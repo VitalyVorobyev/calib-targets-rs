@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "calib-targets-core",
+    "calib-targets-chessboard",
+    "calib-targets-charuco",
+    "calib-targets-marker",
+]
+
+resolver = "2"
