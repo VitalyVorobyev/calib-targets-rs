@@ -61,7 +61,7 @@ pub struct LabeledCorner {
     /// Optional integer grid coordinates (i, j).
     pub grid: Option<GridCoords>,
 
-    /// Optional logical ID (e.g. ChArUco or coded pattern ID).
+    /// Optional logical ID (e.g. ChArUco or marker-board ID).
     pub id: Option<u32>,
 
     /// Optional detection confidence [0, 1].
@@ -101,9 +101,7 @@ impl Default for GridSearchParams {
 /// constructs the perpendicular as the second axis.
 ///
 /// Returns (u, v) unit vectors in image pixel space.
-pub fn estimate_grid_axes_from_orientations(
-    corners: &[Corner],
-) -> Option<GridAxes> {
+pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<GridAxes> {
     if corners.is_empty() {
         return None;
     }

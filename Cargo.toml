@@ -1,3 +1,9 @@
+[package]
+name = "calib-targets-rs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
 [workspace]
 members = [
     "calib-targets-core",
@@ -7,3 +13,15 @@ members = [
 ]
 
 resolver = "2"
+
+[dependencies]
+calib-targets-core = { path = "calib-targets-core" }
+calib-targets-chessboard = { path = "calib-targets-chessboard" }
+calib-targets-charuco = { path = "calib-targets-charuco" }
+calib-targets-marker = { path = "calib-targets-marker" }
+chess-corners = "0.1.1"
+image = { version = "0.25", default-features = true }
+nalgebra = "0.34"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"

@@ -37,7 +37,7 @@ fn detect_chessboard(corners: &[Corner]) {
         },
         expected_rows: None,
         expected_cols: None,
-        spacing_tolerance: 3.0,
+        completeness_threshold: 0.7,
     };
 
     let detector = ChessboardDetector::new(params);
