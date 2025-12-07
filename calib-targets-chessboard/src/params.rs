@@ -25,6 +25,7 @@ impl Default for ChessboardParams {
             expected_rows: None,
             expected_cols: None,
             completeness_threshold: 0.7,
+            orientation_tolerance_rad: 22.5_f32.to_radians(),
         }
     }
 }

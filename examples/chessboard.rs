@@ -94,6 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         expected_rows: Some(cfg.expected_rows),
         expected_cols: Some(cfg.expected_cols),
         completeness_threshold: cfg.completeness_threshold,
+        orientation_tolerance_rad: 22.5_f32.to_radians(),
     };
 
     let detector = ChessboardDetector::new(params);

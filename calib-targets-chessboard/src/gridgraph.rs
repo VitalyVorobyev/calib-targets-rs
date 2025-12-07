@@ -3,10 +3,10 @@ use calib_targets_core::Corner;
 use kiddo::{KdTree, SquaredEuclidean};
 
 pub struct GridGraphParams {
-    min_spacing_pix: f32,
-    max_spacing_pix: f32,
-    k_neighbors: usize,
-    orientation_tolerance_rad: f32,
+    pub min_spacing_pix: f32,
+    pub max_spacing_pix: f32,
+    pub k_neighbors: usize,
+    pub orientation_tolerance_rad: f32,
 }
 
 impl Default for GridGraphParams {
@@ -21,7 +21,7 @@ impl Default for GridGraphParams {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum NeighborDirection {
+pub enum NeighborDirection {
     Right,
     Left,
     Up,
@@ -29,11 +29,11 @@ enum NeighborDirection {
 }
 
 #[derive(Debug)]
-struct NodeNeighbor {
-    direction: NeighborDirection,
-    index: usize,
-    distance: f32,
-    score: f32,
+pub struct NodeNeighbor {
+    pub direction: NeighborDirection,
+    pub index: usize,
+    pub distance: f32,
+    pub score: f32,
 }
 
 /// Small helper: angle between an undirected axis `axis_angle`
@@ -153,10 +153,10 @@ fn select_neighbors(candidates: Vec<NodeNeighbor>) -> Vec<NodeNeighbor> {
 }
 
 pub struct GridGraph {
-    neighbors: Vec<Vec<NodeNeighbor>>, // For each node, list of neighbors
+    pub neighbors: Vec<Vec<NodeNeighbor>>, // For each node, list of neighbors
 }
 
-fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
+pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
     let mut visited = vec![false; graph.neighbors.len()];
     let mut components = Vec::new();
 
@@ -188,10 +188,9 @@ fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
     components
 }
 
-fn assign_grid_coordinates(
-    graph: &GridGraph,
-    
-)
+fn assign_grid_coordinates(graph: &GridGraph) {
+
+}
 
 impl GridGraph {
     pub fn new(corners: &[Corner], params: GridGraphParams) -> Self {

@@ -2,5 +2,10 @@
   "image_path": "testdata/mid.png",
   "config_path": "testdata/chessboard_config.json",
   "num_raw_corners": 77,
-  "detections": []
+  "detections": [
+    {
+      "kind": "chessboard",
+      "corners": []
+    }
+  ]
 }
