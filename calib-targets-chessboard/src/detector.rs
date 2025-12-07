@@ -1,10 +1,7 @@
-use crate::params::ChessboardParams;
-use crate::gridgraph::{GridGraph, GridGraphParams};
 use crate::geom::is_aligned_or_orthogonal;
-use calib_targets_core::{
-    Corner, TargetDetection,
-    TargetKind,
-};
+use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph, GridGraphParams};
+use crate::params::ChessboardParams;
+use calib_targets_core::{Corner, TargetDetection, TargetKind};
 use log::info;
 use nalgebra::Vector2;
 
@@ -15,9 +12,7 @@ use nalgebra::Vector2;
 /// constructs the perpendicular as the second axis.
 ///
 /// Returns (u, v) unit vectors in image pixel space.
-pub fn estimate_grid_axes_from_orientations(
-    corners: &[Corner],
-) -> Option<f32> {
+pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
     if corners.is_empty() {
         return None;
     }
@@ -97,7 +92,11 @@ impl ChessboardDetector {
             .iter()
             .cloned()
             .filter(|c| {
-                is_aligned_or_orthogonal(theta_u, c.orientation, self.params.orientation_tolerance_rad)
+                is_aligned_or_orthogonal(
+                    theta_u,
+                    c.orientation,
+                    self.params.orientation_tolerance_rad,
+                )
             })
             .collect();
 
@@ -108,7 +107,12 @@ impl ChessboardDetector {
             orientation_tolerance_rad: self.params.orientation_tolerance_rad,
         };
         let graph = GridGraph::new(&aligned_corners, graph_params);
-        println!("{:?}", graph.neighbors);
+
+        // TODO: continue implementing the chessboard detection algorithm.
+        // 1. find connected components
+        // 2. assign (i, j) grid coordinates
+        // 3. evaluate completeness against expected_rows/cols
+        // 4. return the best detection if any matches criteria
 
         vec![TargetDetection {
             kind: TargetKind::Chessboard,

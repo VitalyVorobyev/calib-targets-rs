@@ -139,8 +139,7 @@ fn select_neighbors(candidates: Vec<NodeNeighbor>) -> Vec<NodeNeighbor> {
             None => true,
             Some(current) => {
                 candidate.score < current.score
-                    || (candidate.score == current.score
-                        && candidate.distance < current.distance)
+                    || (candidate.score == current.score && candidate.distance < current.distance)
             }
         };
 
@@ -188,8 +187,39 @@ pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
     components
 }
 
-fn assign_grid_coordinates(graph: &GridGraph) {
+pub fn assign_grid_coordinates(
+    graph: &GridGraph,
+    component: &Vec<usize>,
+) -> Vec<(usize, i32, i32)> {
+    let mut coords = Vec::new();
+    let mut visited = vec![false; graph.neighbors.len()];
+    let mut queue = std::collections::VecDeque::new();
 
+    // Start from the first node in the component.
+    let start = component[0];
+    queue.push_back((start, 0, 0)); // (node index, i, j)
+
+    while let Some((node_idx, i, j)) = queue.pop_front() {
+        if visited[node_idx] {
+            continue;
+        }
+        visited[node_idx] = true;
+        coords.push((node_idx, i, j));
+
+        for neighbor in &graph.neighbors[node_idx] {
+            let (di, dj) = match neighbor.direction {
+                NeighborDirection::Right => (1, 0),
+                NeighborDirection::Left => (-1, 0),
+                NeighborDirection::Up => (0, -1),
+                NeighborDirection::Down => (0, 1),
+            };
+            let neighbor_i = i + di;
+            let neighbor_j = j + dj;
+            queue.push_back((neighbor.index, neighbor_i, neighbor_j));
+        }
+    }
+
+    coords
 }
 
 impl GridGraph {
@@ -356,7 +386,7 @@ mod tests {
         // Center at origin; two right candidates with slightly different orientation,
         // and a left candidate to ensure other directions remain intact.
         let corners = vec![
-            make_corner(0.0, 0.0, FRAC_PI_4), // center (idx 0)
+            make_corner(0.0, 0.0, FRAC_PI_4),           // center (idx 0)
             make_corner(spacing, 0.0, 3.0 * FRAC_PI_4), // better right (idx 1)
             make_corner(
                 worse_spacing,
