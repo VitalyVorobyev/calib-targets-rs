@@ -254,6 +254,8 @@ dependencies = [
  "kiddo",
  "log",
  "nalgebra",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

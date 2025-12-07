@@ -28,8 +28,6 @@ struct ExampleConfig {
     min_corners: usize,
     /// Minimal completeness ratio when expected_rows/cols are set.
     completeness_threshold: f32,
-    /// Minimal number of corners per grid line (for u/v clustering).
-    min_points_per_line: usize,
 }
 
 #[derive(Debug, Serialize)]

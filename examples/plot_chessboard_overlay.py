@@ -23,6 +23,17 @@ def main() -> None:
         type=Path,
         help="Path to detection JSON produced by examples/chessboard.rs",
     )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        help="Where to save the PNG overlay (defaults to <detections_json>_overlay.png)",
+    )
+    parser.add_argument(
+        "--show",
+        action="store_true",
+        help="Also show the overlay window in addition to saving the PNG",
+    )
     args = parser.parse_args()
 
     data = json.loads(args.detections_json.read_text())
@@ -47,15 +58,42 @@ def main() -> None:
         ys = [c["y"] for c in corners]
 
         ax.scatter(xs, ys, s=20, facecolors="none", edgecolors="r", linewidths=1.0)
+        for corner in corners:
+            grid = corner.get("grid")
+            if grid is None:
+                continue
+            label = f"{grid[0]},{grid[1]}"
+            ax.annotate(
+                label,
+                (corner["x"], corner["y"]),
+                xytext=(3, -3),
+                textcoords="offset points",
+                fontsize=8,
+                color="yellow",
+                ha="left",
+                va="top",
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="black",
+                    edgecolor="none",
+                    alpha=0.5,
+                ),
+            )
 
-    ax.set_title(f"Detected corners: {sum(len(d.get('corners', [])) for d in detections)}")
-    ax.set_xlabel("x (pixels)")
-    ax.set_ylabel("y (pixels)")
+    ax.set_axis_off()
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
-    plt.tight_layout()
-    plt.show()
+    output_path = args.output or args.detections_json.with_name(
+        f"{args.detections_json.stem}_overlay.png"
+    )
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0)
+    print(f"Saved overlay to {output_path}")
+
+    if args.show:
+        plt.show()
+    else:
+        plt.close(fig)
 
 
 if __name__ == "__main__":
     main()
-

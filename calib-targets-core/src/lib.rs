@@ -91,9 +91,9 @@ impl Default for GridSearchParams {
     }
 }
 
-/// Estimate two orthogonal grid axes from ChESS corner orientations.
+/// Estimate grid orientation from ChESS corner orientations.
 ///
-/// This respects the fact that your orientations are defined modulo π.
+/// This respects the fact that orientations are defined modulo π.
 /// It uses a "double-angle" trick to get a dominant direction, then
 /// constructs the perpendicular as the second axis.
 pub fn estimate_grid_orientations(corners: &[Corner]) -> Option<f32> {

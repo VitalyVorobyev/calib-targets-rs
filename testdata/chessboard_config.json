@@ -5,6 +5,5 @@
   "expected_cols": 11,
   "min_strength": 0.0,
   "min_corners": 16,
-  "completeness_threshold": 0.7,
-  "min_points_per_line": 3
+  "completeness_threshold": 0.7
 }

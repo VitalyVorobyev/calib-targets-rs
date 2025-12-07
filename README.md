@@ -2,6 +2,8 @@
 
 Early-stage calibration target detection library for Rust.
 
+![](testdata/chessboard_detection_overlay.png)
+
 > **Status:** experimental & work in progress. APIs are not stable yet and many detectors are only skeletons.
 
 This repository contains a small family of crates for detecting various calibration targets from corner detections (e.g., ChESS corners). The focus is on clean geometry and target modeling; image I/O and corner detection are intentionally kept out of scope.

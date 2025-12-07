@@ -1,7 +1,9 @@
 use crate::geom::{angle_diff_abs, is_orthogonal};
 use calib_targets_core::Corner;
 use kiddo::{KdTree, SquaredEuclidean};
+use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Deserialize, Serialize)]
 pub struct GridGraphParams {
     pub min_spacing_pix: f32,
     pub max_spacing_pix: f32,
