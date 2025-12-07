@@ -156,6 +156,43 @@ pub struct GridGraph {
     neighbors: Vec<Vec<NodeNeighbor>>, // For each node, list of neighbors
 }
 
+fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
+    let mut visited = vec![false; graph.neighbors.len()];
+    let mut components = Vec::new();
+
+    for start in 0..graph.neighbors.len() {
+        if visited[start] {
+            continue;
+        }
+
+        let mut component = Vec::new();
+        let mut stack = vec![start];
+
+        while let Some(node) = stack.pop() {
+            if visited[node] {
+                continue;
+            }
+            visited[node] = true;
+            component.push(node);
+
+            for neighbor in &graph.neighbors[node] {
+                if !visited[neighbor.index] {
+                    stack.push(neighbor.index);
+                }
+            }
+        }
+
+        components.push(component);
+    }
+
+    components
+}
+
+fn assign_grid_coordinates(
+    graph: &GridGraph,
+    
+)
+
 impl GridGraph {
     pub fn new(corners: &[Corner], params: GridGraphParams) -> Self {
         let coords = corners

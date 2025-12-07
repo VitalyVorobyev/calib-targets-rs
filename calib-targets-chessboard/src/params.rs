@@ -14,6 +14,8 @@ pub struct ChessboardParams {
     /// Minimal completeness ratio (#detected corners / full grid size)
     /// when expected_rows/cols are provided.
     pub completeness_threshold: f32,
+
+    pub orientation_tolerance_rad: f32,
 }
 
 impl Default for ChessboardParams {

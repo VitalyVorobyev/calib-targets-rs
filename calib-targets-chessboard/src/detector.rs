@@ -1,4 +1,6 @@
 use crate::params::ChessboardParams;
+use crate::gridgraph::GridGraph;
+use crate::geom::is_aligned_or_orthogonal;
 use calib_targets_core::{
     estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner, TargetDetection,
     TargetKind,
@@ -44,7 +46,14 @@ impl ChessboardDetector {
         };
 
         let theta_u = u_axis_unit.angle(&Vector2::x_axis());
-        let theta_v = v_axis_unit.angle(&Vector2::x_axis());
+
+        let aligned_corners: Vec<Corner> = strong
+            .iter()
+            .cloned()
+            .filter(|c| {
+                is_aligned_or_orthogonal(theta_u, c.orientation, self.params.orientation_tolerance_rad)
+            })
+            .collect();
 
         vec![TargetDetection {
             kind: TargetKind::Chessboard,

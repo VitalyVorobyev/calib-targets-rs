@@ -41,9 +41,6 @@ pub struct GridCoords {
     pub j: i32,
 }
 
-/// Pair of orthogonal grid axes in image space.
-pub type GridAxes = (Unit<Vector2<f32>>, Unit<Vector2<f32>>);
-
 /// The kind of target that a detection corresponds to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetKind {
@@ -99,9 +96,7 @@ impl Default for GridSearchParams {
 /// This respects the fact that your orientations are defined modulo π.
 /// It uses a "double-angle" trick to get a dominant direction, then
 /// constructs the perpendicular as the second axis.
-///
-/// Returns (u, v) unit vectors in image pixel space.
-pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<GridAxes> {
+pub fn estimate_grid_orientations(corners: &[Corner]) -> Option<f32> {
     if corners.is_empty() {
         return None;
     }
@@ -139,7 +134,5 @@ pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<GridAx
     let mean_theta = 0.5 * mean_two_angle;
 
     let u = Unit::new_normalize(Vector2::new(mean_theta.cos(), mean_theta.sin()));
-    let v = Unit::new_normalize(Vector2::new(-u.y, u.x)); // perpendicular
-
-    Some((u, v))
+    Some(u.angle(&Vector2::x_axis()))
 }
