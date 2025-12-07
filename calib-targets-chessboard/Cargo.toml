@@ -9,3 +9,4 @@ license = "MIT OR Apache-2.0"
 calib-targets-core = { path = "../calib-targets-core" }
 nalgebra = "0.34"
 log = "0.4"
+kiddo = "5.2.0"

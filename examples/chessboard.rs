@@ -94,7 +94,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         expected_rows: Some(cfg.expected_rows),
         expected_cols: Some(cfg.expected_cols),
         completeness_threshold: cfg.completeness_threshold,
-        min_points_per_line: cfg.min_points_per_line,
     };
 
     let detector = ChessboardDetector::new(params);
@@ -130,7 +129,12 @@ impl log::Log for SimpleLogger {
 
     fn log(&self, record: &log::Record) {
         if self.enabled(record.metadata()) {
-            eprintln!("[{}] {}: {}", record.level(), record.target(), record.args());
+            eprintln!(
+                "[{}] {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
         }
     }
 
