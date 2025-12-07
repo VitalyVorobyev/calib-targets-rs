@@ -41,6 +41,9 @@ pub struct GridCoords {
     pub j: i32,
 }
 
+/// Pair of orthogonal grid axes in image space.
+pub type GridAxes = (Unit<Vector2<f32>>, Unit<Vector2<f32>>);
+
 /// The kind of target that a detection corresponds to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetKind {
@@ -100,7 +103,7 @@ impl Default for GridSearchParams {
 /// Returns (u, v) unit vectors in image pixel space.
 pub fn estimate_grid_axes_from_orientations(
     corners: &[Corner],
-) -> Option<(Unit<Vector2<f32>>, Unit<Vector2<f32>>)> {
+) -> Option<GridAxes> {
     if corners.is_empty() {
         return None;
     }
