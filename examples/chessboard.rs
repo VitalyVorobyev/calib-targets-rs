@@ -1,8 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::{
-    Corner as TargetCorner, GridSearchParams, LabeledCorner, TargetDetection, TargetKind,
+    Corner as TargetCorner, LabeledCorner, TargetDetection, TargetKind,
 };
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
@@ -18,16 +18,8 @@ struct ExampleConfig {
     /// Where to write the detection JSON.
     #[serde(default)]
     output_path: Option<String>,
-    /// Expected inner corner rows of the chessboard.
-    expected_rows: u32,
-    /// Expected inner corner columns of the chessboard.
-    expected_cols: u32,
-    /// Minimal corner strength to consider in the grid search.
-    min_strength: f32,
-    /// Minimal number of corners required for a valid detection.
-    min_corners: usize,
-    /// Minimal completeness ratio when expected_rows/cols are set.
-    completeness_threshold: f32,
+    chessboard: ChessboardParams,
+    graph: GridGraphParams,
 }
 
 #[derive(Debug, Serialize)]
@@ -84,18 +76,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     // Configure the chessboard detector.
-    let params = ChessboardParams {
-        grid_search: GridSearchParams {
-            min_strength: cfg.min_strength,
-            min_corners: cfg.min_corners,
-        },
-        expected_rows: Some(cfg.expected_rows),
-        expected_cols: Some(cfg.expected_cols),
-        completeness_threshold: cfg.completeness_threshold,
-        orientation_tolerance_rad: 22.5_f32.to_radians(),
-    };
-
-    let detector = ChessboardDetector::new(params);
+    let detector = ChessboardDetector::new(cfg.chessboard);
     let detections = detector.detect_from_corners(&target_corners);
 
     let output = ExampleOutput {

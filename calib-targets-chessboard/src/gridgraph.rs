@@ -1,26 +1,7 @@
 use crate::geom::{angle_diff_abs, is_orthogonal};
+use crate::params::GridGraphParams;
 use calib_targets_core::Corner;
 use kiddo::{KdTree, SquaredEuclidean};
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct GridGraphParams {
-    pub min_spacing_pix: f32,
-    pub max_spacing_pix: f32,
-    pub k_neighbors: usize,
-    pub orientation_tolerance_rad: f32,
-}
-
-impl Default for GridGraphParams {
-    fn default() -> Self {
-        Self {
-            min_spacing_pix: 5.0,
-            max_spacing_pix: 50.0,
-            k_neighbors: 8,
-            orientation_tolerance_rad: std::f32::consts::FRAC_PI_8, // 22.5 degrees
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum NeighborDirection {
@@ -65,7 +46,7 @@ fn is_good_neighbor(
     if !is_orthogonal(
         corner.orientation,
         neighbor.orientation,
-        params.orientation_tolerance_rad,
+        params.orientation_tolerance_deg.to_radians(),
     ) {
         return None;
     }
@@ -89,7 +70,7 @@ fn is_good_neighbor(
     let diff_corner = axis_vec_diff(corner.orientation, edge_angle);
     let diff_neighbor = axis_vec_diff(neighbor.orientation, edge_angle);
     let expected = std::f32::consts::FRAC_PI_4; // 45°
-    let tol = params.orientation_tolerance_rad.abs();
+    let tol = params.orientation_tolerance_deg.to_radians();
 
     let score_corner = (diff_corner - expected).abs();
     let score_neighbor = (diff_neighbor - expected).abs();

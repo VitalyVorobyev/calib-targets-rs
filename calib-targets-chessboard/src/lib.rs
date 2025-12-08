@@ -18,5 +18,4 @@ mod gridgraph;
 mod params;
 
 pub use detector::ChessboardDetector;
-pub use gridgraph::{GridGraph, GridGraphParams};
-pub use params::ChessboardParams;
+pub use params::{ChessboardParams, GridGraphParams};

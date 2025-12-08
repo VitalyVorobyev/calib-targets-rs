@@ -70,7 +70,7 @@ impl ChessboardDetector {
         let strong: Vec<Corner> = corners
             .iter()
             .cloned()
-            .filter(|c| c.strength >= self.params.grid_search.min_strength)
+            .filter(|c| c.strength >= self.params.min_strength)
             .collect();
 
         info!(
@@ -78,7 +78,7 @@ impl ChessboardDetector {
             strong.len()
         );
 
-        if strong.len() < self.params.grid_search.min_corners {
+        if strong.len() < self.params.min_corners {
             return Vec::new();
         }
 
@@ -135,17 +135,10 @@ impl ChessboardDetector {
                 continue;
             }
 
-            let (min_i, max_i, min_j, max_j) =
-                coords
-                    .iter()
-                    .fold((i32::MAX, i32::MIN, i32::MAX, i32::MIN), |acc, &(_, i, j)| {
-                        (
-                            acc.0.min(i),
-                            acc.1.max(i),
-                            acc.2.min(j),
-                            acc.3.max(j),
-                        )
-                    });
+            let (min_i, max_i, min_j, max_j) = coords.iter().fold(
+                (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+                |acc, &(_, i, j)| (acc.0.min(i), acc.1.max(i), acc.2.min(j), acc.3.max(j)),
+            );
 
             if min_i == i32::MAX || min_j == i32::MAX {
                 continue;
@@ -169,10 +162,8 @@ impl ChessboardDetector {
                         } else if !fits_direct && fits_swapped {
                             true
                         } else {
-                            let gap_direct =
-                                (expected_cols - width) + (expected_rows - height);
-                            let gap_swapped =
-                                (expected_rows - width) + (expected_cols - height);
+                            let gap_direct = (expected_cols - width) + (expected_rows - height);
+                            let gap_swapped = (expected_rows - width) + (expected_cols - height);
                             gap_swapped < gap_direct
                         };
 

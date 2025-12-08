@@ -1,9 +1,32 @@
-use calib_targets_core::GridSearchParams;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct GridGraphParams {
+    pub min_spacing_pix: f32,
+    pub max_spacing_pix: f32,
+    pub k_neighbors: usize,
+    pub orientation_tolerance_deg: f32,
+}
+
+impl Default for GridGraphParams {
+    fn default() -> Self {
+        Self {
+            min_spacing_pix: 5.0,
+            max_spacing_pix: 50.0,
+            k_neighbors: 8,
+            orientation_tolerance_deg: 22.5,
+        }
+    }
+}
 
 /// Parameters specific to the chessboard detector.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChessboardParams {
-    pub grid_search: GridSearchParams,
+    /// Minimal corner strength to consider.
+    pub min_strength: f32,
+
+    /// Minimal number of corners in a detection to be considered valid.
+    pub min_corners: usize,
 
     /// Expected number of *inner* corners in vertical direction (rows).
     pub expected_rows: Option<u32>,
@@ -14,18 +37,16 @@ pub struct ChessboardParams {
     /// Minimal completeness ratio (#detected corners / full grid size)
     /// when expected_rows/cols are provided.
     pub completeness_threshold: f32,
-
-    pub orientation_tolerance_rad: f32,
 }
 
 impl Default for ChessboardParams {
     fn default() -> Self {
         Self {
-            grid_search: GridSearchParams::default(),
+            min_strength: 0.0,
+            min_corners: 16,
             expected_rows: None,
             expected_cols: None,
             completeness_threshold: 0.7,
-            orientation_tolerance_rad: 22.5_f32.to_radians(),
         }
     }
 }

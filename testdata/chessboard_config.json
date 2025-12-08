@@ -1,9 +1,16 @@
 {
   "image_path": "testdata/mid.png",
   "output_path": "testdata/chessboard_detection.json",
-  "expected_rows": 7,
-  "expected_cols": 11,
-  "min_strength": 0.0,
-  "min_corners": 16,
-  "completeness_threshold": 0.7
+  "chessboard": {
+    "expected_rows": 7,
+    "expected_cols": 11,
+    "min_strength": 0.0,
+    "completeness_threshold": 0.7
+  },
+  "graph": {
+    "min_spacing_pix": 5.0,
+    "max_spacing_pix": 50.0,
+    "k_neighbors": 8,
+    "orientation_tolerance_deg": 22.5
+  }
 }

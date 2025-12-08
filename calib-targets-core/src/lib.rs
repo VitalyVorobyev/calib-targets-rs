@@ -3,7 +3,7 @@
 //! This crate is intentionally small and purely geometric. It does *not*
 //! depend on any concrete corner detector or image type.
 
-use nalgebra::{Point2, Unit, Vector2};
+use nalgebra::{Point2, Vector2};
 
 /// Canonical 2D corner used by all target detectors.
 ///
@@ -70,69 +70,4 @@ pub struct LabeledCorner {
 pub struct TargetDetection {
     pub kind: TargetKind,
     pub corners: Vec<LabeledCorner>,
-}
-
-/// Shared parameters for grid search (tune per pattern if needed).
-#[derive(Clone, Debug)]
-pub struct GridSearchParams {
-    /// Minimal corner strength to consider.
-    pub min_strength: f32,
-
-    /// Minimal number of corners in a detection to be considered valid.
-    pub min_corners: usize,
-}
-
-impl Default for GridSearchParams {
-    fn default() -> Self {
-        Self {
-            min_strength: 0.0,
-            min_corners: 16,
-        }
-    }
-}
-
-/// Estimate grid orientation from ChESS corner orientations.
-///
-/// This respects the fact that orientations are defined modulo π.
-/// It uses a "double-angle" trick to get a dominant direction, then
-/// constructs the perpendicular as the second axis.
-pub fn estimate_grid_orientations(corners: &[Corner]) -> Option<f32> {
-    if corners.is_empty() {
-        return None;
-    }
-
-    // Accumulate in double-angle space to handle θ ≡ θ + π
-    let mut sum = Vector2::<f32>::zeros();
-    let mut weight_sum = 0.0f32;
-
-    for c in corners {
-        let theta = c.orientation;
-        // You can weight by strength to favor strong corners.
-        let w = c.strength.max(0.0);
-        if w <= 0.0 {
-            continue;
-        }
-
-        let two_theta = 2.0 * theta;
-        let v = Vector2::new(two_theta.cos(), two_theta.sin());
-        sum += w * v;
-        weight_sum += w;
-    }
-
-    if weight_sum <= 0.0 {
-        return None;
-    }
-
-    let mean = sum / weight_sum;
-    if mean.norm_squared() < 1e-6 {
-        // No dominant orientation.
-        return None;
-    }
-
-    // Back to single-angle space.
-    let mean_two_angle = mean.y.atan2(mean.x);
-    let mean_theta = 0.5 * mean_two_angle;
-
-    let u = Unit::new_normalize(Vector2::new(mean_theta.cos(), mean_theta.sin()));
-    Some(u.angle(&Vector2::x_axis()))
 }
