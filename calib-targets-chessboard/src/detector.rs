@@ -1,6 +1,6 @@
 use crate::geom::is_aligned_or_orthogonal;
-use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph, GridGraphParams};
-use crate::params::ChessboardParams;
+use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph};
+use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use log::info;
 use nalgebra::Vector2;
@@ -54,13 +54,10 @@ pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
 /// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
 pub struct ChessboardDetector {
     pub params: ChessboardParams,
+    pub grid_search: GridGraphParams,
 }
 
 impl ChessboardDetector {
-    pub fn new(params: ChessboardParams) -> Self {
-        Self { params }
-    }
-
     /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
     ///
     /// This function expects corners already computed by your ChESS crate.
@@ -95,7 +92,7 @@ impl ChessboardDetector {
                 is_aligned_or_orthogonal(
                     theta_u,
                     c.orientation,
-                    self.params.orientation_tolerance_rad,
+                    self.grid_search.orientation_tolerance_deg.to_radians(),
                 )
             })
             .collect();
@@ -105,17 +102,11 @@ impl ChessboardDetector {
             aligned_corners.len()
         );
 
-        if aligned_corners.len() < self.params.grid_search.min_corners {
+        if aligned_corners.len() < self.params.min_corners {
             return Vec::new();
         }
 
-        let graph_params = GridGraphParams {
-            min_spacing_pix: 5.0,
-            max_spacing_pix: 100.0,
-            k_neighbors: 8,
-            orientation_tolerance_rad: self.params.orientation_tolerance_rad,
-        };
-        let graph = GridGraph::new(&aligned_corners, graph_params);
+        let graph = GridGraph::new(&aligned_corners, self.grid_search.clone());
 
         let components = connected_components(&graph);
         info!(
@@ -126,7 +117,7 @@ impl ChessboardDetector {
         let mut best: Option<(f32, usize, TargetDetection)> = None;
 
         for component in components.into_iter() {
-            if component.len() < self.params.grid_search.min_corners {
+            if component.len() < self.params.min_corners {
                 continue;
             }
 

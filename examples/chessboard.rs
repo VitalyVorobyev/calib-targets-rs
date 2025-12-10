@@ -1,9 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
-use calib_targets_core::{
-    Corner as TargetCorner, LabeledCorner, TargetDetection, TargetKind,
-};
+use calib_targets_core::{Corner as TargetCorner, LabeledCorner, TargetDetection, TargetKind};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
 use log::LevelFilter;

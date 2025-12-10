@@ -5,6 +5,11 @@
 
 use nalgebra::{Point2, Vector2};
 
+mod orientation_clustering;
+pub use orientation_clustering::{
+    cluster_orientations, OrientationClusteringParams, OrientationClusteringResult,
+};
+
 /// Canonical 2D corner used by all target detectors.
 ///
 /// This is the thing you obtain by adapting the output of your ChESS crate.
