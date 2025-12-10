@@ -5,12 +5,12 @@
 /// and assigns each angle to cluster 0, 1, or None (outlier).
 ///
 /// This is purely angular; no geometry or projective assumptions here.
-
 use crate::Corner;
+use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, PI};
 
 /// Parameters for orientation clustering.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OrientationClusteringParams {
     /// Number of histogram bins on [0, π).
     pub num_bins: usize,
@@ -70,7 +70,11 @@ pub fn cluster_orientations(
     for c in corners {
         let t = wrap_angle_pi(c.orientation);
         let bin = angle_to_bin(t, params.num_bins);
-        let w = if params.use_weights { c.strength.max(0.0) } else { 1.0 };
+        let w = if params.use_weights {
+            c.strength.max(0.0)
+        } else {
+            1.0
+        };
         hist[bin] += w;
         total_weight += w;
     }
@@ -156,7 +160,11 @@ pub fn cluster_orientations(
 
         for (i, lbl) in labels.iter().enumerate() {
             if let Some(c) = lbl {
-                let w = if params.use_weights { corners[i].strength.max(0.0) } else { 1.0 };
+                let w = if params.use_weights {
+                    corners[i].strength.max(0.0)
+                } else {
+                    1.0
+                };
                 let t = wrap_angle_pi(corners[i].orientation);
                 let vx = t.cos();
                 let vy = t.sin();
@@ -184,7 +192,11 @@ pub fn cluster_orientations(
     let mut cluster_weights = [0.0f32; 2];
     for (i, lbl) in labels.iter().enumerate() {
         if let Some(c) = lbl {
-            let w = if params.use_weights { corners[i].strength.max(0.0) } else { 1.0 };
+            let w = if params.use_weights {
+                corners[i].strength.max(0.0)
+            } else {
+                1.0
+            };
             cluster_weights[*c] += w;
         }
     }
@@ -290,4 +302,50 @@ fn find_peaks(hist: &[f32]) -> Vec<Peak> {
     }
 
     peaks
+}
+
+/// Estimate two orthogonal grid axes from ChESS corner orientations.
+///
+/// This respects the fact that your orientations are defined modulo π.
+/// It uses a "double-angle" trick to get a dominant direction, then
+/// constructs the perpendicular as the second axis.
+///
+/// Returns (u, v) unit vectors in image pixel space.
+pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
+    if corners.is_empty() {
+        return None;
+    }
+
+    // Accumulate in double-angle space to handle θ ≡ θ + π
+    let mut sum = Vector2::<f32>::zeros();
+    let mut weight_sum = 0.0f32;
+
+    for c in corners {
+        let theta = c.orientation;
+        // You can weight by strength to favor strong corners.
+        let w = c.strength.max(0.0);
+        if w <= 0.0 {
+            continue;
+        }
+
+        let two_theta = 2.0 * theta;
+        let v = Vector2::new(two_theta.cos(), two_theta.sin());
+        sum += w * v;
+        weight_sum += w;
+    }
+
+    if weight_sum <= 0.0 {
+        return None;
+    }
+
+    let mean = sum / weight_sum;
+    if mean.norm_squared() < 1e-6 {
+        // No dominant orientation.
+        return None;
+    }
+
+    // Back to single-angle space.
+    let mean_two_angle = mean.y.atan2(mean.x);
+    let mean_theta = 0.5 * mean_two_angle;
+    Some(mean_theta)
 }

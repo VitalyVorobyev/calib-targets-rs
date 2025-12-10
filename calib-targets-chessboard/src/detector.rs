@@ -1,55 +1,12 @@
 use crate::geom::is_aligned_or_orthogonal;
 use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph};
 use crate::params::{ChessboardParams, GridGraphParams};
-use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{
+    cluster_orientations, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind,
+};
 use log::info;
 use nalgebra::Vector2;
 
-/// Estimate two orthogonal grid axes from ChESS corner orientations.
-///
-/// This respects the fact that your orientations are defined modulo π.
-/// It uses a "double-angle" trick to get a dominant direction, then
-/// constructs the perpendicular as the second axis.
-///
-/// Returns (u, v) unit vectors in image pixel space.
-pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
-    if corners.is_empty() {
-        return None;
-    }
-
-    // Accumulate in double-angle space to handle θ ≡ θ + π
-    let mut sum = Vector2::<f32>::zeros();
-    let mut weight_sum = 0.0f32;
-
-    for c in corners {
-        let theta = c.orientation;
-        // You can weight by strength to favor strong corners.
-        let w = c.strength.max(0.0);
-        if w <= 0.0 {
-            continue;
-        }
-
-        let two_theta = 2.0 * theta;
-        let v = Vector2::new(two_theta.cos(), two_theta.sin());
-        sum += w * v;
-        weight_sum += w;
-    }
-
-    if weight_sum <= 0.0 {
-        return None;
-    }
-
-    let mean = sum / weight_sum;
-    if mean.norm_squared() < 1e-6 {
-        // No dominant orientation.
-        return None;
-    }
-
-    // Back to single-angle space.
-    let mean_two_angle = mean.y.atan2(mean.x);
-    let mean_theta = 0.5 * mean_two_angle;
-    Some(mean_theta)
-}
 
 /// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
 pub struct ChessboardDetector {

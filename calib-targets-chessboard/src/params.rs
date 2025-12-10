@@ -1,3 +1,4 @@
+use calib_targets_core::OrientationClusteringParams;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -37,6 +38,9 @@ pub struct ChessboardParams {
     /// Minimal completeness ratio (#detected corners / full grid size)
     /// when expected_rows/cols are provided.
     pub completeness_threshold: f32,
+
+    pub use_orientation_clustering: bool,
+    pub orientation_clustering_params: OrientationClusteringParams,
 }
 
 impl Default for ChessboardParams {
@@ -47,6 +51,8 @@ impl Default for ChessboardParams {
             expected_rows: None,
             expected_cols: None,
             completeness_threshold: 0.7,
+            use_orientation_clustering: true,
+            orientation_clustering_params: OrientationClusteringParams::default(),
         }
     }
 }
