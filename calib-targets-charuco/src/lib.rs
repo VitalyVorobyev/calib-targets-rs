@@ -5,6 +5,7 @@
 //! - ID decoding.
 //! - Board homography + interior corner interpolation.
 
+mod detect_aruco;
 pub mod dlt_homography;
 mod mesh_warp;
 pub mod rectified_view;
