@@ -63,6 +63,15 @@ struct OutputDetection {
 }
 
 #[derive(Debug, Serialize)]
+struct RawCornerOut {
+    x: f32,
+    y: f32,
+    strength: f32,
+    /// Strength normalized to [0, 1] by the max response in the image.
+    confidence: f32,
+}
+
+#[derive(Debug, Serialize)]
 struct OrientationBinOut {
     angle_rad: f32,
     angle_deg: f32,
@@ -114,6 +123,7 @@ struct ExampleOutput {
     image_path: String,
     config_path: String,
     num_raw_corners: usize,
+    raw_corners: Vec<RawCornerOut>,
     detections: Vec<DetectionReport>,
 }
 
@@ -169,10 +179,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         det
     };
 
+    let max_response = raw_corners
+        .iter()
+        .map(|c| c.response)
+        .fold(0.0_f32, f32::max);
+    let response_scale = if max_response > 0.0 { 1.0 / max_response } else { 0.0 };
+    let raw_corners_out: Vec<RawCornerOut> = raw_corners
+        .iter()
+        .map(|c| RawCornerOut {
+            x: c.x,
+            y: c.y,
+            strength: c.response,
+            confidence: (c.response * response_scale).clamp(0.0, 1.0),
+        })
+        .collect();
+
     let output = ExampleOutput {
         image_path: cfg.image_path.clone(),
         config_path: config_path.to_string_lossy().into_owned(),
         num_raw_corners: raw_corners.len(),
+        raw_corners: raw_corners_out,
         detections: detection
             .into_iter()
             .map(|res| map_detection_report(res, &cfg.debug_outputs))

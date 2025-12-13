@@ -3,7 +3,7 @@ use crate::gridgraph::{
 };
 use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{
-    cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
+    cluster_orientations, estimate_grid_axes_from_orientations,
     Corner, GridCoords, LabeledCorner, OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{info, warn};
@@ -215,7 +215,7 @@ impl ChessboardDetector {
                     position: corner.position,
                     grid: Some(GridCoords { i: gi, j: gj }),
                     id: None,
-                    confidence: 1.0,
+                    confidence: corner.strength,
                 }
             })
             .collect();
