@@ -1,3 +1,13 @@
+//! ChArUco-related utilities.
+//!
+//! Current focus:
+//! - Rectification helpers for detected chessboard grids:
+//!   - global homography: [`rectify_from_chessboard_result`]
+//!   - mesh warp (piecewise homographies): [`rectify_mesh_from_grid`]
+//!
+//! Marker dictionaries and decoding live in the separate `calib-targets-aruco` crate.
+//! A full ChArUco board solver (marker→board pose, corner IDs/interpolation) is not implemented yet.
+
 mod mesh_warp;
 mod rectified_view;
 // NOTE: marker dictionaries + decoding live in the `calib-targets-aruco` crate.

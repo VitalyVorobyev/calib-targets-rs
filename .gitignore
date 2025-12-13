@@ -1,3 +1,4 @@
 target
 .vscode
 *.pyc
+book/book

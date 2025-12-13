@@ -10,6 +10,7 @@ members = [
     "calib-targets-chessboard",
     "calib-targets-charuco",
     "calib-targets-aruco",
+    "calib-targets-marker",
 ]
 
 resolver = "2"

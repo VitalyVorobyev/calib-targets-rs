@@ -42,6 +42,10 @@ impl MarkerBoardDetector {
         }
     }
 
+    pub fn params(&self) -> &MarkerBoardParams {
+        &self.params
+    }
+
     /// Main entry: detect marker-board from ChESS corners + (eventually) image.
     ///
     /// For v0 we just re-use the chessboard detector and relabel the result

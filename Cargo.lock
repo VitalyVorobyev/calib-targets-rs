@@ -281,6 +281,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "calib-targets-marker"
+version = "0.1.0"
+dependencies = [
+ "calib-targets-chessboard",
+ "calib-targets-core",
+ "nalgebra",
+]
+
+[[package]]
 name = "calib-targets-rs"
 version = "0.1.0"
 dependencies = [
