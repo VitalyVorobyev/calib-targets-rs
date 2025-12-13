@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Export all predefined ArUco/AprilTag dictionaries available in the current
-OpenCV build into JSON files in `calib-targets-charuco/data/`.
+OpenCV build into JSON files in `calib-targets-aruco/data/`.
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ def export_dict(
     name: str,
     border: int = 1,
     cell: int = 20,
-    out_dir: Union[Path, str] = "calib-targets-charuco/data",
+    out_dir: Union[Path, str] = "calib-targets-aruco/data",
 ) -> None:
     """Render all markers for a predefined dictionary and dump them as JSON.
 

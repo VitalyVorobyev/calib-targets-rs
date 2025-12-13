@@ -1,18 +1,9 @@
-//! ChArUco detector skeleton.
-//!
-//! Future work:
-//! - Marker detection (ArUco-like).
-//! - ID decoding.
-//! - Board homography + interior corner interpolation.
-
-pub mod detect_aruco;
 mod mesh_warp;
 mod rectified_view;
-pub mod scan_decode_4x4;
-mod aruco;
+// NOTE: marker dictionaries + decoding live in the `calib-targets-aruco` crate.
 
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use rectified_view::rectify_from_chessboard_result;
+pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 
 use calib_targets_core::TargetDetection;
 

@@ -33,6 +33,10 @@ pub struct RectifiedMeshView {
 
     // How many cells were valid (had all 4 corners)
     pub valid_cells: usize,
+
+    // Per-cell homographies (cell-local rect -> image), in row-major (cj * cells_x + ci).
+    // This is intentionally kept private; use `cell_rect_to_img`/`rect_to_img` accessors.
+    cells: Vec<Cell>,
 }
 
 // Internal cell storage
@@ -40,6 +44,64 @@ pub struct RectifiedMeshView {
 struct Cell {
     h_img_from_cellrect: Homography,
     valid: bool,
+}
+
+impl RectifiedMeshView {
+    /// Map a point in **global rectified pixel coordinates** into the original image,
+    /// using the homography of the cell that contains it.
+    ///
+    /// Returns `None` if the point lies outside the rectified image or the cell is invalid.
+    pub fn rect_to_img(&self, p_rect: Point2<f32>) -> Option<Point2<f32>> {
+        let s = self.px_per_square;
+        if s <= 0.0 {
+            return None;
+        }
+
+        let ci = (p_rect.x / s).floor() as i32;
+        let cj = (p_rect.y / s).floor() as i32;
+        if ci < 0 || cj < 0 || ci >= self.cells_x as i32 || cj >= self.cells_y as i32 {
+            return None;
+        }
+
+        let x_local = p_rect.x - (ci as f32) * s;
+        let y_local = p_rect.y - (cj as f32) * s;
+        self.cell_rect_to_img(ci as usize, cj as usize, Point2::new(x_local, y_local))
+    }
+
+    /// Map a point in **cell-local rectified pixel coordinates** into the original image.
+    ///
+    /// - `ci`, `cj`: cell indices in `0..cells_x × 0..cells_y`
+    /// - `p_cell`: point in `[0..px_per_square]²` (cell-local)
+    pub fn cell_rect_to_img(
+        &self,
+        ci: usize,
+        cj: usize,
+        p_cell: Point2<f32>,
+    ) -> Option<Point2<f32>> {
+        let idx = cj.checked_mul(self.cells_x)?.checked_add(ci)?;
+        let cell = *self.cells.get(idx)?;
+        if !cell.valid {
+            return None;
+        }
+        Some(cell.h_img_from_cellrect.apply(p_cell))
+    }
+
+    /// Convenience: map the four corners of a cell into image coordinates.
+    pub fn cell_corners_img(&self, ci: usize, cj: usize) -> Option<[Point2<f32>; 4]> {
+        let s = self.px_per_square;
+        let pts = [
+            Point2::new(0.0, 0.0),
+            Point2::new(s, 0.0),
+            Point2::new(s, s),
+            Point2::new(0.0, s),
+        ];
+        Some([
+            self.cell_rect_to_img(ci, cj, pts[0])?,
+            self.cell_rect_to_img(ci, cj, pts[1])?,
+            self.cell_rect_to_img(ci, cj, pts[2])?,
+            self.cell_rect_to_img(ci, cj, pts[3])?,
+        ])
+    }
 }
 
 /// Build a rectified “board view” by piecewise homographies per grid cell.
@@ -197,5 +259,6 @@ pub fn rectify_mesh_from_grid(
         cells_y,
         px_per_square,
         valid_cells,
+        cells,
     })
 }

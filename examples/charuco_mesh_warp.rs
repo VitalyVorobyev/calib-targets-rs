@@ -1,5 +1,6 @@
 use std::{env, fs, path::PathBuf, time::Instant};
 
+use calib_targets_aruco::{builtins, scan_decode_markers, Matcher, ScanDecodeConfig};
 use calib_targets_charuco::{rectify_mesh_from_grid, RectifiedMeshView};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::GrayImageView;
@@ -27,12 +28,20 @@ struct ExampleConfig {
     #[serde(default)]
     #[allow(dead_code)]
     margin_squares: Option<f32>, // ignored for mesh warp; present for compatibility
+    #[serde(default = "default_aruco_dictionary")]
+    aruco_dictionary: String,
+    #[serde(default)]
+    aruco_max_hamming: Option<u8>,
     chessboard: ChessboardParams,
     graph: GridGraphParams,
 }
 
 fn default_px_per_square() -> f32 {
     40.0
+}
+
+fn default_aruco_dictionary() -> String {
+    "DICT_4X4_1000".to_string()
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -48,6 +57,27 @@ struct OutputCorner {
 struct OutputDetection {
     kind: String,
     corners: Vec<OutputCorner>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct OutputMarker {
+    id: u32,
+    cell: [i32; 2],
+    grid_cell: [i32; 2],
+    rotation: u8,
+    hamming: u8,
+    score: f32,
+    border_score: f32,
+    inverted: bool,
+    corners_rect: [[f32; 2]; 4],
+    corners_img: Option<[[f32; 2]; 4]>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct MarkerScanOut {
+    dictionary: String,
+    max_hamming: u8,
+    markers: Vec<OutputMarker>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -71,6 +101,7 @@ struct TimingsMs {
     detect_board: u64,
     mesh_rectify: Option<u64>,
     save_mesh: Option<u64>,
+    scan_markers: Option<u64>,
     total: u64,
 }
 
@@ -83,6 +114,7 @@ struct ExampleReport {
     inliers: Vec<usize>,
     orientations: Option<[f32; 2]>,
     mesh_rectified: Option<MeshRectifiedOut>,
+    markers: Option<MarkerScanOut>,
     timings_ms: TimingsMs,
 }
 
@@ -160,7 +192,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mesh_rectified = None;
     let mut mesh_rectify_ms = None;
     let mut mesh_save_ms = None;
+    let mut scan_markers_ms = None;
     let mut detection_json = None;
+    let mut markers_json = None;
     let mut inliers = Vec::new();
     let mut orientations = None;
 
@@ -196,6 +230,80 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 save_mesh_view(&mesh_path, &rectified)?;
                 mesh_save_ms = Some(t_save.elapsed().as_millis() as u64);
 
+                // Decode ArUco markers on the rectified grid.
+                let span_markers = info_span!("aruco_decode");
+                let (markers, scan_ms) = {
+                    let _g = span_markers.enter();
+                    let t0 = Instant::now();
+
+                    match builtins::builtin_dictionary(&cfg.aruco_dictionary) {
+                        None => {
+                            info!(
+                                dictionary = %cfg.aruco_dictionary,
+                                "unknown dictionary; skipping marker decoding"
+                            );
+                            (Vec::new(), 0u64)
+                        }
+                        Some(dict) => {
+                            if dict.codes.is_empty() {
+                                (Vec::new(), 0u64)
+                            } else {
+                                let max_hamming = cfg
+                                    .aruco_max_hamming
+                                    .unwrap_or(dict.max_correction_bits.min(2));
+                                let matcher = Matcher::new(dict, max_hamming);
+                                let scan_cfg = ScanDecodeConfig::default();
+
+                                let rect_view = GrayImageView {
+                                    width: rectified.rect.width,
+                                    height: rectified.rect.height,
+                                    data: &rectified.rect.data,
+                                };
+
+                                let dets = scan_decode_markers(
+                                    &rect_view,
+                                    rectified.cells_x,
+                                    rectified.cells_y,
+                                    rectified.px_per_square,
+                                    &scan_cfg,
+                                    &matcher,
+                                );
+
+                                let scan_ms = t0.elapsed().as_millis() as u64;
+                                info!(
+                                    duration_ms = scan_ms,
+                                    dictionary = %dict.name,
+                                    max_hamming = max_hamming,
+                                    count = dets.len(),
+                                    "decoded markers on rectified grid"
+                                );
+
+                                (dets, scan_ms)
+                            }
+                        }
+                    }
+                };
+                if scan_ms > 0 {
+                    scan_markers_ms = Some(scan_ms);
+                }
+
+                if !markers.is_empty() {
+                    let dict_name = cfg.aruco_dictionary.clone();
+                    let dict = builtins::builtin_dictionary(&dict_name)
+                        .expect("dictionary was already validated");
+                    let max_hamming = cfg
+                        .aruco_max_hamming
+                        .unwrap_or(dict.max_correction_bits.min(2));
+                    markers_json = Some(MarkerScanOut {
+                        dictionary: dict_name,
+                        max_hamming,
+                        markers: markers
+                            .into_iter()
+                            .map(|m| map_marker(&rectified, m))
+                            .collect(),
+                    });
+                }
+
                 mesh_rectified = Some(map_mesh_rectified(mesh_path, rectified));
             }
             Err(err) => {
@@ -214,6 +322,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         inliers,
         orientations,
         mesh_rectified,
+        markers: markers_json,
         timings_ms: TimingsMs {
             load_image: load_image_ms,
             detect_corners: detect_corners_ms,
@@ -221,6 +330,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             detect_board: detect_board_ms,
             mesh_rectify: mesh_rectify_ms,
             save_mesh: mesh_save_ms,
+            scan_markers: scan_markers_ms,
             total: total_ms,
         },
     };
@@ -289,6 +399,29 @@ fn map_mesh_rectified(path: PathBuf, rect: RectifiedMeshView) -> MeshRectifiedOu
         cells_x: rect.cells_x,
         cells_y: rect.cells_y,
         valid_cells: rect.valid_cells,
+    }
+}
+
+fn map_marker(rect: &RectifiedMeshView, m: calib_targets_aruco::MarkerDetection) -> OutputMarker {
+    let corners_rect = m.corners_rect.map(|p| [p.x, p.y]);
+
+    let ci = m.sx.max(0) as usize;
+    let cj = m.sy.max(0) as usize;
+    let corners_img = rect
+        .cell_corners_img(ci, cj)
+        .map(|pts| pts.map(|p| [p.x, p.y]));
+
+    OutputMarker {
+        id: m.id,
+        cell: [m.sx, m.sy],
+        grid_cell: [rect.min_i + m.sx, rect.min_j + m.sy],
+        rotation: m.rotation,
+        hamming: m.hamming,
+        score: m.score,
+        border_score: m.border_score,
+        inverted: m.inverted,
+        corners_rect,
+        corners_img,
     }
 }
 

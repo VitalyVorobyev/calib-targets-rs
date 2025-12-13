@@ -239,6 +239,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
+name = "calib-targets-aruco"
+version = "0.1.0"
+dependencies = [
+ "calib-targets-core",
+ "nalgebra",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "calib-targets-charuco"
 version = "0.1.0"
 dependencies = [
@@ -274,6 +284,7 @@ dependencies = [
 name = "calib-targets-rs"
 version = "0.1.0"
 dependencies = [
+ "calib-targets-aruco",
  "calib-targets-charuco",
  "calib-targets-chessboard",
  "calib-targets-core",
