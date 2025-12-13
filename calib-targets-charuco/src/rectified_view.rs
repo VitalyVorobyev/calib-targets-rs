@@ -1,9 +1,18 @@
-use crate::dlt_homography::estimate_homography_rect_to_img;
-use crate::rectify::RectifyError;
-use crate::rectify::{GrayImage, GrayImageView, Homography, Point2f};
-use crate::warp_grayscale::warp_perspective_gray;
+use calib_targets_core::{
+    estimate_homography_rect_to_img, warp_perspective_gray, GrayImage, GrayImageView, Homography,
+    LabeledCorner,
+};
+use nalgebra::Point2;
 
-use calib_targets_core::LabeledCorner;
+#[derive(thiserror::Error, Debug)]
+pub enum RectifyError {
+    #[error("not enough labeled inlier corners with grid coords (need >=4)")]
+    NotEnoughPoints,
+    #[error("homography estimation failed")]
+    HomographyFailed,
+    #[error("homography not invertible")]
+    NonInvertible,
+}
 
 #[derive(Clone, Debug)]
 pub struct RectifiedBoardView {
@@ -25,13 +34,13 @@ pub fn rectify_from_chessboard_result(
     margin_squares: f32, // e.g. 0.5..1.0
 ) -> Result<RectifiedBoardView, RectifyError> {
     // 1) collect correspondences (rect_pt -> img_pt)
-    let mut img_pts = Vec::<Point2f>::new();
+    let mut img_pts = Vec::<Point2<f32>>::new();
     let mut grid = Vec::<(i32, i32)>::new();
 
     for &idx in inliers {
         if let Some(c) = det_corners.get(idx) {
             if let Some(g) = c.grid {
-                img_pts.push(Point2f::new(c.position.x, c.position.y));
+                img_pts.push(Point2::new(c.position.x, c.position.y));
                 grid.push((g.i, g.j));
             }
         }
@@ -69,11 +78,11 @@ pub fn rectify_from_chessboard_result(
         .max(1.0) as usize;
 
     // 3) build rectified points for DLT
-    let mut rect_pts = Vec::<Point2f>::with_capacity(grid.len());
+    let mut rect_pts = Vec::<Point2<f32>>::with_capacity(grid.len());
     for &(i, j) in &grid {
         let x = (i - min_i_m) as f32 * px_per_square;
         let y = (j - min_j_m) as f32 * px_per_square;
-        rect_pts.push(Point2f::new(x, y));
+        rect_pts.push(Point2::new(x, y));
     }
 
     // 4) estimate H_img_from_rect

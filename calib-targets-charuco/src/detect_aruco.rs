@@ -1,4 +1,4 @@
-use crate::rectify::GrayImageView;
+use calib_targets_core::GrayImageView;
 
 #[inline]
 fn get_gray(img: &GrayImageView<'_>, x: i32, y: i32) -> u8 {

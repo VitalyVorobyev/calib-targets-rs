@@ -10,3 +10,4 @@ nalgebra = { version = "0.34", features = ["serde-serialize"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
+thiserror = "2"

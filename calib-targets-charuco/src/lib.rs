@@ -6,12 +6,12 @@
 //! - Board homography + interior corner interpolation.
 
 mod detect_aruco;
-pub mod dlt_homography;
 mod mesh_warp;
-pub mod rectified_view;
-pub mod rectify;
-pub mod warp_grayscale;
+mod rectified_view;
 mod scan_decode_4x4;
+
+pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
+pub use rectified_view::rectify_from_chessboard_result;
 
 use calib_targets_core::TargetDetection;
 

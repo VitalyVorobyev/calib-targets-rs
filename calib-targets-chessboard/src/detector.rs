@@ -3,8 +3,8 @@ use crate::gridgraph::{
 };
 use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{
-    cluster_orientations, estimate_grid_axes_from_orientations,
-    Corner, GridCoords, LabeledCorner, OrientationHistogram, TargetDetection, TargetKind,
+    cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
+    OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{info, warn};
 use std::f32::consts::FRAC_PI_2;

@@ -267,15 +267,7 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "calib-targets-marker"
-version = "0.1.0"
-dependencies = [
- "calib-targets-chessboard",
- "calib-targets-core",
- "nalgebra",
+ "thiserror",
 ]
 
 [[package]]
@@ -285,7 +277,6 @@ dependencies = [
  "calib-targets-charuco",
  "calib-targets-chessboard",
  "calib-targets-core",
- "calib-targets-marker",
  "chess-corners",
  "image",
  "log",

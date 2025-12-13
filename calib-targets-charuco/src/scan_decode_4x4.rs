@@ -1,4 +1,4 @@
-use crate::rectify::GrayImageView;
+use calib_targets_core::GrayImageView;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -29,7 +29,10 @@ pub struct ArucoMatcher4x4 {
 impl ArucoMatcher4x4 {
     /// max_hamming supported up to 2 (0/1/2). If you need >2, say so and I’ll extend it.
     pub fn new(dict: &ArucoDictionary4x4, max_hamming: u8) -> Self {
-        assert!(max_hamming <= 2, "max_hamming > 2 not supported in this fast matcher");
+        assert!(
+            max_hamming <= 2,
+            "max_hamming > 2 not supported in this fast matcher"
+        );
 
         let mut map: HashMap<u16, Match> = HashMap::new();
 
@@ -38,19 +41,43 @@ impl ArucoMatcher4x4 {
                 let code_obs = rotate_code_4x4(base, rot);
 
                 // dist 0
-                insert_best(&mut map, code_obs, Match { id: id as u32, rotation: rot, hamming: 0 });
+                insert_best(
+                    &mut map,
+                    code_obs,
+                    Match {
+                        id: id as u32,
+                        rotation: rot,
+                        hamming: 0,
+                    },
+                );
 
                 if max_hamming >= 1 {
                     for i in 0..16 {
                         let c1 = code_obs ^ (1u16 << i);
-                        insert_best(&mut map, c1, Match { id: id as u32, rotation: rot, hamming: 1 });
+                        insert_best(
+                            &mut map,
+                            c1,
+                            Match {
+                                id: id as u32,
+                                rotation: rot,
+                                hamming: 1,
+                            },
+                        );
                     }
                 }
                 if max_hamming >= 2 {
                     for i in 0..16 {
-                        for j in (i+1)..16 {
+                        for j in (i + 1)..16 {
                             let c2 = code_obs ^ (1u16 << i) ^ (1u16 << j);
-                            insert_best(&mut map, c2, Match { id: id as u32, rotation: rot, hamming: 2 });
+                            insert_best(
+                                &mut map,
+                                c2,
+                                Match {
+                                    id: id as u32,
+                                    rotation: rot,
+                                    hamming: 2,
+                                },
+                            );
                         }
                     }
                 }
@@ -66,14 +93,18 @@ impl ArucoMatcher4x4 {
     }
 
     #[inline]
-    pub fn max_hamming(&self) -> u8 { self.max_hamming }
+    pub fn max_hamming(&self) -> u8 {
+        self.max_hamming
+    }
 }
 
 #[inline]
 fn insert_best(map: &mut HashMap<u16, Match>, key: u16, cand: Match) {
     // Keep the smallest hamming; tie-break by leaving the first inserted (stable enough).
     match map.get(&key) {
-        None => { map.insert(key, cand); }
+        None => {
+            map.insert(key, cand);
+        }
         Some(prev) => {
             if cand.hamming < prev.hamming {
                 map.insert(key, cand);
@@ -85,12 +116,14 @@ fn insert_best(map: &mut HashMap<u16, Match>, key: u16, cand: Match) {
 // Rotate 4x4 code stored row-major in low bits: idx = y*4 + x
 #[inline]
 pub fn rotate_code_4x4(code: u16, rot: u8) -> u16 {
-    if (rot & 3) == 0 { return code; }
+    if (rot & 3) == 0 {
+        return code;
+    }
     let rot = rot & 3;
 
     #[inline]
     fn get(code: u16, x: usize, y: usize) -> u16 {
-        (code >> (y*4 + x)) & 1
+        (code >> (y * 4 + x)) & 1
     }
 
     let mut out: u16 = 0;
@@ -98,12 +131,12 @@ pub fn rotate_code_4x4(code: u16, rot: u8) -> u16 {
         for x in 0..4usize {
             let (sx, sy) = match rot {
                 0 => (x, y),
-                1 => (y, 3 - x),       // 90°
-                2 => (3 - x, 3 - y),   // 180°
-                _ => (3 - y, x),       // 270°
+                1 => (y, 3 - x),     // 90°
+                2 => (3 - x, 3 - y), // 180°
+                _ => (3 - y, x),     // 270°
             };
             let bit = get(code, sx, sy);
-            out |= bit << (y*4 + x);
+            out |= bit << (y * 4 + x);
         }
     }
     out
@@ -166,7 +199,9 @@ pub fn scan_decode_markers_4x4(
 
     for sy in 0..(cells_y as i32) {
         for sx in 0..(cells_x as i32) {
-            if let Some((code, border_score)) = read_aruco_4x4_from_square(rect, sx, sy, px_per_square, cfg) {
+            if let Some((code, border_score)) =
+                read_aruco_4x4_from_square(rect, sx, sy, px_per_square, cfg)
+            {
                 if let Some(m) = matcher.match_code(code) {
                     // score: border quality + hamming penalty
                     let ham_pen = 1.0 - (m.hamming as f32 / 16.0);
@@ -177,10 +212,10 @@ pub fn scan_decode_markers_4x4(
                     let x0 = sx as f32 * s;
                     let y0 = sy as f32 * s;
                     let corners = [
-                        Point2::new(x0,     y0    ),
-                        Point2::new(x0 + s, y0    ),
+                        Point2::new(x0, y0),
+                        Point2::new(x0 + s, y0),
                         Point2::new(x0 + s, y0 + s),
-                        Point2::new(x0,     y0 + s),
+                        Point2::new(x0, y0 + s),
                     ];
 
                     out.push(MarkerDetection {
@@ -203,11 +238,17 @@ pub fn scan_decode_markers_4x4(
 }
 
 fn dedup_by_id_keep_best(mut dets: Vec<MarkerDetection>) -> Vec<MarkerDetection> {
-    dets.sort_by(|a,b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    dets.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     let mut seen: HashMap<u32, ()> = HashMap::new();
     let mut out = Vec::with_capacity(dets.len());
     for d in dets {
-        if seen.contains_key(&d.id) { continue; }
+        if seen.contains_key(&d.id) {
+            continue;
+        }
         seen.insert(d.id, ());
         out.push(d);
     }
@@ -218,7 +259,9 @@ fn dedup_by_id_keep_best(mut dets: Vec<MarkerDetection>) -> Vec<MarkerDetection>
 
 #[inline]
 fn get_gray(img: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
-    if x < 0 || y < 0 || x >= img.width as i32 || y >= img.height as i32 { return 0; }
+    if x < 0 || y < 0 || x >= img.width as i32 || y >= img.height as i32 {
+        return 0;
+    }
     img.data[y as usize * img.width + x as usize]
 }
 
@@ -234,11 +277,15 @@ fn otsu_threshold_roi(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i32)
             count += 1;
         }
     }
-    if count == 0 { return 127; }
+    if count == 0 {
+        return 127;
+    }
 
     let total = count as f64;
     let mut sum_total = 0f64;
-    for i in 0..256 { sum_total += (i as f64) * (hist[i] as f64); }
+    for i in 0..256 {
+        sum_total += (i as f64) * (hist[i] as f64);
+    }
 
     let mut sum_b = 0f64;
     let mut w_b = 0f64;
@@ -247,9 +294,13 @@ fn otsu_threshold_roi(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i32)
 
     for t in 0..256 {
         w_b += hist[t] as f64;
-        if w_b < 1.0 { continue; }
+        if w_b < 1.0 {
+            continue;
+        }
         let w_f = total - w_b;
-        if w_f < 1.0 { break; }
+        if w_f < 1.0 {
+            break;
+        }
 
         sum_b += (t as f64) * (hist[t] as f64);
         let m_b = sum_b / w_b;
@@ -276,16 +327,18 @@ fn read_aruco_4x4_from_square(
 ) -> Option<(u16, f32)> {
     let bits = cfg.bits;
     let border = cfg.border_bits;
-    let cells = bits + 2*border;
+    let cells = bits + 2 * border;
 
     // square ROI (in rectified pixels), slightly inset to avoid grid-line artifacts
     let s = px_per_square;
     let inset = (cfg.inset_frac * s).round() as i32;
     let x0 = (sx as f32 * s).round() as i32 + inset;
     let y0 = (sy as f32 * s).round() as i32 + inset;
-    let side = ((1.0 - 2.0*cfg.inset_frac) * s).round() as i32;
+    let side = ((1.0 - 2.0 * cfg.inset_frac) * s).round() as i32;
 
-    if side < 12 { return None; }
+    if side < 12 {
+        return None;
+    }
     if x0 < 0 || y0 < 0 || x0 + side >= rect.width as i32 || y0 + side >= rect.height as i32 {
         return None;
     }
@@ -327,18 +380,22 @@ fn read_aruco_4x4_from_square(
             for cx in 0..cells {
                 let m = sample_cell(cx, cy);
                 let mut is_black = m < thr;
-                if inverted { is_black = !is_black; }
+                if inverted {
+                    is_black = !is_black;
+                }
 
                 let is_border = cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells;
                 if is_border {
                     border_total += 1;
-                    if is_black { border_ok += 1; }
+                    if is_black {
+                        border_ok += 1;
+                    }
                 } else {
                     // inner bits
                     let bx = cx - border;
                     let by = cy - border;
                     let bit = if is_black { 1u16 } else { 0u16 };
-                    let idx = (by*bits + bx) as u16; // row-major
+                    let idx = (by * bits + bx) as u16; // row-major
                     code |= bit << idx;
                 }
             }

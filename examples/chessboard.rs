@@ -183,7 +183,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|c| c.response)
         .fold(0.0_f32, f32::max);
-    let response_scale = if max_response > 0.0 { 1.0 / max_response } else { 0.0 };
+    let response_scale = if max_response > 0.0 {
+        1.0 / max_response
+    } else {
+        0.0
+    };
     let raw_corners_out: Vec<RawCornerOut> = raw_corners
         .iter()
         .map(|c| RawCornerOut {
