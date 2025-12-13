@@ -6,9 +6,10 @@
 //! - Board homography + interior corner interpolation.
 
 pub mod dlt_homography;
+mod mesh_warp;
 pub mod rectified_view;
 pub mod rectify;
-pub mod wrap_grayscale;
+pub mod warp_grayscale;
 
 use calib_targets_core::TargetDetection;
 

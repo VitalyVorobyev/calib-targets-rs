@@ -7,7 +7,8 @@ use nalgebra::{Point2, Vector2};
 
 mod orientation_clustering;
 pub use orientation_clustering::{
-    cluster_orientations, OrientationClusteringParams, OrientationClusteringResult,
+    cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
+    OrientationClusteringParams, OrientationClusteringResult, OrientationHistogram,
 };
 
 /// Canonical 2D corner used by all target detectors.

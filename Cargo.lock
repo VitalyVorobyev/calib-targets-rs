@@ -291,6 +291,9 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]

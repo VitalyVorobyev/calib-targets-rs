@@ -1,6 +1,8 @@
 use nalgebra as na;
 use thiserror;
 
+pub type Point2f = na::Point2<f32>;
+
 #[derive(Clone, Copy, Debug)]
 pub struct GrayImageView<'a> {
     pub width: usize,
@@ -13,12 +15,6 @@ pub struct GrayImage {
     pub width: usize,
     pub height: usize,
     pub data: Vec<u8>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct Point2f {
-    pub x: f32,
-    pub y: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,10 +31,7 @@ impl Homography {
         let w = self.h[2][0] * x + self.h[2][1] * y + self.h[2][2];
         let u = (self.h[0][0] * x + self.h[0][1] * y + self.h[0][2]) / w;
         let v = (self.h[1][0] * x + self.h[1][1] * y + self.h[1][2]) / w;
-        Point2f {
-            x: u as f32,
-            y: v as f32,
-        }
+        Point2f::new(u as f32, v as f32)
     }
 
     pub fn inverse(&self) -> Option<Self> {

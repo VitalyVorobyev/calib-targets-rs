@@ -1,9 +1,13 @@
-use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph};
+use crate::gridgraph::{
+    assign_grid_coordinates, connected_components, GridGraph, NeighborDirection,
+};
 use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{
-    cluster_orientations, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind,
+    cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
+    Corner, GridCoords, LabeledCorner, OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{info, warn};
+use std::f32::consts::FRAC_PI_2;
 
 /// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
 pub struct ChessboardDetector {
@@ -15,6 +19,31 @@ pub struct ChessboardDetectionResult {
     pub detection: TargetDetection,
     pub inliers: Vec<usize>,
     pub orientations: Option<[f32; 2]>,
+    pub debug: ChessboardDebug,
+}
+
+#[derive(Clone, Debug)]
+pub struct ChessboardDebug {
+    pub orientation_histogram: Option<OrientationHistogram>,
+    pub graph: Option<GridGraphDebug>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GridGraphDebug {
+    pub nodes: Vec<GridGraphNodeDebug>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GridGraphNodeDebug {
+    pub position: [f32; 2],
+    pub neighbors: Vec<GridGraphNeighborDebug>,
+}
+
+#[derive(Clone, Debug)]
+pub struct GridGraphNeighborDebug {
+    pub index: usize,
+    pub direction: &'static str,
+    pub distance: f32,
 }
 
 impl ChessboardDetector {
@@ -53,11 +82,16 @@ impl ChessboardDetector {
 
         // 2. Estimate grid axes from orientations.
         let mut grid_diagonals = None;
+        let mut graph_diagonals = None;
+        let mut orientation_histogram =
+            compute_orientation_histogram(&strong, &self.params.orientation_clustering_params);
         if self.params.use_orientation_clustering {
             if let Some(clusters) =
                 cluster_orientations(&strong, &self.params.orientation_clustering_params)
             {
                 grid_diagonals = Some(clusters.centers);
+                orientation_histogram = clusters.histogram.clone();
+                graph_diagonals = grid_diagonals;
                 strong = strong
                     .into_iter()
                     .zip(clusters.labels.into_iter())
@@ -71,6 +105,14 @@ impl ChessboardDetector {
             }
         }
 
+        if grid_diagonals.is_none() {
+            if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
+                let c0 = wrap_angle_pi(theta);
+                let c1 = wrap_angle_pi(theta + FRAC_PI_2);
+                grid_diagonals = Some([c0, c1]);
+            }
+        }
+
         info!(
             "kept {} ChESS corners after orientation consistency filter",
             strong.len()
@@ -80,7 +122,7 @@ impl ChessboardDetector {
             return None;
         }
 
-        let graph = GridGraph::new(&strong, self.grid_search.clone(), grid_diagonals);
+        let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
 
         let components = connected_components(&graph);
         info!(
@@ -106,10 +148,22 @@ impl ChessboardDetector {
             }
         };
 
+        let graph_debug = Some(build_graph_debug(&graph, &strong));
+
+        info!(
+            "debug extras: histogram={}, orientations={:?}",
+            orientation_histogram.is_some(),
+            grid_diagonals
+        );
+
         Some(ChessboardDetectionResult {
             detection,
             inliers,
             orientations: grid_diagonals,
+            debug: ChessboardDebug {
+                orientation_histogram,
+                graph: graph_debug,
+            },
         })
     }
 
@@ -210,4 +264,45 @@ fn select_board_size(
         }
         _ => Some((width, height, false)),
     }
+}
+
+fn build_graph_debug(graph: &GridGraph, corners: &[Corner]) -> GridGraphDebug {
+    let nodes = graph
+        .neighbors
+        .iter()
+        .enumerate()
+        .map(|(idx, neighs)| {
+            let neighbors = neighs
+                .iter()
+                .map(|n| GridGraphNeighborDebug {
+                    index: n.index,
+                    direction: neighbor_dir_name(n.direction),
+                    distance: n.distance,
+                })
+                .collect();
+            GridGraphNodeDebug {
+                position: [corners[idx].position.x, corners[idx].position.y],
+                neighbors,
+            }
+        })
+        .collect();
+
+    GridGraphDebug { nodes }
+}
+
+fn neighbor_dir_name(dir: NeighborDirection) -> &'static str {
+    match dir {
+        NeighborDirection::Right => "right",
+        NeighborDirection::Left => "left",
+        NeighborDirection::Up => "up",
+        NeighborDirection::Down => "down",
+    }
+}
+
+fn wrap_angle_pi(theta: f32) -> f32 {
+    let mut t = theta % std::f32::consts::PI;
+    if t < 0.0 {
+        t += std::f32::consts::PI;
+    }
+    t
 }

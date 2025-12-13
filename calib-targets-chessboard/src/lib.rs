@@ -17,5 +17,8 @@ mod geom;
 mod gridgraph;
 mod params;
 
-pub use detector::ChessboardDetector;
+pub use detector::{
+    ChessboardDebug, ChessboardDetectionResult, ChessboardDetector, GridGraphDebug,
+    GridGraphNeighborDebug, GridGraphNodeDebug,
+};
 pub use params::{ChessboardParams, GridGraphParams};

@@ -1,7 +1,7 @@
 use crate::dlt_homography::estimate_homography_rect_to_img;
 use crate::rectify::RectifyError;
 use crate::rectify::{GrayImage, GrayImageView, Homography, Point2f};
-use crate::wrap_grayscale::warp_perspective_gray;
+use crate::warp_grayscale::warp_perspective_gray;
 
 use calib_targets_core::LabeledCorner;
 
@@ -31,10 +31,7 @@ pub fn rectify_from_chessboard_result(
     for &idx in inliers {
         if let Some(c) = det_corners.get(idx) {
             if let Some(g) = c.grid {
-                img_pts.push(Point2f {
-                    x: c.position.x,
-                    y: c.position.y,
-                });
+                img_pts.push(Point2f::new(c.position.x, c.position.y));
                 grid.push((g.i, g.j));
             }
         }
@@ -76,7 +73,7 @@ pub fn rectify_from_chessboard_result(
     for &(i, j) in &grid {
         let x = (i - min_i_m) as f32 * px_per_square;
         let y = (j - min_j_m) as f32 * px_per_square;
-        rect_pts.push(Point2f { x, y });
+        rect_pts.push(Point2f::new(x, y));
     }
 
     // 4) estimate H_img_from_rect

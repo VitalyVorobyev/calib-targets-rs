@@ -22,5 +22,10 @@
     "max_spacing_pix": 50.0,
     "k_neighbors": 8,
     "orientation_tolerance_deg": 22.5
+  },
+  "debug_outputs": {
+    "orientation_histogram": true,
+    "grid_graph": true,
+    "board_orientation": true
   }
 }

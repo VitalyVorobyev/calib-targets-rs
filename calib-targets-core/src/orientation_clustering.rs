@@ -6,6 +6,7 @@
 ///
 /// This is purely angular; no geometry or projective assumptions here.
 use crate::Corner;
+use nalgebra::Vector2;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, PI};
 
@@ -40,7 +41,7 @@ impl Default for OrientationClusteringParams {
 }
 
 /// Result of orientation clustering.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrientationClusteringResult {
     /// Cluster centers in [0, π), indices 0 and 1.
     pub centers: [f32; 2],
@@ -48,6 +49,53 @@ pub struct OrientationClusteringResult {
     pub labels: Vec<Option<usize>>,
     /// Sum of weights in each cluster (excluding outliers).
     pub cluster_weights: [f32; 2],
+    /// Smoothed histogram for debugging/visualization.
+    pub histogram: Option<OrientationHistogram>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OrientationHistogram {
+    pub bin_centers: Vec<f32>,
+    pub values: Vec<f32>,
+}
+
+/// Compute smoothed orientation histogram for debug/visualization.
+pub fn compute_orientation_histogram(
+    corners: &[Corner],
+    params: &OrientationClusteringParams,
+) -> Option<OrientationHistogram> {
+    if params.num_bins < 1 {
+        return None;
+    }
+
+    let mut hist = vec![0.0f32; params.num_bins];
+    let mut total_weight = 0.0f32;
+
+    for c in corners {
+        let t = wrap_angle_pi(c.orientation);
+        let bin = angle_to_bin(t, params.num_bins);
+        let w = if params.use_weights {
+            c.strength.max(0.0)
+        } else {
+            1.0
+        };
+        hist[bin] += w;
+        total_weight += w;
+    }
+
+    if total_weight <= 0.0 {
+        return None;
+    }
+
+    let values = smooth_circular_histogram(&hist);
+    let bin_centers: Vec<f32> = (0..params.num_bins)
+        .map(|b| bin_to_angle(b, params.num_bins))
+        .collect();
+
+    Some(OrientationHistogram {
+        bin_centers,
+        values,
+    })
 }
 
 /// Cluster ChESS orientations into two dominant directions on [0, π).
@@ -85,6 +133,9 @@ pub fn cluster_orientations(
 
     // 2. Smooth histogram (circular) with a small kernel.
     let hist_smoothed = smooth_circular_histogram(&hist);
+    let bin_centers: Vec<f32> = (0..params.num_bins)
+        .map(|b| bin_to_angle(b, params.num_bins))
+        .collect();
 
     // 3. Find local maxima as peak candidates.
     let peaks = find_peaks(&hist_smoothed);
@@ -205,6 +256,10 @@ pub fn cluster_orientations(
         centers,
         labels,
         cluster_weights,
+        histogram: Some(OrientationHistogram {
+            bin_centers,
+            values: hist_smoothed,
+        }),
     })
 }
 
@@ -302,6 +357,43 @@ fn find_peaks(hist: &[f32]) -> Vec<Peak> {
     }
 
     peaks
+}
+
+/// Estimate a dominant grid axis from orientations using a double-angle mean.
+pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
+    if corners.is_empty() {
+        return None;
+    }
+
+    // Accumulate in double-angle space to handle θ ≡ θ + π.
+    let mut sum = Vector2::<f32>::zeros();
+    let mut weight_sum = 0.0f32;
+
+    for c in corners {
+        let theta = c.orientation;
+        let w = c.strength.max(0.0);
+        if w <= 0.0 {
+            continue;
+        }
+
+        let two_theta = 2.0 * theta;
+        let v = Vector2::new(two_theta.cos(), two_theta.sin());
+        sum += w * v;
+        weight_sum += w;
+    }
+
+    if weight_sum <= 0.0 {
+        return None;
+    }
+
+    let mean = sum / weight_sum;
+    if mean.norm_squared() < 1e-6 {
+        return None;
+    }
+
+    let mean_two_angle = mean.y.atan2(mean.x);
+    let mean_theta = 0.5 * mean_two_angle;
+    Some(mean_theta)
 }
 
 #[cfg(test)]

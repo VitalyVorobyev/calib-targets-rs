@@ -1,12 +1,16 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, time::Instant};
 
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{
+    ChessboardDetectionResult, ChessboardDetector, ChessboardParams, GridGraphParams,
+};
 use calib_targets_core::{Corner as TargetCorner, LabeledCorner, TargetDetection, TargetKind};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
-use log::LevelFilter;
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+use tracing::{info, info_span};
+use tracing_log::LogTracer;
+use tracing_subscriber::EnvFilter;
 
 /// Configuration for the chessboard example, loaded from JSON.
 #[derive(Debug, Deserialize)]
@@ -18,6 +22,26 @@ struct ExampleConfig {
     output_path: Option<String>,
     chessboard: ChessboardParams,
     graph: GridGraphParams,
+    #[serde(default)]
+    debug_outputs: DebugOutputsConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+struct DebugOutputsConfig {
+    orientation_histogram: bool,
+    grid_graph: bool,
+    board_orientation: bool,
+}
+
+impl Default for DebugOutputsConfig {
+    fn default() -> Self {
+        Self {
+            orientation_histogram: false,
+            grid_graph: false,
+            board_orientation: false,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -39,15 +63,62 @@ struct OutputDetection {
 }
 
 #[derive(Debug, Serialize)]
+struct OrientationBinOut {
+    angle_rad: f32,
+    angle_deg: f32,
+    value: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct OrientationHistogramOut {
+    bins: Vec<OrientationBinOut>,
+}
+
+#[derive(Debug, Serialize)]
+struct OrientationSummaryOut {
+    centers_rad: [f32; 2],
+    centers_deg: [f32; 2],
+}
+
+#[derive(Debug, Serialize)]
+struct GraphNeighborOut {
+    index: usize,
+    direction: String,
+    distance: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct GraphNodeOut {
+    index: usize,
+    x: f32,
+    y: f32,
+    neighbors: Vec<GraphNeighborOut>,
+}
+
+#[derive(Debug, Serialize)]
+struct GridGraphOut {
+    nodes: Vec<GraphNodeOut>,
+}
+
+#[derive(Debug, Serialize)]
+struct DetectionReport {
+    detection: OutputDetection,
+    inliers: Vec<usize>,
+    orientations: Option<OrientationSummaryOut>,
+    orientation_histogram: Option<OrientationHistogramOut>,
+    grid_graph: Option<GridGraphOut>,
+}
+
+#[derive(Debug, Serialize)]
 struct ExampleOutput {
     image_path: String,
     config_path: String,
     num_raw_corners: usize,
-    detections: Vec<OutputDetection>,
+    detections: Vec<DetectionReport>,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logger();
+    init_tracing();
 
     let args: Vec<String> = env::args().collect();
     let config_path = args
@@ -67,15 +138,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chess_cfg = ChessConfig::single_scale();
     chess_cfg.params.threshold_rel = 0.2;
     chess_cfg.params.nms_radius = 2;
-    let raw_corners: Vec<CornerDescriptor> = find_chess_corners_image(&img, &chess_cfg);
-    println!("found {} raw ChESS corners", raw_corners.len());
+    let span_corners = info_span!("chess_corners");
+    let raw_corners: Vec<CornerDescriptor> = {
+        let _g = span_corners.enter();
+        let t0 = Instant::now();
+        let corners = find_chess_corners_image(&img, &chess_cfg);
+        info!(
+            duration_ms = t0.elapsed().as_millis() as u64,
+            count = corners.len(),
+            "found ChESS corners"
+        );
+        corners
+    };
 
     // Adapt ChESS corners to calib-targets core `Corner` type.
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     // Configure the chessboard detector.
     let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
-    let detection = detector.detect_from_corners(&target_corners);
+    let span_detect = info_span!("chessboard_detect");
+    let detection = {
+        let _g = span_detect.enter();
+        let t0 = Instant::now();
+        let det = detector.detect_from_corners(&target_corners);
+        info!(
+            duration_ms = t0.elapsed().as_millis() as u64,
+            detected = det.is_some(),
+            "chessboard detection finished"
+        );
+        det
+    };
 
     let output = ExampleOutput {
         image_path: cfg.image_path.clone(),
@@ -83,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         num_raw_corners: raw_corners.len(),
         detections: detection
             .into_iter()
-            .map(|res| map_detection(res.detection))
+            .map(|res| map_detection_report(res, &cfg.debug_outputs))
             .collect(),
     };
 
@@ -99,31 +191,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-static LOGGER: SimpleLogger = SimpleLogger;
-
-struct SimpleLogger;
-
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= LevelFilter::Info
-    }
-
-    fn log(&self, record: &log::Record) {
-        if self.enabled(record.metadata()) {
-            eprintln!(
-                "[{}] {}: {}",
-                record.level(),
-                record.target(),
-                record.args()
-            );
-        }
-    }
-
-    fn flush(&self) {}
-}
-
-fn init_logger() {
-    let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
+fn init_tracing() {
+    // Ignore errors if a logger/subscriber was already installed (e.g. when
+    // running multiple examples in the same process).
+    let _ = LogTracer::init();
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
@@ -145,6 +218,78 @@ fn map_detection(det: TargetDetection) -> OutputDetection {
         }
         .to_string(),
         corners: det.corners.into_iter().map(map_corner).collect(),
+    }
+}
+
+fn map_detection_report(
+    res: ChessboardDetectionResult,
+    debug_cfg: &DebugOutputsConfig,
+) -> DetectionReport {
+    let orientations = res.orientations.and_then(|c| {
+        if debug_cfg.board_orientation {
+            Some(OrientationSummaryOut {
+                centers_rad: c,
+                centers_deg: [c[0].to_degrees(), c[1].to_degrees()],
+            })
+        } else {
+            None
+        }
+    });
+
+    let orientation_histogram = if debug_cfg.orientation_histogram {
+        res.debug.orientation_histogram.as_ref().map(|hist| {
+            let bins = hist
+                .bin_centers
+                .iter()
+                .zip(hist.values.iter())
+                .map(|(angle_rad, value)| OrientationBinOut {
+                    angle_rad: *angle_rad,
+                    angle_deg: angle_rad.to_degrees(),
+                    value: *value,
+                })
+                .collect();
+            OrientationHistogramOut { bins }
+        })
+    } else {
+        None
+    };
+
+    let grid_graph = if debug_cfg.grid_graph {
+        res.debug.graph.as_ref().map(|g| {
+            let nodes = g
+                .nodes
+                .iter()
+                .enumerate()
+                .map(|(idx, node)| {
+                    let neighbors = node
+                        .neighbors
+                        .iter()
+                        .map(|n| GraphNeighborOut {
+                            index: n.index,
+                            direction: n.direction.to_string(),
+                            distance: n.distance,
+                        })
+                        .collect();
+                    GraphNodeOut {
+                        index: idx,
+                        x: node.position[0],
+                        y: node.position[1],
+                        neighbors,
+                    }
+                })
+                .collect();
+            GridGraphOut { nodes }
+        })
+    } else {
+        None
+    };
+
+    DetectionReport {
+        detection: map_detection(res.detection),
+        inliers: res.inliers,
+        orientations,
+        orientation_histogram,
+        grid_graph,
     }
 }
 
