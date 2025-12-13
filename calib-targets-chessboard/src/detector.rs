@@ -83,14 +83,14 @@ impl ChessboardDetector {
         // 2. Estimate grid axes from orientations.
         let mut grid_diagonals = None;
         let mut graph_diagonals = None;
-        let mut orientation_histogram =
-            compute_orientation_histogram(&strong, &self.params.orientation_clustering_params);
+        let mut orientation_histogram = None;
+
         if self.params.use_orientation_clustering {
             if let Some(clusters) =
                 cluster_orientations(&strong, &self.params.orientation_clustering_params)
             {
+                orientation_histogram = clusters.histogram;
                 grid_diagonals = Some(clusters.centers);
-                orientation_histogram = clusters.histogram.clone();
                 graph_diagonals = grid_diagonals;
                 strong = strong
                     .into_iter()
@@ -106,6 +106,7 @@ impl ChessboardDetector {
         }
 
         if grid_diagonals.is_none() {
+            warn!("Orientation clustering failed. Fallback to a simple estimate");
             if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
                 let c0 = wrap_angle_pi(theta);
                 let c1 = wrap_angle_pi(theta + FRAC_PI_2);

@@ -6,6 +6,7 @@
 ///
 /// This is purely angular; no geometry or projective assumptions here.
 use crate::Corner;
+use log::warn;
 use nalgebra::Vector2;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, PI};
@@ -64,37 +65,11 @@ pub fn compute_orientation_histogram(
     corners: &[Corner],
     params: &OrientationClusteringParams,
 ) -> Option<OrientationHistogram> {
-    if params.num_bins < 1 {
-        return None;
-    }
-
-    let mut hist = vec![0.0f32; params.num_bins];
-    let mut total_weight = 0.0f32;
-
-    for c in corners {
-        let t = wrap_angle_pi(c.orientation);
-        let bin = angle_to_bin(t, params.num_bins);
-        let w = if params.use_weights {
-            c.strength.max(0.0)
-        } else {
-            1.0
-        };
-        hist[bin] += w;
-        total_weight += w;
-    }
-
-    if total_weight <= 0.0 {
-        return None;
-    }
-
-    let values = smooth_circular_histogram(&hist);
-    let bin_centers: Vec<f32> = (0..params.num_bins)
-        .map(|b| bin_to_angle(b, params.num_bins))
-        .collect();
-
-    Some(OrientationHistogram {
-        bin_centers,
-        values,
+    build_smoothed_histogram(corners, params).map(|(values, bin_centers, _, _)| {
+        OrientationHistogram {
+            bin_centers,
+            values,
+        }
     })
 }
 
@@ -108,73 +83,62 @@ pub fn cluster_orientations(
 ) -> Option<OrientationClusteringResult> {
     let n = corners.len();
     if n == 0 || params.num_bins < 4 {
+        warn!("n = {n} num_bins = {}", params.num_bins);
         return None;
     }
 
-    // 1. Wrap angles and build histogram on [0, π).
-    let mut hist = vec![0.0f32; params.num_bins];
-    let mut total_weight = 0.0f32;
-
-    for c in corners {
-        let t = wrap_angle_pi(c.orientation);
-        let bin = angle_to_bin(t, params.num_bins);
-        let w = if params.use_weights {
-            c.strength.max(0.0)
-        } else {
-            1.0
-        };
-        hist[bin] += w;
-        total_weight += w;
-    }
-
-    if total_weight <= 0.0 {
-        return None;
-    }
-
-    // 2. Smooth histogram (circular) with a small kernel.
-    let hist_smoothed = smooth_circular_histogram(&hist);
-    let bin_centers: Vec<f32> = (0..params.num_bins)
-        .map(|b| bin_to_angle(b, params.num_bins))
-        .collect();
+    // 1. Wrap angles and build histogram on [0, π) once (shared with debug output).
+    let (hist_smoothed, bin_centers, total_weight, corner_bins) =
+        build_smoothed_histogram(corners, params)?;
 
     // 3. Find local maxima as peak candidates.
     let peaks = find_peaks(&hist_smoothed);
-
     if peaks.is_empty() {
+        warn!("Orientation peaks not found");
         return None;
     }
 
-    // 4. Pick top 2 peaks (by height), with minimal separation.
+    // 4. Group peaks (contiguous bins) and pick top 2 by total weight, with minimal separation.
+    let mut supports: Vec<PeakSupport> = peaks
+        .into_iter()
+        .map(|p| build_peak_support(&hist_smoothed, p.bin, &bin_centers))
+        .collect();
+
     let min_peak_weight = total_weight * params.min_peak_weight_fraction;
-    let mut peaks_sorted = peaks;
-    peaks_sorted.sort_by(|a, b| {
-        b.value
-            .partial_cmp(&a.value)
+    supports.retain(|p| p.weight >= min_peak_weight);
+    supports.sort_by(|a, b| {
+        b.weight
+            .partial_cmp(&a.weight)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Filter out very small peaks.
-    peaks_sorted.retain(|p| p.value >= min_peak_weight);
-    if peaks_sorted.len() < 2 {
+    if supports.len() < 2 {
+        warn!(
+            "{} grouped peaks, total {total_weight:.2}, min {min_peak_weight:.2}",
+            supports.len()
+        );
         return None;
     }
 
-    // Candidate centers from the two strongest peaks.
-    let phi1 = bin_to_angle(peaks_sorted[0].bin, params.num_bins);
+    let mut phi1 = None;
     let mut phi2 = None;
 
-    for p in &peaks_sorted[1..] {
-        let cand = bin_to_angle(p.bin, params.num_bins);
-        let sep = angular_dist_pi(phi1, cand);
-        if sep >= params.peak_min_separation_deg.to_radians() {
+    for sup in &supports {
+        if phi1.is_none() {
+            phi1 = Some(sup.angle_from_corners(corners, &corner_bins, params));
+            continue;
+        }
+        let c1 = phi1.unwrap();
+        let cand = sup.angle_from_corners(corners, &corner_bins, params);
+        if angular_dist_pi(c1, cand) >= params.peak_min_separation_deg.to_radians() {
             phi2 = Some(cand);
             break;
         }
     }
 
-    let phi2 = match phi2 {
-        Some(v) => v,
-        None => return None, // only one strong mode or too close
+    let (phi1, phi2) = match (phi1, phi2) {
+        (Some(a), Some(b)) => (a, b),
+        _ => return None,
     };
 
     let mut centers = [phi1, phi2];
@@ -261,6 +225,126 @@ pub fn cluster_orientations(
             values: hist_smoothed,
         }),
     })
+}
+
+fn build_smoothed_histogram(
+    corners: &[Corner],
+    params: &OrientationClusteringParams,
+) -> Option<(Vec<f32>, Vec<f32>, f32, Vec<usize>)> {
+    if params.num_bins < 1 {
+        return None;
+    }
+
+    let mut hist = vec![0.0f32; params.num_bins];
+    let mut total_weight = 0.0f32;
+    let mut corner_bins = Vec::with_capacity(corners.len());
+
+    for c in corners {
+        let t = wrap_angle_pi(c.orientation);
+        let bin = angle_to_bin(t, params.num_bins);
+        let w = if params.use_weights {
+            c.strength.max(0.0)
+        } else {
+            1.0
+        };
+        hist[bin] += w;
+        total_weight += w;
+        corner_bins.push(bin);
+    }
+
+    if total_weight <= 0.0 {
+        return None;
+    }
+
+    let values = smooth_circular_histogram(&hist);
+    let bin_centers: Vec<f32> = (0..params.num_bins)
+        .map(|b| bin_to_angle(b, params.num_bins))
+        .collect();
+
+    Some((values, bin_centers, total_weight, corner_bins))
+}
+
+#[derive(Clone, Debug)]
+struct PeakSupport {
+    bins: Vec<usize>,
+    weight: f32,
+    weighted_angle: f32,
+}
+
+impl PeakSupport {
+    fn angle_from_corners(
+        &self,
+        corners: &[Corner],
+        corner_bins: &[usize],
+        params: &OrientationClusteringParams,
+    ) -> f32 {
+        let mut sum = [0.0f32; 2];
+        let mut w_sum = 0.0f32;
+        for (corner, &bin) in corners.iter().zip(corner_bins.iter()) {
+            if self.bins.contains(&bin) {
+                let w = if params.use_weights {
+                    corner.strength.max(0.0)
+                } else {
+                    1.0
+                };
+                let t = wrap_angle_pi(corner.orientation);
+                sum[0] += w * t.cos();
+                sum[1] += w * t.sin();
+                w_sum += w;
+            }
+        }
+
+        if w_sum > 0.0 {
+            wrap_angle_pi(sum[1].atan2(sum[0]))
+        } else {
+            self.weighted_angle
+        }
+    }
+}
+
+fn build_peak_support(hist: &[f32], peak_bin: usize, bin_centers: &[f32]) -> PeakSupport {
+    let n = hist.len();
+    let mut bins = vec![peak_bin];
+
+    // expand left
+    let mut i = (peak_bin + n - 1) % n;
+    while hist[i] <= hist[(i + 1) % n] && hist[i] > 0.0 {
+        bins.push(i);
+        i = (i + n - 1) % n;
+        if i == peak_bin {
+            break;
+        }
+    }
+
+    // expand right
+    let mut i = (peak_bin + 1) % n;
+    while hist[i] <= hist[(i + n - 1) % n] && hist[i] > 0.0 {
+        bins.push(i);
+        i = (i + 1) % n;
+        if i == peak_bin {
+            break;
+        }
+    }
+
+    bins.sort();
+    bins.dedup();
+
+    let mut weight = 0.0f32;
+    let mut sum = [0.0f32; 2];
+    for &b in &bins {
+        let w = hist[b];
+        weight += w;
+        let t = bin_centers[b];
+        sum[0] += w * t.cos();
+        sum[1] += w * t.sin();
+    }
+    let weighted_angle = wrap_angle_pi(sum[1].atan2(sum[0]));
+
+    PeakSupport {
+        bins,
+        weight,
+        weighted_angle,
+    }
 }
 
 /// Wrap an angle to [0, π).
