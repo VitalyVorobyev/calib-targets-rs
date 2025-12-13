@@ -283,8 +283,8 @@ fn otsu_threshold_roi(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i32)
 
     let total = count as f64;
     let mut sum_total = 0f64;
-    for i in 0..256 {
-        sum_total += (i as f64) * (hist[i] as f64);
+    for (i, &h) in hist.iter().enumerate() {
+        sum_total += (i as f64) * (h as f64);
     }
 
     let mut sum_b = 0f64;
@@ -292,8 +292,8 @@ fn otsu_threshold_roi(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i32)
     let mut best_var = -1f64;
     let mut best_t = 127u8;
 
-    for t in 0..256 {
-        w_b += hist[t] as f64;
+    for (t, &h) in hist.iter().enumerate() {
+        w_b += h as f64;
         if w_b < 1.0 {
             continue;
         }
@@ -302,7 +302,7 @@ fn otsu_threshold_roi(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i32)
             break;
         }
 
-        sum_b += (t as f64) * (hist[t] as f64);
+        sum_b += (t as f64) * (h as f64);
         let m_b = sum_b / w_b;
         let m_f = (sum_total - sum_b) / w_f;
 

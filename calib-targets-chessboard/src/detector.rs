@@ -67,8 +67,8 @@ impl ChessboardDetector {
         // 1. Filter by strength.
         let mut strong: Vec<Corner> = corners
             .iter()
-            .cloned()
             .filter(|c| c.strength >= self.params.min_strength)
+            .cloned()
             .collect();
 
         info!(
@@ -94,7 +94,7 @@ impl ChessboardDetector {
                 graph_diagonals = grid_diagonals;
                 strong = strong
                     .into_iter()
-                    .zip(clusters.labels.into_iter())
+                    .zip(clusters.labels)
                     .filter_map(|(mut corner, label)| {
                         label.map(|cluster| {
                             corner.orientation_cluster = Some(cluster);
@@ -186,10 +186,7 @@ impl ChessboardDetector {
         let height = (max_j - min_j + 1) as u32;
 
         let (board_cols, board_rows, swap_axes) =
-            match select_board_size(width, height, &self.params) {
-                Some(dim) => dim,
-                None => return None,
-            };
+            select_board_size(width, height, &self.params)?;
 
         let grid_area = (board_cols * board_rows) as f32;
         if grid_area <= f32::EPSILON {

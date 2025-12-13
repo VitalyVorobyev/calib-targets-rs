@@ -5,10 +5,11 @@
 //! - ID decoding.
 //! - Board homography + interior corner interpolation.
 
-mod detect_aruco;
+pub mod detect_aruco;
 mod mesh_warp;
 mod rectified_view;
-mod scan_decode_4x4;
+pub mod scan_decode_4x4;
+mod aruco;
 
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use rectified_view::rectify_from_chessboard_result;

@@ -24,8 +24,8 @@ fn otsu_threshold_patch(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i3
 
     let total = count as f64;
     let mut sum_total = 0f64;
-    for i in 0..256 {
-        sum_total += (i as f64) * (hist[i] as f64);
+    for (i, &h) in hist.iter().enumerate() {
+        sum_total += (i as f64) * (h as f64);
     }
 
     let mut sum_b = 0f64;
@@ -33,8 +33,8 @@ fn otsu_threshold_patch(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i3
     let mut best_var = -1f64;
     let mut best_t = 127u8;
 
-    for t in 0..256 {
-        w_b += hist[t] as f64;
+    for (t, &h) in hist.iter().enumerate() {
+        w_b += h as f64;
         if w_b < 1.0 {
             continue;
         }
@@ -43,7 +43,7 @@ fn otsu_threshold_patch(img: &GrayImageView<'_>, x0: i32, y0: i32, w: i32, h: i3
             break;
         }
 
-        sum_b += (t as f64) * (hist[t] as f64);
+        sum_b += (t as f64) * (h as f64);
         let m_b = sum_b / w_b;
         let m_f = (sum_total - sum_b) / w_f;
         let var_between = w_b * w_f * (m_b - m_f) * (m_b - m_f);
@@ -85,7 +85,6 @@ pub fn read_aruco_4x4_from_square(
     let thr = otsu_threshold_patch(rect, x0, y0, side, side);
 
     // cell center mapping (canonical cell grid -> rect square)
-    let cs = cell_size_px as f32;
     let scale = (side as f32) / (marker_side as f32);
 
     let mut border_ok = 0u32;

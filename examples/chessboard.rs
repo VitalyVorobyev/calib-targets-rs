@@ -26,22 +26,12 @@ struct ExampleConfig {
     debug_outputs: DebugOutputsConfig,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Default)]
 #[serde(default)]
 struct DebugOutputsConfig {
     orientation_histogram: bool,
     grid_graph: bool,
     board_orientation: bool,
-}
-
-impl Default for DebugOutputsConfig {
-    fn default() -> Self {
-        Self {
-            orientation_histogram: false,
-            grid_graph: false,
-            board_orientation: false,
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]

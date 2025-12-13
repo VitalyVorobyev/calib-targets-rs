@@ -65,11 +65,9 @@ pub fn compute_orientation_histogram(
     corners: &[Corner],
     params: &OrientationClusteringParams,
 ) -> Option<OrientationHistogram> {
-    build_smoothed_histogram(corners, params).map(|(values, bin_centers, _, _)| {
-        OrientationHistogram {
-            bin_centers,
-            values,
-        }
+    build_smoothed_histogram(corners, params).map(|h| OrientationHistogram {
+        bin_centers: h.bin_centers,
+        values: h.values,
     })
 }
 
@@ -88,8 +86,12 @@ pub fn cluster_orientations(
     }
 
     // 1. Wrap angles and build histogram on [0, π) once (shared with debug output).
-    let (hist_smoothed, bin_centers, total_weight, corner_bins) =
-        build_smoothed_histogram(corners, params)?;
+    let SmoothedHistogramData {
+        values: hist_smoothed,
+        bin_centers,
+        total_weight,
+        corner_bins,
+    } = build_smoothed_histogram(corners, params)?;
 
     // 3. Find local maxima as peak candidates.
     let peaks = find_peaks(&hist_smoothed);
@@ -227,10 +229,17 @@ pub fn cluster_orientations(
     })
 }
 
+struct SmoothedHistogramData {
+    values: Vec<f32>,
+    bin_centers: Vec<f32>,
+    total_weight: f32,
+    corner_bins: Vec<usize>,
+}
+
 fn build_smoothed_histogram(
     corners: &[Corner],
     params: &OrientationClusteringParams,
-) -> Option<(Vec<f32>, Vec<f32>, f32, Vec<usize>)> {
+) -> Option<SmoothedHistogramData> {
     if params.num_bins < 1 {
         return None;
     }
@@ -261,7 +270,12 @@ fn build_smoothed_histogram(
         .map(|b| bin_to_angle(b, params.num_bins))
         .collect();
 
-    Some((values, bin_centers, total_weight, corner_bins))
+    Some(SmoothedHistogramData {
+        values,
+        bin_centers,
+        total_weight,
+        corner_bins,
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -401,14 +415,14 @@ fn smooth_circular_histogram(hist: &[f32]) -> Vec<f32> {
     const K_SUM: f32 = 16.0;
 
     let mut out = vec![0.0f32; n];
-    for i in 0..n {
+    for (i, item) in out.iter_mut().enumerate() {
         let mut acc = 0.0f32;
         for (k, &w) in K.iter().enumerate() {
             let offset = k as isize - 2;
             let j = ((i as isize + offset).rem_euclid(n as isize)) as usize;
             acc += w * hist[j];
         }
-        out[i] = acc / K_SUM;
+        *item = acc / K_SUM;
     }
     out
 }
@@ -416,7 +430,6 @@ fn smooth_circular_histogram(hist: &[f32]) -> Vec<f32> {
 #[derive(Clone, Debug)]
 struct Peak {
     bin: usize,
-    value: f32,
 }
 
 /// Find local maxima on a circular 1D array.
@@ -435,7 +448,6 @@ fn find_peaks(hist: &[f32]) -> Vec<Peak> {
         if curr >= prev && curr >= next && curr > 0.0 {
             peaks.push(Peak {
                 bin: i,
-                value: curr,
             });
         }
     }

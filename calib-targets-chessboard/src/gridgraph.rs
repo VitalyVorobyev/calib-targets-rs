@@ -263,7 +263,7 @@ pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
 
 pub fn assign_grid_coordinates(
     graph: &GridGraph,
-    component: &Vec<usize>,
+    component: &[usize],
 ) -> Vec<(usize, i32, i32)> {
     let mut coords = Vec::new();
     let mut visited = vec![false; graph.neighbors.len()];
@@ -332,12 +332,10 @@ impl GridGraph {
                     ) {
                         node_neighbors.push(nn_entry);
                     }
-                } else {
-                    if let Some(nn_entry) =
-                        is_good_neighbor(corner, neighbor, neighbor_index, &params)
-                    {
-                        node_neighbors.push(nn_entry);
-                    }
+                } else if let Some(nn_entry) =
+                    is_good_neighbor(corner, neighbor, neighbor_index, &params)
+                {
+                    node_neighbors.push(nn_entry);
                 }
             }
 
@@ -366,9 +364,7 @@ mod tests {
         }
     }
 
-    fn neighbor_map<'a>(
-        neighbors: &'a [NodeNeighbor],
-    ) -> HashMap<NeighborDirection, &'a NodeNeighbor> {
+    fn neighbor_map(neighbors: &[NodeNeighbor]) -> HashMap<NeighborDirection, &NodeNeighbor> {
         neighbors.iter().map(|n| (n.direction, n)).collect()
     }
 

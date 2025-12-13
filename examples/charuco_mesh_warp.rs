@@ -18,12 +18,14 @@ struct ExampleConfig {
     #[serde(default)]
     mesh_rectified_path: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     rectified_path: Option<String>, // kept for compatibility with existing configs
     #[serde(default)]
     report_path: Option<String>,
     #[serde(default = "default_px_per_square")]
     px_per_square: f32,
     #[serde(default)]
+    #[allow(dead_code)]
     margin_squares: Option<f32>, // ignored for mesh warp; present for compatibility
     chessboard: ChessboardParams,
     graph: GridGraphParams,

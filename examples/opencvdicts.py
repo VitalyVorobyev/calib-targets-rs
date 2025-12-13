@@ -1,20 +1,32 @@
 #!/usr/bin/env python3
 """
 Export all predefined ArUco/AprilTag dictionaries available in the current
-OpenCV build into `calib-targets-charuco/data/DICT_*_CODES` files.
+OpenCV build into JSON files in `calib-targets-charuco/data/`.
 """
 
 from pathlib import Path
 from typing import Union
+import json
 
 import cv2
 
 
-def export_dict(dict_id, name: str, border: int = 1, cell: int = 20, out_dir: Union[Path, str] = "calib-targets-charuco/data") -> None:
-    """Render all markers for a predefined dictionary and dump them as hex codes."""
+def export_dict(
+    dict_id,
+    name: str,
+    border: int = 1,
+    cell: int = 20,
+    out_dir: Union[Path, str] = "calib-targets-charuco/data",
+) -> None:
+    """Render all markers for a predefined dictionary and dump them as JSON.
+
+    Codes are encoded as row-major bits, black=1, packed into an integer where
+    bit 0 is the top-left cell.
+    """
     d = cv2.aruco.getPredefinedDictionary(dict_id)
 
     bits = int(getattr(d, "markerSize", 0))
+    max_correction_bits = int(getattr(d, "maxCorrectionBits", 0))
     n_markers = int(d.bytesList.shape[0]) if hasattr(d, "bytesList") else 0
     if bits <= 0 or n_markers <= 0:
         raise RuntimeError(f"Dictionary {name} looks invalid (bits={bits}, markers={n_markers})")
@@ -39,10 +51,16 @@ def export_dict(dict_id, name: str, border: int = 1, cell: int = 20, out_dir: Un
     hex_width = max(1, (bits * bits + 3) // 4)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{name}_CODES"
-    codes_hex = " ".join(f"0x{c:0{hex_width}x}" for c in codes)
-    out_path.write_text(codes_hex + "\n")
-    print(f"Wrote {n_markers:4d} markers to {out_path} ({bits}x{bits})")
+    out_path = out_dir / f"{name}_CODES.json"
+
+    payload = {
+        "name": name,
+        "marker_size": bits,
+        "max_correction_bits": max_correction_bits,
+        "codes": [f"0x{c:0{hex_width}x}" for c in codes],
+    }
+    out_path.write_text(json.dumps(payload) + "\n")
+    print(f"Wrote {n_markers:4d} markers to {out_path} ({bits}x{bits}, max_correction_bits={max_correction_bits})")
 
 def main() -> None:
     # Enumerate every predefined dictionary available in this OpenCV build.
