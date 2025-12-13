@@ -11,6 +11,7 @@ mod mesh_warp;
 pub mod rectified_view;
 pub mod rectify;
 pub mod warp_grayscale;
+mod scan_decode_4x4;
 
 use calib_targets_core::TargetDetection;
 

@@ -1,16 +1,6 @@
+use crate::rectify::GrayImageView;
+use nalgebra::Point2;
 use std::collections::HashMap;
-
-// =================== basic types ===================
-
-#[derive(Clone, Copy, Debug)]
-pub struct Point2f { pub x: f32, pub y: f32 }
-
-#[derive(Clone, Copy, Debug)]
-pub struct GrayImageView<'a> {
-    pub width: usize,
-    pub height: usize,
-    pub data: &'a [u8], // row-major
-}
 
 // =================== dictionary + fast matcher ===================
 
@@ -154,7 +144,7 @@ pub struct MarkerDetection {
     pub hamming: u8,
     pub score: f32,
     /// corners of the square cell in rectified pixels
-    pub corners_rect: [Point2f; 4],
+    pub corners_rect: [Point2<f32>; 4],
 }
 
 // =================== main entry: scan squares + decode ===================
@@ -187,10 +177,10 @@ pub fn scan_decode_markers_4x4(
                     let x0 = sx as f32 * s;
                     let y0 = sy as f32 * s;
                     let corners = [
-                        Point2f { x: x0,     y: y0     },
-                        Point2f { x: x0 + s, y: y0     },
-                        Point2f { x: x0 + s, y: y0 + s },
-                        Point2f { x: x0,     y: y0 + s },
+                        Point2::new(x0,     y0    ),
+                        Point2::new(x0 + s, y0    ),
+                        Point2::new(x0 + s, y0 + s),
+                        Point2::new(x0,     y0 + s),
                     ];
 
                     out.push(MarkerDetection {
