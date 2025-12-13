@@ -74,14 +74,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     // Configure the chessboard detector.
-    let detector = ChessboardDetector::new(cfg.chessboard);
-    let detections = detector.detect_from_corners(&target_corners);
+    let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
+    let detection = detector.detect_from_corners(&target_corners);
 
     let output = ExampleOutput {
         image_path: cfg.image_path.clone(),
         config_path: config_path.to_string_lossy().into_owned(),
         num_raw_corners: raw_corners.len(),
-        detections: detections.into_iter().map(map_detection).collect(),
+        detections: detection
+            .into_iter()
+            .map(|res| map_detection(res.detection))
+            .collect(),
     };
 
     let output_path = cfg
@@ -127,6 +130,7 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
         orientation: c.orientation,
+        orientation_cluster: None,
         strength: c.response,
         phase: c.phase,
     }

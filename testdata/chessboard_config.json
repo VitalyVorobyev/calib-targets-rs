@@ -2,10 +2,20 @@
   "image_path": "testdata/mid.png",
   "output_path": "testdata/chessboard_detection.json",
   "chessboard": {
+    "min_strength": 0.0,
+    "min_corners": 10,
     "expected_rows": 7,
     "expected_cols": 11,
-    "min_strength": 0.0,
-    "completeness_threshold": 0.7
+    "completeness_threshold": 0.7,
+    "use_orientation_clustering": true,
+    "orientation_clustering_params": {
+      "num_bins": 90,
+      "max_iters": 10,
+      "peak_min_separation_deg": 15.0,
+      "outlier_threshold_deg": 30.0,
+      "min_peak_weight_fraction": 0.2,
+      "use_weights": false
+    }
   },
   "graph": {
     "min_spacing_pix": 5.0,

@@ -5,7 +5,7 @@
 //! - ID decoding.
 //! - Board homography + interior corner interpolation.
 
-use calib_targets_core::{LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::TargetDetection;
 
 #[derive(Clone, Debug)]
 pub struct CharucoParams {

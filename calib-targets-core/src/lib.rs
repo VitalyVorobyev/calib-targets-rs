@@ -25,6 +25,8 @@ pub struct Corner {
     /// - Typically points along one local grid axis.
     pub orientation: f32,
 
+    pub orientation_cluster: Option<usize>, // Some(0 or 1) if clustered, None if outlier
+
     /// Strength / response of the corner detector.
     pub strength: f32,
 

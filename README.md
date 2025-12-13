@@ -29,24 +29,25 @@ All crates live in a single Cargo workspace (see `Cargo.toml` at the repository 
 
 ```rust
 use calib_targets_core::{Corner, GridSearchParams};
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 
 fn detect_chessboard(corners: &[Corner]) {
     let params = ChessboardParams {
-        grid_search: GridSearchParams {
-            min_strength: 0.1,
-            min_corners: 16,
-        },
+        min_strength: 0.1,
+        min_corners: 16,
         expected_rows: None,
         expected_cols: None,
         completeness_threshold: 0.7,
+        ..Default::default()
     };
 
-    let detector = ChessboardDetector::new(params);
-    let detections = detector.detect_from_corners(corners);
+    let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
 
-    for det in detections {
-        println!("Detected target with {} corners", det.corners.len());
+    if let Some(result) = detector.detect_from_corners(corners) {
+        println!(
+            "Detected target with {} corners",
+            result.detection.corners.len()
+        );
     }
 }
 ```

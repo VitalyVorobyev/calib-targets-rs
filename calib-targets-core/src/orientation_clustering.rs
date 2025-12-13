@@ -16,10 +16,10 @@ pub struct OrientationClusteringParams {
     pub num_bins: usize,
     /// Max k-means iterations.
     pub max_iters: usize,
-    /// Minimal separation between initial peaks (radians).
-    pub peak_min_separation: f32,
-    /// Max allowed distance from both centers before marking as outlier (radians).
-    pub outlier_threshold: f32,
+    /// Minimal separation between initial peaks (degrees).
+    pub peak_min_separation_deg: f32,
+    /// Max allowed distance from both centers before marking as outlier (degrees).
+    pub outlier_threshold_deg: f32,
     /// Minimal total weight required for a peak to be considered (fraction of total sum).
     pub min_peak_weight_fraction: f32,
     /// Whether to use weights when clustering.
@@ -31,8 +31,8 @@ impl Default for OrientationClusteringParams {
         Self {
             num_bins: 90, // ~2° per bin
             max_iters: 10,
-            peak_min_separation: 10f32.to_radians(),
-            outlier_threshold: 30f32.to_radians(),
+            peak_min_separation_deg: 10f32,
+            outlier_threshold_deg: 30f32,
             min_peak_weight_fraction: 0.05, // 5% of total weight
             use_weights: true,
         }
@@ -115,7 +115,7 @@ pub fn cluster_orientations(
     for p in &peaks_sorted[1..] {
         let cand = bin_to_angle(p.bin, params.num_bins);
         let sep = angular_dist_pi(phi1, cand);
-        if sep >= params.peak_min_separation {
+        if sep >= params.peak_min_separation_deg.to_radians() {
             phi2 = Some(cand);
             break;
         }
@@ -142,7 +142,7 @@ pub fn cluster_orientations(
 
             let (best_cluster, best_dist) = if d0 <= d1 { (0usize, d0) } else { (1usize, d1) };
 
-            let new_label = if best_dist <= params.outlier_threshold {
+            let new_label = if best_dist <= params.outlier_threshold_deg.to_radians() {
                 Some(best_cluster)
             } else {
                 None
@@ -304,48 +304,98 @@ fn find_peaks(hist: &[f32]) -> Vec<Peak> {
     peaks
 }
 
-/// Estimate two orthogonal grid axes from ChESS corner orientations.
-///
-/// This respects the fact that your orientations are defined modulo π.
-/// It uses a "double-angle" trick to get a dominant direction, then
-/// constructs the perpendicular as the second axis.
-///
-/// Returns (u, v) unit vectors in image pixel space.
-pub fn estimate_grid_axes_from_orientations(corners: &[Corner]) -> Option<f32> {
-    if corners.is_empty() {
-        return None;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use nalgebra::Point2;
+    use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
+
+    fn make_corner(theta: f32, strength: f32) -> Corner {
+        Corner {
+            position: Point2::new(0.0, 0.0),
+            orientation: theta,
+            orientation_cluster: None,
+            strength,
+            phase: 0,
+        }
     }
 
-    // Accumulate in double-angle space to handle θ ≡ θ + π
-    let mut sum = Vector2::<f32>::zeros();
-    let mut weight_sum = 0.0f32;
+    #[test]
+    fn clusters_two_dominant_modes() {
+        let cluster_a = [
+            FRAC_PI_4 - 0.05,
+            FRAC_PI_4,
+            FRAC_PI_4 + 0.04,
+            FRAC_PI_4 + 0.02,
+        ];
+        let cluster_b = [
+            3.0 * FRAC_PI_4 - 0.03,
+            3.0 * FRAC_PI_4,
+            3.0 * FRAC_PI_4 + 0.02,
+            3.0 * FRAC_PI_4 + 0.04,
+        ];
 
-    for c in corners {
-        let theta = c.orientation;
-        // You can weight by strength to favor strong corners.
-        let w = c.strength.max(0.0);
-        if w <= 0.0 {
-            continue;
+        let mut corners = Vec::new();
+        for &theta in &cluster_a {
+            corners.push(make_corner(theta, 1.0));
+        }
+        for &theta in &cluster_b {
+            corners.push(make_corner(theta, 1.5));
         }
 
-        let two_theta = 2.0 * theta;
-        let v = Vector2::new(two_theta.cos(), two_theta.sin());
-        sum += w * v;
-        weight_sum += w;
+        let params = OrientationClusteringParams {
+            max_iters: 5,
+            ..Default::default()
+        };
+
+        let result = cluster_orientations(&corners, &params).expect("expected two clusters");
+        assert_eq!(corners.len(), result.labels.len());
+
+        let center_a = if angular_dist_pi(result.centers[0], cluster_a[0])
+            < angular_dist_pi(result.centers[1], cluster_a[0])
+        {
+            0
+        } else {
+            1
+        };
+        let center_b = 1 - center_a;
+
+        for lbl in result.labels.iter().take(cluster_a.len()) {
+            assert_eq!(Some(center_a), *lbl);
+        }
+        for lbl in result.labels.iter().skip(cluster_a.len()) {
+            assert_eq!(Some(center_b), *lbl);
+        }
+
+        let separation = angular_dist_pi(result.centers[0], result.centers[1]);
+        assert!((separation - FRAC_PI_2).abs() < 0.2);
     }
 
-    if weight_sum <= 0.0 {
-        return None;
+    #[test]
+    fn marks_far_angles_as_outliers() {
+        let mut corners = Vec::new();
+        for _ in 0..5 {
+            corners.push(make_corner(FRAC_PI_4, 1.0));
+        }
+        for _ in 0..5 {
+            corners.push(make_corner(3.0 * FRAC_PI_4, 1.0));
+        }
+        corners.push(make_corner(0.0, 1.0)); // outlier
+
+        let result = cluster_orientations(&corners, &OrientationClusteringParams::default())
+            .expect("clustering should succeed");
+
+        assert_eq!(corners.len(), result.labels.len());
+        assert_eq!(
+            corners.len() - 1,
+            result.labels.iter().filter(|l| l.is_some()).count()
+        );
+        assert!(result.labels.last().unwrap().is_none());
     }
 
-    let mean = sum / weight_sum;
-    if mean.norm_squared() < 1e-6 {
-        // No dominant orientation.
-        return None;
+    #[test]
+    fn returns_none_when_only_one_peak() {
+        let corners = vec![make_corner(0.1, 1.0); 6];
+        assert!(cluster_orientations(&corners, &OrientationClusteringParams::default()).is_none());
     }
-
-    // Back to single-angle space.
-    let mean_two_angle = mean.y.atan2(mean.x);
-    let mean_theta = 0.5 * mean_two_angle;
-    Some(mean_theta)
 }

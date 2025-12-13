@@ -51,19 +51,15 @@ impl MarkerBoardDetector {
     /// - add `image: &GrayImage` parameter,
     /// - run circle detector,
     /// - match circles to grid coords.
-    pub fn detect_from_corners(&self, corners: &[Corner]) -> Vec<TargetDetection> {
-        let chess_detections = self.chessboard_detector.detect_from_corners(corners);
+    pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<TargetDetection> {
+        let chess_detection = self.chessboard_detector.detect_from_corners(corners)?;
 
         // TODO: circle detection + matching logic.
-        // For now, simply convert each chessboard detection into a
+        // For now, simply convert the chessboard detection into a
         // CheckerboardMarker detection with the same corners.
-        chess_detections
-            .into_iter()
-            .map(|mut det| {
-                det.kind = TargetKind::CheckerboardMarker;
-                det
-            })
-            .collect()
+        let mut det = chess_detection.detection;
+        det.kind = TargetKind::CheckerboardMarker;
+        Some(det)
     }
 
     /// Placeholder for the future: detect circles (in image coords).

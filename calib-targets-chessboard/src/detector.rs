@@ -1,12 +1,9 @@
-use crate::geom::is_aligned_or_orthogonal;
 use crate::gridgraph::{assign_grid_coordinates, connected_components, GridGraph};
 use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{
     cluster_orientations, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind,
 };
-use log::info;
-use nalgebra::Vector2;
-
+use log::{info, warn};
 
 /// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
 pub struct ChessboardDetector {
@@ -14,14 +11,32 @@ pub struct ChessboardDetector {
     pub grid_search: GridGraphParams,
 }
 
+pub struct ChessboardDetectionResult {
+    pub detection: TargetDetection,
+    pub inliers: Vec<usize>,
+    pub orientations: Option<[f32; 2]>,
+}
+
 impl ChessboardDetector {
+    pub fn new(params: ChessboardParams) -> Self {
+        Self {
+            grid_search: GridGraphParams::default(),
+            params,
+        }
+    }
+
+    pub fn with_grid_search(mut self, grid_search: GridGraphParams) -> Self {
+        self.grid_search = grid_search;
+        self
+    }
+
     /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
     ///
     /// This function expects corners already computed by your ChESS crate.
-    /// For now it returns at most one detection (the best grid).
-    pub fn detect_from_corners(&self, corners: &[Corner]) -> Vec<TargetDetection> {
+    /// For now it returns at most one detection (the largest grid component).
+    pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<ChessboardDetectionResult> {
         // 1. Filter by strength.
-        let strong: Vec<Corner> = corners
+        let mut strong: Vec<Corner> = corners
             .iter()
             .cloned()
             .filter(|c| c.strength >= self.params.min_strength)
@@ -33,37 +48,39 @@ impl ChessboardDetector {
         );
 
         if strong.len() < self.params.min_corners {
-            return Vec::new();
+            return None;
         }
 
         // 2. Estimate grid axes from orientations.
-        let Some(theta_u) = estimate_grid_axes_from_orientations(&strong) else {
-            info!("failed to estimate grid axes from orientations");
-            return Vec::new();
-        };
-
-        let aligned_corners: Vec<Corner> = strong
-            .iter()
-            .cloned()
-            .filter(|c| {
-                is_aligned_or_orthogonal(
-                    theta_u,
-                    c.orientation,
-                    self.grid_search.orientation_tolerance_deg.to_radians(),
-                )
-            })
-            .collect();
+        let mut grid_diagonals = None;
+        if self.params.use_orientation_clustering {
+            if let Some(clusters) =
+                cluster_orientations(&strong, &self.params.orientation_clustering_params)
+            {
+                grid_diagonals = Some(clusters.centers);
+                strong = strong
+                    .into_iter()
+                    .zip(clusters.labels.into_iter())
+                    .filter_map(|(mut corner, label)| {
+                        label.map(|cluster| {
+                            corner.orientation_cluster = Some(cluster);
+                            corner
+                        })
+                    })
+                    .collect();
+            }
+        }
 
         info!(
             "kept {} ChESS corners after orientation consistency filter",
-            aligned_corners.len()
+            strong.len()
         );
 
-        if aligned_corners.len() < self.params.min_corners {
-            return Vec::new();
+        if strong.len() < self.params.min_corners {
+            return None;
         }
 
-        let graph = GridGraph::new(&aligned_corners, self.grid_search.clone());
+        let graph = GridGraph::new(&strong, self.grid_search.clone(), grid_diagonals);
 
         let components = connected_components(&graph);
         info!(
@@ -71,109 +88,126 @@ impl ChessboardDetector {
             components.len()
         );
 
-        let mut best: Option<(f32, usize, TargetDetection)> = None;
+        let largest_component = components
+            .into_iter()
+            .max_by_key(|c| c.len())
+            .filter(|c| c.len() >= self.params.min_corners)?;
 
-        for component in components.into_iter() {
-            if component.len() < self.params.min_corners {
-                continue;
+        let coords = assign_grid_coordinates(&graph, &largest_component);
+        if coords.is_empty() {
+            return None;
+        }
+
+        let (detection, inliers) = match self.component_to_board_coords(&coords, &strong) {
+            Some(res) => res,
+            None => {
+                warn!("no valid board coordinates found for largest component");
+                return None;
             }
+        };
 
-            let coords = assign_grid_coordinates(&graph, &component);
-            if coords.is_empty() {
-                continue;
-            }
+        Some(ChessboardDetectionResult {
+            detection,
+            inliers,
+            orientations: grid_diagonals,
+        })
+    }
 
-            let (min_i, max_i, min_j, max_j) = coords.iter().fold(
-                (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
-                |acc, &(_, i, j)| (acc.0.min(i), acc.1.max(i), acc.2.min(j), acc.3.max(j)),
-            );
+    fn component_to_board_coords(
+        &self,
+        coords: &[(usize, i32, i32)],
+        corners: &[Corner],
+    ) -> Option<(TargetDetection, Vec<usize>)> {
+        let (min_i, max_i, min_j, max_j) = coords.iter().fold(
+            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+            |acc, &(_, i, j)| (acc.0.min(i), acc.1.max(i), acc.2.min(j), acc.3.max(j)),
+        );
 
-            if min_i == i32::MAX || min_j == i32::MAX {
-                continue;
-            }
+        if min_i == i32::MAX || min_j == i32::MAX {
+            return None;
+        }
 
-            let width = (max_i - min_i + 1) as u32;
-            let height = (max_j - min_j + 1) as u32;
+        let width = (max_i - min_i + 1) as u32;
+        let height = (max_j - min_j + 1) as u32;
 
-            let (board_cols, board_rows, swap_axes) =
-                match (self.params.expected_cols, self.params.expected_rows) {
-                    (Some(expected_cols), Some(expected_rows)) => {
-                        let fits_direct = width <= expected_cols && height <= expected_rows;
-                        let fits_swapped = width <= expected_rows && height <= expected_cols;
-
-                        if !fits_direct && !fits_swapped {
-                            continue;
-                        }
-
-                        let swap_axes = if fits_direct && !fits_swapped {
-                            false
-                        } else if !fits_direct && fits_swapped {
-                            true
-                        } else {
-                            let gap_direct = (expected_cols - width) + (expected_rows - height);
-                            let gap_swapped = (expected_rows - width) + (expected_cols - height);
-                            gap_swapped < gap_direct
-                        };
-
-                        (expected_cols, expected_rows, swap_axes)
-                    }
-                    _ => (width, height, false),
-                };
-
-            let grid_area = (board_cols * board_rows) as f32;
-            if grid_area <= f32::EPSILON {
-                continue;
-            }
-            let completeness = coords.len() as f32 / grid_area;
-            if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
-                if completeness < self.params.completeness_threshold {
-                    continue;
-                }
-            }
-
-            let mut labeled: Vec<LabeledCorner> = coords
-                .iter()
-                .map(|(node_idx, i, j)| {
-                    let corner = &aligned_corners[*node_idx];
-                    let (gi, gj) = if swap_axes {
-                        (j - min_j, i - min_i)
-                    } else {
-                        (i - min_i, j - min_j)
-                    };
-                    LabeledCorner {
-                        position: corner.position,
-                        grid: Some(GridCoords { i: gi, j: gj }),
-                        id: None,
-                        confidence: 1.0,
-                    }
-                })
-                .collect();
-
-            labeled.sort_by(|a, b| {
-                let ga = a.grid.as_ref().unwrap();
-                let gb = b.grid.as_ref().unwrap();
-                (ga.j, ga.i).cmp(&(gb.j, gb.i))
-            });
-
-            let detection = TargetDetection {
-                kind: TargetKind::Chessboard,
-                corners: labeled,
+        let (board_cols, board_rows, swap_axes) =
+            match select_board_size(width, height, &self.params) {
+                Some(dim) => dim,
+                None => return None,
             };
 
-            let is_better = match &best {
-                None => true,
-                Some((best_completeness, best_count, _)) => {
-                    completeness > *best_completeness + 1e-6
-                        || ((completeness - *best_completeness).abs() <= 1e-6
-                            && coords.len() > *best_count)
-                }
-            };
-
-            if is_better {
-                best = Some((completeness, coords.len(), detection));
+        let grid_area = (board_cols * board_rows) as f32;
+        if grid_area <= f32::EPSILON {
+            return None;
+        }
+        let completeness = coords.len() as f32 / grid_area;
+        if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
+            if completeness < self.params.completeness_threshold {
+                return None;
             }
         }
 
-        best.map(|(_, _, det)| vec![det]).unwrap_or_default()
+        let mut labeled: Vec<LabeledCorner> = coords
+            .iter()
+            .map(|(node_idx, i, j)| {
+                let corner = &corners[*node_idx];
+                let (gi, gj) = if swap_axes {
+                    (j - min_j, i - min_i)
+                } else {
+                    (i - min_i, j - min_j)
+                };
+                LabeledCorner {
+                    position: corner.position,
+                    grid: Some(GridCoords { i: gi, j: gj }),
+                    id: None,
+                    confidence: 1.0,
+                }
+            })
+            .collect();
+
+        labeled.sort_by(|a, b| {
+            let ga = a.grid.as_ref().unwrap();
+            let gb = b.grid.as_ref().unwrap();
+            (ga.j, ga.i).cmp(&(gb.j, gb.i))
+        });
+
+        let detection = TargetDetection {
+            kind: TargetKind::Chessboard,
+            corners: labeled,
+        };
+
+        let inliers = coords.iter().map(|(idx, _, _)| *idx).collect();
+
+        Some((detection, inliers))
+    }
+}
+
+fn select_board_size(
+    width: u32,
+    height: u32,
+    params: &ChessboardParams,
+) -> Option<(u32, u32, bool)> {
+    match (params.expected_cols, params.expected_rows) {
+        (Some(expected_cols), Some(expected_rows)) => {
+            let fits_direct = width <= expected_cols && height <= expected_rows;
+            let fits_swapped = width <= expected_rows && height <= expected_cols;
+
+            if !fits_direct && !fits_swapped {
+                return None;
+            }
+
+            let swap_axes = if fits_direct && !fits_swapped {
+                false
+            } else if !fits_direct && fits_swapped {
+                true
+            } else {
+                let gap_direct = (expected_cols - width) + (expected_rows - height);
+                let gap_swapped = (expected_rows - width) + (expected_cols - height);
+                gap_swapped < gap_direct
+            };
+
+            Some((expected_cols, expected_rows, swap_axes))
+        }
+        _ => Some((width, height, false)),
     }
 }
