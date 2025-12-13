@@ -176,7 +176,7 @@ impl ChessboardDetector {
             corners: labeled,
         };
 
-        let inliers = coords.iter().map(|(idx, _, _)| *idx).collect();
+        let inliers = (0..coords.len()).collect();
 
         Some((detection, inliers))
     }

@@ -8,3 +8,4 @@ license = "MIT"
 [dependencies]
 calib-targets-core = { path = "../calib-targets-core" }
 nalgebra = "0.34"
+thiserror = "2"

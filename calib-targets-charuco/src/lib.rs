@@ -5,6 +5,11 @@
 //! - ID decoding.
 //! - Board homography + interior corner interpolation.
 
+pub mod dlt_homography;
+pub mod rectified_view;
+pub mod rectify;
+pub mod wrap_grayscale;
+
 use calib_targets_core::TargetDetection;
 
 #[derive(Clone, Debug)]

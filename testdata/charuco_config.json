@@ -1,0 +1,29 @@
+{
+  "image_path": "testdata/mid.png",
+  "rectified_path": "testdata/charuco_rectified.png",
+  "report_path": "testdata/charuco_report.json",
+  "px_per_square": 40.0,
+  "margin_squares": 0.5,
+  "chessboard": {
+    "min_strength": 0.0,
+    "min_corners": 10,
+    "expected_rows": 7,
+    "expected_cols": 11,
+    "completeness_threshold": 0.7,
+    "use_orientation_clustering": true,
+    "orientation_clustering_params": {
+      "num_bins": 90,
+      "max_iters": 10,
+      "peak_min_separation_deg": 15.0,
+      "outlier_threshold_deg": 30.0,
+      "min_peak_weight_fraction": 0.2,
+      "use_weights": false
+    }
+  },
+  "graph": {
+    "min_spacing_pix": 5.0,
+    "max_spacing_pix": 50.0,
+    "k_neighbors": 8,
+    "orientation_tolerance_deg": 22.5
+  }
+}
