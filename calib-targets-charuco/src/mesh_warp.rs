@@ -1,5 +1,5 @@
 use calib_targets_core::{
-    estimate_homography_rect_to_img, GrayImage, GrayImageView, GridCoords, Homography,
+    sample_bilinear, estimate_homography_rect_to_img, GrayImage, GrayImageView, GridCoords, Homography,
     LabeledCorner,
 };
 use std::collections::HashMap;
@@ -14,35 +14,6 @@ pub enum MeshWarpError {
     NoValidCells,
     #[error("homography estimation failed for at least one cell")]
     HomographyFailed,
-}
-
-// ---- Bilinear sampling ----
-
-#[inline]
-fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
-    if x < 0 || y < 0 || x >= src.width as i32 || y >= src.height as i32 {
-        return 0;
-    }
-    src.data[y as usize * src.width + x as usize]
-}
-
-#[inline]
-fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
-    let x0 = x.floor() as i32;
-    let y0 = y.floor() as i32;
-    let fx = x - x0 as f32;
-    let fy = y - y0 as f32;
-
-    let p00 = get_gray(src, x0, y0) as f32;
-    let p10 = get_gray(src, x0 + 1, y0) as f32;
-    let p01 = get_gray(src, x0, y0 + 1) as f32;
-    let p11 = get_gray(src, x0 + 1, y0 + 1) as f32;
-
-    let a = p00 + fx * (p10 - p00);
-    let b = p01 + fx * (p11 - p01);
-    let v = a + fy * (b - a);
-
-    v.clamp(0.0, 255.0) as u8
 }
 
 // ---- Mesh warp rectification ----
@@ -206,14 +177,11 @@ pub fn rectify_mesh_from_grid(
             let x_local = xf - (ci as f32) * s;
 
             let cell = cells[cj_u * cells_x + ci_u];
-            if !cell.valid {
-                continue; // stays 0
+            if cell.valid {
+                let p_cell = Point2::new(x_local, y_local);
+                let p_img = cell.h_img_from_cellrect.apply(p_cell);
+                out[y * out_w + x] = sample_bilinear(src, p_img.x, p_img.y);
             }
-
-            let p_cell = Point2::new(x_local, y_local);
-            let p_img = cell.h_img_from_cellrect.apply(p_cell);
-
-            out[y * out_w + x] = sample_bilinear(src, p_img.x, p_img.y);
         }
     }
 

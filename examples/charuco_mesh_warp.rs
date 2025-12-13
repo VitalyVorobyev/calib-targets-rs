@@ -188,7 +188,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mesh_path = cfg
                     .mesh_rectified_path
                     .as_deref()
-                    .or(cfg.rectified_path.as_deref())
                     .map(PathBuf::from)
                     .unwrap_or_else(|| PathBuf::from("testdata/charuco_mesh_rectified.png"));
 

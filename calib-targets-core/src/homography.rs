@@ -1,4 +1,4 @@
-use crate::{GrayImage, GrayImageView};
+use crate::{sample_bilinear, GrayImage, GrayImageView};
 use nalgebra::{DMatrix, Matrix3, Point2, Vector3};
 
 #[derive(Clone, Copy, Debug)]
@@ -91,7 +91,13 @@ pub fn estimate_homography_rect_to_img(
 
     // Build A (2N x 9)
     let n = rect_pts.len();
-    let mut a = DMatrix::<f64>::zeros(2 * n, 9);
+    //
+    // NOTE: nalgebra's SVD is "thin": V^T has only min(m, n) rows. For the minimal
+    // 4-point case, A is 8x9 and the null-space vector is *not* included unless we
+    // make m >= n. Padding with all-zero rows preserves the null-space and keeps
+    // the implementation simple and robust for N=4.
+    let rows = 2 * n;
+    let mut a = DMatrix::<f64>::zeros(rows.max(9), 9);
 
     for k in 0..n {
         let x = r[k].x;
@@ -119,7 +125,8 @@ pub fn estimate_homography_rect_to_img(
     // Solve Ah = 0 -> h is right singular vector with smallest singular value
     let svd = a.svd(true, true);
     let vt = svd.v_t?;
-    let h = vt.row(8); // last row of V^T = last column of V
+    let last = vt.nrows().checked_sub(1)?;
+    let h = vt.row(last); // last row of V^T = last column of V
 
     let hn =
         Matrix3::<f64>::from_row_slice(&[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]]);
@@ -142,32 +149,6 @@ pub fn estimate_homography_rect_to_img(
             [h_den[(2, 0)], h_den[(2, 1)], h_den[(2, 2)]],
         ],
     })
-}
-
-#[inline]
-fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
-    if x < 0 || y < 0 || x >= src.width as i32 || y >= src.height as i32 {
-        return 0;
-    }
-    src.data[y as usize * src.width + x as usize]
-}
-
-fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
-    let x0 = x.floor() as i32;
-    let y0 = y.floor() as i32;
-    let fx = x - x0 as f32;
-    let fy = y - y0 as f32;
-
-    let p00 = get_gray(src, x0, y0) as f32;
-    let p10 = get_gray(src, x0 + 1, y0) as f32;
-    let p01 = get_gray(src, x0, y0 + 1) as f32;
-    let p11 = get_gray(src, x0 + 1, y0 + 1) as f32;
-
-    let a = p00 + fx * (p10 - p00);
-    let b = p01 + fx * (p11 - p01);
-    let v = a + fy * (b - a);
-
-    v.clamp(0.0, 255.0) as u8
 }
 
 /// Warp into rectified image: for each dst pixel, map to src via H_img_from_rect and sample.
@@ -193,5 +174,43 @@ pub fn warp_perspective_gray(
         width: out_w,
         height: out_h,
         data: out,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn homography_from_four_points_maps_corners() {
+        let rect = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(10.0_f32, 0.0),
+            Point2::new(0.0_f32, 10.0),
+            Point2::new(10.0_f32, 10.0),
+        ];
+
+        // A general convex quad (not a pure affine transform).
+        let img = [
+            Point2::new(100.0_f32, 50.0),
+            Point2::new(220.0_f32, 60.0),
+            Point2::new(90.0_f32, 170.0),
+            Point2::new(240.0_f32, 190.0),
+        ];
+
+        let h = estimate_homography_rect_to_img(&rect, &img).expect("homography");
+        for (r, expected) in rect.iter().zip(img.iter()) {
+            let got = h.apply(*r);
+            let dx = (got.x - expected.x).abs();
+            let dy = (got.y - expected.y).abs();
+            assert!(
+                dx < 1e-2 && dy < 1e-2,
+                "corner mismatch: got=({:.4},{:.4}) expected=({:.4},{:.4})",
+                got.x,
+                got.y,
+                expected.x,
+                expected.y
+            );
+        }
     }
 }

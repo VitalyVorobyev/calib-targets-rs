@@ -10,7 +10,7 @@ mod image;
 mod orientation_clustering;
 
 pub use homography::{estimate_homography_rect_to_img, warp_perspective_gray, Homography};
-pub use image::{GrayImage, GrayImageView};
+pub use image::{sample_bilinear, GrayImage, GrayImageView};
 
 pub use orientation_clustering::{
     cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
