@@ -104,6 +104,19 @@ impl RectifiedMeshView {
     }
 }
 
+fn build_corners_to_pix_map(corners: &[LabeledCorner],
+    inliers: &[usize]) -> HashMap<GridCoords, Point2<f32>> {
+    let mut map: HashMap<GridCoords, Point2<f32>> = HashMap::new();
+    for &idx in inliers {
+        if let Some(c) = corners.get(idx) {
+            if let Some(g) = c.grid {
+                map.insert(g, c.position);
+            }
+        }
+    }
+    map
+}
+
 /// Build a rectified “board view” by piecewise homographies per grid cell.
 /// This is robust to lens distortion because it does not assume a single global H.
 ///
@@ -117,14 +130,7 @@ pub fn rectify_mesh_from_grid(
     px_per_square: f32,
 ) -> Result<RectifiedMeshView, MeshWarpError> {
     // 1) Build map: (i,j) -> image point
-    let mut map: HashMap<GridCoords, Point2<f32>> = HashMap::new();
-    for &idx in inliers {
-        if let Some(c) = corners.get(idx) {
-            if let Some(g) = c.grid {
-                map.insert(g, c.position);
-            }
-        }
-    }
+    let map = build_corners_to_pix_map(corners, inliers);
     if map.len() < 4 {
         return Err(MeshWarpError::NotEnoughLabeledCorners);
     }

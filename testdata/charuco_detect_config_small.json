@@ -1,22 +1,22 @@
 {
-  "image_path": "testdata/large.png",
+  "image_path": "testdata/small.png",
   "board": {
-    "rows": 22,
-    "cols": 22,
+    "rows": 10,
+    "cols": 10,
     "cell_size": 1.0,
     "marker_size_rel": 0.75,
-    "dictionary": "DICT_4X4_1000",
+    "dictionary": "DICT_4X4_250",
     "marker_layout": "opencv_charuco"
   },
-  "output_path": "tmpdata/charuco_detect_report_large.json",
-  "mesh_rectified_path": "tmpdata/charuco_detect_rectified_large.png",
+  "output_path": "tmpdata/charuco_detect_report_small.json",
+  "mesh_rectified_path": "tmpdata/charuco_detect_rectified_small.png",
   "px_per_square": 60.0,
-  "min_marker_inliers": 16,
+  "min_marker_inliers": 8,
   "chessboard": {
     "min_corner_strength": 0.5,
-    "min_corners": 50,
-    "expected_rows": 21,
-    "expected_cols": 21,
+    "min_corners": 16,
+    "expected_rows": null,
+    "expected_cols": null,
     "completeness_threshold": 0.05,
     "use_orientation_clustering": true,
     "orientation_clustering_params": {
@@ -30,7 +30,7 @@
   },
   "graph": {
     "min_spacing_pix": 10.0,
-    "max_spacing_pix": 160.0,
+    "max_spacing_pix": 50.0,
     "k_neighbors": 8,
     "orientation_tolerance_deg": 12.5
   },

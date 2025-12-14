@@ -278,6 +278,8 @@ dependencies = [
  "chess-corners",
  "image",
  "nalgebra",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
