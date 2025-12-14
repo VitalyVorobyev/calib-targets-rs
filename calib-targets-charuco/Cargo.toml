@@ -7,5 +7,11 @@ license = "MIT"
 
 [dependencies]
 calib-targets-core = { path = "../calib-targets-core" }
+calib-targets-chessboard = { path = "../calib-targets-chessboard" }
+calib-targets-aruco = { path = "../calib-targets-aruco" }
 nalgebra = "0.34"
 thiserror = "2"
+
+[dev-dependencies]
+chess-corners = "0.1.1"
+image = { version = "0.25", default-features = true }

@@ -15,7 +15,7 @@ This repository contains a small family of crates for detecting various calibrat
   - helpers such as `estimate_grid_axes_from_orientations`
 - `calib-targets-chessboard` – plain chessboard detector built on top of `calib-targets-core`.
 - `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids.
-- `calib-targets-charuco` – rectification utilities (global homography + mesh warp); ChArUco board solver is not implemented yet.
+- `calib-targets-charuco` – grid-first ChArUco detector + rectification utilities (global homography + mesh warp).
 - `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles), currently a thin wrapper around the chessboard detector.
 
 All crates live in a single Cargo workspace (see `Cargo.toml` at the repository root).
@@ -69,6 +69,21 @@ Run it with:
 cargo run --release --example charuco_mesh_warp
 ```
 
+## Example (full ChArUco detection)
+
+The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
+
+- chessboard detection from ChESS corners,
+- mesh-rectification,
+- marker decoding,
+- marker→board alignment and corner ID assignment.
+
+Run it with:
+
+```bash
+cargo run --release --example charuco_detect
+```
+
 ## Project status & roadmap
 
 Because this is an early development stage:
@@ -79,7 +94,7 @@ Because this is an early development stage:
 Planned work includes:
 
 - Improving chessboard robustness and (eventually) multi-board detection.
-- Implementing a full ChArUco board solver (marker→board pose, corner ID assignment/interpolation).
+- Improving the ChArUco solver (more layouts, robustness, calibration outputs).
 - Implementing circle-based logic for the checkerboard marker detector.
 - Adding more comprehensive examples and tests.
 

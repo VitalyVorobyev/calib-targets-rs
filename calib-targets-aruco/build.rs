@@ -1,8 +1,4 @@
-use std::{
-    env,
-    fs,
-    path::PathBuf,
-};
+use std::{env, fs, path::PathBuf};
 
 use serde::Deserialize;
 
@@ -96,17 +92,13 @@ fn main() {
         let ident = sanitize_ident(name);
         let codes_ident = format!("{ident}_CODES");
 
-        out.push_str(&format!(
-            "pub static {codes_ident}: &[u64] = &[\n"
-        ));
+        out.push_str(&format!("pub static {codes_ident}: &[u64] = &[\n"));
         for v in &codes {
             out.push_str(&format!("    0x{v:x},\n"));
         }
         out.push_str("];\n\n");
 
-        out.push_str(&format!(
-            "pub static {ident}: Dictionary = Dictionary {{\n"
-        ));
+        out.push_str(&format!("pub static {ident}: Dictionary = Dictionary {{\n"));
         out.push_str(&format!("    name: \"{name}\",\n"));
         out.push_str(&format!("    marker_size: {n},\n"));
         out.push_str(&format!(
@@ -142,11 +134,7 @@ fn sanitize_ident(name: &str) -> String {
             out.push('_');
         }
     }
-    if out
-        .chars()
-        .next()
-        .is_some_and(|c| c.is_ascii_digit())
-    {
+    if out.chars().next().is_some_and(|c| c.is_ascii_digit()) {
         out.insert(0, '_');
     }
     out

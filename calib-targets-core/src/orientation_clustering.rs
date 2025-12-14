@@ -446,9 +446,7 @@ fn find_peaks(hist: &[f32]) -> Vec<Peak> {
         let next = hist[(i + 1) % n];
 
         if curr >= prev && curr >= next && curr > 0.0 {
-            peaks.push(Peak {
-                bin: i,
-            });
+            peaks.push(Peak { bin: i });
         }
     }
 

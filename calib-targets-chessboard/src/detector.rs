@@ -62,7 +62,7 @@ impl ChessboardDetector {
     /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
     ///
     /// This function expects corners already computed by your ChESS crate.
-    /// For now it returns at most one detection (the largest grid component).
+    /// For now it returns at most one detection (the best-scoring grid component).
     pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<ChessboardDetectionResult> {
         // 1. Filter by strength.
         let mut strong: Vec<Corner> = corners
@@ -131,23 +131,34 @@ impl ChessboardDetector {
             components.len()
         );
 
-        let largest_component = components
-            .into_iter()
-            .max_by_key(|c| c.len())
-            .filter(|c| c.len() >= self.params.min_corners)?;
+        let mut best: Option<(TargetDetection, Vec<usize>, usize)> = None;
 
-        let coords = assign_grid_coordinates(&graph, &largest_component);
-        if coords.is_empty() {
-            return None;
+        for component in &components {
+            if component.len() < self.params.min_corners {
+                continue;
+            }
+
+            let coords = assign_grid_coordinates(&graph, component);
+            if coords.is_empty() {
+                continue;
+            }
+
+            let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
+            else {
+                continue;
+            };
+
+            let score = detection.corners.len();
+            match best {
+                None => best = Some((detection, inliers, score)),
+                Some((_, _, best_score)) if score > best_score => {
+                    best = Some((detection, inliers, score));
+                }
+                _ => {}
+            }
         }
 
-        let (detection, inliers) = match self.component_to_board_coords(&coords, &strong) {
-            Some(res) => res,
-            None => {
-                warn!("no valid board coordinates found for largest component");
-                return None;
-            }
-        };
+        let (detection, inliers, _) = best?;
 
         let graph_debug = Some(build_graph_debug(&graph, &strong));
 
@@ -185,37 +196,52 @@ impl ChessboardDetector {
         let width = (max_i - min_i + 1) as u32;
         let height = (max_j - min_j + 1) as u32;
 
-        let (board_cols, board_rows, swap_axes) =
-            select_board_size(width, height, &self.params)?;
+        let (board_cols, board_rows, swap_axes) = select_board_size(width, height, &self.params)?;
 
         let grid_area = (board_cols * board_rows) as f32;
         if grid_area <= f32::EPSILON {
             return None;
         }
-        let completeness = coords.len() as f32 / grid_area;
+
+        // De-duplicate by grid coordinate: in noisy graphs, a component can contain
+        // multiple corners that get mapped to the same (i,j). Keep the strongest one.
+        let mut by_grid: std::collections::HashMap<GridCoords, LabeledCorner> =
+            std::collections::HashMap::new();
+        for &(node_idx, i, j) in coords {
+            let corner = &corners[node_idx];
+            let (gi, gj) = if swap_axes {
+                (j - min_j, i - min_i)
+            } else {
+                (i - min_i, j - min_j)
+            };
+            let grid = GridCoords { i: gi, j: gj };
+            let candidate = LabeledCorner {
+                position: corner.position,
+                grid: Some(grid),
+                id: None,
+                confidence: corner.strength,
+            };
+
+            match by_grid.get(&grid) {
+                None => {
+                    by_grid.insert(grid, candidate);
+                }
+                Some(prev) => {
+                    if candidate.confidence > prev.confidence {
+                        by_grid.insert(grid, candidate);
+                    }
+                }
+            }
+        }
+
+        let completeness = by_grid.len() as f32 / grid_area;
         if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
             if completeness < self.params.completeness_threshold {
                 return None;
             }
         }
 
-        let mut labeled: Vec<LabeledCorner> = coords
-            .iter()
-            .map(|(node_idx, i, j)| {
-                let corner = &corners[*node_idx];
-                let (gi, gj) = if swap_axes {
-                    (j - min_j, i - min_i)
-                } else {
-                    (i - min_i, j - min_j)
-                };
-                LabeledCorner {
-                    position: corner.position,
-                    grid: Some(GridCoords { i: gi, j: gj }),
-                    id: None,
-                    confidence: corner.strength,
-                }
-            })
-            .collect();
+        let mut labeled: Vec<LabeledCorner> = by_grid.into_values().collect();
 
         labeled.sort_by(|a, b| {
             let ga = a.grid.as_ref().unwrap();
@@ -228,7 +254,7 @@ impl ChessboardDetector {
             corners: labeled,
         };
 
-        let inliers = (0..coords.len()).collect();
+        let inliers = (0..detection.corners.len()).collect();
 
         Some((detection, inliers))
     }

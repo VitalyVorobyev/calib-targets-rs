@@ -1,6 +1,6 @@
 use calib_targets_core::{
-    sample_bilinear, estimate_homography_rect_to_img, GrayImage, GrayImageView, GridCoords, Homography,
-    LabeledCorner,
+    estimate_homography_rect_to_img, sample_bilinear, GrayImage, GrayImageView, GridCoords,
+    Homography, LabeledCorner,
 };
 use std::collections::HashMap;
 

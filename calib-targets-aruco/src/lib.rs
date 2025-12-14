@@ -135,6 +135,11 @@ pub struct ScanDecodeConfig {
     pub border_bits: usize,
     /// Fraction of a square to ignore near edges (0.08..0.15 typical).
     pub inset_frac: f32,
+    /// Marker side length relative to the square cell side.
+    ///
+    /// - `1.0`: marker fills the entire square (no extra white margin).
+    /// - `< 1.0`: marker is centered inside the square (ChArUco-style).
+    pub marker_size_rel: f32,
     /// Require border-black ratio >= this.
     pub min_border_score: f32,
     /// If true, keep only the best detection per marker id.
@@ -146,6 +151,7 @@ impl Default for ScanDecodeConfig {
         Self {
             border_bits: 1,
             inset_frac: 0.10,
+            marker_size_rel: 1.0,
             min_border_score: 0.85,
             dedup_by_id: true,
         }
@@ -272,15 +278,23 @@ fn read_marker_from_square(
     }
 
     let s = px_per_square;
-    let inset = (cfg.inset_frac * s).round() as i32;
-    let x0 = (sx as f32 * s).round() as i32 + inset;
-    let y0 = (sy as f32 * s).round() as i32 + inset;
-    let side = ((1.0 - 2.0 * cfg.inset_frac) * s).round() as i32;
+    if s <= 1.0 {
+        return None;
+    }
+
+    let marker_size_rel = cfg.marker_size_rel.clamp(0.01, 1.0);
+    let marker_side = (marker_size_rel * s).round().max(1.0) as i32;
+    let marker_offset = ((s - marker_side as f32) * 0.5).round() as i32;
+
+    let inset = (cfg.inset_frac * marker_side as f32).round() as i32;
+    let x0 = (sx as f32 * s).round() as i32 + marker_offset + inset;
+    let y0 = (sy as f32 * s).round() as i32 + marker_offset + inset;
+    let side = marker_side - 2 * inset;
 
     if side < 12 {
         return None;
     }
-    if x0 < 0 || y0 < 0 || x0 + side >= rect.width as i32 || y0 + side >= rect.height as i32 {
+    if x0 < 0 || y0 < 0 || x0 + side > rect.width as i32 || y0 + side > rect.height as i32 {
         return None;
     }
 

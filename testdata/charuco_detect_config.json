@@ -1,0 +1,44 @@
+{
+  "image_path": "testdata/large.png",
+  "board": {
+    "rows": 22,
+    "cols": 22,
+    "cell_size": 1.0,
+    "marker_size_rel": 0.85,
+    "dictionary": "DICT_4X4_1000",
+    "marker_layout": "opencv_charuco"
+  },
+  "output_path": "testdata/charuco_detect_report.json",
+  "mesh_rectified_path": "testdata/charuco_detect_rectified.png",
+  "px_per_square": 60.0,
+  "min_marker_inliers": 16,
+  "chessboard": {
+    "min_strength": 0.5,
+    "min_corners": 50,
+    "expected_rows": 21,
+    "expected_cols": 21,
+    "completeness_threshold": 0.05,
+    "use_orientation_clustering": true,
+    "orientation_clustering_params": {
+      "num_bins": 90,
+      "max_iters": 10,
+      "peak_min_separation_deg": 15.0,
+      "outlier_threshold_deg": 30.0,
+      "min_peak_weight_fraction": 0.2,
+      "use_weights": true
+    }
+  },
+  "graph": {
+    "min_spacing_pix": 40.0,
+    "max_spacing_pix": 160.0,
+    "k_neighbors": 8,
+    "orientation_tolerance_deg": 22.5
+  },
+  "aruco": {
+    "max_hamming": 0,
+    "border_bits": 1,
+    "inset_frac": 0.06,
+    "min_border_score": 0.85,
+    "dedup_by_id": true
+  }
+}

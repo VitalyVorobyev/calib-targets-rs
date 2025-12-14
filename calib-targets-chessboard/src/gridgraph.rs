@@ -261,10 +261,7 @@ pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
     components
 }
 
-pub fn assign_grid_coordinates(
-    graph: &GridGraph,
-    component: &[usize],
-) -> Vec<(usize, i32, i32)> {
+pub fn assign_grid_coordinates(graph: &GridGraph, component: &[usize]) -> Vec<(usize, i32, i32)> {
     let mut coords = Vec::new();
     let mut visited = vec![false; graph.neighbors.len()];
     let mut queue = std::collections::VecDeque::new();
