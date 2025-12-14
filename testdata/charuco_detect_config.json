@@ -13,7 +13,7 @@
   "px_per_square": 60.0,
   "min_marker_inliers": 16,
   "chessboard": {
-    "min_strength": 0.5,
+    "min_corner_strength": 0.5,
     "min_corners": 50,
     "expected_rows": 21,
     "expected_cols": 21,

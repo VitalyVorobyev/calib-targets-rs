@@ -138,7 +138,7 @@ fn detects_plain_chessboard_on_mid_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let chessboard = ChessboardParams {
-        min_strength: 0.5,
+        min_corner_strength: 0.5,
         min_corners: 20,
         expected_rows: Some(7),
         expected_cols: Some(11),

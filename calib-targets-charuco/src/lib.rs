@@ -13,12 +13,8 @@
 //! - aligns the detected grid to a known board definition and assigns corner IDs.
 
 mod detector;
-mod mesh_warp;
-mod rectified_view;
 
 pub use detector::{
     CharucoAlignment, CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
     CharucoDetectionResult, CharucoDetector, CharucoDetectorParams, GridTransform, MarkerLayout,
 };
-pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};

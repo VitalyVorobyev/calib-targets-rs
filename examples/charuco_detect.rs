@@ -5,7 +5,7 @@ use calib_targets_charuco::{
     CharucoBoard, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult, CharucoDetector,
     CharucoDetectorParams, MarkerLayout,
 };
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{ChessboardParams, GridGraphParams, RectifiedMeshView};
 use calib_targets_core::{Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{save_buffer, ImageBuffer, ImageReader, Luma};
@@ -445,10 +445,7 @@ fn map_markers(board: &CharucoBoard, res: &CharucoDetectionResult) -> Vec<Output
     out
 }
 
-fn save_mesh_view(
-    path: &PathBuf,
-    rect: &calib_targets_charuco::RectifiedMeshView,
-) -> Result<(), image::ImageError> {
+fn save_mesh_view(path: &PathBuf, rect: &RectifiedMeshView) -> Result<(), image::ImageError> {
     let img_buf = ImageBuffer::<Luma<u8>, _>::from_raw(
         rect.rect.width as u32,
         rect.rect.height as u32,

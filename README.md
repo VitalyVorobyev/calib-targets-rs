@@ -34,7 +34,7 @@ use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphPa
 
 fn detect_chessboard(corners: &[Corner]) {
     let params = ChessboardParams {
-        min_strength: 0.1,
+        min_corner_strength: 0.1,
         min_corners: 16,
         expected_rows: None,
         expected_cols: None,

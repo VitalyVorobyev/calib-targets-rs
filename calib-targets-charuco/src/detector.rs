@@ -3,13 +3,14 @@ use std::collections::HashMap;
 use calib_targets_aruco::{
     scan_decode_markers, Dictionary, MarkerDetection, Matcher, ScanDecodeConfig,
 };
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{
+    rectify_mesh_from_grid, ChessboardDetector, ChessboardParams, GridGraphParams, MeshWarpError,
+    RectifiedMeshView,
+};
 use calib_targets_core::{
     Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
 };
 use nalgebra::Point2;
-
-use crate::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 
 /// Marker placement scheme for the board.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -174,7 +175,7 @@ pub struct CharucoDetectorParams {
 impl CharucoDetectorParams {
     pub fn for_board(board: &CharucoBoard) -> Self {
         let chessboard = ChessboardParams {
-            min_strength: 0.5,
+            min_corner_strength: 0.5,
             min_corners: 32,
             expected_rows: Some(board.expected_inner_rows()),
             expected_cols: Some(board.expected_inner_cols()),

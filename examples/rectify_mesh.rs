@@ -1,8 +1,10 @@
 use std::{env, fs, path::PathBuf, time::Instant};
 
 use calib_targets_aruco::{builtins, scan_decode_markers, Matcher, ScanDecodeConfig};
-use calib_targets_charuco::{rectify_mesh_from_grid, RectifiedMeshView};
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{
+    rectify_mesh_from_grid, ChessboardDetector, ChessboardParams, GridGraphParams,
+    RectifiedMeshView,
+};
 use calib_targets_core::GrayImageView;
 use calib_targets_core::{Corner as TargetCorner, LabeledCorner, TargetKind};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
@@ -125,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = args
         .get(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("testdata/charuco_config.json"));
+        .unwrap_or_else(|| PathBuf::from("tmpdata/rectify_config.json"));
 
     let cfg: ExampleConfig = {
         let raw = fs::read_to_string(&config_path)?;
@@ -225,7 +227,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .mesh_rectified_path
                     .as_deref()
                     .map(PathBuf::from)
-                    .unwrap_or_else(|| PathBuf::from("testdata/charuco_mesh_rectified.png"));
+                    .unwrap_or_else(|| PathBuf::from("tmpdata/mesh_rectified.png"));
 
                 save_mesh_view(&mesh_path, &rectified)?;
                 mesh_save_ms = Some(t_save.elapsed().as_millis() as u64);
@@ -339,7 +341,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .report_path
         .as_deref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("testdata/charuco_mesh_report.json"));
+        .unwrap_or_else(|| PathBuf::from("tmpdata/mesh_report.json"));
 
     let json = serde_json::to_string_pretty(&report)?;
     fs::write(&report_path, json)?;

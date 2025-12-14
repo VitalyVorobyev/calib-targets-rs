@@ -1,7 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_charuco::rectify_from_chessboard_result;
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{
+    rectify_from_chessboard_result, ChessboardDetector, ChessboardParams, GridGraphParams,
+};
 use calib_targets_core::{Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{save_buffer, ImageBuffer, ImageReader, Luma};
@@ -78,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = args
         .get(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("testdata/charuco_config.json"));
+        .unwrap_or_else(|| PathBuf::from("tmpdata/rectify_config.json"));
 
     let cfg: ExampleConfig = {
         let raw = fs::read_to_string(&config_path)?;
@@ -138,7 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .rectified_path
                 .as_deref()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("testdata/charuco_rectified.png"));
+                .unwrap_or_else(|| PathBuf::from("tmpdata/rectified.png"));
 
             save_buffer(
                 &rectified_path,
@@ -180,7 +181,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .report_path
         .as_deref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("testdata/charuco_report.json"));
+        .unwrap_or_else(|| PathBuf::from("tmpdata/rectify_report.json"));
 
     let json = serde_json::to_string_pretty(&report)?;
     fs::write(&report_path, json)?;

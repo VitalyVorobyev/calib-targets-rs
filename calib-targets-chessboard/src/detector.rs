@@ -67,7 +67,7 @@ impl ChessboardDetector {
         // 1. Filter by strength.
         let mut strong: Vec<Corner> = corners
             .iter()
-            .filter(|c| c.strength >= self.params.min_strength)
+            .filter(|c| c.strength >= self.params.min_corner_strength)
             .cloned()
             .collect();
 

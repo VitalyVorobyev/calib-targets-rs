@@ -240,7 +240,7 @@ def main() -> None:
     fig.tight_layout()
 
     output_path = args.output or args.detections_json.with_name(
-        f"{args.detections_json.stem}_overlay.png"
+        f"tmpdata/{args.detections_json.stem}_overlay.png"
     )
     fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     print(f"Saved visualization to {output_path}")

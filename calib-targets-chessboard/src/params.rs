@@ -24,7 +24,7 @@ impl Default for GridGraphParams {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChessboardParams {
     /// Minimal corner strength to consider.
-    pub min_strength: f32,
+    pub min_corner_strength: f32,
 
     /// Minimal number of corners in a detection to be considered valid.
     pub min_corners: usize,
@@ -46,7 +46,7 @@ pub struct ChessboardParams {
 impl Default for ChessboardParams {
     fn default() -> Self {
         Self {
-            min_strength: 0.0,
+            min_corner_strength: 0.0,
             min_corners: 16,
             expected_rows: None,
             expected_cols: None,

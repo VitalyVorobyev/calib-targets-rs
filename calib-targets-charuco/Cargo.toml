@@ -13,5 +13,5 @@ nalgebra = "0.34"
 thiserror = "2"
 
 [dev-dependencies]
-chess-corners = "0.1.1"
+chess-corners = "0.1"
 image = { version = "0.25", default-features = true }
