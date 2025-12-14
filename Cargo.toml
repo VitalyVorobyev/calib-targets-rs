@@ -20,7 +20,7 @@ calib-targets-core = { path = "calib-targets-core" }
 calib-targets-chessboard = { path = "calib-targets-chessboard" }
 calib-targets-charuco = { path = "calib-targets-charuco" }
 calib-targets-aruco = { path = "calib-targets-aruco" }
-chess-corners = "0.1.1"
+chess-corners = "0.1"
 image = { version = "0.25", default-features = true }
 nalgebra = "0.34"
 serde = { version = "1", features = ["derive"] }

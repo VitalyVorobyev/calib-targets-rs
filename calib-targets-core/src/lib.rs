@@ -8,9 +8,13 @@ use nalgebra::{Point2, Vector2};
 mod homography;
 mod image;
 mod orientation_clustering;
+mod rectify;
 
-pub use homography::{estimate_homography_rect_to_img, warp_perspective_gray, Homography};
+pub use homography::{
+    estimate_homography_rect_to_img, homography_from_4pt, warp_perspective_gray, Homography,
+};
 pub use image::{sample_bilinear, GrayImage, GrayImageView};
+pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use orientation_clustering::{
     cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,

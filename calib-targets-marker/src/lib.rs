@@ -10,23 +10,15 @@ use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::{Corner, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
-#[derive(Clone, Copy, Debug)]
-pub enum CirclePolarity { White, Black }
-
-#[derive(Clone, Copy, Debug)]
-pub struct CircleSpec {
-    /// In *corner-index* grid coordinates, usually half-integers (e.g. 10.5, 10.5)
-    pub grid_ij: (f32, f32),
-    pub polarity: CirclePolarity,
-}
-
 #[derive(Clone, Debug)]
 pub struct MarkerBoardLayout {
-    pub rows_corners: u32, // inner corners count in j
-    pub cols_corners: u32, // inner corners count in i
-    pub circles: [CircleSpec; 3],
-    /// circle radius relative to a square (typical 0.20..0.35)
-    pub radius_in_squares: f32,
+    /// Full checkerboard dimensions (e.g., inner corners).
+    pub rows: u32,
+    pub cols: u32,
+
+    /// Grid coordinates of the three marker circles,
+    /// e.g. (i, j) for each circle center in board coordinates.
+    pub circle_positions: [(i32, i32); 3],
 }
 
 #[derive(Clone, Debug)]

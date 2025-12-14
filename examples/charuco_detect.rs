@@ -232,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .mesh_rectified_path
                 .as_deref()
                 .map(PathBuf::from)
-                .unwrap_or_else(|| PathBuf::from("testdata/charuco_detect_rectified.png"));
+                .unwrap_or_else(|| PathBuf::from("tmpdata/charuco_detect_rectified.png"));
 
             let t_save = Instant::now();
             save_mesh_view(&rectified_path, &res.rectified)?;

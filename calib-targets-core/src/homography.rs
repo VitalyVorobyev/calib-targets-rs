@@ -1,5 +1,5 @@
 use crate::{sample_bilinear, GrayImage, GrayImageView};
-use nalgebra::{DMatrix, Matrix3, Point2, Vector3};
+use nalgebra::{DMatrix, Matrix3, Point2, SMatrix, SVector, Vector3};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Homography {
@@ -77,6 +77,44 @@ fn normalize_points(pts: &[Point2<f32>]) -> (Vec<Point2<f64>>, Matrix3<f64>) {
     (out, t)
 }
 
+fn normalize_points4(pts: &[Point2<f32>; 4]) -> ([Point2<f64>; 4], Matrix3<f64>) {
+    let n = 4.0_f64;
+    let mut cx = 0.0_f64;
+    let mut cy = 0.0_f64;
+    for p in pts {
+        cx += p.x as f64;
+        cy += p.y as f64;
+    }
+    cx /= n;
+    cy /= n;
+
+    let mut mean_dist = 0.0_f64;
+    for p in pts {
+        let dx = p.x as f64 - cx;
+        let dy = p.y as f64 - cy;
+        mean_dist += (dx * dx + dy * dy).sqrt();
+    }
+    mean_dist /= n;
+
+    let s = if mean_dist > 1e-12 {
+        (2.0_f64).sqrt() / mean_dist
+    } else {
+        1.0
+    };
+
+    let t = Matrix3::<f64>::new(s, 0.0, -s * cx, 0.0, s, -s * cy, 0.0, 0.0, 1.0);
+
+    let mut out = [Point2::new(0.0_f64, 0.0_f64); 4];
+    for (i, p) in pts.iter().enumerate() {
+        let x = p.x as f64;
+        let y = p.y as f64;
+        let v = t * Vector3::new(x, y, 1.0);
+        out[i] = Point2::new(v[0], v[1]);
+    }
+
+    (out, t)
+}
+
 /// Estimate H such that:  p_img ~ H * p_rect
 pub fn estimate_homography_rect_to_img(
     rect_pts: &[Point2<f32>],
@@ -86,18 +124,19 @@ pub fn estimate_homography_rect_to_img(
         return None;
     }
 
+    if rect_pts.len() == 4 {
+        let src: &[Point2<f32>; 4] = rect_pts.try_into().ok()?;
+        let dst: &[Point2<f32>; 4] = img_pts.try_into().ok()?;
+        return homography_from_4pt(src, dst);
+    }
+
     let (r, tr) = normalize_points(rect_pts);
     let (i, ti) = normalize_points(img_pts);
 
     // Build A (2N x 9)
     let n = rect_pts.len();
-    //
-    // NOTE: nalgebra's SVD is "thin": V^T has only min(m, n) rows. For the minimal
-    // 4-point case, A is 8x9 and the null-space vector is *not* included unless we
-    // make m >= n. Padding with all-zero rows preserves the null-space and keeps
-    // the implementation simple and robust for N=4.
     let rows = 2 * n;
-    let mut a = DMatrix::<f64>::zeros(rows.max(9), 9);
+    let mut a = DMatrix::<f64>::zeros(rows, 9);
 
     for k in 0..n {
         let x = r[k].x;
@@ -134,6 +173,74 @@ pub fn estimate_homography_rect_to_img(
     // Denormalize: H = Ti^{-1} * Hn * Tr
     let ti_inv = ti.try_inverse()?;
     let h_den = ti_inv * hn * tr;
+
+    // Normalize so h[2][2] = 1
+    let s = h_den[(2, 2)];
+    if s.abs() < 1e-12 {
+        return None;
+    }
+    let h_den = h_den / s;
+
+    Some(Homography {
+        h: [
+            [h_den[(0, 0)], h_den[(0, 1)], h_den[(0, 2)]],
+            [h_den[(1, 0)], h_den[(1, 1)], h_den[(1, 2)]],
+            [h_den[(2, 0)], h_den[(2, 1)], h_den[(2, 2)]],
+        ],
+    })
+}
+
+/// Compute H such that: dst ~ H * src (projective), using 4 point correspondences.
+/// - src: points in "patch/cell" coords
+/// - dst: points in image coords
+///
+/// Corner order must be consistent in both arrays: TL, TR, BR, BL.
+pub fn homography_from_4pt(src: &[Point2<f32>; 4], dst: &[Point2<f32>; 4]) -> Option<Homography> {
+    // Unknowns: [h11 h12 h13 h21 h22 h23 h31 h32], with h33 = 1
+    // For each correspondence (x,y)->(u,v):
+    // h11 x + h12 y + h13 - u h31 x - u h32 y = u
+    // h21 x + h22 y + h23 - v h31 x - v h32 y = v
+    let (src_n, t_src) = normalize_points4(src);
+    let (dst_n, t_dst) = normalize_points4(dst);
+
+    let mut a = SMatrix::<f64, 8, 8>::zeros();
+    let mut b = SVector::<f64, 8>::zeros();
+
+    for k in 0..4 {
+        let x = src_n[k].x;
+        let y = src_n[k].y;
+        let u = dst_n[k].x;
+        let v = dst_n[k].y;
+
+        // row 2k
+        let r0 = 2 * k;
+        a[(r0, 0)] = x;
+        a[(r0, 1)] = y;
+        a[(r0, 2)] = 1.0;
+        a[(r0, 6)] = -u * x;
+        a[(r0, 7)] = -u * y;
+        b[r0] = u;
+
+        // row 2k+1
+        let r1 = 2 * k + 1;
+        a[(r1, 3)] = x;
+        a[(r1, 4)] = y;
+        a[(r1, 5)] = 1.0;
+        a[(r1, 6)] = -v * x;
+        a[(r1, 7)] = -v * y;
+        b[r1] = v;
+    }
+
+    let x = a.lu().solve(&b)?;
+
+    let hn = Matrix3::<f64>::new(
+        x[0], x[1], x[2], //
+        x[3], x[4], x[5], //
+        x[6], x[7], 1.0,
+    );
+
+    let t_dst_inv = t_dst.try_inverse()?;
+    let h_den = t_dst_inv * hn * t_src;
 
     // Normalize so h[2][2] = 1
     let s = h_den[(2, 2)];
