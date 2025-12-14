@@ -2,10 +2,9 @@
 import argparse
 import json
 import math
-import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple
 
 import cv2
 import numpy as np
@@ -246,7 +245,12 @@ def default_center_circles(cols_corners: int, rows_corners: int) -> List[CircleS
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    """
+    Usage examplse:
+        python tools/synth_marker_target.py --out ./synthetic --num 1 --cols-corners 22 --rows-corners 22
+        --circle "11,11,white" --circle "12,11,black" --circle "12,12,white"
+    """
+    ap = argparse.ArgumentParser('Synthetic marker target images')
     ap.add_argument("--out", type=str, required=True, help="Output folder")
     ap.add_argument("--num", type=int, default=50, help="Number of images")
     ap.add_argument("--img-w", type=int, default=1280)
@@ -260,8 +264,8 @@ def main():
                     help="Circle spec 'sx,sy,polarity'. Repeat 3x. If omitted, uses a default center pattern.")
     ap.add_argument("--circle-diam-frac", type=float, default=0.5, help="Circle diameter / square size")
 
-    ap.add_argument("--noise-sigma", type=float, default=3.0)
-    ap.add_argument("--blur-ksize", type=int, default=0)
+    ap.add_argument("--noise-sigma", type=float, default=6.0)
+    ap.add_argument("--blur-ksize", type=int, default=7)
 
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()

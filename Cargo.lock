@@ -239,6 +239,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f1fe948ff07f4bd06c30984e69f5b4899c516a3ef74f34df92a2df2ab535495"
 
 [[package]]
+name = "calib-targets"
+version = "0.1.0"
+dependencies = [
+ "calib-targets-aruco",
+ "calib-targets-charuco",
+ "calib-targets-chessboard",
+ "calib-targets-core",
+ "chess-corners",
+ "image",
+ "log",
+ "nalgebra",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "calib-targets-aruco"
 version = "0.1.0"
 dependencies = [
@@ -295,25 +315,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "calib-targets-rs"
-version = "0.1.0"
-dependencies = [
- "calib-targets-aruco",
- "calib-targets-charuco",
- "calib-targets-chessboard",
- "calib-targets-core",
- "chess-corners",
- "image",
- "log",
- "nalgebra",
- "serde",
- "serde_json",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "cc"
 version = "1.2.49"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -333,9 +334,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f2077e3fd9d6b9bddcffcd26d860ba30209a5038c9b18c2c80eff508a2afba3"
+checksum = "fd9eaea8bacedc116b7839bc07441fc670f4bfdee0bca6b147079dba6948e8da"
 dependencies = [
  "anyhow",
  "chess-corners-core",
@@ -349,9 +350,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c84c8403364235b61f522584fb8f4110312f7978dde4126ab427cc5979b38d30"
+checksum = "3ae992c0e0d5223ddcaf91d6f08f439fd38348f184d14f86422c9af78144f7c5"
 dependencies = [
  "log",
 ]
@@ -468,12 +469,6 @@ name = "divrem"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69dde51e8fef5e12c1d65e0929b03d66e4c0c18282bc30ed2ca050ad6f44dd82"
-
-[[package]]
-name = "doc-comment"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "780955b8b195a21ab8e4ac6b60dd1dbdcec1dc6c51c0617964b08c81785e12c9"
 
 [[package]]
 name = "either"
@@ -744,7 +739,7 @@ dependencies = [
  "rgb",
  "tiff",
  "zune-core 0.5.0",
- "zune-jpeg 0.5.5",
+ "zune-jpeg 0.5.6",
 ]
 
 [[package]]
@@ -807,16 +802,15 @@ dependencies = [
 
 [[package]]
 name = "kiddo"
-version = "5.2.2"
+version = "5.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fc5459a4b132bf81ba0384127e03abb116610da569c4b77db8ab7f629489c71"
+checksum = "7722b5b12a2b83342ea1d2c6215915118f4dd5aaed6cab2bf4ce581838275d3c"
 dependencies = [
  "aligned-vec",
  "array-init",
  "az",
  "cmov",
  "divrem",
- "doc-comment",
  "fixed",
  "generator",
  "num-traits",
@@ -1408,9 +1402,9 @@ dependencies = [
 
 [[package]]
 name = "simd-adler32"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
+checksum = "e320a6c5ad31d271ad523dcf3ad13e2767ad8b1cb8f047f75a8aeaf8da139da2"
 
 [[package]]
 name = "simd_helpers"
@@ -1868,9 +1862,9 @@ dependencies = [
 
 [[package]]
 name = "zune-jpeg"
-version = "0.5.5"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6fb7703e32e9a07fb3f757360338b3a567a5054f21b5f52a666752e333d58e"
+checksum = "f520eebad972262a1dde0ec455bce4f8b298b1e5154513de58c114c4c54303e8"
 dependencies = [
  "zune-core 0.5.0",
 ]

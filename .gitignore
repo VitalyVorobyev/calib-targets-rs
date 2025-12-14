@@ -3,3 +3,4 @@ target
 *.pyc
 book/book
 tmpdata
+synthetic

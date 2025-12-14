@@ -11,8 +11,11 @@ use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{save_buffer, ImageBuffer, ImageReader, Luma};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "tracing")]
 use tracing::{info, info_span};
+#[cfg(feature = "tracing")]
 use tracing_log::LogTracer;
+#[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -167,16 +170,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     chess_cfg.params.threshold_rel = 0.2;
     chess_cfg.params.nms_radius = 2;
 
-    let span_corners = info_span!("chess_corners");
+    let span_corners = make_span("chess_corners");
     let (raw_corners, detect_corners_ms): (Vec<CornerDescriptor>, u64) = {
         let _g = span_corners.enter();
         let t0 = Instant::now();
         let corners = find_chess_corners_image(&img, &chess_cfg);
         let dt = t0.elapsed().as_millis() as u64;
+        #[cfg(feature = "tracing")]
         info!(
             duration_ms = dt,
             count = corners.len(),
             "found ChESS corners"
+        );
+        #[cfg(not(feature = "tracing"))]
+        log::info!(
+            "found ChESS corners duration_ms={} count={}",
+            dt,
+            corners.len()
         );
         (corners, dt)
     };
@@ -194,7 +204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let (board, detector) = build_detector(&cfg)?;
 
-    let span_detect = info_span!("charuco_detect");
+    let span_detect = make_span("charuco_detect");
     let (result, detect_charuco_ms) = {
         let _g = span_detect.enter();
         let t0 = Instant::now();
@@ -277,15 +287,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let json = serde_json::to_string_pretty(&report)?;
     fs::write(&output_path, json)?;
-    info!("wrote report JSON to {}", output_path.display());
+    log::info!("wrote report JSON to {}", output_path.display());
 
     Ok(())
 }
 
 fn init_tracing() {
-    let _ = LogTracer::init();
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    #[cfg(feature = "tracing")]
+    {
+        let _ = LogTracer::init();
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    }
+}
+
+#[cfg(feature = "tracing")]
+fn make_span(name: &str) -> tracing::Span {
+    info_span!(name)
+}
+
+#[cfg(not(feature = "tracing"))]
+fn make_span(_name: &str) -> NoopSpan {
+    NoopSpan
+}
+
+#[cfg(not(feature = "tracing"))]
+struct NoopSpan;
+#[cfg(not(feature = "tracing"))]
+struct NoopGuard;
+#[cfg(not(feature = "tracing"))]
+impl NoopSpan {
+    fn enter(&self) -> NoopGuard {
+        NoopGuard
+    }
 }
 
 fn build_detector(
@@ -460,6 +494,6 @@ fn save_mesh_view(path: &PathBuf, rect: &RectifiedMeshView) -> Result<(), image:
         img_buf.height(),
         image::ColorType::L8,
     )?;
-    info!("wrote mesh-rectified image to {}", path.display());
+    log::info!("wrote mesh-rectified image to {}", path.display());
     Ok(())
 }

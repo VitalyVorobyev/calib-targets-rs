@@ -11,8 +11,11 @@ use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{save_buffer, ImageBuffer, ImageReader, Luma};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "tracing")]
 use tracing::{info, info_span};
+#[cfg(feature = "tracing")]
 use tracing_log::LogTracer;
+#[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Deserialize)]
@@ -146,16 +149,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     chess_cfg.params.threshold_rel = 0.2;
     chess_cfg.params.nms_radius = 2;
 
-    let span_corners = info_span!("chess_corners");
+    let span_corners = make_span("chess_corners");
     let (raw_corners, detect_corners_ms): (Vec<CornerDescriptor>, u64) = {
         let _g = span_corners.enter();
         let t0 = Instant::now();
         let corners = find_chess_corners_image(&img, &chess_cfg);
         let detect_corners_ms = t0.elapsed().as_millis() as u64;
+        #[cfg(feature = "tracing")]
         info!(
             duration_ms = detect_corners_ms,
             count = corners.len(),
             "found ChESS corners"
+        );
+        #[cfg(not(feature = "tracing"))]
+        log::info!(
+            "found ChESS corners duration_ms={} count={}",
+            detect_corners_ms,
+            corners.len()
         );
         (corners, detect_corners_ms)
     };
@@ -163,23 +173,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let t_adapt = Instant::now();
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
     let adapt_ms = t_adapt.elapsed().as_millis() as u64;
+    #[cfg(feature = "tracing")]
     info!(
         duration_ms = adapt_ms,
         "adapted corners to calib-targets core type"
     );
+    #[cfg(not(feature = "tracing"))]
+    log::info!(
+        "adapted corners to calib-targets core type duration_ms={}",
+        adapt_ms
+    );
 
     // Configure the chessboard detector.
     let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
-    let span_detect = info_span!("chessboard_detect");
+    let span_detect = make_span("chessboard_detect");
     let (detection_res, detect_board_ms) = {
         let _g = span_detect.enter();
         let t0 = Instant::now();
         let det = detector.detect_from_corners(&target_corners);
         let detect_board_ms = t0.elapsed().as_millis() as u64;
+        #[cfg(feature = "tracing")]
         info!(
             duration_ms = detect_board_ms,
             detected = det.is_some(),
             "chessboard detection finished"
+        );
+        #[cfg(not(feature = "tracing"))]
+        log::info!(
+            "chessboard detection finished duration_ms={} detected={}",
+            detect_board_ms,
+            det.is_some()
         );
         (det, detect_board_ms)
     };
@@ -215,12 +238,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(rectified) => {
                 let rect_ms = t_mesh.elapsed().as_millis() as u64;
                 mesh_rectify_ms = Some(rect_ms);
+                #[cfg(feature = "tracing")]
                 info!(
                     duration_ms = rect_ms,
                     width = rectified.rect.width,
                     height = rectified.rect.height,
                     valid_cells = rectified.valid_cells,
                     "mesh rectification succeeded"
+                );
+                #[cfg(not(feature = "tracing"))]
+                log::info!(
+                    "mesh rectification succeeded duration_ms={} width={} height={} valid_cells={}",
+                    rect_ms,
+                    rectified.rect.width,
+                    rectified.rect.height,
+                    rectified.valid_cells
                 );
                 let t_save = Instant::now();
                 let mesh_path = cfg
@@ -233,16 +265,22 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mesh_save_ms = Some(t_save.elapsed().as_millis() as u64);
 
                 // Decode ArUco markers on the rectified grid.
-                let span_markers = info_span!("aruco_decode");
+                let span_markers = make_span("aruco_decode");
                 let (markers, scan_ms) = {
                     let _g = span_markers.enter();
                     let t0 = Instant::now();
 
                     match builtins::builtin_dictionary(&cfg.aruco_dictionary) {
                         None => {
+                            #[cfg(feature = "tracing")]
                             info!(
                                 dictionary = %cfg.aruco_dictionary,
                                 "unknown dictionary; skipping marker decoding"
+                            );
+                            #[cfg(not(feature = "tracing"))]
+                            log::info!(
+                                "unknown dictionary {}; skipping marker decoding",
+                                cfg.aruco_dictionary
                             );
                             (Vec::new(), 0u64)
                         }
@@ -272,12 +310,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 );
 
                                 let scan_ms = t0.elapsed().as_millis() as u64;
+                                #[cfg(feature = "tracing")]
                                 info!(
                                     duration_ms = scan_ms,
                                     dictionary = %dict.name,
                                     max_hamming = max_hamming,
                                     count = dets.len(),
                                     "decoded markers on rectified grid"
+                                );
+                                #[cfg(not(feature = "tracing"))]
+                                log::info!(
+                                    "decoded markers on rectified grid duration_ms={} dictionary={} max_hamming={} count={}",
+                                    scan_ms,
+                                    dict.name,
+                                    max_hamming,
+                                    dets.len()
                                 );
 
                                 (dets, scan_ms)
@@ -309,7 +356,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 mesh_rectified = Some(map_mesh_rectified(mesh_path, rectified));
             }
             Err(err) => {
+                #[cfg(feature = "tracing")]
                 info!(error = %err, "mesh rectification failed");
+                #[cfg(not(feature = "tracing"))]
+                log::info!("mesh rectification failed: {}", err);
             }
         }
     }
@@ -345,7 +395,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let json = serde_json::to_string_pretty(&report)?;
     fs::write(&report_path, json)?;
-    info!("wrote mesh report JSON to {}", report_path.display());
+    log::info!("wrote mesh report JSON to {}", report_path.display());
 
     Ok(())
 }
@@ -353,9 +403,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn init_tracing() {
     // Ignore errors if a logger/subscriber was already installed (e.g. when
     // running multiple examples in the same process).
-    let _ = LogTracer::init();
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    #[cfg(feature = "tracing")]
+    {
+        let _ = LogTracer::init();
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    }
+}
+
+#[cfg(feature = "tracing")]
+fn make_span(name: &str) -> tracing::Span {
+    info_span!(name)
+}
+
+#[cfg(not(feature = "tracing"))]
+fn make_span(_name: &str) -> NoopSpan {
+    NoopSpan
+}
+
+#[cfg(not(feature = "tracing"))]
+struct NoopSpan;
+#[cfg(not(feature = "tracing"))]
+struct NoopGuard;
+#[cfg(not(feature = "tracing"))]
+impl NoopSpan {
+    fn enter(&self) -> NoopGuard {
+        NoopGuard
+    }
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
@@ -442,6 +516,6 @@ fn save_mesh_view(path: &PathBuf, rect: &RectifiedMeshView) -> Result<(), image:
         img_buf.height(),
         image::ColorType::L8,
     )?;
-    info!("wrote mesh-rectified image to {}", path.display());
+    log::info!("wrote mesh-rectified image to {}", path.display());
     Ok(())
 }

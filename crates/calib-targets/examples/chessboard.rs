@@ -8,8 +8,11 @@ use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "tracing")]
 use tracing::{info, info_span};
+#[cfg(feature = "tracing")]
 use tracing_log::LogTracer;
+#[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
 /// Configuration for the chessboard example, loaded from JSON.
@@ -138,15 +141,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut chess_cfg = ChessConfig::single_scale();
     chess_cfg.params.threshold_rel = 0.2;
     chess_cfg.params.nms_radius = 2;
-    let span_corners = info_span!("chess_corners");
+    let span_corners = make_span("chess_corners");
     let raw_corners: Vec<CornerDescriptor> = {
         let _g = span_corners.enter();
         let t0 = Instant::now();
         let corners = find_chess_corners_image(&img, &chess_cfg);
+        let dt = t0.elapsed().as_millis() as u64;
+        #[cfg(feature = "tracing")]
         info!(
-            duration_ms = t0.elapsed().as_millis() as u64,
+            duration_ms = dt,
             count = corners.len(),
             "found ChESS corners"
+        );
+        #[cfg(not(feature = "tracing"))]
+        log::info!(
+            "found ChESS corners duration_ms={} count={}",
+            dt,
+            corners.len()
         );
         corners
     };
@@ -156,15 +167,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Configure the chessboard detector.
     let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
-    let span_detect = info_span!("chessboard_detect");
+    let span_detect = make_span("chessboard_detect");
     let detection = {
         let _g = span_detect.enter();
         let t0 = Instant::now();
         let det = detector.detect_from_corners(&target_corners);
+        let dt = t0.elapsed().as_millis() as u64;
+        #[cfg(feature = "tracing")]
         info!(
-            duration_ms = t0.elapsed().as_millis() as u64,
+            duration_ms = dt,
             detected = det.is_some(),
             "chessboard detection finished"
+        );
+        #[cfg(not(feature = "tracing"))]
+        log::info!(
+            "chessboard detection finished duration_ms={} detected={}",
+            dt,
+            det.is_some()
         );
         det
     };
@@ -214,9 +233,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn init_tracing() {
     // Ignore errors if a logger/subscriber was already installed (e.g. when
     // running multiple examples in the same process).
-    let _ = LogTracer::init();
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    #[cfg(feature = "tracing")]
+    {
+        let _ = LogTracer::init();
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+        let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
+    }
+}
+
+#[cfg(feature = "tracing")]
+fn make_span(name: &str) -> tracing::Span {
+    info_span!(name)
+}
+
+#[cfg(not(feature = "tracing"))]
+fn make_span(_name: &str) -> NoopSpan {
+    NoopSpan
+}
+
+#[cfg(not(feature = "tracing"))]
+struct NoopSpan;
+#[cfg(not(feature = "tracing"))]
+struct NoopGuard;
+#[cfg(not(feature = "tracing"))]
+impl NoopSpan {
+    fn enter(&self) -> NoopGuard {
+        NoopGuard
+    }
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {

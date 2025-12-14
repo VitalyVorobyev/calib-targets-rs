@@ -49,9 +49,15 @@ fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetectionResult, max_id
     );
 }
 
+fn testdata_path(name: &str) -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata")
+        .join(name)
+}
+
 #[test]
 fn detects_charuco_on_large_png() {
-    let img_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/large.png");
+    let img_path = testdata_path("large.png");
     let img = load_gray(&img_path);
     let raw_corners = detect_corners(&img);
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
@@ -91,7 +97,7 @@ fn detects_charuco_on_large_png() {
 
 #[test]
 fn detects_charuco_on_small_png() {
-    let img_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/small.png");
+    let img_path = testdata_path("small.png");
     let img = load_gray(&img_path);
     let raw_corners = detect_corners(&img);
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
@@ -132,7 +138,7 @@ fn detects_charuco_on_small_png() {
 
 #[test]
 fn detects_plain_chessboard_on_mid_png() {
-    let img_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../testdata/mid.png");
+    let img_path = testdata_path("mid.png");
     let img = load_gray(&img_path);
     let raw_corners = detect_corners(&img);
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
