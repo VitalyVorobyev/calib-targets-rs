@@ -111,6 +111,8 @@ To work on the project locally, you’ll need a recent stable Rust toolchain.
   mdbook build book
   ```
 
+For contribution rules see [AGENTS.md](./AGENTS.ms).
+
 ## License
 
 This project is dual-licensed under MIT or Apache-2.0, at your option. See the individual crate `Cargo.toml` files for details.
