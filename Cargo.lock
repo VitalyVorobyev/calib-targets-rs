@@ -313,7 +313,11 @@ version = "0.1.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
+ "chess-corners",
+ "image",
  "nalgebra",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
