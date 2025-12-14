@@ -159,8 +159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 max_i: rectified.max_i,
                 min_j: rectified.min_j,
                 max_j: rectified.max_j,
-                h_img_from_rect: rectified.h_img_from_rect.h,
-                h_rect_from_img: rectified.h_rect_from_img.h,
+                h_img_from_rect: rectified.h_img_from_rect.to_array(),
+                h_rect_from_img: rectified.h_rect_from_img.to_array(),
             });
         }
     }

@@ -21,7 +21,7 @@ fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
 }
 
 #[inline]
-pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
+pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
     let x0 = x.floor() as i32;
     let y0 = y.floor() as i32;
     let fx = x - x0 as f32;
@@ -34,7 +34,10 @@ pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
 
     let a = p00 + fx * (p10 - p00);
     let b = p01 + fx * (p11 - p01);
-    let v = a + fy * (b - a);
+    a + fy * (b - a)
+}
 
-    v.clamp(0.0, 255.0) as u8
+#[inline]
+pub fn sample_bilinear_u8(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
+    sample_bilinear(src, x, y,).clamp(0.0, 255.0) as u8
 }

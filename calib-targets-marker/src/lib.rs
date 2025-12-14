@@ -6,6 +6,9 @@
 //! - Match circle centers to known grid coordinates.
 //! - Output a TargetDetection with TargetKind::CheckerboardMarker.
 
+mod detect;
+mod circle_score;
+
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::{Corner, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;

@@ -13,7 +13,7 @@ mod rectify;
 pub use homography::{
     estimate_homography_rect_to_img, homography_from_4pt, warp_perspective_gray, Homography,
 };
-pub use image::{sample_bilinear, GrayImage, GrayImageView};
+pub use image::{sample_bilinear, sample_bilinear_u8, GrayImage, GrayImageView};
 pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use orientation_clustering::{

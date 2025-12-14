@@ -1,30 +1,5 @@
-use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
+use calib_targets_core::{sample_bilinear, homography_from_4pt, GrayImageView, Homography};
 use nalgebra::Point2;
-
-#[inline]
-fn get_gray(img: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
-    if x < 0 || y < 0 || x >= img.width as i32 || y >= img.height as i32 {
-        return 0;
-    }
-    img.data[y as usize * img.width + x as usize]
-}
-
-#[inline]
-fn sample_bilinear(img: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
-    let x0 = x.floor() as i32;
-    let y0 = y.floor() as i32;
-    let fx = x - x0 as f32;
-    let fy = y - y0 as f32;
-
-    let p00 = get_gray(img, x0, y0) as f32;
-    let p10 = get_gray(img, x0 + 1, y0) as f32;
-    let p01 = get_gray(img, x0, y0 + 1) as f32;
-    let p11 = get_gray(img, x0 + 1, y0 + 1) as f32;
-
-    let a = p00 + fx * (p10 - p00);
-    let b = p01 + fx * (p11 - p01);
-    a + fy * (b - a)
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CirclePolarity {

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use nalgebra::Point2;
 
-use calib_targets_core::GridCoords;
-use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams, GrayImageView, score_circle_in_square};
+use calib_targets_core::{GridCoords, GrayImageView};
+use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams, score_circle_in_square};
 
 pub fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,

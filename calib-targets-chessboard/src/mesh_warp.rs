@@ -1,5 +1,5 @@
 use calib_targets_core::{
-    estimate_homography_rect_to_img, sample_bilinear, GrayImage, GrayImageView, GridCoords,
+    estimate_homography_rect_to_img, sample_bilinear_u8, GrayImage, GrayImageView, GridCoords,
     Homography, LabeledCorner,
 };
 use std::collections::HashMap;
@@ -154,7 +154,7 @@ pub fn rectify_mesh_from_grid(
     // 3) Precompute per-cell homographies (cell-rect -> image)
     let mut cells = vec![
         Cell {
-            h_img_from_cellrect: Homography { h: [[0.0; 3]; 3] },
+            h_img_from_cellrect: Homography::zero(),
             valid: false
         };
         cells_x * cells_y
@@ -242,7 +242,7 @@ pub fn rectify_mesh_from_grid(
             if cell.valid {
                 let p_cell = Point2::new(x_local, y_local);
                 let p_img = cell.h_img_from_cellrect.apply(p_cell);
-                out[y * out_w + x] = sample_bilinear(src, p_img.x, p_img.y);
+                out[y * out_w + x] = sample_bilinear_u8(src, p_img.x, p_img.y);
             }
         }
     }
