@@ -1,6 +1,6 @@
 {
-  "image_path": "testdata/small.png",
-  "output_path": "tmpdata/chessboard_detection_small.json",
+  "image_path": "testdata/markerboard.png",
+  "output_path": "tmpdata/chessboard_detection_markerboard.json",
   "chessboard": {
     "min_corner_strength": 0.5,
     "min_corners": 10,

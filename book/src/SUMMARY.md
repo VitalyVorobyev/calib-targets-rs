@@ -1,4 +1,19 @@
 # Summary
 
 - [Introduction](intro.md)
-
+- [Project Overview](overview.md)
+- [Conventions](conventions.md)
+- [Pipeline Overview](pipeline.md)
+- [Crates](crates.md)
+  - [calib-targets-core](core.md)
+  - [calib-targets-chessboard](chessboard.md)
+  - [calib-targets-aruco](aruco.md)
+  - [calib-targets-charuco](charuco.md)
+  - [calib-targets-marker](marker.md)
+  - [calib-targets (facade)](facade.md)
+- [Examples](examples.md)
+  - [Chessboard Detection](example_chessboard.md)
+  - [Global Rectification](example_rectify_global.md)
+  - [Mesh Rectification](example_rectify_mesh.md)
+- [Data and Tools](data_and_tools.md)
+- [Roadmap](roadmap.md)
