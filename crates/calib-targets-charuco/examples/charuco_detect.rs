@@ -227,6 +227,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             params.scan.dedup_by_id = dedup_by_id;
         }
     }
+    params.build_rectified_image =
+        cfg.rectified_path.is_some() || cfg.mesh_rectified_path.is_some();
 
     let detector = CharucoDetector::new(board, params);
 
@@ -309,31 +311,34 @@ fn fill_report_from_detection(
         .or_else(|| cfg.mesh_rectified_path.as_ref())
         .map(PathBuf::from);
 
-    let rectified_out = RectifiedOut {
-        path: rect_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
-        width: res.rectified.rect.width,
-        height: res.rectified.rect.height,
-        px_per_square: res.rectified.px_per_square,
-        min_i: res.rectified.min_i,
-        min_j: res.rectified.min_j,
-        cells_x: res.rectified.cells_x,
-        cells_y: res.rectified.cells_y,
-        valid_cells: res.rectified.valid_cells,
-    };
+    if let Some(rectified) = res.rectified.as_ref() {
+        let rectified_out = RectifiedOut {
+            path: rect_path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            width: rectified.rect.width,
+            height: rectified.rect.height,
+            px_per_square: rectified.px_per_square,
+            min_i: rectified.min_i,
+            min_j: rectified.min_j,
+            cells_x: rectified.cells_x,
+            cells_y: rectified.cells_y,
+            valid_cells: rectified.valid_cells,
+        };
 
-    if let Some(path) = rect_path {
-        if let Err(err) = save_rectified(&path, &res.rectified) {
-            eprintln!("failed to save rectified image to {}: {err}", path.display());
+        if let Some(path) = rect_path {
+            if let Err(err) = save_rectified(&path, rectified) {
+                eprintln!("failed to save rectified image to {}: {err}", path.display());
+            }
         }
+
+        report.rectified = Some(rectified_out);
     }
 
     let markers = res
         .markers
         .iter()
-        .map(|m| map_marker(&res.rectified, m))
+        .map(|m| map_marker(res.rectified.as_ref(), m))
         .collect::<Vec<_>>();
 
-    report.rectified = Some(rectified_out);
     report.markers = Some(markers);
     report.alignment = Some(AlignmentOut {
         transform: [
@@ -399,15 +404,20 @@ fn map_detection(det: TargetDetection, board: Option<&CharucoBoard>) -> OutputDe
     }
 }
 
-fn map_marker(rect: &calib_targets_chessboard::RectifiedMeshView, m: &calib_targets_aruco::MarkerDetection) -> OutputMarker {
+fn map_marker(
+    rect: Option<&calib_targets_chessboard::RectifiedMeshView>,
+    m: &calib_targets_aruco::MarkerDetection,
+) -> OutputMarker {
     let corners_rect = m.corners_rect.map(|p| [p.x, p.y]);
 
-    let corners_img = if m.sx >= 0 && m.sy >= 0 {
-        rect.cell_corners_img(m.sx as usize, m.sy as usize)
-            .map(|pts| pts.map(|p| [p.x, p.y]))
-    } else {
-        None
-    };
+    let corners_img = rect.and_then(|view| {
+        if m.sx >= 0 && m.sy >= 0 {
+            view.cell_corners_img(m.sx as usize, m.sy as usize)
+                .map(|pts| pts.map(|p| [p.x, p.y]))
+        } else {
+            None
+        }
+    });
 
     let center_rect = [
         0.25 * (corners_rect[0][0] + corners_rect[1][0] + corners_rect[2][0] + corners_rect[3][0]),
@@ -423,7 +433,9 @@ fn map_marker(rect: &calib_targets_chessboard::RectifiedMeshView, m: &calib_targ
     OutputMarker {
         id: m.id,
         cell: [m.sx, m.sy],
-        grid_cell: [rect.min_i + m.sx, rect.min_j + m.sy],
+        grid_cell: rect
+            .map(|view| [view.min_i + m.sx, view.min_j + m.sy])
+            .unwrap_or([m.sx, m.sy]),
         center_rect,
         center_img,
         rotation: m.rotation,

@@ -1,178 +1,43 @@
-use std::collections::HashMap;
+//! ChArUco detection pipeline.
 
+use crate::alignment::{map_charuco_corners, solve_alignment, CharucoAlignment};
+use crate::board::{CharucoBoard, MarkerLayout};
 use calib_targets_aruco::{
-    scan_decode_markers, Dictionary, MarkerDetection, Matcher, ScanDecodeConfig,
+    scan_decode_markers, scan_decode_markers_in_cells, MarkerCell, MarkerDetection, Matcher,
+    ScanDecodeConfig,
 };
 use calib_targets_chessboard::{
     rectify_mesh_from_grid, ChessboardDetector, ChessboardParams, GridGraphParams, MeshWarpError,
     RectifiedMeshView,
 };
-use calib_targets_core::{
-    Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
-};
+use calib_targets_core::{Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection};
 use nalgebra::Point2;
+use std::collections::HashMap;
 
-/// Marker placement scheme for the board.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MarkerLayout {
-    /// OpenCV-style ChArUco layout:
-    /// - markers are placed on white squares only (assuming top-left square is black),
-    /// - marker IDs are assigned sequentially in row-major order over those squares.
-    OpenCvCharuco,
-}
-
-/// Static ChArUco board specification.
-///
-/// `rows`/`cols` are **square counts** (not inner corner counts).
-#[derive(Clone, Copy, Debug)]
-pub struct CharucoBoardSpec {
-    pub rows: u32,
-    pub cols: u32,
-    pub cell_size: f32,
-    pub marker_size_rel: f32,
-    pub dictionary: Dictionary,
-    pub marker_layout: MarkerLayout,
-}
-
-#[derive(thiserror::Error, Debug)]
-pub enum CharucoBoardError {
-    #[error("rows and cols must be >= 2")]
-    InvalidSize,
-    #[error("cell_size must be > 0")]
-    InvalidCellSize,
-    #[error("marker_size_rel must be in (0, 1]")]
-    InvalidMarkerSizeRel,
-    #[error("dictionary has no codes")]
-    EmptyDictionary,
-    #[error("board needs {needed} markers, dictionary has {available}")]
-    NotEnoughDictionaryCodes { needed: usize, available: usize },
-}
-
-/// Precomputed board mapping helpers.
-#[derive(Clone, Debug)]
-pub struct CharucoBoard {
-    spec: CharucoBoardSpec,
-    marker_positions: Vec<[i32; 2]>,
-}
-
-impl CharucoBoard {
-    pub fn new(spec: CharucoBoardSpec) -> Result<Self, CharucoBoardError> {
-        if spec.rows < 2 || spec.cols < 2 {
-            return Err(CharucoBoardError::InvalidSize);
-        }
-        if !spec.cell_size.is_finite() || spec.cell_size <= 0.0 {
-            return Err(CharucoBoardError::InvalidCellSize);
-        }
-        if !spec.marker_size_rel.is_finite()
-            || spec.marker_size_rel <= 0.0
-            || spec.marker_size_rel > 1.0
-        {
-            return Err(CharucoBoardError::InvalidMarkerSizeRel);
-        }
-        if spec.dictionary.codes.is_empty() {
-            return Err(CharucoBoardError::EmptyDictionary);
-        }
-
-        let marker_positions = match spec.marker_layout {
-            MarkerLayout::OpenCvCharuco => open_cv_charuco_marker_positions(spec.rows, spec.cols),
-        };
-
-        let needed = marker_positions.len();
-        let available = spec.dictionary.codes.len();
-        if available < needed {
-            return Err(CharucoBoardError::NotEnoughDictionaryCodes { needed, available });
-        }
-
-        Ok(Self {
-            spec,
-            marker_positions,
-        })
-    }
-
-    #[inline]
-    pub fn spec(&self) -> CharucoBoardSpec {
-        self.spec
-    }
-
-    /// Expected number of *inner* chessboard corners in vertical direction.
-    #[inline]
-    pub fn expected_inner_rows(&self) -> u32 {
-        self.spec.rows - 1
-    }
-
-    /// Expected number of *inner* chessboard corners in horizontal direction.
-    #[inline]
-    pub fn expected_inner_cols(&self) -> u32 {
-        self.spec.cols - 1
-    }
-
-    /// Mapping from marker id -> board cell (square) coordinates.
-    #[inline]
-    pub fn marker_position(&self, id: u32) -> Option<[i32; 2]> {
-        self.marker_positions.get(id as usize).copied()
-    }
-
-    /// Convert a board **corner coordinate** `(i, j)` into a ChArUco corner id.
-    ///
-    /// Returns `None` if the corner is outside the inner corner range.
-    pub fn charuco_corner_id_from_board_corner(&self, i: i32, j: i32) -> Option<u32> {
-        let cols = i32::try_from(self.spec.cols).ok()?;
-        let rows = i32::try_from(self.spec.rows).ok()?;
-
-        if i <= 0 || j <= 0 || i >= cols || j >= rows {
-            return None;
-        }
-
-        let inner_cols = cols - 1;
-        let ii = i - 1;
-        let jj = j - 1;
-        Some((jj as u32) * (inner_cols as u32) + (ii as u32))
-    }
-
-    /// Physical 2D point (board plane) for a ChArUco corner id.
-    ///
-    /// Coordinates are in the board reference frame with origin at the top-left board corner.
-    pub fn charuco_object_xy(&self, id: u32) -> Option<Point2<f32>> {
-        let cols = self.spec.cols.checked_sub(1)?; // inner corner cols
-        let rows = self.spec.rows.checked_sub(1)?; // inner corner rows
-        let count = cols.checked_mul(rows)?;
-        if id >= count {
-            return None;
-        }
-        let i = (id % cols) as f32 + 1.0;
-        let j = (id / cols) as f32 + 1.0;
-        Some(Point2::new(
-            i * self.spec.cell_size,
-            j * self.spec.cell_size,
-        ))
-    }
-}
-
-fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<[i32; 2]> {
-    let mut out = Vec::new();
-    for j in 0..(rows as i32) {
-        for i in 0..(cols as i32) {
-            // OpenCV: top-left square is black => white squares have (i+j) odd.
-            if ((i + j) & 1) == 1 {
-                out.push([i, j]);
-            }
-        }
-    }
-    out
-}
-
+/// Configuration for the ChArUco detector.
 #[derive(Clone, Debug)]
 pub struct CharucoDetectorParams {
+    /// Pixels per board square in the canonical sampling space.
     pub px_per_square: f32,
+    /// Chessboard detection parameters.
     pub chessboard: ChessboardParams,
+    /// Grid graph parameters.
     pub graph: GridGraphParams,
+    /// Marker scan parameters.
     pub scan: ScanDecodeConfig,
+    /// Maximum Hamming distance for marker matching.
     pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     pub min_marker_inliers: usize,
+    /// If true, build a full rectified mesh image for output/debugging.
+    /// This is more expensive than per-cell decoding.
+    pub build_rectified_image: bool,
+    /// If true, fall back to full rectified decoding when per-cell alignment is weak.
+    pub fallback_to_rectified: bool,
 }
 
 impl CharucoDetectorParams {
+    /// Build a reasonable default configuration for the given board.
     pub fn for_board(board: &CharucoBoard) -> Self {
         let chessboard = ChessboardParams {
             min_corner_strength: 0.5,
@@ -199,10 +64,13 @@ impl CharucoDetectorParams {
             scan,
             max_hamming,
             min_marker_inliers: 8,
+            build_rectified_image: false,
+            fallback_to_rectified: true,
         }
     }
 }
 
+/// Errors returned by the ChArUco detector.
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoDetectError {
     #[error("chessboard not detected")]
@@ -215,46 +83,19 @@ pub enum CharucoDetectError {
     AlignmentFailed { inliers: usize },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GridTransform {
-    pub a: i32,
-    pub b: i32,
-    pub c: i32,
-    pub d: i32,
-}
-
-impl GridTransform {
-    #[inline]
-    pub fn apply(&self, i: i32, j: i32) -> [i32; 2] {
-        [self.a * i + self.b * j, self.c * i + self.d * j]
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct CharucoAlignment {
-    pub transform: GridTransform,
-    pub translation: [i32; 2],
-    pub marker_inliers: Vec<usize>,
-}
-
-impl CharucoAlignment {
-    #[inline]
-    pub fn map(&self, i: i32, j: i32) -> [i32; 2] {
-        let [x, y] = self.transform.apply(i, j);
-        [x + self.translation[0], y + self.translation[1]]
-    }
-}
-
+/// Output of a ChArUco detection run.
 #[derive(Clone, Debug)]
 pub struct CharucoDetectionResult {
     pub detection: TargetDetection,
     pub chessboard: TargetDetection,
     pub chessboard_inliers: Vec<usize>,
-    pub markers: Vec<MarkerDetection>,
+    pub markers: Vec<calib_targets_aruco::MarkerDetection>,
     pub alignment: CharucoAlignment,
-    pub rectified: RectifiedMeshView,
+    /// Optional rectified mesh view (built only if requested).
+    pub rectified: Option<RectifiedMeshView>,
 }
 
+/// Grid-first ChArUco detector.
 pub struct CharucoDetector {
     board: CharucoBoard,
     params: CharucoDetectorParams,
@@ -262,6 +103,7 @@ pub struct CharucoDetector {
 }
 
 impl CharucoDetector {
+    /// Create a detector for a given board and parameters.
     pub fn new(board: CharucoBoard, mut params: CharucoDetectorParams) -> Self {
         if params.chessboard.expected_rows.is_none() {
             params.chessboard.expected_rows = Some(board.expected_inner_rows());
@@ -285,16 +127,22 @@ impl CharucoDetector {
         }
     }
 
+    /// Board definition used by the detector.
     #[inline]
     pub fn board(&self) -> &CharucoBoard {
         &self.board
     }
 
+    /// Detector parameters.
     #[inline]
     pub fn params(&self) -> &CharucoDetectorParams {
         &self.params
     }
 
+    /// Detect a ChArUco board from an image and a set of corners.
+    ///
+    /// This uses per-cell marker sampling by default. Set
+    /// `build_rectified_image` if you need a rectified output image.
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
@@ -306,25 +154,17 @@ impl CharucoDetector {
             .detect_from_corners(corners)
             .ok_or(CharucoDetectError::ChessboardNotDetected)?;
 
-        let rectified = rectify_mesh_from_grid(
+        let corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
+        let cells = build_marker_cells(&corner_map);
+
+        let mut scan_cfg = self.params.scan.clone();
+        scan_cfg.dedup_by_id = false;
+
+        let markers = scan_decode_markers_in_cells(
             image,
-            &chessboard.detection.corners,
-            &chessboard.inliers,
+            &cells,
             self.params.px_per_square,
-        )?;
-
-        let rect_view = GrayImageView {
-            width: rectified.rect.width,
-            height: rectified.rect.height,
-            data: &rectified.rect.data,
-        };
-
-        let markers = scan_decode_markers(
-            &rect_view,
-            rectified.cells_x,
-            rectified.cells_y,
-            rectified.px_per_square,
-            &self.params.scan,
+            &scan_cfg,
             &self.matcher,
         );
 
@@ -332,8 +172,38 @@ impl CharucoDetector {
             return Err(CharucoDetectError::NoMarkers);
         }
 
-        let alignment = solve_alignment(&self.board, &markers)
+        let mut rectified_for_output = None;
+        let (mut markers, mut alignment) = select_alignment(&self.board, markers)
             .ok_or(CharucoDetectError::AlignmentFailed { inliers: 0usize })?;
+
+        if alignment.marker_inliers.len() < self.params.min_marker_inliers
+            && self.params.fallback_to_rectified
+        {
+            let rectified = rectify_mesh_from_grid(
+                image,
+                &chessboard.detection.corners,
+                &chessboard.inliers,
+                self.params.px_per_square,
+            )?;
+            let rect_view = GrayImageView {
+                width: rectified.rect.width,
+                height: rectified.rect.height,
+                data: &rectified.rect.data,
+            };
+            let rect_markers = scan_decode_markers(
+                &rect_view,
+                rectified.cells_x,
+                rectified.cells_y,
+                rectified.px_per_square,
+                &scan_cfg,
+                &self.matcher,
+            );
+            if let Some((m, a)) = select_alignment(&self.board, rect_markers) {
+                markers = m;
+                alignment = a;
+                rectified_for_output = Some(rectified);
+            }
+        }
 
         if alignment.marker_inliers.len() < self.params.min_marker_inliers {
             return Err(CharucoDetectError::AlignmentFailed {
@@ -342,6 +212,17 @@ impl CharucoDetector {
         }
 
         let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+
+        let rectified = if self.params.build_rectified_image && rectified_for_output.is_none() {
+            Some(rectify_mesh_from_grid(
+                image,
+                &chessboard.detection.corners,
+                &chessboard.inliers,
+                self.params.px_per_square,
+            )?)
+        } else {
+            rectified_for_output
+        };
 
         Ok(CharucoDetectionResult {
             detection,
@@ -354,156 +235,97 @@ impl CharucoDetector {
     }
 }
 
-fn solve_alignment(board: &CharucoBoard, markers: &[MarkerDetection]) -> Option<CharucoAlignment> {
-    #[derive(Clone, Copy)]
-    struct Pair {
-        idx: usize,
-        sx: i32,
-        sy: i32,
-        ex: i32,
-        ey: i32,
-    }
-
-    let pairs: Vec<Pair> = markers
-        .iter()
-        .enumerate()
-        .filter_map(|(idx, m)| {
-            board.marker_position(m.id).map(|[ex, ey]| Pair {
-                idx,
-                sx: m.sx,
-                sy: m.sy,
-                ex,
-                ey,
-            })
-        })
-        .collect();
-
-    if pairs.is_empty() {
-        return None;
-    }
-
-    let transforms = [
-        GridTransform {
-            a: 1,
-            b: 0,
-            c: 0,
-            d: 1,
-        },
-        GridTransform {
-            a: 0,
-            b: 1,
-            c: -1,
-            d: 0,
-        },
-        GridTransform {
-            a: -1,
-            b: 0,
-            c: 0,
-            d: -1,
-        },
-        GridTransform {
-            a: 0,
-            b: -1,
-            c: 1,
-            d: 0,
-        },
-        GridTransform {
-            a: -1,
-            b: 0,
-            c: 0,
-            d: 1,
-        },
-        GridTransform {
-            a: 1,
-            b: 0,
-            c: 0,
-            d: -1,
-        },
-        GridTransform {
-            a: 0,
-            b: 1,
-            c: 1,
-            d: 0,
-        },
-        GridTransform {
-            a: 0,
-            b: -1,
-            c: -1,
-            d: 0,
-        },
-    ];
-
-    let mut best: Option<(usize, GridTransform, [i32; 2], Vec<usize>)> = None;
-
-    for transform in transforms {
-        let mut counts: HashMap<[i32; 2], usize> = HashMap::new();
-        for p in &pairs {
-            let [rx, ry] = transform.apply(p.sx, p.sy);
-            let t = [p.ex - rx, p.ey - ry];
-            *counts.entry(t).or_insert(0) += 1;
-        }
-
-        let (translation, _) = counts.into_iter().max_by_key(|(_, c)| *c)?;
-
-        let mut inliers = Vec::new();
-        for p in &pairs {
-            let [x, y] = transform.apply(p.sx, p.sy);
-            if x + translation[0] == p.ex && y + translation[1] == p.ey {
-                inliers.push(p.idx);
-            }
-        }
-
-        let candidate = (inliers.len(), transform, translation, inliers);
-        match best {
-            None => best = Some(candidate),
-            Some((best_n, _, _, _)) => {
-                if candidate.0 > best_n {
-                    best = Some(candidate);
-                }
+fn build_corner_map(
+    corners: &[LabeledCorner],
+    inliers: &[usize],
+) -> HashMap<GridCoords, Point2<f32>> {
+    let mut map = HashMap::new();
+    for &idx in inliers {
+        if let Some(c) = corners.get(idx) {
+            if let Some(g) = c.grid {
+                map.insert(g, c.position);
             }
         }
     }
-
-    let (_, transform, translation, marker_inliers) = best?;
-    Some(CharucoAlignment {
-        transform,
-        translation,
-        marker_inliers,
-    })
+    map
 }
 
-fn map_charuco_corners(
+fn build_marker_cells(map: &HashMap<GridCoords, Point2<f32>>) -> Vec<MarkerCell> {
+    let mut min_i = i32::MAX;
+    let mut min_j = i32::MAX;
+    let mut max_i = i32::MIN;
+    let mut max_j = i32::MIN;
+
+    for g in map.keys() {
+        min_i = min_i.min(g.i);
+        min_j = min_j.min(g.j);
+        max_i = max_i.max(g.i);
+        max_j = max_j.max(g.j);
+    }
+
+    if min_i == i32::MAX || min_j == i32::MAX {
+        return Vec::new();
+    }
+
+    let cells_x = (max_i - min_i).max(0) as usize;
+    let cells_y = (max_j - min_j).max(0) as usize;
+    let mut out = Vec::with_capacity(cells_x * cells_y);
+    for j in min_j..max_j {
+        for i in min_i..max_i {
+            let g00 = GridCoords { i, j };
+            let g10 = GridCoords { i: i + 1, j };
+            let g11 = GridCoords { i: i + 1, j: j + 1 };
+            let g01 = GridCoords { i, j: j + 1 };
+
+            let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
+                (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
+            else {
+                continue;
+            };
+
+            out.push(MarkerCell {
+                sx: i,
+                sy: j,
+                corners_img: [p00, p10, p11, p01],
+            });
+        }
+    }
+
+    out
+}
+
+fn select_alignment(
     board: &CharucoBoard,
-    chessboard: &TargetDetection,
-    alignment: &CharucoAlignment,
-) -> TargetDetection {
-    let mut corners = Vec::new();
+    markers: Vec<MarkerDetection>,
+) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
+    let mut candidates: Vec<(usize, CharucoAlignment, Vec<MarkerDetection>)> = Vec::new();
 
-    for c in &chessboard.corners {
-        let Some(g) = c.grid else {
-            continue;
-        };
-
-        let [bi, bj] = alignment.map(g.i, g.j);
-        let Some(id) = board.charuco_corner_id_from_board_corner(bi, bj) else {
-            continue;
-        };
-
-        corners.push(LabeledCorner {
-            position: c.position,
-            grid: Some(GridCoords {
-                i: bi - 1,
-                j: bj - 1,
-            }),
-            id: Some(id),
-            confidence: c.confidence,
-        });
+    if let Some(alignment) = solve_alignment(board, &markers) {
+        candidates.push((alignment.marker_inliers.len(), alignment, markers.clone()));
     }
 
-    corners.sort_by_key(|c| c.id.unwrap_or(u32::MAX));
+    if board.spec().marker_layout == MarkerLayout::OpenCvCharuco {
+        let even = markers
+            .iter()
+            .cloned()
+            .filter(|m| ((m.sx + m.sy) & 1) == 0)
+            .collect::<Vec<_>>();
+        if let Some(alignment) = solve_alignment(board, &even) {
+            candidates.push((alignment.marker_inliers.len(), alignment, even));
+        }
 
-    TargetDetection {
-        kind: TargetKind::Charuco,
-        corners,
+        let odd = markers
+            .iter()
+            .cloned()
+            .filter(|m| ((m.sx + m.sy) & 1) != 0)
+            .collect::<Vec<_>>();
+        if let Some(alignment) = solve_alignment(board, &odd) {
+            candidates.push((alignment.marker_inliers.len(), alignment, odd));
+        }
     }
+
+    candidates
+        .into_iter()
+        .max_by_key(|(inliers, _, _)| *inliers)
+        .map(|(_, alignment, markers)| (markers, alignment))
 }

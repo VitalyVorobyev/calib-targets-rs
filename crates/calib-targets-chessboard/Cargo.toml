@@ -6,7 +6,7 @@ description = "Plain chessboard detector built on top of ChESS corners"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-calib-targets-core = { path = "../calib-targets-core" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
 nalgebra = "0.34"
 log = "0.4"
 kiddo = "5.2.0"
