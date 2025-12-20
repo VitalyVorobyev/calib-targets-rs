@@ -502,7 +502,6 @@ mod tests {
             orientation: theta,
             orientation_cluster: None,
             strength,
-            phase: 0,
         }
     }
 

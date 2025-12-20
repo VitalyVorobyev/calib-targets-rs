@@ -14,7 +14,7 @@ calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.1" }
 calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.1" }
 calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
 calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
-chess-corners = { version = "0.1" }
+chess-corners = { version = "0.2" }
 nalgebra = "0.34"
 log = "0.4"
 serde = { version = "1", features = ["derive"] }

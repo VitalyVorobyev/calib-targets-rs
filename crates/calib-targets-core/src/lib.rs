@@ -40,9 +40,6 @@ pub struct Corner {
 
     /// Strength / response of the corner detector.
     pub strength: f32,
-
-    /// Optional phase / parity (0..3) describing local black/white configuration.
-    pub phase: u8,
 }
 
 impl Corner {

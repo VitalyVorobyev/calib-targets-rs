@@ -357,7 +357,6 @@ mod tests {
             orientation,
             orientation_cluster: None,
             strength: 1.0,
-            phase: 0,
         }
     }
 

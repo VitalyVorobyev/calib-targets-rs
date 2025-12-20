@@ -30,7 +30,6 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
         orientation: c.orientation,
         orientation_cluster: None,
         strength: c.response,
-        phase: c.phase,
     }
 }
 

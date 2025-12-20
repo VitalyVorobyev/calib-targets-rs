@@ -340,9 +340,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd9eaea8bacedc116b7839bc07441fc670f4bfdee0bca6b147079dba6948e8da"
+checksum = "61a92560a1f28512b290e1bd7534c7f34fbf0a3a56635eefa80a365a03e9a66f"
 dependencies = [
  "anyhow",
  "chess-corners-core",
@@ -356,9 +356,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae992c0e0d5223ddcaf91d6f08f439fd38348f184d14f86422c9af78144f7c5"
+checksum = "12819fef6c2140511982c6bd688d4316149229accf6e060d6f03c41ba1965a6f"
 dependencies = [
  "log",
 ]
