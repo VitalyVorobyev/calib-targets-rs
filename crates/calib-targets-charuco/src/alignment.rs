@@ -2,7 +2,6 @@
 
 use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
 
 /// Integer grid transform used for marker alignment.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,43 +144,6 @@ pub(crate) fn solve_alignment(
         translation,
         marker_inliers,
     })
-}
-
-/// Map detected chessboard corners into ChArUco corner IDs using the alignment.
-pub(crate) fn map_charuco_corners(
-    board: &CharucoBoard,
-    chessboard: &TargetDetection,
-    alignment: &CharucoAlignment,
-) -> TargetDetection {
-    let mut corners = Vec::new();
-
-    for c in &chessboard.corners {
-        let Some(g) = c.grid else {
-            continue;
-        };
-
-        let [bi, bj] = alignment.map(g.i, g.j);
-        let Some(id) = board.charuco_corner_id_from_board_corner(bi, bj) else {
-            continue;
-        };
-
-        corners.push(LabeledCorner {
-            position: c.position,
-            grid: Some(GridCoords {
-                i: bi - 1,
-                j: bj - 1,
-            }),
-            id: Some(id),
-            confidence: c.confidence,
-        });
-    }
-
-    corners.sort_by_key(|c| c.id.unwrap_or(u32::MAX));
-
-    TargetDetection {
-        kind: TargetKind::Charuco,
-        corners,
-    }
 }
 
 fn marker_pairs(board: &CharucoBoard, markers: &[MarkerDetection]) -> Vec<Pair> {

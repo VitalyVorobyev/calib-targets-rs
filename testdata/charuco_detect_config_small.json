@@ -38,7 +38,7 @@
     "max_hamming": 0,
     "border_bits": 1,
     "inset_frac": 0.06,
-    "min_border_score": 0.85,
+    "min_border_score": 0.45,
     "dedup_by_id": true
   }
 }

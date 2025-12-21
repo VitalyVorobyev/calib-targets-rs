@@ -1,6 +1,6 @@
 //! ChArUco detection pipeline.
 
-use crate::alignment::{map_charuco_corners, solve_alignment, CharucoAlignment};
+use crate::alignment::{solve_alignment, CharucoAlignment};
 use crate::board::{CharucoBoard, MarkerLayout};
 use calib_targets_aruco::{
     decode_marker_in_cell, scan_decode_markers, scan_decode_markers_in_cells, MarkerCell,
@@ -10,9 +10,11 @@ use calib_targets_chessboard::{
     rectify_mesh_from_grid, ChessboardDetector, ChessboardParams, GridGraphParams, MeshWarpError,
     RectifiedMeshView,
 };
-use calib_targets_core::{Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection};
+use calib_targets_core::{
+    Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
+};
 use nalgebra::Point2;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Configuration for the ChArUco detector.
 #[derive(Clone, Debug)]
@@ -94,7 +96,10 @@ pub struct CharucoDetectionResult {
     pub detection: TargetDetection,
     pub chessboard: TargetDetection,
     pub chessboard_inliers: Vec<usize>,
+    /// Raw marker detections in the rectified grid coordinate system.
     pub markers: Vec<calib_targets_aruco::MarkerDetection>,
+    /// Marker square coordinates aligned to the board definition.
+    pub marker_board_cells: Vec<[i32; 2]>,
     pub alignment: CharucoAlignment,
     /// Optional rectified mesh view (built only if requested).
     pub rectified: Option<RectifiedMeshView>,
@@ -249,7 +254,15 @@ impl CharucoDetector {
             });
         }
 
-        let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+        let (markers, alignment) = retain_inlier_markers(markers, alignment);
+        let marker_board_cells = marker_board_cells(&self.board, &markers, &alignment);
+
+        let detection = map_charuco_corners_from_markers(
+            &self.board,
+            &chessboard.detection,
+            &alignment,
+            &marker_board_cells,
+        );
 
         let rectified = if self.params.build_rectified_image && rectified_for_output.is_none() {
             Some(rectify_mesh_from_grid(
@@ -267,6 +280,7 @@ impl CharucoDetector {
             chessboard: chessboard.detection,
             chessboard_inliers: chessboard.inliers,
             markers,
+            marker_board_cells,
             alignment,
             rectified,
         })
@@ -446,4 +460,170 @@ fn select_alignment(
         .into_iter()
         .max_by_key(|(inliers, _, _)| *inliers)
         .map(|(_, alignment, markers)| (markers, alignment))
+}
+
+fn retain_inlier_markers(
+    markers: Vec<MarkerDetection>,
+    mut alignment: CharucoAlignment,
+) -> (Vec<MarkerDetection>, CharucoAlignment) {
+    if alignment.marker_inliers.len() == markers.len() {
+        return (markers, alignment);
+    }
+
+    let mut keep = vec![false; markers.len()];
+    for &idx in &alignment.marker_inliers {
+        if let Some(slot) = keep.get_mut(idx) {
+            *slot = true;
+        }
+    }
+
+    let mut filtered = Vec::with_capacity(alignment.marker_inliers.len());
+    for (idx, marker) in markers.into_iter().enumerate() {
+        if keep[idx] {
+            filtered.push(marker);
+        }
+    }
+
+    alignment.marker_inliers = (0..filtered.len()).collect();
+    (filtered, alignment)
+}
+
+fn marker_board_cells(
+    board: &CharucoBoard,
+    markers: &[MarkerDetection],
+    alignment: &CharucoAlignment,
+) -> Vec<[i32; 2]> {
+    markers
+        .iter()
+        .map(|marker| {
+            let mapped = alignment.map(marker.sx, marker.sy);
+            if let Some(expected) = board.marker_position(marker.id) {
+                debug_assert_eq!(
+                    mapped, expected,
+                    "marker alignment mismatch for id {}",
+                    marker.id
+                );
+            }
+            mapped
+        })
+        .collect()
+}
+
+fn map_charuco_corners_from_markers(
+    board: &CharucoBoard,
+    chessboard: &TargetDetection,
+    alignment: &CharucoAlignment,
+    marker_board_cells: &[[i32; 2]],
+) -> TargetDetection {
+    let board_corners = collect_board_corners(board, chessboard, alignment);
+    let allowed = marker_corner_set(board, marker_board_cells);
+
+    let mut corners = Vec::new();
+    for coord in allowed {
+        let Some(obs) = board_corners.get(&coord) else {
+            continue;
+        };
+        let Some(id) = board.charuco_corner_id_from_board_corner(coord.i, coord.j) else {
+            continue;
+        };
+        let Some(grid) = grid_from_charuco_id(board, id) else {
+            continue;
+        };
+        corners.push(LabeledCorner {
+            position: obs.position,
+            grid: Some(grid),
+            id: Some(id),
+            confidence: obs.confidence,
+        });
+    }
+
+    corners.sort_by_key(|c| c.id.unwrap_or(u32::MAX));
+
+    TargetDetection {
+        kind: TargetKind::Charuco,
+        corners,
+    }
+}
+
+fn collect_board_corners(
+    board: &CharucoBoard,
+    chessboard: &TargetDetection,
+    alignment: &CharucoAlignment,
+) -> HashMap<GridCoords, LabeledCorner> {
+    let mut out = HashMap::new();
+    for corner in &chessboard.corners {
+        let Some(grid) = corner.grid else {
+            continue;
+        };
+        let [bi, bj] = alignment.map(grid.i, grid.j);
+        if board
+            .charuco_corner_id_from_board_corner(bi, bj)
+            .is_none()
+        {
+            continue;
+        }
+        let key = GridCoords { i: bi, j: bj };
+        match out.get(&key) {
+            None => {
+                out.insert(
+                    key,
+                    LabeledCorner {
+                        position: corner.position,
+                        grid: Some(grid),
+                        id: None,
+                        confidence: corner.confidence,
+                    },
+                );
+            }
+            Some(prev) if corner.confidence > prev.confidence => {
+                out.insert(
+                    key,
+                    LabeledCorner {
+                        position: corner.position,
+                        grid: Some(grid),
+                        id: None,
+                        confidence: corner.confidence,
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+fn marker_corner_set(
+    board: &CharucoBoard,
+    marker_board_cells: &[[i32; 2]],
+) -> HashSet<GridCoords> {
+    let cols = i32::try_from(board.spec().cols).unwrap_or(0);
+    let rows = i32::try_from(board.spec().rows).unwrap_or(0);
+    let mut out = HashSet::new();
+
+    for cell in marker_board_cells {
+        let sx = cell[0];
+        let sy = cell[1];
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = sx + dx;
+            let j = sy + dy;
+            if i <= 0 || j <= 0 || i >= cols || j >= rows {
+                continue;
+            }
+            out.insert(GridCoords { i, j });
+        }
+    }
+
+    out
+}
+
+fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
+    let inner_cols = board.expected_inner_cols();
+    let inner_rows = board.expected_inner_rows();
+    let total = inner_cols.checked_mul(inner_rows)?;
+    if id >= total {
+        return None;
+    }
+    let i = (id % inner_cols) as i32;
+    let j = (id / inner_cols) as i32;
+    Some(GridCoords { i, j })
 }

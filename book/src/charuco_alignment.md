@@ -12,6 +12,9 @@
 
 After an initial alignment, the detector re-decodes markers at their expected cell locations and re-solves the alignment. This filters out inconsistent detections and stabilizes the final corner IDs.
 
+Aligned marker square coordinates are exposed in the detection result as `marker_board_cells`.
+ChArUco corners are then filtered to those supported by the aligned markers.
+
 ## Fallback to rectified scan
 
 If per-cell alignment is weak, the detector can optionally scan a full rectified mesh image to recover additional markers. Enable this with `fallback_to_rectified` and request a rectified output via `build_rectified_image` when you need debug visuals.

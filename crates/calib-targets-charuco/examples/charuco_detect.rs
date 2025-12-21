@@ -1,4 +1,9 @@
-use std::{env, fs, path::PathBuf, time::Instant};
+use std::{
+    env,
+    fs,
+    path::{Path, PathBuf},
+    time::Instant,
+};
 
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{
@@ -150,53 +155,92 @@ struct ExampleReport {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    let config_path = args
-        .get(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("testdata/charuco_detect_config.json"));
-
-    let cfg: ExampleConfig = {
-        let raw = fs::read_to_string(&config_path)?;
-        serde_json::from_str(&raw)?
-    };
-
+    let config_path = parse_config_path();
+    let cfg = load_config(&config_path)?;
     let t_total = Instant::now();
 
-    let image_path = PathBuf::from(&cfg.image_path);
-    let t_img = Instant::now();
-    let img = ImageReader::open(&image_path)?.decode()?.to_luma8();
-    let load_image_ms = t_img.elapsed().as_millis() as u64;
+    let (img, load_image_ms) = timed_result(|| load_image(Path::new(&cfg.image_path)))?;
+    let (raw_corners, detect_corners_ms) = timed_value(|| detect_raw_corners(&img));
+    let (target_corners, adapt_corners_ms) = timed_value(|| adapt_corners(&raw_corners));
 
+    let board = build_board(&cfg.board)?;
+    let params = build_params(&cfg, &board);
+    let detector = CharucoDetector::new(board, params);
+    let src_view = make_view(&img);
+
+    let (detect_result, detect_charuco_ms) =
+        timed_value(|| detector.detect(&src_view, &target_corners));
+
+    let timings = TimingsMs {
+        load_image: load_image_ms,
+        detect_corners: detect_corners_ms,
+        adapt_corners: adapt_corners_ms,
+        detect_charuco: detect_charuco_ms,
+        total: 0,
+    };
+
+    let mut report = init_report(&cfg, &config_path, &raw_corners, timings);
+    match detect_result {
+        Ok(res) => fill_report_from_detection(&mut report, &cfg, res, &detector),
+        Err(err) => report.error = Some(format_detect_error(err)),
+    }
+
+    report.timings_ms.total = t_total.elapsed().as_millis() as u64;
+
+    let output_path = output_path(&cfg);
+    write_report(&output_path, &report)?;
+    println!("wrote report JSON to {}", output_path.display());
+
+    Ok(())
+}
+
+fn parse_config_path() -> PathBuf {
+    env::args()
+        .nth(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("testdata/charuco_detect_config.json"))
+}
+
+fn load_config(path: &Path) -> Result<ExampleConfig, Box<dyn std::error::Error>> {
+    let raw = fs::read_to_string(path)?;
+    Ok(serde_json::from_str(&raw)?)
+}
+
+fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error>> {
+    Ok(ImageReader::open(path)?.decode()?.to_luma8())
+}
+
+fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
     let mut chess_cfg = ChessConfig::single_scale();
     chess_cfg.params.threshold_rel = 0.2;
     chess_cfg.params.nms_radius = 2;
+    find_chess_corners_image(img, &chess_cfg)
+}
 
-    let t_corners = Instant::now();
-    let raw_corners: Vec<CornerDescriptor> = find_chess_corners_image(&img, &chess_cfg);
-    let detect_corners_ms = t_corners.elapsed().as_millis() as u64;
+fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
+    raw.iter().map(adapt_chess_corner).collect()
+}
 
-    let t_adapt = Instant::now();
-    let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
-    let adapt_corners_ms = t_adapt.elapsed().as_millis() as u64;
-
-    let dict = builtins::builtin_dictionary(&cfg.board.dictionary)
-        .ok_or_else(|| format!("unknown dictionary {}", cfg.board.dictionary))?;
-    let layout = match cfg.board.marker_layout.as_deref() {
+fn build_board(cfg: &BoardConfig) -> Result<CharucoBoard, Box<dyn std::error::Error>> {
+    let dict = builtins::builtin_dictionary(&cfg.dictionary)
+        .ok_or_else(|| format!("unknown dictionary {}", cfg.dictionary))?;
+    let layout = match cfg.marker_layout.as_deref() {
         None | Some("opencv_charuco") => MarkerLayout::OpenCvCharuco,
         Some(other) => return Err(format!("unknown marker_layout {other}").into()),
     };
 
-    let board = CharucoBoard::new(CharucoBoardSpec {
-        rows: cfg.board.rows,
-        cols: cfg.board.cols,
-        cell_size: cfg.board.cell_size,
-        marker_size_rel: cfg.board.marker_size_rel,
+    Ok(CharucoBoard::new(CharucoBoardSpec {
+        rows: cfg.rows,
+        cols: cfg.cols,
+        cell_size: cfg.cell_size,
+        marker_size_rel: cfg.marker_size_rel,
         dictionary: dict,
         marker_layout: layout,
-    })?;
+    })?)
+}
 
-    let mut params = CharucoDetectorParams::for_board(&board);
+fn build_params(cfg: &ExampleConfig, board: &CharucoBoard) -> CharucoDetectorParams {
+    let mut params = CharucoDetectorParams::for_board(board);
     params.px_per_square = cfg.px_per_square;
     if let Some(min_marker_inliers) = cfg.min_marker_inliers {
         params.min_marker_inliers = min_marker_inliers;
@@ -207,38 +251,50 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(graph) = cfg.graph.clone() {
         params.graph = graph;
     }
-    if let Some(aruco) = cfg.aruco.clone() {
-        if let Some(max_hamming) = aruco.max_hamming {
-            params.max_hamming = max_hamming;
-        }
-        if let Some(border_bits) = aruco.border_bits {
-            params.scan.border_bits = border_bits;
-        }
-        if let Some(inset_frac) = aruco.inset_frac {
-            params.scan.inset_frac = inset_frac;
-        }
-        if let Some(marker_size_rel) = aruco.marker_size_rel {
-            params.scan.marker_size_rel = marker_size_rel;
-        }
-        if let Some(min_border_score) = aruco.min_border_score {
-            params.scan.min_border_score = min_border_score;
-        }
-        if let Some(dedup_by_id) = aruco.dedup_by_id {
-            params.scan.dedup_by_id = dedup_by_id;
-        }
+    if let Some(aruco) = cfg.aruco.as_ref() {
+        apply_aruco_config(&mut params, aruco);
     }
     params.build_rectified_image =
         cfg.rectified_path.is_some() || cfg.mesh_rectified_path.is_some();
+    params
+}
 
-    let detector = CharucoDetector::new(board, params);
+fn apply_aruco_config(params: &mut CharucoDetectorParams, aruco: &ArucoConfig) {
+    if let Some(max_hamming) = aruco.max_hamming {
+        params.max_hamming = max_hamming;
+    }
+    if let Some(border_bits) = aruco.border_bits {
+        params.scan.border_bits = border_bits;
+    }
+    if let Some(inset_frac) = aruco.inset_frac {
+        params.scan.inset_frac = inset_frac;
+    }
+    if let Some(marker_size_rel) = aruco.marker_size_rel {
+        params.scan.marker_size_rel = marker_size_rel;
+    }
+    if let Some(min_border_score) = aruco.min_border_score {
+        params.scan.min_border_score = min_border_score;
+    }
+    if let Some(dedup_by_id) = aruco.dedup_by_id {
+        params.scan.dedup_by_id = dedup_by_id;
+    }
+}
 
-    let src_view = GrayImageView {
+fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
+    GrayImageView {
         width: img.width() as usize,
         height: img.height() as usize,
         data: img.as_raw(),
-    };
+    }
+}
 
-    let mut report = ExampleReport {
+fn init_report(
+    cfg: &ExampleConfig,
+    config_path: &Path,
+    raw_corners: &[CornerDescriptor],
+    timings: TimingsMs,
+) -> ExampleReport {
+    ExampleReport {
         image_path: cfg.image_path.clone(),
         config_path: config_path.to_string_lossy().into_owned(),
         board: cfg.board.clone(),
@@ -257,40 +313,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rectified: None,
         alignment: None,
         error: None,
-        timings_ms: TimingsMs {
-            load_image: load_image_ms,
-            detect_corners: detect_corners_ms,
-            adapt_corners: adapt_corners_ms,
-            detect_charuco: 0,
-            total: 0,
-        },
-    };
-
-    let t_detect = Instant::now();
-    match detector.detect(&src_view, &target_corners) {
-        Ok(res) => {
-            report.timings_ms.detect_charuco = t_detect.elapsed().as_millis() as u64;
-            fill_report_from_detection(&mut report, &cfg, res, &detector);
-        }
-        Err(err) => {
-            report.timings_ms.detect_charuco = t_detect.elapsed().as_millis() as u64;
-            report.error = Some(format_detect_error(err));
-        }
+        timings_ms: timings,
     }
+}
 
-    report.timings_ms.total = t_total.elapsed().as_millis() as u64;
-
-    let output_path = cfg
-        .output_path
+fn output_path(cfg: &ExampleConfig) -> PathBuf {
+    cfg.output_path
         .as_ref()
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("charuco_detect_report.json"));
+        .unwrap_or_else(|| PathBuf::from("charuco_detect_report.json"))
+}
 
-    let json = serde_json::to_string_pretty(&report)?;
-    fs::write(&output_path, json)?;
-    println!("wrote report JSON to {}", output_path.display());
-
+fn write_report(path: &Path, report: &ExampleReport) -> Result<(), Box<dyn std::error::Error>> {
+    let json = serde_json::to_string_pretty(report)?;
+    fs::write(path, json)?;
     Ok(())
+}
+
+fn timed_result<T, E, F: FnOnce() -> Result<T, E>>(f: F) -> Result<(T, u64), E> {
+    let start = Instant::now();
+    let value = f()?;
+    let elapsed = start.elapsed().as_millis() as u64;
+    Ok((value, elapsed))
+}
+
+fn timed_value<T, F: FnOnce() -> T>(f: F) -> (T, u64) {
+    let start = Instant::now();
+    let value = f();
+    let elapsed = start.elapsed().as_millis() as u64;
+    (value, elapsed)
 }
 
 fn fill_report_from_detection(
@@ -336,7 +387,8 @@ fn fill_report_from_detection(
     let markers = res
         .markers
         .iter()
-        .map(|m| map_marker(res.rectified.as_ref(), m))
+        .zip(res.marker_board_cells.iter())
+        .map(|(m, board_cell)| map_marker(res.rectified.as_ref(), m, *board_cell))
         .collect::<Vec<_>>();
 
     report.markers = Some(markers);
@@ -407,6 +459,7 @@ fn map_detection(det: TargetDetection, board: Option<&CharucoBoard>) -> OutputDe
 fn map_marker(
     rect: Option<&calib_targets_chessboard::RectifiedMeshView>,
     m: &calib_targets_aruco::MarkerDetection,
+    board_cell: [i32; 2],
 ) -> OutputMarker {
     let corners_rect = m.corners_rect.map(|p| [p.x, p.y]);
 
@@ -433,9 +486,7 @@ fn map_marker(
     OutputMarker {
         id: m.id,
         cell: [m.sx, m.sy],
-        grid_cell: rect
-            .map(|view| [view.min_i + m.sx, view.min_j + m.sy])
-            .unwrap_or([m.sx, m.sy]),
+        grid_cell: board_cell,
         center_rect,
         center_img,
         rotation: m.rotation,

@@ -135,6 +135,7 @@ def main() -> None:
 
     ax.set_title("ChArUco detection overlay")
     ax.set_axis_off()
+    fig.tight_layout()
 
     out_path = args.output or args.report.with_name(
         args.report.stem + "_overlay.png"

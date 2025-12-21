@@ -91,7 +91,7 @@ fn detects_charuco_on_large_png() {
     assert_eq!(res.detection.kind, TargetKind::Charuco);
     assert!(res.alignment.marker_inliers.len() >= 100);
     assert!(res.detection.corners.len() >= 200);
-    assert_unique_ids(&res, 21 * 21);
+    assert_unique_ids(&res, 22 * 22);
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn detects_charuco_on_small_png() {
     assert_eq!(res.detection.kind, TargetKind::Charuco);
     assert!(res.alignment.marker_inliers.len() >= 20);
     assert!(res.detection.corners.len() >= 60);
-    assert_unique_ids(&res, 21 * 21);
+    assert_unique_ids(&res, 22 * 22);
 }
 
 #[test]

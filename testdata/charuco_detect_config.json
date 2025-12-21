@@ -15,8 +15,8 @@
   "chessboard": {
     "min_corner_strength": 0.5,
     "min_corners": 50,
-    "expected_rows": 21,
-    "expected_cols": 21,
+    "expected_rows": null,
+    "expected_cols": null,
     "completeness_threshold": 0.05,
     "use_orientation_clustering": true,
     "orientation_clustering_params": {

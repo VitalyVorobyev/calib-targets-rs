@@ -21,8 +21,9 @@
 
 - `CharucoDetectorParams::for_board` provides a reasonable default configuration.
 - `CharucoDetector::detect` returns a `CharucoDetectionResult` with:
-  - `detection`: labeled corners with ChArUco IDs.
+  - `detection`: labeled corners with ChArUco IDs, filtered to marker-supported corners.
   - `markers`: decoded marker detections.
+  - `marker_board_cells`: marker square coordinates aligned to the board definition.
   - `alignment`: grid transform and inlier indices.
   - `rectified`: optional mesh-warped board view (built on request).
 
