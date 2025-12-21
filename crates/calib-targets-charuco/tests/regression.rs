@@ -1,6 +1,6 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{
-    CharucoBoard, CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout,
+    CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::{Corner as TargetCorner, GrayImageView, TargetKind};
@@ -62,15 +62,14 @@ fn detects_charuco_on_large_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let dict = builtins::builtin_dictionary("DICT_4X4_1000").expect("builtin dict");
-    let board = CharucoBoard::new(CharucoBoardSpec {
+    let board = CharucoBoardSpec {
         rows: 22,
         cols: 22,
         cell_size: 1.0,
         marker_size_rel: 0.75,
         dictionary: dict,
         marker_layout: MarkerLayout::OpenCvCharuco,
-    })
-    .expect("board spec");
+    };
 
     let mut params = CharucoDetectorParams::for_board(&board);
     params.px_per_square = 60.0;
@@ -79,7 +78,7 @@ fn detects_charuco_on_large_png() {
     params.graph.max_spacing_pix = 160.0;
     params.min_marker_inliers = 64;
 
-    let detector = CharucoDetector::new(board, params);
+    let detector = CharucoDetector::new(board, params).expect("detector");
 
     let src_view = GrayImageView {
         width: img.width() as usize,
@@ -102,15 +101,14 @@ fn detects_charuco_on_small_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let dict = builtins::builtin_dictionary("DICT_4X4_250").expect("builtin dict");
-    let board = CharucoBoard::new(CharucoBoardSpec {
+    let board = CharucoBoardSpec {
         rows: 10,
         cols: 10,
         cell_size: 1.0,
         marker_size_rel: 0.75,
         dictionary: dict,
         marker_layout: MarkerLayout::OpenCvCharuco,
-    })
-    .expect("board spec");
+    };
 
     let mut params = CharucoDetectorParams::for_board(&board);
     params.px_per_square = 60.0;
@@ -120,7 +118,7 @@ fn detects_charuco_on_small_png() {
     params.graph.max_spacing_pix = 60.0;
     params.min_marker_inliers = 12;
 
-    let detector = CharucoDetector::new(board, params);
+    let detector = CharucoDetector::new(board, params).expect("detector");
 
     let src_view = GrayImageView {
         width: img.width() as usize,

@@ -7,7 +7,7 @@ use std::{
 use calib_targets_charuco::{CharucoDetectConfig, CharucoDetectReport, TimingsMs};
 use calib_targets_core::{Corner, GrayImageView};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
-use image::{ImageBuffer, ImageReader, Luma};
+use image::ImageReader;
 use nalgebra::Point2;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,20 +34,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let mut report = CharucoDetectReport::new(&cfg, &config_path, target_corners, timings);
-    let rectified_path = cfg.rectified_image_path();
-
     match detect_result {
         Ok(res) => {
-            if let (Some(path), Some(rectified)) = (rectified_path.as_ref(), res.rectified.as_ref())
-            {
-                if let Err(err) = save_rectified(path, rectified) {
-                    eprintln!(
-                        "failed to save rectified image to {}: {err}",
-                        path.display()
-                    );
-                }
-            }
-            report.set_detection(res, rectified_path);
+            report.set_detection(res);
         }
         Err(err) => report.set_error(err),
     }
@@ -112,20 +101,4 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
         orientation_cluster: None,
         strength: c.response,
     }
-}
-
-fn save_rectified(
-    path: &PathBuf,
-    rect: &calib_targets_chessboard::RectifiedMeshView,
-) -> Result<(), image::ImageError> {
-    let img_buf = ImageBuffer::<Luma<u8>, _>::from_raw(
-        rect.rect.width as u32,
-        rect.rect.height as u32,
-        rect.rect.data.clone(),
-    )
-    .expect("failed to build rectified output image");
-
-    img_buf.save(path)?;
-    println!("wrote rectified image to {}", path.display());
-    Ok(())
 }

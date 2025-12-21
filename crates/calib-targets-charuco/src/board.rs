@@ -5,20 +5,15 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 /// Marker placement scheme for the board.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkerLayout {
     /// OpenCV-style ChArUco layout:
     /// - markers are placed on white squares only (assuming top-left square is black),
     /// - marker IDs are assigned sequentially in row-major order over those squares.
     #[serde(rename = "opencv_charuco", alias = "open_cv_charuco")]
+    #[default]
     OpenCvCharuco,
-}
-
-impl Default for MarkerLayout {
-    fn default() -> Self {
-        MarkerLayout::OpenCvCharuco
-    }
 }
 
 /// Static ChArUco board specification.

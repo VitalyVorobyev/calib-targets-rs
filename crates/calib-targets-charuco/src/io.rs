@@ -5,7 +5,7 @@ use crate::{
     CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams, RectifiedMeshView};
+use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{Corner, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -76,21 +76,13 @@ impl CharucoDetectConfig {
             .unwrap_or_else(|| PathBuf::from("charuco_detect_report.json"))
     }
 
-    /// Resolve the rectified output image path, if any.
-    pub fn rectified_image_path(&self) -> Option<PathBuf> {
-        self.rectified_path
-            .as_ref()
-            .or(self.mesh_rectified_path.as_ref())
-            .map(PathBuf::from)
-    }
-
     /// Build a validated ChArUco board from the config.
     pub fn build_board(&self) -> Result<CharucoBoard, CharucoConfigError> {
         Ok(CharucoBoard::new(self.board)?)
     }
 
     /// Build detector parameters, applying overrides from the config.
-    pub fn build_params(&self, board: &CharucoBoard) -> CharucoDetectorParams {
+    pub fn build_params(&self, board: &CharucoBoardSpec) -> CharucoDetectorParams {
         let mut params = CharucoDetectorParams::for_board(board);
         params.px_per_square = self.px_per_square;
         if let Some(min_marker_inliers) = self.min_marker_inliers {
@@ -108,16 +100,13 @@ impl CharucoDetectConfig {
             }
             aruco.apply_to_scan(&mut params.scan);
         }
-        params.build_rectified_image =
-            self.rectified_path.is_some() || self.mesh_rectified_path.is_some();
         params
     }
 
     /// Build a detector from this config.
     pub fn build_detector(&self) -> Result<CharucoDetector, CharucoConfigError> {
-        let board = self.build_board()?;
-        let params = self.build_params(&board);
-        Ok(CharucoDetector::new(board, params))
+        let params = self.build_params(&self.board);
+        Ok(CharucoDetector::new(self.board, params)?)
     }
 }
 
@@ -132,22 +121,6 @@ pub struct RectifiedImageInfo {
     pub cells_x: usize,
     pub cells_y: usize,
     pub valid_cells: usize,
-}
-
-impl RectifiedImageInfo {
-    fn from_view(view: &RectifiedMeshView, path: Option<String>) -> Self {
-        Self {
-            path,
-            width: view.rect.width,
-            height: view.rect.height,
-            px_per_square: view.px_per_square,
-            min_i: view.min_i,
-            min_j: view.min_j,
-            cells_x: view.cells_x,
-            cells_y: view.cells_y,
-            valid_cells: view.valid_cells,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -209,18 +182,13 @@ impl CharucoDetectReport {
     }
 
     /// Populate report fields from a successful detection.
-    pub fn set_detection(&mut self, res: CharucoDetectionResult, rectified_path: Option<PathBuf>) {
+    pub fn set_detection(&mut self, res: CharucoDetectionResult) {
         self.chessboard = Some(res.chessboard);
         self.charuco = Some(res.detection);
         self.markers = Some(res.markers);
         self.marker_board_cells = Some(res.marker_board_cells);
         self.alignment = Some(res.alignment);
         self.error = None;
-
-        if let Some(rectified) = res.rectified {
-            let path = rectified_path.map(|p| p.to_string_lossy().into_owned());
-            self.rectified = Some(RectifiedImageInfo::from_view(&rectified, path));
-        }
     }
 
     /// Record a detection error.

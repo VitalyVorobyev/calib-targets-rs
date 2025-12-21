@@ -5,11 +5,11 @@ use super::marker_sampling::{
 };
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
 use crate::alignment::CharucoAlignment;
-use crate::board::CharucoBoard;
+use crate::board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec};
 use calib_targets_aruco::{
-    scan_decode_markers, scan_decode_markers_in_cells, MarkerDetection, Matcher, ScanDecodeConfig,
+    scan_decode_markers_in_cells, MarkerDetection, Matcher, ScanDecodeConfig,
 };
-use calib_targets_chessboard::{rectify_mesh_from_grid, ChessboardDetector};
+use calib_targets_chessboard::ChessboardDetector;
 use calib_targets_core::{Corner, GrayImageView};
 
 /// Grid-first ChArUco detector.
@@ -21,29 +21,33 @@ pub struct CharucoDetector {
 
 impl CharucoDetector {
     /// Create a detector for a given board and parameters.
-    pub fn new(board: CharucoBoard, mut params: CharucoDetectorParams) -> Self {
+    pub fn new(
+        board_cfg: CharucoBoardSpec,
+        mut params: CharucoDetectorParams,
+    ) -> Result<Self, CharucoBoardError> {
         if params.chessboard.expected_rows.is_none() {
-            params.chessboard.expected_rows = Some(board.expected_inner_rows());
+            params.chessboard.expected_rows = Some(board_cfg.rows);
         }
         if params.chessboard.expected_cols.is_none() {
-            params.chessboard.expected_cols = Some(board.expected_inner_cols());
+            params.chessboard.expected_cols = Some(board_cfg.cols);
         }
         if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
-            params.scan.marker_size_rel = board.spec().marker_size_rel;
+            params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
 
         let max_hamming = params
             .max_hamming
-            .min(board.spec().dictionary.max_correction_bits);
+            .min(board_cfg.dictionary.max_correction_bits);
         params.max_hamming = max_hamming;
 
-        let matcher = Matcher::new(board.spec().dictionary, max_hamming);
+        let matcher = Matcher::new(board_cfg.dictionary, max_hamming);
+        let board = CharucoBoard::new(board_cfg)?;
 
-        Self {
+        Ok(Self {
             board,
             params,
             matcher,
-        }
+        })
     }
 
     /// Board definition used by the detector.
@@ -90,41 +94,9 @@ impl CharucoDetector {
             return Err(CharucoDetectError::NoMarkers);
         }
 
-        let mut rectified_for_output = None;
-        let (mut markers, mut alignment) = self
+        let (markers, alignment) = self
             .select_and_refine_markers(markers, image, &corner_map, &scan_cfg)
             .ok_or(CharucoDetectError::AlignmentFailed { inliers: 0usize })?;
-
-        if alignment.marker_inliers.len() < self.params.min_marker_inliers
-            && self.params.fallback_to_rectified
-        {
-            let rectified = rectify_mesh_from_grid(
-                image,
-                &chessboard.detection.corners,
-                &chessboard.inliers,
-                self.params.px_per_square,
-            )?;
-            let rect_view = GrayImageView {
-                width: rectified.rect.width,
-                height: rectified.rect.height,
-                data: &rectified.rect.data,
-            };
-            let rect_markers = scan_decode_markers(
-                &rect_view,
-                rectified.cells_x,
-                rectified.cells_y,
-                rectified.px_per_square,
-                &scan_cfg,
-                &self.matcher,
-            );
-            if let Some((refined_markers, refined_alignment)) =
-                self.select_and_refine_markers(rect_markers, image, &corner_map, &scan_cfg)
-            {
-                markers = refined_markers;
-                alignment = refined_alignment;
-                rectified_for_output = Some(rectified);
-            }
-        }
 
         if alignment.marker_inliers.len() < self.params.min_marker_inliers {
             return Err(CharucoDetectError::AlignmentFailed {
@@ -142,17 +114,6 @@ impl CharucoDetector {
             &marker_board_cells,
         );
 
-        let rectified = if self.params.build_rectified_image && rectified_for_output.is_none() {
-            Some(rectify_mesh_from_grid(
-                image,
-                &chessboard.detection.corners,
-                &chessboard.inliers,
-                self.params.px_per_square,
-            )?)
-        } else {
-            rectified_for_output
-        };
-
         Ok(CharucoDetectionResult {
             detection,
             chessboard: chessboard.detection,
@@ -160,7 +121,6 @@ impl CharucoDetector {
             markers,
             marker_board_cells,
             alignment,
-            rectified,
         })
     }
 
