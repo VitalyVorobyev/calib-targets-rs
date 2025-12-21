@@ -123,15 +123,6 @@ pub struct RectifiedImageInfo {
     pub valid_cells: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TimingsMs {
-    pub load_image: u64,
-    pub detect_corners: u64,
-    pub adapt_corners: u64,
-    pub detect_charuco: u64,
-    pub total: u64,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectReport {
     pub image_path: String,
@@ -153,17 +144,11 @@ pub struct CharucoDetectReport {
     pub alignment: Option<CharucoAlignment>,
     #[serde(default)]
     pub error: Option<String>,
-    pub timings_ms: TimingsMs,
 }
 
 impl CharucoDetectReport {
     /// Build a base report from the input config and raw corners.
-    pub fn new(
-        cfg: &CharucoDetectConfig,
-        config_path: &Path,
-        raw_corners: Vec<Corner>,
-        timings_ms: TimingsMs,
-    ) -> Self {
+    pub fn new(cfg: &CharucoDetectConfig, config_path: &Path, raw_corners: Vec<Corner>) -> Self {
         Self {
             image_path: cfg.image_path.clone(),
             config_path: config_path.to_string_lossy().into_owned(),
@@ -177,7 +162,6 @@ impl CharucoDetectReport {
             rectified: None,
             alignment: None,
             error: None,
-            timings_ms,
         }
     }
 

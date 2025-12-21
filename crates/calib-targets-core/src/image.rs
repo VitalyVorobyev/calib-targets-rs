@@ -12,6 +12,16 @@ pub struct GrayImage {
     pub data: Vec<u8>,
 }
 
+impl GrayImage {
+    pub fn view(&self) -> GrayImageView<'_> {
+        GrayImageView {
+            width: self.width,
+            height: self.height,
+            data: &self.data,
+        }
+    }
+}
+
 #[inline]
 fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
     if x < 0 || y < 0 || x >= src.width as i32 || y >= src.height as i32 {

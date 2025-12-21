@@ -1,13 +1,12 @@
 use std::{
     env,
     path::{Path, PathBuf},
-    time::Instant
 };
 
 #[cfg(not(feature = "tracing"))]
 use std::str::FromStr;
 
-use calib_targets_charuco::{CharucoDetectConfig, CharucoDetectReport, TimingsMs};
+use calib_targets_charuco::{CharucoDetectConfig, CharucoDetectReport};
 use calib_targets_core::{Corner, GrayImageView};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
@@ -20,7 +19,6 @@ use log::{info, LevelFilter};
 use calib_targets_core::init_tracing;
 #[cfg(not(feature = "tracing"))]
 use calib_targets_core::init_with_level;
-
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(feature = "tracing"))]
@@ -35,35 +33,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config_path = parse_config_path();
     let cfg = CharucoDetectConfig::load_json(&config_path)?;
-    let t_total = Instant::now();
 
-    let (img, load_image_ms) = timed_result(|| load_image(Path::new(&cfg.image_path)))?;
-    let (raw_corners, detect_corners_ms) = timed_value(|| detect_raw_corners(&img));
-    let (target_corners, adapt_corners_ms) = timed_value(|| adapt_corners(&raw_corners));
+    let img = load_image(Path::new(&cfg.image_path))?;
+    let raw_corners = detect_raw_corners(&img);
+    let target_corners = adapt_corners(&raw_corners);
 
     let detector = cfg.build_detector()?;
     let src_view = make_view(&img);
 
-    let (detect_result, detect_charuco_ms) =
-        timed_value(|| detector.detect(&src_view, &target_corners));
+    let detect_result = detector.detect(&src_view, &target_corners);
 
-    let timings = TimingsMs {
-        load_image: load_image_ms,
-        detect_corners: detect_corners_ms,
-        adapt_corners: adapt_corners_ms,
-        detect_charuco: detect_charuco_ms,
-        total: 0,
-    };
-
-    let mut report = CharucoDetectReport::new(&cfg, &config_path, target_corners, timings);
+    let mut report = CharucoDetectReport::new(&cfg, &config_path, target_corners);
     match detect_result {
         Ok(res) => {
             report.set_detection(res);
         }
         Err(err) => report.set_error(err),
     }
-
-    report.timings_ms.total = t_total.elapsed().as_millis() as u64;
 
     let output_path = cfg.output_path();
     report.write_json(&output_path)?;
@@ -100,20 +86,6 @@ fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
         height: img.height() as usize,
         data: img.as_raw(),
     }
-}
-
-fn timed_result<T, E, F: FnOnce() -> Result<T, E>>(f: F) -> Result<(T, u64), E> {
-    let start = Instant::now();
-    let value = f()?;
-    let elapsed = start.elapsed().as_millis() as u64;
-    Ok((value, elapsed))
-}
-
-fn timed_value<T, F: FnOnce() -> T>(f: F) -> (T, u64) {
-    let start = Instant::now();
-    let value = f();
-    let elapsed = start.elapsed().as_millis() as u64;
-    (value, elapsed)
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {

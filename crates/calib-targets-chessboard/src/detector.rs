@@ -142,16 +142,19 @@ impl ChessboardDetector {
             if component.len() < self.params.min_corners {
                 continue;
             }
+            info!("comp: {} corners", component.len());
 
             let coords = assign_grid_coordinates(&graph, component);
             if coords.is_empty() {
                 continue;
             }
+            info!("coords: {}", coords.len());
 
             let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
             else {
                 continue;
             };
+            info!("inliers: {} corners", inliers.len());
 
             let score = detection.corners.len();
             match best {
@@ -164,6 +167,7 @@ impl ChessboardDetector {
         }
 
         let (detection, inliers, _) = best?;
+        info!("Best component contains {} inliers", inliers.len());
 
         let graph_debug = Some(build_graph_debug(&graph, &strong));
 
@@ -201,7 +205,13 @@ impl ChessboardDetector {
         let width = (max_i - min_i + 1) as u32;
         let height = (max_j - min_j + 1) as u32;
 
+        info!(
+            "min_i {min_i}, min_j {min_j}, width {width}, height {height}, expected w {:?} h {:?}",
+            self.params.expected_cols, self.params.expected_rows
+        );
+
         let (board_cols, board_rows, swap_axes) = select_board_size(width, height, &self.params)?;
+        info!("board size: {board_cols}x{board_rows}");
 
         let grid_area = (board_cols * board_rows) as f32;
         if grid_area <= f32::EPSILON {

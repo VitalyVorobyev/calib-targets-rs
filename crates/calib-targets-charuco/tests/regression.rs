@@ -102,9 +102,9 @@ fn detects_charuco_on_small_png() {
 
     let dict = builtins::builtin_dictionary("DICT_4X4_250").expect("builtin dict");
     let board = CharucoBoardSpec {
-        rows: 10,
-        cols: 10,
-        cell_size: 1.0,
+        rows: 22,
+        cols: 22,
+        cell_size: 5.2,
         marker_size_rel: 0.75,
         dictionary: dict,
         marker_layout: MarkerLayout::OpenCvCharuco,
