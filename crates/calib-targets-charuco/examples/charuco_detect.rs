@@ -1,8 +1,11 @@
 use std::{
     env,
     path::{Path, PathBuf},
-    time::Instant,
+    time::Instant
 };
+
+#[cfg(not(feature = "tracing"))]
+use std::str::FromStr;
 
 use calib_targets_charuco::{CharucoDetectConfig, CharucoDetectReport, TimingsMs};
 use calib_targets_core::{Corner, GrayImageView};
@@ -10,7 +13,26 @@ use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
 use nalgebra::Point2;
 
+#[cfg(not(feature = "tracing"))]
+use log::{info, LevelFilter};
+
+#[cfg(feature = "tracing")]
+use calib_targets_core::init_tracing;
+#[cfg(not(feature = "tracing"))]
+use calib_targets_core::init_with_level;
+
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(not(feature = "tracing"))]
+    let log_level = LevelFilter::from_str("info").unwrap_or(LevelFilter::Info);
+    #[cfg(not(feature = "tracing"))]
+    init_with_level(log_level)?;
+    #[cfg(not(feature = "tracing"))]
+    info!("Logger initialized");
+
+    #[cfg(feature = "tracing")]
+    init_tracing(false);
+
     let config_path = parse_config_path();
     let cfg = CharucoDetectConfig::load_json(&config_path)?;
     let t_total = Instant::now();

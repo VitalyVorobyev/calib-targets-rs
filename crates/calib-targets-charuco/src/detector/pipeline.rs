@@ -12,7 +12,11 @@ use calib_targets_aruco::{
 use calib_targets_chessboard::ChessboardDetector;
 use calib_targets_core::{Corner, GrayImageView};
 
+#[cfg(feature = "tracing")]
+use tracing::instrument;
+
 /// Grid-first ChArUco detector.
+#[derive(Debug)]
 pub struct CharucoDetector {
     board: CharucoBoard,
     params: CharucoDetectorParams,
@@ -66,6 +70,7 @@ impl CharucoDetector {
     ///
     /// This uses per-cell marker sampling by default. Set
     /// `build_rectified_image` if you need a rectified output image.
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,

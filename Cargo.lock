@@ -277,6 +277,7 @@ dependencies = [
  "calib-targets-core",
  "chess-corners",
  "image",
+ "log",
  "nalgebra",
  "serde",
  "serde_json",
@@ -295,6 +296,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -306,6 +308,8 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

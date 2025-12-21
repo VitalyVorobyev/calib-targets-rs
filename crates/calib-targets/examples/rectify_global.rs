@@ -1,12 +1,14 @@
-use std::{env, fs, path::PathBuf};
+use std::{env, fs, path::PathBuf, str::FromStr};
 
 use calib_targets_chessboard::{
     rectify_from_chessboard_result, ChessboardDetector, ChessboardParams, GridGraphParams,
 };
-use calib_targets_core::{Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind};
+use calib_targets_core::{
+    init_with_level, Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind,
+};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{save_buffer, ImageBuffer, ImageReader, Luma};
-use log::LevelFilter;
+use log::{info, LevelFilter};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +75,9 @@ struct ExampleReport {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_logger();
+    let log_level = LevelFilter::from_str("info").unwrap_or(LevelFilter::Info);
+    init_with_level(log_level)?;
+    info!("Logger initialized");
 
     let args: Vec<String> = env::args().collect();
     let config_path = args
@@ -225,31 +229,4 @@ fn map_corner(c: LabeledCorner) -> OutputCorner {
         id: c.id,
         confidence: c.confidence,
     }
-}
-
-static LOGGER: SimpleLogger = SimpleLogger;
-
-struct SimpleLogger;
-
-impl log::Log for SimpleLogger {
-    fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= LevelFilter::Info
-    }
-
-    fn log(&self, record: &log::Record) {
-        if self.enabled(record.metadata()) {
-            eprintln!(
-                "[{}] {}: {}",
-                record.level(),
-                record.target(),
-                record.args()
-            );
-        }
-    }
-
-    fn flush(&self) {}
-}
-
-fn init_logger() {
-    let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
 }

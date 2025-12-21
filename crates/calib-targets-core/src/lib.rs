@@ -6,6 +6,7 @@
 mod corner;
 mod homography;
 mod image;
+mod logger;
 mod orientation_clustering;
 mod rectify;
 
@@ -16,6 +17,11 @@ pub use image::{sample_bilinear, sample_bilinear_u8, GrayImage, GrayImageView};
 pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use corner::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+
+#[cfg(feature = "tracing")]
+pub use logger::init_tracing;
+
+pub use logger::init_with_level;
 pub use orientation_clustering::{
     cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
     OrientationClusteringParams, OrientationClusteringResult, OrientationHistogram,

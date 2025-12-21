@@ -9,7 +9,11 @@ use calib_targets_core::{
 use log::{info, warn};
 use std::f32::consts::FRAC_PI_2;
 
+#[cfg(feature = "tracing")]
+use tracing::instrument;
+
 /// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
+#[derive(Debug)]
 pub struct ChessboardDetector {
     pub params: ChessboardParams,
     pub grid_search: GridGraphParams,
@@ -63,6 +67,7 @@ impl ChessboardDetector {
     ///
     /// This function expects corners already computed by your ChESS crate.
     /// For now it returns at most one detection (the best-scoring grid component).
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
     pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<ChessboardDetectionResult> {
         // 1. Filter by strength.
         let mut strong: Vec<Corner> = corners
