@@ -214,6 +214,7 @@ impl ChessboardDetector {
                 position: corner.position,
                 grid: Some(grid),
                 id: None,
+                target_position: None,
                 confidence: corner.strength,
             };
 

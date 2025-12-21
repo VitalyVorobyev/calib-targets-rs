@@ -1,5 +1,5 @@
 use super::alignment_select::{maybe_refine_alignment, retain_inlier_markers, select_alignment};
-use super::corner_mapping::{map_charuco_corners_from_markers, marker_board_cells};
+use super::corner_mapping::map_charuco_corners;
 use super::marker_sampling::{
     build_corner_map, build_marker_cells, refine_markers_for_alignment, CornerMap,
 };
@@ -110,25 +110,13 @@ impl CharucoDetector {
         }
 
         let (markers, alignment) = retain_inlier_markers(markers, alignment);
-        let marker_board_cells = marker_board_cells(&self.board, &markers, &alignment);
+        let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
 
-        let detection = map_charuco_corners_from_markers(
-            &self.board,
-            &chessboard.detection,
-            &alignment,
-            &marker_board_cells,
-        );
-
-        Ok(CharucoDetectionResult {
-            detection,
-            chessboard: chessboard.detection,
-            chessboard_inliers: chessboard.inliers,
-            markers,
-            marker_board_cells,
-            alignment,
-        })
+        Ok(CharucoDetectionResult { detection, markers })
     }
 
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, markers, corner_map, scan_cfg),
+      fields(markers=markers.len(), w=image.width, h=image.height)))]
     fn select_and_refine_markers(
         &self,
         markers: Vec<MarkerDetection>,

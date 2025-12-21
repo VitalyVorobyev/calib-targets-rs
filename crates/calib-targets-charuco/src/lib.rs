@@ -18,6 +18,5 @@ pub use detector::{
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
 };
 pub use io::{
-    CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
-    RectifiedImageInfo,
+    CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError
 };

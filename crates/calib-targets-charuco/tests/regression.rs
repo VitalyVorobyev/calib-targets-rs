@@ -88,8 +88,13 @@ fn detects_charuco_on_large_png() {
 
     let res = detector.detect(&src_view, &corners).expect("detect");
     assert_eq!(res.detection.kind, TargetKind::Charuco);
-    assert!(res.alignment.marker_inliers.len() >= 100);
+    assert!(res.markers.len() >= 100);
     assert!(res.detection.corners.len() >= 200);
+    assert!(res
+        .detection
+        .corners
+        .iter()
+        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
     assert_unique_ids(&res, 22 * 22);
 }
 
@@ -128,8 +133,13 @@ fn detects_charuco_on_small_png() {
 
     let res = detector.detect(&src_view, &corners).expect("detect");
     assert_eq!(res.detection.kind, TargetKind::Charuco);
-    assert!(res.alignment.marker_inliers.len() >= 20);
+    assert!(res.markers.len() >= 20);
     assert!(res.detection.corners.len() >= 60);
+    assert!(res
+        .detection
+        .corners
+        .iter()
+        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
     assert_unique_ids(&res, 22 * 22);
 }
 

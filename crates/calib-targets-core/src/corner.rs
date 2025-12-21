@@ -57,6 +57,10 @@ pub struct LabeledCorner {
     /// Optional logical ID (e.g. ChArUco or marker-board ID).
     pub id: Option<u32>,
 
+    /// Optional target-space position in millimeters (paired with `id`).
+    #[serde(default)]
+    pub target_position: Option<Point2<f32>>,
+
     /// Optional detection confidence [0, 1].
     pub confidence: f32,
 }

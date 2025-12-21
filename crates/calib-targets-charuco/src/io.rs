@@ -1,8 +1,8 @@
 //! JSON configuration and report helpers for ChArUco detection.
 
 use crate::{
-    CharucoAlignment, CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
-    CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
+    CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult,
+    CharucoDetector, CharucoDetectorParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
@@ -111,19 +111,6 @@ impl CharucoDetectConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RectifiedImageInfo {
-    pub path: Option<String>,
-    pub width: usize,
-    pub height: usize,
-    pub px_per_square: f32,
-    pub min_i: i32,
-    pub min_j: i32,
-    pub cells_x: usize,
-    pub cells_y: usize,
-    pub valid_cells: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectReport {
     pub image_path: String,
     pub config_path: String,
@@ -131,17 +118,9 @@ pub struct CharucoDetectReport {
     pub num_raw_corners: usize,
     pub raw_corners: Vec<Corner>,
     #[serde(default)]
-    pub chessboard: Option<TargetDetection>,
-    #[serde(default)]
-    pub charuco: Option<TargetDetection>,
+    pub detection: Option<TargetDetection>,
     #[serde(default)]
     pub markers: Option<Vec<MarkerDetection>>,
-    #[serde(default)]
-    pub marker_board_cells: Option<Vec<[i32; 2]>>,
-    #[serde(default)]
-    pub rectified: Option<RectifiedImageInfo>,
-    #[serde(default)]
-    pub alignment: Option<CharucoAlignment>,
     #[serde(default)]
     pub error: Option<String>,
 }
@@ -155,23 +134,16 @@ impl CharucoDetectReport {
             board: cfg.board,
             num_raw_corners: raw_corners.len(),
             raw_corners,
-            chessboard: None,
-            charuco: None,
+            detection: None,
             markers: None,
-            marker_board_cells: None,
-            rectified: None,
-            alignment: None,
             error: None,
         }
     }
 
     /// Populate report fields from a successful detection.
     pub fn set_detection(&mut self, res: CharucoDetectionResult) {
-        self.chessboard = Some(res.chessboard);
-        self.charuco = Some(res.detection);
+        self.detection = Some(res.detection);
         self.markers = Some(res.markers);
-        self.marker_board_cells = Some(res.marker_board_cells);
-        self.alignment = Some(res.alignment);
         self.error = None;
     }
 
