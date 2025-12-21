@@ -39,5 +39,5 @@ pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
 
 #[inline]
 pub fn sample_bilinear_u8(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
-    sample_bilinear(src, x, y,).clamp(0.0, 255.0) as u8
+    sample_bilinear(src, x, y).clamp(0.0, 255.0) as u8
 }

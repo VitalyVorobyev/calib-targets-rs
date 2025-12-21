@@ -217,7 +217,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let roi = cfg.roi_cells.map(|[i0, j0, i1, j1]| (i0, j0, i1, j1));
     let t_circles = Instant::now();
-    let mut candidates = detect_circles_via_square_warp(&src_view, &corner_map, &circle_params, roi);
+    let mut candidates =
+        detect_circles_via_square_warp(&src_view, &corner_map, &circle_params, roi);
     report.timings_ms.circle_detect = t_circles.elapsed().as_millis() as u64;
 
     // Keep strongest per polarity to reduce noise (3 expected markers)
@@ -313,7 +314,10 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
     }
 }
 
-fn write_report(path: Option<&str>, report: ExampleReport) -> Result<(), Box<dyn std::error::Error>> {
+fn write_report(
+    path: Option<&str>,
+    report: ExampleReport,
+) -> Result<(), Box<dyn std::error::Error>> {
     let out_path = path
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("tmpdata/marker_detect_report.json"));

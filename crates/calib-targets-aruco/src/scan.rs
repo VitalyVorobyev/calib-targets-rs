@@ -81,9 +81,7 @@ pub fn scan_decode_markers(
 
     for sy in 0..(cells_y as i32) {
         for sx in 0..(cells_x as i32) {
-            let Some(obs) =
-                decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits)
-            else {
+            let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits) else {
                 continue;
             };
             if let Some(det) = build_detection(sx, sy, px_per_square, obs, matcher) {
@@ -239,7 +237,11 @@ impl<'a> CellDecoder<'a> {
         })
     }
 
-    fn decode_warped(&mut self, img: &GrayImageView<'_>, h: &Homography) -> Option<MarkerObservation> {
+    fn decode_warped(
+        &mut self,
+        img: &GrayImageView<'_>,
+        h: &Homography,
+    ) -> Option<MarkerObservation> {
         self.scratch_bits.clear();
         for p in &self.grid.points {
             let q = h.apply(*p);
@@ -350,7 +352,14 @@ fn decode_rectified_cell(
         }
     }
 
-    decode_samples(&samples, &thr_samples, cells, bits, border, cfg.min_border_score)
+    decode_samples(
+        &samples,
+        &thr_samples,
+        cells,
+        bits,
+        border,
+        cfg.min_border_score,
+    )
 }
 
 fn decode_samples(
@@ -388,8 +397,8 @@ fn decode_samples(
                     is_black = !is_black;
                 }
 
-                let is_border = use_border
-                    && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
+                let is_border =
+                    use_border && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
                 if is_border {
                     border_total += 1;
                     if is_black {
@@ -477,11 +486,7 @@ fn cell_rect_corners(px_per_square: f32) -> [Point2<f32>; 4] {
 fn sample_mean_3x3(img: &GrayImageView<'_>, x: f32, y: f32) -> Option<u8> {
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;
-    if ix - 1 < 0
-        || iy - 1 < 0
-        || ix + 1 >= img.width as i32
-        || iy + 1 >= img.height as i32
-    {
+    if ix - 1 < 0 || iy - 1 < 0 || ix + 1 >= img.width as i32 || iy + 1 >= img.height as i32 {
         return None;
     }
 
@@ -589,8 +594,7 @@ mod tests {
             ],
         };
 
-        let det = decode_marker_in_cell(&view, &cell, s, &cfg, &matcher)
-            .expect("decode marker");
+        let det = decode_marker_in_cell(&view, &cell, s, &cfg, &matcher).expect("decode marker");
         assert_eq!(det.id, 0);
         assert_eq!(det.hamming, 0);
     }

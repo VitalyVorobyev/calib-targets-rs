@@ -13,15 +13,8 @@ impl Homography {
 
     pub fn from_array(rows: [[f64; 3]; 3]) -> Self {
         Self::new(Matrix3::from_row_slice(&[
-            rows[0][0],
-            rows[0][1],
-            rows[0][2],
-            rows[1][0],
-            rows[1][1],
-            rows[1][2],
-            rows[2][0],
-            rows[2][1],
-            rows[2][2],
+            rows[0][0], rows[0][1], rows[0][2], rows[1][0], rows[1][1], rows[1][2], rows[2][0],
+            rows[2][1], rows[2][2],
         ]))
     }
 

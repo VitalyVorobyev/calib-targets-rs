@@ -1,8 +1,10 @@
-use std::collections::HashMap;
 use nalgebra::Point2;
+use std::collections::HashMap;
 
-use calib_targets_core::{GridCoords, GrayImageView};
-use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams, score_circle_in_square};
+use crate::circle_score::{
+    score_circle_in_square, CircleCandidate, CirclePolarity, CircleScoreParams,
+};
+use calib_targets_core::{GrayImageView, GridCoords};
 
 pub fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,
@@ -32,14 +34,16 @@ pub fn detect_circles_via_square_warp(
     for j in scan_j0..=scan_j1 {
         for i in scan_i0..=scan_i1 {
             // corners TL,TR,BR,BL in image space
-            let g00 = GridCoords { i,     j };
-            let g10 = GridCoords { i: i+1, j };
-            let g11 = GridCoords { i: i+1, j: j+1 };
-            let g01 = GridCoords { i,     j: j+1 };
+            let g00 = GridCoords { i, j };
+            let g10 = GridCoords { i: i + 1, j };
+            let g11 = GridCoords { i: i + 1, j: j + 1 };
+            let g01 = GridCoords { i, j: j + 1 };
 
             let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
                 (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
-            else { continue; };
+            else {
+                continue;
+            };
 
             let corners_img = [p00, p10, p11, p01]; // TL,TR,BR,BL
 
@@ -53,8 +57,16 @@ pub fn detect_circles_via_square_warp(
 }
 
 /// Utility to keep top K candidates per polarity (simple, stable).
-pub fn top_k_by_polarity(mut v: Vec<CircleCandidate>, k_white: usize, k_black: usize) -> (Vec<CircleCandidate>, Vec<CircleCandidate>) {
-    v.sort_by(|a,b| b.contrast.partial_cmp(&a.contrast).unwrap_or(std::cmp::Ordering::Equal));
+pub fn top_k_by_polarity(
+    mut v: Vec<CircleCandidate>,
+    k_white: usize,
+    k_black: usize,
+) -> (Vec<CircleCandidate>, Vec<CircleCandidate>) {
+    v.sort_by(|a, b| {
+        b.contrast
+            .partial_cmp(&a.contrast)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut whites = Vec::new();
     let mut blacks = Vec::new();

@@ -1,4 +1,4 @@
-use calib_targets_core::{sample_bilinear, homography_from_4pt, GrayImageView, Homography};
+use calib_targets_core::{homography_from_4pt, sample_bilinear, GrayImageView, Homography};
 use nalgebra::Point2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -104,8 +104,10 @@ impl RectifiedMeshView {
     }
 }
 
-fn build_corners_to_pix_map(corners: &[LabeledCorner],
-    inliers: &[usize]) -> HashMap<GridCoords, Point2<f32>> {
+fn build_corners_to_pix_map(
+    corners: &[LabeledCorner],
+    inliers: &[usize],
+) -> HashMap<GridCoords, Point2<f32>> {
     let mut map: HashMap<GridCoords, Point2<f32>> = HashMap::new();
     for &idx in inliers {
         if let Some(c) = corners.get(idx) {

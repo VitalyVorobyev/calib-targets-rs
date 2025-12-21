@@ -122,7 +122,8 @@ pub(crate) fn solve_alignment(
         return None;
     }
 
-    let mut best: Option<(f32, usize, GridTransform, [i32; 2], Vec<usize>)> = None;
+    type Candidate = (f32, usize, GridTransform, [i32; 2], Vec<usize>);
+    let mut best: Option<Candidate> = None;
 
     for transform in TRANSFORMS {
         let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
@@ -174,13 +175,11 @@ fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2
         entry.1 += 1;
     }
 
-    let (translation, (weight_sum, count)) = counts
-        .into_iter()
-        .max_by(|(_, a), (_, b)| {
-            a.0.partial_cmp(&b.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.1.cmp(&b.1))
-        })?;
+    let (translation, (weight_sum, count)) = counts.into_iter().max_by(|(_, a), (_, b)| {
+        a.0.partial_cmp(&b.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    })?;
     Some((translation, weight_sum, count))
 }
 

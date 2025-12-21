@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -351,15 +350,12 @@ fn fill_report_from_detection(
     detector: &CharucoDetector,
 ) {
     report.chessboard = Some(map_detection(res.chessboard.clone(), None));
-    report.charuco = Some(map_detection(
-        res.detection.clone(),
-        Some(detector.board()),
-    ));
+    report.charuco = Some(map_detection(res.detection.clone(), Some(detector.board())));
 
     let rect_path = cfg
         .rectified_path
         .as_ref()
-        .or_else(|| cfg.mesh_rectified_path.as_ref())
+        .or(cfg.mesh_rectified_path.as_ref())
         .map(PathBuf::from);
 
     if let Some(rectified) = res.rectified.as_ref() {
@@ -377,7 +373,10 @@ fn fill_report_from_detection(
 
         if let Some(path) = rect_path {
             if let Err(err) = save_rectified(&path, rectified) {
-                eprintln!("failed to save rectified image to {}: {err}", path.display());
+                eprintln!(
+                    "failed to save rectified image to {}: {err}",
+                    path.display()
+                );
             }
         }
 
@@ -430,10 +429,9 @@ fn map_detection(det: TargetDetection, board: Option<&CharucoBoard>) -> OutputDe
         .corners
         .into_iter()
         .map(|c| {
-            let object_xy = c
-                .id
-                .and_then(|id| board.and_then(|b| b.charuco_object_xy(id)))
-                .map(|p| [p.x, p.y]);
+            let object_xy =
+                c.id.and_then(|id| board.and_then(|b| b.charuco_object_xy(id)))
+                    .map(|p| [p.x, p.y]);
             OutputCorner {
                 x: c.position.x,
                 y: c.position.y,
@@ -499,7 +497,10 @@ fn map_marker(
     }
 }
 
-fn save_rectified(path: &PathBuf, rect: &calib_targets_chessboard::RectifiedMeshView) -> Result<(), image::ImageError> {
+fn save_rectified(
+    path: &PathBuf,
+    rect: &calib_targets_chessboard::RectifiedMeshView,
+) -> Result<(), image::ImageError> {
     let img_buf = ImageBuffer::<Luma<u8>, _>::from_raw(
         rect.rect.width as u32,
         rect.rect.height as u32,
