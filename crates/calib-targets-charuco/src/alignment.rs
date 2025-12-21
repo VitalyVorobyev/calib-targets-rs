@@ -19,6 +19,20 @@ impl GridTransform {
     pub fn apply(&self, i: i32, j: i32) -> [i32; 2] {
         [self.a * i + self.b * j, self.c * i + self.d * j]
     }
+
+    /// Invert the transform if it is unimodular (det = ±1).
+    pub fn inverse(&self) -> Option<GridTransform> {
+        let det = self.a * self.d - self.b * self.c;
+        if det != 1 && det != -1 {
+            return None;
+        }
+        Some(GridTransform {
+            a: self.d / det,
+            b: -self.b / det,
+            c: -self.c / det,
+            d: self.a / det,
+        })
+    }
 }
 
 /// Alignment result between detected markers and a board specification.
@@ -45,6 +59,7 @@ struct Pair {
     sy: i32,
     ex: i32,
     ey: i32,
+    weight: f32,
 }
 
 const TRANSFORMS: [GridTransform; 8] = [
@@ -108,23 +123,23 @@ pub(crate) fn solve_alignment(
         return None;
     }
 
-    let mut best: Option<(usize, GridTransform, [i32; 2], Vec<usize>)> = None;
+    let mut best: Option<(f32, usize, GridTransform, [i32; 2], Vec<usize>)> = None;
 
     for transform in TRANSFORMS {
-        let translation = best_translation(&pairs, transform)?;
+        let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
         let inliers = inliers_for_transform(&pairs, transform, translation);
-        let candidate = (inliers.len(), transform, translation, inliers);
+        let candidate = (weight_sum, count, transform, translation, inliers);
         match best {
             None => best = Some(candidate),
-            Some((best_n, _, _, _)) => {
-                if candidate.0 > best_n {
+            Some((best_w, best_n, _, _, _)) => {
+                if candidate.0 > best_w || (candidate.0 == best_w && candidate.1 > best_n) {
                     best = Some(candidate);
                 }
             }
         }
     }
 
-    let (_, transform, translation, marker_inliers) = best?;
+    let (_, _, transform, translation, marker_inliers) = best?;
     Some(CharucoAlignment {
         transform,
         translation,
@@ -180,22 +195,31 @@ fn marker_pairs(board: &CharucoBoard, markers: &[MarkerDetection]) -> Vec<Pair> 
                 sy: m.sy,
                 ex,
                 ey,
+                weight: m.score.max(0.0),
             })
         })
         .collect()
 }
 
-fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<[i32; 2]> {
-    let mut counts: std::collections::HashMap<[i32; 2], usize> =
+fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2], f32, usize)> {
+    let mut counts: std::collections::HashMap<[i32; 2], (f32, usize)> =
         std::collections::HashMap::new();
     for p in pairs {
         let [rx, ry] = transform.apply(p.sx, p.sy);
         let t = [p.ex - rx, p.ey - ry];
-        *counts.entry(t).or_insert(0) += 1;
+        let entry = counts.entry(t).or_insert((0.0, 0));
+        entry.0 += p.weight;
+        entry.1 += 1;
     }
 
-    let (translation, _) = counts.into_iter().max_by_key(|(_, c)| *c)?;
-    Some(translation)
+    let (translation, (weight_sum, count)) = counts
+        .into_iter()
+        .max_by(|(_, a), (_, b)| {
+            a.0.partial_cmp(&b.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+        })?;
+    Some((translation, weight_sum, count))
 }
 
 fn inliers_for_transform(

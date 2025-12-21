@@ -14,8 +14,8 @@ This repository contains a small family of crates for detecting various calibrat
   - `Corner`, `LabeledCorner`, `TargetDetection`, `TargetKind`
   - helpers such as `estimate_grid_axes_from_orientations`
 - `calib-targets-chessboard` – plain chessboard detector built on top of `calib-targets-core`.
-- `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids.
-- `calib-targets-charuco` – grid-first ChArUco detector + rectification utilities (global homography + mesh warp).
+- `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids or per-cell quads.
+- `calib-targets-charuco` – grid-first ChArUco detector with per-cell marker sampling by default and optional rectified output.
 - `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles), currently a thin wrapper around the chessboard detector.
 
 All crates live in a single Cargo workspace (see `Cargo.toml` at the repository root).
@@ -63,6 +63,9 @@ The `examples/charuco_mesh_warp.rs` example demonstrates:
 - mesh-rectification (piecewise homographies per grid cell),
 - decoding embedded ArUco markers on the rectified grid via `calib-targets-aruco`.
 
+For performance-sensitive pipelines, you can also decode markers per cell without
+building the full rectified image.
+
 Run it with:
 
 ```bash
@@ -74,8 +77,8 @@ cargo run --release --example charuco_mesh_warp
 The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
 
 - chessboard detection from ChESS corners,
-- mesh-rectification,
-- marker decoding,
+- per-cell marker decoding (with optional rectified output for debugging),
+- marker decoding and alignment,
 - marker→board alignment and corner ID assignment.
 
 Run it with:

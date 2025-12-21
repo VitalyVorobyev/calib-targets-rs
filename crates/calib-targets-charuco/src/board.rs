@@ -106,6 +106,12 @@ impl CharucoBoard {
         self.marker_positions.get(id as usize).copied()
     }
 
+    /// Number of markers on the board.
+    #[inline]
+    pub fn marker_count(&self) -> usize {
+        self.marker_positions.len()
+    }
+
     /// Convert a board **corner coordinate** `(i, j)` into a ChArUco corner id.
     ///
     /// Returns `None` if the corner is outside the inner corner range.

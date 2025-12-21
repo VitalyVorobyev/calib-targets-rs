@@ -3,8 +3,8 @@
 use crate::alignment::{map_charuco_corners, solve_alignment, CharucoAlignment};
 use crate::board::{CharucoBoard, MarkerLayout};
 use calib_targets_aruco::{
-    scan_decode_markers, scan_decode_markers_in_cells, MarkerCell, MarkerDetection, Matcher,
-    ScanDecodeConfig,
+    decode_marker_in_cell, scan_decode_markers, scan_decode_markers_in_cells, MarkerCell,
+    MarkerDetection, Matcher, ScanDecodeConfig,
 };
 use calib_targets_chessboard::{
     rectify_mesh_from_grid, ChessboardDetector, ChessboardParams, GridGraphParams, MeshWarpError,
@@ -24,6 +24,10 @@ pub struct CharucoDetectorParams {
     /// Grid graph parameters.
     pub graph: GridGraphParams,
     /// Marker scan parameters.
+    ///
+    /// `CharucoDetectorParams::for_board` uses a slightly smaller inset
+    /// (`inset_frac = 0.06`) to improve real-image robustness. If
+    /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
     pub scan: ScanDecodeConfig,
     /// Maximum Hamming distance for marker matching.
     pub max_hamming: u8,
@@ -52,6 +56,7 @@ impl CharucoDetectorParams {
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.spec().marker_size_rel,
+            inset_frac: 0.06,
             ..ScanDecodeConfig::default()
         };
 
@@ -111,7 +116,9 @@ impl CharucoDetector {
         if params.chessboard.expected_cols.is_none() {
             params.chessboard.expected_cols = Some(board.expected_inner_cols());
         }
-        params.scan.marker_size_rel = board.spec().marker_size_rel;
+        if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
+            params.scan.marker_size_rel = board.spec().marker_size_rel;
+        }
 
         let max_hamming = params
             .max_hamming
@@ -157,8 +164,7 @@ impl CharucoDetector {
         let corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
         let cells = build_marker_cells(&corner_map);
 
-        let mut scan_cfg = self.params.scan.clone();
-        scan_cfg.dedup_by_id = false;
+        let scan_cfg = self.params.scan.clone();
 
         let markers = scan_decode_markers_in_cells(
             image,
@@ -175,6 +181,22 @@ impl CharucoDetector {
         let mut rectified_for_output = None;
         let (mut markers, mut alignment) = select_alignment(&self.board, markers)
             .ok_or(CharucoDetectError::AlignmentFailed { inliers: 0usize })?;
+
+        let refined = refine_markers_for_alignment(
+            &self.board,
+            &alignment,
+            image,
+            &corner_map,
+            self.params.px_per_square,
+            &scan_cfg,
+            &self.matcher,
+        );
+        if let Some((refined_markers, refined_alignment)) =
+            maybe_refine_alignment(&self.board, refined, alignment.marker_inliers.len())
+        {
+            markers = refined_markers;
+            alignment = refined_alignment;
+        }
 
         if alignment.marker_inliers.len() < self.params.min_marker_inliers
             && self.params.fallback_to_rectified
@@ -199,8 +221,24 @@ impl CharucoDetector {
                 &self.matcher,
             );
             if let Some((m, a)) = select_alignment(&self.board, rect_markers) {
-                markers = m;
-                alignment = a;
+                let refined = refine_markers_for_alignment(
+                    &self.board,
+                    &a,
+                    image,
+                    &corner_map,
+                    self.params.px_per_square,
+                    &scan_cfg,
+                    &self.matcher,
+                );
+                if let Some((refined_markers, refined_alignment)) =
+                    maybe_refine_alignment(&self.board, refined, a.marker_inliers.len())
+                {
+                    markers = refined_markers;
+                    alignment = refined_alignment;
+                } else {
+                    markers = m;
+                    alignment = a;
+                }
                 rectified_for_output = Some(rectified);
             }
         }
@@ -292,6 +330,86 @@ fn build_marker_cells(map: &HashMap<GridCoords, Point2<f32>>) -> Vec<MarkerCell>
     }
 
     out
+}
+
+fn refine_markers_for_alignment(
+    board: &CharucoBoard,
+    alignment: &CharucoAlignment,
+    image: &GrayImageView<'_>,
+    map: &HashMap<GridCoords, Point2<f32>>,
+    px_per_square: f32,
+    scan_cfg: &ScanDecodeConfig,
+    matcher: &Matcher,
+) -> Vec<MarkerDetection> {
+    let Some(inv) = alignment.transform.inverse() else {
+        return Vec::new();
+    };
+
+    let mut refined = Vec::new();
+    let marker_count = board.marker_count();
+    for id in 0..marker_count as u32 {
+        let Some([ex, ey]) = board.marker_position(id) else {
+            continue;
+        };
+        let dx = ex - alignment.translation[0];
+        let dy = ey - alignment.translation[1];
+        let [sx, sy] = inv.apply(dx, dy);
+
+        let Some(cell) = marker_cell_from_map(map, sx, sy) else {
+            continue;
+        };
+        let Some(det) =
+            decode_marker_in_cell(image, &cell, px_per_square, scan_cfg, matcher)
+        else {
+            continue;
+        };
+        if det.id == id {
+            refined.push(det);
+        }
+    }
+    refined
+}
+
+fn maybe_refine_alignment(
+    board: &CharucoBoard,
+    markers: Vec<MarkerDetection>,
+    previous_inliers: usize,
+) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
+    if markers.is_empty() {
+        return None;
+    }
+    let alignment = solve_alignment(board, &markers)?;
+    if alignment.marker_inliers.len() >= previous_inliers {
+        Some((markers, alignment))
+    } else {
+        None
+    }
+}
+
+fn marker_cell_from_map(
+    map: &HashMap<GridCoords, Point2<f32>>,
+    sx: i32,
+    sy: i32,
+) -> Option<MarkerCell> {
+    let g00 = GridCoords { i: sx, j: sy };
+    let g10 = GridCoords { i: sx + 1, j: sy };
+    let g11 = GridCoords {
+        i: sx + 1,
+        j: sy + 1,
+    };
+    let g01 = GridCoords { i: sx, j: sy + 1 };
+
+    let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
+        (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
+    else {
+        return None;
+    };
+
+    Some(MarkerCell {
+        sx,
+        sy,
+        corners_img: [p00, p10, p11, p01],
+    })
 }
 
 fn select_alignment(
