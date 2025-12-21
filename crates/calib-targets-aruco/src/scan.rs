@@ -6,6 +6,8 @@ use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(feature = "tracing")]
+use tracing::instrument;
 
 /// Decoder configuration for scanning markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -140,6 +142,8 @@ pub fn scan_decode_markers(
 /// Decode markers from explicit per-cell image quads.
 ///
 /// This avoids warping the full image and can be parallelized by the caller.
+#[cfg_attr(feature = "tracing", instrument(level = "info", skip(image, cells, cfg, matcher),
+fields(cells=cells.len(), w=image.width, h=image.height)))]
 pub fn scan_decode_markers_in_cells(
     image: &GrayImageView<'_>,
     cells: &[MarkerCell],

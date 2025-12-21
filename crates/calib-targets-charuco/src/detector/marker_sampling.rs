@@ -7,9 +7,14 @@ use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner};
 use nalgebra::Point2;
 use std::collections::HashMap;
 
+#[cfg(feature = "tracing")]
+use tracing::instrument;
+
 pub(crate) type CornerMap = HashMap<GridCoords, Point2<f32>>;
 
+
 /// Build a grid -> image map from inlier chessboard corners.
+#[cfg_attr(feature = "tracing", instrument(level = "info", skip(corners, inliers), fields(corners=inliers.len())))]
 pub(crate) fn build_corner_map(corners: &[LabeledCorner], inliers: &[usize]) -> CornerMap {
     let mut map = HashMap::new();
     for &idx in inliers {
@@ -23,6 +28,7 @@ pub(crate) fn build_corner_map(corners: &[LabeledCorner], inliers: &[usize]) -> 
 }
 
 /// Enumerate complete square cells (TL, TR, BR, BL) from a corner map.
+#[cfg_attr(feature = "tracing", instrument(level = "info", skip(map), fields(corners=map.len())))]
 pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;

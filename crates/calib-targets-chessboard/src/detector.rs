@@ -6,7 +6,7 @@ use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
     OrientationHistogram, TargetDetection, TargetKind,
 };
-use log::{info, warn};
+use log::{debug, warn};
 use std::f32::consts::FRAC_PI_2;
 
 #[cfg(feature = "tracing")]
@@ -76,7 +76,7 @@ impl ChessboardDetector {
             .cloned()
             .collect();
 
-        info!(
+        debug!(
             "found {} raw ChESS corners after strength filter",
             strong.len()
         );
@@ -119,7 +119,7 @@ impl ChessboardDetector {
             }
         }
 
-        info!(
+        debug!(
             "kept {} ChESS corners after orientation consistency filter",
             strong.len()
         );
@@ -131,7 +131,7 @@ impl ChessboardDetector {
         let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
 
         let components = connected_components(&graph);
-        info!(
+        debug!(
             "found {} connected grid components after orientation filtering",
             components.len()
         );
@@ -142,20 +142,14 @@ impl ChessboardDetector {
             if component.len() < self.params.min_corners {
                 continue;
             }
-            info!("comp: {} corners", component.len());
-
             let coords = assign_grid_coordinates(&graph, component);
             if coords.is_empty() {
                 continue;
             }
-            info!("coords: {}", coords.len());
-
             let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
             else {
                 continue;
             };
-            info!("inliers: {} corners", inliers.len());
-
             let score = detection.corners.len();
             match best {
                 None => best = Some((detection, inliers, score)),
@@ -167,15 +161,7 @@ impl ChessboardDetector {
         }
 
         let (detection, inliers, _) = best?;
-        info!("Best component contains {} inliers", inliers.len());
-
         let graph_debug = Some(build_graph_debug(&graph, &strong));
-
-        info!(
-            "debug extras: histogram={}, orientations={:?}",
-            orientation_histogram.is_some(),
-            grid_diagonals
-        );
 
         Some(ChessboardDetectionResult {
             detection,
@@ -205,13 +191,7 @@ impl ChessboardDetector {
         let width = (max_i - min_i + 1) as u32;
         let height = (max_j - min_j + 1) as u32;
 
-        info!(
-            "min_i {min_i}, min_j {min_j}, width {width}, height {height}, expected w {:?} h {:?}",
-            self.params.expected_cols, self.params.expected_rows
-        );
-
         let (board_cols, board_rows, swap_axes) = select_board_size(width, height, &self.params)?;
-        info!("board size: {board_cols}x{board_rows}");
 
         let grid_area = (board_cols * board_rows) as f32;
         if grid_area <= f32::EPSILON {

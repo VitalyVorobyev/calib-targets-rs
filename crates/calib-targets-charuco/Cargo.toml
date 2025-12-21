@@ -6,7 +6,7 @@ description = "ChArUco board detector built on top of calib-targets-core"
 license = "MIT"
 
 [features]
-tracing = ["dep:tracing"]
+tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
 calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
