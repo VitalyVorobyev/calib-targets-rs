@@ -2,9 +2,13 @@
 
 use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
+use serde::{Deserialize, Serialize};
+
+#[cfg(feature = "tracing")]
+use tracing::instrument;
 
 /// Integer grid transform used for marker alignment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GridTransform {
     pub a: i32,
     pub b: i32,
@@ -35,7 +39,7 @@ impl GridTransform {
 }
 
 /// Alignment result between detected markers and a board specification.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoAlignment {
     pub transform: GridTransform,
     pub translation: [i32; 2],
@@ -113,6 +117,7 @@ const TRANSFORMS: [GridTransform; 8] = [
 ];
 
 /// Estimate a grid transform + translation that best aligns marker detections to the board.
+#[cfg_attr(feature = "tracing", instrument(level = "info", skip(board, markers)))]
 pub(crate) fn solve_alignment(
     board: &CharucoBoard,
     markers: &[MarkerDetection],

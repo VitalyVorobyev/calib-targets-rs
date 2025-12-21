@@ -10,9 +10,14 @@
 mod alignment;
 mod board;
 mod detector;
+mod io;
 
 pub use alignment::{CharucoAlignment, GridTransform};
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 pub use detector::{
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
+};
+pub use io::{
+    CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
+    RectifiedImageInfo, TimingsMs,
 };

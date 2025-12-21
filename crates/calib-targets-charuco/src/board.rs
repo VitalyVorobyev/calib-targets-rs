@@ -2,26 +2,36 @@
 
 use calib_targets_aruco::Dictionary;
 use nalgebra::Point2;
+use serde::{Deserialize, Serialize};
 
 /// Marker placement scheme for the board.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MarkerLayout {
     /// OpenCV-style ChArUco layout:
     /// - markers are placed on white squares only (assuming top-left square is black),
     /// - marker IDs are assigned sequentially in row-major order over those squares.
+    #[serde(rename = "opencv_charuco", alias = "open_cv_charuco")]
     OpenCvCharuco,
+}
+
+impl Default for MarkerLayout {
+    fn default() -> Self {
+        MarkerLayout::OpenCvCharuco
+    }
 }
 
 /// Static ChArUco board specification.
 ///
 /// `rows`/`cols` are **square counts** (not inner corner counts).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CharucoBoardSpec {
     pub rows: u32,
     pub cols: u32,
     pub cell_size: f32,
     pub marker_size_rel: f32,
     pub dictionary: Dictionary,
+    #[serde(default)]
     pub marker_layout: MarkerLayout,
 }
 

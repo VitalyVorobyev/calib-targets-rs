@@ -1,9 +1,10 @@
 use nalgebra::{Point2, Vector2};
+use serde::{Deserialize, Serialize};
 
 /// Canonical 2D corner used by all target detectors.
 ///
 /// This is the thing you obtain by adapting the output of your ChESS crate.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Corner {
     /// Corner position in pixel coordinates.
     pub position: Point2<f32>,
@@ -29,14 +30,15 @@ impl Corner {
 }
 
 /// Integer grid coordinates (i, j) in board space.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct GridCoords {
     pub i: i32,
     pub j: i32,
 }
 
 /// The kind of target that a detection corresponds to.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TargetKind {
     Chessboard,
     Charuco,
@@ -44,7 +46,7 @@ pub enum TargetKind {
 }
 
 /// A corner that is part of a detected target, with optional ID info.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LabeledCorner {
     /// Pixel position.
     pub position: Point2<f32>,
@@ -60,7 +62,7 @@ pub struct LabeledCorner {
 }
 
 /// One detected target (board instance) in an image.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TargetDetection {
     pub kind: TargetKind,
     pub corners: Vec<LabeledCorner>,

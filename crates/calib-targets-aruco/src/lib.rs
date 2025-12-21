@@ -17,6 +17,6 @@ mod threshold;
 pub use dictionary::Dictionary;
 pub use matcher::{rotate_code_u64, Match, Matcher};
 pub use scan::{
-    decode_marker_in_cell, scan_decode_markers, scan_decode_markers_in_cells, MarkerCell,
-    MarkerDetection, ScanDecodeConfig,
+    decode_marker_in_cell, scan_decode_markers, scan_decode_markers_in_cells, ArucoScanConfig,
+    MarkerCell, MarkerDetection, ScanDecodeConfig,
 };

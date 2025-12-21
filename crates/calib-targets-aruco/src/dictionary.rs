@@ -1,5 +1,7 @@
 //! Dictionary metadata and packed marker codes.
 
+use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
+
 /// A fixed ArUco/AprilTag-style dictionary.
 #[derive(Clone, Copy, Debug)]
 pub struct Dictionary {
@@ -20,5 +22,25 @@ impl Dictionary {
     #[inline]
     pub fn bit_count(&self) -> usize {
         self.marker_size * self.marker_size
+    }
+}
+
+impl Serialize for Dictionary {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.name)
+    }
+}
+
+impl<'de> Deserialize<'de> for Dictionary {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let name = String::deserialize(deserializer)?;
+        crate::builtins::builtin_dictionary(&name)
+            .ok_or_else(|| D::Error::custom(format!("unknown dictionary {name}")))
     }
 }

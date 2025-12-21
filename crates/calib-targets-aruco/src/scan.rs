@@ -4,10 +4,12 @@ use crate::threshold::otsu_threshold_from_samples;
 use crate::Matcher;
 use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
 use nalgebra::Point2;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Decoder configuration for scanning markers.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ScanDecodeConfig {
     /// Marker border width in cells (OpenCV typically uses 1).
     pub border_bits: usize,
@@ -36,8 +38,46 @@ impl Default for ScanDecodeConfig {
     }
 }
 
+/// Optional overrides for marker scanning and matching.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ArucoScanConfig {
+    #[serde(default)]
+    pub max_hamming: Option<u8>,
+    #[serde(default)]
+    pub border_bits: Option<usize>,
+    #[serde(default)]
+    pub inset_frac: Option<f32>,
+    #[serde(default)]
+    pub marker_size_rel: Option<f32>,
+    #[serde(default)]
+    pub min_border_score: Option<f32>,
+    #[serde(default)]
+    pub dedup_by_id: Option<bool>,
+}
+
+impl ArucoScanConfig {
+    /// Apply overrides to an existing `ScanDecodeConfig`.
+    pub fn apply_to_scan(&self, scan: &mut ScanDecodeConfig) {
+        if let Some(border_bits) = self.border_bits {
+            scan.border_bits = border_bits;
+        }
+        if let Some(inset_frac) = self.inset_frac {
+            scan.inset_frac = inset_frac;
+        }
+        if let Some(marker_size_rel) = self.marker_size_rel {
+            scan.marker_size_rel = marker_size_rel;
+        }
+        if let Some(min_border_score) = self.min_border_score {
+            scan.min_border_score = min_border_score;
+        }
+        if let Some(dedup_by_id) = self.dedup_by_id {
+            scan.dedup_by_id = dedup_by_id;
+        }
+    }
+}
+
 /// One decoded marker detection.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerDetection {
     pub id: u32,
     /// Square cell coordinates in rectified grid coords.
@@ -56,7 +96,7 @@ pub struct MarkerDetection {
 }
 
 /// One square cell with its image-space corners.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerCell {
     /// Cell coordinates in grid space (top-left corner of the square).
     pub sx: i32,

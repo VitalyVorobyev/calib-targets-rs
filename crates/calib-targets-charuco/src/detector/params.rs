@@ -1,9 +1,10 @@
 use crate::board::CharucoBoard;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoDetectorParams {
     /// Pixels per board square in the canonical sampling space.
     pub px_per_square: f32,

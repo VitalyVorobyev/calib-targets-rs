@@ -5,15 +5,19 @@ edition = "2021"
 description = "ChArUco board detector built on top of calib-targets-core"
 license = "MIT"
 
+[features]
+tracing = ["dep:tracing"]
+
 [dependencies]
-calib-targets-core = { path = "../calib-targets-core" }
-calib-targets-chessboard = { path = "../calib-targets-chessboard" }
-calib-targets-aruco = { path = "../calib-targets-aruco" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
+calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
+calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.1" }
 nalgebra = "0.34"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 thiserror = "2"
+tracing = { version = "0.1", optional=true }
 
 [dev-dependencies]
 chess-corners = "0.2"
 image = { version = "0.25", default-features = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
