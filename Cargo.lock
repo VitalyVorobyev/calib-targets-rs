@@ -321,9 +321,11 @@ dependencies = [
  "calib-targets-core",
  "chess-corners",
  "image",
+ "log",
  "nalgebra",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

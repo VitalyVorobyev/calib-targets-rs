@@ -1,0 +1,44 @@
+{
+  "image_path": "testdata/markerboard.png",
+  "output_path": "tmpdata/marker_detect_report.json",
+  "board": {
+    "rows": 22,
+    "cols": 22,
+    "circle_positions": [
+      [11, 11],
+      [12, 11],
+      [12, 12]
+    ]
+  },
+  "chessboard": {
+    "min_corner_strength": 0.2,
+    "min_corners": 50,
+    "expected_rows": 22,
+    "expected_cols": 22,
+    "completeness_threshold": 0.05,
+    "use_orientation_clustering": true,
+    "orientation_clustering_params": {
+      "num_bins": 90,
+      "max_iters": 10,
+      "peak_min_separation_deg": 15.0,
+      "outlier_threshold_deg": 30.0,
+      "min_peak_weight_fraction": 0.2,
+      "use_weights": true
+    }
+  },
+  "graph": {
+    "min_spacing_pix": 20.0,
+    "max_spacing_pix": 100.0,
+    "k_neighbors": 8,
+    "orientation_tolerance_deg": 22.5
+  },
+  "circle_score": {
+    "patch_size": 64,
+    "diameter_frac": 0.5,
+    "ring_thickness_frac": 0.35,
+    "ring_radius_mul": 1.6,
+    "min_contrast": 10.0,
+    "samples": 48,
+    "center_search_px": 2
+  }
+}

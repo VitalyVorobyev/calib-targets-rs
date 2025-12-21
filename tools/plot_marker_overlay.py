@@ -107,6 +107,7 @@ def main() -> None:
 
     chessboard = (data.get("chessboard") or {}).get("corners") or []
     candidates = data.get("circle_candidates") or []
+    candidates = []
     matches = data.get("matches") or []
 
     img = mpimg.imread(str(image_path))
@@ -121,6 +122,7 @@ def main() -> None:
 
     ax.set_title("Marker board detection overlay")
     ax.set_axis_off()
+    fig.tight_layout()
 
     out_path = args.output or args.report.with_name(args.report.stem + "_overlay.png")
     plt.savefig(out_path, bbox_inches="tight", dpi=200)

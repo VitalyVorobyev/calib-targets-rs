@@ -5,10 +5,15 @@ edition = "2021"
 description = "Checkerboard marker target detector (checkerboard + 3 central circles)"
 license = "MIT OR Apache-2.0"
 
+[features]
+tracing = ["calib-targets-core/tracing", "dep:tracing"]
+
 [dependencies]
-calib-targets-core = { path = "../calib-targets-core" }
-calib-targets-chessboard = { path = "../calib-targets-chessboard" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
+calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
 nalgebra = "0.34"
+tracing = { version = "0.1", optional=true }
+log = "0.4"
 
 [dev-dependencies]
 chess-corners = "0.2"
