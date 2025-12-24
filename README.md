@@ -16,7 +16,7 @@ This repository contains a small family of crates for detecting various calibrat
 - `calib-targets-chessboard` – plain chessboard detector built on top of `calib-targets-core`.
 - `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids or per-cell quads.
 - `calib-targets-charuco` – grid-first ChArUco detector with per-cell marker sampling by default and optional rectified output.
-- `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles), currently a thin wrapper around the chessboard detector.
+- `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles) with per-cell circle scoring and layout-based matching.
 
 All crates live in a single Cargo workspace (see `Cargo.toml` at the repository root).
 
@@ -98,7 +98,7 @@ Planned work includes:
 
 - Improving chessboard robustness and (eventually) multi-board detection.
 - Improving the ChArUco solver (more layouts, robustness, calibration outputs).
-- Implementing circle-based logic for the checkerboard marker detector.
+- Refining circle-based marker detection and grid-offset alignment.
 - Adding more comprehensive examples and tests.
 
 ## Development

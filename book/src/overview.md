@@ -23,7 +23,7 @@
 - Public APIs are not yet stable and the facade crate is minimal.
 - ArUco decoding assumes rectified grids and does not perform quad detection.
 - ChArUco alignment is still focused on the OpenCV-style layout.
-- Marker detector is a thin wrapper; circle detection and ID assignment are unfinished.
+- Marker detector is implemented, but matching heuristics and alignment validation still need refinement.
 - Test coverage is narrow and performance/benchmarks are not yet a focus.
 - MSRV is unspecified.
 

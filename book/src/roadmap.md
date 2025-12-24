@@ -51,13 +51,13 @@ This project is in early development, and APIs can change. The roadmap below foc
 
 **Phase 1 (complete the detector)**
 
-- Implement circle detection and scoring on top of the existing grid model.
-- Match circle centers to grid coordinates and assign marker IDs.
-- Add tests and a synthetic data generator to validate circle scoring.
+- Circle detection and scoring on top of the existing grid model (done).
+- Match circle centers to the layout and expose grid offsets; add explicit marker IDs.
+- Expand tests and add a synthetic data generator to validate circle scoring.
 
 **Phase 2 (robustness)**
 
-- Handle partial boards and missing corners.
+- Partial boards and missing corners are supported; refine alignment validation.
 - Improve circle scoring under blur, noise, and non-uniform lighting.
 
 ## calib-targets (facade)

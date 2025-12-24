@@ -17,6 +17,4 @@ pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout}
 pub use detector::{
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
 };
-pub use io::{
-    CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError
-};
+pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};

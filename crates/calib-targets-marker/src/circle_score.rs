@@ -1,13 +1,17 @@
 use calib_targets_core::{homography_from_4pt, sample_bilinear, GrayImageView, Homography};
 use nalgebra::Point2;
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+use crate::coords::CellCoords;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CirclePolarity {
     White,
     Black,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleScoreParams {
     /// Canonical patch size (square), e.g. 64
     pub patch_size: usize,
@@ -39,13 +43,21 @@ impl Default for CircleScoreParams {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleCandidate {
     pub center_img: Point2<f32>,
-    pub center_grid: (f32, f32), // (i+0.5, j+0.5) in detected grid space
+    /// Detected cell coordinates (top-left corner indices).
+    pub cell: CellCoords,
     pub polarity: CirclePolarity,
     pub score: f32,
     pub contrast: f32,
+}
+
+impl CircleCandidate {
+    /// Cell center in detected grid coordinates.
+    pub fn center_grid(&self) -> (f32, f32) {
+        self.cell.center()
+    }
 }
 
 /// Score a circle in one chess square given its 4 image corners.
@@ -54,7 +66,7 @@ pub struct CircleCandidate {
 pub fn score_circle_in_square(
     img: &GrayImageView<'_>,
     square_corners_img: &[Point2<f32>; 4], // TL,TR,BR,BL
-    grid_cell_ij: (i32, i32),              // top-left corner indices (i,j) for this square
+    cell: CellCoords,                      // top-left corner indices (i,j) for this square
     params: &CircleScoreParams,
 ) -> Option<CircleCandidate> {
     let s = params.patch_size as f32;
@@ -119,13 +131,9 @@ pub fn score_circle_in_square(
     // Map chosen center to image space
     let center_img = h_img_from_patch.apply(c_patch);
 
-    // Detected grid center for this square (corner-index space)
-    let (i0, j0) = grid_cell_ij;
-    let center_grid = (i0 as f32 + 0.5, j0 as f32 + 0.5);
-
     Some(CircleCandidate {
         center_img,
-        center_grid,
+        cell,
         polarity,
         score,
         contrast,

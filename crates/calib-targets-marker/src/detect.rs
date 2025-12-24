@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use crate::circle_score::{
     score_circle_in_square, CircleCandidate, CirclePolarity, CircleScoreParams,
 };
+use crate::coords::CellCoords;
 use calib_targets_core::{GrayImageView, GridCoords};
 
 pub fn detect_circles_via_square_warp(
@@ -13,6 +14,10 @@ pub fn detect_circles_via_square_warp(
     // optional ROI in grid cell coords to avoid scanning whole board:
     roi: Option<(i32, i32, i32, i32)>, // (i_min, j_min, i_max, j_max) on CELL indices
 ) -> Vec<CircleCandidate> {
+    if map.is_empty() {
+        return Vec::new();
+    }
+
     // Determine scan bounds from map
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
@@ -27,7 +32,24 @@ pub fn detect_circles_via_square_warp(
     }
 
     // cell indices range: i in [min_i .. max_i-1], j in [min_j .. max_j-1]
-    let (scan_i0, scan_j0, scan_i1, scan_j1) = roi.unwrap_or((min_i, min_j, max_i - 1, max_j - 1));
+    let cell_min_i = min_i;
+    let cell_min_j = min_j;
+    let cell_max_i = max_i - 1;
+    let cell_max_j = max_j - 1;
+    if cell_max_i < cell_min_i || cell_max_j < cell_min_j {
+        return Vec::new();
+    }
+
+    let (mut scan_i0, mut scan_j0, mut scan_i1, mut scan_j1) =
+        roi.unwrap_or((cell_min_i, cell_min_j, cell_max_i, cell_max_j));
+
+    scan_i0 = scan_i0.max(cell_min_i);
+    scan_j0 = scan_j0.max(cell_min_j);
+    scan_i1 = scan_i1.min(cell_max_i);
+    scan_j1 = scan_j1.min(cell_max_j);
+    if scan_i0 > scan_i1 || scan_j0 > scan_j1 {
+        return Vec::new();
+    }
 
     let mut out = Vec::new();
 
@@ -47,7 +69,8 @@ pub fn detect_circles_via_square_warp(
 
             let corners_img = [p00, p10, p11, p01]; // TL,TR,BR,BL
 
-            if let Some(c) = score_circle_in_square(img, &corners_img, (i, j), score_params) {
+            let cell = CellCoords { i, j };
+            if let Some(c) = score_circle_in_square(img, &corners_img, cell, score_params) {
                 out.push(c);
             }
         }
@@ -83,4 +106,38 @@ pub fn top_k_by_polarity(
     }
 
     (whites, blacks)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::circle_score::CircleScoreParams;
+    use calib_targets_core::GrayImageView;
+
+    fn dummy_image() -> GrayImageView<'static> {
+        GrayImageView {
+            width: 1,
+            height: 1,
+            data: &[0u8],
+        }
+    }
+
+    #[test]
+    fn detect_circles_empty_map_returns_empty() {
+        let img = dummy_image();
+        let map = HashMap::new();
+        let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn detect_circles_insufficient_corners_returns_empty() {
+        let img = dummy_image();
+        let mut map = HashMap::new();
+        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        map.insert(GridCoords { i: 1, j: 0 }, Point2::new(1.0, 0.0));
+
+        let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
+        assert!(out.is_empty());
+    }
 }

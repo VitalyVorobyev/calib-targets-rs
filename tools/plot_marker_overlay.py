@@ -14,11 +14,45 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 
 
+def parse_point(value):
+    if isinstance(value, dict):
+        if "x" in value and "y" in value:
+            return [value["x"], value["y"]]
+        if "coords" in value:
+            coords = value["coords"]
+            if isinstance(coords, list):
+                if len(coords) == 2 and all(isinstance(v, (int, float)) for v in coords):
+                    return coords
+                if len(coords) == 1 and isinstance(coords[0], list) and len(coords[0]) == 2:
+                    return coords[0]
+    if isinstance(value, list):
+        if len(value) == 2 and all(isinstance(v, (int, float)) for v in value):
+            return value
+        if len(value) == 1 and isinstance(value[0], list) and len(value[0]) == 2:
+            return value[0]
+        if len(value) == 2 and all(isinstance(v, list) and len(v) == 1 for v in value):
+            return [value[0][0], value[1][0]]
+    return None
+
+
+def parse_cell(value):
+    if isinstance(value, dict) and "i" in value and "j" in value:
+        return [value["i"], value["j"]]
+    if isinstance(value, list) and len(value) == 2:
+        return value
+    return None
+
+
 def draw_chessboard(ax, corners):
     for c in corners:
+        center = parse_point(c.get("position")) if isinstance(c, dict) else None
+        if center is None and isinstance(c, dict):
+            center = [c.get("x"), c.get("y")]
+        if center is None:
+            continue
         ax.scatter(
-            c["x"],
-            c["y"],
+            center[0],
+            center[1],
             s=14,
             facecolors="none",
             edgecolors="green",
@@ -32,9 +66,12 @@ def draw_circles(ax, candidates, matches):
     if len(matches) == 0:
         for idx, c in enumerate(candidates):
             color = pol_color.get(c.get("polarity"), "yellow")
+            center = parse_point(c.get("center_img")) if isinstance(c, dict) else None
+            if center is None:
+                continue
             ax.scatter(
-                c["center_img"][0],
-                c["center_img"][1],
+                center[0],
+                center[1],
                 s=32,
                 facecolors="none",
                 edgecolors=color,
@@ -43,7 +80,7 @@ def draw_circles(ax, candidates, matches):
             )
             ax.annotate(
                 str(idx),
-                (c["center_img"][0], c["center_img"][1]),
+                (center[0], center[1]),
                 xytext=(3, -3),
                 textcoords="offset points",
                 fontsize=8,
@@ -57,10 +94,17 @@ def draw_circles(ax, candidates, matches):
             )
 
     for m in matches:
-        if m.get("matched_index") is None:
+        if not isinstance(m, dict):
             continue
-        center = m.get("center_img")
-        if not center:
+        matched_index = m.get("matched_index")
+        if matched_index is None:
+            continue
+        center = None
+        if "center_img" in m:
+            center = parse_point(m.get("center_img"))
+        if center is None and 0 <= matched_index < len(candidates):
+            center = parse_point(candidates[matched_index].get("center_img"))
+        if center is None:
             continue
         ax.scatter(
             center[0],
@@ -72,8 +116,13 @@ def draw_circles(ax, candidates, matches):
             alpha=0.9,
             zorder=5,
         )
+        expected_cell = None
+        if "expected_cell" in m:
+            expected_cell = parse_cell(m.get("expected_cell"))
+        elif "expected" in m:
+            expected_cell = parse_cell(m.get("expected", {}).get("cell"))
         ax.annotate(
-            f"cell {m['expected_cell']}",
+            f"cell {expected_cell}",
             (center[0], center[1]),
             xytext=(4, 4),
             textcoords="offset points",
@@ -106,9 +155,15 @@ def main() -> None:
     if not image_path.is_file():
         raise SystemExit(f"Image not found: {image_path}")
 
-    chessboard = (data.get("chessboard") or {}).get("corners") or []
-    candidates = data.get("circle_candidates") or []
-    matches = data.get("matches") or []
+    detection = data.get("detection")
+    if detection:
+        chessboard = (detection.get("detection") or {}).get("corners") or []
+        candidates = detection.get("circle_candidates") or []
+        matches = detection.get("circle_matches") or []
+    else:
+        chessboard = (data.get("chessboard") or {}).get("corners") or []
+        candidates = data.get("circle_candidates") or []
+        matches = data.get("matches") or []
 
     img = mpimg.imread(str(image_path))
 
