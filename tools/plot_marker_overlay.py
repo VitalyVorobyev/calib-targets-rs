@@ -21,39 +21,40 @@ def draw_chessboard(ax, corners):
             c["y"],
             s=14,
             facecolors="none",
-            edgecolors="0.6",
-            linewidths=0.6,
-            alpha=0.7,
+            edgecolors="green",
+            linewidths=0.8,
+            alpha=0.9,
         )
 
 
 def draw_circles(ax, candidates, matches):
     pol_color = {"white": "cyan", "black": "magenta"}
-    for idx, c in enumerate(candidates):
-        color = pol_color.get(c.get("polarity"), "yellow")
-        ax.scatter(
-            c["center_img"][0],
-            c["center_img"][1],
-            s=32,
-            facecolors="none",
-            edgecolors=color,
-            linewidths=1.2,
-            alpha=0.9,
-        )
-        ax.annotate(
-            str(idx),
-            (c["center_img"][0], c["center_img"][1]),
-            xytext=(3, -3),
-            textcoords="offset points",
-            fontsize=8,
-            color=color,
-            bbox=dict(
-                boxstyle="round,pad=0.2",
-                facecolor="black",
-                edgecolor="none",
-                alpha=0.5,
-            ),
-        )
+    if len(matches) == 0:
+        for idx, c in enumerate(candidates):
+            color = pol_color.get(c.get("polarity"), "yellow")
+            ax.scatter(
+                c["center_img"][0],
+                c["center_img"][1],
+                s=32,
+                facecolors="none",
+                edgecolors=color,
+                linewidths=1.2,
+                alpha=0.9,
+            )
+            ax.annotate(
+                str(idx),
+                (c["center_img"][0], c["center_img"][1]),
+                xytext=(3, -3),
+                textcoords="offset points",
+                fontsize=8,
+                color=color,
+                bbox=dict(
+                    boxstyle="round,pad=0.2",
+                    facecolor="black",
+                    edgecolor="none",
+                    alpha=0.5,
+                ),
+            )
 
     for m in matches:
         if m.get("matched_index") is None:
@@ -107,7 +108,6 @@ def main() -> None:
 
     chessboard = (data.get("chessboard") or {}).get("corners") or []
     candidates = data.get("circle_candidates") or []
-    candidates = []
     matches = data.get("matches") or []
 
     img = mpimg.imread(str(image_path))
