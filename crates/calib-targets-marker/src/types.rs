@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
-use calib_targets_core::TargetDetection;
+use calib_targets_core::{GridAlignment, TargetDetection};
 
 use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 use crate::coords::{CellCoords, CellOffset};
@@ -101,21 +101,13 @@ pub struct MarkerBoardDetectionResult {
     pub inliers: Vec<usize>,
     pub circle_candidates: Vec<CircleCandidate>,
     pub circle_matches: Vec<CircleMatch>,
-    pub grid_offset: Option<CellOffset>,
-    pub grid_offset_inliers: usize,
+    pub alignment: Option<GridAlignment>,
+    pub alignment_inliers: usize,
 }
 
 impl MarkerBoardDetectionResult {
-    /// Apply the estimated grid offset (if available) to corner grid coordinates.
+    /// Return the board-aligned corner detection if alignment is available.
     pub fn aligned_detection(&self) -> Option<TargetDetection> {
-        let offset = self.grid_offset?;
-        let mut det = self.detection.clone();
-        for corner in &mut det.corners {
-            if let Some(grid) = &mut corner.grid {
-                grid.i += offset.di;
-                grid.j += offset.dj;
-            }
-        }
-        Some(det)
+        self.alignment.map(|_| self.detection.clone())
     }
 }

@@ -12,9 +12,11 @@ mod board;
 mod detector;
 mod io;
 
-pub use alignment::{CharucoAlignment, GridTransform};
+pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 pub use detector::{
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
 };
 pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};
+
+pub use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

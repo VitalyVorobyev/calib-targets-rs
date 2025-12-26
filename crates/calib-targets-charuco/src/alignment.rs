@@ -2,47 +2,16 @@
 
 use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
+use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-/// Integer grid transform used for marker alignment.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GridTransform {
-    pub a: i32,
-    pub b: i32,
-    pub c: i32,
-    pub d: i32,
-}
-
-impl GridTransform {
-    /// Apply the transform to `(i, j)`.
-    #[inline]
-    pub fn apply(&self, i: i32, j: i32) -> [i32; 2] {
-        [self.a * i + self.b * j, self.c * i + self.d * j]
-    }
-
-    /// Invert the transform if it is unimodular (det = ±1).
-    pub fn inverse(&self) -> Option<GridTransform> {
-        let det = self.a * self.d - self.b * self.c;
-        if det != 1 && det != -1 {
-            return None;
-        }
-        Some(GridTransform {
-            a: self.d / det,
-            b: -self.b / det,
-            c: -self.c / det,
-            d: self.a / det,
-        })
-    }
-}
-
 /// Alignment result between detected markers and a board specification.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoAlignment {
-    pub transform: GridTransform,
-    pub translation: [i32; 2],
+    pub alignment: GridAlignment,
     pub marker_inliers: Vec<usize>,
 }
 
@@ -50,8 +19,7 @@ impl CharucoAlignment {
     /// Map grid coordinates `(i, j)` into board coordinates.
     #[inline]
     pub fn map(&self, i: i32, j: i32) -> [i32; 2] {
-        let [x, y] = self.transform.apply(i, j);
-        [x + self.translation[0], y + self.translation[1]]
+        self.alignment.map(i, j)
     }
 }
 
@@ -64,57 +32,6 @@ struct Pair {
     ey: i32,
     weight: f32,
 }
-
-const TRANSFORMS: [GridTransform; 8] = [
-    GridTransform {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: 1,
-    },
-    GridTransform {
-        a: 0,
-        b: 1,
-        c: -1,
-        d: 0,
-    },
-    GridTransform {
-        a: -1,
-        b: 0,
-        c: 0,
-        d: -1,
-    },
-    GridTransform {
-        a: 0,
-        b: -1,
-        c: 1,
-        d: 0,
-    },
-    GridTransform {
-        a: -1,
-        b: 0,
-        c: 0,
-        d: 1,
-    },
-    GridTransform {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: -1,
-    },
-    GridTransform {
-        a: 0,
-        b: 1,
-        c: 1,
-        d: 0,
-    },
-    GridTransform {
-        a: 0,
-        b: -1,
-        c: -1,
-        d: 0,
-    },
-];
 
 /// Estimate a grid transform + translation that best aligns marker detections to the board.
 #[cfg_attr(feature = "tracing", instrument(level = "info", skip(board, markers)))]
@@ -130,7 +47,7 @@ pub(crate) fn solve_alignment(
     type Candidate = (f32, usize, GridTransform, [i32; 2], Vec<usize>);
     let mut best: Option<Candidate> = None;
 
-    for transform in TRANSFORMS {
+    for transform in GRID_TRANSFORMS_D4 {
         let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
         let inliers = inliers_for_transform(&pairs, transform, translation);
         let candidate = (weight_sum, count, transform, translation, inliers);
@@ -146,8 +63,10 @@ pub(crate) fn solve_alignment(
 
     let (_, _, transform, translation, marker_inliers) = best?;
     Some(CharucoAlignment {
-        transform,
-        translation,
+        alignment: GridAlignment {
+            transform,
+            translation,
+        },
         marker_inliers,
     })
 }
@@ -247,8 +166,8 @@ mod tests {
         }
 
         let alignment = solve_alignment(&board, &markers).expect("alignment");
-        assert_eq!(alignment.transform, TRANSFORMS[0]);
-        assert_eq!(alignment.translation, [0, 0]);
+        assert_eq!(alignment.alignment.transform, GridTransform::IDENTITY);
+        assert_eq!(alignment.alignment.translation, [0, 0]);
         assert!(!alignment.marker_inliers.is_empty());
     }
 }

@@ -83,7 +83,7 @@ pub(crate) fn retain_inlier_markers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alignment::GridTransform;
+    use calib_targets_core::GridAlignment;
     use nalgebra::Point2;
 
     fn marker(id: u32, sx: i32, sy: i32) -> MarkerDetection {
@@ -105,13 +105,7 @@ mod tests {
     fn retain_inlier_markers_reindexes() {
         let markers = vec![marker(10, 0, 0), marker(11, 1, 0), marker(12, 2, 0)];
         let alignment = CharucoAlignment {
-            transform: GridTransform {
-                a: 1,
-                b: 0,
-                c: 0,
-                d: 1,
-            },
-            translation: [0, 0],
+            alignment: GridAlignment::IDENTITY,
             marker_inliers: vec![2, 0],
         };
 

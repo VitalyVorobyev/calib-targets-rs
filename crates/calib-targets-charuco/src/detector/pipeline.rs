@@ -113,7 +113,11 @@ impl CharucoDetector {
         let (markers, alignment) = retain_inlier_markers(markers, alignment);
         let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
 
-        Ok(CharucoDetectionResult { detection, markers })
+        Ok(CharucoDetectionResult {
+            detection,
+            markers,
+            alignment: alignment.alignment,
+        })
     }
 
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, markers, corner_map, scan_cfg),

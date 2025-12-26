@@ -105,9 +105,10 @@ pub(crate) fn refine_markers_for_alignment(
     scan_cfg: &ScanDecodeConfig,
     matcher: &Matcher,
 ) -> Vec<MarkerDetection> {
-    let Some(inv) = alignment.transform.inverse() else {
+    let Some(inv) = alignment.alignment.transform.inverse() else {
         return Vec::new();
     };
+    let [tx, ty] = alignment.alignment.translation;
 
     let mut refined = Vec::new();
     let marker_count = board.marker_count();
@@ -115,8 +116,8 @@ pub(crate) fn refine_markers_for_alignment(
         let Some([ex, ey]) = board.marker_position(id) else {
             continue;
         };
-        let dx = ex - alignment.translation[0];
-        let dy = ey - alignment.translation[1];
+        let dx = ex - tx;
+        let dy = ey - ty;
         let [sx, sy] = inv.apply(dx, dy);
 
         let Some(cell) = marker_cell_from_map(map, sx, sy) else {

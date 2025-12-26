@@ -4,6 +4,7 @@
 //! depend on any concrete corner detector or image type.
 
 mod corner;
+mod grid_alignment;
 mod homography;
 mod image;
 mod logger;
@@ -17,6 +18,7 @@ pub use image::{sample_bilinear, sample_bilinear_u8, GrayImage, GrayImageView};
 pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use corner::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 #[cfg(feature = "tracing")]
 pub use logger::init_tracing;

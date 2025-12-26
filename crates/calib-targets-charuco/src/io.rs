@@ -6,7 +6,7 @@ use crate::{
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
-use calib_targets_core::{Corner, TargetDetection};
+use calib_targets_core::{Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -122,6 +122,8 @@ pub struct CharucoDetectReport {
     #[serde(default)]
     pub markers: Option<Vec<MarkerDetection>>,
     #[serde(default)]
+    pub alignment: Option<GridAlignment>,
+    #[serde(default)]
     pub error: Option<String>,
 }
 
@@ -136,6 +138,7 @@ impl CharucoDetectReport {
             raw_corners,
             detection: None,
             markers: None,
+            alignment: None,
             error: None,
         }
     }
@@ -144,6 +147,7 @@ impl CharucoDetectReport {
     pub fn set_detection(&mut self, res: CharucoDetectionResult) {
         self.detection = Some(res.detection);
         self.markers = Some(res.markers);
+        self.alignment = Some(res.alignment);
         self.error = None;
     }
 

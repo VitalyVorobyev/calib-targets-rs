@@ -3,10 +3,11 @@ use std::collections::HashMap;
 use nalgebra::Point2;
 
 use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
-use calib_targets_core::{Corner, GrayImageView, GridCoords, TargetDetection, TargetKind};
+use calib_targets_core::{
+    Corner, GrayImageView, GridAlignment, GridCoords, GridTransform, TargetDetection, TargetKind,
+};
 
 use crate::circle_score::CircleCandidate;
-use crate::coords::CellOffset;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
 use crate::match_circles::{estimate_grid_offset, match_expected_circles};
 use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
@@ -75,18 +76,20 @@ impl MarkerBoardDetector {
             &candidates,
             &self.params.match_params,
         );
-        let (grid_offset, grid_offset_inliers) =
+        let (alignment, alignment_inliers) =
             estimate_grid_offset(&matches, self.params.match_params.min_offset_inliers)
-                .map(|(offset, inliers)| (Some(offset), inliers))
+                .map(|(offset, inliers)| {
+                    (
+                        Some(GridAlignment {
+                            transform: GridTransform::IDENTITY,
+                            translation: [offset.di, offset.dj],
+                        }),
+                        inliers,
+                    )
+                })
                 .unwrap_or((None, 0));
 
-        Some(self.result_from_chessboard(
-            chess,
-            candidates,
-            matches,
-            grid_offset,
-            grid_offset_inliers,
-        ))
+        Some(self.result_from_chessboard(chess, candidates, matches, alignment, alignment_inliers))
     }
 
     fn result_from_chessboard(
@@ -94,17 +97,26 @@ impl MarkerBoardDetector {
         chess: ChessboardDetectionResult,
         circle_candidates: Vec<CircleCandidate>,
         circle_matches: Vec<CircleMatch>,
-        grid_offset: Option<CellOffset>,
-        grid_offset_inliers: usize,
+        alignment: Option<GridAlignment>,
+        alignment_inliers: usize,
     ) -> MarkerBoardDetectionResult {
-        let detection = relabel_as_marker(chess.detection);
+        let mut detection = relabel_as_marker(chess.detection);
+        if let Some(alignment) = alignment {
+            for corner in &mut detection.corners {
+                if let Some(grid) = &mut corner.grid {
+                    let [i, j] = alignment.map(grid.i, grid.j);
+                    grid.i = i;
+                    grid.j = j;
+                }
+            }
+        }
         MarkerBoardDetectionResult {
             detection,
             inliers: chess.inliers,
             circle_candidates,
             circle_matches,
-            grid_offset,
-            grid_offset_inliers,
+            alignment,
+            alignment_inliers,
         }
     }
 }

@@ -65,9 +65,10 @@ fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alignment::{CharucoAlignment, GridTransform};
+    use crate::alignment::CharucoAlignment;
     use crate::board::{CharucoBoard, CharucoBoardSpec, MarkerLayout};
     use calib_targets_aruco::builtins;
+    use calib_targets_core::GridAlignment;
     use nalgebra::Point2;
 
     fn build_board() -> CharucoBoard {
@@ -100,13 +101,7 @@ mod tests {
     fn map_charuco_corners_keeps_best_confidence() {
         let board = build_board();
         let alignment = CharucoAlignment {
-            transform: GridTransform {
-                a: 1,
-                b: 0,
-                c: 0,
-                d: 1,
-            },
-            translation: [0, 0],
+            alignment: GridAlignment::IDENTITY,
             marker_inliers: Vec::new(),
         };
         let chessboard = TargetDetection {
