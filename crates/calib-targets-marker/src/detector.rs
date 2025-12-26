@@ -4,12 +4,12 @@ use nalgebra::Point2;
 
 use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
 use calib_targets_core::{
-    Corner, GrayImageView, GridAlignment, GridCoords, GridTransform, TargetDetection, TargetKind,
+    Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind,
 };
 
 use crate::circle_score::CircleCandidate;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
-use crate::match_circles::{estimate_grid_offset, match_expected_circles};
+use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
 use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
 
 /// Marker board detector: chessboard + three circle markers.
@@ -71,23 +71,34 @@ impl MarkerBoardDetector {
             candidates = [white, black].concat();
         }
 
-        let matches = match_expected_circles(
+        let mut matches = match_expected_circles(
             &self.params.layout.circles,
             &candidates,
             &self.params.match_params,
         );
-        let (alignment, alignment_inliers) =
-            estimate_grid_offset(&matches, self.params.match_params.min_offset_inliers)
-                .map(|(offset, inliers)| {
-                    (
-                        Some(GridAlignment {
-                            transform: GridTransform::IDENTITY,
-                            translation: [offset.di, offset.dj],
-                        }),
-                        inliers,
-                    )
-                })
-                .unwrap_or((None, 0));
+        let (alignment, alignment_inliers) = estimate_grid_alignment(
+            &matches,
+            &candidates,
+            self.params.match_params.min_offset_inliers,
+        )
+        .map(|(alignment, inliers)| (Some(alignment), inliers))
+        .unwrap_or((None, 0));
+
+        if let Some(alignment) = alignment {
+            for m in &mut matches {
+                let Some(idx) = m.matched_index else {
+                    continue;
+                };
+                let Some(cand) = candidates.get(idx) else {
+                    continue;
+                };
+                let [rx, ry] = alignment.transform.apply(cand.cell.i, cand.cell.j);
+                m.offset_cells = Some(crate::coords::CellOffset {
+                    di: m.expected.cell.i - rx,
+                    dj: m.expected.cell.j - ry,
+                });
+            }
+        }
 
         Some(self.result_from_chessboard(chess, candidates, matches, alignment, alignment_inliers))
     }
@@ -108,6 +119,34 @@ impl MarkerBoardDetector {
                     grid.i = i;
                     grid.j = j;
                 }
+            }
+
+            let cols = i32::try_from(self.params.layout.cols).ok();
+            let rows = i32::try_from(self.params.layout.rows).ok();
+            if let Some((cols, rows)) = cols.zip(rows) {
+                let cell_size = self.params.layout.cell_size;
+                for corner in &mut detection.corners {
+                    let Some(grid) = corner.grid else {
+                        continue;
+                    };
+                    if grid.i < 0 || grid.j < 0 || grid.i >= cols || grid.j >= rows {
+                        continue;
+                    }
+                    let id = (grid.j as u32)
+                        .checked_mul(self.params.layout.cols)
+                        .and_then(|base| base.checked_add(grid.i as u32));
+                    corner.id = id;
+                    if let Some(size) = cell_size.filter(|s| s.is_finite() && *s > 0.0) {
+                        corner.target_position =
+                            Some(Point2::new(grid.i as f32 * size, grid.j as f32 * size));
+                    }
+                }
+
+                detection.corners.sort_by(|a, b| {
+                    let ga = a.grid.unwrap();
+                    let gb = b.grid.unwrap();
+                    (ga.j, ga.i).cmp(&(gb.j, gb.i))
+                });
             }
         }
         MarkerBoardDetectionResult {

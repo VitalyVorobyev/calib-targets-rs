@@ -17,7 +17,7 @@ mod detector;
 pub use circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 pub use coords::{CellCoords, CellOffset};
 pub use detector::MarkerBoardDetector;
-pub use match_circles::{estimate_grid_offset, match_expected_circles};
+pub use match_circles::{estimate_grid_alignment, estimate_grid_offset, match_expected_circles};
 pub use types::{
     CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardLayout,
     MarkerBoardParams, MarkerCircleSpec,

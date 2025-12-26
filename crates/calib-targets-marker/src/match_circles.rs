@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::circle_score::CircleCandidate;
 use crate::coords::{CellCoords, CellOffset};
 use crate::types::{CircleMatch, CircleMatchParams, MarkerCircleSpec};
+use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 #[derive(Clone, Copy, Debug)]
 struct MatchOption {
@@ -138,6 +139,93 @@ pub fn estimate_grid_offset(
     Some((best_offset, best_count))
 }
 
+/// Estimate a dihedral alignment from detected cell coordinates to board cell coordinates.
+///
+/// The returned alignment maps `(cell_i, cell_j)` from the detected grid coordinate system into
+/// the board-anchored coordinate system: `dst = transform(src) + translation`.
+pub fn estimate_grid_alignment(
+    matches: &[CircleMatch],
+    candidates: &[CircleCandidate],
+    min_inliers: usize,
+) -> Option<(GridAlignment, usize)> {
+    #[derive(Clone, Copy)]
+    struct Pair {
+        sx: i32,
+        sy: i32,
+        ex: i32,
+        ey: i32,
+        weight: f32,
+    }
+
+    let mut pairs = Vec::new();
+    for m in matches {
+        let Some(idx) = m.matched_index else {
+            continue;
+        };
+        let cand = candidates.get(idx)?;
+        let ex = m.expected.cell.i;
+        let ey = m.expected.cell.j;
+        pairs.push(Pair {
+            sx: cand.cell.i,
+            sy: cand.cell.j,
+            ex,
+            ey,
+            weight: cand.contrast.max(0.0),
+        });
+    }
+
+    if pairs.is_empty() {
+        return None;
+    }
+
+    type Candidate = (f32, usize, GridTransform, [i32; 2]);
+    let mut best: Option<Candidate> = None;
+
+    for transform in GRID_TRANSFORMS_D4 {
+        let mut counts: HashMap<[i32; 2], (f32, usize)> = HashMap::new();
+        for p in &pairs {
+            let [rx, ry] = transform.apply(p.sx, p.sy);
+            let translation = [p.ex - rx, p.ey - ry];
+            let entry = counts.entry(translation).or_insert((0.0, 0));
+            entry.0 += p.weight;
+            entry.1 += 1;
+        }
+
+        let Some((translation, (weight_sum, count))) =
+            counts.into_iter().max_by(|(_, a), (_, b)| {
+                a.0.partial_cmp(&b.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.cmp(&b.1))
+            })
+        else {
+            continue;
+        };
+
+        let candidate = (weight_sum, count, transform, translation);
+        match best {
+            None => best = Some(candidate),
+            Some((best_w, best_n, _, _)) => {
+                if candidate.0 > best_w || (candidate.0 == best_w && candidate.1 > best_n) {
+                    best = Some(candidate);
+                }
+            }
+        }
+    }
+
+    let (_, inliers, transform, translation) = best?;
+    if inliers < min_inliers {
+        return None;
+    }
+
+    Some((
+        GridAlignment {
+            transform,
+            translation,
+        },
+        inliers,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,5 +312,80 @@ mod tests {
         let (offset, count) = estimate_grid_offset(&matches, 2).expect("offset");
         assert_eq!(offset, CellOffset { di: 3, dj: 4 });
         assert_eq!(count, 2);
+    }
+
+    fn candidate_with_contrast(
+        cell: CellCoords,
+        polarity: CirclePolarity,
+        contrast: f32,
+    ) -> CircleCandidate {
+        CircleCandidate {
+            center_img: Point2::new(0.0, 0.0),
+            cell,
+            polarity,
+            score: 0.0,
+            contrast,
+        }
+    }
+
+    #[test]
+    fn estimate_grid_alignment_recovers_transform_and_translation() {
+        let candidates = vec![
+            candidate_with_contrast(CellCoords { i: 2, j: 3 }, CirclePolarity::White, 10.0),
+            candidate_with_contrast(CellCoords { i: 5, j: 1 }, CirclePolarity::Black, 10.0),
+            candidate_with_contrast(CellCoords { i: -1, j: 4 }, CirclePolarity::White, 10.0),
+        ];
+
+        let transform = GridTransform {
+            a: 0,
+            b: 1,
+            c: 1,
+            d: 0,
+        }; // swap axes: (i, j) -> (j, i)
+        let translation = [10, 20];
+
+        let matches = vec![
+            CircleMatch {
+                expected: MarkerCircleSpec {
+                    cell: CellCoords {
+                        i: transform.apply(2, 3)[0] + translation[0],
+                        j: transform.apply(2, 3)[1] + translation[1],
+                    },
+                    polarity: CirclePolarity::White,
+                },
+                matched_index: Some(0),
+                distance_cells: None,
+                offset_cells: None,
+            },
+            CircleMatch {
+                expected: MarkerCircleSpec {
+                    cell: CellCoords {
+                        i: transform.apply(5, 1)[0] + translation[0],
+                        j: transform.apply(5, 1)[1] + translation[1],
+                    },
+                    polarity: CirclePolarity::Black,
+                },
+                matched_index: Some(1),
+                distance_cells: None,
+                offset_cells: None,
+            },
+            CircleMatch {
+                expected: MarkerCircleSpec {
+                    cell: CellCoords {
+                        i: transform.apply(-1, 4)[0] + translation[0],
+                        j: transform.apply(-1, 4)[1] + translation[1],
+                    },
+                    polarity: CirclePolarity::White,
+                },
+                matched_index: Some(2),
+                distance_cells: None,
+                offset_cells: None,
+            },
+        ];
+
+        let (est, inliers) = estimate_grid_alignment(&matches, &candidates, 3).expect("align");
+        assert_eq!(inliers, 3);
+        assert_eq!(est.transform, transform);
+        assert_eq!(est.translation, translation);
     }
 }

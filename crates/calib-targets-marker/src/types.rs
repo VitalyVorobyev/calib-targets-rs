@@ -20,6 +20,11 @@ pub struct MarkerBoardLayout {
     /// Full checkerboard dimensions (inner corners).
     pub rows: u32,
     pub cols: u32,
+    /// Optional square size (in your chosen world units, e.g. millimeters).
+    ///
+    /// When provided, detections will populate `LabeledCorner.target_position`.
+    #[serde(default)]
+    pub cell_size: Option<f32>,
     /// Expected circle markers.
     pub circles: [MarkerCircleSpec; 3],
 }
@@ -31,7 +36,7 @@ pub struct CircleMatchParams {
     pub max_candidates_per_polarity: usize,
     /// Optional max distance in cell units to accept a match.
     pub max_distance_cells: Option<f32>,
-    /// Minimum number of consistent matches needed to return a grid offset.
+    /// Minimum number of consistent matches needed to return a grid alignment.
     pub min_offset_inliers: usize,
 }
 
