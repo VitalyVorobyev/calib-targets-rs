@@ -95,6 +95,12 @@ pub struct MarkerDetection {
     pub inverted: bool,
     /// Corners of the square cell in rectified pixels.
     pub corners_rect: [Point2<f32>; 4],
+    /// Optional corners of the square cell in the *input image* pixel coordinates.
+    ///
+    /// This is populated when decoding from explicit cell quads (e.g. ChArUco grid-first
+    /// detection), and is suitable for drawing overlays on the original image.
+    #[serde(default)]
+    pub corners_img: Option<[Point2<f32>; 4]>,
 }
 
 /// One square cell with its image-space corners.
@@ -166,7 +172,8 @@ pub fn scan_decode_markers_in_cells(
         let Some(obs) = decoder.decode_warped(image, &h) else {
             continue;
         };
-        if let Some(det) = build_detection(cell.sx, cell.sy, px_per_square, obs, matcher) {
+        if let Some(mut det) = build_detection(cell.sx, cell.sy, px_per_square, obs, matcher) {
+            det.corners_img = Some(cell.corners_img);
             out.push(det);
         }
     }
@@ -190,7 +197,9 @@ pub fn decode_marker_in_cell(
     let cell_rect = cell_rect_corners(px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
-    build_detection(cell.sx, cell.sy, px_per_square, obs, matcher)
+    let mut det = build_detection(cell.sx, cell.sy, px_per_square, obs, matcher)?;
+    det.corners_img = Some(cell.corners_img);
+    Some(det)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -340,6 +349,7 @@ fn build_detection(
         code: obs.code,
         inverted: obs.inverted,
         corners_rect: corners,
+        corners_img: None,
     })
 }
 

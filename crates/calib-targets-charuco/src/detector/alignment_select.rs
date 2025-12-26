@@ -98,6 +98,7 @@ mod tests {
             code: 0,
             inverted: false,
             corners_rect: [Point2::new(0.0, 0.0); 4],
+            corners_img: None,
         }
     }
 

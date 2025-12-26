@@ -111,6 +111,31 @@ impl CharucoBoard {
         self.marker_positions.get(id as usize).copied()
     }
 
+    /// Square-cell coordinates `(sx, sy)` for the given marker id.
+    ///
+    /// These are chessboard square indices in the board coordinate system.
+    pub fn marker_cell(&self, marker_id: i32) -> Option<(usize, usize)> {
+        let id = u32::try_from(marker_id).ok()?;
+        let [sx, sy] = self.marker_position(id)?;
+        let sx = usize::try_from(sx).ok()?;
+        let sy = usize::try_from(sy).ok()?;
+        Some((sx, sy))
+    }
+
+    /// Return the four surrounding ChArUco corner ids for a marker (TL, TR, BR, BL).
+    ///
+    /// Returns `None` if the marker is unknown or lies on the board border
+    /// (i.e. not surrounded by 4 internal intersections).
+    pub fn marker_surrounding_charuco_corners(&self, marker_id: i32) -> Option<[usize; 4]> {
+        let (sx, sy) = self.marker_cell(marker_id)?;
+        marker_surrounding_charuco_corners_for_cell(
+            self.spec.cols as usize,
+            self.spec.rows as usize,
+            sx,
+            sy,
+        )
+    }
+
     /// Number of markers on the board.
     #[inline]
     pub fn marker_count(&self) -> usize {
@@ -153,6 +178,52 @@ impl CharucoBoard {
     }
 }
 
+/// True if `(ix, iy)` is an internal intersection for a board with `squares_x` × `squares_y`.
+pub fn is_internal_intersection(squares_x: usize, squares_y: usize, ix: usize, iy: usize) -> bool {
+    squares_x >= 2
+        && squares_y >= 2
+        && (1..=squares_x - 1).contains(&ix)
+        && (1..=squares_y - 1).contains(&iy)
+}
+
+/// Row-major ChArUco corner id for an internal intersection `(ix, iy)`.
+pub fn charuco_corner_id(
+    squares_x: usize,
+    squares_y: usize,
+    ix: usize,
+    iy: usize,
+) -> Option<usize> {
+    if !is_internal_intersection(squares_x, squares_y, ix, iy) {
+        return None;
+    }
+    let stride = squares_x.checked_sub(1)?;
+    let ix0 = ix.checked_sub(1)?;
+    let iy0 = iy.checked_sub(1)?;
+    Some(iy0 * stride + ix0)
+}
+
+fn marker_surrounding_charuco_corners_for_cell(
+    squares_x: usize,
+    squares_y: usize,
+    sx: usize,
+    sy: usize,
+) -> Option<[usize; 4]> {
+    if squares_x < 2 || squares_y < 2 {
+        return None;
+    }
+    if sx == 0 || sy == 0 {
+        return None;
+    }
+    if sx + 1 >= squares_x || sy + 1 >= squares_y {
+        return None;
+    }
+    let tl = charuco_corner_id(squares_x, squares_y, sx, sy)?;
+    let tr = charuco_corner_id(squares_x, squares_y, sx + 1, sy)?;
+    let br = charuco_corner_id(squares_x, squares_y, sx + 1, sy + 1)?;
+    let bl = charuco_corner_id(squares_x, squares_y, sx, sy + 1)?;
+    Some([tl, tr, br, bl])
+}
+
 fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<[i32; 2]> {
     let mut out = Vec::new();
     for j in 0..(rows as i32) {
@@ -164,4 +235,47 @@ fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<[i32; 2]> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calib_targets_aruco::builtins;
+
+    fn build_board() -> CharucoBoard {
+        let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
+        CharucoBoard::new(CharucoBoardSpec {
+            rows: 5,
+            cols: 6,
+            cell_size: 1.0,
+            marker_size_rel: 0.75,
+            dictionary: dict,
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        })
+        .expect("board")
+    }
+
+    #[test]
+    fn marker_surrounding_charuco_corners_matches_expected() {
+        let board = build_board();
+        let marker_id = 4;
+        let cell = board.marker_cell(marker_id).expect("marker cell");
+        assert_eq!(cell, (2, 1));
+
+        let corners = board
+            .marker_surrounding_charuco_corners(marker_id)
+            .expect("corners");
+        assert_eq!(corners, [1, 2, 7, 6]);
+    }
+
+    #[test]
+    fn border_marker_has_no_four_corner_neighborhood() {
+        let board = build_board();
+        let marker_id = 0;
+        let cell = board.marker_cell(marker_id).expect("marker cell");
+        assert_eq!(cell, (1, 0));
+        assert!(board
+            .marker_surrounding_charuco_corners(marker_id)
+            .is_none());
+    }
 }

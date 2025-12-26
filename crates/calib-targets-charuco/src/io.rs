@@ -1,7 +1,7 @@
 //! JSON configuration and report helpers for ChArUco detection.
 
 use crate::{
-    CharucoAlignedMarker, CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
+    CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
     CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
@@ -124,8 +124,6 @@ pub struct CharucoDetectReport {
     #[serde(default)]
     pub alignment: Option<GridAlignment>,
     #[serde(default)]
-    pub aligned_markers: Option<Vec<CharucoAlignedMarker>>,
-    #[serde(default)]
     pub error: Option<String>,
 }
 
@@ -141,18 +139,15 @@ impl CharucoDetectReport {
             detection: None,
             markers: None,
             alignment: None,
-            aligned_markers: None,
             error: None,
         }
     }
 
     /// Populate report fields from a successful detection.
     pub fn set_detection(&mut self, res: CharucoDetectionResult) {
-        let aligned_markers = res.aligned_markers();
         self.detection = Some(res.detection);
         self.markers = Some(res.markers);
         self.alignment = Some(res.alignment);
-        self.aligned_markers = Some(aligned_markers);
         self.error = None;
     }
 
