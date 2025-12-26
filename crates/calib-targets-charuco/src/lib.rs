@@ -15,7 +15,8 @@ mod io;
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 pub use detector::{
-    CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
+    CharucoAlignedMarker, CharucoDetectError, CharucoDetectionResult, CharucoDetector,
+    CharucoDetectorParams,
 };
 pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};
 

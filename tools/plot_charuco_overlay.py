@@ -146,7 +146,10 @@ def draw_detection(ax, corners, label_mode, label_step, use_confidence=True):
             continue
         xs.append(x)
         ys.append(y)
-        conf.append(float(c.get("confidence", 1.0)))
+        score = c.get("score")
+        if score is None:
+            score = c.get("confidence", 1.0)
+        conf.append(float(score))
 
     if not xs:
         return None
@@ -366,7 +369,7 @@ def main() -> None:
         )
 
     if sc is not None and sc.get_array() is not None:
-        fig.colorbar(sc, ax=ax_img, fraction=0.035, pad=0.02, label="Corner strength")
+        fig.colorbar(sc, ax=ax_img, fraction=0.035, pad=0.02, label="Corner score")
     fig.tight_layout()
 
     out_path = args.output or args.report.with_name(args.report.stem + "_overlay.png")

@@ -14,4 +14,4 @@ mod result;
 pub use error::CharucoDetectError;
 pub use params::CharucoDetectorParams;
 pub use pipeline::CharucoDetector;
-pub use result::CharucoDetectionResult;
+pub use result::{CharucoAlignedMarker, CharucoDetectionResult};
