@@ -215,7 +215,7 @@ impl ChessboardDetector {
                 grid: Some(grid),
                 id: None,
                 target_position: None,
-                confidence: corner.strength,
+                score: corner.strength,
             };
 
             match by_grid.get(&grid) {
@@ -223,7 +223,7 @@ impl ChessboardDetector {
                     by_grid.insert(grid, candidate);
                 }
                 Some(prev) => {
-                    if candidate.confidence > prev.confidence {
+                    if candidate.score > prev.score {
                         by_grid.insert(grid, candidate);
                     }
                 }

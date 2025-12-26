@@ -61,8 +61,11 @@ pub struct LabeledCorner {
     #[serde(default)]
     pub target_position: Option<Point2<f32>>,
 
-    /// Optional detection confidence [0, 1].
-    pub confidence: f32,
+    /// Detection score (higher is better).
+    ///
+    /// The meaning depends on the detector (it may be unnormalized).
+    #[serde(alias = "confidence")]
+    pub score: f32,
 }
 
 /// One detected target (board instance) in an image.

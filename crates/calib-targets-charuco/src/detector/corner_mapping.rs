@@ -27,14 +27,14 @@ pub(crate) fn map_charuco_corners(
             grid: Some(grid),
             id: Some(id),
             target_position: board.charuco_object_xy(id),
-            confidence: corner.confidence,
+            score: corner.score,
         };
 
         match by_grid.get(&grid) {
             None => {
                 by_grid.insert(grid, candidate);
             }
-            Some(prev) if candidate.confidence > prev.confidence => {
+            Some(prev) if candidate.score > prev.score => {
                 by_grid.insert(grid, candidate);
             }
             _ => {}
@@ -117,14 +117,14 @@ mod tests {
                     grid: Some(GridCoords { i: 1, j: 1 }),
                     id: None,
                     target_position: None,
-                    confidence: 0.2,
+                    score: 0.2,
                 },
                 LabeledCorner {
                     position: Point2::new(2.0, 2.0),
                     grid: Some(GridCoords { i: 1, j: 1 }),
                     id: None,
                     target_position: None,
-                    confidence: 0.9,
+                    score: 0.9,
                 },
             ],
         };
@@ -133,7 +133,7 @@ mod tests {
         assert_eq!(detection.corners.len(), 1);
         let corner = &detection.corners[0];
         assert_eq!(corner.position, Point2::new(2.0, 2.0));
-        assert_eq!(corner.confidence, 0.9);
+        assert_eq!(corner.score, 0.9);
         assert_eq!(corner.id, Some(0));
         assert_eq!(corner.grid, Some(GridCoords { i: 0, j: 0 }));
         assert_eq!(corner.target_position, board.charuco_object_xy(0));

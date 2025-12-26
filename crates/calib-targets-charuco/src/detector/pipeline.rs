@@ -30,10 +30,11 @@ impl CharucoDetector {
         mut params: CharucoDetectorParams,
     ) -> Result<Self, CharucoBoardError> {
         if params.chessboard.expected_rows.is_none() {
-            params.chessboard.expected_rows = Some(board_cfg.rows);
+            // `board_cfg.rows/cols` are square counts; chessboard detector expects inner corners.
+            params.chessboard.expected_rows = board_cfg.rows.checked_sub(1);
         }
         if params.chessboard.expected_cols.is_none() {
-            params.chessboard.expected_cols = Some(board_cfg.cols);
+            params.chessboard.expected_cols = board_cfg.cols.checked_sub(1);
         }
         if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;

@@ -459,7 +459,7 @@ fn map_corner(c: LabeledCorner) -> OutputCorner {
         y: c.position.y,
         grid: c.grid.map(|g| [g.i, g.j]),
         id: c.id,
-        confidence: c.confidence,
+        confidence: c.score,
     }
 }
 
