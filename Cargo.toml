@@ -1,9 +1,16 @@
 [workspace]
 members = [
-    "calib-targets-core",
-    "calib-targets-chessboard",
-    "calib-targets-charuco",
-    "calib-targets-marker",
+    "crates/calib-targets",
+    "crates/calib-targets-core",
+    "crates/calib-targets-chessboard",
+    "crates/calib-targets-charuco",
+    "crates/calib-targets-aruco",
+    "crates/calib-targets-marker",
 ]
 
 resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/VitalyVorobyev/calib-targets-rs"

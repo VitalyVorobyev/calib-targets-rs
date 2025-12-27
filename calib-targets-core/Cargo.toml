@@ -1,9 +1,0 @@
-[package]
-name = "calib-targets-core"
-version = "0.1.0"
-edition = "2021"
-description = "Core types and utilities for calibration target detection"
-license = "MIT OR Apache-2.0"
-
-[dependencies]
-nalgebra = { version = "0.34", features = ["serde-serialize"] }

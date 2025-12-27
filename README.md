@@ -2,7 +2,9 @@
 
 Early-stage calibration target detection library for Rust.
 
-> **Status:** experimental & work in progress. APIs are not stable yet and many detectors are only skeletons.
+![](testdata/chessboard_detection_overlay.png)
+
+> **Status:** experimental & work in progress. APIs are not stable yet.
 
 This repository contains a small family of crates for detecting various calibration targets from corner detections (e.g., ChESS corners). The focus is on clean geometry and target modeling; image I/O and corner detection are intentionally kept out of scope.
 
@@ -12,8 +14,9 @@ This repository contains a small family of crates for detecting various calibrat
   - `Corner`, `LabeledCorner`, `TargetDetection`, `TargetKind`
   - helpers such as `estimate_grid_axes_from_orientations`
 - `calib-targets-chessboard` – plain chessboard detector built on top of `calib-targets-core`.
-- `calib-targets-charuco` – ChArUco detector skeleton; marker ID logic is not implemented yet.
-- `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles), currently a thin wrapper around the chessboard detector.
+- `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids or per-cell quads.
+- `calib-targets-charuco` – grid-first ChArUco detector with per-cell marker sampling by default and optional rectified output.
+- `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles) with per-cell circle scoring and layout-based matching.
 
 All crates live in a single Cargo workspace (see `Cargo.toml` at the repository root).
 
@@ -26,44 +29,76 @@ All crates live in a single Cargo workspace (see `Cargo.toml` at the repository 
 ## Example (chessboard detection)
 
 ```rust
-use calib_targets_core::{Corner, GridSearchParams};
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
+use calib_targets_core::Corner;
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 
 fn detect_chessboard(corners: &[Corner]) {
     let params = ChessboardParams {
-        grid_search: GridSearchParams {
-            min_strength: 0.1,
-            min_corners: 16,
-        },
+        min_corner_strength: 0.1,
+        min_corners: 16,
         expected_rows: None,
         expected_cols: None,
-        spacing_tolerance: 3.0,
+        completeness_threshold: 0.7,
+        ..Default::default()
     };
 
-    let detector = ChessboardDetector::new(params);
-    let detections = detector.detect_from_corners(corners);
+    let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
 
-    for det in detections {
-        println!("Detected target with {} corners", det.corners.len());
+    if let Some(result) = detector.detect_from_corners(corners) {
+        println!(
+            "Detected target with {} corners",
+            result.detection.corners.len()
+        );
     }
 }
 ```
 
 This example assumes you already have a list of `Corner` values produced by your own ChESS/corner detector.
 
+## Example (mesh rectification + marker decoding)
+
+The `examples/charuco_mesh_warp.rs` example demonstrates:
+
+- chessboard detection from ChESS corners,
+- mesh-rectification (piecewise homographies per grid cell),
+- decoding embedded ArUco markers on the rectified grid via `calib-targets-aruco`.
+
+For performance-sensitive pipelines, you can also decode markers per cell without
+building the full rectified image.
+
+Run it with:
+
+```bash
+cargo run --release --example charuco_mesh_warp
+```
+
+## Example (full ChArUco detection)
+
+The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
+
+- chessboard detection from ChESS corners,
+- per-cell marker decoding (with optional rectified output for debugging),
+- marker decoding and alignment,
+- marker→board alignment and corner ID assignment.
+
+Run it with:
+
+```bash
+cargo run --release --example charuco_detect
+```
+
 ## Project status & roadmap
 
 Because this is an early development stage:
 
 - APIs may change without notice.
-- Some detectors are placeholders with minimal or no real detection logic.
 - Error handling, documentation, and examples are still evolving.
 
 Planned work includes:
 
-- Filling in the actual grid fitting and labeling logic for the chessboard detector.
-- Implementing ChArUco marker detection and ID decoding.
-- Implementing circle-based logic for the checkerboard marker detector.
+- Improving chessboard robustness and (eventually) multi-board detection.
+- Improving the ChArUco solver (more layouts, robustness, calibration outputs).
+- Refining circle-based marker detection and grid-offset alignment.
 - Adding more comprehensive examples and tests.
 
 ## Development
@@ -88,6 +123,13 @@ To work on the project locally, you’ll need a recent stable Rust toolchain.
   ```bash
   cargo doc --workspace --all-features
   ```
+
+- Build the mdBook (used by the docs workflow):
+  ```bash
+  mdbook build book
+  ```
+
+For contribution rules see [AGENTS.md](./AGENTS.ms).
 
 ## License
 
