@@ -263,7 +263,11 @@ dependencies = [
 name = "calib-targets-aruco"
 version = "0.1.0"
 dependencies = [
+ "calib-targets-chessboard",
  "calib-targets-core",
+ "chess-corners",
+ "image",
+ "log",
  "nalgebra",
  "serde",
  "serde_json",
@@ -292,6 +296,8 @@ name = "calib-targets-chessboard"
 version = "0.1.0"
 dependencies = [
  "calib-targets-core",
+ "chess-corners",
+ "image",
  "kiddo",
  "log",
  "nalgebra",
@@ -299,6 +305,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]
