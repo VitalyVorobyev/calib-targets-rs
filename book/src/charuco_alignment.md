@@ -1,4 +1,4 @@
-# ChArUco Alignment and Refinement
+# ChArUco Alignment
 
 `calib-targets-charuco` aligns decoded marker IDs to a board layout and assigns ChArUco corner IDs. Alignment is discrete and fast: it tries a small set of grid transforms and selects the translation with the strongest inlier support.
 
@@ -8,13 +8,6 @@
 - The best translation wins (ties broken by inlier count).
 - Inliers are the markers whose `(sx, sy)` map exactly to the expected board cell for their ID.
 
-## Refinement pass
+## Inlier filtering
 
-After an initial alignment, the detector re-decodes markers at their expected cell locations and re-solves the alignment. This filters out inconsistent detections and stabilizes the final corner IDs.
-
-Aligned marker square coordinates are exposed in the detection result as `marker_board_cells`.
-ChArUco corners are then filtered to those supported by the aligned markers.
-
-## Fallback to rectified scan
-
-If per-cell alignment is weak, the detector can optionally scan a full rectified mesh image to recover additional markers. Enable this with `fallback_to_rectified` and request a rectified output via `build_rectified_image` when you need debug visuals.
+After alignment is chosen, the detector keeps only inlier markers and assigns ChArUco corner IDs based on the aligned grid coordinates. The final `alignment` in the result is a `GridAlignment` that maps detected grid coordinates into board coordinates.

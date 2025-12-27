@@ -1,17 +1,16 @@
 # calib-targets (facade)
 
-The `calib-targets` crate is intended to be the unified entry point that re-exports common types and offers higher-level, ergonomic APIs. Today it mainly hosts examples and brings together dependencies for those examples.
+The `calib-targets` crate is the unified entry point for the workspace. It re-exports the lower-level crates and provides optional end-to-end helpers in `calib_targets::detect` (feature `image`, enabled by default).
 
 ## Current contents
 
-- Examples under `crates/calib-targets/examples/`.
-- Optional `tracing` feature for richer logging in examples.
+- Re-exports: `core`, `chessboard`, `aruco`, `charuco`, `marker`.
+- `detect` module: helpers that run ChESS corner detection and then the target detector.
+- Examples under `crates/calib-targets/examples/` that take an image path.
 
-## Planned direction
+## Features
 
-- Re-export commonly used types (`Corner`, `TargetDetection`, params structs).
-- Provide pre-wired detector builders for common pipelines.
-- Stabilize error types and configuration structs.
-- Offer minimal integration utilities (for example, adapting common corner detector outputs).
+- `image` (default): enables `calib_targets::detect`.
+- `tracing`: enables tracing output across the subcrates.
 
-See the roadmap for the planned milestones.
+See the roadmap for future expansion of the facade API.

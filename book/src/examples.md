@@ -1,6 +1,6 @@
 # Examples
 
-Examples live under `crates/*/examples/` and are built per crate. Each example accepts a JSON config file; defaults point to `testdata/` or `tmpdata/`.
+Examples live under `crates/*/examples/` and are built per crate. Many examples accept a JSON config file (defaults point to `testdata/` or `tmpdata/`), while the facade examples under `calib-targets` take an image path directly.
 
 To run an example from the workspace root:
 

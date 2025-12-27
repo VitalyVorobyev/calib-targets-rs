@@ -1,6 +1,6 @@
 # Chessboard Detection Example
 
-File: `crates/calib-targets/examples/chessboard.rs`
+File: `crates/calib-targets-chessboard/examples/chessboard.rs`
 
 This example runs the full chessboard pipeline:
 
@@ -14,7 +14,7 @@ The default config is `testdata/chessboard_config.json`.
 Run it with:
 
 ```bash
-cargo run -p calib-targets --example chessboard -- testdata/chessboard_config.json
+cargo run -p calib-targets-chessboard --example chessboard -- testdata/chessboard_config.json
 ```
 
 The output JSON contains detected corners, grid coordinates, and optional debug diagnostics.

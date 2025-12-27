@@ -3,8 +3,8 @@
 `calib-targets-charuco` combines chessboard detection with ArUco decoding to detect ChArUco boards. The flow is grid-first:
 
 1. Detect a chessboard grid from ChESS corners.
-2. Rectify the grid (mesh warp).
-3. Decode markers on the rectified grid.
+2. Build per-cell quads from the detected grid.
+3. Decode markers per cell (no full-image warp).
 4. Align marker detections to a board specification and assign corner IDs.
 
 ## Board specification
@@ -22,20 +22,12 @@
 - `CharucoDetectorParams::for_board` provides a reasonable default configuration.
 - `CharucoDetector::detect` returns a `CharucoDetectionResult` with:
   - `detection`: labeled corners with ChArUco IDs, filtered to marker-supported corners.
-  - `markers`: decoded marker detections.
-  - `marker_board_cells`: marker square coordinates aligned to the board definition.
-  - `alignment`: grid transform and inlier indices.
-  - `rectified`: optional mesh-warped board view (built on request).
+  - `markers`: decoded marker detections in rectified grid coordinates (with optional `corners_img`).
+  - `alignment`: grid alignment from detected grid coordinates into board coordinates.
 
 ## Per-cell decoding
 
-The detector decodes markers **per grid cell** by default. This avoids building a full rectified image and keeps the work proportional to the number of valid squares. If you need a rectified output image for debugging or visualization, set:
-
-- `CharucoDetectorParams.build_rectified_image = true`
-
-If per-cell alignment is weak, the detector can optionally fall back to a full rectified scan:
-
-- `CharucoDetectorParams.fallback_to_rectified = true`
+The detector decodes markers **per grid cell**. This avoids building a full rectified image and keeps the work proportional to the number of valid squares. If you need a full rectified image for visualization, use the rectification helpers in `calib-targets-chessboard` on a detected grid.
 
 ## Alignment and refinement
 

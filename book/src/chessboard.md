@@ -79,4 +79,4 @@ fn detect(corners: &[Corner]) {
 }
 ```
 
-For a full runnable example, see `crates/calib-targets/examples/chessboard.rs`.
+For a full runnable example, see `crates/calib-targets-chessboard/examples/chessboard.rs`.
