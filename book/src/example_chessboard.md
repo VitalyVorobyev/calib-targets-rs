@@ -12,7 +12,8 @@ This example runs the full chessboard pipeline:
 3. Runs `ChessboardDetector`.
 4. Optionally outputs debug data (orientation histogram, grid graph).
 
-The default config is `testdata/chessboard_config.json`.
+The default config is `testdata/chessboard_config.json` (input: `testdata/mid.png`,
+output: `tmpdata/chessboard_detection_mid.json`).
 
 Run it with:
 
@@ -20,4 +21,5 @@ Run it with:
 cargo run -p calib-targets-chessboard --example chessboard -- testdata/chessboard_config.json
 ```
 
-The output JSON contains detected corners, grid coordinates, and optional debug diagnostics.
+The output JSON contains detected corners, grid coordinates, and optional debug diagnostics
+(if `debug_outputs` are enabled in the config).
