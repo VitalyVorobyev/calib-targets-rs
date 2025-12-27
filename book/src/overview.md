@@ -25,6 +25,6 @@
 - ChArUco alignment is still focused on the OpenCV-style layout.
 - Marker detector is implemented, but matching heuristics and alignment validation still need refinement.
 - Test coverage is narrow and performance/benchmarks are not yet a focus.
-- MSRV is unspecified.
+- MSRV is set to Rust 1.70, but CI does not yet validate it explicitly.
 
 The roadmap chapter captures the intended sequence for filling these gaps while keeping the API clean and composable.

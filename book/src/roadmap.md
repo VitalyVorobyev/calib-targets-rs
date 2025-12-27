@@ -7,7 +7,7 @@ This project is in early development, and APIs can change. The roadmap below foc
 - Expand test coverage with real and synthetic datasets.
 - Clarify data conventions (bit order, polarity, grid indexing) in docs and code.
 - Add benchmark fixtures once correctness stabilizes.
-- Define an MSRV and enforce it in CI.
+- MSRV is set to Rust 1.70; add an explicit CI check for it.
 
 ## calib-targets-aruco
 
