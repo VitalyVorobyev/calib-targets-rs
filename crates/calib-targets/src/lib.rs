@@ -4,6 +4,14 @@
 //! - stable, convenient re-exports of the underlying detector crates
 //! - (feature-gated) end-to-end helpers that run a ChESS corner detector
 //!   (`chess-corners`) and then run a target detector on an image or raw buffer.
+//!
+//! ## API map
+//! - `calib_targets::core`: core types (corners, grids, homographies, images).
+//! - `calib_targets::chessboard`: chessboard detection from ChESS corners.
+//! - `calib_targets::aruco`: ArUco/AprilTag dictionaries and marker decoding.
+//! - `calib_targets::charuco`: ChArUco board alignment and IDs.
+//! - `calib_targets::marker`: checkerboard + circle marker boards.
+//! - `calib_targets::detect` (feature `image`): end-to-end helpers from `image::GrayImage`.
 
 pub use calib_targets_aruco as aruco;
 pub use calib_targets_charuco as charuco;
