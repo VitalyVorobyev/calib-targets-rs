@@ -4,6 +4,7 @@ use crate::board::CharucoBoard;
 use calib_targets_aruco::{MarkerDetection, GridCell, BoardCell};
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 use serde::{Deserialize, Serialize};
+use log::debug;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -35,20 +36,6 @@ fn dominant_rotation(markers: &[MarkerDetection]) -> u8 {
         .unwrap_or(0)
 }
 
-fn transform_rot_component(t: GridTransform) -> u8 {
-    let [x0, y0] = t.apply(0, 0);
-    let [x1, y1] = t.apply(1, 0);
-    let dx = x1 - x0;
-    let dy = y1 - y0;
-    match (dx, dy) {
-        ( 1,  0) => 0,
-        ( 0,  1) => 1,
-        (-1,  0) => 2,
-        ( 0, -1) => 3,
-        _ => 0, // should not happen for D4
-    }
-}
-
 #[derive(Clone, Copy)]
 struct Pair {
     idx: usize,
@@ -63,34 +50,19 @@ pub(crate) fn solve_alignment(
     board: &CharucoBoard,
     markers: &[MarkerDetection],
 ) -> Option<CharucoAlignment> {
-    type Candidate = (f32, usize, GridTransform, [i32; 2], Vec<usize>);
-    let mut best: Option<Candidate> = None;
-
     let pairs = marker_pairs(board, markers);
         if pairs.is_empty() {
             return None;
         }
 
-    let rot_mode = 4 - dominant_rotation(&markers);
+    let rot_mode = dominant_rotation(&markers);
+    let transform = GRID_TRANSFORMS_D4[rot_mode as usize];
+    let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
+    let inliers = inliers_for_transform(&pairs, transform, translation);
+    debug!("Dominant rotation is {rot_mode}, {} inliers", inliers.len());
+    let candidate = (weight_sum, count, transform, translation, inliers);
 
-    for transform in GRID_TRANSFORMS_D4 {
-        if transform_rot_component(transform) != rot_mode {
-            continue;
-        }
-        let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
-        let inliers = inliers_for_transform(&pairs, transform, translation);
-        let candidate = (weight_sum, count, transform, translation, inliers);
-        match best {
-            None => best = Some(candidate),
-            Some((best_w, best_n, _, _, _)) => {
-                if candidate.0 > best_w || (candidate.0 == best_w && candidate.1 > best_n) {
-                    best = Some(candidate);
-                }
-            }
-        }
-    }
-
-    let (_, _, transform, translation, marker_inliers) = best?;
+    let (_, _, transform, translation, marker_inliers) = candidate;
     Some(CharucoAlignment {
         alignment: GridAlignment {
             transform,

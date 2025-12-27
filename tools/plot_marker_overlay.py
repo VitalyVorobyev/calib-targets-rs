@@ -43,7 +43,99 @@ def parse_cell(value):
     return None
 
 
-def draw_chessboard(ax, corners):
+def parse_int(value):
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return None
+
+
+def load_layout_dims(data, report_path):
+    config_path = data.get("config_path")
+    if not config_path:
+        return None
+    path = Path(config_path)
+    if not path.is_file():
+        candidate = (report_path.parent / config_path).resolve()
+        if candidate.is_file():
+            path = candidate
+        else:
+            return None
+    config = json.loads(path.read_text())
+    layout = (config.get("marker") or {}).get("layout") or {}
+    rows = parse_int(layout.get("rows"))
+    cols = parse_int(layout.get("cols"))
+    if rows is None or cols is None:
+        return None
+    return {"rows": rows, "cols": cols, "path": path}
+
+
+def compute_id_frame_info(corners, board_cols):
+    entries = []
+    for c in corners:
+        if not isinstance(c, dict):
+            continue
+        grid = parse_cell(c.get("grid"))
+        if grid is None:
+            continue
+        i = parse_int(grid[0])
+        j = parse_int(grid[1])
+        corner_id = parse_int(c.get("id"))
+        if i is None or j is None or corner_id is None:
+            continue
+        entries.append((i, j, corner_id))
+
+    total = len(entries)
+    if total == 0:
+        return {"status": "unknown", "total": 0, "entries": [], "board_cols": board_cols}
+
+    min_i = min(i for i, _, _ in entries)
+    max_i = max(i for i, _, _ in entries)
+    min_j = min(j for _, j, _ in entries)
+    max_j = max(j for _, j, _ in entries)
+    visible_cols = max_i - min_i + 1
+
+    board_matches = 0
+    visible_matches = 0
+    for i, j, corner_id in entries:
+        if board_cols is not None:
+            expected_board = j * board_cols + i
+            if corner_id == expected_board:
+                board_matches += 1
+        expected_visible = (j - min_j) * visible_cols + (i - min_i)
+        if corner_id == expected_visible:
+            visible_matches += 1
+
+    status = "mixed"
+    if board_cols is not None and board_matches == total:
+        status = "board"
+    elif visible_matches == total:
+        status = "visible"
+    elif board_cols is None:
+        status = "unknown"
+
+    return {
+        "status": status,
+        "total": total,
+        "entries": entries,
+        "board_cols": board_cols,
+        "visible_cols": visible_cols,
+        "min_i": min_i,
+        "min_j": min_j,
+        "max_i": max_i,
+        "max_j": max_j,
+        "board_matches": board_matches,
+        "visible_matches": visible_matches,
+    }
+
+
+def draw_chessboard(ax, corners, id_info=None):
+    board_cols = id_info.get("board_cols") if id_info else None
+    visible_cols = id_info.get("visible_cols") if id_info else None
+    min_i = id_info.get("min_i") if id_info else None
+    min_j = id_info.get("min_j") if id_info else None
+
     for c in corners:
         center = parse_point(c.get("position")) if isinstance(c, dict) else None
         if center is None and isinstance(c, dict):
@@ -58,6 +150,46 @@ def draw_chessboard(ax, corners):
             edgecolors="green",
             linewidths=0.8,
             alpha=0.9,
+        )
+
+        if not isinstance(c, dict):
+            continue
+        corner_id = c.get("id")
+        if corner_id is None:
+            continue
+        corner_id = parse_int(corner_id)
+        if corner_id is None:
+            continue
+
+        text_color = "yellow"
+        grid = parse_cell(c.get("grid"))
+        if grid is not None and board_cols is not None and visible_cols is not None:
+            i = parse_int(grid[0])
+            j = parse_int(grid[1])
+            if i is not None and j is not None and min_i is not None and min_j is not None:
+                expected_board = j * board_cols + i
+                expected_visible = (j - min_j) * visible_cols + (i - min_i)
+                if corner_id == expected_board:
+                    text_color = "yellow"
+                elif corner_id == expected_visible:
+                    text_color = "orange"
+                else:
+                    text_color = "red"
+
+        ax.annotate(
+            str(corner_id),
+            (center[0], center[1]),
+            xytext=(3, 3),
+            textcoords="offset points",
+            fontsize=6,
+            color=text_color,
+            bbox=dict(
+                boxstyle="round,pad=0.15",
+                facecolor="black",
+                edgecolor="none",
+                alpha=0.4,
+            ),
+            zorder=6,
         )
 
 
@@ -165,17 +297,40 @@ def main() -> None:
         candidates = data.get("circle_candidates") or []
         matches = data.get("matches") or []
 
+    layout = load_layout_dims(data, args.report)
+    board_cols = layout["cols"] if layout else None
+    id_info = compute_id_frame_info(chessboard, board_cols)
+    if id_info["total"] > 0:
+        if id_info["status"] == "board":
+            id_label = f"ids: board frame (cols={id_info['board_cols']})"
+        elif id_info["status"] == "visible":
+            id_label = (
+                "ids: visible frame "
+                f"(min_i={id_info['min_i']}, min_j={id_info['min_j']}, cols={id_info['visible_cols']})"
+            )
+        elif id_info["board_cols"] is None:
+            id_label = "ids: unknown frame (no layout cols)"
+        else:
+            id_label = (
+                "ids: mixed "
+                f"(board {id_info['board_matches']}/{id_info['total']}, "
+                f"visible {id_info['visible_matches']}/{id_info['total']})"
+            )
+        print(id_label)
+    else:
+        id_label = "ids: n/a"
+
     img = mpimg.imread(str(image_path))
 
     fig, ax = plt.subplots(figsize=(10, 8))
     ax.imshow(img, cmap="gray", origin="upper")
 
     if chessboard:
-        draw_chessboard(ax, chessboard)
+        draw_chessboard(ax, chessboard, id_info=id_info)
     if candidates:
         draw_circles(ax, candidates, matches)
 
-    ax.set_title("Marker board detection overlay")
+    ax.set_title(f"Marker board detection overlay ({id_label})")
     ax.set_axis_off()
     fig.tight_layout()
 
