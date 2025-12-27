@@ -1,9 +1,16 @@
 [package]
 name = "calib-targets-charuco"
 version = "0.1.0"
-edition = "2021"
 description = "ChArUco board detector built on top of calib-targets-core"
-license = "MIT"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/calib-targets-charuco"
+keywords = ["calibration", "computer-vision", "charuco", "aruco", "chessboard"]
+categories = ["computer-vision", "science"]
 
 [features]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
@@ -22,3 +29,7 @@ log = "0.4"
 [dev-dependencies]
 chess-corners = "0.2"
 image = { version = "0.25", default-features = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

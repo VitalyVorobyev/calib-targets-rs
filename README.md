@@ -55,9 +55,15 @@ fn detect_chessboard(corners: &[Corner]) {
 
 This example assumes you already have a list of `Corner` values produced by your own ChESS/corner detector.
 
+To run the end-to-end example that includes ChESS corner detection, use:
+
+```bash
+cargo run -p calib-targets --example detect_chessboard -- path/to/image.png
+```
+
 ## Example (mesh rectification + marker decoding)
 
-The `examples/charuco_mesh_warp.rs` example demonstrates:
+The `crates/calib-targets-aruco/examples/rectify_mesh.rs` example demonstrates:
 
 - chessboard detection from ChESS corners,
 - mesh-rectification (piecewise homographies per grid cell),
@@ -69,12 +75,12 @@ building the full rectified image.
 Run it with:
 
 ```bash
-cargo run --release --example charuco_mesh_warp
+cargo run -p calib-targets-aruco --release --example rectify_mesh -- path/to/config.json
 ```
 
 ## Example (full ChArUco detection)
 
-The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
+The `crates/calib-targets/examples/detect_charuco.rs` example demonstrates a full ChArUco pipeline:
 
 - chessboard detection from ChESS corners,
 - per-cell marker decoding (with optional rectified output for debugging),
@@ -84,7 +90,15 @@ The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
 Run it with:
 
 ```bash
-cargo run --release --example charuco_detect
+cargo run -p calib-targets --release --example detect_charuco -- path/to/image.png
+```
+
+## Example (checkerboard marker board detection)
+
+The `crates/calib-targets/examples/detect_markerboard.rs` example runs the checkerboard + circles detector:
+
+```bash
+cargo run -p calib-targets --release --example detect_markerboard -- path/to/image.png
 ```
 
 ## Project status & roadmap
@@ -133,4 +147,4 @@ For contribution rules see [AGENTS.md](./AGENTS.ms).
 
 ## License
 
-This project is dual-licensed under MIT or Apache-2.0, at your option. See the individual crate `Cargo.toml` files for details.
+This project is dual-licensed under MIT or Apache-2.0, at your option. See `LICENSE` and `LICENSE-APACHE`.
