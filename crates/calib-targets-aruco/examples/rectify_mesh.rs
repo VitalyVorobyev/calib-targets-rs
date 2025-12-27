@@ -64,7 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_corners = detect_raw_corners(&img);
     let corners = adapt_corners(&raw_corners);
 
-    let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
+    let detector =
+        ChessboardDetector::new(cfg.chessboard.clone()).with_grid_search(cfg.graph.clone());
     let detection = detector.detect_from_corners(&corners);
     let src_view = make_view(&img);
 
