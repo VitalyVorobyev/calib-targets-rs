@@ -4,6 +4,9 @@ File: `crates/calib-targets-aruco/examples/rectify_mesh.rs`
 
 This example detects a chessboard, performs per-cell mesh rectification, and scans the rectified grid for ArUco markers. It writes:
 
+![Mesh rectification output](../img/mesh_rectified_small.png)
+*Per-cell mesh rectification output from the small test image.*
+
 - A mesh-rectified grayscale image.
 - A JSON report with rectification info and marker detections.
 

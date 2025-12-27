@@ -4,6 +4,9 @@ File: `crates/calib-targets-chessboard/examples/chessboard.rs`
 
 This example runs the full chessboard pipeline:
 
+![Chessboard detection overlay](../img/chessboard_detection_mid_overlay.png)
+*Example output overlay for chessboard detection.*
+
 1. Detects ChESS corners using the `chess-corners` crate.
 2. Adapts them to `calib_targets_core::Corner`.
 3. Runs `ChessboardDetector`.

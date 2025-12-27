@@ -2,6 +2,9 @@
 
 `calib-targets-rs` is a workspace of Rust crates for detecting and modeling planar calibration targets from **corner clouds** (for example, ChESS corners). The focus is geometry-first: target modeling, grid fitting, and rectification live here, while image I/O and corner detection are intentionally out of scope.
 
+![ChArUco detection overlay](../img/charuco_detect_report_small2_overlay.png)
+*ChArUco detection overlay on a small board.*
+
 What it is:
 
 - A small, composable set of crates for chessboard, ChArUco, and marker-style targets.

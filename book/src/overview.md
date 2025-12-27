@@ -2,6 +2,9 @@
 
 `calib-targets-rs` is a single Cargo workspace with multiple publishable crates under `crates/`. The design is layered: `calib-targets-core` provides geometry and shared types, higher-level crates build on top, and the facade crate (`calib-targets`) is intended to be the main entry point.
 
+![Mesh-rectified grid](../img/mesh_rectified_mid.png)
+*Per-cell mesh rectification helps handle lens distortion.*
+
 ## Workspace layout
 
 - `calib-targets-core`: shared geometry types and utilities.

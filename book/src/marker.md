@@ -2,6 +2,9 @@
 
 `calib-targets-marker` targets a checkerboard marker board: a chessboard grid with three circular markers near the center. The detector is grid-first and works with partial boards.
 
+![Marker-board detection overlay](../img/marker_detect_report_crop_overlay.png)
+*Detected circle markers and aligned grid overlay.*
+
 ## Detection pipeline
 
 1. **Chessboard detection**: run `calib-targets-chessboard` to obtain grid-labeled corners (partial boards are allowed).
