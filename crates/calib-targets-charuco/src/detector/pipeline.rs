@@ -1,14 +1,10 @@
-use super::alignment_select::{maybe_refine_alignment, retain_inlier_markers, select_alignment};
+use super::alignment_select::select_alignment;
 use super::corner_mapping::map_charuco_corners;
-use super::marker_sampling::{
-    build_corner_map, build_marker_cells, refine_markers_for_alignment, CornerMap,
-};
+use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec};
-use calib_targets_aruco::{
-    scan_decode_markers_in_cells, MarkerDetection, Matcher, ScanDecodeConfig,
-};
+use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessboardDetector;
 use calib_targets_core::{Corner, GrayImageView};
 
@@ -101,7 +97,7 @@ impl CharucoDetector {
         }
 
         let (markers, alignment) = self
-            .select_and_refine_markers(markers, image, &corner_map, &scan_cfg)
+            .select_and_refine_markers(markers)
             .ok_or(CharucoDetectError::AlignmentFailed { inliers: 0usize })?;
 
         if alignment.marker_inliers.len() < self.params.min_marker_inliers {
@@ -110,7 +106,6 @@ impl CharucoDetector {
             });
         }
 
-        let (markers, alignment) = retain_inlier_markers(markers, alignment);
         let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
 
         Ok(CharucoDetectionResult {
@@ -120,36 +115,14 @@ impl CharucoDetector {
         })
     }
 
-    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, markers, corner_map, scan_cfg),
-      fields(markers=markers.len(), w=image.width, h=image.height)))]
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, markers),
+      fields(markers=markers.len())))]
     fn select_and_refine_markers(
         &self,
         markers: Vec<MarkerDetection>,
-        image: &GrayImageView<'_>,
-        corner_map: &CornerMap,
-        scan_cfg: &ScanDecodeConfig,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
         // TODO: just run solve_aligment on the full set of markers
-        let (mut markers, mut alignment) = select_alignment(&self.board, markers)?;
-
-        // TODO: skip that
-        let refined = refine_markers_for_alignment(
-            &self.board,
-            &alignment,
-            image,
-            corner_map,
-            self.params.px_per_square,
-            scan_cfg,
-            &self.matcher,
-        );
-
-        // TODO: skip that
-        if let Some((refined_markers, refined_alignment)) =
-            maybe_refine_alignment(&self.board, refined, alignment.marker_inliers.len())
-        {
-            markers = refined_markers;
-            alignment = refined_alignment;
-        }
+        let (markers, alignment) = select_alignment(&self.board, markers)?;
 
         Some((markers, alignment))
     }

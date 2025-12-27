@@ -1,9 +1,5 @@
-use crate::alignment::CharucoAlignment;
-use crate::board::CharucoBoard;
-use calib_targets_aruco::{
-    decode_marker_in_cell, MarkerCell, MarkerDetection, Matcher, ScanDecodeConfig, GridCell
-};
-use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner};
+use calib_targets_aruco::{GridCell, MarkerCell};
+use calib_targets_core::{GridCoords, LabeledCorner};
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -69,67 +65,6 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
     }
 
     out
-}
-
-/// Retrieve the square cell corresponding to `(sx, sy)` if all corners exist.
-pub(crate) fn marker_cell_from_map(map: &CornerMap, sx: i32, sy: i32) -> Option<MarkerCell> {
-    let g00 = GridCoords { i: sx, j: sy };
-    let g10 = GridCoords { i: sx + 1, j: sy };
-    let g11 = GridCoords {
-        i: sx + 1,
-        j: sy + 1,
-    };
-    let g01 = GridCoords { i: sx, j: sy + 1 };
-
-    let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
-        (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
-    else {
-        return None;
-    };
-
-    Some(MarkerCell {
-        gc: GridCell {  gx: sx, gy: sy },
-        corners_img: [p00, p10, p11, p01],
-    })
-}
-
-/// Re-scan markers by projecting expected board positions into detected grid cells.
-pub(crate) fn refine_markers_for_alignment(
-    board: &CharucoBoard,
-    alignment: &CharucoAlignment,
-    image: &GrayImageView<'_>,
-    map: &CornerMap,
-    px_per_square: f32,
-    scan_cfg: &ScanDecodeConfig,
-    matcher: &Matcher,
-) -> Vec<MarkerDetection> {
-    let Some(inv) = alignment.alignment.transform.inverse() else {
-        return Vec::new();
-    };
-    let [tx, ty] = alignment.alignment.translation;
-
-    let mut refined = Vec::new();
-    let marker_count = board.marker_count();
-    for id in 0..marker_count as u32 {
-        let Some(bc) = board.marker_position(id) else {
-            continue;
-        };
-        let dx = bc.sx - tx;
-        let dy = bc.sy - ty;
-        let [sx, sy] = inv.apply(dx, dy);
-
-        let Some(cell) = marker_cell_from_map(map, sx, sy) else {
-            continue;
-        };
-        let Some(det) = decode_marker_in_cell(image, &cell, px_per_square, scan_cfg, matcher)
-        else {
-            continue;
-        };
-        if det.id == id {
-            refined.push(det);
-        }
-    }
-    refined
 }
 
 #[cfg(test)]
@@ -200,15 +135,5 @@ mod tests {
         let cells = build_marker_cells(&map);
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0].corners_img, [p00, p10, p11, p01]);
-    }
-
-    #[test]
-    fn marker_cell_from_map_requires_all_corners() {
-        let mut map = CornerMap::new();
-        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 0 }, Point2::new(1.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 1 }, Point2::new(1.0, 1.0));
-
-        assert!(marker_cell_from_map(&map, 0, 0).is_none());
     }
 }

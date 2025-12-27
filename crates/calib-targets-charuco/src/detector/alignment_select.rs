@@ -1,65 +1,26 @@
 use crate::alignment::{solve_alignment, CharucoAlignment};
-use crate::board::{CharucoBoard, MarkerLayout};
+use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
-
-pub(crate) fn maybe_refine_alignment(
-    board: &CharucoBoard,
-    markers: Vec<MarkerDetection>,
-    previous_inliers: usize,
-) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-    if markers.is_empty() {
-        return None;
-    }
-    let alignment = solve_alignment(board, &markers)?;
-    if alignment.marker_inliers.len() >= previous_inliers {
-        Some((markers, alignment))
-    } else {
-        None
-    }
-}
 
 pub(crate) fn select_alignment(
     board: &CharucoBoard,
     markers: Vec<MarkerDetection>,
 ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-    let mut candidates: Vec<(usize, CharucoAlignment, Vec<MarkerDetection>)> = Vec::new();
-
     if let Some(alignment) = solve_alignment(board, &markers) {
-        candidates.push((alignment.marker_inliers.len(), alignment, markers.clone()));
-    }
-
-    if board.spec().marker_layout == MarkerLayout::OpenCvCharuco {
-        let even = markers
-            .iter()
-            .filter(|m| ((m.gc.gx + m.gc.gy) & 1) == 0)
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(alignment) = solve_alignment(board, &even) {
-            candidates.push((alignment.marker_inliers.len(), alignment, even));
+        if alignment.marker_inliers.len() == markers.len() {
+            return Some((markers, alignment));
         }
-
-        let odd = markers
-            .iter()
-            .filter(|m| ((m.gc.gx + m.gc.gy) & 1) != 0)
-            .cloned()
-            .collect::<Vec<_>>();
-        if let Some(alignment) = solve_alignment(board, &odd) {
-            candidates.push((alignment.marker_inliers.len(), alignment, odd));
-        }
+        return Some((retain_inlier_markers(&markers, &alignment), alignment));
     }
-
-    candidates
-        .into_iter()
-        .max_by_key(|(inliers, _, _)| *inliers)
-        .map(|(_, alignment, markers)| (markers, alignment))
+    None
 }
 
 pub(crate) fn retain_inlier_markers(
-    markers: Vec<MarkerDetection>,
-    mut alignment: CharucoAlignment,
-) -> (Vec<MarkerDetection>, CharucoAlignment) {
+    markers: &[MarkerDetection],
+    alignment: &CharucoAlignment,
+) -> Vec<MarkerDetection> {
     if alignment.marker_inliers.len() == markers.len() {
-        return (markers, alignment);
+        return markers.to_vec();
     }
 
     let mut keep = vec![false; markers.len()];
@@ -70,14 +31,13 @@ pub(crate) fn retain_inlier_markers(
     }
 
     let mut filtered = Vec::with_capacity(alignment.marker_inliers.len());
-    for (idx, marker) in markers.into_iter().enumerate() {
+    for (idx, marker) in markers.iter().enumerate() {
         if keep[idx] {
-            filtered.push(marker);
+            filtered.push(marker.clone());
         }
     }
 
-    alignment.marker_inliers = (0..filtered.len()).collect();
-    (filtered, alignment)
+    filtered
 }
 
 #[cfg(test)]
@@ -110,10 +70,9 @@ mod tests {
             marker_inliers: vec![2, 0],
         };
 
-        let (filtered, updated) = retain_inlier_markers(markers, alignment);
+        let filtered = retain_inlier_markers(&markers, &alignment);
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].id, 10);
         assert_eq!(filtered[1].id, 12);
-        assert_eq!(updated.marker_inliers, vec![0, 1]);
     }
 }

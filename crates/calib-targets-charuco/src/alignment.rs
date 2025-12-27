@@ -1,10 +1,10 @@
 //! Marker-to-board alignment and corner ID assignment.
 
 use crate::board::CharucoBoard;
-use calib_targets_aruco::{MarkerDetection, GridCell, BoardCell};
+use calib_targets_aruco::{BoardCell, GridCell, MarkerDetection};
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
-use serde::{Deserialize, Serialize};
 use log::debug;
+use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -31,8 +31,8 @@ fn dominant_rotation(markers: &[MarkerDetection]) -> u8 {
     }
     hist.iter()
         .enumerate()
-        .max_by(|(_,a),(_,b)| a.partial_cmp(b).unwrap())
-        .map(|(i,_)| i as u8)
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+        .map(|(i, _)| i as u8)
         .unwrap_or(0)
 }
 
@@ -51,11 +51,11 @@ pub(crate) fn solve_alignment(
     markers: &[MarkerDetection],
 ) -> Option<CharucoAlignment> {
     let pairs = marker_pairs(board, markers);
-        if pairs.is_empty() {
-            return None;
-        }
+    if pairs.is_empty() {
+        return None;
+    }
 
-    let rot_mode = dominant_rotation(&markers);
+    let rot_mode = dominant_rotation(markers);
     let transform = GRID_TRANSFORMS_D4[rot_mode as usize];
     let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
     let inliers = inliers_for_transform(&pairs, transform, translation);
@@ -152,7 +152,10 @@ mod tests {
             };
             markers.push(MarkerDetection {
                 id,
-                gc: GridCell { gx: bc.sx, gy: bc.sy },
+                gc: GridCell {
+                    gx: bc.sx,
+                    gy: bc.sy,
+                },
                 rotation: 0,
                 hamming: 0,
                 score: 1.0,

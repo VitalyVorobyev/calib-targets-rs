@@ -10,10 +10,16 @@ use std::collections::HashMap;
 use tracing::instrument;
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-pub struct GridCell { pub gx: i32, pub gy: i32 }   // frame G
+pub struct GridCell {
+    pub gx: i32,
+    pub gy: i32,
+} // frame G
 
 #[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-pub struct BoardCell { pub sx: i32, pub sy: i32 }  // frame B
+pub struct BoardCell {
+    pub sx: i32,
+    pub sy: i32,
+} // frame B
 
 /// Decoder configuration for scanning markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -136,7 +142,7 @@ pub fn scan_decode_markers(
             let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits) else {
                 continue;
             };
-            let gc = GridCell {gx: sx, gy: sy};
+            let gc = GridCell { gx: sx, gy: sy };
             if let Some(det) = build_detection(gc, px_per_square, obs, matcher) {
                 out.push(det);
             }
@@ -177,7 +183,7 @@ pub fn scan_decode_markers_in_cells(
         let Some(obs) = decoder.decode_warped(image, &h) else {
             continue;
         };
-        if let Some(mut det) = build_detection(cell.gc.clone(), px_per_square, obs, matcher) {
+        if let Some(mut det) = build_detection(cell.gc, px_per_square, obs, matcher) {
             det.corners_img = Some(cell.corners_img);
             out.push(det);
         }
@@ -202,7 +208,7 @@ pub fn decode_marker_in_cell(
     let cell_rect = cell_rect_corners(px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
-    let mut det = build_detection(cell.gc.clone(), px_per_square, obs, matcher)?;
+    let mut det = build_detection(cell.gc, px_per_square, obs, matcher)?;
     det.corners_img = Some(cell.corners_img);
     Some(det)
 }
@@ -338,11 +344,20 @@ fn build_detection(
     let score = (obs.border_score * ham_pen).clamp(0.0, 1.0);
 
     let gc = match m.rotation {
-        0 => gc0.clone(),
-        1 => GridCell{gx: gc0.gx + 1, gy: gc0.gy},
-        2 => GridCell{gx: gc0.gx + 1, gy: gc0.gy + 1},
-        3 => GridCell{gx: gc0.gx, gy: gc0.gy + 1},
-        _ => gc0.clone()
+        0 => gc0,
+        1 => GridCell {
+            gx: gc0.gx + 1,
+            gy: gc0.gy,
+        },
+        2 => GridCell {
+            gx: gc0.gx + 1,
+            gy: gc0.gy + 1,
+        },
+        3 => GridCell {
+            gx: gc0.gx,
+            gy: gc0.gy + 1,
+        },
+        _ => gc0,
     };
 
     let corners_rect = cell_rect_corners(px_per_square);
@@ -649,7 +664,7 @@ mod tests {
 
         let s = img.width as f32;
         let cell = MarkerCell {
-            gc: GridCell {gx: 0, gy: 0},
+            gc: GridCell { gx: 0, gy: 0 },
             corners_img: [
                 Point2::new(0.0, 0.0),
                 Point2::new(s, 0.0),

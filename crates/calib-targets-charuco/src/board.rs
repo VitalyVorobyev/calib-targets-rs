@@ -1,6 +1,6 @@
 //! Board specification and layout helpers for ChArUco.
 
-use calib_targets_aruco::{Dictionary, BoardCell};
+use calib_targets_aruco::{BoardCell, Dictionary};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
