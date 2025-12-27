@@ -1,8 +1,10 @@
 # calib-targets-core
 
+![Rectified grid view](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/rectified_small.png)
+
 Core types and geometric utilities for calibration target detection.
 
-## Example
+## Quickstart
 
 ```rust
 use calib_targets_core::{Corner, TargetDetection, TargetKind};
@@ -25,6 +27,12 @@ fn main() {
     let _ = detection;
 }
 ```
+
+## Includes
+
+- Homography estimation and warping helpers.
+- Lightweight grayscale image views and sampling.
+- Grid alignment and target detection types.
 
 ## Links
 

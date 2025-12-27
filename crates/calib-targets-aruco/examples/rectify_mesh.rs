@@ -21,7 +21,7 @@ struct ExampleConfig {
     image_path: String,
     #[serde(default)]
     mesh_rectified_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, alias = "output_path")]
     report_path: Option<String>,
     #[serde(default = "default_px_per_square")]
     px_per_square: f32,
@@ -121,7 +121,7 @@ fn parse_config_path() -> PathBuf {
     env::args()
         .nth(1)
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("tmpdata/rectify_config.json"))
+        .unwrap_or_else(|| PathBuf::from("testdata/rectify_mesh_config_small0.json"))
 }
 
 fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error>> {

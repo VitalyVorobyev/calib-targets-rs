@@ -1,11 +1,8 @@
 # calib-targets
 
+![Mesh-rectified grid](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/mesh_rectified_mid.png)
+
 High-level facade crate for the `calib-targets-*` workspace.
-
-## What this crate provides
-
-- Stable re-exports of the underlying crates: `aruco`, `charuco`, `chessboard`, `core`, `marker`.
-- Optional end-to-end helpers in `calib_targets::detect` (enabled by default).
 
 ## Quickstart (chessboard)
 
@@ -30,6 +27,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - `image` (default): enables the `calib_targets::detect` helpers.
 - `tracing`: enables tracing output across the subcrates.
+
+## Crate map
+
+- `calib_targets::core` – core types and homographies.
+- `calib_targets::chessboard` – chessboard detection.
+- `calib_targets::aruco` – ArUco/AprilTag dictionaries and decoding.
+- `calib_targets::charuco` – ChArUco alignment and IDs.
+- `calib_targets::marker` – checkerboard + circle marker boards.
 
 ## Links
 

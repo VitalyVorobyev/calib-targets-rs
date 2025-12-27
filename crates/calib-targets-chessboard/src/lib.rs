@@ -1,5 +1,19 @@
 //! Plain chessboard detector built on top of `calib-targets-core`.
 //!
+//! ## Quickstart
+//!
+//! ```
+//! use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+//! use calib_targets_core::Corner;
+//!
+//! let params = ChessboardParams::default();
+//! let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
+//!
+//! let corners: Vec<Corner> = Vec::new();
+//! let result = detector.detect_from_corners(&corners);
+//! println!("detected: {}", result.is_some());
+//! ```
+//!
 //! New algorithm (graph-based, perspective-aware):
 //! 1. Filter strong ChESS corners.
 //! 2. Estimate two approximate global grid axes (u, v) from ChESS orientations.

@@ -1,8 +1,10 @@
 # calib-targets-charuco
 
+![ChArUco detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/charuco_detect_report_small2_overlay.png)
+
 ChArUco board detector built on top of `calib-targets-core` and `calib-targets-aruco`.
 
-## Example
+## Quickstart
 
 ```rust,no_run
 use calib_targets_aruco::builtins;

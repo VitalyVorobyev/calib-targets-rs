@@ -1,15 +1,17 @@
 # calib-targets-marker
 
+![Marker-board detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/marker_detect_report_crop_overlay.png)
+
 Checkerboard marker target detector (checkerboard + 3 central circles).
 
-## Example
+## Quickstart
 
 ```rust
 use calib_targets_core::{Corner, GrayImageView};
 use calib_targets_marker::{
-    CirclePolarity, MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
+    CellCoords, CirclePolarity, MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams,
+    MarkerCircleSpec,
 };
-use calib_targets_marker::coords::CellCoords;
 
 fn main() {
     let layout = MarkerBoardLayout {

@@ -1,8 +1,10 @@
 # calib-targets-chessboard
 
+![Chessboard detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/chessboard_detection_mid_overlay.png)
+
 Plain chessboard detector built on top of `calib-targets-core`.
 
-## Example
+## Quickstart
 
 ```rust
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};

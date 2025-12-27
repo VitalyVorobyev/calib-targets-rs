@@ -1,8 +1,10 @@
 # calib-targets-aruco
 
+![Mesh-rectified grid](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/mesh_rectified_small.png)
+
 Embedded ArUco/AprilTag dictionaries and marker decoding utilities.
 
-## Example
+## Quickstart
 
 ```rust
 use calib_targets_aruco::{builtins, scan_decode_markers, Matcher, ScanDecodeConfig};
@@ -24,6 +26,11 @@ fn main() {
     println!("markers: {}", markers.len());
 }
 ```
+
+## Notes
+
+- Built-in dictionaries are compiled in; see `builtins::BUILTIN_DICTIONARY_NAMES`.
+- Decoding expects rectified grids or per-cell quads.
 
 ## Features
 

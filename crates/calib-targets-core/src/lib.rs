@@ -2,6 +2,33 @@
 //!
 //! This crate is intentionally small and purely geometric. It does *not*
 //! depend on any concrete corner detector or image type.
+//!
+//! ## Quickstart
+//!
+//! ```
+//! use calib_targets_core::{Corner, TargetDetection, TargetKind};
+//! use nalgebra::Point2;
+//!
+//! let corner = Corner {
+//!     position: Point2::new(10.0, 20.0),
+//!     orientation: 0.0,
+//!     orientation_cluster: None,
+//!     strength: 1.0,
+//! };
+//!
+//! let detection = TargetDetection {
+//!     kind: TargetKind::Chessboard,
+//!     corners: Vec::new(),
+//! };
+//!
+//! println!("{:?} {}", corner.position, detection.corners.len());
+//! ```
+//!
+//! ## Includes
+//!
+//! - Homography estimation and warping helpers.
+//! - Lightweight grayscale image views and sampling.
+//! - Grid alignment and target detection types.
 
 mod corner;
 mod grid_alignment;
