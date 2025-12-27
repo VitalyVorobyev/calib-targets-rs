@@ -9,6 +9,12 @@ use std::collections::HashMap;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
+#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+pub struct GridCell { pub gx: i32, pub gy: i32 }   // frame G
+
+#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
+pub struct BoardCell { pub sx: i32, pub sy: i32 }  // frame B
+
 /// Decoder configuration for scanning markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
@@ -82,9 +88,8 @@ impl ArucoScanConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerDetection {
     pub id: u32,
-    /// Square cell coordinates in rectified grid coords.
-    pub sx: i32,
-    pub sy: i32,
+    /// Square cell coordinates in grid coords.
+    pub gc: GridCell,
     pub rotation: u8,
     pub hamming: u8,
     pub score: f32,
@@ -107,8 +112,7 @@ pub struct MarkerDetection {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerCell {
     /// Cell coordinates in grid space (top-left corner of the square).
-    pub sx: i32,
-    pub sy: i32,
+    pub gc: GridCell,
     /// Corners of the square cell in image coordinates (TL, TR, BR, BL).
     pub corners_img: [Point2<f32>; 4],
 }
@@ -132,7 +136,8 @@ pub fn scan_decode_markers(
             let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits) else {
                 continue;
             };
-            if let Some(det) = build_detection(sx, sy, px_per_square, obs, matcher) {
+            let gc = GridCell {gx: sx, gy: sy};
+            if let Some(det) = build_detection(gc, px_per_square, obs, matcher) {
                 out.push(det);
             }
         }
@@ -172,7 +177,7 @@ pub fn scan_decode_markers_in_cells(
         let Some(obs) = decoder.decode_warped(image, &h) else {
             continue;
         };
-        if let Some(mut det) = build_detection(cell.sx, cell.sy, px_per_square, obs, matcher) {
+        if let Some(mut det) = build_detection(cell.gc.clone(), px_per_square, obs, matcher) {
             det.corners_img = Some(cell.corners_img);
             out.push(det);
         }
@@ -197,7 +202,7 @@ pub fn decode_marker_in_cell(
     let cell_rect = cell_rect_corners(px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
-    let mut det = build_detection(cell.sx, cell.sy, px_per_square, obs, matcher)?;
+    let mut det = build_detection(cell.gc.clone(), px_per_square, obs, matcher)?;
     det.corners_img = Some(cell.corners_img);
     Some(det)
 }
@@ -322,8 +327,7 @@ impl<'a> CellDecoder<'a> {
 }
 
 fn build_detection(
-    sx: i32,
-    sy: i32,
+    gc0: GridCell,
     px_per_square: f32,
     obs: MarkerObservation,
     matcher: &Matcher,
@@ -333,15 +337,22 @@ fn build_detection(
     let ham_pen = 1.0 - (m.hamming as f32 / bits);
     let score = (obs.border_score * ham_pen).clamp(0.0, 1.0);
 
+    let gc = match m.rotation {
+        0 => gc0.clone(),
+        1 => GridCell{gx: gc0.gx + 1, gy: gc0.gy},
+        2 => GridCell{gx: gc0.gx + 1, gy: gc0.gy + 1},
+        3 => GridCell{gx: gc0.gx, gy: gc0.gy + 1},
+        _ => gc0.clone()
+    };
+
     let corners_rect = cell_rect_corners(px_per_square);
-    let x0 = sx as f32 * px_per_square;
-    let y0 = sy as f32 * px_per_square;
+    let x0 = gc0.gx as f32 * px_per_square;
+    let y0 = gc0.gy as f32 * px_per_square;
     let corners = corners_rect.map(|p| Point2::new(p.x + x0, p.y + y0));
 
     Some(MarkerDetection {
         id: m.id,
-        sx,
-        sy,
+        gc,
         rotation: m.rotation,
         hamming: m.hamming,
         score,
@@ -638,8 +649,7 @@ mod tests {
 
         let s = img.width as f32;
         let cell = MarkerCell {
-            sx: 0,
-            sy: 0,
+            gc: GridCell {gx: 0, gy: 0},
             corners_img: [
                 Point2::new(0.0, 0.0),
                 Point2::new(s, 0.0),

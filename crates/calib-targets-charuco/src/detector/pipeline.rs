@@ -129,7 +129,6 @@ impl CharucoDetector {
         corner_map: &CornerMap,
         scan_cfg: &ScanDecodeConfig,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-
         // TODO: just run solve_aligment on the full set of markers
         let (mut markers, mut alignment) = select_alignment(&self.board, markers)?;
 

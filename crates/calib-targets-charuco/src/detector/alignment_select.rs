@@ -31,7 +31,7 @@ pub(crate) fn select_alignment(
     if board.spec().marker_layout == MarkerLayout::OpenCvCharuco {
         let even = markers
             .iter()
-            .filter(|m| ((m.sx + m.sy) & 1) == 0)
+            .filter(|m| ((m.gc.gx + m.gc.gy) & 1) == 0)
             .cloned()
             .collect::<Vec<_>>();
         if let Some(alignment) = solve_alignment(board, &even) {
@@ -40,7 +40,7 @@ pub(crate) fn select_alignment(
 
         let odd = markers
             .iter()
-            .filter(|m| ((m.sx + m.sy) & 1) != 0)
+            .filter(|m| ((m.gc.gx + m.gc.gy) & 1) != 0)
             .cloned()
             .collect::<Vec<_>>();
         if let Some(alignment) = solve_alignment(board, &odd) {
@@ -83,14 +83,14 @@ pub(crate) fn retain_inlier_markers(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use calib_targets_aruco::GridCell;
     use calib_targets_core::GridAlignment;
     use nalgebra::Point2;
 
-    fn marker(id: u32, sx: i32, sy: i32) -> MarkerDetection {
+    fn marker(id: u32, gx: i32, gy: i32) -> MarkerDetection {
         MarkerDetection {
             id,
-            sx,
-            sy,
+            gc: GridCell { gx, gy },
             rotation: 0,
             hamming: 0,
             score: 1.0,

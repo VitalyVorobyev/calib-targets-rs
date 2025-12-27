@@ -1,7 +1,7 @@
 //! Marker-to-board alignment and corner ID assignment.
 
 use crate::board::CharucoBoard;
-use calib_targets_aruco::MarkerDetection;
+use calib_targets_aruco::{MarkerDetection, GridCell, BoardCell};
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 use serde::{Deserialize, Serialize};
 
@@ -23,13 +23,37 @@ impl CharucoAlignment {
     }
 }
 
+fn dominant_rotation(markers: &[MarkerDetection]) -> u8 {
+    let mut hist = [0.0f32; 4];
+    for m in markers {
+        hist[(m.rotation & 3) as usize] += m.score;
+    }
+    hist.iter()
+        .enumerate()
+        .max_by(|(_,a),(_,b)| a.partial_cmp(b).unwrap())
+        .map(|(i,_)| i as u8)
+        .unwrap_or(0)
+}
+
+fn transform_rot_component(t: GridTransform) -> u8 {
+    let [x0, y0] = t.apply(0, 0);
+    let [x1, y1] = t.apply(1, 0);
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    match (dx, dy) {
+        ( 1,  0) => 0,
+        ( 0,  1) => 1,
+        (-1,  0) => 2,
+        ( 0, -1) => 3,
+        _ => 0, // should not happen for D4
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Pair {
     idx: usize,
-    sx: i32,
-    sy: i32,
-    ex: i32,
-    ey: i32,
+    bc: BoardCell,
+    gc: GridCell,
     weight: f32,
 }
 
@@ -39,15 +63,20 @@ pub(crate) fn solve_alignment(
     board: &CharucoBoard,
     markers: &[MarkerDetection],
 ) -> Option<CharucoAlignment> {
-    let pairs = marker_pairs(board, markers);
-    if pairs.is_empty() {
-        return None;
-    }
-
     type Candidate = (f32, usize, GridTransform, [i32; 2], Vec<usize>);
     let mut best: Option<Candidate> = None;
 
+    let pairs = marker_pairs(board, markers);
+        if pairs.is_empty() {
+            return None;
+        }
+
+    let rot_mode = 4 - dominant_rotation(&markers);
+
     for transform in GRID_TRANSFORMS_D4 {
+        if transform_rot_component(transform) != rot_mode {
+            continue;
+        }
         let (translation, weight_sum, count) = best_translation(&pairs, transform)?;
         let inliers = inliers_for_transform(&pairs, transform, translation);
         let candidate = (weight_sum, count, transform, translation, inliers);
@@ -76,12 +105,10 @@ fn marker_pairs(board: &CharucoBoard, markers: &[MarkerDetection]) -> Vec<Pair> 
         .iter()
         .enumerate()
         .filter_map(|(idx, m)| {
-            board.marker_position(m.id).map(|[ex, ey]| Pair {
+            board.marker_position(m.id).map(|bc| Pair {
                 idx,
-                sx: m.sx,
-                sy: m.sy,
-                ex,
-                ey,
+                gc: m.gc,
+                bc,
                 weight: m.score.max(0.0),
             })
         })
@@ -92,8 +119,8 @@ fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2
     let mut counts: std::collections::HashMap<[i32; 2], (f32, usize)> =
         std::collections::HashMap::new();
     for p in pairs {
-        let [rx, ry] = transform.apply(p.sx, p.sy);
-        let t = [p.ex - rx, p.ey - ry];
+        let [rx, ry] = transform.apply(p.gc.gx, p.gc.gy);
+        let t = [p.bc.sx - rx, p.bc.sy - ry];
         let entry = counts.entry(t).or_insert((0.0, 0));
         entry.0 += p.weight;
         entry.1 += 1;
@@ -114,8 +141,8 @@ fn inliers_for_transform(
 ) -> Vec<usize> {
     let mut inliers = Vec::new();
     for p in pairs {
-        let [x, y] = transform.apply(p.sx, p.sy);
-        if x + translation[0] == p.ex && y + translation[1] == p.ey {
+        let [x, y] = transform.apply(p.gc.gx, p.gc.gy);
+        if x + translation[0] == p.bc.sx && y + translation[1] == p.bc.sy {
             inliers.push(p.idx);
         }
     }
@@ -148,13 +175,12 @@ mod tests {
         let mut markers = Vec::new();
 
         for id in 0..6u32 {
-            let Some([sx, sy]) = board.marker_position(id) else {
+            let Some(bc) = board.marker_position(id) else {
                 continue;
             };
             markers.push(MarkerDetection {
                 id,
-                sx,
-                sy,
+                gc: GridCell { gx: bc.sx, gy: bc.sy },
                 rotation: 0,
                 hamming: 0,
                 score: 1.0,

@@ -1,7 +1,7 @@
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::{
-    decode_marker_in_cell, MarkerCell, MarkerDetection, Matcher, ScanDecodeConfig,
+    decode_marker_in_cell, MarkerCell, MarkerDetection, Matcher, ScanDecodeConfig, GridCell
 };
 use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner};
 use nalgebra::Point2;
@@ -62,8 +62,7 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
             };
 
             out.push(MarkerCell {
-                sx: i,
-                sy: j,
+                gc: GridCell { gx: i, gy: j },
                 corners_img: [p00, p10, p11, p01],
             });
         }
@@ -89,8 +88,7 @@ pub(crate) fn marker_cell_from_map(map: &CornerMap, sx: i32, sy: i32) -> Option<
     };
 
     Some(MarkerCell {
-        sx,
-        sy,
+        gc: GridCell {  gx: sx, gy: sy },
         corners_img: [p00, p10, p11, p01],
     })
 }
@@ -113,11 +111,11 @@ pub(crate) fn refine_markers_for_alignment(
     let mut refined = Vec::new();
     let marker_count = board.marker_count();
     for id in 0..marker_count as u32 {
-        let Some([ex, ey]) = board.marker_position(id) else {
+        let Some(bc) = board.marker_position(id) else {
             continue;
         };
-        let dx = ex - tx;
-        let dy = ey - ty;
+        let dx = bc.sx - tx;
+        let dy = bc.sy - ty;
         let [sx, sy] = inv.apply(dx, dy);
 
         let Some(cell) = marker_cell_from_map(map, sx, sy) else {

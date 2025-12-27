@@ -1,6 +1,6 @@
 //! Board specification and layout helpers for ChArUco.
 
-use calib_targets_aruco::Dictionary;
+use calib_targets_aruco::{Dictionary, BoardCell};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +49,7 @@ pub enum CharucoBoardError {
 #[derive(Clone, Debug)]
 pub struct CharucoBoard {
     spec: CharucoBoardSpec,
-    marker_positions: Vec<[i32; 2]>,
+    marker_positions: Vec<BoardCell>,
 }
 
 impl CharucoBoard {
@@ -107,8 +107,8 @@ impl CharucoBoard {
 
     /// Mapping from marker id -> board cell (square) coordinates.
     #[inline]
-    pub fn marker_position(&self, id: u32) -> Option<[i32; 2]> {
-        self.marker_positions.get(id as usize).copied()
+    pub fn marker_position(&self, id: u32) -> Option<BoardCell> {
+        self.marker_positions.get(id as usize).cloned()
     }
 
     /// Square-cell coordinates `(sx, sy)` for the given marker id.
@@ -116,9 +116,9 @@ impl CharucoBoard {
     /// These are chessboard square indices in the board coordinate system.
     pub fn marker_cell(&self, marker_id: i32) -> Option<(usize, usize)> {
         let id = u32::try_from(marker_id).ok()?;
-        let [sx, sy] = self.marker_position(id)?;
-        let sx = usize::try_from(sx).ok()?;
-        let sy = usize::try_from(sy).ok()?;
+        let bc = self.marker_position(id)?;
+        let sx = usize::try_from(bc.sx).ok()?;
+        let sy = usize::try_from(bc.sy).ok()?;
         Some((sx, sy))
     }
 
@@ -224,13 +224,13 @@ fn marker_surrounding_charuco_corners_for_cell(
     Some([tl, tr, br, bl])
 }
 
-fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<[i32; 2]> {
+fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<BoardCell> {
     let mut out = Vec::new();
     for j in 0..(rows as i32) {
         for i in 0..(cols as i32) {
             // OpenCV: top-left square is black => white squares have (i+j) odd.
             if ((i + j) & 1) == 1 {
-                out.push([i, j]);
+                out.push(BoardCell { sx: i, sy: j });
             }
         }
     }
@@ -247,6 +247,19 @@ mod tests {
         CharucoBoard::new(CharucoBoardSpec {
             rows: 5,
             cols: 6,
+            cell_size: 1.0,
+            marker_size_rel: 0.75,
+            dictionary: dict,
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        })
+        .expect("board")
+    }
+
+    fn build_board_1000() -> CharucoBoard {
+        let dict = builtins::builtin_dictionary("DICT_4X4_1000").expect("dict");
+        CharucoBoard::new(CharucoBoardSpec {
+            rows: 22,
+            cols: 22,
             cell_size: 1.0,
             marker_size_rel: 0.75,
             dictionary: dict,
@@ -277,5 +290,17 @@ mod tests {
         assert!(board
             .marker_surrounding_charuco_corners(marker_id)
             .is_none());
+    }
+
+    #[test]
+    fn marker_22() {
+        let board = build_board_1000();
+        let marker_id = 22;
+        let cell = board.marker_cell(marker_id).expect("marker cell");
+        assert_eq!(cell, (1, 2));
+        let corners = board
+            .marker_surrounding_charuco_corners(marker_id)
+            .expect("corners");
+        assert_eq!(corners, [21, 22, 43, 42]);
     }
 }

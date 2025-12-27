@@ -57,8 +57,8 @@ fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
     if id >= total {
         return None;
     }
-    let i = (id % inner_cols) as i32;
-    let j = (id / inner_cols) as i32;
+    let i = (id % inner_cols) as i32 + 1;
+    let j = (id / inner_cols) as i32 + 1;
     Some(GridCoords { i, j })
 }
 
@@ -84,16 +84,39 @@ mod tests {
         .expect("board")
     }
 
+    fn build_board_1000() -> CharucoBoard {
+        let dict = builtins::builtin_dictionary("DICT_4X4_1000").expect("dict");
+        CharucoBoard::new(CharucoBoardSpec {
+            rows: 22,
+            cols: 22,
+            cell_size: 1.0,
+            marker_size_rel: 0.75,
+            dictionary: dict,
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        })
+        .expect("board")
+    }
+
+    #[test]
+    fn corner_43() {
+        let board = build_board_1000();
+        let corner_id: u32 = 43;
+        assert_eq!(
+            grid_from_charuco_id(&board, corner_id),
+            Some(GridCoords { i: 2, j: 3 })
+        );
+    }
+
     #[test]
     fn grid_from_charuco_id_row_major() {
         let board = build_board();
         assert_eq!(
             grid_from_charuco_id(&board, 0),
-            Some(GridCoords { i: 0, j: 0 })
+            Some(GridCoords { i: 1, j: 1 })
         );
         assert_eq!(
             grid_from_charuco_id(&board, 3),
-            Some(GridCoords { i: 0, j: 1 })
+            Some(GridCoords { i: 1, j: 2 })
         );
     }
 
@@ -130,7 +153,7 @@ mod tests {
         assert_eq!(corner.position, Point2::new(2.0, 2.0));
         assert_eq!(corner.score, 0.9);
         assert_eq!(corner.id, Some(0));
-        assert_eq!(corner.grid, Some(GridCoords { i: 0, j: 0 }));
+        assert_eq!(corner.grid, Some(GridCoords { i: 1, j: 1 }));
         assert_eq!(corner.target_position, board.charuco_object_xy(0));
     }
 }

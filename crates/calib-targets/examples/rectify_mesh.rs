@@ -480,16 +480,16 @@ fn map_mesh_rectified(path: PathBuf, rect: RectifiedMeshView) -> MeshRectifiedOu
 fn map_marker(rect: &RectifiedMeshView, m: calib_targets_aruco::MarkerDetection) -> OutputMarker {
     let corners_rect = m.corners_rect.map(|p| [p.x, p.y]);
 
-    let ci = m.sx.max(0) as usize;
-    let cj = m.sy.max(0) as usize;
+    let ci = m.gc.gx.max(0) as usize;
+    let cj = m.gc.gy.max(0) as usize;
     let corners_img = rect
         .cell_corners_img(ci, cj)
         .map(|pts| pts.map(|p| [p.x, p.y]));
 
     OutputMarker {
         id: m.id,
-        cell: [m.sx, m.sy],
-        grid_cell: [rect.min_i + m.sx, rect.min_j + m.sy],
+        cell: [m.gc.gx, m.gc.gy],
+        grid_cell: [rect.min_i + m.gc.gx, rect.min_j + m.gc.gy],
         rotation: m.rotation,
         hamming: m.hamming,
         score: m.score,

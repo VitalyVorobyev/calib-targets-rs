@@ -1,8 +1,8 @@
 //! JSON configuration and report helpers for ChArUco detection.
 
 use crate::{
-    CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
-    CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
+    CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult,
+    CharucoDetector, CharucoDetectorParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
