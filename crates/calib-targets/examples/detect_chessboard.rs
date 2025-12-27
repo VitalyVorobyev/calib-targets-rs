@@ -2,7 +2,13 @@ use calib_targets::chessboard::{ChessboardParams, GridGraphParams};
 use calib_targets::detect;
 use image::ImageReader;
 
+#[cfg(feature = "tracing")]
+use calib_targets_core::init_tracing;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "tracing")]
+    init_tracing(false);
+
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("Usage: detect_chessboard <image_path>");
         return Ok(());

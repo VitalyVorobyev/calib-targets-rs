@@ -4,9 +4,15 @@ Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marke
 
 ![ChArUco detection overlay](book/img/charuco_detect_report_small2_overlay.png)
 
-> **Status:** experimental and evolving. APIs may change.
+> **Status:** Feature-complete, but APIs may change.
+
+## Introduction
+
+Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. Targets of all types are detected using the same basic algorithms for a chessboard detection: building a graph on ChESS features, then selecting connected components in this graph.
 
 ## Quickstart
+
+### Chessboard
 
 ```bash
 cargo add calib-targets image
@@ -28,6 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+This code was used to process a 1024x576 image belos. The whole detection took 3.1 ms with 2.9 ms spent on ChESS corners detection (single scale, `rayon` feature on ) and 132 µs on chessboard detection.
+
+![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay_simple.png)
+
+### Maerkerboard
 
 ## Crates
 

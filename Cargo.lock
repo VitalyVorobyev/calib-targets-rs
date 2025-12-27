@@ -366,6 +366,7 @@ dependencies = [
  "clap",
  "image",
  "log",
+ "rayon",
  "serde",
  "serde_json",
  "tracing-subscriber",
@@ -378,6 +379,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12819fef6c2140511982c6bd688d4316149229accf6e060d6f03c41ba1965a6f"
 dependencies = [
  "log",
+ "rayon",
 ]
 
 [[package]]

@@ -134,6 +134,13 @@ def extract_detection(data):
     return None
 
 
+def make_simple_figure(img, dpi=100):
+    h, w = img.shape[0], img.shape[1]
+    fig = plt.figure(figsize=(w / dpi, h / dpi), dpi=dpi)
+    ax = fig.add_axes([0.0, 0.0, 1.0, 1.0])
+    return fig, ax
+
+
 def draw_detection(ax, corners, label_mode, label_step, use_confidence=True):
     if not corners:
         return None
@@ -284,6 +291,11 @@ def main() -> None:
         action="store_true",
         help="Disable drawing grid connectivity",
     )
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        help="Save just the input image with overlay (no padding or colorbar)",
+    )
     args = parser.parse_args()
 
     data = json.loads(args.report.read_text())
@@ -302,7 +314,10 @@ def main() -> None:
 
     grid_map_img = build_grid_map(corners)
 
-    fig, ax_img = plt.subplots(figsize=(10, 8))
+    if args.simple:
+        fig, ax_img = make_simple_figure(img)
+    else:
+        fig, ax_img = plt.subplots(figsize=(10, 8))
     ax_img.imshow(img, cmap="gray", origin="upper")
     if grid_map_img and not args.no_grid:
         draw_grid_edges(ax_img, grid_map_img, color="#00c7e6", linewidth=0.8, alpha=0.5)
@@ -357,7 +372,6 @@ def main() -> None:
             if cell_size > 0:
                 px_per_mm = median / float(cell_size)
 
-    ax_img.set_title("ChArUco detection overlay")
     ax_img.set_axis_off()
     markers_img = [m for m in markers if m.get("corners_img") or m.get("center_img")]
     if markers_img:
@@ -368,12 +382,16 @@ def main() -> None:
             "skipping markers on the original image"
         )
 
-    if sc is not None and sc.get_array() is not None:
+    if not args.simple and sc is not None and sc.get_array() is not None:
         fig.colorbar(sc, ax=ax_img, fraction=0.035, pad=0.02, label="Corner score")
-    fig.tight_layout()
+    if not args.simple:
+        fig.tight_layout()
 
     out_path = args.output or args.report.with_name(args.report.stem + "_overlay.png")
-    plt.savefig(out_path, bbox_inches="tight", dpi=300)
+    if args.simple:
+        fig.savefig(out_path, dpi=fig.dpi, bbox_inches=None, pad_inches=0)
+    else:
+        fig.savefig(out_path, bbox_inches="tight", dpi=300)
     print(f"overlay saved to {out_path}")
 
     if args.show:
