@@ -48,6 +48,29 @@ pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
 }
 
 #[inline]
+pub fn sample_bilinear_fast(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
+    let x0 = x.floor() as i32;
+    let y0 = y.floor() as i32;
+
+    if x0 < 0 || y0 < 0 || x0 + 1 >= src.width as i32 || y0 + 1 >= src.height as i32 {
+        return sample_bilinear(src, x, y);
+    }
+
+    let fx = x - x0 as f32;
+    let fy = y - y0 as f32;
+    let base = y0 as usize * src.width + x0 as usize;
+
+    let p00 = src.data[base] as f32;
+    let p10 = src.data[base + 1] as f32;
+    let p01 = src.data[base + src.width] as f32;
+    let p11 = src.data[base + src.width + 1] as f32;
+
+    let a = p00 + fx * (p10 - p00);
+    let b = p01 + fx * (p11 - p01);
+    a + fy * (b - a)
+}
+
+#[inline]
 pub fn sample_bilinear_u8(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
     sample_bilinear(src, x, y).clamp(0.0, 255.0) as u8
 }

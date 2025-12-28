@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-core"
-version = "0.1.1"
+version = "0.1.2"
 description = "Core types and utilities for calibration target detection"
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api/calib-targets-core"
+documentation.workspace = true
 keywords = ["calibration", "computer-vision", "geometry", "homography", "chessboard"]
 categories = ["computer-vision", "science"]
 

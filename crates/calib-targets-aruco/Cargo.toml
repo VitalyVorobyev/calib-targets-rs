@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-aruco"
-version = "0.1.1"
+version = "0.1.2"
 description = "Embedded ArUco/AprilTag dictionaries and fast marker decoding on rectified grids"
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api/calib-targets-aruco"
+documentation.workspace = true
 keywords = ["calibration", "computer-vision", "aruco", "apriltag", "marker"]
 categories = ["computer-vision", "science"]
 
@@ -29,7 +29,7 @@ serde_json = "1"
 [dev-dependencies]
 image = { version = "0.25", default-features = true }
 chess-corners = { version = "0.2", features = ["rayon"] }
-calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
+calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1.2" }
 log = "0.4"
 
 [package.metadata.docs.rs]

@@ -1,6 +1,6 @@
 # calib-targets-charuco
 
-`calib-targets-charuco` combines chessboard detection with ArUco decoding to detect ChArUco boards. The flow is grid-first:
+`calib-targets-charuco` combines chessboard detection with ArUco decoding to detect ChArUco boards. ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/charuco implementation. The flow is grid-first:
 
 ![ChArUco detection overlay](img/charuco_detect_report_small2_overlay.png)
 *ChArUco detection overlay with assigned corner IDs.*

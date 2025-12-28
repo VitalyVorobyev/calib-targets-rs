@@ -3,6 +3,7 @@
 ![ChArUco detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/charuco_detect_report_small2_overlay.png)
 
 ChArUco board detector built on top of `calib-targets-core` and `calib-targets-aruco`.
+ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/charuco implementation.
 
 ## Quickstart
 
