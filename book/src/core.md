@@ -2,7 +2,7 @@
 
 `calib-targets-core` provides shared geometric types and utilities. It is intentionally small and purely geometric; it does not depend on any particular corner detector or image pipeline.
 
-![Rectified grid view](../img/rectified_small.png)
+![Rectified grid view](img/rectified_small.png)
 *Global rectification output from the chessboard pipeline.*
 
 ## Core data types

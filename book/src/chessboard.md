@@ -2,7 +2,7 @@
 
 `calib-targets-chessboard` detects a plain chessboard from a cloud of ChESS corners. It is graph-based and perspective-aware, and it returns integer grid coordinates for each detected corner.
 
-![Chessboard detection overlay](../img/chessboard_detection_mid_overlay.png)
+![Chessboard detection overlay](img/chessboard_detection_mid_overlay.png)
 *Detected chessboard corners overlaid on the source image.*
 
 ## Detection pipeline
@@ -68,13 +68,12 @@ Both require labeled corners and a chosen `px_per_square` scale.
 ## Example
 
 ```rust
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::Corner;
 
 fn detect(corners: &[Corner]) {
     let params = ChessboardParams::default();
-    let detector = ChessboardDetector::new(params)
-        .with_grid_search(GridGraphParams::default());
+    let detector = ChessboardDetector::new(params);
 
     if let Some(result) = detector.detect_from_corners(corners) {
         println!("detected {} corners", result.detection.corners.len());

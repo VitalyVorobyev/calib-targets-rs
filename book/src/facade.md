@@ -2,7 +2,7 @@
 
 The `calib-targets` crate is the unified entry point for the workspace. It re-exports the lower-level crates and provides optional end-to-end helpers in `calib_targets::detect` (feature `image`, enabled by default).
 
-![Mesh-rectified grid](../img/mesh_rectified_mid.png)
+![Mesh-rectified grid](img/mesh_rectified_mid.png)
 *Facade examples cover detection and rectification workflows.*
 
 ## Current contents

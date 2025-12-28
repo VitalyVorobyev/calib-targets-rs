@@ -5,8 +5,6 @@ This repository includes data and scripts that support testing and debugging.
 ## Data folders
 
 - `testdata/`: sample images and JSON configs used by examples and tests.
-- `synthetic/`: synthetic board assets and configs.
-- `tmpdata/`: default output folder for example-generated images and reports.
 
 ## Tools
 

@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets"
-version = "0.1.0"
+version = "0.1.1"
 description = "Main entry point crate for a collection of plain calibration target detectors built on top of ChESS corners"
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://docs.rs/calib-targets"
+documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api/calib_targets"
 keywords = ["calibration", "computer-vision", "chessboard", "charuco", "aruco"]
 categories = ["computer-vision", "science"]
 

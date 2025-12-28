@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process the 1024x576 image shown below. End-to-end detection took 3.1 ms: 2.9 ms for ChESS corner detection (single scale, `rayon` feature on) and 132 µs for chessboard recognition. (Performance numbers here and later are from a MacBook Pro M4.)
 
-![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay_simple.png)
+![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay.png)
 
 The exact command used was:
 
