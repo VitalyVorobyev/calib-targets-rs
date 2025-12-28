@@ -5,9 +5,6 @@ use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 use std::collections::HashMap;
 
-#[cfg(feature = "tracing")]
-use tracing::instrument;
-
 #[derive(Clone, Copy, Debug)]
 struct MatchOption {
     index: usize,

@@ -1,5 +1,5 @@
 {
-  "image_path": "testdata/small5.png",
+  "image_path": "testdata/small2.png",
   "board": {
     "rows": 22,
     "cols": 22,
@@ -8,8 +8,8 @@
     "dictionary": "DICT_4X4_1000",
     "marker_layout": "opencv_charuco"
   },
-  "output_path": "tmpdata/charuco_detect_report_small5.json",
-  "mesh_rectified_path": "tmpdata/charuco_detect_rectified_small5.png",
+  "output_path": "tmpdata/charuco_detect_report_small2.json",
+  "mesh_rectified_path": "tmpdata/charuco_detect_rectified_small2.png",
   "px_per_square": 60.0,
   "min_marker_inliers": 8,
   "chessboard": {

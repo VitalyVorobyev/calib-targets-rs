@@ -12,9 +12,6 @@ use calib_targets_core::{
     Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind,
 };
 
-#[cfg(feature = "tracing")]
-use tracing::instrument;
-
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {
     params: MarkerBoardParams,

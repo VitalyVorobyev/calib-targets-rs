@@ -4,11 +4,11 @@ Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marke
 
 ![ChArUco detection overlay](book/img/charuco_detect_report_small2_overlay.png)
 
-> **Status:** Feature-complete, but APIs may change.
+> **Status:** Feature-complete, APIs may change.
 
 ## Introduction
 
-Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. Targets of all types are detected using the same basic algorithms for a chessboard detection: building a graph on ChESS features, then selecting connected components in this graph.
+Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. All target types share the same chessboard-style pipeline: build a graph over ChESS features and select connected components. The local nature of the algorithm makes it robust to lens distortion. Detection of calibration target features (ArUco markers or circles) uses a local projective warp, which avoids heavy pattern matching while remaining robust and fast. Each algorithms has parameters, but default setup should work in most of practical cases.
 
 ## Quickstart
 
@@ -34,11 +34,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process a 1024x576 image below. The whole detection took 3.1 ms with 2.9 ms for the ChESS corners detection (single scale, `rayon` feature on ) and 132 µs for the following chessboard recognition.
+This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process the 1024x576 image shown below. End-to-end detection took 3.1 ms: 2.9 ms for ChESS corner detection (single scale, `rayon` feature on) and 132 µs for chessboard recognition. (Performance numbers here and later are from a MacBook Pro M4.)
 
 ![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay_simple.png)
 
-The exact command used is
+The exact command used was:
 
 ```zsh
 cargo run --release --features "tracing" --example detect_chessboard -- testdata/mid.png
@@ -46,7 +46,39 @@ cargo run --release --features "tracing" --example detect_chessboard -- testdata
 
 ### Markerboard
 
-[This example](./crates/calib-targets/examples/detect_markerboard.rs) 
+[This example](./crates/calib-targets/examples/detect_markerboard.rs) with the command
+
+```zsh
+cargo run --release --features "tracing" --example detect_markerboard -- testdata/markerboard_crop.png
+```
+
+produces the detection below (643x358 px):
+
+![Markerboard detection overlay](book/img/marker_detect_report_crop_overlay.png)
+
+in 8.6 ms (including 1.7 ms for ChESS corner detection and 250 µs for chessboard detection). More optimizations are planned.
+
+### ChArUco
+
+The 720x540 px ChArUco target in the first image took 3.2 ms (2.1 ms for ChESS corner detection and 250 µs for chessboard detection).
+
+[This example](crates/calib-targets/examples/detect_charuco.rs) shows the code. The command is:
+
+```zsh
+cargo run --release --features "tracing" --example detect_charuco -- testdata/small2.png
+```
+
+### The `TargetDetection` struct
+
+`TargetDetection` is the common output container used by all detectors (returned directly for chessboards and embedded in result structs for ChArUco and marker boards). It describes one detected board instance:
+
+- `kind` identifies the target type (`Chessboard`, `Charuco`, or `CheckerboardMarker`).
+- `corners` is a list of `LabeledCorner` values. Each corner includes pixel `position`, optional integer `grid` coordinates `(i, j)`, optional logical `id`, optional `target_position` in board units (often millimeters), and a detector-specific `score` (higher is better).
+
+Typical field usage:
+- Chessboard: `grid` is set; `id` and `target_position` are `None`. Corners are ordered by grid row then column.
+- ChArUco: `id` is the ChArUco corner id; `grid` and `target_position` are set when a board spec is available. Corners are ordered by `id`.
+- Marker board: `grid` is set; `id` and `target_position` are populated when alignment succeeds and the layout has a valid cell size. Corners are ordered by grid coordinates.
 
 ## Crates
 
@@ -59,11 +91,23 @@ cargo run --release --features "tracing" --example detect_chessboard -- testdata
 
 ## Examples
 
+The examples mentioned above are:
+
 ```bash
-cargo run -p calib-targets --example detect_chessboard -- path/to/image.png
-cargo run -p calib-targets --example detect_charuco -- path/to/image.png
-cargo run -p calib-targets-aruco --example rectify_mesh -- testdata/rectify_mesh_config_small0.json
+cargo run --example detect_chessboard -- path/to/image.png
+cargo run --example detect_charuco -- path/to/image.png
+cargo run --example detect_markerboard -- path/to/image.png
 ```
+
+Examples with complete parameters control via json files are:
+
+```bash
+cargo run --example chessboard -- testdata/chessboard_config.json
+cargo run --example charuco_detect -- testdata/charuco_detect_config.json
+cargo run --example chessboard -- testdata/chessboard_config.json
+```
+
+The later produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
 
 ## Performance and accuracy
 
@@ -79,7 +123,7 @@ cargo doc --workspace --all-features
 mdbook build book
 ```
 
-For contribution rules see [AGENTS.md](./AGENTS.ms).
+For contribution rules see [AGENTS.ms](./AGENTS.ms).
 
 ## License
 
