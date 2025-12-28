@@ -1,4 +1,4 @@
-use calib_targets_core::{homography_from_4pt, sample_bilinear, GrayImageView, Homography};
+use calib_targets_core::{homography_from_4pt, sample_bilinear_fast, GrayImageView, Homography};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -87,6 +87,31 @@ pub fn score_circle_in_square(
     let ring_half_th = 0.5 * params.ring_thickness_frac * r;
 
     let center0 = Point2::new(0.5 * s, 0.5 * s);
+    let dirs = build_unit_circle_lut(params.samples)?;
+    let radii = SampleRadii {
+        rad_disk: r * 0.65,
+        r0: r_ring - ring_half_th,
+        r1: r_ring + ring_half_th,
+    };
+
+    const PRECHECK_SAMPLES: usize = 12;
+    const PRECHECK_CONTRAST_FRAC: f32 = 0.5;
+
+    // Quick center precheck to skip full search on low-contrast cells.
+    if params.center_search_px > 0 && params.min_contrast > 0.0 {
+        let stride = (dirs.len() / PRECHECK_SAMPLES).max(1);
+        let sample_params = SampleParams {
+            radii,
+            dirs: &dirs,
+            stride,
+        };
+        let (mean_disk, mean_ring) =
+            sample_disk_and_ring(img, &h_img_from_patch, center0, &sample_params)?;
+        let precheck_contrast = (mean_disk - mean_ring).abs();
+        if precheck_contrast < params.min_contrast * PRECHECK_CONTRAST_FRAC {
+            return None;
+        }
+    }
 
     // Evaluate a few centers around middle; pick best by |contrast|
     let mut best: Option<(Point2<f32>, f32, f32)> = None; // (center_patch, mean_disk, mean_ring)
@@ -95,15 +120,13 @@ pub fn score_circle_in_square(
         for dx in -params.center_search_px..=params.center_search_px {
             let c = Point2::new(center0.x + dx as f32, center0.y + dy as f32);
 
-            let mean_disk = sample_ring_like(img, &h_img_from_patch, c, r * 0.65, params.samples)?;
-            let mean_ring = sample_annulus(
-                img,
-                &h_img_from_patch,
-                c,
-                r_ring - ring_half_th,
-                r_ring + ring_half_th,
-                params.samples,
-            )?;
+            let sample_params = SampleParams {
+                radii,
+                dirs: &dirs,
+                stride: 1,
+            };
+            let (mean_disk, mean_ring) =
+                sample_disk_and_ring(img, &h_img_from_patch, c, &sample_params)?;
 
             let contrast = (mean_disk - mean_ring).abs();
             if best.map(|b| contrast > (b.1 - b.2).abs()).unwrap_or(true) {
@@ -140,43 +163,78 @@ pub fn score_circle_in_square(
     })
 }
 
-/// Sample mean intensity on a circle-ish disk proxy: average of multiple points on several radii.
-/// For speed/correctness, we sample points on a circle at radius `rad`.
-fn sample_ring_like(
-    img: &GrayImageView<'_>,
-    h: &Homography,
-    center_patch: Point2<f32>,
-    rad: f32,
-    samples: usize,
-) -> Option<f32> {
+fn build_unit_circle_lut(samples: usize) -> Option<Vec<(f32, f32)>> {
     if samples == 0 {
         return None;
     }
-    let mut sum = 0.0f32;
-
+    let mut out = Vec::with_capacity(samples);
+    let step = std::f32::consts::TAU / samples as f32;
     for k in 0..samples {
-        let t = (k as f32) * (std::f32::consts::TAU / samples as f32);
-        let p = Point2::new(
-            center_patch.x + rad * t.cos(),
-            center_patch.y + rad * t.sin(),
-        );
-        let q = h.apply(p);
-        sum += sample_bilinear(img, q.x, q.y);
+        let t = (k as f32) * step;
+        let (sin_t, cos_t) = t.sin_cos();
+        out.push((cos_t, sin_t));
     }
-    Some(sum / samples as f32)
+    Some(out)
 }
 
-/// Sample mean intensity in an annulus by sampling two circles and averaging.
-/// (Correct-first; can be improved to better area sampling later.)
-fn sample_annulus(
+#[derive(Clone, Copy)]
+struct SampleRadii {
+    rad_disk: f32,
+    r0: f32,
+    r1: f32,
+}
+
+struct SampleParams<'a> {
+    radii: SampleRadii,
+    dirs: &'a [(f32, f32)],
+    stride: usize,
+}
+
+/// Sample disk and ring means using a shared unit-circle LUT (no per-sample trig).
+fn sample_disk_and_ring(
     img: &GrayImageView<'_>,
     h: &Homography,
     center_patch: Point2<f32>,
-    r0: f32,
-    r1: f32,
-    samples: usize,
-) -> Option<f32> {
-    let m0 = sample_ring_like(img, h, center_patch, r0, samples)?;
-    let m1 = sample_ring_like(img, h, center_patch, r1, samples)?;
-    Some(0.5 * (m0 + m1))
+    params: &SampleParams<'_>,
+) -> Option<(f32, f32)> {
+    if params.dirs.is_empty() {
+        return None;
+    }
+    let step = params.stride.max(1);
+    let mut sum_disk = 0.0f32;
+    let mut sum_r0 = 0.0f32;
+    let mut sum_r1 = 0.0f32;
+    let mut count = 0usize;
+
+    for idx in (0..params.dirs.len()).step_by(step) {
+        let (ux, uy) = params.dirs[idx];
+        let p_disk = Point2::new(
+            center_patch.x + params.radii.rad_disk * ux,
+            center_patch.y + params.radii.rad_disk * uy,
+        );
+        let q_disk = h.apply(p_disk);
+        sum_disk += sample_bilinear_fast(img, q_disk.x, q_disk.y);
+
+        let p_r0 = Point2::new(
+            center_patch.x + params.radii.r0 * ux,
+            center_patch.y + params.radii.r0 * uy,
+        );
+        let q_r0 = h.apply(p_r0);
+        sum_r0 += sample_bilinear_fast(img, q_r0.x, q_r0.y);
+
+        let p_r1 = Point2::new(
+            center_patch.x + params.radii.r1 * ux,
+            center_patch.y + params.radii.r1 * uy,
+        );
+        let q_r1 = h.apply(p_r1);
+        sum_r1 += sample_bilinear_fast(img, q_r1.x, q_r1.y);
+        count += 1;
+    }
+    if count == 0 {
+        return None;
+    }
+    let n = count as f32;
+    let mean_disk = sum_disk / n;
+    let mean_ring = (sum_r0 + sum_r1) / (2.0 * n);
+    Some((mean_disk, mean_ring))
 }

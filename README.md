@@ -56,11 +56,12 @@ produces the detection below (643x358 px):
 
 ![Markerboard detection overlay](book/img/marker_detect_report_crop_overlay.png)
 
-in 8.6 ms (including 1.7 ms for ChESS corner detection and 250 µs for chessboard detection). More optimizations are planned.
+in 2.4 ms (including 1.5 ms for ChESS corner detection and 250 µs for chessboard detection).
 
 ### ChArUco
 
 The 720x540 px ChArUco target in the first image took 3.2 ms (2.1 ms for ChESS corner detection and 250 µs for chessboard detection).
+ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/charuco implementation.
 
 [This example](crates/calib-targets/examples/detect_charuco.rs) shows the code. The command is:
 
@@ -82,12 +83,14 @@ Typical field usage:
 
 ## Crates
 
-- `calib-targets` – facade crate with end-to-end helpers.
-- `calib-targets-core` – core geometry and types.
-- `calib-targets-chessboard` – chessboard detector.
-- `calib-targets-aruco` – ArUco/AprilTag dictionaries and decoding.
-- `calib-targets-charuco` – ChArUco alignment and IDs.
-- `calib-targets-marker` – checkerboard + 3-circle marker boards.
+- [`calib-targets`](https://crates.io/crates/calib-targets) – facade crate with end-to-end helpers.
+- [`calib-targets-core`](https://crates.io/crates/calib-targets-core) – core geometry and types.
+- [`calib-targets-chessboard`](https://crates.io/crates/calib-targets-chessboard) – chessboard detector.
+- [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
+- [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
+- [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
+
+(All crates are published on crates.io)
 
 ## Examples
 
