@@ -2,7 +2,7 @@
 
 `calib-targets-rs` is a workspace of Rust crates for detecting and modeling planar calibration targets from **corner clouds** (for example, ChESS corners). The focus is geometry-first: target modeling, grid fitting, and rectification live here, while image I/O and corner detection are intentionally out of scope.
 
-![ChArUco detection overlay](../img/charuco_detect_report_small2_overlay.png)
+![ChArUco detection overlay](img/charuco_detect_report_small2_overlay.png)
 *ChArUco detection overlay on a small board.*
 
 What it is:
@@ -22,7 +22,7 @@ Recommended reading order:
 2. [Pipeline Overview](pipeline.md)
 3. Crate chapters, starting with [calib-targets-core](core.md) and [calib-targets-chessboard](chessboard.md)
 
-This project is experimental and APIs are still evolving. The intent of this book is to document the current design and make future changes easier to reason about.
+[API docs](https://vitalyvorobyev.github.io/calib-targets-rs/api).
 
 ## Quickstart
 
@@ -36,16 +36,15 @@ Minimal chessboard detection:
 
 ```rust,no_run
 use calib_targets::detect;
-use calib_targets::chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets::chessboard::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
     let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
-    let graph = GridGraphParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params, graph);
+    let result = detect::detect_chessboard(&img, &chess_cfg, params);
     println!("detected: {}", result.is_some());
     Ok(())
 }

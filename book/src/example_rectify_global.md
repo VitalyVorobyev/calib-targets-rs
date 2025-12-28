@@ -4,7 +4,7 @@ File: `crates/calib-targets-chessboard/examples/rectify_global.rs`
 
 This example detects a chessboard and computes a single global homography to produce a rectified board view. The output includes:
 
-![Global rectification output](../img/rectified_small.png)
+![Global rectification output](img/rectified_small.png)
 *Global rectification output from the small test image.*
 
 - A rectified grayscale image.

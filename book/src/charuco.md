@@ -2,7 +2,7 @@
 
 `calib-targets-charuco` combines chessboard detection with ArUco decoding to detect ChArUco boards. The flow is grid-first:
 
-![ChArUco detection overlay](../img/charuco_detect_report_small2_overlay.png)
+![ChArUco detection overlay](img/charuco_detect_report_small2_overlay.png)
 *ChArUco detection overlay with assigned corner IDs.*
 
 1. Detect a chessboard grid from ChESS corners.

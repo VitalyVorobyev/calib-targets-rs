@@ -3,11 +3,11 @@
 //! ## Quickstart
 //!
 //! ```
-//! use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+//! use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 //! use calib_targets_core::Corner;
 //!
 //! let params = ChessboardParams::default();
-//! let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
+//! let detector = ChessboardDetector::new(params);
 //!
 //! let corners: Vec<Corner> = Vec::new();
 //! let result = detector.detect_from_corners(&corners);

@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-marker"
-version = "0.1.0"
+version = "0.1.1"
 description = "Checkerboard marker target detector (checkerboard + 3 central circles)"
 edition.workspace = true
 license.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
 readme = "README.md"
-documentation = "https://docs.rs/calib-targets-marker"
+documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api/calib-targets-marker"
 keywords = ["calibration", "computer-vision", "marker", "chessboard", "circles"]
 categories = ["computer-vision", "science"]
 

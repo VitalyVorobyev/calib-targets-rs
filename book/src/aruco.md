@@ -2,7 +2,7 @@
 
 `calib-targets-aruco` provides embedded ArUco/AprilTag-style dictionaries and decoding on **rectified grids**. It does not detect quads or perform image rectification by itself.
 
-![Mesh-rectified grid](../img/mesh_rectified_small.png)
+![Mesh-rectified grid](img/mesh_rectified_small.png)
 *Rectified grid used for ArUco/AprilTag decoding.*
 
 ## Current API surface
