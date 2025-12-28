@@ -2,31 +2,59 @@
 
 ![Mesh-rectified grid](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/mesh_rectified_mid.png)
 
-High-level facade crate for the `calib-targets-*` workspace.
+Fast, robust calibration target detection in Rust: chessboard, ChArUco, ArUco/AprilTag dictionaries, and marker boards.
+
+## Highlights
+
+- Shared `TargetDetection` output across detectors for consistent downstream processing.
+- End-to-end helpers (`calib_targets::detect`) that run ChESS corner detection for you (feature `image`, enabled by default).
+- Low-level detector crates are re-exported when you need custom pipelines.
 
 ## Quickstart (chessboard)
 
+```bash
+cargo add calib-targets image
+```
+
 ```rust,no_run
 use calib_targets::detect;
-use calib_targets::chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
     let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
-    let graph = GridGraphParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params, graph);
+    let result = detect::detect_chessboard(&img, &chess_cfg, params);
     println!("detected: {}", result.is_some());
     Ok(())
 }
 ```
 
+## What you get back
+
+All detectors produce a `TargetDetection` (returned directly for chessboards and embedded in higher-level result structs elsewhere). Each `LabeledCorner` includes pixel `position`, optional grid coordinates, optional logical `id`, optional target-space position, and a detector-specific `score`.
+
+## Supported targets
+
+- Chessboard: `detect::detect_chessboard` or `chessboard::ChessboardDetector`.
+- ChArUco: `detect::detect_charuco` or `charuco::CharucoDetector`.
+- Marker boards: `detect::detect_marker_board` or `marker::MarkerBoardDetector`.
+- ArUco/AprilTag dictionaries and decoding via `aruco`.
+
 ## Features
 
-- `image` (default): enables the `calib_targets::detect` helpers.
-- `tracing`: enables tracing output across the subcrates.
+- `image` (default): enables `calib_targets::detect` helpers that use `image::GrayImage` and `chess-corners`.
+- `tracing`: enables tracing output across the workspace crates.
+
+## Examples (repo)
+
+```bash
+cargo run -p calib-targets --example detect_chessboard -- path/to/image.png
+cargo run -p calib-targets --example detect_charuco -- path/to/image.png
+cargo run -p calib-targets --example detect_markerboard -- path/to/image.png
+```
 
 ## Crate map
 
@@ -38,5 +66,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Links
 
+- Docs: https://docs.rs/calib-targets
 - Repository: https://github.com/VitalyVorobyev/calib-targets-rs
 - Workspace docs: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/README.md

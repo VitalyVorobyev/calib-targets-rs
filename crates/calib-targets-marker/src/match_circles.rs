@@ -48,7 +48,6 @@ fn build_match_options(
 }
 
 /// Match expected circles to detected candidates, enforcing polarity.
-
 pub fn match_expected_circles(
     expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],
