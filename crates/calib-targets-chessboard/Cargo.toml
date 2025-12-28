@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3", optional = true, features = ["fmt", "env
 
 [dev-dependencies]
 image = { version = "0.25", default-features = true }
-chess-corners = { version = "0.2" }
+chess-corners = { version = "0.2", features = ["rayon"] }
 
 [package.metadata.docs.rs]
 all-features = true
