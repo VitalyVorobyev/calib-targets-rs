@@ -1,6 +1,6 @@
 {
-  "image_path": "testdata/markerboard.png",
-  "output_path": "tmpdata/marker_detect_report.json",
+  "image_path": "testdata/markerboard_crop.png",
+  "output_path": "tmpdata/marker_detect_report_crop.json",
   "marker": {
     "layout": {
       "rows": 22,

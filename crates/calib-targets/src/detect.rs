@@ -2,6 +2,9 @@ use crate::{charuco, chessboard, core, marker};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use nalgebra::Point2;
 
+#[cfg(feature = "tracing")]
+use tracing::instrument;
+
 /// Errors produced by the high-level facade helpers.
 #[derive(thiserror::Error, Debug)]
 pub enum DetectError {
@@ -39,6 +42,10 @@ pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
 }
 
 /// Detect raw ChESS corners using `chess-corners`.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "info", skip(img, cfg), fields(width = img.width(), height = img.height()))
+)]
 pub fn detect_chess_corners_raw(
     img: &::image::GrayImage,
     cfg: &ChessConfig,
@@ -61,18 +68,38 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
 }
 
 /// Run the chessboard detector end-to-end: ChESS corners -> chessboard grid.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
 pub fn detect_chessboard(
     img: &::image::GrayImage,
     chess_cfg: &ChessConfig,
     params: chessboard::ChessboardParams,
-    graph: chessboard::GridGraphParams,
 ) -> Option<chessboard::ChessboardDetectionResult> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::ChessboardDetector::new(params).with_grid_search(graph);
+    let detector = chessboard::ChessboardDetector::new(params);
     detector.detect_from_corners(&corners)
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, board, params),
+        fields(
+            width = img.width(),
+            height = img.height(),
+            board_rows = board.rows,
+            board_cols = board.cols
+        )
+    )
+)]
 pub fn detect_charuco(
     img: &::image::GrayImage,
     chess_cfg: &ChessConfig,
@@ -95,6 +122,14 @@ pub fn detect_charuco_default(
 }
 
 /// Run the checkerboard+circles marker board detector end-to-end.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
 pub fn detect_marker_board(
     img: &::image::GrayImage,
     chess_cfg: &ChessConfig,
@@ -144,10 +179,9 @@ pub fn detect_chessboard_from_gray_u8(
     pixels: &[u8],
     chess_cfg: &ChessConfig,
     params: chessboard::ChessboardParams,
-    graph: chessboard::GridGraphParams,
 ) -> Result<Option<chessboard::ChessboardDetectionResult>, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_chessboard(&img, chess_cfg, params, graph))
+    Ok(detect_chessboard(&img, chess_cfg, params))
 }
 
 pub fn detect_charuco_from_gray_u8(

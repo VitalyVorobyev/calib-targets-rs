@@ -1,9 +1,16 @@
 [package]
 name = "calib-targets"
 version = "0.1.0"
-edition = "2021"
 description = "Main entry point crate for a collection of plain calibration target detectors built on top of ChESS corners"
-license = "MIT OR Apache-2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/calib-targets"
+keywords = ["calibration", "computer-vision", "chessboard", "charuco", "aruco"]
+categories = ["computer-vision", "science"]
 
 [features]
 default = ["image"]
@@ -25,7 +32,7 @@ calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.1" }
 calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
 calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
 calib-targets-marker = { path = "../calib-targets-marker", version = "0.1" }
-chess-corners = { version = "0.2", optional = true }
+chess-corners = { version = "0.2", optional = true, features = ["rayon"] }
 nalgebra = "0.34"
 thiserror = "2"
 image = { version = "0.25", default-features = true, optional = true }
@@ -37,3 +44,7 @@ tracing-subscriber = { version = "0.3", optional = true, features = ["fmt", "env
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

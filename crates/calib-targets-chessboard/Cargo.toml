@@ -1,9 +1,16 @@
 [package]
 name = "calib-targets-chessboard"
 version = "0.1.0"
-edition = "2021"
 description = "Plain chessboard detector built on top of ChESS corners"
-license = "MIT OR Apache-2.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation = "https://docs.rs/calib-targets-chessboard"
+keywords = ["calibration", "computer-vision", "chessboard", "detection", "grid"]
+categories = ["computer-vision", "science"]
 
 [features]
 tracing = ["calib-targets-core/tracing", "dep:tracing", "dep:tracing-log",
@@ -23,4 +30,8 @@ tracing-subscriber = { version = "0.3", optional = true, features = ["fmt", "env
 
 [dev-dependencies]
 image = { version = "0.25", default-features = true }
-chess-corners = { version = "0.2" }
+chess-corners = { version = "0.2", features = ["rayon"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

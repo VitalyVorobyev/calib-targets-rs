@@ -1,136 +1,130 @@
 # calib-targets-rs
 
-Early-stage calibration target detection library for Rust.
+Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marker boards).
 
-![](testdata/chessboard_detection_overlay.png)
+![ChArUco detection overlay](book/img/charuco_detect_report_small2_overlay.png)
 
-> **Status:** experimental & work in progress. APIs are not stable yet.
+> **Status:** Feature-complete, APIs may change.
 
-This repository contains a small family of crates for detecting various calibration targets from corner detections (e.g., ChESS corners). The focus is on clean geometry and target modeling; image I/O and corner detection are intentionally kept out of scope.
+## Introduction
 
-## Crates
+Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. All target types share the same chessboard-style pipeline: build a graph over ChESS features and select connected components. The local nature of the algorithm makes it robust to lens distortion. Detection of calibration target features (ArUco markers or circles) uses a local projective warp, which avoids heavy pattern matching while remaining robust and fast. Each algorithms has parameters, but default setup should work in most of practical cases.
 
-- `calib-targets-core` – core geometric types and utilities:
-  - `Corner`, `LabeledCorner`, `TargetDetection`, `TargetKind`
-  - helpers such as `estimate_grid_axes_from_orientations`
-- `calib-targets-chessboard` – plain chessboard detector built on top of `calib-targets-core`.
-- `calib-targets-aruco` – embedded ArUco/AprilTag dictionaries and decoding on rectified grids or per-cell quads.
-- `calib-targets-charuco` – grid-first ChArUco detector with per-cell marker sampling by default and optional rectified output.
-- `calib-targets-marker` – checkerboard marker detector (checkerboard + 3 central circles) with per-cell circle scoring and layout-based matching.
+## Quickstart
 
-All crates live in a single Cargo workspace (see `Cargo.toml` at the repository root).
+### Chessboard
 
-## Design goals
+```bash
+cargo add calib-targets image
+```
 
-- Minimal, geometry-centric API that is independent of any image or corner detector implementation.
-- Support for multiple target types (chessboard, ChArUco, checkerboard marker).
-- Suitable building blocks for camera calibration and pose estimation pipelines.
+```rust,no_run
+use calib_targets::detect;
+use calib_targets::ChessboardParams;
+use image::ImageReader;
 
-## Example (chessboard detection)
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+    let chess_cfg = detect::default_chess_config();
+    let params = ChessboardParams::default();
 
-```rust
-use calib_targets_core::Corner;
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
-
-fn detect_chessboard(corners: &[Corner]) {
-    let params = ChessboardParams {
-        min_corner_strength: 0.1,
-        min_corners: 16,
-        expected_rows: None,
-        expected_cols: None,
-        completeness_threshold: 0.7,
-        ..Default::default()
-    };
-
-    let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
-
-    if let Some(result) = detector.detect_from_corners(corners) {
-        println!(
-            "Detected target with {} corners",
-            result.detection.corners.len()
-        );
-    }
+    let result = detect::detect_chessboard(&img, &chess_cfg, params);
+    println!("detected: {}", result.is_some());
+    Ok(())
 }
 ```
 
-This example assumes you already have a list of `Corner` values produced by your own ChESS/corner detector.
+This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process the 1024x576 image shown below. End-to-end detection took 3.1 ms: 2.9 ms for ChESS corner detection (single scale, `rayon` feature on) and 132 µs for chessboard recognition. (Performance numbers here and later are from a MacBook Pro M4.)
 
-## Example (mesh rectification + marker decoding)
+![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay_simple.png)
 
-The `examples/charuco_mesh_warp.rs` example demonstrates:
+The exact command used was:
 
-- chessboard detection from ChESS corners,
-- mesh-rectification (piecewise homographies per grid cell),
-- decoding embedded ArUco markers on the rectified grid via `calib-targets-aruco`.
-
-For performance-sensitive pipelines, you can also decode markers per cell without
-building the full rectified image.
-
-Run it with:
-
-```bash
-cargo run --release --example charuco_mesh_warp
+```zsh
+cargo run --release --features "tracing" --example detect_chessboard -- testdata/mid.png
 ```
 
-## Example (full ChArUco detection)
+### Markerboard
 
-The `examples/charuco_detect.rs` example demonstrates a full ChArUco pipeline:
+[This example](./crates/calib-targets/examples/detect_markerboard.rs) with the command
 
-- chessboard detection from ChESS corners,
-- per-cell marker decoding (with optional rectified output for debugging),
-- marker decoding and alignment,
-- marker→board alignment and corner ID assignment.
-
-Run it with:
-
-```bash
-cargo run --release --example charuco_detect
+```zsh
+cargo run --release --features "tracing" --example detect_markerboard -- testdata/markerboard_crop.png
 ```
 
-## Project status & roadmap
+produces the detection below (643x358 px):
 
-Because this is an early development stage:
+![Markerboard detection overlay](book/img/marker_detect_report_crop_overlay.png)
 
-- APIs may change without notice.
-- Error handling, documentation, and examples are still evolving.
+in 8.6 ms (including 1.7 ms for ChESS corner detection and 250 µs for chessboard detection). More optimizations are planned.
 
-Planned work includes:
+### ChArUco
 
-- Improving chessboard robustness and (eventually) multi-board detection.
-- Improving the ChArUco solver (more layouts, robustness, calibration outputs).
-- Refining circle-based marker detection and grid-offset alignment.
-- Adding more comprehensive examples and tests.
+The 720x540 px ChArUco target in the first image took 3.2 ms (2.1 ms for ChESS corner detection and 250 µs for chessboard detection).
+
+[This example](crates/calib-targets/examples/detect_charuco.rs) shows the code. The command is:
+
+```zsh
+cargo run --release --features "tracing" --example detect_charuco -- testdata/small2.png
+```
+
+### The `TargetDetection` struct
+
+`TargetDetection` is the common output container used by all detectors (returned directly for chessboards and embedded in result structs for ChArUco and marker boards). It describes one detected board instance:
+
+- `kind` identifies the target type (`Chessboard`, `Charuco`, or `CheckerboardMarker`).
+- `corners` is a list of `LabeledCorner` values. Each corner includes pixel `position`, optional integer `grid` coordinates `(i, j)`, optional logical `id`, optional `target_position` in board units (often millimeters), and a detector-specific `score` (higher is better).
+
+Typical field usage:
+- Chessboard: `grid` is set; `id` and `target_position` are `None`. Corners are ordered by grid row then column.
+- ChArUco: `id` is the ChArUco corner id; `grid` and `target_position` are set when a board spec is available. Corners are ordered by `id`.
+- Marker board: `grid` is set; `id` and `target_position` are populated when alignment succeeds and the layout has a valid cell size. Corners are ordered by grid coordinates.
+
+## Crates
+
+- `calib-targets` – facade crate with end-to-end helpers.
+- `calib-targets-core` – core geometry and types.
+- `calib-targets-chessboard` – chessboard detector.
+- `calib-targets-aruco` – ArUco/AprilTag dictionaries and decoding.
+- `calib-targets-charuco` – ChArUco alignment and IDs.
+- `calib-targets-marker` – checkerboard + 3-circle marker boards.
+
+## Examples
+
+The examples mentioned above are:
+
+```bash
+cargo run --example detect_chessboard -- path/to/image.png
+cargo run --example detect_charuco -- path/to/image.png
+cargo run --example detect_markerboard -- path/to/image.png
+```
+
+Examples with complete parameters control via json files are:
+
+```bash
+cargo run --example chessboard -- testdata/chessboard_config.json
+cargo run --example charuco_detect -- testdata/charuco_detect_config.json
+cargo run --example chessboard -- testdata/chessboard_config.json
+```
+
+The later produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
+
+## Performance and accuracy
+
+Benchmarks are coming. The goal is to be the fastest detector in this class while maintaining high sensitivity and accuracy.
 
 ## Development
 
-To work on the project locally, you’ll need a recent stable Rust toolchain.
+```bash
+cargo fmt --all
+cargo clippy --workspace --all-targets --all-features
+cargo test --workspace --all-features
+cargo doc --workspace --all-features
+mdbook build book
+```
 
-- Run tests for all crates:
-
-  ```bash
-  cargo test --workspace
-  ```
-
-- Run formatting and linting (matches the CI configuration):
-
-  ```bash
-  cargo fmt --all
-  cargo clippy --workspace --all-targets
-  ```
-
-- Build API documentation:
-
-  ```bash
-  cargo doc --workspace --all-features
-  ```
-
-- Build the mdBook (used by the docs workflow):
-  ```bash
-  mdbook build book
-  ```
-
-For contribution rules see [AGENTS.md](./AGENTS.ms).
+For contribution rules see [AGENTS.ms](./AGENTS.ms).
 
 ## License
 
-This project is dual-licensed under MIT or Apache-2.0, at your option. See the individual crate `Cargo.toml` files for details.
+This project is dual-licensed under MIT or Apache-2.0, at your option. See `LICENSE` and `LICENSE-APACHE`.

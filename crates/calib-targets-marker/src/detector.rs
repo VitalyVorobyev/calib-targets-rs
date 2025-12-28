@@ -1,3 +1,8 @@
+use crate::circle_score::CircleCandidate;
+use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
+use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
+use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
+
 use std::collections::HashMap;
 
 use nalgebra::Point2;
@@ -6,11 +11,6 @@ use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
 use calib_targets_core::{
     Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind,
 };
-
-use crate::circle_score::CircleCandidate;
-use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
-use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
-use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
 
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {

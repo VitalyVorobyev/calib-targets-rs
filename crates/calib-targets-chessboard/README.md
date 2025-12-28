@@ -1,0 +1,29 @@
+# calib-targets-chessboard
+
+![Chessboard detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/chessboard_detection_mid_overlay.png)
+
+Plain chessboard detector built on top of `calib-targets-core`.
+
+## Quickstart
+
+```rust
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets_core::Corner;
+
+fn main() {
+    let params = ChessboardParams::default();
+    let detector = ChessboardDetector::new(params).with_grid_search(GridGraphParams::default());
+
+    let corners: Vec<Corner> = Vec::new();
+    let result = detector.detect_from_corners(&corners);
+    println!("detected: {}", result.is_some());
+}
+```
+
+## Features
+
+- `tracing`: enables tracing output in the detector and grid graph stages.
+
+## Links
+
+- Repository: https://github.com/VitalyVorobyev/calib-targets-rs

@@ -26,7 +26,7 @@ def finite_float(value):
     return val
 
 
-def plot_overlay(fig, ax, img, corners, grid_graph, orientations):
+def plot_overlay(fig, ax, img, corners, grid_graph, orientations, show_colorbar=True):
     ax.imshow(img, cmap="gray", origin="upper")
 
     if corners:
@@ -58,8 +58,9 @@ def plot_overlay(fig, ax, img, corners, grid_graph, orientations):
                 linewidths=0.6,
                 alpha=0.9,
             )
-            cbar = fig.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
-            cbar.set_label("Score", rotation=270, labelpad=12)
+            if show_colorbar:
+                cbar = fig.colorbar(scatter, ax=ax, fraction=0.046, pad=0.04)
+                cbar.set_label("Score", rotation=270, labelpad=12)
         else:
             ax.scatter(xs, ys, s=20, facecolors="none", edgecolors="r", linewidths=1.0)
 
@@ -140,6 +141,12 @@ def plot_overlay(fig, ax, img, corners, grid_graph, orientations):
 
     ax.set_axis_off()
 
+def make_simple_figure(img, dpi=100):
+    h, w = img.shape[0], img.shape[1]
+    fig = plt.figure(figsize=(w / dpi, h / dpi), dpi=dpi)
+    ax = fig.add_axes([0.0, 0.0, 1.0, 1.0])
+    return fig, ax
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -160,6 +167,11 @@ def main() -> None:
         "--show",
         action="store_true",
         help="Also show the overlay window in addition to saving the PNG",
+    )
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        help="Save just the input image with overlay (no padding or colorbar)",
     )
     args = parser.parse_args()
 
@@ -186,16 +198,32 @@ def main() -> None:
 
     img = mpimg.imread(str(image_path))
 
-    fig, ax_overlay = plt.subplots(1, 1, figsize=(8, 5))
-    plot_overlay(fig, ax_overlay, img, corners, grid_graph, None)
+    if args.simple:
+        fig, ax_overlay = make_simple_figure(img)
+    else:
+        fig, ax_overlay = plt.subplots(1, 1, figsize=(8, 5))
+    plot_overlay(
+        fig,
+        ax_overlay,
+        img,
+        corners,
+        grid_graph,
+        None,
+        show_colorbar=not args.simple,
+    )
 
-    fig.tight_layout()
+    if not args.simple:
+        fig.tight_layout()
 
+    suff = '_simple' if args.simple else ''
     output_path = args.output or (
-        Path("tmpdata") / f"{args.detections_json.stem}_overlay.png"
+        Path("tmpdata") / f"{args.detections_json.stem}_overlay{suff}.png"
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    if args.simple:
+        fig.savefig(output_path, dpi=fig.dpi, bbox_inches=None, pad_inches=0)
+    else:
+        fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     print(f"Saved visualization to {output_path}")
 
     if args.show:

@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-
 use crate::circle_score::CircleCandidate;
 use crate::coords::{CellCoords, CellOffset};
 use crate::types::{CircleMatch, CircleMatchParams, MarkerCircleSpec};
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug)]
 struct MatchOption {

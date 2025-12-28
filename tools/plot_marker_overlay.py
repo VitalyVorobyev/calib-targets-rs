@@ -14,6 +14,13 @@ import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 
 
+def make_simple_figure(img, dpi=100):
+    h, w = img.shape[0], img.shape[1]
+    fig = plt.figure(figsize=(w / dpi, h / dpi), dpi=dpi)
+    ax = fig.add_axes([0.0, 0.0, 1.0, 1.0])
+    return fig, ax
+
+
 def parse_point(value):
     if isinstance(value, dict):
         if "x" in value and "y" in value:
@@ -279,6 +286,11 @@ def main() -> None:
         help="Where to save the overlay PNG (defaults to <report>_overlay.png)",
     )
     parser.add_argument("--show", action="store_true", help="Show an interactive window as well")
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        help="Save just the input image with overlay (no padding or title)",
+    )
     args = parser.parse_args()
 
     data = json.loads(args.report.read_text())
@@ -322,7 +334,10 @@ def main() -> None:
 
     img = mpimg.imread(str(image_path))
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    if args.simple:
+        fig, ax = make_simple_figure(img)
+    else:
+        fig, ax = plt.subplots(figsize=(10, 8))
     ax.imshow(img, cmap="gray", origin="upper")
 
     if chessboard:
@@ -330,12 +345,17 @@ def main() -> None:
     if candidates:
         draw_circles(ax, candidates, matches)
 
-    ax.set_title(f"Marker board detection overlay ({id_label})")
+    if not args.simple:
+        ax.set_title(f"Marker board detection overlay ({id_label})")
     ax.set_axis_off()
-    fig.tight_layout()
+    if not args.simple:
+        fig.tight_layout()
 
     out_path = args.output or args.report.with_name(args.report.stem + "_overlay.png")
-    plt.savefig(out_path, bbox_inches="tight", dpi=200)
+    if args.simple:
+        fig.savefig(out_path, dpi=fig.dpi, bbox_inches=None, pad_inches=0)
+    else:
+        fig.savefig(out_path, bbox_inches="tight", dpi=200)
     print(f"overlay saved to {out_path}")
 
     if args.show:

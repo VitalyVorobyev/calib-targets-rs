@@ -2,6 +2,9 @@
 
 `calib-targets-rs` is a single Cargo workspace with multiple publishable crates under `crates/`. The design is layered: `calib-targets-core` provides geometry and shared types, higher-level crates build on top, and the facade crate (`calib-targets`) is intended to be the main entry point.
 
+![Mesh-rectified grid](../img/mesh_rectified_mid.png)
+*Per-cell mesh rectification helps handle lens distortion.*
+
 ## Workspace layout
 
 - `calib-targets-core`: shared geometry types and utilities.
@@ -25,6 +28,6 @@
 - ChArUco alignment is still focused on the OpenCV-style layout.
 - Marker detector is implemented, but matching heuristics and alignment validation still need refinement.
 - Test coverage is narrow and performance/benchmarks are not yet a focus.
-- MSRV is unspecified.
+- MSRV is set to Rust 1.70, but CI does not yet validate it explicitly.
 
 The roadmap chapter captures the intended sequence for filling these gaps while keeping the API clean and composable.

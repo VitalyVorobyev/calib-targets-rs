@@ -2,6 +2,9 @@
 
 `calib-targets-chessboard` detects a plain chessboard from a cloud of ChESS corners. It is graph-based and perspective-aware, and it returns integer grid coordinates for each detected corner.
 
+![Chessboard detection overlay](../img/chessboard_detection_mid_overlay.png)
+*Detected chessboard corners overlaid on the source image.*
+
 ## Detection pipeline
 
 The detector follows these steps (see `ChessboardDetector`):
@@ -79,4 +82,4 @@ fn detect(corners: &[Corner]) {
 }
 ```
 
-For a full runnable example, see `crates/calib-targets/examples/chessboard.rs`.
+For a full runnable example, see `crates/calib-targets-chessboard/examples/chessboard.rs`.
