@@ -20,26 +20,33 @@ cargo add calib-targets image
 
 ```rust,no_run
 use calib_targets::detect;
-use calib_targets::chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
     let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
-    let graph = GridGraphParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params, graph);
+    let result = detect::detect_chessboard(&img, &chess_cfg, params);
     println!("detected: {}", result.is_some());
     Ok(())
 }
 ```
 
-This code was used to process a 1024x576 image belos. The whole detection took 3.1 ms with 2.9 ms spent on ChESS corners detection (single scale, `rayon` feature on ) and 132 µs on chessboard detection.
+This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process a 1024x576 image below. The whole detection took 3.1 ms with 2.9 ms for the ChESS corners detection (single scale, `rayon` feature on ) and 132 µs for the following chessboard recognition.
 
 ![Chessboard detection overlay](book/img/chessboard_detection_mid_overlay_simple.png)
 
-### Maerkerboard
+The exact command used is
+
+```zsh
+cargo run --release --features "tracing" --example detect_chessboard -- testdata/mid.png
+```
+
+### Markerboard
+
+[This example](./crates/calib-targets/examples/detect_markerboard.rs) 
 
 ## Crates
 

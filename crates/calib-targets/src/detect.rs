@@ -25,7 +25,6 @@ pub enum DetectError {
 ///
 /// This is tuned for the repo examples and is expected to be overridden by callers
 /// for difficult real-world images.
-#[cfg_attr(feature = "tracing", instrument(level = "info"))]
 pub fn default_chess_config() -> ChessConfig {
     let mut cfg = ChessConfig::single_scale();
     cfg.params.threshold_rel = 0.2;
@@ -34,10 +33,6 @@ pub fn default_chess_config() -> ChessConfig {
 }
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "info", skip(img), fields(width = img.width(), height = img.height()))
-)]
 pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
     core::GrayImageView {
         width: img.width() as usize,
@@ -59,10 +54,6 @@ pub fn detect_chess_corners_raw(
 }
 
 /// Detect ChESS corners and adapt them into `calib-targets-core::Corner`.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "info", skip(img, cfg), fields(width = img.width(), height = img.height()))
-)]
 pub fn detect_corners(img: &::image::GrayImage, cfg: &ChessConfig) -> Vec<core::Corner> {
     detect_chess_corners_raw(img, cfg)
         .iter()
@@ -71,10 +62,6 @@ pub fn detect_corners(img: &::image::GrayImage, cfg: &ChessConfig) -> Vec<core::
 }
 
 /// Convenience overload using `default_chess_config()`.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(level = "info", skip(img), fields(width = img.width(), height = img.height()))
-)]
 pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
     let cfg = default_chess_config();
     detect_corners(img, &cfg)
@@ -85,7 +72,7 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, chess_cfg, params, graph),
+        skip(img, chess_cfg, params),
         fields(width = img.width(), height = img.height())
     )
 )]
@@ -93,10 +80,9 @@ pub fn detect_chessboard(
     img: &::image::GrayImage,
     chess_cfg: &ChessConfig,
     params: chessboard::ChessboardParams,
-    graph: chessboard::GridGraphParams,
 ) -> Option<chessboard::ChessboardDetectionResult> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::ChessboardDetector::new(params).with_grid_search(graph);
+    let detector = chessboard::ChessboardDetector::new(params);
     detector.detect_from_corners(&corners)
 }
 
@@ -126,19 +112,6 @@ pub fn detect_charuco(
 }
 
 /// Convenience overload using `default_chess_config()` and `CharucoDetectorParams::for_board`.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, board),
-        fields(
-            width = img.width(),
-            height = img.height(),
-            board_rows = board.rows,
-            board_cols = board.cols
-        )
-    )
-)]
 pub fn detect_charuco_default(
     img: &::image::GrayImage,
     board: charuco::CharucoBoardSpec,
@@ -168,14 +141,6 @@ pub fn detect_marker_board(
 }
 
 /// Convenience overload using `default_chess_config()`.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, params),
-        fields(width = img.width(), height = img.height())
-    )
-)]
 pub fn detect_marker_board_default(
     img: &::image::GrayImage,
     params: marker::MarkerBoardParams,
@@ -185,14 +150,6 @@ pub fn detect_marker_board_default(
 }
 
 /// Build an `image::GrayImage` from a raw grayscale buffer.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(pixels),
-        fields(width = width, height = height, pixels_len = pixels.len())
-    )
-)]
 pub fn gray_image_from_slice(
     width: u32,
     height: u32,
@@ -216,40 +173,17 @@ pub fn gray_image_from_slice(
         .ok_or(DetectError::InvalidGrayDimensions { width, height })
 }
 
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(pixels, chess_cfg, params, graph),
-        fields(width = width, height = height, pixels_len = pixels.len())
-    )
-)]
 pub fn detect_chessboard_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
     chess_cfg: &ChessConfig,
     params: chessboard::ChessboardParams,
-    graph: chessboard::GridGraphParams,
 ) -> Result<Option<chessboard::ChessboardDetectionResult>, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_chessboard(&img, chess_cfg, params, graph))
+    Ok(detect_chessboard(&img, chess_cfg, params))
 }
 
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(pixels, chess_cfg, board, params),
-        fields(
-            width = width,
-            height = height,
-            pixels_len = pixels.len(),
-            board_rows = board.rows,
-            board_cols = board.cols
-        )
-    )
-)]
 pub fn detect_charuco_from_gray_u8(
     width: u32,
     height: u32,
@@ -262,14 +196,6 @@ pub fn detect_charuco_from_gray_u8(
     detect_charuco(&img, chess_cfg, board, params)
 }
 
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(pixels, chess_cfg, params),
-        fields(width = width, height = height, pixels_len = pixels.len())
-    )
-)]
 pub fn detect_marker_board_from_gray_u8(
     width: u32,
     height: u32,

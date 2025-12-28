@@ -1,12 +1,19 @@
-use nalgebra::Point2;
-use std::collections::HashMap;
-
 use crate::circle_score::{
     score_circle_in_square, CircleCandidate, CirclePolarity, CircleScoreParams,
 };
 use crate::coords::CellCoords;
 use calib_targets_core::{GrayImageView, GridCoords};
 
+use nalgebra::Point2;
+use std::collections::HashMap;
+
+#[cfg(feature = "tracing")]
+use tracing::instrument;
+
+#[cfg_attr(
+    feature = "tracing",
+    instrument(level = "info", skip(img, map, score_params, roi), fields(width = img.width, height = img.height))
+)]
 pub fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,
     map: &HashMap<GridCoords, Point2<f32>>, // (i,j)->pixel corner

@@ -1,9 +1,12 @@
-use std::collections::HashMap;
-
 use crate::circle_score::CircleCandidate;
 use crate::coords::{CellCoords, CellOffset};
 use crate::types::{CircleMatch, CircleMatchParams, MarkerCircleSpec};
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+
+use std::collections::HashMap;
+
+#[cfg(feature = "tracing")]
+use tracing::instrument;
 
 #[derive(Clone, Copy, Debug)]
 struct MatchOption {
@@ -48,6 +51,7 @@ fn build_match_options(
 }
 
 /// Match expected circles to detected candidates, enforcing polarity.
+
 pub fn match_expected_circles(
     expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],

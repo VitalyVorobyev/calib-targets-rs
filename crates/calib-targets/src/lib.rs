@@ -9,16 +9,15 @@
 //!
 //! ```no_run
 //! use calib_targets::detect;
-//! use calib_targets::chessboard::{ChessboardParams, GridGraphParams};
+//! use calib_targets::chessboard::ChessboardParams;
 //! use image::ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 //! let chess_cfg = detect::default_chess_config();
 //! let params = ChessboardParams::default();
-//! let graph = GridGraphParams::default();
 //!
-//! let result = detect::detect_chessboard(&img, &chess_cfg, params, graph);
+//! let result = detect::detect_chessboard(&img, &chess_cfg, params);
 //! println!("detected: {}", result.is_some());
 //! # Ok(())
 //! # }
@@ -43,6 +42,7 @@ pub use calib_targets_chessboard as chessboard;
 pub use calib_targets_core as core;
 pub use calib_targets_marker as marker;
 
+pub use calib_targets_chessboard::ChessboardParams;
 pub use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 
 #[cfg(feature = "image")]

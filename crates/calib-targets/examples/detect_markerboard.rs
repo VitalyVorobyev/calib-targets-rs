@@ -4,7 +4,13 @@ use calib_targets::marker::{
 };
 use image::ImageReader;
 
+#[cfg(feature = "tracing")]
+use calib_targets_core::init_tracing;
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "tracing")]
+    init_tracing(false);
+
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("Usage: detect_markerboard <image_path>");
         return Ok(());
@@ -13,20 +19,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
     let layout = MarkerBoardLayout {
-        rows: 6,
-        cols: 8,
+        rows: 22,
+        cols: 22,
         cell_size: None,
         circles: [
             MarkerCircleSpec {
-                cell: CellCoords { i: 2, j: 2 },
+                cell: CellCoords { i: 11, j: 11 },
                 polarity: CirclePolarity::White,
             },
             MarkerCircleSpec {
-                cell: CellCoords { i: 3, j: 2 },
+                cell: CellCoords { i: 12, j: 11 },
                 polarity: CirclePolarity::Black,
             },
             MarkerCircleSpec {
-                cell: CellCoords { i: 2, j: 3 },
+                cell: CellCoords { i: 12, j: 12 },
                 polarity: CirclePolarity::White,
             },
         ],
