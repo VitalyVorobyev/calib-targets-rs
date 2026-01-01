@@ -32,7 +32,7 @@ calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.2" }
 calib-targets-core = { path = "../calib-targets-core", version = "0.2" }
 calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.2" }
 calib-targets-marker = { path = "../calib-targets-marker", version = "0.2" }
-chess-corners = { version = "0.2", optional = true, features = ["rayon"] }
+chess-corners = { version = "0.3", optional = true, features = ["rayon", "ml-refiner"] }
 nalgebra = "0.34"
 thiserror = "2"
 image = { version = "0.25", default-features = true, optional = true }
