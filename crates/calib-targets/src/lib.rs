@@ -27,8 +27,9 @@
 //!
 //! Python bindings live in `crates/calib-targets-py` and expose the
 //! `calib_targets` module. See `python/README.md` in the repository for setup
-//! and the `detect_*` APIs. For marker boards, `target_position` is populated
-//! only when `params["layout"]["cell_size"]` is provided and alignment succeeds.
+//! and the `detect_*` APIs. Config inputs accept typed Python classes or dict
+//! overrides. For marker boards, `target_position` is populated only when
+//! `params["layout"]["cell_size"]` is provided and alignment succeeds.
 //!
 //! ## API map
 //! - `calib_targets::core`: core types (corners, grids, homographies, images).

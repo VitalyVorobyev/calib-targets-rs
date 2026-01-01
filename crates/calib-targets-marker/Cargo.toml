@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-marker"
-version = "0.2.0"
+version = "0.2.1"
 description = "Checkerboard marker target detector (checkerboard + 3 central circles)"
 edition.workspace = true
 license.workspace = true

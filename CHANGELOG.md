@@ -6,6 +6,12 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.1]
+- Add Python-friendly config/params classes with IDE signatures while keeping dict overrides.
+- Allow partial dict overrides for detector params without specifying full structs.
+- Validate unknown keys in Python config dicts with clearer error paths.
+- Improve Python conversion errors to include parameter paths and accept NumPy scalars.
+
 ## [0.2.0]
 - Document the Python bindings across the workspace README, crate readmes, and book.
 - Clarify marker-board `cell_size` usage so `target_position` is populated when alignment succeeds.

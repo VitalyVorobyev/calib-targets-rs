@@ -69,6 +69,7 @@ python python/examples/detect_charuco.py path/to/image.png
 
 Notes:
 
+- Python config accepts typed params classes or dict overrides (partial dicts are OK).
 - `target_position` is populated only when a board layout includes a valid
   cell size and alignment succeeds (for marker boards, set
   `params["layout"]["cell_size"]`).
