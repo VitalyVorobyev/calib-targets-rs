@@ -5,7 +5,13 @@ All notable changes to this project will be documented in this file.
 This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
-- TODO: describe changes for the next release.
+
+## [0.2.0]
+- Document the Python bindings across the workspace README, crate readmes, and book.
+- Clarify marker-board `cell_size` usage so `target_position` is populated when alignment succeeds.
+- Fix macOS Python binding linking via a PyO3 build script.
+- Refresh PyO3 bindings to the Bound API to remove deprecation warnings.
+- Bump `chess-corners` dependency to v0.3.
 
 ## [0.1.2]
 - Speed up marker circle scoring with LUT-based sampling and a center precheck.

@@ -30,6 +30,7 @@
 `MarkerBoardLayout` defines the board and marker placement:
 
 - `rows`, `cols`: inner corner counts.
+- `cell_size`: optional square size in your world units (when set, `target_position` is populated).
 - `circles`: three `MarkerCircleSpec` entries with `cell` (top-left corner indices) and `polarity`.
 
 `MarkerBoardParams` configures detection:

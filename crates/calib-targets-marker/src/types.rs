@@ -29,6 +29,30 @@ pub struct MarkerBoardLayout {
     pub circles: [MarkerCircleSpec; 3],
 }
 
+impl Default for MarkerBoardLayout {
+    fn default() -> Self {
+        Self {
+            rows: 6,
+            cols: 8,
+            cell_size: None,
+            circles: [
+                MarkerCircleSpec {
+                    cell: CellCoords { i: 2, j: 2 },
+                    polarity: CirclePolarity::White,
+                },
+                MarkerCircleSpec {
+                    cell: CellCoords { i: 3, j: 2 },
+                    polarity: CirclePolarity::Black,
+                },
+                MarkerCircleSpec {
+                    cell: CellCoords { i: 2, j: 3 },
+                    polarity: CirclePolarity::White,
+                },
+            ],
+        }
+    }
+}
+
 /// Circle matching settings.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircleMatchParams {
@@ -80,6 +104,12 @@ impl MarkerBoardParams {
             match_params: CircleMatchParams::default(),
             roi_cells: None,
         }
+    }
+}
+
+impl Default for MarkerBoardParams {
+    fn default() -> Self {
+        Self::new(MarkerBoardLayout::default())
     }
 }
 

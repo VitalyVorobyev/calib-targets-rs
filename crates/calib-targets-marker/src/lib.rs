@@ -18,7 +18,7 @@
 //! let layout = MarkerBoardLayout {
 //!     rows: 6,
 //!     cols: 8,
-//!     cell_size: None,
+//!     cell_size: Some(1.0),
 //!     circles: [
 //!         MarkerCircleSpec {
 //!             cell: CellCoords { i: 2, j: 2 },

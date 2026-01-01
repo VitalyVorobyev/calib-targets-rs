@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-chessboard"
-version = "0.1.2"
+version = "0.2.0"
 description = "Plain chessboard detector built on top of ChESS corners"
 edition.workspace = true
 license.workspace = true
@@ -17,7 +17,7 @@ tracing = ["calib-targets-core/tracing", "dep:tracing", "dep:tracing-log",
     "dep:tracing-subscriber"]
 
 [dependencies]
-calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.2" }
 nalgebra = "0.34"
 log = "0.4"
 kiddo = "5.2.0"
@@ -30,7 +30,7 @@ tracing-subscriber = { version = "0.3", optional = true, features = ["fmt", "env
 
 [dev-dependencies]
 image = { version = "0.25", default-features = true }
-chess-corners = { version = "0.2", features = ["rayon"] }
+chess-corners = { version = "0.3", features = ["rayon", "ml-refiner"] }
 
 [package.metadata.docs.rs]
 all-features = true

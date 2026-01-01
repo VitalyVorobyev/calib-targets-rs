@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let layout = MarkerBoardLayout {
         rows: 22,
         cols: 22,
-        cell_size: None,
+        cell_size: Some(1.0),
         circles: [
             MarkerCircleSpec {
                 cell: CellCoords { i: 11, j: 11 },

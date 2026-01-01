@@ -1,0 +1,21 @@
+[package]
+name = "calib-targets-py"
+version = "0.2.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "calib_targets"
+crate-type = ["cdylib"]
+
+[dependencies]
+calib-targets = { path = "../calib-targets", features = ["image"], version = "0.2" }
+chess-corners = { version = "0.3", features = ["rayon", "ml-refiner"] }
+image = { version = "0.25", default-features = true }
+numpy = "0.21"
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+pyo3-build-config = "0.21"

@@ -112,6 +112,29 @@ cargo run --example chessboard -- testdata/chessboard_config.json
 
 The later produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
 
+## Python bindings
+
+Python bindings live in `crates/calib-targets-py` and are built with `maturin`.
+See `python/README.md` for setup details.
+
+Quickstart:
+
+```bash
+pip install maturin
+maturin develop
+python python/examples/detect_chessboard.py path/to/image.png
+```
+
+API surface:
+
+- `calib_targets.detect_chessboard(image, *, chess_cfg=None, params=None)`
+- `calib_targets.detect_charuco(image, *, board, chess_cfg=None, params=None)`
+- `calib_targets.detect_marker_board(image, *, chess_cfg=None, params=None)`
+
+Note: `target_position` is populated only when a board layout includes a valid
+cell size and alignment succeeds (for marker boards, set
+`params["layout"]["cell_size"]`).
+
 ## Performance and accuracy
 
 Benchmarks are coming. The goal is to be the fastest detector in this class while maintaining high sensitivity and accuracy.
