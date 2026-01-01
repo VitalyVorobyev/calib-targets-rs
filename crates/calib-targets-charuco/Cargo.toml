@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-charuco"
-version = "0.1.2"
+version = "0.2.0"
 description = "ChArUco board detector built on top of calib-targets-core"
 edition.workspace = true
 license.workspace = true
@@ -16,9 +16,9 @@ categories = ["computer-vision", "science"]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
-calib-targets-core = { path = "../calib-targets-core", version = "0.1" }
-calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.1" }
-calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.1" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.2" }
+calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.2" }
+calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.2" }
 nalgebra = "0.34"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

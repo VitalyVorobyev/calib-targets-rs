@@ -1,0 +1,15 @@
+[build-system]
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "calib-targets"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+dynamic = ["version"]
+readme = "python/README.md"
+
+[tool.maturin]
+bindings = "pyo3"
+module-name = "calib_targets"
+manifest-path = "crates/calib-targets-py/Cargo.toml"

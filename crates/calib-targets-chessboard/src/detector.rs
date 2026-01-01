@@ -7,6 +7,7 @@ use calib_targets_core::{
     OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{debug, warn};
+use serde::Serialize;
 use std::f32::consts::FRAC_PI_2;
 
 #[cfg(feature = "tracing")]
@@ -19,6 +20,7 @@ pub struct ChessboardDetector {
     pub grid_search: GridGraphParams,
 }
 
+#[derive(Debug, Serialize)]
 pub struct ChessboardDetectionResult {
     pub detection: TargetDetection,
     pub inliers: Vec<usize>,
@@ -26,24 +28,24 @@ pub struct ChessboardDetectionResult {
     pub debug: ChessboardDebug,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ChessboardDebug {
     pub orientation_histogram: Option<OrientationHistogram>,
     pub graph: Option<GridGraphDebug>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct GridGraphDebug {
     pub nodes: Vec<GridGraphNodeDebug>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct GridGraphNodeDebug {
     pub position: [f32; 2],
     pub neighbors: Vec<GridGraphNeighborDebug>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct GridGraphNeighborDebug {
     pub index: usize,
     pub direction: &'static str,
