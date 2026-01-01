@@ -325,8 +325,7 @@ impl PyCharucoDetectorParams {
             overrides.px_per_square = Some(px_per_square);
         }
         if let Some(chessboard) = chessboard {
-            overrides.chessboard =
-                Some(chessboard_overrides_from_obj(chessboard, "chessboard")?);
+            overrides.chessboard = Some(chessboard_overrides_from_obj(chessboard, "chessboard")?);
         }
         if let Some(graph) = graph {
             overrides.graph = Some(grid_graph_overrides_from_obj(graph, "graph")?);
@@ -453,11 +452,8 @@ impl PyMarkerBoardParams {
                 grid_graph_params_from_obj(grid_graph, "grid_graph", params.grid_graph.clone())?;
         }
         if let Some(circle_score) = circle_score {
-            params.circle_score = circle_score_params_from_obj(
-                circle_score,
-                "circle_score",
-                params.circle_score,
-            )?;
+            params.circle_score =
+                circle_score_params_from_obj(circle_score, "circle_score", params.circle_score)?;
         }
         if let Some(match_params) = match_params {
             params.match_params = circle_match_params_from_obj(
@@ -675,11 +671,9 @@ impl ChessboardParamsOverrides {
             expected_cols: params.expected_cols.map(Some),
             completeness_threshold: Some(params.completeness_threshold),
             use_orientation_clustering: Some(params.use_orientation_clustering),
-            orientation_clustering_params: Some(
-                OrientationClusteringParamsOverrides::from_params(
-                    &params.orientation_clustering_params,
-                ),
-            ),
+            orientation_clustering_params: Some(OrientationClusteringParamsOverrides::from_params(
+                &params.orientation_clustering_params,
+            )),
         }
     }
 }
@@ -1019,7 +1013,11 @@ fn validate_chess_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<
 }
 
 fn validate_coarse_to_fine_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
-    validate_dict_keys(dict, path, &["pyramid", "refinement_radius", "merge_radius"])?;
+    validate_dict_keys(
+        dict,
+        path,
+        &["pyramid", "refinement_radius", "merge_radius"],
+    )?;
     if let Some(pyramid) = get_optional_dict(dict, "pyramid")? {
         validate_pyramid_dict(&pyramid, &format!("{path}.pyramid"))?;
     }
@@ -1030,10 +1028,7 @@ fn validate_pyramid_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     validate_dict_keys(dict, path, &["num_levels", "min_size"])
 }
 
-fn validate_orientation_clustering_dict(
-    dict: &Bound<'_, PyDict>,
-    path: &str,
-) -> PyResult<()> {
+fn validate_orientation_clustering_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     validate_dict_keys(
         dict,
         path,
@@ -1063,7 +1058,10 @@ fn validate_chessboard_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyRe
         ],
     )?;
     if let Some(orientation) = get_optional_dict(dict, "orientation_clustering_params")? {
-        validate_orientation_clustering_dict(&orientation, &format!("{path}.orientation_clustering_params"))?;
+        validate_orientation_clustering_dict(
+            &orientation,
+            &format!("{path}.orientation_clustering_params"),
+        )?;
     }
     Ok(())
 }
@@ -1185,20 +1183,8 @@ fn validate_marker_board_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> Py
 }
 
 const NUMPY_SCALAR_TYPES: &[&str] = &[
-    "bool_",
-    "bool8",
-    "int8",
-    "int16",
-    "int32",
-    "int64",
-    "uint8",
-    "uint16",
-    "uint32",
-    "uint64",
-    "float16",
-    "float32",
-    "float64",
-    "float128",
+    "bool_", "bool8", "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64",
+    "float16", "float32", "float64", "float128",
 ];
 
 fn is_numpy_scalar(obj: &Bound<'_, PyAny>) -> bool {
@@ -1230,13 +1216,11 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
     if let Ok(dict) = obj.downcast::<PyDict>() {
         let mut out = Map::with_capacity(dict.len());
         for (key, value) in dict.iter() {
-            let key_str: String = key
-                .extract()
-                .map_err(|_| {
-                    value_error(format!(
-                        "{path}: dictionary keys must be strings for JSON conversion"
-                    ))
-                })?;
+            let key_str: String = key.extract().map_err(|_| {
+                value_error(format!(
+                    "{path}: dictionary keys must be strings for JSON conversion"
+                ))
+            })?;
             let child_path = format!("{path}.{key_str}");
             let value_json = py_to_json(&value, &child_path)?;
             out.insert(key_str, value_json);
@@ -1282,8 +1266,9 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
     }
 
     if let Ok(value) = obj.extract::<f64>() {
-        let number = Number::from_f64(value)
-            .ok_or_else(|| value_error(format!("{path}: non-finite float is not JSON compatible")))?;
+        let number = Number::from_f64(value).ok_or_else(|| {
+            value_error(format!("{path}: non-finite float is not JSON compatible"))
+        })?;
         return Ok(Value::Number(number));
     }
 
@@ -1346,7 +1331,10 @@ fn chess_params_to_json(params: &ChessParams) -> Value {
             .map(Value::Bool)
             .unwrap_or(Value::Null),
     );
-    map.insert("threshold_rel".to_string(), json_number_f32(params.threshold_rel));
+    map.insert(
+        "threshold_rel".to_string(),
+        json_number_f32(params.threshold_rel),
+    );
     map.insert(
         "threshold_abs".to_string(),
         params
@@ -1354,7 +1342,10 @@ fn chess_params_to_json(params: &ChessParams) -> Value {
             .map(json_number_f32)
             .unwrap_or(Value::Null),
     );
-    map.insert("nms_radius".to_string(), json_number_u64(params.nms_radius as u64));
+    map.insert(
+        "nms_radius".to_string(),
+        json_number_u64(params.nms_radius as u64),
+    );
     map.insert(
         "min_cluster_size".to_string(),
         json_number_u64(params.min_cluster_size as u64),
@@ -1364,8 +1355,14 @@ fn chess_params_to_json(params: &ChessParams) -> Value {
 
 fn pyramid_params_to_json(params: &PyramidParams) -> Value {
     let mut map = Map::new();
-    map.insert("num_levels".to_string(), json_number_u64(params.num_levels as u64));
-    map.insert("min_size".to_string(), json_number_u64(params.min_size as u64));
+    map.insert(
+        "num_levels".to_string(),
+        json_number_u64(params.num_levels as u64),
+    );
+    map.insert(
+        "min_size".to_string(),
+        json_number_u64(params.min_size as u64),
+    );
     Value::Object(map)
 }
 
@@ -1379,7 +1376,10 @@ fn coarse_to_fine_to_json(params: &CoarseToFineParams) -> Value {
         "refinement_radius".to_string(),
         json_number_u64(params.refinement_radius as u64),
     );
-    map.insert("merge_radius".to_string(), json_number_f32(params.merge_radius));
+    map.insert(
+        "merge_radius".to_string(),
+        json_number_f32(params.merge_radius),
+    );
     Value::Object(map)
 }
 
