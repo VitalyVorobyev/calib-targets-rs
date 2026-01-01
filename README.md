@@ -135,6 +135,12 @@ Note: `target_position` is populated only when a board layout includes a valid
 cell size and alignment succeeds (for marker boards, set
 `params["layout"]["cell_size"]`).
 
+Config inputs:
+
+- `chess_cfg` accepts `None`, a dict of overrides, or a `ChessConfig` instance.
+- `params` accepts `None`, a dict of overrides, or the typed params classes
+  (`ChessboardParams`, `CharucoDetectorParams`, `MarkerBoardParams`).
+
 ## Performance and accuracy
 
 Benchmarks are coming. The goal is to be the fastest detector in this class while maintaining high sensitivity and accuracy.

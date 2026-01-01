@@ -21,13 +21,19 @@ The module name is `calib_targets` and it exposes three functions:
 Inputs and config:
 
 - `image` must be a 2D `numpy.ndarray` with `dtype=uint8` (grayscale).
-- `chess_cfg` is a nested dict of overrides for the ChESS detector.
-- `params` are detector settings serialized from the Rust structs.
+- `chess_cfg` accepts `None`, a dict of overrides, or a `ChessConfig` instance.
+- `params` accepts `None`, a dict of overrides, or typed params classes.
 - `board` is a ChArUco board spec dict: `rows`, `cols`, `cell_size`,
   `marker_size_rel`, `dictionary`, `marker_layout`.
 
 Notes:
 
+- Typed config classes exposed by the module include `ChessConfig`,
+  `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`,
+  `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`,
+  `CharucoDetectorParams`, `ScanDecodeConfig`, `MarkerBoardParams`,
+  `CircleScoreParams`, and `CircleMatchParams`.
+- Dict overrides can be partial; unknown keys raise `ValueError` listing valid keys.
 - `target_position` is populated only when the board layout includes a valid
   `cell_size` and alignment succeeds. For marker boards, set
   `params["layout"]["cell_size"]` to your square size.

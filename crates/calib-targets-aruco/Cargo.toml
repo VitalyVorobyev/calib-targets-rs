@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-aruco"
-version = "0.2.0"
+version = "0.2.1"
 description = "Embedded ArUco/AprilTag dictionaries and fast marker decoding on rectified grids"
 edition.workspace = true
 license.workspace = true
