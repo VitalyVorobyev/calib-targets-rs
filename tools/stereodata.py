@@ -8,8 +8,11 @@ def main():
     print(list(data.keys()))
 
     print(data['BoardSize'], data['SquareSize'])
-    print(data['Objpoints'])
     print(data['Transformation'])
+    print(data['R_Extrinsics'])
+    print(data['L_Extrinsics'])
+    print(data['Essential'])
+    print(data['Fundamental'])
 
 if __name__ == '__main__':
     main()
