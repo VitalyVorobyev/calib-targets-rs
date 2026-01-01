@@ -125,9 +125,9 @@ fn py_to_json(obj: &Bound<'_, PyAny>) -> PyResult<Value> {
     if let Ok(dict) = obj.downcast::<PyDict>() {
         let mut out = Map::with_capacity(dict.len());
         for (key, value) in dict.iter() {
-            let key_str: String = key.extract().map_err(|_| {
-                value_error("dictionary keys must be strings for JSON conversion")
-            })?;
+            let key_str: String = key
+                .extract()
+                .map_err(|_| value_error("dictionary keys must be strings for JSON conversion"))?;
             let value_json = py_to_json(&value)?;
             out.insert(key_str, value_json);
         }
@@ -235,10 +235,8 @@ fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<ChessConfig> {
     if let Some(obj) = obj {
         if !obj.is_none() {
             let value = py_to_json(obj).map_err(|err| value_error(format!("chess_cfg: {err}")))?;
-            let overrides: ChessConfigOverrides =
-                serde_json::from_value(value).map_err(|err| {
-                    value_error(format!("chess_cfg: {err}"))
-                })?;
+            let overrides: ChessConfigOverrides = serde_json::from_value(value)
+                .map_err(|err| value_error(format!("chess_cfg: {err}")))?;
             overrides.apply(&mut cfg);
         }
     }
@@ -246,19 +244,22 @@ fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<ChessConfig> {
 }
 
 fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> {
-    let array = image.downcast::<PyArrayDyn<u8>>().map_err(|_| {
-        value_error("image must be a numpy.ndarray with dtype=uint8")
-    })?;
+    let array = image
+        .downcast::<PyArrayDyn<u8>>()
+        .map_err(|_| value_error("image must be a numpy.ndarray with dtype=uint8"))?;
     if array.ndim() != 2 {
         return Err(value_error("image must be a 2D array"));
     }
     let readonly = array.readonly();
     let view = readonly.as_array();
     let shape = view.shape();
-    let height = *shape.get(0).ok_or_else(|| value_error("image has no height"))?;
-    let width = *shape.get(1).ok_or_else(|| value_error("image has no width"))?;
-    let height = u32::try_from(height)
-        .map_err(|_| value_error("image height is too large"))?;
+    let height = *shape
+        .get(0)
+        .ok_or_else(|| value_error("image has no height"))?;
+    let width = *shape
+        .get(1)
+        .ok_or_else(|| value_error("image has no width"))?;
+    let height = u32::try_from(height).map_err(|_| value_error("image height is too large"))?;
     let width = u32::try_from(width).map_err(|_| value_error("image width is too large"))?;
     let pixels = view.to_owned().into_raw_vec();
     detect::gray_image_from_slice(width, height, &pixels)
@@ -284,8 +285,8 @@ fn detect_charuco(
 
     let result = py.allow_threads(move || detect::detect_charuco(&img, &chess_cfg, board, params));
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json = serde_json::to_value(result)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let json =
+        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)
 }
 
