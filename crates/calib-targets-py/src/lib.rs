@@ -254,7 +254,7 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
     let view = readonly.as_array();
     let shape = view.shape();
     let height = *shape
-        .get(0)
+        .first()
         .ok_or_else(|| value_error("image has no height"))?;
     let width = *shape
         .get(1)
@@ -300,10 +300,8 @@ fn detect_chessboard(
 ) -> PyResult<Option<PyObject>> {
     let img = gray_image_from_py(image)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-    let params = match parse_optional::<chessboard::ChessboardParams>(params, "params")? {
-        Some(params) => params,
-        None => chessboard::ChessboardParams::default(),
-    };
+    let params =
+        parse_optional::<chessboard::ChessboardParams>(params, "params")?.unwrap_or_default();
 
     let result = py.allow_threads(move || detect::detect_chessboard(&img, &chess_cfg, params));
     match result {
@@ -326,10 +324,7 @@ fn detect_marker_board(
 ) -> PyResult<Option<PyObject>> {
     let img = gray_image_from_py(image)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-    let params = match parse_optional::<marker::MarkerBoardParams>(params, "params")? {
-        Some(params) => params,
-        None => marker::MarkerBoardParams::default(),
-    };
+    let params = parse_optional::<marker::MarkerBoardParams>(params, "params")?.unwrap_or_default();
 
     let result = py.allow_threads(move || detect::detect_marker_board(&img, &chess_cfg, params));
     match result {
