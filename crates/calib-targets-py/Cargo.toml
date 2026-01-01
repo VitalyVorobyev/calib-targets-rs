@@ -7,6 +7,7 @@ publish = false
 [lib]
 name = "calib_targets"
 crate-type = ["cdylib"]
+doc = false
 
 [dependencies]
 calib-targets = { path = "../calib-targets", features = ["image"], version = "0.2" }
