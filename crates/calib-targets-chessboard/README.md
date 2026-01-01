@@ -24,6 +24,11 @@ fn main() {
 
 - `tracing`: enables tracing output in the detector and grid graph stages.
 
+## Python bindings
+
+Python bindings are provided via the workspace facade (`calib_targets` module).
+See `python/README.md` in the repo root for setup.
+
 ## Links
 
 - Repository: https://github.com/VitalyVorobyev/calib-targets-rs

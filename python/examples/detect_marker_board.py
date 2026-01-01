@@ -22,6 +22,7 @@ def main() -> None:
         "layout": {
             "rows": 22,
             "cols": 22,
+            "cell_size": 1.0,
             "circles": [
                 {"cell": {"i": 11, "j": 11}, "polarity": "white"},
                 {"cell": {"i": 12, "j": 11}, "polarity": "black"},
@@ -35,6 +36,9 @@ def main() -> None:
     if result is None:
         print("No marker board detected")
         return
+    
+    print(result.keys())
+    print(result['detection']['corners'][0])
 
     detection = result.get("detection", {})
     corners = detection.get("corners", [])

@@ -11,6 +11,12 @@ The workspace is organized as a stack of crates with minimal, composable boundar
 - `calib-targets-marker` depends on `chessboard` and `core`.
 - `calib-targets` is the facade that re-exports types and offers end-to-end helpers.
 
+## Python bindings
+
+Python bindings are provided by the `calib-targets-py` crate (module name
+`calib_targets`). It depends on the facade crate and is built with `maturin`;
+see `python/README.md` in the repository root.
+
 ## Where to start
 
 If you are new to the codebase, start with:

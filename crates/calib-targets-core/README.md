@@ -34,6 +34,11 @@ fn main() {
 - Lightweight grayscale image views and sampling.
 - Grid alignment and target detection types.
 
+## Python bindings
+
+Python bindings are provided via the workspace facade (`calib_targets` module).
+See `python/README.md` in the repo root for setup.
+
 ## Links
 
 - Repository: https://github.com/VitalyVorobyev/calib-targets-rs

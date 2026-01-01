@@ -50,4 +50,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Python bindings
+
+Python bindings are built with `maturin`:
+
+```bash
+pip install maturin
+maturin develop
+python python/examples/detect_chessboard.py path/to/image.png
+```
+
+The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`, and
+`detect_marker_board`. For marker boards, `target_position` is populated only
+when `params["layout"]["cell_size"]` is set and alignment succeeds.
+
 MSRV: Rust 1.70 (stable).
