@@ -115,7 +115,7 @@ The later produce detailed json reports that can be rendered by python scripts [
 ## Python bindings
 
 Python bindings live in `crates/calib-targets-py` and are built with `maturin`.
-See `python/README.md` for setup details.
+See [`python/README.md`](crates/calib-targets-py/README.md) for setup details.
 
 Quickstart:
 

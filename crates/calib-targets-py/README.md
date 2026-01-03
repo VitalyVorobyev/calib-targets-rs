@@ -44,7 +44,7 @@ The example scripts load an image with Pillow (install it once):
 
 ```
 pip install pillow
-python python/examples/detect_chessboard.py path/to/image.png
-python python/examples/detect_charuco.py path/to/image.png
-python python/examples/detect_marker_board.py path/to/image.png
+python examples/detect_chessboard.py path/to/image.png
+python examples/detect_charuco.py path/to/image.png
+python examples/detect_marker_board.py path/to/image.png
 ```

@@ -1,6 +1,7 @@
 use ::calib_targets::{aruco, charuco, chessboard, core, detect, marker};
 use chess_corners::{ChessConfig, ChessParams, CoarseToFineParams, PyramidParams};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
+use pyo3::conversion::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyList, PyString, PyTuple};
@@ -131,7 +132,7 @@ impl PyChessConfig {
     }
 
     /// Return a JSON-like dict for debugging.
-    fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_dict(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let json = chess_config_to_json(&self.inner);
         json_to_py(py, &json)
     }
@@ -983,7 +984,7 @@ fn get_optional_dict<'py>(
     let Some(value) = dict.get_item(key)? else {
         return Ok(None);
     };
-    Ok(value.downcast::<PyDict>().ok().cloned())
+    Ok(value.cast_into::<PyDict>().ok())
 }
 
 fn validate_chess_cfg_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
@@ -1213,7 +1214,7 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
         return Ok(Value::Bool(obj.extract::<bool>()?));
     }
 
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         let mut out = Map::with_capacity(dict.len());
         for (key, value) in dict.iter() {
             let key_str: String = key.extract().map_err(|_| {
@@ -1228,7 +1229,7 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
         return Ok(Value::Object(out));
     }
 
-    if let Ok(list) = obj.downcast::<PyList>() {
+    if let Ok(list) = obj.cast::<PyList>() {
         let mut out = Vec::with_capacity(list.len());
         for (idx, item) in list.iter().enumerate() {
             let child_path = format!("{path}[{idx}]");
@@ -1237,7 +1238,7 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
         return Ok(Value::Array(out));
     }
 
-    if let Ok(tuple) = obj.downcast::<PyTuple>() {
+    if let Ok(tuple) = obj.cast::<PyTuple>() {
         let mut out = Vec::with_capacity(tuple.len());
         for (idx, item) in tuple.iter().enumerate() {
             let child_path = format!("{path}[{idx}]");
@@ -1277,36 +1278,36 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
     )))
 }
 
-fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<PyObject> {
+fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     match value {
         Value::Null => Ok(py.None()),
-        Value::Bool(v) => Ok(v.into_py(py)),
+        Value::Bool(v) => v.into_py_any(py),
         Value::Number(v) => {
             if let Some(i) = v.as_i64() {
-                Ok(i.into_py(py))
+                i.into_py_any(py)
             } else if let Some(u) = v.as_u64() {
-                Ok(u.into_py(py))
+                u.into_py_any(py)
             } else if let Some(f) = v.as_f64() {
-                Ok(f.into_py(py))
+                f.into_py_any(py)
             } else {
                 Ok(py.None())
             }
         }
-        Value::String(s) => Ok(s.into_py(py)),
+        Value::String(s) => s.into_py_any(py),
         Value::Array(values) => {
             let mut out = Vec::with_capacity(values.len());
             for item in values {
                 out.push(json_to_py(py, item)?);
             }
-            Ok(PyList::new_bound(py, out).into_py(py))
+            Ok(PyList::new(py, out)?.into_any().unbind())
         }
         Value::Object(map) => {
-            let dict = PyDict::new_bound(py);
+            let dict = PyDict::new(py);
             for (key, item) in map.iter() {
                 let value = json_to_py(py, item)?;
                 dict.set_item(key, value)?;
             }
-            Ok(dict.into_py(py))
+            Ok(dict.into_any().unbind())
         }
     }
 }
@@ -1412,7 +1413,7 @@ fn chess_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyChessCornerParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_chess_params_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1434,7 +1435,7 @@ fn pyramid_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyPyramidParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_pyramid_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1456,7 +1457,7 @@ fn coarse_to_fine_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyCoarseToFineParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_coarse_to_fine_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1478,7 +1479,7 @@ fn orientation_clustering_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyOrientationClusteringParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_orientation_clustering_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1500,7 +1501,7 @@ fn chessboard_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyChessboardParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_chessboard_params_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1522,7 +1523,7 @@ fn grid_graph_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyGridGraphParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_grid_graph_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1544,7 +1545,7 @@ fn circle_score_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyCircleScoreParams>>() {
         return Ok(params.inner);
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_circle_score_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1566,7 +1567,7 @@ fn circle_match_params_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyCircleMatchParams>>() {
         return Ok(params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_circle_match_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1582,7 +1583,7 @@ fn marker_board_layout_from_obj(
     path: &str,
 ) -> PyResult<marker::MarkerBoardLayout> {
     let dict = obj
-        .downcast::<PyDict>()
+        .cast::<PyDict>()
         .map_err(|_| value_error(format!("{path}: expected dict")))?;
     validate_marker_board_layout_dict(dict, path)?;
     let value = py_to_json(obj, path)?;
@@ -1600,7 +1601,7 @@ fn chessboard_overrides_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyChessboardParams>>() {
         return Ok(ChessboardParamsOverrides::from_params(&params.inner));
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_chessboard_params_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1614,7 +1615,7 @@ fn grid_graph_overrides_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyGridGraphParams>>() {
         return Ok(GridGraphParamsOverrides::from_params(&params.inner));
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_grid_graph_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1628,7 +1629,7 @@ fn scan_decode_overrides_from_obj(
     if let Ok(params) = obj.extract::<PyRef<PyScanDecodeConfig>>() {
         return Ok(ScanDecodeConfigOverrides::from_params(&params.inner));
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_scan_decode_dict(dict, path)?;
     }
     let value = py_to_json(obj, path)?;
@@ -1642,7 +1643,7 @@ fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<ChessConfig> {
             if let Ok(py_cfg) = obj.extract::<PyRef<PyChessConfig>>() {
                 return Ok(py_cfg.inner.clone());
             }
-            if let Ok(dict) = obj.downcast::<PyDict>() {
+            if let Ok(dict) = obj.cast::<PyDict>() {
                 validate_chess_cfg_dict(dict, "chess_cfg")?;
             }
             let value = py_to_json(obj, "chess_cfg")?;
@@ -1667,7 +1668,7 @@ fn chessboard_params_from_py(
     if let Ok(py_params) = obj.extract::<PyRef<PyChessboardParams>>() {
         return Ok(py_params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_chessboard_params_dict(dict, "params")?;
     }
     let value = py_to_json(obj, "params")?;
@@ -1689,7 +1690,7 @@ fn marker_board_params_from_py(
     if let Ok(py_params) = obj.extract::<PyRef<PyMarkerBoardParams>>() {
         return Ok(py_params.inner.clone());
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_marker_board_params_dict(dict, "params")?;
     }
     let value = py_to_json(obj, "params")?;
@@ -1721,7 +1722,7 @@ fn charuco_params_from_py(
         overrides.apply(&mut params);
         return Ok(params);
     }
-    if let Ok(dict) = obj.downcast::<PyDict>() {
+    if let Ok(dict) = obj.cast::<PyDict>() {
         validate_charuco_params_dict(dict, "params")?;
     }
     let value = py_to_json(obj, "params")?;
@@ -1733,7 +1734,7 @@ fn charuco_params_from_py(
 
 fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> {
     let array = image
-        .downcast::<PyArrayDyn<u8>>()
+        .cast::<PyArrayDyn<u8>>()
         .map_err(|_| value_error("image must be a numpy.ndarray with dtype=uint8"))?;
     if array.ndim() != 2 {
         return Err(value_error("image must be a 2D array"));
@@ -1749,7 +1750,7 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
         .ok_or_else(|| value_error("image has no width"))?;
     let height = u32::try_from(height).map_err(|_| value_error("image height is too large"))?;
     let width = u32::try_from(width).map_err(|_| value_error("image width is too large"))?;
-    let pixels = view.to_owned().into_raw_vec();
+    let pixels = view.to_owned().into_raw_vec_and_offset().0;
     detect::gray_image_from_slice(width, height, &pixels)
         .map_err(|err| value_error(err.to_string()))
 }
@@ -1772,13 +1773,13 @@ fn detect_charuco(
     board: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<PyObject> {
+) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let board = parse_required::<charuco::CharucoBoardSpec>(board, "board")?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
     let params = charuco_params_from_py(params, &board)?;
 
-    let result = py.allow_threads(move || detect::detect_charuco(&img, &chess_cfg, board, params));
+    let result = py.detach(move || detect::detect_charuco(&img, &chess_cfg, board, params));
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let json =
         serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -1801,12 +1802,12 @@ fn detect_chessboard(
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<PyObject>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
     let params = chessboard_params_from_py(params)?;
 
-    let result = py.allow_threads(move || detect::detect_chessboard(&img, &chess_cfg, params));
+    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, params));
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -1833,12 +1834,12 @@ fn detect_marker_board(
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<PyObject>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
     let params = marker_board_params_from_py(params)?;
 
-    let result = py.allow_threads(move || detect::detect_marker_board(&img, &chess_cfg, params));
+    let result = py.detach(move || detect::detect_marker_board(&img, &chess_cfg, params));
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -1863,8 +1864,8 @@ fn calib_targets(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyCircleScoreParams>()?;
     m.add_class::<PyCircleMatchParams>()?;
     m.add_class::<PyMarkerBoardParams>()?;
-    m.add_function(wrap_pyfunction_bound!(detect_charuco, m)?)?;
-    m.add_function(wrap_pyfunction_bound!(detect_chessboard, m)?)?;
-    m.add_function(wrap_pyfunction_bound!(detect_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
     Ok(())
 }

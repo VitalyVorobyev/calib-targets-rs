@@ -1,8 +1,12 @@
 [package]
 name = "calib-targets-py"
-version = "0.2.1"
-edition = "2021"
+version = "0.2.2"
+description = "Python bindings for chess-corners"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 publish = false
+autobins = false
 
 [lib]
 name = "calib_targets"
@@ -13,10 +17,10 @@ doc = false
 calib-targets = { path = "../calib-targets", features = ["image"], version = "0.2" }
 chess-corners = { version = "0.3", features = ["rayon", "ml-refiner"] }
 image = { version = "0.25", default-features = true }
-numpy = "0.21"
-pyo3 = { version = "0.21", features = ["extension-module", "abi3-py310"] }
+numpy = "0.27"
+pyo3 = { version = "0.27", features = ["extension-module", "abi3-py310"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 [build-dependencies]
-pyo3-build-config = "0.21"
+pyo3-build-config = "0.27"
