@@ -115,31 +115,35 @@ The later produce detailed json reports that can be rendered by python scripts [
 ## Python bindings
 
 Python bindings live in `crates/calib-targets-py` and are built with `maturin`.
-See `python/README.md` for setup details.
+See `crates/calib-targets-py/README.md` for setup details.
 
 Quickstart:
 
 ```bash
 pip install maturin
 maturin develop
-python python/examples/detect_chessboard.py path/to/image.png
+python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
 ```
 
 API surface:
 
 - `calib_targets.detect_chessboard(image, *, chess_cfg=None, params=None)`
-- `calib_targets.detect_charuco(image, *, board, chess_cfg=None, params=None)`
+- `calib_targets.detect_charuco(image, *, chess_cfg=None, params)`
 - `calib_targets.detect_marker_board(image, *, chess_cfg=None, params=None)`
 
 Note: `target_position` is populated only when a board layout includes a valid
 cell size and alignment succeeds (for marker boards, set
-`params["layout"]["cell_size"]`).
+`params.layout.cell_size` or `params["layout"]["cell_size"]`).
 
 Config inputs:
 
 - `chess_cfg` accepts `None`, a dict of overrides, or a `ChessConfig` instance.
 - `params` accepts `None`, a dict of overrides, or the typed params classes
   (`ChessboardParams`, `CharucoDetectorParams`, `MarkerBoardParams`).
+- ChArUco board and marker-board layout have typed helpers: `CharucoBoardSpec`,
+  `MarkerBoardLayout`, and `MarkerCircleSpec`.
+- `detect_charuco` requires `params` and the board lives in
+  `params.board` (or `params["board"]` when using dicts).
 
 ## Performance and accuracy
 

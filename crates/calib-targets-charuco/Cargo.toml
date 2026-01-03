@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-charuco"
-version = "0.2.1"
+version = "0.2.2"
 description = "ChArUco board detector built on top of calib-targets-core"
 edition.workspace = true
 license.workspace = true

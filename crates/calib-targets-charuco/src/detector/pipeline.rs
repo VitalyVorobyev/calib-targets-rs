@@ -3,7 +3,7 @@ use super::corner_mapping::map_charuco_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
 use crate::alignment::CharucoAlignment;
-use crate::board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec};
+use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessboardDetector;
 use calib_targets_core::{Corner, GrayImageView};
@@ -20,11 +20,9 @@ pub struct CharucoDetector {
 }
 
 impl CharucoDetector {
-    /// Create a detector for a given board and parameters.
-    pub fn new(
-        board_cfg: CharucoBoardSpec,
-        mut params: CharucoDetectorParams,
-    ) -> Result<Self, CharucoBoardError> {
+    /// Create a detector from parameters (board spec lives in `params.charuco`).
+    pub fn new(mut params: CharucoDetectorParams) -> Result<Self, CharucoBoardError> {
+        let board_cfg = params.charuco;
         if params.chessboard.expected_rows.is_none() {
             // `board_cfg.rows/cols` are square counts; chessboard detector expects inner corners.
             params.chessboard.expected_rows = board_cfg.rows.checked_sub(1);

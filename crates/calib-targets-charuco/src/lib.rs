@@ -25,7 +25,7 @@
 //! };
 //!
 //! let params = CharucoDetectorParams::for_board(&board);
-//! let detector = CharucoDetector::new(board, params)?;
+//! let detector = CharucoDetector::new(params)?;
 //!
 //! let pixels = vec![0u8; 32 * 32];
 //! let view = GrayImageView {

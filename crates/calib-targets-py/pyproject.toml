@@ -7,7 +7,7 @@ name = "calib-targets"
 requires-python = ">=3.10"
 dependencies = ["numpy"]
 dynamic = ["version"]
-readme = "python/README.md"
+readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Vitaly Vorobyev" }]
 classifiers = [
@@ -24,4 +24,5 @@ Issues = "https://github.com/VitalyVorobyev/calib-targets-rs/issues"
 [tool.maturin]
 bindings = "pyo3"
 module-name = "calib_targets"
-manifest-path = "crates/calib-targets-py/Cargo.toml"
+manifest-path = "Cargo.toml"
+include = ["LICENSE"]

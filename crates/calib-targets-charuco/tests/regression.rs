@@ -78,7 +78,7 @@ fn detects_charuco_on_large_png() {
     params.graph.max_spacing_pix = 160.0;
     params.min_marker_inliers = 64;
 
-    let detector = CharucoDetector::new(board, params).expect("detector");
+    let detector = CharucoDetector::new(params).expect("detector");
 
     let src_view = GrayImageView {
         width: img.width() as usize,
@@ -123,7 +123,7 @@ fn detects_charuco_on_small_png() {
     params.graph.max_spacing_pix = 60.0;
     params.min_marker_inliers = 12;
 
-    let detector = CharucoDetector::new(board, params).expect("detector");
+    let detector = CharucoDetector::new(params).expect("detector");
 
     let src_view = GrayImageView {
         width: img.width() as usize,

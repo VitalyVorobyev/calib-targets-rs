@@ -26,10 +26,12 @@
 //! ## Python bindings
 //!
 //! Python bindings live in `crates/calib-targets-py` and expose the
-//! `calib_targets` module. See `python/README.md` in the repository for setup
-//! and the `detect_*` APIs. Config inputs accept typed Python classes or dict
-//! overrides. For marker boards, `target_position` is populated only when
-//! `params["layout"]["cell_size"]` is provided and alignment succeeds.
+//! `calib_targets` module. See `crates/calib-targets-py/README.md` in the
+//! repository for setup and the `detect_*` APIs. Config inputs accept typed
+//! Python classes or dict overrides; `detect_charuco` requires `params` with
+//! `params.board`. For marker boards, `target_position` is populated only when
+//! `params.layout.cell_size` (or `params["layout"]["cell_size"]`) is provided
+//! and alignment succeeds.
 //!
 //! ## API map
 //! - `calib_targets::core`: core types (corners, grids, homographies, images).

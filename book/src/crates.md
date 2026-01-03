@@ -15,7 +15,7 @@ The workspace is organized as a stack of crates with minimal, composable boundar
 
 Python bindings are provided by the `calib-targets-py` crate (module name
 `calib_targets`). It depends on the facade crate and is built with `maturin`;
-see `python/README.md` in the repository root.
+see `crates/calib-targets-py/README.md` in the repository root.
 
 ## Where to start
 

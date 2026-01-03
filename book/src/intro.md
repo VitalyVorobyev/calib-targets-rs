@@ -57,13 +57,14 @@ Python bindings are built with `maturin`:
 ```bash
 pip install maturin
 maturin develop
-python python/examples/detect_chessboard.py path/to/image.png
+python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
 ```
 
 The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`, and
 `detect_marker_board`. Config inputs accept either typed classes (for IDE
-autocomplete) or dict overrides. For marker boards, `target_position` is
-populated only when `params["layout"]["cell_size"]` is set and alignment
-succeeds.
+autocomplete) or dict overrides. `detect_charuco` requires `params` and the
+board lives in `params.board`. For marker boards, `target_position` is
+populated only when `params.layout.cell_size` (or
+`params["layout"]["cell_size"]`) is set and alignment succeeds.
 
 MSRV: Rust 1.70 (stable).
