@@ -59,20 +59,21 @@ cargo run -p calib-targets --example detect_markerboard -- path/to/image.png
 ## Python bindings
 
 Python bindings are provided via `crates/calib-targets-py` (module name
-`calib_targets`). See the workspace `python/README.md` for setup.
+`calib_targets`). See `crates/calib-targets-py/README.md` for setup.
 
 ```bash
 pip install maturin
 maturin develop
-python python/examples/detect_charuco.py path/to/image.png
+python crates/calib-targets-py/examples/detect_charuco.py path/to/image.png
 ```
 
 Notes:
 
 - Python config accepts typed params classes or dict overrides (partial dicts are OK).
+- `detect_charuco` requires `params` and the board lives in `params.board`.
 - `target_position` is populated only when a board layout includes a valid
   cell size and alignment succeeds (for marker boards, set
-  `params["layout"]["cell_size"]`).
+  `params.layout.cell_size` or `params["layout"]["cell_size"]`).
 
 ## Crate map
 

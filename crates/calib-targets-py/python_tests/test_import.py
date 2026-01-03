@@ -9,18 +9,19 @@ def test_import_and_smoke() -> None:
     result = calib_targets.detect_chessboard(image)
     assert result is None or isinstance(result, dict)
 
-    board = {
-        "rows": 3,
-        "cols": 3,
-        "cell_size": 1.0,
-        "marker_size_rel": 0.75,
-        "dictionary": "DICT_4X4_50",
-        "marker_layout": "opencv_charuco",
-    }
+    board = calib_targets.CharucoBoardSpec(
+        rows=3,
+        cols=3,
+        cell_size=1.0,
+        marker_size_rel=0.75,
+        dictionary="DICT_4X4_50",
+        marker_layout="opencv_charuco",
+    )
+    params = calib_targets.CharucoDetectorParams(board=board)
 
     # ChArUco detection can fail on empty images; this is just a smoke test.
     try:
-        result = calib_targets.detect_charuco(image, board=board)
+        result = calib_targets.detect_charuco(image, params=params)
     except RuntimeError:
         result = None
     assert result is None or isinstance(result, dict)

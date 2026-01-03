@@ -6,6 +6,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2]
+- Remove redundant ChArUco board parameter; board spec now lives in params for Rust and Python APIs.
+- `CharucoDetector::new` now takes only `CharucoDetectorParams`.
+- Add typed Python classes for `CharucoBoardSpec`, `MarkerBoardLayout`, and `MarkerCircleSpec`.
+- Make Python config classes mutable via settable attributes.
+- Document authoritative Python output schema in `crates/calib-targets-py/README.md`.
+
 ## [0.2.1]
 - Add Python-friendly config/params classes with IDE signatures while keeping dict overrides.
 - Allow partial dict overrides for detector params without specifying full structs.

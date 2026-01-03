@@ -36,17 +36,16 @@ def main() -> None:
     )
     chess_cfg = calib_targets.ChessConfig(params=chess_params, multiscale=multiscale)
 
-    # Layout uses a dict for now (no Python helper type yet).
-    layout = {
-        "rows": 22,
-        "cols": 22,
-        "cell_size": 1.0,
-        "circles": [
-            {"cell": {"i": 11, "j": 11}, "polarity": "white"},
-            {"cell": {"i": 12, "j": 11}, "polarity": "black"},
-            {"cell": {"i": 12, "j": 12}, "polarity": "white"},
+    layout = calib_targets.MarkerBoardLayout(
+        rows=22,
+        cols=22,
+        cell_size=1.0,
+        circles=[
+            calib_targets.MarkerCircleSpec(i=11, j=11, polarity="white"),
+            calib_targets.MarkerCircleSpec(i=12, j=11, polarity="black"),
+            calib_targets.MarkerCircleSpec(i=12, j=12, polarity="white"),
         ],
-    }
+    )
     orientation = calib_targets.OrientationClusteringParams(
         num_bins=90,
         max_iters=10,

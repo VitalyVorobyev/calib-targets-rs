@@ -18,9 +18,8 @@ def main() -> None:
 
     # Input for detect_charuco:
     # - image: 2D numpy.ndarray, dtype=uint8 (grayscale).
-    # - board: ChArUco board spec (square counts, sizes, dictionary).
     # - chess_cfg: optional overrides for the ChESS corner detector.
-    # - params: full CharucoDetectorParams structure (optional).
+    # - params: CharucoDetectorParams with an embedded board spec.
     image = load_gray(sys.argv[1])
 
     chess_params = calib_targets.ChessCornerParams(
@@ -37,15 +36,14 @@ def main() -> None:
     )
     chess_cfg = calib_targets.ChessConfig(params=chess_params, multiscale=multiscale)
 
-    # Board spec is passed as a dict (no Python helper type yet).
-    board = {
-        "rows": 22,
-        "cols": 22,
-        "cell_size": 1.0,
-        "marker_size_rel": 0.75,
-        "dictionary": "DICT_4X4_1000",
-        "marker_layout": "opencv_charuco",
-    }
+    board = calib_targets.CharucoBoardSpec(
+        rows=22,
+        cols=22,
+        cell_size=1.0,
+        marker_size_rel=0.75,
+        dictionary="DICT_4X4_1000",
+        marker_layout="opencv_charuco",
+    )
 
     orientation = calib_targets.OrientationClusteringParams(
         num_bins=90,
@@ -78,6 +76,7 @@ def main() -> None:
         dedup_by_id=True,
     )
     params = calib_targets.CharucoDetectorParams(
+        board=board,
         px_per_square=60.0,
         chessboard=chessboard,
         graph=graph,
@@ -92,7 +91,7 @@ def main() -> None:
     # - raises RuntimeError if detection fails.
     try:
         result = calib_targets.detect_charuco(
-            image, board=board, chess_cfg=chess_cfg, params=params
+            image, chess_cfg=chess_cfg, params=params
         )
     except RuntimeError as exc:
         print(f"detect_charuco failed: {exc}")

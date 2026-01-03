@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let params = CharucoDetectorParams::for_board(&board);
-    let detector = CharucoDetector::new(board, params)?;
+    let detector = CharucoDetector::new(params)?;
 
     let pixels = vec![0u8; 32 * 32];
     let view = GrayImageView {
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Python bindings
 
 Python bindings are provided via the workspace facade (`calib_targets` module).
-See `python/README.md` in the repo root for setup.
+See `crates/calib-targets-py/README.md` in the repo root for setup.
 
 ## Links
 

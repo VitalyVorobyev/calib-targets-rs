@@ -91,34 +91,32 @@ pub fn detect_chessboard(
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, chess_cfg, board, params),
+        skip(img, chess_cfg, params),
         fields(
             width = img.width(),
             height = img.height(),
-            board_rows = board.rows,
-            board_cols = board.cols
+            board_rows = params.charuco.rows,
+            board_cols = params.charuco.cols
         )
     )
 )]
 pub fn detect_charuco(
     img: &::image::GrayImage,
     chess_cfg: &ChessConfig,
-    board: charuco::CharucoBoardSpec,
     params: charuco::CharucoDetectorParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = charuco::CharucoDetector::new(board, params)?;
+    let detector = charuco::CharucoDetector::new(params)?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
 
-/// Convenience overload using `default_chess_config()` and `CharucoDetectorParams::for_board`.
+/// Convenience overload using `default_chess_config()`.
 pub fn detect_charuco_default(
     img: &::image::GrayImage,
-    board: charuco::CharucoBoardSpec,
+    params: charuco::CharucoDetectorParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
     let chess_cfg = default_chess_config();
-    let params = charuco::CharucoDetectorParams::for_board(&board);
-    detect_charuco(img, &chess_cfg, board, params)
+    detect_charuco(img, &chess_cfg, params)
 }
 
 /// Run the checkerboard+circles marker board detector end-to-end.
@@ -189,11 +187,10 @@ pub fn detect_charuco_from_gray_u8(
     height: u32,
     pixels: &[u8],
     chess_cfg: &ChessConfig,
-    board: charuco::CharucoBoardSpec,
     params: charuco::CharucoDetectorParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    detect_charuco(&img, chess_cfg, board, params)
+    detect_charuco(&img, chess_cfg, params)
 }
 
 pub fn detect_marker_board_from_gray_u8(

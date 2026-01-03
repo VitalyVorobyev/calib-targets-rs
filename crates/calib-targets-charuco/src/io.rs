@@ -82,8 +82,8 @@ impl CharucoDetectConfig {
     }
 
     /// Build detector parameters, applying overrides from the config.
-    pub fn build_params(&self, board: &CharucoBoardSpec) -> CharucoDetectorParams {
-        let mut params = CharucoDetectorParams::for_board(board);
+    pub fn build_params(&self) -> CharucoDetectorParams {
+        let mut params = CharucoDetectorParams::for_board(&self.board);
         params.px_per_square = self.px_per_square;
         if let Some(min_marker_inliers) = self.min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
@@ -105,8 +105,8 @@ impl CharucoDetectConfig {
 
     /// Build a detector from this config.
     pub fn build_detector(&self) -> Result<CharucoDetector, CharucoConfigError> {
-        let params = self.build_params(&self.board);
-        Ok(CharucoDetector::new(self.board, params)?)
+        let params = self.build_params();
+        Ok(CharucoDetector::new(params)?)
     }
 }
 
