@@ -4,7 +4,16 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.3]
+- Python bindings: switch to a mixed Rust/Python package layout with private
+  extension module `calib_targets._core` and typed public package sources.
+- Python API: hard reset to a dataclass-first surface with typed-only config
+  inputs and typed detector result objects.
+- Add `to_dict()` / `from_dict(...)` compatibility helpers on public config and
+  result models.
+- Add generated typing artifacts (`_core.pyi`, dictionary literal definitions)
+  and a generator script with `--check` mode for CI.
+- Add Python type-check smoke coverage (Pyright + mypy) in CI.
 
 ## [0.2.2]
 - Remove redundant ChArUco board parameter; board spec now lives in params for Rust and Python APIs.

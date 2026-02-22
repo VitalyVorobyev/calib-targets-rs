@@ -61,10 +61,11 @@ python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
 ```
 
 The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`, and
-`detect_marker_board`. Config inputs accept either typed classes (for IDE
-autocomplete) or dict overrides. `detect_charuco` requires `params` and the
-board lives in `params.board`. For marker boards, `target_position` is
-populated only when `params.layout.cell_size` (or
-`params["layout"]["cell_size"]`) is set and alignment succeeds.
+`detect_marker_board`. The public API is dataclass-first: config inputs are
+typed models and detector results are typed dataclasses with
+`to_dict()`/`from_dict(...)` helpers for JSON interoperability.
+`detect_charuco` requires `params` and the board lives in `params.board`.
+For marker boards, `target_position` is populated only when
+`params.layout.cell_size` is set and alignment succeeds.
 
 MSRV: Rust 1.70 (stable).
