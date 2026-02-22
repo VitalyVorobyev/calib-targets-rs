@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.3]
 - Python bindings: switch to a mixed Rust/Python package layout with private
   extension module `calib_targets._core` and typed public package sources.
 - Python API: hard reset to a dataclass-first surface with typed-only config
