@@ -399,7 +399,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.2.2"
+version = "1.0.0"
 dependencies = [
  "calib-targets",
  "chess-corners",

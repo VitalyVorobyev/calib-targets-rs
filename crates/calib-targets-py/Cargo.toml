@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-py"
-version = "0.2.2"
+version = "1.0.0"
 description = "Python bindings for chess-corners"
 edition.workspace = true
 license.workspace = true

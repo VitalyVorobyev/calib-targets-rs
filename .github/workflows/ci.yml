@@ -41,3 +41,37 @@ jobs:
 
       - name: test (all crates, default features)
         run: cargo test --workspace --all-targets
+
+  python-bindings:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.10 (PyO3)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin numpy pytest pyright mypy
+
+      - name: Check generated typing artifacts
+        run: python crates/calib-targets-py/tools/generate_typing_artifacts.py --check
+
+      - name: Build and install Python bindings
+        run: maturin develop -m crates/calib-targets-py/Cargo.toml
+
+      - name: Python tests
+        run: pytest crates/calib-targets-py/python_tests
+
+      - name: Pyright smoke check
+        run: pyright crates/calib-targets-py/python_tests/typecheck_smoke.py
+
+      - name: mypy smoke check
+        run: mypy crates/calib-targets-py/python_tests/typecheck_smoke.py

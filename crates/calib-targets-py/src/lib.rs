@@ -16,7 +16,7 @@ enum ChessCornerParamsSource {
     ChessConfig(Py<PyChessConfig>),
 }
 
-#[pyclass(name = "ChessCornerParams", module = "calib_targets")]
+#[pyclass(name = "ChessCornerParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for the ChESS corner detector.
 struct PyChessCornerParams {
@@ -170,7 +170,7 @@ enum PyramidParamsSource {
     CoarseToFine(Py<PyCoarseToFineParams>),
 }
 
-#[pyclass(name = "PyramidParams", module = "calib_targets")]
+#[pyclass(name = "PyramidParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for image pyramid generation.
 struct PyPyramidParams {
@@ -253,7 +253,7 @@ enum CoarseToFineParamsSource {
     ChessConfig(Py<PyChessConfig>),
 }
 
-#[pyclass(name = "CoarseToFineParams", module = "calib_targets")]
+#[pyclass(name = "CoarseToFineParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Coarse-to-fine multiscale detector parameters.
 struct PyCoarseToFineParams {
@@ -363,7 +363,7 @@ impl PyCoarseToFineParams {
     }
 }
 
-#[pyclass(name = "ChessConfig", module = "calib_targets")]
+#[pyclass(name = "ChessConfig", module = "calib_targets._core")]
 #[derive(Clone, Debug)]
 /// ChESS detector configuration (corner params + multiscale tuning).
 struct PyChessConfig {
@@ -443,7 +443,7 @@ enum OrientationClusteringParamsSource {
     Chessboard(Py<PyChessboardParams>),
 }
 
-#[pyclass(name = "OrientationClusteringParams", module = "calib_targets")]
+#[pyclass(name = "OrientationClusteringParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Orientation clustering parameters for chessboard detection.
 struct PyOrientationClusteringParams {
@@ -604,7 +604,7 @@ enum GridGraphParamsSource {
     MarkerBoard(Py<PyMarkerBoardParams>),
 }
 
-#[pyclass(name = "GridGraphParams", module = "calib_targets")]
+#[pyclass(name = "GridGraphParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for grid graph construction in chessboard detection.
 struct PyGridGraphParams {
@@ -736,7 +736,7 @@ enum ChessboardParamsSource {
     MarkerBoard(Py<PyMarkerBoardParams>),
 }
 
-#[pyclass(name = "ChessboardParams", module = "calib_targets")]
+#[pyclass(name = "ChessboardParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for chessboard detection from ChESS corners.
 struct PyChessboardParams {
@@ -939,7 +939,7 @@ enum ScanDecodeConfigSource {
     Charuco(Py<PyCharucoDetectorParams>),
 }
 
-#[pyclass(name = "ScanDecodeConfig", module = "calib_targets")]
+#[pyclass(name = "ScanDecodeConfig", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Marker scan/decoder configuration.
 struct PyScanDecodeConfig {
@@ -1079,7 +1079,7 @@ enum CharucoBoardSpecSource {
     Charuco(Py<PyCharucoDetectorParams>),
 }
 
-#[pyclass(name = "CharucoBoardSpec", module = "calib_targets")]
+#[pyclass(name = "CharucoBoardSpec", module = "calib_targets._core")]
 #[derive(Debug)]
 /// ChArUco board specification (square counts + dictionary).
 struct PyCharucoBoardSpec {
@@ -1241,7 +1241,7 @@ fn update_charuco_params_for_board(params: &mut charuco::CharucoDetectorParams) 
     params.max_hamming = params.max_hamming.min(board.dictionary.max_correction_bits);
 }
 
-#[pyclass(name = "CharucoDetectorParams", module = "calib_targets")]
+#[pyclass(name = "CharucoDetectorParams", module = "calib_targets._core")]
 #[derive(Clone, Debug)]
 /// Full ChArUco detector configuration (board + parameters).
 struct PyCharucoDetectorParams {
@@ -1404,7 +1404,7 @@ enum MarkerCircleSpecSource {
     },
 }
 
-#[pyclass(name = "MarkerCircleSpec", module = "calib_targets")]
+#[pyclass(name = "MarkerCircleSpec", module = "calib_targets._core")]
 #[derive(Debug)]
 /// One expected circle marker (cell + polarity).
 struct PyMarkerCircleSpec {
@@ -1501,7 +1501,7 @@ enum MarkerBoardLayoutSource {
     MarkerBoard(Py<PyMarkerBoardParams>),
 }
 
-#[pyclass(name = "MarkerBoardLayout", module = "calib_targets")]
+#[pyclass(name = "MarkerBoardLayout", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Marker-board layout: grid size plus 3 circle markers.
 struct PyMarkerBoardLayout {
@@ -1647,7 +1647,7 @@ enum CircleScoreParamsSource {
     MarkerBoard(Py<PyMarkerBoardParams>),
 }
 
-#[pyclass(name = "CircleScoreParams", module = "calib_targets")]
+#[pyclass(name = "CircleScoreParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for scoring circle markers.
 struct PyCircleScoreParams {
@@ -1821,7 +1821,7 @@ enum CircleMatchParamsSource {
     MarkerBoard(Py<PyMarkerBoardParams>),
 }
 
-#[pyclass(name = "CircleMatchParams", module = "calib_targets")]
+#[pyclass(name = "CircleMatchParams", module = "calib_targets._core")]
 #[derive(Debug)]
 /// Parameters for matching detected circles to the board layout.
 struct PyCircleMatchParams {
@@ -1921,7 +1921,7 @@ impl PyCircleMatchParams {
     }
 }
 
-#[pyclass(name = "MarkerBoardParams", module = "calib_targets")]
+#[pyclass(name = "MarkerBoardParams", module = "calib_targets._core")]
 #[derive(Clone, Debug)]
 /// Parameters for marker-board detection.
 struct PyMarkerBoardParams {
@@ -3504,7 +3504,7 @@ fn detect_marker_board(
 }
 
 #[pymodule]
-fn calib_targets(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyChessConfig>()?;
     m.add_class::<PyChessCornerParams>()?;
     m.add_class::<PyCoarseToFineParams>()?;

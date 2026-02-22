@@ -23,4 +23,5 @@ Issues = "https://github.com/VitalyVorobyev/calib-targets-rs/issues"
 
 [tool.maturin]
 bindings = "pyo3"
-module-name = "calib_targets"
+module-name = "calib_targets._core"
+python-source = "python"
