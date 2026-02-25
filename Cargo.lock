@@ -342,6 +342,7 @@ dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
  "chess-corners",
+ "chess-corners-core",
  "image",
  "log",
  "nalgebra",
