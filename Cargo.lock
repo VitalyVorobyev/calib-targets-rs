@@ -300,7 +300,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "calib-targets"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -321,7 +321,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-charuco"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-chessboard",
@@ -354,7 +354,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets-core",
  "chess-corners",
@@ -372,7 +372,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "log",
  "nalgebra",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "calib-targets",
  "chess-corners",
