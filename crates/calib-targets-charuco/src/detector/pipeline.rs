@@ -1,6 +1,6 @@
 use super::alignment_select::select_alignment;
 use super::corner_mapping::map_charuco_corners;
-use super::corner_validation::validate_and_fix_corners;
+use super::corner_validation::{validate_and_fix_corners, CornerValidationConfig};
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
 use crate::alignment::CharucoAlignment;
@@ -113,9 +113,11 @@ impl CharucoDetector {
             &markers,
             &alignment,
             image,
-            self.params.px_per_square,
-            self.params.corner_validation_threshold_rel,
-            &self.params.corner_redetect_params,
+            &CornerValidationConfig {
+                px_per_square: self.params.px_per_square,
+                threshold_rel: self.params.corner_validation_threshold_rel,
+                chess_params: &self.params.corner_redetect_params,
+            },
         );
 
         Ok(CharucoDetectionResult {

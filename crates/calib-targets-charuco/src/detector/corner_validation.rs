@@ -57,6 +57,25 @@ use chess_corners_core::{
 use nalgebra::Point2;
 
 // ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+/// Configuration for the corner validation stage.
+///
+/// Groups the three tuning parameters so that `validate_and_fix_corners` stays
+/// within the argument-count limit.
+pub(crate) struct CornerValidationConfig<'a> {
+    /// Side length of one board square in pixels (used to scale thresholds).
+    pub px_per_square: f32,
+    /// Maximum allowed deviation from the homography-predicted position,
+    /// expressed as a fraction of `px_per_square`.  Set to `f32::INFINITY`
+    /// to disable validation entirely.
+    pub threshold_rel: f32,
+    /// ChESS detector parameters used for local re-detection.
+    pub chess_params: &'a ChessParams,
+}
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -155,10 +174,8 @@ fn redetect_corner_in_roi(
     // Compute ROI in integer image coords, clamped to image bounds.
     let x0 = ((seed.x as i32) - roi_half_px).max(0) as usize;
     let y0 = ((seed.y as i32) - roi_half_px).max(0) as usize;
-    let x1 = ((seed.x as i32) + roi_half_px + 1)
-        .min(image.width as i32) as usize;
-    let y1 = ((seed.y as i32) + roi_half_px + 1)
-        .min(image.height as i32) as usize;
+    let x1 = ((seed.x as i32) + roi_half_px + 1).min(image.width as i32) as usize;
+    let y1 = ((seed.y as i32) + roi_half_px + 1).min(image.height as i32) as usize;
 
     if x1 <= x0 || y1 <= y0 {
         return None;
@@ -179,8 +196,12 @@ fn redetect_corner_in_roi(
 
     // Build an ImageView with origin = (x0, y0) so the refiner reads the
     // correct global pixels even though the response map has local coords.
-    let refine_view =
-        ImageView::with_origin(image.width, image.height, image.data, [x0 as i32, y0 as i32])?;
+    let refine_view = ImageView::with_origin(
+        image.width,
+        image.height,
+        image.data,
+        [x0 as i32, y0 as i32],
+    )?;
 
     let mut refiner = Refiner::from_kind(chess_params.refiner.clone());
     let raw_corners = detect_corners_from_response_with_refiner(
@@ -240,21 +261,19 @@ pub(crate) fn validate_and_fix_corners(
     markers: &[MarkerDetection],
     alignment: &CharucoAlignment,
     image: &GrayImageView<'_>,
-    px_per_square: f32,
-    threshold_rel: f32,
-    chess_params: &ChessParams,
+    cfg: &CornerValidationConfig<'_>,
 ) -> TargetDetection {
     // Fast path: validation disabled or no markers to consult.
-    if threshold_rel.is_infinite() || markers.is_empty() {
+    if cfg.threshold_rel.is_infinite() || markers.is_empty() {
         return detection;
     }
 
-    let threshold_px = threshold_rel * px_per_square;
+    let threshold_px = cfg.threshold_rel * cfg.px_per_square;
     let threshold_sq = threshold_px * threshold_px;
     let roi_half_px = (threshold_px * 3.0)
         .round()
         .max(8.0)
-        .min(px_per_square * 0.5) as i32;
+        .min(cfg.px_per_square * 0.5) as i32;
 
     // Collect board↔image correspondences and estimate a global homography.
     let (board_pts, image_pts) = collect_board_to_image_correspondences(board, markers, alignment);
@@ -298,7 +317,7 @@ pub(crate) fn validate_and_fix_corners(
         }
 
         // Corner is a candidate false positive — attempt local re-detection.
-        match redetect_corner_in_roi(image, seed, roi_half_px, chess_params) {
+        match redetect_corner_in_roi(image, seed, roi_half_px, cfg.chess_params) {
             Some(new_pos) => {
                 // Replace the false position with the re-detected one.
                 let mut fixed = corner;
