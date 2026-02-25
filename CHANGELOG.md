@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.4]
+- Fix ChArUco false-corner detection: ArUco marker-interior saddle points
+  could displace true chessboard-grid corners in the graph BFS and produce
+  ChArUco corners with correct IDs but wrong pixel positions.
+- Add marker-constrained corner validation stage in `calib-targets-charuco`:
+  estimates a board-to-image homography from all inlier marker corners and
+  flags corners whose reprojection error exceeds `corner_validation_threshold_rel
+  * px_per_square` (default 8%). Flagged corners are re-detected via a local
+  ChESS patch search seeded at the projected position.
+- Add `corner_validation_threshold_rel` and `corner_redetect_params` to
+  `CharucoDetectorParams`.
+- Add `chess-corners-core` as a production dependency of `calib-targets-charuco`.
+
 ## [0.2.3]
 - Python bindings: switch to a mixed Rust/Python package layout with private
   extension module `calib_targets._core` and typed public package sources.
