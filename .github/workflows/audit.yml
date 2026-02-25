@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          lfs: true
 
       # Uses cargo-audit via the official RustSec action, running
       # against the committed Cargo.lock without installing tools on
