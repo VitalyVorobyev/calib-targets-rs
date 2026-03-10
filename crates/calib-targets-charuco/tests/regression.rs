@@ -3,10 +3,13 @@ use calib_targets_charuco::{
     CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
-use calib_targets_core::{Corner as TargetCorner, GrayImageView, TargetKind};
+use calib_targets_core::{
+    estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,
+};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::ImageReader;
 use nalgebra::Point2;
+use std::collections::HashSet;
 use std::path::Path;
 
 fn load_gray(path: &Path) -> image::GrayImage {
@@ -54,6 +57,100 @@ fn testdata_path(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ReprojectionError {
+    id: u32,
+    error_px: f32,
+}
+
+fn median(values: &[f32]) -> f32 {
+    assert!(!values.is_empty(), "median requires at least one sample");
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let mid = sorted.len() / 2;
+    if sorted.len() % 2 == 1 {
+        sorted[mid]
+    } else {
+        0.5 * (sorted[mid - 1] + sorted[mid])
+    }
+}
+
+fn robust_error_gate(errors: &[f32], sigma_scale: f32, min_gate_px: f32) -> f32 {
+    let med = median(errors);
+    let abs_dev: Vec<f32> = errors.iter().map(|e| (e - med).abs()).collect();
+    let mad = median(&abs_dev);
+    let robust_sigma = (1.4826 * mad).max(0.25);
+    (med + sigma_scale * robust_sigma).max(min_gate_px)
+}
+
+fn compute_reprojection_errors(
+    ids: &[u32],
+    target_pts: &[Point2<f32>],
+    image_pts: &[Point2<f32>],
+    gate_sigma: f32,
+) -> Vec<ReprojectionError> {
+    assert_eq!(ids.len(), target_pts.len(), "ids/target count mismatch");
+    assert_eq!(
+        target_pts.len(),
+        image_pts.len(),
+        "target/image correspondence count mismatch"
+    );
+    assert!(
+        target_pts.len() >= 4,
+        "need at least 4 correspondences to estimate homography"
+    );
+
+    let h_all = estimate_homography_rect_to_img(target_pts, image_pts)
+        .expect("homography fit from target coordinates to image pixels");
+
+    let seed_errors: Vec<ReprojectionError> = ids
+        .iter()
+        .zip(target_pts.iter())
+        .zip(image_pts.iter())
+        .map(|((&id, &target), &image)| {
+            let pred = h_all.apply(target);
+            let dx = pred.x - image.x;
+            let dy = pred.y - image.y;
+            ReprojectionError {
+                id,
+                error_px: (dx * dx + dy * dy).sqrt(),
+            }
+        })
+        .collect();
+
+    let seed_values: Vec<f32> = seed_errors.iter().map(|sample| sample.error_px).collect();
+    let seed_gate = robust_error_gate(&seed_values, gate_sigma, 2.0);
+
+    let mut inlier_target = Vec::new();
+    let mut inlier_image = Vec::new();
+    for (idx, sample) in seed_errors.iter().enumerate() {
+        if sample.error_px <= seed_gate {
+            inlier_target.push(target_pts[idx]);
+            inlier_image.push(image_pts[idx]);
+        }
+    }
+
+    let h_refined = if inlier_target.len() >= 8 {
+        estimate_homography_rect_to_img(&inlier_target, &inlier_image).unwrap_or(h_all)
+    } else {
+        h_all
+    };
+
+    ids.iter()
+        .zip(target_pts.iter())
+        .zip(image_pts.iter())
+        .map(|((&id, &target), &image)| {
+            let pred = h_refined.apply(target);
+            let dx = pred.x - image.x;
+            let dy = pred.y - image.y;
+            ReprojectionError {
+                id,
+                error_px: (dx * dx + dy * dy).sqrt(),
+            }
+        })
+        .collect()
+}
+
 #[test]
 fn detects_charuco_on_large_png() {
     let img_path = testdata_path("large.png");
@@ -96,6 +193,57 @@ fn detects_charuco_on_large_png() {
         .iter()
         .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
     assert_unique_ids(&res, 22 * 22);
+
+    let mut ids = Vec::with_capacity(res.detection.corners.len());
+    let mut target_pts = Vec::with_capacity(res.detection.corners.len());
+    let mut image_pts = Vec::with_capacity(res.detection.corners.len());
+    for corner in &res.detection.corners {
+        let id = corner.id.expect("id");
+        let target = corner.target_position.expect("target_position");
+        ids.push(id);
+        target_pts.push(target);
+        image_pts.push(corner.position);
+    }
+
+    let errors = compute_reprojection_errors(&ids, &target_pts, &image_pts, 4.0);
+    let error_values: Vec<f32> = errors.iter().map(|sample| sample.error_px).collect();
+    let outlier_gate_px = robust_error_gate(&error_values, 6.0, 3.0);
+    let median_error_px = median(&error_values);
+
+    let outlier_ids: HashSet<u32> = errors
+        .iter()
+        .filter(|sample| sample.error_px > outlier_gate_px)
+        .map(|sample| sample.id)
+        .collect();
+
+    let mut ranked = errors;
+    ranked.sort_by(|a, b| b.error_px.total_cmp(&a.error_px));
+    let top12_ids: HashSet<u32> = ranked.iter().take(12).map(|sample| sample.id).collect();
+
+    for known_bad_id in [369_u32, 309_u32, 109_u32] {
+        let sample = ranked
+            .iter()
+            .find(|entry| entry.id == known_bad_id)
+            .expect("known problematic id should be present in large.png detection");
+        assert!(
+            !outlier_ids.contains(&known_bad_id),
+            "known problematic id {known_bad_id} is still a reprojection outlier (err={:.3}px, gate={:.3}px, median={:.3}px)",
+            sample.error_px,
+            outlier_gate_px,
+            median_error_px
+        );
+        assert!(
+            !top12_ids.contains(&known_bad_id),
+            "known problematic id {known_bad_id} still ranks among top reprojection errors (err={:.3}px)",
+            sample.error_px
+        );
+        assert!(
+            sample.error_px <= median_error_px * 3.0,
+            "known problematic id {known_bad_id} reprojection error is still far above baseline (err={:.3}px, median={:.3}px)",
+            sample.error_px,
+            median_error_px
+        );
+    }
 }
 
 #[test]

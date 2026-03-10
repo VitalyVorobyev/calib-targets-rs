@@ -1,6 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use chess_corners_core::{ChessParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -24,6 +25,38 @@ pub struct CharucoDetectorParams {
     pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     pub min_marker_inliers: usize,
+    /// Relative threshold for marker-constrained corner validation.
+    ///
+    /// A detected ChArUco corner is considered a false corner if its pixel
+    /// position deviates from the marker-predicted seed by more than
+    /// `corner_validation_threshold_rel * px_per_square` pixels.
+    ///
+    /// Set to `f32::INFINITY` to disable validation entirely.
+    /// Typical value: `0.08` (8 % of a board square side, ~5 px at 60 px/sq).
+    pub corner_validation_threshold_rel: f32,
+    /// ChESS detector parameters used for local corner re-detection.
+    ///
+    /// When validation identifies a false corner, these parameters control
+    /// the ChESS response computation and subpixel refinement in a small
+    /// patch centred on the marker-predicted seed position.
+    ///
+    /// Not serialised — reconstructed from defaults on deserialisation.
+    #[serde(skip)]
+    pub corner_redetect_params: ChessParams,
+}
+
+/// Build the `ChessParams` used for local re-detection inside a small ROI.
+///
+/// Lower threshold and looser cluster requirement compared to the global scan,
+/// because we already know approximately where the true corner should be.
+pub(crate) fn default_redetect_params() -> ChessParams {
+    ChessParams {
+        threshold_rel: 0.05,
+        nms_radius: 2,
+        min_cluster_size: 1,
+        refiner: RefinerKind::SaddlePoint(SaddlePointConfig::default()),
+        ..ChessParams::default()
+    }
 }
 
 impl CharucoDetectorParams {
@@ -56,6 +89,8 @@ impl CharucoDetectorParams {
             scan,
             max_hamming,
             min_marker_inliers: 8,
+            corner_validation_threshold_rel: 0.08,
+            corner_redetect_params: default_redetect_params(),
         }
     }
 }
