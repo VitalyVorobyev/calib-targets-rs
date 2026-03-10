@@ -14,6 +14,10 @@ Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marke
 
 Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. All target types share the same chessboard-style pipeline: build a graph over ChESS features and select connected components. The local nature of the algorithm makes it robust to lens distortion. Detection of calibration target features (ArUco markers or circles) uses a local projective warp, which avoids heavy pattern matching while remaining robust and fast. Each algorithms has parameters, but default setup should work in most of practical cases.
 
+## Diligence Statement
+
+This project is developed with AI coding assistants (`Codex` and `Claude Code`) as implementation tools. Not every code path is manually line-reviewed by a human before merge. The project author is an expert in computer vision, validates algorithmic behavior and numerical results, and enforces quality gates (`fmt`/`clippy`/tests/docs/Python checks) before release. This is engineering-assisted development, not "vibe coding."
+
 ## Quickstart
 
 ### Chessboard
