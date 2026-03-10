@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.5]
+- Maintenance release: bump crate versions to `0.2.5`.
+
 ## [0.2.4]
 - Fix ChArUco false-corner detection: ArUco marker-interior saddle points
   could displace true chessboard-grid corners in the graph BFS and produce
