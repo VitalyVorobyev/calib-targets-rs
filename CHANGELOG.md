@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+- Add the repo-local `calib-targets-ffi` crate and generated public C header for native consumers. The FFI crate remains `publish = false` and is built from the workspace rather than distributed on crates.io.
+- Add fixed-struct C detector APIs for chessboard, ChArUco, and checkerboard marker-board detection over 8-bit grayscale images, with opaque handles, explicit status codes, caller-owned query/fill buffers, full ChESS configuration, and built-in dictionary names only.
+- Add repo-owned native validation for the C API: generated-header drift checks, a plain C smoke example, a thin header-only C++17 RAII wrapper/example, and a Cargo-driven smoke test that compiles and runs external C and C++ consumers against the built shared library.
+- Clarify current native-consumer boundaries: no CMake packaging or prebuilt binaries yet; ergonomic C++/CMake integration and the broader release-ready C API guide/tutorial work remain follow-up items.
+
 ## [0.2.5]
 - Maintenance release: bump crate versions to `0.2.5`.
 
