@@ -21,7 +21,7 @@
 
 ## Active Sprint
 
-- `FFI-006` (`P0`, docs, implementer) Publish a release-ready C API README and concise tutorials.
+- _None currently._
 
 ## Up Next
 - `FFI-007` (`P1`, infra, implementer) Add ergonomic C++ consumer packaging and CMake API after the C API release.
@@ -34,7 +34,7 @@
 | FFI-003 | done | P1 | infra | Add conservative detector handles and detection entry points | implementer | Delivered the approved v1 detector ABI for grayscale image input and fixed-struct config/result transport, including ChESS config. |
 | FFI-004 | done | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Added repo-owned C/C++ examples, a thin RAII wrapper, automated external compile/smoke coverage, and usage docs without widening the approved C ABI. |
 | FFI-005 | done | P0 | docs | Add C API changelog entries and release notes | implementer | Added an `Unreleased` changelog entry plus a checked-in release-note draft for the C API launch, with current support boundaries and deferred C++/CMake follow-up called out explicitly. |
-| FFI-006 | todo | P0 | docs | Publish a release-ready C API README and concise tutorials | implementer | Block the next release until the repo has a concise user-facing C API guide with build/link instructions, ownership/error rules, minimal detect tutorials, and top-level README navigation for C consumers. |
+| FFI-006 | done | P0 | docs | Publish a release-ready C API README and concise tutorials | implementer | Added a top-level native entry point plus a release-facing C API guide with build/link instructions, ownership/error rules, query/fill coverage, and concise C/C++ tutorials aligned to the shipped examples. |
 | FFI-007 | todo | P1 | infra | Add ergonomic C++ consumer packaging and CMake API | implementer | Planned now for post-release execution; package the existing thin C++ wrapper as a clean CMake consumer surface without widening the underlying C ABI. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
@@ -67,6 +67,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| FFI-006 | 2026-03-11 | docs | Publish a release-ready C API README and concise tutorials | Added a top-level native entry point and rewrote the FFI README into a release-facing C API guide with support boundaries, build/link flow, ownership rules, and concise example-backed tutorials. |
 | FFI-005 | 2026-03-11 | docs | Add C API changelog entries and release notes | Added an `Unreleased` changelog entry and a checked-in release-note draft for the C API launch, with explicit support boundaries and deferred post-release work. |
 | FFI-004 | 2026-03-11 | docs | Add C examples, C++ RAII wrapper, and ABI verification | Added repo-owned C/C++ smoke consumers, a header-only RAII wrapper, native compile/run smoke validation, CI header checks, and FFI usage docs. |
 | FFI-003 | 2026-03-11 | infra | Add conservative detector handles and detection entry points | Added the v1 detector ABI for chessboard, ChArUco, and marker-board detection with fixed structs, query/fill arrays, and stable status/error mapping. |

@@ -1,368 +1,315 @@
-# C/C++ FFI Plan
+# C API Guide
 
-## Repo Understanding Summary
+`calib-targets-rs` ships a repo-local native FFI crate, `calib-targets-ffi`, for
+C and C++ consumers that want the same detector stack exposed by the Rust
+facade crate.
 
-This workspace already has a clear top-level API boundary:
+This guide covers the current release-facing native surface:
 
-- `crates/calib-targets` is the facade crate that re-exports the detector crates and provides end-to-end `detect_*` helpers from grayscale images and raw `u8` image buffers.
-- `crates/calib-targets-core` contains geometry/image primitives and detection result types, but it is intentionally detector-agnostic and does not expose the full user-facing workflow.
-- `crates/calib-targets-chessboard`, `crates/calib-targets-charuco`, and `crates/calib-targets-marker` hold the detector-specific params/results/detector structs.
-- `crates/calib-targets-py` is the only current foreign-language boundary. It depends on the facade crate rather than on lower crates directly, and it already uses serde-backed config/result conversion to avoid binding every Rust type 1:1.
+- generated public header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
+- header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
+- repo-owned C example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
+- repo-owned C++ example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
 
-Implication for FFI design: the correct crate boundary is above the existing facade API, not inside `core` and not as separate FFI layers per detector crate.
+For the architectural rationale behind the ABI shape, see the
+[decision record](./decision-record.md). This document focuses on consumption,
+not design history.
 
-## Recommended FFI Crate Placement
+## Current Support Boundaries
 
-Create a dedicated crate:
+- `calib-targets-ffi` is repo-local and remains `publish = false`.
+- Build the shared library from this workspace with Cargo; there is no crates.io
+  package, no prebuilt binary distribution, and no CMake package yet.
+- Image input is limited to 8-bit grayscale buffers via `ct_gray_image_u8_t`.
+- The v1 ABI supports built-in dictionary ids only.
+- The C++ helper wrapper currently assumes a C++17-capable compiler.
 
-- `crates/calib-targets-ffi`
+## What Ships
 
-Recommended dependencies and role:
+The native ABI currently exposes:
 
-- Depend on `calib-targets` with the `image` feature enabled.
-- Reuse facade-level detection entry points (`detect_chessboard_from_gray_u8`, `detect_charuco_from_gray_u8`, `detect_marker_board_from_gray_u8`) where possible.
-- Reuse the detector structs (`ChessboardDetector`, `CharucoDetector`, `MarkerBoardDetector`) internally for opaque handles when setup/validation should be cached across calls.
-- Add `cbindgen` configuration in this crate, with header output treated as part of the crate deliverable.
-- Keep all ABI-only types and panic/error containment in this crate so lower crates stay pure Rust and unconstrained by C ABI concerns.
+- chessboard detection via `ct_chessboard_detector_*`
+- ChArUco detection via `ct_charuco_detector_*`
+- checkerboard marker-board detection via `ct_marker_board_detector_*`
+- shared status/error retrieval through `ct_status_t` and
+  `ct_last_error_message`
+- caller-owned result arrays with query/fill patterns instead of heap ownership
+  crossing the ABI boundary
 
-Why not place the ABI lower?
+## Build And Link
 
-- `calib-targets-core` is too low-level; it lacks the caller-facing detection workflow and would force the C API to reconstruct public behavior from internal pieces.
-- Binding directly to `charuco`, `marker`, or `chessboard` would fracture the foreign-language surface and bypass the existing facade boundary already used by Python.
-- The facade crate is the smallest layer that already reflects the repo's intended end-to-end public API.
+Build the shared library from the workspace root:
 
-## Confirmed Decisions
-
-The following v1 decisions are now fixed:
-
-- Config and result transport must use fixed C structs, not JSON.
-- All config surfaces, including ChESS configuration, are exposed from day 1.
-- Built-in dictionary names only in v1.
-- Initial library delivery target is `cdylib`.
-- The API must read as a first-class C API with a thin first-class C++ wrapper above it, not as a generic string transport.
-
-## Recommended v1 Scope
-
-Updated v1 recommendation:
-
-- One FFI crate.
-- One shared header.
-- Grayscale `u8` image input only.
-- Opaque detector handles for chessboard, ChArUco, and marker-board detectors.
-- Fixed `repr(C)` config and result structs.
-- Stable detection results only; Rust-only debug/report structs are not part of the v1 ABI.
-- Built-in dictionary names only.
-- `cdylib` first.
-- Thin C++ RAII wrapper planned on top, but not part of the ABI contract itself.
-
-## Proposed Exported API Shape
-
-### ABI Principles
-
-- C ABI only: `extern "C"`, `#[no_mangle]`, `#[repr(C)]`.
-- FFI-safe types only.
-- No panics cross the boundary; all exported functions wrap Rust internals in `catch_unwind`.
-- Explicit status codes for every call.
-- Explicit ownership and free rules.
-- Caller-owned output buffers for serialized results and error messages.
-- Opaque handles for complex/stateful Rust detector objects.
-
-### Fixed Struct ABI Strategy
-
-Confirmed v1 transport:
-
-- Config in: fixed `repr(C)` structs.
-- Result out: fixed `repr(C)` structs plus caller-owned arrays.
-
-Implications:
-
-- The FFI crate must define explicit ABI mirrors for the caller-visible configuration types.
-- Optional values in Rust must become explicit presence flags or sentinel conventions in C.
-- Nested result graphs must be flattened into count + pointer or count + fill-call patterns.
-- The ABI should expose stable, detector-focused data, not raw serialized Rust internals.
-
-Recommended rule:
-
-- Mirror only the stable caller-facing config/result surface, not every Rust implementation detail.
-- Exclude debug/report-only fields from v1.
-- Keep all variable-length outputs caller-owned via query/fill APIs.
-
-### Recommended C Header Sketch
-
-```c
-typedef enum ct_status {
-    CT_STATUS_OK = 0,
-    CT_STATUS_NOT_FOUND = 1,
-    CT_STATUS_INVALID_ARGUMENT = 2,
-    CT_STATUS_BUFFER_TOO_SMALL = 3,
-    CT_STATUS_CONFIG_ERROR = 4,
-    CT_STATUS_INTERNAL_ERROR = 255
-} ct_status_t;
-
-typedef struct ct_gray_image_u8 {
-    uint32_t width;
-    uint32_t height;
-    size_t stride_bytes;
-    const uint8_t* data;
-} ct_gray_image_u8_t;
-
-typedef struct ct_chessboard_detector ct_chessboard_detector_t;
-typedef struct ct_charuco_detector ct_charuco_detector_t;
-typedef struct ct_marker_board_detector ct_marker_board_detector_t;
-
-const char* ct_version_string(void);
-
-ct_status_t ct_last_error_message(char* out_utf8, size_t out_capacity, size_t* out_len);
-
-typedef struct ct_presence_u32 {
-    uint32_t has_value;
-    uint32_t value;
-} ct_presence_u32_t;
-
-typedef struct ct_presence_f32 {
-    uint32_t has_value;
-    float value;
-} ct_presence_f32_t;
-
-typedef struct ct_chess_corner_params {
-    uint32_t use_radius10;
-    uint32_t descriptor_use_radius10_has_value;
-    uint32_t descriptor_use_radius10;
-    float threshold_rel;
-    uint32_t threshold_abs_has_value;
-    float threshold_abs;
-    uint32_t nms_radius;
-    uint32_t min_cluster_size;
-} ct_chess_corner_params_t;
-
-typedef struct ct_pyramid_params {
-    uint32_t num_levels;
-    size_t min_size;
-} ct_pyramid_params_t;
-
-typedef struct ct_coarse_to_fine_params {
-    ct_pyramid_params_t pyramid;
-    uint32_t refinement_radius;
-    float merge_radius;
-} ct_coarse_to_fine_params_t;
-
-typedef struct ct_chess_config {
-    ct_chess_corner_params_t params;
-    ct_coarse_to_fine_params_t multiscale;
-} ct_chess_config_t;
-
-typedef struct ct_charuco_detector_params ct_charuco_detector_params_t;
-
-ct_status_t ct_charuco_detector_create(
-    const ct_charuco_detector_params_t* params,
-    ct_charuco_detector_t** out_detector);
-
-void ct_charuco_detector_destroy(ct_charuco_detector_t* detector);
-
-ct_status_t ct_charuco_detector_detect(
-    const ct_charuco_detector_t* detector,
-    const ct_gray_image_u8_t* image,
-    ct_target_detection_t* out_detection,
-    ct_marker_detection_t* out_markers,
-    size_t markers_capacity,
-    size_t* out_markers_len,
-    ct_grid_alignment_t* out_alignment);
+```bash
+cargo build -p calib-targets-ffi
 ```
 
-Apply the same pattern to chessboard and marker-board detectors.
+The public headers live in:
 
-### Ownership Model
+```text
+crates/calib-targets-ffi/include/
+```
 
-- `*_create` allocates a detector handle owned by the caller after success.
-- `*_destroy` is always safe on non-null handles and is the only way to free them.
-- Detection results use caller-owned output objects and arrays.
-- Variable-length outputs use a two-call pattern:
-  - first call with `capacity = 0` and output pointer `NULL` to query required count,
-  - second call with a caller-allocated array to receive the values.
-- Error messages still use a caller-owned UTF-8 buffer-query pattern.
+The shared library is produced in the usual Cargo target directory, for example:
 
-### Recommended ABI Struct Families
+- macOS: `target/debug/libcalib_targets_ffi.dylib`
+- Linux: `target/debug/libcalib_targets_ffi.so`
+- Windows: `target/debug/calib_targets_ffi.dll`
 
-Configuration families that should be mirrored explicitly in `repr(C)` form:
+Typical include and link flags from the repo root look like this:
 
-- Shared/common:
-  - grayscale image descriptor
-  - optional scalar helpers / presence wrappers
-  - ChESS config (`ChessConfig`, `ChessCornerParams`, `PyramidParams`, `CoarseToFineParams`)
-  - orientation clustering config
-  - grid graph config
-- Chessboard:
-  - `ChessboardParams`
+```bash
+cc -std=c11 -Wall -Wextra -pedantic \
+  -I crates/calib-targets-ffi/include \
+  your_app.c \
+  -L target/debug \
+  -lcalib_targets_ffi \
+  -o your_app
+```
+
+On Unix-like platforms you usually also want either an rpath or a runtime
+library search path:
+
+- macOS: `DYLD_LIBRARY_PATH=target/debug`
+- Linux: `LD_LIBRARY_PATH=target/debug`
+
+If you want to verify the checked-in header before integrating, run:
+
+```bash
+cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+```
+
+## API Model
+
+### Status Codes And Error Text
+
+Every exported function returns `ct_status_t`.
+
+- `CT_STATUS_OK` means success.
+- `CT_STATUS_NOT_FOUND` means the detector ran successfully but found no target.
+- `CT_STATUS_INVALID_ARGUMENT`, `CT_STATUS_BUFFER_TOO_SMALL`, and
+  `CT_STATUS_CONFIG_ERROR` indicate caller-visible failures.
+- `CT_STATUS_INTERNAL_ERROR` is reserved for unexpected internal failures.
+
+Failure details are retrieved with `ct_last_error_message(...)`. Use the same
+query/copy pattern as the result arrays:
+
+```c
+size_t len = 0;
+ct_status_t status = ct_last_error_message(NULL, 0, &len);
+```
+
+Then allocate a buffer of at least `len + 1` bytes and call it again.
+
+### Handle Ownership
+
+Each detector family uses an opaque handle:
+
+- `ct_chessboard_detector_t`
+- `ct_charuco_detector_t`
+- `ct_marker_board_detector_t`
+
+Ownership rules are simple:
+
+- `*_create(...)` allocates a handle on success.
+- `*_destroy(...)` frees it.
+- `*_destroy(NULL)` is allowed.
+- Do not free a handle yourself or destroy it twice.
+
+### Caller-Owned Arrays
+
+Variable-length outputs never allocate memory for you. Instead:
+
+1. Call the detect function with the output array pointer set to `NULL` and its
+   capacity set to `0`.
+2. Read the required length from the corresponding `*_len` out-parameter.
+3. Allocate that many entries in your own memory.
+4. Call the detect function again to fill the array.
+
+For chessboard detection that pattern is:
+
+```c
+size_t corners_len = 0;
+ct_chessboard_detector_detect(detector, &image, &result, NULL, 0, &corners_len);
+```
+
+Then allocate `corners_len` `ct_labeled_corner_t` entries and call
+`ct_chessboard_detector_detect(...)` again.
+
+## Plain C Tutorial: Chessboard Detection
+
+The complete runnable example in this repo is:
+
+- `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
+
+That example uses the repo-local helper header
+`crates/calib-targets-ffi/examples/native_smoke_common.h` for two things:
+
+- loading a binary PGM fixture into `ct_gray_image_u8_t`
+- constructing a known-good `ct_chessboard_detector_config_t`
+
+`native_smoke_common.h` is example scaffolding, not part of the public API.
+Downstream applications should build their own config/image-loading helpers and
+fill the public ABI structs from `calib_targets_ffi.h`.
+
+The end-to-end detection flow itself looks like this:
+
+```c
+ct_chessboard_detector_t *detector = NULL;
+ct_chessboard_detector_config_t config = ct_native_default_chessboard_detector_config();
+ct_chessboard_result_t result;
+ct_labeled_corner_t *corners = NULL;
+size_t corners_len = 0;
+
+memset(&result, 0, sizeof(result));
+
+ct_status_t status = ct_chessboard_detector_create(&config, &detector);
+if (status != CT_STATUS_OK) {
+  /* read ct_last_error_message(...) */
+}
+
+status = ct_chessboard_detector_detect(detector, &image, &result, NULL, 0, &corners_len);
+if (status != CT_STATUS_OK) {
+  /* handle failure */
+}
+
+corners = (ct_labeled_corner_t *)calloc(corners_len, sizeof(*corners));
+status = ct_chessboard_detector_detect(
+    detector,
+    &image,
+    &result,
+    corners,
+    corners_len,
+    &corners_len);
+if (status != CT_STATUS_OK) {
+  /* handle failure */
+}
+
+ct_chessboard_detector_destroy(detector);
+free(corners);
+```
+
+The checked-in example also demonstrates two important failure paths worth
+preserving in downstream code:
+
+- invalid create arguments return `CT_STATUS_INVALID_ARGUMENT`
+- short output buffers return `CT_STATUS_BUFFER_TOO_SMALL`
+
+To compile and run the repo-owned example from the workspace root on the same
+macOS/Linux-style path covered by the repo smoke test:
+
+```bash
+cargo build -p calib-targets-ffi
+
+cc -std=c11 -Wall -Wextra -pedantic \
+  -I crates/calib-targets-ffi/include \
+  -I crates/calib-targets-ffi/examples \
+  crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c \
+  -L target/debug \
+  -lcalib_targets_ffi \
+  -Wl,-rpath,$PWD/target/debug \
+  -o chessboard_consumer_smoke
+```
+
+Then run it against a grayscale PGM fixture:
+
+```bash
+./chessboard_consumer_smoke path/to/image.pgm
+```
+
+If you want a repo-owned end-to-end proof, use the native smoke test instead:
+
+```bash
+cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
+```
+
+## C++ Tutorial: Thin Wrapper Layer
+
+The helper wrapper lives in:
+
+- `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
+
+It is header-only and stays strictly above the C ABI:
+
+- detector ownership is mapped into RAII objects
+- status handling stays explicit through `calib_targets::ffi::Status`
+- the wrapper does not introduce new exported symbols
+
+The current wrapper example is:
+
+- `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
+
+Minimal usage looks like this:
+
+```cpp
+ct_chessboard_detector_config_t config = ct_native_default_chessboard_detector_config();
+calib_targets::ffi::ChessboardDetector detector;
+ct_chessboard_result_t result{};
+std::vector<ct_labeled_corner_t> corners;
+
+auto status = detector.create(config);
+if (!status.ok()) {
+  /* inspect status.message */
+}
+
+status = detector.detect(image.descriptor, &result, &corners);
+if (!status.ok()) {
+  /* inspect status.message */
+}
+```
+
+The wrapper example uses the same repo-local helper header as the C example for
+fixture loading and default config construction. The public contract is still
+the C ABI types from `calib_targets_ffi.h`.
+
+Compile it from the workspace root on the same macOS/Linux-style path covered by
+the repo smoke test, using a C++17-capable compiler:
+
+```bash
+cargo build -p calib-targets-ffi
+
+c++ -std=c++17 -Wall -Wextra -pedantic \
+  -I crates/calib-targets-ffi/include \
+  -I crates/calib-targets-ffi/examples \
+  crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp \
+  -L target/debug \
+  -lcalib_targets_ffi \
+  -Wl,-rpath,$PWD/target/debug \
+  -o chessboard_wrapper_smoke
+```
+
+## Other Detector Families
+
+The other detector families follow the same broad model:
+
 - ChArUco:
-  - board spec
-  - marker layout enum
-  - scan/decode config
-  - detector params
+  `ct_charuco_detector_create`, `ct_charuco_detector_detect`,
+  `ct_charuco_detector_destroy`
 - Marker board:
-  - circle polarity enum
-  - marker circle spec
-  - board layout
-  - circle score config
-  - circle match config
-  - detector params
+  `ct_marker_board_detector_create`, `ct_marker_board_detector_detect`,
+  `ct_marker_board_detector_destroy`
 
-Result families that should be mirrored explicitly in `repr(C)` form:
+The main differences are the output arrays:
 
-- common corner/grid/alignment structs
-- target detection header
-- labeled corner output array
-- chessboard result header
-- marker detection array
-- marker-board circle candidate / match arrays
+- ChArUco fills both `ct_labeled_corner_t` and `ct_marker_detection_t`
+- marker-board detection fills labeled corners, circle candidates, and circle
+  matches
 
-Recommended exclusion from v1:
+The same ownership and query/fill rules apply.
 
-- Rust debug structs such as graph debug, orientation histograms, and other report-oriented payloads
-- serialization-only compatibility helpers
+## Validation Commands
 
-### Recommended Rust Internal Mapping
+These commands exercise the native surface the repo currently documents:
 
-- Chessboard handle wraps `calib_targets_chessboard::ChessboardDetector`.
-- ChArUco handle wraps `calib_targets_charuco::CharucoDetector`.
-- Marker-board handle wraps `calib_targets_marker::MarkerBoardDetector`.
-- Shared image adapter converts `ct_gray_image_u8_t` to an internal grayscale view or owned buffer.
-- Shared conversion layer maps fixed ABI structs into repo-native Rust types and maps stable Rust outputs back into fixed ABI structs and caller-owned arrays.
+```bash
+cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
+```
 
-## Resolved Dictionary Scope
+## Design History
 
-Decision:
+If you need the design rationale rather than the consumer workflow, start with:
 
-- V1 supports built-in dictionary names only.
-
-Rationale:
-
-- The current Rust `Dictionary` type is built around static built-ins.
-- A custom-dictionary ABI would add ownership, validation, and compatibility complexity to the very first C ABI release.
-- Built-in names keep the board-spec ABI smaller and easier to stabilize.
-
-Deferred follow-up:
-
-- If a concrete downstream caller needs custom dictionaries, add that as a separate post-v1 backlog task with its own ABI design review.
-
-## Implementation Plan
-
-### Milestone 0: ABI Decision Record
-
-Status:
-
-- Complete.
-
-Deliverables:
-
-- Decision record in `docs/ffi/decision-record.md`.
-
-### Milestone 1: Crate Scaffold and ABI Runtime Layer
-
-Goal:
-
-- Introduce the dedicated FFI crate without exposing detector APIs yet.
-
-Work:
-
-- Add `crates/calib-targets-ffi` to the workspace.
-- Configure `cdylib` output and `cbindgen`.
-- Define `ct_status_t`, shared image structs, version functions, and error buffer API.
-- Define shared `repr(C)` config/result primitives and optional-value conventions.
-- Add panic containment and internal error capture helpers.
-
-Acceptance:
-
-- Header generation works deterministically.
-- A C smoke test can call version/error functions successfully.
-
-### Milestone 2: Detector Handles and Detection Entry Points
-
-Goal:
-
-- Expose the minimal v1 functionality over the approved ABI.
-
-Work:
-
-- Add create/destroy APIs for chessboard, ChArUco, and marker-board detectors.
-- Add fixed-struct detect calls using caller-owned output buffers and query/fill patterns.
-- Map Rust `Option`/`Result` outcomes to explicit status codes.
-- Expose full approved config surfaces, including ChESS config, from day 1.
-
-Acceptance:
-
-- Each detector can be created from approved fixed-struct config input.
-- Each detector can process a grayscale image buffer and return stable fixed-struct results plus caller-owned arrays.
-- No panic crosses the ABI boundary.
-
-### Milestone 3: Header, Tests, and Packaging Hardening
-
-Goal:
-
-- Make the ABI reproducible and safe to consume.
-
-Work:
-
-- Add C integration tests.
-- Add ABI smoke checks for null pointers, short buffers, invalid config, and not-found results.
-- Check generated header drift in CI.
-
-Acceptance:
-
-- CI fails on header drift or FFI regressions.
-- Ownership and error rules are documented and tested.
-
-### Milestone 4: Thin C++ Wrapper
-
-Goal:
-
-- Add a convenience C++ layer without widening the C ABI.
-
-Work:
-
-- Implement RAII wrappers for detector handles.
-- Wrap status/error handling into C++ exceptions or status objects, depending on project preference.
-- Add small end-to-end examples.
-
-Acceptance:
-
-- The wrapper owns handles correctly and does not bypass the C ABI.
-- Examples compile and run against the generated header/library.
-
-## Repo-Owned Native Consumer Flow
-
-The repo now treats native consumption as a first-class validation path instead of a manual follow-up.
-
-Checked-in artifacts:
-
-- Generated C header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
-- Header-only C++ RAII wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
-- Plain C consumer smoke example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
-- C++ wrapper smoke example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
-- Integration harness: `crates/calib-targets-ffi/tests/native_consumer_smoke.rs`
-
-Local validation entry points:
-
-- `cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check`
-- `cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture`
-
-The native smoke harness builds an isolated `calib-targets-ffi` shared library, converts `testdata/mid.png` into a temporary binary PGM fixture for the plain C/C++ loaders, compiles the checked-in C and C++ examples against the generated header, and runs them. The C example exercises version retrieval, last-error retrieval, and the chessboard query/fill convention including a short-buffer failure. The C++ example exercises the RAII wrapper on top of the same C ABI without introducing any new exports.
-
-Build/link expectations for downstream callers:
-
-- Build the library with `cargo build -p calib-targets-ffi`.
-- Include `crates/calib-targets-ffi/include/`.
-- Link against the produced `calib_targets_ffi` shared library from `target/debug/` or the corresponding release directory.
-- Keep ownership rules unchanged: destroy only the handle type you created, keep output arrays caller-owned, and read failure text through `ct_last_error_message`.
-
-## Recommended Backlog Breakdown
-
-- `FFI-001` ABI decision record and scope freeze.
-- `FFI-002` FFI crate scaffold and header generation.
-- `FFI-003` Detector handles and detection entry points.
-- `FFI-004` C examples, C++ wrapper, and CI/docs hardening.
-
-## Current State
-
-Major ABI decisions are now resolved.
-
-Implementation can begin with `FFI-002`.
+- `docs/ffi/decision-record.md`
+- `docs/handoffs/TASK-001-plan-c-ffi-crate/01-architect.md`
+- `docs/handoffs/TASK-004-add-c-examples-cpp-raii-wrapper-and-abi-verification/01-architect.md`
