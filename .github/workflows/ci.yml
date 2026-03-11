@@ -41,6 +41,10 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Check generated FFI header
+        if: matrix.toolchain == 'stable'
+        run: cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+
       - name: test (all crates, default features)
         run: cargo test --workspace --all-targets
 

@@ -328,6 +328,32 @@ Acceptance:
 - The wrapper owns handles correctly and does not bypass the C ABI.
 - Examples compile and run against the generated header/library.
 
+## Repo-Owned Native Consumer Flow
+
+The repo now treats native consumption as a first-class validation path instead of a manual follow-up.
+
+Checked-in artifacts:
+
+- Generated C header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
+- Header-only C++ RAII wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
+- Plain C consumer smoke example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
+- C++ wrapper smoke example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
+- Integration harness: `crates/calib-targets-ffi/tests/native_consumer_smoke.rs`
+
+Local validation entry points:
+
+- `cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check`
+- `cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture`
+
+The native smoke harness builds an isolated `calib-targets-ffi` shared library, converts `testdata/mid.png` into a temporary binary PGM fixture for the plain C/C++ loaders, compiles the checked-in C and C++ examples against the generated header, and runs them. The C example exercises version retrieval, last-error retrieval, and the chessboard query/fill convention including a short-buffer failure. The C++ example exercises the RAII wrapper on top of the same C ABI without introducing any new exports.
+
+Build/link expectations for downstream callers:
+
+- Build the library with `cargo build -p calib-targets-ffi`.
+- Include `crates/calib-targets-ffi/include/`.
+- Link against the produced `calib_targets_ffi` shared library from `target/debug/` or the corresponding release directory.
+- Keep ownership rules unchanged: destroy only the handle type you created, keep output arrays caller-owned, and read failure text through `ct_last_error_message`.
+
 ## Recommended Backlog Breakdown
 
 - `FFI-001` ABI decision record and scope freeze.

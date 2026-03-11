@@ -21,18 +21,18 @@
 
 ## Active Sprint
 
-- `FFI-003` Expose conservative chessboard / ChArUco / marker-board detector entry points over the approved ABI.
+- _None currently._
 
 ## Up Next
-- `FFI-004` Add C examples, C++ RAII wrapper, ABI tests, and release/docs integration.
+- _None currently._
 
 ## Backlog
 
 | ID | Status | Priority | Type | Title | Role | Notes |
 |----|--------|----------|------|-------|------|-------|
 | FFI-002 | done | P1 | infra | Scaffold `calib-targets-ffi` crate and header generation | implementer | Added the workspace FFI crate, shared ABI runtime, deterministic `cbindgen` header generation, and the initial public header. |
-| FFI-003 | in-progress | P1 | infra | Add conservative detector handles and detection entry points | implementer | Implement approved v1 ABI for grayscale image input and fixed-struct config/result transport, including ChESS config. |
-| FFI-004 | todo | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Thin C++ wrapper on top of the C ABI, plus docs and CI coverage including automated C header compile smoke checks. |
+| FFI-003 | done | P1 | infra | Add conservative detector handles and detection entry points | implementer | Delivered the approved v1 detector ABI for grayscale image input and fixed-struct config/result transport, including ChESS config. |
+| FFI-004 | done | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Added repo-owned C/C++ examples, a thin RAII wrapper, automated external compile/smoke coverage, and usage docs without widening the approved C ABI. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -45,7 +45,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 ## Acceptance Scenarios (Attached to Tasks)
 - `FFI-002` Header generation is deterministic and checked in CI; create/destroy APIs are leak-free under sanitizer/valgrind-style checks.
 - `FFI-003` A C caller can detect chessboard / ChArUco / marker-board targets from an 8-bit grayscale buffer and retrieve stable fixed-struct results without Rust panics crossing the boundary.
-- `FFI-004` The C++ RAII wrapper demonstrates correct ownership and error propagation without widening the underlying C ABI.
+- `FFI-004` Repo-owned C and C++ consumers compile and exercise the generated header/library in CI, and the thin C++ RAII wrapper preserves ownership and explicit error propagation without widening the underlying C ABI.
 
 ## Locked Defaults
 - Dedicated `calib-targets-ffi` crate layered on top of `calib-targets`, not on individual lower crates.
@@ -61,5 +61,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| FFI-004 | 2026-03-11 | docs | Add C examples, C++ RAII wrapper, and ABI verification | Added repo-owned C/C++ smoke consumers, a header-only RAII wrapper, native compile/run smoke validation, CI header checks, and FFI usage docs. |
+| FFI-003 | 2026-03-11 | infra | Add conservative detector handles and detection entry points | Added the v1 detector ABI for chessboard, ChArUco, and marker-board detection with fixed structs, query/fill arrays, and stable status/error mapping. |
 | FFI-002 | 2026-03-11 | infra | Scaffold `calib-targets-ffi` crate and header generation | Added `calib-targets-ffi`, deterministic header generation, shared ABI status/error handling, and the initial generated header. |
 | FFI-001 | 2026-03-10 | design | Freeze FFI v1 ABI scope | Fixed structs, full config surface, built-in dictionary names only, and `cdylib` first. See `docs/ffi/decision-record.md`. |
