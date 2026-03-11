@@ -2,12 +2,16 @@ use super::alignment_select::select_alignment;
 use super::corner_mapping::map_charuco_corners;
 use super::corner_validation::{validate_and_fix_corners, CornerValidationConfig};
 use super::marker_sampling::{build_corner_map, build_marker_cells};
-use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
+use super::{
+    CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun, CharucoDetectorParams,
+    CharucoDiagnostics,
+};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessboardDetector;
 use calib_targets_core::{Corner, GrayImageView};
+use std::time::Instant;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -25,7 +29,6 @@ impl CharucoDetector {
     pub fn new(mut params: CharucoDetectorParams) -> Result<Self, CharucoBoardError> {
         let board_cfg = params.charuco;
         if params.chessboard.expected_rows.is_none() {
-            // `board_cfg.rows/cols` are square counts; chessboard detector expects inner corners.
             params.chessboard.expected_rows = board_cfg.rows.checked_sub(1);
         }
         if params.chessboard.expected_cols.is_none() {
@@ -63,52 +66,95 @@ impl CharucoDetector {
     }
 
     /// Detect a ChArUco board from an image and a set of corners.
-    ///
-    /// This uses per-cell marker sampling by default. Set
-    /// `build_rectified_image` if you need a rectified output image.
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
         corners: &[Corner],
     ) -> Result<CharucoDetectionResult, CharucoDetectError> {
+        self.detect_with_diagnostics(image, corners).result
+    }
+
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
+    pub fn detect_with_diagnostics(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[Corner],
+    ) -> CharucoDetectionRun {
+        let total_start = Instant::now();
+        let chessboard_start = Instant::now();
         let detector = ChessboardDetector::new(self.params.chessboard.clone())
             .with_grid_search(self.params.graph.clone());
-        let chessboard = detector
-            .detect_from_corners(corners)
-            .ok_or(CharucoDetectError::ChessboardNotDetected)?;
+        let chessboard_run = detector.detect_from_corners_with_diagnostics(corners);
+        let mut diagnostics = CharucoDiagnostics {
+            chessboard: chessboard_run.diagnostics.clone(),
+            ..CharucoDiagnostics::default()
+        };
+        diagnostics.timings.chessboard_ms = elapsed_ms(chessboard_start);
 
+        let Some(chessboard) = chessboard_run.detection else {
+            diagnostics.timings.total_ms = elapsed_ms(total_start);
+            return CharucoDetectionRun {
+                result: Err(CharucoDetectError::ChessboardNotDetected),
+                diagnostics,
+            };
+        };
+
+        let decode_start = Instant::now();
         let corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
         let cells = build_marker_cells(&corner_map);
-
-        let scan_cfg = self.params.scan.clone();
+        diagnostics.candidate_cell_count = cells.len();
 
         let markers = scan_decode_markers_in_cells(
             image,
             &cells,
             self.params.px_per_square,
-            &scan_cfg,
+            &self.params.scan,
             &self.matcher,
         );
+        diagnostics.decoded_marker_count = markers.len();
+        diagnostics.timings.decode_ms = elapsed_ms(decode_start);
 
         if markers.is_empty() {
-            return Err(CharucoDetectError::NoMarkers);
+            diagnostics.timings.total_ms = elapsed_ms(total_start);
+            return CharucoDetectionRun {
+                result: Err(CharucoDetectError::NoMarkers),
+                diagnostics,
+            };
         }
 
-        let (markers, alignment) = self
-            .select_and_refine_markers(markers)
-            .ok_or(CharucoDetectError::AlignmentFailed { inliers: 0usize })?;
+        let alignment_start = Instant::now();
+        let (markers, alignment) = match self.select_and_refine_markers(markers) {
+            Some(run) => run,
+            None => {
+                diagnostics.timings.alignment_ms = elapsed_ms(alignment_start);
+                diagnostics.timings.total_ms = elapsed_ms(total_start);
+                return CharucoDetectionRun {
+                    result: Err(CharucoDetectError::AlignmentFailed { inliers: 0 }),
+                    diagnostics,
+                };
+            }
+        };
+        diagnostics.aligned_marker_count = markers.len();
+        diagnostics.alignment_inlier_count = alignment.marker_inliers.len();
+        diagnostics.timings.alignment_ms = elapsed_ms(alignment_start);
 
         if alignment.marker_inliers.len() < self.params.min_marker_inliers {
-            return Err(CharucoDetectError::AlignmentFailed {
-                inliers: alignment.marker_inliers.len(),
-            });
+            diagnostics.timings.total_ms = elapsed_ms(total_start);
+            return CharucoDetectionRun {
+                result: Err(CharucoDetectError::AlignmentFailed {
+                    inliers: alignment.marker_inliers.len(),
+                }),
+                diagnostics,
+            };
         }
 
-        let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+        let map_validate_start = Instant::now();
+        let mapped = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+        diagnostics.mapped_corner_count_before_validation = mapped.corners.len();
 
-        let detection = validate_and_fix_corners(
-            detection,
+        let validation = validate_and_fix_corners(
+            mapped,
             &self.board,
             &markers,
             &alignment,
@@ -119,12 +165,19 @@ impl CharucoDetector {
                 chess_params: &self.params.corner_redetect_params,
             },
         );
+        diagnostics.final_corner_count = validation.detection.corners.len();
+        diagnostics.corner_validation = Some(validation.diagnostics);
+        diagnostics.timings.map_validate_ms = elapsed_ms(map_validate_start);
+        diagnostics.timings.total_ms = elapsed_ms(total_start);
 
-        Ok(CharucoDetectionResult {
-            detection,
-            markers,
-            alignment: alignment.alignment,
-        })
+        CharucoDetectionRun {
+            result: Ok(CharucoDetectionResult {
+                detection: validation.detection,
+                markers,
+                alignment: alignment.alignment,
+            }),
+            diagnostics,
+        }
     }
 
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, markers),
@@ -133,9 +186,11 @@ impl CharucoDetector {
         &self,
         markers: Vec<MarkerDetection>,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-        // TODO: just run solve_aligment on the full set of markers
         let (markers, alignment) = select_alignment(&self.board, markers)?;
-
         Some((markers, alignment))
     }
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1_000.0
 }

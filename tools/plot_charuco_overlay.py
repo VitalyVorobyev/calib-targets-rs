@@ -262,6 +262,47 @@ def draw_markers(ax, markers, prefer_img, color="cyan"):
             ),
         )
 
+
+def extract_coverage(data):
+    diagnostics = data.get("diagnostics") or {}
+    if not isinstance(diagnostics, dict):
+        return None
+    coverage = diagnostics.get("coverage") or {}
+    if not isinstance(coverage, dict):
+        return None
+    counts = coverage.get("x_bin_counts")
+    if not isinstance(counts, list) or not counts:
+        return None
+    return coverage
+
+
+def draw_x_bins(ax, image_width, image_height, coverage):
+    counts = coverage.get("x_bin_counts") or []
+    if not counts:
+        return
+    num_bins = len(counts)
+    bin_width = image_width / float(num_bins)
+    for idx in range(1, num_bins):
+        x = idx * bin_width
+        ax.axvline(x, color="white", linewidth=0.8, alpha=0.35, linestyle="--")
+    for idx, count in enumerate(counts):
+        x = (idx + 0.5) * bin_width
+        ax.text(
+            x,
+            max(8.0, 0.04 * image_height),
+            str(count),
+            color="white",
+            fontsize=8,
+            ha="center",
+            va="top",
+            bbox=dict(
+                boxstyle="round,pad=0.2",
+                facecolor="black",
+                edgecolor="none",
+                alpha=0.45,
+            ),
+        )
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("report", type=Path, help="JSON report from the Rust example")
@@ -311,6 +352,7 @@ def main() -> None:
     markers = data.get("markers") or []
     board = data.get("board") or {}
     cell_size = board.get("cell_size")
+    coverage = extract_coverage(data)
 
     grid_map_img = build_grid_map(corners)
 
@@ -339,6 +381,10 @@ def main() -> None:
         cols = board.get("cols")
         if rows and cols and cell_size:
             summary_lines.append(f"board: {rows} x {cols}, cell {cell_size:g} mm")
+    if coverage:
+        counts = coverage.get("x_bin_counts") or []
+        if counts:
+            summary_lines.append("x bins: " + " | ".join(str(v) for v in counts))
     ax_img.text(
         0.02,
         0.02,
@@ -381,6 +427,8 @@ def main() -> None:
             "markers are in rectified coordinates; "
             "skipping markers on the original image"
         )
+    if coverage:
+        draw_x_bins(ax_img, img.shape[1], img.shape[0], coverage)
 
     if not args.simple and sc is not None and sc.get_array() is not None:
         fig.colorbar(sc, ax=ax_img, fraction=0.035, pad=0.02, label="Corner score")

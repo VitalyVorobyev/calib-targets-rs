@@ -41,15 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = cfg.build_detector()?;
     let src_view = make_view(&img);
 
-    let detect_result = detector.detect(&src_view, &target_corners);
-
     let mut report = CharucoDetectReport::new(&cfg, &config_path, target_corners);
-    match detect_result {
-        Ok(res) => {
-            report.set_detection(res);
-        }
-        Err(err) => report.set_error(err),
-    }
+    report.set_detection_run(detector.detect_with_diagnostics(&src_view, &report.raw_corners));
 
     let output_path = cfg.output_path();
     report.write_json(&output_path)?;

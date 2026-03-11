@@ -292,6 +292,86 @@ fn detects_charuco_on_small_png() {
 }
 
 #[test]
+fn detect_with_diagnostics_matches_detect_on_small_png() {
+    let img_path = testdata_path("small.png");
+    let img = load_gray(&img_path);
+    let raw_corners = detect_corners(&img);
+    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+
+    let dict = builtins::builtin_dictionary("DICT_4X4_250").expect("builtin dict");
+    let board = CharucoBoardSpec {
+        rows: 22,
+        cols: 22,
+        cell_size: 5.2,
+        marker_size_rel: 0.75,
+        dictionary: dict,
+        marker_layout: MarkerLayout::OpenCvCharuco,
+    };
+
+    let mut params = CharucoDetectorParams::for_board(&board);
+    params.px_per_square = 60.0;
+    params.chessboard.min_corners = 10;
+    params.chessboard.completeness_threshold = 0.02;
+    params.graph.min_spacing_pix = 5.0;
+    params.graph.max_spacing_pix = 60.0;
+    params.min_marker_inliers = 12;
+
+    let detector = CharucoDetector::new(params).expect("detector");
+    let src_view = GrayImageView {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        data: img.as_raw(),
+    };
+
+    let direct = detector.detect(&src_view, &corners).expect("direct detect");
+    let run = detector.detect_with_diagnostics(&src_view, &corners);
+    let diagnostics = run.diagnostics.clone();
+    let with_diag = run.result.expect("diagnostic detect");
+
+    assert_eq!(direct.alignment, with_diag.alignment);
+    assert_eq!(direct.markers.len(), with_diag.markers.len());
+    assert_eq!(
+        direct.detection.corners.len(),
+        with_diag.detection.corners.len()
+    );
+
+    let direct_ids: Vec<u32> = direct
+        .detection
+        .corners
+        .iter()
+        .map(|corner| corner.id.expect("id"))
+        .collect();
+    let diag_ids: Vec<u32> = with_diag
+        .detection
+        .corners
+        .iter()
+        .map(|corner| corner.id.expect("id"))
+        .collect();
+    assert_eq!(direct_ids, diag_ids);
+
+    assert!(diagnostics.candidate_cell_count >= diagnostics.decoded_marker_count);
+    assert!(diagnostics.decoded_marker_count >= diagnostics.aligned_marker_count);
+    assert_eq!(diagnostics.aligned_marker_count, with_diag.markers.len());
+    assert_eq!(
+        diagnostics.final_corner_count,
+        with_diag.detection.corners.len()
+    );
+    let validation = diagnostics
+        .corner_validation
+        .expect("corner validation diagnostics");
+    assert_eq!(
+        validation.kept_corner_count + validation.corrected_corner_count,
+        diagnostics.final_corner_count
+    );
+    assert_eq!(
+        validation.kept_corner_count
+            + validation.corrected_corner_count
+            + validation.dropped_corner_count,
+        diagnostics.mapped_corner_count_before_validation
+    );
+}
+
+#[test]
 fn detects_plain_chessboard_on_mid_png() {
     let img_path = testdata_path("mid.png");
     let img = load_gray(&img_path);

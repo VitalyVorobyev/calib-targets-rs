@@ -7,8 +7,9 @@ use calib_targets_core::{
     OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{debug, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::f32::consts::FRAC_PI_2;
+use std::time::Instant;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -52,6 +53,43 @@ pub struct GridGraphNeighborDebug {
     pub distance: f32,
 }
 
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ChessboardStageTimings {
+    pub filter_ms: f64,
+    pub orientation_ms: f64,
+    pub graph_components_ms: f64,
+    pub select_ms: f64,
+    pub total_ms: f64,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ChessboardDiagnostics {
+    pub input_corner_count: usize,
+    pub strong_corner_count: usize,
+    pub orientation_filtered_count: usize,
+    pub component_count: usize,
+    pub selected_grid_width: Option<u32>,
+    pub selected_grid_height: Option<u32>,
+    pub selected_grid_completeness: Option<f32>,
+    pub final_corner_count: usize,
+    pub timings: ChessboardStageTimings,
+}
+
+#[derive(Debug)]
+pub struct ChessboardDetectionRun {
+    pub detection: Option<ChessboardDetectionResult>,
+    pub diagnostics: ChessboardDiagnostics,
+}
+
+#[derive(Debug)]
+struct SelectedComponent {
+    detection: TargetDetection,
+    inliers: Vec<usize>,
+    grid_width: u32,
+    grid_height: u32,
+    completeness: f32,
+}
+
 impl ChessboardDetector {
     pub fn new(params: ChessboardParams) -> Self {
         Self {
@@ -71,12 +109,28 @@ impl ChessboardDetector {
     /// For now it returns at most one detection (the best-scoring grid component).
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
     pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<ChessboardDetectionResult> {
-        // 1. Filter by strength.
+        self.detect_from_corners_with_diagnostics(corners).detection
+    }
+
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
+    pub fn detect_from_corners_with_diagnostics(
+        &self,
+        corners: &[Corner],
+    ) -> ChessboardDetectionRun {
+        let total_start = Instant::now();
+        let mut diagnostics = ChessboardDiagnostics {
+            input_corner_count: corners.len(),
+            ..ChessboardDiagnostics::default()
+        };
+
+        let filter_start = Instant::now();
         let mut strong: Vec<Corner> = corners
             .iter()
             .filter(|c| c.strength >= self.params.min_corner_strength)
             .cloned()
             .collect();
+        diagnostics.strong_corner_count = strong.len();
+        diagnostics.timings.filter_ms = elapsed_ms(filter_start);
 
         debug!(
             "found {} raw ChESS corners after strength filter",
@@ -84,10 +138,15 @@ impl ChessboardDetector {
         );
 
         if strong.len() < self.params.min_corners {
-            return None;
+            diagnostics.orientation_filtered_count = strong.len();
+            diagnostics.timings.total_ms = elapsed_ms(total_start);
+            return ChessboardDetectionRun {
+                detection: None,
+                diagnostics,
+            };
         }
 
-        // 2. Estimate grid axes from orientations.
+        let orientation_start = Instant::now();
         let mut grid_diagonals = None;
         let mut graph_diagonals = None;
         let mut orientation_histogram = None;
@@ -121,24 +180,35 @@ impl ChessboardDetector {
             }
         }
 
+        diagnostics.orientation_filtered_count = strong.len();
+        diagnostics.timings.orientation_ms = elapsed_ms(orientation_start);
+
         debug!(
             "kept {} ChESS corners after orientation consistency filter",
             strong.len()
         );
 
         if strong.len() < self.params.min_corners {
-            return None;
+            diagnostics.timings.total_ms = elapsed_ms(total_start);
+            return ChessboardDetectionRun {
+                detection: None,
+                diagnostics,
+            };
         }
 
+        let graph_start = Instant::now();
         let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
-
         let components = connected_components(&graph);
+        diagnostics.component_count = components.len();
+        diagnostics.timings.graph_components_ms = elapsed_ms(graph_start);
+
         debug!(
             "found {} connected grid components after orientation filtering",
             components.len()
         );
 
-        let mut best: Option<(TargetDetection, Vec<usize>, usize)> = None;
+        let select_start = Instant::now();
+        let mut best: Option<(SelectedComponent, usize)> = None;
 
         for component in &components {
             if component.len() < self.params.min_corners {
@@ -148,39 +218,52 @@ impl ChessboardDetector {
             if coords.is_empty() {
                 continue;
             }
-            let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
-            else {
+            let Some(selected) = self.component_to_board_coords(&coords, &strong) else {
                 continue;
             };
-            let score = detection.corners.len();
+            let score = selected.detection.corners.len();
             match best {
-                None => best = Some((detection, inliers, score)),
-                Some((_, _, best_score)) if score > best_score => {
-                    best = Some((detection, inliers, score));
+                None => best = Some((selected, score)),
+                Some((_, best_score)) if score > best_score => {
+                    best = Some((selected, score));
                 }
                 _ => {}
             }
         }
+        diagnostics.timings.select_ms = elapsed_ms(select_start);
 
-        let (detection, inliers, _) = best?;
-        let graph_debug = Some(build_graph_debug(&graph, &strong));
+        let detection = if let Some((selected, _)) = best {
+            diagnostics.selected_grid_width = Some(selected.grid_width);
+            diagnostics.selected_grid_height = Some(selected.grid_height);
+            diagnostics.selected_grid_completeness = Some(selected.completeness);
+            diagnostics.final_corner_count = selected.detection.corners.len();
 
-        Some(ChessboardDetectionResult {
+            let graph_debug = Some(build_graph_debug(&graph, &strong));
+            Some(ChessboardDetectionResult {
+                detection: selected.detection,
+                inliers: selected.inliers,
+                orientations: grid_diagonals,
+                debug: ChessboardDebug {
+                    orientation_histogram,
+                    graph: graph_debug,
+                },
+            })
+        } else {
+            None
+        };
+
+        diagnostics.timings.total_ms = elapsed_ms(total_start);
+        ChessboardDetectionRun {
             detection,
-            inliers,
-            orientations: grid_diagonals,
-            debug: ChessboardDebug {
-                orientation_histogram,
-                graph: graph_debug,
-            },
-        })
+            diagnostics,
+        }
     }
 
     fn component_to_board_coords(
         &self,
         coords: &[(usize, i32, i32)],
         corners: &[Corner],
-    ) -> Option<(TargetDetection, Vec<usize>)> {
+    ) -> Option<SelectedComponent> {
         let (min_i, max_i, min_j, max_j) = coords.iter().fold(
             (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
             |acc, &(_, i, j)| (acc.0.min(i), acc.1.max(i), acc.2.min(j), acc.3.max(j)),
@@ -192,7 +275,6 @@ impl ChessboardDetector {
 
         let width = (max_i - min_i + 1) as u32;
         let height = (max_j - min_j + 1) as u32;
-
         let (board_cols, board_rows, swap_axes) = select_board_size(width, height, &self.params)?;
 
         let grid_area = (board_cols * board_rows) as f32;
@@ -200,8 +282,6 @@ impl ChessboardDetector {
             return None;
         }
 
-        // De-duplicate by grid coordinate: in noisy graphs, a component can contain
-        // multiple corners that get mapped to the same (i,j). Keep the strongest one.
         let mut by_grid: std::collections::HashMap<GridCoords, LabeledCorner> =
             std::collections::HashMap::new();
         for &(node_idx, i, j) in coords {
@@ -240,7 +320,6 @@ impl ChessboardDetector {
         }
 
         let mut labeled: Vec<LabeledCorner> = by_grid.into_values().collect();
-
         labeled.sort_by(|a, b| {
             let ga = a.grid.as_ref().unwrap();
             let gb = b.grid.as_ref().unwrap();
@@ -251,10 +330,15 @@ impl ChessboardDetector {
             kind: TargetKind::Chessboard,
             corners: labeled,
         };
-
         let inliers = (0..detection.corners.len()).collect();
 
-        Some((detection, inliers))
+        Some(SelectedComponent {
+            detection,
+            inliers,
+            grid_width: board_cols,
+            grid_height: board_rows,
+            completeness,
+        })
     }
 }
 
@@ -327,4 +411,8 @@ fn wrap_angle_pi(theta: f32) -> f32 {
         t += std::f32::consts::PI;
     }
     t
+}
+
+fn elapsed_ms(start: Instant) -> f64 {
+    start.elapsed().as_secs_f64() * 1_000.0
 }

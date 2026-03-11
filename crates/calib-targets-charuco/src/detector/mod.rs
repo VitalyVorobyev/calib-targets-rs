@@ -12,7 +12,10 @@ mod params;
 mod pipeline;
 mod result;
 
+pub use corner_validation::{CornerValidationDiagnostics, CornerValidationSkippedReason};
 pub use error::CharucoDetectError;
 pub use params::CharucoDetectorParams;
 pub use pipeline::CharucoDetector;
-pub use result::CharucoDetectionResult;
+pub use result::{
+    CharucoDetectionResult, CharucoDetectionRun, CharucoDiagnostics, CharucoStageTimings,
+};

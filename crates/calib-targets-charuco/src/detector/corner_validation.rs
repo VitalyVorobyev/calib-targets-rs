@@ -2,45 +2,11 @@
 //!
 //! After the chessboard grid corners have been mapped to ChArUco IDs, this
 //! module validates each corner's pixel position against a board-to-image
-//! homography estimated from all inlier marker corners.  A corner that deviates
+//! homography estimated from all inlier marker corners. A corner that deviates
 //! by more than a relative threshold from the homography-predicted position is
 //! identified as a false positive (typically a marker-interior corner picked up
 //! by ChESS), and is corrected by running a local ChESS re-detection centred on
 //! the homography-predicted seed.
-//!
-//! ## Why a global homography instead of per-marker predictions
-//!
-//! The per-marker approach (using `corners_img` of adjacent decoded markers as
-//! predictions) fails when ALL adjacent marker cells were decoded using the false
-//! corner itself.  In that case every prediction equals the false position, the
-//! self-contamination filter removes all of them, and the false corner is silently
-//! kept.  This is the "dense self-contamination" failure mode.
-//!
-//! The global homography is estimated from ALL inlier marker corners (typically
-//! 64–400+ correspondences on a large board).  A single false corner contributes
-//! at most 2 wrong correspondences (from the ≤2 adjacent marker cells), which
-//! are negligible outliers in the DLT fit.  The predicted seed is therefore
-//! accurate even for corners near the false position.
-//!
-//! ## Pipeline stage
-//!
-//! ```text
-//! map_charuco_corners() → [validate_and_fix_corners()] → CharucoDetectionResult
-//! ```
-//!
-//! ## Inputs
-//!
-//! - `TargetDetection` with ChArUco IDs assigned.
-//! - `Vec<MarkerDetection>` – alignment inliers, each with `corners_img` populated.
-//! - `CharucoBoard` for board geometry.
-//! - `CharucoAlignment` to convert marker grid coords to board cell coords.
-//! - Full-resolution `GrayImageView` for local re-detection.
-//!
-//! ## Failure modes
-//!
-//! - Fewer than 4 inlier markers → homography cannot be estimated → skip validation.
-//! - Homography estimation fails numerically → skip validation.
-//! - Re-detection finds no corner near the seed → corner discarded.
 
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
@@ -55,10 +21,7 @@ use chess_corners_core::{
     ChessParams, Refiner,
 };
 use nalgebra::Point2;
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
+use serde::{Deserialize, Serialize};
 
 /// Configuration for the corner validation stage.
 ///
@@ -68,16 +31,49 @@ pub(crate) struct CornerValidationConfig<'a> {
     /// Side length of one board square in pixels (used to scale thresholds).
     pub px_per_square: f32,
     /// Maximum allowed deviation from the homography-predicted position,
-    /// expressed as a fraction of `px_per_square`.  Set to `f32::INFINITY`
+    /// expressed as a fraction of `px_per_square`. Set to `f32::INFINITY`
     /// to disable validation entirely.
     pub threshold_rel: f32,
     /// ChESS detector parameters used for local re-detection.
     pub chess_params: &'a ChessParams,
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CornerValidationSkippedReason {
+    #[default]
+    None,
+    Disabled,
+    NoMarkers,
+    HomographyUnavailable,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct CornerValidationDiagnostics {
+    pub input_corner_count: usize,
+    pub kept_corner_count: usize,
+    pub corrected_corner_count: usize,
+    pub dropped_corner_count: usize,
+    pub skipped_reason: CornerValidationSkippedReason,
+}
+
+#[derive(Debug)]
+pub(crate) struct CornerValidationRun {
+    pub detection: TargetDetection,
+    pub diagnostics: CornerValidationDiagnostics,
+}
+
+impl CornerValidationDiagnostics {
+    fn skipped(count: usize, skipped_reason: CornerValidationSkippedReason) -> Self {
+        Self {
+            input_corner_count: count,
+            kept_corner_count: count,
+            corrected_corner_count: 0,
+            dropped_corner_count: 0,
+            skipped_reason,
+        }
+    }
+}
 
 /// Grid-corner offsets matching `corners_img` indices from `build_marker_cells`.
 ///
@@ -86,43 +82,16 @@ const GRID_CORNER_OFFSETS: [(i32, i32); 4] = [(0, 0), (1, 0), (1, 1), (0, 1)];
 
 /// Recover the grid-frame cell TL coordinate (`gc0`) from `marker.gc` and
 /// `marker.rotation`.
-///
-/// In `build_detection` (scan.rs) the marker's `gc` is offset from the cell TL
-/// by the marker's rotation within the cell:
-///
-/// ```text
-/// rotation 0 → gc = gc0           (TL)
-/// rotation 1 → gc = gc0 + (1, 0)  (TR)
-/// rotation 2 → gc = gc0 + (1, 1)  (BR)
-/// rotation 3 → gc = gc0 + (0, 1)  (BL)
-/// ```
-///
-/// Inverting: `gc0 = gc - rotation_offset`.
 #[inline]
 fn recover_gc0(marker: &MarkerDetection) -> (i32, i32) {
     match marker.rotation {
         1 => (marker.gc.gx - 1, marker.gc.gy),
         2 => (marker.gc.gx - 1, marker.gc.gy - 1),
         3 => (marker.gc.gx, marker.gc.gy - 1),
-        _ => (marker.gc.gx, marker.gc.gy), // rotation 0 or unexpected
+        _ => (marker.gc.gx, marker.gc.gy),
     }
 }
 
-/// Collect `(board_corner, image_corner)` correspondences from all inlier markers.
-///
-/// Returns two parallel vectors suitable for passing to
-/// `estimate_homography_rect_to_img`:
-/// - `board_pts[k]`: board-space position of corner k, in the same integer
-///   coordinate system as `board.charuco_corner_id_from_board_corner`.
-/// - `image_pts[k]`: image-space position of that same corner, from
-///   `marker.corners_img`.
-///
-/// For each inlier marker:
-/// 1. Recover `gc0` (cell TL in grid space) from `marker.gc` and `marker.rotation`.
-/// 2. Map each of the 4 grid corners through `alignment.map()` to get the
-///    board-frame corner position `(bi, bj)`.
-/// 3. Only include the corner if it corresponds to a valid ChArUco ID (i.e.,
-///    the board corner is an inner corner, not a board-border corner).
 fn collect_board_to_image_correspondences(
     board: &CharucoBoard,
     markers: &[MarkerDetection],
@@ -141,9 +110,6 @@ fn collect_board_to_image_correspondences(
 
         for (img_idx, &(di, dj)) in GRID_CORNER_OFFSETS.iter().enumerate() {
             let [bi, bj] = alignment.map(gc0_x + di, gc0_y + dj);
-            // Use charuco_object_xy for the board point so the coordinate
-            // system matches corner.target_position used in the prediction.
-            // Only inner corners (those with a ChArUco ID) are included.
             let Some(charuco_id) = board.charuco_corner_id_from_board_corner(bi, bj) else {
                 continue;
             };
@@ -158,20 +124,12 @@ fn collect_board_to_image_correspondences(
     (board_pts, image_pts)
 }
 
-/// Run a local ChESS detection in a window centred on `seed`.
-///
-/// Uses `chess_response_u8_patch` on the full image restricted to a patch of
-/// half-width `roi_half_px`, then runs NMS + subpixel refinement.
-///
-/// Returns the image-space position of the strongest corner found within
-/// `roi_half_px` of the seed, or `None` if no corner is found.
 fn redetect_corner_in_roi(
     image: &GrayImageView<'_>,
     seed: Point2<f32>,
     roi_half_px: i32,
     chess_params: &ChessParams,
 ) -> Option<Point2<f32>> {
-    // Compute ROI in integer image coords, clamped to image bounds.
     let x0 = ((seed.x as i32) - roi_half_px).max(0) as usize;
     let y0 = ((seed.y as i32) - roi_half_px).max(0) as usize;
     let x1 = ((seed.x as i32) + roi_half_px + 1).min(image.width as i32) as usize;
@@ -181,7 +139,6 @@ fn redetect_corner_in_roi(
         return None;
     }
 
-    // Compute ChESS response only inside the ROI.
     let patch_resp = chess_response_u8_patch(
         image.data,
         image.width,
@@ -194,8 +151,6 @@ fn redetect_corner_in_roi(
         return None;
     }
 
-    // Build an ImageView with origin = (x0, y0) so the refiner reads the
-    // correct global pixels even though the response map has local coords.
     let refine_view = ImageView::with_origin(
         image.width,
         image.height,
@@ -211,8 +166,6 @@ fn redetect_corner_in_roi(
         &mut refiner,
     );
 
-    // Shift patch-local coordinates back to global image coordinates and pick
-    // the strongest corner that is within roi_half_px of the seed.
     let seed_x = seed.x;
     let seed_y = seed.y;
     let max_dist2 = (roi_half_px as f32) * (roi_half_px as f32);
@@ -233,28 +186,8 @@ fn redetect_corner_in_roi(
         .map(|(_s, gx, gy)| Point2::new(gx, gy))
 }
 
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
-
 /// Validate ChArUco corners against a board-to-image homography estimated from
 /// all inlier marker corners, and replace any that are geometrically inconsistent.
-///
-/// # Algorithm
-///
-/// 1. Collect `(board_corner, image_corner)` from all inlier markers.
-/// 2. Estimate homography `H: board → image` via DLT on all correspondences.
-///    If fewer than 4 correspondences or estimation fails → skip validation.
-/// 3. For each ChArUco corner with a known board position:
-///    a. Predict image position: `seed = H.apply(board_corner)`.
-///    b. `|corner - seed| ≤ threshold_px` → consistent, keep unchanged.
-///    c. `|corner - seed| > threshold_px` → false corner detected:
-///       - Run `redetect_corner_in_roi` centred on `seed`.
-///       - Re-detection succeeds → replace position.
-///       - Re-detection fails → discard corner.
-///
-/// `threshold_px = threshold_rel * px_per_square`
-/// `roi_half_px  = clamp(threshold_px * 3, 8, px_per_square * 0.5)`
 pub(crate) fn validate_and_fix_corners(
     detection: TargetDetection,
     board: &CharucoBoard,
@@ -262,10 +195,25 @@ pub(crate) fn validate_and_fix_corners(
     alignment: &CharucoAlignment,
     image: &GrayImageView<'_>,
     cfg: &CornerValidationConfig<'_>,
-) -> TargetDetection {
-    // Fast path: validation disabled or no markers to consult.
-    if cfg.threshold_rel.is_infinite() || markers.is_empty() {
-        return detection;
+) -> CornerValidationRun {
+    let input_corner_count = detection.corners.len();
+    if cfg.threshold_rel.is_infinite() {
+        return CornerValidationRun {
+            detection,
+            diagnostics: CornerValidationDiagnostics::skipped(
+                input_corner_count,
+                CornerValidationSkippedReason::Disabled,
+            ),
+        };
+    }
+    if markers.is_empty() {
+        return CornerValidationRun {
+            detection,
+            diagnostics: CornerValidationDiagnostics::skipped(
+                input_corner_count,
+                CornerValidationSkippedReason::NoMarkers,
+            ),
+        };
     }
 
     let threshold_px = cfg.threshold_rel * cfg.px_per_square;
@@ -275,80 +223,210 @@ pub(crate) fn validate_and_fix_corners(
         .max(8.0)
         .min(cfg.px_per_square * 0.5) as i32;
 
-    // Collect board↔image correspondences and estimate a global homography.
     let (board_pts, image_pts) = collect_board_to_image_correspondences(board, markers, alignment);
-
     let homography = match estimate_homography_rect_to_img(&board_pts, &image_pts) {
         Some(h) => h,
         None => {
-            // Not enough correspondences or degenerate configuration — skip.
-            return detection;
+            return CornerValidationRun {
+                detection,
+                diagnostics: CornerValidationDiagnostics::skipped(
+                    input_corner_count,
+                    CornerValidationSkippedReason::HomographyUnavailable,
+                ),
+            };
         }
     };
 
-    let mut out_corners: Vec<LabeledCorner> = Vec::with_capacity(detection.corners.len());
+    let mut diagnostics = CornerValidationDiagnostics {
+        input_corner_count,
+        ..CornerValidationDiagnostics::default()
+    };
+    let mut out_corners: Vec<LabeledCorner> = Vec::with_capacity(input_corner_count);
 
     for corner in detection.corners {
-        // Only validate corners that have a board position (via target_position
-        // which encodes the board coordinate) and a ChArUco ID.  Corners
-        // without an ID cannot be validated — keep as-is.
         let board_pos = match corner.target_position {
             Some(p) => p,
             None => {
+                diagnostics.kept_corner_count += 1;
                 out_corners.push(corner);
                 continue;
             }
         };
 
         if corner.id.is_none() {
+            diagnostics.kept_corner_count += 1;
             out_corners.push(corner);
             continue;
         }
 
-        // Predict image position from the board homography.
         let seed = homography.apply(board_pos);
-
         let dx = corner.position.x - seed.x;
         let dy = corner.position.y - seed.y;
         if dx * dx + dy * dy <= threshold_sq {
-            // Corner is geometrically consistent with the board homography.
+            diagnostics.kept_corner_count += 1;
             out_corners.push(corner);
             continue;
         }
 
-        // Corner is a candidate false positive — attempt local re-detection.
         match redetect_corner_in_roi(image, seed, roi_half_px, cfg.chess_params) {
             Some(new_pos) => {
-                // Replace the false position with the re-detected one.
+                diagnostics.corrected_corner_count += 1;
                 let mut fixed = corner;
                 fixed.position = new_pos;
                 out_corners.push(fixed);
             }
             None => {
-                // No valid corner found near the seed — discard.
+                diagnostics.dropped_corner_count += 1;
             }
         }
     }
 
-    TargetDetection {
-        kind: TargetKind::Charuco,
-        corners: out_corners,
+    CornerValidationRun {
+        detection: TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: out_corners,
+        },
+        diagnostics,
     }
 }
-
-// ---------------------------------------------------------------------------
-// Unit tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::{CharucoBoardSpec, MarkerLayout};
+    use calib_targets_aruco::{builtins, GridCell};
+    use calib_targets_core::GridAlignment;
+    use nalgebra::Point2;
+
+    fn build_board() -> CharucoBoard {
+        let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
+        CharucoBoard::new(CharucoBoardSpec {
+            rows: 4,
+            cols: 4,
+            cell_size: 1.0,
+            marker_size_rel: 0.75,
+            dictionary: dict,
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        })
+        .expect("board")
+    }
+
+    fn blank_image(width: usize, height: usize) -> Vec<u8> {
+        vec![127u8; width * height]
+    }
+
+    fn image_view(data: &[u8], width: usize, height: usize) -> GrayImageView<'_> {
+        GrayImageView {
+            width,
+            height,
+            data,
+        }
+    }
+
+    fn internal_marker(board: &CharucoBoard) -> (u32, MarkerDetection, [usize; 4]) {
+        for marker_id in 0..board.marker_count() as u32 {
+            let Some(corner_ids) = board.marker_surrounding_charuco_corners(marker_id as i32)
+            else {
+                continue;
+            };
+            let Some((sx, sy)) = board.marker_cell(marker_id as i32) else {
+                continue;
+            };
+            let marker = MarkerDetection {
+                id: marker_id,
+                gc: GridCell {
+                    gx: sx as i32,
+                    gy: sy as i32,
+                },
+                rotation: 0,
+                hamming: 0,
+                score: 1.0,
+                border_score: 1.0,
+                code: 0,
+                inverted: false,
+                corners_rect: [Point2::new(0.0, 0.0); 4],
+                corners_img: Some([
+                    Point2::new(20.0, 20.0),
+                    Point2::new(40.0, 20.0),
+                    Point2::new(40.0, 40.0),
+                    Point2::new(20.0, 40.0),
+                ]),
+            };
+            return (marker_id, marker, corner_ids);
+        }
+        panic!("expected at least one internal marker");
+    }
+
+    fn charuco_corner(
+        board: &CharucoBoard,
+        corner_id: usize,
+        position: Point2<f32>,
+    ) -> LabeledCorner {
+        LabeledCorner {
+            position,
+            grid: None,
+            id: Some(corner_id as u32),
+            target_position: board.charuco_object_xy(corner_id as u32),
+            score: 1.0,
+        }
+    }
+
+    fn validation_cfg<'a>(chess_params: &'a ChessParams) -> CornerValidationConfig<'a> {
+        CornerValidationConfig {
+            px_per_square: 40.0,
+            threshold_rel: 0.1,
+            chess_params,
+        }
+    }
+
+    fn seed_for_corner(
+        board: &CharucoBoard,
+        marker: &MarkerDetection,
+        corner_id: usize,
+    ) -> Point2<f32> {
+        let alignment = CharucoAlignment {
+            alignment: GridAlignment::IDENTITY,
+            marker_inliers: vec![0],
+        };
+        let (board_pts, image_pts) =
+            collect_board_to_image_correspondences(board, std::slice::from_ref(marker), &alignment);
+        let homography =
+            estimate_homography_rect_to_img(&board_pts, &image_pts).expect("homography");
+        homography.apply(board.charuco_object_xy(corner_id as u32).expect("target"))
+    }
+
+    fn sample_real_corner_seed() -> (image::GrayImage, Point2<f32>) {
+        use chess_corners::{find_chess_corners_image, ChessConfig};
+        use image::ImageReader;
+        use std::path::Path;
+
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata")
+            .join("mid.png");
+        let image = ImageReader::open(path)
+            .expect("open image")
+            .decode()
+            .expect("decode image")
+            .to_luma8();
+        let mut chess_cfg = ChessConfig::single_scale();
+        chess_cfg.params.threshold_rel = 0.2;
+        chess_cfg.params.nms_radius = 2;
+        let corners = find_chess_corners_image(&image, &chess_cfg);
+        let center = Point2::new(image.width() as f32 * 0.5, image.height() as f32 * 0.5);
+        let seed = corners
+            .iter()
+            .min_by(|a, b| {
+                let da = (a.x - center.x).powi(2) + (a.y - center.y).powi(2);
+                let db = (b.x - center.x).powi(2) + (b.y - center.y).powi(2);
+                da.total_cmp(&db)
+            })
+            .map(|c| Point2::new(c.x, c.y))
+            .expect("at least one real corner");
+        (image, seed)
+    }
 
     #[test]
     fn recover_gc0_rotation_0() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
-        use nalgebra::Point2;
-
         let marker = MarkerDetection {
             id: 0,
             gc: GridCell { gx: 3, gy: 5 },
@@ -366,10 +444,6 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_1() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
-        use nalgebra::Point2;
-
-        // gc = gc0 + (1, 0) for rotation 1, so gc0 = gc - (1, 0)
         let marker = MarkerDetection {
             id: 0,
             gc: GridCell { gx: 4, gy: 5 },
@@ -387,9 +461,6 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_2() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
-        use nalgebra::Point2;
-
         let marker = MarkerDetection {
             id: 0,
             gc: GridCell { gx: 4, gy: 6 },
@@ -407,9 +478,6 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_3() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
-        use nalgebra::Point2;
-
         let marker = MarkerDetection {
             id: 0,
             gc: GridCell { gx: 3, gy: 6 },
@@ -423,5 +491,231 @@ mod tests {
             corners_img: None,
         };
         assert_eq!(recover_gc0(&marker), (3, 5));
+    }
+
+    #[test]
+    fn validation_reports_keep() {
+        let board = build_board();
+        let (_marker_id, marker, corner_ids) = internal_marker(&board);
+        let corner_id = corner_ids[2];
+        let expected = seed_for_corner(&board, &marker, corner_id);
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(&board, corner_id, expected)],
+        };
+        let pixels = blank_image(64, 64);
+        let chess_params = crate::detector::params::default_redetect_params();
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            std::slice::from_ref(&marker),
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![0],
+            },
+            &image_view(&pixels, 64, 64),
+            &validation_cfg(&chess_params),
+        );
+
+        assert_eq!(run.diagnostics.kept_corner_count, 1);
+        assert_eq!(run.diagnostics.corrected_corner_count, 0);
+        assert_eq!(run.diagnostics.dropped_corner_count, 0);
+        assert_eq!(
+            run.diagnostics.skipped_reason,
+            CornerValidationSkippedReason::None
+        );
+        assert_eq!(run.detection.corners.len(), 1);
+    }
+
+    #[test]
+    fn validation_reports_correct() {
+        let board = build_board();
+        let (_marker_id, marker, corner_ids) = internal_marker(&board);
+        let corner_id = corner_ids[2];
+        let (image, target_seed) = sample_real_corner_seed();
+        let mut marker = marker;
+        marker.corners_img = Some([
+            Point2::new(target_seed.x - 20.0, target_seed.y - 20.0),
+            Point2::new(target_seed.x, target_seed.y - 20.0),
+            Point2::new(target_seed.x, target_seed.y),
+            Point2::new(target_seed.x - 20.0, target_seed.y),
+        ]);
+        let expected = seed_for_corner(&board, &marker, corner_id);
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(
+                &board,
+                corner_id,
+                Point2::new(expected.x + 6.0, expected.y),
+            )],
+        };
+        let chess_params = crate::detector::params::default_redetect_params();
+        let preview = redetect_corner_in_roi(
+            &image_view(
+                image.as_raw(),
+                image.width() as usize,
+                image.height() as usize,
+            ),
+            expected,
+            12,
+            &chess_params,
+        );
+        assert!(
+            preview.is_some(),
+            "expected preview re-detect at {expected:?}"
+        );
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            std::slice::from_ref(&marker),
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![0],
+            },
+            &image_view(
+                image.as_raw(),
+                image.width() as usize,
+                image.height() as usize,
+            ),
+            &validation_cfg(&chess_params),
+        );
+
+        assert_eq!(run.diagnostics.kept_corner_count, 0);
+        assert_eq!(run.diagnostics.corrected_corner_count, 1);
+        assert_eq!(run.diagnostics.dropped_corner_count, 0);
+        assert_eq!(run.detection.corners.len(), 1);
+        let corrected = run.detection.corners[0].position;
+        assert!((corrected.x - expected.x).abs() <= 1.5);
+        assert!((corrected.y - expected.y).abs() <= 1.5);
+    }
+
+    #[test]
+    fn validation_reports_drop() {
+        let board = build_board();
+        let (_marker_id, marker, corner_ids) = internal_marker(&board);
+        let corner_id = corner_ids[2];
+        let expected = seed_for_corner(&board, &marker, corner_id);
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(
+                &board,
+                corner_id,
+                Point2::new(expected.x + 6.0, expected.y),
+            )],
+        };
+        let pixels = blank_image(64, 64);
+        let chess_params = crate::detector::params::default_redetect_params();
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            std::slice::from_ref(&marker),
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![0],
+            },
+            &image_view(&pixels, 64, 64),
+            &validation_cfg(&chess_params),
+        );
+
+        assert_eq!(run.diagnostics.corrected_corner_count, 0);
+        assert_eq!(run.diagnostics.dropped_corner_count, 1);
+        assert!(run.detection.corners.is_empty());
+    }
+
+    #[test]
+    fn validation_reports_disabled_skip() {
+        let board = build_board();
+        let (_marker_id, marker, corner_ids) = internal_marker(&board);
+        let corner_id = corner_ids[2];
+        let expected = seed_for_corner(&board, &marker, corner_id);
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(&board, corner_id, expected)],
+        };
+        let pixels = blank_image(64, 64);
+        let chess_params = crate::detector::params::default_redetect_params();
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            std::slice::from_ref(&marker),
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![0],
+            },
+            &image_view(&pixels, 64, 64),
+            &CornerValidationConfig {
+                px_per_square: 20.0,
+                threshold_rel: f32::INFINITY,
+                chess_params: &chess_params,
+            },
+        );
+
+        assert_eq!(
+            run.diagnostics.skipped_reason,
+            CornerValidationSkippedReason::Disabled
+        );
+        assert_eq!(run.diagnostics.kept_corner_count, 1);
+    }
+
+    #[test]
+    fn validation_reports_no_marker_skip() {
+        let board = build_board();
+        let (_marker_id, marker, corner_ids) = internal_marker(&board);
+        let corner_id = corner_ids[2];
+        let expected = seed_for_corner(&board, &marker, corner_id);
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(&board, corner_id, expected)],
+        };
+        let pixels = blank_image(64, 64);
+        let chess_params = crate::detector::params::default_redetect_params();
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            &[],
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![],
+            },
+            &image_view(&pixels, 64, 64),
+            &validation_cfg(&chess_params),
+        );
+
+        assert_eq!(
+            run.diagnostics.skipped_reason,
+            CornerValidationSkippedReason::NoMarkers
+        );
+        assert_eq!(run.diagnostics.kept_corner_count, 1);
+    }
+
+    #[test]
+    fn validation_reports_homography_skip() {
+        let board = build_board();
+        let (_marker_id, mut marker, corner_ids) = internal_marker(&board);
+        marker.corners_img = None;
+        let corner_id = corner_ids[2];
+        let detection = TargetDetection {
+            kind: TargetKind::Charuco,
+            corners: vec![charuco_corner(&board, corner_id, Point2::new(40.0, 40.0))],
+        };
+        let pixels = blank_image(64, 64);
+        let chess_params = crate::detector::params::default_redetect_params();
+        let run = validate_and_fix_corners(
+            detection,
+            &board,
+            std::slice::from_ref(&marker),
+            &CharucoAlignment {
+                alignment: GridAlignment::IDENTITY,
+                marker_inliers: vec![0],
+            },
+            &image_view(&pixels, 64, 64),
+            &validation_cfg(&chess_params),
+        );
+
+        assert_eq!(
+            run.diagnostics.skipped_reason,
+            CornerValidationSkippedReason::HomographyUnavailable
+        );
+        assert_eq!(run.diagnostics.kept_corner_count, 1);
     }
 }

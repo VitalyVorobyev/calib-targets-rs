@@ -43,15 +43,26 @@
 mod alignment;
 mod board;
 mod detector;
+mod investigation;
 mod io;
 mod validation;
 
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 pub use detector::{
-    CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
+    CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun, CharucoDetector,
+    CharucoDetectorParams, CharucoDiagnostics, CharucoStageTimings, CornerValidationDiagnostics,
+    CornerValidationSkippedReason,
 };
-pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};
+pub use investigation::{
+    build_strip_acceptance, compute_strip_coverage, median, normalize_dictionary_name,
+    passes_spread_gate, split_composite_rects, spread_gate_limit, DatasetConfig,
+    InvestigationConfigError, COMPOSITE_STRIP_COUNT, DEFAULT_MIN_CORNER_COUNT,
+};
+pub use io::{
+    CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
+    CharucoReportDiagnostics, ImageCropRect, StripAcceptanceMetrics, StripCoverageMetrics,
+};
 pub use validation::{
     validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,
     LinkViolationKind, MarkerCornerLink,

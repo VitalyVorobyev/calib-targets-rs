@@ -34,8 +34,9 @@ mod params;
 mod rectified_view;
 
 pub use detector::{
-    ChessboardDebug, ChessboardDetectionResult, ChessboardDetector, GridGraphDebug,
-    GridGraphNeighborDebug, GridGraphNodeDebug,
+    ChessboardDebug, ChessboardDetectionResult, ChessboardDetectionRun, ChessboardDetector,
+    ChessboardDiagnostics, ChessboardStageTimings, GridGraphDebug, GridGraphNeighborDebug,
+    GridGraphNodeDebug,
 };
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{ChessboardParams, GridGraphParams};

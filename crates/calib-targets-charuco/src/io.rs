@@ -2,7 +2,7 @@
 
 use crate::{
     CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult,
-    CharucoDetector, CharucoDetectorParams,
+    CharucoDetectionRun, CharucoDetector, CharucoDetectorParams, CharucoDiagnostics,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
@@ -29,6 +29,43 @@ pub enum CharucoConfigError {
 
 fn default_px_per_square() -> f32 {
     60.0
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ImageCropRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct StripCoverageMetrics {
+    pub x_bin_counts: Vec<usize>,
+    pub empty_bin_count: usize,
+    pub min_bin_count: usize,
+    pub y_min: Option<f32>,
+    pub y_p10: Option<f32>,
+    pub y_median: Option<f32>,
+    pub y_p90: Option<f32>,
+    pub y_max: Option<f32>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct StripAcceptanceMetrics {
+    pub min_corner_count: usize,
+    pub passes_corner_count: bool,
+    pub passes_x_coverage: bool,
+    pub passes_all: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CharucoReportDiagnostics {
+    pub detection: CharucoDiagnostics,
+    #[serde(default)]
+    pub coverage: Option<StripCoverageMetrics>,
+    #[serde(default)]
+    pub acceptance: Option<StripAcceptanceMetrics>,
 }
 
 /// Configuration for the ChArUco detection example.
@@ -118,6 +155,14 @@ pub struct CharucoDetectReport {
     pub num_raw_corners: usize,
     pub raw_corners: Vec<Corner>,
     #[serde(default)]
+    pub source_image_path: Option<String>,
+    #[serde(default)]
+    pub strip_index: Option<usize>,
+    #[serde(default)]
+    pub crop_rect: Option<ImageCropRect>,
+    #[serde(default)]
+    pub diagnostics: Option<CharucoReportDiagnostics>,
+    #[serde(default)]
     pub detection: Option<TargetDetection>,
     #[serde(default)]
     pub markers: Option<Vec<MarkerDetection>>,
@@ -130,12 +175,30 @@ pub struct CharucoDetectReport {
 impl CharucoDetectReport {
     /// Build a base report from the input config and raw corners.
     pub fn new(cfg: &CharucoDetectConfig, config_path: &Path, raw_corners: Vec<Corner>) -> Self {
+        Self::new_with_context(
+            cfg.image_path.clone(),
+            config_path.to_string_lossy().into_owned(),
+            cfg.board,
+            raw_corners,
+        )
+    }
+
+    pub fn new_with_context(
+        image_path: impl Into<String>,
+        config_path: impl Into<String>,
+        board: CharucoBoardSpec,
+        raw_corners: Vec<Corner>,
+    ) -> Self {
         Self {
-            image_path: cfg.image_path.clone(),
-            config_path: config_path.to_string_lossy().into_owned(),
-            board: cfg.board,
+            image_path: image_path.into(),
+            config_path: config_path.into(),
+            board,
             num_raw_corners: raw_corners.len(),
             raw_corners,
+            source_image_path: None,
+            strip_index: None,
+            crop_rect: None,
+            diagnostics: None,
             detection: None,
             markers: None,
             alignment: None,
@@ -149,6 +212,19 @@ impl CharucoDetectReport {
         self.markers = Some(res.markers);
         self.alignment = Some(res.alignment);
         self.error = None;
+    }
+
+    pub fn set_detection_run(&mut self, run: CharucoDetectionRun) {
+        let diagnostics = run.diagnostics;
+        self.diagnostics = Some(CharucoReportDiagnostics {
+            detection: diagnostics,
+            coverage: None,
+            acceptance: None,
+        });
+        match run.result {
+            Ok(res) => self.set_detection(res),
+            Err(err) => self.set_error(err),
+        }
     }
 
     /// Record a detection error.
@@ -167,5 +243,46 @@ impl CharucoDetectReport {
         let json = serde_json::to_string_pretty(self)?;
         fs::write(path, json)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::MarkerLayout;
+    use calib_targets_aruco::builtins;
+
+    #[test]
+    fn report_deserializes_without_investigation_fields() {
+        let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
+        let json = serde_json::json!({
+            "image_path": "input.png",
+            "config_path": "config.json",
+            "board": {
+                "rows": 4,
+                "cols": 4,
+                "cell_size": 1.0,
+                "marker_size_rel": 0.75,
+                "dictionary": dict.name,
+                "marker_layout": "opencv_charuco"
+            },
+            "num_raw_corners": 0,
+            "raw_corners": [],
+            "detection": null,
+            "markers": null,
+            "alignment": null,
+            "error": null
+        });
+        let report: CharucoDetectReport =
+            serde_json::from_value(json).expect("report should deserialize");
+
+        assert_eq!(report.image_path, "input.png");
+        assert_eq!(report.board.rows, 4);
+        assert_eq!(report.board.cols, 4);
+        assert_eq!(report.board.marker_layout, MarkerLayout::OpenCvCharuco);
+        assert!(report.source_image_path.is_none());
+        assert!(report.strip_index.is_none());
+        assert!(report.crop_rect.is_none());
+        assert!(report.diagnostics.is_none());
     }
 }
