@@ -21,20 +21,18 @@
 
 ## Active Sprint
 
-_None currently assigned._
+- `FFI-003` Expose conservative chessboard / ChArUco / marker-board detector entry points over the approved ABI.
 
 ## Up Next
-- `FFI-002` Scaffold `calib-targets-ffi` with `cbindgen`, status/error handling, panic containment, and shared image/input primitives.
-- `FFI-003` Expose conservative chessboard / ChArUco / marker-board detector entry points over the approved ABI.
 - `FFI-004` Add C examples, C++ RAII wrapper, ABI tests, and release/docs integration.
 
 ## Backlog
 
 | ID | Status | Priority | Type | Title | Role | Notes |
 |----|--------|----------|------|-------|------|-------|
-| FFI-002 | todo | P1 | infra | Scaffold `calib-targets-ffi` crate and header generation | implementer | New workspace crate above `calib-targets`; add `cbindgen`, status codes, opaque handles, fixed `repr(C)` config/result primitives, and explicit ownership/error rules. |
-| FFI-003 | todo | P1 | infra | Add conservative detector handles and detection entry points | implementer | Implement approved v1 ABI for grayscale image input and fixed-struct config/result transport, including ChESS config. |
-| FFI-004 | todo | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Thin C++ wrapper on top of the C ABI, plus docs and CI coverage. |
+| FFI-002 | done | P1 | infra | Scaffold `calib-targets-ffi` crate and header generation | implementer | Added the workspace FFI crate, shared ABI runtime, deterministic `cbindgen` header generation, and the initial public header. |
+| FFI-003 | in-progress | P1 | infra | Add conservative detector handles and detection entry points | implementer | Implement approved v1 ABI for grayscale image input and fixed-struct config/result transport, including ChESS config. |
+| FFI-004 | todo | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Thin C++ wrapper on top of the C ABI, plus docs and CI coverage including automated C header compile smoke checks. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -63,4 +61,5 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| FFI-002 | 2026-03-11 | infra | Scaffold `calib-targets-ffi` crate and header generation | Added `calib-targets-ffi`, deterministic header generation, shared ABI status/error handling, and the initial generated header. |
 | FFI-001 | 2026-03-10 | design | Freeze FFI v1 ABI scope | Fixed structs, full config surface, built-in dictionary names only, and `cdylib` first. See `docs/ffi/decision-record.md`. |

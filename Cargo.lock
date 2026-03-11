@@ -389,6 +389,8 @@ version = "0.2.5"
 dependencies = [
  "calib-targets",
  "cbindgen",
+ "chess-corners",
+ "image",
 ]
 
 [[package]]

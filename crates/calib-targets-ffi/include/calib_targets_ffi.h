@@ -24,7 +24,7 @@
 #define CT_TRUE 1
 
 /**
- * Explicit status codes returned by all exported functions.
+ * Explicit status codes returned by exported functions.
  */
 typedef enum ct_status_t {
   CT_STATUS_OK = 0,
@@ -36,12 +36,19 @@ typedef enum ct_status_t {
 } ct_status_t;
 
 /**
- * Optional `uint32_t` convention used by fixed ABI structs.
+ * Opaque ChArUco detector handle.
  */
-typedef struct ct_optional_u32_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_u32_t;
+typedef struct ct_charuco_detector_t ct_charuco_detector_t;
+
+/**
+ * Opaque chessboard detector handle.
+ */
+typedef struct ct_chessboard_detector_t ct_chessboard_detector_t;
+
+/**
+ * Opaque marker-board detector handle.
+ */
+typedef struct ct_marker_board_detector_t ct_marker_board_detector_t;
 
 /**
  * Optional boolean convention used by fixed ABI structs.
@@ -60,6 +67,139 @@ typedef struct ct_optional_f32_t {
 } ct_optional_f32_t;
 
 /**
+ * Fixed refiner identifier type for ChESS subpixel refinement.
+ */
+typedef uint32_t ct_refiner_kind_t;
+
+/**
+ * Center-of-mass refiner configuration.
+ */
+typedef struct ct_center_of_mass_config_t {
+  int32_t radius;
+} ct_center_of_mass_config_t;
+
+/**
+ * Förstner refiner configuration.
+ */
+typedef struct ct_forstner_config_t {
+  int32_t radius;
+  float min_trace;
+  float min_det;
+  float max_condition_number;
+  float max_offset;
+} ct_forstner_config_t;
+
+/**
+ * Saddle-point refiner configuration.
+ */
+typedef struct ct_saddle_point_config_t {
+  int32_t radius;
+  float det_margin;
+  float max_offset;
+  float min_abs_det;
+} ct_saddle_point_config_t;
+
+/**
+ * ChESS refiner selection and parameters.
+ */
+typedef struct ct_refiner_config_t {
+  ct_refiner_kind_t kind;
+  struct ct_center_of_mass_config_t center_of_mass;
+  struct ct_forstner_config_t forstner;
+  struct ct_saddle_point_config_t saddle_point;
+} ct_refiner_config_t;
+
+/**
+ * ChESS low-level detector parameters.
+ */
+typedef struct ct_chess_params_t {
+  uint32_t use_radius10;
+  struct ct_optional_bool_t descriptor_use_radius10;
+  float threshold_rel;
+  struct ct_optional_f32_t threshold_abs;
+  uint32_t nms_radius;
+  uint32_t min_cluster_size;
+  struct ct_refiner_config_t refiner;
+} ct_chess_params_t;
+
+/**
+ * ChESS pyramid configuration.
+ */
+typedef struct ct_pyramid_params_t {
+  uint32_t num_levels;
+  size_t min_size;
+} ct_pyramid_params_t;
+
+/**
+ * Coarse-to-fine ChESS configuration.
+ */
+typedef struct ct_coarse_to_fine_params_t {
+  struct ct_pyramid_params_t pyramid;
+  uint32_t refinement_radius;
+  float merge_radius;
+} ct_coarse_to_fine_params_t;
+
+/**
+ * Shared ChESS configuration for raw corner detection.
+ */
+typedef struct ct_chess_config_t {
+  struct ct_chess_params_t params;
+  struct ct_coarse_to_fine_params_t multiscale;
+} ct_chess_config_t;
+
+/**
+ * Optional `uint32_t` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_u32_t {
+  uint32_t has_value;
+  uint32_t value;
+} ct_optional_u32_t;
+
+/**
+ * Orientation clustering parameters for chessboard-family detectors.
+ */
+typedef struct ct_orientation_clustering_params_t {
+  size_t num_bins;
+  size_t max_iters;
+  float peak_min_separation_deg;
+  float outlier_threshold_deg;
+  float min_peak_weight_fraction;
+  uint32_t use_weights;
+} ct_orientation_clustering_params_t;
+
+/**
+ * Chessboard detector parameters.
+ */
+typedef struct ct_chessboard_params_t {
+  float min_corner_strength;
+  size_t min_corners;
+  struct ct_optional_u32_t expected_rows;
+  struct ct_optional_u32_t expected_cols;
+  float completeness_threshold;
+  uint32_t use_orientation_clustering;
+  struct ct_orientation_clustering_params_t orientation_clustering_params;
+} ct_chessboard_params_t;
+
+/**
+ * Grid-graph search parameters.
+ */
+typedef struct ct_grid_graph_params_t {
+  float min_spacing_pix;
+  float max_spacing_pix;
+  size_t k_neighbors;
+  float orientation_tolerance_deg;
+} ct_grid_graph_params_t;
+
+/**
+ * Full create-time configuration for the chessboard detector handle.
+ */
+typedef struct ct_chessboard_detector_config_t {
+  struct ct_chess_config_t chess;
+  struct ct_chessboard_params_t chessboard;
+  struct ct_grid_graph_params_t graph;
+} ct_chessboard_detector_config_t;
+
+/**
  * Shared grayscale image descriptor for `u8` image input.
  *
  * `data` points to row-major pixels. `stride_bytes` may be greater than
@@ -71,6 +211,324 @@ typedef struct ct_gray_image_u8_t {
   size_t stride_bytes;
   const uint8_t *data;
 } ct_gray_image_u8_t;
+
+/**
+ * Fixed target kind identifier type.
+ */
+typedef uint32_t ct_target_kind_t;
+
+/**
+ * Shared target-detection header.
+ */
+typedef struct ct_target_detection_t {
+  ct_target_kind_t kind;
+  size_t corners_len;
+} ct_target_detection_t;
+
+/**
+ * Chessboard detection header.
+ */
+typedef struct ct_chessboard_result_t {
+  struct ct_target_detection_t detection;
+  uint32_t has_orientations;
+  float orientation_0;
+  float orientation_1;
+} ct_chessboard_result_t;
+
+/**
+ * Fixed 2D point output.
+ */
+typedef struct ct_point2f_t {
+  float x;
+  float y;
+} ct_point2f_t;
+
+/**
+ * Fixed integer grid coordinate output.
+ */
+typedef struct ct_grid_coords_t {
+  int32_t i;
+  int32_t j;
+} ct_grid_coords_t;
+
+/**
+ * One detected labeled corner.
+ */
+typedef struct ct_labeled_corner_t {
+  struct ct_point2f_t position;
+  uint32_t has_grid;
+  struct ct_grid_coords_t grid;
+  struct ct_optional_u32_t id;
+  uint32_t has_target_position;
+  struct ct_point2f_t target_position;
+  float score;
+} ct_labeled_corner_t;
+
+/**
+ * Fixed dictionary identifier type for built-in marker dictionaries.
+ */
+typedef uint32_t ct_dictionary_id_t;
+
+/**
+ * Fixed board marker-layout identifier type.
+ */
+typedef uint32_t ct_marker_layout_t;
+
+/**
+ * ChArUco board specification.
+ */
+typedef struct ct_charuco_board_spec_t {
+  uint32_t rows;
+  uint32_t cols;
+  float cell_size;
+  float marker_size_rel;
+  ct_dictionary_id_t dictionary;
+  ct_marker_layout_t marker_layout;
+} ct_charuco_board_spec_t;
+
+/**
+ * Marker scan/decode configuration.
+ */
+typedef struct ct_scan_decode_config_t {
+  size_t border_bits;
+  float inset_frac;
+  float marker_size_rel;
+  float min_border_score;
+  uint32_t dedup_by_id;
+} ct_scan_decode_config_t;
+
+/**
+ * ChArUco detector parameters.
+ */
+typedef struct ct_charuco_detector_params_t {
+  float px_per_square;
+  struct ct_chessboard_params_t chessboard;
+  struct ct_charuco_board_spec_t charuco;
+  struct ct_grid_graph_params_t graph;
+  struct ct_scan_decode_config_t scan;
+  uint32_t max_hamming;
+  size_t min_marker_inliers;
+  float corner_validation_threshold_rel;
+  struct ct_chess_params_t corner_redetect_params;
+} ct_charuco_detector_params_t;
+
+/**
+ * Full create-time configuration for the ChArUco detector handle.
+ */
+typedef struct ct_charuco_detector_config_t {
+  struct ct_chess_config_t chess;
+  struct ct_charuco_detector_params_t detector;
+} ct_charuco_detector_config_t;
+
+/**
+ * Fixed integer grid transform output.
+ */
+typedef struct ct_grid_transform_t {
+  int32_t a;
+  int32_t b;
+  int32_t c;
+  int32_t d;
+} ct_grid_transform_t;
+
+/**
+ * Fixed integer grid alignment output.
+ */
+typedef struct ct_grid_alignment_t {
+  struct ct_grid_transform_t transform;
+  int32_t translation_i;
+  int32_t translation_j;
+} ct_grid_alignment_t;
+
+/**
+ * ChArUco detection header.
+ */
+typedef struct ct_charuco_result_t {
+  struct ct_target_detection_t detection;
+  size_t markers_len;
+  struct ct_grid_alignment_t alignment;
+} ct_charuco_result_t;
+
+/**
+ * One decoded marker detection.
+ */
+typedef struct ct_marker_detection_t {
+  uint32_t id;
+  struct ct_grid_coords_t grid_cell;
+  uint8_t rotation;
+  uint8_t hamming;
+  uint8_t _reserved0[2];
+  float score;
+  float border_score;
+  uint64_t code;
+  uint32_t inverted;
+  struct ct_point2f_t corners_rect[4];
+  uint32_t has_corners_img;
+  struct ct_point2f_t corners_img[4];
+} ct_marker_detection_t;
+
+/**
+ * Fixed circle polarity identifier type.
+ */
+typedef uint32_t ct_circle_polarity_t;
+
+/**
+ * One expected marker circle on the board.
+ */
+typedef struct ct_marker_circle_spec_t {
+  struct ct_grid_coords_t cell;
+  ct_circle_polarity_t polarity;
+} ct_marker_circle_spec_t;
+
+/**
+ * Fixed marker-board layout.
+ */
+typedef struct ct_marker_board_layout_t {
+  uint32_t rows;
+  uint32_t cols;
+  struct ct_optional_f32_t cell_size;
+  struct ct_marker_circle_spec_t circles[3];
+} ct_marker_board_layout_t;
+
+/**
+ * Circle-score parameters for marker-board detection.
+ */
+typedef struct ct_circle_score_params_t {
+  size_t patch_size;
+  float diameter_frac;
+  float ring_thickness_frac;
+  float ring_radius_mul;
+  float min_contrast;
+  size_t samples;
+  int32_t center_search_px;
+} ct_circle_score_params_t;
+
+/**
+ * Circle-match parameters for marker-board detection.
+ */
+typedef struct ct_circle_match_params_t {
+  size_t max_candidates_per_polarity;
+  struct ct_optional_f32_t max_distance_cells;
+  size_t min_offset_inliers;
+} ct_circle_match_params_t;
+
+/**
+ * Marker-board detector parameters.
+ */
+typedef struct ct_marker_board_params_t {
+  struct ct_marker_board_layout_t layout;
+  struct ct_chessboard_params_t chessboard;
+  struct ct_grid_graph_params_t grid_graph;
+  struct ct_circle_score_params_t circle_score;
+  struct ct_circle_match_params_t match_params;
+  uint32_t has_roi_cells;
+  int32_t roi_cells[4];
+} ct_marker_board_params_t;
+
+/**
+ * Full create-time configuration for the marker-board detector handle.
+ */
+typedef struct ct_marker_board_detector_config_t {
+  struct ct_chess_config_t chess;
+  struct ct_marker_board_params_t detector;
+} ct_marker_board_detector_config_t;
+
+/**
+ * Marker-board detection header.
+ */
+typedef struct ct_marker_board_result_t {
+  struct ct_target_detection_t detection;
+  size_t circle_candidates_len;
+  size_t circle_matches_len;
+  uint32_t has_alignment;
+  struct ct_grid_alignment_t alignment;
+  size_t alignment_inliers;
+} ct_marker_board_result_t;
+
+/**
+ * One circle candidate from marker-board detection.
+ */
+typedef struct ct_circle_candidate_t {
+  struct ct_point2f_t center_img;
+  struct ct_grid_coords_t cell;
+  ct_circle_polarity_t polarity;
+  float score;
+  float contrast;
+} ct_circle_candidate_t;
+
+/**
+ * One expected-to-detected circle match result.
+ */
+typedef struct ct_circle_match_t {
+  struct ct_marker_circle_spec_t expected;
+  uint32_t has_matched_index;
+  size_t matched_index;
+  uint32_t has_distance_cells;
+  float distance_cells;
+  uint32_t has_offset_cells;
+  struct ct_grid_coords_t offset_cells;
+} ct_circle_match_t;
+
+#define CT_DICTIONARY_DICT_4X4_50 1
+
+#define CT_DICTIONARY_DICT_4X4_100 2
+
+#define CT_DICTIONARY_DICT_4X4_250 3
+
+#define CT_DICTIONARY_DICT_4X4_1000 4
+
+#define CT_DICTIONARY_DICT_5X5_50 5
+
+#define CT_DICTIONARY_DICT_5X5_100 6
+
+#define CT_DICTIONARY_DICT_5X5_250 7
+
+#define CT_DICTIONARY_DICT_5X5_1000 8
+
+#define CT_DICTIONARY_DICT_6X6_50 9
+
+#define CT_DICTIONARY_DICT_6X6_100 10
+
+#define CT_DICTIONARY_DICT_6X6_250 11
+
+#define CT_DICTIONARY_DICT_6X6_1000 12
+
+#define CT_DICTIONARY_DICT_7X7_50 13
+
+#define CT_DICTIONARY_DICT_7X7_100 14
+
+#define CT_DICTIONARY_DICT_7X7_250 15
+
+#define CT_DICTIONARY_DICT_7X7_1000 16
+
+#define CT_DICTIONARY_DICT_APRILTAG_16H5 17
+
+#define CT_DICTIONARY_DICT_APRILTAG_25H9 18
+
+#define CT_DICTIONARY_DICT_APRILTAG_36H10 19
+
+#define CT_DICTIONARY_DICT_APRILTAG_36H11 20
+
+#define CT_DICTIONARY_DICT_ARUCO_MIP_36H12 21
+
+#define CT_DICTIONARY_DICT_ARUCO_ORIGINAL 22
+
+#define CT_REFINER_KIND_CENTER_OF_MASS 1
+
+#define CT_REFINER_KIND_FORSTNER 2
+
+#define CT_REFINER_KIND_SADDLE_POINT 3
+
+#define CT_MARKER_LAYOUT_OPENCV_CHARUCO 1
+
+#define CT_TARGET_KIND_CHESSBOARD 1
+
+#define CT_TARGET_KIND_CHARUCO 2
+
+#define CT_TARGET_KIND_CHECKERBOARD_MARKER 3
+
+#define CT_CIRCLE_POLARITY_WHITE 1
+
+#define CT_CIRCLE_POLARITY_BLACK 2
 
 #ifdef __cplusplus
 extern "C" {
@@ -98,6 +556,148 @@ const char *ct_version_string(void);
  * `out_capacity` bytes. `out_len` must always be a valid writable pointer.
  */
 enum ct_status_t ct_last_error_message(char *out_utf8, size_t out_capacity, size_t *out_len);
+
+/**
+ * Create a chessboard detector handle.
+ *
+ * # Safety
+ *
+ * `config` and `out_detector` must be valid non-null pointers. On success,
+ * `*out_detector` receives a new handle owned by the caller.
+ */
+enum ct_status_t ct_chessboard_detector_create(const struct ct_chessboard_detector_config_t *config,
+                                               struct ct_chessboard_detector_t **out_detector);
+
+/**
+ * Destroy a chessboard detector handle.
+ *
+ * Passing `NULL` is allowed and has no effect.
+ *
+ * # Safety
+ *
+ * `detector` must either be null or a handle returned by
+ * [`ct_chessboard_detector_create`] that has not already been destroyed.
+ */
+void ct_chessboard_detector_destroy(struct ct_chessboard_detector_t *detector);
+
+/**
+ * Run end-to-end chessboard detection on a grayscale image.
+ *
+ * `out_corners_len` is required and always receives the required number of
+ * labeled-corner entries. Passing `out_corners = NULL` and
+ * `corners_capacity = 0` queries the required length without copying corner
+ * data.
+ *
+ * # Safety
+ *
+ * `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
+ * If `out_result` is non-null it must be writable. If `out_corners` is
+ * non-null it must point to writable storage for at least `corners_capacity`
+ * entries.
+ */
+enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detector_t *detector,
+                                               const struct ct_gray_image_u8_t *image,
+                                               struct ct_chessboard_result_t *out_result,
+                                               struct ct_labeled_corner_t *out_corners,
+                                               size_t corners_capacity,
+                                               size_t *out_corners_len);
+
+/**
+ * Create a ChArUco detector handle.
+ *
+ * # Safety
+ *
+ * `config` and `out_detector` must be valid non-null pointers. On success,
+ * `*out_detector` receives a new handle owned by the caller.
+ */
+enum ct_status_t ct_charuco_detector_create(const struct ct_charuco_detector_config_t *config,
+                                            struct ct_charuco_detector_t **out_detector);
+
+/**
+ * Destroy a ChArUco detector handle.
+ *
+ * Passing `NULL` is allowed and has no effect.
+ *
+ * # Safety
+ *
+ * `detector` must either be null or a handle returned by
+ * [`ct_charuco_detector_create`] that has not already been destroyed.
+ */
+void ct_charuco_detector_destroy(struct ct_charuco_detector_t *detector);
+
+/**
+ * Run end-to-end ChArUco detection on a grayscale image.
+ *
+ * `out_corners_len` and `out_markers_len` are required and always receive the
+ * required array lengths. Passing a `NULL` output array with capacity `0`
+ * queries the corresponding required length without copying array data.
+ *
+ * # Safety
+ *
+ * `detector`, `image`, `out_corners_len`, and `out_markers_len` must be valid
+ * non-null pointers. If `out_result` is non-null it must be writable. If
+ * `out_corners` or `out_markers` is non-null, each must point to writable
+ * storage for at least the matching capacity.
+ */
+enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detector_t *detector,
+                                            const struct ct_gray_image_u8_t *image,
+                                            struct ct_charuco_result_t *out_result,
+                                            struct ct_labeled_corner_t *out_corners,
+                                            size_t corners_capacity,
+                                            size_t *out_corners_len,
+                                            struct ct_marker_detection_t *out_markers,
+                                            size_t markers_capacity,
+                                            size_t *out_markers_len);
+
+/**
+ * Create a marker-board detector handle.
+ *
+ * # Safety
+ *
+ * `config` and `out_detector` must be valid non-null pointers. On success,
+ * `*out_detector` receives a new handle owned by the caller.
+ */
+enum ct_status_t ct_marker_board_detector_create(const struct ct_marker_board_detector_config_t *config,
+                                                 struct ct_marker_board_detector_t **out_detector);
+
+/**
+ * Destroy a marker-board detector handle.
+ *
+ * Passing `NULL` is allowed and has no effect.
+ *
+ * # Safety
+ *
+ * `detector` must either be null or a handle returned by
+ * [`ct_marker_board_detector_create`] that has not already been destroyed.
+ */
+void ct_marker_board_detector_destroy(struct ct_marker_board_detector_t *detector);
+
+/**
+ * Run end-to-end marker-board detection on a grayscale image.
+ *
+ * The three `*_len` pointers are required and always receive the required
+ * lengths for the corresponding output arrays. Passing a `NULL` output array
+ * with capacity `0` queries the required length without copying array data.
+ *
+ * # Safety
+ *
+ * `detector`, `image`, and all three `*_len` pointers must be valid non-null
+ * pointers. If `out_result` is non-null it must be writable. If any array
+ * pointer is non-null it must point to writable storage for at least the
+ * corresponding capacity.
+ */
+enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_detector_t *detector,
+                                                 const struct ct_gray_image_u8_t *image,
+                                                 struct ct_marker_board_result_t *out_result,
+                                                 struct ct_labeled_corner_t *out_corners,
+                                                 size_t corners_capacity,
+                                                 size_t *out_corners_len,
+                                                 struct ct_circle_candidate_t *out_circle_candidates,
+                                                 size_t circle_candidates_capacity,
+                                                 size_t *out_circle_candidates_len,
+                                                 struct ct_circle_match_t *out_circle_matches,
+                                                 size_t circle_matches_capacity,
+                                                 size_t *out_circle_matches_len);
 
 #ifdef __cplusplus
 }  // extern "C"
