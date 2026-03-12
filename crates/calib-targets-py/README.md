@@ -69,6 +69,10 @@ python examples/detect_marker_board.py path/to/image.png
 python examples/generate_printable.py tmpdata/printable/charuco_a4
 ```
 
+For the canonical printable-target JSON model, the repo-local CLI flow, and
+print-at-100%-scale guidance, see the workspace printable-target guide:
+https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
+
 ## Implementation note
 
 The compiled module is internal (`calib_targets._core`).

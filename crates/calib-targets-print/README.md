@@ -1,31 +1,24 @@
 # calib-targets-print
 
-`calib-targets-print` generates printable calibration targets for chessboard,
-ChArUco, and checkerboard marker boards.
+`calib-targets-print` is the workspace crate that generates printable
+calibration targets for chessboard, ChArUco, and checkerboard marker boards.
 
-It is the shared printable-target backend used by the
-[`calib-targets`](https://crates.io/crates/calib-targets) facade crate. The
-same canonical document renders matching `.json`, `.svg`, and `.png` outputs.
+The same functionality is also exposed through the published
+[`calib-targets`](https://crates.io/crates/calib-targets) facade crate as
+`calib_targets::printable`. The same canonical document renders matching
+`.json`, `.svg`, and `.png` outputs.
 
 ## Quickstart
 
-```bash
-cargo add calib-targets-print
-```
+If you are using the published crates today, the simplest Rust entry point is
+the `calib-targets` facade:
 
 ```rust,no_run
-use calib_targets_print::{
-    write_target_bundle, ChessboardTargetSpec, PrintableTargetDocument, TargetSpec,
-};
+use calib_targets::printable::{write_target_bundle, PrintableTargetDocument};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec {
-        inner_rows: 6,
-        inner_cols: 8,
-        square_size_mm: 20.0,
-    }));
-
-    let written = write_target_bundle(&doc, "out/chessboard_a4")?;
+    let doc = PrintableTargetDocument::load_json("testdata/printable/charuco_a4.json")?;
+    let written = write_target_bundle(&doc, "tmpdata/printable/charuco_a4")?;
     println!("{}", written.svg_path.display());
     Ok(())
 }
@@ -52,12 +45,12 @@ Each render writes:
 The JSON is normalized pretty-printed output for the exact document that was
 rendered. SVG and PNG are emitted from the same internal scene description.
 
-## More examples
+## Guide and examples
 
 - Canonical JSON specs:
   [testdata/printable/](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/testdata/printable)
-- Workspace guide:
-  [book/src/printable.md](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/book/src/printable.md)
+- Canonical printable-target guide:
+  [printable.html](https://vitalyvorobyev.github.io/calib-targets-rs/printable.html)
 - Facade example:
   [crates/calib-targets/examples/generate_printable.rs](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/calib-targets/examples/generate_printable.rs)
 

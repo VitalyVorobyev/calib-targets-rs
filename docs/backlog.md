@@ -25,7 +25,6 @@
 
 ## Up Next
 - `PRINT-001` (`P0`, infra, implementer) Publish `calib-targets-print` on crates.io and align workspace release metadata.
-- `PRINT-003` (`P1`, docs, implementer) Publish a release-ready printable-targets README and workspace entry points.
 
 ## Backlog
 
@@ -40,7 +39,7 @@
 | FFI-008 | done | P1 | infra | Publish native C/C++ release artifacts for supported platforms | implementer | Delivered per-platform native archive packaging, staged-prefix-based smoke validation, a tag-driven release workflow, and release-facing docs for GitHub-hosted native artifacts. |
 | PRINT-001 | todo | P0 | infra | Publish `calib-targets-print` on crates.io and align workspace release metadata | implementer | Make printable target generation a first-class published crate, align crate metadata/release notes/docs.rs/root README claims, and verify the facade dependency/re-export story matches the actual published surface. |
 | PRINT-002 | todo | P1 | api | Add ergonomic detector-spec to printable-target conversions without moving rendering into detector crates | implementer | Keep rendering centralized in `calib-targets-print`, but expose small constructors/conversions from detector-owned board/layout specs so ChArUco and other target crates can participate in printable generation without owning SVG/PNG/page logic. |
-| PRINT-003 | todo | P1 | docs | Publish a release-ready printable-targets README and workspace entry points | implementer | Rewrite the print README/book/root entry points around the canonical JSON document, Rust/CLI/Python examples, output guarantees, and concrete print-at-100%-scale guidance. |
+| PRINT-003 | done | P1 | docs | Publish a release-ready printable-targets README and workspace entry points | implementer | Added a canonical printable-target guide plus aligned root/facade/print/CLI/Python entry points, concrete JSON and Rust/CLI/Python examples, output expectations, and print-at-100%-scale guidance. |
 | PRINT-004 | todo | P1 | infra | Productize the printable target CLI workflow | implementer | Promote the existing `calib-targets-cli` init/generate flow as the official target-generation app, add any minimal missing affordances such as validation or dictionary discovery, and document whether the CLI remains repo-local or becomes a published companion package. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
@@ -80,6 +79,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| PRINT-003 | 2026-03-12 | docs | Publish a release-ready printable-targets README and workspace entry points | Added the canonical printable-target guide, aligned workspace and crate README entry points, documented Rust/CLI/Python flows, and made the current published-vs-repo-local distribution boundaries explicit. |
 | FFI-008 | 2026-03-12 | infra | Publish native C/C++ release artifacts for supported platforms | Added deterministic native release-archive packaging, multi-config-safe smoke validation, a tag-driven GitHub workflow, and updated docs/release notes for GitHub-hosted native artifacts. |
 | FFI-007 | 2026-03-12 | infra | Add ergonomic C++ consumer packaging and CMake API | Added a repo-local staged CMake package, exported `calib_targets_ffi::c` and `calib_targets_ffi::cpp` targets, a `find_package(...)` consumer example, dedicated smoke validation, and updated native docs/CI. |
 | FFI-006 | 2026-03-11 | docs | Publish a release-ready C API README and concise tutorials | Added a top-level native entry point and rewrote the FFI README into a release-facing C API guide with support boundaries, build/link flow, ownership rules, and concise example-backed tutorials. |

@@ -97,11 +97,15 @@ Typical field usage:
 - [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
 - [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
 - [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
-- [`calib-targets-print`](https://crates.io/crates/calib-targets-print) – printable target generation and JSON/SVG/PNG output.
+- `calib-targets-print` – workspace printable-target backend and JSON/SVG/PNG output.
 
-The Rust library crates above are the crates.io surface for this workspace.
-Repo-local companion crates such as `calib-targets-cli`,
-`calib-targets-py`, and `calib-targets-ffi` are not published on crates.io.
+Today the published Rust crates are `calib-targets`, `calib-targets-core`,
+`calib-targets-chessboard`, `calib-targets-aruco`, `calib-targets-charuco`,
+and `calib-targets-marker`. The printable backend currently lives in the
+workspace and is re-exported by the published `calib-targets` facade as
+`calib_targets::printable`.
+Repo-local companion crates such as `calib-targets-cli`, `calib-targets-py`,
+and `calib-targets-ffi` are not published on crates.io.
 
 ## Examples
 
@@ -126,9 +130,13 @@ The later produce detailed json reports that can be rendered by python scripts [
 
 Printable target generation uses canonical JSON documents stored under
 `testdata/printable/`. Each flow writes `<stem>.json`, `<stem>.svg`, and
-`<stem>.png` from the same source document. Library users can depend on the
-published `calib-targets-print` crate directly, while the CLI shown below
-remains a repo-local workflow.
+`<stem>.png` from the same source document. For the complete JSON model,
+Rust/CLI/Python flows, and print-at-100%-scale guidance, see the
+[printable-target guide](./book/src/printable.md).
+
+Today the published Rust entry point is `calib_targets::printable` from the
+`calib-targets` facade crate. The CLI shown below remains a repo-local
+workflow.
 
 CLI:
 
