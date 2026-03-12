@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workflow Runner"
+  short_description: "Route the manual architect implementer reviewer architect human workflow"
+  default_prompt: "Route a task through the manual architect implementer reviewer architect human workflow using the existing role skills"

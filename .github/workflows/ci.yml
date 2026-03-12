@@ -41,6 +41,14 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      - name: Check generated FFI header
+        if: matrix.toolchain == 'stable'
+        run: cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+
+      - name: CMake consumer smoke
+        if: matrix.toolchain == 'stable'
+        run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
+
       - name: test (all crates, default features)
         run: cargo test --workspace --all-targets
 

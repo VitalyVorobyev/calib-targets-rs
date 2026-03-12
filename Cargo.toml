@@ -3,6 +3,7 @@ members = [
     "crates/calib-targets-cli",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
+    "crates/calib-targets-ffi",
     "crates/calib-targets",
     "crates/calib-targets-core",
     "crates/calib-targets-chessboard",

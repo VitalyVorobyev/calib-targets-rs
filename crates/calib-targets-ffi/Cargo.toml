@@ -1,0 +1,22 @@
+[package]
+name = "calib-targets-ffi"
+version = "0.2.5"
+description = "C ABI scaffold for calib-targets"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+documentation.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+calib-targets = { path = "../calib-targets", features = ["image"], version = "0.2.5" }
+cbindgen = "0.29.2"
+chess-corners = "0.3"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = true }

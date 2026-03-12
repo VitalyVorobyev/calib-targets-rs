@@ -131,6 +131,29 @@ CLI:
 ```bash
 cargo run -p calib-targets-cli -- generate --spec testdata/printable/charuco_a4.json --out-stem tmpdata/printable/charuco_a4
 ```
+## C API
+
+The repo also ships a native C ABI in `crates/calib-targets-ffi`.
+
+Current native surface:
+
+- generated header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
+- header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
+- repo-owned C and C++ smoke examples plus an external compile/run smoke test
+- a repo-local staged CMake package and `find_package(...)` consumer example
+
+Current support boundaries:
+
+- build from this workspace with `cargo build -p calib-targets-ffi`
+- grayscale `u8` image input only
+- built-in dictionary ids only
+- no crates.io package, package-manager metadata, or prebuilt binaries yet
+- the C++ helper wrapper assumes a C++17-capable compiler, and the staged CMake flow targets CMake 3.16+
+
+For build steps, ownership rules, the query/fill result model, and concise C/C++
+tutorials, see [the C API guide](./docs/ffi/README.md).
+If you want the shortest path to a working downstream project, start with the
+[CMake consumer quickstart](./docs/ffi/cmake-consumer-quickstart.md).
 
 ## Python bindings
 
