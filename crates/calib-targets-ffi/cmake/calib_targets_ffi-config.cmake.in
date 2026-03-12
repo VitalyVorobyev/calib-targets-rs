@@ -1,0 +1,26 @@
+get_filename_component(_calib_targets_ffi_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(_calib_targets_ffi_include_dir "${_calib_targets_ffi_prefix}/include")
+set(_calib_targets_ffi_lib_dir "${_calib_targets_ffi_prefix}/lib")
+
+if(NOT TARGET calib_targets_ffi::c)
+  add_library(calib_targets_ffi::c SHARED IMPORTED)
+  set_target_properties(calib_targets_ffi::c PROPERTIES
+    IMPORTED_LOCATION "${_calib_targets_ffi_lib_dir}/@SHARED_LIBRARY_FILENAME@"
+    INTERFACE_INCLUDE_DIRECTORIES "${_calib_targets_ffi_include_dir}"@WINDOWS_IMPORT_LIBRARY_PROPERTY@
+  )
+endif()
+
+if(NOT TARGET calib_targets_ffi::cpp)
+  add_library(calib_targets_ffi::cpp INTERFACE IMPORTED)
+  set_target_properties(calib_targets_ffi::cpp PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${_calib_targets_ffi_include_dir}"
+    INTERFACE_LINK_LIBRARIES "calib_targets_ffi::c"
+  )
+endif()
+
+set(calib_targets_ffi_INCLUDE_DIR "${_calib_targets_ffi_include_dir}")
+set(calib_targets_ffi_LIBRARY "${_calib_targets_ffi_lib_dir}/@SHARED_LIBRARY_FILENAME@")
+
+unset(_calib_targets_ffi_include_dir)
+unset(_calib_targets_ffi_lib_dir)
+unset(_calib_targets_ffi_prefix)
