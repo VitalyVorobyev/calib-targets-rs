@@ -1,9 +1,15 @@
+#[path = "support/cmake.rs"]
+mod cmake_support;
+#[path = "support/native.rs"]
+mod native_support;
 mod support;
 
 use std::process::Command;
 
+use cmake_support::{build_cmake_example, cmake_executable_path, configure_cmake_example};
+use native_support::{dylib_env_var, prepend_search_path};
 use support::{
-    build_ffi_cdylib, cargo_program, crate_root, exe_suffix, find_program, run_command, temp_dir,
+    build_ffi_cdylib_with_profile, cargo_program, crate_root, find_program, run_command, temp_dir,
     testdata_path, workspace_root, write_binary_pgm,
 };
 
@@ -23,12 +29,11 @@ fn staged_cmake_consumer_builds_and_runs() {
         .join("cmake")
         .join("calib_targets_ffi")
         .join("calib_targets_ffi-config.cmake");
-    let executable = cmake_build_dir.join(format!("chessboard_cmake_consumer{}", exe_suffix()));
     let cargo = cargo_program();
     let cmake = find_program(&["cmake"]);
 
     write_binary_pgm(&testdata_path("mid.png"), &pgm_path);
-    build_ffi_cdylib(&workspace_root, &cargo, &cargo_target_dir);
+    build_ffi_cdylib_with_profile(&workspace_root, &cargo, &cargo_target_dir, "debug");
 
     run_command(
         Command::new(&cargo)
@@ -54,23 +59,27 @@ fn staged_cmake_consumer_builds_and_runs() {
         staged_config.display()
     );
 
-    run_command(
-        Command::new(&cmake)
-            .arg("-S")
-            .arg(&example_dir)
-            .arg("-B")
-            .arg(&cmake_build_dir)
-            .arg(format!("-DCMAKE_PREFIX_PATH={}", package_prefix.display())),
-        "configure CMake consumer example",
+    configure_cmake_example(
+        &cmake,
+        &example_dir,
+        &cmake_build_dir,
+        &package_prefix,
+        "debug",
     );
-
-    run_command(
-        Command::new(&cmake).arg("--build").arg(&cmake_build_dir),
+    build_cmake_example(
+        &cmake,
+        &cmake_build_dir,
+        "debug",
         "build CMake consumer example",
     );
+    let executable = cmake_executable_path(&cmake_build_dir, "chessboard_cmake_consumer", "debug");
+
+    let dylib_env = prepend_search_path(dylib_env_var(), &package_prefix.join("lib"));
 
     run_command(
-        Command::new(&executable).arg(&pgm_path),
+        Command::new(&executable)
+            .arg(&pgm_path)
+            .env(dylib_env_var(), &dylib_env),
         "run CMake consumer example",
     );
 }

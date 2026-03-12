@@ -12,6 +12,7 @@
   - [calib-targets-charuco](charuco.md)
     - [ChArUco Alignment and Refinement](charuco_alignment.md)
   - [calib-targets-marker](marker.md)
+  - [calib-targets-print](printable.md)
   - [calib-targets (facade)](facade.md)
 - [Examples](examples.md)
   - [Chessboard Detection](example_chessboard.md)

@@ -42,6 +42,7 @@ jobs:
             calib-targets-aruco \
             calib-targets-charuco \
             calib-targets-marker \
+            calib-targets-print \
             calib-targets; do
             PKG_VER="$(jq -r --arg name "$pkg" '.packages[] | select(.name==$name) | .version' <<<"$META")"
             echo "$pkg version:  $PKG_VER"
@@ -79,4 +80,5 @@ jobs:
           publish_with_retry calib-targets-aruco
           publish_with_retry calib-targets-charuco
           publish_with_retry calib-targets-marker
+          publish_with_retry calib-targets-print
           publish_with_retry calib-targets

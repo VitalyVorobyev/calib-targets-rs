@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "target": {
+    "kind": "charuco",
+    "rows": 31,
+    "cols": 31,
+    "square_size_mm": 2.5,
+    "marker_size_rel": 0.75,
+    "dictionary": "DICT_4X4_1000",
+    "marker_layout": "opencv_charuco",
+    "border_bits": 1
+  },
+  "page": {
+    "size": {
+      "kind": "a4"
+    },
+    "orientation": "portrait",
+    "margin_mm": 10.0
+  },
+  "render": {
+    "debug_annotations": false,
+    "png_dpi": 600
+  }
+}

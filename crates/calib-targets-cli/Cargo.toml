@@ -1,0 +1,28 @@
+[package]
+name = "calib-targets-cli"
+version = "0.3.0"
+description = "CLI utilities for calib-targets"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "calib-targets"
+path = "src/main.rs"
+
+[dependencies]
+calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.3.0" }
+calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.3.0" }
+calib-targets-marker = { path = "../calib-targets-marker", version = "0.3.0" }
+calib-targets-print = { path = "../calib-targets-print", version = "0.3.0" }
+clap = { version = "4.5", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"

@@ -72,16 +72,26 @@ pub fn cargo_program() -> String {
     env::var("CARGO").unwrap_or_else(|_| "cargo".to_string())
 }
 
-pub fn build_ffi_cdylib(workspace_root: &Path, cargo: &str, cargo_target_dir: &Path) {
+pub fn build_ffi_cdylib_with_profile(
+    workspace_root: &Path,
+    cargo: &str,
+    cargo_target_dir: &Path,
+    profile: &str,
+) {
+    let mut command = Command::new(cargo);
+    command
+        .current_dir(workspace_root)
+        .arg("build")
+        .arg("-p")
+        .arg("calib-targets-ffi")
+        .arg("--target-dir")
+        .arg(cargo_target_dir);
+    if profile == "release" {
+        command.arg("--release");
+    }
     run_command(
-        Command::new(cargo)
-            .current_dir(workspace_root)
-            .arg("build")
-            .arg("-p")
-            .arg("calib-targets-ffi")
-            .arg("--target-dir")
-            .arg(cargo_target_dir),
-        "cargo build -p calib-targets-ffi",
+        &mut command,
+        &format!("cargo build -p calib-targets-ffi --profile {profile}"),
     );
 }
 
