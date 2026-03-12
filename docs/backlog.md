@@ -24,7 +24,7 @@
 - _None currently._
 
 ## Up Next
-- _None currently._
+- `FFI-008` (`P1`, infra, implementer) Publish native C/C++ release artifacts for supported platforms.
 
 ## Backlog
 
@@ -36,6 +36,7 @@
 | FFI-005 | done | P0 | docs | Add C API changelog entries and release notes | implementer | Added an `Unreleased` changelog entry plus a checked-in release-note draft for the C API launch, with current support boundaries and deferred C++/CMake follow-up called out explicitly. |
 | FFI-006 | done | P0 | docs | Publish a release-ready C API README and concise tutorials | implementer | Added a top-level native entry point plus a release-facing C API guide with build/link instructions, ownership/error rules, query/fill coverage, and concise C/C++ tutorials aligned to the shipped examples. |
 | FFI-007 | done | P1 | infra | Add ergonomic C++ consumer packaging and CMake API | implementer | Added a repo-local staged CMake package, exported C/C++ consumer targets, a `find_package(...)` example, dedicated smoke validation, and matching docs without widening the underlying C ABI. |
+| FFI-008 | todo | P1 | infra | Publish native C/C++ release artifacts for supported platforms | implementer | Produce per-platform archives from the staged native package prefix so downstream users can consume headers, binaries, and CMake config files without building Rust from source. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -52,6 +53,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 - `FFI-005` The next release entry in `CHANGELOG.md` and release notes clearly describe the shipped C API surface, native smoke validation, documented toolchain/language assumptions, and explicitly deferred post-release work.
 - `FFI-006` The repo contains a concise but complete C API guide with build/link instructions, ownership and last-error conventions, at least one end-to-end tutorial, and clear top-level navigation from the workspace README.
 - `FFI-007` Post-release C++ consumers can integrate through a documented CMake target/package and a repo-owned example without widening or bypassing the approved C ABI.
+- `FFI-008` Supported releases attach native archives for the chosen platform matrix, each containing the staged include/lib/cmake prefix, and the docs explain how downstream C/C++ consumers use those artifacts without a Rust toolchain.
 
 ## Locked Defaults
 - Dedicated `calib-targets-ffi` crate layered on top of `calib-targets`, not on individual lower crates.

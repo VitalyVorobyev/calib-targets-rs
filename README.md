@@ -141,6 +141,8 @@ Current support boundaries:
 
 For build steps, ownership rules, the query/fill result model, and concise C/C++
 tutorials, see [the C API guide](./docs/ffi/README.md).
+If you want the shortest path to a working downstream project, start with the
+[CMake consumer quickstart](./docs/ffi/cmake-consumer-quickstart.md).
 
 ## Python bindings
 

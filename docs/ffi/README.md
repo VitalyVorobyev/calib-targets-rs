@@ -18,6 +18,10 @@ For the architectural rationale behind the ABI shape, see the
 [decision record](./decision-record.md). This document focuses on consumption,
 not design history.
 
+If you want a direct “what files do I need and what does the smallest CMake
+consumer look like?” walkthrough, start with
+[`docs/ffi/cmake-consumer-quickstart.md`](./cmake-consumer-quickstart.md).
+
 ## Current Support Boundaries
 
 - `calib-targets-ffi` is repo-local and remains `publish = false`.
