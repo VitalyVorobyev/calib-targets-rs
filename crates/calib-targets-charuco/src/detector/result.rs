@@ -27,9 +27,16 @@ pub struct CharucoStageTimings {
 pub struct CharucoDiagnostics {
     pub chessboard: ChessboardDiagnostics,
     pub candidate_cell_count: usize,
+    pub complete_candidate_cell_count: usize,
+    pub inferred_candidate_cell_count: usize,
     pub decoded_marker_count: usize,
     pub aligned_marker_count: usize,
     pub alignment_inlier_count: usize,
+    pub alignment_candidate_count: usize,
+    pub alignment_corner_in_bounds_count: usize,
+    pub alignment_corner_in_bounds_ratio: f32,
+    pub alignment_runner_up_inlier_count: usize,
+    pub alignment_runner_up_corner_in_bounds_ratio: f32,
     pub mapped_corner_count_before_validation: usize,
     pub corner_validation: Option<CornerValidationDiagnostics>,
     pub final_corner_count: usize,
@@ -40,4 +47,6 @@ pub struct CharucoDiagnostics {
 pub struct CharucoDetectionRun {
     pub result: Result<CharucoDetectionResult, super::CharucoDetectError>,
     pub diagnostics: CharucoDiagnostics,
+    pub markers: Vec<MarkerDetection>,
+    pub alignment: Option<GridAlignment>,
 }

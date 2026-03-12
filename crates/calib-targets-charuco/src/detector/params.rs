@@ -88,7 +88,9 @@ impl CharucoDetectorParams {
             graph,
             scan,
             max_hamming,
-            min_marker_inliers: 8,
+            // Thin field-of-view strips often expose only 6-7 markers even when the
+            // chessboard fit is otherwise stable, so keep the default gate below 8.
+            min_marker_inliers: 6,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
         }

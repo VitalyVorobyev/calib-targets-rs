@@ -215,13 +215,24 @@ impl CharucoDetectReport {
     }
 
     pub fn set_detection_run(&mut self, run: CharucoDetectionRun) {
-        let diagnostics = run.diagnostics;
+        let CharucoDetectionRun {
+            result,
+            diagnostics,
+            markers,
+            alignment,
+        } = run;
+        if !markers.is_empty() {
+            self.markers = Some(markers);
+        }
+        if let Some(alignment) = alignment {
+            self.alignment = Some(alignment);
+        }
         self.diagnostics = Some(CharucoReportDiagnostics {
             detection: diagnostics,
             coverage: None,
             acceptance: None,
         });
-        match run.result {
+        match result {
             Ok(res) => self.set_detection(res),
             Err(err) => self.set_error(err),
         }

@@ -21,12 +21,17 @@ pub struct ChessboardDetector {
     pub grid_search: GridGraphParams,
 }
 
-#[derive(Debug, Serialize)]
+const MAX_CHESSBOARD_CANDIDATES: usize = 8;
+
+#[derive(Clone, Debug, Serialize)]
 pub struct ChessboardDetectionResult {
     pub detection: TargetDetection,
     pub inliers: Vec<usize>,
     pub orientations: Option<[f32; 2]>,
     pub debug: ChessboardDebug,
+    pub grid_width: u32,
+    pub grid_height: u32,
+    pub completeness: f32,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -68,6 +73,10 @@ pub struct ChessboardDiagnostics {
     pub strong_corner_count: usize,
     pub orientation_filtered_count: usize,
     pub component_count: usize,
+    pub largest_component_size: usize,
+    pub graph_min_spacing_pix: f32,
+    pub graph_max_spacing_pix: f32,
+    pub graph_k_neighbors: usize,
     pub selected_grid_width: Option<u32>,
     pub selected_grid_height: Option<u32>,
     pub selected_grid_completeness: Option<f32>,
@@ -78,6 +87,7 @@ pub struct ChessboardDiagnostics {
 #[derive(Debug)]
 pub struct ChessboardDetectionRun {
     pub detection: Option<ChessboardDetectionResult>,
+    pub candidates: Vec<ChessboardDetectionResult>,
     pub diagnostics: ChessboardDiagnostics,
 }
 
@@ -142,6 +152,7 @@ impl ChessboardDetector {
             diagnostics.timings.total_ms = elapsed_ms(total_start);
             return ChessboardDetectionRun {
                 detection: None,
+                candidates: Vec::new(),
                 diagnostics,
             };
         }
@@ -192,14 +203,21 @@ impl ChessboardDetector {
             diagnostics.timings.total_ms = elapsed_ms(total_start);
             return ChessboardDetectionRun {
                 detection: None,
+                candidates: Vec::new(),
                 diagnostics,
             };
         }
 
         let graph_start = Instant::now();
-        let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
+        let graph_params = adapt_grid_search_params(&strong, &self.grid_search);
+        diagnostics.graph_min_spacing_pix = graph_params.min_spacing_pix;
+        diagnostics.graph_max_spacing_pix = graph_params.max_spacing_pix;
+        diagnostics.graph_k_neighbors = graph_params.k_neighbors;
+
+        let graph = GridGraph::new(&strong, graph_params, graph_diagonals);
         let components = connected_components(&graph);
         diagnostics.component_count = components.len();
+        diagnostics.largest_component_size = components.iter().map(Vec::len).max().unwrap_or(0);
         diagnostics.timings.graph_components_ms = elapsed_ms(graph_start);
 
         debug!(
@@ -208,7 +226,7 @@ impl ChessboardDetector {
         );
 
         let select_start = Instant::now();
-        let mut best: Option<(SelectedComponent, usize)> = None;
+        let mut candidates = Vec::new();
 
         for component in &components {
             if component.len() < self.params.min_corners {
@@ -221,33 +239,43 @@ impl ChessboardDetector {
             let Some(selected) = self.component_to_board_coords(&coords, &strong) else {
                 continue;
             };
-            let score = selected.detection.corners.len();
-            match best {
-                None => best = Some((selected, score)),
-                Some((_, best_score)) if score > best_score => {
-                    best = Some((selected, score));
-                }
-                _ => {}
-            }
+            candidates.push(selected);
         }
         diagnostics.timings.select_ms = elapsed_ms(select_start);
 
-        let detection = if let Some((selected, _)) = best {
-            diagnostics.selected_grid_width = Some(selected.grid_width);
-            diagnostics.selected_grid_height = Some(selected.grid_height);
-            diagnostics.selected_grid_completeness = Some(selected.completeness);
-            diagnostics.final_corner_count = selected.detection.corners.len();
+        candidates.sort_by(|a, b| {
+            b.detection
+                .corners
+                .len()
+                .cmp(&a.detection.corners.len())
+                .then_with(|| b.completeness.total_cmp(&a.completeness))
+                .then_with(|| (b.grid_width * b.grid_height).cmp(&(a.grid_width * a.grid_height)))
+        });
 
-            let graph_debug = Some(build_graph_debug(&graph, &strong));
-            Some(ChessboardDetectionResult {
+        let graph_debug = Some(build_graph_debug(&graph, &strong));
+        let chessboard_candidates: Vec<ChessboardDetectionResult> = candidates
+            .into_iter()
+            .take(MAX_CHESSBOARD_CANDIDATES)
+            .map(|selected| ChessboardDetectionResult {
                 detection: selected.detection,
                 inliers: selected.inliers,
                 orientations: grid_diagonals,
                 debug: ChessboardDebug {
-                    orientation_histogram,
-                    graph: graph_debug,
+                    orientation_histogram: orientation_histogram.clone(),
+                    graph: graph_debug.clone(),
                 },
+                grid_width: selected.grid_width,
+                grid_height: selected.grid_height,
+                completeness: selected.completeness,
             })
+            .collect();
+
+        let detection = if let Some(selected) = chessboard_candidates.first() {
+            diagnostics.selected_grid_width = Some(selected.grid_width);
+            diagnostics.selected_grid_height = Some(selected.grid_height);
+            diagnostics.selected_grid_completeness = Some(selected.completeness);
+            diagnostics.final_corner_count = selected.detection.corners.len();
+            Some(selected.clone())
         } else {
             None
         };
@@ -255,6 +283,7 @@ impl ChessboardDetector {
         diagnostics.timings.total_ms = elapsed_ms(total_start);
         ChessboardDetectionRun {
             detection,
+            candidates: chessboard_candidates,
             diagnostics,
         }
     }
@@ -342,6 +371,55 @@ impl ChessboardDetector {
     }
 }
 
+fn adapt_grid_search_params(corners: &[Corner], base: &GridGraphParams) -> GridGraphParams {
+    let Some(spacing_pix) = estimate_grid_spacing_pix(corners) else {
+        return base.clone();
+    };
+
+    let mut params = base.clone();
+    params.min_spacing_pix = params.min_spacing_pix.max(spacing_pix * 0.4);
+    params.max_spacing_pix = params.max_spacing_pix.max(spacing_pix * 2.2);
+    params.k_neighbors = params.k_neighbors.max(16);
+    params
+}
+
+fn estimate_grid_spacing_pix(corners: &[Corner]) -> Option<f32> {
+    if corners.len() < 4 {
+        return None;
+    }
+
+    let mut samples = Vec::with_capacity(corners.len());
+    for (idx, corner) in corners.iter().enumerate() {
+        let mut distances = Vec::with_capacity(corners.len().saturating_sub(1));
+        for (neighbor_idx, neighbor) in corners.iter().enumerate() {
+            if idx == neighbor_idx {
+                continue;
+            }
+            let delta = neighbor.position - corner.position;
+            let distance = delta.norm();
+            if distance.is_finite() && distance > 0.0 {
+                distances.push(distance);
+            }
+        }
+        distances.sort_by(|a, b| a.total_cmp(b));
+        let sample = if distances.len() >= 3 {
+            distances[2]
+        } else if distances.len() >= 2 {
+            distances[1]
+        } else {
+            distances[0]
+        };
+        samples.push(sample);
+    }
+
+    if samples.is_empty() {
+        return None;
+    }
+
+    samples.sort_by(|a, b| a.total_cmp(b));
+    Some(samples[samples.len() / 2])
+}
+
 fn select_board_size(
     width: u32,
     height: u32,
@@ -415,4 +493,91 @@ fn wrap_angle_pi(theta: f32) -> f32 {
 
 fn elapsed_ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1_000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{adapt_grid_search_params, estimate_grid_spacing_pix, ChessboardDetector};
+    use crate::params::{ChessboardParams, GridGraphParams};
+    use calib_targets_core::Corner;
+    use nalgebra::Point2;
+    use std::f32::consts::FRAC_PI_4;
+
+    fn make_corner(x: f32, y: f32, orientation: f32) -> Corner {
+        Corner {
+            position: Point2::new(x, y),
+            orientation,
+            orientation_cluster: None,
+            strength: 1.0,
+        }
+    }
+
+    fn make_grid_with_duplicates(
+        cols: usize,
+        rows: usize,
+        spacing: f32,
+        dup_offset: f32,
+    ) -> Vec<Corner> {
+        let mut corners = Vec::new();
+        for j in 0..rows {
+            for i in 0..cols {
+                let base_orientation = if (i + j) % 2 == 0 {
+                    FRAC_PI_4
+                } else {
+                    3.0 * FRAC_PI_4
+                };
+                let opposite_orientation = if (i + j) % 2 == 0 {
+                    3.0 * FRAC_PI_4
+                } else {
+                    FRAC_PI_4
+                };
+                let x = i as f32 * spacing;
+                let y = j as f32 * spacing;
+                corners.push(make_corner(x, y, base_orientation));
+                corners.push(make_corner(
+                    x + dup_offset,
+                    y + dup_offset,
+                    opposite_orientation,
+                ));
+            }
+        }
+        corners
+    }
+
+    #[test]
+    fn spacing_estimate_skips_duplicate_local_corners() {
+        let corners = make_grid_with_duplicates(5, 5, 55.0, 3.0);
+        let spacing = estimate_grid_spacing_pix(&corners).expect("spacing");
+        assert!((spacing - 55.0).abs() < 8.0, "spacing={spacing}");
+    }
+
+    #[test]
+    fn adapted_graph_params_expand_for_large_spacing() {
+        let corners = make_grid_with_duplicates(5, 5, 55.0, 3.0);
+        let base = GridGraphParams::default();
+        let adapted = adapt_grid_search_params(&corners, &base);
+        assert!(adapted.min_spacing_pix >= 20.0, "{adapted:?}");
+        assert!(adapted.max_spacing_pix >= 110.0, "{adapted:?}");
+        assert!(adapted.k_neighbors >= 16, "{adapted:?}");
+    }
+
+    #[test]
+    fn detector_handles_duplicate_nearby_corners_with_adaptive_spacing() {
+        let corners = make_grid_with_duplicates(5, 5, 55.0, 3.0);
+        let params = ChessboardParams {
+            min_corner_strength: 0.0,
+            min_corners: 16,
+            expected_rows: Some(5),
+            expected_cols: Some(5),
+            completeness_threshold: 0.6,
+            use_orientation_clustering: false,
+            ..ChessboardParams::default()
+        };
+        let detector = ChessboardDetector::new(params);
+        let run = detector.detect_from_corners_with_diagnostics(&corners);
+        let detection = run.detection.expect("detection");
+        assert_eq!(run.diagnostics.final_corner_count, 25);
+        assert_eq!(run.diagnostics.largest_component_size, 25);
+        assert_eq!(detection.detection.corners.len(), 25);
+    }
 }
