@@ -17,6 +17,9 @@ crate-type = ["cdylib", "rlib"]
 calib-targets = { path = "../calib-targets", features = ["image"], version = "0.2.5" }
 cbindgen = "0.29.2"
 chess-corners = "0.3"
+flate2 = "1.0"
+tar = "0.4"
+zip = { version = "0.6.6", default-features = false }
 
 [dev-dependencies]
 image = { version = "0.25", default-features = true }

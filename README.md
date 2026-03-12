@@ -140,18 +140,19 @@ Current native surface:
 - generated header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
 - header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
 - repo-owned C and C++ smoke examples plus an external compile/run smoke test
-- a repo-local staged CMake package and `find_package(...)` consumer example
+- a repo-local staged CMake package, release-archive helper, and `find_package(...)` consumer example
 
 Current support boundaries:
 
 - build from this workspace with `cargo build -p calib-targets-ffi`
 - grayscale `u8` image input only
 - built-in dictionary ids only
-- no crates.io package, package-manager metadata, or prebuilt binaries yet
+- supported tagged releases attach native archives for Linux, macOS, and Windows
+- no crates.io package or package-manager metadata
 - the C++ helper wrapper assumes a C++17-capable compiler, and the staged CMake flow targets CMake 3.16+
 
-For build steps, ownership rules, the query/fill result model, and concise C/C++
-tutorials, see [the C API guide](./docs/ffi/README.md).
+For release-archive download steps, ownership rules, the query/fill result
+model, and concise C/C++ tutorials, see [the C API guide](./docs/ffi/README.md).
 If you want the shortest path to a working downstream project, start with the
 [CMake consumer quickstart](./docs/ffi/cmake-consumer-quickstart.md).
 

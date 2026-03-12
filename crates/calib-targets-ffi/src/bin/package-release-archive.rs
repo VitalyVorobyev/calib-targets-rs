@@ -3,28 +3,32 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process;
 
-use calib_targets_ffi::package_support::{next_path_arg, stage_package, usage_for, StageArgs};
+use calib_targets_ffi::package_support::{
+    build_release_archive, next_path_arg, next_string_arg, usage_for, ReleaseArchiveArgs,
+};
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("stage-cmake-package failed: {err}");
+        eprintln!("package-release-archive failed: {err}");
         process::exit(1);
     }
 }
 
 fn run() -> Result<(), String> {
     let args = Args::parse(env::args_os().skip(1))?;
-    stage_package(&StageArgs {
-        lib_dir: args.lib_dir.clone(),
-        prefix: args.prefix.clone(),
+    let archive_path = build_release_archive(&ReleaseArchiveArgs {
+        lib_dir: args.lib_dir,
+        output_dir: args.output_dir,
+        platform_id: args.platform_id,
     })?;
-    println!("{}", args.prefix.display());
+    println!("{}", archive_path.display());
     Ok(())
 }
 
 struct Args {
     lib_dir: PathBuf,
-    prefix: PathBuf,
+    output_dir: PathBuf,
+    platform_id: Option<String>,
 }
 
 impl Args {
@@ -33,7 +37,8 @@ impl Args {
         I: IntoIterator<Item = OsString>,
     {
         let mut lib_dir = None;
-        let mut prefix = None;
+        let mut output_dir = None;
+        let mut platform_id = None;
         let mut iter = args.into_iter();
 
         while let Some(arg) = iter.next() {
@@ -44,11 +49,17 @@ impl Args {
                             .map_err(|_| format!("missing value for --lib-dir\n\n{}", usage()))?,
                     );
                 }
-                Some("--prefix") => {
-                    prefix = Some(
-                        next_path_arg(&mut iter, "--prefix")
-                            .map_err(|_| format!("missing value for --prefix\n\n{}", usage()))?,
-                    );
+                Some("--output-dir") => {
+                    output_dir =
+                        Some(next_path_arg(&mut iter, "--output-dir").map_err(|_| {
+                            format!("missing value for --output-dir\n\n{}", usage())
+                        })?);
+                }
+                Some("--platform-id") => {
+                    platform_id =
+                        Some(next_string_arg(&mut iter, "--platform-id").map_err(|_| {
+                            format!("missing value for --platform-id\n\n{}", usage())
+                        })?);
                 }
                 Some("--help") | Some("-h") => {
                     return Err(usage().to_string());
@@ -63,12 +74,17 @@ impl Args {
         }
 
         let lib_dir = lib_dir.ok_or_else(|| format!("missing --lib-dir\n\n{}", usage()))?;
-        let prefix = prefix.ok_or_else(|| format!("missing --prefix\n\n{}", usage()))?;
+        let output_dir =
+            output_dir.ok_or_else(|| format!("missing --output-dir\n\n{}", usage()))?;
 
-        Ok(Self { lib_dir, prefix })
+        Ok(Self {
+            lib_dir,
+            output_dir,
+            platform_id,
+        })
     }
 }
 
 fn usage() -> &'static str {
-    usage_for("stage-cmake-package")
+    usage_for("package-release-archive")
 }

@@ -5,8 +5,7 @@ wants to use `calib-targets-ffi` from a CMake project.
 
 It assumes:
 
-- you have a checkout of this repo or a release tarball that contains it
-- you can build `calib-targets-ffi` with Cargo
+- you have either a tagged native release archive or a checkout of this repo
 - you want the current ergonomic path: CMake + the header-only C++ wrapper
 
 If you want the broader ABI/reference guide, see
@@ -32,6 +31,20 @@ Those files are enough for a CMake consumer that uses:
 
 ## How To Get Those Files Today
 
+From a supported tagged release, download and unpack the native archive for your
+platform:
+
+- Linux and macOS: `calib-targets-ffi-<version>-<platform>.tar.gz`
+- Windows: `calib-targets-ffi-<version>-<platform>.zip`
+
+After unpacking, you can either:
+
+- point `CMAKE_PREFIX_PATH` at the unpacked top-level directory directly, or
+- copy that directory into your own repo under something like
+  `third_party/calib-targets-ffi/`
+
+If you are working from a repo checkout instead, create the same layout locally:
+
 From the workspace root:
 
 ```bash
@@ -47,16 +60,14 @@ That creates a staged package prefix at:
 target/ffi-cmake-package/
 ```
 
-You can either:
-
-- point `CMAKE_PREFIX_PATH` at that directory directly, or
-- copy that directory into your own repo under something like
-  `third_party/calib-targets-ffi/`
-
 Current limitation:
 
-- there are no published prebuilt archives yet, so today the package is created
-  from a repo checkout with Cargo
+- there is still no crates.io/package-manager distribution or installer flow;
+  the supported distribution format is the native release archive itself
+
+If you want to rehearse that exact release-archive payload from a repo checkout,
+run `package-release-archive` instead; the broader C API guide shows that
+command and the expected archive layout.
 
 ## Minimal Consumer Project Layout
 
@@ -72,7 +83,8 @@ my-app/
       lib/
 ```
 
-Where `third_party/calib-targets-ffi/` is the staged package prefix copied from
+Where `third_party/calib-targets-ffi/` is either the unpacked native release
+archive directory or the staged package prefix copied from
 `target/ffi-cmake-package/`.
 
 ## Minimal `CMakeLists.txt`
@@ -252,6 +264,10 @@ Expected output:
 ```text
 detector call succeeded; no target found in blank image
 ```
+
+On Windows, make sure `third_party/calib-targets-ffi/lib` is on `PATH` before
+running the executable, or copy `calib_targets_ffi.dll` next to the built
+binary.
 
 ## If You Want Pure C Instead
 

@@ -9,7 +9,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Add fixed-struct C detector APIs for chessboard, ChArUco, and checkerboard marker-board detection over 8-bit grayscale images, with opaque handles, explicit status codes, caller-owned query/fill buffers, full ChESS configuration, and built-in dictionary names only.
 - Add repo-owned native validation for the C API: generated-header drift checks, a plain C smoke example, a thin header-only C++17 RAII wrapper/example, and a Cargo-driven smoke test that compiles and runs external C and C++ consumers against the built shared library.
 - Add repo-local ergonomic C++/CMake consumer packaging: stage Cargo-built artifacts into a deterministic CMake package prefix, export `calib_targets_ffi::c` and `calib_targets_ffi::cpp` targets, and validate a repo-owned `find_package(...)` consumer example in CI.
-- Clarify current native-consumer boundaries: the staged CMake package is repo-local only; there is still no crates.io/package-manager distribution or prebuilt binary release flow for `calib-targets-ffi`.
+- Add tagged native release assets for `calib-targets-ffi`: supported GitHub releases now attach per-platform archives containing the staged `include/`, `lib/`, and `lib/cmake/` prefix so downstream C/C++ consumers can integrate without building Rust from source.
+- Clarify current native-consumer boundaries: the release archives are the supported distribution format for Linux, macOS, and Windows tags, but there is still no crates.io/package-manager distribution, installer flow, or signed native package.
 
 ## [0.2.5]
 - Maintenance release: bump crate versions to `0.2.5`.
