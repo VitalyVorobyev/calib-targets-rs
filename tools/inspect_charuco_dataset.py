@@ -48,6 +48,8 @@ def cargo_command(args: argparse.Namespace, out_dir: Path) -> list[str]:
         cmd.extend(["--strip", str(args.strip)])
     if args.repeat is not None:
         cmd.extend(["--repeat", str(args.repeat)])
+    if args.min_marker_inliers is not None:
+        cmd.extend(["--min-marker-inliers", str(args.min_marker_inliers)])
     if args.multi_hypothesis_decode:
         cmd.append("--multi-hypothesis-decode")
     if args.rectified_recovery:
@@ -121,6 +123,7 @@ def main() -> None:
     parser.add_argument("--image")
     parser.add_argument("--strip", type=int)
     parser.add_argument("--repeat", type=int)
+    parser.add_argument("--min-marker-inliers", type=int)
     parser.add_argument("--multi-hypothesis-decode", action="store_true")
     parser.add_argument("--rectified-recovery", action="store_true")
     parser.add_argument("--global-corner-validation", action="store_true")

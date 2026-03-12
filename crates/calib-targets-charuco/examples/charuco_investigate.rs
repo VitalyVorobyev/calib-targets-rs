@@ -46,6 +46,7 @@ enum Command {
 struct CommonArgs {
     input_dir: Option<PathBuf>,
     out_dir: Option<PathBuf>,
+    min_marker_inliers: Option<usize>,
     multi_hypothesis_decode: bool,
     rectified_recovery: bool,
     global_corner_validation: bool,
@@ -188,6 +189,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> 
     let mut image = None;
     let mut strip = None;
     let mut repeat = 10usize;
+    let mut min_marker_inliers = None;
     let mut multi_hypothesis_decode = false;
     let mut rectified_recovery = false;
     let mut global_corner_validation = false;
@@ -222,6 +224,14 @@ fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> 
                     .parse::<usize>()
                     .map_err(|_| "invalid --repeat")?;
             }
+            "--min-marker-inliers" => {
+                idx += 1;
+                min_marker_inliers = Some(
+                    require_arg(&args, idx, "--min-marker-inliers")?
+                        .parse::<usize>()
+                        .map_err(|_| "invalid --min-marker-inliers")?,
+                );
+            }
             "--multi-hypothesis-decode" => {
                 multi_hypothesis_decode = true;
             }
@@ -242,6 +252,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> 
     let common = CommonArgs {
         input_dir,
         out_dir,
+        min_marker_inliers,
         multi_hypothesis_decode,
         rectified_recovery,
         global_corner_validation,
@@ -420,6 +431,9 @@ fn build_context(common: &CommonArgs) -> Result<InvestigationContext, Box<dyn st
 
     let mut params = CharucoDetectorParams::for_board(&board);
     params.px_per_square = 60.0;
+    if let Some(min_marker_inliers) = common.min_marker_inliers {
+        params.min_marker_inliers = min_marker_inliers;
+    }
     params.augmentation.multi_hypothesis_decode = common.multi_hypothesis_decode;
     params.augmentation.rectified_recovery = common.rectified_recovery;
     params.use_global_corner_validation = common.global_corner_validation;
