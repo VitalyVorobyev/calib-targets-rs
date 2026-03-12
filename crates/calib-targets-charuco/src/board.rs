@@ -3,6 +3,7 @@
 use calib_targets_aruco::{BoardCell, Dictionary};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Marker placement scheme for the board.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -50,6 +51,7 @@ pub enum CharucoBoardError {
 pub struct CharucoBoard {
     spec: CharucoBoardSpec,
     marker_positions: Vec<BoardCell>,
+    marker_ids_by_cell: HashMap<(i32, i32), u32>,
 }
 
 impl CharucoBoard {
@@ -74,6 +76,11 @@ impl CharucoBoard {
         let marker_positions = match spec.marker_layout {
             MarkerLayout::OpenCvCharuco => open_cv_charuco_marker_positions(spec.rows, spec.cols),
         };
+        let marker_ids_by_cell = marker_positions
+            .iter()
+            .enumerate()
+            .map(|(id, cell)| ((cell.sx, cell.sy), id as u32))
+            .collect();
 
         let needed = marker_positions.len();
         let available = spec.dictionary.codes.len();
@@ -84,6 +91,7 @@ impl CharucoBoard {
         Ok(Self {
             spec,
             marker_positions,
+            marker_ids_by_cell,
         })
     }
 
@@ -109,6 +117,12 @@ impl CharucoBoard {
     #[inline]
     pub fn marker_position(&self, id: u32) -> Option<BoardCell> {
         self.marker_positions.get(id as usize).cloned()
+    }
+
+    /// Mapping from board square-cell coordinates `(sx, sy)` back to marker id.
+    #[inline]
+    pub fn marker_id_at_cell(&self, sx: i32, sy: i32) -> Option<u32> {
+        self.marker_ids_by_cell.get(&(sx, sy)).copied()
     }
 
     /// Square-cell coordinates `(sx, sy)` for the given marker id.

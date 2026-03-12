@@ -16,7 +16,9 @@ use calib_targets_aruco::{
 use calib_targets_chessboard::{
     rectify_from_chessboard_result, ChessboardDetectionResult, ChessboardDetector,
 };
-use calib_targets_core::{Corner, GrayImageView, GridCoords};
+use calib_targets_core::{
+    Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, GRID_TRANSFORMS_D4,
+};
 use nalgebra::Point2;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -55,6 +57,24 @@ struct CandidateEvaluation {
     alignment_ms: f64,
     map_validate_ms: f64,
     failure: Option<CandidateFailure>,
+}
+
+#[derive(Clone)]
+struct CellDecodeEvidence {
+    candidate: SampledMarkerCell,
+    selected_marker: Option<MarkerDetection>,
+    hypothesis_detections: Vec<(usize, MarkerDetection)>,
+}
+
+#[derive(Clone)]
+struct PlacementSelectionCandidate {
+    alignment: GridAlignment,
+    markers: Vec<MarkerDetection>,
+    matched_count: usize,
+    contradiction_count: usize,
+    score_sum: f32,
+    corner_in_bounds_count: usize,
+    corner_in_bounds_ratio: f32,
 }
 
 #[derive(Clone, Copy)]
@@ -226,8 +246,22 @@ impl CharucoDetector {
             .len()
             .saturating_sub(complete_candidate_cell_count);
         let local_decode_start = Instant::now();
-        let local_markers = self.decode_markers_in_cell_candidates(image, &cell_candidates);
+        let cell_evidence = self.decode_cell_evidence(image, &cell_candidates);
+        let local_markers = dedup_markers_by_id(
+            cell_evidence
+                .iter()
+                .filter_map(|evidence| evidence.selected_marker.clone())
+                .collect(),
+        );
         let local_decode_ms = elapsed_ms(local_decode_start);
+        let patch_eval = self.evaluate_patch_placement(
+            image,
+            chessboard.clone(),
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            &cell_evidence,
+            local_decode_ms,
+        );
         let local_eval = self.evaluate_marker_hypothesis(
             image,
             chessboard.clone(),
@@ -236,6 +270,30 @@ impl CharucoDetector {
             local_markers.clone(),
             local_decode_ms,
         );
+        let local_eval = if let Some(patch_eval) = patch_eval {
+            match (local_eval.failure.is_none(), patch_eval.failure.is_none()) {
+                (false, true) => patch_eval,
+                (true, false) => local_eval,
+                (true, true) => {
+                    let patch_improves = (patch_eval.final_corner_count
+                        > local_eval.final_corner_count
+                        && patch_eval.markers.len() >= local_eval.markers.len())
+                        || (patch_eval.final_corner_count == local_eval.final_corner_count
+                            && patch_eval.markers.len() > local_eval.markers.len());
+                    if patch_improves {
+                        patch_eval
+                    } else {
+                        local_eval
+                    }
+                }
+                (false, false) => match compare_evaluations(&local_eval, &patch_eval) {
+                    Ordering::Less => patch_eval,
+                    _ => local_eval,
+                },
+            }
+        } else {
+            local_eval
+        };
 
         let (rectified_markers, rectified_cell_count) =
             self.decode_markers_from_rectified_view(image, &chessboard, &corner_map);
@@ -407,13 +465,188 @@ impl CharucoDetector {
         }
     }
 
-    fn decode_markers_in_cell_candidates(
+    fn evaluate_patch_placement(
+        &self,
+        image: &GrayImageView<'_>,
+        chessboard: ChessboardDetectionResult,
+        complete_candidate_cell_count: usize,
+        inferred_candidate_cell_count: usize,
+        cell_evidence: &[CellDecodeEvidence],
+        decode_ms: f64,
+    ) -> Option<CandidateEvaluation> {
+        let alignment_start = Instant::now();
+        let selection = self.select_patch_alignment(&chessboard.detection, cell_evidence)?;
+        let alignment_ms = elapsed_ms(alignment_start);
+        if !alignment_has_sufficient_support(&selection, self.params.min_marker_inliers) {
+            return None;
+        }
+
+        let alignment = selection.alignment;
+        let markers = selection.markers;
+        let decoded_marker_count = markers.len();
+        let aligned_marker_count = markers.len();
+        let candidate_cell_count = complete_candidate_cell_count + inferred_candidate_cell_count;
+
+        let map_validate_start = Instant::now();
+        let mapped = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+        let mapped_corner_count_before_validation = mapped.corners.len();
+        let validation = validate_and_fix_corners(
+            mapped,
+            &self.board,
+            &markers,
+            &alignment,
+            image,
+            &CornerValidationConfig {
+                px_per_square: self.params.px_per_square,
+                threshold_rel: self.params.corner_validation_threshold_rel,
+                chess_params: &self.params.corner_redetect_params,
+            },
+        );
+        let map_validate_ms = elapsed_ms(map_validate_start);
+
+        let result = CharucoDetectionResult {
+            detection: validation.detection.clone(),
+            markers: markers.clone(),
+            alignment: alignment.alignment,
+        };
+
+        Some(CandidateEvaluation {
+            chessboard,
+            candidate_cell_count,
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            decoded_marker_count,
+            aligned_marker_count,
+            alignment_candidate_count: selection.candidate_count,
+            alignment_corner_in_bounds_count: selection.corner_in_bounds_count,
+            alignment_corner_in_bounds_ratio: selection.corner_in_bounds_ratio,
+            alignment_runner_up_inlier_count: selection.runner_up_inlier_count,
+            alignment_runner_up_corner_in_bounds_ratio: selection.runner_up_corner_in_bounds_ratio,
+            markers,
+            alignment: Some(alignment),
+            mapped_corner_count_before_validation,
+            final_corner_count: validation.detection.corners.len(),
+            corner_validation: Some(validation.diagnostics),
+            result: Some(result),
+            decode_ms,
+            alignment_ms,
+            map_validate_ms,
+            failure: None,
+        })
+    }
+
+    fn select_patch_alignment(
+        &self,
+        chessboard: &TargetDetection,
+        cell_evidence: &[CellDecodeEvidence],
+    ) -> Option<super::alignment_select::AlignmentSelection> {
+        let mut candidates = enumerate_legal_patch_alignments(&self.board, chessboard)
+            .into_iter()
+            .filter_map(|alignment| {
+                self.evaluate_patch_alignment_candidate(chessboard, cell_evidence, alignment)
+            })
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return None;
+        }
+
+        candidates.sort_by(|a, b| compare_patch_selection_candidates(b, a));
+        let best = candidates.first()?.clone();
+        let runner_up = candidates.get(1);
+        if runner_up.is_some_and(|runner_up| {
+            compare_patch_selection_candidates(&best, runner_up) == Ordering::Equal
+                && runner_up.alignment != best.alignment
+        }) {
+            return None;
+        }
+
+        let marker_inliers = (0..best.markers.len()).collect();
+        Some(super::alignment_select::AlignmentSelection {
+            markers: best.markers.clone(),
+            alignment: CharucoAlignment {
+                alignment: best.alignment,
+                marker_inliers,
+            },
+            candidate_count: candidates.len(),
+            corner_in_bounds_count: best.corner_in_bounds_count,
+            corner_in_bounds_ratio: best.corner_in_bounds_ratio,
+            runner_up_inlier_count: runner_up
+                .map(|candidate| candidate.matched_count)
+                .unwrap_or(0),
+            runner_up_corner_in_bounds_ratio: runner_up
+                .map(|candidate| candidate.corner_in_bounds_ratio)
+                .unwrap_or(0.0),
+        })
+    }
+
+    fn evaluate_patch_alignment_candidate(
+        &self,
+        chessboard: &TargetDetection,
+        cell_evidence: &[CellDecodeEvidence],
+        alignment: GridAlignment,
+    ) -> Option<PlacementSelectionCandidate> {
+        let (corner_in_bounds_count, corner_in_bounds_ratio) =
+            alignment_corner_fit(&self.board, chessboard, alignment);
+        if corner_in_bounds_count == 0 {
+            return None;
+        }
+
+        let mut matched_markers = Vec::new();
+        let mut contradiction_count = 0usize;
+
+        for evidence in cell_evidence {
+            let [sx, sy] =
+                alignment.map(evidence.candidate.cell.gc.gx, evidence.candidate.cell.gc.gy);
+            let expected_id = self.board.marker_id_at_cell(sx, sy);
+            match expected_id {
+                Some(expected_id) => {
+                    if let Some(marker) = match_expected_marker_from_hypotheses(
+                        evidence.candidate.source,
+                        expected_id,
+                        &evidence.hypothesis_detections,
+                        &self.params.scan,
+                    ) {
+                        matched_markers.push(marker);
+                    } else if cell_has_confident_wrong_decode(
+                        evidence,
+                        Some(expected_id),
+                        &self.params.scan,
+                    ) {
+                        contradiction_count += 1;
+                    }
+                }
+                None => {
+                    if cell_has_confident_wrong_decode(evidence, None, &self.params.scan) {
+                        contradiction_count += 1;
+                    }
+                }
+            }
+        }
+
+        let matched_markers = dedup_markers_by_id(matched_markers);
+        if matched_markers.is_empty() {
+            return None;
+        }
+
+        let score_sum = matched_markers.iter().map(|marker| marker.score).sum();
+        Some(PlacementSelectionCandidate {
+            alignment,
+            matched_count: matched_markers.len(),
+            contradiction_count,
+            score_sum,
+            markers: matched_markers,
+            corner_in_bounds_count,
+            corner_in_bounds_ratio,
+        })
+    }
+
+    fn decode_cell_evidence(
         &self,
         image: &GrayImageView<'_>,
         cell_candidates: &[SampledMarkerCell],
-    ) -> Vec<MarkerDetection> {
+    ) -> Vec<CellDecodeEvidence> {
         let scan_hypotheses = marker_scan_hypotheses(&self.params.scan);
-        let mut decoded = Vec::new();
+        let mut evidence = Vec::with_capacity(cell_candidates.len());
 
         for candidate in cell_candidates {
             let mut hypothesis_detections = Vec::new();
@@ -430,16 +663,19 @@ impl CharucoDetector {
                 hypothesis_detections.push((hypothesis_idx, marker));
             }
 
-            if let Some(marker) = select_marker_from_scan_hypotheses(
+            let selected_marker = select_marker_from_scan_hypotheses(
                 candidate.source,
                 &hypothesis_detections,
                 &self.params.scan,
-            ) {
-                decoded.push(marker);
-            }
+            );
+            evidence.push(CellDecodeEvidence {
+                candidate: candidate.clone(),
+                selected_marker,
+                hypothesis_detections,
+            });
         }
 
-        dedup_markers_by_id(decoded)
+        evidence
     }
 
     fn decode_markers_from_rectified_view(
@@ -574,6 +810,153 @@ fn alignment_has_sufficient_support(
     inliers >= 4
         && selection.corner_in_bounds_ratio >= 0.95
         && selection.runner_up_inlier_count + 2 <= inliers
+}
+
+fn compare_patch_selection_candidates(
+    a: &PlacementSelectionCandidate,
+    b: &PlacementSelectionCandidate,
+) -> Ordering {
+    a.matched_count
+        .cmp(&b.matched_count)
+        .then_with(|| b.contradiction_count.cmp(&a.contradiction_count))
+        .then_with(|| {
+            a.score_sum
+                .partial_cmp(&b.score_sum)
+                .unwrap_or(Ordering::Equal)
+        })
+        .then_with(|| {
+            a.corner_in_bounds_ratio
+                .partial_cmp(&b.corner_in_bounds_ratio)
+                .unwrap_or(Ordering::Equal)
+        })
+}
+
+fn alignment_corner_fit(
+    board: &CharucoBoard,
+    chessboard: &TargetDetection,
+    alignment: GridAlignment,
+) -> (usize, f32) {
+    let mut total = 0usize;
+    let mut in_bounds = 0usize;
+    for corner in &chessboard.corners {
+        let Some(grid) = corner.grid else {
+            continue;
+        };
+        total += 1;
+        let [bi, bj] = alignment.map(grid.i, grid.j);
+        if board.charuco_corner_id_from_board_corner(bi, bj).is_some() {
+            in_bounds += 1;
+        }
+    }
+    let ratio = if total == 0 {
+        0.0
+    } else {
+        in_bounds as f32 / total as f32
+    };
+    (in_bounds, ratio)
+}
+
+fn enumerate_legal_patch_alignments(
+    board: &CharucoBoard,
+    chessboard: &TargetDetection,
+) -> Vec<GridAlignment> {
+    let Some((min_i, max_i, min_j, max_j)) = chessboard_grid_bounds(chessboard) else {
+        return Vec::new();
+    };
+    let inner_cols = board.expected_inner_cols() as i32;
+    let inner_rows = board.expected_inner_rows() as i32;
+    let bbox = [
+        (min_i, min_j),
+        (max_i, min_j),
+        (max_i, max_j),
+        (min_i, max_j),
+    ];
+
+    let mut alignments = Vec::new();
+    for transform in GRID_TRANSFORMS_D4 {
+        let transformed = bbox.map(|(i, j)| transform.apply(i, j));
+        let min_x = transformed.iter().map(|p| p[0]).min().unwrap_or(0);
+        let max_x = transformed.iter().map(|p| p[0]).max().unwrap_or(0);
+        let min_y = transformed.iter().map(|p| p[1]).min().unwrap_or(0);
+        let max_y = transformed.iter().map(|p| p[1]).max().unwrap_or(0);
+
+        let tx_min = 1 - min_x;
+        let tx_max = inner_cols - max_x;
+        let ty_min = 1 - min_y;
+        let ty_max = inner_rows - max_y;
+        if tx_min > tx_max || ty_min > ty_max {
+            continue;
+        }
+
+        for tx in tx_min..=tx_max {
+            for ty in ty_min..=ty_max {
+                alignments.push(GridAlignment {
+                    transform,
+                    translation: [tx, ty],
+                });
+            }
+        }
+    }
+    alignments
+}
+
+fn chessboard_grid_bounds(chessboard: &TargetDetection) -> Option<(i32, i32, i32, i32)> {
+    let mut min_i = i32::MAX;
+    let mut max_i = i32::MIN;
+    let mut min_j = i32::MAX;
+    let mut max_j = i32::MIN;
+
+    for corner in &chessboard.corners {
+        let Some(grid) = corner.grid else {
+            continue;
+        };
+        min_i = min_i.min(grid.i);
+        max_i = max_i.max(grid.i);
+        min_j = min_j.min(grid.j);
+        max_j = max_j.max(grid.j);
+    }
+
+    (min_i != i32::MAX).then_some((min_i, max_i, min_j, max_j))
+}
+
+fn match_expected_marker_from_hypotheses(
+    source: MarkerCellSource,
+    expected_id: u32,
+    hypothesis_detections: &[(usize, MarkerDetection)],
+    base_scan: &calib_targets_aruco::ScanDecodeConfig,
+) -> Option<MarkerDetection> {
+    let base_detection = hypothesis_detections
+        .iter()
+        .find(|(hypothesis_idx, marker)| *hypothesis_idx == 0 && marker.id == expected_id)
+        .map(|(_, marker)| marker.clone());
+    if let Some(marker) = base_detection {
+        return marker_allowed_for_source(source, &marker, base_scan, false).then_some(marker);
+    }
+
+    let matching: Vec<&MarkerDetection> = hypothesis_detections
+        .iter()
+        .filter(|(_, marker)| marker.id == expected_id)
+        .map(|(_, marker)| marker)
+        .collect();
+    if matching.len() < 2 {
+        return None;
+    }
+
+    let marker = best_marker_from_group(&matching).clone();
+    marker_allowed_for_source(source, &marker, base_scan, true).then_some(marker)
+}
+
+fn cell_has_confident_wrong_decode(
+    evidence: &CellDecodeEvidence,
+    expected_id: Option<u32>,
+    base_scan: &calib_targets_aruco::ScanDecodeConfig,
+) -> bool {
+    evidence.selected_marker.as_ref().is_some_and(|marker| {
+        (match expected_id {
+            Some(expected_id) => marker.id != expected_id,
+            None => true,
+        }) && marker_allowed_for_source(evidence.candidate.source, marker, base_scan, false)
+    })
 }
 
 fn marker_scan_hypotheses(
