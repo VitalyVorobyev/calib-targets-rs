@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+- Publish `calib-targets-print` as part of the Rust crates.io release flow,
+  update the tagged publish workflow to release it before the `calib-targets`
+  facade crate, and clarify that printable generation is a published library
+  surface while `calib-targets-cli` remains repo-local.
 - Add the repo-local `calib-targets-ffi` crate and generated public C header for native consumers. The FFI crate remains `publish = false` and is built from the workspace rather than distributed on crates.io.
 - Add fixed-struct C detector APIs for chessboard, ChArUco, and checkerboard marker-board detection over 8-bit grayscale images, with opaque handles, explicit status codes, caller-owned query/fill buffers, full ChESS configuration, and built-in dictionary names only.
 - Add repo-owned native validation for the C API: generated-header drift checks, a plain C smoke example, a thin header-only C++17 RAII wrapper/example, and a Cargo-driven smoke test that compiles and runs external C and C++ consumers against the built shared library.

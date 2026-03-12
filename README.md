@@ -97,9 +97,11 @@ Typical field usage:
 - [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
 - [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
 - [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
-- `calib-targets-print` – printable target generation and JSON/SVG/PNG output.
+- [`calib-targets-print`](https://crates.io/crates/calib-targets-print) – printable target generation and JSON/SVG/PNG output.
 
-(All crates are published on crates.io)
+The Rust library crates above are the crates.io surface for this workspace.
+Repo-local companion crates such as `calib-targets-cli`,
+`calib-targets-py`, and `calib-targets-ffi` are not published on crates.io.
 
 ## Examples
 
@@ -124,7 +126,9 @@ The later produce detailed json reports that can be rendered by python scripts [
 
 Printable target generation uses canonical JSON documents stored under
 `testdata/printable/`. Each flow writes `<stem>.json`, `<stem>.svg`, and
-`<stem>.png` from the same source document.
+`<stem>.png` from the same source document. Library users can depend on the
+published `calib-targets-print` crate directly, while the CLI shown below
+remains a repo-local workflow.
 
 CLI:
 

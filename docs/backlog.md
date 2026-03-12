@@ -24,7 +24,8 @@
 - _None currently._
 
 ## Up Next
-- `FFI-008` (`P1`, infra, implementer) Publish native C/C++ release artifacts for supported platforms.
+- `PRINT-001` (`P0`, infra, implementer) Publish `calib-targets-print` on crates.io and align workspace release metadata.
+- `PRINT-003` (`P1`, docs, implementer) Publish a release-ready printable-targets README and workspace entry points.
 
 ## Backlog
 
@@ -36,7 +37,11 @@
 | FFI-005 | done | P0 | docs | Add C API changelog entries and release notes | implementer | Added an `Unreleased` changelog entry plus a checked-in release-note draft for the C API launch, with current support boundaries and deferred C++/CMake follow-up called out explicitly. |
 | FFI-006 | done | P0 | docs | Publish a release-ready C API README and concise tutorials | implementer | Added a top-level native entry point plus a release-facing C API guide with build/link instructions, ownership/error rules, query/fill coverage, and concise C/C++ tutorials aligned to the shipped examples. |
 | FFI-007 | done | P1 | infra | Add ergonomic C++ consumer packaging and CMake API | implementer | Added a repo-local staged CMake package, exported C/C++ consumer targets, a `find_package(...)` example, dedicated smoke validation, and matching docs without widening the underlying C ABI. |
-| FFI-008 | todo | P1 | infra | Publish native C/C++ release artifacts for supported platforms | implementer | Produce per-platform archives from the staged native package prefix so downstream users can consume headers, binaries, and CMake config files without building Rust from source. |
+| FFI-008 | done | P1 | infra | Publish native C/C++ release artifacts for supported platforms | implementer | Delivered per-platform native archive packaging, staged-prefix-based smoke validation, a tag-driven release workflow, and release-facing docs for GitHub-hosted native artifacts. |
+| PRINT-001 | todo | P0 | infra | Publish `calib-targets-print` on crates.io and align workspace release metadata | implementer | Make printable target generation a first-class published crate, align crate metadata/release notes/docs.rs/root README claims, and verify the facade dependency/re-export story matches the actual published surface. |
+| PRINT-002 | todo | P1 | api | Add ergonomic detector-spec to printable-target conversions without moving rendering into detector crates | implementer | Keep rendering centralized in `calib-targets-print`, but expose small constructors/conversions from detector-owned board/layout specs so ChArUco and other target crates can participate in printable generation without owning SVG/PNG/page logic. |
+| PRINT-003 | todo | P1 | docs | Publish a release-ready printable-targets README and workspace entry points | implementer | Rewrite the print README/book/root entry points around the canonical JSON document, Rust/CLI/Python examples, output guarantees, and concrete print-at-100%-scale guidance. |
+| PRINT-004 | todo | P1 | infra | Productize the printable target CLI workflow | implementer | Promote the existing `calib-targets-cli` init/generate flow as the official target-generation app, add any minimal missing affordances such as validation or dictionary discovery, and document whether the CLI remains repo-local or becomes a published companion package. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -54,6 +59,10 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 - `FFI-006` The repo contains a concise but complete C API guide with build/link instructions, ownership and last-error conventions, at least one end-to-end tutorial, and clear top-level navigation from the workspace README.
 - `FFI-007` Post-release C++ consumers can integrate through a documented CMake target/package and a repo-owned example without widening or bypassing the approved C ABI.
 - `FFI-008` Supported releases attach native archives for the chosen platform matrix, each containing the staged include/lib/cmake prefix, and the docs explain how downstream C/C++ consumers use those artifacts without a Rust toolchain.
+- `PRINT-001` `calib-targets-print` can be published and consumed independently from crates.io, the workspace/facade metadata and README claims are accurate, and the published docs point users to the canonical printable-target workflow.
+- `PRINT-002` Rust users can construct printable target documents directly from detector-owned board/layout specs where appropriate, without duplicating rendering code across detector crates or introducing cyclic crate dependencies.
+- `PRINT-003` The repo contains a concise but release-facing printable-target guide with one canonical JSON example, Rust/CLI/Python quickstarts, output-file expectations, and explicit physical-print validation guidance.
+- `PRINT-004` A user can discover, initialize, validate, and generate a printable target through the documented CLI flow, and the scope/distribution model of that CLI is explicit in repo docs.
 
 ## Locked Defaults
 - Dedicated `calib-targets-ffi` crate layered on top of `calib-targets`, not on individual lower crates.
@@ -64,11 +73,14 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 - Built-in dictionary names only in v1.
 - Initial packaging target is `cdylib`.
 - `cbindgen` generates the public header; the C++ wrapper lives above the C ABI and does not define the ABI.
+- Dedicated `calib-targets-print` crate layered on top of detector crates stays as the printable-target backend; do not move SVG/PNG/page rendering into `calib-targets-charuco`, `calib-targets-marker`, or other detector crates.
+- Detector crates own board semantics and reusable board/layout specs; `calib-targets-print` owns page specification, layout resolution, rendering, and output bundles, with facade re-exports used only for ergonomics.
 
 ## Done
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| FFI-008 | 2026-03-12 | infra | Publish native C/C++ release artifacts for supported platforms | Added deterministic native release-archive packaging, multi-config-safe smoke validation, a tag-driven GitHub workflow, and updated docs/release notes for GitHub-hosted native artifacts. |
 | FFI-007 | 2026-03-12 | infra | Add ergonomic C++ consumer packaging and CMake API | Added a repo-local staged CMake package, exported `calib_targets_ffi::c` and `calib_targets_ffi::cpp` targets, a `find_package(...)` consumer example, dedicated smoke validation, and updated native docs/CI. |
 | FFI-006 | 2026-03-11 | docs | Publish a release-ready C API README and concise tutorials | Added a top-level native entry point and rewrote the FFI README into a release-facing C API guide with support boundaries, build/link flow, ownership rules, and concise example-backed tutorials. |
 | FFI-005 | 2026-03-11 | docs | Add C API changelog entries and release notes | Added an `Unreleased` changelog entry and a checked-in release-note draft for the C API launch, with explicit support boundaries and deferred post-release work. |

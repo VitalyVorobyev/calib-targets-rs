@@ -63,6 +63,9 @@ cargo run -p calib-targets --example generate_printable -- testdata/printable/ch
 The facade re-exports `calib-targets-print` as `calib_targets::printable`.
 `PrintableTargetDocument` is the canonical JSON-backed input; `write_target_bundle`
 writes `<stem>.json`, `<stem>.svg`, and `<stem>.png` in one call.
+If you only need printable generation, use the dedicated
+`calib-targets-print` crate directly. The `calib-targets-cli` binary mentioned
+in the workspace docs is repo-local and is not published on crates.io.
 
 ## Python bindings
 
