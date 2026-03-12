@@ -1,10 +1,10 @@
-use ::calib_targets::{aruco, charuco, chessboard, core, detect, marker};
+use ::calib_targets::{aruco, charuco, chessboard, core, detect, marker, printable};
 use chess_corners::{ChessConfig, ChessParams, CoarseToFineParams, PyramidParams};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PyString, PyTuple};
 use pyo3::PyRef;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
@@ -3636,6 +3636,13 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
         .map_err(|err| value_error(err.to_string()))
 }
 
+fn printable_document_from_py(
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<printable::PrintableTargetDocument> {
+    let value = py_to_json(obj, "document")?;
+    serde_json::from_value(value).map_err(|err| value_error(format!("document: {err}")))
+}
+
 /// Detect a ChArUco board in a grayscale image.
 ///
 /// Args:
@@ -3728,6 +3735,39 @@ fn detect_marker_board(
     }
 }
 
+#[pyfunction]
+#[pyo3(signature = (document))]
+fn render_target_bundle(py: Python<'_>, document: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+    let document = printable_document_from_py(document)?;
+    let bundle = printable::render_target_bundle(&document)
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let out = PyDict::new(py);
+    out.set_item("json_text", bundle.json_text)?;
+    out.set_item("svg_text", bundle.svg_text)?;
+    out.set_item("png_bytes", PyBytes::new(py, &bundle.png_bytes))?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
+#[pyo3(signature = (document, output_stem))]
+fn write_target_bundle(
+    py: Python<'_>,
+    document: &Bound<'_, PyAny>,
+    output_stem: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let document = printable_document_from_py(document)?;
+    let output_stem = output_stem
+        .extract::<String>()
+        .map_err(|_| value_error("output_stem must be str"))?;
+    let written = printable::write_target_bundle(&document, output_stem)
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let out = PyDict::new(py);
+    out.set_item("json_path", written.json_path.to_string_lossy().as_ref())?;
+    out.set_item("svg_path", written.svg_path.to_string_lossy().as_ref())?;
+    out.set_item("png_path", written.png_path.to_string_lossy().as_ref())?;
+    Ok(out.into_any().unbind())
+}
+
 #[pymodule]
 fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyChessConfig>()?;
@@ -3749,5 +3789,7 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())
 }

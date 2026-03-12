@@ -42,6 +42,7 @@ All detectors produce a `TargetDetection` (returned directly for chessboards and
 - ChArUco: `detect::detect_charuco` or `charuco::CharucoDetector`.
 - Marker boards: `detect::detect_marker_board` or `marker::MarkerBoardDetector`.
 - ArUco/AprilTag dictionaries and decoding via `aruco`.
+- Printable targets: `printable::render_target_bundle` / `printable::write_target_bundle`.
 
 ## Features
 
@@ -54,7 +55,21 @@ All detectors produce a `TargetDetection` (returned directly for chessboards and
 cargo run -p calib-targets --example detect_chessboard -- path/to/image.png
 cargo run -p calib-targets --example detect_charuco -- path/to/image.png
 cargo run -p calib-targets --example detect_markerboard -- path/to/image.png
+cargo run -p calib-targets --example generate_printable -- testdata/printable/charuco_a4.json tmpdata/printable/charuco_a4
 ```
+
+## Printable targets
+
+The facade re-exports the dedicated published `calib-targets-print` crate as
+`calib_targets::printable`. `PrintableTargetDocument` is the canonical
+JSON-backed input, and `write_target_bundle` writes `<stem>.json`,
+`<stem>.svg`, and `<stem>.png` in one call.
+
+For the full printable-target workflow, including the canonical JSON example,
+CLI/Python entry points, and print-scale validation guidance, see the
+[printable-target guide](https://vitalyvorobyev.github.io/calib-targets-rs/printable.html).
+The repo-local `calib-targets-cli` binary mentioned in the workspace docs is
+not published on crates.io.
 
 ## Python bindings
 
@@ -69,11 +84,10 @@ python crates/calib-targets-py/examples/detect_charuco.py path/to/image.png
 
 Notes:
 
-- Python config accepts typed params classes or dict overrides (partial dicts are OK).
+- Python config accepts typed params classes only.
 - `detect_charuco` requires `params` and the board lives in `params.board`.
 - `target_position` is populated only when a board layout includes a valid
-  cell size and alignment succeeds (for marker boards, set
-  `params.layout.cell_size` or `params["layout"]["cell_size"]`).
+  cell size and alignment succeeds (for marker boards, set `params.layout.cell_size`).
 
 ## Crate map
 
@@ -82,6 +96,7 @@ Notes:
 - `calib_targets::aruco` – ArUco/AprilTag dictionaries and decoding.
 - `calib_targets::charuco` – ChArUco alignment and IDs.
 - `calib_targets::marker` – checkerboard + circle marker boards.
+- `calib_targets::printable` – printable target generation.
 
 ## Links
 

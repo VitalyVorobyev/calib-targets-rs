@@ -17,6 +17,8 @@ Top-level detectors return typed dataclasses:
 - `detect_chessboard(image, *, chess_cfg=None, params=None) -> ChessboardDetectionResult | None`
 - `detect_charuco(image, *, chess_cfg=None, params) -> CharucoDetectionResult`
 - `detect_marker_board(image, *, chess_cfg=None, params=None) -> MarkerBoardDetectionResult | None`
+- `render_target_bundle(document) -> GeneratedTargetBundle`
+- `write_target_bundle(document, output_stem) -> WrittenTargetBundle`
 
 Configuration is typed-only (dataclasses):
 
@@ -24,6 +26,7 @@ Configuration is typed-only (dataclasses):
 - `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`
 - `CharucoBoardSpec`, `CharucoAugmentationParams`, `CharucoDetectorParams`, `ScanDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
+- `PageSize`, `PageSpec`, `RenderOptions`, `ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PrintableTargetDocument`
 
 Enums and literals:
 
@@ -63,6 +66,7 @@ pip install pillow matplotlib
 python examples/detect_chessboard.py path/to/image.png
 python examples/detect_charuco.py path/to/image.png --show
 python examples/detect_marker_board.py path/to/image.png
+python examples/generate_printable.py tmpdata/printable/charuco_a4
 ```
 
 `examples/detect_charuco.py` writes an overlay PNG next to the input image by default and can enable the opt-in ChArUco robustness stages with:
@@ -74,6 +78,9 @@ python examples/detect_charuco.py path/to/image.png \
   --global-corner-validation \
   --allow-low-inlier-unique-alignment
 ```
+For the canonical printable-target JSON model, the repo-local CLI flow, and
+print-at-100%-scale guidance, see the workspace printable-target guide:
+https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
 
 ## Implementation note
 

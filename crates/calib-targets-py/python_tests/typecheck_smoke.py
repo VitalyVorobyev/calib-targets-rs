@@ -30,3 +30,11 @@ except RuntimeError:
 marker = ct.detect_marker_board(img)
 if marker is not None:
     _matches: list[ct.CircleMatch] = marker.circle_matches
+
+print_doc = ct.PrintableTargetDocument(
+    target=ct.ChessboardTargetSpec(inner_rows=6, inner_cols=8, square_size_mm=20.0)
+)
+bundle = ct.render_target_bundle(print_doc)
+_json_text: str = bundle.json_text
+written = ct.write_target_bundle(print_doc, "tmpdata/typecheck_printable")
+_png_path: str = written.png_path
