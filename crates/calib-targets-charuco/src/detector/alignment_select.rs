@@ -90,6 +90,22 @@ pub(crate) fn select_alignment(
     }
 }
 
+pub(crate) fn alignment_has_sufficient_support(
+    selection: &AlignmentSelection,
+    min_marker_inliers: usize,
+    allow_low_inlier_unique_alignment: bool,
+) -> bool {
+    let inliers = selection.alignment.marker_inliers.len();
+    if inliers >= min_marker_inliers {
+        return true;
+    }
+
+    allow_low_inlier_unique_alignment
+        && inliers >= 4
+        && selection.corner_in_bounds_ratio >= 0.95
+        && selection.runner_up_inlier_count + 2 <= inliers
+}
+
 pub(crate) fn retain_inlier_markers(
     markers: &[MarkerDetection],
     alignment: &CharucoAlignment,

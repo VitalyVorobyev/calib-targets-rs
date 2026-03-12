@@ -183,6 +183,23 @@ class CharucoBoardSpec:
 
 
 @dataclass(slots=True)
+class CharucoAugmentationParams:
+    multi_hypothesis_decode: bool | None = None
+    rectified_recovery: bool | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_in import charuco_augmentation_params_to_dict
+
+        return charuco_augmentation_params_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CharucoAugmentationParams:
+        from ._convert_in import charuco_augmentation_params_from_dict
+
+        return charuco_augmentation_params_from_dict(data)
+
+
+@dataclass(slots=True)
 class CharucoDetectorParams:
     board: CharucoBoardSpec
     px_per_square: float | None = None
@@ -191,6 +208,9 @@ class CharucoDetectorParams:
     scan: ScanDecodeConfig | None = None
     max_hamming: int | None = None
     min_marker_inliers: int | None = None
+    allow_low_inlier_unique_alignment: bool | None = None
+    augmentation: CharucoAugmentationParams | None = None
+    use_global_corner_validation: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_in import charuco_detector_params_to_dict
@@ -322,6 +342,7 @@ __all__ = [
     "ChessboardParams",
     "ScanDecodeConfig",
     "CharucoBoardSpec",
+    "CharucoAugmentationParams",
     "CharucoDetectorParams",
     "MarkerCircleSpec",
     "MarkerBoardLayout",

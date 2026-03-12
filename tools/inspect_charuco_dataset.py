@@ -48,6 +48,14 @@ def cargo_command(args: argparse.Namespace, out_dir: Path) -> list[str]:
         cmd.extend(["--strip", str(args.strip)])
     if args.repeat is not None:
         cmd.extend(["--repeat", str(args.repeat)])
+    if args.multi_hypothesis_decode:
+        cmd.append("--multi-hypothesis-decode")
+    if args.rectified_recovery:
+        cmd.append("--rectified-recovery")
+    if args.global_corner_validation:
+        cmd.append("--global-corner-validation")
+    if args.allow_low_inlier_unique_alignment:
+        cmd.append("--allow-low-inlier-unique-alignment")
     return cmd
 
 
@@ -113,6 +121,10 @@ def main() -> None:
     parser.add_argument("--image")
     parser.add_argument("--strip", type=int)
     parser.add_argument("--repeat", type=int)
+    parser.add_argument("--multi-hypothesis-decode", action="store_true")
+    parser.add_argument("--rectified-recovery", action="store_true")
+    parser.add_argument("--global-corner-validation", action="store_true")
+    parser.add_argument("--allow-low-inlier-unique-alignment", action="store_true")
     parser.add_argument("--overlay-one", action="store_true")
     parser.add_argument("--overlay-all", action="store_true")
     parser.add_argument("--overlay-failures", action="store_true")

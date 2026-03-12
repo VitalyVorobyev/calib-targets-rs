@@ -5,6 +5,9 @@
 //! - per-cell marker decoding (no full-image warp by default),
 //! - alignment to a known board definition and corner ID assignment.
 //!
+//! Optional global recovery/cleanup stages exist, but they are explicit opt-ins
+//! rather than part of the default corner-first path.
+//!
 //! Marker dictionaries and decoding live in `calib-targets-aruco`.
 //!
 //! ## Quickstart
@@ -50,9 +53,9 @@ mod validation;
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 pub use detector::{
-    CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun, CharucoDetector,
-    CharucoDetectorParams, CharucoDiagnostics, CharucoStageTimings, CornerValidationDiagnostics,
-    CornerValidationSkippedReason,
+    CharucoAugmentationParams, CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun,
+    CharucoDetector, CharucoDetectorParams, CharucoDiagnostics, CharucoStageTimings,
+    CornerValidationDiagnostics, CornerValidationSkippedReason,
 };
 pub use investigation::{
     build_strip_acceptance, compute_strip_coverage, median, normalize_dictionary_name,

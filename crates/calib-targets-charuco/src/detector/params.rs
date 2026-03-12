@@ -4,6 +4,21 @@ use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
 use chess_corners_core::{ChessParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
+/// Optional robustness features that augment the local corner-first pipeline.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CharucoAugmentationParams {
+    /// Try a small internal scan-parameter sweep when decoding a marker cell.
+    ///
+    /// This is off by default to keep the detector behavior explicit and local.
+    pub multi_hypothesis_decode: bool,
+    /// Try decoding extra markers from a globally rectified board view.
+    ///
+    /// This is off by default because it relies on a global warp model and is
+    /// intended as an optional augmentation, not a core detection stage.
+    pub rectified_recovery: bool,
+}
+
 /// Configuration for the ChArUco detector.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoDetectorParams {
@@ -25,6 +40,22 @@ pub struct CharucoDetectorParams {
     pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     pub min_marker_inliers: usize,
+    /// Allow accepting a unique low-inlier placement below `min_marker_inliers`.
+    ///
+    /// This is conservative but still a policy choice, so keep it explicit.
+    #[serde(default)]
+    pub allow_low_inlier_unique_alignment: bool,
+    /// Optional robustness augmentations that sit outside the default local
+    /// corner-first path.
+    #[serde(default)]
+    pub augmentation: CharucoAugmentationParams,
+    /// Run the legacy global homography-based corner validation/refinement
+    /// stage after ChArUco IDs have been assigned.
+    ///
+    /// This is off by default because the global model can be fragile under
+    /// strong lens distortion and shallow depth of field.
+    #[serde(default)]
+    pub use_global_corner_validation: bool,
     /// Relative threshold for marker-constrained corner validation.
     ///
     /// A detected ChArUco corner is considered a false corner if its pixel
@@ -91,6 +122,9 @@ impl CharucoDetectorParams {
             // Thin field-of-view strips often expose only 6-7 markers even when the
             // chessboard fit is otherwise stable, so keep the default gate below 8.
             min_marker_inliers: 6,
+            allow_low_inlier_unique_alignment: false,
+            augmentation: CharucoAugmentationParams::default(),
+            use_global_corner_validation: false,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
         }

@@ -22,7 +22,7 @@ Configuration is typed-only (dataclasses):
 
 - `ChessConfig`, `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`
 - `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`
-- `CharucoBoardSpec`, `CharucoDetectorParams`, `ScanDecodeConfig`
+- `CharucoBoardSpec`, `CharucoAugmentationParams`, `CharucoDetectorParams`, `ScanDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
 
 Enums and literals:
@@ -59,10 +59,20 @@ This is the compatibility path for JSON pipelines and legacy dict-based code.
 ## Examples
 
 ```bash
-pip install pillow
+pip install pillow matplotlib
 python examples/detect_chessboard.py path/to/image.png
-python examples/detect_charuco.py path/to/image.png
+python examples/detect_charuco.py path/to/image.png --show
 python examples/detect_marker_board.py path/to/image.png
+```
+
+`examples/detect_charuco.py` writes an overlay PNG next to the input image by default and can enable the opt-in ChArUco robustness stages with:
+
+```bash
+python examples/detect_charuco.py path/to/image.png \
+  --multi-hypothesis-decode \
+  --rectified-recovery \
+  --global-corner-validation \
+  --allow-low-inlier-unique-alignment
 ```
 
 ## Implementation note

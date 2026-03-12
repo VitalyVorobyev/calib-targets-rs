@@ -84,6 +84,14 @@ pub struct CharucoDetectConfig {
     #[serde(default)]
     pub min_marker_inliers: Option<usize>,
     #[serde(default)]
+    pub allow_low_inlier_unique_alignment: Option<bool>,
+    #[serde(default)]
+    pub multi_hypothesis_decode: Option<bool>,
+    #[serde(default)]
+    pub rectified_recovery: Option<bool>,
+    #[serde(default)]
+    pub global_corner_validation: Option<bool>,
+    #[serde(default)]
     pub chessboard: Option<ChessboardParams>,
     #[serde(default)]
     pub graph: Option<GridGraphParams>,
@@ -124,6 +132,18 @@ impl CharucoDetectConfig {
         params.px_per_square = self.px_per_square;
         if let Some(min_marker_inliers) = self.min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
+        }
+        if let Some(allow_low_inlier_unique_alignment) = self.allow_low_inlier_unique_alignment {
+            params.allow_low_inlier_unique_alignment = allow_low_inlier_unique_alignment;
+        }
+        if let Some(multi_hypothesis_decode) = self.multi_hypothesis_decode {
+            params.augmentation.multi_hypothesis_decode = multi_hypothesis_decode;
+        }
+        if let Some(rectified_recovery) = self.rectified_recovery {
+            params.augmentation.rectified_recovery = rectified_recovery;
+        }
+        if let Some(global_corner_validation) = self.global_corner_validation {
+            params.use_global_corner_validation = global_corner_validation;
         }
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;

@@ -5,6 +5,7 @@ from typing import Any, Callable, Iterable, cast
 
 from ._generated_dictionary import DICTIONARY_NAMES, DictionaryName
 from .config import (
+    CharucoAugmentationParams,
     CharucoBoardSpec,
     CharucoDetectorParams,
     ChessboardParams,
@@ -249,6 +250,17 @@ def charuco_board_spec_to_dict(cfg: CharucoBoardSpec) -> dict[str, Any]:
     }
 
 
+def charuco_augmentation_params_to_dict(
+    cfg: CharucoAugmentationParams,
+) -> dict[str, Any]:
+    return _strip_none(
+        {
+            "multi_hypothesis_decode": cfg.multi_hypothesis_decode,
+            "rectified_recovery": cfg.rectified_recovery,
+        }
+    )
+
+
 def charuco_detector_params_to_dict(cfg: CharucoDetectorParams) -> dict[str, Any]:
     out: dict[str, Any] = {
         "board": charuco_board_spec_to_dict(cfg.board),
@@ -259,6 +271,8 @@ def charuco_detector_params_to_dict(cfg: CharucoDetectorParams) -> dict[str, Any
                 "px_per_square": cfg.px_per_square,
                 "max_hamming": cfg.max_hamming,
                 "min_marker_inliers": cfg.min_marker_inliers,
+                "allow_low_inlier_unique_alignment": cfg.allow_low_inlier_unique_alignment,
+                "use_global_corner_validation": cfg.use_global_corner_validation,
             }
         )
     )
@@ -268,6 +282,8 @@ def charuco_detector_params_to_dict(cfg: CharucoDetectorParams) -> dict[str, Any
         out["graph"] = grid_graph_params_to_dict(cfg.graph)
     if cfg.scan is not None:
         out["scan"] = scan_decode_config_to_dict(cfg.scan)
+    if cfg.augmentation is not None:
+        out["augmentation"] = charuco_augmentation_params_to_dict(cfg.augmentation)
     return out
 
 
@@ -575,6 +591,27 @@ def charuco_board_spec_from_dict(data: Mapping[str, Any]) -> CharucoBoardSpec:
     )
 
 
+def charuco_augmentation_params_from_dict(
+    data: Mapping[str, Any],
+) -> CharucoAugmentationParams:
+    obj = _ensure_mapping(data, "CharucoAugmentationParams")
+    _validate_keys(
+        obj,
+        allowed={"multi_hypothesis_decode", "rectified_recovery"},
+        ctx="CharucoAugmentationParams",
+    )
+    return CharucoAugmentationParams(
+        multi_hypothesis_decode=_optional(
+            obj.get("multi_hypothesis_decode"),
+            _to_bool,
+            "multi_hypothesis_decode",
+        ),
+        rectified_recovery=_optional(
+            obj.get("rectified_recovery"), _to_bool, "rectified_recovery"
+        ),
+    )
+
+
 def charuco_detector_params_from_dict(data: Mapping[str, Any]) -> CharucoDetectorParams:
     obj = _ensure_mapping(data, "CharucoDetectorParams")
     _validate_keys(
@@ -587,6 +624,9 @@ def charuco_detector_params_from_dict(data: Mapping[str, Any]) -> CharucoDetecto
             "scan",
             "max_hamming",
             "min_marker_inliers",
+            "allow_low_inlier_unique_alignment",
+            "augmentation",
+            "use_global_corner_validation",
         },
         required={"board"},
         ctx="CharucoDetectorParams",
@@ -596,6 +636,7 @@ def charuco_detector_params_from_dict(data: Mapping[str, Any]) -> CharucoDetecto
     chessboard = obj.get("chessboard")
     graph = obj.get("graph")
     scan = obj.get("scan")
+    augmentation = obj.get("augmentation")
     return CharucoDetectorParams(
         board=board,
         px_per_square=_optional(obj.get("px_per_square"), _to_float, "px_per_square"),
@@ -607,6 +648,19 @@ def charuco_detector_params_from_dict(data: Mapping[str, Any]) -> CharucoDetecto
         max_hamming=_optional(obj.get("max_hamming"), _to_int, "max_hamming"),
         min_marker_inliers=_optional(
             obj.get("min_marker_inliers"), _to_int, "min_marker_inliers"
+        ),
+        allow_low_inlier_unique_alignment=_optional(
+            obj.get("allow_low_inlier_unique_alignment"),
+            _to_bool,
+            "allow_low_inlier_unique_alignment",
+        ),
+        augmentation=charuco_augmentation_params_from_dict(augmentation)
+        if augmentation is not None
+        else None,
+        use_global_corner_validation=_optional(
+            obj.get("use_global_corner_validation"),
+            _to_bool,
+            "use_global_corner_validation",
         ),
     )
 
@@ -787,6 +841,7 @@ __all__ = [
     "chessboard_params_to_dict",
     "scan_decode_config_to_dict",
     "charuco_board_spec_to_dict",
+    "charuco_augmentation_params_to_dict",
     "charuco_detector_params_to_dict",
     "marker_circle_spec_to_dict",
     "marker_board_layout_to_dict",
@@ -802,6 +857,7 @@ __all__ = [
     "chessboard_params_from_dict",
     "scan_decode_config_from_dict",
     "charuco_board_spec_from_dict",
+    "charuco_augmentation_params_from_dict",
     "charuco_detector_params_from_dict",
     "marker_circle_spec_from_dict",
     "marker_board_layout_from_dict",

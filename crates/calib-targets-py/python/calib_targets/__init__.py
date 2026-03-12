@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from .api import detect_charuco, detect_chessboard, detect_marker_board
 from .config import (
+    CharucoAugmentationParams,
     CharucoBoardSpec,
     CharucoDetectorParams,
     ChessboardParams,
@@ -66,6 +67,7 @@ __all__ = [
     "GridGraphParams",
     "ChessboardParams",
     "ScanDecodeConfig",
+    "CharucoAugmentationParams",
     "CharucoBoardSpec",
     "CharucoDetectorParams",
     "MarkerCircleSpec",

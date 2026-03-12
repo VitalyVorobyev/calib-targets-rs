@@ -10,6 +10,8 @@
 3. Decode markers per cell (no full-image warp).
 4. Align marker detections to a board specification and assign corner IDs.
 
+The detailed stage-by-stage description lives in [ChArUco Detection Pipeline](charuco_pipeline.md).
+
 ## Board specification
 
 - `CharucoBoardSpec` describes the board geometry:
@@ -23,8 +25,14 @@
 ## Detector
 
 - `CharucoDetectorParams::for_board` provides a reasonable default configuration.
+- The default configuration is intentionally local-first:
+  - sparse per-cell marker decoding on
+  - adaptive chessboard graph search on
+  - multi-hypothesis marker decode off
+  - rectified marker recovery off
+  - global homography corner validation off
 - `CharucoDetector::detect` returns a `CharucoDetectionResult` with:
-  - `detection`: labeled corners with ChArUco IDs, filtered to marker-supported corners.
+  - `detection`: labeled corners with ChArUco IDs, assigned to already detected corners.
   - `markers`: decoded marker detections in rectified grid coordinates (with optional `corners_img`).
   - `alignment`: grid alignment from detected grid coordinates into board coordinates.
 
@@ -32,19 +40,25 @@
 
 The detector decodes markers **per grid cell**. This avoids building a full rectified image and keeps the work proportional to the number of valid squares. If you need a full rectified image for visualization, use the rectification helpers in `calib-targets-chessboard` on a detected grid.
 
-## Alignment and refinement
+## Alignment
 
-Alignment maps decoded marker IDs to board positions using a small set of grid transforms and a translation vote. Once an alignment is found, the detector re-decodes markers at their **expected** cell locations and re-solves the alignment to filter out inconsistencies.
+Alignment is discrete. The detector combines:
 
-This two-stage approach helps reject spurious markers while keeping the final corner IDs consistent.
+- marker-vote alignment over D4 grid transforms
+- patch-first legal placement scoring for sparse-marker cases
+
+Markers act as anchors for board placement; they are not the primary source of corner geometry.
 
 ## Tuning notes
 
 - `scan.inset_frac` trades off robustness vs. sensitivity. The defaults in `for_board` use a slightly smaller inset (`0.06`) to improve real-image decoding.
 - `min_marker_inliers` controls how many aligned markers are required to accept a detection.
+- `augmentation.multi_hypothesis_decode` is an explicit opt-in robustness mode.
+- `augmentation.rectified_recovery` is an explicit opt-in global recovery stage.
+- `use_global_corner_validation` is an explicit opt-in legacy cleanup stage.
 
 ## Status
 
-The current implementation focuses on the OpenCV-style layout and is intentionally conservative about alignment. Extensions for more layouts and improved robustness are planned (see the roadmap).
+The current implementation focuses on the OpenCV-style layout and on a corner-first default path. Optional global stages remain available for diagnostics and experimentation, but they are not part of the intended default detector.
 
 For alignment details, see [ChArUco Alignment and Refinement](charuco_alignment.md).

@@ -46,6 +46,10 @@ enum Command {
 struct CommonArgs {
     input_dir: Option<PathBuf>,
     out_dir: Option<PathBuf>,
+    multi_hypothesis_decode: bool,
+    rectified_recovery: bool,
+    global_corner_validation: bool,
+    allow_low_inlier_unique_alignment: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -184,6 +188,10 @@ fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> 
     let mut image = None;
     let mut strip = None;
     let mut repeat = 10usize;
+    let mut multi_hypothesis_decode = false;
+    let mut rectified_recovery = false;
+    let mut global_corner_validation = false;
+    let mut allow_low_inlier_unique_alignment = false;
 
     let mut idx = 1usize;
     while idx < args.len() {
@@ -214,12 +222,31 @@ fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> 
                     .parse::<usize>()
                     .map_err(|_| "invalid --repeat")?;
             }
+            "--multi-hypothesis-decode" => {
+                multi_hypothesis_decode = true;
+            }
+            "--rectified-recovery" => {
+                rectified_recovery = true;
+            }
+            "--global-corner-validation" => {
+                global_corner_validation = true;
+            }
+            "--allow-low-inlier-unique-alignment" => {
+                allow_low_inlier_unique_alignment = true;
+            }
             unknown => return Err(format!("unknown argument {unknown}").into()),
         }
         idx += 1;
     }
 
-    let common = CommonArgs { input_dir, out_dir };
+    let common = CommonArgs {
+        input_dir,
+        out_dir,
+        multi_hypothesis_decode,
+        rectified_recovery,
+        global_corner_validation,
+        allow_low_inlier_unique_alignment,
+    };
     Ok(match mode.as_str() {
         "single" => Command::Single(SingleArgs {
             common,
@@ -248,7 +275,7 @@ fn require_arg<'a>(
 }
 
 fn run_single(args: SingleArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let context = build_context(args.common.input_dir)?;
+    let context = build_context(&args.common)?;
     let image_path = resolve_image_path(&context.dataset_dir, &args.image)?;
     let out_dir = args.common.out_dir.unwrap_or_else(|| {
         PathBuf::from("tmpdata/charuco_investigate").join(image_stem(&image_path))
@@ -267,7 +294,7 @@ fn run_single(args: SingleArgs) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_dataset(args: DatasetArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let context = build_context(args.common.input_dir)?;
+    let context = build_context(&args.common)?;
     let out_dir = args
         .common
         .out_dir
@@ -295,7 +322,7 @@ fn run_dataset(args: DatasetArgs) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn run_perf(args: PerfArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let context = build_context(args.common.input_dir)?;
+    let context = build_context(&args.common)?;
     let image_path = resolve_image_path(&context.dataset_dir, &args.image)?;
     let out_dir = args.common.out_dir.unwrap_or_else(|| {
         PathBuf::from("tmpdata/charuco_investigate")
@@ -376,10 +403,8 @@ fn run_perf(args: PerfArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn build_context(
-    input_dir: Option<PathBuf>,
-) -> Result<InvestigationContext, Box<dyn std::error::Error>> {
-    let dataset_dir = resolve_dataset_dir(input_dir)?;
+fn build_context(common: &CommonArgs) -> Result<InvestigationContext, Box<dyn std::error::Error>> {
+    let dataset_dir = resolve_dataset_dir(common.input_dir.clone())?;
     let config_path = find_dataset_config(&dataset_dir);
     let (board, expected_strip_size, config_label) = if let Some(path) = &config_path {
         let cfg = DatasetConfig::load_json(path)?;
@@ -395,6 +420,10 @@ fn build_context(
 
     let mut params = CharucoDetectorParams::for_board(&board);
     params.px_per_square = 60.0;
+    params.augmentation.multi_hypothesis_decode = common.multi_hypothesis_decode;
+    params.augmentation.rectified_recovery = common.rectified_recovery;
+    params.use_global_corner_validation = common.global_corner_validation;
+    params.allow_low_inlier_unique_alignment = common.allow_low_inlier_unique_alignment;
     let detector = CharucoDetector::new(params)?;
 
     Ok(InvestigationContext {

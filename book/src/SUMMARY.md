@@ -10,6 +10,7 @@
   - [calib-targets-aruco](aruco.md)
     - [ArUco Decoding Details](aruco_decoding.md)
   - [calib-targets-charuco](charuco.md)
+    - [ChArUco Detection Pipeline](charuco_pipeline.md)
     - [ChArUco Alignment and Refinement](charuco_alignment.md)
   - [calib-targets-marker](marker.md)
   - [calib-targets (facade)](facade.md)

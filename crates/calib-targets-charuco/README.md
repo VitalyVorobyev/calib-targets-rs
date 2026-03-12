@@ -5,6 +5,15 @@
 ChArUco board detector built on top of `calib-targets-core` and `calib-targets-aruco`.
 ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/charuco implementation.
 
+The detector is corner-first by default:
+
+- lattice extraction from ChESS corners
+- sparse per-cell marker decoding for board anchoring
+- discrete board embedding
+- ChArUco IDs assigned to already detected corners
+
+Optional robustness augmentations such as multi-hypothesis marker decoding, rectified marker recovery, and global homography-based corner validation are available as explicit opt-ins rather than default behavior.
+
 ## Quickstart
 
 ```rust,no_run

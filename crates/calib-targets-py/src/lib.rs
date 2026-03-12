@@ -1074,6 +1074,97 @@ impl PyScanDecodeConfig {
 }
 
 #[derive(Debug)]
+enum CharucoAugmentationParamsSource {
+    Owned(charuco::CharucoAugmentationParams),
+    Charuco(Py<PyCharucoDetectorParams>),
+}
+
+#[pyclass(name = "CharucoAugmentationParams", module = "calib_targets._core")]
+#[derive(Debug)]
+struct PyCharucoAugmentationParams {
+    inner: CharucoAugmentationParamsSource,
+}
+
+#[pymethods]
+impl PyCharucoAugmentationParams {
+    #[new]
+    #[pyo3(signature = (*, multi_hypothesis_decode=None, rectified_recovery=None))]
+    fn new(
+        multi_hypothesis_decode: Option<bool>,
+        rectified_recovery: Option<bool>,
+    ) -> PyResult<Self> {
+        let mut params = charuco::CharucoAugmentationParams::default();
+        if let Some(multi_hypothesis_decode) = multi_hypothesis_decode {
+            params.multi_hypothesis_decode = multi_hypothesis_decode;
+        }
+        if let Some(rectified_recovery) = rectified_recovery {
+            params.rectified_recovery = rectified_recovery;
+        }
+        Ok(Self {
+            inner: CharucoAugmentationParamsSource::Owned(params),
+        })
+    }
+
+    #[getter]
+    fn multi_hypothesis_decode(&self) -> PyResult<bool> {
+        self.with_params(|params| params.multi_hypothesis_decode)
+    }
+
+    #[setter]
+    fn set_multi_hypothesis_decode(&mut self, value: bool) -> PyResult<()> {
+        self.with_params_mut(|params| {
+            params.multi_hypothesis_decode = value;
+        })?;
+        Ok(())
+    }
+
+    #[getter]
+    fn rectified_recovery(&self) -> PyResult<bool> {
+        self.with_params(|params| params.rectified_recovery)
+    }
+
+    #[setter]
+    fn set_rectified_recovery(&mut self, value: bool) -> PyResult<()> {
+        self.with_params_mut(|params| {
+            params.rectified_recovery = value;
+        })?;
+        Ok(())
+    }
+}
+
+impl PyCharucoAugmentationParams {
+    fn with_params<R>(
+        &self,
+        f: impl FnOnce(&charuco::CharucoAugmentationParams) -> R,
+    ) -> PyResult<R> {
+        match &self.inner {
+            CharucoAugmentationParamsSource::Owned(params) => Ok(f(params)),
+            CharucoAugmentationParamsSource::Charuco(parent) => Python::attach(|py| {
+                let parent = parent.bind(py).borrow();
+                Ok(f(&parent.inner.augmentation))
+            }),
+        }
+    }
+
+    fn with_params_mut<R>(
+        &mut self,
+        f: impl FnOnce(&mut charuco::CharucoAugmentationParams) -> R,
+    ) -> PyResult<R> {
+        match &mut self.inner {
+            CharucoAugmentationParamsSource::Owned(params) => Ok(f(params)),
+            CharucoAugmentationParamsSource::Charuco(parent) => Python::attach(|py| {
+                let mut parent = parent.bind(py).borrow_mut();
+                Ok(f(&mut parent.inner.augmentation))
+            }),
+        }
+    }
+
+    fn to_params(&self) -> PyResult<charuco::CharucoAugmentationParams> {
+        self.with_params(|params| params.clone())
+    }
+}
+
+#[derive(Debug)]
 enum CharucoBoardSpecSource {
     Owned(charuco::CharucoBoardSpec),
     Charuco(Py<PyCharucoDetectorParams>),
@@ -1251,15 +1342,22 @@ struct PyCharucoDetectorParams {
 #[pymethods]
 impl PyCharucoDetectorParams {
     #[new]
-    #[pyo3(signature = (board, *, px_per_square=None, chessboard=None, graph=None, scan=None, max_hamming=None, min_marker_inliers=None))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "PyO3 constructor mirrors the keyword-only ChArUco config surface"
+    )]
+    #[pyo3(signature = (board, *, px_per_square=None, chessboard=None, graph=None, scan=None, augmentation=None, max_hamming=None, min_marker_inliers=None, allow_low_inlier_unique_alignment=None, use_global_corner_validation=None))]
     fn new(
         board: &Bound<'_, PyAny>,
         px_per_square: Option<f32>,
         chessboard: Option<&Bound<'_, PyAny>>,
         graph: Option<&Bound<'_, PyAny>>,
         scan: Option<&Bound<'_, PyAny>>,
+        augmentation: Option<&Bound<'_, PyAny>>,
         max_hamming: Option<u8>,
         min_marker_inliers: Option<usize>,
+        allow_low_inlier_unique_alignment: Option<bool>,
+        use_global_corner_validation: Option<bool>,
     ) -> PyResult<Self> {
         let board = charuco_board_from_obj(board, "board")?;
         let mut params = charuco::CharucoDetectorParams::for_board(&board);
@@ -1276,11 +1374,24 @@ impl PyCharucoDetectorParams {
         if let Some(scan) = scan {
             params.scan = scan_decode_params_from_obj(scan, "scan", params.scan.clone())?;
         }
+        if let Some(augmentation) = augmentation {
+            params.augmentation = charuco_augmentation_params_from_obj(
+                augmentation,
+                "augmentation",
+                params.augmentation.clone(),
+            )?;
+        }
         if let Some(max_hamming) = max_hamming {
             params.max_hamming = max_hamming;
         }
         if let Some(min_marker_inliers) = min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
+        }
+        if let Some(allow_low_inlier_unique_alignment) = allow_low_inlier_unique_alignment {
+            params.allow_low_inlier_unique_alignment = allow_low_inlier_unique_alignment;
+        }
+        if let Some(use_global_corner_validation) = use_global_corner_validation {
+            params.use_global_corner_validation = use_global_corner_validation;
         }
         Ok(Self { inner: params })
     }
@@ -1375,6 +1486,30 @@ impl PyCharucoDetectorParams {
     }
 
     #[getter]
+    fn augmentation(slf: PyRef<'_, Self>) -> PyResult<Py<PyAny>> {
+        let py = slf.py();
+        let parent = slf.into_pyobject(py)?.unbind();
+        let params = PyCharucoAugmentationParams {
+            inner: CharucoAugmentationParamsSource::Charuco(parent),
+        };
+        Py::new(py, params).map(|obj| obj.into_any())
+    }
+
+    #[setter]
+    fn set_augmentation(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        let Some(value) = value else {
+            self.inner.augmentation = charuco::CharucoAugmentationParams::default();
+            return Ok(());
+        };
+        self.inner.augmentation = charuco_augmentation_params_from_obj(
+            value,
+            "augmentation",
+            self.inner.augmentation.clone(),
+        )?;
+        Ok(())
+    }
+
+    #[getter]
     fn max_hamming(&self) -> u8 {
         self.inner.max_hamming
     }
@@ -1392,6 +1527,26 @@ impl PyCharucoDetectorParams {
     #[setter]
     fn set_min_marker_inliers(&mut self, value: usize) {
         self.inner.min_marker_inliers = value;
+    }
+
+    #[getter]
+    fn allow_low_inlier_unique_alignment(&self) -> bool {
+        self.inner.allow_low_inlier_unique_alignment
+    }
+
+    #[setter]
+    fn set_allow_low_inlier_unique_alignment(&mut self, value: bool) {
+        self.inner.allow_low_inlier_unique_alignment = value;
+    }
+
+    #[getter]
+    fn use_global_corner_validation(&self) -> bool {
+        self.inner.use_global_corner_validation
+    }
+
+    #[setter]
+    fn set_use_global_corner_validation(&mut self, value: bool) {
+        self.inner.use_global_corner_validation = value;
     }
 }
 
@@ -2338,6 +2493,25 @@ impl ScanDecodeConfigOverrides {
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
+struct CharucoAugmentationParamsOverrides {
+    #[serde(default)]
+    multi_hypothesis_decode: Option<bool>,
+    #[serde(default)]
+    rectified_recovery: Option<bool>,
+}
+
+impl CharucoAugmentationParamsOverrides {
+    fn apply(self, params: &mut charuco::CharucoAugmentationParams) {
+        if let Some(multi_hypothesis_decode) = self.multi_hypothesis_decode {
+            params.multi_hypothesis_decode = multi_hypothesis_decode;
+        }
+        if let Some(rectified_recovery) = self.rectified_recovery {
+            params.rectified_recovery = rectified_recovery;
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize, Clone)]
 struct CharucoDetectorParamsOverrides {
     #[serde(default)]
     board: Option<charuco::CharucoBoardSpec>,
@@ -2350,9 +2524,15 @@ struct CharucoDetectorParamsOverrides {
     #[serde(default)]
     scan: Option<ScanDecodeConfigOverrides>,
     #[serde(default)]
+    augmentation: Option<CharucoAugmentationParamsOverrides>,
+    #[serde(default)]
     max_hamming: Option<u8>,
     #[serde(default)]
     min_marker_inliers: Option<usize>,
+    #[serde(default)]
+    allow_low_inlier_unique_alignment: Option<bool>,
+    #[serde(default)]
+    use_global_corner_validation: Option<bool>,
 }
 
 impl CharucoDetectorParamsOverrides {
@@ -2372,11 +2552,20 @@ impl CharucoDetectorParamsOverrides {
         if let Some(scan) = self.scan {
             scan.apply(&mut params.scan);
         }
+        if let Some(augmentation) = self.augmentation {
+            augmentation.apply(&mut params.augmentation);
+        }
         if let Some(max_hamming) = self.max_hamming {
             params.max_hamming = max_hamming;
         }
         if let Some(min_marker_inliers) = self.min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
+        }
+        if let Some(allow_low_inlier_unique_alignment) = self.allow_low_inlier_unique_alignment {
+            params.allow_low_inlier_unique_alignment = allow_low_inlier_unique_alignment;
+        }
+        if let Some(use_global_corner_validation) = self.use_global_corner_validation {
+            params.use_global_corner_validation = use_global_corner_validation;
         }
     }
 }
@@ -2762,6 +2951,14 @@ fn validate_scan_decode_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<(
     )
 }
 
+fn validate_charuco_augmentation_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
+    validate_dict_keys(
+        dict,
+        path,
+        &["multi_hypothesis_decode", "rectified_recovery"],
+    )
+}
+
 fn validate_charuco_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResult<()> {
     validate_dict_keys(
         dict,
@@ -2772,8 +2969,11 @@ fn validate_charuco_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResul
             "chessboard",
             "graph",
             "scan",
+            "augmentation",
             "max_hamming",
             "min_marker_inliers",
+            "allow_low_inlier_unique_alignment",
+            "use_global_corner_validation",
         ],
     )?;
     if let Some(board) = get_optional_dict(dict, "board")? {
@@ -2787,6 +2987,9 @@ fn validate_charuco_params_dict(dict: &Bound<'_, PyDict>, path: &str) -> PyResul
     }
     if let Some(scan) = get_optional_dict(dict, "scan")? {
         validate_scan_decode_dict(&scan, &format!("{path}.scan"))?;
+    }
+    if let Some(augmentation) = get_optional_dict(dict, "augmentation")? {
+        validate_charuco_augmentation_dict(&augmentation, &format!("{path}.augmentation"))?;
     }
     Ok(())
 }
@@ -3227,6 +3430,28 @@ fn scan_decode_params_from_obj(
     Ok(params)
 }
 
+fn charuco_augmentation_params_from_obj(
+    obj: &Bound<'_, PyAny>,
+    path: &str,
+    base: charuco::CharucoAugmentationParams,
+) -> PyResult<charuco::CharucoAugmentationParams> {
+    if obj.is_none() {
+        return Ok(base);
+    }
+    if let Ok(params) = obj.extract::<PyRef<PyCharucoAugmentationParams>>() {
+        return params.to_params();
+    }
+    if let Ok(dict) = obj.cast::<PyDict>() {
+        validate_charuco_augmentation_dict(dict, path)?;
+    }
+    let value = py_to_json(obj, path)?;
+    let overrides: CharucoAugmentationParamsOverrides =
+        serde_json::from_value(value).map_err(|err| value_error(format!("{path}: {err}")))?;
+    let mut params = base;
+    overrides.apply(&mut params);
+    Ok(params)
+}
+
 fn circle_score_params_from_obj(
     obj: &Bound<'_, PyAny>,
     path: &str,
@@ -3513,6 +3738,7 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGridGraphParams>()?;
     m.add_class::<PyChessboardParams>()?;
     m.add_class::<PyScanDecodeConfig>()?;
+    m.add_class::<PyCharucoAugmentationParams>()?;
     m.add_class::<PyCharucoBoardSpec>()?;
     m.add_class::<PyCharucoDetectorParams>()?;
     m.add_class::<PyMarkerCircleSpec>()?;
