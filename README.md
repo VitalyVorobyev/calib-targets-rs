@@ -97,13 +97,13 @@ Typical field usage:
 - [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
 - [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
 - [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
-- `calib-targets-print` – workspace printable-target backend and JSON/SVG/PNG output.
+- [`calib-targets-print`](https://crates.io/crates/calib-targets-print) – dedicated printable-target generation and JSON/SVG/PNG output.
 
 Today the published Rust crates are `calib-targets`, `calib-targets-core`,
 `calib-targets-chessboard`, `calib-targets-aruco`, `calib-targets-charuco`,
-and `calib-targets-marker`. The printable backend currently lives in the
-workspace and is re-exported by the published `calib-targets` facade as
-`calib_targets::printable`.
+`calib-targets-marker`, and `calib-targets-print`. The printable APIs are
+available both through the dedicated `calib-targets-print` crate and through
+the published `calib-targets` facade as `calib_targets::printable`.
 Repo-local companion crates such as `calib-targets-cli`, `calib-targets-py`,
 and `calib-targets-ffi` are not published on crates.io.
 
@@ -134,7 +134,8 @@ Printable target generation uses canonical JSON documents stored under
 Rust/CLI/Python flows, and print-at-100%-scale guidance, see the
 [printable-target guide](./book/src/printable.md).
 
-Today the published Rust entry point is `calib_targets::printable` from the
+Published Rust entry points for printable generation are the dedicated
+`calib-targets-print` crate and `calib_targets::printable` from the
 `calib-targets` facade crate. The CLI shown below remains a repo-local
 workflow.
 

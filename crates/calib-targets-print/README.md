@@ -1,6 +1,6 @@
 # calib-targets-print
 
-`calib-targets-print` is the workspace crate that generates printable
+`calib-targets-print` is the dedicated crate that generates printable
 calibration targets for chessboard, ChArUco, and checkerboard marker boards.
 
 The same functionality is also exposed through the published
@@ -10,11 +10,10 @@ The same functionality is also exposed through the published
 
 ## Quickstart
 
-If you are using the published crates today, the simplest Rust entry point is
-the `calib-targets` facade:
+If you want the dedicated crate directly, use `calib-targets-print`:
 
 ```rust,no_run
-use calib_targets::printable::{write_target_bundle, PrintableTargetDocument};
+use calib_targets_print::{write_target_bundle, PrintableTargetDocument};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let doc = PrintableTargetDocument::load_json("testdata/printable/charuco_a4.json")?;
@@ -23,6 +22,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+If you already depend on the published
+[`calib-targets`](https://crates.io/crates/calib-targets) facade for detection,
+the same API is also available as `calib_targets::printable`.
 
 ## Canonical document
 

@@ -1,11 +1,11 @@
 # calib-targets-print
 
-`calib-targets-print` is the workspace crate that owns printable target
-generation. The same functionality is also exposed through the published
-`calib-targets` facade as `calib_targets::printable`.
+`calib-targets-print` is the dedicated crate for printable target generation.
+The same functionality is also exposed through the published `calib-targets`
+facade as `calib_targets::printable`.
 
-This page is the canonical guide for printable-target generation across Rust,
-the repo-local CLI, and the Python bindings.
+This page is the canonical guide for printable-target generation across the
+published Rust crates, the repo-local CLI, and the Python bindings.
 
 ## What it generates
 
@@ -68,8 +68,10 @@ Matching examples also exist for chessboard and marker-board targets:
 
 ## Rust quickstart
 
-If you are using the published Rust crates today, the simplest entry point is
-the `calib-targets` facade re-export:
+If you are using the published Rust crates today, you can either depend on the
+dedicated `calib-targets-print` crate directly or use the `calib-targets`
+facade re-export. The facade path stays shortest when you also want detector
+APIs:
 
 ```rust,no_run
 use calib_targets::printable::{write_target_bundle, PrintableTargetDocument};
@@ -93,8 +95,8 @@ cargo run -p calib-targets --example generate_printable -- \
   tmpdata/printable/charuco_a4
 ```
 
-Within this workspace, the underlying implementation crate is
-`crates/calib-targets-print`.
+The underlying implementation crate is the published `calib-targets-print`
+crate; within this workspace it lives at `crates/calib-targets-print`.
 
 ## CLI quickstart
 
@@ -178,7 +180,6 @@ For a physically accurate calibration target:
 ## Choosing an entry point
 
 - Use `calib_targets::printable` when you want the published Rust facade crate.
+- Use `calib-targets-print` when you want the dedicated published printable-target crate.
 - Use `crates/calib-targets-cli` when you want a repo-local init/render tool.
 - Use the Python bindings when your downstream workflow is already in Python.
-- Use `crates/calib-targets-print` directly when working inside this workspace
-  or after the dedicated crate is published.

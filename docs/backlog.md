@@ -41,7 +41,7 @@
 | PRINT-002 | done | P1 | api | Add ergonomic detector-spec to printable-target conversions without moving rendering into detector crates | implementer | Added explicit millimeter-aware conversions from `CharucoBoardSpec` and `MarkerBoardLayout` into printable specs/documents, with checked marker-board layout failures and no detector-to-print dependency changes. |
 | PRINT-003 | done | P1 | docs | Publish a release-ready printable-targets README and workspace entry points | implementer | Added a canonical printable-target guide plus aligned root/facade/print/CLI/Python entry points, concrete JSON and Rust/CLI/Python examples, output expectations, and print-at-100%-scale guidance. |
 | PRINT-004 | done | P1 | infra | Productize the printable target CLI workflow | implementer | Added `validate` and `list-dictionaries`, improved CLI help, extended integration coverage, and documented the repo-local discover/init/validate/generate workflow as the official printable-target app today. |
-| PRINT-005 | blocked | P0 | release | Perform the live crates.io publish for `calib-targets-print` and final docs-state sync | implementer | Execute the actual crates.io publish after the remaining printable backlog work lands, then switch any remaining workspace-local wording to live published-crate wording where appropriate. |
+| PRINT-005 | done | P0 | release | Perform the live crates.io publish for `calib-targets-print` and final docs-state sync | implementer | `calib-targets-print` is now live on crates.io, and the workspace/facade/print docs now describe it as a published dedicated printable-target crate while keeping the CLI repo-local. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -81,6 +81,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| PRINT-005 | 2026-03-12 | release | Perform the live crates.io publish for `calib-targets-print` and final docs-state sync | Published `calib-targets-print` on crates.io and updated the workspace, facade, and print-crate docs so the dedicated printable-target crate is described as live while the CLI remains repo-local. |
 | PRINT-004 | 2026-03-12 | infra | Productize the printable target CLI workflow | Added first-class dictionary discovery and spec validation commands, improved top-level and subcommand help, expanded CLI integration tests, and aligned the CLI/book docs around the repo-local printable-target workflow. |
 | PRINT-002 | 2026-03-12 | api | Add ergonomic detector-spec to printable-target conversions without moving rendering into detector crates | Added explicit ChArUco and marker-board conversion helpers in `calib-targets-print`, preserved centralized rendering ownership, and rejected marker-board layouts that cannot be converted deterministically for printing. |
 | PRINT-001 | 2026-03-12 | infra | Prepare `calib-targets-print` for crates.io publish and align workspace release metadata | Added release-workflow support, correct publish ordering, dry-run publish validation, and release-facing doc alignment while intentionally deferring the live crates.io publish until the remaining printable backlog tasks are complete. |

@@ -60,7 +60,7 @@ cargo run -p calib-targets --example generate_printable -- testdata/printable/ch
 
 ## Printable targets
 
-The facade re-exports the workspace printable backend as
+The facade re-exports the dedicated published `calib-targets-print` crate as
 `calib_targets::printable`. `PrintableTargetDocument` is the canonical
 JSON-backed input, and `write_target_bundle` writes `<stem>.json`,
 `<stem>.svg`, and `<stem>.png` in one call.
