@@ -6,7 +6,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.2.6]
+## [0.3.0]
 
 ### Printable targets
 
