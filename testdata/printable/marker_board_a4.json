@@ -9,17 +9,17 @@
       {
         "i": 3,
         "j": 2,
-        "polarity": "white"
-      },
-      {
-        "i": 4,
-        "j": 2,
         "polarity": "black"
       },
       {
         "i": 4,
-        "j": 3,
+        "j": 2,
         "polarity": "white"
+      },
+      {
+        "i": 4,
+        "j": 3,
+        "polarity": "black"
       }
     ],
     "circle_diameter_rel": 0.5

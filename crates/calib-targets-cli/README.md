@@ -19,7 +19,7 @@ cargo run -p calib-targets-cli -- list-dictionaries
 
 ```bash
 cargo run -p calib-targets-cli -- init charuco \
-  --out tmpdata/printable/charuco_a4.json \
+  --out testdata/printable/charuco_a4.json \
   --rows 5 \
   --cols 7 \
   --square-size-mm 20 \
@@ -27,10 +27,10 @@ cargo run -p calib-targets-cli -- init charuco \
   --dictionary DICT_4X4_50
 
 cargo run -p calib-targets-cli -- validate \
-  --spec tmpdata/printable/charuco_a4.json
+  --spec testdata/printable/charuco_a4.json
 
 cargo run -p calib-targets-cli -- generate \
-  --spec tmpdata/printable/charuco_a4.json \
+  --spec testdata/printable/charuco_a4.json \
   --out-stem tmpdata/printable/charuco_a4
 ```
 
