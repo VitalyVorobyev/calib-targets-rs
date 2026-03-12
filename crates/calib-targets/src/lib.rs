@@ -27,11 +27,11 @@
 //!
 //! Python bindings live in `crates/calib-targets-py` and expose the
 //! `calib_targets` module. See `crates/calib-targets-py/README.md` in the
-//! repository for setup and the `detect_*` APIs. Config inputs accept typed
-//! Python classes or dict overrides; `detect_charuco` requires `params` with
-//! `params.board`. For marker boards, `target_position` is populated only when
-//! `params.layout.cell_size` (or `params["layout"]["cell_size"]`) is provided
-//! and alignment succeeds.
+//! repository for setup, the `detect_*` APIs, and printable-target generation.
+//! Config inputs accept typed Python classes; `detect_charuco` requires
+//! `params` with `params.board`. For marker boards, `target_position` is
+//! populated only when `params.layout.cell_size` is provided and alignment
+//! succeeds.
 //!
 //! ## API map
 //! - `calib_targets::core`: core types (corners, grids, homographies, images).
@@ -39,6 +39,7 @@
 //! - `calib_targets::aruco`: ArUco/AprilTag dictionaries and marker decoding.
 //! - `calib_targets::charuco`: ChArUco board alignment and IDs.
 //! - `calib_targets::marker`: checkerboard + circle marker boards.
+//! - `calib_targets::printable`: printable target generation and JSON/SVG/PNG output.
 //! - `calib_targets::detect` (feature `image`): end-to-end helpers from `image::GrayImage`.
 //!
 //! ## Performance
@@ -51,6 +52,7 @@ pub use calib_targets_charuco as charuco;
 pub use calib_targets_chessboard as chessboard;
 pub use calib_targets_core as core;
 pub use calib_targets_marker as marker;
+pub use calib_targets_print as printable;
 
 pub use calib_targets_chessboard::ChessboardParams;
 pub use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};

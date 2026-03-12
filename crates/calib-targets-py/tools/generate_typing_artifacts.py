@@ -119,6 +119,8 @@ def _render_core_stub(
         "detect_charuco": "dict[str, Any]",
         "detect_chessboard": "dict[str, Any] | None",
         "detect_marker_board": "dict[str, Any] | None",
+        "render_target_bundle": "dict[str, Any]",
+        "write_target_bundle": "dict[str, Any]",
     }
 
     for func_name, func_sig in functions:

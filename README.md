@@ -97,6 +97,7 @@ Typical field usage:
 - [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
 - [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
 - [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
+- `calib-targets-print` – printable target generation and JSON/SVG/PNG output.
 
 (All crates are published on crates.io)
 
@@ -108,6 +109,7 @@ The examples mentioned above are:
 cargo run --example detect_chessboard -- path/to/image.png
 cargo run --example detect_charuco -- path/to/image.png
 cargo run --example detect_markerboard -- path/to/image.png
+cargo run --example generate_printable -- testdata/printable/charuco_a4.json tmpdata/printable/charuco_a4
 ```
 
 Examples with complete parameters control via json files are:
@@ -119,6 +121,16 @@ cargo run --example chessboard -- testdata/chessboard_config.json
 ```
 
 The later produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
+
+Printable target generation uses canonical JSON documents stored under
+`testdata/printable/`. Each flow writes `<stem>.json`, `<stem>.svg`, and
+`<stem>.png` from the same source document.
+
+CLI:
+
+```bash
+cargo run -p calib-targets-cli -- generate --spec testdata/printable/charuco_a4.json --out-stem tmpdata/printable/charuco_a4
+```
 
 ## Python bindings
 
@@ -138,6 +150,8 @@ API surface:
 - `calib_targets.detect_chessboard(image, *, chess_cfg=None, params=None) -> ChessboardDetectionResult | None`
 - `calib_targets.detect_charuco(image, *, chess_cfg=None, params) -> CharucoDetectionResult`
 - `calib_targets.detect_marker_board(image, *, chess_cfg=None, params=None) -> MarkerBoardDetectionResult | None`
+- `calib_targets.render_target_bundle(document) -> GeneratedTargetBundle`
+- `calib_targets.write_target_bundle(document, output_stem) -> WrittenTargetBundle`
 
 Note: `target_position` is populated only when a board layout includes a valid
 cell size and alignment succeeds (for marker boards, set
@@ -146,7 +160,7 @@ cell size and alignment succeeds (for marker boards, set
 Config inputs:
 
 - Dataclass-based typed inputs only (`ChessConfig`, `ChessboardParams`,
-  `CharucoDetectorParams`, `MarkerBoardParams`, etc.).
+  `CharucoDetectorParams`, `MarkerBoardParams`, printable target document types, etc.).
 - Mapping/dict config overrides are intentionally not supported in the new API.
 - `detect_charuco` requires `params` with `params.board`.
 - All config/result models provide `to_dict()` and `from_dict(...)` for

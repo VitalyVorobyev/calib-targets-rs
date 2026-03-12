@@ -9,6 +9,7 @@ The workspace is organized as a stack of crates with minimal, composable boundar
 - `calib-targets-aruco` depends on `core` for rectified image access.
 - `calib-targets-charuco` depends on `chessboard` and `aruco`.
 - `calib-targets-marker` depends on `chessboard` and `core`.
+- `calib-targets-print` depends on the target crates and owns printable-target rendering.
 - `calib-targets` is the facade that re-exports types and offers end-to-end helpers.
 
 ## Python bindings
