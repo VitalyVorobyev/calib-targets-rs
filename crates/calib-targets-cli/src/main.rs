@@ -1,3 +1,4 @@
+use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_print::{
     write_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec,
     MarkerCircleSpec, PageOrientation, PageSize, PageSpec, PrintableTargetDocument,
@@ -8,7 +9,7 @@ use std::{fs, path::PathBuf, process::ExitCode, str::FromStr};
 
 #[derive(Parser, Debug)]
 #[command(name = "calib-targets")]
-#[command(about = "Generate printable calibration targets")]
+#[command(about = "Repo-local CLI for printable calibration target generation")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -16,12 +17,24 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    /// Render a validated printable spec into .json, .svg, and .png outputs.
     Generate {
+        /// Path to the input printable spec JSON file.
         #[arg(long)]
         spec: PathBuf,
+        /// Output path stem; the CLI writes `stem.json`, `stem.svg`, and `stem.png`.
         #[arg(long)]
         out_stem: PathBuf,
     },
+    /// Validate a printable spec without writing any output files.
+    Validate {
+        /// Path to the printable spec JSON file to validate.
+        #[arg(long)]
+        spec: PathBuf,
+    },
+    /// List the built-in dictionary names available for ChArUco initialization.
+    ListDictionaries,
+    /// Initialize a printable spec JSON file for one target family.
     Init {
         #[command(subcommand)]
         target: InitCommand,
@@ -30,8 +43,11 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum InitCommand {
+    /// Initialize a chessboard printable spec.
     Chessboard(ChessboardInitArgs),
+    /// Initialize a ChArUco printable spec.
     Charuco(CharucoInitArgs),
+    /// Initialize a checkerboard marker-board printable spec.
     MarkerBoard(MarkerBoardInitArgs),
 }
 
@@ -55,34 +71,45 @@ enum MarkerLayoutArg {
 
 #[derive(Args, Debug, Clone)]
 struct PageArgs {
+    /// Output page size preset.
     #[arg(long, value_enum, default_value_t = PageSizeArg::A4)]
     page_size: PageSizeArg,
+    /// Custom page width in millimeters; requires --page-size custom.
     #[arg(long)]
     page_width_mm: Option<f64>,
+    /// Custom page height in millimeters; requires --page-size custom.
     #[arg(long)]
     page_height_mm: Option<f64>,
+    /// Page orientation.
     #[arg(long, value_enum, default_value_t = OrientationArg::Portrait)]
     orientation: OrientationArg,
+    /// Margin on each side of the page in millimeters.
     #[arg(long, default_value_t = 10.0)]
     margin_mm: f64,
 }
 
 #[derive(Args, Debug, Clone)]
 struct RenderArgs {
+    /// Add guide overlays to the rendered outputs.
     #[arg(long, default_value_t = false)]
     debug_annotations: bool,
+    /// Raster DPI for the generated PNG output.
     #[arg(long, default_value_t = 300)]
     png_dpi: u32,
 }
 
 #[derive(Args, Debug)]
 struct ChessboardInitArgs {
+    /// Path to the spec JSON file to write.
     #[arg(long)]
     out: PathBuf,
+    /// Number of inner chessboard corners vertically.
     #[arg(long)]
     inner_rows: u32,
+    /// Number of inner chessboard corners horizontally.
     #[arg(long)]
     inner_cols: u32,
+    /// Square side length in millimeters.
     #[arg(long)]
     square_size_mm: f64,
     #[command(flatten)]
@@ -93,20 +120,28 @@ struct ChessboardInitArgs {
 
 #[derive(Args, Debug)]
 struct CharucoInitArgs {
+    /// Path to the spec JSON file to write.
     #[arg(long)]
     out: PathBuf,
+    /// Number of board squares vertically.
     #[arg(long)]
     rows: u32,
+    /// Number of board squares horizontally.
     #[arg(long)]
     cols: u32,
+    /// Square side length in millimeters.
     #[arg(long)]
     square_size_mm: f64,
+    /// Marker side length relative to square size.
     #[arg(long)]
     marker_size_rel: f64,
+    /// Built-in dictionary name. Use `list-dictionaries` to discover valid values.
     #[arg(long)]
     dictionary: String,
+    /// Marker placement scheme.
     #[arg(long, value_enum, default_value_t = MarkerLayoutArg::OpencvCharuco)]
     marker_layout: MarkerLayoutArg,
+    /// Marker border width in bit cells.
     #[arg(long, default_value_t = 1)]
     border_bits: usize,
     #[command(flatten)]
@@ -117,17 +152,23 @@ struct CharucoInitArgs {
 
 #[derive(Args, Debug)]
 struct MarkerBoardInitArgs {
+    /// Path to the spec JSON file to write.
     #[arg(long)]
     out: PathBuf,
+    /// Number of inner chessboard corners vertically.
     #[arg(long)]
     inner_rows: u32,
+    /// Number of inner chessboard corners horizontally.
     #[arg(long)]
     inner_cols: u32,
+    /// Square side length in millimeters.
     #[arg(long)]
     square_size_mm: f64,
+    /// Circle diameter relative to square size.
     #[arg(long, default_value_t = 0.5)]
     circle_diameter_rel: f64,
-    #[arg(long = "circle")]
+    /// Marker circles as `i,j,polarity`; repeat exactly three times when overriding defaults.
+    #[arg(long = "circle", value_name = "I,J,POLARITY")]
     circles: Vec<String>,
     #[command(flatten)]
     page: PageArgs,
@@ -141,7 +182,7 @@ enum CliError {
     Printable(#[from] PrintableTargetError),
     #[error("invalid page configuration: {0}")]
     InvalidPage(String),
-    #[error("unknown dictionary {0}")]
+    #[error("unknown dictionary {0}; run `list-dictionaries` to inspect built-ins")]
     UnknownDictionary(String),
     #[error("invalid --circle '{0}', expected i,j,polarity")]
     InvalidCircle(String),
@@ -167,6 +208,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", written.svg_path.display());
             println!("{}", written.png_path.display());
         }
+        Command::Validate { spec } => {
+            let doc = PrintableTargetDocument::load_json(&spec)?;
+            println!("valid {}", doc.target.kind_name());
+        }
+        Command::ListDictionaries => {
+            for name in BUILTIN_DICTIONARY_NAMES {
+                println!("{name}");
+            }
+        }
         Command::Init { target } => match target {
             InitCommand::Chessboard(args) => {
                 let doc = PrintableTargetDocument {
@@ -182,9 +232,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 write_document_json(&doc, args.out)?;
             }
             InitCommand::Charuco(args) => {
-                let dictionary =
-                    calib_targets_aruco::builtins::builtin_dictionary(&args.dictionary)
-                        .ok_or_else(|| CliError::UnknownDictionary(args.dictionary.clone()))?;
+                let dictionary = builtin_dictionary(&args.dictionary)
+                    .ok_or_else(|| CliError::UnknownDictionary(args.dictionary.clone()))?;
                 let marker_layout = match args.marker_layout {
                     MarkerLayoutArg::OpencvCharuco => {
                         calib_targets_charuco::MarkerLayout::OpenCvCharuco

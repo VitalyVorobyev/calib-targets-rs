@@ -98,10 +98,17 @@ Within this workspace, the underlying implementation crate is
 
 ## CLI quickstart
 
-The CLI currently lives in the repo-local `crates/calib-targets-cli` crate and
-is not published on crates.io.
+The CLI currently lives in the repo-local `crates/calib-targets-cli` crate.
+Today it is the official repo-local app for printable target generation, and
+it is not published on crates.io.
 
-To initialize a ChArUco spec and then render it:
+If you need a valid ChArUco dictionary name, list the built-ins first:
+
+```bash
+cargo run -p calib-targets-cli -- list-dictionaries
+```
+
+To initialize a ChArUco spec, validate it, and then render it:
 
 ```bash
 cargo run -p calib-targets-cli -- init charuco \
@@ -112,10 +119,16 @@ cargo run -p calib-targets-cli -- init charuco \
   --marker-size-rel 0.75 \
   --dictionary DICT_4X4_50
 
+cargo run -p calib-targets-cli -- validate \
+  --spec tmpdata/printable/charuco_a4.json
+
 cargo run -p calib-targets-cli -- generate \
   --spec tmpdata/printable/charuco_a4.json \
   --out-stem tmpdata/printable/charuco_a4
 ```
+
+`validate` prints `valid <target-kind>` on success and exits non-zero if the
+spec fails printable validation.
 
 If you already have a spec file, generation is a single command:
 
@@ -130,6 +143,12 @@ The current `init` subcommands are:
 - `chessboard`
 - `charuco`
 - `marker-board`
+
+Other printable workflow commands:
+
+- `list-dictionaries`
+- `validate`
+- `generate`
 
 ## Python quickstart
 

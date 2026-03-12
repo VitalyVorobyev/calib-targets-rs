@@ -4,7 +4,42 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
-fn init_then_generate_chessboard_bundle() {
+fn top_level_help_lists_productized_commands() {
+    Command::cargo_bin("calib-targets")
+        .expect("binary")
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Repo-local CLI for printable calibration target generation",
+        ))
+        .stdout(predicate::str::contains("validate"))
+        .stdout(predicate::str::contains("list-dictionaries"));
+}
+
+#[test]
+fn list_dictionaries_is_sorted_and_includes_known_name() {
+    let output = Command::cargo_bin("calib-targets")
+        .expect("binary")
+        .arg("list-dictionaries")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let stdout = String::from_utf8(output).expect("utf8");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert!(!lines.is_empty(), "expected at least one dictionary name");
+    assert!(lines.contains(&"DICT_4X4_50"));
+
+    let mut sorted = lines.clone();
+    sorted.sort_unstable();
+    assert_eq!(lines, sorted, "dictionary names should be printed in order");
+}
+
+#[test]
+fn init_validate_then_generate_chessboard_bundle() {
     let dir = tempdir().expect("tempdir");
     let spec_path = dir.path().join("board.json");
     let out_stem = dir.path().join("generated/board");
@@ -28,6 +63,13 @@ fn init_then_generate_chessboard_bundle() {
 
     Command::cargo_bin("calib-targets")
         .expect("binary")
+        .args(["validate", "--spec", spec_path.to_str().expect("utf8")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("valid chessboard"));
+
+    Command::cargo_bin("calib-targets")
+        .expect("binary")
         .args([
             "generate",
             "--spec",
@@ -44,7 +86,7 @@ fn init_then_generate_chessboard_bundle() {
 }
 
 #[test]
-fn generate_rejects_bad_spec() {
+fn validate_rejects_bad_spec() {
     let dir = tempdir().expect("tempdir");
     let spec_path = dir.path().join("bad.json");
     fs::write(
@@ -72,13 +114,7 @@ fn generate_rejects_bad_spec() {
 
     Command::cargo_bin("calib-targets")
         .expect("binary")
-        .args([
-            "generate",
-            "--spec",
-            spec_path.to_str().expect("utf8"),
-            "--out-stem",
-            dir.path().join("out").to_str().expect("utf8"),
-        ])
+        .args(["validate", "--spec", spec_path.to_str().expect("utf8")])
         .assert()
         .failure()
         .stderr(predicate::str::contains("board does not fit page"));
