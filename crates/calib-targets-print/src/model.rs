@@ -1,7 +1,7 @@
 use calib_targets_aruco::Dictionary;
 use calib_targets_charuco::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 use calib_targets_core::GridCoords;
-use calib_targets_marker::CirclePolarity;
+use calib_targets_marker::{CirclePolarity, MarkerBoardLayout};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -67,6 +67,8 @@ pub enum PrintableTargetError {
     InvalidBorderBits,
     #[error("circle_diameter_rel must be finite and in (0, 1]")]
     InvalidCircleDiameter,
+    #[error("marker board layout needs cell_size in millimeters for printable conversion")]
+    MissingMarkerBoardCellSize,
     #[error("marker circle coordinates must fall inside the board squares")]
     InvalidCircleCell,
     #[error("marker circle cells must be unique")]
@@ -271,6 +273,27 @@ impl MarkerBoardTargetSpec {
             },
         ]
     }
+
+    /// Build a printable marker-board target from a detector layout whose
+    /// `cell_size` is already expressed in millimeters.
+    pub fn try_from_layout_mm(layout: &MarkerBoardLayout) -> Result<Self, PrintableTargetError> {
+        let square_size_mm = layout
+            .cell_size
+            .map(f64::from)
+            .ok_or(PrintableTargetError::MissingMarkerBoardCellSize)?;
+        let [circle0, circle1, circle2] = layout.circles;
+        Ok(Self {
+            inner_rows: layout.rows,
+            inner_cols: layout.cols,
+            square_size_mm,
+            circles: [
+                try_printable_circle_from_detector_spec(circle0)?,
+                try_printable_circle_from_detector_spec(circle1)?,
+                try_printable_circle_from_detector_spec(circle2)?,
+            ],
+            circle_diameter_rel: default_circle_diameter_rel(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -408,6 +431,24 @@ impl PrintableTargetDocument {
             page: PageSpec::default(),
             render: RenderOptions::default(),
         }
+    }
+
+    /// Build a printable document from a ChArUco board spec whose `cell_size`
+    /// is already expressed in millimeters.
+    pub fn from_charuco_board_spec_mm(board: &CharucoBoardSpec) -> Self {
+        Self::new(TargetSpec::Charuco(CharucoTargetSpec::from_board_spec_mm(
+            board,
+        )))
+    }
+
+    /// Build a printable document from a marker-board layout whose `cell_size`
+    /// is already expressed in millimeters.
+    pub fn try_from_marker_board_layout_mm(
+        layout: &MarkerBoardLayout,
+    ) -> Result<Self, PrintableTargetError> {
+        Ok(Self::new(TargetSpec::MarkerBoard(
+            MarkerBoardTargetSpec::try_from_layout_mm(layout)?,
+        )))
     }
 
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, PrintableTargetError> {
@@ -568,6 +609,20 @@ pub(crate) fn validate_marker_board_spec(
 }
 
 impl CharucoTargetSpec {
+    /// Build a printable ChArUco target from a detector board spec whose
+    /// `cell_size` is already expressed in millimeters.
+    pub fn from_board_spec_mm(board: &CharucoBoardSpec) -> Self {
+        Self {
+            rows: board.rows,
+            cols: board.cols,
+            square_size_mm: f64::from(board.cell_size),
+            marker_size_rel: f64::from(board.marker_size_rel),
+            dictionary: board.dictionary,
+            marker_layout: board.marker_layout,
+            border_bits: default_border_bits(),
+        }
+    }
+
     pub fn to_board_spec(&self) -> CharucoBoardSpec {
         CharucoBoardSpec {
             rows: self.rows,
@@ -580,10 +635,21 @@ impl CharucoTargetSpec {
     }
 }
 
+fn try_printable_circle_from_detector_spec(
+    circle: calib_targets_marker::MarkerCircleSpec,
+) -> Result<MarkerCircleSpec, PrintableTargetError> {
+    Ok(MarkerCircleSpec {
+        i: u32::try_from(circle.cell.i).map_err(|_| PrintableTargetError::InvalidCircleCell)?,
+        j: u32::try_from(circle.cell.j).map_err(|_| PrintableTargetError::InvalidCircleCell)?,
+        polarity: circle.polarity,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use calib_targets_aruco::builtins;
+    use calib_targets_marker::{CellCoords, MarkerCircleSpec as DetectorMarkerCircleSpec};
 
     fn sample_chessboard() -> PrintableTargetDocument {
         PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec {
@@ -677,5 +743,172 @@ mod tests {
         let json = doc.to_json_pretty().expect("json");
         let parsed: PrintableTargetDocument = serde_json::from_str(&json).expect("parse");
         assert_eq!(parsed, doc);
+    }
+
+    #[test]
+    fn builds_charuco_spec_from_board_spec_mm() {
+        let board = CharucoBoardSpec {
+            rows: 5,
+            cols: 7,
+            cell_size: 20.0,
+            marker_size_rel: 0.75,
+            dictionary: builtins::builtin_dictionary("DICT_4X4_50").expect("dict"),
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        };
+        let spec = CharucoTargetSpec::from_board_spec_mm(&board);
+        assert_eq!(spec.rows, board.rows);
+        assert_eq!(spec.cols, board.cols);
+        assert_eq!(spec.square_size_mm, 20.0);
+        assert_eq!(spec.marker_size_rel, 0.75);
+        assert_eq!(spec.dictionary.name, board.dictionary.name);
+        assert_eq!(spec.marker_layout, board.marker_layout);
+        assert_eq!(spec.border_bits, 1);
+    }
+
+    #[test]
+    fn builds_charuco_document_from_board_spec_mm() {
+        let board = CharucoBoardSpec {
+            rows: 5,
+            cols: 7,
+            cell_size: 20.0,
+            marker_size_rel: 0.75,
+            dictionary: builtins::builtin_dictionary("DICT_4X4_50").expect("dict"),
+            marker_layout: MarkerLayout::OpenCvCharuco,
+        };
+        let doc = PrintableTargetDocument::from_charuco_board_spec_mm(&board);
+        assert!(matches!(
+            &doc.target,
+            TargetSpec::Charuco(spec)
+                if spec.rows == 5
+                    && spec.cols == 7
+                    && spec.square_size_mm == 20.0
+                    && spec.marker_size_rel == 0.75
+                    && spec.border_bits == 1
+        ));
+        doc.validate().expect("valid printable charuco");
+    }
+
+    #[test]
+    fn builds_marker_board_spec_from_layout_mm() {
+        let layout = MarkerBoardLayout {
+            rows: 6,
+            cols: 8,
+            cell_size: Some(20.0),
+            circles: [
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 3, j: 2 },
+                    polarity: CirclePolarity::White,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 2 },
+                    polarity: CirclePolarity::Black,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 3 },
+                    polarity: CirclePolarity::White,
+                },
+            ],
+        };
+        let spec = MarkerBoardTargetSpec::try_from_layout_mm(&layout).expect("marker board spec");
+        assert_eq!(spec.inner_rows, 6);
+        assert_eq!(spec.inner_cols, 8);
+        assert_eq!(spec.square_size_mm, 20.0);
+        assert_eq!(
+            spec.circles,
+            [
+                MarkerCircleSpec {
+                    i: 3,
+                    j: 2,
+                    polarity: CirclePolarity::White,
+                },
+                MarkerCircleSpec {
+                    i: 4,
+                    j: 2,
+                    polarity: CirclePolarity::Black,
+                },
+                MarkerCircleSpec {
+                    i: 4,
+                    j: 3,
+                    polarity: CirclePolarity::White,
+                },
+            ]
+        );
+        assert_eq!(spec.circle_diameter_rel, 0.5);
+    }
+
+    #[test]
+    fn builds_marker_board_document_from_layout_mm() {
+        let layout = MarkerBoardLayout {
+            rows: 6,
+            cols: 8,
+            cell_size: Some(20.0),
+            circles: [
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 3, j: 2 },
+                    polarity: CirclePolarity::White,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 2 },
+                    polarity: CirclePolarity::Black,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 3 },
+                    polarity: CirclePolarity::White,
+                },
+            ],
+        };
+        let doc = PrintableTargetDocument::try_from_marker_board_layout_mm(&layout)
+            .expect("marker board doc");
+        assert!(matches!(
+            &doc.target,
+            TargetSpec::MarkerBoard(spec)
+                if spec.inner_rows == 6
+                    && spec.inner_cols == 8
+                    && spec.square_size_mm == 20.0
+                    && spec.circle_diameter_rel == 0.5
+        ));
+        doc.validate().expect("valid printable marker board");
+    }
+
+    #[test]
+    fn rejects_marker_board_layout_without_cell_size() {
+        let layout = MarkerBoardLayout {
+            rows: 6,
+            cols: 8,
+            cell_size: None,
+            circles: MarkerBoardLayout::default().circles,
+        };
+        let err =
+            MarkerBoardTargetSpec::try_from_layout_mm(&layout).expect_err("missing cell size");
+        assert!(matches!(
+            err,
+            PrintableTargetError::MissingMarkerBoardCellSize
+        ));
+    }
+
+    #[test]
+    fn rejects_negative_detector_circle_coords() {
+        let layout = MarkerBoardLayout {
+            rows: 6,
+            cols: 8,
+            cell_size: Some(20.0),
+            circles: [
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: -1, j: 2 },
+                    polarity: CirclePolarity::White,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 2 },
+                    polarity: CirclePolarity::Black,
+                },
+                DetectorMarkerCircleSpec {
+                    cell: CellCoords { i: 4, j: 3 },
+                    polarity: CirclePolarity::White,
+                },
+            ],
+        };
+        let err =
+            MarkerBoardTargetSpec::try_from_layout_mm(&layout).expect_err("negative detector cell");
+        assert!(matches!(err, PrintableTargetError::InvalidCircleCell));
     }
 }
