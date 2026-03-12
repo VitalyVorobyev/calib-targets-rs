@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "target": {
+    "kind": "marker_board",
+    "inner_rows": 6,
+    "inner_cols": 8,
+    "square_size_mm": 20.0,
+    "circles": [
+      {
+        "i": 3,
+        "j": 2,
+        "polarity": "black"
+      },
+      {
+        "i": 4,
+        "j": 2,
+        "polarity": "white"
+      },
+      {
+        "i": 4,
+        "j": 3,
+        "polarity": "black"
+      }
+    ],
+    "circle_diameter_rel": 0.5
+  },
+  "page": {
+    "size": {
+      "kind": "a4"
+    },
+    "orientation": "portrait",
+    "margin_mm": 10.0
+  },
+  "render": {
+    "debug_annotations": false,
+    "png_dpi": 300
+  }
+}

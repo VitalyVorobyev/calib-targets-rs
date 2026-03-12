@@ -4,10 +4,10 @@ mod support;
 
 use std::process::Command;
 
-use native_support::{add_rpath_arg, dylib_env_var, dylib_filename, prepend_search_path};
+use native_support::{dylib_env_var, prepend_search_path};
 use support::{
-    build_ffi_cdylib, cargo_program, crate_root, exe_suffix, find_program, run_command, temp_dir,
-    testdata_path, workspace_root, write_binary_pgm,
+    build_ffi_cdylib_with_profile, cargo_program, crate_root, exe_suffix, find_program,
+    run_command, temp_dir, testdata_path, workspace_root, write_binary_pgm,
 };
 
 #[test]
@@ -30,7 +30,7 @@ fn native_c_and_cpp_consumers_compile_and_run() {
     let cargo = cargo_program();
 
     write_binary_pgm(&testdata_path("mid.png"), &pgm_path);
-    build_ffi_cdylib(&workspace_root, &cargo, &cargo_target_dir);
+    build_ffi_cdylib_with_profile(&workspace_root, &cargo, &cargo_target_dir, "debug");
 
     assert!(
         dylib_path.exists(),
@@ -89,4 +89,24 @@ fn native_c_and_cpp_consumers_compile_and_run() {
             .env(dylib_env_var(), &dylib_env),
         "run C++ smoke example",
     );
+}
+
+fn dylib_filename() -> &'static str {
+    #[cfg(target_os = "macos")]
+    {
+        "libcalib_targets_ffi.dylib"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "libcalib_targets_ffi.so"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "calib_targets_ffi.dll"
+    }
+}
+
+fn add_rpath_arg(command: &mut Command, lib_dir: &std::path::Path) {
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    command.arg(format!("-Wl,-rpath,{}", lib_dir.display()));
 }

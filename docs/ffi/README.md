@@ -9,6 +9,7 @@ This guide covers the current release-facing native surface:
 - generated public header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
 - header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
 - repo-local staging helper: `crates/calib-targets-ffi/src/bin/stage-cmake-package.rs`
+- repo-local release-archive helper: `crates/calib-targets-ffi/src/bin/package-release-archive.rs`
 - repo-owned C example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
 - repo-owned C++ example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
 - repo-owned CMake consumer example:
@@ -25,14 +26,17 @@ consumer look like?” walkthrough, start with
 ## Current Support Boundaries
 
 - `calib-targets-ffi` is repo-local and remains `publish = false`.
-- Build the shared library from this workspace with Cargo. A repo-local CMake
-  package can be staged from those artifacts, but there is still no crates.io
-  package, package-manager metadata, or prebuilt binary distribution.
+- Supported tagged GitHub releases attach native archives for Linux, macOS, and
+  Windows. Each archive contains the staged `include/`, `lib/`, and
+  `lib/cmake/` prefix, so downstream consumers can integrate without building
+  Rust from source.
+- The crate is still not distributed on crates.io, and there is still no
+  package-manager metadata, installer flow, or signed native package.
 - Image input is limited to 8-bit grayscale buffers via `ct_gray_image_u8_t`.
 - The v1 ABI supports built-in dictionary ids only.
 - The C++ helper wrapper assumes a C++17-capable compiler.
 - The staged CMake consumer flow assumes CMake 3.16 or newer and is currently
-  validated on the Linux `ubuntu-latest` CI path.
+  validated on Linux, macOS, and Windows release runners.
 
 ## What Ships
 
@@ -47,6 +51,29 @@ The native ABI currently exposes:
   `ct_last_error_message`
 - caller-owned result arrays with query/fill patterns instead of heap ownership
   crossing the ABI boundary
+
+## Download Native Release Archives
+
+Supported tagged releases attach one native archive per platform. Archive names
+follow this pattern:
+
+- Linux and macOS: `calib-targets-ffi-<version>-<platform>.tar.gz`
+- Windows: `calib-targets-ffi-<version>-<platform>.zip`
+
+Each archive unpacks into a single top-level directory named the same way,
+containing the staged package prefix directly:
+
+```text
+calib-targets-ffi-<version>-<platform>/
+  include/
+  lib/
+  lib/cmake/calib_targets_ffi/
+```
+
+Point `CMAKE_PREFIX_PATH` at that unpacked top-level directory.
+
+If you are working from a repo checkout instead of a tagged release asset, the
+rest of this guide still shows how to build and stage the same layout locally.
 
 ## Build And Link
 
@@ -93,8 +120,9 @@ cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
 
 ## Stage A CMake Package
 
-Build the shared library first, then stage a repo-local package prefix from the
-Cargo output directory:
+If you are working from a repo checkout, build the shared library first, then
+stage the same package prefix that is shipped inside the native release
+archives:
 
 ```bash
 cargo build -p calib-targets-ffi
@@ -119,9 +147,26 @@ The generated CMake package exports two targets:
 - `calib_targets_ffi::c` for the shared C ABI library
 - `calib_targets_ffi::cpp` for the header-only C++ wrapper layered on top of it
 
-The package is repo-local and intentionally simple: it stages the built
-artifacts for downstream consumption, but it is not yet a published system
-package or package-manager integration.
+The local stage command is useful when you want to test packaging changes from a
+checkout. Supported tagged releases ship the same layout as downloadable native
+archives, but there is still no system package or package-manager integration.
+
+## Build A Matching Release Archive Locally
+
+If you want to rehearse the exact tagged-release payload from a repo checkout,
+build the release library and package the staged prefix as a platform archive:
+
+```bash
+cargo build -p calib-targets-ffi --release
+cargo run -p calib-targets-ffi --bin package-release-archive -- \
+  --lib-dir target/release \
+  --output-dir target/ffi-release-archives
+```
+
+The command prints the produced archive path. Linux and macOS emit `.tar.gz`;
+Windows emits `.zip`. Unpacking that archive yields the same top-level
+`calib-targets-ffi-<version>-<platform>/` prefix that the tagged GitHub
+releases publish.
 
 ## API Model
 
@@ -369,6 +414,10 @@ The example keeps the public boundary clean:
 - its local helper header handles PGM loading and config construction inside the
   consumer project rather than depending on repo-internal smoke helpers
 
+On Windows, make sure `<prefix>/lib` is on `PATH` when you run a consumer
+binary, or copy `calib_targets_ffi.dll` next to the executable. The repo smoke
+tests set `PATH` automatically for that case.
+
 ## Other Detector Families
 
 The other detector families follow the same broad model:
@@ -396,6 +445,7 @@ These commands exercise the native surface the repo currently documents:
 cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
 cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
 cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
+cargo test -p calib-targets-ffi --test release_archive_smoke -- --nocapture
 ```
 
 ## Design History

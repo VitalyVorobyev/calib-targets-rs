@@ -17,6 +17,9 @@
 #![allow(non_camel_case_types)]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+#[doc(hidden)]
+pub mod package_support;
+
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection, ScanDecodeConfig};
 use calib_targets::charuco::{
     CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector,

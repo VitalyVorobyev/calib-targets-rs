@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "target": {
+    "kind": "chessboard",
+    "inner_rows": 6,
+    "inner_cols": 8,
+    "square_size_mm": 20.0
+  },
+  "page": {
+    "size": {
+      "kind": "a4"
+    },
+    "orientation": "portrait",
+    "margin_mm": 10.0
+  },
+  "render": {
+    "debug_annotations": false,
+    "png_dpi": 300
+  }
+}
