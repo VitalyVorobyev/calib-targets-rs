@@ -24,7 +24,7 @@
 - _None currently._
 
 ## Up Next
-- `FFI-007` (`P1`, infra, implementer) Add ergonomic C++ consumer packaging and CMake API after the C API release.
+- _None currently._
 
 ## Backlog
 
@@ -35,7 +35,7 @@
 | FFI-004 | done | P2 | docs | Add C examples, C++ RAII wrapper, and ABI verification | implementer | Added repo-owned C/C++ examples, a thin RAII wrapper, automated external compile/smoke coverage, and usage docs without widening the approved C ABI. |
 | FFI-005 | done | P0 | docs | Add C API changelog entries and release notes | implementer | Added an `Unreleased` changelog entry plus a checked-in release-note draft for the C API launch, with current support boundaries and deferred C++/CMake follow-up called out explicitly. |
 | FFI-006 | done | P0 | docs | Publish a release-ready C API README and concise tutorials | implementer | Added a top-level native entry point plus a release-facing C API guide with build/link instructions, ownership/error rules, query/fill coverage, and concise C/C++ tutorials aligned to the shipped examples. |
-| FFI-007 | todo | P1 | infra | Add ergonomic C++ consumer packaging and CMake API | implementer | Planned now for post-release execution; package the existing thin C++ wrapper as a clean CMake consumer surface without widening the underlying C ABI. |
+| FFI-007 | done | P1 | infra | Add ergonomic C++ consumer packaging and CMake API | implementer | Added a repo-local staged CMake package, exported C/C++ consumer targets, a `find_package(...)` example, dedicated smoke validation, and matching docs without widening the underlying C ABI. |
 
 _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`, `Up Next`, or `Backlog` when you want the workflow to mint a `TASK-*` handoff._
 
@@ -67,6 +67,7 @@ _Empty backlog is valid. Add the first work item as a new row in `Active Sprint`
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| FFI-007 | 2026-03-12 | infra | Add ergonomic C++ consumer packaging and CMake API | Added a repo-local staged CMake package, exported `calib_targets_ffi::c` and `calib_targets_ffi::cpp` targets, a `find_package(...)` consumer example, dedicated smoke validation, and updated native docs/CI. |
 | FFI-006 | 2026-03-11 | docs | Publish a release-ready C API README and concise tutorials | Added a top-level native entry point and rewrote the FFI README into a release-facing C API guide with support boundaries, build/link flow, ownership rules, and concise example-backed tutorials. |
 | FFI-005 | 2026-03-11 | docs | Add C API changelog entries and release notes | Added an `Unreleased` changelog entry and a checked-in release-note draft for the C API launch, with explicit support boundaries and deferred post-release work. |
 | FFI-004 | 2026-03-11 | docs | Add C examples, C++ RAII wrapper, and ABI verification | Added repo-owned C/C++ smoke consumers, a header-only RAII wrapper, native compile/run smoke validation, CI header checks, and FFI usage docs. |

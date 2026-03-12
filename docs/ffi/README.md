@@ -8,8 +8,11 @@ This guide covers the current release-facing native surface:
 
 - generated public header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
 - header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
+- repo-local staging helper: `crates/calib-targets-ffi/src/bin/stage-cmake-package.rs`
 - repo-owned C example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
 - repo-owned C++ example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
+- repo-owned CMake consumer example:
+  `crates/calib-targets-ffi/examples/cmake_wrapper_consumer/`
 
 For the architectural rationale behind the ABI shape, see the
 [decision record](./decision-record.md). This document focuses on consumption,
@@ -18,11 +21,14 @@ not design history.
 ## Current Support Boundaries
 
 - `calib-targets-ffi` is repo-local and remains `publish = false`.
-- Build the shared library from this workspace with Cargo; there is no crates.io
-  package, no prebuilt binary distribution, and no CMake package yet.
+- Build the shared library from this workspace with Cargo. A repo-local CMake
+  package can be staged from those artifacts, but there is still no crates.io
+  package, package-manager metadata, or prebuilt binary distribution.
 - Image input is limited to 8-bit grayscale buffers via `ct_gray_image_u8_t`.
 - The v1 ABI supports built-in dictionary ids only.
-- The C++ helper wrapper currently assumes a C++17-capable compiler.
+- The C++ helper wrapper assumes a C++17-capable compiler.
+- The staged CMake consumer flow assumes CMake 3.16 or newer and is currently
+  validated on the Linux `ubuntu-latest` CI path.
 
 ## What Ships
 
@@ -31,6 +37,8 @@ The native ABI currently exposes:
 - chessboard detection via `ct_chessboard_detector_*`
 - ChArUco detection via `ct_charuco_detector_*`
 - checkerboard marker-board detection via `ct_marker_board_detector_*`
+- a staged CMake config package exporting `calib_targets_ffi::c` and
+  `calib_targets_ffi::cpp`
 - shared status/error retrieval through `ct_status_t` and
   `ct_last_error_message`
 - caller-owned result arrays with query/fill patterns instead of heap ownership
@@ -78,6 +86,38 @@ If you want to verify the checked-in header before integrating, run:
 ```bash
 cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
 ```
+
+## Stage A CMake Package
+
+Build the shared library first, then stage a repo-local package prefix from the
+Cargo output directory:
+
+```bash
+cargo build -p calib-targets-ffi
+cargo run -p calib-targets-ffi --bin stage-cmake-package -- \
+  --lib-dir target/debug \
+  --prefix target/ffi-cmake-package
+```
+
+That produces a prefix with the shape:
+
+```text
+target/ffi-cmake-package/
+  include/calib_targets_ffi.h
+  include/calib_targets_ffi.hpp
+  lib/libcalib_targets_ffi.{so,dylib}
+  lib/cmake/calib_targets_ffi/calib_targets_ffi-config.cmake
+  lib/cmake/calib_targets_ffi/calib_targets_ffi-config-version.cmake
+```
+
+The generated CMake package exports two targets:
+
+- `calib_targets_ffi::c` for the shared C ABI library
+- `calib_targets_ffi::cpp` for the header-only C++ wrapper layered on top of it
+
+The package is repo-local and intentionally simple: it stages the built
+artifacts for downstream consumption, but it is not yet a published system
+package or package-manager integration.
 
 ## API Model
 
@@ -278,6 +318,53 @@ c++ -std=c++17 -Wall -Wextra -pedantic \
   -o chessboard_wrapper_smoke
 ```
 
+## CMake Consumer Flow
+
+The staged package is intended to remove handwritten include directories and
+linker flags from downstream CMake consumers. The repo-owned example is:
+
+- `crates/calib-targets-ffi/examples/cmake_wrapper_consumer/`
+
+Its `CMakeLists.txt` uses the staged package like this:
+
+```cmake
+cmake_minimum_required(VERSION 3.16)
+project(chessboard_cmake_consumer LANGUAGES CXX)
+
+find_package(calib_targets_ffi CONFIG REQUIRED)
+
+add_executable(chessboard_cmake_consumer main.cpp)
+target_compile_features(chessboard_cmake_consumer PRIVATE cxx_std_17)
+target_link_libraries(chessboard_cmake_consumer PRIVATE calib_targets_ffi::cpp)
+
+set_property(
+  TARGET chessboard_cmake_consumer
+  PROPERTY BUILD_RPATH "$<TARGET_FILE_DIR:calib_targets_ffi::c>"
+)
+```
+
+To build and run that example from the workspace root:
+
+```bash
+cargo build -p calib-targets-ffi
+cargo run -p calib-targets-ffi --bin stage-cmake-package -- \
+  --lib-dir target/debug \
+  --prefix target/ffi-cmake-package
+
+cmake -S crates/calib-targets-ffi/examples/cmake_wrapper_consumer \
+  -B target/cmake-wrapper-consumer \
+  -DCMAKE_PREFIX_PATH=$PWD/target/ffi-cmake-package
+cmake --build target/cmake-wrapper-consumer
+target/cmake-wrapper-consumer/chessboard_cmake_consumer path/to/image.pgm
+```
+
+The example keeps the public boundary clean:
+
+- it includes `calib_targets_ffi.hpp` from the staged package
+- it links against the exported `calib_targets_ffi::cpp` target
+- its local helper header handles PGM loading and config construction inside the
+  consumer project rather than depending on repo-internal smoke helpers
+
 ## Other Detector Families
 
 The other detector families follow the same broad model:
@@ -304,6 +391,7 @@ These commands exercise the native surface the repo currently documents:
 ```bash
 cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
 cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
+cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 ```
 
 ## Design History

@@ -3,81 +3,85 @@
 - Task ID: `TASK-005-add-ergonomic-cpp-cmake-consumer-api`
 - Backlog ID: `FFI-007`
 - Role: `architect`
-- Date: `2026-03-11`
+- Date: `2026-03-12`
 - Status: `ready_for_implementer`
 
 ## Inputs Consulted
 - `docs/backlog.md`
-- `CHANGELOG.md`
+- `docs/handoffs/TASK-005-add-ergonomic-cpp-cmake-consumer-api/01-architect.md` (previous revision)
+- `docs/handoffs/TASK-007-publish-c-api-readme-and-tutorials/04-architect.md`
 - `README.md`
 - `docs/ffi/README.md`
+- `docs/releases/ffi-c-api-release-draft.md`
 - `crates/calib-targets-ffi/Cargo.toml`
 - `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
-- `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
-- `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
 - `crates/calib-targets-ffi/tests/native_consumer_smoke.rs`
+- `.github/workflows/ci.yml`
 
 ## Summary
-The repo now has a usable C ABI and a thin header-only C++ wrapper, but downstream C++ consumers still need repo-specific manual include and link flags. That is acceptable for the next release because the immediate release goal is a good C API, not full native packaging ergonomics. `FFI-007` should land immediately after that release and package the existing wrapper plus shared library as a first-class CMake consumer surface without widening or bypassing the approved C ABI.
+The C API release blockers are now complete, so `FFI-007` is the next native-consumer task. The repo already ships a usable header-only C++17 wrapper and validates repo-local C/C++ consumers, but downstream CMake users still have to know Cargo’s output layout and hand-write include/link flags. This task should package the existing shared library and wrapper as a deterministic repo-produced CMake config package, add a repo-owned `find_package(...)` consumer example, and validate that flow in CI without widening or bypassing the approved C ABI.
 
 ## Decisions Made
-- Treat the existing `calib_targets_ffi.hpp` wrapper as the semantic baseline; improve ergonomics around packaging and consumption rather than redesigning the wrapper around exceptions or alternate ownership rules.
-- Use Cargo as the source of truth for building the Rust shared library, then expose the built artifacts to CMake through generated package/config targets instead of teaching CMake to rebuild the Rust crate independently.
-- Keep the C++ layer above the C ABI as a header-only wrapper plus imported shared-library target; do not add C++-only exported symbols or a second ABI surface.
+- Reuse the existing `TASK-005-add-ergonomic-cpp-cmake-consumer-api` handoff directory and revise the plan now that the C API release/docs work is complete.
+- Keep Cargo as the build authority for `calib-targets-ffi`; the new work should stage/package already-built artifacts for CMake consumption rather than teaching CMake to build the Rust crate itself.
+- Preserve the current layering: one imported/shared-library C target for the C ABI and one interface/header-only C++ target above it. Do not add a second ABI surface or C++-only exported symbols.
+- Treat Linux on the existing `ubuntu-latest` CI path as the required validation target for this task. Other native toolchains may remain best-effort until they have explicit CI coverage.
 
 ## Files/Modules Affected
+- `crates/calib-targets-ffi/src/bin/` for a package-staging helper
+- New CMake package templates under `crates/calib-targets-ffi/`
 - `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
-- `crates/calib-targets-ffi/include/calib_targets_ffi.h`
-- New staging/package metadata under `crates/calib-targets-ffi/` for CMake config generation
 - New repo-owned CMake consumer example under `crates/calib-targets-ffi/`
 - `crates/calib-targets-ffi/tests/`
 - `.github/workflows/ci.yml`
 - `docs/ffi/README.md`
-- `README.md` if top-level C++/CMake navigation is added
+- `README.md` if the native entry point needs a short CMake/package note
 
 ## Validation/Tests
 - No implementation yet.
 - Required validation for implementation is listed below.
 
 ## Risks/Open Questions
-- The repo does not yet define a native packaging layout for release artifacts. This task should introduce one that works for repo validation first and can later back published release assets if needed.
-- The existing wrapper and smoke test already imply a C++17 baseline. The implementation should document the exact minimum C++ standard and minimum supported CMake version instead of leaving them implicit.
-- Windows/MSVC packaging may need separate follow-up if the first implementation focuses on the same Unix-like toolchain path currently covered by native smoke tests.
+- The repo does not yet define a staged native package layout. This task must introduce one that is deterministic and relocatable enough for repo validation without implying crates.io publication or prebuilt binary distribution.
+- The current docs say “no CMake package yet”; implementation must update that messaging carefully so it reflects the new repo-local packaged flow without overstating platform support.
+- The minimum supported CMake version is not yet fixed. The implementation should choose the lowest version needed by the actual package/config features used and document it explicitly.
+- If Windows/MSVC-specific packaging details diverge materially from the Linux CI path, keep them out of scope for this task and leave a concrete follow-up instead of guessing.
 
 ## Role-Specific Details
 
 ### Architect Planning
 - Problem statement:
-  The current C++ wrapper is only ergonomic for repo-local development. Consumers still have to know where Cargo puts the shared library, which include directories to add, and how to link the wrapper manually. That is too much friction for a supported native consumer path, but it is post-release work because the current release is explicitly focused on the C API itself.
+  The existing native story is good enough for a C API release but still poor for supported C++ consumers. A downstream CMake project currently has to know where Cargo wrote the shared library, which headers to include, and which linker/runtime-path flags to pass manually. That is avoidable friction now that the release-critical C API work is done.
 - Scope:
-  Add a deterministic package/staging layout for the built FFI library and headers, generate a CMake config/package that exposes clean imported targets for the C library and header-only C++ wrapper, add a repo-owned CMake consumer example plus smoke validation, and document the workflow.
+  Add a deterministic staged package layout for the built `calib-targets-ffi` artifacts, generate a repo-local CMake config package with clean imported targets for the C library and header-only C++ wrapper, add a repo-owned `find_package(...)` consumer example, validate that flow in CI, and document the supported usage path.
 - Out of scope:
-  Any new C ABI exports, exception-only wrapper redesign, static-library support, custom dictionary support, prebuilt binary distribution, Windows-specific packaging guarantees beyond what can be validated in CI today, and the current-release docs/release-note blockers in `FFI-005` and `FFI-006`.
+  Any new C ABI exports, redesign of the C++ wrapper around exceptions, static-library support, package-manager metadata, prebuilt binaries, crates.io publication of `calib-targets-ffi`, Windows/MSVC guarantees beyond documented caveats, and any new detector capabilities unrelated to consumer packaging.
 - Constraints:
-  Preserve the approved C ABI and current ownership/error model; keep Cargo as the authoritative build path for the shared library; keep the C++ layer thin and header-only above the generated C header; do not delay the current C API release with this work.
+  Preserve the approved C ABI and current ownership/error model; keep the C++ layer thin and header-only above `calib_targets_ffi.h`; keep Cargo as the source of truth for building the shared library; maintain the existing direct-compiler native smoke test instead of replacing it; and keep the implementation reviewable as one focused post-release change set.
 - Assumptions:
-  A `find_package(...)` CMake consumer flow is the right ergonomic target for post-release support.
-  A staged package layout produced from `cargo build -p calib-targets-ffi` is sufficient for the first version.
-  The wrapper remains status-oriented rather than exception-only unless a later human decision explicitly changes that direction.
+  A repo-local `find_package(... CONFIG REQUIRED)` flow is the right ergonomic target for the first supported CMake integration.
+  A staged prefix containing `include/`, `lib/`, and `lib/cmake/<package>/` is sufficient for the first implementation.
+  The current C++17 wrapper semantics remain acceptable; this task improves packaging and consumption, not wrapper behavior.
 - Implementation plan:
-  1. Define the package layout and exported CMake targets.
-     Add a deterministic staging/install layout that contains the shared library, generated C header, C++ wrapper header, and generated CMake package files. Expose at least one imported target for the C library and one interface target for the C++ wrapper so downstream code does not need manual include/link flags.
-  2. Add a repo-owned CMake consumer path.
-     Create a small CMake example that uses `find_package(...)` and the exported targets to build and run a wrapper-based detector flow against the staged artifacts. Keep the example focused on the already-shipped chessboard happy path plus one checked error/status path where practical.
-  3. Add validation and documentation.
-     Wire a local/CI smoke command that stages the package, configures the CMake example, builds it, and runs it. Document the package generation flow, minimum C++/CMake requirements, and the exact consumer steps in `docs/ffi/README.md`, with a short top-level pointer if the workspace README gains a native section.
+  1. Add a deterministic native package-staging flow.
+     Introduce a small Rust helper under `crates/calib-targets-ffi/src/bin/` or an equivalently local mechanism that stages the already-built shared library, generated C header, C++ wrapper header, and CMake config files into a deterministic prefix. The generated package should be prefix-relative/relocatable enough for temp-dir smoke tests and CI, and should expose one imported C target plus one interface C++ wrapper target so consumers do not set include or link flags by hand.
+  2. Add a repo-owned CMake consumer example and smoke test.
+     Create a small CMake project under `crates/calib-targets-ffi/` that uses `find_package(...)` and the exported targets to build a wrapper-based consumer. Keep the example close to the existing chessboard happy path and one explicit error/status check. Add a dedicated integration test that builds `calib-targets-ffi`, stages the package, runs `cmake -S ... -B ...`, builds the example, and executes it against a known fixture. Keep `native_consumer_smoke.rs` as the direct compiler-level coverage for the raw headers/link flags path.
+  3. Update docs and CI around the packaged flow.
+     Update `docs/ffi/README.md` to document the package-generation command, prefix layout, minimum supported C++ standard, minimum supported CMake version, `find_package(...)` consumer steps, and current validation scope. Add a short README pointer if needed. Wire the new smoke path into CI on `ubuntu-latest`.
 - Acceptance criteria:
-  1. A deterministic package/staging layout can be produced from the repo and contains the FFI shared library, generated C header, C++ wrapper header, and CMake package files.
-  2. A repo-owned CMake example builds through `find_package(...)` and exported targets without handwritten include directories or linker flags in the consumer project.
-  3. Local/CI validation configures, builds, and runs the CMake consumer example against the staged package.
-  4. The underlying C ABI and generated C header remain backward-compatible aside from non-breaking comments or docs polish.
-  5. Documentation states the minimum supported C++ language level and CMake version for the package flow.
+  1. The repo can produce a deterministic staged native package containing the FFI shared library, generated C header, C++ wrapper header, and CMake package/config files.
+  2. A repo-owned CMake consumer project builds through `find_package(... CONFIG REQUIRED)` and exported targets without handwritten include directories or linker flags in the consumer project.
+  3. CI runs a dedicated package/CMake smoke validation on the existing Linux path and executes the produced consumer binary successfully.
+  4. The existing raw C/C++ native smoke path continues to pass, and the underlying C ABI/header surface remains unchanged apart from non-breaking comments or documentation-related polish.
+  5. The docs explicitly state the supported C++ language level, minimum CMake version, package-generation workflow, and any remaining platform limitations.
 - Test plan:
   1. `cargo fmt`
   2. `cargo clippy --workspace --all-targets -- -D warnings`
-  3. `cargo test --workspace`
+  3. `cargo test --workspace --all-targets`
   4. `cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check`
-  5. Add a dedicated package/CMake smoke-validation command and record it in CI; a reasonable shape is a Rust integration test or scripted check that stages artifacts, runs `cmake -S ... -B ...`, `cmake --build ...`, and then executes the produced example binary.
+  5. `cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture`
+  6. Add and run a dedicated CMake/package smoke command; the preferred shape is `cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture`
 
 ## Next Handoff
-Implementer: start this only after the current C API release blockers (`FFI-005` and `FFI-006`) are complete, then add the staged CMake package flow, repo-owned consumer example, validation wiring, and docs without widening the C ABI.
+Implementer: treat `FFI-007` as the active post-release native task. Add the staged CMake package flow, repo-owned `find_package(...)` consumer example, dedicated smoke validation, and matching docs without widening the approved C ABI or replacing the existing raw native smoke coverage.
