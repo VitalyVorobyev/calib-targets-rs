@@ -558,7 +558,11 @@ mod tests {
         assert_eq!(cols * rows, coords.len());
         let coord_set: std::collections::HashSet<(i32, i32)> =
             coords.iter().map(|&(_, i, j)| (i, j)).collect();
-        assert_eq!(cols * rows, coord_set.len(), "All grid coords must be unique");
+        assert_eq!(
+            cols * rows,
+            coord_set.len(),
+            "All grid coords must be unique"
+        );
     }
 
     /// Verify that for every edge A->B with direction D, B->A has the opposite direction.
@@ -579,7 +583,12 @@ mod tests {
                 let pos = ax * (i as f32 * spacing) + ay * (j as f32 * spacing);
                 let cluster = (i + j) % 2;
                 let ori = if cluster == 0 { diag0 } else { diag1 };
-                corners.push(make_clustered_corner(pos.x + 50.0, pos.y + 50.0, ori, cluster));
+                corners.push(make_clustered_corner(
+                    pos.x + 50.0,
+                    pos.y + 50.0,
+                    ori,
+                    cluster,
+                ));
             }
         }
 
@@ -637,7 +646,12 @@ mod tests {
                 let pos = ax * (i as f32 * spacing) + ay * (j as f32 * spacing);
                 let cluster = (i + j) % 2;
                 let ori = if cluster == 0 { diag0 } else { diag1 };
-                corners.push(make_clustered_corner(pos.x + 80.0, pos.y + 80.0, ori, cluster));
+                corners.push(make_clustered_corner(
+                    pos.x + 80.0,
+                    pos.y + 80.0,
+                    ori,
+                    cluster,
+                ));
             }
         }
 
