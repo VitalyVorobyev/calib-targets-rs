@@ -61,9 +61,9 @@ def _extract_rust_core_surface() -> tuple[list[tuple[str, str]], list[tuple[str,
         src,
     )
     ctor_sigs = re.findall(
-        r"#\[new\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]",
+        r"#\[new\](?:(?!#\[new\]).)*?#\[pyo3\(signature = (\([^\)]*\))\)\]",
         src,
-        re.MULTILINE,
+        re.MULTILINE | re.DOTALL,
     )
     if len(class_names) != len(ctor_sigs):
         raise RuntimeError(

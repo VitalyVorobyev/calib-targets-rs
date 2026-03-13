@@ -22,8 +22,8 @@ pub mod package_support;
 
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection, ScanDecodeConfig};
 use calib_targets::charuco::{
-    CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector,
-    CharucoDetectorParams, MarkerLayout,
+    CharucoAugmentationParams, CharucoBoardError, CharucoBoardSpec, CharucoDetectError,
+    CharucoDetector, CharucoDetectorParams, MarkerLayout,
 };
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets::core::{
@@ -1185,6 +1185,9 @@ fn convert_charuco_detector_params(
         max_hamming: u8::try_from(params.max_hamming)
             .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
         min_marker_inliers: params.min_marker_inliers,
+        allow_low_inlier_unique_alignment: false,
+        augmentation: CharucoAugmentationParams::default(),
+        use_global_corner_validation: false,
         corner_validation_threshold_rel,
         corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
     })

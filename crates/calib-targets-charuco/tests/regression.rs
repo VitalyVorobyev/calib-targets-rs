@@ -356,6 +356,73 @@ fn detect_with_diagnostics_matches_detect_on_small_png() {
         diagnostics.final_corner_count,
         with_diag.detection.corners.len()
     );
+    assert!(diagnostics.marker_path.expected_id_accounted);
+    assert!(diagnostics.marker_path.covers_selected_evaluation);
+    assert_eq!(
+        diagnostics.marker_path.complete.candidate_cell_count
+            + diagnostics.marker_path.inferred.candidate_cell_count,
+        diagnostics.candidate_cell_count
+    );
+    assert!(
+        diagnostics.marker_path.complete.candidate_cell_count
+            >= diagnostics.marker_path.complete.cells_with_any_decode_count
+    );
+    assert!(
+        diagnostics.marker_path.complete.cells_with_any_decode_count
+            >= diagnostics.marker_path.complete.selected_marker_count
+    );
+    assert!(
+        diagnostics.marker_path.inferred.candidate_cell_count
+            >= diagnostics.marker_path.inferred.cells_with_any_decode_count
+    );
+    assert!(
+        diagnostics.marker_path.inferred.cells_with_any_decode_count
+            >= diagnostics.marker_path.inferred.selected_marker_count
+    );
+    assert_eq!(
+        diagnostics
+            .marker_path
+            .complete
+            .selected_hamming
+            .histogram
+            .iter()
+            .sum::<usize>(),
+        diagnostics.marker_path.complete.selected_marker_count
+    );
+    assert_eq!(
+        diagnostics
+            .marker_path
+            .inferred
+            .selected_hamming
+            .histogram
+            .iter()
+            .sum::<usize>(),
+        diagnostics.marker_path.inferred.selected_marker_count
+    );
+    assert_eq!(
+        diagnostics.marker_path.complete.expected_id_match_count
+            + diagnostics
+                .marker_path
+                .complete
+                .expected_id_contradiction_count
+            + diagnostics
+                .marker_path
+                .complete
+                .non_marker_confident_decode_count,
+        diagnostics.marker_path.complete.selected_marker_count
+    );
+    assert_eq!(
+        diagnostics.marker_path.inferred.expected_id_match_count
+            + diagnostics
+                .marker_path
+                .inferred
+                .expected_id_contradiction_count
+            + diagnostics
+                .marker_path
+                .inferred
+                .non_marker_confident_decode_count,
+        diagnostics.marker_path.inferred.selected_marker_count
+    );
     let validation = diagnostics
         .corner_validation
         .expect("corner validation diagnostics");

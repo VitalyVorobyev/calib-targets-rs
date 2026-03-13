@@ -22,4 +22,5 @@ pub use params::{CharucoAugmentationParams, CharucoDetectorParams};
 pub use pipeline::CharucoDetector;
 pub use result::{
     CharucoDetectionResult, CharucoDetectionRun, CharucoDiagnostics, CharucoStageTimings,
+    MarkerHammingSummary, MarkerPathDiagnostics, MarkerPathSourceDiagnostics, MarkerScoreSummary,
 };

@@ -4,3 +4,5 @@
 *.bmp filter=lfs diff=lfs merge=lfs -text
 book/src/img/*.png filter=lfs diff=lfs merge=lfs -text
 testdata/*.png filter=lfs diff=lfs merge=lfs -text
+*.h text eol=lf
+*.hpp text eol=lf

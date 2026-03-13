@@ -55,7 +55,8 @@ pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout}
 pub use detector::{
     CharucoAugmentationParams, CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun,
     CharucoDetector, CharucoDetectorParams, CharucoDiagnostics, CharucoStageTimings,
-    CornerValidationDiagnostics, CornerValidationSkippedReason,
+    CornerValidationDiagnostics, CornerValidationSkippedReason, MarkerHammingSummary,
+    MarkerPathDiagnostics, MarkerPathSourceDiagnostics, MarkerScoreSummary,
 };
 pub use investigation::{
     build_strip_acceptance, compute_strip_coverage, median, normalize_dictionary_name,

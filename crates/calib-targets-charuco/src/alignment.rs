@@ -7,7 +7,7 @@ use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "tracing")]
+#[cfg(all(test, feature = "tracing"))]
 use tracing::instrument;
 
 /// Alignment result between detected markers and a board specification.

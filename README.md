@@ -217,6 +217,18 @@ cargo doc --workspace --all-features
 mdbook build book
 ```
 
+Fast local iteration when you do not need the native C/C++ API smoke coverage:
+
+```bash
+cargo test-fast
+cargo test-fast-ffi
+```
+
+That fast path skips the slow `calib-targets-ffi` native consumer and release-archive
+integration tests while still running the Rust-side `calib-targets-ffi` unit/bin
+tests. Keep using the full workspace test baseline before finalizing changes and in
+CI/release validation.
+
 For contribution rules see [AGENTS.ms](./AGENTS.ms).
 
 ## License

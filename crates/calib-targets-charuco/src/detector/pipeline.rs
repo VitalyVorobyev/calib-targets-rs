@@ -9,13 +9,16 @@ use super::corner_mapping::map_charuco_corners;
 use super::corner_validation::{
     validate_and_fix_corners, CornerValidationConfig, CornerValidationRun,
 };
-use super::marker_decode::{decode_cell_evidence, dedup_markers_by_id, CellDecodeEvidence};
+use super::marker_decode::{
+    decode_cell_evidence, dedup_markers_by_id, summarize_cell_decode_diagnostics,
+    CellDecodeEvidence,
+};
 use super::marker_sampling::{build_corner_map, build_marker_cell_candidates, MarkerCellSource};
-use super::patch_placement::select_patch_alignment;
+use super::patch_placement::{add_alignment_match_diagnostics, select_patch_alignment};
 use super::rectified_recovery::decode_markers_from_rectified_view;
 use super::{
     CharucoDetectError, CharucoDetectionResult, CharucoDetectionRun, CharucoDetectorParams,
-    CharucoDiagnostics,
+    CharucoDiagnostics, MarkerPathDiagnostics,
 };
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
@@ -40,8 +43,36 @@ struct CandidateContext {
     candidate_cell_count: usize,
     complete_candidate_cell_count: usize,
     inferred_candidate_cell_count: usize,
+    marker_path: MarkerPathDiagnostics,
+    cell_evidence: Vec<CellDecodeEvidence>,
     decoded_marker_count: usize,
     decode_ms: f64,
+}
+
+#[derive(Clone)]
+struct CandidateBase {
+    chessboard: ChessboardDetectionResult,
+    complete_candidate_cell_count: usize,
+    inferred_candidate_cell_count: usize,
+    marker_path: MarkerPathDiagnostics,
+    cell_evidence: Vec<CellDecodeEvidence>,
+    decode_ms: f64,
+}
+
+impl CandidateBase {
+    fn into_context(self, decoded_marker_count: usize) -> CandidateContext {
+        CandidateContext {
+            candidate_cell_count: self.complete_candidate_cell_count
+                + self.inferred_candidate_cell_count,
+            chessboard: self.chessboard,
+            complete_candidate_cell_count: self.complete_candidate_cell_count,
+            inferred_candidate_cell_count: self.inferred_candidate_cell_count,
+            marker_path: self.marker_path,
+            cell_evidence: self.cell_evidence,
+            decoded_marker_count,
+            decode_ms: self.decode_ms,
+        }
+    }
 }
 
 impl CharucoDetector {
@@ -137,6 +168,7 @@ impl CharucoDetector {
         diagnostics.candidate_cell_count = selected.candidate_cell_count;
         diagnostics.complete_candidate_cell_count = selected.complete_candidate_cell_count;
         diagnostics.inferred_candidate_cell_count = selected.inferred_candidate_cell_count;
+        diagnostics.marker_path = selected.marker_path.clone();
         diagnostics.decoded_marker_count = selected.decoded_marker_count;
         diagnostics.aligned_marker_count = selected.aligned_marker_count;
         diagnostics.alignment_inlier_count = selected
@@ -222,23 +254,20 @@ impl CharucoDetector {
                 .collect(),
         );
         let local_decode_ms = elapsed_ms(local_decode_start);
+        let base_marker_path = summarize_cell_decode_diagnostics(&cell_evidence);
 
-        let patch_eval = self.evaluate_patch_placement(
-            image,
-            chessboard.clone(),
+        let base = CandidateBase {
+            chessboard: chessboard.clone(),
             complete_candidate_cell_count,
             inferred_candidate_cell_count,
-            &cell_evidence,
-            local_decode_ms,
-        );
-        let local_eval = self.evaluate_marker_hypothesis(
-            image,
-            chessboard.clone(),
-            complete_candidate_cell_count,
-            inferred_candidate_cell_count,
-            local_markers.clone(),
-            local_decode_ms,
-        );
+            marker_path: base_marker_path.clone(),
+            cell_evidence: cell_evidence.clone(),
+            decode_ms: local_decode_ms,
+        };
+
+        let patch_eval = self.evaluate_patch_placement(image, base.clone());
+        let local_eval =
+            self.evaluate_marker_hypothesis(image, base.clone(), local_markers.clone());
         let local_eval = select_preferred_local_evaluation(local_eval, patch_eval);
 
         if !self.params.augmentation.rectified_recovery {
@@ -261,12 +290,18 @@ impl CharucoDetector {
             dedup_markers_by_id(local_markers.into_iter().chain(rectified_markers).collect());
         let augmented_eval = self.evaluate_marker_hypothesis(
             image,
-            chessboard,
-            complete_candidate_cell_count + rectified_cell_count,
-            inferred_candidate_cell_count,
+            CandidateBase {
+                chessboard,
+                complete_candidate_cell_count: complete_candidate_cell_count + rectified_cell_count,
+                inferred_candidate_cell_count,
+                marker_path: base_marker_path,
+                cell_evidence,
+                decode_ms: local_decode_ms,
+            },
             augmented_markers,
-            local_decode_ms,
         );
+        let mut augmented_eval = augmented_eval;
+        augmented_eval.marker_path.covers_selected_evaluation = false;
 
         match compare_evaluations(&local_eval, &augmented_eval) {
             std::cmp::Ordering::Less => augmented_eval,
@@ -277,27 +312,17 @@ impl CharucoDetector {
     fn evaluate_marker_hypothesis(
         &self,
         image: &GrayImageView<'_>,
-        chessboard: ChessboardDetectionResult,
-        complete_candidate_cell_count: usize,
-        inferred_candidate_cell_count: usize,
+        base: CandidateBase,
         markers: Vec<MarkerDetection>,
-        decode_ms: f64,
     ) -> CandidateEvaluation {
-        let candidate_cell_count = complete_candidate_cell_count + inferred_candidate_cell_count;
-        let ctx = CandidateContext {
-            chessboard,
-            candidate_cell_count,
-            complete_candidate_cell_count,
-            inferred_candidate_cell_count,
-            decoded_marker_count: markers.len(),
-            decode_ms,
-        };
+        let ctx = base.into_context(markers.len());
         if markers.is_empty() {
             return CandidateEvaluation {
                 chessboard: ctx.chessboard,
                 candidate_cell_count: ctx.candidate_cell_count,
                 complete_candidate_cell_count: ctx.complete_candidate_cell_count,
                 inferred_candidate_cell_count: ctx.inferred_candidate_cell_count,
+                marker_path: ctx.marker_path,
                 decoded_marker_count: ctx.decoded_marker_count,
                 aligned_marker_count: 0,
                 alignment_candidate_count: 0,
@@ -327,6 +352,7 @@ impl CharucoDetector {
                 candidate_cell_count: ctx.candidate_cell_count,
                 complete_candidate_cell_count: ctx.complete_candidate_cell_count,
                 inferred_candidate_cell_count: ctx.inferred_candidate_cell_count,
+                marker_path: ctx.marker_path,
                 decoded_marker_count: ctx.decoded_marker_count,
                 aligned_marker_count: 0,
                 alignment_candidate_count: alignment_attempt.candidate_count,
@@ -362,17 +388,13 @@ impl CharucoDetector {
     fn evaluate_patch_placement(
         &self,
         image: &GrayImageView<'_>,
-        chessboard: ChessboardDetectionResult,
-        complete_candidate_cell_count: usize,
-        inferred_candidate_cell_count: usize,
-        cell_evidence: &[CellDecodeEvidence],
-        decode_ms: f64,
+        base: CandidateBase,
     ) -> Option<CandidateEvaluation> {
         let alignment_start = Instant::now();
         let selection = select_patch_alignment(
             &self.board,
-            &chessboard.detection,
-            cell_evidence,
+            &base.chessboard.detection,
+            &base.cell_evidence,
             &self.params.scan,
         )?;
         let alignment_ms = elapsed_ms(alignment_start);
@@ -384,14 +406,7 @@ impl CharucoDetector {
             return None;
         }
 
-        let ctx = CandidateContext {
-            chessboard,
-            candidate_cell_count: complete_candidate_cell_count + inferred_candidate_cell_count,
-            complete_candidate_cell_count,
-            inferred_candidate_cell_count,
-            decoded_marker_count: selection.markers.len(),
-            decode_ms,
-        };
+        let ctx = base.into_context(selection.markers.len());
         Some(self.finish_candidate_evaluation(image, ctx, selection, alignment_ms))
     }
 
@@ -402,6 +417,16 @@ impl CharucoDetector {
         selection: AlignmentSelection,
         alignment_ms: f64,
     ) -> CandidateEvaluation {
+        let CandidateContext {
+            chessboard,
+            candidate_cell_count,
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            mut marker_path,
+            cell_evidence,
+            decoded_marker_count,
+            decode_ms,
+        } = ctx;
         let AlignmentSelection {
             markers,
             alignment,
@@ -412,9 +437,15 @@ impl CharucoDetector {
             runner_up_corner_in_bounds_ratio,
         } = selection;
         let aligned_marker_count = markers.len();
+        add_alignment_match_diagnostics(
+            &self.board,
+            &cell_evidence,
+            alignment.alignment,
+            &mut marker_path,
+        );
 
         let map_validate_start = Instant::now();
-        let mapped = map_charuco_corners(&self.board, &ctx.chessboard.detection, &alignment);
+        let mapped = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
         let mapped_corner_count_before_validation = mapped.corners.len();
         let validation = self.run_corner_validation(mapped, &markers, &alignment, image);
         let map_validate_ms = elapsed_ms(map_validate_start);
@@ -426,11 +457,12 @@ impl CharucoDetector {
         };
 
         CandidateEvaluation {
-            chessboard: ctx.chessboard,
-            candidate_cell_count: ctx.candidate_cell_count,
-            complete_candidate_cell_count: ctx.complete_candidate_cell_count,
-            inferred_candidate_cell_count: ctx.inferred_candidate_cell_count,
-            decoded_marker_count: ctx.decoded_marker_count,
+            chessboard,
+            candidate_cell_count,
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            marker_path,
+            decoded_marker_count,
             aligned_marker_count,
             alignment_candidate_count: candidate_count,
             alignment_corner_in_bounds_count: corner_in_bounds_count,
@@ -443,7 +475,7 @@ impl CharucoDetector {
             final_corner_count: validation.detection.corners.len(),
             corner_validation: Some(validation.diagnostics),
             result: Some(result),
-            decode_ms: ctx.decode_ms,
+            decode_ms,
             alignment_ms,
             map_validate_ms,
             failure: None,
@@ -457,6 +489,16 @@ impl CharucoDetector {
         alignment_ms: f64,
         inliers: usize,
     ) -> CandidateEvaluation {
+        let CandidateContext {
+            chessboard,
+            candidate_cell_count,
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            mut marker_path,
+            cell_evidence,
+            decoded_marker_count,
+            decode_ms,
+        } = ctx;
         let AlignmentSelection {
             markers,
             alignment,
@@ -467,13 +509,20 @@ impl CharucoDetector {
             runner_up_corner_in_bounds_ratio,
         } = selection;
         let aligned_marker_count = markers.len();
+        add_alignment_match_diagnostics(
+            &self.board,
+            &cell_evidence,
+            alignment.alignment,
+            &mut marker_path,
+        );
 
         CandidateEvaluation {
-            chessboard: ctx.chessboard,
-            candidate_cell_count: ctx.candidate_cell_count,
-            complete_candidate_cell_count: ctx.complete_candidate_cell_count,
-            inferred_candidate_cell_count: ctx.inferred_candidate_cell_count,
-            decoded_marker_count: ctx.decoded_marker_count,
+            chessboard,
+            candidate_cell_count,
+            complete_candidate_cell_count,
+            inferred_candidate_cell_count,
+            marker_path,
+            decoded_marker_count,
             aligned_marker_count,
             alignment_candidate_count: candidate_count,
             alignment_corner_in_bounds_count: corner_in_bounds_count,
@@ -486,7 +535,7 @@ impl CharucoDetector {
             final_corner_count: 0,
             corner_validation: None,
             result: None,
-            decode_ms: ctx.decode_ms,
+            decode_ms,
             alignment_ms,
             map_validate_ms: 0.0,
             failure: Some(CandidateFailure::AlignmentFailed { inliers }),

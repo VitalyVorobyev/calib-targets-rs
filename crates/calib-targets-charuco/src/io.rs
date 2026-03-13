@@ -316,4 +316,86 @@ mod tests {
         assert!(report.crop_rect.is_none());
         assert!(report.diagnostics.is_none());
     }
+
+    #[test]
+    fn report_deserializes_without_marker_path_diagnostics() {
+        let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
+        let report = CharucoDetectReport {
+            image_path: "input.png".to_string(),
+            config_path: "config.json".to_string(),
+            board: CharucoBoardSpec {
+                rows: 5,
+                cols: 7,
+                cell_size: 1.0,
+                marker_size_rel: 0.75,
+                dictionary: dict,
+                marker_layout: MarkerLayout::OpenCvCharuco,
+            },
+            num_raw_corners: 0,
+            raw_corners: Vec::new(),
+            source_image_path: None,
+            strip_index: None,
+            crop_rect: None,
+            diagnostics: Some(CharucoReportDiagnostics {
+                detection: CharucoDiagnostics {
+                    chessboard: calib_targets_chessboard::ChessboardDiagnostics {
+                        input_corner_count: 0,
+                        strong_corner_count: 0,
+                        orientation_filtered_count: 0,
+                        component_count: 0,
+                        largest_component_size: 0,
+                        graph_min_spacing_pix: 0.0,
+                        graph_max_spacing_pix: 0.0,
+                        graph_k_neighbors: 0,
+                        selected_grid_width: None,
+                        selected_grid_height: None,
+                        selected_grid_completeness: None,
+                        final_corner_count: 0,
+                        timings: calib_targets_chessboard::ChessboardStageTimings::default(),
+                    },
+                    candidate_cell_count: 3,
+                    complete_candidate_cell_count: 2,
+                    inferred_candidate_cell_count: 1,
+                    decoded_marker_count: 1,
+                    aligned_marker_count: 1,
+                    alignment_inlier_count: 1,
+                    alignment_candidate_count: 1,
+                    alignment_corner_in_bounds_count: 4,
+                    alignment_corner_in_bounds_ratio: 1.0,
+                    alignment_runner_up_inlier_count: 0,
+                    alignment_runner_up_corner_in_bounds_ratio: 0.0,
+                    mapped_corner_count_before_validation: 4,
+                    corner_validation: None,
+                    final_corner_count: 4,
+                    timings: crate::CharucoStageTimings {
+                        chessboard_ms: 1.0,
+                        decode_ms: 1.0,
+                        alignment_ms: 1.0,
+                        map_validate_ms: 1.0,
+                        total_ms: 4.0,
+                    },
+                    ..CharucoDiagnostics::default()
+                },
+                coverage: None,
+                acceptance: None,
+            }),
+            detection: None,
+            markers: None,
+            alignment: None,
+            error: None,
+        };
+        let mut json = serde_json::to_value(report).expect("serialize report");
+        json["diagnostics"]["detection"]
+            .as_object_mut()
+            .expect("detection object")
+            .remove("marker_path");
+
+        let report: CharucoDetectReport =
+            serde_json::from_value(json).expect("report should deserialize");
+        let diagnostics = report.diagnostics.expect("diagnostics").detection;
+
+        assert!(!diagnostics.marker_path.expected_id_accounted);
+        assert_eq!(diagnostics.marker_path.complete.candidate_cell_count, 0);
+        assert_eq!(diagnostics.marker_path.inferred.candidate_cell_count, 0);
+    }
 }

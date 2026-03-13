@@ -92,6 +92,15 @@ struct StripSummary {
     input_image_path: String,
     raw_corner_count: usize,
     marker_count: usize,
+    marker_path_covers_selected_evaluation: bool,
+    complete_candidate_cell_count: Option<usize>,
+    inferred_candidate_cell_count: Option<usize>,
+    complete_cells_with_any_decode_count: Option<usize>,
+    inferred_cells_with_any_decode_count: Option<usize>,
+    complete_selected_marker_count: Option<usize>,
+    inferred_selected_marker_count: Option<usize>,
+    complete_expected_id_match_count: Option<usize>,
+    inferred_expected_id_match_count: Option<usize>,
     final_corner_count: usize,
     x_bin_counts: Vec<usize>,
     empty_bin_count: usize,
@@ -177,6 +186,19 @@ struct StripRunMeasure {
     map_validate_ms: f64,
     total_ms: f64,
     final_corner_count: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MarkerPathSummaryRollup {
+    covers_selected_evaluation: bool,
+    complete_candidate_cell_count: Option<usize>,
+    inferred_candidate_cell_count: Option<usize>,
+    complete_cells_with_any_decode_count: Option<usize>,
+    inferred_cells_with_any_decode_count: Option<usize>,
+    complete_selected_marker_count: Option<usize>,
+    inferred_selected_marker_count: Option<usize>,
+    complete_expected_id_match_count: Option<usize>,
+    inferred_expected_id_match_count: Option<usize>,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> {
@@ -613,6 +635,7 @@ fn process_strip(
         .as_ref()
         .map(|d| &d.detection)
         .expect("detection diagnostics");
+    let marker_path_rollup = marker_path_summary(det_diag);
 
     Ok(StripRunArtifacts {
         summary: StripSummary {
@@ -628,6 +651,17 @@ fn process_strip(
             input_image_path: input_path.display().to_string(),
             raw_corner_count: raw_corners.len(),
             marker_count,
+            marker_path_covers_selected_evaluation: marker_path_rollup.covers_selected_evaluation,
+            complete_candidate_cell_count: marker_path_rollup.complete_candidate_cell_count,
+            inferred_candidate_cell_count: marker_path_rollup.inferred_candidate_cell_count,
+            complete_cells_with_any_decode_count: marker_path_rollup
+                .complete_cells_with_any_decode_count,
+            inferred_cells_with_any_decode_count: marker_path_rollup
+                .inferred_cells_with_any_decode_count,
+            complete_selected_marker_count: marker_path_rollup.complete_selected_marker_count,
+            inferred_selected_marker_count: marker_path_rollup.inferred_selected_marker_count,
+            complete_expected_id_match_count: marker_path_rollup.complete_expected_id_match_count,
+            inferred_expected_id_match_count: marker_path_rollup.inferred_expected_id_match_count,
             final_corner_count,
             x_bin_counts: coverage.x_bin_counts.clone(),
             empty_bin_count: coverage.empty_bin_count,
@@ -768,16 +802,25 @@ fn write_summary_files(
     let mut file = File::create(&csv_path)?;
     writeln!(
         file,
-        "image_name,strip_index,raw_corner_count,marker_count,final_corner_count,x_bin_counts,empty_bin_count,min_bin_count,passes_corner_count,passes_x_coverage,passes_all,raw_corner_ms,chessboard_ms,decode_ms,alignment_ms,map_validate_ms,total_ms,error,failure_stage,report_path"
+        "image_name,strip_index,raw_corner_count,marker_count,marker_path_covers_selected_evaluation,complete_candidate_cell_count,inferred_candidate_cell_count,complete_cells_with_any_decode_count,inferred_cells_with_any_decode_count,complete_selected_marker_count,inferred_selected_marker_count,complete_expected_id_match_count,inferred_expected_id_match_count,final_corner_count,x_bin_counts,empty_bin_count,min_bin_count,passes_corner_count,passes_x_coverage,passes_all,raw_corner_ms,chessboard_ms,decode_ms,alignment_ms,map_validate_ms,total_ms,error,failure_stage,report_path"
     )?;
     for strip in &summary.strips {
         writeln!(
             file,
-            "{},{},{},{},{},\"{}\",{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
             csv_escape(&strip.image_name),
             strip.strip_index,
             strip.raw_corner_count,
             strip.marker_count,
+            strip.marker_path_covers_selected_evaluation,
+            csv_opt_usize(strip.complete_candidate_cell_count),
+            csv_opt_usize(strip.inferred_candidate_cell_count),
+            csv_opt_usize(strip.complete_cells_with_any_decode_count),
+            csv_opt_usize(strip.inferred_cells_with_any_decode_count),
+            csv_opt_usize(strip.complete_selected_marker_count),
+            csv_opt_usize(strip.inferred_selected_marker_count),
+            csv_opt_usize(strip.complete_expected_id_match_count),
+            csv_opt_usize(strip.inferred_expected_id_match_count),
             strip.final_corner_count,
             strip
                 .x_bin_counts
@@ -835,6 +878,90 @@ fn percentile(values: &[f64], q: f64) -> f64 {
     }
     let w = pos - lo as f64;
     values[lo] * (1.0 - w) + values[hi] * w
+}
+
+fn marker_path_summary(
+    diagnostics: &calib_targets_charuco::CharucoDiagnostics,
+) -> MarkerPathSummaryRollup {
+    let covers_selected_evaluation = diagnostics.marker_path.covers_selected_evaluation;
+    MarkerPathSummaryRollup {
+        covers_selected_evaluation,
+        complete_candidate_cell_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.complete.candidate_cell_count),
+        inferred_candidate_cell_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.inferred.candidate_cell_count),
+        complete_cells_with_any_decode_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.complete.cells_with_any_decode_count),
+        inferred_cells_with_any_decode_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.inferred.cells_with_any_decode_count),
+        complete_selected_marker_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.complete.selected_marker_count),
+        inferred_selected_marker_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.inferred.selected_marker_count),
+        complete_expected_id_match_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.complete.expected_id_match_count),
+        inferred_expected_id_match_count: covers_selected_evaluation
+            .then_some(diagnostics.marker_path.inferred.expected_id_match_count),
+    }
+}
+
+fn csv_opt_usize(value: Option<usize>) -> String {
+    value.map(|value| value.to_string()).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{marker_path_summary, MarkerPathSummaryRollup};
+
+    #[test]
+    fn marker_path_summary_keeps_counts_when_selected_evaluation_is_covered() {
+        let mut diagnostics = calib_targets_charuco::CharucoDiagnostics::default();
+        diagnostics.marker_path.covers_selected_evaluation = true;
+        diagnostics.marker_path.complete.candidate_cell_count = 7;
+        diagnostics.marker_path.inferred.expected_id_match_count = 2;
+
+        let rollup = marker_path_summary(&diagnostics);
+
+        assert_eq!(
+            rollup,
+            MarkerPathSummaryRollup {
+                covers_selected_evaluation: true,
+                complete_candidate_cell_count: Some(7),
+                inferred_candidate_cell_count: Some(0),
+                complete_cells_with_any_decode_count: Some(0),
+                inferred_cells_with_any_decode_count: Some(0),
+                complete_selected_marker_count: Some(0),
+                inferred_selected_marker_count: Some(0),
+                complete_expected_id_match_count: Some(0),
+                inferred_expected_id_match_count: Some(2),
+            }
+        );
+    }
+
+    #[test]
+    fn marker_path_summary_redacts_local_only_counts() {
+        let mut diagnostics = calib_targets_charuco::CharucoDiagnostics::default();
+        diagnostics.marker_path.covers_selected_evaluation = false;
+        diagnostics.marker_path.complete.candidate_cell_count = 7;
+        diagnostics.marker_path.inferred.expected_id_match_count = 2;
+
+        let rollup = marker_path_summary(&diagnostics);
+
+        assert_eq!(
+            rollup,
+            MarkerPathSummaryRollup {
+                covers_selected_evaluation: false,
+                complete_candidate_cell_count: None,
+                inferred_candidate_cell_count: None,
+                complete_cells_with_any_decode_count: None,
+                inferred_cells_with_any_decode_count: None,
+                complete_selected_marker_count: None,
+                inferred_selected_marker_count: None,
+                complete_expected_id_match_count: None,
+                inferred_expected_id_match_count: None,
+            }
+        );
+    }
 }
 
 fn csv_escape(value: &str) -> String {

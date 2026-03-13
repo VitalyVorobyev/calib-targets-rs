@@ -1,4 +1,5 @@
 use super::corner_validation::CornerValidationDiagnostics;
+use super::result::MarkerPathDiagnostics;
 use super::{CharucoDetectError, CharucoDetectionResult};
 use crate::alignment::CharucoAlignment;
 use calib_targets_aruco::MarkerDetection;
@@ -11,6 +12,7 @@ pub(super) struct CandidateEvaluation {
     pub candidate_cell_count: usize,
     pub complete_candidate_cell_count: usize,
     pub inferred_candidate_cell_count: usize,
+    pub marker_path: MarkerPathDiagnostics,
     pub decoded_marker_count: usize,
     pub aligned_marker_count: usize,
     pub alignment_candidate_count: usize,

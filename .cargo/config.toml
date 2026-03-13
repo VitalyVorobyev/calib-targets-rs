@@ -1,0 +1,3 @@
+[alias]
+test-fast = ["test", "--workspace", "--all-targets", "--exclude", "calib-targets-ffi"]
+test-fast-ffi = ["test", "-p", "calib-targets-ffi", "--lib", "--bins"]

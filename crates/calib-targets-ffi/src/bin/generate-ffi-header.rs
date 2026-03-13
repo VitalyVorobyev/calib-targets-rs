@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 header_path.display()
             )
         })?;
-        if existing != generated {
+        if normalize_line_endings(&existing) != normalize_line_endings(&generated) {
             eprintln!(
                 "header is out of date: run `cargo run -p calib-targets-ffi --bin generate-ffi-header`"
             );
@@ -43,4 +43,23 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn header_path(crate_dir: &Path) -> PathBuf {
     crate_dir.join("include").join("calib_targets_ffi.h")
+}
+
+fn normalize_line_endings(text: &str) -> String {
+    text.replace("\r\n", "\n").replace('\r', "\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_line_endings;
+
+    #[test]
+    fn normalizes_crlf_and_cr_to_lf() {
+        assert_eq!(normalize_line_endings("a\r\nb\rc\n"), "a\nb\nc\n");
+    }
+
+    #[test]
+    fn leaves_lf_text_unchanged() {
+        assert_eq!(normalize_line_endings("a\nb\n"), "a\nb\n");
+    }
 }
