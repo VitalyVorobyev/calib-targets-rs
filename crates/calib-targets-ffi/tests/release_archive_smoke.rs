@@ -20,6 +20,7 @@ use tar::Archive as TarArchive;
 use zip::ZipArchive;
 
 #[test]
+#[ignore = "CI-only smoke test for packaged native release archives"]
 fn release_archive_builds_extracts_and_runs() {
     let workspace_root = workspace_root();
     let crate_root = crate_root();

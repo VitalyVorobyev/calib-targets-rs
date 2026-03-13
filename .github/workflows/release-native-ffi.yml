@@ -38,7 +38,7 @@ jobs:
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 
       - name: Release archive smoke
-        run: cargo test -p calib-targets-ffi --test release_archive_smoke -- --nocapture
+        run: cargo test -p calib-targets-ffi --test release_archive_smoke -- --ignored --nocapture
 
       - name: Build release archive
         shell: bash

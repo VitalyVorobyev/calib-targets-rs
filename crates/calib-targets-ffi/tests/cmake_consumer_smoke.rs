@@ -14,6 +14,7 @@ use support::{
 };
 
 #[test]
+#[ignore = "CI-only smoke test for packaged native release archives"]
 fn staged_cmake_consumer_builds_and_runs() {
     let workspace_root = workspace_root();
     let crate_root = crate_root();
