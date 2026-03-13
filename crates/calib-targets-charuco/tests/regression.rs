@@ -1,13 +1,14 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{
-    CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout,
+    split_composite_rects, CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, DatasetConfig,
+    MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::{
     estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,
 };
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
-use image::ImageReader;
+use image::{imageops::crop_imm, ImageReader};
 use nalgebra::Point2;
 use std::collections::HashSet;
 use std::path::Path;
@@ -55,6 +56,39 @@ fn testdata_path(name: &str) -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../testdata")
         .join(name)
+}
+
+fn detect_3536119669_strip(
+    image_name: &str,
+    strip_index: usize,
+) -> calib_targets_charuco::CharucoDetectionRun {
+    let dataset_cfg =
+        DatasetConfig::load_json(testdata_path("3536119669/config.json")).expect("dataset config");
+    let board = dataset_cfg.board_spec().expect("board spec");
+    let expected_strip_size = dataset_cfg.strip_size().expect("strip size");
+
+    let composite = load_gray(&testdata_path(&format!("3536119669/{image_name}")));
+    let rects = split_composite_rects(
+        composite.width(),
+        composite.height(),
+        Some(expected_strip_size),
+    )
+    .expect("strip rects");
+    let rect = rects[strip_index];
+    let crop = crop_imm(&composite, rect.x, rect.y, rect.width, rect.height).to_image();
+
+    let raw_corners = detect_corners(&crop);
+    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+
+    let mut params = CharucoDetectorParams::for_board(&board);
+    params.px_per_square = 60.0;
+    let detector = CharucoDetector::new(params).expect("detector");
+    let src_view = GrayImageView {
+        width: crop.width() as usize,
+        height: crop.height() as usize,
+        data: crop.as_raw(),
+    };
+    detector.detect_with_diagnostics(&src_view, &corners)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -289,6 +323,148 @@ fn detects_charuco_on_small_png() {
         .iter()
         .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
     assert_unique_ids(&res, 22 * 22);
+}
+
+#[test]
+fn algo_002_preserves_good_strip_marker_support() {
+    let strip_1 = detect_3536119669_strip("target_0.png", 1);
+    assert!(
+        strip_1.result.is_ok(),
+        "target_0 strip_1 should stay successful"
+    );
+    assert!(
+        strip_1.diagnostics.decoded_marker_count >= 8,
+        "target_0 strip_1 decoded markers regressed: {}",
+        strip_1.diagnostics.decoded_marker_count
+    );
+    assert!(
+        strip_1
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+            >= 1,
+        "target_0 strip_1 inferred selected markers regressed: {}",
+        strip_1
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+    );
+    assert!(
+        strip_1
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+            >= 1,
+        "target_0 strip_1 inferred expected-id matches regressed: {}",
+        strip_1
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+    );
+
+    let strip_5 = detect_3536119669_strip("target_2.png", 5);
+    assert!(
+        strip_5.result.is_ok(),
+        "target_2 strip_5 should stay successful"
+    );
+    assert!(
+        strip_5.diagnostics.decoded_marker_count >= 11,
+        "target_2 strip_5 decoded markers regressed: {}",
+        strip_5.diagnostics.decoded_marker_count
+    );
+    assert!(
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .cells_with_any_decode_count
+            >= 3,
+        "target_2 strip_5 inferred any-decode count regressed: {}",
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .cells_with_any_decode_count
+    );
+    assert!(
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+            >= 2,
+        "target_2 strip_5 inferred selected markers regressed: {}",
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+    );
+    assert!(
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+            >= 2,
+        "target_2 strip_5 inferred expected-id matches regressed: {}",
+        strip_5
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+    );
+}
+
+#[test]
+fn algo_002_keeps_target_2_strip_3_gain() {
+    let strip_3 = detect_3536119669_strip("target_2.png", 3);
+    assert!(
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .cells_with_any_decode_count
+            >= 3,
+        "target_2 strip_3 should keep the inferred any-decode gain: {}",
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .cells_with_any_decode_count
+    );
+    assert!(
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+            >= 3,
+        "target_2 strip_3 should keep the inferred selected-marker gain: {}",
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .selected_marker_count
+    );
+    assert!(
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+            >= 1,
+        "target_2 strip_3 should keep at least one inferred expected-id match: {}",
+        strip_3
+            .diagnostics
+            .marker_path
+            .inferred
+            .expected_id_match_count
+    );
 }
 
 #[test]

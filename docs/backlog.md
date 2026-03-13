@@ -25,7 +25,6 @@
 
 ## Up Next
 
-- `ALGO-002` — Improve inferred 3-corner cell geometry for marker sampling.
 - `ALGO-003` — Strengthen discrete patch placement scoring with richer local evidence.
 
 ## Backlog
@@ -33,7 +32,7 @@
 | ID | Status | Priority | Type | Title | Role | Notes |
 |----|--------|----------|------|-------|------|-------|
 | ALGO-001 | done | P0 | algo | Instrument ChArUco marker-path diagnostics on complete vs inferred cells | implementer | Added additive complete-vs-inferred marker-path diagnostics, corrected rotated expected-id accounting, and explicit partial-coverage signaling for rectified-recovery-selected reports without changing detector acceptance behavior. |
-| ALGO-002 | todo | P0 | algo | Improve inferred 3-corner cell geometry for marker sampling | implementer | Replace the current parallelogram-only missing-corner completion with a stronger local-lattice-based quad estimate for incomplete cells, without inventing new ChArUco corners. |
+| ALGO-002 | done | P0 | algo | Improve inferred 3-corner cell geometry for marker sampling | implementer | Replaced the parallelogram-only inferred-cell completion with a local-lattice estimator plus conservative fallback arbitration, improved weak-strip inferred marker support, and preserved the already-good strips without inventing new ChArUco corners. |
 | ALGO-003 | todo | P1 | algo | Strengthen discrete patch placement scoring with richer local evidence | implementer | Extend board-placement scoring beyond sparse matched IDs by using contradiction evidence and other correctness-safe local cell cues while keeping the default path calibration-free and discrete. |
 | ALGO-004 | todo | P1 | algo | Re-evaluate the first four real composites against the 24-of-24 gate | implementer | Re-run `target_0` through `target_3`, inspect overlays on every changed weak strip, and require `>= 40` final ChArUco corners on all 24 snaps before broadening the rollout. |
 | ALGO-005 | todo | P2 | algo | Re-run the whole `3536119669` dataset and classify residual failures | implementer | After the first-four gate is met, run the default detector on the entire dataset and regroup failures by camera, distance, failure stage, and decoded marker yield to decide the next algorithmic step. |
@@ -236,6 +235,7 @@ python3 tools/inspect_charuco_dataset.py \
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| ALGO-002 | 2026-03-13 | algo | Improve inferred 3-corner cell geometry for marker sampling | Replaced the inferred-cell parallelogram-only completion with a local-lattice estimator, added conservative invalid-quad and decode-time fallback handling, locked the key strip regressions in tests, and improved first-four weak-strip marker support without regressing the already-good strips. |
 | INFRA-001 | 2026-03-13 | infra | Add a fast local test set that skips native FFI smoke tests | Added `cargo test-fast` and `cargo test-fast-ffi` as the documented fast local iteration path so native C/C++ smoke tests stay out of the hot loop while the full baseline remains available for final validation. |
 | ALGO-001 | 2026-03-13 | algo | Instrument ChArUco marker-path diagnostics on complete vs inferred cells | Added additive per-source marker-path diagnostics, fixed rotated expected-id accounting, surfaced explicit partial-coverage signaling for rectified-recovery-selected runs, and landed reviewer-approved investigation summaries for the weak strips. |
 | PRINT-005 | 2026-03-12 | release | Perform the live crates.io publish for `calib-targets-print` and final docs-state sync | Published `calib-targets-print` on crates.io and updated the workspace, facade, and print-crate docs so the dedicated printable-target crate is described as live while the CLI remains repo-local. |

@@ -69,10 +69,11 @@ Canonical routing:
 - Implementer stage: use `implementer` only.
 - Reviewer stage: use `reviewer` only.
 - Architect closeout stage: use `architect` only.
-5. After the role finishes, re-read the handoff directory.
-6. If reviewer verdict is `changes_requested`, route back to `implementer` and continue the `implementer -> reviewer` loop.
-7. If reviewer verdict is approved, route to final Architect closeout and stop only when Human is the next legal handoff.
-8. Stop on any missing input, malformed report, blocked status, or inconsistent task-id instead of guessing.
+5. Preserve the role-skill validation boundaries when routing. Do not add or request standalone C/C++ or other native-library test suites during this workflow unless the human explicitly overrides that rule.
+6. After the role finishes, re-read the handoff directory.
+7. If reviewer verdict is `changes_requested`, route back to `implementer` and continue the `implementer -> reviewer` loop.
+8. If reviewer verdict is approved, route to final Architect closeout and stop only when Human is the next legal handoff.
+9. Stop on any missing input, malformed report, blocked status, or inconsistent task-id instead of guessing.
 
 ## Guardrails
 - Do not skip stages.
@@ -85,6 +86,7 @@ Canonical routing:
 - Do not continue past an incomplete plan.
 - Do not silently reinterpret the task if the upstream report is weak or contradictory.
 - Do not guess when a backlog/source task id cannot be resolved unambiguously.
+- Do not expand the workflow baseline to include time-consuming C/C++ or native-library tests unless the human explicitly asks for that override.
 
 ## Stop Conditions
 Stop and state exactly what is wrong when any of the following is true:

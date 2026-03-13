@@ -70,6 +70,7 @@ Do not edit `02-implementer.md` or `03-reviewer.md`.
 - Functional criteria.
 - Regression criteria.
 - Required validation commands.
+- Keep the required validation plan scoped to Rust, Python, docs, and other repo-native non-C/C++ checks for this workflow. Do not require standalone C/C++ test suites, `ctest`, `cmake --build ... test`, `ninja test`, or similar native test runs; if native validation would be helpful, record it as an optional follow-up or separate task instead of a required gate.
 9. In planning stage, write `01-architect.md` using `docs/templates/task-handoff-report.md` and role-specific sections.
    - Include `Backlog ID: <ID>` in report metadata when the work comes from `docs/backlog.md`; otherwise use `n/a` or another stable source id if helpful.
 10. In closeout stage, write `04-architect.md` using `docs/templates/task-handoff-report.md` and role-specific sections.
@@ -83,6 +84,7 @@ Do not edit `02-implementer.md` or `03-reviewer.md`.
 - Prefer minimal diffs and isolated change sets.
 - Mark uncertainty explicitly; do not guess missing requirements.
 - Recommend splitting when scope is too broad for one reviewable PR.
+- Do not put time-consuming C/C++ test suites into the required Implementer/Reviewer workflow baseline. Native validation, when relevant, should be called out separately rather than blocking the handoff.
 
 ## Definition Of Done
 - Planning stage:

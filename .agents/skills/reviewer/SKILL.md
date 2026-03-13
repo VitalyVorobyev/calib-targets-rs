@@ -46,6 +46,7 @@ Do not edit `01-architect.md` or `02-implementer.md`.
   - `cargo doc --workspace --all-features --no-deps`
   - `mdbook build book`
   - Python binding/docs checks (`generate_typing_artifacts.py --check`, `maturin develop`, `pytest crates/calib-targets-py/python_tests`, `pyright`, `mypy`)
+- Do not require or reproduce standalone C/C++ or native-library test suites (`ctest`, `cmake --build ... test`, `ninja test`, custom C/C++ harnesses, etc.) as part of this workflow review baseline unless the human explicitly asked for them.
 4. Review against architect acceptance criteria and test plan.
 5. Confirm the implementer's recorded local CI baseline is coherent, and reproduce any high-risk or disputed checks when feasible. If you cannot reproduce an expected check, state that explicitly.
 6. Check implementation quality:
@@ -76,12 +77,13 @@ Do not edit `01-architect.md` or `02-implementer.md`.
 - Do not request broad refactors outside task scope unless risk justifies it.
 - Keep findings prioritized and actionable.
 - Be explicit when validation could not be reproduced.
+- Do not block this workflow solely because C/C++ test suites were not run; call out residual native-code risk instead when relevant.
 
 ## Definition Of Done
 - Review report references correct `task-id`.
 - Verdict is one of the allowed values.
 - Findings are evidence-backed and mapped to action.
-- Review explicitly accounts for the local CI baseline (`fmt`, `clippy`, workspace tests, Rust docs, `mdbook`, Python checks), either via reproduced commands or a clear statement of what evidence was reviewed and what could not be reproduced.
+- Review explicitly accounts for the local CI baseline (`fmt`, `clippy`, workspace tests, Rust docs, `mdbook`, Python checks), either via reproduced commands or a clear statement of what evidence was reviewed and what could not be reproduced. C/C++ test suites are outside the normal review baseline unless the human explicitly requested them.
 - Handoff destination is explicit (Implementer, Architect, or Human).
 - `03-reviewer.md` preserves the correct `Backlog ID` when the task originated from `docs/backlog.md`.
 

@@ -48,7 +48,7 @@ Do not edit `01-architect.md` or `03-reviewer.md`.
 8. Run the local CI validation baseline unless the architect explicitly narrows it or a concrete blocker prevents a command:
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace --all-targets`
+- `cargo test-fast`
 - `cargo doc --workspace --all-features --no-deps`
 - `mdbook build book`
 - Python binding/docs checks using the repo venv (`.venv/bin/python`) when present, or an explicitly documented equivalent interpreter:
@@ -57,6 +57,7 @@ Do not edit `01-architect.md` or `03-reviewer.md`.
   - `pytest crates/calib-targets-py/python_tests`
   - `pyright crates/calib-targets-py/python_tests/typecheck_smoke.py`
   - `mypy crates/calib-targets-py/python_tests/typecheck_smoke.py`
+- Do not invoke standalone C/C++ or other native-library test suites as part of this workflow baseline (`ctest`, `cmake --build ... test`, `ninja test`, ad hoc C/C++ harnesses, etc.), even if the repo contains them. If native validation would normally be useful, document the residual risk or propose a separate follow-up instead of running those suites here.
 - If any required local CI command is not run, stop and record the blocker explicitly instead of handing off as `ready_for_review`.
 9. Record deviations explicitly:
 - what changed,
@@ -73,11 +74,12 @@ Do not edit `01-architect.md` or `03-reviewer.md`.
 - Keep diffs small and reviewable.
 - Prefer existing project conventions over introducing new patterns.
 - Be explicit about blockers, uncertainty, and unvalidated assumptions.
+- Treat C/C++ test suites as out of scope for this workflow unless the human explicitly overrides this rule.
 
 ## Definition Of Done
 - Code changes align with architect plan (or documented deviation).
 - Tests are added/updated where behavior changed.
-- Validation commands and outcomes are recorded, including the local CI baseline for `fmt`, `clippy`, workspace tests, Rust docs, `mdbook`, and Python binding checks unless a blocker is explicitly documented.
+- Validation commands and outcomes are recorded, including the local CI baseline for `fmt`, `clippy`, workspace tests, Rust docs, `mdbook`, and Python binding checks unless a blocker is explicitly documented. C/C++ test suites are intentionally excluded from this workflow baseline unless the human explicitly requested them.
 - `02-implementer.md` references correct `task-id`, changed files, results, and reviewer handoff.
 - `02-implementer.md` preserves the correct `Backlog ID` when the task originated from `docs/backlog.md`.
 

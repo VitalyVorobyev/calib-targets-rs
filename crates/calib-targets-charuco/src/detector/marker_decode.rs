@@ -2,8 +2,11 @@ use super::marker_sampling::{MarkerCellSource, SampledMarkerCell};
 use super::result::{
     MarkerHammingSummary, MarkerPathDiagnostics, MarkerPathSourceDiagnostics, MarkerScoreSummary,
 };
-use calib_targets_aruco::{decode_marker_in_cell, MarkerDetection, Matcher, ScanDecodeConfig};
+use calib_targets_aruco::{
+    decode_marker_in_cell, MarkerCell, MarkerDetection, Matcher, ScanDecodeConfig,
+};
 use calib_targets_core::GrayImageView;
+use nalgebra::Point2;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -27,9 +30,15 @@ pub(crate) fn decode_cell_evidence(
 
     for candidate in cell_candidates {
         let mut hypothesis_detections = Vec::new();
+        let fallback_cell = inferred_parallelogram_retry_cell(candidate);
         for (hypothesis_idx, scan_cfg) in scan_hypotheses.iter().enumerate() {
+            let local =
+                decode_marker_in_cell(image, &candidate.cell, px_per_square, scan_cfg, matcher);
+            let fallback = fallback_cell.as_ref().and_then(|cell| {
+                decode_marker_in_cell(image, cell, px_per_square, scan_cfg, matcher)
+            });
             let Some(marker) =
-                decode_marker_in_cell(image, &candidate.cell, px_per_square, scan_cfg, matcher)
+                prefer_geometry_detection(candidate.source, scan_cfg, local, fallback)
             else {
                 continue;
             };
@@ -132,6 +141,119 @@ pub(crate) fn dedup_markers_by_id(markers: Vec<MarkerDetection>) -> Vec<MarkerDe
     let mut deduped: Vec<MarkerDetection> = best.into_values().collect();
     deduped.sort_by_key(|marker| marker.id);
     deduped
+}
+
+fn prefer_geometry_detection(
+    source: MarkerCellSource,
+    scan: &ScanDecodeConfig,
+    local: Option<MarkerDetection>,
+    fallback: Option<MarkerDetection>,
+) -> Option<MarkerDetection> {
+    match (local, fallback) {
+        (None, None) => None,
+        (Some(marker), None) | (None, Some(marker)) => Some(marker),
+        (Some(local), Some(fallback)) => {
+            let local_reliable = marker_allowed_for_source(source, &local, scan, false);
+            let fallback_reliable = marker_allowed_for_source(source, &fallback, scan, false);
+            match (local_reliable, fallback_reliable) {
+                (true, false) => Some(local),
+                (false, true) => Some(fallback),
+                _ => Some(better_geometry_detection(local, fallback)),
+            }
+        }
+    }
+}
+
+fn better_geometry_detection(a: MarkerDetection, b: MarkerDetection) -> MarkerDetection {
+    match a
+        .hamming
+        .cmp(&b.hamming)
+        .reverse()
+        .then_with(|| a.score.partial_cmp(&b.score).unwrap_or(Ordering::Equal))
+        .then_with(|| {
+            a.border_score
+                .partial_cmp(&b.border_score)
+                .unwrap_or(Ordering::Equal)
+        }) {
+        Ordering::Less => b,
+        _ => a,
+    }
+}
+
+fn inferred_parallelogram_retry_cell(candidate: &SampledMarkerCell) -> Option<MarkerCell> {
+    let MarkerCellSource::InferredThreeCorners { missing_corner } = candidate.source else {
+        return None;
+    };
+
+    let mut corners_img = candidate.cell.corners_img;
+    let inferred = infer_missing_corner_parallelogram(corners_img, missing_corner);
+    if point_distance(inferred, corners_img[missing_corner]) <= 1e-3 {
+        return None;
+    }
+    corners_img[missing_corner] = inferred;
+    quad_is_valid(&corners_img).then_some(MarkerCell {
+        gc: candidate.cell.gc,
+        corners_img,
+    })
+}
+
+fn infer_missing_corner_parallelogram(
+    corners: [Point2<f32>; 4],
+    missing_corner: usize,
+) -> Point2<f32> {
+    match missing_corner {
+        0 => point_sum_diff(corners[3], corners[1], corners[2]),
+        1 => point_sum_diff(corners[0], corners[2], corners[3]),
+        2 => point_sum_diff(corners[1], corners[3], corners[0]),
+        3 => point_sum_diff(corners[0], corners[2], corners[1]),
+        _ => corners[missing_corner],
+    }
+}
+
+fn point_sum_diff(a: Point2<f32>, b: Point2<f32>, c: Point2<f32>) -> Point2<f32> {
+    Point2::from(a.coords + b.coords - c.coords)
+}
+
+fn point_distance(a: Point2<f32>, b: Point2<f32>) -> f32 {
+    let delta = a - b;
+    (delta.x * delta.x + delta.y * delta.y).sqrt()
+}
+
+fn quad_is_valid(quad: &[Point2<f32>; 4]) -> bool {
+    let area = polygon_area(quad).abs();
+    if !area.is_finite() || area <= 1e-3 {
+        return false;
+    }
+
+    let mut sign = 0.0f32;
+    for idx in 0..4 {
+        let p0 = quad[idx];
+        let p1 = quad[(idx + 1) % 4];
+        let p2 = quad[(idx + 2) % 4];
+        let v1 = p1 - p0;
+        let v2 = p2 - p1;
+        let cross = v1.x * v2.y - v1.y * v2.x;
+        if !cross.is_finite() || cross.abs() <= 1e-4 {
+            return false;
+        }
+        if sign == 0.0 {
+            sign = cross.signum();
+        } else if cross.signum() != sign {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn polygon_area(quad: &[Point2<f32>; 4]) -> f32 {
+    let mut area = 0.0f32;
+    for idx in 0..4 {
+        let p0 = quad[idx];
+        let p1 = quad[(idx + 1) % 4];
+        area += p0.x * p1.y - p1.x * p0.y;
+    }
+    0.5 * area
 }
 
 fn inferred_marker_is_reliable(marker: &MarkerDetection, scan: &ScanDecodeConfig) -> bool {
