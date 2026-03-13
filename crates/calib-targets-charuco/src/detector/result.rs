@@ -1,6 +1,6 @@
 use super::corner_validation::CornerValidationDiagnostics;
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_chessboard::ChessboardDiagnostics;
+use calib_targets_chessboard::{ChessboardDiagnostics, GridGraphDebug};
 use calib_targets_core::{GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 
@@ -131,4 +131,6 @@ pub struct CharucoDetectionRun {
     pub diagnostics: CharucoDiagnostics,
     pub markers: Vec<MarkerDetection>,
     pub alignment: Option<GridAlignment>,
+    pub selected_chessboard_inliers: Option<Vec<usize>>,
+    pub selected_chessboard_graph: Option<GridGraphDebug>,
 }

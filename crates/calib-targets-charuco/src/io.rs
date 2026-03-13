@@ -5,7 +5,7 @@ use crate::{
     CharucoDetectionRun, CharucoDetector, CharucoDetectorParams, CharucoDiagnostics,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::{ChessboardParams, GridGraphDebug, GridGraphParams};
 use calib_targets_core::{Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -66,6 +66,47 @@ pub struct CharucoReportDiagnostics {
     pub coverage: Option<StripCoverageMetrics>,
     #[serde(default)]
     pub acceptance: Option<StripAcceptanceMetrics>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectedChessboardGraph {
+    pub nodes: Vec<SelectedChessboardGraphNode>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectedChessboardGraphNode {
+    pub position: [f32; 2],
+    pub neighbors: Vec<SelectedChessboardGraphNeighbor>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SelectedChessboardGraphNeighbor {
+    pub index: usize,
+    pub direction: String,
+    pub distance: f32,
+}
+
+impl From<&GridGraphDebug> for SelectedChessboardGraph {
+    fn from(graph: &GridGraphDebug) -> Self {
+        Self {
+            nodes: graph
+                .nodes
+                .iter()
+                .map(|node| SelectedChessboardGraphNode {
+                    position: node.position,
+                    neighbors: node
+                        .neighbors
+                        .iter()
+                        .map(|neighbor| SelectedChessboardGraphNeighbor {
+                            index: neighbor.index,
+                            direction: neighbor.direction.to_string(),
+                            distance: neighbor.distance,
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Configuration for the ChArUco detection example.
@@ -175,6 +216,10 @@ pub struct CharucoDetectReport {
     pub num_raw_corners: usize,
     pub raw_corners: Vec<Corner>,
     #[serde(default)]
+    pub selected_chessboard_inliers: Option<Vec<usize>>,
+    #[serde(default)]
+    pub selected_chessboard_graph: Option<SelectedChessboardGraph>,
+    #[serde(default)]
     pub source_image_path: Option<String>,
     #[serde(default)]
     pub strip_index: Option<usize>,
@@ -215,6 +260,8 @@ impl CharucoDetectReport {
             board,
             num_raw_corners: raw_corners.len(),
             raw_corners,
+            selected_chessboard_inliers: None,
+            selected_chessboard_graph: None,
             source_image_path: None,
             strip_index: None,
             crop_rect: None,
@@ -240,6 +287,8 @@ impl CharucoDetectReport {
             diagnostics,
             markers,
             alignment,
+            selected_chessboard_inliers,
+            selected_chessboard_graph,
         } = run;
         if !markers.is_empty() {
             self.markers = Some(markers);
@@ -247,6 +296,10 @@ impl CharucoDetectReport {
         if let Some(alignment) = alignment {
             self.alignment = Some(alignment);
         }
+        self.selected_chessboard_inliers = selected_chessboard_inliers;
+        self.selected_chessboard_graph = selected_chessboard_graph
+            .as_ref()
+            .map(SelectedChessboardGraph::from);
         self.diagnostics = Some(CharucoReportDiagnostics {
             detection: diagnostics,
             coverage: None,
@@ -315,6 +368,8 @@ mod tests {
         assert!(report.strip_index.is_none());
         assert!(report.crop_rect.is_none());
         assert!(report.diagnostics.is_none());
+        assert!(report.selected_chessboard_inliers.is_none());
+        assert!(report.selected_chessboard_graph.is_none());
     }
 
     #[test]
@@ -333,6 +388,23 @@ mod tests {
             },
             num_raw_corners: 0,
             raw_corners: Vec::new(),
+            selected_chessboard_inliers: Some(vec![0, 2]),
+            selected_chessboard_graph: Some(SelectedChessboardGraph {
+                nodes: vec![
+                    SelectedChessboardGraphNode {
+                        position: [10.0, 20.0],
+                        neighbors: vec![SelectedChessboardGraphNeighbor {
+                            index: 1,
+                            direction: "right".to_string(),
+                            distance: 12.0,
+                        }],
+                    },
+                    SelectedChessboardGraphNode {
+                        position: [22.0, 20.0],
+                        neighbors: Vec::new(),
+                    },
+                ],
+            }),
             source_image_path: None,
             strip_index: None,
             crop_rect: None,
@@ -403,5 +475,11 @@ mod tests {
         assert_eq!(diagnostics.marker_path.inferred.candidate_cell_count, 0);
         assert_eq!(diagnostics.patch_placement.candidate_count, 0);
         assert!(diagnostics.patch_placement.best.is_none());
+        assert_eq!(report.selected_chessboard_inliers, Some(vec![0, 2]));
+        let graph = report
+            .selected_chessboard_graph
+            .expect("selected chessboard graph");
+        assert_eq!(graph.nodes.len(), 2);
+        assert_eq!(graph.nodes[0].neighbors[0].direction, "right");
     }
 }

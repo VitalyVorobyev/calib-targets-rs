@@ -153,6 +153,8 @@ impl CharucoDetector {
                 diagnostics,
                 markers: Vec::new(),
                 alignment: None,
+                selected_chessboard_inliers: None,
+                selected_chessboard_graph: None,
             };
         }
 
@@ -204,6 +206,8 @@ impl CharucoDetector {
                     .alignment
                     .as_ref()
                     .map(|alignment| alignment.alignment),
+                selected_chessboard_inliers: Some(selected.chessboard.inliers.clone()),
+                selected_chessboard_graph: selected.chessboard.debug.graph.clone(),
             };
         }
 
@@ -215,6 +219,8 @@ impl CharucoDetector {
                 .alignment
                 .as_ref()
                 .map(|alignment| alignment.alignment),
+            selected_chessboard_inliers: Some(selected.chessboard.inliers.clone()),
+            selected_chessboard_graph: selected.chessboard.debug.graph.clone(),
         }
     }
 

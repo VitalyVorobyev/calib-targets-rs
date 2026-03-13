@@ -10,6 +10,9 @@ Notes:
     `grid`, `id`, and `target_position` (mm).
   - Markers are shown on the image only when `corners_img` (or `center_img`)
     is present in the report.
+  - When available, `selected_chessboard_graph` and
+    `selected_chessboard_inliers` are drawn to show the selected lattice
+    component before ChArUco labeling.
 """
 
 import argparse
@@ -85,6 +88,91 @@ def draw_grid_edges(ax, grid_map, color, linewidth=0.8, alpha=0.6):
                 linewidth=linewidth,
                 alpha=alpha,
             )
+
+
+def graph_node_xy(node):
+    pos = node.get("position")
+    if isinstance(pos, (list, tuple)) and len(pos) >= 2:
+        return float(pos[0]), float(pos[1])
+    x = node.get("x")
+    y = node.get("y")
+    if x is None or y is None:
+        return None, None
+    return float(x), float(y)
+
+
+def draw_selected_chessboard_graph(ax, graph, inliers):
+    nodes = graph.get("nodes") or []
+    if not nodes:
+        return 0, 0
+
+    selected = set()
+    for idx in inliers or []:
+        try:
+            idx = int(idx)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(nodes):
+            selected.add(idx)
+
+    base_xs = []
+    base_ys = []
+    selected_xs = []
+    selected_ys = []
+
+    for idx, node in enumerate(nodes):
+        x0, y0 = graph_node_xy(node)
+        if x0 is None or y0 is None:
+            continue
+        base_xs.append(x0)
+        base_ys.append(y0)
+        if idx in selected:
+            selected_xs.append(x0)
+            selected_ys.append(y0)
+
+        for neigh in node.get("neighbors", []):
+            try:
+                j = int(neigh.get("index"))
+            except (TypeError, ValueError):
+                continue
+            if j <= idx or j < 0 or j >= len(nodes):
+                continue
+            x1, y1 = graph_node_xy(nodes[j])
+            if x1 is None or y1 is None:
+                continue
+            both_selected = idx in selected and j in selected
+            ax.plot(
+                [x0, x1],
+                [y0, y1],
+                color="#ffb000" if both_selected else "#8a8a8a",
+                linewidth=1.8 if both_selected else 0.5,
+                alpha=0.9 if both_selected else 0.18,
+                zorder=3 if both_selected else 1,
+            )
+
+    if base_xs:
+        ax.scatter(
+            base_xs,
+            base_ys,
+            s=8,
+            facecolors="#6f6f6f",
+            edgecolors="none",
+            alpha=0.25,
+            zorder=2,
+        )
+    if selected_xs:
+        ax.scatter(
+            selected_xs,
+            selected_ys,
+            s=16,
+            facecolors="#ffb000",
+            edgecolors="black",
+            linewidths=0.25,
+            alpha=0.95,
+            zorder=4,
+        )
+
+    return len(selected), len(nodes)
 
 
 def label_corner(ax, x, y, text, color, fontsize=7):
@@ -353,6 +441,8 @@ def main() -> None:
     board = data.get("board") or {}
     cell_size = board.get("cell_size")
     coverage = extract_coverage(data)
+    selected_chessboard_graph = data.get("selected_chessboard_graph") or {}
+    selected_chessboard_inliers = data.get("selected_chessboard_inliers") or []
 
     grid_map_img = build_grid_map(corners)
 
@@ -361,6 +451,12 @@ def main() -> None:
     else:
         fig, ax_img = plt.subplots(figsize=(10, 8))
     ax_img.imshow(img, cmap="gray", origin="upper")
+    selected_node_count = 0
+    selected_graph_node_count = 0
+    if selected_chessboard_graph:
+        selected_node_count, selected_graph_node_count = draw_selected_chessboard_graph(
+            ax_img, selected_chessboard_graph, selected_chessboard_inliers
+        )
     if grid_map_img and not args.no_grid:
         draw_grid_edges(ax_img, grid_map_img, color="#00c7e6", linewidth=0.8, alpha=0.5)
 
@@ -376,6 +472,10 @@ def main() -> None:
         f"detected corners: {len(corners)}",
         f"markers: {len(markers)}",
     ]
+    if selected_graph_node_count:
+        summary_lines.append(
+            f"selected chessboard nodes: {selected_node_count}/{selected_graph_node_count}"
+        )
     if board:
         rows = board.get("rows")
         cols = board.get("cols")

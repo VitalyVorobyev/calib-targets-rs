@@ -66,7 +66,9 @@ pub use investigation::{
 };
 pub use io::{
     CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
-    CharucoReportDiagnostics, ImageCropRect, StripAcceptanceMetrics, StripCoverageMetrics,
+    CharucoReportDiagnostics, ImageCropRect, SelectedChessboardGraph,
+    SelectedChessboardGraphNeighbor, SelectedChessboardGraphNode, StripAcceptanceMetrics,
+    StripCoverageMetrics,
 };
 pub use validation::{
     validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,
