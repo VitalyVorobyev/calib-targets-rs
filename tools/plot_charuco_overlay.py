@@ -29,6 +29,18 @@ def resolve_path(report_path: Path, path_str: str) -> Path:
     p = Path(path_str)
     if p.is_absolute():
         return p
+
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        p,
+        repo_root / p,
+        report_path.parent / p,
+        report_path.parent / p.name,
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+
     return (report_path.parent / p).resolve()
 
 

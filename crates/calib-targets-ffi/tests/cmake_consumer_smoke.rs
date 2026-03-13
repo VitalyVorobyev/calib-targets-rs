@@ -15,6 +15,10 @@ use support::{
 
 #[test]
 fn staged_cmake_consumer_builds_and_runs() {
+    if support::skip_if_not_ci("staged_cmake_consumer_builds_and_runs") {
+        return;
+    }
+
     let workspace_root = workspace_root();
     let crate_root = crate_root();
     let temp_dir = temp_dir("calib-targets-ffi-cmake-smoke");

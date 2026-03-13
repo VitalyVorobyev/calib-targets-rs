@@ -635,7 +635,7 @@ fn process_strip(
         build_strip_acceptance(final_corner_count, &coverage, DEFAULT_MIN_CORNER_COUNT);
 
     let mut report = CharucoDetectReport::new_with_context(
-        input_path.display().to_string(),
+        "input.png",
         context.config_label.clone(),
         context.board,
         target_corners,

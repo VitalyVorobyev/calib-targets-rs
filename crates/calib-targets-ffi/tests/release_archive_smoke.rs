@@ -21,6 +21,10 @@ use zip::ZipArchive;
 
 #[test]
 fn release_archive_builds_extracts_and_runs() {
+    if support::skip_if_not_ci("release_archive_builds_extracts_and_runs") {
+        return;
+    }
+
     let workspace_root = workspace_root();
     let crate_root = crate_root();
     let temp_dir = temp_dir("calib-targets-ffi-release-archive-smoke");

@@ -12,6 +12,10 @@ use support::{
 
 #[test]
 fn native_c_and_cpp_consumers_compile_and_run() {
+    if support::skip_if_not_ci("native_c_and_cpp_consumers_compile_and_run") {
+        return;
+    }
+
     let workspace_root = workspace_root();
     let crate_root = crate_root();
     let temp_dir = temp_dir("calib-targets-ffi-native-smoke");

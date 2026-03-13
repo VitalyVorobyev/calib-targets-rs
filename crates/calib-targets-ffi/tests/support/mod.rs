@@ -12,6 +12,14 @@ pub fn workspace_root() -> PathBuf {
         .expect("workspace root")
 }
 
+pub fn skip_if_not_ci(test_name: &str) -> bool {
+    if env::var_os("CI").is_some() {
+        return false;
+    }
+    eprintln!("skipping {test_name}: smoke test runs only when CI is set");
+    true
+}
+
 pub fn crate_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .canonicalize()
