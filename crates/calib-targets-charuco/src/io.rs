@@ -389,6 +389,10 @@ mod tests {
             .as_object_mut()
             .expect("detection object")
             .remove("marker_path");
+        json["diagnostics"]["detection"]
+            .as_object_mut()
+            .expect("detection object")
+            .remove("patch_placement");
 
         let report: CharucoDetectReport =
             serde_json::from_value(json).expect("report should deserialize");
@@ -397,5 +401,7 @@ mod tests {
         assert!(!diagnostics.marker_path.expected_id_accounted);
         assert_eq!(diagnostics.marker_path.complete.candidate_cell_count, 0);
         assert_eq!(diagnostics.marker_path.inferred.candidate_cell_count, 0);
+        assert_eq!(diagnostics.patch_placement.candidate_count, 0);
+        assert!(diagnostics.patch_placement.best.is_none());
     }
 }

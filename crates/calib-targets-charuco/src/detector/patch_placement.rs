@@ -4,7 +4,10 @@ use super::marker_decode::{
     CellDecodeEvidence,
 };
 use super::marker_sampling::MarkerCellSource;
-use super::result::{MarkerPathDiagnostics, MarkerPathSourceDiagnostics};
+use super::result::{
+    MarkerPathDiagnostics, MarkerPathSourceDiagnostics, PatchPlacementCandidateDiagnostics,
+    PatchPlacementDiagnostics, PatchPlacementSourceDiagnostics,
+};
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
@@ -16,11 +19,14 @@ use std::cmp::Ordering;
 struct PlacementSelectionCandidate {
     alignment: GridAlignment,
     markers: Vec<calib_targets_aruco::MarkerDetection>,
-    matched_count: usize,
-    contradiction_count: usize,
-    score_sum: f32,
+    evidence: PatchPlacementCandidateDiagnostics,
     corner_in_bounds_count: usize,
     corner_in_bounds_ratio: f32,
+}
+
+pub(crate) struct PatchPlacementAttempt {
+    pub selection: Option<AlignmentSelection>,
+    pub diagnostics: PatchPlacementDiagnostics,
 }
 
 pub(crate) fn select_patch_alignment(
@@ -28,44 +34,64 @@ pub(crate) fn select_patch_alignment(
     chessboard: &TargetDetection,
     cell_evidence: &[CellDecodeEvidence],
     scan: &ScanDecodeConfig,
-) -> Option<AlignmentSelection> {
+) -> PatchPlacementAttempt {
     let mut candidates = enumerate_legal_patch_alignments(board, chessboard)
         .into_iter()
         .filter_map(|alignment| {
             evaluate_patch_alignment_candidate(board, chessboard, cell_evidence, scan, alignment)
         })
         .collect::<Vec<_>>();
+
+    let mut diagnostics = PatchPlacementDiagnostics {
+        candidate_count: candidates.len(),
+        ..PatchPlacementDiagnostics::default()
+    };
     if candidates.is_empty() {
-        return None;
+        return PatchPlacementAttempt {
+            selection: None,
+            diagnostics,
+        };
     }
 
     candidates.sort_by(|a, b| compare_patch_selection_candidates(b, a));
-    let best = candidates.first()?.clone();
+    let best = candidates
+        .first()
+        .cloned()
+        .expect("non-empty candidate list should have a best candidate");
     let runner_up = candidates.get(1);
-    if runner_up.is_some_and(|runner_up| {
+    diagnostics.best = Some(best.evidence.clone());
+    diagnostics.runner_up = runner_up.map(|candidate| candidate.evidence.clone());
+
+    let ambiguous = runner_up.is_some_and(|runner_up| {
         compare_patch_selection_candidates(&best, runner_up) == Ordering::Equal
             && runner_up.alignment != best.alignment
-    }) {
-        return None;
-    }
+    });
+    diagnostics.ambiguous = ambiguous;
 
-    let marker_inliers = (0..best.markers.len()).collect();
-    Some(AlignmentSelection {
-        markers: best.markers.clone(),
-        alignment: CharucoAlignment {
-            alignment: best.alignment,
-            marker_inliers,
-        },
-        candidate_count: candidates.len(),
-        corner_in_bounds_count: best.corner_in_bounds_count,
-        corner_in_bounds_ratio: best.corner_in_bounds_ratio,
-        runner_up_inlier_count: runner_up
-            .map(|candidate| candidate.matched_count)
-            .unwrap_or(0),
-        runner_up_corner_in_bounds_ratio: runner_up
-            .map(|candidate| candidate.corner_in_bounds_ratio)
-            .unwrap_or(0.0),
-    })
+    let selection = (!ambiguous).then(|| {
+        let marker_inliers = (0..best.markers.len()).collect();
+        AlignmentSelection {
+            markers: best.markers.clone(),
+            alignment: CharucoAlignment {
+                alignment: best.alignment,
+                marker_inliers,
+            },
+            candidate_count: candidates.len(),
+            corner_in_bounds_count: best.corner_in_bounds_count,
+            corner_in_bounds_ratio: best.corner_in_bounds_ratio,
+            runner_up_inlier_count: runner_up
+                .map(|candidate| candidate.evidence.matched_marker_count)
+                .unwrap_or(0),
+            runner_up_corner_in_bounds_ratio: runner_up
+                .map(|candidate| candidate.corner_in_bounds_ratio)
+                .unwrap_or(0.0),
+        }
+    });
+
+    PatchPlacementAttempt {
+        selection,
+        diagnostics,
+    }
 }
 
 pub(crate) fn add_alignment_match_diagnostics(
@@ -115,13 +141,22 @@ fn evaluate_patch_alignment_candidate(
     }
 
     let mut matched_markers = Vec::new();
-    let mut contradiction_count = 0usize;
+    let mut candidate_evidence = PatchPlacementCandidateDiagnostics::default();
 
     for evidence in cell_evidence {
+        let source =
+            patch_source_diagnostics_mut(&mut candidate_evidence, evidence.candidate.source);
         let [sx, sy] = alignment.map(evidence.candidate.cell.gc.gx, evidence.candidate.cell.gc.gy);
         let expected_id = board.marker_id_at_cell(sx, sy);
         match expected_id {
             Some(expected_id) => {
+                source.expected_marker_cell_count += 1;
+                if !evidence.hypothesis_detections.is_empty() {
+                    source.expected_marker_cells_with_any_decode_count += 1;
+                }
+                if evidence.selected_marker.is_some() {
+                    source.expected_marker_cells_with_selected_marker_count += 1;
+                }
                 if let Some(marker) = match_expected_marker_from_hypotheses(
                     evidence.candidate.source,
                     expected_id,
@@ -129,13 +164,14 @@ fn evaluate_patch_alignment_candidate(
                     scan,
                 ) {
                     matched_markers.push(marker);
+                    source.expected_id_match_count += 1;
                 } else if cell_has_confident_wrong_decode(evidence, Some(expected_id), scan) {
-                    contradiction_count += 1;
+                    source.expected_id_contradiction_count += 1;
                 }
             }
             None => {
                 if cell_has_confident_wrong_decode(evidence, None, scan) {
-                    contradiction_count += 1;
+                    source.non_marker_confident_decode_count += 1;
                 }
             }
         }
@@ -146,13 +182,27 @@ fn evaluate_patch_alignment_candidate(
         return None;
     }
 
-    let score_sum = matched_markers.iter().map(|marker| marker.score).sum();
+    candidate_evidence.matched_marker_count = matched_markers.len();
+    candidate_evidence.contradiction_count = contradiction_count(&candidate_evidence);
+    candidate_evidence.expected_marker_cells_with_any_decode_count = candidate_evidence
+        .complete
+        .expected_marker_cells_with_any_decode_count
+        + candidate_evidence
+            .inferred
+            .expected_marker_cells_with_any_decode_count;
+    candidate_evidence.expected_marker_cells_with_selected_marker_count = candidate_evidence
+        .complete
+        .expected_marker_cells_with_selected_marker_count
+        + candidate_evidence
+            .inferred
+            .expected_marker_cells_with_selected_marker_count;
+    candidate_evidence.matched_marker_score_sum =
+        matched_markers.iter().map(|marker| marker.score).sum();
+
     Some(PlacementSelectionCandidate {
         alignment,
-        matched_count: matched_markers.len(),
-        contradiction_count,
-        score_sum,
         markers: matched_markers,
+        evidence: candidate_evidence,
         corner_in_bounds_count,
         corner_in_bounds_ratio,
     })
@@ -162,12 +212,34 @@ fn compare_patch_selection_candidates(
     a: &PlacementSelectionCandidate,
     b: &PlacementSelectionCandidate,
 ) -> Ordering {
-    a.matched_count
-        .cmp(&b.matched_count)
-        .then_with(|| b.contradiction_count.cmp(&a.contradiction_count))
+    a.evidence
+        .matched_marker_count
+        .cmp(&b.evidence.matched_marker_count)
         .then_with(|| {
-            a.score_sum
-                .partial_cmp(&b.score_sum)
+            b.evidence
+                .contradiction_count
+                .cmp(&a.evidence.contradiction_count)
+        })
+        .then_with(|| {
+            a.evidence
+                .complete
+                .expected_id_match_count
+                .cmp(&b.evidence.complete.expected_id_match_count)
+        })
+        .then_with(|| {
+            a.evidence
+                .expected_marker_cells_with_selected_marker_count
+                .cmp(&b.evidence.expected_marker_cells_with_selected_marker_count)
+        })
+        .then_with(|| {
+            a.evidence
+                .expected_marker_cells_with_any_decode_count
+                .cmp(&b.evidence.expected_marker_cells_with_any_decode_count)
+        })
+        .then_with(|| {
+            a.evidence
+                .matched_marker_score_sum
+                .partial_cmp(&b.evidence.matched_marker_score_sum)
                 .unwrap_or(Ordering::Equal)
         })
         .then_with(|| {
@@ -175,6 +247,23 @@ fn compare_patch_selection_candidates(
                 .partial_cmp(&b.corner_in_bounds_ratio)
                 .unwrap_or(Ordering::Equal)
         })
+}
+
+fn patch_source_diagnostics_mut(
+    diagnostics: &mut PatchPlacementCandidateDiagnostics,
+    source: MarkerCellSource,
+) -> &mut PatchPlacementSourceDiagnostics {
+    match source {
+        MarkerCellSource::CompleteQuad => &mut diagnostics.complete,
+        MarkerCellSource::InferredThreeCorners { .. } => &mut diagnostics.inferred,
+    }
+}
+
+fn contradiction_count(diagnostics: &PatchPlacementCandidateDiagnostics) -> usize {
+    diagnostics.complete.expected_id_contradiction_count
+        + diagnostics.complete.non_marker_confident_decode_count
+        + diagnostics.inferred.expected_id_contradiction_count
+        + diagnostics.inferred.non_marker_confident_decode_count
 }
 
 fn source_diagnostics_mut(
@@ -289,6 +378,7 @@ mod tests {
     use super::*;
     use crate::{CharucoBoardSpec, MarkerLayout};
     use calib_targets_aruco::{builtins, GridCell, MarkerCell, MarkerDetection};
+    use calib_targets_core::{GridCoords, LabeledCorner, TargetKind};
     use nalgebra::Point2;
 
     fn marker(
@@ -357,6 +447,53 @@ mod tests {
             }
         }
         panic!("expected board cell");
+    }
+
+    fn chessboard_patch(max_i: i32, max_j: i32) -> TargetDetection {
+        let mut corners = Vec::new();
+        for j in 0..=max_j {
+            for i in 0..=max_i {
+                corners.push(LabeledCorner {
+                    position: Point2::new(i as f32, j as f32),
+                    grid: Some(GridCoords { i, j }),
+                    id: None,
+                    target_position: None,
+                    score: 1.0,
+                });
+            }
+        }
+        TargetDetection {
+            kind: TargetKind::Chessboard,
+            corners,
+        }
+    }
+
+    fn candidate(
+        matched_marker_count: usize,
+        contradiction_count: usize,
+        complete_matches: usize,
+        expected_marker_cells_with_selected_marker_count: usize,
+        expected_marker_cells_with_any_decode_count: usize,
+        matched_marker_score_sum: f32,
+    ) -> PlacementSelectionCandidate {
+        PlacementSelectionCandidate {
+            alignment: GridAlignment::IDENTITY,
+            markers: Vec::new(),
+            evidence: PatchPlacementCandidateDiagnostics {
+                matched_marker_count,
+                contradiction_count,
+                expected_marker_cells_with_selected_marker_count,
+                expected_marker_cells_with_any_decode_count,
+                matched_marker_score_sum,
+                complete: PatchPlacementSourceDiagnostics {
+                    expected_id_match_count: complete_matches,
+                    ..PatchPlacementSourceDiagnostics::default()
+                },
+                ..PatchPlacementCandidateDiagnostics::default()
+            },
+            corner_in_bounds_count: 4,
+            corner_in_bounds_ratio: 1.0,
+        }
     }
 
     #[test]
@@ -456,5 +593,106 @@ mod tests {
         assert_eq!(diagnostics.complete.expected_id_match_count, 1);
         assert_eq!(diagnostics.complete.expected_id_contradiction_count, 0);
         assert_eq!(diagnostics.complete.non_marker_confident_decode_count, 0);
+    }
+
+    #[test]
+    fn compare_patch_selection_candidates_prefers_support_after_match_and_contradiction_ties() {
+        let stronger = candidate(3, 1, 2, 4, 5, 2.7);
+        let weaker = candidate(3, 1, 2, 3, 4, 3.1);
+
+        assert_eq!(
+            compare_patch_selection_candidates(&stronger, &weaker),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn compare_patch_selection_candidates_prefers_fewer_contradictions_before_support() {
+        let safer = candidate(3, 0, 2, 2, 2, 2.0);
+        let noisier = candidate(3, 1, 2, 4, 5, 3.0);
+
+        assert_eq!(
+            compare_patch_selection_candidates(&safer, &noisier),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn select_patch_alignment_reports_ambiguous_equal_evidence() {
+        let board = test_board();
+        let chessboard = chessboard_patch(1, 1);
+        let alignments: Vec<GridAlignment> = enumerate_legal_patch_alignments(&board, &chessboard)
+            .into_iter()
+            .filter(|alignment| {
+                let [sx, sy] = alignment.map(0, 0);
+                board.marker_id_at_cell(sx, sy).is_some()
+            })
+            .take(2)
+            .collect();
+        assert_eq!(
+            alignments.len(),
+            2,
+            "expected two legal marker-cell alignments"
+        );
+
+        let first_id = {
+            let [sx, sy] = alignments[0].map(0, 0);
+            board
+                .marker_id_at_cell(sx, sy)
+                .expect("first alignment should land on a marker cell")
+        };
+        let second_id = {
+            let [sx, sy] = alignments[1].map(0, 0);
+            board
+                .marker_id_at_cell(sx, sy)
+                .expect("second alignment should land on a marker cell")
+        };
+        assert_ne!(
+            first_id, second_id,
+            "alignments should represent different board cells"
+        );
+
+        let cell_evidence = vec![evidence(
+            MarkerCellSource::CompleteQuad,
+            0,
+            0,
+            None,
+            vec![
+                (0, marker(first_id, 0, 0, 0, 0, 0.96, 0.99)),
+                (0, marker(second_id, 0, 0, 0, 0, 0.96, 0.99)),
+            ],
+        )];
+
+        let attempt = select_patch_alignment(
+            &board,
+            &chessboard,
+            &cell_evidence,
+            &ScanDecodeConfig::default(),
+        );
+
+        assert!(attempt.selection.is_none());
+        assert!(attempt.diagnostics.ambiguous);
+        assert!(
+            attempt.diagnostics.candidate_count >= 2,
+            "expected at least two legal patch-placement candidates"
+        );
+        assert_eq!(
+            attempt
+                .diagnostics
+                .best
+                .as_ref()
+                .expect("best evidence")
+                .matched_marker_count,
+            1
+        );
+        assert_eq!(
+            attempt
+                .diagnostics
+                .runner_up
+                .as_ref()
+                .expect("runner-up evidence")
+                .matched_marker_count,
+            1
+        );
     }
 }

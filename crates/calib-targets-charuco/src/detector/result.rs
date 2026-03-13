@@ -66,6 +66,42 @@ pub struct MarkerPathDiagnostics {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PatchPlacementSourceDiagnostics {
+    pub expected_marker_cell_count: usize,
+    pub expected_marker_cells_with_any_decode_count: usize,
+    pub expected_marker_cells_with_selected_marker_count: usize,
+    pub expected_id_match_count: usize,
+    pub expected_id_contradiction_count: usize,
+    pub non_marker_confident_decode_count: usize,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PatchPlacementCandidateDiagnostics {
+    pub matched_marker_count: usize,
+    pub contradiction_count: usize,
+    pub expected_marker_cells_with_any_decode_count: usize,
+    pub expected_marker_cells_with_selected_marker_count: usize,
+    pub matched_marker_score_sum: f32,
+    #[serde(default)]
+    pub complete: PatchPlacementSourceDiagnostics,
+    #[serde(default)]
+    pub inferred: PatchPlacementSourceDiagnostics,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PatchPlacementDiagnostics {
+    pub candidate_count: usize,
+    #[serde(default)]
+    pub ambiguous: bool,
+    #[serde(default)]
+    pub covers_selected_evaluation: bool,
+    #[serde(default)]
+    pub best: Option<PatchPlacementCandidateDiagnostics>,
+    #[serde(default)]
+    pub runner_up: Option<PatchPlacementCandidateDiagnostics>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CharucoDiagnostics {
     pub chessboard: ChessboardDiagnostics,
     pub candidate_cell_count: usize,
@@ -73,6 +109,8 @@ pub struct CharucoDiagnostics {
     pub inferred_candidate_cell_count: usize,
     #[serde(default)]
     pub marker_path: MarkerPathDiagnostics,
+    #[serde(default)]
+    pub patch_placement: PatchPlacementDiagnostics,
     pub decoded_marker_count: usize,
     pub aligned_marker_count: usize,
     pub alignment_inlier_count: usize,

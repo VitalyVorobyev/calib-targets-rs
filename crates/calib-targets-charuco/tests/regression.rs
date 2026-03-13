@@ -612,6 +612,73 @@ fn detect_with_diagnostics_matches_detect_on_small_png() {
             + validation.dropped_corner_count,
         diagnostics.mapped_corner_count_before_validation
     );
+
+    if let Some(best) = diagnostics.patch_placement.best.as_ref() {
+        assert_eq!(
+            best.complete.expected_id_match_count + best.inferred.expected_id_match_count,
+            best.matched_marker_count
+        );
+        assert_eq!(
+            best.complete.expected_id_contradiction_count
+                + best.complete.non_marker_confident_decode_count
+                + best.inferred.expected_id_contradiction_count
+                + best.inferred.non_marker_confident_decode_count,
+            best.contradiction_count
+        );
+        assert!(
+            best.expected_marker_cells_with_selected_marker_count
+                <= best.expected_marker_cells_with_any_decode_count
+        );
+    }
+    if let Some(runner_up) = diagnostics.patch_placement.runner_up.as_ref() {
+        assert_eq!(
+            runner_up.complete.expected_id_match_count + runner_up.inferred.expected_id_match_count,
+            runner_up.matched_marker_count
+        );
+        assert_eq!(
+            runner_up.complete.expected_id_contradiction_count
+                + runner_up.complete.non_marker_confident_decode_count
+                + runner_up.inferred.expected_id_contradiction_count
+                + runner_up.inferred.non_marker_confident_decode_count,
+            runner_up.contradiction_count
+        );
+        assert!(
+            runner_up.expected_marker_cells_with_selected_marker_count
+                <= runner_up.expected_marker_cells_with_any_decode_count
+        );
+    }
+}
+
+#[test]
+fn algo_003_reports_patch_placement_evidence_on_hard_strip() {
+    let strip_3 = detect_3536119669_strip("target_3.png", 3);
+    let diagnostics = strip_3.diagnostics;
+
+    assert!(
+        diagnostics.patch_placement.candidate_count > 0,
+        "expected patch placement to evaluate at least one legal alignment"
+    );
+    let best = diagnostics
+        .patch_placement
+        .best
+        .as_ref()
+        .expect("hard strip should report best patch-placement evidence");
+    let runner_up = diagnostics
+        .patch_placement
+        .runner_up
+        .as_ref()
+        .expect("hard strip should report runner-up patch-placement evidence");
+
+    assert!(
+        best.matched_marker_count >= runner_up.matched_marker_count,
+        "best patch-placement candidate should not trail the runner-up on exact matches"
+    );
+    if best.matched_marker_count == runner_up.matched_marker_count {
+        assert!(
+            best.contradiction_count <= runner_up.contradiction_count,
+            "best patch-placement candidate should not have more contradictions when exact matches tie"
+        );
+    }
 }
 
 #[test]

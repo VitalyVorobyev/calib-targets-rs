@@ -57,6 +57,7 @@ pub use detector::{
     CharucoDetector, CharucoDetectorParams, CharucoDiagnostics, CharucoStageTimings,
     CornerValidationDiagnostics, CornerValidationSkippedReason, MarkerHammingSummary,
     MarkerPathDiagnostics, MarkerPathSourceDiagnostics, MarkerScoreSummary,
+    PatchPlacementCandidateDiagnostics, PatchPlacementDiagnostics, PatchPlacementSourceDiagnostics,
 };
 pub use investigation::{
     build_strip_acceptance, compute_strip_coverage, median, normalize_dictionary_name,

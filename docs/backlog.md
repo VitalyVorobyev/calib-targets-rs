@@ -25,7 +25,7 @@
 
 ## Up Next
 
-- `ALGO-003` — Strengthen discrete patch placement scoring with richer local evidence.
+- `ALGO-004` — Re-evaluate the first four real composites against the 24-of-24 gate.
 
 ## Backlog
 
@@ -33,7 +33,7 @@
 |----|--------|----------|------|-------|------|-------|
 | ALGO-001 | done | P0 | algo | Instrument ChArUco marker-path diagnostics on complete vs inferred cells | implementer | Added additive complete-vs-inferred marker-path diagnostics, corrected rotated expected-id accounting, and explicit partial-coverage signaling for rectified-recovery-selected reports without changing detector acceptance behavior. |
 | ALGO-002 | done | P0 | algo | Improve inferred 3-corner cell geometry for marker sampling | implementer | Replaced the parallelogram-only inferred-cell completion with a local-lattice estimator plus conservative fallback arbitration, improved weak-strip inferred marker support, and preserved the already-good strips without inventing new ChArUco corners. |
-| ALGO-003 | todo | P1 | algo | Strengthen discrete patch placement scoring with richer local evidence | implementer | Extend board-placement scoring beyond sparse matched IDs by using contradiction evidence and other correctness-safe local cell cues while keeping the default path calibration-free and discrete. |
+| ALGO-003 | done | P1 | algo | Strengthen discrete patch placement scoring with richer local evidence | implementer | Added explicit patch-placement evidence summaries and additive best-vs-runner-up diagnostics, improved weak-strip support without changing default detector policy, and kept the reviewed first-four outputs discrete and visually plausible. |
 | ALGO-004 | todo | P1 | algo | Re-evaluate the first four real composites against the 24-of-24 gate | implementer | Re-run `target_0` through `target_3`, inspect overlays on every changed weak strip, and require `>= 40` final ChArUco corners on all 24 snaps before broadening the rollout. |
 | ALGO-005 | todo | P2 | algo | Re-run the whole `3536119669` dataset and classify residual failures | implementer | After the first-four gate is met, run the default detector on the entire dataset and regroup failures by camera, distance, failure stage, and decoded marker yield to decide the next algorithmic step. |
 | INFRA-001 | done | P2 | infra | Add a fast local test set that skips native FFI smoke tests | implementer | Added repo-local cargo aliases for a fast Rust-only iteration path: workspace tests excluding `calib-targets-ffi` plus Rust-side `calib-targets-ffi` lib/bin tests, while leaving the full native C/C++ smoke coverage in the standard baseline and CI. |
@@ -235,6 +235,7 @@ python3 tools/inspect_charuco_dataset.py \
 
 | ID | Date | Type | Title | Notes |
 |----|------|------|-------|-------|
+| ALGO-003 | 2026-03-13 | algo | Strengthen discrete patch placement scoring with richer local evidence | Added explicit patch-placement evidence summaries plus additive best-vs-runner-up diagnostics, kept the first-four totals at `18/24` successful and `15/24` with `>= 40` corners, improved `target_2/strip_3` from `3` to `4` alignment inliers, and gained one inferred marker each on `target_0/strip_2`, `target_1/strip_4`, and `target_2/strip_4` without changing final corner counts. |
 | ALGO-002 | 2026-03-13 | algo | Improve inferred 3-corner cell geometry for marker sampling | Replaced the inferred-cell parallelogram-only completion with a local-lattice estimator, added conservative invalid-quad and decode-time fallback handling, locked the key strip regressions in tests, and improved first-four weak-strip marker support without regressing the already-good strips. |
 | INFRA-001 | 2026-03-13 | infra | Add a fast local test set that skips native FFI smoke tests | Added `cargo test-fast` and `cargo test-fast-ffi` as the documented fast local iteration path so native C/C++ smoke tests stay out of the hot loop while the full baseline remains available for final validation. |
 | ALGO-001 | 2026-03-13 | algo | Instrument ChArUco marker-path diagnostics on complete vs inferred cells | Added additive per-source marker-path diagnostics, fixed rotated expected-id accounting, surfaced explicit partial-coverage signaling for rectified-recovery-selected runs, and landed reviewer-approved investigation summaries for the weak strips. |

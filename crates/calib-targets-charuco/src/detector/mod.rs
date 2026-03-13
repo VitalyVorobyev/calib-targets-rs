@@ -23,4 +23,5 @@ pub use pipeline::CharucoDetector;
 pub use result::{
     CharucoDetectionResult, CharucoDetectionRun, CharucoDiagnostics, CharucoStageTimings,
     MarkerHammingSummary, MarkerPathDiagnostics, MarkerPathSourceDiagnostics, MarkerScoreSummary,
+    PatchPlacementCandidateDiagnostics, PatchPlacementDiagnostics, PatchPlacementSourceDiagnostics,
 };

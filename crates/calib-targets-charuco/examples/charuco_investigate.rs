@@ -101,6 +101,15 @@ struct StripSummary {
     inferred_selected_marker_count: Option<usize>,
     complete_expected_id_match_count: Option<usize>,
     inferred_expected_id_match_count: Option<usize>,
+    patch_placement_candidate_count: usize,
+    patch_placement_ambiguous: bool,
+    patch_placement_covers_selected_evaluation: bool,
+    patch_placement_best_matched_marker_count: Option<usize>,
+    patch_placement_best_contradiction_count: Option<usize>,
+    patch_placement_best_expected_marker_cells_with_any_decode_count: Option<usize>,
+    patch_placement_runner_up_matched_marker_count: Option<usize>,
+    patch_placement_runner_up_contradiction_count: Option<usize>,
+    patch_placement_runner_up_expected_marker_cells_with_any_decode_count: Option<usize>,
     final_corner_count: usize,
     x_bin_counts: Vec<usize>,
     empty_bin_count: usize,
@@ -199,6 +208,19 @@ struct MarkerPathSummaryRollup {
     inferred_selected_marker_count: Option<usize>,
     complete_expected_id_match_count: Option<usize>,
     inferred_expected_id_match_count: Option<usize>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PatchPlacementSummaryRollup {
+    candidate_count: usize,
+    ambiguous: bool,
+    covers_selected_evaluation: bool,
+    best_matched_marker_count: Option<usize>,
+    best_contradiction_count: Option<usize>,
+    best_expected_marker_cells_with_any_decode_count: Option<usize>,
+    runner_up_matched_marker_count: Option<usize>,
+    runner_up_contradiction_count: Option<usize>,
+    runner_up_expected_marker_cells_with_any_decode_count: Option<usize>,
 }
 
 fn parse_args(args: Vec<String>) -> Result<Command, Box<dyn std::error::Error>> {
@@ -636,6 +658,7 @@ fn process_strip(
         .map(|d| &d.detection)
         .expect("detection diagnostics");
     let marker_path_rollup = marker_path_summary(det_diag);
+    let patch_placement_rollup = patch_placement_summary(det_diag);
 
     Ok(StripRunArtifacts {
         summary: StripSummary {
@@ -662,6 +685,22 @@ fn process_strip(
             inferred_selected_marker_count: marker_path_rollup.inferred_selected_marker_count,
             complete_expected_id_match_count: marker_path_rollup.complete_expected_id_match_count,
             inferred_expected_id_match_count: marker_path_rollup.inferred_expected_id_match_count,
+            patch_placement_candidate_count: patch_placement_rollup.candidate_count,
+            patch_placement_ambiguous: patch_placement_rollup.ambiguous,
+            patch_placement_covers_selected_evaluation: patch_placement_rollup
+                .covers_selected_evaluation,
+            patch_placement_best_matched_marker_count: patch_placement_rollup
+                .best_matched_marker_count,
+            patch_placement_best_contradiction_count: patch_placement_rollup
+                .best_contradiction_count,
+            patch_placement_best_expected_marker_cells_with_any_decode_count:
+                patch_placement_rollup.best_expected_marker_cells_with_any_decode_count,
+            patch_placement_runner_up_matched_marker_count: patch_placement_rollup
+                .runner_up_matched_marker_count,
+            patch_placement_runner_up_contradiction_count: patch_placement_rollup
+                .runner_up_contradiction_count,
+            patch_placement_runner_up_expected_marker_cells_with_any_decode_count:
+                patch_placement_rollup.runner_up_expected_marker_cells_with_any_decode_count,
             final_corner_count,
             x_bin_counts: coverage.x_bin_counts.clone(),
             empty_bin_count: coverage.empty_bin_count,
@@ -802,12 +841,12 @@ fn write_summary_files(
     let mut file = File::create(&csv_path)?;
     writeln!(
         file,
-        "image_name,strip_index,raw_corner_count,marker_count,marker_path_covers_selected_evaluation,complete_candidate_cell_count,inferred_candidate_cell_count,complete_cells_with_any_decode_count,inferred_cells_with_any_decode_count,complete_selected_marker_count,inferred_selected_marker_count,complete_expected_id_match_count,inferred_expected_id_match_count,final_corner_count,x_bin_counts,empty_bin_count,min_bin_count,passes_corner_count,passes_x_coverage,passes_all,raw_corner_ms,chessboard_ms,decode_ms,alignment_ms,map_validate_ms,total_ms,error,failure_stage,report_path"
+        "image_name,strip_index,raw_corner_count,marker_count,marker_path_covers_selected_evaluation,complete_candidate_cell_count,inferred_candidate_cell_count,complete_cells_with_any_decode_count,inferred_cells_with_any_decode_count,complete_selected_marker_count,inferred_selected_marker_count,complete_expected_id_match_count,inferred_expected_id_match_count,patch_placement_candidate_count,patch_placement_ambiguous,patch_placement_covers_selected_evaluation,patch_placement_best_matched_marker_count,patch_placement_best_contradiction_count,patch_placement_best_expected_marker_cells_with_any_decode_count,patch_placement_runner_up_matched_marker_count,patch_placement_runner_up_contradiction_count,patch_placement_runner_up_expected_marker_cells_with_any_decode_count,final_corner_count,x_bin_counts,empty_bin_count,min_bin_count,passes_corner_count,passes_x_coverage,passes_all,raw_corner_ms,chessboard_ms,decode_ms,alignment_ms,map_validate_ms,total_ms,error,failure_stage,report_path"
     )?;
     for strip in &summary.strips {
         writeln!(
             file,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},\"{}\",{},{},{},{},{},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{},{},{}",
             csv_escape(&strip.image_name),
             strip.strip_index,
             strip.raw_corner_count,
@@ -821,6 +860,19 @@ fn write_summary_files(
             csv_opt_usize(strip.inferred_selected_marker_count),
             csv_opt_usize(strip.complete_expected_id_match_count),
             csv_opt_usize(strip.inferred_expected_id_match_count),
+            strip.patch_placement_candidate_count,
+            strip.patch_placement_ambiguous,
+            strip.patch_placement_covers_selected_evaluation,
+            csv_opt_usize(strip.patch_placement_best_matched_marker_count),
+            csv_opt_usize(strip.patch_placement_best_contradiction_count),
+            csv_opt_usize(
+                strip.patch_placement_best_expected_marker_cells_with_any_decode_count
+            ),
+            csv_opt_usize(strip.patch_placement_runner_up_matched_marker_count),
+            csv_opt_usize(strip.patch_placement_runner_up_contradiction_count),
+            csv_opt_usize(
+                strip.patch_placement_runner_up_expected_marker_cells_with_any_decode_count
+            ),
             strip.final_corner_count,
             strip
                 .x_bin_counts
@@ -905,13 +957,45 @@ fn marker_path_summary(
     }
 }
 
+fn patch_placement_summary(
+    diagnostics: &calib_targets_charuco::CharucoDiagnostics,
+) -> PatchPlacementSummaryRollup {
+    let patch = &diagnostics.patch_placement;
+    PatchPlacementSummaryRollup {
+        candidate_count: patch.candidate_count,
+        ambiguous: patch.ambiguous,
+        covers_selected_evaluation: patch.covers_selected_evaluation,
+        best_matched_marker_count: patch.best.as_ref().map(|best| best.matched_marker_count),
+        best_contradiction_count: patch.best.as_ref().map(|best| best.contradiction_count),
+        best_expected_marker_cells_with_any_decode_count: patch
+            .best
+            .as_ref()
+            .map(|best| best.expected_marker_cells_with_any_decode_count),
+        runner_up_matched_marker_count: patch
+            .runner_up
+            .as_ref()
+            .map(|runner_up| runner_up.matched_marker_count),
+        runner_up_contradiction_count: patch
+            .runner_up
+            .as_ref()
+            .map(|runner_up| runner_up.contradiction_count),
+        runner_up_expected_marker_cells_with_any_decode_count: patch
+            .runner_up
+            .as_ref()
+            .map(|runner_up| runner_up.expected_marker_cells_with_any_decode_count),
+    }
+}
+
 fn csv_opt_usize(value: Option<usize>) -> String {
     value.map(|value| value.to_string()).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{marker_path_summary, MarkerPathSummaryRollup};
+    use super::{
+        marker_path_summary, patch_placement_summary, MarkerPathSummaryRollup,
+        PatchPlacementSummaryRollup,
+    };
 
     #[test]
     fn marker_path_summary_keeps_counts_when_selected_evaluation_is_covered() {
@@ -959,6 +1043,44 @@ mod tests {
                 inferred_selected_marker_count: None,
                 complete_expected_id_match_count: None,
                 inferred_expected_id_match_count: None,
+            }
+        );
+    }
+
+    #[test]
+    fn patch_placement_summary_keeps_best_and_runner_up_evidence() {
+        let mut diagnostics = calib_targets_charuco::CharucoDiagnostics::default();
+        diagnostics.patch_placement.candidate_count = 8;
+        diagnostics.patch_placement.ambiguous = true;
+        diagnostics.patch_placement.best =
+            Some(calib_targets_charuco::PatchPlacementCandidateDiagnostics {
+                matched_marker_count: 4,
+                contradiction_count: 1,
+                expected_marker_cells_with_any_decode_count: 6,
+                ..calib_targets_charuco::PatchPlacementCandidateDiagnostics::default()
+            });
+        diagnostics.patch_placement.runner_up =
+            Some(calib_targets_charuco::PatchPlacementCandidateDiagnostics {
+                matched_marker_count: 4,
+                contradiction_count: 2,
+                expected_marker_cells_with_any_decode_count: 5,
+                ..calib_targets_charuco::PatchPlacementCandidateDiagnostics::default()
+            });
+
+        let rollup = patch_placement_summary(&diagnostics);
+
+        assert_eq!(
+            rollup,
+            PatchPlacementSummaryRollup {
+                candidate_count: 8,
+                ambiguous: true,
+                covers_selected_evaluation: false,
+                best_matched_marker_count: Some(4),
+                best_contradiction_count: Some(1),
+                best_expected_marker_cells_with_any_decode_count: Some(6),
+                runner_up_matched_marker_count: Some(4),
+                runner_up_contradiction_count: Some(2),
+                runner_up_expected_marker_cells_with_any_decode_count: Some(5),
             }
         );
     }
