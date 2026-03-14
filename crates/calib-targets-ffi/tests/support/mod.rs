@@ -5,17 +5,20 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
 pub fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
+    manifest_dir()
+        .parent()
+        .and_then(Path::parent)
         .expect("workspace root")
+        .to_path_buf()
 }
 
 pub fn crate_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .canonicalize()
-        .expect("crate root")
+    manifest_dir()
 }
 
 pub fn temp_dir(prefix: &str) -> PathBuf {
@@ -103,5 +106,26 @@ pub fn exe_suffix() -> &'static str {
     #[cfg(not(target_os = "windows"))]
     {
         ""
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{crate_root, workspace_root};
+
+    #[test]
+    fn support_roots_are_absolute() {
+        assert!(crate_root().is_absolute());
+        assert!(workspace_root().is_absolute());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn support_roots_avoid_verbatim_prefixes() {
+        let crate_root = crate_root().display().to_string();
+        let workspace_root = workspace_root().display().to_string();
+
+        assert!(!crate_root.starts_with(r"\\?\"));
+        assert!(!workspace_root.starts_with(r"\\?\"));
     }
 }
