@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::env;
 use std::error::Error;
 use std::fs;
@@ -23,7 +24,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 header_path.display()
             )
         })?;
-        if existing != generated {
+        if !headers_match(&existing, &generated) {
             eprintln!(
                 "header is out of date: run `cargo run -p calib-targets-ffi --bin generate-ffi-header`"
             );
@@ -43,4 +44,37 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn header_path(crate_dir: &Path) -> PathBuf {
     crate_dir.join("include").join("calib_targets_ffi.h")
+}
+
+fn headers_match(existing: &str, generated: &str) -> bool {
+    normalize_line_endings(existing) == normalize_line_endings(generated)
+}
+
+fn normalize_line_endings(text: &str) -> Cow<'_, str> {
+    if text.contains('\r') {
+        Cow::Owned(text.replace("\r\n", "\n").replace('\r', "\n"))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::headers_match;
+
+    #[test]
+    fn accepts_crlf_equivalent_header_contents() {
+        let existing = "line 1\r\nline 2\r\n";
+        let generated = "line 1\nline 2\n";
+
+        assert!(headers_match(existing, generated));
+    }
+
+    #[test]
+    fn rejects_actual_header_content_drift() {
+        let existing = "line 1\r\nline 2\r\n";
+        let generated = "line 1\nline changed\n";
+
+        assert!(!headers_match(existing, generated));
+    }
 }

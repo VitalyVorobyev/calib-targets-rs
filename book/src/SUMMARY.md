@@ -1,6 +1,11 @@
 # Summary
 
 - [Introduction](intro.md)
+- [User Guide]()
+  - [Getting Started](getting-started.md)
+  - [Tuning the Detector](tuning.md)
+  - [Troubleshooting](troubleshooting.md)
+  - [Understanding Results](output.md)
 - [Project Overview](overview.md)
 - [Conventions](conventions.md)
 - [Pipeline Overview](pipeline.md)
