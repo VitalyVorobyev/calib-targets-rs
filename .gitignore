@@ -6,3 +6,4 @@ tmpdata
 synthetic
 stereo
 *.so
+testdata/charuco_detect_config_test.json

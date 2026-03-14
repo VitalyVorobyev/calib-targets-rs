@@ -10,6 +10,8 @@ Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marke
 
 > **Status:** Feature-complete, APIs may change.
 
+→ **[Full documentation (book)](https://vitalyvorobyev.github.io/calib-targets-rs/)** — tuning guide, troubleshooting, output reference, and more.
+
 ## Introduction
 
 Target detection is built on top of the [ChESS corners](https://github.com/VitalyVorobyev/chess-corners-rs) detector. All target types share the same chessboard-style pipeline: build a graph over ChESS features and select connected components. The local nature of the algorithm makes it robust to lens distortion. Detection of calibration target features (ArUco markers or circles) uses a local projective warp, which avoids heavy pattern matching while remaining robust and fast. Each algorithms has parameters, but default setup should work in most of practical cases.
@@ -17,6 +19,52 @@ Target detection is built on top of the [ChESS corners](https://github.com/Vital
 ## Diligence Statement
 
 This project is developed with AI coding assistants (`Codex` and `Claude Code`) as implementation tools. Not every code path is manually line-reviewed by a human before merge. The project author is an expert in computer vision, validates algorithmic behavior and numerical results, and enforces quality gates (`fmt`/`clippy`/tests/docs/Python checks) before release. This is engineering-assisted development, not "vibe coding."
+
+## Getting started
+
+The workflow is: **generate a target → print it → detect it.**
+
+| Target | When to use |
+|---|---|
+| **Chessboard** | Simplest option; no markers needed |
+| **ChArUco** | Recommended for real calibration — partial views OK, each corner has a unique ID |
+| **Marker board** | Specialised layouts with 3-circle markers |
+
+**Generate** a ChArUco board (Python — simplest path):
+
+```bash
+pip install calib-targets
+```
+
+```python
+import calib_targets as ct
+doc = ct.PrintableTargetDocument(
+    target=ct.CharucoTargetSpec(rows=5, cols=7, square_size_mm=20.0,
+                                marker_size_rel=0.75, dictionary="DICT_4X4_50")
+)
+ct.write_target_bundle(doc, "my_board/charuco_a4")  # → .json + .svg + .png
+```
+
+**Print** `my_board/charuco_a4.svg` at 100% scale ("actual size" — disable "fit to page").
+Measure one square with a ruler to confirm it is 20 mm.
+
+**Detect:**
+
+```python
+import numpy as np
+from PIL import Image
+import calib_targets as ct
+
+image = np.asarray(Image.open("frame.png").convert("L"), dtype=np.uint8)
+
+board = ct.CharucoBoardSpec(rows=5, cols=7, cell_size=20.0,
+                            marker_size_rel=0.75, dictionary="DICT_4X4_50",
+                            marker_layout=ct.MarkerLayout.OPENCV_CHARUCO)
+result = ct.detect_charuco(image, params=ct.CharucoDetectorParams.for_board(board))
+print(f"{len(result.detection.corners)} corners detected")
+```
+
+→ **[Full Getting Started tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html)** — target selection, printing guidance, Rust API, and calibration point pairs.
 
 ## Quickstart
 
@@ -77,17 +125,44 @@ ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/
 cargo run --release --features "tracing" --example detect_charuco -- testdata/small2.png
 ```
 
+### Python
+
+```bash
+pip install calib-targets numpy Pillow
+```
+
+```python
+import numpy as np
+from PIL import Image
+import calib_targets as ct
+
+image = np.asarray(Image.open("board.png").convert("L"), dtype=np.uint8)
+
+result = ct.detect_chessboard(image)
+if result is not None:
+    corners = result.detection.corners
+    print(f"detected {len(corners)} corners")
+    print(f"first corner: {corners[0].position}, grid={corners[0].grid}")
+```
+
+All three target types follow the same pattern — swap in `detect_charuco` or
+`detect_marker_board` and pass the appropriate `params`. See the [API surface](#api-surface)
+below for the full signature list.
+
+<details>
+<summary>For contributors: building from source</summary>
+
+```bash
+pip install maturin
+maturin develop  # run from repo root or crates/calib-targets-py
+```
+
+See `crates/calib-targets-py/README.md` for full setup details.
+</details>
+
 ### The `TargetDetection` struct
 
-`TargetDetection` is the common output container used by all detectors (returned directly for chessboards and embedded in result structs for ChArUco and marker boards). It describes one detected board instance:
-
-- `kind` identifies the target type (`Chessboard`, `Charuco`, or `CheckerboardMarker`).
-- `corners` is a list of `LabeledCorner` values. Each corner includes pixel `position`, optional integer `grid` coordinates `(i, j)`, optional logical `id`, optional `target_position` in board units (often millimeters), and a detector-specific `score` (higher is better).
-
-Typical field usage:
-- Chessboard: `grid` is set; `id` and `target_position` are `None`. Corners are ordered by grid row then column.
-- ChArUco: `id` is the ChArUco corner id; `grid` and `target_position` are set when a board spec is available. Corners are ordered by `id`.
-- Marker board: `grid` is set; `id` and `target_position` are populated when alignment succeeds and the layout has a valid cell size. Corners are ordered by grid coordinates.
+`TargetDetection` is the common output container used by all detectors. For a full description of every field (`position`, `grid`, `id`, `target_position`, `score`) and when each is populated, see [Understanding Results](https://vitalyvorobyev.github.io/calib-targets-rs/output.html) in the book.
 
 ## Crates
 
@@ -118,15 +193,14 @@ cargo run --example detect_markerboard -- path/to/image.png
 cargo run --example generate_printable -- testdata/printable/charuco_a4.json tmpdata/printable/charuco_a4
 ```
 
-Examples with complete parameters control via json files are:
+Examples with complete parameter control via JSON files:
 
 ```bash
 cargo run --example chessboard -- testdata/chessboard_config.json
 cargo run --example charuco_detect -- testdata/charuco_detect_config.json
-cargo run --example chessboard -- testdata/chessboard_config.json
 ```
 
-The later produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
+These produce detailed json reports that can be rendered by python scripts [plot_chessboard_overlay](tools/plot_chessboard_overlay.py), [plot_charuco_overlay](tools/plot_charuco_overlay.py), and [plot_marker_overlay](tools/plot_marker_overlay.py).
 
 Printable target generation uses canonical JSON documents stored under
 `testdata/printable/`. Each flow writes `<stem>.json`, `<stem>.svg`, and
@@ -171,18 +245,9 @@ If you want the shortest path to a working downstream project, start with the
 
 ## Python bindings
 
-Python bindings live in `crates/calib-targets-py` and are built with `maturin`.
-See `crates/calib-targets-py/README.md` for setup details.
+Python bindings live in `crates/calib-targets-py`. See the [Python quickstart](#python) above for a minimal example.
 
-Quickstart:
-
-```bash
-pip install maturin
-maturin develop
-python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
-```
-
-API surface:
+### API surface {#api-surface}
 
 - `calib_targets.detect_chessboard(image, *, chess_cfg=None, params=None) -> ChessboardDetectionResult | None`
 - `calib_targets.detect_charuco(image, *, chess_cfg=None, params) -> CharucoDetectionResult`
@@ -191,8 +256,7 @@ API surface:
 - `calib_targets.write_target_bundle(document, output_stem) -> WrittenTargetBundle`
 
 Note: `target_position` is populated only when a board layout includes a valid
-cell size and alignment succeeds (for marker boards, set
-`params.layout.cell_size`).
+cell size and alignment succeeds (for marker boards, set `params.layout.cell_size`).
 
 Config inputs:
 

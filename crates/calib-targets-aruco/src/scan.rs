@@ -1,6 +1,6 @@
 //! Marker decoding from rectified grids or per-cell image quads.
 
-use crate::threshold::otsu_threshold_from_samples;
+use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
 use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
 use nalgebra::Point2;
@@ -38,6 +38,10 @@ pub struct ScanDecodeConfig {
     pub min_border_score: f32,
     /// If true, keep only the best detection per marker id.
     pub dedup_by_id: bool,
+    /// If true, try multiple binarization thresholds per cell and select the
+    /// one that yields a valid dictionary match. Improves recall on blurry or
+    /// unevenly-lit images at a small compute cost.
+    pub multi_threshold: bool,
 }
 
 impl Default for ScanDecodeConfig {
@@ -48,6 +52,7 @@ impl Default for ScanDecodeConfig {
             marker_size_rel: 1.0,
             min_border_score: 0.85,
             dedup_by_id: true,
+            multi_threshold: true,
         }
     }
 }
@@ -67,6 +72,8 @@ pub struct ArucoScanConfig {
     pub min_border_score: Option<f32>,
     #[serde(default)]
     pub dedup_by_id: Option<bool>,
+    #[serde(default)]
+    pub multi_threshold: Option<bool>,
 }
 
 impl ArucoScanConfig {
@@ -86,6 +93,9 @@ impl ArucoScanConfig {
         }
         if let Some(dedup_by_id) = self.dedup_by_id {
             scan.dedup_by_id = dedup_by_id;
+        }
+        if let Some(multi_threshold) = self.multi_threshold {
+            scan.multi_threshold = multi_threshold;
         }
     }
 }
@@ -139,7 +149,8 @@ pub fn scan_decode_markers(
 
     for sy in 0..(cells_y as i32) {
         for sx in 0..(cells_x as i32) {
-            let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits) else {
+            let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits, matcher)
+            else {
                 continue;
             };
             let gc = GridCell { gx: sx, gy: sy };
@@ -169,8 +180,12 @@ pub fn scan_decode_markers_in_cells(
     matcher: &Matcher,
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
-    let Some(mut decoder) = CellDecoder::new(cfg, matcher.dictionary().marker_size, px_per_square)
-    else {
+    let Some(mut decoder) = CellDecoder::new(
+        cfg,
+        matcher.dictionary().marker_size,
+        px_per_square,
+        matcher,
+    ) else {
         return out;
     };
 
@@ -180,12 +195,26 @@ pub fn scan_decode_markers_in_cells(
         let Some(h) = homography_from_4pt(&cell_rect, &cell.corners_img) else {
             continue;
         };
-        let Some(obs) = decoder.decode_warped(image, &h) else {
+        let obs = decoder.decode_warped(image, &h);
+        let Some(obs) = obs else {
+            log::debug!(
+                "cell ({},{}) failed decode (no threshold passed border score)",
+                cell.gc.gx,
+                cell.gc.gy,
+            );
             continue;
         };
         if let Some(mut det) = build_detection(cell.gc, px_per_square, obs, matcher) {
             det.corners_img = Some(cell.corners_img);
             out.push(det);
+        } else {
+            log::debug!(
+                "cell ({},{}) passed threshold (border_score={:.3}) but no dict match (code={:#018x})",
+                cell.gc.gx,
+                cell.gc.gy,
+                obs.border_score,
+                obs.code,
+            );
         }
     }
 
@@ -204,7 +233,12 @@ pub fn decode_marker_in_cell(
     cfg: &ScanDecodeConfig,
     matcher: &Matcher,
 ) -> Option<MarkerDetection> {
-    let mut decoder = CellDecoder::new(cfg, matcher.dictionary().marker_size, px_per_square)?;
+    let mut decoder = CellDecoder::new(
+        cfg,
+        matcher.dictionary().marker_size,
+        px_per_square,
+        matcher,
+    )?;
     let cell_rect = cell_rect_corners(px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
@@ -279,6 +313,7 @@ impl SampleGrid {
 
 struct CellDecoder<'a> {
     cfg: &'a ScanDecodeConfig,
+    matcher: &'a Matcher,
     bits: usize,
     border: usize,
     grid: SampleGrid,
@@ -287,12 +322,18 @@ struct CellDecoder<'a> {
 }
 
 impl<'a> CellDecoder<'a> {
-    fn new(cfg: &'a ScanDecodeConfig, bits: usize, px_per_square: f32) -> Option<Self> {
+    fn new(
+        cfg: &'a ScanDecodeConfig,
+        bits: usize,
+        px_per_square: f32,
+        matcher: &'a Matcher,
+    ) -> Option<Self> {
         let grid = SampleGrid::new(cfg, bits, px_per_square)?;
         let scratch_bits = Vec::with_capacity(grid.points.len());
         let scratch_thr = Vec::with_capacity(grid.threshold_points.len());
         Some(Self {
             cfg,
+            matcher,
             bits,
             border: cfg.border_bits,
             grid,
@@ -328,6 +369,8 @@ impl<'a> CellDecoder<'a> {
             self.bits,
             self.border,
             self.cfg.min_border_score,
+            self.matcher,
+            self.cfg.multi_threshold,
         )
     }
 }
@@ -386,6 +429,7 @@ fn decode_rectified_cell(
     px_per_square: f32,
     cfg: &ScanDecodeConfig,
     bits: usize,
+    matcher: &Matcher,
 ) -> Option<MarkerObservation> {
     let border = cfg.border_bits;
     let cells = bits + 2 * border;
@@ -439,9 +483,67 @@ fn decode_rectified_cell(
         bits,
         border,
         cfg.min_border_score,
+        matcher,
+        cfg.multi_threshold,
     )
 }
 
+/// Binarize `samples` at `thr` for one polarity and return border_score + code.
+///
+/// Returns `None` if `border_score < min_border_score`.
+fn binarize_and_score(
+    samples: &[u8],
+    cells: usize,
+    bits: usize,
+    border: usize,
+    thr: u8,
+    inverted: bool,
+    min_border_score: f32,
+) -> Option<MarkerObservation> {
+    let use_border = border > 0;
+    let mut border_ok = 0u32;
+    let mut border_total = 0u32;
+    let mut code: u64 = 0;
+
+    for cy in 0..cells {
+        for cx in 0..cells {
+            let m = samples[cy * cells + cx];
+            let mut is_black = m < thr;
+            if inverted {
+                is_black = !is_black;
+            }
+            let is_border =
+                use_border && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
+            if is_border {
+                border_total += 1;
+                if is_black {
+                    border_ok += 1;
+                }
+            } else {
+                let bx = cx - border;
+                let by = cy - border;
+                let bit = if is_black { 1u64 } else { 0u64 };
+                code |= bit << (by * bits + bx); // row-major
+            }
+        }
+    }
+
+    let border_score = if use_border {
+        border_ok as f32 / border_total.max(1) as f32
+    } else {
+        1.0
+    };
+    if border_score < min_border_score {
+        return None;
+    }
+    Some(MarkerObservation {
+        code,
+        border_score,
+        inverted,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn decode_samples(
     samples: &[u8],
     thr_samples: &[u8],
@@ -449,73 +551,81 @@ fn decode_samples(
     bits: usize,
     border: usize,
     min_border_score: f32,
+    matcher: &Matcher,
+    multi_threshold: bool,
 ) -> Option<MarkerObservation> {
     if samples.len() != cells * cells {
         return None;
     }
 
-    let thr = if thr_samples.is_empty() {
-        otsu_threshold_from_samples(samples)
+    let thr_src = if thr_samples.is_empty() {
+        samples
     } else {
-        otsu_threshold_from_samples(thr_samples)
+        thr_samples
     };
+    let otsu = otsu_threshold_from_samples(thr_src);
 
-    let mut best: Option<MarkerObservation> = None;
+    if multi_threshold {
+        let candidates = compute_threshold_candidates(otsu, samples, cells, border);
+        let mut best_matched: Option<MarkerObservation> = None;
 
-    for inverted in [false, true] {
-        let mut border_ok = 0u32;
-        let mut border_total = 0u32;
-        let mut code: u64 = 0;
-        let use_border = border > 0;
-
-        for cy in 0..cells {
-            for cx in 0..cells {
-                let idx = cy * cells + cx;
-                let m = samples[idx];
-                let mut is_black = m < thr;
-                if inverted {
-                    is_black = !is_black;
-                }
-
-                let is_border =
-                    use_border && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
-                if is_border {
-                    border_total += 1;
-                    if is_black {
-                        border_ok += 1;
+        'outer: for &thr in &candidates {
+            for inverted in [false, true] {
+                let Some(obs) = binarize_and_score(
+                    samples,
+                    cells,
+                    bits,
+                    border,
+                    thr,
+                    inverted,
+                    min_border_score,
+                ) else {
+                    continue;
+                };
+                if let Some(m) = matcher.match_code(obs.code) {
+                    if m.hamming == 0 {
+                        let is_better = best_matched
+                            .as_ref()
+                            .map(|b| obs.border_score > b.border_score)
+                            .unwrap_or(true);
+                        if is_better {
+                            best_matched = Some(obs);
+                            if obs.border_score >= 0.85 {
+                                break 'outer;
+                            }
+                        }
                     }
-                } else {
-                    let bx = cx - border;
-                    let by = cy - border;
-                    let bit = if is_black { 1u64 } else { 0u64 };
-                    let idx = by * bits + bx; // row-major
-                    code |= bit << idx;
                 }
             }
         }
 
-        let border_score = if use_border {
-            border_ok as f32 / border_total.max(1) as f32
-        } else {
-            1.0
-        };
-        if border_score < min_border_score {
-            continue;
-        }
-
-        if best
-            .as_ref()
-            .map(|b| border_score > b.border_score)
-            .unwrap_or(true)
-        {
-            best = Some(MarkerObservation {
-                code,
-                border_score,
-                inverted,
-            });
+        if let Some(obs) = best_matched {
+            return Some(obs);
         }
     }
 
+    // Single-threshold fallback: Otsu only, keep best by border_score.
+    let mut best: Option<MarkerObservation> = None;
+    for inverted in [false, true] {
+        let Some(obs) = binarize_and_score(
+            samples,
+            cells,
+            bits,
+            border,
+            otsu,
+            inverted,
+            min_border_score,
+        ) else {
+            continue;
+        };
+        if best
+            .as_ref()
+            .map(|b| obs.border_score > b.border_score)
+            .unwrap_or(true)
+        {
+            best = Some(obs);
+        }
+    }
     best
 }
 
@@ -651,6 +761,7 @@ mod tests {
             marker_size_rel: 1.0,
             min_border_score: 0.9,
             dedup_by_id: false,
+            multi_threshold: true,
         };
 
         let code = dict.codes[0];
@@ -689,6 +800,7 @@ mod tests {
             marker_size_rel: 1.0,
             min_border_score: 0.9,
             dedup_by_id: false,
+            multi_threshold: true,
         };
 
         let code = dict.codes[0];

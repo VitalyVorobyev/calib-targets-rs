@@ -11,6 +11,7 @@ use support::{
 };
 
 #[test]
+#[ignore = "CI-only smoke test for packaged native release archives"]
 fn native_c_and_cpp_consumers_compile_and_run() {
     let workspace_root = workspace_root();
     let crate_root = crate_root();

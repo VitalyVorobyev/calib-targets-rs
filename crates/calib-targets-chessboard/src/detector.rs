@@ -84,6 +84,11 @@ impl ChessboardDetector {
         );
 
         if strong.len() < self.params.min_corners {
+            debug!(
+                "rejecting chessboard before graph build: {} corners < min_corners={}",
+                strong.len(),
+                self.params.min_corners
+            );
             return None;
         }
 
@@ -121,18 +126,42 @@ impl ChessboardDetector {
             }
         }
 
+        if let Some(diagonals) = grid_diagonals {
+            let mut cluster_counts = [0usize; 2];
+            for corner in &strong {
+                if let Some(cluster) = corner.orientation_cluster {
+                    if let Some(slot) = cluster_counts.get_mut(cluster) {
+                        *slot += 1;
+                    }
+                }
+            }
+            debug!(
+                "grid diagonals estimated at {:.1} deg / {:.1} deg; orientation cluster counts = [{}, {}]",
+                diagonals[0].to_degrees(),
+                diagonals[1].to_degrees(),
+                cluster_counts[0],
+                cluster_counts[1]
+            );
+        }
+
         debug!(
             "kept {} ChESS corners after orientation consistency filter",
             strong.len()
         );
 
         if strong.len() < self.params.min_corners {
+            debug!(
+                "rejecting chessboard after orientation filtering: {} corners < min_corners={}",
+                strong.len(),
+                self.params.min_corners
+            );
             return None;
         }
 
         let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
 
         let components = connected_components(&graph);
+        log_graph_summary(&graph, &components, self.params.min_corners);
         debug!(
             "found {} connected grid components after orientation filtering",
             components.len()
@@ -146,6 +175,10 @@ impl ChessboardDetector {
             }
             let coords = assign_grid_coordinates(&graph, component);
             if coords.is_empty() {
+                debug!(
+                    "rejecting component with {} nodes because BFS assigned no grid coordinates",
+                    component.len()
+                );
                 continue;
             }
             let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
@@ -164,6 +197,11 @@ impl ChessboardDetector {
 
         let (detection, inliers, _) = best?;
         let graph_debug = Some(build_graph_debug(&graph, &strong));
+        debug!(
+            "accepted chessboard candidate with {} corners and {} inliers",
+            detection.corners.len(),
+            inliers.len()
+        );
 
         Some(ChessboardDetectionResult {
             detection,
@@ -193,10 +231,28 @@ impl ChessboardDetector {
         let width = (max_i - min_i + 1) as u32;
         let height = (max_j - min_j + 1) as u32;
 
-        let (board_cols, board_rows, swap_axes) = select_board_size(width, height, &self.params)?;
+        let Some((board_cols, board_rows, swap_axes)) =
+            select_board_size(width, height, &self.params)
+        else {
+            debug!(
+                "rejecting component with {} nodes: grid span {}x{} does not fit expected board cols={:?} rows={:?}",
+                coords.len(),
+                width,
+                height,
+                self.params.expected_cols,
+                self.params.expected_rows
+            );
+            return None;
+        };
 
         let grid_area = (board_cols * board_rows) as f32;
         if grid_area <= f32::EPSILON {
+            debug!(
+                "rejecting component with {} nodes: degenerate grid area for board {}x{}",
+                coords.len(),
+                board_cols,
+                board_rows
+            );
             return None;
         }
 
@@ -235,6 +291,15 @@ impl ChessboardDetector {
         let completeness = by_grid.len() as f32 / grid_area;
         if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
             if completeness < self.params.completeness_threshold {
+                debug!(
+                    "rejecting component with {} nodes: completeness {:.3} below threshold {:.3} for board {}x{} ({} unique corners)",
+                    coords.len(),
+                    completeness,
+                    self.params.completeness_threshold,
+                    board_cols,
+                    board_rows,
+                    by_grid.len()
+                );
                 return None;
             }
         }
@@ -253,6 +318,14 @@ impl ChessboardDetector {
         };
 
         let inliers = (0..detection.corners.len()).collect();
+        debug!(
+            "component with {} nodes produced board {}x{} (swap_axes={swap_axes}) with {} unique corners and completeness {:.3}",
+            coords.len(),
+            board_cols,
+            board_rows,
+            detection.corners.len(),
+            completeness
+        );
 
         Some((detection, inliers))
     }
@@ -310,6 +383,47 @@ fn build_graph_debug(graph: &GridGraph, corners: &[Corner]) -> GridGraphDebug {
         .collect();
 
     GridGraphDebug { nodes }
+}
+
+fn log_graph_summary(graph: &GridGraph, components: &[Vec<usize>], min_corners: usize) {
+    let mut component_sizes: Vec<usize> =
+        components.iter().map(|component| component.len()).collect();
+    component_sizes.sort_unstable_by(|a, b| b.cmp(a));
+
+    let degrees: Vec<usize> = graph
+        .neighbors
+        .iter()
+        .map(|neighbors| neighbors.len())
+        .collect();
+    let isolated_nodes = degrees.iter().filter(|&&degree| degree == 0).count();
+    let nodes_with_neighbors = degrees.len().saturating_sub(isolated_nodes);
+    let directed_edges: usize = degrees.iter().sum();
+    let min_degree = degrees.iter().copied().min().unwrap_or(0);
+    let max_degree = degrees.iter().copied().max().unwrap_or(0);
+    let avg_degree = if degrees.is_empty() {
+        0.0
+    } else {
+        directed_edges as f32 / degrees.len() as f32
+    };
+    let candidate_components = component_sizes
+        .iter()
+        .filter(|&&size| size >= min_corners)
+        .count();
+    let top_n = component_sizes.len().min(8);
+
+    debug!(
+        "grid graph summary: nodes={}, nodes_with_neighbors={}, isolated_nodes={}, directed_edges={}, degree[min/avg/max]={}/{:.2}/{}, components={}, candidate_components={}, largest_components={:?}",
+        degrees.len(),
+        nodes_with_neighbors,
+        isolated_nodes,
+        directed_edges,
+        min_degree,
+        avg_degree,
+        max_degree,
+        component_sizes.len(),
+        candidate_components,
+        &component_sizes[..top_n]
+    );
 }
 
 fn neighbor_dir_name(dir: NeighborDirection) -> &'static str {

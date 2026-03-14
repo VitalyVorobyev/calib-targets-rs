@@ -16,11 +16,76 @@ import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 from matplotlib.colors import Normalize
 import matplotlib.patheffects as pe
 
+def plot_chess_corners(
+    ax,
+    corners: list,
+    show_orientation: bool = True,
+    arrow_length: float = 20.0,
+    show_labels: bool = True,
+):
+    """ Plot chess corners on image
+
+    Args:
+        img (np.ndarray): Image to plot on
+        corner (list[ChESSCorner]): List of ChESS corners
+        ax (matplotlib.axes.Axes, optional): Axes to plot on. Defaults to None.
+
+    Returns:
+        matplotlib.axes.Axes: Axes with plot
+    """
+    xs = [c['position'][0] for c in corners]
+    ys = [c['position'][1] for c in corners]
+
+    responses = np.array([c['strength'] for c in corners], dtype=float)
+    if responses.size:
+        r_min = float(responses.min())
+        r_max = float(responses.max())
+        denom = r_max - r_min
+        if denom <= 1e-12:
+            t = np.zeros_like(responses)
+        else:
+            t = (responses - r_min) / denom
+        colors = plt.get_cmap("viridis")(t)
+    else:
+        colors = "#1d3557"
+
+    if show_orientation:
+        orientation = np.array([c['orientation'] for c in corners])
+        arrow_us = np.cos(orientation) * arrow_length
+        arrow_vs = np.sin(orientation) * arrow_length
+        ax.quiver(
+            xs,
+            ys,
+            arrow_us,
+            arrow_vs,
+            angles="xy",
+            scale_units="xy",
+            scale=1,
+            color=colors,
+            width=0.002,
+        )
+    
+    ax.scatter(
+        xs,
+        ys,
+        s=18,
+        facecolors="none",
+        edgecolors=colors,
+        linewidths=0.7,
+        label="chess-corners",
+    )
+
+    if show_labels:
+        ax.set_title(f'ChESS Corners: {len(corners)} detected')
+    ax.axis('off')
+    
+    return ax
 
 def resolve_path(report_path: Path, path_str: str) -> Path:
     p = Path(path_str)
@@ -122,16 +187,6 @@ def format_label(c, mode):
     if tx is not None and ty is not None:
         parts.append(f"{tx:.1f},{ty:.1f} mm")
     return "\n".join(parts) if parts else None
-
-
-def extract_detection(data):
-    if data.get("detection"):
-        return data["detection"]
-    if data.get("charuco"):
-        return data["charuco"]
-    if data.get("chessboard"):
-        return data["chessboard"]
-    return None
 
 
 def make_simple_figure(img, dpi=100):
@@ -300,13 +355,13 @@ def main() -> None:
 
     data = json.loads(args.report.read_text())
 
-    image_path = resolve_path(args.report, data["image_path"])
+    image_path = Path(data["image_path"])
     if not image_path.is_file():
         raise SystemExit(f"Image not found: {image_path}")
 
     img = mpimg.imread(str(image_path))
 
-    detection = extract_detection(data) or {}
+    detection = data['detection'] or {}
     corners = detection.get("corners") or []
     markers = data.get("markers") or []
     board = data.get("board") or {}
@@ -322,13 +377,17 @@ def main() -> None:
     if grid_map_img and not args.no_grid:
         draw_grid_edges(ax_img, grid_map_img, color="#00c7e6", linewidth=0.8, alpha=0.5)
 
-    sc = draw_detection(
-        ax_img,
-        corners,
-        label_mode=args.labels,
-        label_step=max(1, args.label_step),
-        use_confidence=True,
-    )
+    plot_chess_corners(ax_img, data['raw_corners'])
+    sc = None
+
+    if len(corners) > 0:
+        sc = draw_detection(
+            ax_img,
+            corners,
+            label_mode=args.labels,
+            label_step=max(1, args.label_step),
+            use_confidence=True,
+        )
 
     summary_lines = [
         f"detected corners: {len(corners)}",

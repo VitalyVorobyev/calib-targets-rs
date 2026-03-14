@@ -1148,6 +1148,7 @@ fn convert_scan_decode_config(params: &ct_scan_decode_config_t) -> FfiResult<Sca
         marker_size_rel: require_positive(params.marker_size_rel, "scan.marker_size_rel")?,
         min_border_score: require_fraction(params.min_border_score, "scan.min_border_score")?,
         dedup_by_id: flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?,
+        multi_threshold: true,
     })
 }
 
