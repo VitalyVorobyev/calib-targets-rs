@@ -1,8 +1,6 @@
 //! Marker decoding from rectified grids or per-cell image quads.
 
-use crate::threshold::{
-    compute_threshold_candidates, otsu_threshold_from_samples,
-};
+use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
 use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
 use nalgebra::Point2;
@@ -151,8 +149,7 @@ pub fn scan_decode_markers(
 
     for sy in 0..(cells_y as i32) {
         for sx in 0..(cells_x as i32) {
-            let Some(obs) =
-                decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits, matcher)
+            let Some(obs) = decode_rectified_cell(rect, sx, sy, px_per_square, cfg, bits, matcher)
             else {
                 continue;
             };
@@ -183,9 +180,12 @@ pub fn scan_decode_markers_in_cells(
     matcher: &Matcher,
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
-    let Some(mut decoder) =
-        CellDecoder::new(cfg, matcher.dictionary().marker_size, px_per_square, matcher)
-    else {
+    let Some(mut decoder) = CellDecoder::new(
+        cfg,
+        matcher.dictionary().marker_size,
+        px_per_square,
+        matcher,
+    ) else {
         return out;
     };
 
@@ -233,8 +233,12 @@ pub fn decode_marker_in_cell(
     cfg: &ScanDecodeConfig,
     matcher: &Matcher,
 ) -> Option<MarkerDetection> {
-    let mut decoder =
-        CellDecoder::new(cfg, matcher.dictionary().marker_size, px_per_square, matcher)?;
+    let mut decoder = CellDecoder::new(
+        cfg,
+        matcher.dictionary().marker_size,
+        px_per_square,
+        matcher,
+    )?;
     let cell_rect = cell_rect_corners(px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
@@ -567,9 +571,15 @@ fn decode_samples(
 
         'outer: for &thr in &candidates {
             for inverted in [false, true] {
-                let Some(obs) =
-                    binarize_and_score(samples, cells, bits, border, thr, inverted, min_border_score)
-                else {
+                let Some(obs) = binarize_and_score(
+                    samples,
+                    cells,
+                    bits,
+                    border,
+                    thr,
+                    inverted,
+                    min_border_score,
+                ) else {
                     continue;
                 };
                 if let Some(m) = matcher.match_code(obs.code) {
@@ -597,9 +607,15 @@ fn decode_samples(
     // Single-threshold fallback: Otsu only, keep best by border_score.
     let mut best: Option<MarkerObservation> = None;
     for inverted in [false, true] {
-        let Some(obs) =
-            binarize_and_score(samples, cells, bits, border, otsu, inverted, min_border_score)
-        else {
+        let Some(obs) = binarize_and_score(
+            samples,
+            cells,
+            bits,
+            border,
+            otsu,
+            inverted,
+            min_border_score,
+        ) else {
             continue;
         };
         if best
