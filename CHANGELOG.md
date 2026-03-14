@@ -6,6 +6,69 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1]
+
+### Chessboard grid graph — perspective-invariant neighbor direction fix
+
+- **Fix direction symmetry in `is_good_neighbor_with_orientation`**: the old
+  code indexed diagonal directions by the source/neighbor cluster index
+  (`grid_diagonals[ci]` / `grid_diagonals[cj]`), so the sign of `v_minus = oi
+  - oj` depended on which corner was the "source" and which was the "neighbor".
+  This broke the A→B Right ↔ B→A Left invariant the BFS relies on, causing
+  spurious disconnected components and missing grid edges on rotated or
+  perspective-distorted boards.
+- **Canonical reference frame**: switch to `grid_diagonals[0]` and
+  `grid_diagonals[1]` (independent of edge direction) so all edges in the graph
+  share the same `v_plus`/`v_minus` axes. Canonicalize the sign of `v_minus`
+  via the cross-product determinant so that `(v_minus, v_plus)` always form a
+  right-handed frame in image coordinates, regardless of the arbitrary order
+  produced by orientation clustering.
+- **Perspective-invariant direction classification**: replace the image-space
+  `direction_quadrant` heuristic (which broke for rotated boards) with signed
+  dot products against the local grid axes. The resulting Right/Left/Down/Up
+  labels are now consistent with the local grid geometry under perspective, not
+  just when the board is nearly axis-aligned.
+- Add a `rotated_grid_forms_single_component` unit test that constructs a 4×4
+  corner grid at an arbitrary 40° rotation and verifies the graph BFS produces
+  a single connected component with correct grid coordinates.
+
+### ChArUco marker detection — improved recall on blurry images
+
+- **Multi-threshold binarization**: the marker decode step now tries multiple
+  binarization thresholds per cell (Otsu, Otsu±10, Otsu±15, two percentile
+  thresholds, and a border-guided midpoint) and selects the one that yields a
+  valid dictionary match with hamming=0. This recovers markers that were
+  previously lost on blurry or unevenly-lit images because a single Otsu
+  threshold flipped one or two border or payload bits. Controlled by the new
+  `ScanDecodeConfig::multi_threshold` field (default `true`); exposed as
+  `ArucoScanConfig::multi_threshold` for JSON-level overrides.
+- **Lower default `min_border_score` for ChArUco**: the per-cell border-black
+  ratio threshold is now `0.75` (was `0.85`) in `CharucoDetectorParams::for_board`.
+  The downstream alignment and corner-validation stages already act as
+  false-positive guards, so the looser scan-stage bar improves recall without
+  introducing spurious detections.
+- Add `percentile_threshold`, `border_guided_threshold`, and
+  `compute_threshold_candidates` helper functions to `calib-targets-aruco`
+  (crate-private).
+- Move `log` from a dev-dependency to a regular dependency in
+  `calib-targets-aruco` to support debug logging in production builds.
+
+### Diagnostic logging across the detection pipeline
+
+- **`calib-targets-chessboard`**: add `log::debug!` at every significant
+  rejection point in the chessboard detector — early corner count check,
+  post-orientation-filter count, per-component BFS/grid-fit/completeness
+  rejections, and the accepted-candidate summary. Add `log_graph_summary`
+  helper that logs grid-graph component sizes and node-degree distribution.
+- **`calib-targets-charuco` pipeline**: add `log::debug!` / `log::warn!` at
+  each stage — chessboard success/failure (with config details on failure),
+  marker sampling cell counts, scan result count, alignment result (transform +
+  inlier count), pre- and post-validation corner counts. Failed-cell details
+  (border-score, observed code) now logged at `debug` level from
+  `scan_decode_markers_in_cells`.
+- **`charuco_detect` example**: switch default log level to `debug`; add
+  config-echo logging on startup.
+
 ## [0.3.0]
 
 ### Printable targets

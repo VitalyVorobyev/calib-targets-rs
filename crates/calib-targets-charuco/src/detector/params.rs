@@ -76,6 +76,10 @@ impl CharucoDetectorParams {
         let scan = ScanDecodeConfig {
             marker_size_rel: charuco.marker_size_rel,
             inset_frac: 0.06,
+            // Lower than the default (0.85) — downstream alignment validation
+            // rejects false positives, so a looser bar here improves recall on
+            // blurry or unevenly-lit images.
+            min_border_score: 0.75,
             ..ScanDecodeConfig::default()
         };
 
