@@ -29,7 +29,7 @@
     },
     "grid_graph": {
       "min_spacing_pix": 20.0,
-      "max_spacing_pix": 100.0,
+      "max_spacing_pix": 140.0,
       "k_neighbors": 8,
       "orientation_tolerance_deg": 22.5
     },
