@@ -6,6 +6,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2]
+
 ### ChArUco — local grid smoothness pre-filter
 
 - **New `grid_smoothness` module** in `calib-targets-charuco`: runs between
