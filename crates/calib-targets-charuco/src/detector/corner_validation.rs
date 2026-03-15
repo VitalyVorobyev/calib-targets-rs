@@ -165,7 +165,7 @@ fn collect_board_to_image_correspondences(
 ///
 /// Returns the image-space position of the strongest corner found within
 /// `roi_half_px` of the seed, or `None` if no corner is found.
-fn redetect_corner_in_roi(
+pub(crate) fn redetect_corner_in_roi(
     image: &GrayImageView<'_>,
     seed: Point2<f32>,
     roi_half_px: i32,
