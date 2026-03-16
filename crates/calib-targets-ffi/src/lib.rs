@@ -546,6 +546,7 @@ pub struct ct_charuco_detector_params_t {
     pub scan: ct_scan_decode_config_t,
     pub max_hamming: u32,
     pub min_marker_inliers: usize,
+    pub grid_smoothness_threshold_rel: f32,
     pub corner_validation_threshold_rel: f32,
     pub corner_redetect_params: ct_chess_params_t,
 }
@@ -1166,6 +1167,17 @@ fn convert_charuco_board_spec(params: &ct_charuco_board_spec_t) -> FfiResult<Cha
 fn convert_charuco_detector_params(
     params: &ct_charuco_detector_params_t,
 ) -> FfiResult<CharucoDetectorParams> {
+    let grid_smoothness_threshold_rel = if params.grid_smoothness_threshold_rel.is_infinite()
+        && params.grid_smoothness_threshold_rel.is_sign_positive()
+    {
+        params.grid_smoothness_threshold_rel
+    } else {
+        require_nonnegative(
+            params.grid_smoothness_threshold_rel,
+            "charuco.grid_smoothness_threshold_rel",
+        )?
+    };
+
     let corner_validation_threshold_rel = if params.corner_validation_threshold_rel.is_infinite()
         && params.corner_validation_threshold_rel.is_sign_positive()
     {
@@ -1186,6 +1198,7 @@ fn convert_charuco_detector_params(
         max_hamming: u8::try_from(params.max_hamming)
             .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
         min_marker_inliers: params.min_marker_inliers,
+        grid_smoothness_threshold_rel,
         corner_validation_threshold_rel,
         corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
     })
@@ -2272,6 +2285,7 @@ mod tests {
                 },
                 max_hamming: 2,
                 min_marker_inliers: 12,
+                grid_smoothness_threshold_rel: 0.05,
                 corner_validation_threshold_rel: 0.08,
                 corner_redetect_params: ct_chess_params_t {
                     use_radius10: CT_FALSE,

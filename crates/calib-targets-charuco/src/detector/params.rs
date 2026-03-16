@@ -25,6 +25,17 @@ pub struct CharucoDetectorParams {
     pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     pub min_marker_inliers: usize,
+    /// Relative threshold for local grid smoothness pre-filter.
+    ///
+    /// Each grid corner's position is predicted from its immediate neighbors
+    /// via midpoint averaging.  If the actual position deviates by more than
+    /// `grid_smoothness_threshold_rel * px_per_square` pixels, the corner is
+    /// re-detected locally or removed.
+    ///
+    /// Set to `f32::INFINITY` to disable.
+    /// Default: `0.05` (3 px at 60 px/sq).
+    #[serde(default = "default_grid_smoothness_threshold_rel")]
+    pub grid_smoothness_threshold_rel: f32,
     /// Relative threshold for marker-constrained corner validation.
     ///
     /// A detected ChArUco corner is considered a false corner if its pixel
@@ -43,6 +54,10 @@ pub struct CharucoDetectorParams {
     /// Not serialised — reconstructed from defaults on deserialisation.
     #[serde(skip)]
     pub corner_redetect_params: ChessParams,
+}
+
+fn default_grid_smoothness_threshold_rel() -> f32 {
+    0.05
 }
 
 /// Build the `ChessParams` used for local re-detection inside a small ROI.
@@ -93,6 +108,7 @@ impl CharucoDetectorParams {
             scan,
             max_hamming,
             min_marker_inliers: 8,
+            grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
         }

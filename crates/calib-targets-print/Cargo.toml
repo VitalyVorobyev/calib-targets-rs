@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-print"
-version = "0.3.1"
+version = "0.3.2"
 description = "Printable calibration target generation for chessboard, ChArUco, and marker boards"
 edition.workspace = true
 license.workspace = true
@@ -13,10 +13,10 @@ keywords = ["calibration", "computer-vision", "charuco", "chessboard", "svg"]
 categories = ["computer-vision", "science"]
 
 [dependencies]
-calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.3.1" }
-calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.3.1" }
-calib-targets-core = { path = "../calib-targets-core", version = "0.3.1" }
-calib-targets-marker = { path = "../calib-targets-marker", version = "0.3.1" }
+calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.3.2" }
+calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.3.2" }
+calib-targets-core = { path = "../calib-targets-core", version = "0.3.2" }
+calib-targets-marker = { path = "../calib-targets-marker", version = "0.3.2" }
 png = "0.18"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

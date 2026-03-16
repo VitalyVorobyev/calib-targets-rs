@@ -7,6 +7,7 @@ mod alignment_select;
 mod corner_mapping;
 mod corner_validation;
 mod error;
+mod grid_smoothness;
 mod marker_sampling;
 mod params;
 mod pipeline;

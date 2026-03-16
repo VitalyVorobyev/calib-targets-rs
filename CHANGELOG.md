@@ -6,6 +6,25 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.2]
+
+### ChArUco — local grid smoothness pre-filter
+
+- **New `grid_smoothness` module** in `calib-targets-charuco`: runs between
+  `build_corner_map` and `build_marker_cells` to detect corners whose pixel
+  position is inconsistent with their grid neighbors (midpoint prediction).
+  This catches false corners from ArUco marker internal features picked up by
+  ChESS under a loose orientation tolerance (e.g. 22.5°).  Flagged corners are
+  re-detected locally via `redetect_corner_in_roi`; if re-detection fails, the
+  corner is snapped to the predicted position (never removed) so that marker
+  cell completeness — and thus marker detection recall — is preserved.
+- **New `grid_smoothness_threshold_rel` parameter** on
+  `CharucoDetectorParams` (default `0.05`, i.e. 3 px at 60 px/sq).
+  Set to `f32::INFINITY` to disable.  Also exposed in the FFI
+  (`ct_charuco_detector_params_t`) with the same default.
+- Promote `redetect_corner_in_roi` from private to `pub(crate)` in
+  `corner_validation.rs` so the grid smoothness module can reuse it.
+
 ## [0.3.1]
 
 ### Chessboard grid graph — perspective-invariant neighbor direction fix
