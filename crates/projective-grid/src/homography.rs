@@ -139,10 +139,7 @@ fn denormalize_homography(
 /// Estimate H such that `p_dst ~ H * p_src` from N >= 4 point correspondences.
 ///
 /// Uses Hartley normalization + DLT for N > 4 and a direct 4-point solver for N == 4.
-pub fn estimate_homography(
-    src_pts: &[Point2<f32>],
-    dst_pts: &[Point2<f32>],
-) -> Option<Homography> {
+pub fn estimate_homography(src_pts: &[Point2<f32>], dst_pts: &[Point2<f32>]) -> Option<Homography> {
     if src_pts.len() != dst_pts.len() || src_pts.len() < 4 {
         return None;
     }

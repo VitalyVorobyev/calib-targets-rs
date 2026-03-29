@@ -1,11 +1,13 @@
-use crate::gridgraph::{assign_grid_coordinates, build_chessboard_grid_graph, connected_components};
+use crate::gridgraph::{
+    assign_grid_coordinates, build_chessboard_grid_graph, connected_components,
+};
 use crate::params::{ChessboardParams, GridGraphParams};
-use projective_grid::{GridGraph, GridIndex, NeighborDirection};
 use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
     OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{debug, warn};
+use projective_grid::{GridGraph, GridIndex, NeighborDirection};
 use serde::Serialize;
 use std::f32::consts::FRAC_PI_2;
 
@@ -218,10 +220,17 @@ impl ChessboardDetector {
         coords: &[(usize, GridIndex)],
         corners: &[Corner],
     ) -> Option<(TargetDetection, Vec<usize>)> {
-        let (min_i, max_i, min_j, max_j) = coords.iter().fold(
-            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
-            |acc, &(_, g)| (acc.0.min(g.i), acc.1.max(g.i), acc.2.min(g.j), acc.3.max(g.j)),
-        );
+        let (min_i, max_i, min_j, max_j) =
+            coords
+                .iter()
+                .fold((i32::MAX, i32::MIN, i32::MAX, i32::MIN), |acc, &(_, g)| {
+                    (
+                        acc.0.min(g.i),
+                        acc.1.max(g.i),
+                        acc.2.min(g.j),
+                        acc.3.max(g.j),
+                    )
+                });
 
         if min_i == i32::MAX || min_j == i32::MAX {
             return None;
