@@ -65,13 +65,12 @@ fn default_grid_smoothness_threshold_rel() -> f32 {
 /// Lower threshold and looser cluster requirement compared to the global scan,
 /// because we already know approximately where the true corner should be.
 pub(crate) fn default_redetect_params() -> ChessParams {
-    ChessParams {
-        threshold_rel: 0.05,
-        nms_radius: 2,
-        min_cluster_size: 1,
-        refiner: RefinerKind::SaddlePoint(SaddlePointConfig::default()),
-        ..ChessParams::default()
-    }
+    let mut params = ChessParams::default();
+    params.threshold_rel = 0.05;
+    params.nms_radius = 2;
+    params.min_cluster_size = 1;
+    params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
+    params
 }
 
 impl CharucoDetectorParams {

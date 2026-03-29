@@ -363,7 +363,11 @@ impl PyCoarseToFineParams {
     }
 }
 
-#[pyclass(name = "ChessConfig", module = "calib_targets._core")]
+#[pyclass(
+    name = "ChessConfig",
+    module = "calib_targets._core",
+    skip_from_py_object
+)]
 #[derive(Clone, Debug)]
 /// ChESS detector configuration (corner params + multiscale tuning).
 struct PyChessConfig {
@@ -1241,7 +1245,11 @@ fn update_charuco_params_for_board(params: &mut charuco::CharucoDetectorParams) 
     params.max_hamming = params.max_hamming.min(board.dictionary.max_correction_bits);
 }
 
-#[pyclass(name = "CharucoDetectorParams", module = "calib_targets._core")]
+#[pyclass(
+    name = "CharucoDetectorParams",
+    module = "calib_targets._core",
+    skip_from_py_object
+)]
 #[derive(Clone, Debug)]
 /// Full ChArUco detector configuration (board + parameters).
 struct PyCharucoDetectorParams {
@@ -1921,7 +1929,11 @@ impl PyCircleMatchParams {
     }
 }
 
-#[pyclass(name = "MarkerBoardParams", module = "calib_targets._core")]
+#[pyclass(
+    name = "MarkerBoardParams",
+    module = "calib_targets._core",
+    skip_from_py_object
+)]
 #[derive(Clone, Debug)]
 /// Parameters for marker-board detection.
 struct PyMarkerBoardParams {

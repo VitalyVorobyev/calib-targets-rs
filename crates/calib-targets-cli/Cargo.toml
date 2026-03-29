@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-cli"
-version = "0.3.2"
+version.workspace = true
 description = "CLI utilities for calib-targets"
 edition.workspace = true
 license.workspace = true
@@ -14,15 +14,15 @@ name = "calib-targets"
 path = "src/main.rs"
 
 [dependencies]
-calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.3.2" }
-calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.3.2" }
-calib-targets-marker = { path = "../calib-targets-marker", version = "0.3.2" }
-calib-targets-print = { path = "../calib-targets-print", version = "0.3.2" }
-clap = { version = "4.5", features = ["derive"] }
-serde_json = "1"
-thiserror = "2"
+calib-targets-aruco.workspace = true
+calib-targets-charuco.workspace = true
+calib-targets-marker.workspace = true
+calib-targets-print.workspace = true
+clap = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-assert_cmd = "2"
-predicates = "3"
-tempfile = "3"
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true

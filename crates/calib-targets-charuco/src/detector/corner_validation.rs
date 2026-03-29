@@ -187,10 +187,10 @@ pub(crate) fn redetect_corner_in_roi(
         image.width,
         image.height,
         chess_params,
-        Roi { x0, y0, x1, y1 },
+        Roi::new(x0, y0, x1, y1)?,
     );
 
-    if patch_resp.w == 0 || patch_resp.h == 0 {
+    if patch_resp.width() == 0 || patch_resp.height() == 0 {
         return None;
     }
 
@@ -220,8 +220,8 @@ pub(crate) fn redetect_corner_in_roi(
     raw_corners
         .into_iter()
         .map(|c| {
-            let gx = c.xy[0] + x0 as f32;
-            let gy = c.xy[1] + y0 as f32;
+            let gx = c.x + x0 as f32;
+            let gy = c.y + y0 as f32;
             (c.strength, gx, gy)
         })
         .filter(|&(_s, gx, gy)| {

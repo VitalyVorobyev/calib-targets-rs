@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets"
-version = "0.3.2"
+version.workspace = true
 description = "Main entry point crate for a collection of plain calibration target detectors built on top of ChESS corners"
 edition.workspace = true
 license.workspace = true
@@ -27,24 +27,24 @@ tracing = [
 ]
 
 [dependencies]
-calib-targets-charuco = { path = "../calib-targets-charuco", version = "0.3.2" }
-calib-targets-aruco = { path = "../calib-targets-aruco", version = "0.3.2" }
-calib-targets-core = { path = "../calib-targets-core", version = "0.3.2" }
-calib-targets-chessboard = { path = "../calib-targets-chessboard", version = "0.3.2" }
-calib-targets-marker = { path = "../calib-targets-marker", version = "0.3.2" }
-calib-targets-print = { path = "../calib-targets-print", version = "0.3.2" }
-chess-corners = { version = "0.3", optional = true, features = ["rayon", "ml-refiner"] }
-nalgebra = "0.34"
-thiserror = "2"
-image = { version = "0.25", default-features = true, optional = true }
-tracing = { version = "0.1", optional = true }
-tracing-log = { version = "0.2", optional = true }
-tracing-subscriber = { version = "0.3", optional = true, features = ["fmt", "env-filter"] }
+calib-targets-charuco.workspace = true
+calib-targets-aruco.workspace = true
+calib-targets-core.workspace = true
+calib-targets-chessboard.workspace = true
+calib-targets-marker.workspace = true
+calib-targets-print.workspace = true
+chess-corners = { workspace = true, optional = true, features = ["rayon", "ml-refiner"] }
+nalgebra.workspace = true
+thiserror.workspace = true
+image = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-log = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
-log = "0.4"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+log.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

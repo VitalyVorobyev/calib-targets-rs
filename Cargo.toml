@@ -15,9 +15,43 @@ members = [
 resolver = "2"
 
 [workspace.package]
+version = "0.3.2"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
 homepage = "https://vitalyvorobyev.github.io/calib-targets-rs/"
 documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api"
-rust-version = "1.70"
+rust-version = "1.88"
+
+[workspace.dependencies]
+calib-targets = { version = "0.3", path = "crates/calib-targets" }
+calib-targets-aruco = { version = "0.3", path = "crates/calib-targets-aruco" }
+calib-targets-charuco = { version = "0.3", path = "crates/calib-targets-charuco" }
+calib-targets-chessboard = { version = "0.3", path = "crates/calib-targets-chessboard" }
+calib-targets-core = { version = "0.3", path = "crates/calib-targets-core" }
+calib-targets-marker = { version = "0.3", path = "crates/calib-targets-marker" }
+calib-targets-print = { version = "0.3", path = "crates/calib-targets-print" }
+assert_cmd = "2"
+cbindgen = "0.29"
+chess-corners = "0.4"
+chess-corners-core = "0.4"
+clap = "4.5"
+flate2 = "1"
+image = { version = "0.25", default-features = true }
+kiddo = "5"
+log = "0.4"
+nalgebra = "0.34"
+numpy = "0.28"
+png = "0.18"
+predicates = "3"
+pyo3 = "0.28"
+pyo3-build-config = "0.28"
+serde = "1"
+serde_json = "1"
+tar = "0.4"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+tracing-log = "0.2"
+tracing-subscriber = "0.3"
+zip = { version = "8", default-features = false }

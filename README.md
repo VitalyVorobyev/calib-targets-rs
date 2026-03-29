@@ -3,6 +3,7 @@
 [![CI](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml)
 [![Docs](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/calib-targets-rs/)
+[![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)](https://blog.rust-lang.org/2025/06/26/Rust-1.88.0/)
 
 Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marker boards).
 
