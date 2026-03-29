@@ -7,6 +7,7 @@ This release adds the first native C API for `calib-targets-rs`.
 - New `calib-targets-ffi` crate with a generated public header, `cdylib` output, and explicit status/error handling.
 - New C detector APIs for chessboard, ChArUco, and checkerboard marker-board detection from 8-bit grayscale images.
 - Fixed `repr(C)` config/result structs, opaque detector handles, caller-owned query/fill buffers, and no JSON transport layer in the ABI.
+- Marker scan config in the C ABI includes the `multi_threshold` toggle, matching the Rust `ScanDecodeConfig` surface for ChArUco callers.
 - Repo-owned native validation now compiles and runs checked-in C and C++ consumers against the generated header and built shared library.
 - A thin header-only C++ wrapper is included as a helper layer above the C ABI; it does not define a second ABI surface.
 - Tagged GitHub releases now attach per-platform native archives that ship the staged `include/`, `lib/`, and `lib/cmake/` prefix for downstream C/C++ consumers.

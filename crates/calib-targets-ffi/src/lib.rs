@@ -521,6 +521,8 @@ pub struct ct_scan_decode_config_t {
     pub marker_size_rel: f32,
     pub min_border_score: f32,
     pub dedup_by_id: u32,
+    /// If `CT_TRUE`, try multiple thresholds per cell before giving up.
+    pub multi_threshold: u32,
 }
 
 /// ChArUco board specification.
@@ -1150,7 +1152,7 @@ fn convert_scan_decode_config(params: &ct_scan_decode_config_t) -> FfiResult<Sca
         marker_size_rel: require_positive(params.marker_size_rel, "scan.marker_size_rel")?,
         min_border_score: require_fraction(params.min_border_score, "scan.min_border_score")?,
         dedup_by_id: flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?,
-        multi_threshold: true,
+        multi_threshold: flag_to_bool(params.multi_threshold, "scan.multi_threshold")?,
     })
 }
 
@@ -2283,6 +2285,7 @@ mod tests {
                     marker_size_rel: 0.75,
                     min_border_score: 0.85,
                     dedup_by_id: CT_TRUE,
+                    multi_threshold: CT_TRUE,
                 },
                 max_hamming: 2,
                 min_marker_inliers: 12,
@@ -2498,6 +2501,31 @@ mod tests {
         assert_eq!(status, ct_status_t::CT_STATUS_CONFIG_ERROR);
         assert!(detector.is_null());
         assert!(last_error_string().contains("charuco.dictionary"));
+    }
+
+    #[test]
+    fn scan_decode_config_preserves_multi_threshold_flag() {
+        let disabled = convert_scan_decode_config(&ct_scan_decode_config_t {
+            border_bits: 1,
+            inset_frac: 0.06,
+            marker_size_rel: 0.75,
+            min_border_score: 0.85,
+            dedup_by_id: CT_TRUE,
+            multi_threshold: CT_FALSE,
+        })
+        .unwrap();
+        assert!(!disabled.multi_threshold);
+
+        let enabled = convert_scan_decode_config(&ct_scan_decode_config_t {
+            border_bits: 1,
+            inset_frac: 0.06,
+            marker_size_rel: 0.75,
+            min_border_score: 0.85,
+            dedup_by_id: CT_TRUE,
+            multi_threshold: CT_TRUE,
+        })
+        .unwrap();
+        assert!(enabled.multi_threshold);
     }
 
     #[test]

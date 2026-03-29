@@ -16,7 +16,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
@@ -25,14 +25,14 @@ documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api"
 rust-version = "1.88"
 
 [workspace.dependencies]
-calib-targets = { version = "0.3", path = "crates/calib-targets" }
-calib-targets-aruco = { version = "0.3", path = "crates/calib-targets-aruco" }
-calib-targets-charuco = { version = "0.3", path = "crates/calib-targets-charuco" }
-calib-targets-chessboard = { version = "0.3", path = "crates/calib-targets-chessboard" }
-calib-targets-core = { version = "0.3", path = "crates/calib-targets-core" }
-calib-targets-marker = { version = "0.3", path = "crates/calib-targets-marker" }
-projective-grid = { version = "0.3", path = "crates/projective-grid" }
-calib-targets-print = { version = "0.3", path = "crates/calib-targets-print" }
+calib-targets = { version = "0.4", path = "crates/calib-targets" }
+calib-targets-aruco = { version = "0.4", path = "crates/calib-targets-aruco" }
+calib-targets-charuco = { version = "0.4", path = "crates/calib-targets-charuco" }
+calib-targets-chessboard = { version = "0.4", path = "crates/calib-targets-chessboard" }
+calib-targets-core = { version = "0.4", path = "crates/calib-targets-core" }
+calib-targets-marker = { version = "0.4", path = "crates/calib-targets-marker" }
+projective-grid = { version = "0.4", path = "crates/projective-grid" }
+calib-targets-print = { version = "0.4", path = "crates/calib-targets-print" }
 assert_cmd = "2"
 cbindgen = "0.29"
 chess-corners = "0.4"

@@ -6,6 +6,15 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.0]
+
+### Native C API
+
+- Expose `ScanDecodeConfig::multi_threshold` in the FFI as
+  `ct_scan_decode_config_t::multi_threshold` so native callers can control the
+  multi-threshold marker decode path instead of being forced to the Rust
+  default.
+
 ## [0.3.2]
 
 ### ChArUco — local grid smoothness pre-filter
