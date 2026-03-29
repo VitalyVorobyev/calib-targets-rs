@@ -167,21 +167,23 @@ See `crates/calib-targets-py/README.md` for full setup details.
 
 ## Crates
 
-- [`calib-targets`](https://crates.io/crates/calib-targets) – facade crate with end-to-end helpers.
-- [`calib-targets-core`](https://crates.io/crates/calib-targets-core) – core geometry and types.
-- [`calib-targets-chessboard`](https://crates.io/crates/calib-targets-chessboard) – chessboard detector.
-- [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) – ArUco/AprilTag dictionaries and decoding.
-- [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) – ChArUco alignment and IDs.
-- [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) – checkerboard + 3-circle marker boards.
-- [`calib-targets-print`](https://crates.io/crates/calib-targets-print) – dedicated printable-target generation and JSON/SVG/PNG output.
+- [`calib-targets`](https://crates.io/crates/calib-targets) -- facade crate with end-to-end helpers.
+- [`calib-targets-core`](https://crates.io/crates/calib-targets-core) -- core geometry and types.
+- [`calib-targets-chessboard`](https://crates.io/crates/calib-targets-chessboard) -- chessboard detector.
+- [`calib-targets-aruco`](https://crates.io/crates/calib-targets-aruco) -- ArUco/AprilTag dictionaries and decoding.
+- [`calib-targets-charuco`](https://crates.io/crates/calib-targets-charuco) -- ChArUco alignment and IDs.
+- [`calib-targets-marker`](https://crates.io/crates/calib-targets-marker) -- checkerboard + 3-circle marker boards.
+- [`calib-targets-print`](https://crates.io/crates/calib-targets-print) -- dedicated printable-target generation and JSON/SVG/PNG output.
+- [`projective-grid`](https://crates.io/crates/projective-grid) -- standalone grid graph construction, traversal, and homography tools (used by `core` and `chessboard`).
 
 Today the published Rust crates are `calib-targets`, `calib-targets-core`,
 `calib-targets-chessboard`, `calib-targets-aruco`, `calib-targets-charuco`,
-`calib-targets-marker`, and `calib-targets-print`. The printable APIs are
-available both through the dedicated `calib-targets-print` crate and through
-the published `calib-targets` facade as `calib_targets::printable`.
-Repo-local companion crates such as `calib-targets-cli`, `calib-targets-py`,
-and `calib-targets-ffi` are not published on crates.io.
+`calib-targets-marker`, `calib-targets-print`, and `projective-grid`. The
+printable APIs are available both through the dedicated `calib-targets-print`
+crate and through the published `calib-targets` facade as
+`calib_targets::printable`. Repo-local companion crates such as
+`calib-targets-cli`, `calib-targets-py`, and `calib-targets-ffi` are not
+published on crates.io.
 
 ## Examples
 

@@ -16,6 +16,7 @@ categories = ["computer-vision", "science"]
 tracing = ["dep:tracing"]
 
 [dependencies]
+projective-grid = { workspace = true }
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

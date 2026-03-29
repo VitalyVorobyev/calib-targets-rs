@@ -1,6 +1,8 @@
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 
+pub use projective_grid::GridIndex as GridCoords;
+
 /// Canonical 2D corner used by all target detectors.
 ///
 /// This is the thing you obtain by adapting the output of your ChESS crate.
@@ -27,13 +29,6 @@ impl Corner {
     pub fn as_vec2(&self) -> Vector2<f32> {
         Vector2::new(self.position.x, self.position.y)
     }
-}
-
-/// Integer grid coordinates (i, j) in board space.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
-pub struct GridCoords {
-    pub i: i32,
-    pub j: i32,
 }
 
 /// The kind of target that a detection corresponds to.

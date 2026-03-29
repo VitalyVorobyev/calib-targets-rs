@@ -30,9 +30,9 @@ fn main() {
 
 ## Includes
 
-- Homography estimation and warping helpers.
+- Homography estimation and warping helpers (re-exported from `projective-grid`).
 - Lightweight grayscale image views and sampling.
-- Grid alignment and target detection types.
+- Grid alignment and target detection types (re-exported from `projective-grid`).
 
 ## Python bindings
 

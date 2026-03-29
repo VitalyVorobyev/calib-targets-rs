@@ -1,4 +1,5 @@
-use crate::{GrayImage, Homography};
+use crate::GrayImage;
+use projective_grid::Homography;
 use nalgebra::Point2;
 
 pub struct RectifiedView {

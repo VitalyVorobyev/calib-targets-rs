@@ -49,14 +49,15 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | Crate | Role |
 |---|---|
 | `calib-targets` | Facade crate — end-to-end `detect_*` helpers, `default_chess_config()` |
-| `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`, grid coords |
-| `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly |
+| `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
+| `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
+| `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-marker` | Checkerboard + 3-circle marker board layouts and detection |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
 
-**Dependency rules:** `core` has no internal deps. `charuco` may depend on `chessboard` and `aruco`. No cyclic deps.
+**Dependency rules:** `projective-grid` is standalone (no internal deps). `core` depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`. No cyclic deps.
 
 **Detection pipeline** (same structure for all target types):
 1. Run `chess-corners` (external crate) to detect ChESS corner features.

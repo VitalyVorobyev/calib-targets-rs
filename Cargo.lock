@@ -382,6 +382,7 @@ dependencies = [
  "image",
  "log",
  "nalgebra",
+ "projective-grid",
  "serde",
  "serde_json",
  "thiserror",
@@ -398,6 +399,7 @@ dependencies = [
  "kiddo",
  "log",
  "nalgebra",
+ "projective-grid",
  "serde",
  "serde_json",
  "thiserror",
@@ -428,6 +430,7 @@ version = "0.3.2"
 dependencies = [
  "log",
  "nalgebra",
+ "projective-grid",
  "serde",
  "serde_json",
  "thiserror",
@@ -1916,6 +1919,17 @@ checksum = "52717f9a02b6965224f95ca2a81e2e0c5c43baacd28ca057577988930b6c3d5b"
 dependencies = [
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "projective-grid"
+version = "0.3.2"
+dependencies = [
+ "kiddo",
+ "nalgebra",
+ "serde",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

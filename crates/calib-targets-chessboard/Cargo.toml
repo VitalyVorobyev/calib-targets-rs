@@ -18,6 +18,7 @@ tracing = ["calib-targets-core/tracing", "dep:tracing", "dep:tracing-log",
 
 [dependencies]
 calib-targets-core.workspace = true
+projective-grid.workspace = true
 nalgebra.workspace = true
 log.workspace = true
 kiddo.workspace = true
