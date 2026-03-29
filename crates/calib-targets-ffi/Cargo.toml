@@ -1,6 +1,6 @@
 [package]
 name = "calib-targets-ffi"
-version = "0.3.2"
+version.workspace = true
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true
@@ -14,12 +14,12 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-calib-targets = { path = "../calib-targets", features = ["image"], version = "0.3.2" }
-cbindgen = "0.29.2"
-chess-corners = "0.3"
-flate2 = "1.0"
-tar = "0.4"
-zip = { version = "0.6.6", default-features = false }
+calib-targets = { workspace = true, features = ["image"] }
+cbindgen.workspace = true
+chess-corners.workspace = true
+flate2.workspace = true
+tar.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
-image = { version = "0.25", default-features = true }
+image.workspace = true

@@ -1,5 +1,5 @@
 use crate::gridgraph::{
-    assign_grid_coordinates, connected_components, GridGraph, NeighborDirection,
+    assign_grid_coordinates, build_chessboard_grid_graph, connected_components,
 };
 use crate::params::{ChessboardParams, GridGraphParams};
 use calib_targets_core::{
@@ -7,6 +7,7 @@ use calib_targets_core::{
     OrientationHistogram, TargetDetection, TargetKind,
 };
 use log::{debug, warn};
+use projective_grid::{GridGraph, GridIndex, NeighborDirection};
 use serde::Serialize;
 use std::f32::consts::FRAC_PI_2;
 
@@ -158,7 +159,7 @@ impl ChessboardDetector {
             return None;
         }
 
-        let graph = GridGraph::new(&strong, self.grid_search.clone(), graph_diagonals);
+        let graph = build_chessboard_grid_graph(&strong, &self.grid_search, graph_diagonals);
 
         let components = connected_components(&graph);
         log_graph_summary(&graph, &components, self.params.min_corners);
@@ -216,13 +217,20 @@ impl ChessboardDetector {
 
     fn component_to_board_coords(
         &self,
-        coords: &[(usize, i32, i32)],
+        coords: &[(usize, GridIndex)],
         corners: &[Corner],
     ) -> Option<(TargetDetection, Vec<usize>)> {
-        let (min_i, max_i, min_j, max_j) = coords.iter().fold(
-            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
-            |acc, &(_, i, j)| (acc.0.min(i), acc.1.max(i), acc.2.min(j), acc.3.max(j)),
-        );
+        let (min_i, max_i, min_j, max_j) =
+            coords
+                .iter()
+                .fold((i32::MAX, i32::MIN, i32::MAX, i32::MIN), |acc, &(_, g)| {
+                    (
+                        acc.0.min(g.i),
+                        acc.1.max(g.i),
+                        acc.2.min(g.j),
+                        acc.3.max(g.j),
+                    )
+                });
 
         if min_i == i32::MAX || min_j == i32::MAX {
             return None;
@@ -260,12 +268,12 @@ impl ChessboardDetector {
         // multiple corners that get mapped to the same (i,j). Keep the strongest one.
         let mut by_grid: std::collections::HashMap<GridCoords, LabeledCorner> =
             std::collections::HashMap::new();
-        for &(node_idx, i, j) in coords {
+        for &(node_idx, g) in coords {
             let corner = &corners[node_idx];
             let (gi, gj) = if swap_axes {
-                (j - min_j, i - min_i)
+                (g.j - min_j, g.i - min_i)
             } else {
-                (i - min_i, j - min_j)
+                (g.i - min_i, g.j - min_j)
             };
             let grid = GridCoords { i: gi, j: gj };
             let candidate = LabeledCorner {

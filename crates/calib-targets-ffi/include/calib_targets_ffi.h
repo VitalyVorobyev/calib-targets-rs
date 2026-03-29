@@ -295,6 +295,10 @@ typedef struct ct_scan_decode_config_t {
   float marker_size_rel;
   float min_border_score;
   uint32_t dedup_by_id;
+  /**
+   * If `CT_TRUE`, try multiple thresholds per cell before giving up.
+   */
+  uint32_t multi_threshold;
 } ct_scan_decode_config_t;
 
 /**

@@ -193,7 +193,7 @@ for c in corners:
 ```toml
 # Cargo.toml
 [dependencies]
-calib-targets = "0.3"
+calib-targets = "0.4"
 image = "0.25"
 ```
 

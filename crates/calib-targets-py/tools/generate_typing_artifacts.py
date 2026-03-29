@@ -22,6 +22,18 @@ ARUCO_DATA = ROOT.parent / "calib-targets-aruco" / "data"
 DICTIONARY_OUTPUT = PY_PACKAGE / "_generated_dictionary.py"
 CORE_STUB_OUTPUT = PY_PACKAGE / "_core.pyi"
 
+PYCLASS_RE = re.compile(r"#\[pyclass\((?P<attrs>.*?)\)\]", re.DOTALL)
+PYCLASS_NAME_RE = re.compile(r'\bname\s*=\s*"([A-Za-z0-9_]+)"')
+PYCLASS_MODULE_RE = re.compile(r'\bmodule\s*=\s*"calib_targets\._core"')
+CTOR_SIG_RE = re.compile(
+    r"#\[new\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]",
+    re.MULTILINE,
+)
+PYFUNCTION_RE = re.compile(
+    r"#\[pyfunction\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]\s*fn ([a-zA-Z0-9_]+)\(",
+    re.MULTILINE,
+)
+
 
 def _signature_inner(sig: str) -> str:
     text = sig.strip()
@@ -56,15 +68,17 @@ def _extract_dictionary_names() -> list[str]:
 def _extract_rust_core_surface() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
     src = RUST_LIB.read_text(encoding="utf-8")
 
-    class_names = re.findall(
-        r'#\[pyclass\(name = "([A-Za-z0-9_]+)", module = "calib_targets\._core"\)\]',
-        src,
-    )
-    ctor_sigs = re.findall(
-        r"#\[new\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]",
-        src,
-        re.MULTILINE,
-    )
+    class_names: list[str] = []
+    for match in PYCLASS_RE.finditer(src):
+        attrs = match.group("attrs")
+        if not PYCLASS_MODULE_RE.search(attrs):
+            continue
+        name_match = PYCLASS_NAME_RE.search(attrs)
+        if name_match is None:
+            raise RuntimeError(f"failed to extract pyclass name from attributes: {attrs!r}")
+        class_names.append(name_match.group(1))
+
+    ctor_sigs = CTOR_SIG_RE.findall(src)
     if len(class_names) != len(ctor_sigs):
         raise RuntimeError(
             "failed to map pyclass constructors: "
@@ -73,11 +87,7 @@ def _extract_rust_core_surface() -> tuple[list[tuple[str, str]], list[tuple[str,
 
     classes = list(zip(class_names, ctor_sigs, strict=True))
 
-    function_matches = re.findall(
-        r"#\[pyfunction\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]\s*fn ([a-zA-Z0-9_]+)\(",
-        src,
-        re.MULTILINE,
-    )
+    function_matches = PYFUNCTION_RE.findall(src)
     if not function_matches:
         raise RuntimeError("no #[pyfunction] signatures found")
 

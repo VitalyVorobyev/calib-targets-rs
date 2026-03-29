@@ -14,6 +14,7 @@ use calib_targets_core::{GrayImageView, GridCoords};
 use chess_corners_core::ChessParams;
 use log::debug;
 use nalgebra::Point2;
+use projective_grid::predict_grid_position;
 
 /// Check grid corners for smoothness and fix or remove outliers.
 ///
@@ -50,49 +51,9 @@ pub(crate) fn smooth_grid_corners(
     for gc in &keys {
         let pos = corner_map[gc];
 
-        let mut pred_sum = Point2::new(0.0f32, 0.0f32);
-        let mut pred_count = 0u32;
-
-        // Horizontal pair
-        let left = GridCoords {
-            i: gc.i - 1,
-            j: gc.j,
-        };
-        let right = GridCoords {
-            i: gc.i + 1,
-            j: gc.j,
-        };
-        if let (Some(&pl), Some(&pr)) = (corner_map.get(&left), corner_map.get(&right)) {
-            let mid = Point2::new(0.5 * (pl.x + pr.x), 0.5 * (pl.y + pr.y));
-            pred_sum.x += mid.x;
-            pred_sum.y += mid.y;
-            pred_count += 1;
-        }
-
-        // Vertical pair
-        let up = GridCoords {
-            i: gc.i,
-            j: gc.j - 1,
-        };
-        let down = GridCoords {
-            i: gc.i,
-            j: gc.j + 1,
-        };
-        if let (Some(&pu), Some(&pd)) = (corner_map.get(&up), corner_map.get(&down)) {
-            let mid = Point2::new(0.5 * (pu.x + pd.x), 0.5 * (pu.y + pd.y));
-            pred_sum.x += mid.x;
-            pred_sum.y += mid.y;
-            pred_count += 1;
-        }
-
-        if pred_count == 0 {
+        let Some(predicted) = predict_grid_position(corner_map, *gc) else {
             continue;
-        }
-
-        let predicted = Point2::new(
-            pred_sum.x / pred_count as f32,
-            pred_sum.y / pred_count as f32,
-        );
+        };
 
         let dx = pos.x - predicted.x;
         let dy = pos.y - predicted.y;

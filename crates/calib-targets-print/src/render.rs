@@ -6,7 +6,6 @@ use crate::model::{
 use calib_targets_charuco::CharucoBoard;
 use calib_targets_marker::CirclePolarity;
 use png::{BitDepth, ColorType, Encoder, PixelDimensions, Unit};
-use std::io::ErrorKind;
 
 #[derive(Clone, Copy, Debug)]
 enum Fill {
@@ -488,7 +487,7 @@ fn fmt_mm(value: f64) -> String {
 
 impl From<png::EncodingError> for PrintableTargetError {
     fn from(value: png::EncodingError) -> Self {
-        PrintableTargetError::Io(std::io::Error::new(ErrorKind::Other, value.to_string()))
+        PrintableTargetError::Io(std::io::Error::other(value.to_string()))
     }
 }
 

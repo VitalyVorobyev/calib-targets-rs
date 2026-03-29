@@ -521,6 +521,8 @@ pub struct ct_scan_decode_config_t {
     pub marker_size_rel: f32,
     pub min_border_score: f32,
     pub dedup_by_id: u32,
+    /// If `CT_TRUE`, try multiple thresholds per cell before giving up.
+    pub multi_threshold: u32,
 }
 
 /// ChArUco board specification.
@@ -1001,23 +1003,23 @@ fn convert_refiner_kind(
 }
 
 fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    Ok(ChessParams {
-        use_radius10: flag_to_bool(params.use_radius10, "chess.params.use_radius10")?,
-        descriptor_use_radius10: params
-            .descriptor_use_radius10
-            .to_option("chess.params.descriptor_use_radius10")?,
-        threshold_rel: require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?,
-        threshold_abs: match params
-            .threshold_abs
-            .to_option("chess.params.threshold_abs")?
-        {
-            Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
-            None => None,
-        },
-        nms_radius: params.nms_radius,
-        min_cluster_size: params.min_cluster_size,
-        refiner: convert_refiner_kind(params.refiner.kind, &params.refiner)?,
-    })
+    let mut opars = ChessParams::default();
+    opars.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
+    opars.descriptor_use_radius10 = params
+        .descriptor_use_radius10
+        .to_option("chess.params.descriptor_use_radius10")?;
+    opars.threshold_rel = require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?;
+    opars.threshold_abs = match params
+        .threshold_abs
+        .to_option("chess.params.threshold_abs")?
+    {
+        Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
+        None => None,
+    };
+    opars.nms_radius = params.nms_radius;
+    opars.min_cluster_size = params.min_cluster_size;
+    opars.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
+    Ok(opars)
 }
 
 fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidParams> {
@@ -1031,26 +1033,27 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
             "chess.multiscale.pyramid.min_size must be > 0",
         ));
     }
-    Ok(PyramidParams {
-        num_levels: u8::try_from(params.num_levels).map_err(|_| {
-            FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
-        })?,
-        min_size: params.min_size,
-    })
+    let mut opars = PyramidParams::default();
+    opars.num_levels = u8::try_from(params.num_levels).map_err(|_| {
+        FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
+    })?;
+    opars.min_size = params.min_size;
+    Ok(opars)
 }
 
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
-    Ok(ChessConfig {
-        params: convert_chess_params(&config.params)?,
-        multiscale: CoarseToFineParams {
-            pyramid: convert_pyramid_params(&config.multiscale.pyramid)?,
-            refinement_radius: config.multiscale.refinement_radius,
-            merge_radius: require_nonnegative(
-                config.multiscale.merge_radius,
-                "chess.multiscale.merge_radius",
-            )?,
-        },
-    })
+    let mut ms_pars = CoarseToFineParams::default();
+    ms_pars.pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
+    ms_pars.refinement_radius = config.multiscale.refinement_radius;
+    ms_pars.merge_radius = require_nonnegative(
+        config.multiscale.merge_radius,
+        "chess.multiscale.merge_radius",
+    )?;
+
+    let mut opars = ChessConfig::default();
+    opars.params = convert_chess_params(&config.params)?;
+    opars.multiscale = ms_pars;
+    Ok(opars)
 }
 
 fn convert_orientation_clustering_params(
@@ -1149,7 +1152,7 @@ fn convert_scan_decode_config(params: &ct_scan_decode_config_t) -> FfiResult<Sca
         marker_size_rel: require_positive(params.marker_size_rel, "scan.marker_size_rel")?,
         min_border_score: require_fraction(params.min_border_score, "scan.min_border_score")?,
         dedup_by_id: flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?,
-        multi_threshold: true,
+        multi_threshold: flag_to_bool(params.multi_threshold, "scan.multi_threshold")?,
     })
 }
 
@@ -2282,6 +2285,7 @@ mod tests {
                     marker_size_rel: 0.75,
                     min_border_score: 0.85,
                     dedup_by_id: CT_TRUE,
+                    multi_threshold: CT_TRUE,
                 },
                 max_hamming: 2,
                 min_marker_inliers: 12,
@@ -2497,6 +2501,31 @@ mod tests {
         assert_eq!(status, ct_status_t::CT_STATUS_CONFIG_ERROR);
         assert!(detector.is_null());
         assert!(last_error_string().contains("charuco.dictionary"));
+    }
+
+    #[test]
+    fn scan_decode_config_preserves_multi_threshold_flag() {
+        let disabled = convert_scan_decode_config(&ct_scan_decode_config_t {
+            border_bits: 1,
+            inset_frac: 0.06,
+            marker_size_rel: 0.75,
+            min_border_score: 0.85,
+            dedup_by_id: CT_TRUE,
+            multi_threshold: CT_FALSE,
+        })
+        .unwrap();
+        assert!(!disabled.multi_threshold);
+
+        let enabled = convert_scan_decode_config(&ct_scan_decode_config_t {
+            border_bits: 1,
+            inset_frac: 0.06,
+            marker_size_rel: 0.75,
+            min_border_score: 0.85,
+            dedup_by_id: CT_TRUE,
+            multi_threshold: CT_TRUE,
+        })
+        .unwrap();
+        assert!(enabled.multi_threshold);
     }
 
     #[test]
