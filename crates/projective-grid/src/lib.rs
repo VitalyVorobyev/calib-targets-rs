@@ -7,6 +7,11 @@
 //! It is pattern-agnostic: the [`NeighborValidator`] trait lets callers plug in
 //! pattern-specific logic (chessboard orientation checks, marker constraints, etc.)
 //! while the graph construction, traversal, and geometry remain generic.
+//!
+//! # Hex Grid Support
+//!
+//! The [`hex`] module provides 6-connected hexagonal grid counterparts for
+//! pointy-top axial coordinates `(q, r)`.
 
 pub mod direction;
 pub mod graph;
@@ -15,6 +20,7 @@ pub mod grid_index;
 pub mod grid_mesh;
 pub mod grid_rectify;
 pub mod grid_smoothness;
+pub mod hex;
 pub mod homography;
 pub mod traverse;
 
