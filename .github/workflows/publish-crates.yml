@@ -8,6 +8,16 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      PUBLISH_PACKAGES: |
+        projective-grid
+        calib-targets-core
+        calib-targets-chessboard
+        calib-targets-aruco
+        calib-targets-charuco
+        calib-targets-marker
+        calib-targets-print
+        calib-targets
 
     # Needed for OIDC -> crates.io token exchange
     permissions:
@@ -33,20 +43,44 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
           META="$(cargo metadata --format-version 1 --no-deps)"
+          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
 
           echo "tag version:   $VER"
 
-          for pkg in \
-            calib-targets-core \
-            calib-targets-chessboard \
-            calib-targets-aruco \
-            calib-targets-charuco \
-            calib-targets-marker \
-            calib-targets-print \
-            calib-targets; do
+          for pkg in "${publish_packages[@]}"; do
             PKG_VER="$(jq -r --arg name "$pkg" '.packages[] | select(.name==$name) | .version' <<<"$META")"
             echo "$pkg version:  $PKG_VER"
             test "$PKG_VER" = "$VER"
+          done
+
+      - name: Validate publish order
+        shell: bash
+        run: |
+          META="$(cargo metadata --format-version 1 --no-deps)"
+          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
+          declare -A publish_index=()
+
+          for idx in "${!publish_packages[@]}"; do
+            pkg="${publish_packages[$idx]}"
+            publish_index["$pkg"]="$idx"
+          done
+
+          for pkg in "${publish_packages[@]}"; do
+            while IFS= read -r dep; do
+              [[ -z "$dep" ]] && continue
+              if [[ -v "publish_index[$dep]" ]] && (( publish_index["$dep"] >= publish_index["$pkg"] )); then
+                echo "Publish order is invalid: $pkg depends on $dep, but $dep is not published earlier."
+                exit 1
+              fi
+            done < <(
+              jq -r --arg name "$pkg" '
+                .packages[]
+                | select(.name == $name)
+                | .dependencies[]
+                | select(.path != null and .kind != "dev")
+                | .name
+              ' <<<"$META"
+            )
           done
 
       - name: Test workspace
@@ -61,6 +95,8 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
         shell: bash
         run: |
+          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
+
           publish_with_retry() {
             local pkg="$1"
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
@@ -75,10 +111,6 @@ jobs:
             return 1
           }
 
-          publish_with_retry calib-targets-core
-          publish_with_retry calib-targets-chessboard
-          publish_with_retry calib-targets-aruco
-          publish_with_retry calib-targets-charuco
-          publish_with_retry calib-targets-marker
-          publish_with_retry calib-targets-print
-          publish_with_retry calib-targets
+          for pkg in "${publish_packages[@]}"; do
+            publish_with_retry "$pkg"
+          done

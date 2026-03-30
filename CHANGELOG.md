@@ -8,12 +8,63 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [0.4.0]
 
-### Native C API
+### Standalone `projective-grid` crate
+
+- Add the new publishable [`projective-grid`](https://crates.io/crates/projective-grid)
+  crate for pattern-agnostic 2D grid tooling: pluggable `NeighborValidator`
+  traits, grid graph construction, connected-component traversal, BFS grid
+  coordinate assignment, homography estimation, global rectification, per-cell
+  mesh rectification, and grid smoothness prediction.
+- Extract the generic square-grid geometry and homography machinery from
+  `calib-targets-core` into `projective-grid`. `calib-targets-core` keeps the
+  image-space pieces (`GrayImage*`, sampling, `warp_perspective_gray`) and
+  re-exports `Homography`, `GridCoords` (`GridIndex` alias), `GridAlignment`,
+  `GridTransform`, and homography-estimation helpers for downstream
+  compatibility.
+- Refactor `calib-targets-chessboard` to delegate grid-graph construction and
+  traversal to `projective-grid`, while keeping chessboard-specific neighbor
+  validation in-crate. Switch ChArUco grid smoothness to the shared
+  `projective_grid::predict_grid_position` helper instead of maintaining a
+  separate midpoint-prediction implementation.
+
+### Hex grids and built-in validators
+
+- Add `projective_grid::hex` with pointy-top axial-coordinate support for
+  6-connected graph construction, BFS coordinate assignment, grid smoothness
+  prediction, `D6` alignment transforms, `HexGridHomography`, and
+  `HexGridHomographyMesh` for per-triangle affine/projective rectification.
+- Add ready-to-use validator implementations in
+  `projective_grid::validators`:
+  `XJunctionValidator` for ChESS-like oriented square-grid corners,
+  `SpatialSquareValidator` for unoriented square lattices, and
+  `SpatialHexValidator` for unoriented hex lattices such as ringgrids.
+
+### Native C API and bindings
 
 - Expose `ScanDecodeConfig::multi_threshold` in the FFI as
   `ct_scan_decode_config_t::multi_threshold` so native callers can control the
   multi-threshold marker decode path instead of being forced to the Rust
   default.
+- Add native test coverage that verifies `ct_scan_decode_config_t` preserves
+  the `multi_threshold` flag when converting into the Rust
+  `ScanDecodeConfig`.
+- Make the Python typing-artifact generator robust to multiline
+  `#[pyclass(...)]` attributes so generated `_core.pyi` stubs stay in sync
+  after adding `skip_from_py_object` to config-heavy binding classes.
+
+### Workspace and release engineering
+
+- Centralize shared crate metadata and dependency versions in the workspace
+  root via `[workspace.package]` and `[workspace.dependencies]` so the Rust
+  crates inherit coordinated `0.4` versioning and one dependency set.
+- Raise the documented MSRV to Rust `1.88` and surface it in the workspace
+  metadata and top-level README badge.
+- Update docs and packaging references from `0.3` to `0.4`, including the
+  getting-started dependency snippets and the coordinated Rust/Python/native
+  release metadata.
+- Include `projective-grid` in the coordinated crates.io release flow and add
+  CI validation that the publish order matches inter-crate dependencies before
+  attempting the tagged publish job.
 
 ## [0.3.2]
 
