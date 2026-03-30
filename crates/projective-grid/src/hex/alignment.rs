@@ -210,11 +210,7 @@ mod tests {
         let identity = &GRID_TRANSFORMS_D6[0];
         let mut acc = *identity;
         for (k, expected) in GRID_TRANSFORMS_D6.iter().enumerate().take(6) {
-            assert_eq!(
-                as_tuple(&acc),
-                as_tuple(expected),
-                "rot60^{k} mismatch"
-            );
+            assert_eq!(as_tuple(&acc), as_tuple(expected), "rot60^{k} mismatch");
             acc = compose(&acc, rot60);
         }
     }

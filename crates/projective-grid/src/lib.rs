@@ -12,6 +12,11 @@
 //!
 //! The [`hex`] module provides 6-connected hexagonal grid counterparts for
 //! pointy-top axial coordinates `(q, r)`.
+//!
+//! # Built-in Validators
+//!
+//! The [`validators`] module provides ready-to-use implementations of
+//! [`NeighborValidator`] and [`hex::HexNeighborValidator`] for common scenarios.
 
 pub mod direction;
 pub mod graph;
@@ -23,6 +28,7 @@ pub mod grid_smoothness;
 pub mod hex;
 pub mod homography;
 pub mod traverse;
+pub mod validators;
 
 pub use direction::{NeighborDirection, NodeNeighbor};
 pub use graph::{GridGraph, GridGraphParams, NeighborCandidate, NeighborValidator};
