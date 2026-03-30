@@ -45,6 +45,12 @@ pub struct HexGridHomography {
     /// Rectified image dimensions.
     pub rect_width: usize,
     pub rect_height: usize,
+
+    /// Pixel-space origin offset subtracted during construction.
+    /// Needed by [`axial_to_rect`](Self::axial_to_rect) to produce coordinates
+    /// in the same frame as the stored homography.
+    x_offset: f64,
+    y_offset: f64,
 }
 
 impl HexGridHomography {
@@ -135,6 +141,8 @@ impl HexGridHomography {
             px_per_cell,
             rect_width,
             rect_height,
+            x_offset: x_min,
+            y_offset: y_min,
         })
     }
 
@@ -151,14 +159,13 @@ impl HexGridHomography {
     /// Convert axial coordinates `(q, r)` to rectified pixel coordinates.
     ///
     /// This does **not** apply the homography — it maps grid indices to the
-    /// rectified coordinate system directly.
+    /// rectified coordinate system directly. The result is in the same shifted
+    /// frame used by the stored homography, so it can be passed to
+    /// [`rect_to_img`](Self::rect_to_img).
     pub fn axial_to_rect(&self, q: f64, r: f64) -> Point2<f64> {
         let s = self.px_per_cell as f64;
-        // We need the same x_min, y_min used during construction.
-        // Reconstruct from stored bounds (approximate — for exact use, store offsets).
-        // For now, use the stored min_q/min_r with margin to reconstruct.
-        let x = s * (q + r * 0.5);
-        let y = s * (r * SQRT3_HALF);
+        let x = s * (q + r * 0.5) - self.x_offset;
+        let y = s * (r * SQRT3_HALF) - self.y_offset;
         Point2::new(x, y)
     }
 }
@@ -223,6 +230,33 @@ mod tests {
             let recovered = h.rect_to_img(rect_pos);
             assert!((recovered.x - img_pos.x).abs() < 0.1);
             assert!((recovered.y - img_pos.y).abs() < 0.1);
+        }
+    }
+
+    #[test]
+    fn axial_to_rect_then_rect_to_img_matches_corners() {
+        let corners = make_hex_corners(3, 60.0);
+        let h = HexGridHomography::from_corners(&corners, 60.0, 1.0).unwrap();
+
+        for (g, &img_pos) in &corners {
+            let rect_pt = h.axial_to_rect(g.i as f64, g.j as f64);
+            let recovered = h.rect_to_img(Point2::new(rect_pt.x as f32, rect_pt.y as f32));
+            assert!(
+                (recovered.x - img_pos.x).abs() < 0.5,
+                "x mismatch at ({},{}): {} vs {}",
+                g.i,
+                g.j,
+                recovered.x,
+                img_pos.x,
+            );
+            assert!(
+                (recovered.y - img_pos.y).abs() < 0.5,
+                "y mismatch at ({},{}): {} vs {}",
+                g.i,
+                g.j,
+                recovered.y,
+                img_pos.y,
+            );
         }
     }
 
