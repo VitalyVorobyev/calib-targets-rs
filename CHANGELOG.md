@@ -6,6 +6,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.2]
+
+### Release engineering
+
+- Technical release: bump coordinated crate versions to `0.4.2` after
+  publish-workflow fixes.
+
 ## [0.4.1]
 
 ### Release engineering
