@@ -6,6 +6,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.4.1]
+
+### Release engineering
+
+- Technical release: bump coordinated crate versions to `0.4.1` to fix
+  publication issues.
+
 ## [0.4.0]
 
 ### Standalone `projective-grid` crate
