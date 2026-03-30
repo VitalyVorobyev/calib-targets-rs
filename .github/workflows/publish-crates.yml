@@ -43,7 +43,7 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VER="${TAG#v}"
           META="$(cargo metadata --format-version 1 --no-deps)"
-          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
+          mapfile -t publish_packages < <(printf '%s\n' "$PUBLISH_PACKAGES" | sed '/^[[:space:]]*$/d')
 
           echo "tag version:   $VER"
 
@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           META="$(cargo metadata --format-version 1 --no-deps)"
-          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
+          mapfile -t publish_packages < <(printf '%s\n' "$PUBLISH_PACKAGES" | sed '/^[[:space:]]*$/d')
           declare -A publish_index=()
 
           for idx in "${!publish_packages[@]}"; do
@@ -95,7 +95,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
         shell: bash
         run: |
-          mapfile -t publish_packages <<<"$PUBLISH_PACKAGES"
+          mapfile -t publish_packages < <(printf '%s\n' "$PUBLISH_PACKAGES" | sed '/^[[:space:]]*$/d')
 
           publish_with_retry() {
             local pkg="$1"
