@@ -94,13 +94,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 All `calib_targets::detect` config types are now workspace-owned, so advanced tuning stays inside the `calib-targets` dependency:
 
 ```rust
-use calib_targets::detect::{ChessConfig, ChessCornerParams};
+use calib_targets::detect::{ChessConfig, ThresholdMode};
 
 let cfg = ChessConfig {
-    params: ChessCornerParams {
-        threshold_rel: 0.15,
-        ..ChessCornerParams::default()
-    },
+    threshold_mode: ThresholdMode::Relative,
+    threshold_value: 0.15,
+    pyramid_levels: 2,
     ..ChessConfig::default()
 };
 ```

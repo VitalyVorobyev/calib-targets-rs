@@ -1,7 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
-use calib_targets_core::{ChessCornerParams, RefinerConfig, SaddlePointConfig};
+use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -69,7 +69,7 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
         threshold_rel: 0.05,
         nms_radius: 2,
         min_cluster_size: 1,
-        refiner: RefinerConfig::SaddlePoint(SaddlePointConfig::default()),
+        refiner: RefinerKindConfig::SaddlePoint(SaddlePointConfig::default()),
         ..ChessCornerParams::default()
     }
 }
@@ -86,14 +86,14 @@ pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners_core:
     out
 }
 
-fn to_refiner_kind(refiner: &RefinerConfig) -> chess_corners_core::RefinerKind {
+fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKind {
     match refiner {
-        RefinerConfig::CenterOfMass(cfg) => {
+        RefinerKindConfig::CenterOfMass(cfg) => {
             chess_corners_core::RefinerKind::CenterOfMass(chess_corners_core::CenterOfMassConfig {
                 radius: cfg.radius,
             })
         }
-        RefinerConfig::Forstner(cfg) => {
+        RefinerKindConfig::Forstner(cfg) => {
             chess_corners_core::RefinerKind::Forstner(chess_corners_core::ForstnerConfig {
                 radius: cfg.radius,
                 min_trace: cfg.min_trace,
@@ -102,7 +102,7 @@ fn to_refiner_kind(refiner: &RefinerConfig) -> chess_corners_core::RefinerKind {
                 max_offset: cfg.max_offset,
             })
         }
-        RefinerConfig::SaddlePoint(cfg) => {
+        RefinerKindConfig::SaddlePoint(cfg) => {
             chess_corners_core::RefinerKind::SaddlePoint(chess_corners_core::SaddlePointConfig {
                 radius: cfg.radius,
                 det_margin: cfg.det_margin,
@@ -231,7 +231,7 @@ mod tests {
             threshold_abs: Some(7.5),
             nms_radius: 4,
             min_cluster_size: 3,
-            refiner: RefinerConfig::Forstner(ForstnerConfig {
+            refiner: RefinerKindConfig::Forstner(ForstnerConfig {
                 radius: 5,
                 min_trace: 12.0,
                 min_det: 0.5,
@@ -263,15 +263,15 @@ mod tests {
     #[test]
     fn all_refiner_variants_convert() {
         let variants = [
-            RefinerConfig::CenterOfMass(CenterOfMassConfig { radius: 6 }),
-            RefinerConfig::Forstner(ForstnerConfig {
+            RefinerKindConfig::CenterOfMass(CenterOfMassConfig { radius: 6 }),
+            RefinerKindConfig::Forstner(ForstnerConfig {
                 radius: 3,
                 min_trace: 10.0,
                 min_det: 0.25,
                 max_condition_number: 128.0,
                 max_offset: 1.0,
             }),
-            RefinerConfig::SaddlePoint(SaddlePointConfig {
+            RefinerKindConfig::SaddlePoint(SaddlePointConfig {
                 radius: 4,
                 det_margin: 0.05,
                 max_offset: 0.75,

@@ -49,8 +49,9 @@ pub use image::{
 pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use chess::{
-    CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, ForstnerConfig,
-    PyramidParams, RefinerConfig, SaddlePointConfig,
+    CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, DescriptorMode,
+    DetectorMode, ForstnerConfig, PyramidParams, RefinementMethod, RefinerConfig,
+    RefinerKindConfig, SaddlePointConfig, ThresholdMode,
 };
 pub use corner::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

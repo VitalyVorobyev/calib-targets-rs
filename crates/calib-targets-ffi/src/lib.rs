@@ -27,13 +27,11 @@ use calib_targets::charuco::{
 };
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets::core::{
-    GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection,
+    ChessCornerParams as ChessParams, CoarseToFineParams, GrayImageView, GridAlignment, GridCoords,
+    LabeledCorner, PyramidParams, RefinerKindConfig, TargetDetection,
 };
 use calib_targets::detect;
-use calib_targets::detect::{
-    CenterOfMassConfig, ChessConfig, ChessCornerParams as ChessParams, CoarseToFineParams,
-    ForstnerConfig, PyramidParams, RefinerConfig, SaddlePointConfig,
-};
+use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
     MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
@@ -939,7 +937,7 @@ fn convert_dictionary_id(value: ct_dictionary_id_t, field: &str) -> FfiResult<Di
 fn convert_refiner_kind(
     value: ct_refiner_kind_t,
     cfg: &ct_refiner_config_t,
-) -> FfiResult<RefinerConfig> {
+) -> FfiResult<RefinerKindConfig> {
     match value {
         CT_REFINER_KIND_CENTER_OF_MASS => {
             if cfg.center_of_mass.radius < 0 {
@@ -947,7 +945,7 @@ fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            Ok(RefinerConfig::CenterOfMass(CenterOfMassConfig {
+            Ok(RefinerKindConfig::CenterOfMass(CenterOfMassConfig {
                 radius: cfg.center_of_mass.radius,
             }))
         }
@@ -957,7 +955,7 @@ fn convert_refiner_kind(
                     "refiner.forstner.radius must be >= 0",
                 ));
             }
-            Ok(RefinerConfig::Forstner(ForstnerConfig {
+            Ok(RefinerKindConfig::Forstner(ForstnerConfig {
                 radius: cfg.forstner.radius,
                 min_trace: require_nonnegative(
                     cfg.forstner.min_trace,
@@ -980,7 +978,7 @@ fn convert_refiner_kind(
                     "refiner.saddle_point.radius must be >= 0",
                 ));
             }
-            Ok(RefinerConfig::SaddlePoint(SaddlePointConfig {
+            Ok(RefinerKindConfig::SaddlePoint(SaddlePointConfig {
                 radius: cfg.saddle_point.radius,
                 det_margin: require_nonnegative(
                     cfg.saddle_point.det_margin,
@@ -1042,6 +1040,7 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
 }
 
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
+    let params = convert_chess_params(&config.params)?;
     let multiscale = CoarseToFineParams {
         pyramid: convert_pyramid_params(&config.multiscale.pyramid)?,
         refinement_radius: config.multiscale.refinement_radius,
@@ -1051,10 +1050,7 @@ fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
         )?,
     };
 
-    Ok(ChessConfig {
-        params: convert_chess_params(&config.params)?,
-        multiscale,
-    })
+    Ok(ChessConfig::from_parts(&params, &multiscale))
 }
 
 fn convert_orientation_clustering_params(

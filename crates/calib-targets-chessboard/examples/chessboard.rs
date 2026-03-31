@@ -88,8 +88,9 @@ fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error
 
 fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
     let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.params.threshold_rel = 0.2;
-    chess_cfg.params.nms_radius = 2;
+    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
+    chess_cfg.threshold_value = 0.2;
+    chess_cfg.nms_radius = 2;
     find_chess_corners_image(img, &chess_cfg)
 }
 

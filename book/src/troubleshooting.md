@@ -46,8 +46,9 @@ a connected grid from the detected corners.
    - If `N < min_corners`: lower `min_corners` or lower `min_corner_strength`.
    - If `N` is zero or very small: the ChESS detector found nothing. Check image
      resolution and corner contrast. If needed, lower
-     `detect::ChessConfig.params.threshold_rel`, reduce
-     `detect::ChessConfig.params.min_cluster_size`, or capture a higher-resolution image.
+     `detect::ChessConfig.threshold_value` (with
+     `detect::ChessConfig.threshold_mode = Relative`), reduce
+     `detect::ChessConfig.min_cluster_size`, or capture a higher-resolution image.
 
 2. **Corners found but grid assembly fails?**
    - Check `max_spacing_pix`: if the physical board squares are larger than this value

@@ -35,26 +35,26 @@ image = "0.25"
     write_file(
         &main_path,
         r#"use calib_targets::detect::{
-    self, ChessConfig, ChessCornerParams, CoarseToFineParams, PyramidParams, RefinerConfig,
-    SaddlePointConfig,
+    self, ChessConfig, DetectorMode, DescriptorMode, RefinementMethod, RefinerConfig,
+    SaddlePointConfig, ThresholdMode,
 };
 
 fn main() {
     let _named_default: ChessConfig = detect::default_chess_config();
     let cfg = ChessConfig {
-        params: ChessCornerParams {
-            threshold_rel: 0.15,
-            min_cluster_size: 1,
-            refiner: RefinerConfig::SaddlePoint(SaddlePointConfig::default()),
-            ..ChessCornerParams::default()
+        detector_mode: DetectorMode::Broad,
+        descriptor_mode: DescriptorMode::Canonical,
+        threshold_mode: ThresholdMode::Relative,
+        threshold_value: 0.15,
+        min_cluster_size: 1,
+        refiner: RefinerConfig {
+            kind: RefinementMethod::SaddlePoint,
+            saddle_point: SaddlePointConfig::default(),
+            ..RefinerConfig::default()
         },
-        multiscale: CoarseToFineParams {
-            pyramid: PyramidParams {
-                num_levels: 2,
-                min_size: 64,
-            },
-            ..CoarseToFineParams::default()
-        },
+        pyramid_levels: 2,
+        pyramid_min_size: 64,
+        ..ChessConfig::default()
     };
 
     let img = image::GrayImage::new(16, 16);

@@ -1,6 +1,5 @@
-use ::calib_targets::detect::{
-    ChessConfig, ChessCornerParams as ChessParams, CoarseToFineParams, PyramidParams,
-};
+use ::calib_targets::core::{ChessCornerParams as ChessParams, CoarseToFineParams, PyramidParams};
+use ::calib_targets::detect::ChessConfig;
 use ::calib_targets::{aruco, charuco, chessboard, core, detect, marker, printable};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
@@ -146,7 +145,8 @@ impl PyChessCornerParams {
             ChessCornerParamsSource::Owned(params) => Ok(f(params)),
             ChessCornerParamsSource::ChessConfig(parent) => Python::attach(|py| {
                 let parent = parent.bind(py).borrow();
-                Ok(f(&parent.inner.params))
+                let params = parent.low_level_params();
+                Ok(f(&params))
             }),
         }
     }
@@ -156,7 +156,11 @@ impl PyChessCornerParams {
             ChessCornerParamsSource::Owned(params) => Ok(f(params)),
             ChessCornerParamsSource::ChessConfig(parent) => Python::attach(|py| {
                 let mut parent = parent.bind(py).borrow_mut();
-                Ok(f(&mut parent.inner.params))
+                let mut params = parent.low_level_params();
+                let result = f(&mut params);
+                let multiscale = parent.low_level_multiscale();
+                parent.set_low_level_parts(params, multiscale);
+                Ok(result)
             }),
         }
     }
@@ -345,7 +349,8 @@ impl PyCoarseToFineParams {
             CoarseToFineParamsSource::Owned(params) => Ok(f(params)),
             CoarseToFineParamsSource::ChessConfig(parent) => Python::attach(|py| {
                 let parent = parent.bind(py).borrow();
-                Ok(f(&parent.inner.multiscale))
+                let params = parent.low_level_multiscale();
+                Ok(f(&params))
             }),
         }
     }
@@ -355,7 +360,11 @@ impl PyCoarseToFineParams {
             CoarseToFineParamsSource::Owned(params) => Ok(f(params)),
             CoarseToFineParamsSource::ChessConfig(parent) => Python::attach(|py| {
                 let mut parent = parent.bind(py).borrow_mut();
-                Ok(f(&mut parent.inner.multiscale))
+                let mut multiscale = parent.low_level_multiscale();
+                let result = f(&mut multiscale);
+                let params = parent.low_level_params();
+                parent.set_low_level_parts(params, multiscale);
+                Ok(result)
             }),
         }
     }
@@ -376,6 +385,20 @@ struct PyChessConfig {
     inner: ChessConfig,
 }
 
+impl PyChessConfig {
+    fn low_level_params(&self) -> ChessParams {
+        self.inner.to_chess_params()
+    }
+
+    fn low_level_multiscale(&self) -> CoarseToFineParams {
+        self.inner.to_coarse_to_fine_params()
+    }
+
+    fn set_low_level_parts(&mut self, params: ChessParams, multiscale: CoarseToFineParams) {
+        self.inner = ChessConfig::from_parts(&params, &multiscale);
+    }
+}
+
 #[pymethods]
 impl PyChessConfig {
     #[new]
@@ -385,13 +408,16 @@ impl PyChessConfig {
         multiscale: Option<&Bound<'_, PyAny>>,
     ) -> PyResult<Self> {
         let mut cfg = detect::default_chess_config();
+        let mut low_level_params = cfg.to_chess_params();
+        let mut low_level_multiscale = cfg.to_coarse_to_fine_params();
         if let Some(params) = params {
-            cfg.params = chess_params_from_obj(params, "params", cfg.params.clone())?;
+            low_level_params = chess_params_from_obj(params, "params", low_level_params)?;
         }
         if let Some(multiscale) = multiscale {
-            cfg.multiscale =
-                coarse_to_fine_params_from_obj(multiscale, "multiscale", cfg.multiscale.clone())?;
+            low_level_multiscale =
+                coarse_to_fine_params_from_obj(multiscale, "multiscale", low_level_multiscale)?;
         }
+        cfg = ChessConfig::from_parts(&low_level_params, &low_level_multiscale);
         Ok(Self { inner: cfg })
     }
 
@@ -407,11 +433,13 @@ impl PyChessConfig {
 
     #[setter]
     fn set_params(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        let mut params = self.low_level_params();
         let Some(value) = value else {
-            self.inner.params = ChessParams::default();
+            self.set_low_level_parts(ChessParams::default(), self.low_level_multiscale());
             return Ok(());
         };
-        self.inner.params = chess_params_from_obj(value, "params", self.inner.params.clone())?;
+        params = chess_params_from_obj(value, "params", params)?;
+        self.set_low_level_parts(params, self.low_level_multiscale());
         Ok(())
     }
 
@@ -427,12 +455,13 @@ impl PyChessConfig {
 
     #[setter]
     fn set_multiscale(&mut self, value: Option<&Bound<'_, PyAny>>) -> PyResult<()> {
+        let mut multiscale = self.low_level_multiscale();
         let Some(value) = value else {
-            self.inner.multiscale = CoarseToFineParams::default();
+            self.set_low_level_parts(self.low_level_params(), CoarseToFineParams::default());
             return Ok(());
         };
-        self.inner.multiscale =
-            coarse_to_fine_params_from_obj(value, "multiscale", self.inner.multiscale.clone())?;
+        multiscale = coarse_to_fine_params_from_obj(value, "multiscale", multiscale)?;
+        self.set_low_level_parts(self.low_level_params(), multiscale);
         Ok(())
     }
 
@@ -2114,12 +2143,15 @@ struct ChessConfigOverrides {
 
 impl ChessConfigOverrides {
     fn apply(self, cfg: &mut ChessConfig) {
+        let mut low_level_params = cfg.to_chess_params();
+        let mut low_level_multiscale = cfg.to_coarse_to_fine_params();
         if let Some(params) = self.params {
-            params.apply(&mut cfg.params);
+            params.apply(&mut low_level_params);
         }
         if let Some(multiscale) = self.multiscale {
-            multiscale.apply(&mut cfg.multiscale);
+            multiscale.apply(&mut low_level_multiscale);
         }
+        *cfg = ChessConfig::from_parts(&low_level_params, &low_level_multiscale);
     }
 }
 
@@ -3070,11 +3102,13 @@ fn coarse_to_fine_to_json(params: &CoarseToFineParams) -> Value {
 }
 
 fn chess_config_to_json(cfg: &ChessConfig) -> Value {
+    let params = cfg.to_chess_params();
+    let multiscale = cfg.to_coarse_to_fine_params();
     let mut map = Map::new();
-    map.insert("params".to_string(), chess_params_to_json(&cfg.params));
+    map.insert("params".to_string(), chess_params_to_json(&params));
     map.insert(
         "multiscale".to_string(),
-        coarse_to_fine_to_json(&cfg.multiscale),
+        coarse_to_fine_to_json(&multiscale),
     );
     Value::Object(map)
 }
