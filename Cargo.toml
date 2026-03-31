@@ -10,6 +10,20 @@ members = [
     "crates/calib-targets-charuco",
     "crates/calib-targets-aruco",
     "crates/calib-targets-marker",
+    "crates/calib-targets-wasm",
+    "crates/projective-grid",
+]
+default-members = [
+    "crates/calib-targets-cli",
+    "crates/calib-targets-py",
+    "crates/calib-targets-print",
+    "crates/calib-targets-ffi",
+    "crates/calib-targets",
+    "crates/calib-targets-core",
+    "crates/calib-targets-chessboard",
+    "crates/calib-targets-charuco",
+    "crates/calib-targets-aruco",
+    "crates/calib-targets-marker",
     "crates/projective-grid",
 ]
 
@@ -56,4 +70,7 @@ thiserror = "2"
 tracing = "0.1"
 tracing-log = "0.2"
 tracing-subscriber = "0.3"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+serde-wasm-bindgen = "0.6"
 zip = { version = "8", default-features = false }

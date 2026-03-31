@@ -7,3 +7,9 @@ synthetic
 stereo
 *.so
 testdata/charuco_detect_config_test.json
+
+# WASM build artifacts
+crates/calib-targets-wasm/pkg/
+demo/pkg/
+demo/node_modules/
+demo/dist/

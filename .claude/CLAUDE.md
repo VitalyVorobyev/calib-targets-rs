@@ -35,11 +35,23 @@ cargo run --example chessboard -- testdata/chessboard_config.json
 cargo run --example charuco_detect -- testdata/charuco_detect_config.json
 ```
 
-Python bindings (built with `maturin`, crate is `crates/calib-targets-py`):
+Python bindings (built with `maturin`, managed with `uv`, crate is `crates/calib-targets-py`):
 ```bash
-pip install maturin
-maturin develop  # from repo root or crates/calib-targets-py
-python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
+# Use the existing .venv in the project root — do not create new environments
+uv run maturin develop --release
+uv run python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
+
+# Run Python tests
+uv run --directory crates/calib-targets-py pytest python_tests/ -v
+```
+
+WASM bindings (built with `wasm-pack`, demo at `demo/`):
+```bash
+# Build WASM package into demo/pkg/
+scripts/build-wasm.sh
+
+# Run demo dev server
+cd demo && npm install && npm run dev
 ```
 
 ## Architecture
@@ -56,6 +68,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-marker` | Checkerboard + 3-circle marker board layouts and detection |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
+| `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (not published to crates.io) |
 
 **Dependency rules:** `projective-grid` is standalone (no internal deps). `core` depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`. No cyclic deps.
 
@@ -83,4 +96,4 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 
 **New warnings:** fix them; do not suppress.
 
-**MSRV:** workspace sets `rust-version = "1.70"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
+**MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.

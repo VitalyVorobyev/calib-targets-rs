@@ -52,6 +52,48 @@ jobs:
       - name: test (all crates, default features)
         run: cargo test --workspace --all-targets
 
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          lfs: true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package
+        run: wasm-pack build crates/calib-targets-wasm --target web --release --out-dir ../../demo/pkg --out-name calib_targets_wasm
+
+      - name: Verify WASM output
+        run: |
+          test -f demo/pkg/calib_targets_wasm.js
+          test -f demo/pkg/calib_targets_wasm_bg.wasm
+          test -f demo/pkg/calib_targets_wasm.d.ts
+          ls -lh demo/pkg/calib_targets_wasm_bg.wasm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build demo app
+        working-directory: demo
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vite build
+
   python-bindings:
     runs-on: ubuntu-latest
 

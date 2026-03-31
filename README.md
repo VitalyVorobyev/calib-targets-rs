@@ -195,8 +195,8 @@ Today the published Rust crates are `calib-targets`, `calib-targets-core`,
 printable APIs are available both through the dedicated `calib-targets-print`
 crate and through the published `calib-targets` facade as
 `calib_targets::printable`. Repo-local companion crates such as
-`calib-targets-cli`, `calib-targets-py`, and `calib-targets-ffi` are not
-published on crates.io.
+`calib-targets-cli`, `calib-targets-py`, `calib-targets-wasm`, and
+`calib-targets-ffi` are not published on crates.io.
 
 ## Examples
 
@@ -282,6 +282,34 @@ Config inputs:
 - `detect_charuco` requires `params` with `params.board`.
 - All config/result models provide `to_dict()` and `from_dict(...)` for
   compatibility with JSON/dict pipelines.
+
+## WebAssembly
+
+The `calib-targets-wasm` crate provides browser-ready WebAssembly bindings for all detection pipelines (~436 KB raw, ~195 KB gzipped).
+
+```typescript
+import init, { detect_chessboard, rgba_to_gray, default_chess_config, default_chessboard_params } from "calib-targets-wasm";
+
+await init();
+
+// Convert canvas RGBA to grayscale
+const gray = rgba_to_gray(rgbaPixels, width, height);
+
+// Detect chessboard
+const result = detect_chessboard(width, height, gray, default_chess_config(), default_chessboard_params());
+if (result) {
+  console.log(`${result.detection.corners.length} corners detected`);
+}
+```
+
+A React/TypeScript demo app with interactive parameter tuning is included at `demo/`:
+
+```bash
+scripts/build-wasm.sh
+cd demo && npm install && npm run dev
+```
+
+See `crates/calib-targets-wasm/README.md` for full API documentation.
 
 ## Performance and accuracy
 
