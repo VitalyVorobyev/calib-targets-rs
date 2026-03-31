@@ -45,6 +45,7 @@ tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "en
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tempfile.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

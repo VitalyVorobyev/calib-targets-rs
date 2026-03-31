@@ -7,25 +7,29 @@ This chapter answers the question: *"My detection fails or gives poor results â€
 Before tuning anything, confirm you are starting from the library defaults:
 
 ```rust,no_run
-use calib_targets::detect::{default_chess_config, detect_chessboard};
+use calib_targets::detect::{default_chess_config, detect_chessboard, ChessConfig};
 use calib_targets::ChessboardParams;
 
-let chess_cfg = default_chess_config();       // ChESS corner detector config
+let chess_cfg: ChessConfig = default_chess_config(); // ChESS corner detector config
 let params    = ChessboardParams::default();  // chessboard assembly params
 ```
 
 For ChArUco:
 
 ```rust,no_run
-use calib_targets_charuco::CharucoDetectorParams;
+use calib_targets::charuco::CharucoDetectorParams;
 
 let params = CharucoDetectorParams::for_board(&board);
 ```
 
-`default_chess_config()` sets `px_per_square = 60` pixels. This value is chosen so that
-each bit cell in a 4Ã—4 marker is ~15 px wide, keeping Otsu binarization reliable above
-the empirical 4 px / bit-cell minimum. If your image has a very different scale, adjust
-`px_per_square` proportionally before touching any other parameter.
+`default_chess_config()` returns the workspace-owned ChESS config used by the
+facade helpers. Its default tuning is single-scale detection with
+`threshold_rel = 0.2` and `nms_radius = 2`.
+
+For ChArUco, board sampling scale is controlled separately by
+`CharucoDetectorParams::for_board`, which starts with `px_per_square = 60`.
+If marker decoding is the problem and the board appears at a very different
+pixel scale, adjust `px_per_square` there before touching other parameters.
 
 ---
 

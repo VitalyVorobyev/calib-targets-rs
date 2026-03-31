@@ -3,6 +3,7 @@ use super::corner_mapping::map_charuco_corners;
 use super::corner_validation::{validate_and_fix_corners, CornerValidationConfig};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
+use super::params::to_chess_params;
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
@@ -114,12 +115,13 @@ impl CharucoDetector {
         };
 
         let mut corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
+        let corner_redetect_params = to_chess_params(&self.params.corner_redetect_params);
         smooth_grid_corners(
             &mut corner_map,
             image,
             self.params.px_per_square,
             self.params.grid_smoothness_threshold_rel,
-            &self.params.corner_redetect_params,
+            &corner_redetect_params,
         );
         let cells = build_marker_cells(&corner_map);
         debug!(
@@ -185,7 +187,7 @@ impl CharucoDetector {
             &CornerValidationConfig {
                 px_per_square: self.params.px_per_square,
                 threshold_rel: self.params.corner_validation_threshold_rel,
-                chess_params: &self.params.corner_redetect_params,
+                chess_params: &corner_redetect_params,
             },
         );
         debug!(

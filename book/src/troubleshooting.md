@@ -45,8 +45,9 @@ a connected grid from the detected corners.
 1. **How many corners were detected?** Look for `input_corners=N` in the log.
    - If `N < min_corners`: lower `min_corners` or lower `min_corner_strength`.
    - If `N` is zero or very small: the ChESS detector found nothing. Check image
-     resolution — `px_per_square` in `default_chess_config()` should be close to the
-     actual pixel size of one board square.
+     resolution and corner contrast. If needed, lower
+     `detect::ChessConfig.params.threshold_rel`, reduce
+     `detect::ChessConfig.params.min_cluster_size`, or capture a higher-resolution image.
 
 2. **Corners found but grid assembly fails?**
    - Check `max_spacing_pix`: if the physical board squares are larger than this value
@@ -87,7 +88,7 @@ marker was decoded inside any cell.
 
 5. **Wrong scale?** If `px_per_square` is far from the actual pixel size, the projective
    warp used for cell sampling will produce a very small or very large patch. Adjust
-   `px_per_square` in `ChessConfig`.
+   `CharucoDetectorParams.px_per_square`.
 
 ---
 
@@ -123,7 +124,7 @@ specification in a geometrically consistent way.
 | Uneven / gradient lighting | `multi_threshold` (already default) |
 | Strong perspective / wide-angle | Raise `max_spacing_pix`, raise `orientation_tolerance_deg` |
 | Partial occlusion | Lower `completeness_threshold`, lower `min_marker_inliers` |
-| Very small board in frame | Raise `px_per_square` to match actual pixel size |
+| Very small ChArUco board in frame | Raise `CharucoDetectorParams.px_per_square` to match actual square size |
 | Very large board / high-res image | Raise `max_spacing_pix` to ≥ `image_width / cols / 2` |
 | Multiple boards in frame | Set `expected_rows` / `expected_cols` explicitly |
 | Specular reflections on board | Pre-process with local contrast normalization (CLAHE) |

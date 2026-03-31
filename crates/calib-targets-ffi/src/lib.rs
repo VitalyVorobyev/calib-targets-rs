@@ -30,13 +30,13 @@ use calib_targets::core::{
     GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection,
 };
 use calib_targets::detect;
+use calib_targets::detect::{
+    CenterOfMassConfig, ChessConfig, ChessCornerParams as ChessParams, CoarseToFineParams,
+    ForstnerConfig, PyramidParams, RefinerConfig, SaddlePointConfig,
+};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
     MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
-};
-use chess_corners::{
-    CenterOfMassConfig, ChessConfig, ChessParams, CoarseToFineParams, ForstnerConfig,
-    PyramidParams, RefinerKind, SaddlePointConfig,
 };
 use std::any::Any;
 use std::cell::RefCell;
@@ -939,7 +939,7 @@ fn convert_dictionary_id(value: ct_dictionary_id_t, field: &str) -> FfiResult<Di
 fn convert_refiner_kind(
     value: ct_refiner_kind_t,
     cfg: &ct_refiner_config_t,
-) -> FfiResult<RefinerKind> {
+) -> FfiResult<RefinerConfig> {
     match value {
         CT_REFINER_KIND_CENTER_OF_MASS => {
             if cfg.center_of_mass.radius < 0 {
@@ -947,7 +947,7 @@ fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::CenterOfMass(CenterOfMassConfig {
+            Ok(RefinerConfig::CenterOfMass(CenterOfMassConfig {
                 radius: cfg.center_of_mass.radius,
             }))
         }
@@ -957,7 +957,7 @@ fn convert_refiner_kind(
                     "refiner.forstner.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::Forstner(ForstnerConfig {
+            Ok(RefinerConfig::Forstner(ForstnerConfig {
                 radius: cfg.forstner.radius,
                 min_trace: require_nonnegative(
                     cfg.forstner.min_trace,
@@ -980,7 +980,7 @@ fn convert_refiner_kind(
                     "refiner.saddle_point.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::SaddlePoint(SaddlePointConfig {
+            Ok(RefinerConfig::SaddlePoint(SaddlePointConfig {
                 radius: cfg.saddle_point.radius,
                 det_margin: require_nonnegative(
                     cfg.saddle_point.det_margin,
@@ -1003,23 +1003,23 @@ fn convert_refiner_kind(
 }
 
 fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    let mut opars = ChessParams::default();
-    opars.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
-    opars.descriptor_use_radius10 = params
-        .descriptor_use_radius10
-        .to_option("chess.params.descriptor_use_radius10")?;
-    opars.threshold_rel = require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?;
-    opars.threshold_abs = match params
-        .threshold_abs
-        .to_option("chess.params.threshold_abs")?
-    {
-        Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
-        None => None,
-    };
-    opars.nms_radius = params.nms_radius;
-    opars.min_cluster_size = params.min_cluster_size;
-    opars.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
-    Ok(opars)
+    Ok(ChessParams {
+        use_radius10: flag_to_bool(params.use_radius10, "chess.params.use_radius10")?,
+        descriptor_use_radius10: params
+            .descriptor_use_radius10
+            .to_option("chess.params.descriptor_use_radius10")?,
+        threshold_rel: require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?,
+        threshold_abs: match params
+            .threshold_abs
+            .to_option("chess.params.threshold_abs")?
+        {
+            Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
+            None => None,
+        },
+        nms_radius: params.nms_radius,
+        min_cluster_size: params.min_cluster_size,
+        refiner: convert_refiner_kind(params.refiner.kind, &params.refiner)?,
+    })
 }
 
 fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidParams> {
@@ -1033,27 +1033,28 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
             "chess.multiscale.pyramid.min_size must be > 0",
         ));
     }
-    let mut opars = PyramidParams::default();
-    opars.num_levels = u8::try_from(params.num_levels).map_err(|_| {
-        FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
-    })?;
-    opars.min_size = params.min_size;
-    Ok(opars)
+    Ok(PyramidParams {
+        num_levels: u8::try_from(params.num_levels).map_err(|_| {
+            FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
+        })?,
+        min_size: params.min_size,
+    })
 }
 
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
-    let mut ms_pars = CoarseToFineParams::default();
-    ms_pars.pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
-    ms_pars.refinement_radius = config.multiscale.refinement_radius;
-    ms_pars.merge_radius = require_nonnegative(
-        config.multiscale.merge_radius,
-        "chess.multiscale.merge_radius",
-    )?;
+    let multiscale = CoarseToFineParams {
+        pyramid: convert_pyramid_params(&config.multiscale.pyramid)?,
+        refinement_radius: config.multiscale.refinement_radius,
+        merge_radius: require_nonnegative(
+            config.multiscale.merge_radius,
+            "chess.multiscale.merge_radius",
+        )?,
+    };
 
-    let mut opars = ChessConfig::default();
-    opars.params = convert_chess_params(&config.params)?;
-    opars.multiscale = ms_pars;
-    Ok(opars)
+    Ok(ChessConfig {
+        params: convert_chess_params(&config.params)?,
+        multiscale,
+    })
 }
 
 fn convert_orientation_clustering_params(

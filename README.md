@@ -76,19 +76,33 @@ cargo add calib-targets image
 ```
 
 ```rust,no_run
-use calib_targets::detect;
+use calib_targets::detect::{self, ChessConfig};
 use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let chess_cfg = detect::default_chess_config();
+    let chess_cfg: ChessConfig = detect::default_chess_config();
     let params = ChessboardParams::default();
 
     let result = detect::detect_chessboard(&img, &chess_cfg, params);
     println!("detected: {}", result.is_some());
     Ok(())
 }
+```
+
+All `calib_targets::detect` config types are now workspace-owned, so advanced tuning stays inside the `calib-targets` dependency:
+
+```rust
+use calib_targets::detect::{ChessConfig, ChessCornerParams};
+
+let cfg = ChessConfig {
+    params: ChessCornerParams {
+        threshold_rel: 0.15,
+        ..ChessCornerParams::default()
+    },
+    ..ChessConfig::default()
+};
 ```
 
 This code (see [example](./crates/calib-targets/examples/detect_chessboard.rs)) was used to process the 1024x576 image shown below. End-to-end detection took 3.1 ms: 2.9 ms for ChESS corner detection (single scale, `rayon` feature on) and 132 µs for chessboard recognition. (Performance numbers here and later are from a MacBook Pro M4.)

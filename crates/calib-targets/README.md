@@ -17,13 +17,13 @@ cargo add calib-targets image
 ```
 
 ```rust,no_run
-use calib_targets::detect;
+use calib_targets::detect::{self, ChessConfig};
 use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let chess_cfg = detect::default_chess_config();
+    let chess_cfg: ChessConfig = detect::default_chess_config();
     let params = ChessboardParams::default();
 
     let result = detect::detect_chessboard(&img, &chess_cfg, params);
@@ -31,6 +31,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+When you need to tune the ChESS stage, use the workspace-owned config types from
+`calib_targets::detect` instead of depending on `chess-corners` directly.
 
 ## What you get back
 

@@ -198,8 +198,8 @@ image = "0.25"
 ```
 
 ```rust,no_run
-use calib_targets::detect;
-use calib_targets_charuco::{CharucoBoardSpec, CharucoDetectorParams, MarkerLayout};
+use calib_targets::charuco::{CharucoBoardSpec, CharucoDetectorParams, MarkerLayout};
+use calib_targets::detect::{self, ChessConfig};
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -216,7 +216,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let params = CharucoDetectorParams::for_board(&board);
-    let chess_cfg = detect::default_chess_config();
+    let chess_cfg: ChessConfig = detect::default_chess_config();
 
     let result = detect::detect_charuco(&img, &chess_cfg, params)?;
     println!(

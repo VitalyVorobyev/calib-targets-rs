@@ -31,6 +31,7 @@ log.workspace = true
 [dev-dependencies]
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
+tempfile.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true

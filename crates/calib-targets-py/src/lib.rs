@@ -1,5 +1,7 @@
+use ::calib_targets::detect::{
+    ChessConfig, ChessCornerParams as ChessParams, CoarseToFineParams, PyramidParams,
+};
 use ::calib_targets::{aruco, charuco, chessboard, core, detect, marker, printable};
-use chess_corners::{ChessConfig, ChessParams, CoarseToFineParams, PyramidParams};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};

@@ -35,8 +35,8 @@ projective-grid = { version = "0.4.2", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.4.2", path = "crates/calib-targets-print" }
 assert_cmd = "2"
 cbindgen = "0.29"
-chess-corners = "0.4"
-chess-corners-core = "0.4"
+chess-corners = "0.5"
+chess-corners-core = "0.5"
 clap = "4.5"
 flate2 = "1"
 image = { version = "0.25", default-features = true }
