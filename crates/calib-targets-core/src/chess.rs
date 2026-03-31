@@ -174,6 +174,7 @@ impl RefinerConfig {
 }
 
 /// Tunable parameters for ChESS response computation and local corner detection.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChessCornerParams {
@@ -201,6 +202,7 @@ impl Default for ChessCornerParams {
 }
 
 /// Parameters for image pyramid construction.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PyramidParams {
@@ -218,6 +220,7 @@ impl Default for PyramidParams {
 }
 
 /// Coarse-to-fine multiscale ChESS detector parameters.
+#[doc(hidden)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CoarseToFineParams {
@@ -290,6 +293,7 @@ impl ChessConfig {
         }
     }
 
+    #[doc(hidden)]
     pub fn to_chess_params(&self) -> ChessCornerParams {
         let mut params = ChessCornerParams {
             use_radius10: matches!(self.detector_mode, DetectorMode::Broad),
@@ -315,6 +319,7 @@ impl ChessConfig {
         params
     }
 
+    #[doc(hidden)]
     pub fn to_coarse_to_fine_params(&self) -> CoarseToFineParams {
         CoarseToFineParams {
             pyramid: PyramidParams {
@@ -326,6 +331,7 @@ impl ChessConfig {
         }
     }
 
+    #[doc(hidden)]
     pub fn from_parts(params: &ChessCornerParams, multiscale: &CoarseToFineParams) -> Self {
         Self {
             detector_mode: if params.use_radius10 {

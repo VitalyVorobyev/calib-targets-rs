@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -21,26 +20,9 @@ from .results import (
 )
 
 
-def _type_error(name: str, expected: str) -> TypeError:
-    return TypeError(
-        f"{name} must be {expected}. Mapping inputs were removed; use typed dataclasses."
-    )
-
-
-def _ensure_typed_or_none(name: str, value: Any, typ: type[Any]) -> None:
-    if value is None:
-        return
-    if isinstance(value, Mapping):
-        raise _type_error(name, f"{typ.__name__} | None")
+def _check_type(name: str, value: Any, typ: type[Any]) -> None:
     if not isinstance(value, typ):
-        raise _type_error(name, f"{typ.__name__} | None")
-
-
-def _ensure_typed(name: str, value: Any, typ: type[Any]) -> None:
-    if isinstance(value, Mapping):
-        raise _type_error(name, typ.__name__)
-    if not isinstance(value, typ):
-        raise _type_error(name, typ.__name__)
+        raise TypeError(f"{name} must be {typ.__name__}, got {type(value).__name__}")
 
 
 def detect_chessboard(
@@ -49,8 +31,10 @@ def detect_chessboard(
     chess_cfg: ChessConfig | None = None,
     params: ChessboardParams | None = None,
 ) -> ChessboardDetectionResult | None:
-    _ensure_typed_or_none("chess_cfg", chess_cfg, ChessConfig)
-    _ensure_typed_or_none("params", params, ChessboardParams)
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    if params is not None:
+        _check_type("params", params, ChessboardParams)
 
     raw = _core.detect_chessboard(
         image,
@@ -68,8 +52,9 @@ def detect_charuco(
     chess_cfg: ChessConfig | None = None,
     params: CharucoDetectorParams,
 ) -> CharucoDetectionResult:
-    _ensure_typed_or_none("chess_cfg", chess_cfg, ChessConfig)
-    _ensure_typed("params", params, CharucoDetectorParams)
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    _check_type("params", params, CharucoDetectorParams)
 
     raw = _core.detect_charuco(
         image,
@@ -85,8 +70,10 @@ def detect_marker_board(
     chess_cfg: ChessConfig | None = None,
     params: MarkerBoardParams | None = None,
 ) -> MarkerBoardDetectionResult | None:
-    _ensure_typed_or_none("chess_cfg", chess_cfg, ChessConfig)
-    _ensure_typed_or_none("params", params, MarkerBoardParams)
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    if params is not None:
+        _check_type("params", params, MarkerBoardParams)
 
     raw = _core.detect_marker_board(
         image,

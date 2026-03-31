@@ -5,8 +5,8 @@ use crate::{
     CharucoDetector, CharucoDetectorParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
-use calib_targets_core::{Corner, GridAlignment, TargetDetection};
+use calib_targets_chessboard::ChessboardParams;
+use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -39,6 +39,8 @@ pub struct CharucoDetectConfig {
     #[serde(default)]
     pub output_path: Option<String>,
     #[serde(default)]
+    pub chess: ChessConfig,
+    #[serde(default)]
     pub rectified_path: Option<String>,
     #[serde(default)]
     pub mesh_rectified_path: Option<String>,
@@ -48,8 +50,6 @@ pub struct CharucoDetectConfig {
     pub min_marker_inliers: Option<usize>,
     #[serde(default)]
     pub chessboard: Option<ChessboardParams>,
-    #[serde(default)]
-    pub graph: Option<GridGraphParams>,
     #[serde(default)]
     pub aruco: Option<ArucoScanConfig>,
 }
@@ -90,9 +90,6 @@ impl CharucoDetectConfig {
         }
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;
-        }
-        if let Some(graph) = self.graph.clone() {
-            params.graph = graph;
         }
         if let Some(aruco) = self.aruco.as_ref() {
             if let Some(max_hamming) = aruco.max_hamming {

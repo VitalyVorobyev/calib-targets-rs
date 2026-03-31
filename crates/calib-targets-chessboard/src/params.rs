@@ -41,6 +41,10 @@ pub struct ChessboardParams {
 
     pub use_orientation_clustering: bool,
     pub orientation_clustering_params: OrientationClusteringParams,
+
+    /// Grid graph construction parameters.
+    #[serde(default)]
+    pub graph: GridGraphParams,
 }
 
 impl Default for ChessboardParams {
@@ -53,6 +57,7 @@ impl Default for ChessboardParams {
             completeness_threshold: 0.7,
             use_orientation_clustering: true,
             orientation_clustering_params: OrientationClusteringParams::default(),
+            graph: GridGraphParams::default(),
         }
     }
 }

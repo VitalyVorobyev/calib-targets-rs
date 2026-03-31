@@ -46,9 +46,9 @@ def test_detect_marker_board_typed_layout() -> None:
     assert result is None or isinstance(result, calib_targets.MarkerBoardDetectionResult)
 
 
-def test_legacy_mapping_inputs_are_rejected() -> None:
+def test_dict_inputs_are_rejected() -> None:
     with pytest.raises(TypeError):
-        calib_targets.detect_chessboard(_image(), params={"min_corners": 16})
+        calib_targets.detect_chessboard(_image(), params={"min_corners": 16})  # type: ignore[arg-type]
 
     board = calib_targets.CharucoBoardSpec(
         rows=3,
@@ -60,20 +60,28 @@ def test_legacy_mapping_inputs_are_rejected() -> None:
     )
     params = calib_targets.CharucoDetectorParams(board=board)
     with pytest.raises(TypeError):
-        calib_targets.detect_charuco(_image(), chess_cfg={"params": {}}, params=params)
+        calib_targets.detect_charuco(_image(), chess_cfg={"threshold_value": 0.1}, params=params)  # type: ignore[arg-type]
 
 
-def test_config_roundtrip() -> None:
+def test_chess_config_roundtrip() -> None:
     cfg = calib_targets.ChessConfig(
-        params=calib_targets.ChessCornerParams(threshold_rel=0.2),
-        multiscale=calib_targets.CoarseToFineParams(
-            pyramid=calib_targets.PyramidParams(num_levels=2, min_size=64),
-            refinement_radius=3,
-            merge_radius=3.0,
-        ),
+        threshold_value=0.3,
+        pyramid_levels=2,
+        pyramid_min_size=64,
+        refiner=calib_targets.RefinerConfig(kind="forstner"),
     )
     serialized = cfg.to_dict()
     restored = calib_targets.ChessConfig.from_dict(serialized)
+    assert restored.to_dict() == serialized
+
+
+def test_chessboard_params_roundtrip() -> None:
+    params = calib_targets.ChessboardParams(
+        min_corners=20,
+        graph=calib_targets.GridGraphParams(min_spacing_pix=15.0),
+    )
+    serialized = params.to_dict()
+    restored = calib_targets.ChessboardParams.from_dict(serialized)
     assert restored.to_dict() == serialized
 
 

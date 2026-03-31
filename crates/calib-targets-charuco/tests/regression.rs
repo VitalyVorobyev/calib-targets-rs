@@ -172,8 +172,8 @@ fn detects_charuco_on_large_png() {
     let mut params = CharucoDetectorParams::for_board(&board);
     params.px_per_square = 60.0;
     params.chessboard.min_corners = 50;
-    params.graph.min_spacing_pix = 40.0;
-    params.graph.max_spacing_pix = 160.0;
+    params.chessboard.graph.min_spacing_pix = 40.0;
+    params.chessboard.graph.max_spacing_pix = 160.0;
     params.min_marker_inliers = 64;
 
     let detector = CharucoDetector::new(params).expect("detector");
@@ -268,8 +268,8 @@ fn detects_charuco_on_small_png() {
     params.px_per_square = 60.0;
     params.chessboard.min_corners = 10;
     params.chessboard.completeness_threshold = 0.02;
-    params.graph.min_spacing_pix = 5.0;
-    params.graph.max_spacing_pix = 60.0;
+    params.chessboard.graph.min_spacing_pix = 5.0;
+    params.chessboard.graph.max_spacing_pix = 60.0;
     params.min_marker_inliers = 12;
 
     let detector = CharucoDetector::new(params).expect("detector");
@@ -305,15 +305,15 @@ fn detects_plain_chessboard_on_mid_png() {
         expected_rows: Some(7),
         expected_cols: Some(11),
         completeness_threshold: 0.9,
+        graph: GridGraphParams {
+            min_spacing_pix: 10.0,
+            max_spacing_pix: 120.0,
+            k_neighbors: 8,
+            orientation_tolerance_deg: 22.5,
+        },
         ..ChessboardParams::default()
     };
-    let graph = GridGraphParams {
-        min_spacing_pix: 10.0,
-        max_spacing_pix: 120.0,
-        k_neighbors: 8,
-        orientation_tolerance_deg: 22.5,
-    };
-    let detector = ChessboardDetector::new(chessboard).with_grid_search(graph);
+    let detector = ChessboardDetector::new(chessboard);
     let res = detector
         .detect_from_corners(&corners)
         .expect("chessboard detect");

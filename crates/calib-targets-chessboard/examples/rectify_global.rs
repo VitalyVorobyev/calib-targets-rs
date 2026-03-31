@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf, str::FromStr};
 
 use calib_targets_chessboard::{
-    rectify_from_chessboard_result, ChessboardDetector, ChessboardParams, GridGraphParams,
+    rectify_from_chessboard_result, ChessboardDetector, ChessboardParams,
 };
 use calib_targets_core::{
     init_with_level, Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind,
@@ -24,7 +24,6 @@ struct ExampleConfig {
     #[serde(default = "default_margin_squares")]
     margin_squares: f32,
     chessboard: ChessboardParams,
-    graph: GridGraphParams,
 }
 
 fn default_px_per_square() -> f32 {
@@ -105,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     // Configure the chessboard detector.
-    let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
+    let detector = ChessboardDetector::new(cfg.chessboard);
     let detection = detector.detect_from_corners(&target_corners);
 
     // Prepare GrayImageView for rectification.

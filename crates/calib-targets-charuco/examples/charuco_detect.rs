@@ -160,10 +160,10 @@ fn log_detector_params(params: &CharucoDetectorParams) {
     );
     debug!(
         "Grid graph params: min_spacing_pix={:.1}, max_spacing_pix={:.1}, k_neighbors={}, orientation_tolerance_deg={:.1}",
-        params.graph.min_spacing_pix,
-        params.graph.max_spacing_pix,
-        params.graph.k_neighbors,
-        params.graph.orientation_tolerance_deg
+        params.chessboard.graph.min_spacing_pix,
+        params.chessboard.graph.max_spacing_pix,
+        params.chessboard.graph.k_neighbors,
+        params.chessboard.graph.orientation_tolerance_deg
     );
     debug!(
         "Marker scan params: marker_size_rel={:.3}, inset_frac={:.3}, border_bits={}, min_border_score={:.3}, dedup_by_id={}",
@@ -201,7 +201,8 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
 
             let distance = (other.position - corner.position).norm();
             best_distance = best_distance.min(distance);
-            if distance >= params.graph.min_spacing_pix && distance <= params.graph.max_spacing_pix
+            if distance >= params.chessboard.graph.min_spacing_pix
+                && distance <= params.chessboard.graph.max_spacing_pix
             {
                 has_spacing_match = true;
             }
@@ -237,8 +238,8 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
         percentile(&nearest_neighbor, 0.5),
         percentile(&nearest_neighbor, 0.9),
         percentile(&nearest_neighbor, 1.0),
-        params.graph.min_spacing_pix,
-        params.graph.max_spacing_pix,
+        params.chessboard.graph.min_spacing_pix,
+        params.chessboard.graph.max_spacing_pix,
         corners_with_spacing_match,
         corners.len()
     );

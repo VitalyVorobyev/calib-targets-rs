@@ -36,3 +36,12 @@ def test_module_exports() -> None:
     assert callable(calib_targets.detect_marker_board)
     assert isinstance(calib_targets.DICTIONARY_NAMES, tuple)
     assert "DICT_4X4_50" in calib_targets.DICTIONARY_NAMES
+
+
+def test_new_config_types_exported() -> None:
+    assert hasattr(calib_targets, "ChessConfig")
+    assert hasattr(calib_targets, "RefinerConfig")
+    assert hasattr(calib_targets, "CenterOfMassConfig")
+    assert hasattr(calib_targets, "ForstnerConfig")
+    assert hasattr(calib_targets, "SaddlePointConfig")
+    assert hasattr(calib_targets, "GridGraphParams")

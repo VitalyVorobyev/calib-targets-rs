@@ -1,3 +1,5 @@
+"""ChArUco detection example with full in-code configuration."""
+
 import sys
 
 import numpy as np
@@ -19,17 +21,9 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     chess_cfg = ct.ChessConfig(
-        params=ct.ChessCornerParams(
-            use_radius10=False,
-            threshold_rel=0.2,
-            nms_radius=2,
-            min_cluster_size=2,
-        ),
-        multiscale=ct.CoarseToFineParams(
-            pyramid=ct.PyramidParams(num_levels=1, min_size=128),
-            refinement_radius=3,
-            merge_radius=3.0,
-        ),
+        threshold_mode="relative",
+        threshold_value=0.2,
+        nms_radius=2,
     )
 
     board = ct.CharucoBoardSpec(
@@ -50,21 +44,12 @@ def main() -> None:
             expected_rows=21,
             expected_cols=21,
             completeness_threshold=0.05,
-            use_orientation_clustering=True,
-            orientation_clustering_params=ct.OrientationClusteringParams(
-                num_bins=90,
-                max_iters=10,
-                peak_min_separation_deg=10.0,
-                outlier_threshold_deg=30.0,
-                min_peak_weight_fraction=0.05,
-                use_weights=True,
+            graph=ct.GridGraphParams(
+                min_spacing_pix=5.0,
+                max_spacing_pix=50.0,
+                k_neighbors=8,
+                orientation_tolerance_deg=22.5,
             ),
-        ),
-        graph=ct.GridGraphParams(
-            min_spacing_pix=5.0,
-            max_spacing_pix=50.0,
-            k_neighbors=8,
-            orientation_tolerance_deg=22.5,
         ),
         scan=ct.ScanDecodeConfig(
             border_bits=1,

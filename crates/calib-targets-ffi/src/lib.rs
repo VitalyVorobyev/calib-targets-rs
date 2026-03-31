@@ -499,6 +499,7 @@ pub struct ct_chessboard_params_t {
     pub completeness_threshold: f32,
     pub use_orientation_clustering: u32,
     pub orientation_clustering_params: ct_orientation_clustering_params_t,
+    pub graph: ct_grid_graph_params_t,
 }
 
 /// Full create-time configuration for the chessboard detector handle.
@@ -507,7 +508,6 @@ pub struct ct_chessboard_params_t {
 pub struct ct_chessboard_detector_config_t {
     pub chess: ct_chess_config_t,
     pub chessboard: ct_chessboard_params_t,
-    pub graph: ct_grid_graph_params_t,
 }
 
 /// Marker scan/decode configuration.
@@ -542,7 +542,6 @@ pub struct ct_charuco_detector_params_t {
     pub px_per_square: f32,
     pub chessboard: ct_chessboard_params_t,
     pub charuco: ct_charuco_board_spec_t,
-    pub graph: ct_grid_graph_params_t,
     pub scan: ct_scan_decode_config_t,
     pub max_hamming: u32,
     pub min_marker_inliers: usize,
@@ -597,7 +596,6 @@ pub struct ct_marker_board_layout_t {
 pub struct ct_marker_board_params_t {
     pub layout: ct_marker_board_layout_t,
     pub chessboard: ct_chessboard_params_t,
-    pub grid_graph: ct_grid_graph_params_t,
     pub circle_score: ct_circle_score_params_t,
     pub match_params: ct_circle_match_params_t,
     pub has_roi_cells: u32,
@@ -1136,6 +1134,7 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         orientation_clustering_params: convert_orientation_clustering_params(
             &params.orientation_clustering_params,
         )?,
+        graph: convert_grid_graph_params(&params.graph)?,
     })
 }
 
@@ -1193,7 +1192,6 @@ fn convert_charuco_detector_params(
         px_per_square: require_positive(params.px_per_square, "charuco.px_per_square")?,
         chessboard: convert_chessboard_params(&params.chessboard)?,
         charuco: convert_charuco_board_spec(&params.charuco)?,
-        graph: convert_grid_graph_params(&params.graph)?,
         scan: convert_scan_decode_config(&params.scan)?,
         max_hamming: u8::try_from(params.max_hamming)
             .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
@@ -1293,7 +1291,6 @@ fn convert_marker_board_params(params: &ct_marker_board_params_t) -> FfiResult<M
     Ok(MarkerBoardParams {
         layout: convert_marker_board_layout(&params.layout)?,
         chessboard: convert_chessboard_params(&params.chessboard)?,
-        grid_graph: convert_grid_graph_params(&params.grid_graph)?,
         circle_score: convert_circle_score_params(&params.circle_score)?,
         match_params: convert_circle_match_params(&params.match_params)?,
         roi_cells: if has_roi_cells {
@@ -1547,8 +1544,7 @@ unsafe fn chessboard_detector_create_impl(
     let config = unsafe { require_ref(config, "config")? };
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?)
-        .with_grid_search(convert_grid_graph_params(&config.graph)?);
+    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?);
     let handle = Box::new(ct_chessboard_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
@@ -2238,12 +2234,12 @@ mod tests {
                 completeness_threshold: 0.9,
                 use_orientation_clustering: CT_TRUE,
                 orientation_clustering_params: default_orientation_clustering(),
-            },
-            graph: ct_grid_graph_params_t {
-                min_spacing_pix: 10.0,
-                max_spacing_pix: 120.0,
-                k_neighbors: 8,
-                orientation_tolerance_deg: 22.5,
+                graph: ct_grid_graph_params_t {
+                    min_spacing_pix: 10.0,
+                    max_spacing_pix: 120.0,
+                    k_neighbors: 8,
+                    orientation_tolerance_deg: 22.5,
+                },
             },
         }
     }
@@ -2261,6 +2257,12 @@ mod tests {
                     completeness_threshold: 0.02,
                     use_orientation_clustering: CT_TRUE,
                     orientation_clustering_params: default_orientation_clustering(),
+                    graph: ct_grid_graph_params_t {
+                        min_spacing_pix: 5.0,
+                        max_spacing_pix: 60.0,
+                        k_neighbors: 8,
+                        orientation_tolerance_deg: 22.5,
+                    },
                 },
                 charuco: ct_charuco_board_spec_t {
                     rows: 22,
@@ -2269,12 +2271,6 @@ mod tests {
                     marker_size_rel: 0.75,
                     dictionary: CT_DICTIONARY_DICT_4X4_250,
                     marker_layout: CT_MARKER_LAYOUT_OPENCV_CHARUCO,
-                },
-                graph: ct_grid_graph_params_t {
-                    min_spacing_pix: 5.0,
-                    max_spacing_pix: 60.0,
-                    k_neighbors: 8,
-                    orientation_tolerance_deg: 22.5,
                 },
                 scan: ct_scan_decode_config_t {
                     border_bits: 1,
@@ -2339,12 +2335,12 @@ mod tests {
                         min_peak_weight_fraction: 0.2,
                         use_weights: CT_TRUE,
                     },
-                },
-                grid_graph: ct_grid_graph_params_t {
-                    min_spacing_pix: 20.0,
-                    max_spacing_pix: 100.0,
-                    k_neighbors: 8,
-                    orientation_tolerance_deg: 22.5,
+                    graph: ct_grid_graph_params_t {
+                        min_spacing_pix: 20.0,
+                        max_spacing_pix: 100.0,
+                        k_neighbors: 8,
+                        orientation_tolerance_deg: 22.5,
+                    },
                 },
                 circle_score: ct_circle_score_params_t {
                     patch_size: 64,

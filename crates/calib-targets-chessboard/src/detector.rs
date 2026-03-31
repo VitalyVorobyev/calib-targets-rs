@@ -1,7 +1,7 @@
 use crate::gridgraph::{
     assign_grid_coordinates, build_chessboard_grid_graph, connected_components,
 };
-use crate::params::{ChessboardParams, GridGraphParams};
+use crate::params::ChessboardParams;
 use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
     OrientationHistogram, TargetDetection, TargetKind,
@@ -18,7 +18,6 @@ use tracing::instrument;
 #[derive(Debug)]
 pub struct ChessboardDetector {
     pub params: ChessboardParams,
-    pub grid_search: GridGraphParams,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,15 +54,7 @@ pub struct GridGraphNeighborDebug {
 
 impl ChessboardDetector {
     pub fn new(params: ChessboardParams) -> Self {
-        Self {
-            grid_search: GridGraphParams::default(),
-            params,
-        }
-    }
-
-    pub fn with_grid_search(mut self, grid_search: GridGraphParams) -> Self {
-        self.grid_search = grid_search;
-        self
+        Self { params }
     }
 
     /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
@@ -159,7 +150,7 @@ impl ChessboardDetector {
             return None;
         }
 
-        let graph = build_chessboard_grid_graph(&strong, &self.grid_search, graph_diagonals);
+        let graph = build_chessboard_grid_graph(&strong, &self.params.graph, graph_diagonals);
 
         let components = connected_components(&graph);
         log_graph_summary(&graph, &components, self.params.min_corners);

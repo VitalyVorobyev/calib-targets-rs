@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
@@ -8,22 +8,25 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoDetectorParams {
     /// Pixels per board square in the canonical sampling space.
+    #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
-    /// Chessboard detection parameters.
+    /// Chessboard detection parameters (includes grid graph settings).
+    #[serde(default)]
     pub chessboard: ChessboardParams,
     /// ChArUco board parameters
     pub charuco: CharucoBoardSpec,
-    /// Grid graph parameters.
-    pub graph: GridGraphParams,
     /// Marker scan parameters.
     ///
     /// `CharucoDetectorParams::for_board` uses a slightly smaller inset
     /// (`inset_frac = 0.06`) to improve real-image robustness. If
     /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
+    #[serde(default)]
     pub scan: ScanDecodeConfig,
     /// Maximum Hamming distance for marker matching.
+    #[serde(default)]
     pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
+    #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
     /// Relative threshold for local grid smoothness pre-filter.
     ///
@@ -44,6 +47,7 @@ pub struct CharucoDetectorParams {
     ///
     /// Set to `f32::INFINITY` to disable validation entirely.
     /// Typical value: `0.08` (8 % of a board square side, ~5 px at 60 px/sq).
+    #[serde(default = "default_corner_validation_threshold_rel")]
     pub corner_validation_threshold_rel: f32,
     /// ChESS detector parameters used for local corner re-detection.
     ///
@@ -58,6 +62,18 @@ pub struct CharucoDetectorParams {
 
 fn default_grid_smoothness_threshold_rel() -> f32 {
     0.05
+}
+
+fn default_corner_validation_threshold_rel() -> f32 {
+    0.08
+}
+
+fn default_px_per_square() -> f32 {
+    60.0
+}
+
+fn default_min_marker_inliers() -> usize {
+    8
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -125,8 +141,6 @@ impl CharucoDetectorParams {
             ..ChessboardParams::default()
         };
 
-        let graph = GridGraphParams::default();
-
         let scan = ScanDecodeConfig {
             marker_size_rel: charuco.marker_size_rel,
             inset_frac: 0.06,
@@ -143,7 +157,6 @@ impl CharucoDetectorParams {
             px_per_square: 60.0,
             chessboard,
             charuco: *charuco,
-            graph,
             scan,
             max_hamming,
             min_marker_inliers: 8,

@@ -8,7 +8,7 @@ use calib_targets_aruco::{
 };
 use calib_targets_chessboard::{
     rectify_mesh_from_grid, ChessboardDetectionResult, ChessboardDetector, ChessboardParams,
-    GridGraphParams, RectifiedMeshView,
+    RectifiedMeshView,
 };
 use calib_targets_core::{Corner, GrayImageView, TargetDetection};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
@@ -32,7 +32,6 @@ struct ExampleConfig {
     #[serde(default)]
     aruco: Option<ArucoScanConfig>,
     chessboard: ChessboardParams,
-    graph: GridGraphParams,
 }
 
 fn default_px_per_square() -> f32 {
@@ -64,8 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let raw_corners = detect_raw_corners(&img);
     let corners = adapt_corners(&raw_corners);
 
-    let detector =
-        ChessboardDetector::new(cfg.chessboard.clone()).with_grid_search(cfg.graph.clone());
+    let detector = ChessboardDetector::new(cfg.chessboard.clone());
     let detection = detector.detect_from_corners(&corners);
     let src_view = make_view(&img);
 

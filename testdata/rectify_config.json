@@ -19,12 +19,12 @@
       "outlier_threshold_deg": 30.0,
       "min_peak_weight_fraction": 0.2,
       "use_weights": true
+    },
+    "graph": {
+      "min_spacing_pix": 5.0,
+      "max_spacing_pix": 200.0,
+      "k_neighbors": 8,
+      "orientation_tolerance_deg": 12.5
     }
-  },
-  "graph": {
-    "min_spacing_pix": 5.0,
-    "max_spacing_pix": 200.0,
-    "k_neighbors": 8,
-    "orientation_tolerance_deg": 12.5
   }
 }

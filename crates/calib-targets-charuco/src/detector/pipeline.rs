@@ -85,8 +85,7 @@ impl CharucoDetector {
             self.params.px_per_square,
             self.params.min_marker_inliers
         );
-        let detector = ChessboardDetector::new(self.params.chessboard.clone())
-            .with_grid_search(self.params.graph.clone());
+        let detector = ChessboardDetector::new(self.params.chessboard.clone());
         let chessboard = match detector.detect_from_corners(corners) {
             Some(chessboard) => {
                 debug!(
@@ -105,10 +104,10 @@ impl CharucoDetector {
                     corners.len(),
                     self.params.chessboard.min_corner_strength,
                     self.params.chessboard.min_corners,
-                    self.params.graph.min_spacing_pix,
-                    self.params.graph.max_spacing_pix,
-                    self.params.graph.k_neighbors,
-                    self.params.graph.orientation_tolerance_deg
+                    self.params.chessboard.graph.min_spacing_pix,
+                    self.params.chessboard.graph.max_spacing_pix,
+                    self.params.chessboard.graph.k_neighbors,
+                    self.params.chessboard.graph.orientation_tolerance_deg
                 );
                 return Err(CharucoDetectError::ChessboardNotDetected);
             }

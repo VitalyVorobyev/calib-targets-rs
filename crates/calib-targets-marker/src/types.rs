@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{GridAlignment, TargetDetection};
 
 use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
@@ -81,8 +81,6 @@ pub struct MarkerBoardParams {
     #[serde(default = "default_marker_chessboard_params")]
     pub chessboard: ChessboardParams,
     #[serde(default)]
-    pub grid_graph: GridGraphParams,
-    #[serde(default)]
     pub circle_score: CircleScoreParams,
     #[serde(default)]
     pub match_params: CircleMatchParams,
@@ -99,7 +97,6 @@ impl MarkerBoardParams {
         Self {
             layout,
             chessboard,
-            grid_graph: GridGraphParams::default(),
             circle_score: CircleScoreParams::default(),
             match_params: CircleMatchParams::default(),
             roi_cells: None,

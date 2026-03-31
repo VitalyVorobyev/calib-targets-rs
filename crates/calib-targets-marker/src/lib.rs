@@ -52,6 +52,7 @@
 pub mod circle_score;
 pub mod coords;
 pub mod detect;
+pub mod io;
 pub mod match_circles;
 pub mod types;
 
@@ -60,6 +61,7 @@ mod detector;
 pub use circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 pub use coords::{CellCoords, CellOffset};
 pub use detector::MarkerBoardDetector;
+pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
 pub use match_circles::{estimate_grid_alignment, estimate_grid_offset, match_expected_circles};
 pub use types::{
     CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardLayout,

@@ -26,13 +26,13 @@
       "outlier_threshold_deg": 30.0,
       "min_peak_weight_fraction": 0.2,
       "use_weights": true
+    },
+    "graph": {
+      "min_spacing_pix": 10.0,
+      "max_spacing_pix": 200.0,
+      "k_neighbors": 8,
+      "orientation_tolerance_deg": 22.5
     }
-  },
-  "graph": {
-    "min_spacing_pix": 10.0,
-    "max_spacing_pix": 200.0,
-    "k_neighbors": 8,
-    "orientation_tolerance_deg": 22.5
   },
   "aruco": {
     "max_hamming": 0,
