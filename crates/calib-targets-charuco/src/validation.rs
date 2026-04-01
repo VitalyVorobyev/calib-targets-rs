@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// How strictly to validate marker-to-corner links.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkCheckMode {
@@ -31,6 +32,7 @@ pub struct CharucoMarkerCornerLinks {
 }
 
 /// Specific violation encountered while validating marker-corner links.
+#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkViolationKind {

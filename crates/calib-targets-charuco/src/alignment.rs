@@ -31,6 +31,8 @@ fn dominant_rotation(markers: &[MarkerDetection]) -> u8 {
     }
     hist.iter()
         .enumerate()
+        // INVARIANT: histogram values are sums of marker scores which are finite
+        // f32 values from image data; NaN cannot arise here.
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
         .map(|(i, _)| i as u8)
         .unwrap_or(0)

@@ -529,6 +529,7 @@ fn neighbor_dir_name(dir: NeighborDirection) -> &'static str {
         NeighborDirection::Left => "left",
         NeighborDirection::Up => "up",
         NeighborDirection::Down => "down",
+        _ => "unknown",
     }
 }
 

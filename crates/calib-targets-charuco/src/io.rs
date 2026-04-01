@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 pub type CharucoIoError = IoError;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoConfigError {
     #[error(transparent)]

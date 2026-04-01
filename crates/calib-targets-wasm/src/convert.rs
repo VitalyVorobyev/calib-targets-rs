@@ -39,6 +39,7 @@ fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {
     match mode {
         DetectorMode::Canonical => chess_corners::DetectorMode::Canonical,
         DetectorMode::Broad => chess_corners::DetectorMode::Broad,
+        _ => unimplemented!("unknown DetectorMode variant"),
     }
 }
 
@@ -47,6 +48,7 @@ fn to_descriptor_mode(mode: DescriptorMode) -> chess_corners::DescriptorMode {
         DescriptorMode::FollowDetector => chess_corners::DescriptorMode::FollowDetector,
         DescriptorMode::Canonical => chess_corners::DescriptorMode::Canonical,
         DescriptorMode::Broad => chess_corners::DescriptorMode::Broad,
+        _ => unimplemented!("unknown DescriptorMode variant"),
     }
 }
 
@@ -54,6 +56,7 @@ fn to_threshold_mode(mode: ThresholdMode) -> chess_corners::ThresholdMode {
     match mode {
         ThresholdMode::Relative => chess_corners::ThresholdMode::Relative,
         ThresholdMode::Absolute => chess_corners::ThresholdMode::Absolute,
+        _ => unimplemented!("unknown ThresholdMode variant"),
     }
 }
 
@@ -62,6 +65,7 @@ fn to_refinement_method(method: RefinementMethod) -> chess_corners::RefinementMe
         RefinementMethod::CenterOfMass => chess_corners::RefinementMethod::CenterOfMass,
         RefinementMethod::Forstner => chess_corners::RefinementMethod::Forstner,
         RefinementMethod::SaddlePoint => chess_corners::RefinementMethod::SaddlePoint,
+        _ => unimplemented!("unknown RefinementMethod variant"),
     }
 }
 

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Cardinal direction along a 4-connected grid.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NeighborDirection {
     Right,

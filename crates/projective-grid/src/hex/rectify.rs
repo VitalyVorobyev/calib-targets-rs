@@ -12,6 +12,7 @@ use std::collections::HashMap;
 /// Sqrt(3) / 2, the vertical spacing factor for pointy-top hex grids.
 const SQRT3_HALF: f64 = 0.866_025_403_784_438_6;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum HexRectifyError {
     #[error("not enough grid corners with positions (need >= 4, got {got})")]

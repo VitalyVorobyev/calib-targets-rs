@@ -215,6 +215,7 @@ fn map_detection(det: calib_targets_core::TargetDetection) -> OutputDetection {
             TargetKind::Chessboard => "chessboard",
             TargetKind::Charuco => "charuco",
             TargetKind::CheckerboardMarker => "checkerboard_marker",
+            _ => "unknown",
         }
         .to_string(),
         corners: det.corners.into_iter().map(map_corner).collect(),

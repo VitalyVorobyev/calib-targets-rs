@@ -229,6 +229,7 @@ fn build_marker_board(
             fill: match circle.polarity {
                 CirclePolarity::White => Fill::White,
                 CirclePolarity::Black => Fill::Black,
+                _ => unimplemented!("unknown CirclePolarity variant"),
             },
         });
     }

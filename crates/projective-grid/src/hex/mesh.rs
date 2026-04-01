@@ -13,6 +13,7 @@ use std::collections::HashMap;
 /// Sqrt(3) / 2, the vertical spacing factor for pointy-top hex grids.
 const SQRT3_HALF: f64 = 0.866_025_403_784_438_6;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum HexMeshError {
     #[error("not enough grid corners (need at least 3)")]

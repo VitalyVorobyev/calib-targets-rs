@@ -137,6 +137,7 @@ fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKi
                 min_abs_det: cfg.min_abs_det,
             })
         }
+        _ => unimplemented!("unknown RefinerKindConfig variant"),
     }
 }
 
@@ -225,7 +226,7 @@ mod tests {
                 assert_eq!(actual.max_offset, expected.max_offset);
                 assert_eq!(actual.min_abs_det, expected.min_abs_det);
             }
-            _ => panic!("refiner kind mismatch"),
+            _ => unreachable!("refiner kind mismatch"),
         }
     }
 

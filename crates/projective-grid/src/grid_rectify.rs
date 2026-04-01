@@ -9,6 +9,7 @@ use crate::homography::{estimate_homography, Homography};
 use nalgebra::Point2;
 use std::collections::HashMap;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum GridRectifyError {
     #[error("not enough grid corners with positions (need >= 4, got {got})")]

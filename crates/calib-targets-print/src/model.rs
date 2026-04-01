@@ -39,6 +39,7 @@ fn default_png_dpi() -> u32 {
     300
 }
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum PrintableTargetError {
     #[error(transparent)]
@@ -86,6 +87,7 @@ pub enum PrintableTargetError {
     CharucoBoard(#[from] CharucoBoardError),
 }
 
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PageOrientation {
@@ -94,6 +96,7 @@ pub enum PageOrientation {
     Landscape,
 }
 
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PageSize {
@@ -296,6 +299,7 @@ impl MarkerBoardTargetSpec {
     }
 }
 
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TargetSpec {

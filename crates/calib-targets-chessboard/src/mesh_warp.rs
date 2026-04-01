@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use nalgebra::Point2;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum MeshWarpError {
     #[error("not enough labeled corners with grid coords")]

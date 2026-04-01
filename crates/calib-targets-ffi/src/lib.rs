@@ -873,6 +873,7 @@ fn target_kind_to_ffi(kind: calib_targets::core::TargetKind) -> ct_target_kind_t
         calib_targets::core::TargetKind::Chessboard => CT_TARGET_KIND_CHESSBOARD,
         calib_targets::core::TargetKind::Charuco => CT_TARGET_KIND_CHARUCO,
         calib_targets::core::TargetKind::CheckerboardMarker => CT_TARGET_KIND_CHECKERBOARD_MARKER,
+        _ => CT_TARGET_KIND_CHESSBOARD, // fallback for future variants
     }
 }
 
@@ -880,6 +881,7 @@ fn circle_polarity_to_ffi(polarity: CirclePolarity) -> ct_circle_polarity_t {
     match polarity {
         CirclePolarity::White => CT_CIRCLE_POLARITY_WHITE,
         CirclePolarity::Black => CT_CIRCLE_POLARITY_BLACK,
+        _ => CT_CIRCLE_POLARITY_WHITE, // fallback for future variants
     }
 }
 
@@ -1321,6 +1323,7 @@ fn map_charuco_detect_error(err: CharucoDetectError) -> FfiError {
         CharucoDetectError::MeshWarp(err) => {
             FfiError::not_found(format!("mesh warp failed during ChArUco detection: {err}"))
         }
+        _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
     }
 }
 

@@ -142,6 +142,9 @@ impl MarkerBoardDetector {
                 }
 
                 detection.corners.sort_by(|a, b| {
+                    // INVARIANT: grid coordinates are always populated for every corner
+                    // at this point — they are assigned in the loop above via the
+                    // `set_grid_coords_from_chess` call before this sort.
                     let ga = a.grid.unwrap();
                     let gb = b.grid.unwrap();
                     (ga.j, ga.i).cmp(&(gb.j, gb.i))

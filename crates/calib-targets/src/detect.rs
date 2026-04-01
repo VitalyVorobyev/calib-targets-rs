@@ -11,6 +11,7 @@ pub use core::{
 };
 
 /// Errors produced by the high-level facade helpers.
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum DetectError {
     #[error("invalid grayscale image buffer length (expected {expected} bytes, got {got})")]
@@ -235,6 +236,10 @@ pub fn gray_image_from_slice(
         .ok_or(DetectError::InvalidGrayDimensions { width, height })
 }
 
+/// Run the chessboard detector from a raw grayscale byte buffer.
+///
+/// `pixels` must have length `width * height`. Returns `Ok(None)` when no board is found,
+/// or `Err` when the buffer dimensions are invalid.
 pub fn detect_chessboard_from_gray_u8(
     width: u32,
     height: u32,
@@ -245,6 +250,10 @@ pub fn detect_chessboard_from_gray_u8(
     Ok(detect_chessboard(&img, params))
 }
 
+/// Run the ChArUco detector from a raw grayscale byte buffer.
+///
+/// `pixels` must have length `width * height`. Returns `Err` when the buffer dimensions
+/// are invalid or detection fails (e.g. no markers found, alignment failed).
 pub fn detect_charuco_from_gray_u8(
     width: u32,
     height: u32,
@@ -255,6 +264,10 @@ pub fn detect_charuco_from_gray_u8(
     detect_charuco(&img, params)
 }
 
+/// Run the checkerboard+circles marker board detector from a raw grayscale byte buffer.
+///
+/// `pixels` must have length `width * height`. Returns `Ok(None)` when no board is found,
+/// or `Err` when the buffer dimensions are invalid.
 pub fn detect_marker_board_from_gray_u8(
     width: u32,
     height: u32,
@@ -294,6 +307,7 @@ fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {
     match mode {
         DetectorMode::Canonical => chess_corners::DetectorMode::Canonical,
         DetectorMode::Broad => chess_corners::DetectorMode::Broad,
+        _ => unimplemented!("unknown DetectorMode variant"),
     }
 }
 
@@ -302,6 +316,7 @@ fn to_descriptor_mode(mode: DescriptorMode) -> chess_corners::DescriptorMode {
         DescriptorMode::FollowDetector => chess_corners::DescriptorMode::FollowDetector,
         DescriptorMode::Canonical => chess_corners::DescriptorMode::Canonical,
         DescriptorMode::Broad => chess_corners::DescriptorMode::Broad,
+        _ => unimplemented!("unknown DescriptorMode variant"),
     }
 }
 
@@ -309,6 +324,7 @@ fn to_threshold_mode(mode: ThresholdMode) -> chess_corners::ThresholdMode {
     match mode {
         ThresholdMode::Relative => chess_corners::ThresholdMode::Relative,
         ThresholdMode::Absolute => chess_corners::ThresholdMode::Absolute,
+        _ => unimplemented!("unknown ThresholdMode variant"),
     }
 }
 
@@ -317,6 +333,7 @@ fn to_refinement_method(method: RefinementMethod) -> chess_corners::RefinementMe
         RefinementMethod::CenterOfMass => chess_corners::RefinementMethod::CenterOfMass,
         RefinementMethod::Forstner => chess_corners::RefinementMethod::Forstner,
         RefinementMethod::SaddlePoint => chess_corners::RefinementMethod::SaddlePoint,
+        _ => unimplemented!("unknown RefinementMethod variant"),
     }
 }
 

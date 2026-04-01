@@ -1,6 +1,7 @@
 use calib_targets_chessboard::MeshWarpError;
 
 /// Errors returned by the ChArUco detector.
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoDetectError {
     #[error("chessboard not detected")]

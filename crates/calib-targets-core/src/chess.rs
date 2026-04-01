@@ -58,6 +58,7 @@ impl Default for SaddlePointConfig {
 }
 
 /// Detector sampling mode for the ChESS response kernel.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DetectorMode {
@@ -67,6 +68,7 @@ pub enum DetectorMode {
 }
 
 /// Descriptor sampling mode for orientation/descriptor extraction.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DescriptorMode {
@@ -77,6 +79,7 @@ pub enum DescriptorMode {
 }
 
 /// Threshold interpretation mode for ChESS corner detection.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ThresholdMode {
@@ -86,6 +89,7 @@ pub enum ThresholdMode {
 }
 
 /// User-facing refiner method selector for the high-level ChESS config.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RefinementMethod {
@@ -96,6 +100,7 @@ pub enum RefinementMethod {
 }
 
 /// Workspace-owned selection of the low-level ChESS subpixel refiner.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RefinerKindConfig {

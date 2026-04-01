@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 
 /// Errors from JSON file I/O.
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum IoError {
     #[error(transparent)]

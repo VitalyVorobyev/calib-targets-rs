@@ -6,6 +6,7 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 /// Marker placement scheme for the board.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkerLayout {
@@ -32,6 +33,7 @@ pub struct CharucoBoardSpec {
 }
 
 /// Board specification validation errors.
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoBoardError {
     #[error("rows and cols must be >= 2")]

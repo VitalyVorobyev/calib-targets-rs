@@ -29,7 +29,14 @@ fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsError> {
 }
 
 fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> {
-    let expected = (width as usize) * (height as usize);
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .ok_or_else(|| {
+            JsError::new(&format!(
+                "image dimensions {}x{} overflow usize",
+                width, height
+            ))
+        })?;
     if pixels.len() != expected {
         return Err(JsError::new(&format!(
             "pixel buffer length {} does not match {}x{} = {}",
@@ -88,7 +95,15 @@ pub fn default_marker_board_params() -> Result<JsValue, JsError> {
 /// Returns: grayscale buffer of length `width * height`.
 #[wasm_bindgen]
 pub fn rgba_to_gray(rgba: &[u8], width: u32, height: u32) -> Result<Vec<u8>, JsError> {
-    let expected = 4 * (width as usize) * (height as usize);
+    let expected = (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| {
+            JsError::new(&format!(
+                "image dimensions {}x{} overflow usize",
+                width, height
+            ))
+        })?;
     if rgba.len() != expected {
         return Err(JsError::new(&format!(
             "RGBA buffer length {} does not match 4*{}*{} = {}",

@@ -1,7 +1,7 @@
-# Pre-Release Review Workflow
+# Review and Development Workflows
 
-This document describes the 3-agent review pipeline used for pre-release quality
-audits of this Rust workspace.
+This document describes the skill ecosystem and workflows for quality audits and
+feature development in this Rust workspace.
 
 ## When to Use
 
@@ -170,27 +170,104 @@ You can narrow the scope:
 
 The full workspace audit is the default and recommended pre-release mode.
 
-## Skill Map
+---
 
-After this redesign, here is the complete skill map for code review:
+## Feature Development Workflow
+
+Feature development uses a **skill sequence**, not a pipeline. The work is too
+interactive for agent handoffs — you stay in the main conversation throughout,
+invoking specialized skills at natural checkpoints.
+
+### The Skill Sequence
 
 ```
-                    ┌─────────────────────────┐
-                    │  rust-workspace-review   │  Pre-release audit
-                    │  (design, quality, sec,  │  Architect → Implement → Review
-                    │   tests, docs, workspace)│
-                    └────────────┬────────────┘
-                                 │
-          ┌──────────────────────┼──────────────────────┐
-          │                      │                      │
-┌─────────┴─────────┐ ┌─────────┴─────────┐ ┌─────────┴─────────┐
-│    algo-review     │ │ calibration-review │ │   perf-architect   │
-│  (correctness,     │ │ (CV domain, poses, │ │ (allocations, hot  │
-│   numerical)       │ │  distortion, etc.) │ │  paths, nalgebra)  │
-└───────────────────┘ └───────────────────┘ └────────┬──────────┘
-                                                      │
-                                            ┌─────────┴─────────┐
-                                            │   hotpath-rust     │
-                                            │   criterion-bench  │
-                                            └───────────────────┘
+/algo-design "new feature"
+    │
+    ├── Produces docs/DESIGN-<feature>.md
+    │   (API shape, error model, assumptions, test plan)
+    │
+    ├── You implement the design
+    │
+    ├── /algo-review
+    │   (checks implementation against DESIGN-*.md,
+    │    verifies correctness, robustness, test adequacy)
+    │
+    ├── /calibration-review          ← if vision/geometry code
+    │
+    ├── /perf-architect              ← if hot paths identified
+    │   └── /hotpath-rust            ← for inner loop implementation
+    │   └── /criterion-bench         ← for benchmark setup
+    │
+    └── /rust-workspace-review       ← before release
+        └── [3-agent pipeline]
+```
+
+### Why Not a Pipeline?
+
+Feature development is exploratory. During implementation, you'll encounter
+questions the designer couldn't anticipate: types that don't compose, edge cases
+that require redesigning, nalgebra API quirks. These need interactive decisions,
+not assembly-line handoffs.
+
+The skill sequence gives you the same coverage as a pipeline but with full
+control at every step. Each skill invocation is a natural checkpoint, not a
+forced handoff.
+
+### The Design Artifact
+
+`/algo-design` writes a `docs/DESIGN-<feature>.md` file that serves as the
+traceability link between design and review:
+
+- During implementation, it's your reference for API shape and test plan
+- When `/algo-review` runs, it checks the implementation against the design
+- Deviations are flagged as findings (they may be justified, but should be explicit)
+
+### Typical Session
+
+```
+you:    let's design the marker grid alignment algorithm
+claude: [invokes /algo-design, writes docs/DESIGN-marker-grid-alignment.md]
+        Design complete. Next steps:
+        1. Implement the design
+        2. /algo-review — check correctness
+        3. /calibration-review — verify geometry conventions
+you:    [implements over several conversation turns]
+you:    review this
+claude: [invokes /algo-review, cross-references DESIGN-marker-grid-alignment.md]
+        3 findings: ...
+you:    pre-release check
+claude: [invokes /rust-workspace-review, runs 3-agent pipeline]
+```
+
+---
+
+## Complete Skill Map
+
+```
+FEATURE DEVELOPMENT                          PRE-RELEASE
+(interactive, single context)                (3-agent pipeline)
+
+┌──────────────┐
+│  algo-design  │──── produces ──── docs/DESIGN-*.md
+└──────┬───────┘                        │
+       │ implement                      │ cross-references
+       ▼                                ▼
+┌──────────────┐                 ┌─────────────────────────┐
+│  algo-review  │                │  rust-workspace-review   │
+│  (correctness,│                │  (design, quality, sec,  │
+│   numerical)  │                │   tests, docs, workspace)│
+└──────────────┘                 │  Architect → Implement   │
+                                 │           → Review       │
+┌──────────────────┐             └─────────────────────────┘
+│calibration-review│
+│  (CV domain)     │
+└──────────────────┘
+
+┌──────────────┐
+│perf-architect │
+│  (hot paths)  │
+├──────────────┤
+│ hotpath-rust  │
+│criterion-bench│
+└──────────────┘
 ```

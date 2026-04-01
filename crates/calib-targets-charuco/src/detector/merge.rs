@@ -15,6 +15,7 @@ pub(crate) fn merge_charuco_results(
 ) -> CharucoDetectionResult {
     debug_assert!(!results.is_empty());
     if results.len() == 1 {
+        // INVARIANT: results is non-empty (guaranteed by debug_assert! above), so next() is Some.
         return results.into_iter().next().unwrap();
     }
 
@@ -27,6 +28,7 @@ pub(crate) fn merge_charuco_results(
     }
 
     // Pick the group with the most total markers.
+    // INVARIANT: groups is non-empty because results is non-empty (each result contributes to a group).
     let best_group = groups
         .into_values()
         .max_by_key(|group| group.iter().map(|r| r.markers.len()).sum::<usize>())
@@ -72,6 +74,7 @@ pub(crate) fn merge_charuco_results(
     }
 
     // Pick alignment from the component with the most markers.
+    // INVARIANT: best_group is non-empty — it was selected from a non-empty groups map above.
     let best_alignment = best_group
         .iter()
         .max_by_key(|r| r.markers.len())
