@@ -31,7 +31,7 @@ pub struct CharucoParams {
     pub min_marker_inliers: usize,
     /// Minimum marker inliers for secondary (non-largest) components.
     ///
-    /// Lower than [`min_marker_inliers`] because even a few markers suffice
+    /// Lower than [`Self::min_marker_inliers`] because even a few markers suffice
     /// to confirm alignment for a small grid fragment.
     #[serde(default = "default_min_secondary_marker_inliers")]
     pub min_secondary_marker_inliers: usize,
