@@ -11,5 +11,7 @@ wasm-pack build "$ROOT_DIR/crates/calib-targets-wasm" \
   --out-dir "$ROOT_DIR/demo/pkg" \
   --out-name calib_targets_wasm
 
+cp "$ROOT_DIR/crates/calib-targets-wasm/README.md" "$ROOT_DIR/demo/pkg/README.md"
+
 echo "WASM package built to demo/pkg/"
 ls -lh "$ROOT_DIR/demo/pkg/"*.wasm

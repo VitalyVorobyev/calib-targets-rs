@@ -69,6 +69,9 @@ All detection functions accept grayscale `Uint8Array` pixel buffers (row-major, 
 | `detect_chessboard(w, h, pixels, chess_cfg, params)` | Detect chessboard grid. Returns `ChessboardDetectionResult \| null`. |
 | `detect_charuco(w, h, pixels, chess_cfg, params)` | Detect ChArUco board. Returns `CharucoDetectionResult`. Throws on error. |
 | `detect_marker_board(w, h, pixels, chess_cfg, params)` | Detect marker board. Returns `MarkerBoardDetectionResult \| null`. |
+| `detect_chessboard_best(w, h, pixels, configs)` | Multi-config sweep, returns best chessboard result. |
+| `detect_charuco_best(w, h, pixels, configs)` | Multi-config sweep, returns best ChArUco result. |
+| `detect_marker_board_best(w, h, pixels, configs)` | Multi-config sweep, returns best marker board result. |
 | `rgba_to_gray(rgba, w, h)` | Convert RGBA buffer to grayscale (BT.601). |
 | `default_chess_config()` | Default ChESS corner detector config. |
 | `default_chessboard_params()` | Default chessboard detection params. |
@@ -87,6 +90,22 @@ const params = default_chessboard_params();
 params.expected_rows = 7;
 params.expected_cols = 9;
 params.completeness_threshold = 0.5;
+```
+
+### Multi-config sweep
+
+The `detect_*_best` functions try multiple parameter configs and return the best result (most markers, then most corners):
+
+```typescript
+import { detect_chessboard_best, default_chessboard_params } from "calib-targets-wasm";
+
+const base = default_chessboard_params();
+const configs = [0.10, 0.15, 0.20].map((t) => ({
+  ...base,
+  chess: { ...base.chess, threshold_value: t },
+}));
+
+const best = detect_chessboard_best(width, height, gray, configs);
 ```
 
 ### Output format
