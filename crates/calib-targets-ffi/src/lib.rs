@@ -22,8 +22,8 @@ pub mod package_support;
 
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection, ScanDecodeConfig};
 use calib_targets::charuco::{
-    CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector,
-    CharucoParams, MarkerLayout,
+    CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector, CharucoParams,
+    MarkerLayout,
 };
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets::core::{
@@ -34,7 +34,7 @@ use calib_targets::detect;
 use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
-    MarkerBoardDetector, MarkerBoardSpec, MarkerBoardParams, MarkerCircleSpec,
+    MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use std::any::Any;
 use std::cell::RefCell;

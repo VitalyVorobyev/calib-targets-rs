@@ -119,10 +119,7 @@ mod tests {
     fn marker(id: u32, score: f32) -> MarkerDetection {
         MarkerDetection {
             id,
-            gc: GridCoords {
-                i: id as i32,
-                j: 0,
-            },
+            gc: GridCoords { i: id as i32, j: 0 },
             rotation: 0,
             hamming: 0,
             score,

@@ -1,6 +1,6 @@
 use calib_targets::detect;
 use calib_targets::marker::{
-    CellCoords, CirclePolarity, MarkerBoardSpec, MarkerBoardParams, MarkerCircleSpec,
+    CellCoords, CirclePolarity, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use image::ImageReader;
 

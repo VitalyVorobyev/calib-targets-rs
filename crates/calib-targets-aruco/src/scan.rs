@@ -2,7 +2,7 @@
 
 use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
-use calib_targets_core::{homography_from_4pt, GridCoords, GrayImageView, Homography};
+use calib_targets_core::{homography_from_4pt, GrayImageView, GridCoords, Homography};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

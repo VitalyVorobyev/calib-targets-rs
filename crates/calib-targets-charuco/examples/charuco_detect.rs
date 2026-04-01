@@ -7,8 +7,7 @@ use std::{
 use std::str::FromStr;
 
 use calib_targets_charuco::{
-    CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector,
-    CharucoParams,
+    CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector, CharucoParams,
 };
 use calib_targets_core::{Corner, GrayImageView};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};

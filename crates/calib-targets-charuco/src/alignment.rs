@@ -152,10 +152,7 @@ mod tests {
             };
             markers.push(MarkerDetection {
                 id,
-                gc: GridCoords {
-                    i: bc.i,
-                    j: bc.j,
-                },
+                gc: GridCoords { i: bc.i, j: bc.j },
                 rotation: 0,
                 hamming: 0,
                 score: 1.0,

@@ -171,9 +171,9 @@ pub fn detect_charuco_best(
         };
         match detector.detect(&gray_view(img), &corners) {
             Ok(result) => {
-                let dominated = best.as_ref().is_some_and(|b| {
-                    charuco_score(b) >= charuco_score(&result)
-                });
+                let dominated = best
+                    .as_ref()
+                    .is_some_and(|b| charuco_score(b) >= charuco_score(&result));
                 if !dominated {
                     best = Some(result);
                 }
@@ -184,9 +184,11 @@ pub fn detect_charuco_best(
         }
     }
 
-    best.ok_or_else(|| last_err.unwrap_or(DetectError::CharucoDetect(
-        charuco::CharucoDetectError::NoMarkers,
-    )))
+    best.ok_or_else(|| {
+        last_err.unwrap_or(DetectError::CharucoDetect(
+            charuco::CharucoDetectError::NoMarkers,
+        ))
+    })
 }
 
 /// Try multiple marker board parameter configs, return the best result (most corners).

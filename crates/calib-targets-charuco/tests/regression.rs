@@ -1,7 +1,5 @@
 use calib_targets_aruco::builtins;
-use calib_targets_charuco::{
-    CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout,
-};
+use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::{
     estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,

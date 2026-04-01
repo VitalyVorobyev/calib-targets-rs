@@ -64,6 +64,6 @@ pub use detector::MarkerBoardDetector;
 pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
 pub use match_circles::{estimate_grid_alignment, estimate_grid_offset, match_expected_circles};
 pub use types::{
-    CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardSpec,
-    MarkerBoardParams, MarkerCircleSpec,
+    CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardParams, MarkerBoardSpec,
+    MarkerCircleSpec,
 };

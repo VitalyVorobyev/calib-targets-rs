@@ -176,9 +176,7 @@ fn chessboard_params_from_py(
     from_py_json(obj, "params")
 }
 
-fn charuco_params_from_py(
-    obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<charuco::CharucoParams> {
+fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::CharucoParams> {
     let Some(obj) = obj else {
         return Err(value_error("params is required for ChArUco detection"));
     };
