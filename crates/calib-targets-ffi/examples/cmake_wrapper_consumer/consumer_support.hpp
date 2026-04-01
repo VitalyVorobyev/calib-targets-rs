@@ -225,10 +225,10 @@ inline ct_chessboard_detector_config_t default_chessboard_detector_config() {
   config.chessboard.completeness_threshold = 0.9f;
   config.chessboard.use_orientation_clustering = CT_TRUE;
   config.chessboard.orientation_clustering_params = default_orientation_clustering();
-  config.graph.min_spacing_pix = 10.0f;
-  config.graph.max_spacing_pix = 120.0f;
-  config.graph.k_neighbors = 8;
-  config.graph.orientation_tolerance_deg = 22.5f;
+  config.chessboard.graph.min_spacing_pix = 10.0f;
+  config.chessboard.graph.max_spacing_pix = 120.0f;
+  config.chessboard.graph.k_neighbors = 8;
+  config.chessboard.graph.orientation_tolerance_deg = 22.5f;
   return config;
 }
 
