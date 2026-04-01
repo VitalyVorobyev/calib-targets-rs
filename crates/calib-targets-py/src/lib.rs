@@ -310,6 +310,118 @@ fn detect_marker_board(
 }
 
 // ---------------------------------------------------------------------------
+// Multi-config sweep detection
+// ---------------------------------------------------------------------------
+
+/// Try multiple chessboard parameter configs, return the best result (most corners).
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   configs: list of dicts with ChessboardParams fields.
+///
+/// Returns:
+///   dict with detection data, or None if no board is found with any config.
+#[pyfunction]
+#[pyo3(signature = (image, configs))]
+fn detect_chessboard_best(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    configs: &Bound<'_, PyAny>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let img = gray_image_from_py(image)?;
+    let list = configs
+        .cast::<PyList>()
+        .map_err(|_| value_error("configs must be a list"))?;
+    let mut params_vec = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        params_vec.push(from_py_json::<chessboard::ChessboardParams>(
+            &item,
+            "configs[]",
+        )?);
+    }
+
+    let result = py.detach(move || detect::detect_chessboard_best(&img, &params_vec));
+    match result {
+        Some(res) => {
+            let json = serde_json::to_value(res)
+                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+            Ok(Some(json_to_py(py, &json)?))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Try multiple ChArUco parameter configs, return the best result
+/// (most markers, then most corners).
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   configs: list of dicts with CharucoParams fields.
+///
+/// Returns:
+///   dict with detection data. Raises RuntimeError if all configs fail.
+#[pyfunction]
+#[pyo3(signature = (image, configs))]
+fn detect_charuco_best(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    configs: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let list = configs
+        .cast::<PyList>()
+        .map_err(|_| value_error("configs must be a list"))?;
+    let mut params_vec = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        params_vec.push(from_py_json::<charuco::CharucoParams>(&item, "configs[]")?);
+    }
+
+    let result = py.detach(move || detect::detect_charuco_best(&img, &params_vec));
+    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let json =
+        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    json_to_py(py, &json)
+}
+
+/// Try multiple marker board parameter configs, return the best result (most corners).
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   configs: list of dicts with MarkerBoardParams fields.
+///
+/// Returns:
+///   dict with detection data, or None if no board is found with any config.
+#[pyfunction]
+#[pyo3(signature = (image, configs))]
+fn detect_marker_board_best(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    configs: &Bound<'_, PyAny>,
+) -> PyResult<Option<Py<PyAny>>> {
+    let img = gray_image_from_py(image)?;
+    let list = configs
+        .cast::<PyList>()
+        .map_err(|_| value_error("configs must be a list"))?;
+    let mut params_vec = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        params_vec.push(from_py_json::<marker::MarkerBoardParams>(
+            &item,
+            "configs[]",
+        )?);
+    }
+
+    let result = py.detach(move || detect::detect_marker_board_best(&img, &params_vec));
+    match result {
+        Some(res) => {
+            let json = serde_json::to_value(res)
+                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+            Ok(Some(json_to_py(py, &json)?))
+        }
+        None => Ok(None),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Printable target functions
 // ---------------------------------------------------------------------------
 
@@ -355,6 +467,9 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_chessboard_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_charuco_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_marker_board_best, m)?)?;
     m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())

@@ -6,7 +6,7 @@
 mod convert;
 mod gray;
 
-use calib_targets_charuco::CharucoDetector;
+use calib_targets_charuco::{CharucoDetector, CharucoParams};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
@@ -223,4 +223,108 @@ pub fn detect_marker_board(
     let view = make_view(pixels, width, height);
     let result = detector.detect_from_image_and_corners(&view, &corners);
     to_js(&result)
+}
+
+// ---------------------------------------------------------------------------
+// Multi-config sweep detection
+// ---------------------------------------------------------------------------
+
+/// Try multiple chessboard parameter configs, return the best result (most corners).
+///
+/// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found
+/// with any config.
+#[wasm_bindgen]
+pub fn detect_chessboard_best(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    configs: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let configs: Vec<ChessboardParams> = from_js(configs)?;
+
+    let best = configs
+        .iter()
+        .filter_map(|params| {
+            let corners = detect_corners_impl(pixels, width, height, &params.chess);
+            let detector = ChessboardDetector::new(params.clone());
+            detector.detect_from_corners(&corners)
+        })
+        .max_by_key(|r| r.detection.corners.len());
+    to_js(&best)
+}
+
+/// Try multiple ChArUco parameter configs, return the best result
+/// (most markers, then most corners). Throws if all configs fail.
+#[wasm_bindgen]
+pub fn detect_charuco_best(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    configs: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let configs: Vec<CharucoParams> = from_js(configs)?;
+
+    let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;
+    let mut last_err = None;
+
+    for params in &configs {
+        let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
+        let detector = match CharucoDetector::new(params.clone()) {
+            Ok(d) => d,
+            Err(e) => {
+                last_err = Some(e.to_string());
+                continue;
+            }
+        };
+        let view = make_view(pixels, width, height);
+        match detector.detect(&view, &corners) {
+            Ok(result) => {
+                let dominated = best.as_ref().is_some_and(|b| {
+                    (b.markers.len(), b.detection.corners.len())
+                        >= (result.markers.len(), result.detection.corners.len())
+                });
+                if !dominated {
+                    best = Some(result);
+                }
+            }
+            Err(e) => {
+                last_err = Some(e.to_string());
+            }
+        }
+    }
+
+    match best {
+        Some(result) => to_js(&result),
+        None => Err(JsError::new(
+            &last_err.unwrap_or_else(|| "no markers detected".to_string()),
+        )),
+    }
+}
+
+/// Try multiple marker board parameter configs, return the best result (most corners).
+///
+/// Returns a `MarkerBoardDetectionResult` JS object, or `null` if no board found
+/// with any config.
+#[wasm_bindgen]
+pub fn detect_marker_board_best(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    configs: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let configs: Vec<MarkerBoardParams> = from_js(configs)?;
+
+    let best = configs
+        .iter()
+        .filter_map(|params| {
+            let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
+            let detector = MarkerBoardDetector::new(params.clone());
+            let view = make_view(pixels, width, height);
+            detector.detect_from_image_and_corners(&view, &corners)
+        })
+        .max_by_key(|r| r.detection.corners.len());
+    to_js(&best)
 }

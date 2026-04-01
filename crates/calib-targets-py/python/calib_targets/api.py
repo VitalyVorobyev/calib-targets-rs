@@ -85,8 +85,57 @@ def detect_marker_board(
     return MarkerBoardDetectionResult.from_dict(raw)
 
 
+def detect_chessboard_best(
+    image: npt.NDArray[np.uint8],
+    configs: list[ChessboardParams],
+) -> ChessboardDetectionResult | None:
+    """Try multiple chessboard configs, return the best result (most corners)."""
+    payloads = []
+    for i, cfg in enumerate(configs):
+        _check_type(f"configs[{i}]", cfg, ChessboardParams)
+        payloads.append(cfg.to_dict())
+
+    raw = _core.detect_chessboard_best(image, payloads)
+    if raw is None:
+        return None
+    return ChessboardDetectionResult.from_dict(raw)
+
+
+def detect_charuco_best(
+    image: npt.NDArray[np.uint8],
+    configs: list[CharucoDetectorParams],
+) -> CharucoDetectionResult:
+    """Try multiple ChArUco configs, return the best result (most markers, then corners)."""
+    payloads = []
+    for i, cfg in enumerate(configs):
+        _check_type(f"configs[{i}]", cfg, CharucoDetectorParams)
+        payloads.append(cfg.to_dict())
+
+    raw = _core.detect_charuco_best(image, payloads)
+    return CharucoDetectionResult.from_dict(raw)
+
+
+def detect_marker_board_best(
+    image: npt.NDArray[np.uint8],
+    configs: list[MarkerBoardParams],
+) -> MarkerBoardDetectionResult | None:
+    """Try multiple marker board configs, return the best result (most corners)."""
+    payloads = []
+    for i, cfg in enumerate(configs):
+        _check_type(f"configs[{i}]", cfg, MarkerBoardParams)
+        payloads.append(cfg.to_dict())
+
+    raw = _core.detect_marker_board_best(image, payloads)
+    if raw is None:
+        return None
+    return MarkerBoardDetectionResult.from_dict(raw)
+
+
 __all__ = [
     "detect_chessboard",
     "detect_charuco",
     "detect_marker_board",
+    "detect_chessboard_best",
+    "detect_charuco_best",
+    "detect_marker_board_best",
 ]
