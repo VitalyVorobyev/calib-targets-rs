@@ -361,11 +361,11 @@ fn create_zip_archive(
         .map_err(|err| format!("create archive {}: {err}", archive_path.display()))?;
     let mut zip = ZipWriter::new(archive_file);
     let timestamp = DateTime::default();
-    let dir_options = FileOptions::default()
+    let dir_options = FileOptions::<()>::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(timestamp)
         .unix_permissions(0o755);
-    let file_options = FileOptions::default()
+    let file_options = FileOptions::<()>::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(timestamp)
         .unix_permissions(0o644);

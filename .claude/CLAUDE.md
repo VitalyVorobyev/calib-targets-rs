@@ -144,6 +144,9 @@ scripts/build-wasm.sh
 `#[non_exhaustive]`) invalidates both the FFI header and Python typing stubs.
 Always regenerate both after such changes.
 
+**`zip` crate:** `FileOptions::default()` requires an explicit type parameter
+on some toolchains (e.g. Windows CI): use `FileOptions::<()>::default()`.
+
 **Binding API parity:** when adding new public functions to the Rust facade
 (`crates/calib-targets/src/detect.rs`), also expose them in:
 - Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
