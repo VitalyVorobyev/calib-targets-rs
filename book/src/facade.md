@@ -5,15 +5,46 @@ The `calib-targets` crate is the unified entry point for the workspace. It re-ex
 ![Mesh-rectified grid](img/mesh_rectified_mid.png)
 *Facade examples cover detection and rectification workflows.*
 
-## Current contents
+## Single-config detection
 
-- Re-exports: `core`, `chessboard`, `aruco`, `charuco`, `marker`.
-- `detect` module: helpers that run ChESS corner detection and then the target detector.
-- Examples under `crates/calib-targets/examples/` that take an image path.
+Each `detect_*` function takes a single params struct that includes the ChESS
+corner detector configuration (`params.chess` or `params.chessboard.chess`):
+
+```rust,no_run
+use calib_targets::detect;
+use calib_targets::chessboard::ChessboardParams;
+
+let img = image::open("board.png").unwrap().to_luma8();
+let params = ChessboardParams::default();
+let result = detect::detect_chessboard(&img, &params);
+```
+
+## Multi-config sweep
+
+For challenging images (uneven lighting, Scheimpflug optics), try multiple
+parameter configs and keep the best result:
+
+```rust,no_run
+use calib_targets::detect;
+use calib_targets::charuco::{CharucoBoardSpec, CharucoParams};
+use calib_targets::aruco::builtins;
+
+let img = image::open("charuco.png").unwrap().to_luma8();
+let board = CharucoBoardSpec {
+    rows: 22, cols: 22, cell_size: 1.0,
+    marker_size_rel: 0.75,
+    dictionary: builtins::DICT_4X4_1000,
+    marker_layout: calib_targets::charuco::MarkerLayout::OpenCvCharuco,
+};
+let configs = CharucoParams::sweep_for_board(&board);
+let result = detect::detect_charuco_best(&img, &configs);
+```
+
+`sweep_for_board()` returns three configs with different ChESS thresholds
+(default, high, low). `detect_charuco_best` tries each and returns the result
+with the most markers (then most corners).
 
 ## Features
 
 - `image` (default): enables `calib_targets::detect`.
 - `tracing`: enables tracing output across the subcrates.
-
-See the roadmap for future expansion of the facade API.

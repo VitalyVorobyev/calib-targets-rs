@@ -1,4 +1,4 @@
-use calib_targets_core::OrientationClusteringParams;
+use calib_targets_core::{ChessConfig, OrientationClusteringParams};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -23,6 +23,10 @@ impl Default for GridGraphParams {
 /// Parameters specific to the chessboard detector.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ChessboardParams {
+    /// ChESS corner detector configuration.
+    #[serde(default)]
+    pub chess: ChessConfig,
+
     /// Minimal corner strength to consider.
     pub min_corner_strength: f32,
 
@@ -47,9 +51,24 @@ pub struct ChessboardParams {
     pub graph: GridGraphParams,
 }
 
+impl ChessboardParams {
+    /// Three-config sweep preset: default + high-threshold + low-threshold.
+    ///
+    /// Useful for challenging images where a single threshold may miss corners.
+    pub fn sweep_default() -> Vec<Self> {
+        let base = Self::default();
+        let mut high = base.clone();
+        high.chess.threshold_value = 0.15;
+        let mut low = base.clone();
+        low.chess.threshold_value = 0.08;
+        vec![base, high, low]
+    }
+}
+
 impl Default for ChessboardParams {
     fn default() -> Self {
         Self {
+            chess: ChessConfig::default(),
             min_corner_strength: 0.0,
             min_corners: 16,
             expected_rows: None,

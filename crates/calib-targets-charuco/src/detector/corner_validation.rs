@@ -101,10 +101,10 @@ const GRID_CORNER_OFFSETS: [(i32, i32); 4] = [(0, 0), (1, 0), (1, 1), (0, 1)];
 #[inline]
 fn recover_gc0(marker: &MarkerDetection) -> (i32, i32) {
     match marker.rotation {
-        1 => (marker.gc.gx - 1, marker.gc.gy),
-        2 => (marker.gc.gx - 1, marker.gc.gy - 1),
-        3 => (marker.gc.gx, marker.gc.gy - 1),
-        _ => (marker.gc.gx, marker.gc.gy), // rotation 0 or unexpected
+        1 => (marker.gc.i - 1, marker.gc.j),
+        2 => (marker.gc.i - 1, marker.gc.j - 1),
+        3 => (marker.gc.i, marker.gc.j - 1),
+        _ => (marker.gc.i, marker.gc.j), // rotation 0 or unexpected
     }
 }
 
@@ -346,12 +346,13 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_0() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
+        use calib_targets_aruco::MarkerDetection;
+        use calib_targets_core::GridCoords;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCell { gx: 3, gy: 5 },
+            gc: GridCoords { i: 3, j: 5 },
             rotation: 0,
             hamming: 0,
             score: 1.0,
@@ -366,13 +367,14 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_1() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
+        use calib_targets_aruco::MarkerDetection;
+        use calib_targets_core::GridCoords;
         use nalgebra::Point2;
 
         // gc = gc0 + (1, 0) for rotation 1, so gc0 = gc - (1, 0)
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCell { gx: 4, gy: 5 },
+            gc: GridCoords { i: 4, j: 5 },
             rotation: 1,
             hamming: 0,
             score: 1.0,
@@ -387,12 +389,13 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_2() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
+        use calib_targets_aruco::MarkerDetection;
+        use calib_targets_core::GridCoords;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCell { gx: 4, gy: 6 },
+            gc: GridCoords { i: 4, j: 6 },
             rotation: 2,
             hamming: 0,
             score: 1.0,
@@ -407,12 +410,13 @@ mod tests {
 
     #[test]
     fn recover_gc0_rotation_3() {
-        use calib_targets_aruco::{GridCell, MarkerDetection};
+        use calib_targets_aruco::MarkerDetection;
+        use calib_targets_core::GridCoords;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCell { gx: 3, gy: 6 },
+            gc: GridCoords { i: 3, j: 6 },
             rotation: 3,
             hamming: 0,
             score: 1.0,

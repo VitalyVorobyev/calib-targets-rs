@@ -68,83 +68,145 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
 }
 
 /// Run the chessboard detector end-to-end: ChESS corners -> chessboard grid.
+///
+/// Corner detection uses `params.chess`.
 #[cfg_attr(
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, chess_cfg, params),
+        skip(img, params),
         fields(width = img.width(), height = img.height())
     )
 )]
 pub fn detect_chessboard(
     img: &::image::GrayImage,
-    chess_cfg: &ChessConfig,
-    params: chessboard::ChessboardParams,
+    params: &chessboard::ChessboardParams,
 ) -> Option<chessboard::ChessboardDetectionResult> {
-    let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::ChessboardDetector::new(params);
+    let corners = detect_corners(img, &params.chess);
+    let detector = chessboard::ChessboardDetector::new(params.clone());
     detector.detect_from_corners(&corners)
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
+///
+/// Corner detection uses `params.chessboard.chess`.
 #[cfg_attr(
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, chess_cfg, params),
+        skip(img, params),
         fields(
             width = img.width(),
             height = img.height(),
-            board_rows = params.charuco.rows,
-            board_cols = params.charuco.cols
+            board_rows = params.board.rows,
+            board_cols = params.board.cols
         )
     )
 )]
 pub fn detect_charuco(
     img: &::image::GrayImage,
-    chess_cfg: &ChessConfig,
-    params: charuco::CharucoDetectorParams,
+    params: &charuco::CharucoParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let corners = detect_corners(img, chess_cfg);
-    let detector = charuco::CharucoDetector::new(params)?;
+    let corners = detect_corners(img, &params.chessboard.chess);
+    let detector = charuco::CharucoDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
 
-/// Convenience overload using `default_chess_config()`.
-pub fn detect_charuco_default(
-    img: &::image::GrayImage,
-    params: charuco::CharucoDetectorParams,
-) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let chess_cfg = default_chess_config();
-    detect_charuco(img, &chess_cfg, params)
-}
-
 /// Run the checkerboard+circles marker board detector end-to-end.
+///
+/// Corner detection uses `params.chessboard.chess`.
 #[cfg_attr(
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, chess_cfg, params),
+        skip(img, params),
         fields(width = img.width(), height = img.height())
     )
 )]
 pub fn detect_marker_board(
     img: &::image::GrayImage,
-    chess_cfg: &ChessConfig,
-    params: marker::MarkerBoardParams,
+    params: &marker::MarkerBoardParams,
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners(img, chess_cfg);
-    let detector = marker::MarkerBoardDetector::new(params);
+    let corners = detect_corners(img, &params.chessboard.chess);
+    let detector = marker::MarkerBoardDetector::new(params.clone());
     detector.detect_from_image_and_corners(&gray_view(img), &corners)
 }
 
-/// Convenience overload using `default_chess_config()`.
-pub fn detect_marker_board_default(
+// ---------------------------------------------------------------------------
+// Multi-config sweep helpers
+// ---------------------------------------------------------------------------
+
+/// Try multiple chessboard parameter configs, return the best result (most corners).
+pub fn detect_chessboard_best(
     img: &::image::GrayImage,
-    params: marker::MarkerBoardParams,
+    configs: &[chessboard::ChessboardParams],
+) -> Option<chessboard::ChessboardDetectionResult> {
+    configs
+        .iter()
+        .filter_map(|params| {
+            let corners = detect_corners(img, &params.chess);
+            let detector = chessboard::ChessboardDetector::new(params.clone());
+            detector.detect_from_corners(&corners)
+        })
+        .max_by_key(|r| r.detection.corners.len())
+}
+
+/// Try multiple ChArUco parameter configs, return the best result
+/// (most markers, then most corners).
+pub fn detect_charuco_best(
+    img: &::image::GrayImage,
+    configs: &[charuco::CharucoParams],
+) -> Result<charuco::CharucoDetectionResult, DetectError> {
+    let mut best: Option<charuco::CharucoDetectionResult> = None;
+    let mut last_err = None;
+
+    for params in configs {
+        let corners = detect_corners(img, &params.chessboard.chess);
+        let detector = match charuco::CharucoDetector::new(params.clone()) {
+            Ok(d) => d,
+            Err(e) => {
+                last_err = Some(DetectError::from(e));
+                continue;
+            }
+        };
+        match detector.detect(&gray_view(img), &corners) {
+            Ok(result) => {
+                let dominated = best.as_ref().is_some_and(|b| {
+                    charuco_score(b) >= charuco_score(&result)
+                });
+                if !dominated {
+                    best = Some(result);
+                }
+            }
+            Err(e) => {
+                last_err = Some(DetectError::from(e));
+            }
+        }
+    }
+
+    best.ok_or_else(|| last_err.unwrap_or(DetectError::CharucoDetect(
+        charuco::CharucoDetectError::NoMarkers,
+    )))
+}
+
+/// Try multiple marker board parameter configs, return the best result (most corners).
+pub fn detect_marker_board_best(
+    img: &::image::GrayImage,
+    configs: &[marker::MarkerBoardParams],
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let chess_cfg = default_chess_config();
-    detect_marker_board(img, &chess_cfg, params)
+    configs
+        .iter()
+        .filter_map(|params| {
+            let corners = detect_corners(img, &params.chessboard.chess);
+            let detector = marker::MarkerBoardDetector::new(params.clone());
+            detector.detect_from_image_and_corners(&gray_view(img), &corners)
+        })
+        .max_by_key(|r| r.detection.corners.len())
+}
+
+/// Scoring key for ChArUco results: (marker count, corner count).
+fn charuco_score(r: &charuco::CharucoDetectionResult) -> (usize, usize) {
+    (r.markers.len(), r.detection.corners.len())
 }
 
 /// Build an `image::GrayImage` from a raw grayscale buffer.
@@ -175,33 +237,30 @@ pub fn detect_chessboard_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
-    chess_cfg: &ChessConfig,
-    params: chessboard::ChessboardParams,
+    params: &chessboard::ChessboardParams,
 ) -> Result<Option<chessboard::ChessboardDetectionResult>, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_chessboard(&img, chess_cfg, params))
+    Ok(detect_chessboard(&img, params))
 }
 
 pub fn detect_charuco_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
-    chess_cfg: &ChessConfig,
-    params: charuco::CharucoDetectorParams,
+    params: &charuco::CharucoParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    detect_charuco(&img, chess_cfg, params)
+    detect_charuco(&img, params)
 }
 
 pub fn detect_marker_board_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
-    chess_cfg: &ChessConfig,
-    params: marker::MarkerBoardParams,
+    params: &marker::MarkerBoardParams,
 ) -> Result<Option<marker::MarkerBoardDetectionResult>, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_marker_board(&img, chess_cfg, params))
+    Ok(detect_marker_board(&img, params))
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> core::Corner {

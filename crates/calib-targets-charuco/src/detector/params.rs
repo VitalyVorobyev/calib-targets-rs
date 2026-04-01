@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CharucoDetectorParams {
+pub struct CharucoParams {
     /// Pixels per board square in the canonical sampling space.
     #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
@@ -14,10 +14,11 @@ pub struct CharucoDetectorParams {
     #[serde(default)]
     pub chessboard: ChessboardParams,
     /// ChArUco board parameters
-    pub charuco: CharucoBoardSpec,
+    #[serde(alias = "charuco")]
+    pub board: CharucoBoardSpec,
     /// Marker scan parameters.
     ///
-    /// `CharucoDetectorParams::for_board` uses a slightly smaller inset
+    /// `CharucoParams::for_board` uses a slightly smaller inset
     /// (`inset_frac = 0.06`) to improve real-image robustness. If
     /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
     #[serde(default)]
@@ -28,6 +29,12 @@ pub struct CharucoDetectorParams {
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
+    /// Minimum marker inliers for secondary (non-largest) components.
+    ///
+    /// Lower than [`min_marker_inliers`] because even a few markers suffice
+    /// to confirm alignment for a small grid fragment.
+    #[serde(default = "default_min_secondary_marker_inliers")]
+    pub min_secondary_marker_inliers: usize,
     /// Relative threshold for local grid smoothness pre-filter.
     ///
     /// Each grid corner's position is predicted from its immediate neighbors
@@ -74,6 +81,10 @@ fn default_px_per_square() -> f32 {
 
 fn default_min_marker_inliers() -> usize {
     8
+}
+
+fn default_min_secondary_marker_inliers() -> usize {
+    2
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -129,20 +140,33 @@ fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKi
     }
 }
 
-impl CharucoDetectorParams {
+impl CharucoParams {
+    /// Three-config sweep preset: canonical + high-threshold + low-threshold.
+    ///
+    /// Useful for challenging images where a single threshold may miss corners
+    /// (e.g. Scheimpflug optics, uneven lighting, narrow focus strips).
+    pub fn sweep_for_board(board: &CharucoBoardSpec) -> Vec<Self> {
+        let base = Self::for_board(board);
+        let mut high = base.clone();
+        high.chessboard.chess.threshold_value = 0.15;
+        let mut low = base.clone();
+        low.chessboard.chess.threshold_value = 0.08;
+        vec![base, high, low]
+    }
+
     /// Build a reasonable default configuration for the given board.
-    pub fn for_board(charuco: &CharucoBoardSpec) -> Self {
+    pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let chessboard = ChessboardParams {
             min_corner_strength: 0.5,
             min_corners: 32,
-            expected_rows: Some(charuco.rows - 1),
-            expected_cols: Some(charuco.cols - 1),
+            expected_rows: Some(board.rows - 1),
+            expected_cols: Some(board.cols - 1),
             completeness_threshold: 0.05,
             ..ChessboardParams::default()
         };
 
         let scan = ScanDecodeConfig {
-            marker_size_rel: charuco.marker_size_rel,
+            marker_size_rel: board.marker_size_rel,
             inset_frac: 0.06,
             // Lower than the default (0.85) — downstream alignment validation
             // rejects false positives, so a looser bar here improves recall on
@@ -151,15 +175,16 @@ impl CharucoDetectorParams {
             ..ScanDecodeConfig::default()
         };
 
-        let max_hamming = charuco.dictionary.max_correction_bits.min(2);
+        let max_hamming = board.dictionary.max_correction_bits.min(2);
 
         Self {
             px_per_square: 60.0,
             chessboard,
-            charuco: *charuco,
+            board: *board,
             scan,
             max_hamming,
             min_marker_inliers: 8,
+            min_secondary_marker_inliers: 2,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),

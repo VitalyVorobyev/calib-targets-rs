@@ -2,24 +2,12 @@
 
 use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
-use calib_targets_core::{homography_from_4pt, GrayImageView, Homography};
+use calib_targets_core::{homography_from_4pt, GridCoords, GrayImageView, Homography};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
-
-#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-pub struct GridCell {
-    pub gx: i32,
-    pub gy: i32,
-} // frame G
-
-#[derive(Clone, Debug, Serialize, Deserialize, Copy)]
-pub struct BoardCell {
-    pub sx: i32,
-    pub sy: i32,
-} // frame B
 
 /// Decoder configuration for scanning markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -105,7 +93,7 @@ impl ArucoScanConfig {
 pub struct MarkerDetection {
     pub id: u32,
     /// Square cell coordinates in grid coords.
-    pub gc: GridCell,
+    pub gc: GridCoords,
     pub rotation: u8,
     pub hamming: u8,
     pub score: f32,
@@ -128,7 +116,7 @@ pub struct MarkerDetection {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerCell {
     /// Cell coordinates in grid space (top-left corner of the square).
-    pub gc: GridCell,
+    pub gc: GridCoords,
     /// Corners of the square cell in image coordinates (TL, TR, BR, BL).
     pub corners_img: [Point2<f32>; 4],
 }
@@ -153,7 +141,7 @@ pub fn scan_decode_markers(
             else {
                 continue;
             };
-            let gc = GridCell { gx: sx, gy: sy };
+            let gc = GridCoords { i: sx, j: sy };
             if let Some(det) = build_detection(gc, px_per_square, obs, matcher) {
                 out.push(det);
             }
@@ -199,8 +187,8 @@ pub fn scan_decode_markers_in_cells(
         let Some(obs) = obs else {
             log::debug!(
                 "cell ({},{}) failed decode (no threshold passed border score)",
-                cell.gc.gx,
-                cell.gc.gy,
+                cell.gc.i,
+                cell.gc.j,
             );
             continue;
         };
@@ -210,8 +198,8 @@ pub fn scan_decode_markers_in_cells(
         } else {
             log::debug!(
                 "cell ({},{}) passed threshold (border_score={:.3}) but no dict match (code={:#018x})",
-                cell.gc.gx,
-                cell.gc.gy,
+                cell.gc.i,
+                cell.gc.j,
                 obs.border_score,
                 obs.code,
             );
@@ -376,7 +364,7 @@ impl<'a> CellDecoder<'a> {
 }
 
 fn build_detection(
-    gc0: GridCell,
+    gc0: GridCoords,
     px_per_square: f32,
     obs: MarkerObservation,
     matcher: &Matcher,
@@ -388,24 +376,24 @@ fn build_detection(
 
     let gc = match m.rotation {
         0 => gc0,
-        1 => GridCell {
-            gx: gc0.gx + 1,
-            gy: gc0.gy,
+        1 => GridCoords {
+            i: gc0.i + 1,
+            j: gc0.j,
         },
-        2 => GridCell {
-            gx: gc0.gx + 1,
-            gy: gc0.gy + 1,
+        2 => GridCoords {
+            i: gc0.i + 1,
+            j: gc0.j + 1,
         },
-        3 => GridCell {
-            gx: gc0.gx,
-            gy: gc0.gy + 1,
+        3 => GridCoords {
+            i: gc0.i,
+            j: gc0.j + 1,
         },
         _ => gc0,
     };
 
     let corners_rect = cell_rect_corners(px_per_square);
-    let x0 = gc0.gx as f32 * px_per_square;
-    let y0 = gc0.gy as f32 * px_per_square;
+    let x0 = gc0.i as f32 * px_per_square;
+    let y0 = gc0.j as f32 * px_per_square;
     let corners = corners_rect.map(|p| Point2::new(p.x + x0, p.y + y0));
 
     Some(MarkerDetection {
@@ -775,7 +763,7 @@ mod tests {
 
         let s = img.width as f32;
         let cell = MarkerCell {
-            gc: GridCell { gx: 0, gy: 0 },
+            gc: GridCoords { i: 0, j: 0 },
             corners_img: [
                 Point2::new(0.0, 0.0),
                 Point2::new(s, 0.0),

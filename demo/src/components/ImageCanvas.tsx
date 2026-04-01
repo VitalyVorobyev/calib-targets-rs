@@ -68,9 +68,10 @@ export function ImageCanvas({ image, detection }: Props) {
         const c = detection.corners[i]!;
         const color = rawCornerColor(c, i);
         const radius = Math.max(2, Math.min(6, c.strength * 3));
+        const [cx, cy] = c.position;
 
         ctx.beginPath();
-        ctx.arc(c.position.x, c.position.y, radius, 0, 2 * Math.PI);
+        ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
         ctx.fillStyle = color;
         ctx.globalAlpha = 0.8;
         ctx.fill();
@@ -78,10 +79,10 @@ export function ImageCanvas({ image, detection }: Props) {
         // Draw orientation line
         const len = radius * 2.5;
         ctx.beginPath();
-        ctx.moveTo(c.position.x, c.position.y);
+        ctx.moveTo(cx, cy);
         ctx.lineTo(
-          c.position.x + len * Math.cos(c.orientation),
-          c.position.y + len * Math.sin(c.orientation),
+          cx + len * Math.cos(c.orientation),
+          cy + len * Math.sin(c.orientation),
         );
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
@@ -118,14 +119,14 @@ export function ImageCanvas({ image, detection }: Props) {
         const down = gridMap.get(`${c.grid.i},${c.grid.j + 1}`);
         if (right) {
           ctx.beginPath();
-          ctx.moveTo(c.position.x, c.position.y);
-          ctx.lineTo(right.position.x, right.position.y);
+          ctx.moveTo(c.position[0], c.position[1]);
+          ctx.lineTo(right.position[0], right.position[1]);
           ctx.stroke();
         }
         if (down) {
           ctx.beginPath();
-          ctx.moveTo(c.position.x, c.position.y);
-          ctx.lineTo(down.position.x, down.position.y);
+          ctx.moveTo(c.position[0], c.position[1]);
+          ctx.lineTo(down.position[0], down.position[1]);
           ctx.stroke();
         }
       }
@@ -136,9 +137,10 @@ export function ImageCanvas({ image, detection }: Props) {
       const c = corners[i]!;
       const color = cornerColor(c, i);
       const radius = 4;
+      const [cx, cy] = c.position;
 
       ctx.beginPath();
-      ctx.arc(c.position.x, c.position.y, radius, 0, 2 * Math.PI);
+      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.globalAlpha = 0.9;
       ctx.fill();
@@ -148,7 +150,7 @@ export function ImageCanvas({ image, detection }: Props) {
         ctx.font = "10px monospace";
         ctx.fillStyle = "white";
         ctx.globalAlpha = 1;
-        ctx.fillText(String(c.id), c.position.x + 6, c.position.y - 4);
+        ctx.fillText(String(c.id), cx + 6, cy - 4);
       }
     }
     ctx.globalAlpha = 1;

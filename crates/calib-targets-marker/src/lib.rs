@@ -11,11 +11,11 @@
 //! ```
 //! use calib_targets_core::{Corner, GrayImageView};
 //! use calib_targets_marker::{
-//!     CellCoords, CirclePolarity, MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams,
+//!     CellCoords, CirclePolarity, MarkerBoardDetector, MarkerBoardSpec, MarkerBoardParams,
 //!     MarkerCircleSpec,
 //! };
 //!
-//! let layout = MarkerBoardLayout {
+//! let layout = MarkerBoardSpec {
 //!     rows: 6,
 //!     cols: 8,
 //!     cell_size: Some(1.0),
@@ -64,6 +64,6 @@ pub use detector::MarkerBoardDetector;
 pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
 pub use match_circles::{estimate_grid_alignment, estimate_grid_offset, match_expected_circles};
 pub use types::{
-    CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardLayout,
+    CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardSpec,
     MarkerBoardParams, MarkerCircleSpec,
 };

@@ -11,7 +11,7 @@
 //!
 //! ```no_run
 //! use calib_targets_aruco::builtins;
-//! use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout};
+//! use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 //! use calib_targets_core::{Corner, GrayImageView};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,7 +24,7 @@
 //!     marker_layout: MarkerLayout::OpenCvCharuco,
 //! };
 //!
-//! let params = CharucoDetectorParams::for_board(&board);
+//! let params = CharucoParams::for_board(&board);
 //! let detector = CharucoDetector::new(params)?;
 //!
 //! let pixels = vec![0u8; 32 * 32];
@@ -48,9 +48,7 @@ mod validation;
 
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
-pub use detector::{
-    CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoDetectorParams,
-};
+pub use detector::{CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams};
 pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};
 pub use validation::{
     validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,

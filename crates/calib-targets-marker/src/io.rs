@@ -1,20 +1,12 @@
 //! JSON configuration and report helpers for marker board detection.
 
 use crate::{MarkerBoardDetectionResult, MarkerBoardDetector, MarkerBoardParams};
+use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-#[derive(thiserror::Error, Debug)]
-pub enum MarkerBoardIoError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
+pub type MarkerBoardIoError = IoError;
 
 /// Configuration for marker board detection, loadable from JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -30,15 +22,12 @@ pub struct MarkerBoardDetectConfig {
 impl MarkerBoardDetectConfig {
     /// Load a JSON config from disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, MarkerBoardIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this config to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), MarkerBoardIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 
     /// Resolve the output report path.
@@ -50,8 +39,12 @@ impl MarkerBoardDetectConfig {
     }
 
     /// Build a detector from this config.
+    ///
+    /// If a top-level `chess` field is present, it overrides `marker.chessboard.chess`.
     pub fn build_detector(&self) -> MarkerBoardDetector {
-        MarkerBoardDetector::new(self.marker.clone())
+        let mut params = self.marker.clone();
+        params.chessboard.chess = self.chess.clone();
+        MarkerBoardDetector::new(params)
     }
 }
 
@@ -97,14 +90,11 @@ impl MarkerBoardDetectReport {
 
     /// Load a report from JSON on disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, MarkerBoardIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this report to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), MarkerBoardIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 }

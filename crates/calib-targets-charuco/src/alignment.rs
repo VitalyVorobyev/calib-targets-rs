@@ -1,8 +1,8 @@
 //! Marker-to-board alignment and corner ID assignment.
 
 use crate::board::CharucoBoard;
-use calib_targets_aruco::{BoardCell, GridCell, MarkerDetection};
-use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_aruco::MarkerDetection;
+use calib_targets_core::{GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
@@ -39,8 +39,8 @@ fn dominant_rotation(markers: &[MarkerDetection]) -> u8 {
 #[derive(Clone, Copy)]
 struct Pair {
     idx: usize,
-    bc: BoardCell,
-    gc: GridCell,
+    bc: GridCoords,
+    gc: GridCoords,
     weight: f32,
 }
 
@@ -91,8 +91,8 @@ fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2
     let mut counts: std::collections::HashMap<[i32; 2], (f32, usize)> =
         std::collections::HashMap::new();
     for p in pairs {
-        let [rx, ry] = transform.apply(p.gc.gx, p.gc.gy);
-        let t = [p.bc.sx - rx, p.bc.sy - ry];
+        let [rx, ry] = transform.apply(p.gc.i, p.gc.j);
+        let t = [p.bc.i - rx, p.bc.j - ry];
         let entry = counts.entry(t).or_insert((0.0, 0));
         entry.0 += p.weight;
         entry.1 += 1;
@@ -113,8 +113,8 @@ fn inliers_for_transform(
 ) -> Vec<usize> {
     let mut inliers = Vec::new();
     for p in pairs {
-        let [x, y] = transform.apply(p.gc.gx, p.gc.gy);
-        if x + translation[0] == p.bc.sx && y + translation[1] == p.bc.sy {
+        let [x, y] = transform.apply(p.gc.i, p.gc.j);
+        if x + translation[0] == p.bc.i && y + translation[1] == p.bc.j {
             inliers.push(p.idx);
         }
     }
@@ -152,9 +152,9 @@ mod tests {
             };
             markers.push(MarkerDetection {
                 id,
-                gc: GridCell {
-                    gx: bc.sx,
-                    gy: bc.sy,
+                gc: GridCoords {
+                    i: bc.i,
+                    j: bc.j,
                 },
                 rotation: 0,
                 hamming: 0,

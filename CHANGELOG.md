@@ -6,6 +6,42 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### API redesign
+
+- **Breaking:** `ChessConfig` is now embedded inside each detector's params struct.
+  Facade `detect_*` functions take a single `&Params` argument instead of
+  separate `(&ChessConfig, Params)`. Removed `detect_charuco_default` and
+  `detect_marker_board_default`.
+- **Breaking:** `CharucoDetectorParams` renamed to `CharucoParams`.
+- **Breaking:** `CharucoParams.charuco` field renamed to `.board`.
+- **Breaking:** `MarkerBoardLayout` renamed to `MarkerBoardSpec`.
+- **Breaking:** `GridCell` replaced with `GridCoords` in aruco crate.
+  `BoardCell` removed.
+- Add multi-config sweep API: `detect_chessboard_best`, `detect_charuco_best`,
+  `detect_marker_board_best` try multiple parameter configs and return the best
+  result (most markers, then most corners).
+- Add `CharucoParams::sweep_for_board()` and `ChessboardParams::sweep_default()`
+  presets for common multi-threshold sweep scenarios.
+- Extract shared `calib_targets_core::io::{load_json, write_json, IoError}` to
+  replace duplicated IO boilerplate across crates.
+- Python and WASM bindings accept the new single-config API. The `chess_cfg`
+  parameter is still accepted for backward compatibility (overrides
+  `params.chess` or `params.chessboard.chess` when provided).
+- Python: `CharucoParams` and `MarkerBoardSpec` are the canonical names;
+  `CharucoDetectorParams` and `MarkerBoardLayout` remain as aliases.
+
+### Multi-component ChArUco detection
+
+- Merge disconnected grid components for 30-50% more corners on challenging
+  images (Scheimpflug optics, narrow focus strips). Each component is aligned
+  independently via marker-based D4 rotation, then merged.
+
+### AprilTag max_hamming fix
+
+- `CharucoParams::for_board()` now sets `max_hamming` to
+  `min(2, dictionary.max_correction_bits)` instead of 0, improving recall for
+  AprilTag-based ChArUco boards (e.g. `DICT_APRILTAG_36h10`).
+
 ### WebAssembly bindings and browser demo
 
 - Add the new `calib-targets-wasm` crate (`crates/calib-targets-wasm/`) with

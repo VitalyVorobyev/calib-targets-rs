@@ -44,7 +44,7 @@ calib-targets-core = {{ path = '{}' }}
     write_file(
         &main_path,
         r#"use calib_targets_aruco::builtins;
-use calib_targets_charuco::{CharucoBoardSpec, CharucoDetectorParams, MarkerLayout};
+use calib_targets_charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
 
 fn main() {
@@ -57,7 +57,7 @@ fn main() {
         marker_layout: MarkerLayout::OpenCvCharuco,
     };
 
-    let mut params = CharucoDetectorParams::for_board(&board);
+    let mut params = CharucoParams::for_board(&board);
     let named: ChessCornerParams = ChessCornerParams {
         threshold_rel: 0.05,
         min_cluster_size: 1,

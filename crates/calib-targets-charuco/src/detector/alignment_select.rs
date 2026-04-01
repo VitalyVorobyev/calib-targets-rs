@@ -43,14 +43,13 @@ pub(crate) fn retain_inlier_markers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_aruco::GridCell;
-    use calib_targets_core::GridAlignment;
+    use calib_targets_core::{GridAlignment, GridCoords};
     use nalgebra::Point2;
 
-    fn marker(id: u32, gx: i32, gy: i32) -> MarkerDetection {
+    fn marker(id: u32, i: i32, j: i32) -> MarkerDetection {
         MarkerDetection {
             id,
-            gc: GridCell { gx, gy },
+            gc: GridCoords { i, j },
             rotation: 0,
             hamming: 0,
             score: 1.0,

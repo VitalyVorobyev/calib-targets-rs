@@ -130,8 +130,11 @@ export interface MarkerBoardParams {
 // Output types
 // ---------------------------------------------------------------------------
 
+/** nalgebra::Point2<f32> serializes as [x, y] via serde */
+export type Point2 = [number, number];
+
 export interface Corner {
-  position: { x: number; y: number };
+  position: Point2;
   orientation: number;
   orientation_cluster: number | null;
   strength: number;
@@ -143,10 +146,10 @@ export interface GridCoords {
 }
 
 export interface LabeledCorner {
-  position: { x: number; y: number };
+  position: Point2;
   grid: GridCoords | null;
   id: number | null;
-  target_position: { x: number; y: number } | null;
+  target_position: Point2 | null;
   score: number;
 }
 

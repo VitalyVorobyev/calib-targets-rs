@@ -16,7 +16,7 @@
 ## Key types
 
 - `MarkerBoardDetector`: main entry point.
-- `MarkerBoardLayout`: rows/cols plus the three expected circles (cell coordinate + polarity).
+- `MarkerBoardSpec`: rows/cols plus the three expected circles (cell coordinate + polarity).
 - `MarkerBoardParams`: layout + chessboard/grid graph params + circle score + match settings.
 - `MarkerBoardDetectionResult`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
@@ -27,7 +27,7 @@
 
 ## Parameters
 
-`MarkerBoardLayout` defines the board and marker placement:
+`MarkerBoardSpec` defines the board and marker placement:
 
 - `rows`, `cols`: inner corner counts.
 - `cell_size`: optional square size in your world units (when set, `target_position` is populated).

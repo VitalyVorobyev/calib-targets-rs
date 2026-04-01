@@ -26,8 +26,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         marker_layout: MarkerLayout::OpenCvCharuco,
     };
 
-    let params = calib_targets::charuco::CharucoDetectorParams::for_board(&board);
-    let result = detect::detect_charuco_default(&img, params)?;
+    let params = calib_targets::charuco::CharucoParams::for_board(&board);
+    let result = detect::detect_charuco(&img, &params)?;
     println!(
         "detected {} charuco corners",
         result.detection.corners.len()

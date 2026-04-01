@@ -2,24 +2,16 @@
 
 use crate::{
     CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult,
-    CharucoDetector, CharucoDetectorParams,
+    CharucoDetector, CharucoParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_chessboard::ChessboardParams;
+use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-#[derive(thiserror::Error, Debug)]
-pub enum CharucoIoError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
+pub type CharucoIoError = IoError;
 
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoConfigError {
@@ -57,15 +49,12 @@ pub struct CharucoDetectConfig {
 impl CharucoDetectConfig {
     /// Load a JSON config from disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, CharucoIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this config to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), CharucoIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 
     /// Resolve the output report path.
@@ -82,9 +71,10 @@ impl CharucoDetectConfig {
     }
 
     /// Build detector parameters, applying overrides from the config.
-    pub fn build_params(&self) -> CharucoDetectorParams {
-        let mut params = CharucoDetectorParams::for_board(&self.board);
+    pub fn build_params(&self) -> CharucoParams {
+        let mut params = CharucoParams::for_board(&self.board);
         params.px_per_square = self.px_per_square;
+        params.chessboard.chess = self.chess.clone();
         if let Some(min_marker_inliers) = self.min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
         }
@@ -155,14 +145,11 @@ impl CharucoDetectReport {
 
     /// Load a report from JSON on disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, CharucoIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this report to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), CharucoIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 }

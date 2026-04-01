@@ -3,12 +3,13 @@ use super::corner_mapping::map_charuco_corners;
 use super::corner_validation::{validate_and_fix_corners, CornerValidationConfig};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
+use super::merge::merge_charuco_results;
 use super::params::to_chess_params;
-use super::{CharucoDetectError, CharucoDetectionResult, CharucoDetectorParams};
+use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
-use calib_targets_chessboard::ChessboardDetector;
+use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
 use calib_targets_core::{Corner, GrayImageView};
 use log::{debug, warn};
 
@@ -19,14 +20,14 @@ use tracing::instrument;
 #[derive(Debug)]
 pub struct CharucoDetector {
     board: CharucoBoard,
-    params: CharucoDetectorParams,
+    params: CharucoParams,
     matcher: Matcher,
 }
 
 impl CharucoDetector {
-    /// Create a detector from parameters (board spec lives in `params.charuco`).
-    pub fn new(mut params: CharucoDetectorParams) -> Result<Self, CharucoBoardError> {
-        let board_cfg = params.charuco;
+    /// Create a detector from parameters (board spec lives in `params.board`).
+    pub fn new(mut params: CharucoParams) -> Result<Self, CharucoBoardError> {
+        let board_cfg = params.board;
         if params.chessboard.expected_rows.is_none() {
             // `board_cfg.rows/cols` are square counts; chessboard detector expects inner corners.
             params.chessboard.expected_rows = board_cfg.rows.checked_sub(1);
@@ -38,9 +39,18 @@ impl CharucoDetector {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
 
-        let max_hamming = params
-            .max_hamming
-            .min(board_cfg.dictionary.max_correction_bits);
+        // Cap max_hamming at max_correction_bits when the dictionary declares a
+        // non-zero value.  AprilTag families report max_correction_bits == 0 in
+        // OpenCV metadata even though their minimum inter-code Hamming distance
+        // is large (e.g. 10 for 36h10), so we skip capping in that case and let
+        // the user control error tolerance directly.
+        let max_hamming = if board_cfg.dictionary.max_correction_bits > 0 {
+            params
+                .max_hamming
+                .min(board_cfg.dictionary.max_correction_bits)
+        } else {
+            params.max_hamming
+        };
         params.max_hamming = max_hamming;
 
         let matcher = Matcher::new(board_cfg.dictionary, max_hamming);
@@ -61,14 +71,15 @@ impl CharucoDetector {
 
     /// Detector parameters.
     #[inline]
-    pub fn params(&self) -> &CharucoDetectorParams {
+    pub fn params(&self) -> &CharucoParams {
         &self.params
     }
 
     /// Detect a ChArUco board from an image and a set of corners.
     ///
-    /// This uses per-cell marker sampling by default. Set
-    /// `build_rectified_image` if you need a rectified output image.
+    /// When the grid graph contains multiple disconnected components, each
+    /// qualifying component is processed independently and results with
+    /// consistent alignments are merged.
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
     pub fn detect(
         &self,
@@ -86,33 +97,72 @@ impl CharucoDetector {
             self.params.min_marker_inliers
         );
         let detector = ChessboardDetector::new(self.params.chessboard.clone());
-        let chessboard = match detector.detect_from_corners(corners) {
-            Some(chessboard) => {
-                debug!(
-                    "chessboard stage succeeded: detected_corners={}, inliers={}, orientations={:?}",
-                    chessboard.detection.corners.len(),
-                    chessboard.inliers.len(),
-                    chessboard
-                        .orientations
-                        .map(|angles| [angles[0].to_degrees(), angles[1].to_degrees()])
-                );
-                chessboard
-            }
-            None => {
-                warn!(
-                    "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, min_corners={}, spacing=[{:.1}, {:.1}], k_neighbors={}, orientation_tol={:.1} deg",
-                    corners.len(),
-                    self.params.chessboard.min_corner_strength,
-                    self.params.chessboard.min_corners,
-                    self.params.chessboard.graph.min_spacing_pix,
-                    self.params.chessboard.graph.max_spacing_pix,
-                    self.params.chessboard.graph.k_neighbors,
-                    self.params.chessboard.graph.orientation_tolerance_deg
-                );
-                return Err(CharucoDetectError::ChessboardNotDetected);
-            }
-        };
+        let components = detector.detect_all_from_corners(corners);
 
+        if components.is_empty() {
+            warn!(
+                "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, min_corners={}, spacing=[{:.1}, {:.1}], k_neighbors={}, orientation_tol={:.1} deg",
+                corners.len(),
+                self.params.chessboard.min_corner_strength,
+                self.params.chessboard.min_corners,
+                self.params.chessboard.graph.min_spacing_pix,
+                self.params.chessboard.graph.max_spacing_pix,
+                self.params.chessboard.graph.k_neighbors,
+                self.params.chessboard.graph.orientation_tolerance_deg
+            );
+            return Err(CharucoDetectError::ChessboardNotDetected);
+        }
+
+        debug!(
+            "chessboard stage produced {} qualifying components: {:?}",
+            components.len(),
+            components
+                .iter()
+                .map(|c| c.detection.corners.len())
+                .collect::<Vec<_>>()
+        );
+
+        let mut results: Vec<CharucoDetectionResult> = Vec::new();
+        for (i, chessboard) in components.iter().enumerate() {
+            let min_inliers = if i == 0 {
+                self.params.min_marker_inliers
+            } else {
+                self.params.min_secondary_marker_inliers
+            };
+
+            match self.detect_component(image, chessboard, min_inliers) {
+                Ok(result) => {
+                    debug!(
+                        "component {i}: {} corners, {} markers",
+                        result.detection.corners.len(),
+                        result.markers.len()
+                    );
+                    results.push(result);
+                }
+                Err(e) => {
+                    debug!("component {i} failed: {e}");
+                }
+            }
+        }
+
+        if results.is_empty() {
+            return Err(CharucoDetectError::NoMarkers);
+        }
+
+        if results.len() == 1 {
+            return Ok(results.into_iter().next().unwrap());
+        }
+
+        Ok(merge_charuco_results(results))
+    }
+
+    /// Run the full charuco pipeline on a single chessboard component.
+    fn detect_component(
+        &self,
+        image: &GrayImageView<'_>,
+        chessboard: &ChessboardDetectionResult,
+        min_marker_inliers: usize,
+    ) -> Result<CharucoDetectionResult, CharucoDetectError> {
         let mut corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
         let corner_redetect_params = to_chess_params(&self.params.corner_redetect_params);
         smooth_grid_corners(
@@ -160,11 +210,11 @@ impl CharucoDetector {
             alignment.alignment.translation
         );
 
-        if alignment.marker_inliers.len() < self.params.min_marker_inliers {
+        if alignment.marker_inliers.len() < min_marker_inliers {
             warn!(
                 "marker-to-board alignment rejected: {} inliers < required {}",
                 alignment.marker_inliers.len(),
-                self.params.min_marker_inliers
+                min_marker_inliers
             );
             return Err(CharucoDetectError::AlignmentFailed {
                 inliers: alignment.marker_inliers.len(),

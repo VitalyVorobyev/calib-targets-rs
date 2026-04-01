@@ -36,6 +36,7 @@ mod corner;
 mod grid_alignment;
 mod homography;
 mod image;
+pub mod io;
 mod logger;
 mod orientation_clustering;
 mod rectify;

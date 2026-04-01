@@ -173,9 +173,9 @@ fn build_charuco(
             .marker_position(marker_id as u32)
             .expect("validated marker position");
         let origin_x =
-            layout.board_origin_mm[0] + cell.sx as f64 * spec.square_size_mm + marker_offset_mm;
+            layout.board_origin_mm[0] + cell.i as f64 * spec.square_size_mm + marker_offset_mm;
         let origin_y =
-            layout.board_origin_mm[1] + cell.sy as f64 * spec.square_size_mm + marker_offset_mm;
+            layout.board_origin_mm[1] + cell.j as f64 * spec.square_size_mm + marker_offset_mm;
         let code = spec.dictionary.codes[marker_id];
         for cy in 0..total_cells {
             for cx in 0..total_cells {

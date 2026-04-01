@@ -1,20 +1,12 @@
 //! JSON configuration and report helpers for chessboard detection.
 
 use crate::{ChessboardDetectionResult, ChessboardDetector, ChessboardParams};
+use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{ChessConfig, Corner, TargetDetection};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
-#[derive(thiserror::Error, Debug)]
-pub enum ChessboardIoError {
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Json(#[from] serde_json::Error),
-}
+pub type ChessboardIoError = IoError;
 
 /// Configuration for chessboard detection, loadable from JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,15 +23,12 @@ pub struct ChessboardDetectConfig {
 impl ChessboardDetectConfig {
     /// Load a JSON config from disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, ChessboardIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this config to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), ChessboardIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 
     /// Resolve the output report path.
@@ -51,8 +40,12 @@ impl ChessboardDetectConfig {
     }
 
     /// Build a detector from this config.
+    ///
+    /// If a top-level `chess` field is present, it overrides `chessboard.chess`.
     pub fn build_detector(&self) -> ChessboardDetector {
-        ChessboardDetector::new(self.chessboard.clone())
+        let mut params = self.chessboard.clone();
+        params.chess = self.chess.clone();
+        ChessboardDetector::new(params)
     }
 }
 
@@ -98,14 +91,11 @@ impl ChessboardDetectReport {
 
     /// Load a report from JSON on disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, ChessboardIoError> {
-        let raw = fs::read_to_string(path)?;
-        Ok(serde_json::from_str(&raw)?)
+        io::load_json(path)
     }
 
     /// Write this report to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), ChessboardIoError> {
-        let json = serde_json::to_string_pretty(self)?;
-        fs::write(path, json)?;
-        Ok(())
+        io::write_json(self, path)
     }
 }

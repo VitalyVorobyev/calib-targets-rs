@@ -8,7 +8,7 @@ use std::str::FromStr;
 
 use calib_targets_charuco::{
     CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector,
-    CharucoDetectorParams,
+    CharucoParams,
 };
 use calib_targets_core::{Corner, GrayImageView};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
@@ -141,7 +141,7 @@ fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
     );
 }
 
-fn log_detector_params(params: &CharucoDetectorParams) {
+fn log_detector_params(params: &CharucoParams) {
     let expected_cols = format_optional_u32(params.chessboard.expected_cols);
     let expected_rows = format_optional_u32(params.chessboard.expected_rows);
 
@@ -175,7 +175,7 @@ fn log_detector_params(params: &CharucoDetectorParams) {
     );
 }
 
-fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
+fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
     if corners.is_empty() {
         warn!("ChESS scan returned no raw corners");
         return;

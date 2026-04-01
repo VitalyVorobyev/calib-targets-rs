@@ -1,6 +1,6 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{
-    CharucoBoardSpec, CharucoDetector, CharucoDetectorParams, MarkerLayout,
+    CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets_core::{
@@ -169,7 +169,7 @@ fn detects_charuco_on_large_png() {
         marker_layout: MarkerLayout::OpenCvCharuco,
     };
 
-    let mut params = CharucoDetectorParams::for_board(&board);
+    let mut params = CharucoParams::for_board(&board);
     params.px_per_square = 60.0;
     params.chessboard.min_corners = 50;
     params.chessboard.graph.min_spacing_pix = 40.0;
@@ -264,7 +264,7 @@ fn detects_charuco_on_small_png() {
         marker_layout: MarkerLayout::OpenCvCharuco,
     };
 
-    let mut params = CharucoDetectorParams::for_board(&board);
+    let mut params = CharucoParams::for_board(&board);
     params.px_per_square = 60.0;
     params.chessboard.min_corners = 10;
     params.chessboard.completeness_threshold = 0.02;

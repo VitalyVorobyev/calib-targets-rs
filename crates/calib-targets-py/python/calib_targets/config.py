@@ -241,8 +241,14 @@ class GridGraphParams:
 
 @dataclass(slots=True)
 class ChessboardParams:
-    """Chessboard detection parameters, including embedded grid graph params."""
+    """Chessboard detection parameters, including embedded grid graph params.
 
+    The ``chess`` field holds the ChESS corner detector configuration.
+    When passed to ``detect_chessboard``, this is the single config object
+    (no separate ``chess_cfg`` needed).
+    """
+
+    chess: ChessConfig = field(default_factory=ChessConfig)
     min_corner_strength: float = 0.2
     min_corners: int = 10
     expected_rows: int | None = None
@@ -256,6 +262,7 @@ class ChessboardParams:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
+            "chess": self.chess.to_dict(),
             "min_corner_strength": self.min_corner_strength,
             "min_corners": self.min_corners,
             "expected_rows": self.expected_rows,
@@ -271,6 +278,7 @@ class ChessboardParams:
     def from_dict(cls, data: dict[str, Any]) -> ChessboardParams:
         d = cls()
         return cls(
+            chess=ChessConfig.from_dict(data.get("chess", {})),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
             min_corners=data.get("min_corners", d.min_corners),
             expected_rows=data.get("expected_rows"),
@@ -354,11 +362,8 @@ class CharucoBoardSpec:
 
 
 @dataclass(slots=True)
-class CharucoDetectorParams:
-    """ChArUco detector parameters. ``board`` is required.
-
-    Note: the ``board`` field maps to ``charuco`` in the Rust/JSON schema.
-    """
+class CharucoParams:
+    """ChArUco detector parameters. ``board`` is required."""
 
     board: CharucoBoardSpec
     px_per_square: float = 60.0
@@ -366,24 +371,34 @@ class CharucoDetectorParams:
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
     max_hamming: int = 0
     min_marker_inliers: int = 3
+    min_secondary_marker_inliers: int | None = None
+    grid_smoothness_threshold_rel: float | None = None
+    corner_validation_threshold_rel: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "charuco": self.board.to_dict(),
+        d: dict[str, Any] = {
+            "board": self.board.to_dict(),
             "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
             "scan": self.scan.to_dict(),
             "max_hamming": self.max_hamming,
             "min_marker_inliers": self.min_marker_inliers,
         }
+        if self.min_secondary_marker_inliers is not None:
+            d["min_secondary_marker_inliers"] = self.min_secondary_marker_inliers
+        if self.grid_smoothness_threshold_rel is not None:
+            d["grid_smoothness_threshold_rel"] = self.grid_smoothness_threshold_rel
+        if self.corner_validation_threshold_rel is not None:
+            d["corner_validation_threshold_rel"] = self.corner_validation_threshold_rel
+        return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> CharucoDetectorParams:
+    def from_dict(cls, data: dict[str, Any]) -> CharucoParams:
         d_px = 60.0
-        # Accept both "charuco" (Rust field name) and "board" (Python alias)
-        board_data = data.get("charuco") or data.get("board")
+        # Accept both "board" (current) and "charuco" (legacy Rust field name)
+        board_data = data.get("board") or data.get("charuco")
         if board_data is None:
-            raise ValueError("CharucoDetectorParams requires 'charuco' (or 'board') field")
+            raise ValueError("CharucoParams requires 'board' field")
         return cls(
             board=CharucoBoardSpec.from_dict(board_data),
             px_per_square=data.get("px_per_square", d_px),
@@ -391,7 +406,14 @@ class CharucoDetectorParams:
             scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
             max_hamming=data.get("max_hamming", 0),
             min_marker_inliers=data.get("min_marker_inliers", 3),
+            min_secondary_marker_inliers=data.get("min_secondary_marker_inliers"),
+            grid_smoothness_threshold_rel=data.get("grid_smoothness_threshold_rel"),
+            corner_validation_threshold_rel=data.get("corner_validation_threshold_rel"),
         )
+
+
+# Backward-compatible alias
+CharucoDetectorParams = CharucoParams
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +450,7 @@ def _default_marker_circles() -> tuple[MarkerCircleSpec, MarkerCircleSpec, Marke
 
 
 @dataclass(slots=True)
-class MarkerBoardLayout:
+class MarkerBoardSpec:
     rows: int = 6
     cols: int = 8
     circles: tuple[MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec] = field(
@@ -447,7 +469,7 @@ class MarkerBoardLayout:
         return d
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardLayout:
+    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardSpec:
         circles_raw = data.get("circles")
         if circles_raw is not None:
             if len(circles_raw) != 3:
@@ -465,6 +487,10 @@ class MarkerBoardLayout:
             circles=circles,
             cell_size=data.get("cell_size"),
         )
+
+
+# Backward-compatible alias
+MarkerBoardLayout = MarkerBoardSpec
 
 
 @dataclass(slots=True)
@@ -533,7 +559,7 @@ class CircleMatchParams:
 class MarkerBoardParams:
     """Marker board detection parameters. Grid graph is inside ``chessboard``."""
 
-    layout: MarkerBoardLayout = field(default_factory=MarkerBoardLayout)
+    layout: MarkerBoardSpec = field(default_factory=MarkerBoardSpec)
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
     circle_score: CircleScoreParams = field(default_factory=CircleScoreParams)
     match_params: CircleMatchParams = field(default_factory=CircleMatchParams)
@@ -554,7 +580,7 @@ class MarkerBoardParams:
     def from_dict(cls, data: dict[str, Any]) -> MarkerBoardParams:
         roi = data.get("roi_cells")
         return cls(
-            layout=MarkerBoardLayout.from_dict(data.get("layout", {})),
+            layout=MarkerBoardSpec.from_dict(data.get("layout", {})),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
             circle_score=CircleScoreParams.from_dict(data.get("circle_score", {})),
             match_params=CircleMatchParams.from_dict(data.get("match_params", {})),
@@ -573,9 +599,11 @@ __all__ = [
     "ChessboardParams",
     "ScanDecodeConfig",
     "CharucoBoardSpec",
-    "CharucoDetectorParams",
+    "CharucoParams",
+    "CharucoDetectorParams",  # backward-compatible alias
     "MarkerCircleSpec",
-    "MarkerBoardLayout",
+    "MarkerBoardSpec",
+    "MarkerBoardLayout",  # backward-compatible alias
     "CircleScoreParams",
     "CircleMatchParams",
     "MarkerBoardParams",

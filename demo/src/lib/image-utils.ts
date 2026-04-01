@@ -21,7 +21,7 @@ export async function loadImage(
 
   ctx.drawImage(bitmap, 0, 0);
   const imgData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
-  const rgba = new Uint8Array(imgData.data.buffer);
+  const rgba = new Uint8Array(imgData.data);
   const gray = rgbaToGray(rgba, bitmap.width, bitmap.height);
 
   return { rgba, gray, width: bitmap.width, height: bitmap.height };

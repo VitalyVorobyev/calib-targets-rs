@@ -1,6 +1,6 @@
 use calib_targets::detect;
 use calib_targets::marker::{
-    CellCoords, CirclePolarity, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
+    CellCoords, CirclePolarity, MarkerBoardSpec, MarkerBoardParams, MarkerCircleSpec,
 };
 use image::ImageReader;
 
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
-    let layout = MarkerBoardLayout {
+    let layout = MarkerBoardSpec {
         rows: 22,
         cols: 22,
         cell_size: Some(1.0),
@@ -39,7 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let params = MarkerBoardParams::new(layout);
-    let result = detect::detect_marker_board_default(&img, params);
+    let result = detect::detect_marker_board(&img, &params);
     println!("detected: {}", result.is_some());
 
     Ok(())

@@ -1,7 +1,7 @@
 use calib_targets_aruco::Dictionary;
 use calib_targets_charuco::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 use calib_targets_core::GridCoords;
-use calib_targets_marker::{CirclePolarity, MarkerBoardLayout};
+use calib_targets_marker::{CirclePolarity, MarkerBoardSpec};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -276,7 +276,7 @@ impl MarkerBoardTargetSpec {
 
     /// Build a printable marker-board target from a detector layout whose
     /// `cell_size` is already expressed in millimeters.
-    pub fn try_from_layout_mm(layout: &MarkerBoardLayout) -> Result<Self, PrintableTargetError> {
+    pub fn try_from_layout_mm(layout: &MarkerBoardSpec) -> Result<Self, PrintableTargetError> {
         let square_size_mm = layout
             .cell_size
             .map(f64::from)
@@ -444,7 +444,7 @@ impl PrintableTargetDocument {
     /// Build a printable document from a marker-board layout whose `cell_size`
     /// is already expressed in millimeters.
     pub fn try_from_marker_board_layout_mm(
-        layout: &MarkerBoardLayout,
+        layout: &MarkerBoardSpec,
     ) -> Result<Self, PrintableTargetError> {
         Ok(Self::new(TargetSpec::MarkerBoard(
             MarkerBoardTargetSpec::try_from_layout_mm(layout)?,
@@ -790,7 +790,7 @@ mod tests {
 
     #[test]
     fn builds_marker_board_spec_from_layout_mm() {
-        let layout = MarkerBoardLayout {
+        let layout = MarkerBoardSpec {
             rows: 6,
             cols: 8,
             cell_size: Some(20.0),
@@ -838,7 +838,7 @@ mod tests {
 
     #[test]
     fn builds_marker_board_document_from_layout_mm() {
-        let layout = MarkerBoardLayout {
+        let layout = MarkerBoardSpec {
             rows: 6,
             cols: 8,
             cell_size: Some(20.0),
@@ -872,11 +872,11 @@ mod tests {
 
     #[test]
     fn rejects_marker_board_layout_without_cell_size() {
-        let layout = MarkerBoardLayout {
+        let layout = MarkerBoardSpec {
             rows: 6,
             cols: 8,
             cell_size: None,
-            circles: MarkerBoardLayout::default().circles,
+            circles: MarkerBoardSpec::default().circles,
         };
         let err =
             MarkerBoardTargetSpec::try_from_layout_mm(&layout).expect_err("missing cell size");
@@ -888,7 +888,7 @@ mod tests {
 
     #[test]
     fn rejects_negative_detector_circle_coords() {
-        let layout = MarkerBoardLayout {
+        let layout = MarkerBoardSpec {
             rows: 6,
             cols: 8,
             cell_size: Some(20.0),

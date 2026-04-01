@@ -1,4 +1,4 @@
-use calib_targets_aruco::{GridCell, MarkerCell};
+use calib_targets_aruco::MarkerCell;
 use calib_targets_core::{GridCoords, LabeledCorner};
 use nalgebra::Point2;
 use std::collections::HashMap;
@@ -58,7 +58,7 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
             };
 
             out.push(MarkerCell {
-                gc: GridCell { gx: i, gy: j },
+                gc: GridCoords { i, j },
                 corners_img: [p00, p10, p11, p01],
             });
         }

@@ -128,6 +128,7 @@ pub fn detect_corners(
 /// Detect a chessboard grid in a grayscale image.
 ///
 /// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found.
+/// If `chess_cfg` is provided, it overrides `params.chess`.
 #[wasm_bindgen]
 pub fn detect_chessboard(
     width: u32,
@@ -137,10 +138,12 @@ pub fn detect_chessboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cfg: ChessConfig = from_js(chess_cfg)?;
-    let cb_params: ChessboardParams = from_js(params)?;
+    let mut cb_params: ChessboardParams = from_js(params)?;
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        cb_params.chess = from_js(chess_cfg)?;
+    }
 
-    let corners = detect_corners_impl(pixels, width, height, &cfg);
+    let corners = detect_corners_impl(pixels, width, height, &cb_params.chess);
     let detector = ChessboardDetector::new(cb_params);
     let result = detector.detect_from_corners(&corners);
     to_js(&result)
@@ -153,6 +156,7 @@ pub fn detect_chessboard(
 /// Detect a ChArUco board in a grayscale image.
 ///
 /// Returns a `CharucoDetectionResult` JS object. Throws on error.
+/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
 #[wasm_bindgen]
 pub fn detect_charuco(
     width: u32,
@@ -162,10 +166,12 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cfg: ChessConfig = from_js(chess_cfg)?;
-    let charuco_params: calib_targets_charuco::CharucoDetectorParams = from_js(params)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        charuco_params.chessboard.chess = from_js(chess_cfg)?;
+    }
 
-    let corners = detect_corners_impl(pixels, width, height, &cfg);
+    let corners = detect_corners_impl(pixels, width, height, &charuco_params.chessboard.chess);
     let detector =
         CharucoDetector::new(charuco_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
@@ -182,6 +188,7 @@ pub fn detect_charuco(
 /// Detect a checkerboard+circles marker board in a grayscale image.
 ///
 /// Returns a `MarkerBoardDetectionResult` JS object, or `null` if not found.
+/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
 #[wasm_bindgen]
 pub fn detect_marker_board(
     width: u32,
@@ -191,10 +198,12 @@ pub fn detect_marker_board(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cfg: ChessConfig = from_js(chess_cfg)?;
-    let mb_params: MarkerBoardParams = from_js(params)?;
+    let mut mb_params: MarkerBoardParams = from_js(params)?;
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        mb_params.chessboard.chess = from_js(chess_cfg)?;
+    }
 
-    let corners = detect_corners_impl(pixels, width, height, &cfg);
+    let corners = detect_corners_impl(pixels, width, height, &mb_params.chessboard.chess);
     let detector = MarkerBoardDetector::new(mb_params);
     let view = make_view(pixels, width, height);
     let result = detector.detect_from_image_and_corners(&view, &corners);

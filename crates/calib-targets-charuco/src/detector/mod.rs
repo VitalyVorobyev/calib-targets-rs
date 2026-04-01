@@ -9,11 +9,12 @@ mod corner_validation;
 mod error;
 mod grid_smoothness;
 mod marker_sampling;
+mod merge;
 mod params;
 mod pipeline;
 mod result;
 
 pub use error::CharucoDetectError;
-pub use params::CharucoDetectorParams;
+pub use params::CharucoParams;
 pub use pipeline::CharucoDetector;
 pub use result::CharucoDetectionResult;

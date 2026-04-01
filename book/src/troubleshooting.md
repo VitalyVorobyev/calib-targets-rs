@@ -89,7 +89,7 @@ marker was decoded inside any cell.
 
 5. **Wrong scale?** If `px_per_square` is far from the actual pixel size, the projective
    warp used for cell sampling will produce a very small or very large patch. Adjust
-   `CharucoDetectorParams.px_per_square`.
+   `CharucoParams.px_per_square`.
 
 ---
 
@@ -125,7 +125,7 @@ specification in a geometrically consistent way.
 | Uneven / gradient lighting | `multi_threshold` (already default) |
 | Strong perspective / wide-angle | Raise `max_spacing_pix`, raise `orientation_tolerance_deg` |
 | Partial occlusion | Lower `completeness_threshold`, lower `min_marker_inliers` |
-| Very small ChArUco board in frame | Raise `CharucoDetectorParams.px_per_square` to match actual square size |
+| Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
 | Very large board / high-res image | Raise `max_spacing_pix` to ≥ `image_width / cols / 2` |
 | Multiple boards in frame | Set `expected_rows` / `expected_cols` explicitly |
 | Specular reflections on board | Pre-process with local contrast normalization (CLAHE) |

@@ -23,7 +23,7 @@ pub mod package_support;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection, ScanDecodeConfig};
 use calib_targets::charuco::{
     CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector,
-    CharucoDetectorParams, MarkerLayout,
+    CharucoParams, MarkerLayout,
 };
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets::core::{
@@ -34,7 +34,7 @@ use calib_targets::detect;
 use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
-    MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
+    MarkerBoardDetector, MarkerBoardSpec, MarkerBoardParams, MarkerCircleSpec,
 };
 use std::any::Any;
 use std::cell::RefCell;
@@ -1110,6 +1110,7 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         return Err(FfiError::config_error("chessboard.min_corners must be > 0"));
     }
     Ok(ChessboardParams {
+        chess: ChessConfig::default(),
         min_corner_strength: require_finite(
             params.min_corner_strength,
             "chessboard.min_corner_strength",
@@ -1165,7 +1166,7 @@ fn convert_charuco_board_spec(params: &ct_charuco_board_spec_t) -> FfiResult<Cha
 
 fn convert_charuco_detector_params(
     params: &ct_charuco_detector_params_t,
-) -> FfiResult<CharucoDetectorParams> {
+) -> FfiResult<CharucoParams> {
     let grid_smoothness_threshold_rel = if params.grid_smoothness_threshold_rel.is_infinite()
         && params.grid_smoothness_threshold_rel.is_sign_positive()
     {
@@ -1188,14 +1189,15 @@ fn convert_charuco_detector_params(
         )?
     };
 
-    Ok(CharucoDetectorParams {
+    Ok(CharucoParams {
         px_per_square: require_positive(params.px_per_square, "charuco.px_per_square")?,
         chessboard: convert_chessboard_params(&params.chessboard)?,
-        charuco: convert_charuco_board_spec(&params.charuco)?,
+        board: convert_charuco_board_spec(&params.charuco)?,
         scan: convert_scan_decode_config(&params.scan)?,
         max_hamming: u8::try_from(params.max_hamming)
             .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
         min_marker_inliers: params.min_marker_inliers,
+        min_secondary_marker_inliers: 2,
         grid_smoothness_threshold_rel,
         corner_validation_threshold_rel,
         corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
@@ -1215,13 +1217,13 @@ fn convert_marker_circle_spec(
     })
 }
 
-fn convert_marker_board_layout(layout: &ct_marker_board_layout_t) -> FfiResult<MarkerBoardLayout> {
+fn convert_marker_board_layout(layout: &ct_marker_board_layout_t) -> FfiResult<MarkerBoardSpec> {
     if layout.rows == 0 || layout.cols == 0 {
         return Err(FfiError::config_error(
             "marker.layout.rows and marker.layout.cols must be > 0",
         ));
     }
-    Ok(MarkerBoardLayout {
+    Ok(MarkerBoardSpec {
         rows: layout.rows,
         cols: layout.cols,
         cell_size: match layout.cell_size.to_option("marker.layout.cell_size")? {
@@ -1383,8 +1385,8 @@ fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_detection_t {
     ct_marker_detection_t {
         id: marker.id,
         grid_cell: ct_grid_coords_t {
-            i: marker.gc.gx,
-            j: marker.gc.gy,
+            i: marker.gc.i,
+            j: marker.gc.j,
         },
         rotation: marker.rotation,
         hamming: marker.hamming,

@@ -178,7 +178,7 @@ fn chessboard_params_from_py(
 
 fn charuco_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<charuco::CharucoDetectorParams> {
+) -> PyResult<charuco::CharucoParams> {
     let Some(obj) = obj else {
         return Err(value_error("params is required for ChArUco detection"));
     };
@@ -215,7 +215,8 @@ fn printable_document_from_py(
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
 ///   chess_cfg: dict with ChessConfig fields, or None for defaults.
-///   params: dict with CharucoDetectorParams fields (must include `board`).
+///     If provided, overrides `params.chessboard.chess`.
+///   params: dict with CharucoParams fields (must include `board`).
 ///
 /// Returns:
 ///   dict with detection data, or raises RuntimeError on detection errors.
@@ -228,10 +229,12 @@ fn detect_charuco(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-    let params = charuco_params_from_py(Some(params))?;
+    let mut params = charuco_params_from_py(Some(params))?;
+    if chess_cfg.is_some() {
+        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
+    }
 
-    let result = py.detach(move || detect::detect_charuco(&img, &chess_cfg, params));
+    let result = py.detach(move || detect::detect_charuco(&img, &params));
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let json =
         serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -243,6 +246,7 @@ fn detect_charuco(
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
 ///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///     If provided, overrides `params.chess`.
 ///   params: dict with ChessboardParams fields, or None for defaults.
 ///
 /// Returns:
@@ -256,10 +260,12 @@ fn detect_chessboard(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-    let params = chessboard_params_from_py(params)?;
+    let mut params = chessboard_params_from_py(params)?;
+    if chess_cfg.is_some() {
+        params.chess = chess_cfg_from_py(chess_cfg)?;
+    }
 
-    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, params));
+    let result = py.detach(move || detect::detect_chessboard(&img, &params));
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -275,6 +281,7 @@ fn detect_chessboard(
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
 ///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///     If provided, overrides `params.chessboard.chess`.
 ///   params: dict with MarkerBoardParams fields, or None for defaults.
 ///
 /// Returns:
@@ -288,10 +295,12 @@ fn detect_marker_board(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-    let params = marker_board_params_from_py(params)?;
+    let mut params = marker_board_params_from_py(params)?;
+    if chess_cfg.is_some() {
+        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
+    }
 
-    let result = py.detach(move || detect::detect_marker_board(&img, &chess_cfg, params));
+    let result = py.detach(move || detect::detect_marker_board(&img, &params));
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)

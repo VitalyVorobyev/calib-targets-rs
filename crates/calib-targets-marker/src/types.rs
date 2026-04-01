@@ -16,7 +16,7 @@ pub struct MarkerCircleSpec {
 
 /// Fixed marker board layout: chessboard size plus 3 circle markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MarkerBoardLayout {
+pub struct MarkerBoardSpec {
     /// Full checkerboard dimensions (inner corners).
     pub rows: u32,
     pub cols: u32,
@@ -29,7 +29,7 @@ pub struct MarkerBoardLayout {
     pub circles: [MarkerCircleSpec; 3],
 }
 
-impl Default for MarkerBoardLayout {
+impl Default for MarkerBoardSpec {
     fn default() -> Self {
         Self {
             rows: 6,
@@ -77,7 +77,7 @@ impl Default for CircleMatchParams {
 /// Parameters for marker-board detection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardParams {
-    pub layout: MarkerBoardLayout,
+    pub layout: MarkerBoardSpec,
     #[serde(default = "default_marker_chessboard_params")]
     pub chessboard: ChessboardParams,
     #[serde(default)]
@@ -90,7 +90,7 @@ pub struct MarkerBoardParams {
 }
 
 impl MarkerBoardParams {
-    pub fn new(layout: MarkerBoardLayout) -> Self {
+    pub fn new(layout: MarkerBoardSpec) -> Self {
         let mut chessboard = default_marker_chessboard_params();
         chessboard.expected_rows = Some(layout.rows);
         chessboard.expected_cols = Some(layout.cols);
@@ -106,7 +106,7 @@ impl MarkerBoardParams {
 
 impl Default for MarkerBoardParams {
     fn default() -> Self {
-        Self::new(MarkerBoardLayout::default())
+        Self::new(MarkerBoardSpec::default())
     }
 }
 
