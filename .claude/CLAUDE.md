@@ -109,3 +109,42 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 **`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
 
 **MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
+
+## Pre-Release Quality Gates
+
+These checks must all pass before tagging a release. Several produce generated
+artifacts that go stale when the Rust API surface changes (new functions,
+`#[non_exhaustive]`, renamed types, etc.).
+
+```bash
+# 1. Standard Rust checks
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo test --workspace --all-features
+
+# 2. Doc warnings (broken intra-doc links, name collisions)
+cargo doc --workspace --no-deps  # must produce zero warnings
+
+# 3. Generated FFI header (stale after any change to FFI-visible types/enums)
+cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+
+# 4. Python typing stubs (stale after any change to #[pyfunction] or #[pyclass])
+uv run maturin develop --release -m crates/calib-targets-py/Cargo.toml
+uv run python crates/calib-targets-py/tools/generate_typing_artifacts.py --check
+
+# 5. Python tests
+uv run pytest crates/calib-targets-py/python_tests/ -v
+
+# 6. WASM build (if wasm-pack is installed)
+scripts/build-wasm.sh
+```
+
+**Common pitfall:** changing public enums or structs (e.g. adding
+`#[non_exhaustive]`) invalidates both the FFI header and Python typing stubs.
+Always regenerate both after such changes.
+
+**Binding API parity:** when adding new public functions to the Rust facade
+(`crates/calib-targets/src/detect.rs`), also expose them in:
+- Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
+- WASM bindings: `crates/calib-targets-wasm/src/lib.rs`

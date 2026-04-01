@@ -12,6 +12,7 @@ publish = false
 [[bin]]
 name = "calib-targets"
 path = "src/main.rs"
+doc = false
 
 [dependencies]
 calib-targets-aruco.workspace = true

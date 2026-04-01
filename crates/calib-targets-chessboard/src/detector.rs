@@ -172,7 +172,7 @@ impl ChessboardDetector {
     /// Return detections for **all** qualifying grid components, sorted by
     /// corner count (largest first).
     ///
-    /// This is the multi-component counterpart of [`detect_from_corners`].
+    /// This is the multi-component counterpart of [`Self::detect_from_corners`].
     /// Callers that can merge multiple components (e.g. the ChArUco detector)
     /// should prefer this method.
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
