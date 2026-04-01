@@ -7,8 +7,7 @@ use std::{
 use std::str::FromStr;
 
 use calib_targets_charuco::{
-    CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector,
-    CharucoDetectorParams,
+    CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector, CharucoParams,
 };
 use calib_targets_core::{Corner, GrayImageView};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
@@ -88,11 +87,12 @@ fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error
 
 fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
     let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.params.threshold_rel = 0.2;
-    chess_cfg.params.nms_radius = 2;
+    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
+    chess_cfg.threshold_value = 0.2;
+    chess_cfg.nms_radius = 2;
     debug!(
-        "Running ChESS corner scan with threshold_rel={:.3}, nms_radius={}",
-        chess_cfg.params.threshold_rel, chess_cfg.params.nms_radius
+        "Running ChESS corner scan with threshold={:.3} ({:?}), nms_radius={}",
+        chess_cfg.threshold_value, chess_cfg.threshold_mode, chess_cfg.nms_radius
     );
     find_chess_corners_image(img, &chess_cfg)
 }
@@ -140,7 +140,7 @@ fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
     );
 }
 
-fn log_detector_params(params: &CharucoDetectorParams) {
+fn log_detector_params(params: &CharucoParams) {
     let expected_cols = format_optional_u32(params.chessboard.expected_cols);
     let expected_rows = format_optional_u32(params.chessboard.expected_rows);
 
@@ -159,10 +159,10 @@ fn log_detector_params(params: &CharucoDetectorParams) {
     );
     debug!(
         "Grid graph params: min_spacing_pix={:.1}, max_spacing_pix={:.1}, k_neighbors={}, orientation_tolerance_deg={:.1}",
-        params.graph.min_spacing_pix,
-        params.graph.max_spacing_pix,
-        params.graph.k_neighbors,
-        params.graph.orientation_tolerance_deg
+        params.chessboard.graph.min_spacing_pix,
+        params.chessboard.graph.max_spacing_pix,
+        params.chessboard.graph.k_neighbors,
+        params.chessboard.graph.orientation_tolerance_deg
     );
     debug!(
         "Marker scan params: marker_size_rel={:.3}, inset_frac={:.3}, border_bits={}, min_border_score={:.3}, dedup_by_id={}",
@@ -174,7 +174,7 @@ fn log_detector_params(params: &CharucoDetectorParams) {
     );
 }
 
-fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
+fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
     if corners.is_empty() {
         warn!("ChESS scan returned no raw corners");
         return;
@@ -200,7 +200,8 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
 
             let distance = (other.position - corner.position).norm();
             best_distance = best_distance.min(distance);
-            if distance >= params.graph.min_spacing_pix && distance <= params.graph.max_spacing_pix
+            if distance >= params.chessboard.graph.min_spacing_pix
+                && distance <= params.chessboard.graph.max_spacing_pix
             {
                 has_spacing_match = true;
             }
@@ -236,8 +237,8 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoDetectorParams) {
         percentile(&nearest_neighbor, 0.5),
         percentile(&nearest_neighbor, 0.9),
         percentile(&nearest_neighbor, 1.0),
-        params.graph.min_spacing_pix,
-        params.graph.max_spacing_pix,
+        params.chessboard.graph.min_spacing_pix,
+        params.chessboard.graph.max_spacing_pix,
         corners_with_spacing_match,
         corners.len()
     );

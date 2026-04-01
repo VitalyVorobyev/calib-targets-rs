@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use calib_targets_chessboard::{ChessboardParams, GridGraphParams};
+use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{GridAlignment, TargetDetection};
 
 use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
@@ -16,7 +16,7 @@ pub struct MarkerCircleSpec {
 
 /// Fixed marker board layout: chessboard size plus 3 circle markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MarkerBoardLayout {
+pub struct MarkerBoardSpec {
     /// Full checkerboard dimensions (inner corners).
     pub rows: u32,
     pub cols: u32,
@@ -29,7 +29,7 @@ pub struct MarkerBoardLayout {
     pub circles: [MarkerCircleSpec; 3],
 }
 
-impl Default for MarkerBoardLayout {
+impl Default for MarkerBoardSpec {
     fn default() -> Self {
         Self {
             rows: 6,
@@ -77,11 +77,9 @@ impl Default for CircleMatchParams {
 /// Parameters for marker-board detection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardParams {
-    pub layout: MarkerBoardLayout,
+    pub layout: MarkerBoardSpec,
     #[serde(default = "default_marker_chessboard_params")]
     pub chessboard: ChessboardParams,
-    #[serde(default)]
-    pub grid_graph: GridGraphParams,
     #[serde(default)]
     pub circle_score: CircleScoreParams,
     #[serde(default)]
@@ -92,14 +90,13 @@ pub struct MarkerBoardParams {
 }
 
 impl MarkerBoardParams {
-    pub fn new(layout: MarkerBoardLayout) -> Self {
+    pub fn new(layout: MarkerBoardSpec) -> Self {
         let mut chessboard = default_marker_chessboard_params();
         chessboard.expected_rows = Some(layout.rows);
         chessboard.expected_cols = Some(layout.cols);
         Self {
             layout,
             chessboard,
-            grid_graph: GridGraphParams::default(),
             circle_score: CircleScoreParams::default(),
             match_params: CircleMatchParams::default(),
             roi_cells: None,
@@ -109,7 +106,7 @@ impl MarkerBoardParams {
 
 impl Default for MarkerBoardParams {
     fn default() -> Self {
-        Self::new(MarkerBoardLayout::default())
+        Self::new(MarkerBoardSpec::default())
     }
 }
 

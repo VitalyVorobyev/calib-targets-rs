@@ -4,6 +4,7 @@ use calib_targets_core::{
 };
 use nalgebra::Point2;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum RectifyError {
     #[error("not enough labeled inlier corners with grid coords (need >=4)")]

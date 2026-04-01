@@ -1,7 +1,7 @@
 use std::{env, fs, path::PathBuf, str::FromStr};
 
 use calib_targets_chessboard::{
-    rectify_from_chessboard_result, ChessboardDetector, ChessboardParams, GridGraphParams,
+    rectify_from_chessboard_result, ChessboardDetector, ChessboardParams,
 };
 use calib_targets_core::{
     init_with_level, Corner as TargetCorner, GrayImageView, LabeledCorner, TargetKind,
@@ -24,7 +24,6 @@ struct ExampleConfig {
     #[serde(default = "default_margin_squares")]
     margin_squares: f32,
     chessboard: ChessboardParams,
-    graph: GridGraphParams,
 }
 
 fn default_px_per_square() -> f32 {
@@ -95,8 +94,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run ChESS corner detector from the `chess-corners` crate.
     let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.params.threshold_rel = 0.2;
-    chess_cfg.params.nms_radius = 2;
+    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
+    chess_cfg.threshold_value = 0.2;
+    chess_cfg.nms_radius = 2;
     let raw_corners: Vec<CornerDescriptor> = find_chess_corners_image(&img, &chess_cfg);
     println!("found {} raw ChESS corners", raw_corners.len());
 
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let target_corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     // Configure the chessboard detector.
-    let detector = ChessboardDetector::new(cfg.chessboard).with_grid_search(cfg.graph);
+    let detector = ChessboardDetector::new(cfg.chessboard);
     let detection = detector.detect_from_corners(&target_corners);
 
     // Prepare GrayImageView for rectification.
@@ -215,6 +215,7 @@ fn map_detection(det: calib_targets_core::TargetDetection) -> OutputDetection {
             TargetKind::Chessboard => "chessboard",
             TargetKind::Charuco => "charuco",
             TargetKind::CheckerboardMarker => "checkerboard_marker",
+            _ => "unknown",
         }
         .to_string(),
         corners: det.corners.into_iter().map(map_corner).collect(),

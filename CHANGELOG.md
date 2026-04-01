@@ -4,7 +4,83 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.5.0]
+
+### API redesign
+
+- **Breaking:** `ChessConfig` is now embedded inside each detector's params struct.
+  Facade `detect_*` functions take a single `&Params` argument instead of
+  separate `(&ChessConfig, Params)`. Removed `detect_charuco_default` and
+  `detect_marker_board_default`.
+- **Breaking:** `CharucoDetectorParams` renamed to `CharucoParams`.
+- **Breaking:** `CharucoParams.charuco` field renamed to `.board`.
+- **Breaking:** `MarkerBoardLayout` renamed to `MarkerBoardSpec`.
+- **Breaking:** `GridCell` replaced with `GridCoords` in aruco crate.
+  `BoardCell` removed.
+- Add multi-config sweep API: `detect_chessboard_best`, `detect_charuco_best`,
+  `detect_marker_board_best` try multiple parameter configs and return the best
+  result (most markers, then most corners).
+- Add `CharucoParams::sweep_for_board()` and `ChessboardParams::sweep_default()`
+  presets for common multi-threshold sweep scenarios.
+- Extract shared `calib_targets_core::io::{load_json, write_json, IoError}` to
+  replace duplicated IO boilerplate across crates.
+- Python and WASM bindings accept the new single-config API. The `chess_cfg`
+  parameter is still accepted for backward compatibility (overrides
+  `params.chess` or `params.chessboard.chess` when provided).
+- Python: `CharucoParams` and `MarkerBoardSpec` are the canonical names;
+  `CharucoDetectorParams` and `MarkerBoardLayout` remain as aliases.
+
+### Multi-component ChArUco detection
+
+- Merge disconnected grid components for 30-50% more corners on challenging
+  images (Scheimpflug optics, narrow focus strips). Each component is aligned
+  independently via marker-based D4 rotation, then merged.
+
+### AprilTag max_hamming fix
+
+- `CharucoParams::for_board()` now sets `max_hamming` to
+  `min(2, dictionary.max_correction_bits)` instead of 0, improving recall for
+  AprilTag-based ChArUco boards (e.g. `DICT_APRILTAG_36h10`).
+
+### WebAssembly bindings and browser demo
+
+- Add the new `calib-targets-wasm` crate (`crates/calib-targets-wasm/`) with
+  `wasm-bindgen` exports for all detection pipelines: `detect_corners`,
+  `detect_chessboard`, `detect_charuco`, and `detect_marker_board`. The crate
+  depends directly on the detector crates and `chess-corners` (without `rayon`
+  or `ml-refiner`) so it compiles cleanly for `wasm32-unknown-unknown`.
+- Expose `rgba_to_gray` for browser canvas RGBA-to-grayscale conversion and
+  `default_chess_config` / `default_chessboard_params` /
+  `default_marker_board_params` helpers for populating UI defaults from Rust.
+- Config and result objects are passed as plain JS objects via
+  `serde-wasm-bindgen` (no JSON string round-trips).
+- WASM binary: ~436 KB raw, ~195 KB gzipped.
+- Add a React/TypeScript demo app at `demo/` (Vite 6, React 19) with:
+  image upload (drag-and-drop), detection mode selector (Corners / Chessboard /
+  ChArUco / Marker Board), interactive parameter sliders, canvas overlay with
+  colored corners and grid edges, and a results panel with timing and JSON view.
+- Add `wasm` CI job to `.github/workflows/ci.yml`: builds WASM with
+  `wasm-pack`, verifies output artifacts, and builds the demo app with
+  TypeScript checking.
+- Add `scripts/build-wasm.sh` helper to build WASM into `demo/pkg/`.
+- Add `default-members` to the root workspace manifest so `cargo test` excludes
+  the WASM crate by default.
+
+### Python bindings API refactoring
+
+- Flatten `ChessConfig` in Python: remove nested `ChessCornerParams`,
+  `CoarseToFineParams`, `PyramidParams`; all fields are now top-level with
+  concrete defaults. Add `RefinerConfig`, `CenterOfMassConfig`,
+  `ForstnerConfig`, `SaddlePointConfig`.
+- Fold `GridGraphParams` into `ChessboardParams` as `chessboard.graph` across
+  all Rust crates, Python bindings, FFI, and JSON configs.
+- Add `ChessboardDetectConfig` / `ChessboardDetectReport` and
+  `MarkerBoardDetectConfig` / `MarkerBoardDetectReport` for JSON-driven
+  detection workflows.
+- Rewrite `calib-targets-py/src/lib.rs` from ~3600 lines to ~290 lines using a
+  dict-based JSON bridge (Python dataclass `to_dict()` -> `serde_json` ->
+  Rust type). Remove all `*Source` enums, `*Overrides` structs, and manual
+  extraction functions.
 
 ## [0.4.2]
 

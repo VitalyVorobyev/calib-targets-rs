@@ -145,7 +145,7 @@ board = ct.CharucoBoardSpec(
     marker_layout=ct.MarkerLayout.OPENCV_CHARUCO,
 )
 
-params = ct.CharucoDetectorParams.for_board(board)
+params = ct.CharucoParams(board=board)
 
 image = load_gray("frame.png")
 
@@ -198,8 +198,8 @@ image = "0.25"
 ```
 
 ```rust,no_run
+use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::detect;
-use calib_targets_charuco::{CharucoBoardSpec, CharucoDetectorParams, MarkerLayout};
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -215,10 +215,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ..Default::default()
     };
 
-    let params = CharucoDetectorParams::for_board(&board);
-    let chess_cfg = detect::default_chess_config();
+    let params = CharucoParams::for_board(&board);
 
-    let result = detect::detect_charuco(&img, &chess_cfg, params)?;
+    let result = detect::detect_charuco(&img, &params)?;
     println!(
         "corners: {}, markers: {}",
         result.detection.corners.len(),

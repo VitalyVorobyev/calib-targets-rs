@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::coords::CellCoords;
 
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CirclePolarity {

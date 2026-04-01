@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 /// Direction along a 6-connected hexagonal grid (pointy-top, axial coordinates).
 ///
 /// Axial coordinate convention: `q` increases eastward, `r` increases south-eastward.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum HexDirection {
     East,

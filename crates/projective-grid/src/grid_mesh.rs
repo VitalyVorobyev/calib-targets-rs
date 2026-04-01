@@ -12,6 +12,7 @@ use crate::homography::{estimate_homography, Homography};
 use nalgebra::Point2;
 use std::collections::HashMap;
 
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum GridMeshError {
     #[error("not enough grid corners (need at least 2×2)")]

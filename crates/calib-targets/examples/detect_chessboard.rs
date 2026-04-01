@@ -1,4 +1,5 @@
-use calib_targets::{detect, ChessboardParams};
+use calib_targets::detect;
+use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 #[cfg(feature = "tracing")]
@@ -14,10 +15,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
-    let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params);
+    let result = detect::detect_chessboard(&img, &params);
     match result {
         Some(found) => println!("detected {} corners", found.detection.corners.len()),
         None => println!("no board detected"),

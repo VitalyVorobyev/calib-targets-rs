@@ -32,6 +32,7 @@ impl Corner {
 }
 
 /// The kind of target that a detection corresponds to.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TargetKind {

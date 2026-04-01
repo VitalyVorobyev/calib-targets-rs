@@ -1,10 +1,12 @@
 //! Board specification and layout helpers for ChArUco.
 
-use calib_targets_aruco::{BoardCell, Dictionary};
+use calib_targets_aruco::Dictionary;
+use calib_targets_core::GridCoords;
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 /// Marker placement scheme for the board.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkerLayout {
@@ -31,6 +33,7 @@ pub struct CharucoBoardSpec {
 }
 
 /// Board specification validation errors.
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoBoardError {
     #[error("rows and cols must be >= 2")]
@@ -49,7 +52,7 @@ pub enum CharucoBoardError {
 #[derive(Clone, Debug)]
 pub struct CharucoBoard {
     spec: CharucoBoardSpec,
-    marker_positions: Vec<BoardCell>,
+    marker_positions: Vec<GridCoords>,
 }
 
 impl CharucoBoard {
@@ -107,7 +110,7 @@ impl CharucoBoard {
 
     /// Mapping from marker id -> board cell (square) coordinates.
     #[inline]
-    pub fn marker_position(&self, id: u32) -> Option<BoardCell> {
+    pub fn marker_position(&self, id: u32) -> Option<GridCoords> {
         self.marker_positions.get(id as usize).cloned()
     }
 
@@ -117,8 +120,8 @@ impl CharucoBoard {
     pub fn marker_cell(&self, marker_id: i32) -> Option<(usize, usize)> {
         let id = u32::try_from(marker_id).ok()?;
         let bc = self.marker_position(id)?;
-        let sx = usize::try_from(bc.sx).ok()?;
-        let sy = usize::try_from(bc.sy).ok()?;
+        let sx = usize::try_from(bc.i).ok()?;
+        let sy = usize::try_from(bc.j).ok()?;
         Some((sx, sy))
     }
 
@@ -224,13 +227,13 @@ fn marker_surrounding_charuco_corners_for_cell(
     Some([tl, tr, br, bl])
 }
 
-fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<BoardCell> {
+fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<GridCoords> {
     let mut out = Vec::new();
     for j in 0..(rows as i32) {
         for i in 0..(cols as i32) {
             // OpenCV: top-left square is black => white squares have (i+j) odd.
             if ((i + j) & 1) == 1 {
-                out.push(BoardCell { sx: i, sy: j });
+                out.push(GridCoords { i, j });
             }
         }
     }

@@ -10,6 +10,7 @@ pub struct RectifiedView {
     pub rect_to_img: RectToImgMapper, // enum for GlobalH | Mesh
 }
 
+#[non_exhaustive]
 pub enum RectToImgMapper {
     Global {
         h_img_from_rect: Homography,

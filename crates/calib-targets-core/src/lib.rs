@@ -1,7 +1,8 @@
 //! Core types and utilities for calibration target detection.
 //!
 //! This crate is intentionally small and purely geometric. It does *not*
-//! depend on any concrete corner detector or image type.
+//! depend on any concrete corner detector implementation or image type, but it
+//! owns the shared detector configuration contracts used across the workspace.
 //!
 //! ## Quickstart
 //!
@@ -30,10 +31,12 @@
 //! - Lightweight grayscale image views and sampling.
 //! - Grid alignment and target detection types.
 
+mod chess;
 mod corner;
 mod grid_alignment;
 mod homography;
 mod image;
+pub mod io;
 mod logger;
 mod orientation_clustering;
 mod rectify;
@@ -46,6 +49,11 @@ pub use image::{
 };
 pub use rectify::{RectToImgMapper, RectifiedView};
 
+pub use chess::{
+    CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, DescriptorMode,
+    DetectorMode, ForstnerConfig, PyramidParams, RefinementMethod, RefinerConfig,
+    RefinerKindConfig, SaddlePointConfig, ThresholdMode,
+};
 pub use corner::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 

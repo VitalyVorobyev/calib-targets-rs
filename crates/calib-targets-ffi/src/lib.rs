@@ -22,21 +22,19 @@ pub mod package_support;
 
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection, ScanDecodeConfig};
 use calib_targets::charuco::{
-    CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector,
-    CharucoDetectorParams, MarkerLayout,
+    CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector, CharucoParams,
+    MarkerLayout,
 };
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
 use calib_targets::core::{
-    GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection,
+    ChessCornerParams as ChessParams, CoarseToFineParams, GrayImageView, GridAlignment, GridCoords,
+    LabeledCorner, PyramidParams, RefinerKindConfig, TargetDetection,
 };
 use calib_targets::detect;
+use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
-    MarkerBoardDetector, MarkerBoardLayout, MarkerBoardParams, MarkerCircleSpec,
-};
-use chess_corners::{
-    CenterOfMassConfig, ChessConfig, ChessParams, CoarseToFineParams, ForstnerConfig,
-    PyramidParams, RefinerKind, SaddlePointConfig,
+    MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use std::any::Any;
 use std::cell::RefCell;
@@ -501,6 +499,7 @@ pub struct ct_chessboard_params_t {
     pub completeness_threshold: f32,
     pub use_orientation_clustering: u32,
     pub orientation_clustering_params: ct_orientation_clustering_params_t,
+    pub graph: ct_grid_graph_params_t,
 }
 
 /// Full create-time configuration for the chessboard detector handle.
@@ -509,7 +508,6 @@ pub struct ct_chessboard_params_t {
 pub struct ct_chessboard_detector_config_t {
     pub chess: ct_chess_config_t,
     pub chessboard: ct_chessboard_params_t,
-    pub graph: ct_grid_graph_params_t,
 }
 
 /// Marker scan/decode configuration.
@@ -544,7 +542,6 @@ pub struct ct_charuco_detector_params_t {
     pub px_per_square: f32,
     pub chessboard: ct_chessboard_params_t,
     pub charuco: ct_charuco_board_spec_t,
-    pub graph: ct_grid_graph_params_t,
     pub scan: ct_scan_decode_config_t,
     pub max_hamming: u32,
     pub min_marker_inliers: usize,
@@ -599,7 +596,6 @@ pub struct ct_marker_board_layout_t {
 pub struct ct_marker_board_params_t {
     pub layout: ct_marker_board_layout_t,
     pub chessboard: ct_chessboard_params_t,
-    pub grid_graph: ct_grid_graph_params_t,
     pub circle_score: ct_circle_score_params_t,
     pub match_params: ct_circle_match_params_t,
     pub has_roi_cells: u32,
@@ -877,6 +873,7 @@ fn target_kind_to_ffi(kind: calib_targets::core::TargetKind) -> ct_target_kind_t
         calib_targets::core::TargetKind::Chessboard => CT_TARGET_KIND_CHESSBOARD,
         calib_targets::core::TargetKind::Charuco => CT_TARGET_KIND_CHARUCO,
         calib_targets::core::TargetKind::CheckerboardMarker => CT_TARGET_KIND_CHECKERBOARD_MARKER,
+        _ => CT_TARGET_KIND_CHESSBOARD, // fallback for future variants
     }
 }
 
@@ -884,6 +881,7 @@ fn circle_polarity_to_ffi(polarity: CirclePolarity) -> ct_circle_polarity_t {
     match polarity {
         CirclePolarity::White => CT_CIRCLE_POLARITY_WHITE,
         CirclePolarity::Black => CT_CIRCLE_POLARITY_BLACK,
+        _ => CT_CIRCLE_POLARITY_WHITE, // fallback for future variants
     }
 }
 
@@ -939,7 +937,7 @@ fn convert_dictionary_id(value: ct_dictionary_id_t, field: &str) -> FfiResult<Di
 fn convert_refiner_kind(
     value: ct_refiner_kind_t,
     cfg: &ct_refiner_config_t,
-) -> FfiResult<RefinerKind> {
+) -> FfiResult<RefinerKindConfig> {
     match value {
         CT_REFINER_KIND_CENTER_OF_MASS => {
             if cfg.center_of_mass.radius < 0 {
@@ -947,7 +945,7 @@ fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::CenterOfMass(CenterOfMassConfig {
+            Ok(RefinerKindConfig::CenterOfMass(CenterOfMassConfig {
                 radius: cfg.center_of_mass.radius,
             }))
         }
@@ -957,7 +955,7 @@ fn convert_refiner_kind(
                     "refiner.forstner.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::Forstner(ForstnerConfig {
+            Ok(RefinerKindConfig::Forstner(ForstnerConfig {
                 radius: cfg.forstner.radius,
                 min_trace: require_nonnegative(
                     cfg.forstner.min_trace,
@@ -980,7 +978,7 @@ fn convert_refiner_kind(
                     "refiner.saddle_point.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::SaddlePoint(SaddlePointConfig {
+            Ok(RefinerKindConfig::SaddlePoint(SaddlePointConfig {
                 radius: cfg.saddle_point.radius,
                 det_margin: require_nonnegative(
                     cfg.saddle_point.det_margin,
@@ -1003,23 +1001,23 @@ fn convert_refiner_kind(
 }
 
 fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    let mut opars = ChessParams::default();
-    opars.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
-    opars.descriptor_use_radius10 = params
-        .descriptor_use_radius10
-        .to_option("chess.params.descriptor_use_radius10")?;
-    opars.threshold_rel = require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?;
-    opars.threshold_abs = match params
-        .threshold_abs
-        .to_option("chess.params.threshold_abs")?
-    {
-        Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
-        None => None,
-    };
-    opars.nms_radius = params.nms_radius;
-    opars.min_cluster_size = params.min_cluster_size;
-    opars.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
-    Ok(opars)
+    Ok(ChessParams {
+        use_radius10: flag_to_bool(params.use_radius10, "chess.params.use_radius10")?,
+        descriptor_use_radius10: params
+            .descriptor_use_radius10
+            .to_option("chess.params.descriptor_use_radius10")?,
+        threshold_rel: require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?,
+        threshold_abs: match params
+            .threshold_abs
+            .to_option("chess.params.threshold_abs")?
+        {
+            Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
+            None => None,
+        },
+        nms_radius: params.nms_radius,
+        min_cluster_size: params.min_cluster_size,
+        refiner: convert_refiner_kind(params.refiner.kind, &params.refiner)?,
+    })
 }
 
 fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidParams> {
@@ -1033,27 +1031,26 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
             "chess.multiscale.pyramid.min_size must be > 0",
         ));
     }
-    let mut opars = PyramidParams::default();
-    opars.num_levels = u8::try_from(params.num_levels).map_err(|_| {
-        FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
-    })?;
-    opars.min_size = params.min_size;
-    Ok(opars)
+    Ok(PyramidParams {
+        num_levels: u8::try_from(params.num_levels).map_err(|_| {
+            FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
+        })?,
+        min_size: params.min_size,
+    })
 }
 
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
-    let mut ms_pars = CoarseToFineParams::default();
-    ms_pars.pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
-    ms_pars.refinement_radius = config.multiscale.refinement_radius;
-    ms_pars.merge_radius = require_nonnegative(
-        config.multiscale.merge_radius,
-        "chess.multiscale.merge_radius",
-    )?;
+    let params = convert_chess_params(&config.params)?;
+    let multiscale = CoarseToFineParams {
+        pyramid: convert_pyramid_params(&config.multiscale.pyramid)?,
+        refinement_radius: config.multiscale.refinement_radius,
+        merge_radius: require_nonnegative(
+            config.multiscale.merge_radius,
+            "chess.multiscale.merge_radius",
+        )?,
+    };
 
-    let mut opars = ChessConfig::default();
-    opars.params = convert_chess_params(&config.params)?;
-    opars.multiscale = ms_pars;
-    Ok(opars)
+    Ok(ChessConfig::from_parts(&params, &multiscale))
 }
 
 fn convert_orientation_clustering_params(
@@ -1115,6 +1112,7 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         return Err(FfiError::config_error("chessboard.min_corners must be > 0"));
     }
     Ok(ChessboardParams {
+        chess: ChessConfig::default(),
         min_corner_strength: require_finite(
             params.min_corner_strength,
             "chessboard.min_corner_strength",
@@ -1139,6 +1137,7 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         orientation_clustering_params: convert_orientation_clustering_params(
             &params.orientation_clustering_params,
         )?,
+        graph: convert_grid_graph_params(&params.graph)?,
     })
 }
 
@@ -1169,7 +1168,7 @@ fn convert_charuco_board_spec(params: &ct_charuco_board_spec_t) -> FfiResult<Cha
 
 fn convert_charuco_detector_params(
     params: &ct_charuco_detector_params_t,
-) -> FfiResult<CharucoDetectorParams> {
+) -> FfiResult<CharucoParams> {
     let grid_smoothness_threshold_rel = if params.grid_smoothness_threshold_rel.is_infinite()
         && params.grid_smoothness_threshold_rel.is_sign_positive()
     {
@@ -1192,15 +1191,15 @@ fn convert_charuco_detector_params(
         )?
     };
 
-    Ok(CharucoDetectorParams {
+    Ok(CharucoParams {
         px_per_square: require_positive(params.px_per_square, "charuco.px_per_square")?,
         chessboard: convert_chessboard_params(&params.chessboard)?,
-        charuco: convert_charuco_board_spec(&params.charuco)?,
-        graph: convert_grid_graph_params(&params.graph)?,
+        board: convert_charuco_board_spec(&params.charuco)?,
         scan: convert_scan_decode_config(&params.scan)?,
         max_hamming: u8::try_from(params.max_hamming)
             .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
         min_marker_inliers: params.min_marker_inliers,
+        min_secondary_marker_inliers: 2,
         grid_smoothness_threshold_rel,
         corner_validation_threshold_rel,
         corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
@@ -1220,13 +1219,13 @@ fn convert_marker_circle_spec(
     })
 }
 
-fn convert_marker_board_layout(layout: &ct_marker_board_layout_t) -> FfiResult<MarkerBoardLayout> {
+fn convert_marker_board_layout(layout: &ct_marker_board_layout_t) -> FfiResult<MarkerBoardSpec> {
     if layout.rows == 0 || layout.cols == 0 {
         return Err(FfiError::config_error(
             "marker.layout.rows and marker.layout.cols must be > 0",
         ));
     }
-    Ok(MarkerBoardLayout {
+    Ok(MarkerBoardSpec {
         rows: layout.rows,
         cols: layout.cols,
         cell_size: match layout.cell_size.to_option("marker.layout.cell_size")? {
@@ -1296,7 +1295,6 @@ fn convert_marker_board_params(params: &ct_marker_board_params_t) -> FfiResult<M
     Ok(MarkerBoardParams {
         layout: convert_marker_board_layout(&params.layout)?,
         chessboard: convert_chessboard_params(&params.chessboard)?,
-        grid_graph: convert_grid_graph_params(&params.grid_graph)?,
         circle_score: convert_circle_score_params(&params.circle_score)?,
         match_params: convert_circle_match_params(&params.match_params)?,
         roi_cells: if has_roi_cells {
@@ -1325,6 +1323,7 @@ fn map_charuco_detect_error(err: CharucoDetectError) -> FfiError {
         CharucoDetectError::MeshWarp(err) => {
             FfiError::not_found(format!("mesh warp failed during ChArUco detection: {err}"))
         }
+        _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
     }
 }
 
@@ -1389,8 +1388,8 @@ fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_detection_t {
     ct_marker_detection_t {
         id: marker.id,
         grid_cell: ct_grid_coords_t {
-            i: marker.gc.gx,
-            j: marker.gc.gy,
+            i: marker.gc.i,
+            j: marker.gc.j,
         },
         rotation: marker.rotation,
         hamming: marker.hamming,
@@ -1550,8 +1549,7 @@ unsafe fn chessboard_detector_create_impl(
     let config = unsafe { require_ref(config, "config")? };
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?)
-        .with_grid_search(convert_grid_graph_params(&config.graph)?);
+    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?);
     let handle = Box::new(ct_chessboard_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
@@ -2241,12 +2239,12 @@ mod tests {
                 completeness_threshold: 0.9,
                 use_orientation_clustering: CT_TRUE,
                 orientation_clustering_params: default_orientation_clustering(),
-            },
-            graph: ct_grid_graph_params_t {
-                min_spacing_pix: 10.0,
-                max_spacing_pix: 120.0,
-                k_neighbors: 8,
-                orientation_tolerance_deg: 22.5,
+                graph: ct_grid_graph_params_t {
+                    min_spacing_pix: 10.0,
+                    max_spacing_pix: 120.0,
+                    k_neighbors: 8,
+                    orientation_tolerance_deg: 22.5,
+                },
             },
         }
     }
@@ -2264,6 +2262,12 @@ mod tests {
                     completeness_threshold: 0.02,
                     use_orientation_clustering: CT_TRUE,
                     orientation_clustering_params: default_orientation_clustering(),
+                    graph: ct_grid_graph_params_t {
+                        min_spacing_pix: 5.0,
+                        max_spacing_pix: 60.0,
+                        k_neighbors: 8,
+                        orientation_tolerance_deg: 22.5,
+                    },
                 },
                 charuco: ct_charuco_board_spec_t {
                     rows: 22,
@@ -2272,12 +2276,6 @@ mod tests {
                     marker_size_rel: 0.75,
                     dictionary: CT_DICTIONARY_DICT_4X4_250,
                     marker_layout: CT_MARKER_LAYOUT_OPENCV_CHARUCO,
-                },
-                graph: ct_grid_graph_params_t {
-                    min_spacing_pix: 5.0,
-                    max_spacing_pix: 60.0,
-                    k_neighbors: 8,
-                    orientation_tolerance_deg: 22.5,
                 },
                 scan: ct_scan_decode_config_t {
                     border_bits: 1,
@@ -2342,12 +2340,12 @@ mod tests {
                         min_peak_weight_fraction: 0.2,
                         use_weights: CT_TRUE,
                     },
-                },
-                grid_graph: ct_grid_graph_params_t {
-                    min_spacing_pix: 20.0,
-                    max_spacing_pix: 100.0,
-                    k_neighbors: 8,
-                    orientation_tolerance_deg: 22.5,
+                    graph: ct_grid_graph_params_t {
+                        min_spacing_pix: 20.0,
+                        max_spacing_pix: 100.0,
+                        k_neighbors: 8,
+                        orientation_tolerance_deg: 22.5,
+                    },
                 },
                 circle_score: ct_circle_score_params_t {
                     patch_size: 64,

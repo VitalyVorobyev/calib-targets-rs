@@ -279,9 +279,9 @@ dependencies = [
 
 [[package]]
 name = "box-image-pyramid"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9df10ad1e3a240711ead31880fec6b0535f1d7b63d00a6b492cd03e2b1b6cfd4"
+checksum = "47cbd8c91ad3b98cf5295d8e54182193a5ae3d8290e445310eca8538bc0e2e5d"
 dependencies = [
  "rayon",
 ]
@@ -335,7 +335,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "calib-targets"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -349,6 +349,7 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
  "tracing-log",
@@ -357,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -372,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-charuco"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-chessboard",
@@ -385,13 +386,14 @@ dependencies = [
  "projective-grid",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tracing",
 ]
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-core",
  "chess-corners",
@@ -410,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-cli"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "assert_cmd",
  "calib-targets-aruco",
@@ -426,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "log",
  "nalgebra",
@@ -440,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets",
  "cbindgen",
@@ -453,7 +455,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -463,12 +465,13 @@ dependencies = [
  "nalgebra",
  "serde",
  "serde_json",
+ "thiserror",
  "tracing",
 ]
 
 [[package]]
 name = "calib-targets-print"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -483,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "calib-targets",
  "chess-corners",
@@ -493,6 +496,24 @@ dependencies = [
  "pyo3-build-config",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "calib-targets-wasm"
+version = "0.5.0"
+dependencies = [
+ "calib-targets-aruco",
+ "calib-targets-charuco",
+ "calib-targets-chessboard",
+ "calib-targets-core",
+ "calib-targets-marker",
+ "chess-corners",
+ "js-sys",
+ "nalgebra",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -534,38 +555,35 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65e0c4d83f46157a45facc5002924304d60eb78f25a13e5d1246602fcbb53345"
+checksum = "1448c561f13a731b2b91ce4716f2a85cd2d360b3df401227d4826fb7cb20a842"
 dependencies = [
- "anyhow",
  "box-image-pyramid",
  "chess-corners-core",
  "chess-corners-ml",
- "clap",
  "image",
  "log",
  "rayon",
  "serde",
- "serde_json",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "chess-corners-core"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cecaaf4cfcc566ffd4ffad335820ec3a694ab463bea7e9ce828c0c0de27a3b89"
+checksum = "4796914389ee03fe0c156cdb3f87bdb465e25a46ec2e96eee02e7f400d0b7e18"
 dependencies = [
  "log",
  "rayon",
+ "serde",
 ]
 
 [[package]]
 name = "chess-corners-ml"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40ea6925915bbd5b0028f5e1299d9c4decff86e47f0fa83e07ce00844c6b6bbb"
+checksum = "508745def32e585524de19d8cbdc2b276b4f26cece63226dbe1c08d9badb92de"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -1242,6 +1260,16 @@ checksum = "9afb3de4395d6b3e67a780b6de64b51c978ecf11cb9a462c66be7d4ca9039d33"
 dependencies = [
  "getrandom 0.3.4",
  "libc",
+]
+
+[[package]]
+name = "js-sys"
+version = "0.3.94"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2e04e2ef80ce82e13552136fabeef8a5ed1f985a96805761cbb9a2c34e7664d9"
+dependencies = [
+ "once_cell",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1923,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "projective-grid"
-version = "0.4.2"
+version = "0.5.0"
 dependencies = [
  "kiddo",
  "nalgebra",
@@ -2352,6 +2380,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde-wasm-bindgen"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8302e169f0eddcc139c70f139d19d6467353af16f9fce27e8c30158036a1e16b"
+dependencies = [
+ "js-sys",
+ "serde",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "serde_core"
 version = "1.0.228"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2386,9 +2425,9 @@ dependencies = [
 
 [[package]]
 name = "serde_spanned"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "876ac351060d4f882bb1032b6369eb0aef79ad9df1ea8bc404874d8cc3d0cd98"
+checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
 ]
@@ -2667,18 +2706,18 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.0+spec-1.1.0"
+version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2334f11ee363607eb04df9b8fc8a13ca1715a72ba8662a26ac285c98aabb4011"
+checksum = "39ca317ebc49f06bd748bfba29533eac9485569dc9bf80b849024b025e814fb9"
 dependencies = [
- "winnow 1.0.0",
+ "winnow 1.0.1",
 ]
 
 [[package]]
 name = "toml_writer"
-version = "1.1.0+spec-1.1.0"
+version = "1.1.1+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d282ade6016312faf3e41e57ebbba0c073e4056dab1232ab1cb624199648f8ed"
+checksum = "756daf9b1013ebe47a8776667b466417e2d4c5679d441c26230efd9ef78692db"
 
 [[package]]
 name = "tracing"
@@ -3026,9 +3065,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen"
-version = "0.2.115"
+version = "0.2.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6523d69017b7633e396a89c5efab138161ed5aafcbc8d3e5c5a42ae38f50495a"
+checksum = "0551fc1bb415591e3372d0bc4780db7e587d84e2a7e79da121051c5c4b89d0b0"
 dependencies = [
  "cfg-if",
  "once_cell",
@@ -3039,9 +3078,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro"
-version = "0.2.115"
+version = "0.2.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e3a6c758eb2f701ed3d052ff5737f5bfe6614326ea7f3bbac7156192dc32e67"
+checksum = "7fbdf9a35adf44786aecd5ff89b4563a90325f9da0923236f6104e603c7e86be"
 dependencies = [
  "quote",
  "wasm-bindgen-macro-support",
@@ -3049,9 +3088,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-macro-support"
-version = "0.2.115"
+version = "0.2.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "921de2737904886b52bcbb237301552d05969a6f9c40d261eb0533c8b055fedf"
+checksum = "dca9693ef2bab6d4e6707234500350d8dad079eb508dca05530c85dc3a529ff2"
 dependencies = [
  "bumpalo",
  "proc-macro2",
@@ -3062,9 +3101,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-bindgen-shared"
-version = "0.2.115"
+version = "0.2.117"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a93e946af942b58934c604527337bad9ae33ba1d5c6900bbb41c2c07c2364a93"
+checksum = "39129a682a6d2d841b6c429d0c51e5cb0ed1a03829d8b3d1e69a011e62cb3d3b"
 dependencies = [
  "unicode-ident",
 ]
@@ -3160,9 +3199,9 @@ checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 
 [[package]]
 name = "winnow"
-version = "1.0.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a90e88e4667264a994d34e6d1ab2d26d398dcdca8b7f52bec8668957517fc7d8"
+checksum = "09dac053f1cd375980747450bfc7250c264eaae0583872e845c0c7cd578872b5"
 
 [[package]]
 name = "wit-bindgen"

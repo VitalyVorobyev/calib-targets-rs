@@ -1,3 +1,5 @@
+"""Chessboard detection example with full in-code configuration."""
+
 import sys
 
 import numpy as np
@@ -19,17 +21,15 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     chess_cfg = ct.ChessConfig(
-        params=ct.ChessCornerParams(
-            use_radius10=False,
-            threshold_rel=0.2,
-            nms_radius=2,
-            min_cluster_size=2,
-        ),
-        multiscale=ct.CoarseToFineParams(
-            pyramid=ct.PyramidParams(num_levels=1, min_size=128),
-            refinement_radius=3,
-            merge_radius=3.0,
-        ),
+        detector_mode="canonical",
+        threshold_mode="relative",
+        threshold_value=0.2,
+        nms_radius=2,
+        min_cluster_size=2,
+        pyramid_levels=1,
+        pyramid_min_size=128,
+        refinement_radius=3,
+        merge_radius=3.0,
     )
 
     params = ct.ChessboardParams(
@@ -44,6 +44,12 @@ def main() -> None:
             outlier_threshold_deg=30.0,
             min_peak_weight_fraction=0.05,
             use_weights=True,
+        ),
+        graph=ct.GridGraphParams(
+            min_spacing_pix=5.0,
+            max_spacing_pix=200.0,
+            k_neighbors=8,
+            orientation_tolerance_deg=22.5,
         ),
     )
 

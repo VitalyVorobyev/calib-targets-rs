@@ -168,19 +168,6 @@ typedef struct ct_orientation_clustering_params_t {
 } ct_orientation_clustering_params_t;
 
 /**
- * Chessboard detector parameters.
- */
-typedef struct ct_chessboard_params_t {
-  float min_corner_strength;
-  size_t min_corners;
-  struct ct_optional_u32_t expected_rows;
-  struct ct_optional_u32_t expected_cols;
-  float completeness_threshold;
-  uint32_t use_orientation_clustering;
-  struct ct_orientation_clustering_params_t orientation_clustering_params;
-} ct_chessboard_params_t;
-
-/**
  * Grid-graph search parameters.
  */
 typedef struct ct_grid_graph_params_t {
@@ -191,12 +178,25 @@ typedef struct ct_grid_graph_params_t {
 } ct_grid_graph_params_t;
 
 /**
+ * Chessboard detector parameters.
+ */
+typedef struct ct_chessboard_params_t {
+  float min_corner_strength;
+  size_t min_corners;
+  struct ct_optional_u32_t expected_rows;
+  struct ct_optional_u32_t expected_cols;
+  float completeness_threshold;
+  uint32_t use_orientation_clustering;
+  struct ct_orientation_clustering_params_t orientation_clustering_params;
+  struct ct_grid_graph_params_t graph;
+} ct_chessboard_params_t;
+
+/**
  * Full create-time configuration for the chessboard detector handle.
  */
 typedef struct ct_chessboard_detector_config_t {
   struct ct_chess_config_t chess;
   struct ct_chessboard_params_t chessboard;
-  struct ct_grid_graph_params_t graph;
 } ct_chessboard_detector_config_t;
 
 /**
@@ -308,7 +308,6 @@ typedef struct ct_charuco_detector_params_t {
   float px_per_square;
   struct ct_chessboard_params_t chessboard;
   struct ct_charuco_board_spec_t charuco;
-  struct ct_grid_graph_params_t graph;
   struct ct_scan_decode_config_t scan;
   uint32_t max_hamming;
   size_t min_marker_inliers;
@@ -422,7 +421,6 @@ typedef struct ct_circle_match_params_t {
 typedef struct ct_marker_board_params_t {
   struct ct_marker_board_layout_t layout;
   struct ct_chessboard_params_t chessboard;
-  struct ct_grid_graph_params_t grid_graph;
   struct ct_circle_score_params_t circle_score;
   struct ct_circle_match_params_t match_params;
   uint32_t has_roi_cells;

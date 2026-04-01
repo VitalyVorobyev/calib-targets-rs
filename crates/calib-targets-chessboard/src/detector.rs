@@ -1,7 +1,7 @@
 use crate::gridgraph::{
     assign_grid_coordinates, build_chessboard_grid_graph, connected_components,
 };
-use crate::params::{ChessboardParams, GridGraphParams};
+use crate::params::ChessboardParams;
 use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
     OrientationHistogram, TargetDetection, TargetKind,
@@ -18,7 +18,6 @@ use tracing::instrument;
 #[derive(Debug)]
 pub struct ChessboardDetector {
     pub params: ChessboardParams,
-    pub grid_search: GridGraphParams,
 }
 
 #[derive(Debug, Serialize)]
@@ -55,15 +54,7 @@ pub struct GridGraphNeighborDebug {
 
 impl ChessboardDetector {
     pub fn new(params: ChessboardParams) -> Self {
-        Self {
-            grid_search: GridGraphParams::default(),
-            params,
-        }
-    }
-
-    pub fn with_grid_search(mut self, grid_search: GridGraphParams) -> Self {
-        self.grid_search = grid_search;
-        self
+        Self { params }
     }
 
     /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
@@ -159,7 +150,7 @@ impl ChessboardDetector {
             return None;
         }
 
-        let graph = build_chessboard_grid_graph(&strong, &self.grid_search, graph_diagonals);
+        let graph = build_chessboard_grid_graph(&strong, &self.params.graph, graph_diagonals);
 
         let components = connected_components(&graph);
         log_graph_summary(&graph, &components, self.params.min_corners);
@@ -168,13 +159,106 @@ impl ChessboardDetector {
             components.len()
         );
 
-        let mut best: Option<(TargetDetection, Vec<usize>, usize)> = None;
+        let results = self.collect_components(
+            &graph,
+            &components,
+            &strong,
+            grid_diagonals,
+            orientation_histogram,
+        );
+        results.into_iter().next()
+    }
 
-        for component in &components {
+    /// Return detections for **all** qualifying grid components, sorted by
+    /// corner count (largest first).
+    ///
+    /// This is the multi-component counterpart of [`detect_from_corners`].
+    /// Callers that can merge multiple components (e.g. the ChArUco detector)
+    /// should prefer this method.
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
+    pub fn detect_all_from_corners(&self, corners: &[Corner]) -> Vec<ChessboardDetectionResult> {
+        // Duplicate the pre-processing from detect_from_corners.
+        let mut strong: Vec<Corner> = corners
+            .iter()
+            .filter(|c| c.strength >= self.params.min_corner_strength)
+            .cloned()
+            .collect();
+
+        if strong.len() < self.params.min_corners {
+            return Vec::new();
+        }
+
+        let mut grid_diagonals = None;
+        let mut graph_diagonals = None;
+        let mut orientation_histogram = None;
+
+        if self.params.use_orientation_clustering {
+            if let Some(clusters) =
+                cluster_orientations(&strong, &self.params.orientation_clustering_params)
+            {
+                orientation_histogram = clusters.histogram;
+                grid_diagonals = Some(clusters.centers);
+                graph_diagonals = grid_diagonals;
+                strong = strong
+                    .into_iter()
+                    .zip(clusters.labels)
+                    .filter_map(|(mut corner, label)| {
+                        label.map(|cluster| {
+                            corner.orientation_cluster = Some(cluster);
+                            corner
+                        })
+                    })
+                    .collect();
+            }
+        }
+
+        if grid_diagonals.is_none() {
+            if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
+                let c0 = wrap_angle_pi(theta);
+                let c1 = wrap_angle_pi(theta + FRAC_PI_2);
+                grid_diagonals = Some([c0, c1]);
+            }
+        }
+
+        if strong.len() < self.params.min_corners {
+            return Vec::new();
+        }
+
+        let graph = build_chessboard_grid_graph(&strong, &self.params.graph, graph_diagonals);
+        let components = connected_components(&graph);
+        log_graph_summary(&graph, &components, self.params.min_corners);
+
+        self.collect_components(
+            &graph,
+            &components,
+            &strong,
+            grid_diagonals,
+            orientation_histogram,
+        )
+    }
+
+    /// Shared logic: iterate components, convert to board coords, return all qualifying results.
+    fn collect_components(
+        &self,
+        graph: &GridGraph,
+        components: &[Vec<usize>],
+        strong: &[Corner],
+        grid_diagonals: Option<[f32; 2]>,
+        orientation_histogram: Option<OrientationHistogram>,
+    ) -> Vec<ChessboardDetectionResult> {
+        let mut results: Vec<(TargetDetection, Vec<usize>, usize)> = Vec::new();
+        let mut found_primary = false;
+
+        // Sort components by size descending so primary is processed first.
+        let mut sorted_indices: Vec<usize> = (0..components.len()).collect();
+        sorted_indices.sort_unstable_by(|&a, &b| components[b].len().cmp(&components[a].len()));
+
+        for &ci in &sorted_indices {
+            let component = &components[ci];
             if component.len() < self.params.min_corners {
                 continue;
             }
-            let coords = assign_grid_coordinates(&graph, component);
+            let coords = assign_grid_coordinates(graph, component);
             if coords.is_empty() {
                 debug!(
                     "rejecting component with {} nodes because BFS assigned no grid coordinates",
@@ -182,43 +266,46 @@ impl ChessboardDetector {
                 );
                 continue;
             }
-            let Some((detection, inliers)) = self.component_to_board_coords(&coords, &strong)
+            let skip_completeness = found_primary;
+            let Some((detection, inliers)) =
+                self.component_to_board_coords(&coords, strong, skip_completeness)
             else {
                 continue;
             };
             let score = detection.corners.len();
-            match best {
-                None => best = Some((detection, inliers, score)),
-                Some((_, _, best_score)) if score > best_score => {
-                    best = Some((detection, inliers, score));
-                }
-                _ => {}
-            }
+            debug!(
+                "accepted chessboard component with {} corners and {} inliers (primary={})",
+                detection.corners.len(),
+                inliers.len(),
+                !found_primary
+            );
+            results.push((detection, inliers, score));
+            found_primary = true;
         }
 
-        let (detection, inliers, _) = best?;
-        let graph_debug = Some(build_graph_debug(&graph, &strong));
-        debug!(
-            "accepted chessboard candidate with {} corners and {} inliers",
-            detection.corners.len(),
-            inliers.len()
-        );
+        // Sort by corner count descending.
+        results.sort_unstable_by(|a, b| b.2.cmp(&a.2));
 
-        Some(ChessboardDetectionResult {
-            detection,
-            inliers,
-            orientations: grid_diagonals,
-            debug: ChessboardDebug {
-                orientation_histogram,
-                graph: graph_debug,
-            },
-        })
+        let graph_debug = Some(build_graph_debug(graph, strong));
+        results
+            .into_iter()
+            .map(|(detection, inliers, _)| ChessboardDetectionResult {
+                detection,
+                inliers,
+                orientations: grid_diagonals,
+                debug: ChessboardDebug {
+                    orientation_histogram: orientation_histogram.clone(),
+                    graph: graph_debug.clone(),
+                },
+            })
+            .collect()
     }
 
     fn component_to_board_coords(
         &self,
         coords: &[(usize, GridIndex)],
         corners: &[Corner],
+        skip_completeness: bool,
     ) -> Option<(TargetDetection, Vec<usize>)> {
         let (min_i, max_i, min_j, max_j) =
             coords
@@ -297,18 +384,20 @@ impl ChessboardDetector {
         }
 
         let completeness = by_grid.len() as f32 / grid_area;
-        if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
-            if completeness < self.params.completeness_threshold {
-                debug!(
-                    "rejecting component with {} nodes: completeness {:.3} below threshold {:.3} for board {}x{} ({} unique corners)",
-                    coords.len(),
-                    completeness,
-                    self.params.completeness_threshold,
-                    board_cols,
-                    board_rows,
-                    by_grid.len()
-                );
-                return None;
+        if !skip_completeness {
+            if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
+                if completeness < self.params.completeness_threshold {
+                    debug!(
+                        "rejecting component with {} nodes: completeness {:.3} below threshold {:.3} for board {}x{} ({} unique corners)",
+                        coords.len(),
+                        completeness,
+                        self.params.completeness_threshold,
+                        board_cols,
+                        board_rows,
+                        by_grid.len()
+                    );
+                    return None;
+                }
             }
         }
 
@@ -440,6 +529,7 @@ fn neighbor_dir_name(dir: NeighborDirection) -> &'static str {
         NeighborDirection::Left => "left",
         NeighborDirection::Up => "up",
         NeighborDirection::Down => "down",
+        _ => "unknown",
     }
 }
 

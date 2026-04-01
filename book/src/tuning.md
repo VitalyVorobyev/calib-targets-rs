@@ -7,25 +7,52 @@ This chapter answers the question: *"My detection fails or gives poor results â€
 Before tuning anything, confirm you are starting from the library defaults:
 
 ```rust,no_run
-use calib_targets::detect::{default_chess_config, detect_chessboard};
+use calib_targets::detect::detect_chessboard;
 use calib_targets::ChessboardParams;
 
-let chess_cfg = default_chess_config();       // ChESS corner detector config
-let params    = ChessboardParams::default();  // chessboard assembly params
+let params = ChessboardParams::default();  // includes ChESS corner config
 ```
 
 For ChArUco:
 
 ```rust,no_run
-use calib_targets_charuco::CharucoDetectorParams;
+use calib_targets::charuco::CharucoParams;
+# let board = todo!();
 
-let params = CharucoDetectorParams::for_board(&board);
+let params = CharucoParams::for_board(&board);
 ```
 
-`default_chess_config()` sets `px_per_square = 60` pixels. This value is chosen so that
-each bit cell in a 4Ã—4 marker is ~15 px wide, keeping Otsu binarization reliable above
-the empirical 4 px / bit-cell minimum. If your image has a very different scale, adjust
-`px_per_square` proportionally before touching any other parameter.
+Each params struct embeds the ChESS corner detector config in `params.chess`
+(chessboard) or `params.chessboard.chess` (charuco, marker). The defaults use
+single-scale detection with `threshold_mode = Relative`,
+`threshold_value = 0.2`, and `nms_radius = 2`.
+
+For ChArUco, board sampling scale is controlled separately by
+`CharucoParams::for_board`, which starts with `px_per_square = 60`.
+If marker decoding is the problem and the board appears at a very different
+pixel scale, adjust `px_per_square` there before touching other parameters.
+
+## Challenging images: multi-config sweep
+
+For images with uneven lighting, Scheimpflug optics, or narrow focus strips,
+a single threshold may miss corners in some regions. Use the multi-config sweep
+to try several parameter variants and keep the best result:
+
+```rust,no_run
+use calib_targets::detect::detect_charuco_best;
+use calib_targets::charuco::CharucoParams;
+# let board = todo!();
+
+let configs = CharucoParams::sweep_for_board(&board);
+let result = detect_charuco_best(&img, &configs);
+```
+
+`sweep_for_board()` returns three configs: default + high-threshold +
+low-threshold. For chessboards, use `ChessboardParams::sweep_default()`.
+
+Multi-component merge (built into the ChArUco detector) further helps by
+independently aligning disconnected grid fragments and merging them, recovering
+30-50% more corners on challenging images.
 
 ---
 
@@ -127,7 +154,7 @@ handheld camera at a steep angle.
 
 ## Per-parameter reference: `ScanDecodeConfig` / ChArUco
 
-These parameters live inside `CharucoDetectorParams`.
+These parameters live inside `CharucoParams`.
 
 ### `min_border_score`
 
