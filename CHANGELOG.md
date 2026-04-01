@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.1]
+
+### Fixes
+
+- Fix FFI C++ consumer examples: `config.graph.*` → `config.chessboard.graph.*`
+  after API redesign nested `GridGraphParams` inside `ChessboardParams`.
+- Fix broken intra-doc links (`detect_from_corners`, `min_marker_inliers`).
+- Fix `cargo doc` binary name collision by adding `doc = false` to CLI bin.
+- Regenerate FFI header and Python typing stubs after `#[non_exhaustive]` changes.
+- Add `detect_*_best` sweep functions to Python and WASM bindings.
+- Document pre-release quality gates in CLAUDE.md.
+
 ## [0.5.0]
 
 ### API redesign
