@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.2]
+
+### Fixes
+
+- Fix `zip::FileOptions` type inference failure on Windows CI by adding explicit
+  `FileOptions::<()>` type parameter.
+
 ## [0.5.1]
 
 ### Fixes
