@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(not(target_os = "windows"))]
 use tar::{Builder as TarBuilder, EntryType, Header as TarHeader};
 #[cfg(target_os = "windows")]
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 #[cfg(target_os = "windows")]
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
@@ -361,11 +361,11 @@ fn create_zip_archive(
         .map_err(|err| format!("create archive {}: {err}", archive_path.display()))?;
     let mut zip = ZipWriter::new(archive_file);
     let timestamp = DateTime::default();
-    let dir_options = FileOptions::default()
+    let dir_options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(timestamp)
         .unix_permissions(0o755);
-    let file_options = FileOptions::default()
+    let file_options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Stored)
         .last_modified_time(timestamp)
         .unix_permissions(0o644);
