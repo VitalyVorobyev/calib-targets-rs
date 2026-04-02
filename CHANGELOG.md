@@ -6,6 +6,8 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.2]
+
 ### Changed
 
 - **`projective-grid`:** all public types and functions are now generic over
