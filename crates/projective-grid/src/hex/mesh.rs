@@ -5,13 +5,16 @@
 //! The hex lattice is decomposed into parallelogram cells, each split into
 //! two triangles.
 
+use crate::float_helpers::lit;
 use crate::grid_index::GridIndex;
 use crate::homography::{estimate_homography, Homography};
+use crate::Float;
 use nalgebra::{Matrix2, Point2, Vector2};
 use std::collections::HashMap;
 
-/// Sqrt(3) / 2, the vertical spacing factor for pointy-top hex grids.
-const SQRT3_HALF: f64 = 0.866_025_403_784_438_6;
+fn sqrt3_half<F: Float>() -> F {
+    lit::<F>(3.0).sqrt() / lit::<F>(2.0)
+}
 
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
@@ -24,34 +27,26 @@ pub enum HexMeshError {
 
 /// A 2D affine transform: `dst = M * [src_x, src_y]^T + t`.
 #[derive(Clone, Copy, Debug)]
-pub struct AffineTransform2D {
+pub struct AffineTransform2D<F: Float = f32> {
     /// 2x2 linear part.
-    pub linear: Matrix2<f64>,
+    pub linear: Matrix2<F>,
     /// Translation part.
-    pub translation: Vector2<f64>,
+    pub translation: Vector2<F>,
 }
 
-impl AffineTransform2D {
+impl<F: Float> AffineTransform2D<F> {
     /// Compute the affine transform mapping `src` triangle to `dst` triangle.
     ///
     /// Returns `None` if the source triangle is degenerate (collinear points).
-    pub fn from_triangle_correspondence(
-        src: [Point2<f64>; 3],
-        dst: [Point2<f64>; 3],
-    ) -> Option<Self> {
-        // Solve: dst_i = M * src_i + t for i = 0, 1, 2
-        // Using src[0] as origin: M * (src_i - src_0) = (dst_i - dst_0) for i = 1, 2
+    pub fn from_triangle_correspondence(src: [Point2<F>; 3], dst: [Point2<F>; 3]) -> Option<Self> {
         let ds1 = src[1] - src[0];
         let ds2 = src[2] - src[0];
         let dd1 = dst[1] - dst[0];
         let dd2 = dst[2] - dst[0];
 
-        // [ds1 | ds2] as column matrix, invert to get M
         let src_mat = Matrix2::new(ds1.x, ds2.x, ds1.y, ds2.y);
-
         let src_inv = src_mat.try_inverse()?;
 
-        // M = [dd1 | dd2] * src_inv
         let dst_mat = Matrix2::new(dd1.x, dd2.x, dd1.y, dd2.y);
         let linear = dst_mat * src_inv;
 
@@ -65,18 +60,16 @@ impl AffineTransform2D {
     }
 
     /// Apply the transform to a 2D point.
-    pub fn apply(&self, p: Point2<f64>) -> Point2<f64> {
+    pub fn apply(&self, p: Point2<F>) -> Point2<F> {
         let v = self.linear * Vector2::new(p.x, p.y) + self.translation;
         Point2::new(v.x, v.y)
     }
 }
 
 #[derive(Clone, Debug)]
-struct TriangleCell {
-    /// Affine transform from rectified triangle to image triangle.
-    affine: AffineTransform2D,
-    /// Homography from rectified triangle to image triangle (4-point, with centroid).
-    homography: Homography,
+struct TriangleCell<F: Float> {
+    affine: AffineTransform2D<F>,
+    homography: Homography<F>,
 }
 
 /// Per-triangle homography mesh over a hex grid.
@@ -86,7 +79,7 @@ struct TriangleCell {
 /// - **Lower**: `(q,r)`, `(q+1,r)`, `(q,r+1)` — when `frac_q + frac_r ≤ 1`
 /// - **Upper**: `(q+1,r)`, `(q,r+1)`, `(q+1,r+1)` — when `frac_q + frac_r > 1`
 #[derive(Clone, Debug)]
-pub struct HexGridHomographyMesh {
+pub struct HexGridHomographyMesh<F: Float = f32> {
     pub min_q: i32,
     pub min_r: i32,
     /// Number of parallelogram cells along q.
@@ -94,30 +87,27 @@ pub struct HexGridHomographyMesh {
     /// Number of parallelogram cells along r.
     pub cells_r: usize,
     /// Rectified pixels per grid cell edge.
-    pub px_per_cell: f32,
+    pub px_per_cell: F,
     /// Number of valid triangle cells.
     pub valid_triangles: usize,
     /// Rectified image dimensions.
     pub rect_width: usize,
     pub rect_height: usize,
 
-    // 2 triangles per parallelogram cell: [lower, upper] interleaved.
-    // Length = cells_q * cells_r * 2
-    cells: Vec<Option<TriangleCell>>,
+    cells: Vec<Option<TriangleCell<F>>>,
 
-    // Rectified coordinate offset (subtracted from raw axial→rect mapping).
-    x_offset: f64,
-    y_offset: f64,
+    x_offset: F,
+    y_offset: F,
 }
 
-impl HexGridHomographyMesh {
+impl<F: Float> HexGridHomographyMesh<F> {
     /// Build per-triangle transforms from a hex grid corner map.
     ///
     /// - `corners`: map from axial grid index `(q=i, r=j)` to image position.
     /// - `px_per_cell`: rectified pixels per grid cell edge.
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<f32>>,
-        px_per_cell: f32,
+        corners: &HashMap<GridIndex, Point2<F>>,
+        px_per_cell: F,
     ) -> Result<Self, HexMeshError> {
         if corners.len() < 3 {
             return Err(HexMeshError::NotEnoughCorners);
@@ -138,34 +128,38 @@ impl HexGridHomographyMesh {
 
         let cells_q = (max_q - min_q) as usize;
         let cells_r = (max_r - min_r) as usize;
-        let s = px_per_cell as f64;
+        let s = px_per_cell;
+        let s3h: F = sqrt3_half();
+        let half: F = lit(0.5);
 
         // Compute rectified bounding box
-        let mut x_min = f64::MAX;
-        let mut x_max = f64::MIN;
-        let mut y_min = f64::MAX;
-        let mut y_max = f64::MIN;
+        let mut x_min = F::max_value().unwrap_or_else(|| lit(1e30));
+        let mut x_max = -x_min;
+        let mut y_min = x_min;
+        let mut y_max = -y_min;
 
-        // Check all corner positions of the bounding parallelogram
-        for &q in &[min_q, max_q] {
-            for &r in &[min_r, max_r] {
-                let x = s * (q as f64 + r as f64 * 0.5);
-                let y = s * (r as f64 * SQRT3_HALF);
-                x_min = x_min.min(x);
-                x_max = x_max.max(x);
-                y_min = y_min.min(y);
-                y_max = y_max.max(y);
+        for &q_i in &[min_q, max_q] {
+            for &r_j in &[min_r, max_r] {
+                let q: F = lit(q_i as f64);
+                let r: F = lit(r_j as f64);
+                let x = s * (q + r * half);
+                let y = s * (r * s3h);
+                x_min = if x < x_min { x } else { x_min };
+                x_max = if x > x_max { x } else { x_max };
+                y_min = if y < y_min { y } else { y_min };
+                y_max = if y > y_max { y } else { y_max };
             }
         }
 
-        let rect_width = ((x_max - x_min).round().max(1.0)) as usize;
-        let rect_height = ((y_max - y_min).round().max(1.0)) as usize;
+        let rect_width = nalgebra::try_convert::<F, f64>((x_max - x_min).round().max(F::one()))
+            .unwrap_or(1.0) as usize;
+        let rect_height = nalgebra::try_convert::<F, f64>((y_max - y_min).round().max(F::one()))
+            .unwrap_or(1.0) as usize;
 
-        let axial_to_rect = |q: i32, r: i32| -> Point2<f64> {
-            Point2::new(
-                s * (q as f64 + r as f64 * 0.5) - x_min,
-                s * (r as f64 * SQRT3_HALF) - y_min,
-            )
+        let axial_to_rect = |qi: i32, rj: i32| -> Point2<F> {
+            let q: F = lit(qi as f64);
+            let r: F = lit(rj as f64);
+            Point2::new(s * (q + r * half) - x_min, s * (r * s3h) - y_min)
         };
 
         let mut cells = vec![None; cells_q * cells_r * 2];
@@ -198,27 +192,22 @@ impl HexGridHomographyMesh {
                         axial_to_rect(q0 + 1, r0),
                         axial_to_rect(q0, r0 + 1),
                     ];
-                    let img_tri = [
-                        Point2::new(ip00.x as f64, ip00.y as f64),
-                        Point2::new(ip10.x as f64, ip10.y as f64),
-                        Point2::new(ip01.x as f64, ip01.y as f64),
-                    ];
+                    let img_tri = [ip00, ip10, ip01];
 
                     if let Some(affine) =
                         AffineTransform2D::from_triangle_correspondence(rect_tri, img_tri)
                     {
-                        // 4-point homography: add centroid as 4th point
                         let rect_c = centroid(&rect_tri);
                         let img_c = affine.apply(rect_c);
-                        let rect_4: Vec<Point2<f32>> = rect_tri
+                        let rect_4: Vec<Point2<F>> = rect_tri
                             .iter()
                             .chain(std::iter::once(&rect_c))
-                            .map(|p| Point2::new(p.x as f32, p.y as f32))
+                            .copied()
                             .collect();
-                        let img_4: Vec<Point2<f32>> = img_tri
+                        let img_4: Vec<Point2<F>> = img_tri
                             .iter()
                             .chain(std::iter::once(&img_c))
-                            .map(|p| Point2::new(p.x as f32, p.y as f32))
+                            .copied()
                             .collect();
 
                         if let Some(homography) = estimate_homography(&rect_4, &img_4) {
@@ -235,26 +224,22 @@ impl HexGridHomographyMesh {
                         axial_to_rect(q0, r0 + 1),
                         axial_to_rect(q0 + 1, r0 + 1),
                     ];
-                    let img_tri = [
-                        Point2::new(ip10.x as f64, ip10.y as f64),
-                        Point2::new(ip01.x as f64, ip01.y as f64),
-                        Point2::new(ip11.x as f64, ip11.y as f64),
-                    ];
+                    let img_tri = [ip10, ip01, ip11];
 
                     if let Some(affine) =
                         AffineTransform2D::from_triangle_correspondence(rect_tri, img_tri)
                     {
                         let rect_c = centroid(&rect_tri);
                         let img_c = affine.apply(rect_c);
-                        let rect_4: Vec<Point2<f32>> = rect_tri
+                        let rect_4: Vec<Point2<F>> = rect_tri
                             .iter()
                             .chain(std::iter::once(&rect_c))
-                            .map(|p| Point2::new(p.x as f32, p.y as f32))
+                            .copied()
                             .collect();
-                        let img_4: Vec<Point2<f32>> = img_tri
+                        let img_4: Vec<Point2<F>> = img_tri
                             .iter()
                             .chain(std::iter::once(&img_c))
-                            .map(|p| Point2::new(p.x as f32, p.y as f32))
+                            .copied()
                             .collect();
 
                         if let Some(homography) = estimate_homography(&rect_4, &img_4) {
@@ -289,61 +274,60 @@ impl HexGridHomographyMesh {
     /// using the per-triangle affine transform.
     ///
     /// Returns `None` if the point lies outside the mesh or the cell is invalid.
-    pub fn rect_to_img_affine(&self, p_rect: Point2<f32>) -> Option<Point2<f32>> {
-        let (cell, p64) = self.lookup_cell(p_rect)?;
-        let result = cell.affine.apply(p64);
-        Some(Point2::new(result.x as f32, result.y as f32))
+    pub fn rect_to_img_affine(&self, p_rect: Point2<F>) -> Option<Point2<F>> {
+        let cell = self.lookup_cell(p_rect)?;
+        Some(cell.affine.apply(p_rect))
     }
 
     /// Map a point in **global rectified pixel coordinates** to image coordinates
     /// using the per-triangle homography.
     ///
     /// Returns `None` if the point lies outside the mesh or the cell is invalid.
-    pub fn rect_to_img(&self, p_rect: Point2<f32>) -> Option<Point2<f32>> {
-        let (cell, _) = self.lookup_cell(p_rect)?;
+    pub fn rect_to_img(&self, p_rect: Point2<F>) -> Option<Point2<F>> {
+        let cell = self.lookup_cell(p_rect)?;
         Some(cell.homography.apply(p_rect))
     }
 
     /// Look up the triangle cell for a rectified point.
-    fn lookup_cell(&self, p_rect: Point2<f32>) -> Option<(&TriangleCell, Point2<f64>)> {
-        let s = self.px_per_cell as f64;
-        if s <= 0.0 {
+    fn lookup_cell(&self, p_rect: Point2<F>) -> Option<&TriangleCell<F>> {
+        let s = self.px_per_cell;
+        if s <= F::zero() {
             return None;
         }
 
-        let p64 = Point2::new(p_rect.x as f64, p_rect.y as f64);
+        let s3h: F = sqrt3_half();
+        let half: F = lit(0.5);
 
         // Convert rectified pixel coords back to fractional axial coords
-        let r_frac = (p64.y + self.y_offset) / (s * SQRT3_HALF);
-        let q_frac = (p64.x + self.x_offset) / s - r_frac * 0.5;
+        let r_frac = (p_rect.y + self.y_offset) / (s * s3h);
+        let q_frac = (p_rect.x + self.x_offset) / s - r_frac * half;
 
         // Determine parallelogram cell
-        let cq_f = q_frac - self.min_q as f64;
-        let cr_f = r_frac - self.min_r as f64;
+        let cq_f = q_frac - lit(self.min_q as f64);
+        let cr_f = r_frac - lit(self.min_r as f64);
 
-        let cq = cq_f.floor() as i32;
-        let cr = cr_f.floor() as i32;
+        let cq = nalgebra::try_convert::<F, f64>(cq_f.floor()).unwrap_or(0.0) as i32;
+        let cr = nalgebra::try_convert::<F, f64>(cr_f.floor()).unwrap_or(0.0) as i32;
 
         if cq < 0 || cr < 0 || cq >= self.cells_q as i32 || cr >= self.cells_r as i32 {
             return None;
         }
 
         // Determine lower vs upper triangle
-        let frac_q = cq_f - cq as f64;
-        let frac_r = cr_f - cr as f64;
-        let is_upper = frac_q + frac_r > 1.0;
+        let frac_q = cq_f - lit(cq as f64);
+        let frac_r = cr_f - lit(cr as f64);
+        let is_upper = frac_q + frac_r > F::one();
 
         let idx = (cr as usize * self.cells_q + cq as usize) * 2 + is_upper as usize;
-        let cell = self.cells.get(idx)?.as_ref()?;
-
-        Some((cell, p64))
+        self.cells.get(idx)?.as_ref()
     }
 }
 
-fn centroid(tri: &[Point2<f64>; 3]) -> Point2<f64> {
+fn centroid<F: Float>(tri: &[Point2<F>; 3]) -> Point2<F> {
+    let third: F = lit(1.0 / 3.0);
     Point2::new(
-        (tri[0].x + tri[1].x + tri[2].x) / 3.0,
-        (tri[0].y + tri[1].y + tri[2].y) / 3.0,
+        (tri[0].x + tri[1].x + tri[2].x) * third,
+        (tri[0].y + tri[1].y + tri[2].y) * third,
     )
 }
 
@@ -369,26 +353,26 @@ mod tests {
 
     #[test]
     fn affine_from_triangle_identity() {
-        let tri = [
+        let tri: [Point2<f32>; 3] = [
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
             Point2::new(0.0, 1.0),
         ];
         let aff = AffineTransform2D::from_triangle_correspondence(tri, tri).unwrap();
-        let p = Point2::new(0.3, 0.4);
+        let p = Point2::new(0.3f32, 0.4);
         let result = aff.apply(p);
-        assert!((result.x - p.x).abs() < 1e-10);
-        assert!((result.y - p.y).abs() < 1e-10);
+        assert!((result.x - p.x).abs() < 1e-6);
+        assert!((result.y - p.y).abs() < 1e-6);
     }
 
     #[test]
     fn affine_maps_vertices_correctly() {
-        let src = [
+        let src: [Point2<f32>; 3] = [
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
             Point2::new(0.0, 1.0),
         ];
-        let dst = [
+        let dst: [Point2<f32>; 3] = [
             Point2::new(10.0, 20.0),
             Point2::new(30.0, 20.0),
             Point2::new(10.0, 50.0),
@@ -396,14 +380,14 @@ mod tests {
         let aff = AffineTransform2D::from_triangle_correspondence(src, dst).unwrap();
         for (s, d) in src.iter().zip(dst.iter()) {
             let result = aff.apply(*s);
-            assert!((result.x - d.x).abs() < 1e-10);
-            assert!((result.y - d.y).abs() < 1e-10);
+            assert!((result.x - d.x).abs() < 1e-4);
+            assert!((result.y - d.y).abs() < 1e-4);
         }
     }
 
     #[test]
     fn degenerate_triangle_returns_none() {
-        let src = [
+        let src: [Point2<f32>; 3] = [
             Point2::new(0.0, 0.0),
             Point2::new(1.0, 0.0),
             Point2::new(2.0, 0.0), // collinear
@@ -427,13 +411,11 @@ mod tests {
         let corners = make_hex_corners(3, spacing);
         let mesh = HexGridHomographyMesh::from_corners(&corners, spacing).unwrap();
 
-        // Test that known corner positions round-trip through the mesh
-        let s = spacing as f64;
+        let s3h = 3.0f32.sqrt() / 2.0;
 
-        // Verify that corners at known positions map back reasonably
         for (g, &img_pos) in &corners {
-            let rx = (s * (g.i as f64 + g.j as f64 * 0.5) - mesh.x_offset) as f32;
-            let ry = (s * (g.j as f64 * SQRT3_HALF) - mesh.y_offset) as f32;
+            let rx = spacing * (g.i as f32 + g.j as f32 * 0.5) - mesh.x_offset;
+            let ry = spacing * (g.j as f32 * s3h) - mesh.y_offset;
             let rect_pt = Point2::new(rx, ry);
 
             if let Some(recovered) = mesh.rect_to_img_affine(rect_pt) {
@@ -454,7 +436,6 @@ mod tests {
                     img_pos.y,
                 );
             }
-            // Some boundary corners may not have a valid triangle cell — that's OK
         }
     }
 
@@ -464,11 +445,11 @@ mod tests {
         let corners = make_hex_corners(3, spacing);
         let mesh = HexGridHomographyMesh::from_corners(&corners, spacing).unwrap();
 
-        let s = spacing as f64;
+        let s3h = 3.0f32.sqrt() / 2.0;
 
         for (g, &img_pos) in &corners {
-            let rx = (s * (g.i as f64 + g.j as f64 * 0.5) - mesh.x_offset) as f32;
-            let ry = (s * (g.j as f64 * SQRT3_HALF) - mesh.y_offset) as f32;
+            let rx = spacing * (g.i as f32 + g.j as f32 * 0.5) - mesh.x_offset;
+            let ry = spacing * (g.j as f32 * s3h) - mesh.y_offset;
             let rect_pt = Point2::new(rx, ry);
 
             if let Some(recovered) = mesh.rect_to_img(rect_pt) {
@@ -495,7 +476,7 @@ mod tests {
     #[test]
     fn too_few_corners_errors() {
         let mut corners = HashMap::new();
-        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0f32, 0.0));
         corners.insert(GridIndex { i: 1, j: 0 }, Point2::new(50.0, 0.0));
 
         let result = HexGridHomographyMesh::from_corners(&corners, 50.0);
@@ -505,12 +486,10 @@ mod tests {
     #[test]
     fn missing_corners_handled_gracefully() {
         let mut corners = make_hex_corners(3, 60.0);
-        // Remove some corners
         corners.remove(&GridIndex { i: 0, j: 0 });
         corners.remove(&GridIndex { i: 1, j: 1 });
 
         let mesh = HexGridHomographyMesh::from_corners(&corners, 60.0);
-        // Should still succeed (just with fewer valid triangles)
         assert!(mesh.is_ok());
         let mesh = mesh.unwrap();
         assert!(mesh.valid_triangles > 0);

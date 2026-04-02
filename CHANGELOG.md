@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`projective-grid`:** all public types and functions are now generic over
+  floating-point type (`f32` / `f64`). All types default to `f32`, so existing
+  code compiles unchanged. New `Float` trait alias (`RealField + Copy`) is
+  re-exported from the crate root.
+- `Homography` internal matrix is now `Matrix3<F>` (previously always `f64`).
+  For `f32` users this means slightly less internal precision but no
+  cross-type conversions; `f64` users get full double-precision throughout.
+
 ## [0.5.1]
 
 ### Fixes

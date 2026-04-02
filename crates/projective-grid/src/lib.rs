@@ -18,6 +18,8 @@
 //! The [`validators`] module provides ready-to-use implementations of
 //! [`NeighborValidator`] and [`hex::HexNeighborValidator`] for common scenarios.
 
+mod float_helpers;
+
 pub mod direction;
 pub mod graph;
 pub mod grid_alignment;
@@ -29,6 +31,13 @@ pub mod hex;
 pub mod homography;
 pub mod traverse;
 pub mod validators;
+
+/// Trait alias for floating-point types supported by this crate.
+///
+/// Both `f32` and `f64` satisfy this bound. All public generic types default
+/// to `f32` for backward compatibility.
+pub trait Float: nalgebra::RealField + Copy {}
+impl<T: nalgebra::RealField + Copy> Float for T {}
 
 pub use direction::{NeighborDirection, NodeNeighbor};
 pub use graph::{GridGraph, GridGraphParams, NeighborCandidate, NeighborValidator};

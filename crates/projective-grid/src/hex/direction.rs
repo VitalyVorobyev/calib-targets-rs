@@ -89,15 +89,15 @@ impl HexDirection {
 
 /// A validated hex grid neighbor with direction, distance, and quality score.
 #[derive(Debug)]
-pub struct HexNodeNeighbor {
+pub struct HexNodeNeighbor<F: crate::Float = f32> {
     /// Direction from the source node to this neighbor.
     pub direction: HexDirection,
     /// Index of the neighbor in the original point array.
     pub index: usize,
     /// Euclidean distance in pixels.
-    pub distance: f32,
+    pub distance: F,
     /// Quality score (lower is better).
-    pub score: f32,
+    pub score: F,
 }
 
 #[cfg(test)]

@@ -1,3 +1,4 @@
+use crate::Float;
 use serde::{Deserialize, Serialize};
 
 /// Cardinal direction along a 4-connected grid.
@@ -36,13 +37,13 @@ impl NeighborDirection {
 
 /// A validated grid neighbor with direction, distance, and quality score.
 #[derive(Debug)]
-pub struct NodeNeighbor {
+pub struct NodeNeighbor<F: Float = f32> {
     /// Direction from the source node to this neighbor.
     pub direction: NeighborDirection,
     /// Index of the neighbor in the original point array.
     pub index: usize,
     /// Euclidean distance in pixels.
-    pub distance: f32,
+    pub distance: F,
     /// Quality score (lower is better).
-    pub score: f32,
+    pub score: F,
 }

@@ -3,14 +3,16 @@
 //!
 //! | Validator | Grid | PointData | Use case |
 //! |-----------|------|-----------|----------|
-//! | [`XJunctionValidator`] | Square | `f32` (orientation mod π) | ChESS corners, chessboard X-junctions |
+//! | [`XJunctionValidator`] | Square | `F` (orientation mod π) | ChESS corners, chessboard X-junctions |
 //! | [`SpatialSquareValidator`] | Square | `()` | Unoriented features on a square lattice |
 //! | [`SpatialHexValidator`] | Hex | `()` | Unoriented features on a hex lattice (ringgrid, etc.) |
 
 use crate::direction::NeighborDirection;
+use crate::float_helpers::{lit, rem_euclid, to_degrees};
 use crate::graph::{NeighborCandidate, NeighborValidator};
 use crate::hex::direction::HexDirection;
 use crate::hex::graph::HexNeighborValidator;
+use crate::Float;
 use nalgebra::Vector2;
 
 // ---------------------------------------------------------------------------
@@ -18,42 +20,42 @@ use nalgebra::Vector2;
 // ---------------------------------------------------------------------------
 
 /// Absolute angle difference in `[0, π]`.
-fn angle_diff_abs(a: f32, b: f32) -> f32 {
-    let two_pi = 2.0 * std::f32::consts::PI;
-    let mut diff = (b - a).rem_euclid(two_pi);
-    if diff >= std::f32::consts::PI {
+fn angle_diff_abs<F: Float>(a: F, b: F) -> F {
+    let two_pi: F = lit::<F>(2.0) * F::pi();
+    let mut diff = rem_euclid(b - a, two_pi);
+    if diff >= F::pi() {
         diff -= two_pi;
     }
     diff.abs()
 }
 
 /// Check whether two undirected axes (angles mod π) are approximately orthogonal.
-fn is_orthogonal(a: f32, b: f32, tolerance: f32) -> bool {
+fn is_orthogonal<F: Float>(a: F, b: F, tolerance: F) -> bool {
     let diff = angle_diff_abs(a, b);
-    (std::f32::consts::FRAC_PI_2 - diff).abs() <= tolerance.abs()
+    (F::frac_pi_2() - diff).abs() <= tolerance.abs()
 }
 
 /// Angle between an undirected axis `axis_angle` (mod π) and a directed vector
 /// `vec_angle`. Returns a value in `[0, π/2]`.
-fn axis_vec_diff(axis_angle: f32, vec_angle: f32) -> f32 {
-    let two_pi = 2.0 * std::f32::consts::PI;
-    let mut diff = (vec_angle - axis_angle).rem_euclid(two_pi);
-    if diff >= std::f32::consts::PI {
+fn axis_vec_diff<F: Float>(axis_angle: F, vec_angle: F) -> F {
+    let two_pi: F = lit::<F>(2.0) * F::pi();
+    let mut diff = rem_euclid(vec_angle - axis_angle, two_pi);
+    if diff >= F::pi() {
         diff -= two_pi;
     }
     let diff_abs = diff.abs();
-    diff_abs.min(std::f32::consts::PI - diff_abs)
+    diff_abs.min(F::pi() - diff_abs)
 }
 
 /// Classify an offset vector into one of 4 cardinal directions by quadrant.
-fn direction_quadrant(offset: &Vector2<f32>) -> NeighborDirection {
+fn direction_quadrant<F: Float>(offset: &Vector2<F>) -> NeighborDirection {
     if offset.x.abs() > offset.y.abs() {
-        if offset.x >= 0.0 {
+        if offset.x >= F::zero() {
             NeighborDirection::Right
         } else {
             NeighborDirection::Left
         }
-    } else if offset.y >= 0.0 {
+    } else if offset.y >= F::zero() {
         NeighborDirection::Down
     } else {
         NeighborDirection::Up
@@ -61,17 +63,17 @@ fn direction_quadrant(offset: &Vector2<f32>) -> NeighborDirection {
 }
 
 /// Classify an offset vector into one of 6 hex directions by sextant (60° sectors).
-fn direction_sextant(offset: &Vector2<f32>) -> HexDirection {
-    let deg = offset.y.atan2(offset.x).to_degrees();
-    if (-30.0..30.0).contains(&deg) {
+fn direction_sextant<F: Float>(offset: &Vector2<F>) -> HexDirection {
+    let deg = to_degrees(offset.y.atan2(offset.x));
+    if deg >= lit(-30.0) && deg < lit(30.0) {
         HexDirection::East
-    } else if (30.0..90.0).contains(&deg) {
+    } else if deg >= lit(30.0) && deg < lit(90.0) {
         HexDirection::SouthEast
-    } else if (90.0..150.0).contains(&deg) {
+    } else if deg >= lit(90.0) && deg < lit(150.0) {
         HexDirection::SouthWest
-    } else if !(-150.0..150.0).contains(&deg) {
+    } else if deg < lit(-150.0) || deg >= lit(150.0) {
         HexDirection::West
-    } else if (-150.0..-90.0).contains(&deg) {
+    } else if deg >= lit(-150.0) && deg < lit(-90.0) {
         HexDirection::NorthWest
     } else {
         HexDirection::NorthEast
@@ -90,7 +92,7 @@ fn direction_sextant(offset: &Vector2<f32>) -> HexDirection {
 ///
 /// # PointData
 ///
-/// `f32` — the corner's orientation angle in radians (mod π, undirected axis).
+/// `F` — the corner's orientation angle in radians (mod π, undirected axis).
 ///
 /// # Example
 ///
@@ -116,25 +118,25 @@ fn direction_sextant(offset: &Vector2<f32>) -> HexDirection {
 ///     &positions, &orientations, &validator, &GridGraphParams::default(),
 /// );
 /// ```
-pub struct XJunctionValidator {
+pub struct XJunctionValidator<F: Float = f32> {
     /// Minimum acceptable neighbor distance (pixels).
-    pub min_spacing: f32,
+    pub min_spacing: F,
     /// Maximum acceptable neighbor distance (pixels).
-    pub max_spacing: f32,
+    pub max_spacing: F,
     /// Angular tolerance (radians) for orthogonality and 45° edge alignment checks.
-    pub tolerance_rad: f32,
+    pub tolerance_rad: F,
 }
 
-impl NeighborValidator for XJunctionValidator {
-    type PointData = f32;
+impl<F: Float> NeighborValidator<F> for XJunctionValidator<F> {
+    type PointData = F;
 
     fn validate(
         &self,
         _source_index: usize,
-        source_data: &f32,
-        candidate: &NeighborCandidate,
-        candidate_data: &f32,
-    ) -> Option<(NeighborDirection, f32)> {
+        source_data: &F,
+        candidate: &NeighborCandidate<F>,
+        candidate_data: &F,
+    ) -> Option<(NeighborDirection, F)> {
         // 1. Orientations must be approximately orthogonal.
         if !is_orthogonal(*source_data, *candidate_data, self.tolerance_rad) {
             return None;
@@ -147,7 +149,7 @@ impl NeighborValidator for XJunctionValidator {
 
         // 3. Edge direction should be at ~45° to both corner orientations.
         let edge_angle = candidate.offset.y.atan2(candidate.offset.x);
-        let expected = std::f32::consts::FRAC_PI_4;
+        let expected = F::frac_pi_4();
 
         let score_src = (axis_vec_diff(*source_data, edge_angle) - expected).abs();
         let score_cand = (axis_vec_diff(*candidate_data, edge_angle) - expected).abs();
@@ -160,8 +162,7 @@ impl NeighborValidator for XJunctionValidator {
         let direction = direction_quadrant(&candidate.offset);
 
         // 5. Score: angular deviations + orientation orthogonality residual.
-        let score_ortho =
-            (std::f32::consts::FRAC_PI_2 - angle_diff_abs(*source_data, *candidate_data)).abs();
+        let score_ortho = (F::frac_pi_2() - angle_diff_abs(*source_data, *candidate_data)).abs();
         let score = score_src + score_cand + score_ortho;
 
         Some((direction, score))
@@ -180,23 +181,23 @@ impl NeighborValidator for XJunctionValidator {
 /// # PointData
 ///
 /// `()` — no per-point data needed.
-pub struct SpatialSquareValidator {
+pub struct SpatialSquareValidator<F: Float = f32> {
     /// Minimum acceptable neighbor distance (pixels).
-    pub min_spacing: f32,
+    pub min_spacing: F,
     /// Maximum acceptable neighbor distance (pixels).
-    pub max_spacing: f32,
+    pub max_spacing: F,
 }
 
-impl NeighborValidator for SpatialSquareValidator {
+impl<F: Float> NeighborValidator<F> for SpatialSquareValidator<F> {
     type PointData = ();
 
     fn validate(
         &self,
         _source_index: usize,
         _source_data: &(),
-        candidate: &NeighborCandidate,
+        candidate: &NeighborCandidate<F>,
         _candidate_data: &(),
-    ) -> Option<(NeighborDirection, f32)> {
+    ) -> Option<(NeighborDirection, F)> {
         if candidate.distance < self.min_spacing || candidate.distance > self.max_spacing {
             return None;
         }
@@ -219,23 +220,23 @@ impl NeighborValidator for SpatialSquareValidator {
 /// # PointData
 ///
 /// `()` — no per-point data needed.
-pub struct SpatialHexValidator {
+pub struct SpatialHexValidator<F: Float = f32> {
     /// Minimum acceptable neighbor distance (pixels).
-    pub min_spacing: f32,
+    pub min_spacing: F,
     /// Maximum acceptable neighbor distance (pixels).
-    pub max_spacing: f32,
+    pub max_spacing: F,
 }
 
-impl HexNeighborValidator for SpatialHexValidator {
+impl<F: Float> HexNeighborValidator<F> for SpatialHexValidator<F> {
     type PointData = ();
 
     fn validate(
         &self,
         _source_index: usize,
         _source_data: &(),
-        candidate: &NeighborCandidate,
+        candidate: &NeighborCandidate<F>,
         _candidate_data: &(),
-    ) -> Option<(HexDirection, f32)> {
+    ) -> Option<(HexDirection, F)> {
         if candidate.distance < self.min_spacing || candidate.distance > self.max_spacing {
             return None;
         }
