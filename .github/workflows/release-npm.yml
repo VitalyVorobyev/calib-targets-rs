@@ -1,0 +1,55 @@
+name: Release to npm (WASM)
+
+on:
+  push:
+    tags:
+      - "wasm-v*"
+
+jobs:
+  publish-wasm:
+    name: Build & publish WASM package
+    runs-on: ubuntu-latest
+
+    environment: npm
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Verify version matches tag
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VER="${TAG#wasm-v}"
+          WASM_VER="$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="calib-targets-wasm") | .version')"
+
+          echo "tag version:  $VER"
+          echo "wasm version: $WASM_VER"
+          test "$WASM_VER" = "$VER"
+
+      - name: Build WASM package
+        run: wasm-pack build crates/calib-targets-wasm --target web --release
+
+      - name: Copy README into pkg
+        run: cp crates/calib-targets-wasm/README.md crates/calib-targets-wasm/pkg/README.md
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish to npm
+        working-directory: crates/calib-targets-wasm/pkg
+        # Trusted publishing via GitHub OIDC; no long-lived npm token required.
+        run: npm publish --access public

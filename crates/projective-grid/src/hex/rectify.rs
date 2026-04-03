@@ -4,13 +4,16 @@
 //! (uniform hex lattice spacing) and the original image. Suitable when lens
 //! distortion is negligible.
 
+use crate::float_helpers::lit;
 use crate::grid_index::GridIndex;
 use crate::homography::{estimate_homography, Homography};
+use crate::Float;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
-/// Sqrt(3) / 2, the vertical spacing factor for pointy-top hex grids.
-const SQRT3_HALF: f64 = 0.866_025_403_784_438_6;
+fn sqrt3_half<F: Float>() -> F {
+    lit::<F>(3.0).sqrt() / lit::<F>(2.0)
+}
 
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
@@ -31,18 +34,18 @@ pub enum HexRectifyError {
 /// y = px_per_cell * (r * sqrt(3) / 2)
 /// ```
 #[derive(Clone, Debug)]
-pub struct HexGridHomography {
+pub struct HexGridHomography<F: Float = f32> {
     /// Maps rectified coordinates to image coordinates.
-    pub h_img_from_rect: Homography,
+    pub h_img_from_rect: Homography<F>,
     /// Maps image coordinates to rectified coordinates.
-    pub h_rect_from_img: Homography,
+    pub h_rect_from_img: Homography<F>,
     /// Axial bounding box (with margin).
     pub min_q: i32,
     pub min_r: i32,
     pub max_q: i32,
     pub max_r: i32,
     /// Rectified pixels per grid cell edge.
-    pub px_per_cell: f32,
+    pub px_per_cell: F,
     /// Rectified image dimensions.
     pub rect_width: usize,
     pub rect_height: usize,
@@ -50,20 +53,20 @@ pub struct HexGridHomography {
     /// Pixel-space origin offset subtracted during construction.
     /// Needed by [`axial_to_rect`](Self::axial_to_rect) to produce coordinates
     /// in the same frame as the stored homography.
-    x_offset: f64,
-    y_offset: f64,
+    x_offset: F,
+    y_offset: F,
 }
 
-impl HexGridHomography {
+impl<F: Float> HexGridHomography<F> {
     /// Compute a global homography from hex grid corners to a rectified coordinate system.
     ///
     /// - `corners`: map from axial grid index `(q=i, r=j)` to image position.
     /// - `px_per_cell`: rectified pixels per grid cell edge.
     /// - `margin_cells`: extra margin around the grid bounding box (in cell units).
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<f32>>,
-        px_per_cell: f32,
-        margin_cells: f32,
+        corners: &HashMap<GridIndex, Point2<F>>,
+        px_per_cell: F,
+        margin_cells: F,
     ) -> Result<Self, HexRectifyError> {
         if corners.len() < 4 {
             return Err(HexRectifyError::NotEnoughPoints { got: corners.len() });
@@ -79,43 +82,46 @@ impl HexGridHomography {
             max_r = max_r.max(g.j);
         }
 
-        // Compute rectified bounding box with margin
-        // x = px_per_cell * (q + r * 0.5), y = px_per_cell * (r * sqrt3/2)
-        // We need to find min/max x and y over all possible (q, r) in bounds
-        let s = px_per_cell as f64;
-        let sqrt3_half = SQRT3_HALF;
+        let s = px_per_cell;
+        let s3h: F = sqrt3_half();
+        let half: F = lit(0.5);
 
-        // Compute x-range: x depends on both q and r
-        let mut x_min = f64::MAX;
-        let mut x_max = f64::MIN;
-        let mut y_min = f64::MAX;
-        let mut y_max = f64::MIN;
+        let mut x_min = F::max_value().unwrap_or_else(|| lit(1e30));
+        let mut x_max = -x_min;
+        let mut y_min = x_min;
+        let mut y_max = -y_min;
 
         for g in corners.keys() {
-            let x = s * (g.i as f64 + g.j as f64 * 0.5);
-            let y = s * (g.j as f64 * sqrt3_half);
-            x_min = x_min.min(x);
-            x_max = x_max.max(x);
-            y_min = y_min.min(y);
-            y_max = y_max.max(y);
+            let q: F = lit(g.i as f64);
+            let r: F = lit(g.j as f64);
+            let x = s * (q + r * half);
+            let y = s * (r * s3h);
+            x_min = if x < x_min { x } else { x_min };
+            x_max = if x > x_max { x } else { x_max };
+            y_min = if y < y_min { y } else { y_min };
+            y_max = if y > y_max { y } else { y_max };
         }
 
-        let margin_px = margin_cells as f64 * s;
+        let margin_px = margin_cells * s;
         x_min -= margin_px;
         y_min -= margin_px;
         x_max += margin_px;
         y_max += margin_px;
 
-        let rect_width = ((x_max - x_min).round().max(1.0)) as usize;
-        let rect_height = ((y_max - y_min).round().max(1.0)) as usize;
+        let rect_width = nalgebra::try_convert::<F, f64>((x_max - x_min).round().max(F::one()))
+            .unwrap_or(1.0) as usize;
+        let rect_height = nalgebra::try_convert::<F, f64>((y_max - y_min).round().max(F::one()))
+            .unwrap_or(1.0) as usize;
 
         // Build correspondences: rectified positions vs image positions
         let mut rect_pts = Vec::with_capacity(corners.len());
         let mut img_pts = Vec::with_capacity(corners.len());
         for (g, &pos) in corners {
-            let rx = s * (g.i as f64 + g.j as f64 * 0.5) - x_min;
-            let ry = s * (g.j as f64 * sqrt3_half) - y_min;
-            rect_pts.push(Point2::new(rx as f32, ry as f32));
+            let q: F = lit(g.i as f64);
+            let r: F = lit(g.j as f64);
+            let rx = s * (q + r * half) - x_min;
+            let ry = s * (r * s3h) - y_min;
+            rect_pts.push(Point2::new(rx, ry));
             img_pts.push(pos);
         }
 
@@ -127,10 +133,12 @@ impl HexGridHomography {
             .ok_or(HexRectifyError::NonInvertible)?;
 
         // Apply margin to axial bounds
-        let mq = min_q - margin_cells.ceil() as i32;
-        let mr = min_r - margin_cells.ceil() as i32;
-        let aq = max_q + margin_cells.ceil() as i32;
-        let ar = max_r + margin_cells.ceil() as i32;
+        let margin_ceil =
+            nalgebra::try_convert::<F, f64>(margin_cells.ceil()).unwrap_or(0.0) as i32;
+        let mq = min_q - margin_ceil;
+        let mr = min_r - margin_ceil;
+        let aq = max_q + margin_ceil;
+        let ar = max_r + margin_ceil;
 
         Ok(Self {
             h_img_from_rect,
@@ -148,12 +156,12 @@ impl HexGridHomography {
     }
 
     /// Map a point from rectified space to image space.
-    pub fn rect_to_img(&self, p_rect: Point2<f32>) -> Point2<f32> {
+    pub fn rect_to_img(&self, p_rect: Point2<F>) -> Point2<F> {
         self.h_img_from_rect.apply(p_rect)
     }
 
     /// Map a point from image space to rectified space.
-    pub fn img_to_rect(&self, p_img: Point2<f32>) -> Point2<f32> {
+    pub fn img_to_rect(&self, p_img: Point2<F>) -> Point2<F> {
         self.h_rect_from_img.apply(p_img)
     }
 
@@ -163,10 +171,11 @@ impl HexGridHomography {
     /// rectified coordinate system directly. The result is in the same shifted
     /// frame used by the stored homography, so it can be passed to
     /// [`rect_to_img`](Self::rect_to_img).
-    pub fn axial_to_rect(&self, q: f64, r: f64) -> Point2<f64> {
-        let s = self.px_per_cell as f64;
-        let x = s * (q + r * 0.5) - self.x_offset;
-        let y = s * (r * SQRT3_HALF) - self.y_offset;
+    pub fn axial_to_rect(&self, q: F, r: F) -> Point2<F> {
+        let s = self.px_per_cell;
+        let half: F = lit(0.5);
+        let x = s * (q + r * half) - self.x_offset;
+        let y = s * (r * sqrt3_half::<F>()) - self.y_offset;
         Point2::new(x, y)
     }
 }
@@ -216,17 +225,13 @@ mod tests {
 
     #[test]
     fn identity_case_with_ideal_positions() {
-        // When corners are at ideal hex positions, the homography should be
-        // close to a translation (the offset to make coordinates non-negative).
         let corners = make_hex_corners(2, 50.0);
         let h = HexGridHomography::from_corners(&corners, 50.0, 0.0).unwrap();
 
         assert!(h.rect_width > 0);
         assert!(h.rect_height > 0);
 
-        // The homography should map rectified positions close to image positions
         for &img_pos in corners.values() {
-            // Verify round-trip: the rectified offset makes direct comparison tricky.
             let rect_pos = h.img_to_rect(img_pos);
             let recovered = h.rect_to_img(rect_pos);
             assert!((recovered.x - img_pos.x).abs() < 0.1);
@@ -240,8 +245,8 @@ mod tests {
         let h = HexGridHomography::from_corners(&corners, 60.0, 1.0).unwrap();
 
         for (g, &img_pos) in &corners {
-            let rect_pt = h.axial_to_rect(g.i as f64, g.j as f64);
-            let recovered = h.rect_to_img(Point2::new(rect_pt.x as f32, rect_pt.y as f32));
+            let rect_pt = h.axial_to_rect(g.i as f32, g.j as f32);
+            let recovered = h.rect_to_img(rect_pt);
             assert!(
                 (recovered.x - img_pos.x).abs() < 0.5,
                 "x mismatch at ({},{}): {} vs {}",

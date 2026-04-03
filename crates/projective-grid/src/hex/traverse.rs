@@ -2,12 +2,13 @@
 
 use crate::grid_index::GridIndex;
 use crate::hex::graph::HexGridGraph;
+use crate::Float;
 
 /// Find connected components in the hex grid graph.
 ///
 /// Returns a list of components, each being a list of node indices.
 /// Components are found via iterative DFS.
-pub fn hex_connected_components(graph: &HexGridGraph) -> Vec<Vec<usize>> {
+pub fn hex_connected_components<F: Float>(graph: &HexGridGraph<F>) -> Vec<Vec<usize>> {
     let mut visited = vec![false; graph.neighbors.len()];
     let mut components = Vec::new();
 
@@ -46,8 +47,8 @@ pub fn hex_connected_components(graph: &HexGridGraph) -> Vec<Vec<usize>> {
 ///
 /// Returns `(node_index, GridIndex)` for each reachable node, where
 /// `GridIndex.i` is `q` and `GridIndex.j` is `r`.
-pub fn hex_assign_grid_coordinates(
-    graph: &HexGridGraph,
+pub fn hex_assign_grid_coordinates<F: Float>(
+    graph: &HexGridGraph<F>,
     component: &[usize],
 ) -> Vec<(usize, GridIndex)> {
     let mut coords = Vec::new();

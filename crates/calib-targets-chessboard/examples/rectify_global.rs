@@ -58,8 +58,8 @@ struct RectifiedInfo {
     max_i: i32,
     min_j: i32,
     max_j: i32,
-    h_img_from_rect: [[f64; 3]; 3],
-    h_rect_from_img: [[f64; 3]; 3],
+    h_img_from_rect: [[f32; 3]; 3],
+    h_rect_from_img: [[f32; 3]; 3],
 }
 
 #[derive(Debug, Serialize)]

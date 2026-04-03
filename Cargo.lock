@@ -335,7 +335,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "calib-targets"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -373,7 +373,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-charuco"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-chessboard",
@@ -393,7 +393,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-core",
  "chess-corners",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "assert_cmd",
  "calib-targets-aruco",
@@ -428,7 +428,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "log",
  "nalgebra",
@@ -442,7 +442,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets",
  "cbindgen",
@@ -455,7 +455,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-print"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -486,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets",
  "chess-corners",
@@ -500,7 +500,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-wasm"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -632,9 +632,9 @@ checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
 name = "cmov"
-version = "0.5.2"
+version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de0758edba32d61d1fd9f4d69491b47604b91ee2f7e6b33de7e54ca4ebe55dc3"
+checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
 
 [[package]]
 name = "color_quant"
@@ -1322,9 +1322,9 @@ checksum = "7a79a3332a6609480d7d0c9eab957bca6b455b91bb84e66d19f5ff66294b85b8"
 
 [[package]]
 name = "libc"
-version = "0.2.183"
+version = "0.2.184"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
+checksum = "48f5d2a454e16a5ea0f4ced81bd44e4cfc7bd3a507b61887c99fd3538b28e4af"
 
 [[package]]
 name = "libfuzzer-sys"
@@ -1951,7 +1951,7 @@ dependencies = [
 
 [[package]]
 name = "projective-grid"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "kiddo",
  "nalgebra",
@@ -1991,9 +1991,9 @@ checksum = "b5a041e753da8b807c9255f28de81879c78c876392ff2469cde94799b2896b9d"
 
 [[package]]
 name = "pyo3"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf85e27e86080aafd5a22eae58a162e133a589551542b3e5cee4beb27e54f8e1"
+checksum = "91fd8e38a3b50ed1167fb981cd6fd60147e091784c427b8f7183a7ee32c31c12"
 dependencies = [
  "libc",
  "once_cell",
@@ -2005,18 +2005,18 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bf94ee265674bf76c09fa430b0e99c26e319c945d96ca0d5a8215f31bf81cf7"
+checksum = "e368e7ddfdeb98c9bca7f8383be1648fd84ab466bf2bc015e94008db6d35611e"
 dependencies = [
  "target-lexicon",
 ]
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "491aa5fc66d8059dd44a75f4580a2962c1862a1c2945359db36f6c2818b748dc"
+checksum = "7f29e10af80b1f7ccaf7f69eace800a03ecd13e883acfacc1e5d0988605f651e"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -2024,9 +2024,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d671734e9d7a43449f8480f8b38115df67bef8d21f76837fa75ee7aaa5e52e"
+checksum = "df6e520eff47c45997d2fc7dd8214b25dd1310918bbb2642156ef66a67f29813"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -2036,9 +2036,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.28.2"
+version = "0.28.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22faaa1ce6c430a1f71658760497291065e6450d7b5dc2bcf254d49f66ee700a"
+checksum = "c4cdc218d835738f81c2338f822078af45b4afdf8b2e33cbb5916f108b813acb"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2706,9 +2706,9 @@ dependencies = [
 
 [[package]]
 name = "toml_parser"
-version = "1.1.1+spec-1.1.0"
+version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39ca317ebc49f06bd748bfba29533eac9485569dc9bf80b849024b025e814fb9"
+checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
  "winnow 1.0.1",
 ]
@@ -3329,9 +3329,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.4.0"
+version = "8.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7756d0206d058333667493c4014f545f4b9603c4330ccd6d9b3f86dcab59f7d9"
+checksum = "2726508a48f38dceb22b35ecbbd2430efe34ff05c62bd3285f965d7911b33464"
 dependencies = [
  "crc32fast",
  "indexmap",

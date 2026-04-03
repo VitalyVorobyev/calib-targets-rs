@@ -7,8 +7,10 @@
 //! This module provides geometry only (coordinate mapping). Pixel warping
 //! is left to the caller.
 
+use crate::float_helpers::lit;
 use crate::grid_index::GridIndex;
 use crate::homography::{estimate_homography, Homography};
+use crate::Float;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -24,8 +26,8 @@ pub enum GridMeshError {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct CellHomography {
-    h_img_from_cellrect: Homography,
+struct CellHomography<F: Float> {
+    h_img_from_cellrect: Homography<F>,
     valid: bool,
 }
 
@@ -34,7 +36,7 @@ struct CellHomography {
 /// Maps between a rectified coordinate system (uniform grid spacing) and
 /// the original image coordinates, using one homography per grid cell.
 #[derive(Clone, Debug)]
-pub struct GridHomographyMesh {
+pub struct GridHomographyMesh<F: Float = f32> {
     /// Minimum grid index (corner space).
     pub min_i: i32,
     /// Minimum grid index (corner space).
@@ -44,7 +46,7 @@ pub struct GridHomographyMesh {
     /// Number of cells (squares) vertically.
     pub cells_y: usize,
     /// Rectified pixels per grid cell.
-    pub px_per_cell: f32,
+    pub px_per_cell: F,
     /// Number of cells that have all 4 corners and a valid homography.
     pub valid_cells: usize,
     /// Width of the rectified image in pixels.
@@ -52,17 +54,17 @@ pub struct GridHomographyMesh {
     /// Height of the rectified image in pixels.
     pub rect_height: usize,
 
-    cells: Vec<CellHomography>,
+    cells: Vec<CellHomography<F>>,
 }
 
-impl GridHomographyMesh {
+impl<F: Float> GridHomographyMesh<F> {
     /// Build per-cell homographies from a grid corner map.
     ///
     /// - `corners`: map from grid index to image position.
     /// - `px_per_cell`: rectified pixels per grid cell.
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<f32>>,
-        px_per_cell: f32,
+        corners: &HashMap<GridIndex, Point2<F>>,
+        px_per_cell: F,
     ) -> Result<Self, GridMeshError> {
         if corners.len() < 4 {
             return Err(GridMeshError::NotEnoughCorners);
@@ -84,14 +86,24 @@ impl GridHomographyMesh {
         let cells_x = (max_i - min_i) as usize;
         let cells_y = (max_j - min_j) as usize;
 
-        let rect_width = ((cells_x as f32) * px_per_cell).floor().max(1.0) as usize;
-        let rect_height = ((cells_y as f32) * px_per_cell).floor().max(1.0) as usize;
+        let rect_width = nalgebra::try_convert::<F, f64>(
+            (lit::<F>(cells_x as f64) * px_per_cell)
+                .floor()
+                .max(F::one()),
+        )
+        .unwrap_or(1.0) as usize;
+        let rect_height = nalgebra::try_convert::<F, f64>(
+            (lit::<F>(cells_y as f64) * px_per_cell)
+                .floor()
+                .max(F::one()),
+        )
+        .unwrap_or(1.0) as usize;
 
         let s = px_per_cell;
         let cell_rect = [
-            Point2::new(0.0, 0.0),
-            Point2::new(s, 0.0),
-            Point2::new(0.0, s),
+            Point2::new(F::zero(), F::zero()),
+            Point2::new(s, F::zero()),
+            Point2::new(F::zero(), s),
             Point2::new(s, s),
         ];
 
@@ -165,20 +177,22 @@ impl GridHomographyMesh {
     /// Map a point in **global rectified pixel coordinates** to image coordinates.
     ///
     /// Returns `None` if the point lies outside the mesh or the cell is invalid.
-    pub fn rect_to_img(&self, p_rect: Point2<f32>) -> Option<Point2<f32>> {
+    pub fn rect_to_img(&self, p_rect: Point2<F>) -> Option<Point2<F>> {
         let s = self.px_per_cell;
-        if s <= 0.0 {
+        if s <= F::zero() {
             return None;
         }
 
-        let ci = (p_rect.x / s).floor() as i32;
-        let cj = (p_rect.y / s).floor() as i32;
+        let ci_f = (p_rect.x / s).floor();
+        let cj_f = (p_rect.y / s).floor();
+        let ci = nalgebra::try_convert::<F, f64>(ci_f).unwrap_or(0.0) as i32;
+        let cj = nalgebra::try_convert::<F, f64>(cj_f).unwrap_or(0.0) as i32;
         if ci < 0 || cj < 0 || ci >= self.cells_x as i32 || cj >= self.cells_y as i32 {
             return None;
         }
 
-        let x_local = p_rect.x - (ci as f32) * s;
-        let y_local = p_rect.y - (cj as f32) * s;
+        let x_local = p_rect.x - lit::<F>(ci as f64) * s;
+        let y_local = p_rect.y - lit::<F>(cj as f64) * s;
         self.cell_rect_to_img(ci as usize, cj as usize, Point2::new(x_local, y_local))
     }
 
@@ -186,12 +200,7 @@ impl GridHomographyMesh {
     ///
     /// - `ci`, `cj`: cell indices in `0..cells_x × 0..cells_y`
     /// - `p_cell`: point in `[0..px_per_cell]²`
-    pub fn cell_rect_to_img(
-        &self,
-        ci: usize,
-        cj: usize,
-        p_cell: Point2<f32>,
-    ) -> Option<Point2<f32>> {
+    pub fn cell_rect_to_img(&self, ci: usize, cj: usize, p_cell: Point2<F>) -> Option<Point2<F>> {
         let idx = cj.checked_mul(self.cells_x)?.checked_add(ci)?;
         let cell = *self.cells.get(idx)?;
         if !cell.valid {
@@ -201,13 +210,13 @@ impl GridHomographyMesh {
     }
 
     /// Get the 4 image-space corners of a cell (TL, TR, BR, BL order).
-    pub fn cell_corners_img(&self, ci: usize, cj: usize) -> Option<[Point2<f32>; 4]> {
+    pub fn cell_corners_img(&self, ci: usize, cj: usize) -> Option<[Point2<F>; 4]> {
         let s = self.px_per_cell;
         let pts = [
-            Point2::new(0.0, 0.0),
-            Point2::new(s, 0.0),
+            Point2::new(F::zero(), F::zero()),
+            Point2::new(s, F::zero()),
             Point2::new(s, s),
-            Point2::new(0.0, s),
+            Point2::new(F::zero(), s),
         ];
         Some([
             self.cell_rect_to_img(ci, cj, pts[0])?,

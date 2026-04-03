@@ -1,12 +1,13 @@
 use crate::direction::NeighborDirection;
 use crate::graph::GridGraph;
 use crate::grid_index::GridIndex;
+use crate::Float;
 
 /// Find connected components in the grid graph.
 ///
 /// Returns a list of components, each being a list of node indices.
 /// Components are found via iterative DFS.
-pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
+pub fn connected_components<F: Float>(graph: &GridGraph<F>) -> Vec<Vec<usize>> {
     let mut visited = vec![false; graph.neighbors.len()];
     let mut components = Vec::new();
 
@@ -44,7 +45,10 @@ pub fn connected_components(graph: &GridGraph) -> Vec<Vec<usize>> {
 /// coordinates using neighbor directions.
 ///
 /// Returns `(node_index, GridIndex)` for each reachable node.
-pub fn assign_grid_coordinates(graph: &GridGraph, component: &[usize]) -> Vec<(usize, GridIndex)> {
+pub fn assign_grid_coordinates<F: Float>(
+    graph: &GridGraph<F>,
+    component: &[usize],
+) -> Vec<(usize, GridIndex)> {
     let mut coords = Vec::new();
     let mut visited = vec![false; graph.neighbors.len()];
     let mut queue = std::collections::VecDeque::new();

@@ -4,7 +4,9 @@
 //! immediate cardinal neighbors via midpoint averaging. Corners that deviate
 //! significantly from the prediction are likely false detections.
 
+use crate::float_helpers::lit;
 use crate::grid_index::GridIndex;
+use crate::Float;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -16,11 +18,12 @@ use std::collections::HashMap;
 ///
 /// Returns the average of available predictions, or `None` if no complete
 /// neighbor pair exists (need at least one horizontal or vertical pair).
-pub fn predict_grid_position(
-    grid: &HashMap<GridIndex, Point2<f32>>,
+pub fn predict_grid_position<F: Float>(
+    grid: &HashMap<GridIndex, Point2<F>>,
     idx: GridIndex,
-) -> Option<Point2<f32>> {
-    let mut pred_sum = Point2::new(0.0f32, 0.0f32);
+) -> Option<Point2<F>> {
+    let half: F = lit(0.5);
+    let mut pred_sum = Point2::new(F::zero(), F::zero());
     let mut pred_count = 0u32;
 
     // Horizontal pair
@@ -33,7 +36,7 @@ pub fn predict_grid_position(
         j: idx.j,
     };
     if let (Some(&pl), Some(&pr)) = (grid.get(&left), grid.get(&right)) {
-        let mid = Point2::new(0.5 * (pl.x + pr.x), 0.5 * (pl.y + pr.y));
+        let mid = Point2::new(half * (pl.x + pr.x), half * (pl.y + pr.y));
         pred_sum.x += mid.x;
         pred_sum.y += mid.y;
         pred_count += 1;
@@ -49,7 +52,7 @@ pub fn predict_grid_position(
         j: idx.j + 1,
     };
     if let (Some(&pu), Some(&pd)) = (grid.get(&up), grid.get(&down)) {
-        let mid = Point2::new(0.5 * (pu.x + pd.x), 0.5 * (pu.y + pd.y));
+        let mid = Point2::new(half * (pu.x + pd.x), half * (pu.y + pd.y));
         pred_sum.x += mid.x;
         pred_sum.y += mid.y;
         pred_count += 1;
@@ -59,20 +62,18 @@ pub fn predict_grid_position(
         return None;
     }
 
-    Some(Point2::new(
-        pred_sum.x / pred_count as f32,
-        pred_sum.y / pred_count as f32,
-    ))
+    let n: F = lit(pred_count as f64);
+    Some(Point2::new(pred_sum.x / n, pred_sum.y / n))
 }
 
 /// Find grid corners whose position deviates from the neighbor-predicted
 /// position by more than `threshold` pixels.
 ///
 /// Returns `(grid_index, predicted_position)` for each inconsistent corner.
-pub fn find_inconsistent_corners(
-    grid: &HashMap<GridIndex, Point2<f32>>,
-    threshold: f32,
-) -> Vec<(GridIndex, Point2<f32>)> {
+pub fn find_inconsistent_corners<F: Float>(
+    grid: &HashMap<GridIndex, Point2<F>>,
+    threshold: F,
+) -> Vec<(GridIndex, Point2<F>)> {
     let threshold_sq = threshold * threshold;
     let mut flagged = Vec::new();
 
@@ -166,7 +167,7 @@ mod tests {
         grid.insert(GridIndex { i: 2, j: 0 }, Point2::new(120.0, 0.0));
 
         let pred = predict_grid_position(&grid, GridIndex { i: 1, j: 0 }).unwrap();
-        assert!((pred.x - 60.0).abs() < 0.01);
-        assert!((pred.y - 0.0).abs() < 0.01);
+        assert!((pred.x - 60.0f32).abs() < 0.01);
+        assert!((pred.y - 0.0f32).abs() < 0.01);
     }
 }

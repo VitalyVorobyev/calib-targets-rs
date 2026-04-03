@@ -2,6 +2,7 @@
 
 use crate::graph::{GridGraphParams, NeighborCandidate};
 use crate::hex::direction::{HexDirection, HexNodeNeighbor};
+use crate::Float;
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 
@@ -9,7 +10,7 @@ use nalgebra::{Point2, Vector2};
 ///
 /// Implementors decide whether a spatially close point is a valid hex grid
 /// neighbor, and if so, assign it a direction and quality score.
-pub trait HexNeighborValidator {
+pub trait HexNeighborValidator<F: Float = f32> {
     /// Per-point data beyond position (e.g., orientation angle).
     /// Use `()` if no extra data is needed.
     type PointData;
@@ -21,32 +22,32 @@ pub trait HexNeighborValidator {
         &self,
         source_index: usize,
         source_data: &Self::PointData,
-        candidate: &NeighborCandidate,
+        candidate: &NeighborCandidate<F>,
         candidate_data: &Self::PointData,
-    ) -> Option<(HexDirection, f32)>;
+    ) -> Option<(HexDirection, F)>;
 }
 
 /// A 6-connected hex grid graph over 2D points.
 ///
 /// Each node has at most one neighbor per hex direction,
 /// selected as the best-scoring candidate from spatial proximity search.
-pub struct HexGridGraph {
+pub struct HexGridGraph<F: Float = f32> {
     /// Per-node adjacency list. `neighbors[i]` contains up to 6 validated neighbors.
-    pub neighbors: Vec<Vec<HexNodeNeighbor>>,
+    pub neighbors: Vec<Vec<HexNodeNeighbor<F>>>,
 }
 
-impl HexGridGraph {
+impl<F: Float + kiddo::float::kdtree::Axis> HexGridGraph<F> {
     /// Build a hex grid graph from 2D points using a caller-supplied validator.
     ///
     /// - `positions`: 2D point positions for spatial search.
     /// - `point_data`: per-point data passed to the validator (same length as `positions`).
     /// - `validator`: determines which spatial neighbors are valid hex grid neighbors.
     /// - `params`: controls KD-tree search parameters.
-    pub fn build<V: HexNeighborValidator>(
-        positions: &[Point2<f32>],
+    pub fn build<V: HexNeighborValidator<F>>(
+        positions: &[Point2<F>],
         point_data: &[V::PointData],
         validator: &V,
-        params: &GridGraphParams,
+        params: &GridGraphParams<F>,
     ) -> Self {
         assert_eq!(
             positions.len(),
@@ -54,8 +55,8 @@ impl HexGridGraph {
             "positions and point_data must have the same length"
         );
 
-        let coords: Vec<[f32; 2]> = positions.iter().map(|p| [p.x, p.y]).collect();
-        let tree: KdTree<f32, 2> = (&coords).into();
+        let coords: Vec<[F; 2]> = positions.iter().map(|p| [p.x, p.y]).collect();
+        let tree: KdTree<F, 2> = (&coords).into();
         let max_dist_sq = params.max_distance * params.max_distance;
 
         let mut neighbors = Vec::with_capacity(positions.len());
@@ -107,8 +108,8 @@ impl HexGridGraph {
 }
 
 /// Keep at most one neighbor per direction, choosing the lowest-score candidate.
-fn select_hex_neighbors(candidates: Vec<HexNodeNeighbor>) -> Vec<HexNodeNeighbor> {
-    let mut best: [Option<HexNodeNeighbor>; 6] = [None, None, None, None, None, None];
+fn select_hex_neighbors<F: Float>(candidates: Vec<HexNodeNeighbor<F>>) -> Vec<HexNodeNeighbor<F>> {
+    let mut best: [Option<HexNodeNeighbor<F>>; 6] = [None, None, None, None, None, None];
 
     for candidate in candidates {
         let slot = &mut best[candidate.direction.slot_index()];
