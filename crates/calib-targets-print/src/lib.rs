@@ -6,7 +6,7 @@ mod render;
 pub use model::{
     stem_paths, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
     PageOrientation, PageSize, PageSpec, PrintableTargetDocument, PrintableTargetError,
-    RenderOptions, ResolvedTargetLayout, ResolvedTargetPoint, TargetSpec,
+    PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, ResolvedTargetPoint, TargetSpec,
 };
 pub use render::{render_target_bundle, GeneratedTargetBundle};
 

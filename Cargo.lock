@@ -343,6 +343,7 @@ dependencies = [
  "calib-targets-core",
  "calib-targets-marker",
  "calib-targets-print",
+ "calib-targets-puzzleboard",
  "chess-corners",
  "image",
  "log",
@@ -477,11 +478,32 @@ dependencies = [
  "calib-targets-charuco",
  "calib-targets-core",
  "calib-targets-marker",
+ "calib-targets-puzzleboard",
  "png",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
+]
+
+[[package]]
+name = "calib-targets-puzzleboard"
+version = "0.5.3"
+dependencies = [
+ "calib-targets-chessboard",
+ "calib-targets-core",
+ "calib-targets-print",
+ "chess-corners",
+ "chess-corners-core",
+ "image",
+ "log",
+ "nalgebra",
+ "projective-grid",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

@@ -24,6 +24,7 @@ tracing = [
     "calib-targets-chessboard/tracing",
     "calib-targets-core/tracing",
     "calib-targets-marker/tracing",
+    "calib-targets-puzzleboard/tracing",
 ]
 
 [dependencies]
@@ -33,6 +34,7 @@ calib-targets-core.workspace = true
 calib-targets-chessboard.workspace = true
 calib-targets-marker.workspace = true
 calib-targets-print.workspace = true
+calib-targets-puzzleboard.workspace = true
 chess-corners = { workspace = true, optional = true, features = ["rayon", "ml-refiner"] }
 nalgebra.workspace = true
 thiserror.workspace = true

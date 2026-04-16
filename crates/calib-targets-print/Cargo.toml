@@ -17,6 +17,7 @@ calib-targets-aruco.workspace = true
 calib-targets-charuco.workspace = true
 calib-targets-core.workspace = true
 calib-targets-marker.workspace = true
+calib-targets-puzzleboard.workspace = true
 png.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

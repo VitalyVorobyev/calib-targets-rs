@@ -10,6 +10,7 @@ members = [
     "crates/calib-targets-charuco",
     "crates/calib-targets-aruco",
     "crates/calib-targets-marker",
+    "crates/calib-targets-puzzleboard",
     "crates/calib-targets-wasm",
     "crates/projective-grid",
 ]
@@ -24,6 +25,7 @@ default-members = [
     "crates/calib-targets-charuco",
     "crates/calib-targets-aruco",
     "crates/calib-targets-marker",
+    "crates/calib-targets-puzzleboard",
     "crates/projective-grid",
 ]
 
@@ -45,6 +47,7 @@ calib-targets-charuco = { version = "0.5", path = "crates/calib-targets-charuco"
 calib-targets-chessboard = { version = "0.5", path = "crates/calib-targets-chessboard" }
 calib-targets-core = { version = "0.5", path = "crates/calib-targets-core" }
 calib-targets-marker = { version = "0.5", path = "crates/calib-targets-marker" }
+calib-targets-puzzleboard = { version = "0.5", path = "crates/calib-targets-puzzleboard" }
 projective-grid = { version = "0.5", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.5", path = "crates/calib-targets-print" }
 assert_cmd = "2"

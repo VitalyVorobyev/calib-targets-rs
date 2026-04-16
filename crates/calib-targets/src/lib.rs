@@ -52,6 +52,7 @@ pub use calib_targets_chessboard as chessboard;
 pub use calib_targets_core as core;
 pub use calib_targets_marker as marker;
 pub use calib_targets_print as printable;
+pub use calib_targets_puzzleboard as puzzleboard;
 
 pub use calib_targets_chessboard::ChessboardParams;
 pub use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
