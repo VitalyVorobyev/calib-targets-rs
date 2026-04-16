@@ -284,7 +284,7 @@ impl ChessboardDetector {
         }
 
         // Sort by corner count descending.
-        results.sort_unstable_by(|a, b| b.2.cmp(&a.2));
+        results.sort_unstable_by_key(|r| std::cmp::Reverse(r.2));
 
         let graph_debug = Some(build_graph_debug(graph, strong));
         results

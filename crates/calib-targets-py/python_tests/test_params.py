@@ -132,7 +132,7 @@ def _sample_charuco_result() -> dict:
         "markers": [
             {
                 "id": 1,
-                "gc": {"gx": 2, "gy": 3},
+                "gc": {"i": 2, "j": 3},
                 "rotation": 0,
                 "hamming": 0,
                 "score": 1.0,

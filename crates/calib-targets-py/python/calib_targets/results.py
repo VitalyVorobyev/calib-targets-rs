@@ -27,23 +27,6 @@ class GridCoords:
 
 
 @dataclass(slots=True)
-class GridCell:
-    gx: int
-    gy: int
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_cell_to_dict
-
-        return grid_cell_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridCell:
-        from ._convert_out import grid_cell_from_dict
-
-        return grid_cell_from_dict(data)
-
-
-@dataclass(slots=True)
 class CellOffset:
     di: int
     dj: int
@@ -240,7 +223,7 @@ class ChessboardDetectionResult:
 @dataclass(slots=True)
 class MarkerDetection:
     id: int
-    gc: GridCell
+    gc: GridCoords
     rotation: int
     hamming: int
     score: float
@@ -361,7 +344,6 @@ __all__ = [
     "Point2",
     "Corners4",
     "GridCoords",
-    "GridCell",
     "CellOffset",
     "GridTransform",
     "GridAlignment",

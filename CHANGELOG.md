@@ -6,6 +6,20 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.3]
+
+### Fixes
+
+- **Python bindings:** fix `MarkerDetection.gc` deserialization. Rust emits
+  `{"i","j"}` (from `GridCoords`), but the Python wrapper was typed as a
+  separate `GridCell` dataclass requiring `{"gx","gy"}`, so every
+  `detect_charuco` call with markers crashed in `from_dict`. Dropped the
+  redundant `GridCell` type; `MarkerDetection.gc` now uses `GridCoords`,
+  matching `LabeledCorner.grid` and `CircleCandidate.cell`.
+- Added `python_tests/test_detect_roundtrip.py` that runs the real extension
+  on repo test images and round-trips result dicts, so Rust/Python dict-key
+  drift fails loudly instead of being masked by hand-written fixtures.
+
 ## [0.5.2]
 
 ### Changed
