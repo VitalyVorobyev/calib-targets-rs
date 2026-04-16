@@ -148,3 +148,14 @@ Always regenerate both after such changes.
 (`crates/calib-targets/src/detect.rs`), also expose them in:
 - Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
 - WASM bindings: `crates/calib-targets-wasm/src/lib.rs`
+
+**Binding dict-key parity:** Python result wrappers in
+`crates/calib-targets-py/python/calib_targets/_convert_out.py` deserialize the
+exact dict emitted by `serde_json::to_value(result)` on the Rust side. Keys,
+required-vs-optional fields, and nested shapes must match the Rust structs
+byte-for-byte — if Rust renames a serde field (or swaps a type alias like
+`GridCoords`/`GridCell`), the Python side breaks silently. Hand-written
+fixtures in `test_params.py` can mask this class of bug; every new result
+type needs a real-extension round-trip test (see
+`python_tests/test_detect_roundtrip.py`) that runs detection on a repo test
+image and exercises `from_dict`/`to_dict` on the actual Rust dict.

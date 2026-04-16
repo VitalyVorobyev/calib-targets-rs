@@ -12,7 +12,6 @@ from .results import (
     CircleCandidate,
     CircleMatch,
     GridAlignment,
-    GridCell,
     GridCoords,
     GridGraphDebug,
     GridGraphNeighbor,
@@ -162,19 +161,6 @@ def grid_coords_from_dict(data: Mapping[str, Any]) -> GridCoords:
     obj = _ensure_mapping(data, "GridCoords")
     _validate_keys(obj, allowed={"i", "j"}, required={"i", "j"}, ctx="GridCoords")
     return GridCoords(i=_to_int(obj["i"], "GridCoords.i"), j=_to_int(obj["j"], "GridCoords.j"))
-
-
-def grid_cell_to_dict(value: GridCell) -> dict[str, Any]:
-    return {"gx": int(value.gx), "gy": int(value.gy)}
-
-
-def grid_cell_from_dict(data: Mapping[str, Any]) -> GridCell:
-    obj = _ensure_mapping(data, "GridCell")
-    _validate_keys(obj, allowed={"gx", "gy"}, required={"gx", "gy"}, ctx="GridCell")
-    return GridCell(
-        gx=_to_int(obj["gx"], "GridCell.gx"),
-        gy=_to_int(obj["gy"], "GridCell.gy"),
-    )
 
 
 def cell_offset_to_dict(value: CellOffset) -> dict[str, Any]:
@@ -462,7 +448,7 @@ def chessboard_detection_result_from_dict(
 def marker_detection_to_dict(value: MarkerDetection) -> dict[str, Any]:
     return {
         "id": int(value.id),
-        "gc": grid_cell_to_dict(value.gc),
+        "gc": grid_coords_to_dict(value.gc),
         "rotation": int(value.rotation),
         "hamming": int(value.hamming),
         "score": float(value.score),
@@ -509,7 +495,7 @@ def marker_detection_from_dict(data: Mapping[str, Any]) -> MarkerDetection:
     corners_img_raw = obj["corners_img"]
     return MarkerDetection(
         id=_to_int(obj["id"], "MarkerDetection.id"),
-        gc=grid_cell_from_dict(obj["gc"]),
+        gc=grid_coords_from_dict(obj["gc"]),
         rotation=_to_int(obj["rotation"], "MarkerDetection.rotation"),
         hamming=_to_int(obj["hamming"], "MarkerDetection.hamming"),
         score=_to_float(obj["score"], "MarkerDetection.score"),
@@ -694,8 +680,6 @@ def marker_board_detection_result_from_dict(
 __all__ = [
     "grid_coords_to_dict",
     "grid_coords_from_dict",
-    "grid_cell_to_dict",
-    "grid_cell_from_dict",
     "cell_offset_to_dict",
     "cell_offset_from_dict",
     "grid_transform_to_dict",
