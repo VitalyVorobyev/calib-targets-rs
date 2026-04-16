@@ -214,7 +214,41 @@ class MarkerBoardTargetSpec:
         )
 
 
-TargetSpec = ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec
+@dataclass(slots=True)
+class PuzzleBoardTargetSpec:
+    rows: int
+    cols: int
+    square_size_mm: float
+    origin_row: int = 0
+    origin_col: int = 0
+    dot_diameter_rel: float = 1.0 / 3.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "puzzle_board",
+            "rows": self.rows,
+            "cols": self.cols,
+            "square_size_mm": self.square_size_mm,
+            "origin_row": self.origin_row,
+            "origin_col": self.origin_col,
+            "dot_diameter_rel": self.dot_diameter_rel,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardTargetSpec:
+        return cls(
+            rows=int(data["rows"]),
+            cols=int(data["cols"]),
+            square_size_mm=float(data["square_size_mm"]),
+            origin_row=int(data.get("origin_row", 0)),
+            origin_col=int(data.get("origin_col", 0)),
+            dot_diameter_rel=float(data.get("dot_diameter_rel", 1.0 / 3.0)),
+        )
+
+
+TargetSpec = (
+    ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec | PuzzleBoardTargetSpec
+)
 
 
 def _marker_circle_to_print_dict(circle: MarkerCircleSpec) -> dict[str, Any]:
@@ -234,9 +268,11 @@ def _target_to_dict(target: TargetSpec) -> dict[str, Any]:
         return target.to_dict()
     if isinstance(target, MarkerBoardTargetSpec):
         return target.to_dict()
+    if isinstance(target, PuzzleBoardTargetSpec):
+        return target.to_dict()
     raise _type_error(
         "target",
-        "ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec",
+        "ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec | PuzzleBoardTargetSpec",
     )
 
 
@@ -248,6 +284,8 @@ def _target_from_dict(data: dict[str, Any]) -> TargetSpec:
         return CharucoTargetSpec.from_dict(data)
     if kind == "marker_board":
         return MarkerBoardTargetSpec.from_dict(data)
+    if kind == "puzzle_board":
+        return PuzzleBoardTargetSpec.from_dict(data)
     raise ValueError(f"unknown target kind {kind!r}")
 
 
@@ -335,6 +373,7 @@ __all__ = [
     "ChessboardTargetSpec",
     "CharucoTargetSpec",
     "MarkerBoardTargetSpec",
+    "PuzzleBoardTargetSpec",
     "PrintableTargetDocument",
     "GeneratedTargetBundle",
     "WrittenTargetBundle",

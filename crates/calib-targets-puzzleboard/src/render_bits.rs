@@ -13,7 +13,7 @@
 //! - `bit = 0` → **white** dot
 //! - `bit = 1` → **black** dot
 //!
-//! This matches the detector's [`crate::detector`] sampling convention.
+//! This matches the detector sampling convention.
 
 use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit};
 

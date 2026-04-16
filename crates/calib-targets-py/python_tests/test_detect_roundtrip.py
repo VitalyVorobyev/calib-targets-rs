@@ -112,6 +112,15 @@ def _marker_board_params() -> ct.MarkerBoardParams:
     )
 
 
+def _puzzleboard_params() -> ct.PuzzleBoardParams:
+    params = ct.PuzzleBoardParams.for_board(
+        ct.PuzzleBoardSpec(rows=10, cols=10, cell_size=12.0, origin_row=0, origin_col=0)
+    )
+    params.chessboard.chess.threshold_value = 0.15
+    params.chessboard.chess.nms_radius = 3
+    return params
+
+
 # ---------------------------------------------------------------------------
 # chessboard
 # ---------------------------------------------------------------------------
@@ -192,6 +201,29 @@ def test_detect_marker_board_best_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# puzzleboard
+# ---------------------------------------------------------------------------
+
+
+def test_detect_puzzleboard_roundtrip() -> None:
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    result = ct.detect_puzzleboard(image, params=params)
+    assert isinstance(result, ct.PuzzleBoardDetectionResult)
+    assert len(result.detection.corners) > 0
+    assert result.decode.edges_observed > 0
+    _assert_roundtrip(result)
+
+
+def test_detect_puzzleboard_best_roundtrip() -> None:
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    result = ct.detect_puzzleboard_best(image, [params])
+    assert isinstance(result, ct.PuzzleBoardDetectionResult)
+    _assert_roundtrip(result)
+
+
+# ---------------------------------------------------------------------------
 # low-level key-shape assertions on the raw Rust dict
 # ---------------------------------------------------------------------------
 
@@ -230,3 +262,33 @@ def test_raw_charuco_dict_keys_match_python_schema() -> None:
             assert set(grid.keys()) == {"i", "j"}, (
                 f"LabeledCorner.grid has unexpected keys: {set(grid.keys())}"
             )
+
+
+def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
+    from calib_targets._convert_in import chess_config_to_payload, puzzleboard_params_to_payload
+
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    raw = _core.detect_puzzleboard(
+        image,
+        chess_cfg=chess_config_to_payload(None),
+        params=puzzleboard_params_to_payload(params),
+    )
+
+    assert isinstance(raw, dict)
+    assert raw["detection"]["kind"] == "puzzle_board"
+    assert set(raw["decode"].keys()) == {
+        "edges_observed",
+        "edges_matched",
+        "mean_confidence",
+        "bit_error_rate",
+        "master_origin_row",
+        "master_origin_col",
+    }
+    for edge in raw["observed_edges"]:
+        assert set(edge.keys()) == {"row", "col", "orientation", "bit", "confidence"}
+
+    for corner in raw["detection"]["corners"]:
+        grid = corner["grid"]
+        if grid is not None:
+            assert set(grid.keys()) == {"i", "j"}

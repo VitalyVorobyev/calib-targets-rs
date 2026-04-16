@@ -262,11 +262,7 @@ mod tests {
                     key.push(acc as u8);
                 }
                 if let Some(prev) = seen.insert(key, (r0, c0)) {
-                    panic!(
-                        "duplicate 4×4 window at {:?} and {:?}",
-                        prev,
-                        (r0, c0)
-                    );
+                    panic!("duplicate 4×4 window at {:?} and {:?}", prev, (r0, c0));
                 }
             }
         }

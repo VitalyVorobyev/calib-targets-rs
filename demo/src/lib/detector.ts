@@ -5,9 +5,11 @@ import init, {
   detect_chessboard as _detect_chessboard,
   detect_charuco as _detect_charuco,
   detect_marker_board as _detect_marker_board,
+  detect_puzzleboard as _detect_puzzleboard,
   rgba_to_gray as _rgba_to_gray,
   default_chess_config as _default_chess_config,
   default_chessboard_params as _default_chessboard_params,
+  default_puzzleboard_params as _default_puzzleboard_params,
 } from "calib-targets-wasm";
 
 import type {
@@ -15,10 +17,12 @@ import type {
   ChessboardParams,
   CharucoDetectorParams,
   MarkerBoardParams,
+  PuzzleBoardParams,
   Corner,
   ChessboardDetectionResult,
   CharucoDetectionResult,
   MarkerBoardDetectionResult,
+  PuzzleBoardDetectionResult,
 } from "../types/calib-targets";
 
 let initialized = false;
@@ -48,6 +52,10 @@ export function defaultChessConfig(): ChessConfig {
 
 export function defaultChessboardParams(): ChessboardParams {
   return _default_chessboard_params() as ChessboardParams;
+}
+
+export function defaultPuzzleBoardParams(rows: number, cols: number): PuzzleBoardParams {
+  return _default_puzzleboard_params(rows, cols) as PuzzleBoardParams;
 }
 
 export function detectCorners(
@@ -105,4 +113,20 @@ export function detectMarkerBoard(
     chessCfg,
     params,
   ) as MarkerBoardDetectionResult | null;
+}
+
+export function detectPuzzleBoard(
+  gray: Uint8Array,
+  width: number,
+  height: number,
+  chessCfg: ChessConfig,
+  params: PuzzleBoardParams,
+): PuzzleBoardDetectionResult {
+  return _detect_puzzleboard(
+    width,
+    height,
+    gray,
+    chessCfg,
+    params,
+  ) as PuzzleBoardDetectionResult;
 }

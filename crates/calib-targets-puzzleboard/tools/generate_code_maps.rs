@@ -227,7 +227,8 @@ fn letters_to_bit_rows(seq: &[u8], rows: usize) -> Vec<Vec<u8>> {
 fn verify_cyclic_3x3_all_unique(bit_rows: &[Vec<u8>]) -> bool {
     let rows = bit_rows.len();
     let cols = bit_rows[0].len();
-    let mut seen: std::collections::HashSet<u16> = std::collections::HashSet::with_capacity(rows * cols);
+    let mut seen: std::collections::HashSet<u16> =
+        std::collections::HashSet::with_capacity(rows * cols);
     for r0 in 0..rows {
         for c0 in 0..cols {
             let mut code: u16 = 0;

@@ -2,7 +2,7 @@
 
 WebAssembly bindings for [calib-targets](https://github.com/VitalyVorobyev/calib-targets-rs) calibration target detection.
 
-Detect chessboard, ChArUco, and marker board calibration targets directly in the browser from grayscale or RGBA images.
+Detect chessboard, ChArUco, PuzzleBoard, and marker board calibration targets directly in the browser from grayscale or RGBA images.
 
 ## Installation
 
@@ -68,13 +68,16 @@ All detection functions accept grayscale `Uint8Array` pixel buffers (row-major, 
 | `detect_corners(w, h, pixels, chess_cfg)` | Detect ChESS corners. Returns `Corner[]`. |
 | `detect_chessboard(w, h, pixels, chess_cfg, params)` | Detect chessboard grid. Returns `ChessboardDetectionResult \| null`. |
 | `detect_charuco(w, h, pixels, chess_cfg, params)` | Detect ChArUco board. Returns `CharucoDetectionResult`. Throws on error. |
+| `detect_puzzleboard(w, h, pixels, chess_cfg, params)` | Detect PuzzleBoard. Returns `PuzzleBoardDetectionResult`. Throws on error. |
 | `detect_marker_board(w, h, pixels, chess_cfg, params)` | Detect marker board. Returns `MarkerBoardDetectionResult \| null`. |
 | `detect_chessboard_best(w, h, pixels, configs)` | Multi-config sweep, returns best chessboard result. |
 | `detect_charuco_best(w, h, pixels, configs)` | Multi-config sweep, returns best ChArUco result. |
+| `detect_puzzleboard_best(w, h, pixels, configs)` | Multi-config sweep, returns best PuzzleBoard result. |
 | `detect_marker_board_best(w, h, pixels, configs)` | Multi-config sweep, returns best marker board result. |
 | `rgba_to_gray(rgba, w, h)` | Convert RGBA buffer to grayscale (BT.601). |
 | `default_chess_config()` | Default ChESS corner detector config. |
 | `default_chessboard_params()` | Default chessboard detection params. |
+| `default_puzzleboard_params(rows, cols)` | Default PuzzleBoard params for a board size. |
 | `default_marker_board_params()` | Default marker board params. |
 
 ### Configuration
@@ -120,7 +123,7 @@ const best = detect_chessboard_best(width, height, gray, configs);
 {
   position: { x: number, y: number },
   grid: { i: number, j: number } | null,
-  id: number | null,              // ChArUco corner ID
+  id: number | null,              // ChArUco or PuzzleBoard corner ID
   target_position: { x: number, y: number } | null,
   score: number
 }

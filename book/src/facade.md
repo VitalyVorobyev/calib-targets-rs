@@ -44,6 +44,18 @@ let result = detect::detect_charuco_best(&img, &configs);
 (default, high, low). `detect_charuco_best` tries each and returns the result
 with the most markers (then most corners).
 
+PuzzleBoard follows the same facade shape:
+
+```rust,no_run
+use calib_targets::detect;
+use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
+
+let img = image::open("puzzleboard.png").unwrap().to_luma8();
+let spec = PuzzleBoardSpec::new(10, 10, 12.0).unwrap();
+let configs = PuzzleBoardParams::sweep_for_board(&spec);
+let result = detect::detect_puzzleboard_best(&img, &configs);
+```
+
 ## Features
 
 - `image` (default): enables `calib_targets::detect`.

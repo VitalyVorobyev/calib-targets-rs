@@ -8,6 +8,8 @@ The workspace is organized as a stack of crates with minimal, composable boundar
 - `calib-targets-chessboard` depends on `core` for geometry and types.
 - `calib-targets-aruco` depends on `core` for rectified image access.
 - `calib-targets-charuco` depends on `chessboard` and `aruco`.
+- `calib-targets-puzzleboard` depends on `chessboard` and uses committed
+  code-map blobs for absolute edge-code decoding.
 - `calib-targets-marker` depends on `chessboard` and `core`.
 - `calib-targets-print` depends on the target crates and owns printable-target rendering.
 - `calib-targets` is the facade that re-exports types and offers end-to-end helpers.

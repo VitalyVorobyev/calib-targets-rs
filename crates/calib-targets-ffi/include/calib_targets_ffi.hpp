@@ -110,6 +110,10 @@ struct MarkerBoardBuffers {
   std::vector<ct_circle_match_t> circle_matches;
 };
 
+struct PuzzleBoardBuffers {
+  std::vector<ct_labeled_corner_t> corners;
+};
+
 class ChessboardDetector {
  public:
   ChessboardDetector() = default;
@@ -336,6 +340,72 @@ class MarkerBoardDetector {
 
  private:
   UniqueHandle<ct_marker_board_detector_t, ct_marker_board_detector_destroy> handle_;
+};
+
+class PuzzleBoardDetector {
+ public:
+  PuzzleBoardDetector() = default;
+  PuzzleBoardDetector(const PuzzleBoardDetector &) = delete;
+  PuzzleBoardDetector &operator=(const PuzzleBoardDetector &) = delete;
+  PuzzleBoardDetector(PuzzleBoardDetector &&) noexcept = default;
+  PuzzleBoardDetector &operator=(PuzzleBoardDetector &&) noexcept = default;
+
+  [[nodiscard]] Status create(const ct_puzzleboard_detector_config_t &config) noexcept {
+    ct_puzzleboard_detector_t *raw = nullptr;
+    const auto code = ct_puzzleboard_detector_create(&config, &raw);
+    if (code != CT_STATUS_OK) {
+      return capture_status(code);
+    }
+    handle_.reset(raw);
+    return {};
+  }
+
+  [[nodiscard]] Status detect(
+      const ct_gray_image_u8_t &image,
+      ct_puzzleboard_result_t *out_result,
+      PuzzleBoardBuffers *out_buffers) const {
+    if (!handle_.has_value()) {
+      return local_status(CT_STATUS_INVALID_ARGUMENT, "puzzleboard detector is not initialized");
+    }
+
+    std::size_t corners_len = 0;
+    ct_puzzleboard_result_t ignored_result{};
+    auto code = ct_puzzleboard_detector_detect(
+        handle_.get(),
+        &image,
+        out_result != nullptr ? out_result : &ignored_result,
+        nullptr,
+        0,
+        &corners_len);
+    if (code != CT_STATUS_OK) {
+      return capture_status(code);
+    }
+    if (out_buffers == nullptr) {
+      return {};
+    }
+
+    out_buffers->corners.assign(corners_len, ct_labeled_corner_t{});
+    code = ct_puzzleboard_detector_detect(
+        handle_.get(),
+        &image,
+        out_result != nullptr ? out_result : &ignored_result,
+        out_buffers->corners.empty() ? nullptr : out_buffers->corners.data(),
+        out_buffers->corners.size(),
+        &corners_len);
+    if (code != CT_STATUS_OK) {
+      out_buffers->corners.clear();
+      return capture_status(code);
+    }
+    out_buffers->corners.resize(corners_len);
+    return {};
+  }
+
+  [[nodiscard]] bool initialized() const noexcept {
+    return handle_.has_value();
+  }
+
+ private:
+  UniqueHandle<ct_puzzleboard_detector_t, ct_puzzleboard_detector_destroy> handle_;
 };
 
 }  // namespace calib_targets::ffi

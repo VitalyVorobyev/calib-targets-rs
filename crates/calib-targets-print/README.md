@@ -1,7 +1,7 @@
 # calib-targets-print
 
 `calib-targets-print` is the dedicated crate that generates printable
-calibration targets for chessboard, ChArUco, and checkerboard marker boards.
+calibration targets for chessboard, ChArUco, PuzzleBoard, and checkerboard marker boards.
 
 The same functionality is also exposed through the published
 [`calib-targets`](https://crates.io/crates/calib-targets) facade crate as
@@ -30,7 +30,7 @@ the same API is also available as `calib_targets::printable`.
 ## Canonical document
 
 - `schema_version`: currently `1`
-- `target`: `chessboard`, `charuco`, or `marker_board`
+- `target`: `chessboard`, `charuco`, `marker_board`, or `puzzle_board`
 - `page`: `a4`, `letter`, or custom page size in millimeters
 - `render`: debug overlay toggle and PNG DPI
 

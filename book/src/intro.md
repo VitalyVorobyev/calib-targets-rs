@@ -7,7 +7,7 @@
 
 What it is:
 
-- A small, composable set of crates for chessboard, ChArUco, and marker-style targets.
+- A small, composable set of crates for chessboard, ChArUco, PuzzleBoard, and marker-style targets.
 - A set of geometric primitives (homographies, rectified views, grid coords).
 - Practical examples and tests based on the `chess-corners` crate.
 
@@ -35,16 +35,15 @@ cargo add calib-targets image
 Minimal chessboard detection:
 
 ```rust,no_run
-use calib_targets::detect::{self, ChessConfig};
+use calib_targets::detect;
 use calib_targets::chessboard::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let chess_cfg: ChessConfig = detect::default_chess_config();
     let params = ChessboardParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params);
+    let result = detect::detect_chessboard(&img, &params);
     println!("detected: {}", result.is_some());
     Ok(())
 }
@@ -60,12 +59,12 @@ maturin develop
 python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
 ```
 
-The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`, and
-`detect_marker_board`. The public API is dataclass-first: config inputs are
-typed models and detector results are typed dataclasses with
-`to_dict()`/`from_dict(...)` helpers for JSON interoperability.
+The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`,
+`detect_puzzleboard`, and `detect_marker_board`. The public API is
+dataclass-first: config inputs are typed models and detector results are typed
+dataclasses with `to_dict()`/`from_dict(...)` helpers for JSON interoperability.
 `detect_charuco` requires `params` and the board lives in `params.board`.
 For marker boards, `target_position` is populated only when
 `params.layout.cell_size` is set and alignment succeeds.
 
-MSRV: Rust 1.70 (stable).
+MSRV: Rust 1.88 (stable).

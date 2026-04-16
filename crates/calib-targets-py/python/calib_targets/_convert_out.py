@@ -22,7 +22,10 @@ from .results import (
     MarkerCircleExpectation,
     MarkerDetection,
     OrientationHistogram,
+    ObservedEdge,
     Point2,
+    PuzzleBoardDecodeInfo,
+    PuzzleBoardDetectionResult,
     TargetDetection,
 )
 
@@ -134,6 +137,14 @@ def _to_circle_polarity(value: Any, ctx: str) -> CirclePolarity:
             valid = [member.value for member in CirclePolarity]
             raise ValueError(f"{ctx} must be one of {valid}") from exc
     raise TypeError(f"{ctx} must be CirclePolarity or str")
+
+
+def _to_edge_orientation(value: Any, ctx: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{ctx} must be str")
+    if value not in {"horizontal", "vertical"}:
+        raise ValueError(f"{ctx} must be 'horizontal' or 'vertical'")
+    return value
 
 
 def _point2_to_list(value: Point2) -> list[float]:
@@ -677,6 +688,120 @@ def marker_board_detection_result_from_dict(
     )
 
 
+# -------------------- puzzleboard results --------------------
+
+
+def observed_edge_to_dict(value: ObservedEdge) -> dict[str, Any]:
+    return {
+        "row": int(value.row),
+        "col": int(value.col),
+        "orientation": _to_edge_orientation(value.orientation, "ObservedEdge.orientation"),
+        "bit": int(value.bit),
+        "confidence": float(value.confidence),
+    }
+
+
+def observed_edge_from_dict(data: Mapping[str, Any]) -> ObservedEdge:
+    obj = _ensure_mapping(data, "ObservedEdge")
+    _validate_keys(
+        obj,
+        allowed={"row", "col", "orientation", "bit", "confidence"},
+        required={"row", "col", "orientation", "bit", "confidence"},
+        ctx="ObservedEdge",
+    )
+    bit = _to_int(obj["bit"], "ObservedEdge.bit")
+    if bit not in (0, 1):
+        raise ValueError("ObservedEdge.bit must be 0 or 1")
+    return ObservedEdge(
+        row=_to_int(obj["row"], "ObservedEdge.row"),
+        col=_to_int(obj["col"], "ObservedEdge.col"),
+        orientation=_to_edge_orientation(obj["orientation"], "ObservedEdge.orientation"),
+        bit=bit,
+        confidence=_to_float(obj["confidence"], "ObservedEdge.confidence"),
+    )
+
+
+def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, Any]:
+    return {
+        "edges_observed": int(value.edges_observed),
+        "edges_matched": int(value.edges_matched),
+        "mean_confidence": float(value.mean_confidence),
+        "bit_error_rate": float(value.bit_error_rate),
+        "master_origin_row": int(value.master_origin_row),
+        "master_origin_col": int(value.master_origin_col),
+    }
+
+
+def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDecodeInfo:
+    obj = _ensure_mapping(data, "PuzzleBoardDecodeInfo")
+    _validate_keys(
+        obj,
+        allowed={
+            "edges_observed",
+            "edges_matched",
+            "mean_confidence",
+            "bit_error_rate",
+            "master_origin_row",
+            "master_origin_col",
+        },
+        required={
+            "edges_observed",
+            "edges_matched",
+            "mean_confidence",
+            "bit_error_rate",
+            "master_origin_row",
+            "master_origin_col",
+        },
+        ctx="PuzzleBoardDecodeInfo",
+    )
+    return PuzzleBoardDecodeInfo(
+        edges_observed=_to_int(obj["edges_observed"], "PuzzleBoardDecodeInfo.edges_observed"),
+        edges_matched=_to_int(obj["edges_matched"], "PuzzleBoardDecodeInfo.edges_matched"),
+        mean_confidence=_to_float(
+            obj["mean_confidence"], "PuzzleBoardDecodeInfo.mean_confidence"
+        ),
+        bit_error_rate=_to_float(obj["bit_error_rate"], "PuzzleBoardDecodeInfo.bit_error_rate"),
+        master_origin_row=_to_int(
+            obj["master_origin_row"], "PuzzleBoardDecodeInfo.master_origin_row"
+        ),
+        master_origin_col=_to_int(
+            obj["master_origin_col"], "PuzzleBoardDecodeInfo.master_origin_col"
+        ),
+    )
+
+
+def puzzleboard_detection_result_to_dict(
+    value: PuzzleBoardDetectionResult,
+) -> dict[str, Any]:
+    return {
+        "detection": target_detection_to_dict(value.detection),
+        "alignment": grid_alignment_to_dict(value.alignment),
+        "decode": puzzleboard_decode_info_to_dict(value.decode),
+        "observed_edges": [observed_edge_to_dict(item) for item in value.observed_edges],
+    }
+
+
+def puzzleboard_detection_result_from_dict(
+    data: Mapping[str, Any],
+) -> PuzzleBoardDetectionResult:
+    obj = _ensure_mapping(data, "PuzzleBoardDetectionResult")
+    _validate_keys(
+        obj,
+        allowed={"detection", "alignment", "decode", "observed_edges"},
+        required={"detection", "alignment", "decode", "observed_edges"},
+        ctx="PuzzleBoardDetectionResult",
+    )
+    observed_edges = _to_sequence(
+        obj["observed_edges"], "PuzzleBoardDetectionResult.observed_edges"
+    )
+    return PuzzleBoardDetectionResult(
+        detection=target_detection_from_dict(obj["detection"]),
+        alignment=grid_alignment_from_dict(obj["alignment"]),
+        decode=puzzleboard_decode_info_from_dict(obj["decode"]),
+        observed_edges=[observed_edge_from_dict(item) for item in observed_edges],
+    )
+
+
 __all__ = [
     "grid_coords_to_dict",
     "grid_coords_from_dict",
@@ -714,4 +839,10 @@ __all__ = [
     "charuco_detection_result_from_dict",
     "marker_board_detection_result_to_dict",
     "marker_board_detection_result_from_dict",
+    "observed_edge_to_dict",
+    "observed_edge_from_dict",
+    "puzzleboard_decode_info_to_dict",
+    "puzzleboard_decode_info_from_dict",
+    "puzzleboard_detection_result_to_dict",
+    "puzzleboard_detection_result_from_dict",
 ]

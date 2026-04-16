@@ -250,8 +250,7 @@ pub fn detect_puzzleboard_best(
                     Some(b) => {
                         let key_new = (r.detection.corners.len(), r.decode.mean_confidence);
                         let key_old = (b.detection.corners.len(), b.decode.mean_confidence);
-                        key_new.0 > key_old.0
-                            || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
+                        key_new.0 > key_old.0 || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
                     }
                 };
                 if better {

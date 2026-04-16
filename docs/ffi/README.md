@@ -44,6 +44,7 @@ The native ABI currently exposes:
 
 - chessboard detection via `ct_chessboard_detector_*`
 - ChArUco detection via `ct_charuco_detector_*`
+- PuzzleBoard detection via `ct_puzzleboard_detector_*`
 - checkerboard marker-board detection via `ct_marker_board_detector_*`
 - a staged CMake config package exporting `calib_targets_ffi::c` and
   `calib_targets_ffi::cpp`
@@ -196,6 +197,7 @@ Each detector family uses an opaque handle:
 
 - `ct_chessboard_detector_t`
 - `ct_charuco_detector_t`
+- `ct_puzzleboard_detector_t`
 - `ct_marker_board_detector_t`
 
 Ownership rules are simple:

@@ -87,22 +87,32 @@ pub(crate) fn decode(observed: &[ObservedEdge], max_bit_error_rate: f32) -> Opti
                     master_origin_row: master_row,
                     master_origin_col: master_col,
                 };
-                match &best {
-                    None => best = Some(candidate),
-                    Some(b) if candidate.weighted_score > b.weighted_score => {
-                        best = Some(candidate)
-                    }
-                    _ => {}
-                }
+                update_best_candidate_if_accepted(&mut best, candidate, max_bit_error_rate);
             }
         }
     }
 
-    let best = best?;
-    if best.bit_error_rate > max_bit_error_rate {
-        return None;
+    best
+}
+
+fn update_best_candidate_if_accepted(
+    best: &mut Option<DecodeOutcome>,
+    candidate: DecodeOutcome,
+    max_bit_error_rate: f32,
+) {
+    if candidate.bit_error_rate <= max_bit_error_rate {
+        update_best_candidate(best, candidate);
     }
-    Some(best)
+}
+
+fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutcome) {
+    match best {
+        None => *best = Some(candidate),
+        Some(current) if candidate.weighted_score > current.weighted_score => {
+            *best = Some(candidate)
+        }
+        _ => {}
+    }
 }
 
 fn transform_edge(edge: &ObservedEdge, t: &GridTransform) -> (i32, i32, EdgeOrientation) {
@@ -181,7 +191,10 @@ mod tests {
         assert_eq!(outcome.edges_matched, outcome.edges_observed);
         assert!(outcome.bit_error_rate < 1e-6);
         // Translation must be in the expected coset modulo master periods.
-        assert_eq!(outcome.master_origin_row.rem_euclid(3), 12_i32.rem_euclid(3));
+        assert_eq!(
+            outcome.master_origin_row.rem_euclid(3),
+            12_i32.rem_euclid(3)
+        );
         assert_eq!(
             outcome.master_origin_col.rem_euclid(167),
             37_i32.rem_euclid(167)
@@ -195,7 +208,7 @@ mod tests {
         // inverse D4 transform that un-rotates it.
         let original = build_perfect_observation(5, 11, 5, 5);
         let rot = GRID_TRANSFORMS_D4[1]; // 90° rotation: a=0, b=1, c=-1, d=0
-        // Rotated observation: apply rot to each anchor + flip orientation.
+                                         // Rotated observation: apply rot to each anchor + flip orientation.
         let rotated: Vec<ObservedEdge> = original
             .iter()
             .map(|e| {
@@ -248,5 +261,39 @@ mod tests {
         if let Some(out) = outcome {
             assert!(out.bit_error_rate <= 0.01);
         }
+    }
+
+    #[test]
+    fn best_candidate_update_keeps_lower_score_valid_candidate() {
+        let alignment = GridAlignment {
+            transform: GRID_TRANSFORMS_D4[0],
+            translation: [0, 0],
+        };
+        let valid = DecodeOutcome {
+            alignment,
+            edges_matched: 16,
+            edges_observed: 24,
+            weighted_score: 0.7,
+            bit_error_rate: 0.33,
+            mean_confidence: 0.6,
+            master_origin_row: 0,
+            master_origin_col: 0,
+        };
+        let invalid_higher_score = DecodeOutcome {
+            weighted_score: 0.9,
+            bit_error_rate: 0.5,
+            master_origin_row: 1,
+            master_origin_col: 1,
+            ..valid.clone()
+        };
+
+        let mut best = None;
+        update_best_candidate_if_accepted(&mut best, valid, 0.4);
+        update_best_candidate_if_accepted(&mut best, invalid_higher_score, 0.4);
+
+        let best = best.expect("valid candidate retained");
+        assert_eq!(best.master_origin_row, 0);
+        assert_eq!(best.master_origin_col, 0);
+        assert!(best.bit_error_rate <= 0.4);
     }
 }

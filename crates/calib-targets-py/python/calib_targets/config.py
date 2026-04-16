@@ -588,6 +588,135 @@ class MarkerBoardParams:
         )
 
 
+# ---------------------------------------------------------------------------
+# PuzzleBoard detection params
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class PuzzleBoardSpec:
+    """PuzzleBoard geometry.
+
+    ``rows`` and ``cols`` are square counts. Inner corner count is
+    ``(rows - 1) * (cols - 1)``.
+    """
+
+    rows: int
+    cols: int
+    cell_size: float
+    origin_row: int = 0
+    origin_col: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rows": self.rows,
+            "cols": self.cols,
+            "cell_size": self.cell_size,
+            "origin_row": self.origin_row,
+            "origin_col": self.origin_col,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSpec:
+        return cls(
+            rows=int(data["rows"]),
+            cols=int(data["cols"]),
+            cell_size=float(data["cell_size"]),
+            origin_row=int(data.get("origin_row", 0)),
+            origin_col=int(data.get("origin_col", 0)),
+        )
+
+
+@dataclass(slots=True)
+class DecodeConfig:
+    """PuzzleBoard edge-bit decode parameters."""
+
+    min_window: int = 4
+    min_bit_confidence: float = 0.15
+    max_bit_error_rate: float = 0.30
+    search_all_components: bool = True
+    sample_radius_rel: float = 1.0 / 6.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "min_window": self.min_window,
+            "min_bit_confidence": self.min_bit_confidence,
+            "max_bit_error_rate": self.max_bit_error_rate,
+            "search_all_components": self.search_all_components,
+            "sample_radius_rel": self.sample_radius_rel,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DecodeConfig:
+        d = cls()
+        return cls(
+            min_window=int(data.get("min_window", d.min_window)),
+            min_bit_confidence=float(
+                data.get("min_bit_confidence", d.min_bit_confidence)
+            ),
+            max_bit_error_rate=float(data.get("max_bit_error_rate", d.max_bit_error_rate)),
+            search_all_components=bool(
+                data.get("search_all_components", d.search_all_components)
+            ),
+            sample_radius_rel=float(data.get("sample_radius_rel", d.sample_radius_rel)),
+        )
+
+
+@dataclass(slots=True)
+class PuzzleBoardParams:
+    """PuzzleBoard detector parameters. ``board`` is required."""
+
+    board: PuzzleBoardSpec
+    px_per_square: float = 60.0
+    chessboard: ChessboardParams = field(default_factory=ChessboardParams)
+    decode: DecodeConfig = field(default_factory=DecodeConfig)
+
+    @classmethod
+    def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
+        chessboard = ChessboardParams(
+            min_corner_strength=0.1,
+            min_corners=20,
+            expected_rows=board.rows - 1,
+            expected_cols=board.cols - 1,
+            completeness_threshold=0.02,
+            graph=GridGraphParams(
+                min_spacing_pix=8.0,
+                max_spacing_pix=600.0,
+                k_neighbors=8,
+                orientation_tolerance_deg=22.5,
+            ),
+        )
+        return cls(board=board, px_per_square=60.0, chessboard=chessboard)
+
+    @classmethod
+    def sweep_for_board(cls, board: PuzzleBoardSpec) -> list[PuzzleBoardParams]:
+        base = cls.for_board(board)
+        high = cls.from_dict(base.to_dict())
+        high.chessboard.chess.threshold_value = 0.15
+        low = cls.from_dict(base.to_dict())
+        low.chessboard.chess.threshold_value = 0.08
+        return [base, high, low]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "px_per_square": self.px_per_square,
+            "chessboard": self.chessboard.to_dict(),
+            "board": self.board.to_dict(),
+            "decode": self.decode.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardParams:
+        if "board" not in data:
+            raise ValueError("PuzzleBoardParams requires 'board' field")
+        return cls(
+            board=PuzzleBoardSpec.from_dict(data["board"]),
+            px_per_square=float(data.get("px_per_square", 60.0)),
+            chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
+            decode=DecodeConfig.from_dict(data.get("decode", {})),
+        )
+
+
 __all__ = [
     "CenterOfMassConfig",
     "ForstnerConfig",
@@ -607,4 +736,7 @@ __all__ = [
     "CircleScoreParams",
     "CircleMatchParams",
     "MarkerBoardParams",
+    "PuzzleBoardSpec",
+    "DecodeConfig",
+    "PuzzleBoardParams",
 ]

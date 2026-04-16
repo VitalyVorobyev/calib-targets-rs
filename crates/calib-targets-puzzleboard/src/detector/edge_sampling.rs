@@ -95,7 +95,12 @@ pub(crate) fn local_cell_references(
 }
 
 #[inline]
-pub(crate) fn observed_horizontal_edge(row: i32, col: i32, bit: u8, confidence: f32) -> ObservedEdge {
+pub(crate) fn observed_horizontal_edge(
+    row: i32,
+    col: i32,
+    bit: u8,
+    confidence: f32,
+) -> ObservedEdge {
     ObservedEdge {
         row,
         col,

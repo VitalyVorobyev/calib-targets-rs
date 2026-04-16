@@ -9,6 +9,7 @@ class TargetKind(str, Enum):
     CHESSBOARD = "chessboard"
     CHARUCO = "charuco"
     CHECKERBOARD_MARKER = "checkerboard_marker"
+    PUZZLE_BOARD = "puzzle_board"
 
 
 class CirclePolarity(str, Enum):

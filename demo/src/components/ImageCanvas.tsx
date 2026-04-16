@@ -100,6 +100,8 @@ export function ImageCanvas({ image, detection }: Props) {
       corners = detection.result.detection.corners;
     } else if (detection.mode === "marker_board" && detection.result) {
       corners = detection.result.detection.corners;
+    } else if (detection.mode === "puzzleboard") {
+      corners = detection.result.detection.corners;
     }
 
     // Draw grid edges between adjacent corners

@@ -4,9 +4,7 @@
 //! master (I, J) coordinates.
 
 use calib_targets_core::{Corner as TargetCorner, GrayImageView};
-use calib_targets_print::{
-    PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
-};
+use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec};
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
 use image::{ImageBuffer, Luma};

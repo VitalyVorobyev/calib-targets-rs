@@ -126,6 +126,29 @@ export interface MarkerBoardParams {
   match_params: CircleMatchParams;
 }
 
+export interface PuzzleBoardSpec {
+  rows: number;
+  cols: number;
+  cell_size: number;
+  origin_row: number;
+  origin_col: number;
+}
+
+export interface PuzzleBoardDecodeConfig {
+  min_window: number;
+  min_bit_confidence: number;
+  max_bit_error_rate: number;
+  search_all_components: boolean;
+  sample_radius_rel: number;
+}
+
+export interface PuzzleBoardParams {
+  px_per_square: number;
+  chessboard: ChessboardParams;
+  board: PuzzleBoardSpec;
+  decode: PuzzleBoardDecodeConfig;
+}
+
 // ---------------------------------------------------------------------------
 // Output types
 // ---------------------------------------------------------------------------
@@ -154,7 +177,7 @@ export interface LabeledCorner {
 }
 
 export interface TargetDetection {
-  kind: "chessboard" | "charuco" | "checkerboard_marker";
+  kind: "chessboard" | "charuco" | "checkerboard_marker" | "puzzle_board";
   corners: LabeledCorner[];
 }
 
@@ -191,8 +214,37 @@ export interface MarkerBoardDetectionResult {
   alignment_inliers: number;
 }
 
+export interface ObservedEdge {
+  row: number;
+  col: number;
+  orientation: "horizontal" | "vertical";
+  bit: 0 | 1;
+  confidence: number;
+}
+
+export interface PuzzleBoardDecodeInfo {
+  edges_observed: number;
+  edges_matched: number;
+  mean_confidence: number;
+  bit_error_rate: number;
+  master_origin_row: number;
+  master_origin_col: number;
+}
+
+export interface PuzzleBoardDetectionResult {
+  detection: TargetDetection;
+  alignment: GridAlignment;
+  decode: PuzzleBoardDecodeInfo;
+  observed_edges: ObservedEdge[];
+}
+
 // ---------------------------------------------------------------------------
 // Detection mode enum
 // ---------------------------------------------------------------------------
 
-export type DetectionMode = "corners" | "chessboard" | "charuco" | "marker_board";
+export type DetectionMode =
+  | "corners"
+  | "chessboard"
+  | "charuco"
+  | "marker_board"
+  | "puzzleboard";

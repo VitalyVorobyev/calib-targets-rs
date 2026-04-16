@@ -4,6 +4,7 @@ import type {
   ChessboardParams,
   CharucoDetectorParams,
   MarkerBoardParams,
+  PuzzleBoardParams,
   DetectionMode,
 } from "../types/calib-targets";
 
@@ -18,6 +19,8 @@ interface Props {
   onCharucoParamsChange: (p: CharucoDetectorParams) => void;
   markerParams: MarkerBoardParams;
   onMarkerParamsChange: (p: MarkerBoardParams) => void;
+  puzzleParams: PuzzleBoardParams;
+  onPuzzleParamsChange: (p: PuzzleBoardParams) => void;
   onDetect: () => void;
   loading: boolean;
   hasImage: boolean;
@@ -97,6 +100,8 @@ export function ConfigPanel({
   onCharucoParamsChange,
   markerParams,
   onMarkerParamsChange,
+  puzzleParams,
+  onPuzzleParamsChange,
   onDetect,
   loading,
   hasImage,
@@ -129,6 +134,13 @@ export function ConfigPanel({
     [markerParams, onMarkerParamsChange],
   );
 
+  const updatePuzzle = useCallback(
+    (partial: Partial<PuzzleBoardParams>) => {
+      onPuzzleParamsChange({ ...puzzleParams, ...partial });
+    },
+    [puzzleParams, onPuzzleParamsChange],
+  );
+
   return (
     <div className="config-panel">
       <h3>Detection Mode</h3>
@@ -139,6 +151,7 @@ export function ConfigPanel({
             ["chessboard", "Chessboard"],
             ["charuco", "ChArUco"],
             ["marker_board", "Marker Board"],
+            ["puzzleboard", "PuzzleBoard"],
           ] as const
         ).map(([m, label]) => (
           <label key={m} className="radio-label">
@@ -314,6 +327,46 @@ export function ConfigPanel({
             onChange={(v) =>
               updateMarker({
                 layout: { ...markerParams.layout, cols: v ?? 22 },
+              })
+            }
+          />
+        </>
+      )}
+
+      {mode === "puzzleboard" && (
+        <>
+          <h3>PuzzleBoard</h3>
+          <NumberInput
+            label="Board Rows"
+            value={puzzleParams.board.rows}
+            min={4}
+            max={501}
+            onChange={(v) =>
+              updatePuzzle({
+                board: { ...puzzleParams.board, rows: v ?? 10 },
+              })
+            }
+          />
+          <NumberInput
+            label="Board Cols"
+            value={puzzleParams.board.cols}
+            min={4}
+            max={501}
+            onChange={(v) =>
+              updatePuzzle({
+                board: { ...puzzleParams.board, cols: v ?? 10 },
+              })
+            }
+          />
+          <Slider
+            label="Min Bit Confidence"
+            value={puzzleParams.decode.min_bit_confidence}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) =>
+              updatePuzzle({
+                decode: { ...puzzleParams.decode, min_bit_confidence: v },
               })
             }
           />

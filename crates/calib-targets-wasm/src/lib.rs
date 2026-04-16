@@ -10,6 +10,7 @@ use calib_targets_charuco::{CharucoDetector, CharucoParams};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
+use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::find_chess_corners_u8;
 use wasm_bindgen::prelude::*;
 
@@ -83,6 +84,13 @@ pub fn default_chessboard_params() -> Result<JsValue, JsError> {
 #[wasm_bindgen]
 pub fn default_marker_board_params() -> Result<JsValue, JsError> {
     to_js(&MarkerBoardParams::default())
+}
+
+/// Return default `PuzzleBoardParams` for a `rows × cols` board as a JS object.
+#[wasm_bindgen]
+pub fn default_puzzleboard_params(rows: u32, cols: u32) -> Result<JsValue, JsError> {
+    let spec = PuzzleBoardSpec::new(rows, cols, 1.0).map_err(|e| JsError::new(&e.to_string()))?;
+    to_js(&PuzzleBoardParams::for_board(&spec))
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +234,38 @@ pub fn detect_marker_board(
 }
 
 // ---------------------------------------------------------------------------
+// PuzzleBoard detection
+// ---------------------------------------------------------------------------
+
+/// Detect a PuzzleBoard in a grayscale image.
+///
+/// Returns a `PuzzleBoardDetectionResult` JS object. Throws on error.
+/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
+#[wasm_bindgen]
+pub fn detect_puzzleboard(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        puzzle_params.chessboard.chess = from_js(chess_cfg)?;
+    }
+
+    let corners = detect_corners_impl(pixels, width, height, &puzzle_params.chessboard.chess);
+    let detector =
+        PuzzleBoardDetector::new(puzzle_params).map_err(|e| JsError::new(&e.to_string()))?;
+    let view = make_view(pixels, width, height);
+    let result = detector
+        .detect(&view, &corners)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    to_js(&result)
+}
+
+// ---------------------------------------------------------------------------
 // Multi-config sweep detection
 // ---------------------------------------------------------------------------
 
@@ -327,4 +367,57 @@ pub fn detect_marker_board_best(
         })
         .max_by_key(|r| r.detection.corners.len());
     to_js(&best)
+}
+
+/// Try multiple PuzzleBoard parameter configs, return the best result
+/// (most labelled corners, then mean bit confidence). Throws if all configs fail.
+#[wasm_bindgen]
+pub fn detect_puzzleboard_best(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    configs: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let configs: Vec<PuzzleBoardParams> = from_js(configs)?;
+
+    let mut best: Option<calib_targets_puzzleboard::PuzzleBoardDetectionResult> = None;
+    let mut last_err = None;
+
+    for params in &configs {
+        let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
+        let detector = match PuzzleBoardDetector::new(params.clone()) {
+            Ok(d) => d,
+            Err(e) => {
+                last_err = Some(e.to_string());
+                continue;
+            }
+        };
+        let view = make_view(pixels, width, height);
+        match detector.detect(&view, &corners) {
+            Ok(result) => {
+                let dominated = best.as_ref().is_some_and(|b| {
+                    let new_key = (
+                        result.detection.corners.len(),
+                        result.decode.mean_confidence,
+                    );
+                    let old_key = (b.detection.corners.len(), b.decode.mean_confidence);
+                    old_key.0 > new_key.0 || (old_key.0 == new_key.0 && old_key.1 >= new_key.1)
+                });
+                if !dominated {
+                    best = Some(result);
+                }
+            }
+            Err(e) => {
+                last_err = Some(e.to_string());
+            }
+        }
+    }
+
+    match best {
+        Some(result) => to_js(&result),
+        None => Err(JsError::new(
+            &last_err.unwrap_or_else(|| "puzzleboard not detected".to_string()),
+        )),
+    }
 }

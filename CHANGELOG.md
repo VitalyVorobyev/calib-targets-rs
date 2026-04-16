@@ -6,6 +6,36 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0]
+
+### Added
+
+- Add first-class PuzzleBoard support with a new
+  `calib-targets-puzzleboard` crate. The detector samples edge-midpoint code
+  dots on a chessboard grid, decodes the embedded 501 x 501 master pattern,
+  and returns absolute corner IDs plus target-space positions.
+- Add committed PuzzleBoard code-map blobs, generation/verification tools,
+  synthetic and real-image regression tests, and generated PuzzleBoard
+  testdata.
+- Add PuzzleBoard printable target generation through `calib-targets-print`,
+  including JSON/SVG/PNG output bundles and Python printable dataclasses.
+- Add PuzzleBoard facade helpers, Rust examples, Python bindings, WASM
+  bindings, FFI C ABI structs/functions, and regenerated native headers.
+- Add PuzzleBoard documentation in the crate README, workspace README,
+  mdBook, and release/development command references.
+
+### Fixed
+
+- Filter PuzzleBoard decode candidates by bit-error rate before selecting the
+  best weighted score, avoiding false negatives when a higher-score candidate
+  exceeds the configured error budget.
+- Re-check the PuzzleBoard minimum edge count after confidence filtering so
+  weak edge samples cannot pass into the decoder as an undersized window.
+
+### Changed
+
+- Bump coordinated workspace crate versions to `0.6.0`.
+
 ## [0.5.3]
 
 ### Fixes

@@ -88,24 +88,14 @@ impl PuzzleBoardDetector {
 
         let observed = self.sample_all_edges(image, labeled, inliers);
         let min_edges = required_edges(self.params.decode.min_window);
-        if observed.len() < min_edges {
-            return Err(PuzzleBoardDetectError::NotEnoughEdges {
-                observed: observed.len(),
-                needed: min_edges,
-            });
-        }
+        ensure_min_edges(observed.len(), min_edges)?;
 
         let filtered: Vec<ObservedEdge> = observed
             .iter()
             .copied()
             .filter(|e| e.confidence >= self.params.decode.min_bit_confidence)
             .collect();
-        if filtered.is_empty() {
-            return Err(PuzzleBoardDetectError::NotEnoughEdges {
-                observed: 0,
-                needed: min_edges,
-            });
-        }
+        ensure_min_edges(filtered.len(), min_edges)?;
 
         let decoded = run_decode(&filtered, self.params.decode.max_bit_error_rate)
             .ok_or(PuzzleBoardDetectError::DecodeFailed)?;
@@ -237,6 +227,13 @@ fn required_edges(min_window: u32) -> usize {
     2 * w * (w - 1)
 }
 
+fn ensure_min_edges(observed: usize, needed: usize) -> Result<(), PuzzleBoardDetectError> {
+    if observed < needed {
+        return Err(PuzzleBoardDetectError::NotEnoughEdges { observed, needed });
+    }
+    Ok(())
+}
+
 fn master_ij_to_id(master_i: i32, master_j: i32) -> u32 {
     let cols = MASTER_COLS as i32;
     let i = master_i.rem_euclid(cols);
@@ -257,5 +254,17 @@ mod tests {
         assert_eq!(required_edges(3), 12);
         assert_eq!(required_edges(4), 24);
         assert_eq!(required_edges(5), 40);
+    }
+
+    #[test]
+    fn min_edges_check_reports_filtered_count() {
+        let err = ensure_min_edges(7, required_edges(4)).expect_err("too few edges");
+        assert!(matches!(
+            err,
+            PuzzleBoardDetectError::NotEnoughEdges {
+                observed: 7,
+                needed: 24
+            }
+        ));
     }
 }

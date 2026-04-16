@@ -5,7 +5,7 @@
 [![Docs](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/docs.yml/badge.svg)](https://vitalyvorobyev.github.io/calib-targets-rs/)
 [![MSRV](https://img.shields.io/badge/MSRV-1.88-blue.svg)](https://blog.rust-lang.org/2025/06/26/Rust-1.88.0/)
 
-Calibration target detection in Rust (chessboard, ChArUco, ArUco/AprilTag, marker boards).
+Calibration target detection in Rust (chessboard, ChArUco, PuzzleBoard, ArUco/AprilTag, marker boards).
 
 ![ChArUco detection overlay](book/img/charuco_detect_report_small2_overlay.png)
 
@@ -23,6 +23,7 @@ Detection is built on the [ChESS corners](https://github.com/VitalyVorobyev/ches
 |---|---|
 | **Chessboard** | Simplest option; no markers needed |
 | **ChArUco** | Recommended for calibration — partial views OK, unique corner IDs |
+| **PuzzleBoard** | Self-identifying chessboard; partial views with dense absolute corner IDs |
 | **Marker board** | Specialised layouts with 3-circle markers |
 
 ## Quickstart
@@ -68,7 +69,9 @@ let result = detect::detect_chessboard_best(&img, &configs);
 ChArUco and marker board follow the same pattern — see
 [detect_charuco](crates/calib-targets/examples/detect_charuco.rs),
 [detect_charuco_best](crates/calib-targets/examples/detect_charuco_best.rs),
-and [detect_markerboard](crates/calib-targets/examples/detect_markerboard.rs).
+[detect_markerboard](crates/calib-targets/examples/detect_markerboard.rs),
+[detect_puzzleboard](crates/calib-targets/examples/detect_puzzleboard.rs),
+and [detect_puzzleboard_best](crates/calib-targets/examples/detect_puzzleboard_best.rs).
 
 ### Python
 
@@ -96,7 +99,7 @@ result = ct.detect_chessboard_best(image, [
 ])
 ```
 
-All three target types and multi-config sweep are available: `detect_chessboard`, `detect_charuco`, `detect_marker_board`, plus `detect_chessboard_best`, `detect_charuco_best`, `detect_marker_board_best`.
+All target types and multi-config sweep are available: `detect_chessboard`, `detect_charuco`, `detect_marker_board`, `detect_puzzleboard`, plus `detect_chessboard_best`, `detect_charuco_best`, `detect_marker_board_best`, `detect_puzzleboard_best`.
 
 See [examples](crates/calib-targets-py/examples/) for full usage.
 
@@ -134,6 +137,7 @@ cd demo && npm install && npm run dev
 | [`calib-targets-chessboard`](crates/calib-targets-chessboard) | [yes](https://crates.io/crates/calib-targets-chessboard) | Chessboard detector |
 | [`calib-targets-aruco`](crates/calib-targets-aruco) | [yes](https://crates.io/crates/calib-targets-aruco) | ArUco/AprilTag dictionaries and decoding |
 | [`calib-targets-charuco`](crates/calib-targets-charuco) | [yes](https://crates.io/crates/calib-targets-charuco) | ChArUco alignment and IDs |
+| [`calib-targets-puzzleboard`](crates/calib-targets-puzzleboard) | [yes](https://crates.io/crates/calib-targets-puzzleboard) | PuzzleBoard self-identifying chessboard detection |
 | [`calib-targets-marker`](crates/calib-targets-marker) | [yes](https://crates.io/crates/calib-targets-marker) | Checkerboard + 3-circle marker boards |
 | [`calib-targets-print`](crates/calib-targets-print) | [yes](https://crates.io/crates/calib-targets-print) | Printable target generation (JSON/SVG/PNG) |
 | `calib-targets-py` | no | Python bindings (PyO3/maturin) |

@@ -15,6 +15,8 @@ function cornerCount(result: DetectionResult): number {
     return result.result.detection.corners.length;
   if (result.mode === "marker_board")
     return result.result?.detection.corners.length ?? 0;
+  if (result.mode === "puzzleboard")
+    return result.result.detection.corners.length;
   return 0;
 }
 
@@ -27,6 +29,8 @@ function gridDims(
   } else if (result.mode === "charuco") {
     corners = result.result.detection.corners;
   } else if (result.mode === "marker_board" && result.result) {
+    corners = result.result.detection.corners;
+  } else if (result.mode === "puzzleboard") {
     corners = result.result.detection.corners;
   } else {
     return null;
@@ -72,7 +76,8 @@ export function ResultsPanel({ result, timeMs, error }: Props) {
     result.mode === "corners" ||
     (result.mode === "chessboard" && result.result != null) ||
     result.mode === "charuco" ||
-    (result.mode === "marker_board" && result.result != null);
+    (result.mode === "marker_board" && result.result != null) ||
+    result.mode === "puzzleboard";
 
   return (
     <div className="results-panel">

@@ -41,11 +41,10 @@ pub enum PuzzleBoardSpecError {
     TooSmall,
     #[error("rows * cols exceeds the master 501×501 pattern")]
     TooLarge,
-    #[error("origin (rows={origin_row}, cols={origin_col}) plus board size exceeds master pattern")]
-    OriginOutOfRange {
-        origin_row: u32,
-        origin_col: u32,
-    },
+    #[error(
+        "origin (rows={origin_row}, cols={origin_col}) plus board size exceeds master pattern"
+    )]
+    OriginOutOfRange { origin_row: u32, origin_col: u32 },
     #[error("cell_size must be finite and > 0")]
     InvalidCellSize,
 }

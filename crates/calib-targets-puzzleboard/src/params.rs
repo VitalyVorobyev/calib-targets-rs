@@ -71,7 +71,7 @@ impl PuzzleBoardParams {
 
     /// Three-config sweep preset (canonical + high-threshold + low-threshold).
     ///
-    /// Mirrors [`calib_targets_charuco::CharucoParams::sweep_for_board`].
+    /// Mirrors the ChArUco `sweep_for_board` preset shape.
     pub fn sweep_for_board(board: &PuzzleBoardSpec) -> Vec<Self> {
         let base = Self::for_board(board);
         let mut high = base.clone();

@@ -11,12 +11,20 @@ from ._convert_in import (
     chess_config_to_payload,
     chessboard_params_to_payload,
     marker_board_params_to_payload,
+    puzzleboard_params_to_payload,
 )
-from .config import CharucoDetectorParams, ChessConfig, ChessboardParams, MarkerBoardParams
+from .config import (
+    CharucoDetectorParams,
+    ChessConfig,
+    ChessboardParams,
+    MarkerBoardParams,
+    PuzzleBoardParams,
+)
 from .results import (
     CharucoDetectionResult,
     ChessboardDetectionResult,
     MarkerBoardDetectionResult,
+    PuzzleBoardDetectionResult,
 )
 
 
@@ -85,6 +93,24 @@ def detect_marker_board(
     return MarkerBoardDetectionResult.from_dict(raw)
 
 
+def detect_puzzleboard(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: PuzzleBoardParams,
+) -> PuzzleBoardDetectionResult:
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    _check_type("params", params, PuzzleBoardParams)
+
+    raw = _core.detect_puzzleboard(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=puzzleboard_params_to_payload(params),
+    )
+    return PuzzleBoardDetectionResult.from_dict(raw)
+
+
 def detect_chessboard_best(
     image: npt.NDArray[np.uint8],
     configs: list[ChessboardParams],
@@ -131,11 +157,34 @@ def detect_marker_board_best(
     return MarkerBoardDetectionResult.from_dict(raw)
 
 
+def detect_puzzleboard_best(
+    image: npt.NDArray[np.uint8],
+    configs: list[PuzzleBoardParams],
+) -> PuzzleBoardDetectionResult:
+    """Try multiple PuzzleBoard configs, return the best result."""
+    payloads = []
+    for i, cfg in enumerate(configs):
+        _check_type(f"configs[{i}]", cfg, PuzzleBoardParams)
+        payloads.append(cfg.to_dict())
+
+    raw = _core.detect_puzzleboard_best(image, payloads)
+    return PuzzleBoardDetectionResult.from_dict(raw)
+
+
+def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:
+    """Return Rust-side default PuzzleBoard parameters for a board size."""
+    raw = _core.default_puzzleboard_params(rows, cols)
+    return PuzzleBoardParams.from_dict(raw)
+
+
 __all__ = [
     "detect_chessboard",
     "detect_charuco",
     "detect_marker_board",
+    "detect_puzzleboard",
     "detect_chessboard_best",
     "detect_charuco_best",
     "detect_marker_board_best",
+    "detect_puzzleboard_best",
+    "default_puzzleboard_params",
 ]

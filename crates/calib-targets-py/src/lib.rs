@@ -1,5 +1,5 @@
 use ::calib_targets::detect::ChessConfig;
-use ::calib_targets::{charuco, chessboard, detect, marker, printable};
+use ::calib_targets::{charuco, chessboard, detect, marker, printable, puzzleboard};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
@@ -198,6 +198,18 @@ fn marker_board_params_from_py(
     from_py_json(obj, "params")
 }
 
+fn puzzleboard_params_from_py(
+    obj: Option<&Bound<'_, PyAny>>,
+) -> PyResult<puzzleboard::PuzzleBoardParams> {
+    let Some(obj) = obj else {
+        return Err(value_error("params is required for PuzzleBoard detection"));
+    };
+    if obj.is_none() {
+        return Err(value_error("params is required for PuzzleBoard detection"));
+    }
+    from_py_json(obj, "params")
+}
+
 fn printable_document_from_py(
     obj: &Bound<'_, PyAny>,
 ) -> PyResult<printable::PrintableTargetDocument> {
@@ -307,6 +319,37 @@ fn detect_marker_board(
         }
         None => Ok(None),
     }
+}
+
+/// Detect a PuzzleBoard in a grayscale image.
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///     If provided, overrides `params.chessboard.chess`.
+///   params: dict with PuzzleBoardParams fields (must include `board`).
+///
+/// Returns:
+///   dict with detection data. Raises RuntimeError on detection errors.
+#[pyfunction]
+#[pyo3(signature = (image, *, chess_cfg=None, params))]
+fn detect_puzzleboard(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    chess_cfg: Option<&Bound<'_, PyAny>>,
+    params: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let mut params = puzzleboard_params_from_py(Some(params))?;
+    if chess_cfg.is_some() {
+        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
+    }
+
+    let result = py.detach(move || detect::detect_puzzleboard(&img, &params));
+    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let json =
+        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    json_to_py(py, &json)
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +464,52 @@ fn detect_marker_board_best(
     }
 }
 
+/// Try multiple PuzzleBoard parameter configs, return the best result
+/// (most labelled corners, then mean bit confidence).
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   configs: list of dicts with PuzzleBoardParams fields.
+///
+/// Returns:
+///   dict with detection data. Raises RuntimeError if all configs fail.
+#[pyfunction]
+#[pyo3(signature = (image, configs))]
+fn detect_puzzleboard_best(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    configs: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let list = configs
+        .cast::<PyList>()
+        .map_err(|_| value_error("configs must be a list"))?;
+    let mut params_vec = Vec::with_capacity(list.len());
+    for item in list.iter() {
+        params_vec.push(from_py_json::<puzzleboard::PuzzleBoardParams>(
+            &item,
+            "configs[]",
+        )?);
+    }
+
+    let result = py.detach(move || detect::detect_puzzleboard_best(&img, &params_vec));
+    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let json =
+        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    json_to_py(py, &json)
+}
+
+/// Return Rust-side default PuzzleBoard parameters for a board size.
+#[pyfunction]
+#[pyo3(signature = (rows, cols))]
+fn default_puzzleboard_params(py: Python<'_>, rows: u32, cols: u32) -> PyResult<Py<PyAny>> {
+    let params = detect::default_puzzleboard_params(rows, cols)
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let json =
+        serde_json::to_value(params).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    json_to_py(py, &json)
+}
+
 // ---------------------------------------------------------------------------
 // Printable target functions
 // ---------------------------------------------------------------------------
@@ -467,9 +556,12 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_best, m)?)?;
     m.add_function(wrap_pyfunction!(detect_charuco_best, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_puzzleboard_best, m)?)?;
+    m.add_function(wrap_pyfunction!(default_puzzleboard_params, m)?)?;
     m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())
