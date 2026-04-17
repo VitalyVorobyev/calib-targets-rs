@@ -1,4 +1,18 @@
-//! Generator for the two binary sub-perfect maps used by PuzzleBoard.
+//! Alternate generator for the two binary sub-perfect maps used by PuzzleBoard.
+//!
+//! > **Note:** The maps shipped with the crate (`src/data/map_a.bin` /
+//! > `src/data/map_b.bin`) are derived from the **authors' canonical** `code1`
+//! > / `code2` arrays via `tools/import_author_maps.rs`. Those maps are
+//! > byte-for-byte compatible with the Stelldinger reference implementation
+//! > (PStelldinger/PuzzleBoard, CC0 1.0) and should be used for all
+//! > interoperability purposes.
+//! >
+//! > This generator produces **alternate** valid maps under the same contract
+//! > (sub-perfect uniqueness, same polarity convention). Boards printed with
+//! > alternate maps will **NOT** decode with the authors' Python decoder, but
+//! > **WILL** decode with our detector given the same alternate maps. They are
+//! > useful for testing the generator/validator pipeline or for research that
+//! > needs a fresh pair of independent maps.
 //!
 //! # What we generate
 //!

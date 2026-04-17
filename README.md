@@ -124,7 +124,7 @@ Browser-ready WASM bindings (~195 KB gzipped) with a React demo app:
 
 ```bash
 scripts/build-wasm.sh
-cd demo && npm install && npm run dev
+cd demo && bun install && bun run dev
 ```
 
 ## Crates

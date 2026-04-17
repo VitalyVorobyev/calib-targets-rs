@@ -134,12 +134,22 @@ export interface PuzzleBoardSpec {
   origin_col: number;
 }
 
+export type PuzzleBoardSearchMode =
+  | { kind: "full" }
+  | {
+      kind: "known_origin";
+      origin_row: number;
+      origin_col: number;
+      window_radius: number;
+    };
+
 export interface PuzzleBoardDecodeConfig {
   min_window: number;
   min_bit_confidence: number;
   max_bit_error_rate: number;
   search_all_components: boolean;
   sample_radius_rel: number;
+  search_mode: PuzzleBoardSearchMode;
 }
 
 export interface PuzzleBoardParams {
@@ -187,8 +197,15 @@ export interface ChessboardDetectionResult {
   orientations: [number, number] | null;
 }
 
+export interface GridTransform {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+}
+
 export interface GridAlignment {
-  transform: string;
+  transform: GridTransform;
   translation: [number, number];
 }
 

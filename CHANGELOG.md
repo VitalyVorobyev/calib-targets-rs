@@ -6,7 +6,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.6.0]
+## [0.6.0] — 2026-04-17
 
 ### Added
 
@@ -17,12 +17,31 @@ This project follows [Semantic Versioning](https://semver.org/).
 - Add committed PuzzleBoard code-map blobs, generation/verification tools,
   synthetic and real-image regression tests, and generated PuzzleBoard
   testdata.
+- Ship the PStelldinger/PuzzleBoard author-canonical `code1`/`code2` maps
+  (`map_a.bin` / `map_b.bin`) and a new `import_author_maps.rs` tool so the
+  shipped maps match the upstream reference implementation; add
+  `tests/interop_authors.rs` to keep the maps byte-compatible.
 - Add PuzzleBoard printable target generation through `calib-targets-print`,
   including JSON/SVG/PNG output bundles and Python printable dataclasses.
 - Add PuzzleBoard facade helpers, Rust examples, Python bindings, WASM
   bindings, FFI C ABI structs/functions, and regenerated native headers.
 - Add PuzzleBoard documentation in the crate README, workspace README,
   mdBook, and release/development command references.
+- Add `PuzzleBoardSearchMode::KnownOrigin { origin_row, origin_col,
+  window_radius }` as an optional decoder knob. When seeded from a prior
+  `Full` decode via `PuzzleBoardDetectionResult::as_known_origin(radius)`,
+  it replaces the 501² × 8-D4 scan with a small window scan and runs
+  roughly 4–10 × faster on small boards. Mirrored in the Python
+  (`PuzzleBoardSearchMode` dataclass + `as_known_origin` result helper) and
+  TypeScript (WASM demo) bindings; FFI callers stay on `Full`.
+- Add `cargo bench -p calib-targets --bench puzzleboard_sizes` (criterion
+  comparison of `Full` vs `KnownOrigin` across sizes 6, 8, 10, 12, 13, 16,
+  20, 30) and `cargo run --release -p calib-targets --example
+  puzzleboard_size_sweep` (per-stage success/failure/timing table used to
+  pinpoint which pipeline stage a given board size fails at).
+- Overlay every decoded PuzzleBoard edge-bit dot in the WASM demo: sky-blue
+  ring around `bit=1` (white puzzle dot), orange ring around `bit=0` (black
+  puzzle dot), opacity scaled by per-bit confidence.
 
 ### Fixed
 
@@ -31,10 +50,27 @@ This project follows [Semantic Versioning](https://semver.org/).
   exceeds the configured error budget.
 - Re-check the PuzzleBoard minimum edge count after confidence filtering so
   weak edge samples cannot pass into the decoder as an undersized window.
+- Demo dev server no longer 404s on `calib_targets_wasm_bg.wasm` — Vite's
+  esbuild pre-bundler was rewriting the JS into `.vite/deps/` without
+  copying the sibling `.wasm`, so the `new URL(..., import.meta.url)` fetch
+  hit the SPA fallback. Fixed by adding `calib-targets-wasm` to
+  `optimizeDeps.exclude`.
+- Demo `ResultsPanel` grid readout now reports `max − min + 1` instead of
+  `max + 1`, so a 10 × 10 PuzzleBoard no longer displays as "177 × 177"
+  (master-grid indices start near 167).
+- Demo PuzzleBoard edge-bit overlay now maps `observed_edges` from local to
+  master coordinates via the alignment's D4 + translation before looking up
+  corners, fixing the previously empty overlay.
+- Fix `GridAlignment.transform` TypeScript type in the WASM demo (was
+  `string`; actual serde shape is `{a, b, c, d}`).
 
 ### Changed
 
 - Bump coordinated workspace crate versions to `0.6.0`.
+- Demo toolchain switched from `npm` to `bun` (`demo/bun.lock` is the
+  committed lockfile; `demo/package-lock.json` removed).
+- `.claude/CLAUDE.md` gains the new bench + diagnostic example commands
+  and documents the `bun` switch.
 
 ## [0.5.3]
 

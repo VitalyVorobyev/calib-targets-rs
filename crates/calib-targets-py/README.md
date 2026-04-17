@@ -26,7 +26,7 @@ Configuration is typed-only (dataclasses):
 - `ChessConfig`, `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`
 - `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`
 - `CharucoBoardSpec`, `CharucoDetectorParams`, `ScanDecodeConfig`
-- `PuzzleBoardSpec`, `PuzzleBoardParams`, `DecodeConfig`
+- `PuzzleBoardSpec`, `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
 - `PageSize`, `PageSpec`, `RenderOptions`, `ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PuzzleBoardTargetSpec`, `PrintableTargetDocument`
 

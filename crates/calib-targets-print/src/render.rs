@@ -239,7 +239,7 @@ fn build_puzzleboard(
     }
 
     // 2) Dots at every interior edge midpoint. Dot colour encodes the bit:
-    //    bit=0 → white dot, bit=1 → black dot.
+    //    bit=0 → black dot, bit=1 → white dot  (Stelldinger 2024 convention).
     let dot_radius_mm = 0.5 * spec.dot_diameter_rel * spec.square_size_mm;
 
     // Horizontal interior edges: between rows `r` and `r+1` at column `c`.
@@ -249,7 +249,7 @@ fn build_puzzleboard(
             let master_r = (spec.origin_row + r) as i32;
             let master_c = (spec.origin_col + c) as i32;
             let bit = code_maps::horizontal_edge_bit(master_r, master_c);
-            let fill = if bit == 0 { Fill::White } else { Fill::Black };
+            let fill = if bit == 1 { Fill::White } else { Fill::Black };
             let cx = origin_x + (c as f64 + 0.5) * spec.square_size_mm;
             let cy = origin_y + (r as f64 + 1.0) * spec.square_size_mm;
             scene.primitives.push(Primitive::Circle {
@@ -268,7 +268,7 @@ fn build_puzzleboard(
             let master_r = (spec.origin_row + r) as i32;
             let master_c = (spec.origin_col + c) as i32;
             let bit = code_maps::vertical_edge_bit(master_r, master_c);
-            let fill = if bit == 0 { Fill::White } else { Fill::Black };
+            let fill = if bit == 1 { Fill::White } else { Fill::Black };
             let cx = origin_x + (c as f64 + 1.0) * spec.square_size_mm;
             let cy = origin_y + (r as f64 + 0.5) * spec.square_size_mm;
             scene.primitives.push(Primitive::Circle {

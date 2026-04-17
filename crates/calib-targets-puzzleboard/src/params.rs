@@ -1,12 +1,13 @@
 //! Detector parameters for PuzzleBoard.
 
 use crate::board::PuzzleBoardSpec;
-use crate::detector::DecodeConfig;
+use crate::detector::PuzzleBoardDecodeConfig;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PuzzleBoardParams {
     /// Pixels per board square in the rectified sampling space.
@@ -19,7 +20,7 @@ pub struct PuzzleBoardParams {
     pub board: PuzzleBoardSpec,
     /// Decoding knobs.
     #[serde(default)]
-    pub decode: DecodeConfig,
+    pub decode: PuzzleBoardDecodeConfig,
     /// ChESS detector parameters used for local re-detection of suspicious corners.
     ///
     /// Not serialised — reconstructed from defaults on deserialisation.
@@ -64,7 +65,7 @@ impl PuzzleBoardParams {
             px_per_square: 60.0,
             chessboard,
             board: *board,
-            decode: DecodeConfig::default(),
+            decode: PuzzleBoardDecodeConfig::default(),
             corner_redetect_params: default_redetect_params(),
         }
     }

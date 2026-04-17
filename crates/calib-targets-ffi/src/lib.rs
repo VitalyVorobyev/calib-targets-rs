@@ -37,8 +37,8 @@ use calib_targets::marker::{
     MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use calib_targets::puzzleboard::{
-    DecodeConfig as PuzzleBoardDecodeConfig, PuzzleBoardDetectError, PuzzleBoardDetector,
-    PuzzleBoardParams, PuzzleBoardSpec, PuzzleBoardSpecError,
+    PuzzleBoardDecodeConfig, PuzzleBoardDetectError, PuzzleBoardDetector, PuzzleBoardParams,
+    PuzzleBoardSpec, PuzzleBoardSpecError,
 };
 use std::any::Any;
 use std::cell::RefCell;
@@ -1402,35 +1402,35 @@ fn convert_puzzleboard_decode_config(
             "puzzleboard.decode.min_window must be >= 3",
         ));
     }
-    Ok(PuzzleBoardDecodeConfig {
-        min_window: params.min_window,
-        min_bit_confidence: require_fraction(
+    Ok(PuzzleBoardDecodeConfig::new(
+        params.min_window,
+        require_fraction(
             params.min_bit_confidence,
             "puzzleboard.decode.min_bit_confidence",
         )?,
-        max_bit_error_rate: require_fraction(
+        require_fraction(
             params.max_bit_error_rate,
             "puzzleboard.decode.max_bit_error_rate",
         )?,
-        search_all_components: flag_to_bool(
+        flag_to_bool(
             params.search_all_components,
             "puzzleboard.decode.search_all_components",
         )?,
-        sample_radius_rel: require_positive(
+        require_positive(
             params.sample_radius_rel,
             "puzzleboard.decode.sample_radius_rel",
         )?,
-    })
+    ))
 }
 
 fn convert_puzzleboard_params(params: &ct_puzzleboard_params_t) -> FfiResult<PuzzleBoardParams> {
-    Ok(PuzzleBoardParams {
-        px_per_square: require_positive(params.px_per_square, "puzzleboard.px_per_square")?,
-        chessboard: convert_chessboard_params(&params.chessboard)?,
-        board: convert_puzzleboard_spec(&params.board)?,
-        decode: convert_puzzleboard_decode_config(&params.decode)?,
-        corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
-    })
+    let board = convert_puzzleboard_spec(&params.board)?;
+    let mut out = PuzzleBoardParams::for_board(&board);
+    out.px_per_square = require_positive(params.px_per_square, "puzzleboard.px_per_square")?;
+    out.chessboard = convert_chessboard_params(&params.chessboard)?;
+    out.decode = convert_puzzleboard_decode_config(&params.decode)?;
+    out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
+    Ok(out)
 }
 
 fn map_charuco_create_error(err: CharucoBoardError) -> FfiError {

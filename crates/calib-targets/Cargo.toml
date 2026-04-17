@@ -44,10 +44,15 @@ tracing-log = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[bench]]
+name = "puzzleboard_sizes"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true

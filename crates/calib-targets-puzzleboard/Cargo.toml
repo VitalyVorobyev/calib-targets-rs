@@ -25,12 +25,14 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
-log.workspace = true
 
 [dev-dependencies]
+calib-targets.workspace = true
+calib-targets-core.workspace = true
 calib-targets-print.workspace = true
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 
 [[bin]]
@@ -40,6 +42,10 @@ path = "tools/generate_code_maps.rs"
 [[bin]]
 name = "verify-puzzleboard-code-maps"
 path = "tools/verify_code_maps.rs"
+
+[[bin]]
+name = "import-author-puzzleboard-maps"
+path = "tools/import_author_maps.rs"
 
 [package.metadata.docs.rs]
 all-features = true

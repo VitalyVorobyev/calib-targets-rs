@@ -2,13 +2,16 @@
 //!
 //! Two cyclic binary maps are shipped with the crate:
 //!
-//! - [`map_a`]: shape `(3, 167)` — bit for each **horizontal** edge
-//! - [`map_b`]: shape `(167, 3)` — bit for each **vertical** edge
+//! - [`map_a`]: shape `(3, 167)` — bit for each **vertical** edge
+//! - [`map_b`]: shape `(167, 3)` — bit for each **horizontal** edge
 //!
-//! Both maps tile cyclically to cover the full 501×501 master PuzzleBoard:
-//! the bit at horizontal edge `(row, col)` of the master is
-//! `map_a[row % 3][col % 167]`, and the bit at vertical edge `(row, col)` is
-//! `map_b[row % 167][col % 3]`.
+//! Both maps tile cyclically to cover the full 501×501 master PuzzleBoard.
+//! This matches the authors' (PStelldinger/PuzzleBoard) convention:
+//!
+//! - Vertical edge bit at `(row, col)`:   `map_a[row % 3][col % 167]`
+//!   (derived from `vfullCode = tile(code1)`)
+//! - Horizontal edge bit at `(row, col)`: `map_b[row % 167][col % 3]`
+//!   (derived from `hfullCode = tile(rot90(code2[::-1,::-1]))`)
 //!
 //! ## Uniqueness property
 //!
@@ -112,7 +115,7 @@ pub enum EdgeOrientation {
 
 /// A single observed edge bit in the local board frame.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
-pub struct ObservedEdge {
+pub struct PuzzleBoardObservedEdge {
     /// Board row coordinate of the edge (see edge-indexing conventions below).
     pub row: i32,
     /// Board column coordinate of the edge.
@@ -129,18 +132,24 @@ pub struct ObservedEdge {
 ///
 /// The horizontal edge at `(row, col)` is the edge *below* row `row` at
 /// column `col`, i.e. between square `(row, col)` and square `(row+1, col)`.
+///
+/// Uses `map_b` (167×3), matching the authors' `hfullCode = tile(rot90(code2[::-1,::-1]))`.
+/// At `(mr, mc)` this evaluates to `map_b[mr % 167][mc % 3]`.
 #[inline]
 pub fn horizontal_edge_bit(master_row: i32, master_col: i32) -> u8 {
-    map_a().get_cyclic(master_row as i64, master_col as i64)
+    map_b().get_cyclic(master_row as i64, master_col as i64)
 }
 
 /// Expected master-pattern bit for a vertical edge at `(row, col)`.
 ///
 /// The vertical edge at `(row, col)` is the edge *right of* column `col` at
 /// row `row`, i.e. between square `(row, col)` and square `(row, col+1)`.
+///
+/// Uses `map_a` (3×167), matching the authors' `vfullCode = tile(code1)`.
+/// At `(mr, mc)` this evaluates to `map_a[mr % 3][mc % 167]`.
 #[inline]
 pub fn vertical_edge_bit(master_row: i32, master_col: i32) -> u8 {
-    map_b().get_cyclic(master_row as i64, master_col as i64)
+    map_a().get_cyclic(master_row as i64, master_col as i64)
 }
 
 /// Verify every cyclic `(wr × wc)` window of `map` is pairwise unique.
@@ -149,8 +158,18 @@ pub fn vertical_edge_bit(master_row: i32, master_col: i32) -> u8 {
 /// sub-perfect. For the shipped maps, `verify_cyclic_window_unique(map_a(),
 /// 3, 3)` enumerates 3·167 = 501 windows; `verify_cyclic_window_unique(
 /// map_b(), 3, 3)` does likewise for B. Both succeed.
+///
+/// Returns [`WindowError::InvalidWindow`] if `wr` or `wc` is zero, or
+/// exceeds the map dimensions.
 pub fn verify_cyclic_window_unique(map: BitMap, wr: usize, wc: usize) -> Result<(), WindowError> {
-    assert!(wr > 0 && wc > 0 && wr <= map.rows() && wc <= map.cols());
+    if wr == 0 || wc == 0 || wr > map.rows() || wc > map.cols() {
+        return Err(WindowError::InvalidWindow {
+            wr,
+            wc,
+            max_rows: map.rows(),
+            max_cols: map.cols(),
+        });
+    }
     let mut seen: std::collections::HashMap<u64, (usize, usize)> =
         std::collections::HashMap::with_capacity(map.rows() * map.cols());
     for r in 0..map.rows() {
@@ -175,6 +194,7 @@ pub fn verify_cyclic_window_unique(map: BitMap, wr: usize, wc: usize) -> Result<
 }
 
 /// Error from [`verify_cyclic_window_unique`].
+#[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum WindowError {
     #[error("duplicate window at {first:?} and {second:?} (code = {code:#x})")]
@@ -182,6 +202,15 @@ pub enum WindowError {
         first: (usize, usize),
         second: (usize, usize),
         code: u64,
+    },
+    #[error(
+        "invalid window size ({wr}×{wc}): must be non-zero and fit within map ({max_rows}×{max_cols})"
+    )]
+    InvalidWindow {
+        wr: usize,
+        wc: usize,
+        max_rows: usize,
+        max_cols: usize,
     },
 }
 

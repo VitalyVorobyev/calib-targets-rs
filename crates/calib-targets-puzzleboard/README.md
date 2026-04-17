@@ -61,7 +61,7 @@ The detector is grid-first:
    `target_position`.
 
 The default decode window is 4 x 4 squares. It can be lowered through
-`DecodeConfig::min_window`, but 4 x 4 is the conservative default.
+`PuzzleBoardDecodeConfig::min_window`, but 4 x 4 is the conservative default.
 
 ## Quickstart
 

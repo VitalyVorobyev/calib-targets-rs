@@ -3,15 +3,41 @@
 //! For each of the 8 D4 transforms and every possible master origin
 //! `(I0, J0) ∈ [0, 501) × [0, 501)`, score the observed edge bits against
 //! the expected master maps. Pick the `(transform, origin)` with highest
-//! confidence-weighted match rate. The cyclic structure of the master maps
-//! means the search space is bounded (501² × 8 ≈ 2M), and each score is
-//! linear in the number of observed edges — this is trivially fast for
-//! typical boards.
+//! confidence-weighted match rate.
+//!
+//! ## Fast-path via cyclic-period precompute (C3)
+//!
+//! The master maps have cyclic structure (matching PStelldinger/PuzzleBoard convention):
+//! - horizontal edge bit at `(mr, mc)` = `map_b[(mr % 167, mc % 3)]`
+//! - vertical edge bit at `(mr, mc)` = `map_a[(mr % 3, mc % 167)]`
+//!
+//! For transformed observations `{(tr, tc, orient, bit, conf)}`, the score
+//! at master origin `(mr, mc)` is:
+//!
+//! ```text
+//! score(mr, mc) = H[(mr % 3, mc % 167)] + V[(mr % 167, mc % 3)]
+//! ```
+//!
+//! where `H` is a `3 × 167` table and `V` is a `167 × 3` table precomputed
+//! **once per D4 transform** in `O(501 × N)`.  The 501² origin loop then
+//! becomes `O(501²)` with two table lookups — no per-observation work.
 
 use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
-use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit, EdgeOrientation, ObservedEdge};
+use crate::code_maps::{
+    horizontal_edge_bit, vertical_edge_bit, EdgeOrientation, PuzzleBoardObservedEdge,
+    EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
+};
+
+/// Cyclic-period sizes for the precompute tables.
+///
+/// Horizontal edges use map_b (167×3); vertical edges use map_a (3×167).
+/// (Matches authors' convention: hfullCode from code2/map_b, vfullCode from code1/map_a.)
+const H_ROWS: usize = EDGE_MAP_B_ROWS; // 167
+const H_COLS: usize = EDGE_MAP_B_COLS; // 3
+const V_ROWS: usize = EDGE_MAP_A_ROWS; // 3
+const V_COLS: usize = EDGE_MAP_A_COLS; // 167
 
 #[derive(Clone, Debug)]
 pub(crate) struct DecodeOutcome {
@@ -25,19 +51,40 @@ pub(crate) struct DecodeOutcome {
     pub master_origin_col: i32,
 }
 
-pub(crate) fn decode(observed: &[ObservedEdge], max_bit_error_rate: f32) -> Option<DecodeOutcome> {
+/// Direct-scoring variant that evaluates only a small, caller-supplied window of
+/// master origins around `(origin_row, origin_col)` across all 8 D4 transforms.
+///
+/// The reduction-table approach used by [`decode`] pays a ~O(501·N) setup cost
+/// per transform to amortise a 501² origin scan; for small windows that cost is
+/// strictly larger than the direct scoring, so `decode_windowed` skips the
+/// tables entirely.
+///
+/// **Caveat — rotated boards:** when the physical board is observed under a
+/// non-identity D4 transform, the recovered `master_origin` does *not* equal
+/// the declared `(origin_row, origin_col)` in general — it shifts by up to the
+/// board extent. Callers that need to decode rotated boards with a known
+/// origin should set `window_radius ≥ max(rows, cols)`, or fall back to
+/// [`PuzzleBoardSearchMode::Full`](crate::detector::PuzzleBoardSearchMode::Full).
+pub(crate) fn decode_windowed(
+    observed: &[PuzzleBoardObservedEdge],
+    origin_row: i32,
+    origin_col: i32,
+    window_radius: u32,
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
     if observed.is_empty() {
         return None;
     }
-
     let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
     if total_conf <= 0.0 {
         return None;
     }
-
+    let total = observed.len();
     let mut best: Option<DecodeOutcome> = None;
+    let w = window_radius as i32;
 
     for transform in GRID_TRANSFORMS_D4.iter().copied() {
+        // Transform all observations once per D4.
         let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
             .iter()
             .map(|e| {
@@ -46,6 +93,304 @@ pub(crate) fn decode(observed: &[ObservedEdge], max_bit_error_rate: f32) -> Opti
             })
             .collect();
 
+        for dr in -w..=w {
+            for dc in -w..=w {
+                let master_row = origin_row + dr;
+                let master_col = origin_col + dc;
+                let (matched, weighted) = score_origin_direct(&transformed, master_row, master_col);
+                let bit_error_rate = if total == 0 {
+                    1.0
+                } else {
+                    (total - matched) as f32 / total as f32
+                };
+                if bit_error_rate > max_bit_error_rate {
+                    continue;
+                }
+                let score = weighted / total_conf;
+                let mean_confidence = if matched == 0 {
+                    0.0
+                } else {
+                    weighted / matched as f32
+                };
+                let candidate = DecodeOutcome {
+                    alignment: GridAlignment {
+                        transform,
+                        translation: [master_col, master_row],
+                    },
+                    edges_matched: matched,
+                    edges_observed: total,
+                    weighted_score: score,
+                    bit_error_rate,
+                    mean_confidence,
+                    master_origin_row: master_row,
+                    master_origin_col: master_col,
+                };
+                update_best_candidate(&mut best, candidate);
+            }
+        }
+    }
+    best
+}
+
+/// Score one candidate origin by direct lookup against the master map.
+///
+/// Returns `(edges_matched, weighted_confidence_sum)`. Shared by the reference
+/// implementation (tests) and the public windowed decoder.
+fn score_origin_direct(
+    transformed: &[(i32, i32, EdgeOrientation, u8, f32)],
+    master_row: i32,
+    master_col: i32,
+) -> (usize, f32) {
+    let mut matched = 0usize;
+    let mut weighted = 0.0f32;
+    for &(tr, tc, orient, bit, conf) in transformed {
+        let m_row = master_row + tr;
+        let m_col = master_col + tc;
+        let expected = match orient {
+            EdgeOrientation::Horizontal => horizontal_edge_bit(m_row, m_col),
+            EdgeOrientation::Vertical => vertical_edge_bit(m_row, m_col),
+        };
+        if expected == bit {
+            matched += 1;
+            weighted += conf;
+        }
+    }
+    (matched, weighted)
+}
+
+pub(crate) fn decode(
+    observed: &[PuzzleBoardObservedEdge],
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
+    if observed.is_empty() {
+        return None;
+    }
+
+    let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
+    if total_conf <= 0.0 {
+        return None;
+    }
+    let total = observed.len();
+
+    let mut best: Option<DecodeOutcome> = None;
+
+    // Scratch buffers for the precompute tables — allocated once, cleared per transform.
+    // h_match[a * H_COLS + b]: sum of confidences for horizontal obs that match at class (a, b).
+    // h_count[a * H_COLS + b]: number of matching horizontal observations at class (a, b).
+    // v_match[a * V_COLS + b]: sum of confidences for vertical obs that match at class (a, b).
+    // v_count[a * V_COLS + b]: number of matching vertical observations at class (a, b).
+    let mut h_match = vec![0.0f32; H_ROWS * H_COLS];
+    let mut h_count = vec![0u32; H_ROWS * H_COLS];
+    let mut v_match = vec![0.0f32; V_ROWS * V_COLS];
+    let mut v_count = vec![0u32; V_ROWS * V_COLS];
+
+    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+        // Transform all observations once.
+        let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
+            .iter()
+            .map(|e| {
+                let (t_row, t_col, t_orient) = transform_edge(e, &transform);
+                (t_row, t_col, t_orient, e.bit, e.confidence)
+            })
+            .collect();
+
+        // Clear scratch buffers.
+        h_match.fill(0.0);
+        h_count.fill(0);
+        v_match.fill(0.0);
+        v_count.fill(0);
+
+        // Build the H and V precompute tables.
+        //
+        // For each observed edge `(tr, tc, orient, bit, conf)` we want to know,
+        // for every master origin `(mr, mc)`, whether `expected_bit(mr+tr, mc+tc) == bit`.
+        //
+        // For a horizontal observation:
+        //   expected = DATA_A[((mr + tr) % 3, (mc + tc) % 167)]
+        //
+        // Equivalently, if we define `a = (mr % 3)` and `b = (mc % 167)`, then:
+        //   expected = DATA_A[((a + tr % 3 + 3) % 3, (b + tc % 167 + 167) % 167)]
+        //
+        // Rather than indexing by (mr, mc), we build the table indexed by the
+        // origin's cyclic class `(a, b)`.  For each observation we scan all
+        // 501 classes and accumulate match contributions:
+        //
+        // Simpler alternative: for each master cell `(r, c)` in DATA_A, compute
+        //   a = (r - tr).rem_euclid(3), b = (c - tc).rem_euclid(167)
+        // If DATA_A[r][c] == bit → accumulate into h_match[a*167 + b] / h_count.
+        // This is O(3*167) = O(501) per observation — total O(501 * N).
+
+        for &(tr, tc, orient, bit, conf) in &transformed {
+            match orient {
+                EdgeOrientation::Horizontal => {
+                    // tr is the observation's transformed row, tc its column.
+                    // For horizontal edges, the relevant master map is A (3×167).
+                    for r in 0..H_ROWS {
+                        let a = (r as i32 - tr).rem_euclid(H_ROWS as i32) as usize;
+                        for c in 0..H_COLS {
+                            let b = (c as i32 - tc).rem_euclid(H_COLS as i32) as usize;
+                            let expected = horizontal_edge_bit(r as i32, c as i32);
+                            if expected == bit {
+                                h_match[a * H_COLS + b] += conf;
+                                h_count[a * H_COLS + b] += 1;
+                            }
+                        }
+                    }
+                }
+                EdgeOrientation::Vertical => {
+                    // For vertical edges, the relevant master map is B (167×3).
+                    for r in 0..V_ROWS {
+                        let a = (r as i32 - tr).rem_euclid(V_ROWS as i32) as usize;
+                        for c in 0..V_COLS {
+                            let b = (c as i32 - tc).rem_euclid(V_COLS as i32) as usize;
+                            let expected = vertical_edge_bit(r as i32, c as i32);
+                            if expected == bit {
+                                v_match[a * V_COLS + b] += conf;
+                                v_count[a * V_COLS + b] += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Scan all 501² origins using the precomputed tables.
+        for master_row in 0..MASTER_ROWS as i32 {
+            let ha = (master_row % H_ROWS as i32) as usize;
+            let va = (master_row % V_ROWS as i32) as usize;
+            for master_col in 0..MASTER_COLS as i32 {
+                let hb = (master_col % H_COLS as i32) as usize;
+                let vb = (master_col % V_COLS as i32) as usize;
+
+                let matched = (h_count[ha * H_COLS + hb] + v_count[va * V_COLS + vb]) as usize;
+                let weighted = h_match[ha * H_COLS + hb] + v_match[va * V_COLS + vb];
+
+                let bit_error_rate = if total == 0 {
+                    1.0
+                } else {
+                    (total - matched) as f32 / total as f32
+                };
+
+                // Early-reject before constructing the full candidate.
+                if bit_error_rate > max_bit_error_rate {
+                    continue;
+                }
+
+                let score = weighted / total_conf;
+                let mean_confidence = if matched == 0 {
+                    0.0
+                } else {
+                    weighted / matched as f32
+                };
+                let candidate = DecodeOutcome {
+                    alignment: GridAlignment {
+                        transform,
+                        // translation[0] is the i (col) offset, translation[1]
+                        // is the j (row) offset, so master_col goes first.
+                        translation: [master_col, master_row],
+                    },
+                    edges_matched: matched,
+                    edges_observed: total,
+                    weighted_score: score,
+                    bit_error_rate,
+                    mean_confidence,
+                    master_origin_row: master_row,
+                    master_origin_col: master_col,
+                };
+                update_best_candidate(&mut best, candidate);
+            }
+        }
+    }
+
+    best
+}
+
+#[cfg(test)]
+fn update_best_candidate_if_accepted(
+    best: &mut Option<DecodeOutcome>,
+    candidate: DecodeOutcome,
+    max_bit_error_rate: f32,
+) {
+    if candidate.bit_error_rate <= max_bit_error_rate {
+        update_best_candidate(best, candidate);
+    }
+}
+
+fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutcome) {
+    // Rank lexicographically by (edges_matched, weighted_score): a candidate
+    // with strictly more matched bits always wins regardless of per-bit
+    // confidence; weighted_score only breaks ties on equal match count.
+    let wins = match best {
+        None => true,
+        Some(current) => {
+            candidate.edges_matched > current.edges_matched
+                || (candidate.edges_matched == current.edges_matched
+                    && candidate.weighted_score > current.weighted_score)
+        }
+    };
+    if wins {
+        *best = Some(candidate);
+    }
+}
+
+fn transform_edge(
+    edge: &PuzzleBoardObservedEdge,
+    t: &GridTransform,
+) -> (i32, i32, EdgeOrientation) {
+    // Convention: edge.col = i-direction, edge.row = j-direction.
+    // apply(i, j) = [a*i + b*j, c*i + d*j] where output[0] = new_i (new col),
+    // output[1] = new_j (new row).
+    let [new_col, new_row] = t.apply(edge.col, edge.row);
+    // For D4 exactly one of {|t.b|, |t.d|} and {|t.a|, |t.c|} is non-zero.
+    // Horizontal edge axis = (0, 1) in (drow, dcol). After transform, axis
+    // becomes (t.b, t.d). Edge stays horizontal iff the new axis has zero
+    // drow component (|t.b| == 0 → axis still along +col direction).
+    let orient = match edge.orientation {
+        EdgeOrientation::Horizontal => {
+            if t.b.abs() > t.d.abs() {
+                EdgeOrientation::Vertical
+            } else {
+                EdgeOrientation::Horizontal
+            }
+        }
+        // Vertical edge axis (1, 0) → (t.a, t.c). Stays vertical iff new
+        // axis has zero dcol component (|t.c| == 0 → axis still along +row).
+        EdgeOrientation::Vertical => {
+            if t.c.abs() > t.a.abs() {
+                EdgeOrientation::Horizontal
+            } else {
+                EdgeOrientation::Vertical
+            }
+        }
+    };
+    (new_row, new_col, orient)
+}
+
+/// Reference (slow, O(501² × N)) implementation kept for correctness guards.
+///
+/// Produces the same result as [`decode`] but iterates observations in the
+/// inner loop rather than using the cyclic precompute.
+#[cfg(test)]
+fn decode_reference(
+    observed: &[PuzzleBoardObservedEdge],
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
+    if observed.is_empty() {
+        return None;
+    }
+    let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
+    if total_conf <= 0.0 {
+        return None;
+    }
+    let mut best: Option<DecodeOutcome> = None;
+    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+        let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
+            .iter()
+            .map(|e| {
+                let (t_row, t_col, t_orient) = transform_edge(e, &transform);
+                (t_row, t_col, t_orient, e.bit, e.confidence)
+            })
+            .collect();
         for master_row in 0..MASTER_ROWS as i32 {
             for master_col in 0..MASTER_COLS as i32 {
                 let mut matched = 0usize;
@@ -77,7 +422,9 @@ pub(crate) fn decode(observed: &[ObservedEdge], max_bit_error_rate: f32) -> Opti
                 let candidate = DecodeOutcome {
                     alignment: GridAlignment {
                         transform,
-                        translation: [master_row, master_col],
+                        // translation[0] is the i (col) offset, translation[1]
+                        // is the j (row) offset, so master_col goes first.
+                        translation: [master_col, master_row],
                     },
                     edges_matched: matched,
                     edges_observed: total,
@@ -91,55 +438,7 @@ pub(crate) fn decode(observed: &[ObservedEdge], max_bit_error_rate: f32) -> Opti
             }
         }
     }
-
     best
-}
-
-fn update_best_candidate_if_accepted(
-    best: &mut Option<DecodeOutcome>,
-    candidate: DecodeOutcome,
-    max_bit_error_rate: f32,
-) {
-    if candidate.bit_error_rate <= max_bit_error_rate {
-        update_best_candidate(best, candidate);
-    }
-}
-
-fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutcome) {
-    match best {
-        None => *best = Some(candidate),
-        Some(current) if candidate.weighted_score > current.weighted_score => {
-            *best = Some(candidate)
-        }
-        _ => {}
-    }
-}
-
-fn transform_edge(edge: &ObservedEdge, t: &GridTransform) -> (i32, i32, EdgeOrientation) {
-    let [r, c] = t.apply(edge.row, edge.col);
-    // For D4 exactly one of {|t.b|, |t.d|} and {|t.a|, |t.c|} is non-zero.
-    // Horizontal edge axis = (0, 1) in (drow, dcol). After transform, axis
-    // becomes (t.b, t.d). Edge stays horizontal iff the new axis has zero
-    // drow component (|t.b| == 0 → axis still along +col direction).
-    let orient = match edge.orientation {
-        EdgeOrientation::Horizontal => {
-            if t.b.abs() > t.d.abs() {
-                EdgeOrientation::Vertical
-            } else {
-                EdgeOrientation::Horizontal
-            }
-        }
-        // Vertical edge axis (1, 0) → (t.a, t.c). Stays vertical iff new
-        // axis has zero dcol component (|t.c| == 0 → axis still along +row).
-        EdgeOrientation::Vertical => {
-            if t.c.abs() > t.a.abs() {
-                EdgeOrientation::Horizontal
-            } else {
-                EdgeOrientation::Vertical
-            }
-        }
-    };
-    (r, c, orient)
 }
 
 #[cfg(test)]
@@ -151,13 +450,13 @@ mod tests {
         master_origin_col: i32,
         local_rows: i32,
         local_cols: i32,
-    ) -> Vec<ObservedEdge> {
+    ) -> Vec<PuzzleBoardObservedEdge> {
         let mut out = Vec::new();
         for r in 0..local_rows {
             for c in 0..local_cols {
                 if c + 1 < local_cols {
                     let bit = horizontal_edge_bit(master_origin_row + r, master_origin_col + c);
-                    out.push(ObservedEdge {
+                    out.push(PuzzleBoardObservedEdge {
                         row: r,
                         col: c,
                         orientation: EdgeOrientation::Horizontal,
@@ -167,7 +466,7 @@ mod tests {
                 }
                 if r + 1 < local_rows {
                     let bit = vertical_edge_bit(master_origin_row + r, master_origin_col + c);
-                    out.push(ObservedEdge {
+                    out.push(PuzzleBoardObservedEdge {
                         row: r,
                         col: c,
                         orientation: EdgeOrientation::Vertical,
@@ -209,10 +508,11 @@ mod tests {
         let original = build_perfect_observation(5, 11, 5, 5);
         let rot = GRID_TRANSFORMS_D4[1]; // 90° rotation: a=0, b=1, c=-1, d=0
                                          // Rotated observation: apply rot to each anchor + flip orientation.
-        let rotated: Vec<ObservedEdge> = original
+        let rotated: Vec<PuzzleBoardObservedEdge> = original
             .iter()
             .map(|e| {
-                let [r, c] = rot.apply(e.row, e.col);
+                // apply(col=i, row=j): output[0]=new_i=new_col, output[1]=new_j=new_row
+                let [new_col, new_row] = rot.apply(e.col, e.row);
                 let new_orient = match e.orientation {
                     EdgeOrientation::Horizontal => {
                         if rot.b.abs() > rot.d.abs() {
@@ -229,9 +529,9 @@ mod tests {
                         }
                     }
                 };
-                ObservedEdge {
-                    row: r,
-                    col: c,
+                PuzzleBoardObservedEdge {
+                    row: new_row,
+                    col: new_col,
                     orientation: new_orient,
                     bit: e.bit,
                     confidence: e.confidence,
@@ -295,5 +595,185 @@ mod tests {
         assert_eq!(best.master_origin_row, 0);
         assert_eq!(best.master_origin_col, 0);
         assert!(best.bit_error_rate <= 0.4);
+    }
+
+    /// C2: more matched bits beats higher confidence-weighted score.
+    ///
+    /// Candidate A: 20 matched bits, weighted_score = 0.5 (lower confidence on each bit).
+    /// Candidate B: 18 matched bits, weighted_score = 0.9 (higher confidence but fewer bits).
+    /// A should win because edges_matched takes priority.
+    #[test]
+    fn lex_rank_matched_beats_weighted_score() {
+        let alignment = GridAlignment {
+            transform: GRID_TRANSFORMS_D4[0],
+            translation: [0, 0],
+        };
+        let candidate_a = DecodeOutcome {
+            alignment,
+            edges_matched: 20,
+            edges_observed: 24,
+            weighted_score: 0.5,
+            bit_error_rate: 0.17,
+            mean_confidence: 0.6,
+            master_origin_row: 10,
+            master_origin_col: 10,
+        };
+        let candidate_b = DecodeOutcome {
+            edges_matched: 18,
+            weighted_score: 0.9,
+            bit_error_rate: 0.25,
+            mean_confidence: 0.95,
+            master_origin_row: 20,
+            master_origin_col: 20,
+            ..candidate_a.clone()
+        };
+
+        // Start with B (fewer matched bits but higher weighted_score).
+        let mut best = None;
+        update_best_candidate(&mut best, candidate_b);
+        // A should displace B despite lower weighted_score.
+        update_best_candidate(&mut best, candidate_a);
+
+        let winner = best.expect("some candidate");
+        assert_eq!(
+            winner.master_origin_row, 10,
+            "A (20 matched) should beat B (18 matched) despite lower weighted_score"
+        );
+    }
+
+    /// C3 correctness guard: the optimized decode must agree with decode_reference
+    /// on (edges_matched, bit_error_rate) for several scenarios including
+    /// identity transform and D4 rotation.
+    #[test]
+    fn fast_decode_matches_reference_identity() {
+        let obs = build_perfect_observation(12, 37, 5, 5);
+        let fast = decode(&obs, 0.30).expect("fast decoded");
+        let reference = decode_reference(&obs, 0.30).expect("reference decoded");
+
+        assert_eq!(
+            fast.edges_matched, reference.edges_matched,
+            "edges_matched mismatch"
+        );
+        assert!(
+            (fast.bit_error_rate - reference.bit_error_rate).abs() < 1e-5,
+            "bit_error_rate mismatch: fast={} ref={}",
+            fast.bit_error_rate,
+            reference.bit_error_rate
+        );
+        // Both must agree on the cyclic equivalence class of the origin.
+        assert_eq!(
+            fast.master_origin_row.rem_euclid(3),
+            reference.master_origin_row.rem_euclid(3),
+            "row coset mismatch"
+        );
+        assert_eq!(
+            fast.master_origin_col.rem_euclid(167),
+            reference.master_origin_col.rem_euclid(167),
+            "col coset mismatch"
+        );
+    }
+
+    #[test]
+    fn fast_decode_matches_reference_d4_rotation() {
+        let original = build_perfect_observation(5, 11, 5, 5);
+        let rot = GRID_TRANSFORMS_D4[2]; // 180° rotation
+        let rotated: Vec<PuzzleBoardObservedEdge> = original
+            .iter()
+            .map(|e| {
+                // apply(col=i, row=j): output[0]=new_i=new_col, output[1]=new_j=new_row
+                let [new_col, new_row] = rot.apply(e.col, e.row);
+                let new_orient = match e.orientation {
+                    EdgeOrientation::Horizontal => {
+                        if rot.b.abs() > rot.d.abs() {
+                            EdgeOrientation::Vertical
+                        } else {
+                            EdgeOrientation::Horizontal
+                        }
+                    }
+                    EdgeOrientation::Vertical => {
+                        if rot.c.abs() > rot.a.abs() {
+                            EdgeOrientation::Horizontal
+                        } else {
+                            EdgeOrientation::Vertical
+                        }
+                    }
+                };
+                PuzzleBoardObservedEdge {
+                    row: new_row,
+                    col: new_col,
+                    orientation: new_orient,
+                    bit: e.bit,
+                    confidence: e.confidence,
+                }
+            })
+            .collect();
+
+        let fast = decode(&rotated, 0.30).expect("fast decoded");
+        let reference = decode_reference(&rotated, 0.30).expect("reference decoded");
+
+        assert_eq!(fast.edges_matched, reference.edges_matched);
+        assert!(
+            (fast.bit_error_rate - reference.bit_error_rate).abs() < 1e-5,
+            "bit_error_rate mismatch: fast={} ref={}",
+            fast.bit_error_rate,
+            reference.bit_error_rate
+        );
+    }
+
+    #[test]
+    fn fast_decode_matches_reference_all_flipped() {
+        let mut obs = build_perfect_observation(12, 37, 5, 5);
+        for e in obs.iter_mut() {
+            e.bit ^= 1;
+        }
+
+        let fast = decode(&obs, 0.30);
+        let reference = decode_reference(&obs, 0.30);
+
+        match (fast, reference) {
+            (None, None) => {} // both found nothing — fine.
+            (Some(f), Some(r)) => {
+                assert_eq!(f.edges_matched, r.edges_matched);
+                assert!(
+                    (f.bit_error_rate - r.bit_error_rate).abs() < 1e-5,
+                    "ber mismatch: fast={} ref={}",
+                    f.bit_error_rate,
+                    r.bit_error_rate
+                );
+            }
+            (f, r) => panic!("one returned None and other Some: fast={f:?} ref={r:?}"),
+        }
+    }
+
+    /// C3 performance check: decode a ~1200-edge observation.
+    ///
+    /// Run with `cargo test --release -- decode_25x25_timing --nocapture` to
+    /// see the wall-clock time.  The 200ms guard is only enforced in release
+    /// builds (debug builds are not optimised and can be >200ms).
+    #[test]
+    fn decode_25x25_timing() {
+        let obs = build_perfect_observation(0, 0, 25, 25);
+        println!("decode_25x25_timing: {} observations", obs.len());
+
+        let start = std::time::Instant::now();
+        let result = decode(&obs, 0.30);
+        let elapsed = start.elapsed();
+
+        println!(
+            "decode_25x25_timing: elapsed={:?}, edges_matched={:?}",
+            elapsed,
+            result.as_ref().map(|r| r.edges_matched)
+        );
+
+        assert!(result.is_some(), "should decode a perfect observation");
+
+        // Wall-clock guard only in release mode — debug builds are not
+        // optimised and routinely exceed 200ms even with the precompute.
+        #[cfg(not(debug_assertions))]
+        assert!(
+            elapsed.as_millis() < 200,
+            "decode_25x25 took {:?} in release mode (expected ≤ 200ms)",
+            elapsed
+        );
     }
 }

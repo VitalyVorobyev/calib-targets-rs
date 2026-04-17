@@ -23,22 +23,17 @@
 //! use calib_targets_puzzleboard::{
 //!     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec,
 //! };
-//! use calib_targets_core::{Corner, GrayImageView};
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
 //! let params = PuzzleBoardParams::for_board(&spec);
 //! let detector = PuzzleBoardDetector::new(params)?;
-//!
-//! let pixels = vec![0u8; 32 * 32];
-//! let view = GrayImageView { width: 32, height: 32, data: &pixels };
-//! let corners: Vec<Corner> = Vec::new();
-//! let _ = detector.detect(&view, &corners)?;
+//! // Feed a real greyscale image and raw ChESS corners to `detector.detect(…)`.
+//! // See `examples/detect_puzzleboard.rs` for a working end-to-end example.
 //! # Ok(()) }
 //! ```
 
 pub mod code_maps;
-pub mod render_bits;
 
 mod board;
 mod detector;
@@ -47,11 +42,11 @@ mod params;
 
 pub use board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 pub use code_maps::{
-    ObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
+    PuzzleBoardObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
 };
 pub use detector::{
-    DecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError, PuzzleBoardDetectionResult,
-    PuzzleBoardDetector,
+    PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError,
+    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardSearchMode,
 };
 pub use io::{PuzzleBoardDetectConfig, PuzzleBoardDetectReport, PuzzleBoardIoError};
 pub use params::PuzzleBoardParams;

@@ -22,7 +22,7 @@ from .results import (
     MarkerCircleExpectation,
     MarkerDetection,
     OrientationHistogram,
-    ObservedEdge,
+    PuzzleBoardObservedEdge,
     Point2,
     PuzzleBoardDecodeInfo,
     PuzzleBoardDetectionResult,
@@ -691,33 +691,37 @@ def marker_board_detection_result_from_dict(
 # -------------------- puzzleboard results --------------------
 
 
-def observed_edge_to_dict(value: ObservedEdge) -> dict[str, Any]:
+def observed_edge_to_dict(value: PuzzleBoardObservedEdge) -> dict[str, Any]:
     return {
         "row": int(value.row),
         "col": int(value.col),
-        "orientation": _to_edge_orientation(value.orientation, "ObservedEdge.orientation"),
+        "orientation": _to_edge_orientation(
+            value.orientation, "PuzzleBoardObservedEdge.orientation"
+        ),
         "bit": int(value.bit),
         "confidence": float(value.confidence),
     }
 
 
-def observed_edge_from_dict(data: Mapping[str, Any]) -> ObservedEdge:
-    obj = _ensure_mapping(data, "ObservedEdge")
+def observed_edge_from_dict(data: Mapping[str, Any]) -> PuzzleBoardObservedEdge:
+    obj = _ensure_mapping(data, "PuzzleBoardObservedEdge")
     _validate_keys(
         obj,
         allowed={"row", "col", "orientation", "bit", "confidence"},
         required={"row", "col", "orientation", "bit", "confidence"},
-        ctx="ObservedEdge",
+        ctx="PuzzleBoardObservedEdge",
     )
-    bit = _to_int(obj["bit"], "ObservedEdge.bit")
+    bit = _to_int(obj["bit"], "PuzzleBoardObservedEdge.bit")
     if bit not in (0, 1):
-        raise ValueError("ObservedEdge.bit must be 0 or 1")
-    return ObservedEdge(
-        row=_to_int(obj["row"], "ObservedEdge.row"),
-        col=_to_int(obj["col"], "ObservedEdge.col"),
-        orientation=_to_edge_orientation(obj["orientation"], "ObservedEdge.orientation"),
+        raise ValueError("PuzzleBoardObservedEdge.bit must be 0 or 1")
+    return PuzzleBoardObservedEdge(
+        row=_to_int(obj["row"], "PuzzleBoardObservedEdge.row"),
+        col=_to_int(obj["col"], "PuzzleBoardObservedEdge.col"),
+        orientation=_to_edge_orientation(
+            obj["orientation"], "PuzzleBoardObservedEdge.orientation"
+        ),
         bit=bit,
-        confidence=_to_float(obj["confidence"], "ObservedEdge.confidence"),
+        confidence=_to_float(obj["confidence"], "PuzzleBoardObservedEdge.confidence"),
     )
 
 

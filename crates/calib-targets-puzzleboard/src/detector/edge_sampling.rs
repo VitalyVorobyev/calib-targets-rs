@@ -1,16 +1,19 @@
 //! Sample per-edge bits from a detected chessboard graph.
 
+use std::collections::HashMap;
+
 use calib_targets_core::{sample_bilinear, GrayImageView, LabeledCorner};
 use nalgebra::Point2;
 
-use crate::code_maps::{EdgeOrientation, ObservedEdge};
+use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 
 /// Sample one bit at the midpoint of an interior chessboard edge.
 ///
-/// PuzzleBoard convention: every interior edge carries one dot at its
-/// midpoint. The dot colour encodes the bit:
-/// - **bit = 0**: dot is **white** (bright cell colour),
-/// - **bit = 1**: dot is **black** (dark cell colour).
+/// PuzzleBoard convention (matches Stelldinger 2024 / PStelldinger/PuzzleBoard):
+/// every interior edge carries one dot at its midpoint. The dot colour encodes
+/// the bit:
+/// - **bit = 0**: dot is **black** (dark cell colour),
+/// - **bit = 1**: dot is **white** (bright cell colour).
 ///
 /// The visible half-moon of the dot sits on the cell of opposite colour, so
 /// the intensity at the exact edge midpoint is a direct readout of the dot
@@ -65,7 +68,7 @@ pub(crate) fn sample_edge_bit(
     let span = (hi - lo).max(1e-3);
     let midpoint = 0.5 * (lo + hi);
 
-    let bit = if mean < midpoint { 1u8 } else { 0u8 };
+    let bit = if mean > midpoint { 1u8 } else { 0u8 };
     let confidence = ((midpoint - mean).abs() / (0.5 * span)).clamp(0.0, 1.0);
     (bit, confidence)
 }
@@ -100,8 +103,8 @@ pub(crate) fn observed_horizontal_edge(
     col: i32,
     bit: u8,
     confidence: f32,
-) -> ObservedEdge {
-    ObservedEdge {
+) -> PuzzleBoardObservedEdge {
+    PuzzleBoardObservedEdge {
         row,
         col,
         orientation: EdgeOrientation::Horizontal,
@@ -111,8 +114,13 @@ pub(crate) fn observed_horizontal_edge(
 }
 
 #[inline]
-pub(crate) fn observed_vertical_edge(row: i32, col: i32, bit: u8, confidence: f32) -> ObservedEdge {
-    ObservedEdge {
+pub(crate) fn observed_vertical_edge(
+    row: i32,
+    col: i32,
+    bit: u8,
+    confidence: f32,
+) -> PuzzleBoardObservedEdge {
+    PuzzleBoardObservedEdge {
         row,
         col,
         orientation: EdgeOrientation::Vertical,
@@ -121,14 +129,20 @@ pub(crate) fn observed_vertical_edge(row: i32, col: i32, bit: u8, confidence: f3
     }
 }
 
-/// Lookup a corner by labelled `(i, j)` grid coordinates.
-pub(crate) fn corner_at(
-    corners: &[LabeledCorner],
+/// Lookup a corner by labelled `(i, j)` grid coordinates using a pre-built
+/// map — O(1) amortised.
+///
+/// Build the map once with:
+/// ```ignore
+/// let map: HashMap<(i32, i32), &LabeledCorner> = corners
+///     .iter()
+///     .filter_map(|c| c.grid.map(|g| ((g.i, g.j), c)))
+///     .collect();
+/// ```
+pub(crate) fn corner_at_map<'a>(
+    map: &'a HashMap<(i32, i32), &'a LabeledCorner>,
     target_i: i32,
     target_j: i32,
-) -> Option<&LabeledCorner> {
-    corners.iter().find(|c| match c.grid {
-        Some(g) => g.i == target_i && g.j == target_j,
-        None => false,
-    })
+) -> Option<&'a LabeledCorner> {
+    map.get(&(target_i, target_j)).copied()
 }

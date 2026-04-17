@@ -40,6 +40,15 @@ cargo run --example charuco_detect -- testdata/charuco_detect_config.json
 cargo run -p calib-targets --example detect_puzzleboard -- testdata/puzzleboard_detect_config.json
 ```
 
+Benchmarks + diagnostics:
+```bash
+# Criterion: PuzzleBoard detection timing across board sizes (Full vs KnownOrigin fast path)
+cargo bench -p calib-targets --bench puzzleboard_sizes
+
+# Per-size success/failure/per-stage-timing table — useful for diagnosing which stage fails
+cargo run --release -p calib-targets --example puzzleboard_size_sweep
+```
+
 Python bindings (built with `maturin`, managed with `uv`, crate is `crates/calib-targets-py`):
 ```bash
 # Use the existing .venv in the project root — do not create new environments
@@ -58,8 +67,8 @@ WASM bindings (built with `wasm-pack`, demo at `demo/`):
 # Build WASM package into demo/pkg/
 scripts/build-wasm.sh
 
-# Run demo dev server
-cd demo && npm install && npm run dev
+# Run demo dev server (use bun, not npm — the demo's lockfile is bun.lock)
+cd demo && bun install && bun run dev
 ```
 
 ## Architecture
@@ -112,6 +121,12 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 **New warnings:** fix them; do not suppress.
 
 **`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
+
+**Public struct conventions:**
+- **Param structs** (detector configuration, e.g. `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`): add `#[non_exhaustive]`. These tend to grow new tuning knobs over time, and non-exhaustive prevents semver breaks from new fields. Provide a named constructor (`new` or `for_board`) so external crates can still build fully-specified instances without struct literal syntax.
+- **Diagnostic structs** (per-call output, e.g. `PuzzleBoardDecodeInfo`): add `#[non_exhaustive]`. These grow new diagnostic fields routinely.
+- **Data-carrier structs** (results and geometric types consumed in match/field-access patterns, e.g. `PuzzleBoardDetectionResult`, `LabeledCorner`, `CharucoDetectionResult`): leave `#[non_exhaustive]` off. Callers typically read fields, not construct them, and tight construction is legitimate for test fixtures.
+- This policy applies to every new detector crate going forward.
 
 **MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
 

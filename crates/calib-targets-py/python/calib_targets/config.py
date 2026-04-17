@@ -628,7 +628,70 @@ class PuzzleBoardSpec:
 
 
 @dataclass(slots=True)
-class DecodeConfig:
+class PuzzleBoardSearchMode:
+    """Strategy for recovering the master-map origin during decode.
+
+    Two variants:
+
+    - ``kind="full"`` (the default) — scan every (D4, master_row, master_col)
+      in the 501 × 501 master. Works unconditionally.
+    - ``kind="known_origin"`` — scan only origins within ``window_radius`` of
+      the given ``(origin_row, origin_col)``, across all 8 D4 transforms.
+      Dramatically faster (~10×–100×). The origin must come from a prior
+      ``Full`` result — see
+      :meth:`~calib_targets.PuzzleBoardDetectionResult.as_known_origin` on the
+      result object or read ``master_origin_{row,col}`` and set the field
+      manually.
+    """
+
+    kind: str = "full"
+    origin_row: int = 0
+    origin_col: int = 0
+    window_radius: int = 0
+
+    @classmethod
+    def full(cls) -> PuzzleBoardSearchMode:
+        return cls(kind="full")
+
+    @classmethod
+    def known_origin(
+        cls, origin_row: int, origin_col: int, window_radius: int = 2
+    ) -> PuzzleBoardSearchMode:
+        return cls(
+            kind="known_origin",
+            origin_row=int(origin_row),
+            origin_col=int(origin_col),
+            window_radius=int(window_radius),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind == "full":
+            return {"kind": "full"}
+        if self.kind == "known_origin":
+            return {
+                "kind": "known_origin",
+                "origin_row": int(self.origin_row),
+                "origin_col": int(self.origin_col),
+                "window_radius": int(self.window_radius),
+            }
+        raise ValueError(f"unknown PuzzleBoardSearchMode kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSearchMode:
+        kind = str(data.get("kind", "full"))
+        if kind == "full":
+            return cls.full()
+        if kind == "known_origin":
+            return cls.known_origin(
+                origin_row=int(data.get("origin_row", 0)),
+                origin_col=int(data.get("origin_col", 0)),
+                window_radius=int(data.get("window_radius", 2)),
+            )
+        raise ValueError(f"unknown PuzzleBoardSearchMode kind: {kind!r}")
+
+
+@dataclass(slots=True)
+class PuzzleBoardDecodeConfig:
     """PuzzleBoard edge-bit decode parameters."""
 
     min_window: int = 4
@@ -636,6 +699,7 @@ class DecodeConfig:
     max_bit_error_rate: float = 0.30
     search_all_components: bool = True
     sample_radius_rel: float = 1.0 / 6.0
+    search_mode: PuzzleBoardSearchMode = field(default_factory=PuzzleBoardSearchMode.full)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -644,10 +708,11 @@ class DecodeConfig:
             "max_bit_error_rate": self.max_bit_error_rate,
             "search_all_components": self.search_all_components,
             "sample_radius_rel": self.sample_radius_rel,
+            "search_mode": self.search_mode.to_dict(),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> DecodeConfig:
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDecodeConfig:
         d = cls()
         return cls(
             min_window=int(data.get("min_window", d.min_window)),
@@ -659,7 +724,14 @@ class DecodeConfig:
                 data.get("search_all_components", d.search_all_components)
             ),
             sample_radius_rel=float(data.get("sample_radius_rel", d.sample_radius_rel)),
+            search_mode=PuzzleBoardSearchMode.from_dict(
+                data.get("search_mode", {"kind": "full"})
+            ),
         )
+
+
+#: Backward-compatible alias. Use :class:`PuzzleBoardDecodeConfig` in new code.
+DecodeConfig = PuzzleBoardDecodeConfig
 
 
 @dataclass(slots=True)
@@ -669,7 +741,7 @@ class PuzzleBoardParams:
     board: PuzzleBoardSpec
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
-    decode: DecodeConfig = field(default_factory=DecodeConfig)
+    decode: PuzzleBoardDecodeConfig = field(default_factory=PuzzleBoardDecodeConfig)
 
     @classmethod
     def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
@@ -713,7 +785,7 @@ class PuzzleBoardParams:
             board=PuzzleBoardSpec.from_dict(data["board"]),
             px_per_square=float(data.get("px_per_square", 60.0)),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
-            decode=DecodeConfig.from_dict(data.get("decode", {})),
+            decode=PuzzleBoardDecodeConfig.from_dict(data.get("decode", {})),
         )
 
 
@@ -737,6 +809,8 @@ __all__ = [
     "CircleMatchParams",
     "MarkerBoardParams",
     "PuzzleBoardSpec",
-    "DecodeConfig",
+    "PuzzleBoardSearchMode",
+    "PuzzleBoardDecodeConfig",
+    "DecodeConfig",  # backward-compatible alias
     "PuzzleBoardParams",
 ]
