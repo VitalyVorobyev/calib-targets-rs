@@ -15,6 +15,29 @@ export async function loadImage(
   rgbaToGray: (rgba: Uint8Array, w: number, h: number) => Uint8Array,
 ): Promise<ImageData> {
   const bitmap = await createImageBitmap(file);
+  return extractImageData(bitmap, rgbaToGray);
+}
+
+/**
+ * Load an image from raw in-memory bytes (e.g. PNG bytes produced by the
+ * WASM `render_puzzleboard_png` helper).
+ */
+export async function loadImageFromBytes(
+  bytes: Uint8Array,
+  mimeType: string,
+  rgbaToGray: (rgba: Uint8Array, w: number, h: number) => Uint8Array,
+): Promise<ImageData> {
+  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], {
+    type: mimeType,
+  });
+  const bitmap = await createImageBitmap(blob);
+  return extractImageData(bitmap, rgbaToGray);
+}
+
+function extractImageData(
+  bitmap: ImageBitmap,
+  rgbaToGray: (rgba: Uint8Array, w: number, h: number) => Uint8Array,
+): ImageData {
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Failed to get 2D context");

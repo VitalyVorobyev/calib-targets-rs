@@ -7,6 +7,7 @@ import init, {
   detect_marker_board as _detect_marker_board,
   detect_puzzleboard as _detect_puzzleboard,
   rgba_to_gray as _rgba_to_gray,
+  render_puzzleboard_png as _render_puzzleboard_png,
   default_chess_config as _default_chess_config,
   default_chessboard_params as _default_chessboard_params,
   default_puzzleboard_params as _default_puzzleboard_params,
@@ -44,6 +45,21 @@ export function rgbaToGray(
   height: number,
 ): Uint8Array {
   return _rgba_to_gray(rgba, width, height);
+}
+
+/**
+ * Synthesise a PuzzleBoard target PNG entirely in WASM.
+ *
+ * Returns PNG bytes suitable for decoding via `createImageBitmap` and feeding
+ * back into the detection pipeline to complete a generate → detect roundtrip.
+ */
+export function renderPuzzleBoardPng(
+  rows: number,
+  cols: number,
+  squareSizeMm: number,
+  dpi: number,
+): Uint8Array {
+  return _render_puzzleboard_png(rows, cols, squareSizeMm, dpi);
 }
 
 export function defaultChessConfig(): ChessConfig {

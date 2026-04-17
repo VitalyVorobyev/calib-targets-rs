@@ -10,6 +10,10 @@ use calib_targets_charuco::{CharucoDetector, CharucoParams};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
+use calib_targets_print::{
+    render_target_bundle, PageSize, PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec,
+    RenderOptions, TargetSpec,
+};
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::find_chess_corners_u8;
 use wasm_bindgen::prelude::*;
@@ -91,6 +95,48 @@ pub fn default_marker_board_params() -> Result<JsValue, JsError> {
 pub fn default_puzzleboard_params(rows: u32, cols: u32) -> Result<JsValue, JsError> {
     let spec = PuzzleBoardSpec::new(rows, cols, 1.0).map_err(|e| JsError::new(&e.to_string()))?;
     to_js(&PuzzleBoardParams::for_board(&spec))
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic PuzzleBoard generation
+// ---------------------------------------------------------------------------
+
+/// Synthesise a PuzzleBoard target PNG in memory.
+///
+/// Returns the raw PNG bytes for a `rows × cols` board at the given DPI.
+/// The caller typically hands these to an `<img>` or `createImageBitmap`
+/// for display, then rasterises to a canvas to obtain an RGBA buffer that
+/// can be fed back into [`detect_puzzleboard`] for a round-trip demo.
+#[wasm_bindgen]
+pub fn render_puzzleboard_png(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let target = PuzzleBoardTargetSpec {
+        rows,
+        cols,
+        square_size_mm,
+        origin_row: 0,
+        origin_col: 0,
+        dot_diameter_rel: 1.0 / 3.0,
+    };
+    let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(target));
+    doc.page = PageSpec {
+        size: PageSize::Custom {
+            width_mm: f64::from(cols) * square_size_mm + 20.0,
+            height_mm: f64::from(rows) * square_size_mm + 20.0,
+        },
+        margin_mm: 5.0,
+        ..PageSpec::default()
+    };
+    doc.render = RenderOptions {
+        debug_annotations: false,
+        png_dpi: dpi,
+    };
+    let bundle = render_target_bundle(&doc).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
 }
 
 // ---------------------------------------------------------------------------

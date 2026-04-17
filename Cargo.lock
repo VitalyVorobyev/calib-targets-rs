@@ -529,6 +529,7 @@ dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
  "calib-targets-marker",
+ "calib-targets-print",
  "calib-targets-puzzleboard",
  "chess-corners",
  "js-sys",
