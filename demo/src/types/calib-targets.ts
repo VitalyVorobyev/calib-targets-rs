@@ -136,12 +136,7 @@ export interface PuzzleBoardSpec {
 
 export type PuzzleBoardSearchMode =
   | { kind: "full" }
-  | {
-      kind: "known_origin";
-      origin_row: number;
-      origin_col: number;
-      window_radius: number;
-    };
+  | { kind: "fixed_board" };
 
 export interface PuzzleBoardDecodeConfig {
   min_window: number;

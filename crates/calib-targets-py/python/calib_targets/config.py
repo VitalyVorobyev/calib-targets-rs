@@ -631,49 +631,29 @@ class PuzzleBoardSpec:
 class PuzzleBoardSearchMode:
     """Strategy for recovering the master-map origin during decode.
 
-    Two variants:
-
-    - ``kind="full"`` (the default) — scan every (D4, master_row, master_col)
-      in the 501 × 501 master. Works unconditionally.
-    - ``kind="known_origin"`` — scan only origins within ``window_radius`` of
-      the given ``(origin_row, origin_col)``, across all 8 D4 transforms.
-      Dramatically faster (~10×–100×). The origin must come from a prior
-      ``Full`` result — see
-      :meth:`~calib_targets.PuzzleBoardDetectionResult.as_known_origin` on the
-      result object or read ``master_origin_{row,col}`` and set the field
-      manually.
+    - ``kind="full"`` (the default) — scan every
+      ``(D4, master_row, master_col)`` in the 501 × 501 master.
+    - ``kind="fixed_board"`` — match observations against the declared
+      board's own bit pattern (read from :class:`PuzzleBoardSpec`). Any
+      partial view of that specific board decodes to the same master IDs
+      a full-view decode would produce, whether that's a single camera
+      seeing a fragment of a large board or several cameras each seeing a
+      different fragment.
     """
 
     kind: str = "full"
-    origin_row: int = 0
-    origin_col: int = 0
-    window_radius: int = 0
 
     @classmethod
     def full(cls) -> PuzzleBoardSearchMode:
         return cls(kind="full")
 
     @classmethod
-    def known_origin(
-        cls, origin_row: int, origin_col: int, window_radius: int = 2
-    ) -> PuzzleBoardSearchMode:
-        return cls(
-            kind="known_origin",
-            origin_row=int(origin_row),
-            origin_col=int(origin_col),
-            window_radius=int(window_radius),
-        )
+    def fixed_board(cls) -> PuzzleBoardSearchMode:
+        return cls(kind="fixed_board")
 
     def to_dict(self) -> dict[str, Any]:
-        if self.kind == "full":
-            return {"kind": "full"}
-        if self.kind == "known_origin":
-            return {
-                "kind": "known_origin",
-                "origin_row": int(self.origin_row),
-                "origin_col": int(self.origin_col),
-                "window_radius": int(self.window_radius),
-            }
+        if self.kind in ("full", "fixed_board"):
+            return {"kind": self.kind}
         raise ValueError(f"unknown PuzzleBoardSearchMode kind: {self.kind!r}")
 
     @classmethod
@@ -681,12 +661,8 @@ class PuzzleBoardSearchMode:
         kind = str(data.get("kind", "full"))
         if kind == "full":
             return cls.full()
-        if kind == "known_origin":
-            return cls.known_origin(
-                origin_row=int(data.get("origin_row", 0)),
-                origin_col=int(data.get("origin_col", 0)),
-                window_radius=int(data.get("window_radius", 2)),
-            )
+        if kind == "fixed_board":
+            return cls.fixed_board()
         raise ValueError(f"unknown PuzzleBoardSearchMode kind: {kind!r}")
 
 

@@ -1,5 +1,7 @@
 # calib-targets-puzzleboard
 
+![detection overlay on a 10 x 10 PuzzleBoard](img/puzzleboard_detect_overlay.png)
+
 `calib-targets-puzzleboard` detects PuzzleBoard targets: checkerboards whose
 interior edge midpoints carry binary dots. The dots identify the board position
 inside a 501 x 501 master pattern, so a visible fragment can still produce
@@ -83,6 +85,43 @@ let result = detect::detect_puzzleboard_best(img, &configs)?;
 # let _ = result;
 # Ok(()) }
 ```
+
+## Search Modes
+
+The default `PuzzleBoardSearchMode::Full` scans all `501 × 501 × 8` `(D4,
+origin)` candidates against the full master code. When the caller already
+knows which board they printed, `PuzzleBoardSearchMode::FixedBoard`
+matches observations directly against that declared board's own bit
+pattern under `8 × (rows+1)²` candidate shifts:
+
+```rust,no_run
+# use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec}};
+# let img = image::GrayImage::new(1, 1);
+# fn run(img: &image::GrayImage) -> Result<(), Box<dyn std::error::Error>> {
+let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
+let mut params = PuzzleBoardParams::for_board(&spec);
+params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+let _ = detect::detect_puzzleboard(img, &params)?;
+# Ok(()) }
+```
+
+Partial-view guarantee: for a given printed board, any subset of its
+corners decodes to the same master IDs a full-view decode would produce.
+This applies equally to single-camera captures that only frame part of a
+large board and to multi-camera rigs where each camera sees a different
+fragment — in both cases overlapping corners across frames or cameras
+share master IDs without further stitching.
+
+The decoder's per-view master origin is otherwise not fixed — it shifts
+with which print-corner the chessboard stage picks as local `(0, 0)`,
+which depends on what the camera sees. `FixedBoard` sidesteps that
+entirely by scoring against the board rather than against the full
+master.
+
+`FixedBoard` runs `8 × (rows + 1)² × N` operations, where `N` is the
+number of confidence-filtered edge observations. At typical edge counts
+even a 50 × 50 board decodes in well under 10 ms natively. The default
+stays `Full`; switch via `params.decode.search_mode` as shown.
 
 ## Printable Example
 

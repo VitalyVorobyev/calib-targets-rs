@@ -4,10 +4,9 @@
 //! times inside the timed loop. Two groups are run:
 //!
 //! - `puzzleboard/full/<rows>x<cols>` — default `PuzzleBoardSearchMode::Full`
-//!   scan of all 501² × 8 origins.
-//! - `puzzleboard/known_origin/<rows>x<cols>` — the fast path, seeded with
-//!   the `master_origin_{row,col}` reported by a prior `Full` decode on the
-//!   same image.
+//!   (scan all 501² × 8 origins in the full master map).
+//! - `puzzleboard/fixed_board/<rows>x<cols>` — the multi-camera path
+//!   (`PuzzleBoardSearchMode::FixedBoard`, bounded by `(rows+1)² × 8`).
 //!
 //! Sizes that fail detection (e.g. the chessboard detector can't assemble a
 //! grid) are skipped with a printed note so the overall run still completes.
@@ -21,7 +20,7 @@ use calib_targets::detect;
 use calib_targets::printable::{
     render_target_bundle, PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
 };
-use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use image::GrayImage;
 
@@ -87,22 +86,12 @@ fn bench_full(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_known_origin(c: &mut Criterion) {
-    let mut group = c.benchmark_group("puzzleboard/known_origin");
+fn bench_fixed_board(c: &mut Criterion) {
+    let mut group = c.benchmark_group("puzzleboard/fixed_board");
     for &n in SIZES {
         let img = render_puzzleboard_gray(n, n, 40);
-        let base = params_for(n, n);
-        // Seed KnownOrigin from a prior Full decode on the same image so the
-        // fast path and the baseline measure the same physical detection.
-        let seed = match detect::detect_puzzleboard(&img, &base) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("[skip] known_origin {n}x{n}: seed Full failed: {e}");
-                continue;
-            }
-        };
-        let mut params = base;
-        params.decode.search_mode = seed.as_known_origin(2);
+        let mut params = params_for(n, n);
+        params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
         match detect::detect_puzzleboard(&img, &params) {
             Ok(_) => {
                 group.throughput(Throughput::Elements(1));
@@ -112,11 +101,11 @@ fn bench_known_origin(c: &mut Criterion) {
                     });
                 });
             }
-            Err(e) => eprintln!("[skip] known_origin {n}x{n}: {e}"),
+            Err(e) => eprintln!("[skip] fixed_board {n}x{n}: {e}"),
         }
     }
     group.finish();
 }
 
-criterion_group!(puzzleboard_detect_size, bench_full, bench_known_origin);
+criterion_group!(puzzleboard_detect_size, bench_full, bench_fixed_board);
 criterion_main!(puzzleboard_detect_size);

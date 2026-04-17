@@ -403,21 +403,6 @@ class PuzzleBoardDetectionResult:
 
         return puzzleboard_detection_result_from_dict(data)
 
-    def as_known_origin(self, window_radius: int = 2) -> "PuzzleBoardSearchMode":
-        """Derive a :class:`PuzzleBoardSearchMode.known_origin` from this
-        result, so subsequent decodes of the same physical board can skip the
-        full 501² scan.
-
-        The ``origin_row``/``origin_col`` are copied from
-        :attr:`PuzzleBoardDecodeInfo.master_origin_row`/``master_origin_col``.
-        """
-        from .config import PuzzleBoardSearchMode
-
-        return PuzzleBoardSearchMode.known_origin(
-            origin_row=self.decode.master_origin_row,
-            origin_col=self.decode.master_origin_col,
-            window_radius=window_radius,
-        )
 
 
 __all__ = [

@@ -23,7 +23,7 @@ Detection is built on the [ChESS corners](https://github.com/VitalyVorobyev/ches
 |---|---|
 | **Chessboard** | Simplest option; no markers needed |
 | **ChArUco** | Recommended for calibration — partial views OK, unique corner IDs |
-| **PuzzleBoard** | Self-identifying chessboard; partial views with dense absolute corner IDs |
+| **PuzzleBoard** | Self-identifying chessboard; any partial view of a known board decodes to the same absolute corner IDs a full-view decode would (via `SearchMode::FixedBoard`) |
 | **Marker board** | Specialised layouts with 3-circle markers |
 
 ## Quickstart

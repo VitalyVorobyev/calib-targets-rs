@@ -1,5 +1,7 @@
 # calib-targets-puzzleboard
 
+![detection overlay on a 10 x 10 PuzzleBoard](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/src/img/puzzleboard_detect_overlay.png)
+
 PuzzleBoard detector for self-identifying chessboard calibration targets.
 
 PuzzleBoard, introduced by Stelldinger (2024, arXiv:2409.20127), is a standard
@@ -62,6 +64,38 @@ The detector is grid-first:
 
 The default decode window is 4 x 4 squares. It can be lowered through
 `PuzzleBoardDecodeConfig::min_window`, but 4 x 4 is the conservative default.
+
+## Search Modes
+
+The default `PuzzleBoardSearchMode::Full` scans all 501 x 501 x 8 (D4)
+origins in the master map. When the caller already knows which board
+they printed, `PuzzleBoardSearchMode::FixedBoard` matches observations
+directly against that board's own bit pattern under
+`8 x (rows+1)^2` candidate shifts — cheaper than `Full` for small
+boards and fast enough for the large ones. Any partial view of the
+declared board decodes to the same master IDs a full-view decode would
+produce, so per-frame or per-camera subsets stitch without extra work.
+
+```rust,no_run
+use calib_targets::{
+    detect,
+    puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec},
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
+    let mut params = PuzzleBoardParams::for_board(&spec);
+    params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+
+    let img = image::open("camera0.png")?.to_luma8();
+    let _ = detect::detect_puzzleboard(&img, &params)?;
+    Ok(())
+}
+```
+
+`FixedBoard` is a zero-field marker — the geometry (`rows`, `cols`,
+`origin_row`, `origin_col`) comes from the `PuzzleBoardSpec` passed to
+`PuzzleBoardParams::for_board`.
 
 ## Quickstart
 

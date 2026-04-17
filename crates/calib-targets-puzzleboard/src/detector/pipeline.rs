@@ -8,7 +8,7 @@ use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
-use crate::detector::decode::{decode as run_decode, decode_windowed};
+use crate::detector::decode::{decode as run_decode, decode_fixed_board};
 use crate::detector::edge_sampling::{
     corner_at_map, local_cell_references, observed_horizontal_edge, observed_vertical_edge,
     sample_edge_bit,
@@ -157,11 +157,14 @@ impl PuzzleBoardDetector {
         let max_err = self.params.decode.max_bit_error_rate;
         let decoded = match self.params.decode.search_mode {
             PuzzleBoardSearchMode::Full => run_decode(&filtered, max_err),
-            PuzzleBoardSearchMode::KnownOrigin {
-                origin_row,
-                origin_col,
-                window_radius,
-            } => decode_windowed(&filtered, origin_row, origin_col, window_radius, max_err),
+            PuzzleBoardSearchMode::FixedBoard => decode_fixed_board(
+                &filtered,
+                self.params.board.origin_row,
+                self.params.board.origin_col,
+                self.params.board.rows,
+                self.params.board.cols,
+                max_err,
+            ),
         }
         .ok_or(PuzzleBoardDetectError::DecodeFailed)?;
 

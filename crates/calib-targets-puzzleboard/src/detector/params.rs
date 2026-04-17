@@ -6,49 +6,34 @@ use crate::detector::error::PuzzleBoardDetectError;
 
 /// Strategy for recovering the master-map origin during decode.
 ///
-/// The full 501² × 8-D4 scan is a backstop that works regardless of what the
-/// caller knows about the physical board. Once you have decoded the board
-/// once (via `Full`), the recovered `master_origin_{row,col}` can be fed
-/// back into `KnownOrigin` for dramatically faster subsequent decodes of the
-/// same physical board.
-///
-/// **Note:** the decoder's `master_origin_{row,col}` is *not* generally equal
-/// to the render-time [`PuzzleBoardSpec::origin_row`] / `origin_col` — they
-/// differ by a Chinese-remainder offset induced by the chessboard detector's
-/// local-frame convention (local `(0, 0)` sits at the first interior corner,
-/// not the print's corner `(0, 0)`). Use
-/// [`crate::detector::PuzzleBoardDetectionResult::as_known_origin`] to
-/// derive a correctly-populated `KnownOrigin` from a prior `Full` result.
+/// - [`PuzzleBoardSearchMode::Full`] scans all `501 × 501 × 8` `(D4, origin)`
+///   candidates against the full 501 × 501 master code. Works whether or not
+///   the caller knows which printed board produced the image.
+/// - [`PuzzleBoardSearchMode::FixedBoard`] matches observations directly
+///   against the *declared* board's bit pattern (read from
+///   [`crate::board::PuzzleBoardSpec`] at decode time). Any partial view of
+///   that specific board decodes to the same absolute master IDs — useful
+///   whenever the caller already knows which board they printed, whether
+///   that's one camera seeing a fragment of a large board or several
+///   cameras each seeing a different fragment.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PuzzleBoardSearchMode {
     /// Scan every `(D4, master_row, master_col)` in the 501 × 501 master.
-    ///
-    /// The default — works for any printed board regardless of its master-map
-    /// origin.
     #[default]
     Full,
-    /// Scan only master origins within `window_radius` cells of the declared
-    /// `(origin_row, origin_col)`, across all 8 D4 transforms.
+    /// Match observations against the declared board's own bit pattern
+    /// (read from `PuzzleBoardParams.board` at decode time).
     ///
-    /// For a small `window_radius` (≲ 4) this is ~10³ × faster than
-    /// [`PuzzleBoardSearchMode::Full`]. The trade-off: if the caller lies
-    /// about the origin or the board is re-oriented (D4 change) beyond the
-    /// window, decode may fail silently.
-    KnownOrigin {
-        /// Decoder's expected master-map row for chessboard-local `(0, 0)`.
-        /// See the enum docs — this is the decoder's origin, not the render
-        /// spec's `origin_row`.
-        origin_row: i32,
-        /// Decoder's expected master-map column for chessboard-local `(0, 0)`.
-        origin_col: i32,
-        /// Half-width of the square scan window, in master-map cells.
-        ///
-        /// `window_radius = 0` scans only the declared origin. Typical values
-        /// are 1–3 to allow for off-by-one slop and minor D4 drift.
-        window_radius: u32,
-    },
+    /// Bounded search space `8 × (rows+1)²` — cheaper than
+    /// [`PuzzleBoardSearchMode::Full`] for small boards and fast enough for
+    /// large ones (50 × 50 native under 10 ms at typical edge counts).
+    ///
+    /// Partial-view guarantee: any subset of the printed board decodes to
+    /// the same master IDs a full-view decode would produce, so subsets
+    /// across frames or cameras stitch cleanly.
+    FixedBoard,
 }
 
 /// Tuning parameters for the decoding stage.

@@ -77,11 +77,9 @@ fn parse_code_array(py_src: &str, var_name: &str) -> Vec<Vec<u8>> {
                 in_row = true;
                 current = Vec::new();
             }
-            ']' => {
-                if in_row {
-                    rows.push(current.clone());
-                    in_row = false;
-                }
+            ']' if in_row => {
+                rows.push(current.clone());
+                in_row = false;
             }
             '0' if in_row => current.push(0),
             '1' if in_row => current.push(1),

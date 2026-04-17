@@ -51,28 +51,30 @@ pub(crate) struct DecodeOutcome {
     pub master_origin_col: i32,
 }
 
-/// Direct-scoring variant that evaluates only a small, caller-supplied window of
-/// master origins around `(origin_row, origin_col)` across all 8 D4 transforms.
+/// Match observations directly against the declared board's own bit pattern.
 ///
-/// The reduction-table approach used by [`decode`] pays a ~O(501·N) setup cost
-/// per transform to amortise a 501² origin scan; for small windows that cost is
-/// strictly larger than the direct scoring, so `decode_windowed` skips the
-/// tables entirely.
+/// For each of the 8 D4 transforms and every shift `(P_r, P_c) ∈ [0, rows] ×
+/// [0, cols]` (chessboard-local `(0, 0)` sitting at print-corner
+/// `(P_r, P_c)`), score observations against the board-local horizontal and
+/// vertical bit tables. Observations whose inferred cell falls outside the
+/// board don't vote.
 ///
-/// **Caveat — rotated boards:** when the physical board is observed under a
-/// non-identity D4 transform, the recovered `master_origin` does *not* equal
-/// the declared `(origin_row, origin_col)` in general — it shifts by up to the
-/// board extent. Callers that need to decode rotated boards with a known
-/// origin should set `window_radius ≥ max(rows, cols)`, or fall back to
-/// [`PuzzleBoardSearchMode::Full`](crate::detector::PuzzleBoardSearchMode::Full).
-pub(crate) fn decode_windowed(
+/// View-independent: a camera observing any partial subset of the same
+/// physical board recovers the same absolute master IDs for the corners it
+/// sees, so observations can be fused across cameras.
+///
+/// Complexity: `O(8 × (rows+1) × (cols+1) × N)` where `N = observed.len()`.
+/// For a 50 × 50 board at typical edge counts (~500 per camera) this runs
+/// well under 10 ms native.
+pub(crate) fn decode_fixed_board(
     observed: &[PuzzleBoardObservedEdge],
-    origin_row: i32,
-    origin_col: i32,
-    window_radius: u32,
+    spec_origin_row: u32,
+    spec_origin_col: u32,
+    rows: u32,
+    cols: u32,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    if observed.is_empty() {
+    if observed.is_empty() || rows < 2 || cols < 2 {
         return None;
     }
     let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
@@ -80,11 +82,32 @@ pub(crate) fn decode_windowed(
         return None;
     }
     let total = observed.len();
+    let spec_or = spec_origin_row as i32;
+    let spec_oc = spec_origin_col as i32;
+
+    // Precompute the board's bit pattern. `h_bit` is `(rows-1) × cols`;
+    // `v_bit` is `rows × (cols-1)`.
+    let h_rows = (rows - 1) as usize;
+    let h_cols = cols as usize;
+    let v_rows = rows as usize;
+    let v_cols = (cols - 1) as usize;
+    let mut h_bit = vec![0u8; h_rows * h_cols];
+    let mut v_bit = vec![0u8; v_rows * v_cols];
+    for r in 0..h_rows {
+        for c in 0..h_cols {
+            h_bit[r * h_cols + c] = horizontal_edge_bit(spec_or + r as i32, spec_oc + c as i32);
+        }
+    }
+    for r in 0..v_rows {
+        for c in 0..v_cols {
+            v_bit[r * v_cols + c] = vertical_edge_bit(spec_or + r as i32, spec_oc + c as i32);
+        }
+    }
+
     let mut best: Option<DecodeOutcome> = None;
-    let w = window_radius as i32;
 
     for transform in GRID_TRANSFORMS_D4.iter().copied() {
-        // Transform all observations once per D4.
+        // Transform all observations into this D4 frame once.
         let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
             .iter()
             .map(|e| {
@@ -93,11 +116,59 @@ pub(crate) fn decode_windowed(
             })
             .collect();
 
-        for dr in -w..=w {
-            for dc in -w..=w {
-                let master_row = origin_row + dr;
-                let master_col = origin_col + dc;
-                let (matched, weighted) = score_origin_direct(&transformed, master_row, master_col);
+        // Bounds on (P_r, P_c) such that *every* observation lands on the
+        // board. For partial-view captures we still need to consider shifts
+        // where only a subset lands on-board, so widen by a small margin
+        // (observations off the board just don't vote).
+        let (tr_min, tr_max) = transformed
+            .iter()
+            .fold((i32::MAX, i32::MIN), |(lo, hi), &(tr, _, _, _, _)| {
+                (lo.min(tr), hi.max(tr))
+            });
+        let (tc_min, tc_max) = transformed
+            .iter()
+            .fold((i32::MAX, i32::MIN), |(lo, hi), &(_, tc, _, _, _)| {
+                (lo.min(tc), hi.max(tc))
+            });
+        let rows_i = rows as i32;
+        let cols_i = cols as i32;
+        let p_r_lo = (-tr_max).max(0);
+        let p_r_hi = (rows_i - tr_min).min(rows_i);
+        let p_c_lo = (-tc_max).max(0);
+        let p_c_hi = (cols_i - tc_min).min(cols_i);
+        if p_r_lo > p_r_hi || p_c_lo > p_c_hi {
+            continue;
+        }
+
+        for p_r in p_r_lo..=p_r_hi {
+            for p_c in p_c_lo..=p_c_hi {
+                let mut matched = 0usize;
+                let mut weighted = 0.0f32;
+                for &(tr, tc, orient, bit, conf) in &transformed {
+                    let (cr, cc, expected) = match orient {
+                        EdgeOrientation::Horizontal => {
+                            let cr = p_r + tr - 1;
+                            let cc = p_c + tc;
+                            if cr < 0 || cr >= h_rows as i32 || cc < 0 || cc >= h_cols as i32 {
+                                continue;
+                            }
+                            (cr, cc, h_bit[cr as usize * h_cols + cc as usize])
+                        }
+                        EdgeOrientation::Vertical => {
+                            let cr = p_r + tr;
+                            let cc = p_c + tc - 1;
+                            if cr < 0 || cr >= v_rows as i32 || cc < 0 || cc >= v_cols as i32 {
+                                continue;
+                            }
+                            (cr, cc, v_bit[cr as usize * v_cols + cc as usize])
+                        }
+                    };
+                    let _ = (cr, cc); // silence unused-variable lint
+                    if expected == bit {
+                        matched += 1;
+                        weighted += conf;
+                    }
+                }
                 let bit_error_rate = if total == 0 {
                     1.0
                 } else {
@@ -112,6 +183,10 @@ pub(crate) fn decode_windowed(
                 } else {
                     weighted / matched as f32
                 };
+                // Master origin `decode_full` would have produced for this
+                // `(T, P_r, P_c)` — downstream label assignment needs it.
+                let master_row = crt_167_3(spec_or + p_r - 1, spec_or + p_r);
+                let master_col = crt_167_3(spec_oc + p_c - 1, spec_oc + p_c);
                 let candidate = DecodeOutcome {
                     alignment: GridAlignment {
                         transform,
@@ -132,30 +207,16 @@ pub(crate) fn decode_windowed(
     best
 }
 
-/// Score one candidate origin by direct lookup against the master map.
+/// Chinese Remainder closed form for `r ≡ a (mod 167) ∧ r ≡ b (mod 3)` in `[0, 501)`.
 ///
-/// Returns `(edges_matched, weighted_confidence_sum)`. Shared by the reference
-/// implementation (tests) and the public windowed decoder.
-fn score_origin_direct(
-    transformed: &[(i32, i32, EdgeOrientation, u8, f32)],
-    master_row: i32,
-    master_col: i32,
-) -> (usize, f32) {
-    let mut matched = 0usize;
-    let mut weighted = 0.0f32;
-    for &(tr, tc, orient, bit, conf) in transformed {
-        let m_row = master_row + tr;
-        let m_col = master_col + tc;
-        let expected = match orient {
-            EdgeOrientation::Horizontal => horizontal_edge_bit(m_row, m_col),
-            EdgeOrientation::Vertical => vertical_edge_bit(m_row, m_col),
-        };
-        if expected == bit {
-            matched += 1;
-            weighted += conf;
-        }
-    }
-    (matched, weighted)
+/// `167 mod 3 = 2`, so `(a + 167 k) ≡ b (mod 3)` ⇒ `2 k ≡ b - a (mod 3)`,
+/// ⇒ `k ≡ 2 (b - a) (mod 3)` (2 is its own inverse mod 3).
+#[inline]
+fn crt_167_3(a: i32, b: i32) -> i32 {
+    let a_r = a.rem_euclid(167);
+    let b_r = b.rem_euclid(3);
+    let k = (2 * ((b_r - a_r).rem_euclid(3))).rem_euclid(3);
+    (a_r + 167 * k).rem_euclid(501)
 }
 
 pub(crate) fn decode(

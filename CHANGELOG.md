@@ -6,7 +6,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-## [0.6.0] — 2026-04-17
+Targeting the next 0.5.x release. Existing workspace crates stay at their
+published `0.5.3` on crates.io; `calib-targets-puzzleboard` ships as a new
+crate at the same coordinated version.
 
 ### Added
 
@@ -27,15 +29,17 @@ This project follows [Semantic Versioning](https://semver.org/).
   bindings, FFI C ABI structs/functions, and regenerated native headers.
 - Add PuzzleBoard documentation in the crate README, workspace README,
   mdBook, and release/development command references.
-- Add `PuzzleBoardSearchMode::KnownOrigin { origin_row, origin_col,
-  window_radius }` as an optional decoder knob. When seeded from a prior
-  `Full` decode via `PuzzleBoardDetectionResult::as_known_origin(radius)`,
-  it replaces the 501² × 8-D4 scan with a small window scan and runs
-  roughly 4–10 × faster on small boards. Mirrored in the Python
-  (`PuzzleBoardSearchMode` dataclass + `as_known_origin` result helper) and
-  TypeScript (WASM demo) bindings; FFI callers stay on `Full`.
+- Add `PuzzleBoardSearchMode::FixedBoard`. Matches observations directly
+  against the declared board's own bit pattern (derived from
+  `PuzzleBoardSpec` at decode time) under `8 × (rows+1)²` candidate
+  shifts, so any partial view of that specific board decodes to the same
+  master IDs a full-view decode would produce. Cheaper than `Full` for
+  small boards and fast enough for the large ones. Default stays `Full`;
+  opt in via `params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard`.
+  Mirrored in the Python dataclass and WASM TypeScript types; FFI stays
+  on `Full`.
 - Add `cargo bench -p calib-targets --bench puzzleboard_sizes` (criterion
-  comparison of `Full` vs `KnownOrigin` across sizes 6, 8, 10, 12, 13, 16,
+  comparison of `Full` vs `FixedBoard` across sizes 6, 8, 10, 12, 13, 16,
   20, 30) and `cargo run --release -p calib-targets --example
   puzzleboard_size_sweep` (per-stage success/failure/timing table used to
   pinpoint which pipeline stage a given board size fails at).
@@ -66,9 +70,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Bump coordinated workspace crate versions to `0.6.0`.
 - Demo toolchain switched from `npm` to `bun` (`demo/bun.lock` is the
-  committed lockfile; `demo/package-lock.json` removed).
+  committed lockfile; `demo/package-lock.json` removed). CI wasm job now
+  uses `oven-sh/setup-bun` + `bun install --frozen-lockfile`.
 - `.claude/CLAUDE.md` gains the new bench + diagnostic example commands
   and documents the `bun` switch.
 
