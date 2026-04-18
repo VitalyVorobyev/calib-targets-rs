@@ -21,6 +21,7 @@
 mod float_helpers;
 
 pub mod direction;
+pub mod global_step;
 pub mod graph;
 pub mod grid_alignment;
 pub mod grid_index;
@@ -29,6 +30,7 @@ pub mod grid_rectify;
 pub mod grid_smoothness;
 pub mod hex;
 pub mod homography;
+pub mod local_step;
 pub mod traverse;
 pub mod validators;
 
@@ -40,11 +42,15 @@ pub trait Float: nalgebra::RealField + Copy {}
 impl<T: nalgebra::RealField + Copy> Float for T {}
 
 pub use direction::{NeighborDirection, NodeNeighbor};
+pub use global_step::{estimate_global_cell_size, GlobalStepEstimate, GlobalStepParams};
 pub use graph::{GridGraph, GridGraphParams, NeighborCandidate, NeighborValidator};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 pub use grid_index::GridIndex;
 pub use grid_mesh::GridHomographyMesh;
 pub use grid_rectify::GridHomography;
-pub use grid_smoothness::{find_inconsistent_corners, predict_grid_position};
+pub use grid_smoothness::{
+    find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
+};
 pub use homography::{estimate_homography, homography_from_4pt, Homography};
+pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStepPointData};
 pub use traverse::{assign_grid_coordinates, connected_components};

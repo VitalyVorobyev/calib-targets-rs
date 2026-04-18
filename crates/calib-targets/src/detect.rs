@@ -7,7 +7,7 @@ use tracing::instrument;
 
 pub use core::{
     CenterOfMassConfig, ChessConfig, DescriptorMode, DetectorMode, ForstnerConfig,
-    RefinementMethod, RefinerConfig, SaddlePointConfig, ThresholdMode,
+    RefinementMethod, RefinerConfig, SaddlePointConfig, ThresholdMode, UpscaleConfig, UpscaleMode,
 };
 
 /// Errors produced by the high-level facade helpers.
@@ -365,10 +365,29 @@ pub fn detect_marker_board_from_gray_u8(
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> core::Corner {
+    // Derive the legacy single-axis orientation in [0, π) from axis 0.
+    // chess-corners 0.5 emitted the 2nd-harmonic *sector-midpoint* direction,
+    // while 0.6's `axes[0]` sits at `seed + π/4` on a grid axis; the −π/4
+    // shift recovers the 0.5 semantic that chessboard / puzzleboard graph
+    // logic expects.
+    let orientation =
+        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     core::Corner {
         position: Point2::new(c.x, c.y),
-        orientation: c.orientation,
+        orientation,
         orientation_cluster: None,
+        axes: [
+            core::AxisEstimate {
+                angle: c.axes[0].angle,
+                sigma: c.axes[0].sigma,
+            },
+            core::AxisEstimate {
+                angle: c.axes[1].angle,
+                sigma: c.axes[1].sigma,
+            },
+        ],
+        contrast: c.contrast,
+        fit_rms: c.fit_rms,
         strength: c.response,
     }
 }
@@ -386,7 +405,16 @@ fn to_chess_corners_config(cfg: &ChessConfig) -> chess_corners::ChessConfig {
     out.pyramid_min_size = cfg.pyramid_min_size;
     out.refinement_radius = cfg.refinement_radius;
     out.merge_radius = cfg.merge_radius;
+    out.upscale = to_upscale_config(cfg.upscale);
     out
+}
+
+fn to_upscale_config(cfg: core::UpscaleConfig) -> chess_corners::UpscaleConfig {
+    match cfg.mode {
+        core::UpscaleMode::Disabled => chess_corners::UpscaleConfig::disabled(),
+        core::UpscaleMode::Fixed => chess_corners::UpscaleConfig::fixed(cfg.factor),
+        _ => unimplemented!("unknown UpscaleMode variant"),
+    }
 }
 
 fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {
@@ -474,20 +502,52 @@ mod tests {
         assert_eq!(actual.pyramid_min_size, expected.pyramid_min_size);
         assert_eq!(actual.refinement_radius, expected.refinement_radius);
         assert_eq!(actual.merge_radius, expected.merge_radius);
+        assert_eq!(actual.upscale, expected.upscale);
+    }
+
+    /// Parity check excluding threshold fields — the workspace default
+    /// intentionally sets `Relative 0.2` rather than following upstream's
+    /// `Absolute 0.0` paper-contract default (see `ChessConfig::default`
+    /// in calib-targets-core). Threshold fields are asserted separately.
+    fn assert_chess_config_non_threshold_eq(
+        actual: &chess_corners::ChessConfig,
+        expected: &chess_corners::ChessConfig,
+    ) {
+        assert_eq!(actual.detector_mode, expected.detector_mode);
+        assert_eq!(actual.descriptor_mode, expected.descriptor_mode);
+        assert_eq!(actual.nms_radius, expected.nms_radius);
+        assert_eq!(actual.min_cluster_size, expected.min_cluster_size);
+        assert_refiner_eq(&actual.refiner, &expected.refiner);
+        assert_eq!(actual.pyramid_levels, expected.pyramid_levels);
+        assert_eq!(actual.pyramid_min_size, expected.pyramid_min_size);
+        assert_eq!(actual.refinement_radius, expected.refinement_radius);
+        assert_eq!(actual.merge_radius, expected.merge_radius);
+        assert_eq!(actual.upscale, expected.upscale);
     }
 
     #[test]
     fn owned_default_matches_upstream_default() {
         let actual = to_chess_corners_config(&ChessConfig::default());
         let expected = chess_corners::ChessConfig::default();
-        assert_chess_config_eq(&actual, &expected);
+        assert_chess_config_non_threshold_eq(&actual, &expected);
+        // Workspace default threshold policy: Relative 0.2.
+        assert_eq!(
+            actual.threshold_mode,
+            chess_corners::ThresholdMode::Relative
+        );
+        assert_eq!(actual.threshold_value, 0.2);
     }
 
     #[test]
     fn owned_multiscale_matches_upstream_multiscale() {
         let actual = to_chess_corners_config(&ChessConfig::multiscale());
         let expected = chess_corners::ChessConfig::multiscale();
-        assert_chess_config_eq(&actual, &expected);
+        assert_chess_config_non_threshold_eq(&actual, &expected);
+        assert_eq!(
+            actual.threshold_mode,
+            chess_corners::ThresholdMode::Relative
+        );
+        assert_eq!(actual.threshold_value, 0.2);
     }
 
     #[test]
@@ -514,6 +574,7 @@ mod tests {
             pyramid_min_size: 96,
             refinement_radius: 6,
             merge_radius: 4.5,
+            upscale: UpscaleConfig::fixed(3),
         };
 
         let converted = to_chess_corners_config(&cfg);
@@ -540,6 +601,7 @@ mod tests {
         expected.pyramid_min_size = 96;
         expected.refinement_radius = 6;
         expected.merge_radius = 4.5;
+        expected.upscale = chess_corners::UpscaleConfig::fixed(3);
 
         assert_chess_config_eq(&converted, &expected);
     }

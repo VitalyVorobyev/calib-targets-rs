@@ -6,6 +6,7 @@
 
 use crate::float_helpers::lit;
 use crate::grid_index::GridIndex;
+use crate::local_step::LocalStep;
 use crate::Float;
 use nalgebra::Point2;
 use std::collections::HashMap;
@@ -90,6 +91,58 @@ pub fn find_inconsistent_corners<F: Float>(
     flagged
 }
 
+/// Step-aware variant of [`find_inconsistent_corners`].
+///
+/// Flags a corner when `|pos - predicted| > threshold_rel * local_step`, where
+/// the local step is the average of the corner's `(step_u, step_v)` as
+/// estimated by [`crate::estimate_local_steps`]. This catches the case where a
+/// false corner sits in the right direction but at a fraction of the expected
+/// spacing — a subtle failure mode that absolute-pixel thresholds can miss
+/// when the grid is viewed at an unexpectedly large or small scale.
+///
+/// Corners without a local-step entry, or whose local step has zero
+/// confidence, fall back to the absolute pixel threshold in
+/// [`find_inconsistent_corners`]. Corners without enough neighbors for a
+/// position prediction are skipped (same behaviour as the non-step variant).
+pub fn find_inconsistent_corners_step_aware<F: Float>(
+    grid: &HashMap<GridIndex, Point2<F>>,
+    local_steps: &HashMap<GridIndex, LocalStep<F>>,
+    threshold_rel: F,
+    threshold_px_floor: F,
+) -> Vec<(GridIndex, Point2<F>)> {
+    let half: F = lit(0.5);
+    let mut flagged = Vec::new();
+    let floor_sq = threshold_px_floor * threshold_px_floor;
+
+    for (&idx, &pos) in grid {
+        let Some(predicted) = predict_grid_position(grid, idx) else {
+            continue;
+        };
+        let dx = pos.x - predicted.x;
+        let dy = pos.y - predicted.y;
+        let err_sq = dx * dx + dy * dy;
+
+        let step_threshold_sq = match local_steps.get(&idx) {
+            Some(ls) if ls.confidence > F::zero() => {
+                let step_mean = (ls.step_u + ls.step_v) * half;
+                if step_mean <= F::zero() {
+                    floor_sq
+                } else {
+                    let t = threshold_rel * step_mean;
+                    t * t
+                }
+            }
+            _ => floor_sq,
+        };
+
+        if err_sq > step_threshold_sq {
+            flagged.push((idx, predicted));
+        }
+    }
+
+    flagged
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +210,65 @@ mod tests {
 
         let flagged = find_inconsistent_corners(&grid, 3.0);
         assert!(flagged.is_empty());
+    }
+
+    fn local_step_map(
+        grid: &HashMap<GridIndex, Point2<f32>>,
+        step: f32,
+    ) -> HashMap<GridIndex, LocalStep<f32>> {
+        grid.keys()
+            .map(|&idx| {
+                (
+                    idx,
+                    LocalStep {
+                        step_u: step,
+                        step_v: step,
+                        confidence: 1.0,
+                        supporters_u: 4,
+                        supporters_v: 4,
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn step_aware_flags_wrong_relative_distance() {
+        let spacing = 60.0;
+        let mut grid = make_grid(3, 3, spacing);
+        // Keep neighbors intact; displace the center by 0.4 × spacing.
+        let center = GridIndex { i: 1, j: 1 };
+        let displacement = 0.4 * spacing;
+        grid.insert(
+            center,
+            Point2::new(spacing + displacement, spacing + displacement),
+        );
+        let steps = local_step_map(&grid, spacing);
+
+        // 20% of step = 12 px floor would miss a 24 px displacement is 40% of step.
+        // But we want to catch 40% displacements → threshold_rel 0.2.
+        let flagged = find_inconsistent_corners_step_aware(&grid, &steps, 0.2, 2.0);
+        assert_eq!(flagged.len(), 1);
+        assert_eq!(flagged[0].0, center);
+    }
+
+    #[test]
+    fn step_aware_preserves_floor_when_step_missing() {
+        let spacing = 60.0;
+        let mut grid = make_grid(3, 3, spacing);
+        grid.insert(
+            GridIndex { i: 1, j: 1 },
+            Point2::new(spacing + 5.0, spacing),
+        );
+        let steps: HashMap<GridIndex, LocalStep<f32>> = HashMap::new();
+
+        // Floor of 3.0 catches the 5 px displacement.
+        let tight = find_inconsistent_corners_step_aware(&grid, &steps, 0.2, 3.0);
+        assert_eq!(tight.len(), 1);
+
+        // Floor of 10.0 does not.
+        let loose = find_inconsistent_corners_step_aware(&grid, &steps, 0.2, 10.0);
+        assert!(loose.is_empty());
     }
 
     #[test]

@@ -31,7 +31,9 @@ use calib_targets::core::{
     LabeledCorner, PyramidParams, RefinerKindConfig, TargetDetection,
 };
 use calib_targets::detect;
-use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
+use calib_targets::detect::{
+    CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig, UpscaleConfig,
+};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
     MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
@@ -82,6 +84,11 @@ pub type ct_refiner_kind_t = u32;
 pub const CT_REFINER_KIND_CENTER_OF_MASS: ct_refiner_kind_t = 1;
 pub const CT_REFINER_KIND_FORSTNER: ct_refiner_kind_t = 2;
 pub const CT_REFINER_KIND_SADDLE_POINT: ct_refiner_kind_t = 3;
+
+/// Fixed upscaling mode identifier type for ChESS pre-detection upscaling.
+pub type ct_upscale_mode_t = u32;
+pub const CT_UPSCALE_MODE_DISABLED: ct_upscale_mode_t = 0;
+pub const CT_UPSCALE_MODE_FIXED: ct_upscale_mode_t = 1;
 
 /// Fixed board marker-layout identifier type.
 pub type ct_marker_layout_t = u32;
@@ -478,12 +485,21 @@ pub struct ct_coarse_to_fine_params_t {
     pub merge_radius: f32,
 }
 
+/// Optional ChESS pre-detection upscaling configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_upscale_config_t {
+    pub mode: ct_upscale_mode_t,
+    pub factor: u32,
+}
+
 /// Shared ChESS configuration for raw corner detection.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chess_config_t {
     pub params: ct_chess_params_t,
     pub multiscale: ct_coarse_to_fine_params_t,
+    pub upscale: ct_upscale_config_t,
 }
 
 /// Orientation clustering parameters for chessboard-family detectors.
@@ -1117,6 +1133,21 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
     })
 }
 
+fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConfig> {
+    let cfg = match config.mode {
+        CT_UPSCALE_MODE_DISABLED => UpscaleConfig::disabled(),
+        CT_UPSCALE_MODE_FIXED => UpscaleConfig::fixed(config.factor),
+        other => {
+            return Err(FfiError::config_error(format!(
+                "chess.upscale.mode must be a valid ct_upscale_mode_t constant, got {other}"
+            )))
+        }
+    };
+    cfg.validate()
+        .map_err(|err| FfiError::config_error(format!("chess.upscale.{err}")))?;
+    Ok(cfg)
+}
+
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
     let params = convert_chess_params(&config.params)?;
     let multiscale = CoarseToFineParams {
@@ -1128,7 +1159,9 @@ fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
         )?,
     };
 
-    Ok(ChessConfig::from_parts(&params, &multiscale))
+    let mut chess = ChessConfig::from_parts(&params, &multiscale);
+    chess.upscale = convert_upscale_config(&config.upscale)?;
+    Ok(chess)
 }
 
 fn convert_orientation_clustering_params(
@@ -1182,6 +1215,9 @@ fn convert_grid_graph_params(params: &ct_grid_graph_params_t) -> FfiResult<GridG
             params.orientation_tolerance_deg,
             "graph.orientation_tolerance_deg",
         )?,
+        // FFI surface keeps the legacy validator mode; Phase 3 two-axis knobs
+        // are exposed only through the Rust API for now.
+        ..GridGraphParams::default()
     })
 }
 
@@ -1216,6 +1252,9 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
             &params.orientation_clustering_params,
         )?,
         graph: convert_grid_graph_params(&params.graph)?,
+        // FFI surface does not yet expose the P1.3 fit-quality knob; keep it
+        // at the default (disabled) to preserve existing C ABI behaviour.
+        max_fit_rms_ratio: f32::INFINITY,
     })
 }
 
@@ -2506,6 +2545,10 @@ mod tests {
                 refinement_radius: 3,
                 merge_radius: 3.0,
             },
+            upscale: ct_upscale_config_t {
+                mode: CT_UPSCALE_MODE_DISABLED,
+                factor: 2,
+            },
         }
     }
 
@@ -2707,6 +2750,30 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn shared_chess_config_converts_upscale_settings() {
+        let mut config = default_shared_chess_config();
+        config.upscale = ct_upscale_config_t {
+            mode: CT_UPSCALE_MODE_FIXED,
+            factor: 2,
+        };
+
+        let converted = convert_chess_config(&config).unwrap();
+        assert_eq!(converted.upscale, UpscaleConfig::fixed(2));
+        assert_eq!(converted.upscale.effective_factor(), 2);
+    }
+
+    #[test]
+    fn shared_chess_config_rejects_invalid_upscale_factor() {
+        let mut config = default_shared_chess_config();
+        config.upscale = ct_upscale_config_t {
+            mode: CT_UPSCALE_MODE_FIXED,
+            factor: 1,
+        };
+
+        assert!(convert_chess_config(&config).is_err());
     }
 
     #[test]

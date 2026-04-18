@@ -1,10 +1,139 @@
 use crate::geom::{angle_diff_abs, is_orthogonal};
-use crate::params::GridGraphParams;
-use calib_targets_core::Corner;
-use nalgebra::Vector2;
+use crate::params::{ChessboardGraphMode, GridGraphParams};
+use calib_targets_core::{AxisEstimate, Corner};
+use nalgebra::{Point2, Vector2};
+use projective_grid::global_step::{estimate_global_cell_size, GlobalStepParams};
+use projective_grid::local_step::{
+    estimate_local_steps, LocalStep, LocalStepParams, LocalStepPointData,
+};
 use projective_grid::{GridGraph, NeighborCandidate, NeighborDirection, NeighborValidator};
+use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 pub use projective_grid::{assign_grid_coordinates, connected_components};
+
+/// Reason a candidate edge was rejected by a chessboard validator.
+///
+/// Used purely for diagnostics — the public [`NeighborValidator`] contract
+/// still returns `Option<(NeighborDirection, f32)>`. When a [`RejectionCounter`]
+/// is attached to a validator, each rejection is tallied against the matching
+/// reason so downstream sweeps can see *why* each stage dropped candidates.
+///
+/// Each reason is emitted by at most one validator:
+/// * `NotOrthogonal`, `EdgeAxisAngleMismatch`: `ChessboardSimpleValidator`.
+/// * `MissingCluster`, `SameClusterLegacy`, `LowAlignment`:
+///   `ChessboardClusterValidator`.
+/// * `NoAxisMatchSource`, `NoAxisMatchCandidate`, `AxisLineDisagree`,
+///   `OutOfStepWindow`: `ChessboardTwoAxisValidator`.
+/// * `OutOfDistanceWindow`: emitted by both legacy validators when the
+///   candidate distance falls outside the absolute-pixel spacing window.
+/// * `ClusterPolarityFlip`, `LocalHomographyResidual`: Phase B stubs reserved
+///   for future validator / pruning stages. Not emitted yet.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeRejectReason {
+    /// Simple validator: the two corner orientations are not within
+    /// `orientation_tolerance_deg` of being orthogonal.
+    NotOrthogonal,
+    /// Legacy validators: `|offset|` fell outside `[min_spacing_pix, max_spacing_pix]`.
+    OutOfDistanceWindow,
+    /// Simple validator: edge direction did not make a 45° angle with either
+    /// endpoint's diagonal within tolerance.
+    EdgeAxisAngleMismatch,
+    /// Cluster validator: one or both endpoints have no orientation-cluster
+    /// label (clustering failed or corner fell outside both clusters).
+    MissingCluster,
+    /// Cluster validator: both endpoints share the same cluster — they are on
+    /// the same diagonal family, not a valid 4-connected neighbor.
+    SameClusterLegacy,
+    /// Cluster validator: edge direction has low dot-product alignment with
+    /// either of the canonical grid axes derived from the diagonals.
+    LowAlignment,
+    /// Two-axis validator: no axis at the source endpoint lies within the
+    /// angular tolerance of the edge direction.
+    NoAxisMatchSource,
+    /// Two-axis validator: same at the candidate endpoint.
+    NoAxisMatchCandidate,
+    /// Two-axis validator: the matched axes at the two endpoints do not agree
+    /// on the same underlying axis line.
+    AxisLineDisagree,
+    /// Two-axis validator: `|offset|` does not lie in `[min_step_rel, max_step_rel]`
+    /// times the local step estimate at either endpoint.
+    OutOfStepWindow,
+    /// Phase B stub: endpoints share the same orientation-cluster label,
+    /// violating the expected polarity flip between adjacent chessboard
+    /// corners. Not emitted yet.
+    ClusterPolarityFlip,
+    /// Phase B stub: corner position disagrees with local-homography
+    /// prediction by more than the configured threshold. Not emitted yet.
+    LocalHomographyResidual,
+}
+
+impl EdgeRejectReason {
+    /// Stable lowercase-snake-case tag, usable as a map key or CSV column.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EdgeRejectReason::NotOrthogonal => "not_orthogonal",
+            EdgeRejectReason::OutOfDistanceWindow => "out_of_distance_window",
+            EdgeRejectReason::EdgeAxisAngleMismatch => "edge_axis_angle_mismatch",
+            EdgeRejectReason::MissingCluster => "missing_cluster",
+            EdgeRejectReason::SameClusterLegacy => "same_cluster_legacy",
+            EdgeRejectReason::LowAlignment => "low_alignment",
+            EdgeRejectReason::NoAxisMatchSource => "no_axis_match_source",
+            EdgeRejectReason::NoAxisMatchCandidate => "no_axis_match_candidate",
+            EdgeRejectReason::AxisLineDisagree => "axis_line_disagree",
+            EdgeRejectReason::OutOfStepWindow => "out_of_step_window",
+            EdgeRejectReason::ClusterPolarityFlip => "cluster_polarity_flip",
+            EdgeRejectReason::LocalHomographyResidual => "local_homography_residual",
+        }
+    }
+}
+
+/// Per-reason counter for candidate-edge rejections during graph construction.
+///
+/// Attach to a validator via `with_counter(...)` (or construct a validator
+/// with `counter: Some(Rc::new(RefCell::new(RejectionCounter::default())))`).
+/// Each rejection increments the matching [`EdgeRejectReason`]. Calling
+/// [`RejectionCounter::total`] returns the sum across reasons.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct RejectionCounter {
+    /// One entry per reason seen. Missing keys mean zero rejections for that
+    /// reason.
+    pub counts: HashMap<EdgeRejectReason, u64>,
+}
+
+impl RejectionCounter {
+    /// Increment the count for `reason`.
+    #[inline]
+    pub fn record(&mut self, reason: EdgeRejectReason) {
+        *self.counts.entry(reason).or_insert(0) += 1;
+    }
+
+    /// Total rejections summed across all reasons.
+    pub fn total(&self) -> u64 {
+        self.counts.values().copied().sum()
+    }
+
+    /// Rejections for a specific reason (0 if never seen).
+    pub fn count_of(&self, reason: EdgeRejectReason) -> u64 {
+        self.counts.get(&reason).copied().unwrap_or(0)
+    }
+}
+
+/// Interior-mutable handle to a shared counter, passed from the detector
+/// through the graph builder into each validator without requiring `&mut` on
+/// the validator (the [`NeighborValidator`] trait takes `&self`).
+pub type RejectionCounterCell = Rc<RefCell<RejectionCounter>>;
+
+#[inline]
+fn record_reason(sink: &Option<RejectionCounterCell>, reason: EdgeRejectReason) {
+    if let Some(cell) = sink {
+        cell.borrow_mut().record(reason);
+    }
+}
 
 /// Small helper: angle between an undirected axis `axis_angle`
 /// (defined modulo π) and a directed vector angle `vec_angle`.
@@ -43,21 +172,53 @@ fn direction_quadrant(vec_to_neighbor: &Vector2<f32>) -> NeighborDirection {
 }
 
 /// Per-corner data needed for chessboard neighbor validation.
+///
+/// Carries the legacy single-axis orientation (used by Simple / Cluster
+/// validators) alongside the richer two-axis descriptor and local-step
+/// estimate consumed by [`ChessboardTwoAxisValidator`].
 pub struct ChessboardPointData {
     pub orientation: f32,
     pub orientation_cluster: Option<usize>,
+    pub axes: [AxisEstimate; 2],
+    pub local_step: LocalStep<f32>,
 }
 
 impl ChessboardPointData {
     pub fn from_corners(corners: &[Corner]) -> Vec<Self> {
+        Self::from_corners_with_steps(corners, &vec![LocalStep::<f32>::default(); corners.len()])
+    }
+
+    pub fn from_corners_with_steps(corners: &[Corner], steps: &[LocalStep<f32>]) -> Vec<Self> {
+        debug_assert_eq!(corners.len(), steps.len());
         corners
             .iter()
-            .map(|c| Self {
+            .zip(steps.iter())
+            .map(|(c, s)| Self {
                 orientation: c.orientation,
                 orientation_cluster: c.orientation_cluster,
+                axes: c.axes,
+                local_step: *s,
             })
             .collect()
     }
+}
+
+/// Estimate per-corner local grid step by delegating to
+/// [`projective_grid::local_step::estimate_local_steps`]. Uses the corner's
+/// two-axis descriptor (`axes`) directly; when a corner has not been populated
+/// from a 0.6 `CornerDescriptor` (sigma == π on both axes), its local step is
+/// still computed from position-only KD-tree neighbors (because sector binning
+/// tolerates any axis as a best-guess).
+pub fn estimate_corner_local_steps(corners: &[Corner]) -> Vec<LocalStep<f32>> {
+    let pts: Vec<LocalStepPointData<f32>> = corners
+        .iter()
+        .map(|c| LocalStepPointData {
+            position: Point2::new(c.position.x, c.position.y),
+            axis_u: c.axes[0].angle,
+            axis_v: c.axes[1].angle,
+        })
+        .collect();
+    estimate_local_steps(&pts, &LocalStepParams::<f32>::default())
 }
 
 /// Validator that uses only diagonal-to-edge angle relationship (no orientation clustering).
@@ -65,6 +226,9 @@ pub struct ChessboardSimpleValidator {
     pub min_spacing_pix: f32,
     pub max_spacing_pix: f32,
     pub orientation_tolerance_deg: f32,
+    /// Optional shared counter. When `Some`, each reject increments the
+    /// matching [`EdgeRejectReason`].
+    pub counter: Option<RejectionCounterCell>,
 }
 
 impl NeighborValidator for ChessboardSimpleValidator {
@@ -80,11 +244,13 @@ impl NeighborValidator for ChessboardSimpleValidator {
         // 1. Corner directions should be approximately orthogonal.
         let tol = self.orientation_tolerance_deg.to_radians();
         if !is_orthogonal(source_data.orientation, candidate_data.orientation, tol) {
+            record_reason(&self.counter, EdgeRejectReason::NotOrthogonal);
             return None;
         }
 
         // 2. Check distance.
         if candidate.distance < self.min_spacing_pix || candidate.distance > self.max_spacing_pix {
+            record_reason(&self.counter, EdgeRejectReason::OutOfDistanceWindow);
             return None;
         }
 
@@ -98,6 +264,7 @@ impl NeighborValidator for ChessboardSimpleValidator {
         let score_neighbor = (diff_neighbor - expected).abs();
 
         if score_corner > tol || score_neighbor > tol {
+            record_reason(&self.counter, EdgeRejectReason::EdgeAxisAngleMismatch);
             return None;
         }
 
@@ -119,6 +286,9 @@ pub struct ChessboardClusterValidator {
     pub max_spacing_pix: f32,
     pub orientation_tolerance_deg: f32,
     pub grid_diagonals: [f32; 2],
+    /// Optional shared counter. When `Some`, each reject increments the
+    /// matching [`EdgeRejectReason`].
+    pub counter: Option<RejectionCounterCell>,
 }
 
 impl NeighborValidator for ChessboardClusterValidator {
@@ -136,14 +306,17 @@ impl NeighborValidator for ChessboardClusterValidator {
             source_data.orientation_cluster,
             candidate_data.orientation_cluster,
         ) else {
+            record_reason(&self.counter, EdgeRejectReason::MissingCluster);
             return None;
         };
         if _ci == _cj {
+            record_reason(&self.counter, EdgeRejectReason::SameClusterLegacy);
             return None; // Same axis cluster; not a valid neighbor.
         }
 
         // 2. Check distance.
         if candidate.distance < self.min_spacing_pix || candidate.distance > self.max_spacing_pix {
+            record_reason(&self.counter, EdgeRejectReason::OutOfDistanceWindow);
             return None;
         }
 
@@ -157,6 +330,7 @@ impl NeighborValidator for ChessboardClusterValidator {
         let mut v_minus = o0 - o1;
 
         if v_plus.norm_squared() < 1e-6 || v_minus.norm_squared() < 1e-6 {
+            record_reason(&self.counter, EdgeRejectReason::LowAlignment);
             return None;
         }
 
@@ -175,6 +349,7 @@ impl NeighborValidator for ChessboardClusterValidator {
         let best_alignment = dot_h.abs().max(dot_v.abs());
 
         if best_alignment < self.orientation_tolerance_deg.to_radians().cos() {
+            record_reason(&self.counter, EdgeRejectReason::LowAlignment);
             return None;
         }
 
@@ -196,36 +371,241 @@ impl NeighborValidator for ChessboardClusterValidator {
     }
 }
 
+/// Step-consistent two-axis chessboard neighbor validator.
+///
+/// Edge `(A, B)` accepted iff all of:
+/// 1. Orientation-axis match at A: `B − A` aligns (within `angular_tol_rad`)
+///    with one of `±A.axes[0]` or `±A.axes[1]`. Tolerance scales up to 2× by
+///    the matched axis's sigma.
+/// 2. Reciprocal axis match at B: `A − B` aligns similarly with B's matched
+///    axis, and `|A.axes[u].angle − B.axes[u].angle|` is within the same
+///    scaled tolerance (the two endpoints agree on which axis they share).
+/// 3. Step match: `|B − A|` lies in `[min_step_rel, max_step_rel] × step_u_or_v`
+///    at both endpoints (when local-step confidence is non-zero; otherwise
+///    falls back to `step_fallback_pix`).
+pub struct ChessboardTwoAxisValidator {
+    pub min_step_rel: f32,
+    pub max_step_rel: f32,
+    pub angular_tol_rad: f32,
+    pub step_fallback_pix: f32,
+    /// Optional shared counter. When `Some`, each reject increments the
+    /// matching [`EdgeRejectReason`].
+    pub counter: Option<RejectionCounterCell>,
+}
+
+impl ChessboardTwoAxisValidator {
+    fn effective_step(step: &LocalStep<f32>, axis: usize, fallback: f32) -> f32 {
+        let s = match axis {
+            0 => step.step_u,
+            _ => step.step_v,
+        };
+        if step.confidence > 0.0 && s > 0.0 {
+            s
+        } else {
+            fallback
+        }
+    }
+}
+
+impl NeighborValidator for ChessboardTwoAxisValidator {
+    type PointData = ChessboardPointData;
+
+    fn validate(
+        &self,
+        _source_index: usize,
+        source_data: &Self::PointData,
+        candidate: &NeighborCandidate,
+        candidate_data: &Self::PointData,
+    ) -> Option<(NeighborDirection, f32)> {
+        let edge_angle = candidate.offset.y.atan2(candidate.offset.x);
+
+        // Pick whichever of A's two axes best matches the edge direction.
+        let Some((src_idx, diff_src, tol_src)) =
+            pick_best_axis(&source_data.axes, edge_angle, self.angular_tol_rad)
+        else {
+            record_reason(&self.counter, EdgeRejectReason::NoAxisMatchSource);
+            return None;
+        };
+        // Same at the candidate: match against EITHER axis — chessboard
+        // canonicalization can swap which angle gets the `[0]` vs `[1]` slot
+        // on adjacent corners (polarity flip), so slot-index equality is not
+        // a reliable cross-endpoint invariant. The *line* is.
+        let Some((cand_idx, diff_cand, tol_cand)) =
+            pick_best_axis(&candidate_data.axes, edge_angle, self.angular_tol_rad)
+        else {
+            record_reason(&self.counter, EdgeRejectReason::NoAxisMatchCandidate);
+            return None;
+        };
+
+        // The two endpoints must agree on the underlying axis line (mod π).
+        let axis_agreement_tol = tol_src.max(tol_cand) * 2.0;
+        let axis_agreement = axis_vec_diff(
+            source_data.axes[src_idx].angle,
+            candidate_data.axes[cand_idx].angle,
+        );
+        if axis_agreement > axis_agreement_tol {
+            record_reason(&self.counter, EdgeRejectReason::AxisLineDisagree);
+            return None;
+        }
+
+        // Step consistency: compare |B − A| to the matched axis's local step
+        // at both endpoints.
+        let step_src =
+            Self::effective_step(&source_data.local_step, src_idx, self.step_fallback_pix);
+        let step_cand =
+            Self::effective_step(&candidate_data.local_step, cand_idx, self.step_fallback_pix);
+        let min_src = self.min_step_rel * step_src;
+        let max_src = self.max_step_rel * step_src;
+        let min_cand = self.min_step_rel * step_cand;
+        let max_cand = self.max_step_rel * step_cand;
+        if candidate.distance < min_src
+            || candidate.distance > max_src
+            || candidate.distance < min_cand
+            || candidate.distance > max_cand
+        {
+            record_reason(&self.counter, EdgeRejectReason::OutOfStepWindow);
+            return None;
+        }
+
+        // Direction classification uses only the geometry (edge offset in
+        // image space) so that the LRUD labelling stays consistent across
+        // corners regardless of which slot `axes[0]` happens to occupy at
+        // each endpoint.
+        let direction = direction_quadrant(&candidate.offset);
+
+        // Score: lower is better. Combine angular residuals, relative step
+        // error, and joint axis sigma. Weights are rough but predictable.
+        let step_error = ((candidate.distance - step_src).abs() / step_src.max(1e-3)).min(1.0);
+        let sigma_sum = source_data.axes[src_idx].sigma + candidate_data.axes[cand_idx].sigma;
+        let score = diff_src + diff_cand + step_error + 0.1 * sigma_sum;
+
+        Some((direction, score))
+    }
+}
+
+/// Pick whichever axis best matches `edge_angle` within tolerance. Returns
+/// `(axis_index, diff, tol)` where `diff` is the angular residual (line-
+/// folded) and `tol` is the adjusted tolerance incorporating the axis sigma.
+fn pick_best_axis(
+    axes: &[AxisEstimate; 2],
+    edge_angle: f32,
+    base_tol: f32,
+) -> Option<(usize, f32, f32)> {
+    let mut best: Option<(usize, f32, f32)> = None;
+    for (idx, axis) in axes.iter().enumerate() {
+        let diff = axis_vec_diff(axis.angle, edge_angle);
+        let tol = (base_tol + axis.sigma).min(2.0 * base_tol);
+        if diff <= tol && best.map(|b| diff < b.1).unwrap_or(true) {
+            best = Some((idx, diff, tol));
+        }
+    }
+    best
+}
+
 /// Build a chessboard grid graph from corners.
+///
+/// Wraps [`build_chessboard_grid_graph_instrumented`] without a counter sink.
 pub fn build_chessboard_grid_graph(
     corners: &[Corner],
     params: &GridGraphParams,
     grid_diagonals: Option<[f32; 2]>,
 ) -> GridGraph {
-    let positions: Vec<_> = corners.iter().map(|c| c.position).collect();
-    let point_data = ChessboardPointData::from_corners(corners);
+    build_chessboard_grid_graph_instrumented(corners, params, grid_diagonals, None)
+}
 
-    let graph_params = projective_grid::GridGraphParams {
-        k_neighbors: params.k_neighbors,
-        max_distance: params.max_spacing_pix,
+/// Build a chessboard grid graph with an optional per-reason rejection counter.
+///
+/// When `counter_sink` is `Some`, every candidate edge a validator rejects
+/// increments the matching [`EdgeRejectReason`] bucket. Callers should clear
+/// or replace the sink between builds.
+pub fn build_chessboard_grid_graph_instrumented(
+    corners: &[Corner],
+    params: &GridGraphParams,
+    grid_diagonals: Option<[f32; 2]>,
+    counter_sink: Option<&mut RejectionCounter>,
+) -> GridGraph {
+    let cell: Option<RejectionCounterCell> = counter_sink
+        .as_ref()
+        .map(|_| Rc::new(RefCell::new(RejectionCounter::default())));
+
+    let positions: Vec<_> = corners.iter().map(|c| c.position).collect();
+
+    let graph = match params.mode {
+        ChessboardGraphMode::Legacy => {
+            let point_data = ChessboardPointData::from_corners(corners);
+            let graph_params = projective_grid::GridGraphParams {
+                k_neighbors: params.k_neighbors,
+                max_distance: params.max_spacing_pix,
+            };
+
+            if let Some(diags) = grid_diagonals {
+                let validator = ChessboardClusterValidator {
+                    min_spacing_pix: params.min_spacing_pix,
+                    max_spacing_pix: params.max_spacing_pix,
+                    orientation_tolerance_deg: params.orientation_tolerance_deg,
+                    grid_diagonals: diags,
+                    counter: cell.clone(),
+                };
+                GridGraph::build(&positions, &point_data, &validator, &graph_params)
+            } else {
+                let validator = ChessboardSimpleValidator {
+                    min_spacing_pix: params.min_spacing_pix,
+                    max_spacing_pix: params.max_spacing_pix,
+                    orientation_tolerance_deg: params.orientation_tolerance_deg,
+                    counter: cell.clone(),
+                };
+                GridGraph::build(&positions, &point_data, &validator, &graph_params)
+            }
+        }
+        ChessboardGraphMode::TwoAxis => {
+            // Auto cell-size estimation: derive the grid spacing from the
+            // corner cloud itself. Falls back to `params.step_fallback_pix`
+            // only when the estimator fails (too few corners, no signal).
+            let fallback_step =
+                if params.step_fallback_pix.is_finite() && params.step_fallback_pix > 0.0 {
+                    params.step_fallback_pix
+                } else {
+                    50.0
+                };
+            let global_step =
+                estimate_global_cell_size(&positions, &GlobalStepParams::<f32>::default())
+                    .map(|e| e.cell_size)
+                    .unwrap_or(fallback_step);
+            log::debug!("[two_axis graph] estimated global cell size = {global_step:.2}");
+
+            let local_steps = estimate_corner_local_steps(corners);
+            let point_data = ChessboardPointData::from_corners_with_steps(corners, &local_steps);
+            // KD-tree window intentionally wider than `global_step × max_step_rel`:
+            // the global nearest-neighbor mode can underestimate the true grid
+            // step when marker-internal corners sit closer to the board than
+            // adjacent board corners. The per-edge bounds inside the validator
+            // still enforce `±max_step_rel × local_step`.
+            let kd_window_factor = (params.max_step_rel * 2.0).max(2.5);
+            let graph_params = projective_grid::GridGraphParams {
+                k_neighbors: params.k_neighbors.max(20),
+                max_distance: global_step * kd_window_factor,
+            };
+            let validator = ChessboardTwoAxisValidator {
+                min_step_rel: params.min_step_rel,
+                max_step_rel: params.max_step_rel,
+                angular_tol_rad: params.angular_tol_deg.to_radians(),
+                step_fallback_pix: global_step,
+                counter: cell.clone(),
+            };
+            GridGraph::build(&positions, &point_data, &validator, &graph_params)
+        }
     };
 
-    if let Some(diags) = grid_diagonals {
-        let validator = ChessboardClusterValidator {
-            min_spacing_pix: params.min_spacing_pix,
-            max_spacing_pix: params.max_spacing_pix,
-            orientation_tolerance_deg: params.orientation_tolerance_deg,
-            grid_diagonals: diags,
-        };
-        GridGraph::build(&positions, &point_data, &validator, &graph_params)
-    } else {
-        let validator = ChessboardSimpleValidator {
-            min_spacing_pix: params.min_spacing_pix,
-            max_spacing_pix: params.max_spacing_pix,
-            orientation_tolerance_deg: params.orientation_tolerance_deg,
-        };
-        GridGraph::build(&positions, &point_data, &validator, &graph_params)
+    if let (Some(sink), Some(cell)) = (counter_sink, cell) {
+        // Only we and the already-dropped validator held the Rc, so the
+        // strong count is 1 after GridGraph::build returns.
+        let counted = Rc::try_unwrap(cell)
+            .expect("rejection counter cell uniquely held after build")
+            .into_inner();
+        *sink = counted;
     }
+
+    graph
 }
 
 #[cfg(test)]
@@ -243,6 +623,7 @@ mod tests {
             orientation,
             orientation_cluster: None,
             strength: 1.0,
+            ..Corner::default()
         }
     }
 
@@ -354,6 +735,7 @@ mod tests {
             orientation,
             orientation_cluster: Some(cluster),
             strength: 1.0,
+            ..Corner::default()
         }
     }
 
@@ -506,6 +888,73 @@ mod tests {
         let components = connected_components(&graph);
         assert_eq!(1, components.len());
         assert_eq!(25, components[0].len());
+    }
+
+    #[test]
+    fn counter_records_distance_rejections_in_simple_validator() {
+        // Two corners closer than `min_spacing_pix`: the KD-tree pre-filter
+        // (bounded by `max_spacing_pix`) keeps the pair, so the validator's
+        // distance window is what rejects it.
+        let corners = vec![
+            make_corner(0.0, 0.0, FRAC_PI_4),
+            make_corner(3.0, 0.0, 3.0 * FRAC_PI_4),
+        ];
+
+        let params = GridGraphParams {
+            min_spacing_pix: 5.0,
+            max_spacing_pix: 50.0,
+            k_neighbors: 2,
+            ..Default::default()
+        };
+
+        let mut counter = RejectionCounter::default();
+        let _graph =
+            build_chessboard_grid_graph_instrumented(&corners, &params, None, Some(&mut counter));
+
+        assert!(counter.total() > 0);
+        assert!(counter.count_of(EdgeRejectReason::OutOfDistanceWindow) > 0);
+    }
+
+    #[test]
+    fn counter_records_not_orthogonal_in_simple_validator() {
+        // Parallel orientations within range: the distance is fine but the
+        // orthogonality check rejects. Simple validator path (no clusters).
+        let corners = vec![
+            make_corner(0.0, 0.0, FRAC_PI_4),
+            make_corner(10.0, 0.0, FRAC_PI_4),
+        ];
+
+        let params = GridGraphParams {
+            min_spacing_pix: 5.0,
+            max_spacing_pix: 15.0,
+            k_neighbors: 2,
+            ..Default::default()
+        };
+
+        let mut counter = RejectionCounter::default();
+        let _graph =
+            build_chessboard_grid_graph_instrumented(&corners, &params, None, Some(&mut counter));
+
+        assert!(counter.count_of(EdgeRejectReason::NotOrthogonal) > 0);
+        assert_eq!(counter.count_of(EdgeRejectReason::OutOfDistanceWindow), 0);
+    }
+
+    #[test]
+    fn counter_is_noop_when_sink_missing() {
+        // Same as the not-orthogonal case, but without a counter sink — the
+        // graph should still build (same behavior as before this change).
+        let corners = vec![
+            make_corner(0.0, 0.0, FRAC_PI_4),
+            make_corner(10.0, 0.0, FRAC_PI_4),
+        ];
+        let params = GridGraphParams {
+            min_spacing_pix: 5.0,
+            max_spacing_pix: 15.0,
+            k_neighbors: 2,
+            ..Default::default()
+        };
+        let graph = build_chessboard_grid_graph_instrumented(&corners, &params, None, None);
+        assert!(graph.neighbors[0].is_empty());
     }
 
     #[test]

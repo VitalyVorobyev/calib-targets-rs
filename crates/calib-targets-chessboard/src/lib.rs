@@ -28,17 +28,26 @@
 
 mod detector;
 mod geom;
-mod gridgraph;
+#[doc(hidden)]
+pub mod gridgraph;
 pub mod io;
 mod mesh_warp;
 mod params;
+#[doc(hidden)]
+pub mod quality;
 mod rectified_view;
 
 pub use detector::{
-    ChessboardDebug, ChessboardDetectionResult, ChessboardDetector, GridGraphDebug,
-    GridGraphNeighborDebug, GridGraphNodeDebug,
+    ChessboardDebug, ChessboardDetectionResult, ChessboardDetector, ChessboardInstrumentedResult,
+    ChessboardInstrumentedResults, ChessboardStageCounts, GridGraphDebug, GridGraphNeighborDebug,
+    GridGraphNodeDebug,
 };
+pub use gridgraph::{EdgeRejectReason, RejectionCounter};
 pub use io::{ChessboardDetectConfig, ChessboardDetectReport, ChessboardIoError};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{ChessboardParams, GridGraphParams};
+pub use params::{ChessboardGraphMode, ChessboardParams, GridGraphParams};
+pub use quality::{
+    score_frame, score_frame_full, GridFrameMetrics, VisibleSubsetGate,
+    VISIBLE_SUBSET_GATE_3536119669,
+};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};

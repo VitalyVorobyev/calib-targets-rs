@@ -252,6 +252,12 @@ mod tests {
 
         let mut expected = chess_corners_core::ChessParams::default();
         expected.threshold_rel = 0.05;
+        // chess-corners 0.6 ships `threshold_abs = Some(0.0)` by default.
+        // The ChArUco re-detect path deliberately opts into relative mode
+        // (to apply a sensitive 0.05 fraction-of-max threshold), so the
+        // converted params clear `threshold_abs` to let `threshold_rel`
+        // take effect.
+        expected.threshold_abs = None;
         expected.nms_radius = 2;
         expected.min_cluster_size = 1;
         expected.refiner = chess_corners_core::RefinerKind::SaddlePoint(

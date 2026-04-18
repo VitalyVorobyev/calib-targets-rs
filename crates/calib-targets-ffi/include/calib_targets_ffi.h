@@ -145,11 +145,25 @@ typedef struct ct_coarse_to_fine_params_t {
 } ct_coarse_to_fine_params_t;
 
 /**
+ * Fixed upscaling mode identifier type for ChESS pre-detection upscaling.
+ */
+typedef uint32_t ct_upscale_mode_t;
+
+/**
+ * Optional ChESS pre-detection upscaling configuration.
+ */
+typedef struct ct_upscale_config_t {
+  ct_upscale_mode_t mode;
+  uint32_t factor;
+} ct_upscale_config_t;
+
+/**
  * Shared ChESS configuration for raw corner detection.
  */
 typedef struct ct_chess_config_t {
   struct ct_chess_params_t params;
   struct ct_coarse_to_fine_params_t multiscale;
+  struct ct_upscale_config_t upscale;
 } ct_chess_config_t;
 
 /**
@@ -581,6 +595,10 @@ typedef struct ct_puzzleboard_result_t {
 #define CT_REFINER_KIND_FORSTNER 2
 
 #define CT_REFINER_KIND_SADDLE_POINT 3
+
+#define CT_UPSCALE_MODE_DISABLED 0
+
+#define CT_UPSCALE_MODE_FIXED 1
 
 #define CT_MARKER_LAYOUT_OPENCV_CHARUCO 1
 

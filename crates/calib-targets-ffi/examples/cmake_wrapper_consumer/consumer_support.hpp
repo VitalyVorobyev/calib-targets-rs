@@ -212,6 +212,8 @@ inline ct_chess_config_t default_shared_chess_config() {
   config.multiscale.pyramid.min_size = 128;
   config.multiscale.refinement_radius = 3;
   config.multiscale.merge_radius = 3.0f;
+  config.upscale.mode = CT_UPSCALE_MODE_DISABLED;
+  config.upscale.factor = 2;
   return config;
 }
 

@@ -5,16 +5,33 @@
 //! via the `image` feature).
 
 use calib_targets_core::{
-    ChessConfig, Corner, DescriptorMode, DetectorMode, RefinementMethod, RefinerConfig,
-    ThresholdMode,
+    AxisEstimate, ChessConfig, Corner, DescriptorMode, DetectorMode, RefinementMethod,
+    RefinerConfig, ThresholdMode, UpscaleConfig, UpscaleMode,
 };
 use nalgebra::Point2;
 
 pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
+    // Derive the legacy single-axis orientation for chessboard / puzzleboard
+    // consumers from 0.6's axes[0]; see calib-targets::adapt_chess_corner for
+    // the rationale behind the −π/4 shift.
+    let orientation =
+        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     Corner {
         position: Point2::new(c.x, c.y),
-        orientation: c.orientation,
+        orientation,
         orientation_cluster: None,
+        axes: [
+            AxisEstimate {
+                angle: c.axes[0].angle,
+                sigma: c.axes[0].sigma,
+            },
+            AxisEstimate {
+                angle: c.axes[1].angle,
+                sigma: c.axes[1].sigma,
+            },
+        ],
+        contrast: c.contrast,
+        fit_rms: c.fit_rms,
         strength: c.response,
     }
 }
@@ -32,7 +49,16 @@ pub fn to_chess_corners_config(cfg: &ChessConfig) -> chess_corners::ChessConfig 
     out.pyramid_min_size = cfg.pyramid_min_size;
     out.refinement_radius = cfg.refinement_radius;
     out.merge_radius = cfg.merge_radius;
+    out.upscale = to_upscale_config(cfg.upscale);
     out
+}
+
+fn to_upscale_config(cfg: UpscaleConfig) -> chess_corners::UpscaleConfig {
+    match cfg.mode {
+        UpscaleMode::Disabled => chess_corners::UpscaleConfig::disabled(),
+        UpscaleMode::Fixed => chess_corners::UpscaleConfig::fixed(cfg.factor),
+        _ => unimplemented!("unknown UpscaleMode variant"),
+    }
 }
 
 fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {

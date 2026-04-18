@@ -502,6 +502,7 @@ mod tests {
             orientation: theta,
             orientation_cluster: None,
             strength,
+            ..Corner::default()
         }
     }
 
