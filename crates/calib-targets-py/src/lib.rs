@@ -286,6 +286,43 @@ fn detect_chessboard(
     }
 }
 
+/// Run the instrumented chessboard detector and return a self-contained
+/// debug frame: strong corners with both axis estimates, graph edges,
+/// per-reason rejection counts, continuous quality metrics, and the
+/// optional labelled detection.
+///
+/// Unlike [`detect_chessboard`] this always returns a dict — failure
+/// paths carry non-empty stage counts and partial metrics so the caller
+/// can diagnose *why* detection failed.
+///
+/// Args:
+///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
+///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///     If provided, overrides `params.chess`.
+///   params: dict with ChessboardParams fields, or None for defaults.
+///
+/// Returns:
+///   dict with the `ChessboardDebugFrame` schema.
+#[pyfunction]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+fn detect_chessboard_debug(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    chess_cfg: Option<&Bound<'_, PyAny>>,
+    params: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let mut params = chessboard_params_from_py(params)?;
+    if chess_cfg.is_some() {
+        params.chess = chess_cfg_from_py(chess_cfg)?;
+    }
+
+    let frame = py.detach(move || detect::detect_chessboard_debug(&img, &params));
+    let json =
+        serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    json_to_py(py, &json)
+}
+
 /// Detect a marker-board target in a grayscale image.
 ///
 /// Args:
@@ -555,6 +592,7 @@ fn write_target_bundle(
 fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
+    m.add_function(wrap_pyfunction!(detect_chessboard_debug, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_best, m)?)?;

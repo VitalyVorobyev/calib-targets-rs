@@ -94,6 +94,30 @@ pub fn detect_chessboard(
     detector.detect_from_corners(&corners)
 }
 
+/// Run the instrumented chessboard detector and return a flat, self-
+/// contained debug frame (strong corners with axes, graph edges, stage
+/// counts, continuous metrics, optional labelled detection).
+///
+/// This is the entry point used by the Python overlay script and by the
+/// Phase A sweep harness — it always returns a frame (never `None`),
+/// even on failure, so the caller can see *why* detection failed.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_debug(
+    img: &::image::GrayImage,
+    params: &chessboard::ChessboardParams,
+) -> chessboard::ChessboardDebugFrame {
+    let corners = detect_corners(img, &params.chess);
+    let detector = chessboard::ChessboardDetector::new(params.clone());
+    detector.detect_debug_from_corners(&corners, img.width(), img.height())
+}
+
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
 ///
 /// Corner detection uses `params.chessboard.chess`.

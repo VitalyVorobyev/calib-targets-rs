@@ -15,6 +15,7 @@ use crate::gridgraph::estimate_corner_local_steps;
 use calib_targets_core::{estimate_homography_rect_to_img, Corner, TargetDetection};
 use nalgebra::Point2;
 use projective_grid::GridGraph;
+use serde::Serialize;
 
 /// Per-frame metrics for a chessboard detection.
 ///
@@ -24,7 +25,7 @@ use projective_grid::GridGraph;
 /// `docs/grid_plan.md` and the top-level plan file). They are all
 /// `Option<...>` so callers that invoke [`score_frame`] without the extra
 /// inputs (raw corner cloud, graph, image width) still get the old subset.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct GridFrameMetrics {
     /// Number of labelled corners in the detection.
     pub corner_count: usize,

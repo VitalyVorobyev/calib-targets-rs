@@ -145,6 +145,117 @@ def test_detect_chessboard_best_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# chessboard debug frame (Phase A instrumentation)
+# ---------------------------------------------------------------------------
+
+
+def _assert_debug_frame_shape(frame: dict[str, Any]) -> None:
+    """Structural check for the ChessboardDebugFrame payload.
+
+    Asserts the top-level keys Rust serializes plus the nested shapes the
+    Python overlay script depends on. If Rust ever renames a field, this
+    test flags it before the overlay breaks silently.
+    """
+    expected_top = {
+        "image_width",
+        "image_height",
+        "strong_corners",
+        "graph_neighbors",
+        "orientations",
+        "orientation_histogram",
+        "stage_counts",
+        "metrics",
+        "result",
+    }
+    assert expected_top.issubset(frame.keys()), (
+        f"missing top-level keys: {expected_top - frame.keys()}"
+    )
+
+    assert isinstance(frame["image_width"], int)
+    assert isinstance(frame["image_height"], int)
+    assert frame["image_width"] > 0
+    assert frame["image_height"] > 0
+
+    # strong_corners and graph_neighbors must be index-aligned.
+    n = len(frame["strong_corners"])
+    assert len(frame["graph_neighbors"]) == n, (
+        "strong_corners and graph_neighbors must share indices"
+    )
+
+    if n > 0:
+        c0 = frame["strong_corners"][0]
+        expected_corner_keys = {
+            "x",
+            "y",
+            "axes",
+            "orientation",
+            "orientation_cluster",
+            "strength",
+            "contrast",
+            "fit_rms",
+            "local_step_u",
+            "local_step_v",
+            "local_step_confidence",
+        }
+        assert expected_corner_keys.issubset(c0.keys()), (
+            f"strong_corner missing keys: {expected_corner_keys - c0.keys()}"
+        )
+        # Axes are serialized as a 2-element list of {angle, sigma}.
+        assert len(c0["axes"]) == 2
+        for axis in c0["axes"]:
+            assert {"angle", "sigma"}.issubset(axis.keys())
+
+    # stage_counts has every required stage count (even on failure paths).
+    counts = frame["stage_counts"]
+    for key in ("raw_corners", "after_strength_filter", "graph_nodes", "graph_edges"):
+        assert key in counts, f"stage_counts missing {key}"
+        assert isinstance(counts[key], int) and counts[key] >= 0
+    # edges_by_reject_reason maps reason-name strings to integer counts.
+    assert isinstance(counts["edges_by_reject_reason"], dict)
+    for reason, count in counts["edges_by_reject_reason"].items():
+        assert isinstance(reason, str)
+        assert isinstance(count, int) and count >= 0
+
+    # metrics has at minimum the legacy pass/fail fields.
+    metrics = frame["metrics"]
+    for key in ("corner_count", "extent_i", "extent_j"):
+        assert key in metrics
+
+
+def test_detect_chessboard_debug_success_path() -> None:
+    """Debug frame on an image that normally detects: must have non-empty
+    strong_corners, a labelled result, and a populated metrics block."""
+    image = _load_gray("mid.png")
+    frame = ct.detect_chessboard_debug(image)
+    _assert_debug_frame_shape(frame)
+    assert len(frame["strong_corners"]) > 0
+    if frame["result"] is None:
+        pytest.skip("no chessboard detected on testdata/mid.png")
+    assert frame["stage_counts"]["final_labeled_corners"] > 0
+    assert frame["metrics"]["corner_count"] > 0
+    # horizontal_coverage_frac populated when a detection exists.
+    assert frame["metrics"]["horizontal_coverage_frac"] is not None
+
+
+def test_detect_chessboard_debug_failure_path_still_emits_counts() -> None:
+    """Debug frame on a failure path: no result, but raw_corners is
+    populated and the caller can see why detection bailed via the stage
+    counts. Uses min_corner_strength well above typical ChESS responses
+    to drop every corner before graph build."""
+    image = _load_gray("mid.png")
+    params = ct.ChessboardParams(
+        min_corner_strength=1e9,  # unreachable
+        min_corners=16,
+    )
+    frame = ct.detect_chessboard_debug(image, params=params)
+    _assert_debug_frame_shape(frame)
+    assert frame["result"] is None
+    assert frame["stage_counts"]["raw_corners"] > 0
+    assert frame["stage_counts"]["after_strength_filter"] == 0
+    assert frame["stage_counts"]["final_labeled_corners"] == 0
+
+
+# ---------------------------------------------------------------------------
 # charuco — direct regression test for the MarkerDetection.gc bug
 # ---------------------------------------------------------------------------
 

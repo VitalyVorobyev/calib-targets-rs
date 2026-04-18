@@ -38,9 +38,9 @@ pub mod quality;
 mod rectified_view;
 
 pub use detector::{
-    ChessboardDebug, ChessboardDetectionResult, ChessboardDetector, ChessboardInstrumentedResult,
-    ChessboardInstrumentedResults, ChessboardStageCounts, GridGraphDebug, GridGraphNeighborDebug,
-    GridGraphNodeDebug,
+    ChessboardDebug, ChessboardDebugFrame, ChessboardDetectionResult, ChessboardDetector,
+    ChessboardInstrumentedResult, ChessboardInstrumentedResults, ChessboardStageCounts,
+    DebugCorner, DebugGraphEdge, GridGraphDebug, GridGraphNeighborDebug, GridGraphNodeDebug,
 };
 pub use gridgraph::{EdgeRejectReason, RejectionCounter};
 pub use io::{ChessboardDetectConfig, ChessboardDetectReport, ChessboardIoError};

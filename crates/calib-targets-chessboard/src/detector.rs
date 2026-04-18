@@ -1,11 +1,13 @@
 use crate::gridgraph::{
     assign_grid_coordinates, build_chessboard_grid_graph_instrumented, connected_components,
-    RejectionCounter,
+    estimate_corner_local_steps, RejectionCounter,
 };
 use crate::params::ChessboardParams;
+use crate::quality::{score_frame_full, GridFrameMetrics};
 use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, estimate_homography_rect_to_img,
-    Corner, GridCoords, LabeledCorner, OrientationHistogram, TargetDetection, TargetKind,
+    AxisEstimate, Corner, GridCoords, LabeledCorner, OrientationHistogram, TargetDetection,
+    TargetKind,
 };
 use log::{debug, warn};
 use nalgebra::Point2;
@@ -115,6 +117,79 @@ pub struct ChessboardInstrumentedResult {
 pub struct ChessboardInstrumentedResults {
     pub results: Vec<ChessboardDetectionResult>,
     pub counts: ChessboardStageCounts,
+}
+
+/// A single strong corner enriched with every signal needed by the Python
+/// overlay script: both axis estimates, orientation-cluster label,
+/// per-corner local step.
+///
+/// Index `i` in [`ChessboardDebugFrame::strong_corners`] corresponds to the
+/// same index in [`ChessboardDebugFrame::graph_neighbors`].
+#[derive(Clone, Debug, Serialize)]
+pub struct DebugCorner {
+    pub x: f32,
+    pub y: f32,
+    pub axes: [AxisEstimate; 2],
+    /// Legacy single-axis orientation (derived from `axes[0]`). Kept so
+    /// overlays can compare against the legacy clustering.
+    pub orientation: f32,
+    pub orientation_cluster: Option<usize>,
+    pub strength: f32,
+    pub contrast: f32,
+    pub fit_rms: f32,
+    pub local_step_u: f32,
+    pub local_step_v: f32,
+    pub local_step_confidence: f32,
+}
+
+/// A graph neighbor entry (flat, serde-friendly).
+#[derive(Clone, Debug, Serialize)]
+pub struct DebugGraphEdge {
+    pub dst: usize,
+    pub direction: &'static str,
+    pub distance: f32,
+    pub score: f32,
+}
+
+/// Full debug payload for a single chessboard detection.
+///
+/// Emitted by [`ChessboardDetector::detect_debug_from_corners`] and the
+/// facade function `detect_chessboard_debug`. Consumed by the Python
+/// overlay script and stored as JSON alongside sweep output.
+///
+/// The payload is **flat and self-contained** — every index in
+/// [`Self::strong_corners`] is shared by [`Self::graph_neighbors`] and
+/// [`Self::cluster_labels`]. Labelled coordinates (`grid`) live inside
+/// `result.detection.corners`; the `strong_corner_index` map resolves
+/// each labelled corner back to its position in `strong_corners`.
+#[derive(Debug, Serialize)]
+pub struct ChessboardDebugFrame {
+    /// Source image dimensions — needed to compute horizontal coverage
+    /// and render overlays at the right scale.
+    pub image_width: u32,
+    pub image_height: u32,
+
+    /// Strong corners (post strength + fit-quality filter and, when
+    /// clustering was applied, post orientation-cluster filter). Every
+    /// index in this list is a node in the graph.
+    pub strong_corners: Vec<DebugCorner>,
+    /// Per-node adjacency list, parallel to [`Self::strong_corners`].
+    pub graph_neighbors: Vec<Vec<DebugGraphEdge>>,
+
+    /// Grid diagonals estimated by orientation clustering (or the
+    /// fallback dominant-axis estimator).
+    pub orientations: Option<[f32; 2]>,
+    /// Smoothed orientation histogram used by the clusterer.
+    pub orientation_histogram: Option<OrientationHistogram>,
+
+    /// Per-stage counts (incl. per-reason rejection map).
+    pub stage_counts: ChessboardStageCounts,
+    /// Continuous quality metrics (Phase A set, plus stubs for Phase B).
+    pub metrics: GridFrameMetrics,
+
+    /// Successful detection result (if any). Contains labelled corners
+    /// with `(i, j)` coordinates in `detection.corners[k].grid`.
+    pub result: Option<ChessboardDetectionResult>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -327,6 +402,164 @@ impl ChessboardDetector {
             .unwrap_or(0);
 
         ChessboardInstrumentedResults { results, counts }
+    }
+
+    /// Run the instrumented pipeline and collect a full debug frame.
+    ///
+    /// Unlike [`Self::detect_instrumented`], this entry point also captures
+    /// the strong-corner list (with both axes, cluster label, per-corner
+    /// local step) and the full neighbor graph in a flat, JSON-friendly
+    /// shape. Intended for the Python overlay script and for per-frame
+    /// debug dumps.
+    ///
+    /// `image_width_px` and `image_height_px` are the source image
+    /// dimensions; they set the denominator for the `horizontal_coverage`
+    /// metric and are copied into the debug frame for overlay rendering.
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
+    pub fn detect_debug_from_corners(
+        &self,
+        corners: &[Corner],
+        image_width_px: u32,
+        image_height_px: u32,
+    ) -> ChessboardDebugFrame {
+        let mut counts = ChessboardStageCounts {
+            raw_corners: corners.len(),
+            ..Default::default()
+        };
+
+        // Stage 1: strength + fit-quality filter.
+        let mut strong: Vec<Corner> = corners
+            .iter()
+            .filter(|c| c.strength >= self.params.min_corner_strength)
+            .filter(|c| passes_fit_quality(c, self.params.max_fit_rms_ratio))
+            .cloned()
+            .collect();
+        counts.after_strength_filter = strong.len();
+
+        // Stage 2: orientation clustering (optional).
+        let mut grid_diagonals = None;
+        let mut graph_diagonals = None;
+        let mut orientation_histogram = None;
+        let mut clustering_ran = false;
+        if strong.len() >= self.params.min_corners && self.params.use_orientation_clustering {
+            if let Some(clusters) =
+                cluster_orientations(&strong, &self.params.orientation_clustering_params)
+            {
+                clustering_ran = true;
+                orientation_histogram = clusters.histogram;
+                grid_diagonals = Some(clusters.centers);
+                graph_diagonals = grid_diagonals;
+                strong = strong
+                    .into_iter()
+                    .zip(clusters.labels)
+                    .filter_map(|(mut corner, label)| {
+                        label.map(|cluster| {
+                            corner.orientation_cluster = Some(cluster);
+                            corner
+                        })
+                    })
+                    .collect();
+            }
+        }
+        if clustering_ran {
+            counts.after_orientation_cluster_filter = Some(strong.len());
+        }
+        if grid_diagonals.is_none() && !strong.is_empty() {
+            if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
+                let c0 = wrap_angle_pi(theta);
+                let c1 = wrap_angle_pi(theta + FRAC_PI_2);
+                grid_diagonals = Some([c0, c1]);
+            }
+        }
+
+        // Stage 3: compute per-corner local step (drives the two-axis
+        // validator's step window + the overlay). Cheap to compute even
+        // when the graph builder will discard the result, so we always
+        // run it for the debug frame.
+        let local_steps = if strong.is_empty() {
+            Vec::new()
+        } else {
+            estimate_corner_local_steps(&strong)
+        };
+
+        // Stage 4: build the graph with rejection counters. Skipped when
+        // not enough corners to form a board — still emit the debug frame.
+        let mut rejection_counter = RejectionCounter::default();
+        let graph = if strong.len() >= self.params.min_corners {
+            build_chessboard_grid_graph_instrumented(
+                &strong,
+                &self.params.graph,
+                graph_diagonals,
+                Some(&mut rejection_counter),
+            )
+        } else {
+            GridGraph {
+                neighbors: (0..strong.len()).map(|_| Vec::new()).collect(),
+            }
+        };
+        counts.graph_nodes = graph.neighbors.len();
+        counts.graph_edges = graph.neighbors.iter().map(|n| n.len()).sum();
+        counts.edges_by_reject_reason = ChessboardStageCounts::from_counter(&rejection_counter);
+
+        // Stage 5: components + BFS coord assignment via the normal path.
+        let components = connected_components(&graph);
+        counts.num_components = components.len();
+        counts.largest_component_size = components.iter().map(|c| c.len()).max().unwrap_or(0);
+
+        // Re-use the production component pipeline so the debug frame
+        // matches what the non-debug entry points would produce.
+        let results = self.collect_components(
+            &graph,
+            &components,
+            &strong,
+            grid_diagonals,
+            orientation_histogram.clone(),
+            &mut counts,
+        );
+        let result = results.into_iter().next();
+        counts.final_labeled_corners = result
+            .as_ref()
+            .map(|r| r.detection.corners.len())
+            .unwrap_or(0);
+
+        // Build the flat debug frame.
+        let strong_corners = build_debug_corners(&strong, &local_steps);
+        let graph_neighbors = build_debug_edges(&graph);
+        let metrics = match result.as_ref() {
+            Some(r) => score_frame_full(
+                &r.detection,
+                self.params.expected_rows.unwrap_or(0),
+                self.params.expected_cols.unwrap_or(0),
+                &strong,
+                &graph,
+                image_width_px,
+            ),
+            None => {
+                // No detection: still compute the partial metrics that do
+                // not need labelled corners (graph degree histogram,
+                // local-step CV, edge-axis residuals).
+                let (med, p95) = edge_axis_residual_stats_raw(&strong, &graph);
+                GridFrameMetrics {
+                    graph_degree_hist: Some(degree_histogram(&graph)),
+                    local_step_cv: local_step_cv_from_steps(&local_steps),
+                    edge_axis_residual_median_deg: med,
+                    edge_axis_residual_p95_deg: p95,
+                    ..Default::default()
+                }
+            }
+        };
+
+        ChessboardDebugFrame {
+            image_width: image_width_px,
+            image_height: image_height_px,
+            strong_corners,
+            graph_neighbors,
+            orientations: grid_diagonals,
+            orientation_histogram,
+            stage_counts: counts,
+            metrics,
+            result,
+        }
     }
 
     /// Shared logic: iterate components, convert to board coords, return all qualifying results.
@@ -790,6 +1023,126 @@ fn wrap_angle_pi(theta: f32) -> f32 {
         t += std::f32::consts::PI;
     }
     t
+}
+
+fn build_debug_corners(
+    strong: &[Corner],
+    local_steps: &[projective_grid::local_step::LocalStep<f32>],
+) -> Vec<DebugCorner> {
+    strong
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let step = local_steps.get(i).copied().unwrap_or_default();
+            DebugCorner {
+                x: c.position.x,
+                y: c.position.y,
+                axes: c.axes,
+                orientation: c.orientation,
+                orientation_cluster: c.orientation_cluster,
+                strength: c.strength,
+                contrast: c.contrast,
+                fit_rms: c.fit_rms,
+                local_step_u: step.step_u,
+                local_step_v: step.step_v,
+                local_step_confidence: step.confidence,
+            }
+        })
+        .collect()
+}
+
+fn build_debug_edges(graph: &GridGraph) -> Vec<Vec<DebugGraphEdge>> {
+    graph
+        .neighbors
+        .iter()
+        .map(|neighbors| {
+            neighbors
+                .iter()
+                .map(|n| DebugGraphEdge {
+                    dst: n.index,
+                    direction: neighbor_dir_name(n.direction),
+                    distance: n.distance,
+                    score: n.score,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn degree_histogram(graph: &GridGraph) -> [u32; 5] {
+    let mut hist = [0u32; 5];
+    for neighbors in &graph.neighbors {
+        let bucket = neighbors.len().min(4);
+        hist[bucket] = hist[bucket].saturating_add(1);
+    }
+    hist
+}
+
+fn local_step_cv_from_steps(steps: &[projective_grid::local_step::LocalStep<f32>]) -> Option<f32> {
+    let means: Vec<f32> = steps
+        .iter()
+        .filter(|s| s.confidence > 0.0 && s.step_u > 0.0 && s.step_v > 0.0)
+        .map(|s| 0.5 * (s.step_u + s.step_v))
+        .collect();
+    if means.len() < 2 {
+        return None;
+    }
+    let n = means.len() as f32;
+    let mean = means.iter().copied().sum::<f32>() / n;
+    if mean <= 0.0 {
+        return None;
+    }
+    let var = means.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / n;
+    Some(var.sqrt() / mean)
+}
+
+fn edge_axis_residual_stats_raw(
+    corners: &[Corner],
+    graph: &GridGraph,
+) -> (Option<f32>, Option<f32>) {
+    let mut residuals: Vec<f32> = Vec::new();
+    for (src_idx, neighbors) in graph.neighbors.iter().enumerate() {
+        let src = &corners[src_idx];
+        for n in neighbors {
+            if n.index <= src_idx {
+                continue;
+            }
+            let dst = &corners[n.index];
+            let edge_angle =
+                (dst.position.y - src.position.y).atan2(dst.position.x - src.position.x);
+            let d_src = nearest_axis_line_diff(&src.axes, edge_angle);
+            let d_dst = nearest_axis_line_diff(&dst.axes, edge_angle);
+            residuals.push(d_src.to_degrees());
+            residuals.push(d_dst.to_degrees());
+        }
+    }
+    if residuals.len() < 2 {
+        return (None, None);
+    }
+    residuals.sort_by(|a, b| a.total_cmp(b));
+    let percentile = |q: f32| {
+        let idx = ((residuals.len() as f32 - 1.0) * q).round() as usize;
+        residuals[idx.min(residuals.len() - 1)]
+    };
+    (Some(percentile(0.5)), Some(percentile(0.95)))
+}
+
+fn nearest_axis_line_diff(axes: &[AxisEstimate; 2], edge_angle: f32) -> f32 {
+    use std::f32::consts::PI;
+    let two_pi = 2.0 * PI;
+    let mut best = f32::INFINITY;
+    for axis in axes {
+        let mut diff = (edge_angle - axis.angle).rem_euclid(two_pi);
+        if diff >= PI {
+            diff -= two_pi;
+        }
+        let diff_abs = diff.abs();
+        let folded = diff_abs.min(PI - diff_abs);
+        if folded < best {
+            best = folded;
+        }
+    }
+    best
 }
 
 #[cfg(test)]

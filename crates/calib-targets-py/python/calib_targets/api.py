@@ -54,6 +54,37 @@ def detect_chessboard(
     return ChessboardDetectionResult.from_dict(raw)
 
 
+def detect_chessboard_debug(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: ChessboardParams | None = None,
+) -> dict[str, Any]:
+    """Run the instrumented chessboard detector and return a raw debug
+    payload (``ChessboardDebugFrame``) as a plain ``dict``.
+
+    Unlike :func:`detect_chessboard`, this entry point always returns a
+    dict — even when detection fails — so callers can inspect per-stage
+    counts and continuous metrics to diagnose the failure.
+
+    The payload shape intentionally stays schemaless on the Python side;
+    it is designed for overlay scripts and JSON persistence, not typed
+    consumption. Top-level keys include ``image_width``, ``image_height``,
+    ``strong_corners``, ``graph_neighbors``, ``stage_counts``, ``metrics``,
+    ``orientations``, ``orientation_histogram``, and ``result``.
+    """
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    if params is not None:
+        _check_type("params", params, ChessboardParams)
+
+    return _core.detect_chessboard_debug(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=chessboard_params_to_payload(params),
+    )
+
+
 def detect_charuco(
     image: npt.NDArray[np.uint8],
     *,
