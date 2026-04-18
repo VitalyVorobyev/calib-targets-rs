@@ -6,9 +6,13 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Targeting the next 0.5.x release. Existing workspace crates stay at their
-published `0.5.3` on crates.io; `calib-targets-puzzleboard` ships as a new
-crate at the same coordinated version.
+## [0.6.0]
+
+Coordinated workspace release that ships the new
+`calib-targets-puzzleboard` crate. `calib-targets-core` adds the
+`TargetKind::PuzzleBoard` variant, which is a non-additive change to a
+`#[non_exhaustive]` enum but bumps the workspace minor version anyway so
+all crates publish in lockstep at `0.6.0`.
 
 ### Added
 
@@ -16,6 +20,8 @@ crate at the same coordinated version.
   `calib-targets-puzzleboard` crate. The detector samples edge-midpoint code
   dots on a chessboard grid, decodes the embedded 501 x 501 master pattern,
   and returns absolute corner IDs plus target-space positions.
+- Add `TargetKind::PuzzleBoard` variant in `calib-targets-core` so the new
+  detector can populate `TargetDetection.kind`.
 - Add committed PuzzleBoard code-map blobs, generation/verification tools,
   synthetic and real-image regression tests, and generated PuzzleBoard
   testdata.

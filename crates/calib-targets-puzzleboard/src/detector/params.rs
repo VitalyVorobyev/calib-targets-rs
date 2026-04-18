@@ -62,8 +62,9 @@ pub struct PuzzleBoardDecodeConfig {
     pub sample_radius_rel: f32,
     /// Master-origin search strategy. Defaults to
     /// [`PuzzleBoardSearchMode::Full`]; set to
-    /// [`PuzzleBoardSearchMode::KnownOrigin`] when the physical board's
-    /// master-map origin is known ahead of time.
+    /// [`PuzzleBoardSearchMode::FixedBoard`] when the physical board's
+    /// own bit pattern is known and you only need to recover its pose
+    /// within the master grid.
     #[serde(default)]
     pub search_mode: PuzzleBoardSearchMode,
 }
