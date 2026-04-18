@@ -27,9 +27,9 @@ thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-calib-targets.workspace = true
+calib-targets = { path = "../calib-targets" }
 calib-targets-core.workspace = true
-calib-targets-print.workspace = true
+calib-targets-print = { path = "../calib-targets-print" }
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
 serde_json.workspace = true
