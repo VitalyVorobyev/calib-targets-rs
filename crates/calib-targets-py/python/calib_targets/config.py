@@ -588,6 +588,183 @@ class MarkerBoardParams:
         )
 
 
+# ---------------------------------------------------------------------------
+# PuzzleBoard detection params
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class PuzzleBoardSpec:
+    """PuzzleBoard geometry.
+
+    ``rows`` and ``cols`` are square counts. Inner corner count is
+    ``(rows - 1) * (cols - 1)``.
+    """
+
+    rows: int
+    cols: int
+    cell_size: float
+    origin_row: int = 0
+    origin_col: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rows": self.rows,
+            "cols": self.cols,
+            "cell_size": self.cell_size,
+            "origin_row": self.origin_row,
+            "origin_col": self.origin_col,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSpec:
+        return cls(
+            rows=int(data["rows"]),
+            cols=int(data["cols"]),
+            cell_size=float(data["cell_size"]),
+            origin_row=int(data.get("origin_row", 0)),
+            origin_col=int(data.get("origin_col", 0)),
+        )
+
+
+@dataclass(slots=True)
+class PuzzleBoardSearchMode:
+    """Strategy for recovering the master-map origin during decode.
+
+    - ``kind="full"`` (the default) — scan every
+      ``(D4, master_row, master_col)`` in the 501 × 501 master.
+    - ``kind="fixed_board"`` — match observations against the declared
+      board's own bit pattern (read from :class:`PuzzleBoardSpec`). Any
+      partial view of that specific board decodes to the same master IDs
+      a full-view decode would produce, whether that's a single camera
+      seeing a fragment of a large board or several cameras each seeing a
+      different fragment.
+    """
+
+    kind: str = "full"
+
+    @classmethod
+    def full(cls) -> PuzzleBoardSearchMode:
+        return cls(kind="full")
+
+    @classmethod
+    def fixed_board(cls) -> PuzzleBoardSearchMode:
+        return cls(kind="fixed_board")
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind in ("full", "fixed_board"):
+            return {"kind": self.kind}
+        raise ValueError(f"unknown PuzzleBoardSearchMode kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSearchMode:
+        kind = str(data.get("kind", "full"))
+        if kind == "full":
+            return cls.full()
+        if kind == "fixed_board":
+            return cls.fixed_board()
+        raise ValueError(f"unknown PuzzleBoardSearchMode kind: {kind!r}")
+
+
+@dataclass(slots=True)
+class PuzzleBoardDecodeConfig:
+    """PuzzleBoard edge-bit decode parameters."""
+
+    min_window: int = 4
+    min_bit_confidence: float = 0.15
+    max_bit_error_rate: float = 0.30
+    search_all_components: bool = True
+    sample_radius_rel: float = 1.0 / 6.0
+    search_mode: PuzzleBoardSearchMode = field(default_factory=PuzzleBoardSearchMode.full)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "min_window": self.min_window,
+            "min_bit_confidence": self.min_bit_confidence,
+            "max_bit_error_rate": self.max_bit_error_rate,
+            "search_all_components": self.search_all_components,
+            "sample_radius_rel": self.sample_radius_rel,
+            "search_mode": self.search_mode.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDecodeConfig:
+        d = cls()
+        return cls(
+            min_window=int(data.get("min_window", d.min_window)),
+            min_bit_confidence=float(
+                data.get("min_bit_confidence", d.min_bit_confidence)
+            ),
+            max_bit_error_rate=float(data.get("max_bit_error_rate", d.max_bit_error_rate)),
+            search_all_components=bool(
+                data.get("search_all_components", d.search_all_components)
+            ),
+            sample_radius_rel=float(data.get("sample_radius_rel", d.sample_radius_rel)),
+            search_mode=PuzzleBoardSearchMode.from_dict(
+                data.get("search_mode", {"kind": "full"})
+            ),
+        )
+
+
+#: Backward-compatible alias. Use :class:`PuzzleBoardDecodeConfig` in new code.
+DecodeConfig = PuzzleBoardDecodeConfig
+
+
+@dataclass(slots=True)
+class PuzzleBoardParams:
+    """PuzzleBoard detector parameters. ``board`` is required."""
+
+    board: PuzzleBoardSpec
+    px_per_square: float = 60.0
+    chessboard: ChessboardParams = field(default_factory=ChessboardParams)
+    decode: PuzzleBoardDecodeConfig = field(default_factory=PuzzleBoardDecodeConfig)
+
+    @classmethod
+    def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
+        chessboard = ChessboardParams(
+            min_corner_strength=0.1,
+            min_corners=20,
+            expected_rows=board.rows - 1,
+            expected_cols=board.cols - 1,
+            completeness_threshold=0.02,
+            graph=GridGraphParams(
+                min_spacing_pix=8.0,
+                max_spacing_pix=600.0,
+                k_neighbors=8,
+                orientation_tolerance_deg=22.5,
+            ),
+        )
+        return cls(board=board, px_per_square=60.0, chessboard=chessboard)
+
+    @classmethod
+    def sweep_for_board(cls, board: PuzzleBoardSpec) -> list[PuzzleBoardParams]:
+        base = cls.for_board(board)
+        high = cls.from_dict(base.to_dict())
+        high.chessboard.chess.threshold_value = 0.15
+        low = cls.from_dict(base.to_dict())
+        low.chessboard.chess.threshold_value = 0.08
+        return [base, high, low]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "px_per_square": self.px_per_square,
+            "chessboard": self.chessboard.to_dict(),
+            "board": self.board.to_dict(),
+            "decode": self.decode.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardParams:
+        if "board" not in data:
+            raise ValueError("PuzzleBoardParams requires 'board' field")
+        return cls(
+            board=PuzzleBoardSpec.from_dict(data["board"]),
+            px_per_square=float(data.get("px_per_square", 60.0)),
+            chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
+            decode=PuzzleBoardDecodeConfig.from_dict(data.get("decode", {})),
+        )
+
+
 __all__ = [
     "CenterOfMassConfig",
     "ForstnerConfig",
@@ -607,4 +784,9 @@ __all__ = [
     "CircleScoreParams",
     "CircleMatchParams",
     "MarkerBoardParams",
+    "PuzzleBoardSpec",
+    "PuzzleBoardSearchMode",
+    "PuzzleBoardDecodeConfig",
+    "DecodeConfig",  # backward-compatible alias
+    "PuzzleBoardParams",
 ]

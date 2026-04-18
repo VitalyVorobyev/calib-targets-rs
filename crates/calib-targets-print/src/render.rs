@@ -1,10 +1,11 @@
 use crate::model::{
     validate_charuco_spec, validate_inner_corner_grid, validate_marker_board_spec,
-    CharucoTargetSpec, MarkerBoardTargetSpec, PrintableTargetDocument, PrintableTargetError,
-    RenderOptions, ResolvedTargetLayout, TargetSpec,
+    validate_puzzleboard_spec, CharucoTargetSpec, MarkerBoardTargetSpec, PrintableTargetDocument,
+    PrintableTargetError, PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, TargetSpec,
 };
 use calib_targets_charuco::CharucoBoard;
 use calib_targets_marker::CirclePolarity;
+use calib_targets_puzzleboard::code_maps;
 use png::{BitDepth, ColorType, Encoder, PixelDimensions, Unit};
 
 #[derive(Clone, Copy, Debug)]
@@ -108,6 +109,7 @@ fn build_board_scene(
         TargetSpec::Chessboard(spec) => build_chessboard(scene, spec, layout),
         TargetSpec::Charuco(spec) => build_charuco(scene, spec, layout),
         TargetSpec::MarkerBoard(spec) => build_marker_board(scene, spec, layout),
+        TargetSpec::PuzzleBoard(spec) => build_puzzleboard(scene, spec, layout),
     }
 }
 
@@ -199,6 +201,82 @@ fn build_charuco(
                     fill: if is_black { Fill::Black } else { Fill::White },
                 });
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn build_puzzleboard(
+    scene: &mut Scene,
+    spec: &PuzzleBoardTargetSpec,
+    layout: &ResolvedTargetLayout,
+) -> Result<(), PrintableTargetError> {
+    validate_puzzleboard_spec(spec)?;
+    let origin_x = layout.board_origin_mm[0];
+    let origin_y = layout.board_origin_mm[1];
+
+    // 1) Checkerboard squares. Convention: top-left square (local (0, 0))
+    //    is **black** iff `(origin_row + origin_col) % 2 == 0`, so the
+    //    master checkerboard tiling is consistent across sub-rectangles.
+    for sy in 0..spec.rows {
+        for sx in 0..spec.cols {
+            let master_r = spec.origin_row + sy;
+            let master_c = spec.origin_col + sx;
+            let fill = if (master_r + master_c).is_multiple_of(2) {
+                Fill::Black
+            } else {
+                Fill::White
+            };
+            scene.primitives.push(Primitive::Rect {
+                x_mm: origin_x + sx as f64 * spec.square_size_mm,
+                y_mm: origin_y + sy as f64 * spec.square_size_mm,
+                width_mm: spec.square_size_mm,
+                height_mm: spec.square_size_mm,
+                fill,
+            });
+        }
+    }
+
+    // 2) Dots at every interior edge midpoint. Dot colour encodes the bit:
+    //    bit=0 → black dot, bit=1 → white dot  (Stelldinger 2024 convention).
+    let dot_radius_mm = 0.5 * spec.dot_diameter_rel * spec.square_size_mm;
+
+    // Horizontal interior edges: between rows `r` and `r+1` at column `c`.
+    // There are `rows - 1` such rows × `cols` columns in the board.
+    for r in 0..spec.rows.saturating_sub(1) {
+        for c in 0..spec.cols {
+            let master_r = (spec.origin_row + r) as i32;
+            let master_c = (spec.origin_col + c) as i32;
+            let bit = code_maps::horizontal_edge_bit(master_r, master_c);
+            let fill = if bit == 1 { Fill::White } else { Fill::Black };
+            let cx = origin_x + (c as f64 + 0.5) * spec.square_size_mm;
+            let cy = origin_y + (r as f64 + 1.0) * spec.square_size_mm;
+            scene.primitives.push(Primitive::Circle {
+                cx_mm: cx,
+                cy_mm: cy,
+                radius_mm: dot_radius_mm,
+                fill,
+            });
+        }
+    }
+
+    // Vertical interior edges: between cols `c` and `c+1` at row `r`.
+    // `rows` rows × `cols - 1` columns.
+    for r in 0..spec.rows {
+        for c in 0..spec.cols.saturating_sub(1) {
+            let master_r = (spec.origin_row + r) as i32;
+            let master_c = (spec.origin_col + c) as i32;
+            let bit = code_maps::vertical_edge_bit(master_r, master_c);
+            let fill = if bit == 1 { Fill::White } else { Fill::Black };
+            let cx = origin_x + (c as f64 + 1.0) * spec.square_size_mm;
+            let cy = origin_y + (r as f64 + 0.5) * spec.square_size_mm;
+            scene.primitives.push(Primitive::Circle {
+                cx_mm: cx,
+                cy_mm: cy,
+                radius_mm: dot_radius_mm,
+                fill,
+            });
         }
     }
 

@@ -4,13 +4,18 @@ import { ImageCanvas } from "./components/ImageCanvas";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { useDetector } from "./hooks/useDetector";
-import { defaultChessConfig, defaultChessboardParams } from "./lib/detector";
+import {
+  defaultChessConfig,
+  defaultChessboardParams,
+  defaultPuzzleBoardParams,
+} from "./lib/detector";
 import type { ImageData } from "./lib/image-utils";
 import type {
   ChessConfig,
   ChessboardParams,
   CharucoDetectorParams,
   MarkerBoardParams,
+  PuzzleBoardParams,
   DetectionMode,
 } from "./types/calib-targets";
 
@@ -117,19 +122,27 @@ export default function App() {
     useState<CharucoDetectorParams>(DEFAULT_CHARUCO_PARAMS);
   const [markerParams, setMarkerParams] =
     useState<MarkerBoardParams>(DEFAULT_MARKER_PARAMS);
+  const [puzzleParams, setPuzzleParams] = useState<PuzzleBoardParams | null>(
+    null,
+  );
 
   // Load defaults from WASM once initialized
   useEffect(() => {
     if (ready && !chessCfg) {
       setChessCfg(defaultChessConfig());
       setCbParams(defaultChessboardParams());
+      setPuzzleParams(defaultPuzzleBoardParams(10, 10));
     }
   }, [ready, chessCfg]);
 
   const handleDetect = useCallback(() => {
-    if (!image || !chessCfg || !cbParams) return;
+    if (!image || !chessCfg || !cbParams || !puzzleParams) return;
 
-    let params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams;
+    let params:
+      | ChessboardParams
+      | CharucoDetectorParams
+      | MarkerBoardParams
+      | PuzzleBoardParams;
     switch (mode) {
       case "corners":
         params = cbParams; // unused, but required by signature
@@ -143,16 +156,19 @@ export default function App() {
       case "marker_board":
         params = markerParams;
         break;
+      case "puzzleboard":
+        params = puzzleParams;
+        break;
     }
 
     detect(mode, image.gray, image.width, image.height, chessCfg, params);
-  }, [image, mode, chessCfg, cbParams, charucoParams, markerParams, detect]);
+  }, [image, mode, chessCfg, cbParams, charucoParams, markerParams, puzzleParams, detect]);
 
   if (initError) {
     return <div className="init-error">Failed to load WASM: {initError}</div>;
   }
 
-  if (!ready || !chessCfg || !cbParams) {
+  if (!ready || !chessCfg || !cbParams || !puzzleParams) {
     return <div className="loading">Loading WASM module...</div>;
   }
 
@@ -179,6 +195,8 @@ export default function App() {
             onCharucoParamsChange={setCharucoParams}
             markerParams={markerParams}
             onMarkerParamsChange={setMarkerParams}
+            puzzleParams={puzzleParams}
+            onPuzzleParamsChange={setPuzzleParams}
             onDetect={handleDetect}
             loading={loading}
             hasImage={image != null}

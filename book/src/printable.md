@@ -12,7 +12,7 @@ published Rust crates, the repo-local CLI, and the Python bindings.
 The input is one canonical JSON-backed document with:
 
 - `schema_version`
-- `target`: `chessboard`, `charuco`, or `marker_board`
+- `target`: `chessboard`, `charuco`, `marker_board`, or `puzzle_board`
 - `page`: size, orientation, and margin in millimeters
 - `render`: debug overlay toggle and PNG DPI
 
@@ -65,6 +65,8 @@ Matching examples also exist for chessboard and marker-board targets:
 
 - `testdata/printable/chessboard_a4.json`
 - `testdata/printable/marker_board_a4.json`
+- `testdata/printable/puzzleboard_small.json`
+- `testdata/printable/puzzleboard_mid.json`
 
 ## Rust quickstart
 
@@ -145,6 +147,9 @@ The current `init` subcommands are:
 - `chessboard`
 - `charuco`
 - `marker-board`
+
+PuzzleBoard generation is available from an existing JSON spec; the CLI does
+not yet have an `init puzzle-board` shortcut.
 
 Other printable workflow commands:
 

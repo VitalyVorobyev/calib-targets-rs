@@ -129,6 +129,9 @@ def _render_core_stub(
         "detect_charuco": "dict[str, Any]",
         "detect_chessboard": "dict[str, Any] | None",
         "detect_marker_board": "dict[str, Any] | None",
+        "detect_puzzleboard": "dict[str, Any]",
+        "detect_puzzleboard_best": "dict[str, Any]",
+        "default_puzzleboard_params": "dict[str, Any]",
         "render_target_bundle": "dict[str, Any]",
         "write_target_bundle": "dict[str, Any]",
     }

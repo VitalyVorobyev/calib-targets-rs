@@ -1,4 +1,4 @@
-use crate::{charuco, chessboard, core, marker};
+use crate::{charuco, chessboard, core, marker, puzzleboard};
 use chess_corners::find_chess_corners_image;
 use nalgebra::Point2;
 
@@ -25,6 +25,12 @@ pub enum DetectError {
 
     #[error(transparent)]
     CharucoDetect(#[from] charuco::CharucoDetectError),
+
+    #[error(transparent)]
+    PuzzleBoardSpec(#[from] puzzleboard::PuzzleBoardSpecError),
+
+    #[error(transparent)]
+    PuzzleBoardDetect(#[from] puzzleboard::PuzzleBoardDetectError),
 }
 
 /// Reasonable default settings for the `chess-corners` ChESS detector.
@@ -113,6 +119,42 @@ pub fn detect_charuco(
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
 
+/// Run the PuzzleBoard detector end-to-end: ChESS corners → chessboard grid
+/// → edge-bit sampling → cross-correlation decode → absolute master IDs.
+///
+/// Corner detection uses `params.chessboard.chess`.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, params),
+        fields(
+            width = img.width(),
+            height = img.height(),
+            board_rows = params.board.rows,
+            board_cols = params.board.cols
+        )
+    )
+)]
+pub fn detect_puzzleboard(
+    img: &::image::GrayImage,
+    params: &puzzleboard::PuzzleBoardParams,
+) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
+    let corners = detect_corners(img, &params.chessboard.chess);
+    let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
+    Ok(detector.detect(&gray_view(img), &corners)?)
+}
+
+/// Build a reasonable default PuzzleBoard parameter set for a
+/// `rows × cols` board (square counts).
+pub fn default_puzzleboard_params(
+    rows: u32,
+    cols: u32,
+) -> Result<puzzleboard::PuzzleBoardParams, DetectError> {
+    let spec = puzzleboard::PuzzleBoardSpec::new(rows, cols, 1.0)?;
+    Ok(puzzleboard::PuzzleBoardParams::for_board(&spec))
+}
+
 /// Run the checkerboard+circles marker board detector end-to-end.
 ///
 /// Corner detection uses `params.chessboard.chess`.
@@ -192,6 +234,39 @@ pub fn detect_charuco_best(
     })
 }
 
+/// Try multiple PuzzleBoard parameter configs. Picks the configuration that
+/// labels the most corners with the highest mean decode confidence.
+pub fn detect_puzzleboard_best(
+    img: &::image::GrayImage,
+    configs: &[puzzleboard::PuzzleBoardParams],
+) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
+    let mut best: Option<puzzleboard::PuzzleBoardDetectionResult> = None;
+    let mut last_err: Option<DetectError> = None;
+    for params in configs {
+        match detect_puzzleboard(img, params) {
+            Ok(r) => {
+                let better = match &best {
+                    None => true,
+                    Some(b) => {
+                        let key_new = (r.detection.corners.len(), r.decode.mean_confidence);
+                        let key_old = (b.detection.corners.len(), b.decode.mean_confidence);
+                        key_new.0 > key_old.0 || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
+                    }
+                };
+                if better {
+                    best = Some(r);
+                }
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    best.ok_or_else(|| {
+        last_err.unwrap_or(DetectError::PuzzleBoardDetect(
+            puzzleboard::PuzzleBoardDetectError::DecodeFailed,
+        ))
+    })
+}
+
 /// Try multiple marker board parameter configs, return the best result (most corners).
 pub fn detect_marker_board_best(
     img: &::image::GrayImage,
@@ -262,6 +337,17 @@ pub fn detect_charuco_from_gray_u8(
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
     detect_charuco(&img, params)
+}
+
+/// Run the PuzzleBoard detector from a raw grayscale byte buffer.
+pub fn detect_puzzleboard_from_gray_u8(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    params: &puzzleboard::PuzzleBoardParams,
+) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
+    let img = gray_image_from_slice(width, height, pixels)?;
+    detect_puzzleboard(&img, params)
 }
 
 /// Run the checkerboard+circles marker board detector from a raw grayscale byte buffer.

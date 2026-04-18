@@ -1,0 +1,52 @@
+[package]
+name = "calib-targets-puzzleboard"
+version.workspace = true
+description = "PuzzleBoard self-identifying chessboard target detector (Stelldinger 2024)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+readme = "README.md"
+documentation.workspace = true
+keywords = ["calibration", "computer-vision", "puzzleboard", "chessboard", "de-bruijn"]
+categories = ["computer-vision", "science"]
+
+[features]
+tracing = ["calib-targets-core/tracing", "dep:tracing"]
+
+[dependencies]
+calib-targets-core.workspace = true
+calib-targets-chessboard.workspace = true
+projective-grid.workspace = true
+chess-corners-core.workspace = true
+nalgebra.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+thiserror.workspace = true
+tracing = { workspace = true, optional = true }
+
+[dev-dependencies]
+calib-targets = { path = "../calib-targets" }
+calib-targets-core.workspace = true
+calib-targets-print = { path = "../calib-targets-print" }
+chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
+image.workspace = true
+serde_json.workspace = true
+tempfile.workspace = true
+
+[[bin]]
+name = "generate-puzzleboard-code-maps"
+path = "tools/generate_code_maps.rs"
+
+[[bin]]
+name = "verify-puzzleboard-code-maps"
+path = "tools/verify_code_maps.rs"
+
+[[bin]]
+name = "import-author-puzzleboard-maps"
+path = "tools/import_author_maps.rs"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -20,11 +20,14 @@ pub struct TargetDetection {
 |---|---|
 | `TargetKind::Chessboard` | `detect_chessboard` |
 | `TargetKind::Charuco` | `detect_charuco` (embedded in `CharucoDetectionResult`) |
+| `TargetKind::PuzzleBoard` | `detect_puzzleboard` (embedded in `PuzzleBoardDetectionResult`) |
 | `TargetKind::CheckerboardMarker` | `detect_marker_board` (embedded in `MarkerBoardDetectionResult`) |
 
 `corners` is a `Vec<LabeledCorner>` ordered differently per target type:
 - **Chessboard:** row-major order (left-to-right, top-to-bottom by grid coordinates).
 - **ChArUco:** ordered by ascending `id`.
+- **PuzzleBoard:** ordered by detected grid traversal, with absolute master-grid
+  coordinates in `grid`.
 - **Marker board:** ordered by grid coordinates `(i, j)`.
 
 ---
@@ -79,6 +82,7 @@ is given in mm).
 |---|---|
 | Chessboard | **Never** (no physical size in `ChessboardParams`) |
 | ChArUco | Always when `board.cell_size > 0` and alignment succeeds |
+| PuzzleBoard | Always when decode succeeds |
 | Marker board | Only when `layout.cell_size > 0` and alignment succeeds |
 
 Use `target_position` directly as the object-space point for camera calibration (pass
@@ -143,10 +147,10 @@ points into the image without re-running detection.
 **Q: Why are `grid` coordinates not always the same as the printed board coordinates?**
 
 The detector builds the grid from scratch without knowing which corner is the
-board's physical origin. The `(0, 0)` origin is always the **top-left of the detected
-region in the image**, not the physical board corner labelled `(0, 0)` by the
-manufacturer. Use `id` (ChArUco) or `target_position` to obtain board-canonical
-positions.
+board's physical origin. For plain chessboards and marker boards, the `(0, 0)`
+origin is the **top-left of the detected region in the image**, not necessarily
+the physical board corner. Use `id` (ChArUco or PuzzleBoard) or
+`target_position` to obtain board-canonical positions.
 
 **Q: Can I use `target_position` directly for `solvePnP`?**
 

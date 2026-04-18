@@ -82,17 +82,17 @@ jobs:
           test -f demo/pkg/calib_targets_wasm.d.ts
           ls -lh demo/pkg/calib_targets_wasm_bg.wasm
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
+          bun-version: latest
 
       - name: Build demo app
         working-directory: demo
         run: |
-          npm ci
-          npx tsc --noEmit
-          npx vite build
+          bun install --frozen-lockfile
+          bunx tsc --noEmit
+          bunx vite build
 
   python-bindings:
     runs-on: ubuntu-latest

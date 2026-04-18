@@ -23,7 +23,7 @@ let params = CharucoParams::for_board(&board);
 ```
 
 Each params struct embeds the ChESS corner detector config in `params.chess`
-(chessboard) or `params.chessboard.chess` (charuco, marker). The defaults use
+(chessboard) or `params.chessboard.chess` (charuco, puzzleboard, marker). The defaults use
 single-scale detection with `threshold_mode = Relative`,
 `threshold_value = 0.2`, and `nms_radius = 2`.
 
@@ -49,6 +49,7 @@ let result = detect_charuco_best(&img, &configs);
 
 `sweep_for_board()` returns three configs: default + high-threshold +
 low-threshold. For chessboards, use `ChessboardParams::sweep_default()`.
+For PuzzleBoard, use `PuzzleBoardParams::sweep_for_board(&spec)`.
 
 Multi-component merge (built into the ChArUco detector) further helps by
 independently aligning disconnected grid fragments and merging them, recovering
@@ -67,6 +68,7 @@ independently aligning disconnected grid fragments and merging them, recovering
 | Dense board, corners falsely merged | `min_spacing_pix` ↑ |
 | `NoMarkers` on blurry image | `min_border_score` ↓, `multi_threshold: true` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
+| `DecodeFailed` on PuzzleBoard | `decode.min_bit_confidence` ↓, `decode.max_bit_error_rate` ↑ |
 
 ---
 

@@ -46,6 +46,16 @@ def test_detect_marker_board_typed_layout() -> None:
     assert result is None or isinstance(result, calib_targets.MarkerBoardDetectionResult)
 
 
+def test_detect_puzzleboard_typed_params() -> None:
+    board = calib_targets.PuzzleBoardSpec(rows=10, cols=10, cell_size=1.0)
+    params = calib_targets.PuzzleBoardParams.for_board(board)
+    try:
+        result = calib_targets.detect_puzzleboard(_image(), params=params)
+    except RuntimeError:
+        result = None
+    assert result is None or isinstance(result, calib_targets.PuzzleBoardDetectionResult)
+
+
 def test_dict_inputs_are_rejected() -> None:
     with pytest.raises(TypeError):
         calib_targets.detect_chessboard(_image(), params={"min_corners": 16})  # type: ignore[arg-type]
@@ -61,6 +71,12 @@ def test_dict_inputs_are_rejected() -> None:
     params = calib_targets.CharucoDetectorParams(board=board)
     with pytest.raises(TypeError):
         calib_targets.detect_charuco(_image(), chess_cfg={"threshold_value": 0.1}, params=params)  # type: ignore[arg-type]
+
+    puzzle_params = calib_targets.PuzzleBoardParams.for_board(
+        calib_targets.PuzzleBoardSpec(rows=10, cols=10, cell_size=1.0)
+    )
+    with pytest.raises(TypeError):
+        calib_targets.detect_puzzleboard(_image(), params=puzzle_params, chess_cfg={"threshold_value": 0.1})  # type: ignore[arg-type]
 
 
 def test_chess_config_roundtrip() -> None:
@@ -83,6 +99,30 @@ def test_chessboard_params_roundtrip() -> None:
     serialized = params.to_dict()
     restored = calib_targets.ChessboardParams.from_dict(serialized)
     assert restored.to_dict() == serialized
+
+
+def test_puzzleboard_params_roundtrip() -> None:
+    params = calib_targets.PuzzleBoardParams.for_board(
+        calib_targets.PuzzleBoardSpec(rows=12, cols=13, cell_size=2.5, origin_row=4, origin_col=7)
+    )
+    params.decode.max_bit_error_rate = 0.25
+    serialized = params.to_dict()
+    restored = calib_targets.PuzzleBoardParams.from_dict(serialized)
+    assert restored.to_dict() == serialized
+
+
+def test_puzzleboard_printing_roundtrip() -> None:
+    doc = calib_targets.PrintableTargetDocument(
+        target=calib_targets.PuzzleBoardTargetSpec(
+            rows=10,
+            cols=10,
+            square_size_mm=12.0,
+            origin_row=1,
+            origin_col=2,
+        )
+    )
+    restored = calib_targets.PrintableTargetDocument.from_dict(doc.to_dict())
+    assert restored.to_dict() == doc.to_dict()
 
 
 def _sample_chessboard_result() -> dict:
@@ -190,6 +230,44 @@ def _sample_marker_board_result() -> dict:
     }
 
 
+def _sample_puzzleboard_result() -> dict:
+    return {
+        "detection": {
+            "kind": "puzzle_board",
+            "corners": [
+                {
+                    "position": [10.0, 20.0],
+                    "grid": {"i": 4, "j": 5},
+                    "id": 2509,
+                    "target_position": [4.0, 5.0],
+                    "score": 0.9,
+                }
+            ],
+        },
+        "alignment": {
+            "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
+            "translation": [4, 5],
+        },
+        "decode": {
+            "edges_observed": 24,
+            "edges_matched": 24,
+            "mean_confidence": 0.95,
+            "bit_error_rate": 0.0,
+            "master_origin_row": 5,
+            "master_origin_col": 4,
+        },
+        "observed_edges": [
+            {
+                "row": 1,
+                "col": 2,
+                "orientation": "horizontal",
+                "bit": 1,
+                "confidence": 0.8,
+            }
+        ],
+    }
+
+
 def test_result_roundtrip() -> None:
     chess_raw = _sample_chessboard_result()
     assert calib_targets.ChessboardDetectionResult.from_dict(chess_raw).to_dict() == chess_raw
@@ -201,6 +279,12 @@ def test_result_roundtrip() -> None:
     assert (
         calib_targets.MarkerBoardDetectionResult.from_dict(marker_raw).to_dict()
         == marker_raw
+    )
+
+    puzzle_raw = _sample_puzzleboard_result()
+    assert (
+        calib_targets.PuzzleBoardDetectionResult.from_dict(puzzle_raw).to_dict()
+        == puzzle_raw
     )
 
 

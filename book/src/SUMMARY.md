@@ -16,6 +16,7 @@
     - [ArUco Decoding Details](aruco_decoding.md)
   - [calib-targets-charuco](charuco.md)
     - [ChArUco Alignment and Refinement](charuco_alignment.md)
+  - [calib-targets-puzzleboard](puzzleboard.md)
   - [calib-targets-marker](marker.md)
   - [calib-targets-print](printable.md)
   - [calib-targets (facade)](facade.md)

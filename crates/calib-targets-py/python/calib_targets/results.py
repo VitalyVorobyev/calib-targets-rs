@@ -340,6 +340,71 @@ class MarkerBoardDetectionResult:
         return marker_board_detection_result_from_dict(data)
 
 
+@dataclass(slots=True)
+class PuzzleBoardObservedEdge:
+    row: int
+    col: int
+    orientation: str
+    bit: int
+    confidence: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import observed_edge_to_dict
+
+        return observed_edge_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardObservedEdge:
+        from ._convert_out import observed_edge_from_dict
+
+        return observed_edge_from_dict(data)
+
+
+#: Backward-compatible alias. Use :class:`PuzzleBoardObservedEdge` in new code.
+ObservedEdge = PuzzleBoardObservedEdge
+
+
+@dataclass(slots=True)
+class PuzzleBoardDecodeInfo:
+    edges_observed: int
+    edges_matched: int
+    mean_confidence: float
+    bit_error_rate: float
+    master_origin_row: int
+    master_origin_col: int
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzleboard_decode_info_to_dict
+
+        return puzzleboard_decode_info_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDecodeInfo:
+        from ._convert_out import puzzleboard_decode_info_from_dict
+
+        return puzzleboard_decode_info_from_dict(data)
+
+
+@dataclass(slots=True)
+class PuzzleBoardDetectionResult:
+    detection: TargetDetection
+    alignment: GridAlignment
+    decode: PuzzleBoardDecodeInfo
+    observed_edges: list[PuzzleBoardObservedEdge]
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzleboard_detection_result_to_dict
+
+        return puzzleboard_detection_result_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDetectionResult:
+        from ._convert_out import puzzleboard_detection_result_from_dict
+
+        return puzzleboard_detection_result_from_dict(data)
+
+
+
 __all__ = [
     "Point2",
     "Corners4",
@@ -361,4 +426,8 @@ __all__ = [
     "CircleMatch",
     "CharucoDetectionResult",
     "MarkerBoardDetectionResult",
+    "PuzzleBoardObservedEdge",
+    "ObservedEdge",  # backward-compatible alias
+    "PuzzleBoardDecodeInfo",
+    "PuzzleBoardDetectionResult",
 ]

@@ -6,16 +6,19 @@ import {
   detectChessboard,
   detectCharuco,
   detectMarkerBoard,
+  detectPuzzleBoard,
 } from "../lib/detector";
 import type {
   ChessConfig,
   ChessboardParams,
   CharucoDetectorParams,
   MarkerBoardParams,
+  PuzzleBoardParams,
   Corner,
   ChessboardDetectionResult,
   CharucoDetectionResult,
   MarkerBoardDetectionResult,
+  PuzzleBoardDetectionResult,
   DetectionMode,
 } from "../types/calib-targets";
 
@@ -23,7 +26,8 @@ export type DetectionResult =
   | { mode: "corners"; corners: Corner[] }
   | { mode: "chessboard"; result: ChessboardDetectionResult | null }
   | { mode: "charuco"; result: CharucoDetectionResult }
-  | { mode: "marker_board"; result: MarkerBoardDetectionResult | null };
+  | { mode: "marker_board"; result: MarkerBoardDetectionResult | null }
+  | { mode: "puzzleboard"; result: PuzzleBoardDetectionResult };
 
 interface UseDetectorReturn {
   ready: boolean;
@@ -38,7 +42,7 @@ interface UseDetectorReturn {
     width: number,
     height: number,
     chessCfg: ChessConfig,
-    params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams,
+    params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams | PuzzleBoardParams,
   ) => void;
 }
 
@@ -75,7 +79,7 @@ export function useDetector(): UseDetectorReturn {
       width: number,
       height: number,
       chessCfg: ChessConfig,
-      params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams,
+      params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams | PuzzleBoardParams,
     ) => {
       setLoading(true);
       setError(null);
@@ -127,6 +131,18 @@ export function useDetector(): UseDetectorReturn {
                   height,
                   chessCfg,
                   params as MarkerBoardParams,
+                ),
+              };
+              break;
+            case "puzzleboard":
+              detectionResult = {
+                mode: "puzzleboard",
+                result: detectPuzzleBoard(
+                  gray,
+                  width,
+                  height,
+                  chessCfg,
+                  params as PuzzleBoardParams,
                 ),
               };
               break;

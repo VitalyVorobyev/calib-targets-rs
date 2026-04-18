@@ -10,6 +10,8 @@
 - `calib-targets-chessboard`: chessboard detection from corner clouds.
 - `calib-targets-aruco`: embedded dictionaries and decoding on rectified grids.
 - `calib-targets-charuco`: grid-first ChArUco detector and alignment.
+- `calib-targets-puzzleboard`: self-identifying chessboard detector with
+  absolute corner IDs from edge dots.
 - `calib-targets-marker`: checkerboard marker detector (chessboard + circles).
 - `calib-targets`: facade crate, currently hosting examples and future high-level APIs.
 

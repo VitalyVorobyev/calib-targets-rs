@@ -15,6 +15,8 @@ function cornerCount(result: DetectionResult): number {
     return result.result.detection.corners.length;
   if (result.mode === "marker_board")
     return result.result?.detection.corners.length ?? 0;
+  if (result.mode === "puzzleboard")
+    return result.result.detection.corners.length;
   return 0;
 }
 
@@ -28,19 +30,29 @@ function gridDims(
     corners = result.result.detection.corners;
   } else if (result.mode === "marker_board" && result.result) {
     corners = result.result.detection.corners;
+  } else if (result.mode === "puzzleboard") {
+    corners = result.result.detection.corners;
   } else {
     return null;
   }
 
-  let maxI = 0,
-    maxJ = 0;
+  // Use max − min + 1 so PuzzleBoard (whose corners carry absolute master
+  // coords in [0, 501)) reports the true extent rather than `max+1`.
+  let minI = Infinity,
+    minJ = Infinity,
+    maxI = -Infinity,
+    maxJ = -Infinity,
+    seen = 0;
   for (const c of corners) {
     if (c.grid) {
-      maxI = Math.max(maxI, c.grid.i);
-      maxJ = Math.max(maxJ, c.grid.j);
+      if (c.grid.i < minI) minI = c.grid.i;
+      if (c.grid.j < minJ) minJ = c.grid.j;
+      if (c.grid.i > maxI) maxI = c.grid.i;
+      if (c.grid.j > maxJ) maxJ = c.grid.j;
+      seen++;
     }
   }
-  return corners.length > 0 ? { rows: maxJ + 1, cols: maxI + 1 } : null;
+  return seen > 0 ? { rows: maxJ - minJ + 1, cols: maxI - minI + 1 } : null;
 }
 
 export function ResultsPanel({ result, timeMs, error }: Props) {
@@ -72,7 +84,8 @@ export function ResultsPanel({ result, timeMs, error }: Props) {
     result.mode === "corners" ||
     (result.mode === "chessboard" && result.result != null) ||
     result.mode === "charuco" ||
-    (result.mode === "marker_board" && result.result != null);
+    (result.mode === "marker_board" && result.result != null) ||
+    result.mode === "puzzleboard";
 
   return (
     <div className="results-panel">

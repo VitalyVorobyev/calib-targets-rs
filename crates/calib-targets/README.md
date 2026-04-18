@@ -2,7 +2,7 @@
 
 ![Mesh-rectified grid](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/mesh_rectified_mid.png)
 
-Fast, robust calibration target detection in Rust: chessboard, ChArUco, ArUco/AprilTag dictionaries, and marker boards.
+Fast, robust calibration target detection in Rust: chessboard, ChArUco, PuzzleBoard, ArUco/AprilTag dictionaries, and marker boards.
 
 ## Highlights
 
@@ -17,16 +17,15 @@ cargo add calib-targets image
 ```
 
 ```rust,no_run
-use calib_targets::detect::{self, ChessConfig};
+use calib_targets::detect;
 use calib_targets::ChessboardParams;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let chess_cfg: ChessConfig = detect::default_chess_config();
     let params = ChessboardParams::default();
 
-    let result = detect::detect_chessboard(&img, &chess_cfg, params);
+    let result = detect::detect_chessboard(&img, &params);
     println!("detected: {}", result.is_some());
     Ok(())
 }
@@ -43,6 +42,7 @@ All detectors produce a `TargetDetection` (returned directly for chessboards and
 
 - Chessboard: `detect::detect_chessboard` or `chessboard::ChessboardDetector`.
 - ChArUco: `detect::detect_charuco` or `charuco::CharucoDetector`.
+- PuzzleBoard: `detect::detect_puzzleboard` or `puzzleboard::PuzzleBoardDetector`.
 - Marker boards: `detect::detect_marker_board` or `marker::MarkerBoardDetector`.
 - ArUco/AprilTag dictionaries and decoding via `aruco`.
 - Printable targets: `printable::render_target_bundle` / `printable::write_target_bundle`.
@@ -58,6 +58,7 @@ All detectors produce a `TargetDetection` (returned directly for chessboards and
 cargo run -p calib-targets --example detect_chessboard -- path/to/image.png
 cargo run -p calib-targets --example detect_charuco -- path/to/image.png
 cargo run -p calib-targets --example detect_markerboard -- path/to/image.png
+cargo run -p calib-targets --example detect_puzzleboard -- path/to/image.png
 cargo run -p calib-targets --example generate_printable -- testdata/printable/charuco_a4.json tmpdata/printable/charuco_a4
 ```
 
@@ -83,6 +84,7 @@ Python bindings are provided via `crates/calib-targets-py` (module name
 pip install maturin
 maturin develop
 python crates/calib-targets-py/examples/detect_charuco.py path/to/image.png
+python crates/calib-targets-py/examples/detect_puzzleboard.py path/to/image.png
 ```
 
 Notes:
@@ -98,6 +100,7 @@ Notes:
 - `calib_targets::chessboard` – chessboard detection.
 - `calib_targets::aruco` – ArUco/AprilTag dictionaries and decoding.
 - `calib_targets::charuco` – ChArUco alignment and IDs.
+- `calib_targets::puzzleboard` – self-identifying PuzzleBoard detection.
 - `calib_targets::marker` – checkerboard + circle marker boards.
 - `calib_targets::printable` – printable target generation.
 

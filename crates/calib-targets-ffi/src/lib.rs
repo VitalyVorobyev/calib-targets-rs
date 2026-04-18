@@ -36,6 +36,10 @@ use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
     MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
+use calib_targets::puzzleboard::{
+    PuzzleBoardDecodeConfig, PuzzleBoardDetectError, PuzzleBoardDetector, PuzzleBoardParams,
+    PuzzleBoardSpec, PuzzleBoardSpecError,
+};
 use std::any::Any;
 use std::cell::RefCell;
 use std::ffi::c_char;
@@ -88,6 +92,7 @@ pub type ct_target_kind_t = u32;
 pub const CT_TARGET_KIND_CHESSBOARD: ct_target_kind_t = 1;
 pub const CT_TARGET_KIND_CHARUCO: ct_target_kind_t = 2;
 pub const CT_TARGET_KIND_CHECKERBOARD_MARKER: ct_target_kind_t = 3;
+pub const CT_TARGET_KIND_PUZZLEBOARD: ct_target_kind_t = 4;
 
 /// Fixed circle polarity identifier type.
 pub type ct_circle_polarity_t = u32;
@@ -390,6 +395,21 @@ pub struct ct_marker_board_result_t {
     pub alignment_inliers: usize,
 }
 
+/// PuzzleBoard detection header and decode diagnostics.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_puzzleboard_result_t {
+    pub detection: ct_target_detection_t,
+    pub alignment: ct_grid_alignment_t,
+    pub edges_observed: usize,
+    pub edges_matched: usize,
+    pub mean_bit_confidence: f32,
+    pub bit_error_rate: f32,
+    pub master_origin_row: i32,
+    pub master_origin_col: i32,
+    pub observed_edges_len: usize,
+}
+
 /// Center-of-mass refiner configuration.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -602,12 +622,53 @@ pub struct ct_marker_board_params_t {
     pub roi_cells: [i32; 4],
 }
 
+/// PuzzleBoard board specification.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_puzzleboard_spec_t {
+    pub rows: u32,
+    pub cols: u32,
+    pub cell_size: f32,
+    pub origin_row: u32,
+    pub origin_col: u32,
+}
+
+/// PuzzleBoard edge-bit decode parameters.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_puzzleboard_decode_config_t {
+    pub min_window: u32,
+    pub min_bit_confidence: f32,
+    pub max_bit_error_rate: f32,
+    pub search_all_components: u32,
+    pub sample_radius_rel: f32,
+}
+
+/// PuzzleBoard detector parameters.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_puzzleboard_params_t {
+    pub px_per_square: f32,
+    pub chessboard: ct_chessboard_params_t,
+    pub board: ct_puzzleboard_spec_t,
+    pub decode: ct_puzzleboard_decode_config_t,
+    pub corner_redetect_params: ct_chess_params_t,
+}
+
 /// Full create-time configuration for the marker-board detector handle.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_marker_board_detector_config_t {
     pub chess: ct_chess_config_t,
     pub detector: ct_marker_board_params_t,
+}
+
+/// Full create-time configuration for the PuzzleBoard detector handle.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_puzzleboard_detector_config_t {
+    pub chess: ct_chess_config_t,
+    pub detector: ct_puzzleboard_params_t,
 }
 
 /// Opaque chessboard detector handle.
@@ -626,6 +687,12 @@ pub struct ct_charuco_detector_t {
 pub struct ct_marker_board_detector_t {
     chess: ChessConfig,
     detector: MarkerBoardDetector,
+}
+
+/// Opaque PuzzleBoard detector handle.
+pub struct ct_puzzleboard_detector_t {
+    chess: ChessConfig,
+    detector: PuzzleBoardDetector,
 }
 
 #[derive(Debug)]
@@ -708,6 +775,16 @@ struct MarkerBoardDetectCall {
     out_circle_matches: *mut ct_circle_match_t,
     circle_matches_capacity: usize,
     out_circle_matches_len: *mut usize,
+}
+
+#[derive(Clone, Copy)]
+struct PuzzleBoardDetectCall {
+    detector: *const ct_puzzleboard_detector_t,
+    image: *const ct_gray_image_u8_t,
+    out_result: *mut ct_puzzleboard_result_t,
+    out_corners: *mut ct_labeled_corner_t,
+    corners_capacity: usize,
+    out_corners_len: *mut usize,
 }
 
 impl PreparedGrayImage {
@@ -873,6 +950,7 @@ fn target_kind_to_ffi(kind: calib_targets::core::TargetKind) -> ct_target_kind_t
         calib_targets::core::TargetKind::Chessboard => CT_TARGET_KIND_CHESSBOARD,
         calib_targets::core::TargetKind::Charuco => CT_TARGET_KIND_CHARUCO,
         calib_targets::core::TargetKind::CheckerboardMarker => CT_TARGET_KIND_CHECKERBOARD_MARKER,
+        calib_targets::core::TargetKind::PuzzleBoard => CT_TARGET_KIND_PUZZLEBOARD,
         _ => CT_TARGET_KIND_CHESSBOARD, // fallback for future variants
     }
 }
@@ -1305,8 +1383,62 @@ fn convert_marker_board_params(params: &ct_marker_board_params_t) -> FfiResult<M
     })
 }
 
+fn convert_puzzleboard_spec(params: &ct_puzzleboard_spec_t) -> FfiResult<PuzzleBoardSpec> {
+    PuzzleBoardSpec::with_origin(
+        params.rows,
+        params.cols,
+        require_positive(params.cell_size, "puzzleboard.board.cell_size")?,
+        params.origin_row,
+        params.origin_col,
+    )
+    .map_err(map_puzzleboard_create_error)
+}
+
+fn convert_puzzleboard_decode_config(
+    params: &ct_puzzleboard_decode_config_t,
+) -> FfiResult<PuzzleBoardDecodeConfig> {
+    if params.min_window < 3 {
+        return Err(FfiError::config_error(
+            "puzzleboard.decode.min_window must be >= 3",
+        ));
+    }
+    Ok(PuzzleBoardDecodeConfig::new(
+        params.min_window,
+        require_fraction(
+            params.min_bit_confidence,
+            "puzzleboard.decode.min_bit_confidence",
+        )?,
+        require_fraction(
+            params.max_bit_error_rate,
+            "puzzleboard.decode.max_bit_error_rate",
+        )?,
+        flag_to_bool(
+            params.search_all_components,
+            "puzzleboard.decode.search_all_components",
+        )?,
+        require_positive(
+            params.sample_radius_rel,
+            "puzzleboard.decode.sample_radius_rel",
+        )?,
+    ))
+}
+
+fn convert_puzzleboard_params(params: &ct_puzzleboard_params_t) -> FfiResult<PuzzleBoardParams> {
+    let board = convert_puzzleboard_spec(&params.board)?;
+    let mut out = PuzzleBoardParams::for_board(&board);
+    out.px_per_square = require_positive(params.px_per_square, "puzzleboard.px_per_square")?;
+    out.chessboard = convert_chessboard_params(&params.chessboard)?;
+    out.decode = convert_puzzleboard_decode_config(&params.decode)?;
+    out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
+    Ok(out)
+}
+
 fn map_charuco_create_error(err: CharucoBoardError) -> FfiError {
     FfiError::config_error(format!("failed to construct ChArUco detector: {err}"))
+}
+
+fn map_puzzleboard_create_error(err: PuzzleBoardSpecError) -> FfiError {
+    FfiError::config_error(format!("failed to construct PuzzleBoard detector: {err}"))
 }
 
 fn map_charuco_detect_error(err: CharucoDetectError) -> FfiError {
@@ -1324,6 +1456,25 @@ fn map_charuco_detect_error(err: CharucoDetectError) -> FfiError {
             FfiError::not_found(format!("mesh warp failed during ChArUco detection: {err}"))
         }
         _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
+    }
+}
+
+fn map_puzzleboard_detect_error(err: PuzzleBoardDetectError) -> FfiError {
+    match err {
+        PuzzleBoardDetectError::BoardSpec(err) => map_puzzleboard_create_error(err),
+        PuzzleBoardDetectError::ChessboardNotDetected => {
+            FfiError::not_found("chessboard not detected during PuzzleBoard detection")
+        }
+        PuzzleBoardDetectError::NotEnoughEdges { observed, needed } => {
+            FfiError::not_found(format!(
+                "not enough PuzzleBoard edge bits sampled (observed={observed}, needed={needed})"
+            ))
+        }
+        PuzzleBoardDetectError::DecodeFailed => FfiError::not_found("PuzzleBoard decode failed"),
+        PuzzleBoardDetectError::InconsistentPosition => {
+            FfiError::not_found("PuzzleBoard decoded position is inconsistent")
+        }
+        other => FfiError::not_found(format!("PuzzleBoard detection failed: {other}")),
     }
 }
 
@@ -1582,6 +1733,20 @@ unsafe fn marker_board_detector_create_impl(
     Ok(())
 }
 
+unsafe fn puzzleboard_detector_create_impl(
+    config: *const ct_puzzleboard_detector_config_t,
+    out_detector: *mut *mut ct_puzzleboard_detector_t,
+) -> FfiResult<()> {
+    let config = unsafe { require_ref(config, "config")? };
+    let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
+    let chess = convert_chess_config(&config.chess)?;
+    let detector = PuzzleBoardDetector::new(convert_puzzleboard_params(&config.detector)?)
+        .map_err(map_puzzleboard_create_error)?;
+    let handle = Box::new(ct_puzzleboard_detector_t { chess, detector });
+    *out_detector = Box::into_raw(handle);
+    Ok(())
+}
+
 unsafe fn chessboard_detector_detect_impl(
     detector: *const ct_chessboard_detector_t,
     image: *const ct_gray_image_u8_t,
@@ -1803,6 +1968,63 @@ unsafe fn marker_board_detector_detect_impl(call: MarkerBoardDetectCall) -> FfiR
     }
     if copy_circle_matches {
         unsafe { copy_output_slice(call.out_circle_matches, &circle_matches_out) };
+    }
+    Ok(())
+}
+
+unsafe fn puzzleboard_detector_detect_impl(call: PuzzleBoardDetectCall) -> FfiResult<()> {
+    let detector = unsafe { require_ref(call.detector, "detector")? };
+    let image = unsafe { require_ref(call.image, "image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    let detection = detector
+        .detector
+        .detect(&view, &corners)
+        .map_err(map_puzzleboard_detect_error);
+
+    let detection = match detection {
+        Ok(detection) => detection,
+        Err(err) => {
+            unsafe {
+                write_required_len(call.out_corners_len, 0, "out_corners_len")?;
+                write_optional_result(call.out_result, ct_puzzleboard_result_t::default());
+            }
+            return Err(err);
+        }
+    };
+
+    let corners_out: Vec<ct_labeled_corner_t> = detection
+        .detection
+        .corners
+        .iter()
+        .map(labeled_corner_to_ffi)
+        .collect();
+    let result = ct_puzzleboard_result_t {
+        detection: build_detection_header(&detection.detection),
+        alignment: alignment_to_ffi(detection.alignment),
+        edges_observed: detection.decode.edges_observed,
+        edges_matched: detection.decode.edges_matched,
+        mean_bit_confidence: detection.decode.mean_confidence,
+        bit_error_rate: detection.decode.bit_error_rate,
+        master_origin_row: detection.decode.master_origin_row,
+        master_origin_col: detection.decode.master_origin_col,
+        observed_edges_len: detection.observed_edges.len(),
+    };
+
+    unsafe {
+        write_required_len(call.out_corners_len, corners_out.len(), "out_corners_len")?;
+        write_optional_result(call.out_result, result);
+    }
+    let copy_corners = validate_output_buffer(
+        call.out_corners,
+        call.corners_capacity,
+        corners_out.len(),
+        "out_corners",
+    )?;
+    if copy_corners {
+        unsafe { copy_output_slice(call.out_corners, &corners_out) };
     }
     Ok(())
 }
@@ -2111,6 +2333,76 @@ pub unsafe extern "C" fn ct_marker_board_detector_detect(
     })
 }
 
+/// Create a PuzzleBoard detector handle.
+///
+/// # Safety
+///
+/// `config` and `out_detector` must be valid non-null pointers. On success,
+/// `*out_detector` receives a new handle owned by the caller.
+#[no_mangle]
+pub unsafe extern "C" fn ct_puzzleboard_detector_create(
+    config: *const ct_puzzleboard_detector_config_t,
+    out_detector: *mut *mut ct_puzzleboard_detector_t,
+) -> ct_status_t {
+    ffi_status(|| unsafe { puzzleboard_detector_create_impl(config, out_detector) })
+}
+
+/// Destroy a PuzzleBoard detector handle.
+///
+/// Passing `NULL` is allowed and has no effect.
+///
+/// # Safety
+///
+/// `detector` must either be null or a handle returned by
+/// [`ct_puzzleboard_detector_create`] that has not already been destroyed.
+#[no_mangle]
+pub unsafe extern "C" fn ct_puzzleboard_detector_destroy(detector: *mut ct_puzzleboard_detector_t) {
+    if let Err(payload) = catch_unwind(AssertUnwindSafe(|| unsafe {
+        if !detector.is_null() {
+            drop(Box::from_raw(detector));
+        }
+    })) {
+        set_last_error_message(format!(
+            "panic across FFI boundary: {}",
+            panic_message(payload)
+        ));
+    }
+}
+
+/// Run end-to-end PuzzleBoard detection on a grayscale image.
+///
+/// `out_corners_len` is required and always receives the required number of
+/// labeled-corner entries. Passing `out_corners = NULL` and
+/// `corners_capacity = 0` queries the required length without copying corner
+/// data. The returned corner grid coordinates are master-board `(I, J)` labels.
+///
+/// # Safety
+///
+/// `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
+/// If `out_result` is non-null it must be writable. If `out_corners` is
+/// non-null it must point to writable storage for at least `corners_capacity`
+/// entries.
+#[no_mangle]
+pub unsafe extern "C" fn ct_puzzleboard_detector_detect(
+    detector: *const ct_puzzleboard_detector_t,
+    image: *const ct_gray_image_u8_t,
+    out_result: *mut ct_puzzleboard_result_t,
+    out_corners: *mut ct_labeled_corner_t,
+    corners_capacity: usize,
+    out_corners_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        puzzleboard_detector_detect_impl(PuzzleBoardDetectCall {
+            detector,
+            image,
+            out_result,
+            out_corners,
+            corners_capacity,
+            out_corners_len,
+        })
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2367,6 +2659,56 @@ mod tests {
         }
     }
 
+    fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
+        let mut chess = default_shared_chess_config();
+        chess.params.threshold_rel = 0.15;
+        chess.params.nms_radius = 3;
+        ct_puzzleboard_detector_config_t {
+            chess,
+            detector: ct_puzzleboard_params_t {
+                px_per_square: 60.0,
+                chessboard: ct_chessboard_params_t {
+                    min_corner_strength: 0.1,
+                    min_corners: 20,
+                    expected_rows: ct_optional_u32_t::some(9),
+                    expected_cols: ct_optional_u32_t::some(9),
+                    completeness_threshold: 0.02,
+                    use_orientation_clustering: CT_TRUE,
+                    orientation_clustering_params: default_orientation_clustering(),
+                    graph: ct_grid_graph_params_t {
+                        min_spacing_pix: 8.0,
+                        max_spacing_pix: 600.0,
+                        k_neighbors: 8,
+                        orientation_tolerance_deg: 22.5,
+                    },
+                },
+                board: ct_puzzleboard_spec_t {
+                    rows: 10,
+                    cols: 10,
+                    cell_size: 12.0,
+                    origin_row: 0,
+                    origin_col: 0,
+                },
+                decode: ct_puzzleboard_decode_config_t {
+                    min_window: 4,
+                    min_bit_confidence: 0.15,
+                    max_bit_error_rate: 0.3,
+                    search_all_components: CT_TRUE,
+                    sample_radius_rel: 1.0 / 6.0,
+                },
+                corner_redetect_params: ct_chess_params_t {
+                    use_radius10: CT_FALSE,
+                    descriptor_use_radius10: ct_optional_bool_t::none(),
+                    threshold_rel: 0.05,
+                    threshold_abs: ct_optional_f32_t::none(),
+                    nms_radius: 2,
+                    min_cluster_size: 1,
+                    refiner: default_saddle_refiner(),
+                },
+            },
+        }
+    }
+
     #[test]
     fn version_string_is_static_c_string() {
         let ptr = ct_version_string();
@@ -2499,6 +2841,17 @@ mod tests {
         assert_eq!(status, ct_status_t::CT_STATUS_CONFIG_ERROR);
         assert!(detector.is_null());
         assert!(last_error_string().contains("charuco.dictionary"));
+    }
+
+    #[test]
+    fn puzzleboard_create_rejects_invalid_board_size() {
+        let mut config = puzzleboard_config_small_png();
+        config.detector.board.rows = 3;
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_puzzleboard_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_CONFIG_ERROR);
+        assert!(detector.is_null());
+        assert!(last_error_string().contains("PuzzleBoard"));
     }
 
     #[test]
@@ -2663,6 +3016,68 @@ mod tests {
     }
 
     #[test]
+    fn puzzleboard_detect_supports_query_and_copy() {
+        let config = puzzleboard_config_small_png();
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_puzzleboard_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        assert!(!detector.is_null());
+
+        let image = load_gray("puzzleboard_small.png");
+        let descriptor = image_descriptor(&image);
+        let mut result = ct_puzzleboard_result_t::default();
+        let mut corners_len = 0usize;
+        let status = unsafe {
+            ct_puzzleboard_detector_detect(
+                detector,
+                &descriptor,
+                &mut result,
+                ptr::null_mut(),
+                0,
+                &mut corners_len,
+            )
+        };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        assert_eq!(result.detection.kind, CT_TARGET_KIND_PUZZLEBOARD);
+        assert!(corners_len > 0);
+        assert!(result.edges_observed > 0);
+        assert!(result.mean_bit_confidence > 0.0);
+
+        let mut short = vec![ct_labeled_corner_t::default(); corners_len - 1];
+        let status = unsafe {
+            ct_puzzleboard_detector_detect(
+                detector,
+                &descriptor,
+                &mut result,
+                short.as_mut_ptr(),
+                short.len(),
+                &mut corners_len,
+            )
+        };
+        assert_eq!(status, ct_status_t::CT_STATUS_BUFFER_TOO_SMALL);
+
+        let mut corners = vec![ct_labeled_corner_t::default(); corners_len];
+        let status = unsafe {
+            ct_puzzleboard_detector_detect(
+                detector,
+                &descriptor,
+                &mut result,
+                corners.as_mut_ptr(),
+                corners.len(),
+                &mut corners_len,
+            )
+        };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        assert!(corners.iter().all(|corner| {
+            corner.has_grid == CT_TRUE
+                && corner.id.has_value == CT_TRUE
+                && corner.has_target_position == CT_TRUE
+        }));
+
+        unsafe { ct_puzzleboard_detector_destroy(detector) };
+    }
+
+    #[test]
     fn detectors_report_not_found_on_blank_image() {
         let blank = image::GrayImage::from_vec(32, 32, vec![0; 32 * 32]).unwrap();
         let descriptor = image_descriptor(&blank);
@@ -2739,5 +3154,25 @@ mod tests {
         assert_eq!(candidates_len, 0);
         assert_eq!(matches_len, 0);
         unsafe { ct_marker_board_detector_destroy(marker_detector) };
+
+        let puzzle_config = puzzleboard_config_small_png();
+        let mut puzzle_detector = ptr::null_mut();
+        let status =
+            unsafe { ct_puzzleboard_detector_create(&puzzle_config, &mut puzzle_detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        let mut puzzle_corners_len = usize::MAX;
+        let status = unsafe {
+            ct_puzzleboard_detector_detect(
+                puzzle_detector,
+                &descriptor,
+                ptr::null_mut(),
+                ptr::null_mut(),
+                0,
+                &mut puzzle_corners_len,
+            )
+        };
+        assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
+        assert_eq!(puzzle_corners_len, 0);
+        unsafe { ct_puzzleboard_detector_destroy(puzzle_detector) };
     }
 }

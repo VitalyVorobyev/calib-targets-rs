@@ -1,7 +1,7 @@
 [package]
 name = "calib-targets-print"
 version.workspace = true
-description = "Printable calibration target generation for chessboard, ChArUco, and marker boards"
+description = "Printable calibration target generation for chessboard, ChArUco, PuzzleBoard, and marker boards"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -17,6 +17,7 @@ calib-targets-aruco.workspace = true
 calib-targets-charuco.workspace = true
 calib-targets-core.workspace = true
 calib-targets-marker.workspace = true
+calib-targets-puzzleboard.workspace = true
 png.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

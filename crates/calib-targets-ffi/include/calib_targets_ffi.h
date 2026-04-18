@@ -51,6 +51,11 @@ typedef struct ct_chessboard_detector_t ct_chessboard_detector_t;
 typedef struct ct_marker_board_detector_t ct_marker_board_detector_t;
 
 /**
+ * Opaque PuzzleBoard detector handle.
+ */
+typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
+
+/**
  * Optional boolean convention used by fixed ABI structs.
  */
 typedef struct ct_optional_bool_t {
@@ -471,6 +476,62 @@ typedef struct ct_circle_match_t {
   struct ct_grid_coords_t offset_cells;
 } ct_circle_match_t;
 
+/**
+ * PuzzleBoard board specification.
+ */
+typedef struct ct_puzzleboard_spec_t {
+  uint32_t rows;
+  uint32_t cols;
+  float cell_size;
+  uint32_t origin_row;
+  uint32_t origin_col;
+} ct_puzzleboard_spec_t;
+
+/**
+ * PuzzleBoard edge-bit decode parameters.
+ */
+typedef struct ct_puzzleboard_decode_config_t {
+  uint32_t min_window;
+  float min_bit_confidence;
+  float max_bit_error_rate;
+  uint32_t search_all_components;
+  float sample_radius_rel;
+} ct_puzzleboard_decode_config_t;
+
+/**
+ * PuzzleBoard detector parameters.
+ */
+typedef struct ct_puzzleboard_params_t {
+  float px_per_square;
+  struct ct_chessboard_params_t chessboard;
+  struct ct_puzzleboard_spec_t board;
+  struct ct_puzzleboard_decode_config_t decode;
+  struct ct_chess_params_t corner_redetect_params;
+} ct_puzzleboard_params_t;
+
+/**
+ * Full create-time configuration for the PuzzleBoard detector handle.
+ */
+typedef struct ct_puzzleboard_detector_config_t {
+  struct ct_chess_config_t chess;
+  struct ct_puzzleboard_params_t detector;
+} ct_puzzleboard_detector_config_t;
+
+/**
+ * PuzzleBoard detection header and decode diagnostics.
+ */
+typedef struct ct_puzzleboard_result_t {
+  struct ct_target_detection_t detection;
+  struct ct_grid_alignment_t alignment;
+  size_t edges_observed;
+  size_t edges_matched;
+  float mean_bit_confidence;
+  float bit_error_rate;
+  int32_t master_origin_row;
+  int32_t master_origin_col;
+  size_t observed_edges_len;
+} ct_puzzleboard_result_t;
+
 #define CT_DICTIONARY_DICT_4X4_50 1
 
 #define CT_DICTIONARY_DICT_4X4_100 2
@@ -528,6 +589,8 @@ typedef struct ct_circle_match_t {
 #define CT_TARGET_KIND_CHARUCO 2
 
 #define CT_TARGET_KIND_CHECKERBOARD_MARKER 3
+
+#define CT_TARGET_KIND_PUZZLEBOARD 4
 
 #define CT_CIRCLE_POLARITY_WHITE 1
 
@@ -701,6 +764,51 @@ enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_de
                                                  struct ct_circle_match_t *out_circle_matches,
                                                  size_t circle_matches_capacity,
                                                  size_t *out_circle_matches_len);
+
+/**
+ * Create a PuzzleBoard detector handle.
+ *
+ * # Safety
+ *
+ * `config` and `out_detector` must be valid non-null pointers. On success,
+ * `*out_detector` receives a new handle owned by the caller.
+ */
+enum ct_status_t ct_puzzleboard_detector_create(const struct ct_puzzleboard_detector_config_t *config,
+                                                struct ct_puzzleboard_detector_t **out_detector);
+
+/**
+ * Destroy a PuzzleBoard detector handle.
+ *
+ * Passing `NULL` is allowed and has no effect.
+ *
+ * # Safety
+ *
+ * `detector` must either be null or a handle returned by
+ * [`ct_puzzleboard_detector_create`] that has not already been destroyed.
+ */
+void ct_puzzleboard_detector_destroy(struct ct_puzzleboard_detector_t *detector);
+
+/**
+ * Run end-to-end PuzzleBoard detection on a grayscale image.
+ *
+ * `out_corners_len` is required and always receives the required number of
+ * labeled-corner entries. Passing `out_corners = NULL` and
+ * `corners_capacity = 0` queries the required length without copying corner
+ * data. The returned corner grid coordinates are master-board `(I, J)` labels.
+ *
+ * # Safety
+ *
+ * `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
+ * If `out_result` is non-null it must be writable. If `out_corners` is
+ * non-null it must point to writable storage for at least `corners_capacity`
+ * entries.
+ */
+enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_detector_t *detector,
+                                                const struct ct_gray_image_u8_t *image,
+                                                struct ct_puzzleboard_result_t *out_result,
+                                                struct ct_labeled_corner_t *out_corners,
+                                                size_t corners_capacity,
+                                                size_t *out_corners_len);
 
 #ifdef __cplusplus
 }  // extern "C"

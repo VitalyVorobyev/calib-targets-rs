@@ -9,6 +9,7 @@ from .config import (
     ChessboardParams,
     ChessConfig,
     MarkerBoardParams,
+    PuzzleBoardParams,
 )
 
 
@@ -34,9 +35,14 @@ def charuco_detector_params_to_payload(cfg: CharucoDetectorParams) -> dict[str, 
     return cfg.to_dict()
 
 
+def puzzleboard_params_to_payload(cfg: PuzzleBoardParams) -> dict[str, Any]:
+    return cfg.to_dict()
+
+
 __all__ = [
     "chess_config_to_payload",
     "chessboard_params_to_payload",
     "marker_board_params_to_payload",
     "charuco_detector_params_to_payload",
+    "puzzleboard_params_to_payload",
 ]

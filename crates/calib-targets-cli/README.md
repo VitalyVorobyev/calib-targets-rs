@@ -54,5 +54,9 @@ Available commands:
 - `validate`
 - `generate`
 
+PuzzleBoard printable generation is supported from an existing JSON spec such
+as `testdata/printable/puzzleboard_small.json`; the CLI does not yet provide an
+`init puzzle-board` shortcut.
+
 For the canonical JSON model, Rust/Python entry points, and print-scale
 guidance, see [book/src/printable.md](../../book/src/printable.md).

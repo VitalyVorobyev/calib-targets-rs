@@ -2,6 +2,7 @@ use calib_targets_aruco::Dictionary;
 use calib_targets_charuco::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
 use calib_targets_core::GridCoords;
 use calib_targets_marker::{CirclePolarity, MarkerBoardSpec};
+use calib_targets_puzzleboard::{PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -29,6 +30,11 @@ fn default_border_bits() -> usize {
 
 fn default_circle_diameter_rel() -> f64 {
     0.5
+}
+
+fn default_puzzleboard_dot_diameter_rel() -> f64 {
+    // Paper recommends 1/3 (1.0 / 3.0).
+    1.0 / 3.0
 }
 
 fn default_margin_mm() -> f64 {
@@ -85,6 +91,14 @@ pub enum PrintableTargetError {
     },
     #[error(transparent)]
     CharucoBoard(#[from] CharucoBoardError),
+    #[error("puzzleboard: rows and cols must be in [4, {MASTER_ROWS}]")]
+    InvalidPuzzleBoardSize,
+    #[error("puzzleboard origin + size exceeds 501×501 master pattern")]
+    InvalidPuzzleBoardOrigin,
+    #[error("puzzleboard dot_diameter_rel must be in (0, 1]")]
+    InvalidPuzzleBoardDotDiameter,
+    #[error(transparent)]
+    PuzzleBoardSpec(#[from] PuzzleBoardSpecError),
 }
 
 #[non_exhaustive]
@@ -299,6 +313,27 @@ impl MarkerBoardTargetSpec {
     }
 }
 
+/// Printable PuzzleBoard target.
+///
+/// A PuzzleBoard is a standard checkerboard of `rows × cols` squares with a
+/// small colour-coded dot at every interior edge midpoint. The dots encode
+/// one bit each (white = 0, black = 1) via the two cyclic sub-perfect maps
+/// shipped in `calib-targets-puzzleboard`. The printable board is a
+/// contiguous sub-rectangle of the 501×501 master pattern anchored at
+/// `(origin_row, origin_col)`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PuzzleBoardTargetSpec {
+    pub rows: u32,
+    pub cols: u32,
+    pub square_size_mm: f64,
+    #[serde(default)]
+    pub origin_row: u32,
+    #[serde(default)]
+    pub origin_col: u32,
+    #[serde(default = "default_puzzleboard_dot_diameter_rel")]
+    pub dot_diameter_rel: f64,
+}
+
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -306,6 +341,7 @@ pub enum TargetSpec {
     Chessboard(ChessboardTargetSpec),
     Charuco(CharucoTargetSpec),
     MarkerBoard(MarkerBoardTargetSpec),
+    PuzzleBoard(PuzzleBoardTargetSpec),
 }
 
 impl TargetSpec {
@@ -314,6 +350,7 @@ impl TargetSpec {
             Self::Chessboard(_) => "chessboard",
             Self::Charuco(_) => "charuco",
             Self::MarkerBoard(_) => "marker_board",
+            Self::PuzzleBoard(_) => "puzzleboard",
         }
     }
 
@@ -338,6 +375,13 @@ impl TargetSpec {
                 Ok((
                     (spec.inner_cols as f64 + 1.0) * spec.square_size_mm,
                     (spec.inner_rows as f64 + 1.0) * spec.square_size_mm,
+                ))
+            }
+            Self::PuzzleBoard(spec) => {
+                validate_puzzleboard_spec(spec)?;
+                Ok((
+                    spec.cols as f64 * spec.square_size_mm,
+                    spec.rows as f64 * spec.square_size_mm,
                 ))
             }
         }
@@ -407,6 +451,33 @@ impl TargetSpec {
                                 j: j as i32,
                             }),
                             id: None,
+                        });
+                    }
+                }
+                Ok(points)
+            }
+            Self::PuzzleBoard(spec) => {
+                validate_puzzleboard_spec(spec)?;
+                let inner_rows = spec.rows.saturating_sub(1);
+                let inner_cols = spec.cols.saturating_sub(1);
+                let mut points = Vec::with_capacity((inner_rows * inner_cols) as usize);
+                // Each corner's id is `I * MASTER_COLS + J` where (I, J) are
+                // master-absolute coords. (I, J) = local (i, j) + origin.
+                for j in 0..inner_rows {
+                    for i in 0..inner_cols {
+                        let master_i = spec.origin_col + i + 1; // inner corner → (origin_col + 1 + i)
+                        let master_j = spec.origin_row + j + 1;
+                        let id = master_j * MASTER_COLS + master_i;
+                        points.push(ResolvedTargetPoint {
+                            position_mm: [
+                                (i as f64 + 1.0) * spec.square_size_mm,
+                                (j as f64 + 1.0) * spec.square_size_mm,
+                            ],
+                            grid: Some(GridCoords {
+                                i: master_i as i32,
+                                j: master_j as i32,
+                            }),
+                            id: Some(id),
                         });
                     }
                 }
@@ -584,6 +655,25 @@ pub(crate) fn validate_charuco_spec(spec: &CharucoTargetSpec) -> Result<(), Prin
     let available = spec.dictionary.codes.len();
     if available < needed {
         return Err(PrintableTargetError::NotEnoughDictionaryCodes { needed, available });
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_puzzleboard_spec(
+    spec: &PuzzleBoardTargetSpec,
+) -> Result<(), PrintableTargetError> {
+    if spec.rows < 4 || spec.cols < 4 || spec.rows > MASTER_ROWS || spec.cols > MASTER_COLS {
+        return Err(PrintableTargetError::InvalidPuzzleBoardSize);
+    }
+    if spec.origin_row + spec.rows > MASTER_ROWS || spec.origin_col + spec.cols > MASTER_COLS {
+        return Err(PrintableTargetError::InvalidPuzzleBoardOrigin);
+    }
+    validate_square_size(spec.square_size_mm)?;
+    if !spec.dot_diameter_rel.is_finite()
+        || spec.dot_diameter_rel <= 0.0
+        || spec.dot_diameter_rel > 1.0
+    {
+        return Err(PrintableTargetError::InvalidPuzzleBoardDotDiameter);
     }
     Ok(())
 }

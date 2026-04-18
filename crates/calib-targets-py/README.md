@@ -16,6 +16,7 @@ Top-level detectors return typed dataclasses:
 
 - `detect_chessboard(image, *, chess_cfg=None, params=None) -> ChessboardDetectionResult | None`
 - `detect_charuco(image, *, chess_cfg=None, params) -> CharucoDetectionResult`
+- `detect_puzzleboard(image, *, chess_cfg=None, params) -> PuzzleBoardDetectionResult`
 - `detect_marker_board(image, *, chess_cfg=None, params=None) -> MarkerBoardDetectionResult | None`
 - `render_target_bundle(document) -> GeneratedTargetBundle`
 - `write_target_bundle(document, output_stem) -> WrittenTargetBundle`
@@ -25,8 +26,9 @@ Configuration is typed-only (dataclasses):
 - `ChessConfig`, `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`
 - `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`
 - `CharucoBoardSpec`, `CharucoDetectorParams`, `ScanDecodeConfig`
+- `PuzzleBoardSpec`, `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
-- `PageSize`, `PageSpec`, `RenderOptions`, `ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PrintableTargetDocument`
+- `PageSize`, `PageSpec`, `RenderOptions`, `ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PuzzleBoardTargetSpec`, `PrintableTargetDocument`
 
 Enums and literals:
 
@@ -65,6 +67,7 @@ This is the compatibility path for JSON pipelines and legacy dict-based code.
 pip install pillow
 python examples/detect_chessboard.py path/to/image.png
 python examples/detect_charuco.py path/to/image.png
+python examples/detect_puzzleboard.py path/to/image.png
 python examples/detect_marker_board.py path/to/image.png
 python examples/generate_printable.py tmpdata/printable/charuco_a4
 ```

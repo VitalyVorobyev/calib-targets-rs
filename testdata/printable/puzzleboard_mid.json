@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "target": {
+    "kind": "puzzle_board",
+    "rows": 12,
+    "cols": 12,
+    "square_size_mm": 10.0,
+    "origin_row": 17,
+    "origin_col": 29,
+    "dot_diameter_rel": 0.3333333333333333
+  },
+  "page": {
+    "size": {
+      "kind": "custom",
+      "width_mm": 200.0,
+      "height_mm": 200.0
+    },
+    "orientation": "portrait",
+    "margin_mm": 5.0
+  },
+  "render": {
+    "debug_annotations": false,
+    "png_dpi": 300
+  }
+}

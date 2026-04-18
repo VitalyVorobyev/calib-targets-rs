@@ -39,6 +39,7 @@ pub enum TargetKind {
     Chessboard,
     Charuco,
     CheckerboardMarker,
+    PuzzleBoard,
 }
 
 /// A corner that is part of a detected target, with optional ID info.
