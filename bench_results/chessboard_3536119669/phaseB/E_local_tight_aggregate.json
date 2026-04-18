@@ -1,0 +1,16 @@
+{
+  "config_name": "E_local_tight",
+  "n_frames": 120,
+  "n_frames_detected": 106,
+  "detection_rate_pct": 88.333336,
+  "median_corner_count": 42,
+  "median_horizontal_coverage_frac": 0.8680264,
+  "p95_horizontal_coverage_frac": 0.9403883,
+  "median_residual_median_px": 0.72934985,
+  "median_residual_p95_px": 1.5242528,
+  "median_edge_axis_residual_median_deg": 2.0979702,
+  "median_local_step_cv": 0.30994025,
+  "median_local_homography_residual_median_px": 0.51573277,
+  "median_graph_degree_4_frac": 0.15853658,
+  "median_timing_total_us": 2109
+}

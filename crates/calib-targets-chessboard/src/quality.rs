@@ -205,7 +205,70 @@ pub fn score_frame_full(
     metrics.edge_axis_residual_p95_deg = axis_p95;
     metrics.local_step_cv = local_step_cv(raw_corners);
     metrics.graph_degree_hist = Some(graph_degree_histogram(graph));
+    let (local_med, local_p95) = local_homography_residual_stats(&detection.corners);
+    metrics.local_homography_residual_median_px = local_med;
+    metrics.local_homography_residual_p95_px = local_p95;
     metrics
+}
+
+/// Distribution of local-homography residuals across the labelled
+/// corners. For each corner, fit a DLT homography from its labelled
+/// neighbours inside a 2-cell grid window (excluding self), predict the
+/// corner via that homography, and report the pixel residual. The
+/// median/p95 across all corners is the continuous signal Phase B
+/// optimises: unlike the global residual, it does not bias against
+/// distorted-but-correct corners.
+fn local_homography_residual_stats(
+    corners: &[calib_targets_core::LabeledCorner],
+) -> (Option<f32>, Option<f32>) {
+    use std::collections::HashMap;
+
+    let mut idx_by_grid: HashMap<(i32, i32), usize> = HashMap::new();
+    for (i, c) in corners.iter().enumerate() {
+        if let Some(g) = c.grid {
+            idx_by_grid.insert((g.i, g.j), i);
+        }
+    }
+
+    let mut residuals: Vec<f32> = Vec::new();
+    for (idx, c) in corners.iter().enumerate() {
+        let Some(g) = c.grid else { continue };
+        let mut grid_pts: Vec<Point2<f32>> = Vec::new();
+        let mut img_pts: Vec<Point2<f32>> = Vec::new();
+        for di in -2i32..=2 {
+            for dj in -2i32..=2 {
+                if di == 0 && dj == 0 {
+                    continue;
+                }
+                let key = (g.i + di, g.j + dj);
+                if let Some(&nidx) = idx_by_grid.get(&key) {
+                    if nidx == idx {
+                        continue;
+                    }
+                    grid_pts.push(Point2::new(key.0 as f32, key.1 as f32));
+                    img_pts.push(corners[nidx].position);
+                }
+            }
+        }
+        if grid_pts.len() < 5 {
+            continue;
+        }
+        let Some(h) = estimate_homography_rect_to_img(&grid_pts, &img_pts) else {
+            continue;
+        };
+        let pred = h.apply(Point2::new(g.i as f32, g.j as f32));
+        let dx = pred.x - c.position.x;
+        let dy = pred.y - c.position.y;
+        residuals.push((dx * dx + dy * dy).sqrt());
+    }
+    if residuals.len() < 2 {
+        return (None, None);
+    }
+    residuals.sort_by(|a, b| a.total_cmp(b));
+    (
+        Some(percentile(&residuals, 0.5)),
+        Some(percentile(&residuals, 0.95)),
+    )
 }
 
 fn horizontal_coverage(

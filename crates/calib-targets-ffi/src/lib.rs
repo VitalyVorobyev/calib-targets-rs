@@ -1255,6 +1255,12 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         // FFI surface does not yet expose the P1.3 fit-quality knob; keep it
         // at the default (disabled) to preserve existing C ABI behaviour.
         max_fit_rms_ratio: f32::INFINITY,
+        // FFI surface does not yet expose the Phase A / Phase B global-
+        // homography prune flag; default to the back-compat value (on).
+        enable_global_homography_prune: true,
+        // FFI surface does not yet expose the Phase B local-homography
+        // prune knobs; default to disabled.
+        local_homography: calib_targets::chessboard::LocalHomographyPruneParams::default(),
     })
 }
 

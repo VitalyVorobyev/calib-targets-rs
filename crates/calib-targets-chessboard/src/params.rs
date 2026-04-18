@@ -129,10 +129,96 @@ pub struct ChessboardParams {
     /// regardless to stay compatible with adapters that ignore the new fields.
     #[serde(default = "default_max_fit_rms_ratio")]
     pub max_fit_rms_ratio: f32,
+
+    /// Whether the post-BFS **global**-homography residual prune runs.
+    ///
+    /// Default `true` preserves the pre-existing behavior: after BFS
+    /// assigns `(i, j)` labels, a two-tier homography refinement drops
+    /// corners whose pixel position disagrees with the best-fit ideal-
+    /// grid homography (see `prune_by_homography_residual` in
+    /// `detector.rs`). The global fit breaks under non-trivial lens
+    /// distortion — flip this off for high-distortion / wide-FoV
+    /// captures.
+    #[serde(default = "default_true")]
+    pub enable_global_homography_prune: bool,
+
+    /// Local-homography residual prune knobs (Phase B).
+    #[serde(default)]
+    pub local_homography: LocalHomographyPruneParams,
+}
+
+/// Parameters for the local-homography residual prune (Phase B).
+///
+/// For each labelled corner, a local homography is fit from the other
+/// labelled corners within a `window_half`-cell window, the current
+/// corner is predicted via that homography, and corners whose observed
+/// pixel position disagrees by more than
+/// `max(threshold_rel × local_step, threshold_px_floor)` are dropped.
+///
+/// The prune iterates (refit + redrop) up to `max_iters` times or until
+/// no further corners are dropped.
+#[non_exhaustive]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LocalHomographyPruneParams {
+    /// Whether the prune runs. Default `false` — Phase A behavior.
+    #[serde(default)]
+    pub enable: bool,
+    /// Window half-width in grid cells. `2` means a 5×5 neighborhood.
+    #[serde(default = "default_local_window_half")]
+    pub window_half: i32,
+    /// Minimum labelled neighbors required inside the window for a fit
+    /// to be considered (below this the corner is kept — no prediction).
+    #[serde(default = "default_local_min_neighbors")]
+    pub min_neighbors: usize,
+    /// Residual threshold as a fraction of the local step (per-corner
+    /// average of `step_u`, `step_v`). When the per-corner step is
+    /// unavailable, falls back to a global step estimate.
+    #[serde(default = "default_local_threshold_rel")]
+    pub threshold_rel: f32,
+    /// Absolute pixel floor on the residual threshold — always applied
+    /// whether or not a local step is available.
+    #[serde(default = "default_local_threshold_px_floor")]
+    pub threshold_px_floor: f32,
+    /// Maximum refit/redrop iterations.
+    #[serde(default = "default_local_max_iters")]
+    pub max_iters: u32,
+}
+
+impl Default for LocalHomographyPruneParams {
+    fn default() -> Self {
+        Self {
+            enable: false,
+            window_half: default_local_window_half(),
+            min_neighbors: default_local_min_neighbors(),
+            threshold_rel: default_local_threshold_rel(),
+            threshold_px_floor: default_local_threshold_px_floor(),
+            max_iters: default_local_max_iters(),
+        }
+    }
+}
+
+fn default_local_window_half() -> i32 {
+    2
+}
+fn default_local_min_neighbors() -> usize {
+    5
+}
+fn default_local_threshold_rel() -> f32 {
+    0.15
+}
+fn default_local_threshold_px_floor() -> f32 {
+    2.0
+}
+fn default_local_max_iters() -> u32 {
+    16
 }
 
 fn default_max_fit_rms_ratio() -> f32 {
     f32::INFINITY
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl ChessboardParams {
@@ -162,6 +248,8 @@ impl Default for ChessboardParams {
             orientation_clustering_params: OrientationClusteringParams::default(),
             graph: GridGraphParams::default(),
             max_fit_rms_ratio: default_max_fit_rms_ratio(),
+            enable_global_homography_prune: true,
+            local_homography: LocalHomographyPruneParams::default(),
         }
     }
 }

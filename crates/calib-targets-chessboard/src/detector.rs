@@ -2,7 +2,7 @@ use crate::gridgraph::{
     assign_grid_coordinates, build_chessboard_grid_graph_instrumented, connected_components,
     estimate_corner_local_steps, RejectionCounter,
 };
-use crate::params::ChessboardParams;
+use crate::params::{ChessboardParams, LocalHomographyPruneParams};
 use crate::quality::{score_frame_full, GridFrameMetrics};
 use calib_targets_core::{
     cluster_orientations, estimate_grid_axes_from_orientations, estimate_homography_rect_to_img,
@@ -738,6 +738,20 @@ impl ChessboardDetector {
         let mut labeled: Vec<LabeledCorner> = by_grid.into_values().collect();
         let assigned_count = labeled.len();
 
+        // Phase B: local-homography residual prune (distortion-tolerant).
+        // Runs BEFORE the global prune so the global-prune residuals are
+        // computed on a cleaner set. Both are individually gateable.
+        let mut local_h_dropped = 0usize;
+        if self.params.local_homography.enable {
+            let before = labeled.len();
+            labeled = prune_by_local_homography_residual(
+                labeled,
+                &self.params.local_homography,
+                self.params.min_corners,
+            );
+            local_h_dropped = before.saturating_sub(labeled.len());
+        }
+
         // Post-BFS homography-consistency pruning. The BFS coordinate
         // assignment propagates (i, j) through the neighbor graph; any
         // mislabelled corner (typically a false response sitting near but
@@ -746,11 +760,28 @@ impl ChessboardDetector {
         // of residuals, refit, repeat. This is what collapses the "large
         // grid, high residual" failure mode into a smaller-but-clean grid
         // that actually passes the visible-subset gate.
-        labeled = prune_by_homography_residual(labeled, self.params.min_corners);
+        //
+        // The global homography assumption breaks under non-trivial lens
+        // distortion: true board corners end up with large residuals and
+        // get dropped together with the mislabelled ones. Gated behind
+        // `enable_global_homography_prune` so distorted captures can run
+        // without it.
+        if self.params.enable_global_homography_prune {
+            labeled = prune_by_homography_residual(labeled, self.params.min_corners);
+        }
 
         if let Some(counts) = counts {
             counts.assigned_grid_corners = assigned_count;
-            counts.after_global_homography_prune = Some(labeled.len());
+            counts.after_local_homography_prune = if self.params.local_homography.enable {
+                Some(assigned_count.saturating_sub(local_h_dropped))
+            } else {
+                None
+            };
+            counts.after_global_homography_prune = if self.params.enable_global_homography_prune {
+                Some(labeled.len())
+            } else {
+                None
+            };
         }
 
         labeled.sort_by(|a, b| {
@@ -879,6 +910,120 @@ fn prune_by_homography_residual(
             }
         }
         labeled = kept;
+    }
+
+    labeled
+}
+
+/// Local-homography residual prune.
+///
+/// For each labelled corner at `(i, j)`, collect **other** labelled
+/// corners inside a `window_half`-cell grid window (`|di|,|dj| <= window_half`),
+/// fit a homography from those neighbors' `(i, j) → (x, y)` pairs, predict
+/// the current corner via that homography, and drop corners whose observed
+/// position disagrees by more than
+/// `max(threshold_rel × local_step, threshold_px_floor)` pixels.
+///
+/// Iterates up to `max_iters` times (refit after each pass) or until no
+/// further corners are dropped. Stops early if removing more would drop
+/// below `min_keep`.
+///
+/// The local step per corner is computed from the currently-labelled
+/// neighbors' median pixel distance — we cannot reuse the validator's
+/// per-corner step because it is indexed by raw-corner index, not grid
+/// index.
+fn prune_by_local_homography_residual(
+    mut labeled: Vec<LabeledCorner>,
+    params: &LocalHomographyPruneParams,
+    min_keep: usize,
+) -> Vec<LabeledCorner> {
+    if labeled.len() < min_keep || params.min_neighbors < 4 {
+        return labeled;
+    }
+    let threshold_px_floor = params.threshold_px_floor.max(0.0);
+    let threshold_rel = params.threshold_rel.max(0.0);
+
+    // Iterative one-at-a-time pruning: one corner per iteration is the
+    // worst current outlier; its removal refits every subsequent window,
+    // which prevents the single label error from "contaminating" neighbor
+    // predictions and cascading into false positives.
+    for _ in 0..params.max_iters {
+        if labeled.len() <= min_keep {
+            break;
+        }
+
+        // Build (grid, idx) index map.
+        let mut idx_by_grid: std::collections::HashMap<(i32, i32), usize> =
+            std::collections::HashMap::with_capacity(labeled.len());
+        for (idx, lc) in labeled.iter().enumerate() {
+            if let Some(g) = lc.grid {
+                idx_by_grid.insert((g.i, g.j), idx);
+            }
+        }
+
+        let mut worst: Option<(usize, f32)> = None;
+        for (idx, lc) in labeled.iter().enumerate() {
+            let Some(g) = lc.grid else { continue };
+
+            // Collect labelled neighbors inside the grid window, excluding self.
+            let mut grid_pts: Vec<Point2<f32>> = Vec::new();
+            let mut img_pts: Vec<Point2<f32>> = Vec::new();
+            let mut nbr_distances: Vec<f32> = Vec::new();
+            for di in -params.window_half..=params.window_half {
+                for dj in -params.window_half..=params.window_half {
+                    if di == 0 && dj == 0 {
+                        continue;
+                    }
+                    let key = (g.i + di, g.j + dj);
+                    if let Some(&nidx) = idx_by_grid.get(&key) {
+                        let nlc = &labeled[nidx];
+                        grid_pts.push(Point2::new(key.0 as f32, key.1 as f32));
+                        img_pts.push(nlc.position);
+                        if di.abs() <= 1 && dj.abs() <= 1 {
+                            let dx = nlc.position.x - lc.position.x;
+                            let dy = nlc.position.y - lc.position.y;
+                            nbr_distances.push((dx * dx + dy * dy).sqrt());
+                        }
+                    }
+                }
+            }
+
+            if grid_pts.len() < params.min_neighbors {
+                continue;
+            }
+            let Some(h) = estimate_homography_rect_to_img(&grid_pts, &img_pts) else {
+                continue;
+            };
+            let pred = h.apply(Point2::new(g.i as f32, g.j as f32));
+            let dx = pred.x - lc.position.x;
+            let dy = pred.y - lc.position.y;
+            let residual = (dx * dx + dy * dy).sqrt();
+
+            // Per-corner local step: median of adjacent-neighbor distances.
+            let step_est = if nbr_distances.is_empty() {
+                None
+            } else {
+                nbr_distances.sort_by(|a, b| a.total_cmp(b));
+                Some(nbr_distances[nbr_distances.len() / 2])
+            };
+            let threshold = match step_est {
+                Some(s) => (threshold_rel * s).max(threshold_px_floor),
+                None => threshold_px_floor,
+            };
+            if residual > threshold {
+                let margin = residual / threshold;
+                if worst.map(|w| margin > w.1).unwrap_or(true) {
+                    worst = Some((idx, margin));
+                }
+            }
+        }
+
+        match worst {
+            Some((idx, _)) => {
+                labeled.remove(idx);
+            }
+            None => break,
+        }
     }
 
     labeled
@@ -1179,6 +1324,91 @@ mod tests {
         assert_eq!(instrumented.counts.graph_nodes, 0);
         assert_eq!(instrumented.counts.final_labeled_corners, 0);
         assert!(instrumented.counts.after_global_homography_prune.is_none());
+    }
+
+    #[test]
+    fn local_homography_prune_drops_injected_mislabel() {
+        use calib_targets_core::{GridCoords, LabeledCorner};
+
+        // Build a clean 5×5 lattice at 20-px spacing plus a single corner
+        // whose GRID label puts it at (0,0) but whose PIXEL position sits
+        // 8 px away from the neighbor-predicted position. The local-H
+        // predictor should flag that corner; the clean 5×5 stays intact.
+        let spacing = 20.0f32;
+        let mut labeled = Vec::new();
+        for j in 0..5 {
+            for i in 0..5 {
+                labeled.push(LabeledCorner {
+                    position: nalgebra::Point2::new(
+                        i as f32 * spacing + 100.0,
+                        j as f32 * spacing + 100.0,
+                    ),
+                    grid: Some(GridCoords { i, j }),
+                    id: None,
+                    target_position: None,
+                    score: 1.0,
+                });
+            }
+        }
+
+        // Displace corner at (2,2) by (8px, 8px) so local-H prediction
+        // is far from its observation. Local residual: ~8 * sqrt(2) ≈ 11.3 px.
+        let center_idx = 2 * 5 + 2;
+        labeled[center_idx].position =
+            nalgebra::Point2::new(100.0 + 2.0 * spacing + 8.0, 100.0 + 2.0 * spacing + 8.0);
+
+        let params = LocalHomographyPruneParams {
+            enable: true,
+            window_half: 2,
+            min_neighbors: 5,
+            threshold_rel: 0.15,
+            threshold_px_floor: 1.5,
+            max_iters: 4,
+        };
+
+        let pruned = prune_by_local_homography_residual(labeled.clone(), &params, 4);
+        // The mislabelled corner must be removed; the rest stay.
+        assert_eq!(pruned.len(), labeled.len() - 1);
+        let kept_grid: std::collections::HashSet<(i32, i32)> = pruned
+            .iter()
+            .filter_map(|c| c.grid.map(|g| (g.i, g.j)))
+            .collect();
+        assert!(!kept_grid.contains(&(2, 2)));
+    }
+
+    #[test]
+    fn local_homography_prune_preserves_clean_grid() {
+        use calib_targets_core::{GridCoords, LabeledCorner};
+
+        // A perfect 5×5 grid — nothing should be dropped.
+        let spacing = 20.0f32;
+        let mut labeled = Vec::new();
+        for j in 0..5 {
+            for i in 0..5 {
+                labeled.push(LabeledCorner {
+                    position: nalgebra::Point2::new(
+                        i as f32 * spacing + 50.0,
+                        j as f32 * spacing + 50.0,
+                    ),
+                    grid: Some(GridCoords { i, j }),
+                    id: None,
+                    target_position: None,
+                    score: 1.0,
+                });
+            }
+        }
+
+        let params = LocalHomographyPruneParams {
+            enable: true,
+            window_half: 2,
+            min_neighbors: 5,
+            threshold_rel: 0.15,
+            threshold_px_floor: 1.5,
+            max_iters: 4,
+        };
+
+        let pruned = prune_by_local_homography_residual(labeled.clone(), &params, 4);
+        assert_eq!(pruned.len(), labeled.len());
     }
 
     #[test]
