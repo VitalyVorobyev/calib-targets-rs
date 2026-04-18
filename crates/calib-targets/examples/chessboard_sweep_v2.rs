@@ -51,6 +51,8 @@ struct CliArgs {
     local_threshold_rel: Option<f32>,
     local_threshold_px_floor: Option<f32>,
     local_window_half: Option<i32>,
+    max_local_h_p95: Option<f32>,
+    use_clustering: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -153,6 +155,9 @@ fn parse_args() -> CliArgs {
             "--local-window-half" => {
                 args.local_window_half = argv.next().and_then(|s| s.parse().ok())
             }
+            "--max-local-h-p95" => args.max_local_h_p95 = argv.next().and_then(|s| s.parse().ok()),
+            "--clustering" => args.use_clustering = Some(true),
+            "--no-clustering" => args.use_clustering = Some(false),
             "--help" | "-h" => {
                 eprintln!(
                     "usage: chessboard_sweep_v2 --dataset <path> --out <dir> \\\n\
@@ -220,6 +225,12 @@ fn main() {
     }
     if let Some(w) = args.local_window_half {
         params.local_homography.window_half = w;
+    }
+    if let Some(t) = args.max_local_h_p95 {
+        params.max_local_homography_p95_px = Some(t);
+    }
+    if let Some(flag) = args.use_clustering {
+        params.use_orientation_clustering = flag;
     }
     let config_name = args
         .config_name

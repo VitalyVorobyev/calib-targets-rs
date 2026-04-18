@@ -145,6 +145,20 @@ pub struct ChessboardParams {
     /// Local-homography residual prune knobs (Phase B).
     #[serde(default)]
     pub local_homography: LocalHomographyPruneParams,
+
+    /// If set, the detector rejects post-prune detections whose
+    /// **local-homography** residual p95 (in pixels) exceeds this value.
+    ///
+    /// This is the post-prune quality gate: a correctly-labelled grid
+    /// always has sub-pixel local residuals, regardless of lens
+    /// distortion. A high post-prune p95 signals that pruning bottomed
+    /// out at `min_corners` before clearing the label errors — the
+    /// remaining corners form a self-consistent-looking-but-wrong
+    /// lattice.
+    ///
+    /// `None` (default) disables the gate for back-compat.
+    #[serde(default)]
+    pub max_local_homography_p95_px: Option<f32>,
 }
 
 /// Parameters for the local-homography residual prune (Phase B).
@@ -250,6 +264,7 @@ impl Default for ChessboardParams {
             max_fit_rms_ratio: default_max_fit_rms_ratio(),
             enable_global_homography_prune: true,
             local_homography: LocalHomographyPruneParams::default(),
+            max_local_homography_p95_px: None,
         }
     }
 }

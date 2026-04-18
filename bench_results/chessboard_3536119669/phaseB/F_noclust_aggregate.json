@@ -1,0 +1,16 @@
+{
+  "config_name": "F_noclust",
+  "n_frames": 120,
+  "n_frames_detected": 107,
+  "detection_rate_pct": 89.166664,
+  "median_corner_count": 45,
+  "median_horizontal_coverage_frac": 0.88775516,
+  "p95_horizontal_coverage_frac": 0.95271575,
+  "median_residual_median_px": 0.8049651,
+  "median_residual_p95_px": 1.6710029,
+  "median_edge_axis_residual_median_deg": 2.1965616,
+  "median_local_step_cv": 0.32269943,
+  "median_local_homography_residual_median_px": 0.53462756,
+  "median_graph_degree_4_frac": 0.12676056,
+  "median_timing_total_us": 2006
+}

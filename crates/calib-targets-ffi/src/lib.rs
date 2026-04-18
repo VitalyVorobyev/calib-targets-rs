@@ -1261,6 +1261,9 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         // FFI surface does not yet expose the Phase B local-homography
         // prune knobs; default to disabled.
         local_homography: calib_targets::chessboard::LocalHomographyPruneParams::default(),
+        // FFI surface does not yet expose the Phase B post-prune quality
+        // gate; default to disabled.
+        max_local_homography_p95_px: None,
     })
 }
 

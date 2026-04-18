@@ -770,6 +770,39 @@ impl ChessboardDetector {
             labeled = prune_by_homography_residual(labeled, self.params.min_corners);
         }
 
+        // Post-prune quality gate: reject detections whose p95 local-
+        // homography residual is still above threshold. Catches the
+        // "pruning bottomed out at min_corners but the residue is all
+        // mis-shifted" failure mode.
+        if let Some(max_p95) = self.params.max_local_homography_p95_px {
+            if let Some(p95) = local_homography_residual_p95(&labeled) {
+                if p95 > max_p95 {
+                    debug!(
+                        "rejecting detection: local-homography p95 residual {:.2} px exceeds gate {:.2} px ({} corners)",
+                        p95,
+                        max_p95,
+                        labeled.len()
+                    );
+                    if let Some(counts) = counts {
+                        counts.assigned_grid_corners = assigned_count;
+                        counts.after_local_homography_prune = if self.params.local_homography.enable
+                        {
+                            Some(assigned_count.saturating_sub(local_h_dropped))
+                        } else {
+                            None
+                        };
+                        counts.after_global_homography_prune =
+                            if self.params.enable_global_homography_prune {
+                                Some(labeled.len())
+                            } else {
+                                None
+                            };
+                    }
+                    return None;
+                }
+            }
+        }
+
         if let Some(counts) = counts {
             counts.assigned_grid_corners = assigned_count;
             counts.after_local_homography_prune = if self.params.local_homography.enable {
@@ -1027,6 +1060,60 @@ fn prune_by_local_homography_residual(
     }
 
     labeled
+}
+
+/// p95 of the local-homography residual over the labelled corners,
+/// mirroring the metric from [`crate::quality::score_frame_full`]. Shares
+/// the structural invariants of the prune above (2-cell window, ≥5
+/// neighbors, DLT fit). Used by the post-prune quality gate.
+fn local_homography_residual_p95(labeled: &[LabeledCorner]) -> Option<f32> {
+    if labeled.len() < 6 {
+        return None;
+    }
+    let mut idx_by_grid: std::collections::HashMap<(i32, i32), usize> =
+        std::collections::HashMap::with_capacity(labeled.len());
+    for (i, c) in labeled.iter().enumerate() {
+        if let Some(g) = c.grid {
+            idx_by_grid.insert((g.i, g.j), i);
+        }
+    }
+    let mut residuals: Vec<f32> = Vec::new();
+    for (idx, c) in labeled.iter().enumerate() {
+        let Some(g) = c.grid else { continue };
+        let mut grid_pts: Vec<Point2<f32>> = Vec::new();
+        let mut img_pts: Vec<Point2<f32>> = Vec::new();
+        for di in -2i32..=2 {
+            for dj in -2i32..=2 {
+                if di == 0 && dj == 0 {
+                    continue;
+                }
+                let key = (g.i + di, g.j + dj);
+                if let Some(&nidx) = idx_by_grid.get(&key) {
+                    if nidx == idx {
+                        continue;
+                    }
+                    grid_pts.push(Point2::new(key.0 as f32, key.1 as f32));
+                    img_pts.push(labeled[nidx].position);
+                }
+            }
+        }
+        if grid_pts.len() < 5 {
+            continue;
+        }
+        let Some(h) = estimate_homography_rect_to_img(&grid_pts, &img_pts) else {
+            continue;
+        };
+        let pred = h.apply(Point2::new(g.i as f32, g.j as f32));
+        let dx = pred.x - c.position.x;
+        let dy = pred.y - c.position.y;
+        residuals.push((dx * dx + dy * dy).sqrt());
+    }
+    if residuals.len() < 2 {
+        return None;
+    }
+    residuals.sort_by(|a, b| a.total_cmp(b));
+    let idx = ((residuals.len() as f32 - 1.0) * 0.95).round() as usize;
+    Some(residuals[idx.min(residuals.len() - 1)])
 }
 
 fn compute_residuals(labeled: &[LabeledCorner]) -> Option<(Vec<f32>, f32)> {

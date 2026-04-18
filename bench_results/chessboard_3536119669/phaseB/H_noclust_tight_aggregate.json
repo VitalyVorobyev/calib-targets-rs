@@ -1,0 +1,16 @@
+{
+  "config_name": "H_noclust_tight",
+  "n_frames": 120,
+  "n_frames_detected": 112,
+  "detection_rate_pct": 93.333336,
+  "median_corner_count": 47,
+  "median_horizontal_coverage_frac": 0.9248727,
+  "p95_horizontal_coverage_frac": 0.96216,
+  "median_residual_median_px": 0.84939224,
+  "median_residual_p95_px": 1.7002405,
+  "median_edge_axis_residual_median_deg": 2.3767693,
+  "median_local_step_cv": 0.32269943,
+  "median_local_homography_residual_median_px": 0.5487509,
+  "median_graph_degree_4_frac": 0.16666667,
+  "median_timing_total_us": 2383
+}
