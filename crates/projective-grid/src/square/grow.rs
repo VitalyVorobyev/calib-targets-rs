@@ -33,7 +33,8 @@
 //!
 //! This function does **not** do post-growth validation (line
 //! collinearity / local-H residuals). See
-//! [`crate::square::validate`] for that.
+//! [`crate::square::validate`](mod@crate::square::validate) for
+//! that.
 
 use crate::circular_stats as cs;
 use kiddo::{KdTree, SquaredEuclidean};

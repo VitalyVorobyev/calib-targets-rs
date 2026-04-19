@@ -1,12 +1,12 @@
 //! Seed-finder data types + pure-geometry helpers.
 //!
 //! The chessboard detector's seed search in
-//! [`calib_targets_chessboard::seed`] is still pattern-specific
-//! (it relies on chessboard parity, the Canonical/Swapped cluster
-//! split, and the axis-slot-swap invariant). The pieces that are
-//! pure geometry — the four-corner seed quad, its edge / cell-size
-//! bundle, and the 2×-spacing "midpoint violation" rejection — live
-//! here so non-calibration consumers can reuse them.
+//! `calib_targets_chessboard::seed` is still pattern-specific (it
+//! relies on chessboard parity, the Canonical/Swapped cluster split,
+//! and the axis-slot-swap invariant). The pieces that are pure
+//! geometry — the four-corner seed quad, its edge / cell-size bundle,
+//! and the 2×-spacing "midpoint violation" rejection — live here so
+//! non-calibration consumers can reuse them.
 
 use crate::homography::homography_from_4pt;
 use nalgebra::Point2;

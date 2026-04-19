@@ -3,9 +3,11 @@
 //! The pattern-agnostic machinery (BFS queue, KD-tree, prediction,
 //! ambiguity resolution, rebase-to-origin) lives in
 //! [`projective_grid::square::grow`]. This module supplies the
-//! chessboard-specific [`GrowValidator`] implementation — parity
-//! rules, axis-cluster matching, axis-slot-swap edge invariant — and
-//! carries the pipeline's per-corner stage updates.
+//! chessboard-specific
+//! [`GrowValidator`](projective_grid::square::grow::GrowValidator)
+//! implementation — parity rules, axis-cluster matching, axis-slot-
+//! swap edge invariant — and carries the pipeline's per-corner stage
+//! updates.
 //!
 //! See the hoisted module for the algorithm description and
 //! `book/src/chessboard.md` for the full pipeline context.

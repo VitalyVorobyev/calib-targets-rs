@@ -1,8 +1,8 @@
 //! Stage 7 — post-growth validation.
 //!
-//! Pattern-agnostic logic lives in
-//! [`projective_grid::square::validate`]; this module is a thin
-//! adapter that maps the chessboard detector's internal
+//! Pattern-agnostic logic lives in the
+//! [`projective_grid::square::validate`](mod@projective_grid::square::validate)
+//! module; this adapter maps the chessboard detector's internal
 //! `CornerAug` + labelled-map representation to
 //! [`projective_grid::square::validate::LabelledEntry`] and
 //! forwards the call.

@@ -15,8 +15,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test --workspace --all-features
 
-# Docs
-cargo doc --workspace --all-features
+# Docs — MUST produce zero warnings; run before every commit
+cargo doc --workspace --no-deps
 
 # Build book
 mdbook build book
@@ -199,6 +199,19 @@ for overlay / calibration consumers and for `chessboard-v2` is
 enforced inside `grow::grow_from_seed`.
 
 **New warnings:** fix them; do not suppress.
+
+**Pre-commit gate — always run before `git commit`:**
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo doc --workspace --no-deps
+```
+
+`cargo doc` must produce zero warnings. Broken intra-doc links and
+ambiguous references (e.g. a name that is both a module and a function)
+are hard errors under this gate. Fix them at source — do not rely on
+CI to catch them.
 
 **`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
 

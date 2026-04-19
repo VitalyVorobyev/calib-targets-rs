@@ -2,9 +2,8 @@
 //! 2-means helpers.
 //!
 //! These primitives are pattern-agnostic pieces of the chessboard
-//! detector's **global grid-direction** stage (spec §5.2–§5.3). The
-//! chessboard-specific wrapper in
-//! [`calib_targets_chessboard::cluster`] owns the
+//! detector's **global grid-direction** stage. The chessboard-
+//! specific wrapper in `calib_targets_chessboard::cluster` owns the
 //! histogram-accumulation step (iterates corners, reads per-axis
 //! `(angle, sigma, strength)`) and the final per-corner label
 //! assignment; this module provides the generic math underneath:
