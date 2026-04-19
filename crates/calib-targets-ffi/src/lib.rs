@@ -1298,9 +1298,7 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
 /// `ct_chessboard_params_t` storage location. `NULL` is allowed and
 /// is a no-op. The caller retains ownership of the storage.
 #[no_mangle]
-pub unsafe extern "C" fn ct_chessboard_params_init_default(
-    out: *mut ct_chessboard_params_t,
-) {
+pub unsafe extern "C" fn ct_chessboard_params_init_default(out: *mut ct_chessboard_params_t) {
     let Some(out) = (unsafe { out.as_mut() }) else {
         return;
     };
