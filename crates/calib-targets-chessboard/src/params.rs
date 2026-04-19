@@ -141,7 +141,16 @@ impl Default for DetectorParams {
             projective_line_tol_rel: 0.25,
             line_min_members: 3,
             local_h_tol_rel: 0.20,
-            max_validation_iters: 3,
+            // Raised from 3 → 6: on dense boards with many
+            // borderline-outlier corners near the edge, the
+            // validate→blacklist→regrow loop can take 4–5 iterations
+            // to settle (see testdata/puzzleboard_reference/example1.png
+            // with ~230 labelled corners and an oscillating blacklist
+            // of 2–4 per iter). 3 was adequate for the 3536119669
+            // benchmark where blacklists are typically empty on the
+            // first pass; 6 absorbs the wider real-world variance
+            // without noticeable cost (each iter is cheap).
+            max_validation_iters: 6,
 
             enable_line_extrapolation: true,
             enable_gap_fill: true,

@@ -376,7 +376,7 @@ impl Detector {
             frame.cell_size = Some(cell_size);
             frame.seed = Some([seed.a, seed.b, seed.c, seed.d]);
 
-            let grow_res: GrowResult = grow_from_seed(
+            let mut grow_res: GrowResult = grow_from_seed(
                 &mut augs,
                 seed,
                 centers,
@@ -395,14 +395,42 @@ impl Detector {
                 .collect();
 
             let converged = new_blacklist.is_empty();
+            // Soft convergence: when the validator keeps flagging a
+            // small residual set (≤ 2 corners) over multiple rounds,
+            // the labelled set has effectively stabilised — we're
+            // oscillating on borderline-outlier corners. Apply the
+            // current round's blacklist and accept. Bounded below
+            // by `iter >= 2` so we never emit until we've seen
+            // at least two validation passes confirm the bulk of
+            // the labels.
+            let soft_converged = !converged
+                && it + 1 >= 2
+                && new_blacklist.len() <= 2
+                && labelled_count >= self.params.min_labeled_corners;
             frame.iterations.push(IterationTrace {
                 iter: it,
                 labelled_count,
                 new_blacklist: new_blacklist.clone(),
-                converged,
+                converged: converged || soft_converged,
             });
 
-            if converged {
+            if converged || soft_converged {
+                if soft_converged {
+                    // Apply the current round's blacklist before
+                    // accepting so the emitted detection excludes
+                    // the flagged outliers.
+                    for &idx in &new_blacklist {
+                        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                                at,
+                                reason: "soft-convergence outlier".into(),
+                            };
+                        }
+                        grow_res.labelled.retain(|_, &mut v| v != idx);
+                        grow_res.by_corner.remove(&idx);
+                        blacklist.insert(idx);
+                    }
+                }
                 let mut grow_mut = grow_res;
 
                 // Phase E recall boosters: interior gap fill + line
@@ -473,9 +501,26 @@ fn build_detection(
     centers: ClusterCenters,
     cell_size: f32,
 ) -> Detection {
-    // Growth rebases (i, j) to non-negative already.
+    // Grow rebases (i, j) to non-negative already, but late-stage
+    // mutations (soft-convergence outlier removal, booster additions
+    // that extend the grid past the prior bbox) can leave the set
+    // un-rebased. Re-rebase here so the non-negative invariant is a
+    // `build_detection`-side guarantee.
     let mut labelled_pairs: Vec<((i32, i32), usize)> =
         grow.labelled.iter().map(|(&k, &v)| (k, v)).collect();
+    if !labelled_pairs.is_empty() {
+        let (min_i, min_j) = labelled_pairs
+            .iter()
+            .fold((i32::MAX, i32::MAX), |(a, b), &((i, j), _)| {
+                (a.min(i), b.min(j))
+            });
+        if min_i != 0 || min_j != 0 {
+            for ((i, j), _) in labelled_pairs.iter_mut() {
+                *i -= min_i;
+                *j -= min_j;
+            }
+        }
+    }
 
     // Canonicalize orientation so +i points roughly +x (right) and +j
     // points roughly +y (down) in image coords. The grow stage assigns

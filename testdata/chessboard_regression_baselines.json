@@ -73,10 +73,9 @@
     },
     {
       "path": "testdata/puzzleboard_reference/example1.png",
-      "require_detection": false,
-      "min_labelled": 0,
-      "max_components": 2,
-      "ratchet_note": "TODO: validation loop oscillates (228->238->236) and hits max_validation_iters=3; detection emits None despite 200+ labelled corners. Fix raises require_detection to true and min_labelled to >=200."
+      "require_detection": true,
+      "min_labelled": 220,
+      "max_components": 2
     },
     {
       "path": "testdata/puzzleboard_reference/example2.png",
