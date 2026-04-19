@@ -89,8 +89,6 @@ fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
     raw.iter()
         .map(|c| TargetCorner {
             position: Point2::new(c.x, c.y),
-            orientation: (c.axes[0].angle - std::f32::consts::FRAC_PI_4)
-                .rem_euclid(std::f32::consts::PI),
             orientation_cluster: None,
             axes: [
                 calib_targets_core::AxisEstimate {

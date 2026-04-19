@@ -27,7 +27,6 @@
 //! 8. Keep the best component that matches expected_rows/cols (up to swap) and completeness threshold.
 
 mod detector;
-mod geom;
 #[doc(hidden)]
 pub mod gridgraph;
 pub mod io;

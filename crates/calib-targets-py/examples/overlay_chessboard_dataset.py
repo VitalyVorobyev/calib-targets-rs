@@ -101,9 +101,6 @@ def build_params(
             "outlier_threshold_deg": 30.0,
             "min_peak_weight_fraction": 0.05,
             "use_weights": True,
-            # Phase 4: dual-axis clustering — disabled pending investigation
-            # (regressed from 84% → 1% on the 120 sweep with it on).
-            "use_dual_axis": False,
         },
         "graph": {
             "mode": "two_axis",

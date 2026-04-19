@@ -150,8 +150,9 @@ pub struct DebugCorner {
     pub x: f32,
     pub y: f32,
     pub axes: [AxisEstimate; 2],
-    /// Legacy single-axis orientation (derived from `axes[0]`). Kept so
-    /// overlays can compare against the legacy clustering.
+    /// Single-axis summary of the corner's orientation, derived at debug
+    /// emission time as `axes[0].angle` (mod π). Kept as a JSON field so
+    /// overlay scripts written against older schemas continue to work.
     pub orientation: f32,
     pub orientation_cluster: Option<usize>,
     pub strength: f32,
@@ -1579,11 +1580,15 @@ fn build_debug_corners(
         .enumerate()
         .map(|(i, c)| {
             let step = local_steps.get(i).copied().unwrap_or_default();
+            // `orientation` is a debug-only convenience derived from
+            // `axes[0].angle`, folded into [0, π). No π/4 shift: the new
+            // convention is that `axes` are the grid axes directly.
+            let orientation = wrap_angle_pi(c.axes[0].angle);
             DebugCorner {
                 x: c.position.x,
                 y: c.position.y,
                 axes: c.axes,
-                orientation: c.orientation,
+                orientation,
                 orientation_cluster: c.orientation_cluster,
                 strength: c.strength,
                 contrast: c.contrast,
@@ -1695,10 +1700,19 @@ mod tests {
     use super::*;
     use calib_targets_core::Corner;
 
-    fn make_corner(x: f32, y: f32, orientation: f32, strength: f32) -> Corner {
+    fn make_corner(x: f32, y: f32, axis0: f32, strength: f32) -> Corner {
         Corner {
             position: nalgebra::Point2::new(x, y),
-            orientation,
+            axes: [
+                AxisEstimate {
+                    angle: axis0,
+                    sigma: 0.05,
+                },
+                AxisEstimate {
+                    angle: axis0 + std::f32::consts::FRAC_PI_2,
+                    sigma: 0.05,
+                },
+            ],
             strength,
             ..Corner::default()
         }

@@ -12,7 +12,6 @@
 //!
 //! let corner = Corner {
 //!     position: Point2::new(10.0, 20.0),
-//!     orientation: 0.0,
 //!     orientation_cluster: None,
 //!     axes: Default::default(),
 //!     contrast: 0.0,

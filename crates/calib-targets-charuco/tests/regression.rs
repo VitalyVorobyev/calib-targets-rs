@@ -27,11 +27,8 @@ fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
-    let orientation =
-        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation,
         orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {

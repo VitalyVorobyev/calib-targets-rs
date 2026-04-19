@@ -11,14 +11,8 @@ use calib_targets_core::{
 use nalgebra::Point2;
 
 pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
-    // Derive the legacy single-axis orientation for chessboard / puzzleboard
-    // consumers from 0.6's axes[0]; see calib-targets::adapt_chess_corner for
-    // the rationale behind the −π/4 shift.
-    let orientation =
-        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     Corner {
         position: Point2::new(c.x, c.y),
-        orientation,
         orientation_cluster: None,
         axes: [
             AxisEstimate {

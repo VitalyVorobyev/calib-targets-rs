@@ -1193,10 +1193,6 @@ fn convert_orientation_clustering_params(
             "orientation_clustering.min_peak_weight_fraction",
         )?,
         use_weights: flag_to_bool(params.use_weights, "orientation_clustering.use_weights")?,
-        // Phase 4: dual-axis clustering. Default off via FFI — an
-        // algorithmic improvement disabled until the FFI surface
-        // grows the knob.
-        use_dual_axis: false,
     })
 }
 

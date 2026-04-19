@@ -45,7 +45,6 @@ fn board_corner(x: f32, y: f32, parity: usize) -> Corner {
     };
     Corner {
         position: Point2::new(x, y),
-        orientation: 0.0,
         orientation_cluster: None,
         axes,
         contrast: 30.0,
@@ -67,7 +66,6 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> Corner {
     ];
     Corner {
         position: Point2::new(x, y),
-        orientation: 0.0,
         orientation_cluster: None,
         axes,
         contrast: 20.0,

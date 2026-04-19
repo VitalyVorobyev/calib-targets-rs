@@ -389,16 +389,8 @@ pub fn detect_marker_board_from_gray_u8(
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> core::Corner {
-    // Derive the legacy single-axis orientation in [0, π) from axis 0.
-    // chess-corners 0.5 emitted the 2nd-harmonic *sector-midpoint* direction,
-    // while 0.6's `axes[0]` sits at `seed + π/4` on a grid axis; the −π/4
-    // shift recovers the 0.5 semantic that chessboard / puzzleboard graph
-    // logic expects.
-    let orientation =
-        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     core::Corner {
         position: Point2::new(c.x, c.y),
-        orientation,
         orientation_cluster: None,
         axes: [
             core::AxisEstimate {

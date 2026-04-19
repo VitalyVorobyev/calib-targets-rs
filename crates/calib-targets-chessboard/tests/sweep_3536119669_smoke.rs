@@ -33,11 +33,8 @@ fn testdata_path() -> PathBuf {
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
-    let orientation =
-        (c.axes[0].angle - std::f32::consts::FRAC_PI_4).rem_euclid(std::f32::consts::PI);
     Corner {
         position: Point2::new(c.x, c.y),
-        orientation,
         orientation_cluster: None,
         axes: [
             AxisEstimate {

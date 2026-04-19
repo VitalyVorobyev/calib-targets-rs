@@ -36,10 +36,9 @@ impl Default for AxisEstimate {
 
 /// Canonical 2D corner used by all target detectors.
 ///
-/// Obtained by adapting the output of your ChESS crate. Carries both the
-/// legacy single-orientation field (kept for existing chessboard / puzzleboard
-/// graph logic) and the richer 0.6-era two-axis descriptor (used by the
-/// forthcoming local-step and two-axis validator work in `projective-grid`).
+/// Obtained by adapting the output of your ChESS crate. Carries the two-axis
+/// descriptor (`axes`) emitted by the chess-corners 0.6 detector; all
+/// orientation-driven graph / clustering code now reads the axes directly.
 ///
 /// `Default::default()` yields a zero-origin corner with `axes` at the no-info
 /// sentinel (sigma = π); test fixtures typically use `..Corner::default()` to
@@ -49,25 +48,17 @@ pub struct Corner {
     /// Corner position in pixel coordinates.
     pub position: Point2<f32>,
 
-    /// Legacy single-axis orientation at the corner, in radians.
-    ///
-    /// Convention:
-    /// - Defined modulo π (pi), not 2π, because chessboard axes are undirected.
-    /// - Typically points along one local grid axis.
-    ///
-    /// For chess-corners 0.6 inputs the adapter derives this as
-    /// `(axes[0].angle - π/4).rem_euclid(π)`, preserving the 0.5 sector-midpoint
-    /// semantics that the chessboard / puzzleboard graph builders rely on.
-    pub orientation: f32,
-
+    /// Orientation-cluster label assigned at runtime by the chessboard
+    /// detector's clustering pass. `None` until clustering runs (or if the
+    /// corner falls outside both cluster centers).
     pub orientation_cluster: Option<usize>, // Some(0 or 1) if clustered, None if outlier
 
     /// The two local grid-axis directions with per-axis 1σ precision.
     ///
     /// Populated from `chess_corners::CornerDescriptor::axes` in 0.6+; older
-    /// consumers may leave this as `Default` (sigma = π, i.e. "no info"). New
-    /// code in `projective-grid` can rely on this field for local step
-    /// estimation and two-axis neighbor validation.
+    /// consumers may leave this as `Default` (sigma = π, i.e. "no info"). All
+    /// orientation-sensitive downstream code (clustering, neighbor validation,
+    /// local-step estimation) reads these directly.
     #[serde(default)]
     pub axes: [AxisEstimate; 2],
 

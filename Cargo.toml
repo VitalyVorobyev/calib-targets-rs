@@ -12,6 +12,7 @@ members = [
     "crates/calib-targets-marker",
     "crates/calib-targets-puzzleboard",
     "crates/calib-targets-wasm",
+    "crates/chessboard-v2",
     "crates/projective-grid",
 ]
 default-members = [
@@ -26,6 +27,7 @@ default-members = [
     "crates/calib-targets-aruco",
     "crates/calib-targets-marker",
     "crates/calib-targets-puzzleboard",
+    "crates/chessboard-v2",
     "crates/projective-grid",
 ]
 

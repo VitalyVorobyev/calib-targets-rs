@@ -67,6 +67,27 @@ match marker.rotation { 1 => (gc.gx-1, gc.gy), 2 => (gc.gx-1, gc.gy-1), 3 => (gc
   FIXED by using global homography instead of per-marker predictions.
 - **Rotation-sensitive corner indexing**: `corners_img` always indexed by `gc0`, not `marker.gc`.
   Under non-identity D4 alignment, `marker.gc != gc0`. Must recover `gc0` using `marker.rotation`.
+- **Double-angle circular mean for undirected axes**: angles on [0, π) representing
+  undirected lines can cancel when averaged naively (sin θ and sin(θ+π) both positive, cos θ
+  and cos(θ+π) opposite → mean collapses to π/2). Always accumulate in DOUBLE-ANGLE space
+  (cos 2θ, sin 2θ) and halve the atan2 result. See `orientation_clustering::refined_angle`,
+  `build_peak_support`, and the center-update step in `cluster_orientations`.
+- **ChessboardClusterValidator direction canonicalization**: when cluster centers ARE grid
+  axes (v2 contract), direction classification must still be independent of which cluster
+  came out as slot 0 vs slot 1. Pick axis_u = whichever has larger |x|, then flip signs so
+  axis_u has non-negative x AND {axis_u, axis_v} is right-handed in y-down coords.
+
+## Phase 0 Axes-Only Migration (Corner.orientation removed)
+
+- `Corner.orientation: f32` is gone. All orientation-driven code reads `axes: [AxisEstimate; 2]`.
+- `axes[0]` and `axes[1]` are the two GRID AXES (not diagonals) at each corner, orthogonal by
+  construction in chess-corners 0.6. Adapter functions no longer shift by π/4.
+- `ChessboardClusterValidator::grid_diagonals` is kept as a historical field name but carries
+  GRID AXES (cluster centers from axes-only clustering), not diagonals. Validator computes
+  direction from axes directly (no more v_plus/v_minus sum-of-diagonals trick).
+- Test helpers `make_corner(x, y, axis0)` set `axes[0] = axis0` and `axes[1] = axis0 + π/2`.
+  Use `make_corner_swapped` for the chessboard parity flip.
+- `OrientationClusteringParams::use_dual_axis` was removed; dual-axis is the ONLY behavior.
 
 ## Test Structure
 

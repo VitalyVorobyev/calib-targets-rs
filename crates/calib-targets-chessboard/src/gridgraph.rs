@@ -1,4 +1,3 @@
-use crate::geom::{angle_diff_abs, is_orthogonal};
 use crate::params::{ChessboardGraphMode, GridGraphParams};
 use calib_targets_core::{AxisEstimate, Corner};
 use nalgebra::{Point2, Vector2};
@@ -22,11 +21,14 @@ pub use projective_grid::{assign_grid_coordinates, connected_components};
 /// reason so downstream sweeps can see *why* each stage dropped candidates.
 ///
 /// Each reason is emitted by at most one validator:
-/// * `NotOrthogonal`, `EdgeAxisAngleMismatch`: `ChessboardSimpleValidator`.
+/// * `NoAxisMatchSource`, `NoAxisMatchCandidate`: both the simple and
+///   two-axis validators emit these when neither axis at an endpoint
+///   aligns with the edge direction (axes-only contract). The simple
+///   validator keeps `NotOrthogonal` and `EdgeAxisAngleMismatch` around
+///   as backwards-compatible no-op buckets (never incremented).
+/// * `AxisLineDisagree`, `OutOfStepWindow`: `ChessboardTwoAxisValidator`.
 /// * `MissingCluster`, `SameClusterLegacy`, `LowAlignment`:
 ///   `ChessboardClusterValidator`.
-/// * `NoAxisMatchSource`, `NoAxisMatchCandidate`, `AxisLineDisagree`,
-///   `OutOfStepWindow`: `ChessboardTwoAxisValidator`.
 /// * `OutOfDistanceWindow`: emitted by both legacy validators when the
 ///   candidate distance falls outside the absolute-pixel spacing window.
 /// * `ClusterPolarityFlip`, `LocalHomographyResidual`: Phase B stubs reserved
@@ -173,11 +175,10 @@ fn direction_quadrant(vec_to_neighbor: &Vector2<f32>) -> NeighborDirection {
 
 /// Per-corner data needed for chessboard neighbor validation.
 ///
-/// Carries the legacy single-axis orientation (used by Simple / Cluster
-/// validators) alongside the richer two-axis descriptor and local-step
-/// estimate consumed by [`ChessboardTwoAxisValidator`].
+/// Carries the two-axis descriptor, the optional orientation-cluster label
+/// (used by [`ChessboardClusterValidator`]), and the local-step estimate
+/// consumed by [`ChessboardTwoAxisValidator`].
 pub struct ChessboardPointData {
-    pub orientation: f32,
     pub orientation_cluster: Option<usize>,
     pub axes: [AxisEstimate; 2],
     pub local_step: LocalStep<f32>,
@@ -194,7 +195,6 @@ impl ChessboardPointData {
             .iter()
             .zip(steps.iter())
             .map(|(c, s)| Self {
-                orientation: c.orientation,
                 orientation_cluster: c.orientation_cluster,
                 axes: c.axes,
                 local_step: *s,
@@ -221,7 +221,18 @@ pub fn estimate_corner_local_steps(corners: &[Corner]) -> Vec<LocalStep<f32>> {
     estimate_local_steps(&pts, &LocalStepParams::<f32>::default())
 }
 
-/// Validator that uses only diagonal-to-edge angle relationship (no orientation clustering).
+/// Validator that matches the edge direction against each endpoint's
+/// two-axis descriptor. Under the axes-only contract:
+///
+/// 1. `axes[0]` and `axes[1]` at each corner are orthogonal by construction
+///    (the upstream ChESS detector guarantees it), so no separate
+///    orthogonality check between endpoints is needed.
+/// 2. The edge direction `B − A` must align (within
+///    `orientation_tolerance_deg`) with one of `A.axes[k]` AND one of
+///    `B.axes[k']`. Slot identity across endpoints is NOT required — a
+///    parity flip (`axes[0]` ↔ `axes[1]` between adjacent corners) is
+///    expected on a chessboard.
+/// 3. The candidate distance must lie in `[min_spacing_pix, max_spacing_pix]`.
 pub struct ChessboardSimpleValidator {
     pub min_spacing_pix: f32,
     pub max_spacing_pix: f32,
@@ -241,50 +252,57 @@ impl NeighborValidator for ChessboardSimpleValidator {
         candidate: &NeighborCandidate,
         candidate_data: &Self::PointData,
     ) -> Option<(NeighborDirection, f32)> {
-        // 1. Corner directions should be approximately orthogonal.
         let tol = self.orientation_tolerance_deg.to_radians();
-        if !is_orthogonal(source_data.orientation, candidate_data.orientation, tol) {
-            record_reason(&self.counter, EdgeRejectReason::NotOrthogonal);
-            return None;
-        }
 
-        // 2. Check distance.
+        // 1. Distance window.
         if candidate.distance < self.min_spacing_pix || candidate.distance > self.max_spacing_pix {
             record_reason(&self.counter, EdgeRejectReason::OutOfDistanceWindow);
             return None;
         }
 
-        // 3. Relationship between corner directions and edge direction.
+        // 2. Axis match at both endpoints. The edge direction must line
+        //    up (line-folded) with some axis at the source and some axis
+        //    at the candidate. Slot identity is NOT required across
+        //    endpoints — chessboard canonicalisation can put the same
+        //    underlying axis in slot 0 at one corner and slot 1 at the
+        //    next.
         let edge_angle = candidate.offset.y.atan2(candidate.offset.x);
-        let diff_corner = axis_vec_diff(source_data.orientation, edge_angle);
-        let diff_neighbor = axis_vec_diff(candidate_data.orientation, edge_angle);
-        let expected = std::f32::consts::FRAC_PI_4; // 45°
-
-        let score_corner = (diff_corner - expected).abs();
-        let score_neighbor = (diff_neighbor - expected).abs();
-
-        if score_corner > tol || score_neighbor > tol {
-            record_reason(&self.counter, EdgeRejectReason::EdgeAxisAngleMismatch);
+        let Some((_src_idx, diff_src, _)) = pick_best_axis(&source_data.axes, edge_angle, tol)
+        else {
+            record_reason(&self.counter, EdgeRejectReason::NoAxisMatchSource);
             return None;
-        }
+        };
+        let Some((_cand_idx, diff_cand, _)) = pick_best_axis(&candidate_data.axes, edge_angle, tol)
+        else {
+            record_reason(&self.counter, EdgeRejectReason::NoAxisMatchCandidate);
+            return None;
+        };
 
-        // 4. Classify neighbor direction in image space.
+        // 3. Classify neighbor direction in image space.
         let direction = direction_quadrant(&candidate.offset);
 
-        let score_orientation = (std::f32::consts::FRAC_PI_2
-            - angle_diff_abs(source_data.orientation, candidate_data.orientation))
-        .abs();
-
-        let score = score_corner + score_neighbor + score_orientation;
+        // Score: lower is better. Sum of axis-alignment residuals, which
+        // collapses to zero for a perfectly grid-aligned edge.
+        let score = diff_src + diff_cand;
         Some((direction, score))
     }
 }
 
-/// Validator that uses orientation clustering and canonical grid axes.
+/// Validator that uses orientation-cluster labels plus two canonical grid
+/// axes (the cluster centers).
+///
+/// Under the axes-only contract, the cluster centers emitted by
+/// `cluster_orientations` (in `calib-targets-core`) are the two grid
+/// axes themselves — not grid diagonals. The `grid_diagonals` field is
+/// therefore a historical name preserved for downstream callers;
+/// geometrically it carries the two axis angles `[θ, θ+π/2 (mod π)]`.
 pub struct ChessboardClusterValidator {
     pub min_spacing_pix: f32,
     pub max_spacing_pix: f32,
     pub orientation_tolerance_deg: f32,
+    /// Two cluster-center angles in [0, π). Despite the legacy name,
+    /// these are the grid AXES (not diagonals) under the axes-only
+    /// contract.
     pub grid_diagonals: [f32; 2],
     /// Optional shared counter. When `Some`, each reject increments the
     /// matching [`EdgeRejectReason`].
@@ -301,61 +319,73 @@ impl NeighborValidator for ChessboardClusterValidator {
         candidate: &NeighborCandidate,
         candidate_data: &Self::PointData,
     ) -> Option<(NeighborDirection, f32)> {
-        // 0. Need valid orientation clusters for both corners.
-        let (Some(_ci), Some(_cj)) = (
+        // 0. Need valid orientation clusters for both corners. Adjacent
+        //    chessboard corners carry opposite labels under the
+        //    canonical-vs-swapped axis pairing — so an edge between same-
+        //    label corners is not a direct 4-neighbor.
+        let (Some(ci), Some(cj)) = (
             source_data.orientation_cluster,
             candidate_data.orientation_cluster,
         ) else {
             record_reason(&self.counter, EdgeRejectReason::MissingCluster);
             return None;
         };
-        if _ci == _cj {
+        if ci == cj {
             record_reason(&self.counter, EdgeRejectReason::SameClusterLegacy);
-            return None; // Same axis cluster; not a valid neighbor.
+            return None;
         }
 
-        // 2. Check distance.
+        // 1. Distance window.
         if candidate.distance < self.min_spacing_pix || candidate.distance > self.max_spacing_pix {
             record_reason(&self.counter, EdgeRejectReason::OutOfDistanceWindow);
             return None;
         }
 
-        // 3. Relationship between corner diagonals and edge direction.
+        // 2. Edge direction vs. the two grid axes (cluster centers).
+        //
+        // Canonicalise so that direction classification is INDEPENDENT
+        // of which cluster slot (0 or 1) the clusterer happened to
+        // produce first:
+        // - Pick as `axis_u` (the horizontal / Left-Right selector)
+        //   whichever of the two centres is closer to image-x (largest
+        //   |cos|); the other becomes `axis_v` (Up/Down).
+        // - Flip `axis_u` to have non-negative x so `dot_u > 0` means
+        //   the edge points RIGHT.
+        // - Flip `axis_v` so the pair forms a right-handed frame
+        //   (u × v ≥ 0 in y-down coords), giving `dot_v > 0` → DOWN.
+        //
+        // Axes are undirected lines (period π), so sign flips do not
+        // change the absolute dot products used for alignment scoring.
         let e = candidate.offset / candidate.distance;
-
-        let o0 = angle_to_unit(self.grid_diagonals[0]);
-        let o1 = angle_to_unit(self.grid_diagonals[1]);
-
-        let v_plus = o0 + o1;
-        let mut v_minus = o0 - o1;
-
-        if v_plus.norm_squared() < 1e-6 || v_minus.norm_squared() < 1e-6 {
-            record_reason(&self.counter, EdgeRejectReason::LowAlignment);
-            return None;
+        let c0 = angle_to_unit(self.grid_diagonals[0]);
+        let c1 = angle_to_unit(self.grid_diagonals[1]);
+        let (mut axis_u, mut axis_v) = if c0.x.abs() >= c1.x.abs() {
+            (c0, c1)
+        } else {
+            (c1, c0)
+        };
+        if axis_u.x < 0.0 {
+            axis_u = -axis_u;
+        }
+        // Pick the `axis_v` sign so {axis_u, axis_v} forms a right-handed
+        // frame (cross product u × v = u.x * v.y − u.y * v.x ≥ 0). With
+        // y-down image coords that means positive dot_v selects DOWN.
+        if axis_u.x * axis_v.y - axis_u.y * axis_v.x < 0.0 {
+            axis_v = -axis_v;
         }
 
-        // Canonicalize v_minus sign for right-handed frame.
-        let det = v_minus.x * v_plus.y - v_minus.y * v_plus.x;
-        if det < 0.0 {
-            v_minus = -v_minus;
-        }
-
-        let v_plus_unit = v_plus.normalize();
-        let v_minus_unit = v_minus.normalize();
-
-        let dot_h = v_minus_unit.dot(&e);
-        let dot_v = v_plus_unit.dot(&e);
-
-        let best_alignment = dot_h.abs().max(dot_v.abs());
+        let dot_u = axis_u.dot(&e);
+        let dot_v = axis_v.dot(&e);
+        let best_alignment = dot_u.abs().max(dot_v.abs());
 
         if best_alignment < self.orientation_tolerance_deg.to_radians().cos() {
             record_reason(&self.counter, EdgeRejectReason::LowAlignment);
             return None;
         }
 
-        // 4. Classify neighbor direction using canonical grid axes.
-        let direction = if dot_h.abs() > dot_v.abs() {
-            if dot_h >= 0.0 {
+        // 3. Direction classification.
+        let direction = if dot_u.abs() >= dot_v.abs() {
+            if dot_u >= 0.0 {
                 NeighborDirection::Right
             } else {
                 NeighborDirection::Left
@@ -615,13 +645,47 @@ mod tests {
     use nalgebra::Point2;
     use projective_grid::NodeNeighbor;
     use std::collections::HashMap;
-    use std::f32::consts::FRAC_PI_4;
+    use std::f32::consts::{FRAC_PI_2, FRAC_PI_4};
 
-    fn make_corner(x: f32, y: f32, orientation: f32) -> Corner {
+    /// Test helper: build a corner whose `axes[0]` is set to `axis0` and
+    /// `axes[1]` to the orthogonal direction. Matches the Phase-0 migration
+    /// contract that orientation is described by `axes` directly.
+    fn make_corner(x: f32, y: f32, axis0: f32) -> Corner {
         Corner {
             position: Point2::new(x, y),
-            orientation,
             orientation_cluster: None,
+            axes: [
+                AxisEstimate {
+                    angle: axis0,
+                    sigma: 0.05,
+                },
+                AxisEstimate {
+                    angle: axis0 + std::f32::consts::FRAC_PI_2,
+                    sigma: 0.05,
+                },
+            ],
+            strength: 1.0,
+            ..Corner::default()
+        }
+    }
+
+    /// Test helper: like `make_corner` but with `axes[0]` and `axes[1]`
+    /// slots swapped, to simulate the chessboard parity flip between
+    /// adjacent corners.
+    fn make_corner_swapped(x: f32, y: f32, axis0: f32) -> Corner {
+        Corner {
+            position: Point2::new(x, y),
+            orientation_cluster: None,
+            axes: [
+                AxisEstimate {
+                    angle: axis0 + std::f32::consts::FRAC_PI_2,
+                    sigma: 0.05,
+                },
+                AxisEstimate {
+                    angle: axis0,
+                    sigma: 0.05,
+                },
+            ],
             strength: 1.0,
             ..Corner::default()
         }
@@ -637,19 +701,19 @@ mod tests {
         let cols = 3;
         let rows = 3;
 
+        // Axes-only contract: grid axes point along image axes (0, π/2).
+        // Alternate corners use the slot-swapped variant to simulate the
+        // parity flip between adjacent chessboard corners.
         let mut corners = Vec::new();
         for j in 0..rows {
             for i in 0..cols {
-                let orientation = if (i + j) % 2 == 0 {
-                    FRAC_PI_4
+                let x = i as f32 * spacing;
+                let y = j as f32 * spacing;
+                if (i + j) % 2 == 0 {
+                    corners.push(make_corner(x, y, 0.0));
                 } else {
-                    3.0 * FRAC_PI_4
-                };
-                corners.push(make_corner(
-                    i as f32 * spacing,
-                    j as f32 * spacing,
-                    orientation,
-                ));
+                    corners.push(make_corner_swapped(x, y, 0.0));
+                }
             }
         }
 
@@ -729,11 +793,20 @@ mod tests {
         assert!(graph.neighbors[1].is_empty());
     }
 
-    fn make_clustered_corner(x: f32, y: f32, orientation: f32, cluster: usize) -> Corner {
+    fn make_clustered_corner(x: f32, y: f32, axis0: f32, cluster: usize) -> Corner {
         Corner {
             position: Point2::new(x, y),
-            orientation,
             orientation_cluster: Some(cluster),
+            axes: [
+                AxisEstimate {
+                    angle: axis0,
+                    sigma: 0.05,
+                },
+                AxisEstimate {
+                    angle: axis0 + std::f32::consts::FRAC_PI_2,
+                    sigma: 0.05,
+                },
+            ],
             strength: 1.0,
             ..Corner::default()
         }
@@ -749,20 +822,27 @@ mod tests {
         let ax = Vector2::new(angle.cos(), angle.sin());
         let ay = Vector2::new(-angle.sin(), angle.cos());
 
-        let diag0 = angle + FRAC_PI_4;
-        let diag1 = angle + 3.0 * FRAC_PI_4;
-        let grid_diagonals = [diag0, diag1];
+        // Under the axes-only contract, cluster centers ARE the grid
+        // axes (not the diagonals). The helper populates each corner's
+        // axes from `axis0` → [axis0, axis0+π/2], so passing `angle`
+        // for even-cluster corners and `angle + π/2` for odd-cluster
+        // corners produces the chessboard parity flip.
+        let grid_axes = [angle, angle + FRAC_PI_2];
 
         let mut corners = Vec::new();
         for j in 0..rows {
             for i in 0..cols {
                 let pos = ax * (i as f32 * spacing) + ay * (j as f32 * spacing);
                 let cluster = (i + j) % 2;
-                let ori = if cluster == 0 { diag0 } else { diag1 };
+                let axis0 = if cluster == 0 {
+                    grid_axes[0]
+                } else {
+                    grid_axes[1]
+                };
                 corners.push(make_clustered_corner(
                     pos.x + 100.0,
                     pos.y + 100.0,
-                    ori,
+                    axis0,
                     cluster,
                 ));
             }
@@ -774,7 +854,7 @@ mod tests {
             k_neighbors: 8,
             ..Default::default()
         };
-        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_diagonals));
+        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_axes));
 
         let components = connected_components(&graph);
         assert_eq!(
@@ -803,20 +883,22 @@ mod tests {
         let ax = Vector2::new(angle.cos(), angle.sin());
         let ay = Vector2::new(-angle.sin(), angle.cos());
 
-        let diag0 = angle + FRAC_PI_4;
-        let diag1 = angle + 3.0 * FRAC_PI_4;
-        let grid_diagonals = [diag0, diag1];
+        let grid_axes = [angle, angle + FRAC_PI_2];
 
         let mut corners = Vec::new();
         for j in 0..3 {
             for i in 0..3 {
                 let pos = ax * (i as f32 * spacing) + ay * (j as f32 * spacing);
                 let cluster = (i + j) % 2;
-                let ori = if cluster == 0 { diag0 } else { diag1 };
+                let axis0 = if cluster == 0 {
+                    grid_axes[0]
+                } else {
+                    grid_axes[1]
+                };
                 corners.push(make_clustered_corner(
                     pos.x + 50.0,
                     pos.y + 50.0,
-                    ori,
+                    axis0,
                     cluster,
                 ));
             }
@@ -828,7 +910,7 @@ mod tests {
             k_neighbors: 8,
             ..Default::default()
         };
-        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_diagonals));
+        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_axes));
 
         for (a, neighbors) in graph.neighbors.iter().enumerate() {
             for n in neighbors {
@@ -858,20 +940,22 @@ mod tests {
         let ax = Vector2::new(angle.cos(), angle.sin());
         let ay = Vector2::new(-angle.sin(), angle.cos());
 
-        let diag0 = angle + FRAC_PI_4;
-        let diag1 = angle + 3.0 * FRAC_PI_4;
-        let grid_diagonals = [diag0, diag1];
+        let grid_axes = [angle, angle + FRAC_PI_2];
 
         let mut corners = Vec::new();
         for j in 0..5 {
             for i in 0..5 {
                 let pos = ax * (i as f32 * spacing) + ay * (j as f32 * spacing);
                 let cluster = (i + j) % 2;
-                let ori = if cluster == 0 { diag0 } else { diag1 };
+                let axis0 = if cluster == 0 {
+                    grid_axes[0]
+                } else {
+                    grid_axes[1]
+                };
                 corners.push(make_clustered_corner(
                     pos.x + 80.0,
                     pos.y + 80.0,
-                    ori,
+                    axis0,
                     cluster,
                 ));
             }
@@ -883,7 +967,7 @@ mod tests {
             k_neighbors: 8,
             ..Default::default()
         };
-        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_diagonals));
+        let graph = build_chessboard_grid_graph(&corners, &params, Some(grid_axes));
 
         let components = connected_components(&graph);
         assert_eq!(1, components.len());
@@ -916,9 +1000,11 @@ mod tests {
     }
 
     #[test]
-    fn counter_records_not_orthogonal_in_simple_validator() {
-        // Parallel orientations within range: the distance is fine but the
-        // orthogonality check rejects. Simple validator path (no clusters).
+    fn counter_records_no_axis_match_in_simple_validator() {
+        // Corners whose axes sit at 45° / 135° — neither aligns with a
+        // horizontal edge within the default tolerance. Distance is fine,
+        // so the axis-match check is what rejects. Simple validator path
+        // (no clusters).
         let corners = vec![
             make_corner(0.0, 0.0, FRAC_PI_4),
             make_corner(10.0, 0.0, FRAC_PI_4),
@@ -935,7 +1021,12 @@ mod tests {
         let _graph =
             build_chessboard_grid_graph_instrumented(&corners, &params, None, Some(&mut counter));
 
-        assert!(counter.count_of(EdgeRejectReason::NotOrthogonal) > 0);
+        let no_match = counter.count_of(EdgeRejectReason::NoAxisMatchSource)
+            + counter.count_of(EdgeRejectReason::NoAxisMatchCandidate);
+        assert!(
+            no_match > 0,
+            "simple validator should reject with NoAxisMatch* reasons"
+        );
         assert_eq!(counter.count_of(EdgeRejectReason::OutOfDistanceWindow), 0);
     }
 
@@ -962,15 +1053,15 @@ mod tests {
         let spacing = 10.0;
         let worse_spacing = 12.0;
 
+        // Grid axes aligned with image axes (0, π/2). Alternate the axes
+        // slot order on neighbors to mimic the chessboard parity flip.
+        // The "worse" neighbor tilts its axes by 0.1 rad so its
+        // alignment residual with the horizontal edge is larger.
         let corners = vec![
-            make_corner(0.0, 0.0, FRAC_PI_4),           // center (idx 0)
-            make_corner(spacing, 0.0, 3.0 * FRAC_PI_4), // better right (idx 1)
-            make_corner(
-                worse_spacing,
-                0.0,
-                3.0 * FRAC_PI_4 + 0.1, // slightly worse orientation
-            ), // worse right (idx 2)
-            make_corner(-spacing, 0.0, 3.0 * FRAC_PI_4), // left (idx 3)
+            make_corner(0.0, 0.0, 0.0),                   // center (idx 0)
+            make_corner_swapped(spacing, 0.0, 0.0),       // better right (idx 1)
+            make_corner_swapped(worse_spacing, 0.0, 0.1), // worse right (idx 2)
+            make_corner_swapped(-spacing, 0.0, 0.0),      // left (idx 3)
         ];
 
         let params = GridGraphParams {
