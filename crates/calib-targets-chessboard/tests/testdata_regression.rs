@@ -150,17 +150,21 @@ fn assert_origin_top_left(detection: &Detection, context: &str) {
 fn baseline_file_loadable_and_self_consistent() {
     let baselines = load_baselines();
     assert!(!baselines.images.is_empty(), "baseline file has no images");
-    // Every referenced image exists on disk.
+    // Image existence is no longer asserted — some entries reference
+    // private material that ships outside the public repo. Missing
+    // images are skipped at gate-evaluation time below.
     let root = workspace_root();
+    let mut present = 0usize;
     for g in &baselines.images {
-        let abs = root.join(&g.path);
-        assert!(
-            abs.exists(),
-            "baseline references missing image {} (abs: {})",
-            g.path,
-            abs.display()
-        );
+        if root.join(&g.path).exists() {
+            present += 1;
+        }
     }
+    assert!(
+        present > 0,
+        "baseline file lists {} images but none exist on disk",
+        baselines.images.len()
+    );
 }
 
 #[test]
@@ -168,9 +172,19 @@ fn every_listed_image_meets_its_gate() {
     let baselines = load_baselines();
     let root = workspace_root();
     let mut failures: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    let mut gated = 0usize;
     for gate in &baselines.images {
         let abs = root.join(&gate.path);
+        if !abs.exists() {
+            // Private regression image not present on disk (e.g. CI
+            // on a fresh public checkout). Skip — the gate is
+            // advisory, not CI-blocking, on missing private material.
+            skipped.push(gate.path.clone());
+            continue;
+        }
         let (detection, components) = run_detector(&abs);
+        gated += 1;
         let ctx = gate.path.clone();
 
         if gate.require_detection {
@@ -208,6 +222,21 @@ fn every_listed_image_meets_its_gate() {
             ));
         }
     }
+    eprintln!(
+        "chessboard testdata regression: gated {gated} images, skipped {} missing",
+        skipped.len()
+    );
+    if !skipped.is_empty() {
+        eprintln!("  skipped:");
+        for path in &skipped {
+            eprintln!("    - {path}");
+        }
+    }
+    assert!(
+        gated > 0,
+        "no images gated — baseline references {} entries but none are on disk",
+        baselines.images.len()
+    );
     if !failures.is_empty() {
         panic!(
             "chessboard testdata regression failures:\n  - {}",
