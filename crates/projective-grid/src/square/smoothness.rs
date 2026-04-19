@@ -5,9 +5,9 @@
 //! significantly from the prediction are likely false detections.
 
 use crate::float_helpers::lit;
-use crate::grid_index::GridIndex;
 use crate::local_step::LocalStep;
 use crate::Float;
+use crate::GridIndex;
 use nalgebra::Point2;
 use std::collections::HashMap;
 

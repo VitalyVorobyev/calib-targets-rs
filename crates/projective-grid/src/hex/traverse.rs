@@ -1,8 +1,8 @@
 //! Connected components and BFS coordinate assignment for hex grid graphs.
 
-use crate::grid_index::GridIndex;
 use crate::hex::graph::HexGridGraph;
 use crate::Float;
+use crate::GridIndex;
 
 /// Find connected components in the hex grid graph.
 ///

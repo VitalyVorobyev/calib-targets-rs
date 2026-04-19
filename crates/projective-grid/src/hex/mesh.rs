@@ -6,9 +6,9 @@
 //! two triangles.
 
 use crate::float_helpers::lit;
-use crate::grid_index::GridIndex;
 use crate::homography::{estimate_homography, Homography};
 use crate::Float;
+use crate::GridIndex;
 use nalgebra::{Matrix2, Point2, Vector2};
 use std::collections::HashMap;
 

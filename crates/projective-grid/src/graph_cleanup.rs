@@ -19,9 +19,9 @@
 //! offending edges in place. All passes are pure geometry — none need the
 //! pattern-specific `PointData` that the original validators used.
 
-use crate::direction::NeighborDirection;
 use crate::graph::GridGraph;
 use crate::Float;
+use crate::NeighborDirection;
 use nalgebra::Point2;
 
 /// Remove every directed edge `A→B` whose reverse `B→A` is missing.
@@ -288,7 +288,7 @@ pub fn segments_properly_cross<F: Float>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::direction::NodeNeighbor;
+    use crate::NodeNeighbor;
 
     fn make_node<F: Float>(
         direction: NeighborDirection,
