@@ -15,8 +15,12 @@ python -c "import calib_targets as ct; print(ct.detect_chessboard)"
 Top-level detectors return typed dataclasses:
 
 - `detect_chessboard(image, *, chess_cfg=None, params=None) -> ChessboardDetectionResult | None`
+- `detect_chessboard_best(image, *, chess_cfg=None, configs=None) -> ChessboardDetectionResult | None`
+- `detect_chessboard_debug(image, *, chess_cfg=None, params=None) -> ChessboardDebug`
 - `detect_charuco(image, *, chess_cfg=None, params) -> CharucoDetectionResult`
+- `detect_charuco_best(image, *, chess_cfg=None, configs=None, board) -> CharucoDetectionResult | None`
 - `detect_puzzleboard(image, *, chess_cfg=None, params) -> PuzzleBoardDetectionResult`
+- `detect_puzzleboard_best(image, *, chess_cfg=None, configs=None) -> PuzzleBoardDetectionResult | None`
 - `detect_marker_board(image, *, chess_cfg=None, params=None) -> MarkerBoardDetectionResult | None`
 - `render_target_bundle(document) -> GeneratedTargetBundle`
 - `write_target_bundle(document, output_stem) -> WrittenTargetBundle`
@@ -24,8 +28,8 @@ Top-level detectors return typed dataclasses:
 Configuration is typed-only (dataclasses):
 
 - `ChessConfig`, `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`
-- `ChessboardParams`, `OrientationClusteringParams`, `GridGraphParams`
-- `CharucoBoardSpec`, `CharucoDetectorParams`, `ScanDecodeConfig`
+- `ChessboardParams` — wraps Rust's `DetectorParams` (chessboard v2 shape; 30 flat tuning fields)
+- `CharucoBoardSpec`, `CharucoParams`, `ScanDecodeConfig`
 - `PuzzleBoardSpec`, `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
 - `PageSize`, `PageSpec`, `RenderOptions`, `ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PuzzleBoardTargetSpec`, `PrintableTargetDocument`
@@ -56,10 +60,19 @@ This is the compatibility path for JSON pipelines and legacy dict-based code.
 
 | Old usage | New usage |
 | --- | --- |
-| `detect_chessboard(img, params={"min_corners": 16})` | `detect_chessboard(img, params=ChessboardParams(min_corners=16))` |
-| `detect_charuco(..., params={"board": {...}})` | `detect_charuco(..., params=CharucoDetectorParams(board=CharucoBoardSpec(...)))` |
+| `detect_chessboard(img, params={"min_corner_strength": 0.5})` | `detect_chessboard(img, params=ChessboardParams(min_corner_strength=0.5))` |
+| `detect_charuco(..., params={"board": {...}})` | `detect_charuco(..., params=CharucoParams(board=CharucoBoardSpec(...)))` |
 | `result["detection"]["corners"]` | `result.detection.corners` |
 | N/A | `result.to_dict()` / `ResultType.from_dict(...)` |
+
+Chessboard v2 API migration note (v0.6.0): the Rust side renamed the
+chessboard types from `ChessboardDetector` / `ChessboardParams` /
+`ChessboardDetectionResult` to `Detector` / `DetectorParams` /
+`Detection`. The Python binding kept the historical `ChessboardParams`
+/ `ChessboardDetectionResult` class names but the fields inside
+`ChessboardParams` now match the v2 flat `DetectorParams` shape — the
+former nested `graph` / `graph_cleanup` / `gap_fill` /
+`local_homography` sub-params are gone.
 
 ## Examples
 
