@@ -5,10 +5,10 @@
 //! [`projective_grid::square::grow`]. This module supplies the
 //! chessboard-specific [`GrowValidator`] implementation — parity
 //! rules, axis-cluster matching, axis-slot-swap edge invariant — and
-//! carries the v2 pipeline's per-corner stage updates.
+//! carries the pipeline's per-corner stage updates.
 //!
-//! See the hoisted module for the algorithm description and the v2
-//! spec (`book/src/chessboard.md`) for the full pipeline context.
+//! See the hoisted module for the algorithm description and
+//! `book/src/chessboard.md` for the full pipeline context.
 
 use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};

@@ -1,4 +1,4 @@
-//! Global cell-size estimation for the v2 detector.
+//! Global cell-size estimation for the detector.
 //!
 //! Computes the dominant cell size from **cross-cluster** nearest-
 //! neighbor distances. Adjacent chessboard corners always flip

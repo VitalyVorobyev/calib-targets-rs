@@ -1,9 +1,8 @@
-"""Render overlays from chessboard-v2's per-snap DebugFrame JSON.
+"""Render overlays from the chessboard detector's per-snap DebugFrame JSON.
 
 Two input modes:
 
-1. **Dataset mode** (original): a directory of `t{T}s{S}.json` files
-   produced by
+1. **Dataset mode**: a directory of `t{T}s{S}.json` files produced by
    `cargo run -p calib-targets-chessboard --example run_dataset`.
    Each JSON wraps a compact debug frame and corresponds to one
    720×540 snap within a stacked `target_*.png` image. Output: one
@@ -23,16 +22,16 @@ The overlay renders:
 - cluster centers drawn as tangent lines in cyan and magenta.
 
 Usage (dataset):
-    uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \\
-        --dataset testdata/3536119669 \\
-        --frames bench_results/chessboard_v2_overlays \\
-        --out bench_results/chessboard_v2_overlays/png
+    uv run python crates/calib-targets-py/examples/overlay_chessboard.py \\
+        --dataset <dir-of-stacked-target-pngs> \\
+        --frames <dir-of-per-snap-jsons> \\
+        --out <output-dir>
 
 Usage (single image):
-    uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \\
+    uv run python crates/calib-targets-py/examples/overlay_chessboard.py \\
         --single-image testdata/mid.png \\
-        --frame-json bench_results/.../mid_default.json \\
-        --out bench_results/.../mid_default.png
+        --frame-json <frame.json> \\
+        --out <overlay.png>
 """
 
 from __future__ import annotations
@@ -55,7 +54,7 @@ SNAP_WIDTH = 720
 SNAP_HEIGHT = 540
 SNAPS_PER_IMAGE = 6
 
-# Keep in sync with `chessboard_v2::DEBUG_FRAME_SCHEMA`.
+# Keep in sync with `calib_targets_chessboard::DEBUG_FRAME_SCHEMA`.
 EXPECTED_DEBUG_FRAME_SCHEMA = 1
 _warned_schemas: set[int] = set()
 
@@ -339,7 +338,7 @@ def _run_single_image_mode(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tag", default="v2",
+    parser.add_argument("--tag", default="chess",
                         help="suffix tag appended to filenames / title")
     # Dataset mode
     parser.add_argument("--dataset", type=Path,

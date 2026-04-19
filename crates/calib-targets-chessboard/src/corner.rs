@@ -1,4 +1,4 @@
-//! Per-corner augmented state carried through the v2 pipeline.
+//! Per-corner augmented state carried through the pipeline.
 
 use calib_targets_core::{AxisEstimate, Corner};
 use nalgebra::Point2;

@@ -6,8 +6,9 @@
 //! to sit at a real grid intersection.* Missing corners are acceptable;
 //! wrong corners are not.
 //!
-//! On the canonical 120-snap regression dataset (`testdata/3536119669`):
-//! **119 / 120 frames detected, 0 wrong `(i, j)` labels**.
+//! On a private 120-frame regression set with non-negligible lens
+//! distortion and motion blur: **119 / 120 frames detected, 0 wrong
+//! `(i, j)` labels**.
 //!
 //! Algorithm reference: see `book/src/chessboard.md`.
 //!
@@ -47,7 +48,7 @@
 //! Two pattern-agnostic rectifiers are exposed under [`mesh_warp`] and
 //! [`rectified_view`]: they take a `&[LabeledCorner]` plus an inlier index
 //! list (typically `Detection::strong_indices`) and produce a rectified
-//! view. They are independent of the v2 detector pipeline and can be used
+//! view. They are independent of the detector pipeline and can be used
 //! with any consistent `(i, j)` labelling.
 
 pub mod boosters;

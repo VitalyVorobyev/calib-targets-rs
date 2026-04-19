@@ -28,7 +28,7 @@ Top-level detectors return typed dataclasses:
 Configuration is typed-only (dataclasses):
 
 - `ChessConfig`, `ChessCornerParams`, `CoarseToFineParams`, `PyramidParams`
-- `ChessboardParams` — wraps Rust's `DetectorParams` (chessboard v2 shape; 30 flat tuning fields)
+- `ChessboardParams` — wraps Rust's `DetectorParams` (flat DetectorParams shape; 30 flat tuning fields)
 - `CharucoBoardSpec`, `CharucoParams`, `ScanDecodeConfig`
 - `PuzzleBoardSpec`, `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`
 - `MarkerCircleSpec`, `MarkerBoardLayout`, `CircleScoreParams`, `CircleMatchParams`, `MarkerBoardParams`
@@ -65,12 +65,12 @@ This is the compatibility path for JSON pipelines and legacy dict-based code.
 | `result["detection"]["corners"]` | `result.detection.corners` |
 | N/A | `result.to_dict()` / `ResultType.from_dict(...)` |
 
-Chessboard v2 API migration note (v0.6.0): the Rust side renamed the
+Chessboard API migration note (v0.7.0): the Rust side renamed the
 chessboard types from `ChessboardDetector` / `ChessboardParams` /
 `ChessboardDetectionResult` to `Detector` / `DetectorParams` /
 `Detection`. The Python binding kept the historical `ChessboardParams`
 / `ChessboardDetectionResult` class names but the fields inside
-`ChessboardParams` now match the v2 flat `DetectorParams` shape — the
+`ChessboardParams` now match the flat `DetectorParams` shape — the
 former nested `graph` / `graph_cleanup` / `gap_fill` /
 `local_homography` sub-params are gone.
 

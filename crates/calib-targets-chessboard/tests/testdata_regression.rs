@@ -1,10 +1,10 @@
 //! Per-image regression gates for the broader `testdata/` image set.
 //!
-//! Complements the 3536119669 120-frame benchmark in
-//! [`dataset_3536119669.rs`] with a smaller, diverse set of single
-//! images (ChArUco, plain chessboard, synthetic/printed puzzleboards,
-//! extreme-resolution photographs). Every image carries its own
-//! baseline expectations in
+//! Complements the private 120-frame flagship benchmark in
+//! [`private_dataset.rs`] with a smaller, diverse set of publicly
+//! committed single images (ChArUco, plain chessboard, synthetic /
+//! printed puzzleboards, extreme-resolution photographs). Every
+//! image carries its own baseline expectations in
 //! `testdata/chessboard_regression_baselines.json`, maintained as a
 //! ratchet: tighten numbers as the detector improves, never loosen
 //! them silently.
@@ -71,10 +71,10 @@ fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
     for lc in &detection.target.corners {
         let g = lc
             .grid
-            .expect("chessboard-v2 emits grid coords on every labelled corner");
+            .expect("chessboard detector emits grid coords on every labelled corner");
         assert!(
             seen.insert((g.i, g.j)),
-            "{context}: duplicate (i, j) = ({}, {}) — v2 precision contract violated",
+            "{context}: duplicate (i, j) = ({}, {}) — precision contract violated",
             g.i,
             g.j
         );
@@ -210,7 +210,7 @@ fn every_listed_image_meets_its_gate() {
     }
     if !failures.is_empty() {
         panic!(
-            "chessboard-v2 testdata regression failures:\n  - {}",
+            "chessboard testdata regression failures:\n  - {}",
             failures.join("\n  - ")
         );
     }

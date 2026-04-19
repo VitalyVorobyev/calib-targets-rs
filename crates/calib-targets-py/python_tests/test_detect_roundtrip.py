@@ -132,7 +132,7 @@ def test_detect_chessboard_best_roundtrip() -> None:
 
 
 def _assert_debug_frame_shape(frame: dict[str, Any]) -> None:
-    """Structural check for the v2 `DebugFrame` payload.
+    """Structural check for the `DebugFrame` payload.
 
     Asserts the top-level keys Rust's `calib_targets_chessboard::
     DebugFrame` serializes so the Python overlay script stays in

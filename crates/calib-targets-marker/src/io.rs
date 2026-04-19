@@ -40,7 +40,7 @@ impl MarkerBoardDetectConfig {
 
     /// Build a detector from this config.
     ///
-    /// Note: the v2 chessboard detector (`DetectorParams`) does not include
+    /// Note: the chessboard detector (`DetectorParams`) does not include
     /// a nested ChESS detector config — `cfg.chess` is consumed upstream by
     /// the corner-detection step (`calib_targets::detect_corners`), not by
     /// the chessboard stage itself.

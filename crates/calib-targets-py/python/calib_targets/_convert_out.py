@@ -422,7 +422,7 @@ def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dic
 def chessboard_detection_result_from_dict(
     data: Mapping[str, Any],
 ) -> ChessboardDetectionResult:
-    # v2 Rust shape: `{ grid_directions, cell_size, target,
+    # Rust shape: `{ grid_directions, cell_size, target,
     # strong_indices }`. Matches `serde_json::to_value(Detection)`
     # byte-for-byte.
     obj = _ensure_mapping(data, "ChessboardDetectionResult")

@@ -1,4 +1,4 @@
-//! Parameters for the v2 detector.
+//! Chessboard detector parameters.
 //!
 //! All spatial tolerances are **multiplicative with respect to `s`**
 //! (the global cell size) — the pipeline is scale-invariant once `s`
@@ -120,7 +120,7 @@ impl Default for DetectorParams {
             // grid-direction peak on a 500-corner scene can fall to
             // ~2–3% of total axis-vote weight (see small1/3/4
             // ChArUco snaps in testdata/). 0.05 was tuned for the
-            // 3536119669 dataset where corners are cleaner and mass
+            // private flagship dataset where corners are cleaner and mass
             // concentrates tightly; 0.02 is still comfortably above
             // pure-noise bins.
             min_peak_weight_fraction: 0.02,
@@ -152,7 +152,7 @@ impl Default for DetectorParams {
             // validate→blacklist→regrow loop can take 4–5 iterations
             // to settle (see testdata/puzzleboard_reference/example1.png
             // with ~230 labelled corners and an oscillating blacklist
-            // of 2–4 per iter). 3 was adequate for the 3536119669
+            // of 2–4 per iter). 3 was adequate for the private flagship
             // benchmark where blacklists are typically empty on the
             // first pass; 6 absorbs the wider real-world variance
             // without noticeable cost (each iter is cheap).

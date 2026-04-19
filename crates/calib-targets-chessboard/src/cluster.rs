@@ -1,4 +1,4 @@
-//! Axes-based orientation clustering for the v2 detector.
+//! Axes-based orientation clustering for the detector.
 //!
 //! Computes the two global grid-direction centers `(Θ₀, Θ₁)` from the
 //! per-corner `axes[0]` and `axes[1]` angles, then labels every
@@ -9,7 +9,7 @@
 //! `calib_targets_core::cluster_orientations` (post Phase-0 migration)
 //! also clusters using axes. This module reuses its per-corner
 //! `axes[0]` / `axes[1]` contributions but is **self-contained** —
-//! v2 keeps its own histogram + 2-means implementation so its
+//! This module keeps its own histogram + 2-means implementation so its
 //! per-stage debug surface is decoupled from the shared helper. The
 //! algorithm is identical (double-angle circular mean over per-axis
 //! votes; the double-angle trick is mandatory for undirected angles

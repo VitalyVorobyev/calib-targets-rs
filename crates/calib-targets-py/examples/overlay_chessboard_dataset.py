@@ -1,4 +1,4 @@
-"""Batch overlay renderer for the 3536119669 dataset (or any target_*.png set).
+"""Batch overlay renderer for a stacked target_*.png dataset.
 
 Renders only what the detector actually delivers: labeled (i,j) corners
 and their grid-neighbor edges. Unlabeled / disconnected ChESS responses
@@ -24,8 +24,8 @@ Detection recipe:
 
 Usage:
     uv run python crates/calib-targets-py/examples/overlay_chessboard_dataset.py \\
-        --dataset testdata/3536119669 \\
-        --out-dir bench_results/chessboard_3536119669/overlays_all
+        --dataset <dir-of-target-pngs> \\
+        --out-dir <output-dir>
 """
 
 from __future__ import annotations

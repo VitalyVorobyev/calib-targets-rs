@@ -1,12 +1,12 @@
-//! Criterion bench: per-frame chessboard-v2 detection timing.
+//! Criterion bench: per-frame chessboard detection timing.
 //!
-//! Times the corner-to-detection pipeline on representative sub-frames from
-//! the 3536119669 dataset:
+//! Times the corner-to-detection pipeline on four representative sub-
+//! frames from the private flagship regression set:
 //!
 //! - `target_0 snap 0`  — a clean, well-lit frame (baseline case).
 //! - `target_5 snap 2`  — moderate difficulty.
-//! - `target_11 snap 2` — the frame flagged as near-failure in `docs/120issues.txt`.
-//! - `target_19 snap 5` — a representative mid-dataset frame.
+//! - `target_11 snap 2` — a near-failure frame (heavy blur + distortion).
+//! - `target_19 snap 5` — a representative mid-set frame.
 //!
 //! The bench measures ONLY the `Detector::detect(&corners)` step — ChESS
 //! corner detection is amortized into the setup phase so we measure the
@@ -36,17 +36,13 @@ const FIXTURES: &[(u32, u32, &str)] = &[
 ];
 
 fn dataset_dir() -> PathBuf {
-    // Prefer privatedata/ (where the 120-snap dataset lives — it's
-    // copyrighted and uncommitted); fall back to testdata/ for
-    // working trees that still have the old layout.
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for candidate in ["privatedata/3536119669", "testdata/3536119669"] {
-        let p = root.join(candidate);
-        if p.exists() {
-            return p;
-        }
+    // Private regression dataset (copyrighted customer material, not
+    // committed to the repo). See `tests/*::dataset_dir` for the
+    // env-var override and default-path contract.
+    if let Ok(custom) = std::env::var("CALIB_CHESSBOARD_PRIVATE_DATASET") {
+        return PathBuf::from(custom);
     }
-    root.join("privatedata/3536119669")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../privatedata/chessboard_flagship")
 }
 
 fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {

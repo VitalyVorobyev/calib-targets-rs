@@ -81,7 +81,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
 | `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
 | `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
-| `chessboard-v2` | **Invariant-first rewrite** of the chessboard detector (standalone prototype, not yet wired into production facade). Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap 3536119669 dataset. See `docs/chessboard_v2_spec.md`. |
+| `chessboard` | **Invariant-first rewrite** of the chessboard detector (standalone prototype, not yet wired into production facade). Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap 3536119669 dataset. See `docs/chessboard_v2_spec.md`. |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-puzzleboard` | PuzzleBoard self-identifying chessboard: edge-dot decode + absolute corner IDs |

@@ -180,7 +180,7 @@ and `example9.png`.
 
 All `(i, j)` output from `bfs_grow` is rebased so the bounding-box
 minimum is `(0, 0)`. Downstream consumers that canonicalise axis
-direction (chessboard v2 does this in
+direction (the chessboard detector does this in
 `calib_targets_chessboard::Detector::detect`) additionally swap /
 flip axes so `(0, 0)` sits at the **visual top-left** of the detected
 grid — `+i` points right (+x), `+j` points down (+y). This is not

@@ -8,15 +8,15 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [0.7.0]
 
-Coordinated workspace release that completes the **chessboard v2**
-swap: invariant-first grid detection that posts 119/120 detections
-with 0 wrong `(i, j)` labels on the canonical 3536119669 benchmark.
-This release breaks the old chessboard API wholesale (rename + flat
-params shape), hoists the pattern-agnostic pieces into
-`projective-grid` as a first-class standalone library, reshapes the
-C ABI to match, and refreshes every book chapter and crate README
-for the new surface. Workspace minor-bumps in lockstep: every crate
-publishes at `0.7.0`.
+Coordinated workspace release that lands the **invariant-first
+chessboard detector rewrite**: 119 / 120 detections with 0 wrong
+`(i, j)` labels on a private regression set of 120 frames with
+non-negligible lens distortion and motion blur. This release breaks
+the old chessboard API wholesale (rename + flat params shape), hoists
+the pattern-agnostic pieces into `projective-grid` as a first-class
+standalone library, reshapes the C ABI to match, and refreshes every
+book chapter and crate README for the new surface. Workspace minor-
+bumps in lockstep: every crate publishes at `0.7.0`.
 
 ### Changed — breaking
 
@@ -24,7 +24,7 @@ publishes at `0.7.0`.
   implementation (graph-based, with nested `GridGraphParams`,
   `LocalHomographyPruneParams`, `GraphCleanupParams`,
   `GapFillParams`, `OrientationClusteringParams`) is replaced by the
-  invariant-first v2 detector. Type names change from
+  invariant-first detector. Type names change from
   `ChessboardDetector` / `ChessboardParams` /
   `ChessboardDetectionResult` to `Detector` / `DetectorParams` /
   `Detection`. `DetectorParams` is flat — 30 tuning fields covering
@@ -43,8 +43,8 @@ publishes at `0.7.0`.
 - **ChArUco chessboard field.** `CharucoParams.chessboard` is now
   `DetectorParams`. Nested `graph` / `graph_cleanup` / `gap_fill` /
   `local_homography` sub-fields are removed.
-- **FFI v2 C ABI (breaking — `publish = false`).**
-  `ct_chessboard_params_t` is reshaped to the flat 30-field v2 layout
+- **C ABI reshape (breaking — `publish = false`).**
+  `ct_chessboard_params_t` is reshaped to the flat 30-field layout
   mirroring `DetectorParams`. Removed:
   `ct_grid_graph_params_t`, `ct_orientation_clustering_params_t`,
   `min_corners`, `expected_rows`, `expected_cols`,
@@ -57,7 +57,7 @@ publishes at `0.7.0`.
   configured value so C callers don't hand-fill 30 fields.
 - **Python binding field shape.** The Python-side
   `ChessboardParams` class keeps its name but its fields now mirror
-  the v2 flat `DetectorParams` (no more nested `graph` /
+  the new flat `DetectorParams` (no more nested `graph` /
   `graph_cleanup` / `gap_fill` / `local_homography` sub-structs).
 
 ### Added
@@ -88,11 +88,11 @@ publishes at `0.7.0`.
 - **Single-image inspection pipeline.** New
   `calib-targets-chessboard/examples/debug_single.rs` emits a per-
   image `CompactFrame` JSON; the Python overlay at
-  `crates/calib-targets-py/examples/overlay_chessboard_v2.py` grows
-  a `--single-image` mode. `scripts/chessboard_regression_overlays.sh`
+  `crates/calib-targets-py/examples/overlay_chessboard.py` grows a
+  `--single-image` mode. `scripts/chessboard_regression_overlays.sh`
   drives the 19-image set end-to-end.
 - **Book chapters.** New `book/src/projective_grid.md`. Rewrites of
-  `book/src/chessboard.md` (folded-in v2 algorithm spec),
+  `book/src/chessboard.md` (folded-in algorithm spec),
   `pipeline.md`, `tuning.md`, `troubleshooting.md`,
   `example_chessboard.md`, `roadmap.md`.
 
@@ -113,7 +113,7 @@ publishes at `0.7.0`.
   testdata set), the real per-peak weight on fine 2° bins is ~2-3%
   of total vote weight, below the old threshold. The new default
   stays comfortably above pure-noise bins.
-- **Soft convergence for oscillating validation.** The v2
+- **Soft convergence for oscillating validation.** The
   validate→blacklist→regrow loop now accepts a "near-converged"
   state when the most recent iteration's new blacklist is ≤ 2
   corners and the labelled count has reached `min_labeled_corners`.
@@ -129,7 +129,7 @@ publishes at `0.7.0`.
   several independent blacklist conditions.
 - **`max_validation_iters` default 3 → 6.** Absorbs wider real-
   world variance on dense boards.
-- Three post-v2-swap regressions in `calib-targets-charuco/tests/
+- Three post-swap regressions in `calib-targets-charuco/tests/
   regression.rs` (`detects_charuco_on_small_png`,
   `detects_plain_chessboard_on_mid_png`) and
   `calib-targets-puzzleboard/tests/end_to_end.rs`
@@ -138,16 +138,15 @@ publishes at `0.7.0`.
 
 ### Infrastructure
 
-- **Privatedata split.** The 3536119669 120-snap benchmark is
-  copyrighted and no longer committed to the repository. Test + bench
-  paths resolve under `privatedata/3536119669` with back-compat
-  fallback to `testdata/3536119669` for older working trees.
-  `full_dataset_precision_contract` skips (instead of panicking)
-  when the dataset isn't available; CI doesn't require it.
+- **Privatedata split.** The private 120-frame regression benchmark
+  is copyrighted customer material and is not committed to the
+  repository. Tests and benches read it from `privatedata/` when it
+  is available and skip (never panic) when it is not, so CI on a
+  fresh public checkout passes without any private asset.
   `.gitignore` adds `privatedata`.
 - Regenerated FFI headers
   (`crates/calib-targets-ffi/include/calib_targets_ffi.h`) match the
-  v2 struct layout.
+  new struct layout.
 
 ## [0.6.0]
 

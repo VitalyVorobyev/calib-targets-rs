@@ -1,4 +1,6 @@
-//! Regression tests against the 3536119669 dataset.
+//! Regression tests against the private flagship dataset (120 frames,
+//! non-negligible lens distortion and motion blur). The target PNGs
+//! live under `privatedata/` outside the public repo.
 //!
 //! The smoke test (`smoke_first_subframe_detects`) runs the detector on a
 //! single 720×540 sub-frame and asserts it produces a labelled grid without
@@ -9,6 +11,9 @@
 //! ≥ 119 detections and no duplicate `(i, j)` labels in any detection. It is
 //! marked `#[ignore]` because it reads 20 images and is slow; run it with
 //! `cargo test -p calib-targets-chessboard --release -- --ignored`.
+//!
+//! Both tests skip (never panic) when the private dataset directory is
+//! absent, so CI on a fresh public checkout passes.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -23,21 +28,20 @@ const SNAPS_PER_IMAGE: u32 = 6;
 const NUM_TARGETS: u32 = 20;
 const MIN_DETECTIONS: usize = 119;
 
-/// Look for the dataset first under `privatedata/3536119669` (where the
-/// 20 target PNGs now live — they're copyrighted and not committed to
-/// the repo), then under `testdata/3536119669` for back-compat with
-/// older working trees that still had the assets there.
+/// Location of the private regression dataset. The 20 target PNGs are
+/// copyrighted customer material that live outside the public repo
+/// under `privatedata/`; `.exists()` is the skip gate for every test
+/// and bench that reads them, so CI on a fresh checkout still passes.
+///
+/// Point `CALIB_CHESSBOARD_PRIVATE_DATASET` at any directory
+/// containing `target_0.png`..`target_19.png` (stacked 6-snap PNGs)
+/// to run the full-sweep test on it; the default fallback is
+/// `privatedata/chessboard_flagship/` relative to the workspace root.
 fn dataset_dir() -> PathBuf {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
-    for candidate in ["privatedata/3536119669", "testdata/3536119669"] {
-        let p = root.join(candidate);
-        if p.exists() {
-            return p;
-        }
+    if let Ok(custom) = std::env::var("CALIB_CHESSBOARD_PRIVATE_DATASET") {
+        return PathBuf::from(custom);
     }
-    // Return the private path as the canonical answer — callers use
-    // `.exists()` to decide whether to skip.
-    root.join("privatedata/3536119669")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../privatedata/chessboard_flagship")
 }
 
 fn target_path(idx: u32) -> PathBuf {
@@ -54,11 +58,11 @@ fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
     for lc in &detection.target.corners {
         let g = lc
             .grid
-            .expect("chessboard-v2 emits grid coords on every labelled corner");
+            .expect("chessboard detector emits grid coords on every labelled corner");
         let (i, j) = (g.i, g.j);
         assert!(
             seen.insert((i, j)),
-            "{context}: duplicate (i, j) = ({i}, {j}) — v2 precision contract violated"
+            "{context}: duplicate (i, j) = ({i}, {j}) — precision contract violated"
         );
     }
 }
@@ -83,9 +87,9 @@ fn smoke_first_subframe_detects() {
     let path = target_path(0);
     if !path.exists() {
         eprintln!(
-            "skipping smoke test: 3536119669/target_0.png missing ({}). \
-             The 120-snap dataset lives under privatedata/ (not committed) \
-             — drop it in there to enable this test.",
+            "skipping smoke test: private dataset target_0.png missing at {}. \
+             The dataset lives under privatedata/ (not committed) — drop \
+             the target_*.png files there to enable this test.",
             path.display()
         );
         return;
@@ -117,8 +121,8 @@ fn full_dataset_precision_contract() {
     if !dir.exists() {
         eprintln!(
             "skipping full dataset test: {} not present. \
-             The 120-snap dataset lives under privatedata/ — drop \
-             the target_*.png files there to enable this test.",
+             The private regression dataset lives under privatedata/ — \
+             drop the target_*.png files there to enable this test.",
             dir.display()
         );
         return;

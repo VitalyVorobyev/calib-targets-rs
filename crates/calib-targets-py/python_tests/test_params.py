@@ -9,7 +9,7 @@ def _image() -> np.ndarray:
 
 
 def test_detect_chessboard_typed_params() -> None:
-    # v2 `ChessboardParams` has no `min_corners` field; `min_labeled_corners`
+    # `ChessboardParams` has no `min_corners` field; `min_labeled_corners`
     # is the output floor and `min_corner_strength` is the Stage-1 pre-filter.
     params = calib_targets.ChessboardParams(min_corner_strength=0.1)
     result = calib_targets.detect_chessboard(_image(), params=params)
@@ -94,7 +94,7 @@ def test_chess_config_roundtrip() -> None:
 
 
 def test_chessboard_params_roundtrip() -> None:
-    # Exercise a couple of v2-specific fields to confirm the round-trip
+    # Exercise a couple of chessboard-specific fields to confirm the round-trip
     # covers the flat DetectorParams shape.
     params = calib_targets.ChessboardParams(
         min_corner_strength=0.25,

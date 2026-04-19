@@ -1,6 +1,6 @@
-//! Run the v2 detector over a directory of stacked target images
-//! (one PNG per target, 6 × 720×540 snaps per image — matches the
-//! `testdata/3536119669` layout).
+//! Run the chessboard detector over a directory of stacked target
+//! images (one PNG per target, 6 × 720×540 snaps per image — the
+//! layout of our private flagship dataset).
 //!
 //! Writes per-snap `DebugFrame` JSON to `<out>/{t{T}s{S}.json}`. The
 //! Python overlay script consumes these.
@@ -8,7 +8,7 @@
 //! Usage:
 //! ```text
 //! cargo run --release -p calib-targets-chessboard --example run_dataset --features dataset -- \
-//!     --dataset testdata/3536119669 --out bench_results/chessboard_overlays
+//!     --dataset <dir-of-stacked-targets> --out bench_results/chessboard_overlays
 //! ```
 
 use std::env;

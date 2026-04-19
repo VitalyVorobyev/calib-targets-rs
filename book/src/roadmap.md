@@ -4,10 +4,10 @@ Known gaps against the v0.6.0 release.
 
 ## Shipped in v0.6.0
 
-- **Chessboard v2 swap.** `calib-targets-chessboard` is the
+- **Chessboard detector rewrite.** `calib-targets-chessboard` is the
   invariant-first rewrite (119 / 120 detected, 0 wrong labels on the
-  canonical `testdata/3536119669` dataset). Types renamed:
-  `ChessboardDetector` / `ChessboardParams` /
+  private flagship regression dataset of blurred, lens-distorted
+  frames). Types renamed: `ChessboardDetector` / `ChessboardParams` /
   `ChessboardDetectionResult` → `Detector` / `DetectorParams` /
   `Detection`.
 - **Grid origin contract.** `Detection.target.corners` is rebased to
@@ -30,7 +30,7 @@ Known gaps against the v0.6.0 release.
 - **FFI rewrite.** `calib-targets-ffi` still mirrors the v1
   chessboard param shape (with nested `grid_graph_params` / `gap_fill`
   / `graph_cleanup` / `local_homography`). Excluded from the workspace
-  until the C-ABI surface is reshaped to the v2 flat `DetectorParams`
+  until the C-ABI surface is reshaped to the flat `DetectorParams`
   and the 3265-line `src/lib.rs` is split into purpose-scoped
   modules.
 - **Seed hoist.** The pattern-agnostic BFS grow already lives in

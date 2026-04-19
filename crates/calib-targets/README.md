@@ -19,9 +19,9 @@ cargo add calib-targets image
   downstream processing.
 - End-to-end helpers in `calib_targets::detect` that run ChESS corner
   detection for you (feature `image`, enabled by default).
-- Invariant-first **chessboard v2** detector: 119 / 120 detections and
-  0 wrong `(i, j)` labels on the canonical `testdata/3536119669`
-  benchmark.
+- **Invariant-first chessboard detector**: 119 / 120 detections and
+  0 wrong `(i, j)` labels on a private 120-frame regression set with
+  non-negligible lens distortion and motion blur.
 - Each detector ships both a single-config `detect_*` call and a
   sweep variant (`detect_*_best`) that tries 3 pre-sets and keeps
   the best result.
@@ -68,7 +68,7 @@ chessboards, wrapped for ChArUco / PuzzleBoard). Each `LabeledCorner`
 includes pixel `position`, optional grid coordinates, optional logical
 `id`, optional target-space position, and a detector-specific `score`.
 
-The chessboard v2 detector additionally enforces two hard invariants on
+The chessboard detector additionally enforces two hard invariants on
 its output: no duplicate `(i, j)` labels and the bounding-box minimum
 rebased to `(0, 0)` with `(0, 0)` sitting at the **visual top-left** of
 the detected grid (`+i` right, `+j` down in image pixels).
@@ -77,7 +77,7 @@ the detected grid (`+i` right, `+j` down in image pixels).
 
 | Target | Detector | Helpers |
 |---|---|---|
-| **Chessboard** | [`calib_targets::chessboard`] (v2 invariant-first) | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_debug`, `detect_chessboard_best` |
+| **Chessboard** | [`calib_targets::chessboard`] (invariant-first) | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_debug`, `detect_chessboard_best` |
 | **ChArUco** | [`calib_targets::charuco`] | `detect_charuco`, `detect_charuco_best` |
 | **PuzzleBoard** | [`calib_targets::puzzleboard`] (self-identifying) | `detect_puzzleboard`, `detect_puzzleboard_best` |
 | **Marker boards** | [`calib_targets::marker`] | `detect_marker_board` |
@@ -90,13 +90,14 @@ the detected grid (`+i` right, `+j` down in image pixels).
   `image::GrayImage` inputs and run `chess-corners` for you.
 - `tracing`: enables tracing output across the workspace crates.
 
-## Chessboard v2 API — migration note
+## Chessboard API — 0.7.0 migration note
 
-Prior to v0.6.0 the chessboard detector's top-level types were named
-`ChessboardDetector`, `ChessboardParams`, and
-`ChessboardDetectionResult`. They were renamed to `Detector`,
-`DetectorParams`, and `Detection` as part of the v2 rewrite. Import
-paths move from `calib_targets::chessboard::ChessboardParams` to
+In 0.7.0 the chessboard detector's top-level types were renamed from
+`ChessboardDetector` / `ChessboardParams` / `ChessboardDetectionResult`
+to `Detector` / `DetectorParams` / `Detection`. `DetectorParams` is
+flat — the old nested `graph` / `graph_cleanup` / `gap_fill` /
+`local_homography` sub-structs are gone. Import paths move from
+`calib_targets::chessboard::ChessboardParams` to
 `calib_targets::chessboard::DetectorParams`; the `detect_chessboard*`
 facade signatures now take `&DetectorParams` directly.
 
@@ -152,7 +153,7 @@ Notes:
 | Re-export | Crate |
 |---|---|
 | `calib_targets::core` | [`calib-targets-core`](../calib-targets-core) — shared types, homographies |
-| `calib_targets::chessboard` | [`calib-targets-chessboard`](../calib-targets-chessboard) — v2 invariant-first chessboard detector |
+| `calib_targets::chessboard` | [`calib-targets-chessboard`](../calib-targets-chessboard) — invariant-first chessboard detector |
 | `calib_targets::aruco` | [`calib-targets-aruco`](../calib-targets-aruco) — ArUco / AprilTag dictionaries & decoding |
 | `calib_targets::charuco` | [`calib-targets-charuco`](../calib-targets-charuco) — ChArUco alignment + IDs |
 | `calib_targets::puzzleboard` | [`calib-targets-puzzleboard`](../calib-targets-puzzleboard) — self-identifying PuzzleBoard |

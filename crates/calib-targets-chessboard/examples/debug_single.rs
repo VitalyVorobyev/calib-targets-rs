@@ -1,4 +1,4 @@
-//! Run the v2 detector on a single image and emit debug JSON for the
+//! Run the detector on a single image and emit debug JSON for the
 //! Python overlay. Runs the default `DetectorParams` and (optionally)
 //! a best-of-3 sweep (`DetectorParams::sweep_default()`), writing one
 //! [`CompactFrame`] JSON per configuration.

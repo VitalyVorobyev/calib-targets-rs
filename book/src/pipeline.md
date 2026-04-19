@@ -27,7 +27,7 @@ positions.
    residuals. The workspace's default config is
    `calib_targets::detect::default_chess_config()`.
 3. **Target-specific detector** — see the dedicated chapters:
-   - [Chessboard](chessboard.md) — invariant-first v2 detector
+   - [Chessboard](chessboard.md) — invariant-first detector
      (119 / 120 detections, 0 wrong labels on the canonical 120-snap
      regression dataset).
    - [ChArUco](charuco.md) — chessboard detector + ArUco marker
@@ -43,9 +43,9 @@ positions.
 
 ---
 
-## Chessboard detector internals (v2)
+## Chessboard detector internals
 
-The v2 chessboard detector itself runs eight internal stages. The
+The chessboard detector itself runs eight internal stages. The
 invariant-first framing means every stage emits a more-constrained
 subset of the previous stage's output, with no backtracking that
 would compromise precision:
@@ -83,7 +83,7 @@ The chessboard detector **algorithm** is split across two crates:
   supplies the chessboard-specific pieces that plug into the generic
   trait surface: ChESS-axis-based clustering, `ClusterLabel` parity,
   per-axis-slot edge validation, boosters. Orchestrates the
-  end-to-end v2 pipeline.
+  end-to-end pipeline.
 
 Output types are standardised in `calib-targets-core` as
 `TargetDetection` with `LabeledCorner` values. Higher-level crates

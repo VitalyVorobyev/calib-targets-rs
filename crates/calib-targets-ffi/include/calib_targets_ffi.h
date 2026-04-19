@@ -64,7 +64,7 @@ typedef struct ct_optional_f32_t {
 } ct_optional_f32_t;
 
 /**
- * Chessboard detector parameters — v2 ABI.
+ * Chessboard detector parameters.
  *
  * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
  * (flat shape — no nested graph / orientation-clustering sub-structs
@@ -245,7 +245,7 @@ typedef struct ct_target_detection_t {
 /**
  * Chessboard detection header.
  *
- * v2 ABI: the detector always populates `grid_direction_0_rad` and
+ * The detector always populates `grid_direction_0_rad` and
  * `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
  * discovered by the chessboard detector's clustering stage) plus
  * `cell_size` in pixels.

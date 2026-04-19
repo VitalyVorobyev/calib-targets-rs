@@ -26,7 +26,7 @@ use calib_targets::charuco::{
     MarkerLayout,
 };
 use calib_targets::chessboard::{
-    Detector as ChessboardDetector, DetectorParams as ChessboardParamsV2,
+    Detector as ChessboardDetector, DetectorParams as ChessboardDetectorParams,
 };
 use calib_targets::core::{
     ChessCornerParams as ChessParams, CoarseToFineParams, GrayImageView, GridAlignment, GridCoords,
@@ -376,7 +376,7 @@ pub struct ct_circle_match_t {
 
 /// Chessboard detection header.
 ///
-/// v2 ABI: the detector always populates `grid_direction_0_rad` and
+/// The detector always populates `grid_direction_0_rad` and
 /// `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
 /// discovered by the chessboard detector's clustering stage) plus
 /// `cell_size` in pixels.
@@ -510,7 +510,7 @@ pub struct ct_chess_config_t {
     pub upscale: ct_upscale_config_t,
 }
 
-/// Chessboard detector parameters — v2 ABI.
+/// Chessboard detector parameters.
 ///
 /// Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
 /// (flat shape — no nested graph / orientation-clustering sub-structs
@@ -1194,7 +1194,9 @@ fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
     Ok(chess)
 }
 
-fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<ChessboardParamsV2> {
+fn convert_chessboard_params(
+    params: &ct_chessboard_params_t,
+) -> FfiResult<ChessboardDetectorParams> {
     if params.num_bins < 4 {
         return Err(FfiError::config_error("chessboard.num_bins must be >= 4"));
     }
@@ -1218,11 +1220,11 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
             "chessboard.max_components must be > 0",
         ));
     }
-    // `ChessboardParamsV2` is `#[non_exhaustive]`; start from `Default`
-    // and overwrite every field we expose over the ABI. New
-    // `DetectorParams` fields added in future Rust releases keep
-    // their defaults until the C ABI explicitly surfaces them.
-    let mut out = ChessboardParamsV2::default();
+    // `DetectorParams` is `#[non_exhaustive]`; start from `Default`
+    // and overwrite every field we expose over the ABI. New fields
+    // added in future Rust releases keep their defaults until the
+    // C ABI explicitly surfaces them.
+    let mut out = ChessboardDetectorParams::default();
     out.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
     out.max_fit_rms_ratio =
@@ -1302,11 +1304,11 @@ pub unsafe extern "C" fn ct_chessboard_params_init_default(out: *mut ct_chessboa
     let Some(out) = (unsafe { out.as_mut() }) else {
         return;
     };
-    *out = chessboard_params_default_v2();
+    *out = chessboard_params_default_values();
 }
 
-fn chessboard_params_default_v2() -> ct_chessboard_params_t {
-    let d = ChessboardParamsV2::default();
+fn chessboard_params_default_values() -> ct_chessboard_params_t {
+    let d = ChessboardDetectorParams::default();
     ct_chessboard_params_t {
         min_corner_strength: d.min_corner_strength,
         max_fit_rms_ratio: d.max_fit_rms_ratio,
@@ -2646,8 +2648,8 @@ mod tests {
         }
     }
 
-    fn v2_chessboard_params_with_strength(strength: f32) -> ct_chessboard_params_t {
-        let mut p = chessboard_params_default_v2();
+    fn chessboard_params_with_strength(strength: f32) -> ct_chessboard_params_t {
+        let mut p = chessboard_params_default_values();
         p.min_corner_strength = strength;
         p
     }
@@ -2655,7 +2657,7 @@ mod tests {
     fn chessboard_config_mid_png() -> ct_chessboard_detector_config_t {
         ct_chessboard_detector_config_t {
             chess: default_shared_chess_config(),
-            chessboard: v2_chessboard_params_with_strength(0.5),
+            chessboard: chessboard_params_with_strength(0.5),
         }
     }
 
@@ -2664,7 +2666,7 @@ mod tests {
             chess: default_shared_chess_config(),
             detector: ct_charuco_detector_params_t {
                 px_per_square: 60.0,
-                chessboard: chessboard_params_default_v2(),
+                chessboard: chessboard_params_default_values(),
                 charuco: ct_charuco_board_spec_t {
                     rows: 22,
                     cols: 22,
@@ -2721,7 +2723,7 @@ mod tests {
                         },
                     ],
                 },
-                chessboard: v2_chessboard_params_with_strength(0.2),
+                chessboard: chessboard_params_with_strength(0.2),
                 circle_score: ct_circle_score_params_t {
                     patch_size: 64,
                     diameter_frac: 0.5,
@@ -2750,7 +2752,7 @@ mod tests {
             chess,
             detector: ct_puzzleboard_params_t {
                 px_per_square: 60.0,
-                chessboard: v2_chessboard_params_with_strength(0.1),
+                chessboard: chessboard_params_with_strength(0.1),
                 board: ct_puzzleboard_spec_t {
                     rows: 10,
                     cols: 10,

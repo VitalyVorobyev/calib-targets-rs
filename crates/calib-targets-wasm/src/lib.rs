@@ -63,7 +63,7 @@ fn detect_corners_impl(pixels: &[u8], width: u32, height: u32, cfg: &ChessConfig
 }
 
 /// Resolve a ChESS detector config, falling back to defaults when JS supplies
-/// `undefined` / `null`. The v2 chessboard detector no longer carries a
+/// `undefined` / `null`. The chessboard detector no longer carries a
 /// nested ChESS config in `DetectorParams`, so callers (or this helper) must
 /// supply one for the corner-detection step.
 fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
@@ -338,7 +338,7 @@ pub fn detect_chessboard_best(
     validate_gray(pixels, width, height)?;
     let configs: Vec<DetectorParams> = from_js(configs)?;
 
-    // The v2 chessboard detector does not carry a ChESS config; reuse the
+    // The chessboard detector does not carry a ChESS config; reuse the
     // default ChESS settings for corner detection across every sweep config.
     let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
     let corners = detect_corners_impl(pixels, width, height, &chess);

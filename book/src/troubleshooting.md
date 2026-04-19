@@ -37,7 +37,7 @@ the binary, not in a parent process.
 
 ## `detect_chessboard` returns `None`
 
-The v2 detector has no single error variant — a `None` return means
+The detector has no single error variant — a `None` return means
 some stage failed to converge. To diagnose, use
 `detect_chessboard_debug` to get a full `DebugFrame` and follow the
 chain:
@@ -75,7 +75,7 @@ println!("iterations: {:#?}", frame.iterations);
    - Few real corners: lower `min_peak_weight_fraction` (default
      `0.02` → try `0.01`).
    - Perfectly rectilinear board with axes exactly at the π-wrap
-     boundary: v2 handles this via plateau-aware peak picking — if
+     boundary: the detector handles this via plateau-aware peak picking — if
      you hit this, verify you're on v0.6.0+.
 
 3. **`grid_directions` set, `seed: None`?** Seeding failed — no

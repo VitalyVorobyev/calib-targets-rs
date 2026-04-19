@@ -9,7 +9,7 @@ points with global `(i, j)` grid coordinates and logical marker IDs.
 Fully compatible with OpenCV's aruco / charuco dictionaries and board
 layouts. Built on top of
 [`calib-targets-chessboard`](../calib-targets-chessboard) (invariant-
-first v2 detector) and
+first detector) and
 [`calib-targets-aruco`](../calib-targets-aruco) (dictionary + bit
 decoding).
 
@@ -54,7 +54,7 @@ For an image-in convenience helper, use
   ArUco dictionary, marker layout. Convert to a runtime `CharucoBoard`
   via `CharucoBoard::from_spec(&spec)`.
 - **`CharucoParams`** — detector tuning: chessboard detector params
-  (v2 `DetectorParams` from `calib-targets-chessboard`), marker
+  (flat `DetectorParams` from `calib-targets-chessboard`), marker
   decoding knobs, alignment tolerances. Use
   `CharucoParams::for_board(&spec)` for sensible defaults.
 - **`CharucoDetector`** — one-shot: takes pre-detected ChESS corners
@@ -80,7 +80,7 @@ Every `LabeledCorner` in `result.detection.corners` carries:
 
 ChArUco markers can fragment the chessboard grid into disconnected
 components (markers break contiguity, specular regions drop corners).
-The underlying v2 chessboard detector supports multi-component
+The underlying chessboard detector supports multi-component
 recovery via `Detector::detect_all`; ChArUco's alignment then uses
 marker decodes to reconcile components against the board's global IDs.
 
@@ -92,7 +92,7 @@ separate physical boards are **not** in scope.
 - `tracing` — enables tracing instrumentation across the detection
   pipeline.
 
-## Chessboard v2 migration note
+## Chessboard migration note
 
 Prior to v0.6.0, `CharucoParams.chessboard` was of type
 `ChessboardParams`. It is now `DetectorParams` (re-exported from

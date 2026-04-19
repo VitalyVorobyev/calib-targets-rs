@@ -45,7 +45,7 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
 impl PuzzleBoardParams {
     /// Reasonable defaults for the given board geometry.
     ///
-    /// The v2 chessboard detector is scale-invariant — it discovers cell
+    /// The chessboard detector is scale-invariant — it discovers cell
     /// size from the seed itself — so the previous `min_spacing_pix` /
     /// `max_spacing_pix` widening for high-DPI prints is no longer needed.
     /// `expected_rows` / `expected_cols` and the v1 `completeness_threshold`

@@ -11,8 +11,9 @@ an integer-labelled chessboard grid `(i, j) → image position`. It is
 a real grid intersection by a stack of independent geometric invariants.
 Missing corners are acceptable; wrong corners are not.
 
-The current sweep on the canonical 120-snap regression dataset
-(`testdata/3536119669`) posts:
+The current sweep on our private 120-frame regression dataset
+(captured with non-negligible lens distortion and motion blur —
+uncommitted; see `privatedata/` for how to reproduce locally) posts:
 
 - **119 / 120 frames detected**, average **43 labelled corners** per detection.
 - **Zero wrong `(i, j)` labels.**
@@ -242,7 +243,7 @@ shapes every non-obvious choice in the pipeline. Two examples:
 global cell size first, then uses it to set the search window during seed
 finding. On ChArUco scenes the nearest-neighbor histogram is **bimodal**
 (marker-internal pairs at ~10 px vs true board pairs at ~55 px); even
-multimodal mean-shift can pick the wrong mode. The v2 detector instead
+multimodal mean-shift can pick the wrong mode. The detector instead
 finds a 4-corner quad that matches itself in edge lengths and reports the
 mean of those 4 edge lengths as `s`. The window is whatever the seed
 itself agrees on — there is no global scalar to mispick. See
@@ -251,7 +252,7 @@ gotcha** in `CLAUDE.md`.
 
 **Edges align with axes, not diagonals.** Some chessboard detectors model
 ChESS corners as having a single orientation `θ` and check that grid
-edges align with `θ ± π/4`. v2 reads the two axes directly and requires
+edges align with `θ ± π/4`. It reads the two axes directly and requires
 edges to align with one axis (per invariant 4). The edge check then
 becomes "does the edge match exactly one of the two axes within
 tolerance?" — robust to the axis-swap parity that ChESS X-junctions
@@ -348,7 +349,7 @@ detection attempt. Key fields:
   `LabeledThenBlacklisted { at, reason }`.
 
 Render overlays with
-`crates/calib-targets-py/examples/overlay_chessboard_v2.py`; it warns
+`crates/calib-targets-py/examples/overlay_chessboard.py`; it warns
 once per observed schema mismatch.
 
 For compact telemetry, prefer

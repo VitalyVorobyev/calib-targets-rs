@@ -52,7 +52,7 @@ cargo run --release -p calib-targets-chessboard \
 Then render an overlay:
 
 ```bash
-uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
+uv run python crates/calib-targets-py/examples/overlay_chessboard.py \
   --single-image testdata/mid.png \
   --frame-json /tmp/mid_default.json \
   --out /tmp/mid_default.png --tag default

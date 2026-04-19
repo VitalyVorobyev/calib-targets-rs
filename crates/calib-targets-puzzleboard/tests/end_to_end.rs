@@ -276,7 +276,7 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
     .expect("board");
     let mut params = PuzzleBoardParams::for_board(&board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-    // v2 chessboard detector is scale-invariant and has no expected_rows /
+    // chessboard detector is scale-invariant and has no expected_rows /
     // expected_cols / min_corners gates; the smallest meaningful detection
     // is governed by `min_labeled_corners` (default 8 — fine for a 4×4
     // partial view).

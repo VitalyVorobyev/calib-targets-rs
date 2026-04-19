@@ -73,7 +73,7 @@ impl CharucoDetectConfig {
 
     /// Build detector parameters, applying overrides from the config.
     ///
-    /// Note: the v2 chessboard detector (`DetectorParams`) does not include a
+    /// Note: the chessboard detector (`DetectorParams`) does not include a
     /// nested ChESS detector config — `cfg.chess` is consumed upstream by
     /// the corner-detection step (`calib_targets::detect_corners`), not by
     /// the chessboard stage itself.

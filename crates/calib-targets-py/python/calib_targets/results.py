@@ -203,7 +203,7 @@ class ChessboardDebug:
 
 @dataclass(slots=True)
 class ChessboardDetectionResult:
-    """Chessboard detection result — v2 schema.
+    """Chessboard detection result.
 
     `detection` wraps the labelled corners. `grid_directions` are the
     two global grid-axis angles in `[0, π)`. `cell_size` is the pixel

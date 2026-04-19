@@ -30,8 +30,8 @@ call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
 directly and pass the resulting `Vec<Corner>` into
 `calib_targets::chessboard::Detector::new(params).detect(&corners)`.
 
-For ChArUco, `CharucoParams.chessboard` is a `DetectorParams` (v2
-flat shape). Board sampling scale is controlled separately by
+For ChArUco, `CharucoParams.chessboard` is a `DetectorParams` (flat
+shape — no nested sub-structs). Board sampling scale is controlled separately by
 `CharucoParams::for_board`, which starts with `px_per_square = 60`.
 If marker decoding is the problem and the board appears at a very
 different pixel scale, adjust `px_per_square` before touching other
@@ -60,7 +60,7 @@ let charuco_result = detect_charuco_best(&img, &charuco_configs);
 
 `DetectorParams::sweep_default()` returns three configs: default +
 tighter + looser on `cluster_tol_deg`, `seed_edge_tol`, and
-`attach_axis_tol_deg`. All three preserve the v2 detector's precision-
+`attach_axis_tol_deg`. All three preserve the detector's precision-
 by-construction invariants; only recall-affecting tolerances are
 varied.
 
@@ -83,7 +83,7 @@ contiguity — each disconnected piece comes back as its own
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
 | Validation loop oscillates, no detection | `max_validation_iters` ↑ (default 3) |
 | Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `projective_line_tol_rel` ↑ |
-| Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. v2 precision contract forbids this. |
+| Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
 | `NoMarkers` on blurry ChArUco | `min_border_score` ↓, `multi_threshold: true` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
 | `DecodeFailed` on PuzzleBoard | `decode.min_bit_confidence` ↓, `decode.max_bit_error_rate` ↑ |
@@ -93,7 +93,7 @@ contiguity — each disconnected piece comes back as its own
 ## Per-parameter reference: `chessboard::DetectorParams`
 
 `DetectorParams` is a flat `#[non_exhaustive]` struct with ~30 fields
-covering every stage of the v2 pipeline. The fields below are the ones
+covering every stage of the pipeline. The fields below are the ones
 users typically touch; see the [chessboard chapter](chessboard.md) for
 the full invariant-to-parameter mapping and
 `crates/calib-targets-chessboard/src/params.rs` for defaults.
@@ -214,7 +214,7 @@ Verify against the printed board or the JSON spec used to generate it.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,
    `marker_size_rel`).
 6. If you observe **wrong `(i, j)` labels**, that's a precision-
-   contract bug — file an issue rather than tuning around it. v2 is
+   contract bug — file an issue rather than tuning around it. The detector is
    engineered to drop corners before it labels them wrong.
 
 See also: [Troubleshooting](troubleshooting.md) for per-error

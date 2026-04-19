@@ -241,7 +241,7 @@ class GridGraphParams:
 
 @dataclass(slots=True)
 class ChessboardParams:
-    """Chessboard detection parameters — v2 flat shape.
+    """Chessboard detection parameters — flat shape.
 
     Mirrors ``calib_targets_chessboard::DetectorParams`` field-for-field.
     The ChESS corner detector config is *not* embedded here — the Rust
@@ -818,14 +818,14 @@ class PuzzleBoardParams:
 
     @classmethod
     def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
-        # v2: chessboard defaults already cover seed/grow/validate on
+        # The chessboard detector's defaults already cover seed/grow/validate on
         # dense puzzleboards. The only field worth overriding is the
         # pre-filter `min_corner_strength` — the puzzle-piece cutout
         # pattern tends to produce a lot of weak spurious corners that
         # we can drop before clustering.
         chessboard = ChessboardParams()
         chessboard.min_corner_strength = 0.1
-        _ = board  # board dims no longer constrain chessboard params in v2
+        _ = board  # board dims no longer constrain chessboard params
         return cls(board=board, px_per_square=60.0, chessboard=chessboard)
 
     @classmethod

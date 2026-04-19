@@ -161,7 +161,7 @@ impl CharucoParams {
 
     /// Build a reasonable default configuration for the given board.
     ///
-    /// The v2 chessboard detector is scale-invariant and discovers cell
+    /// The chessboard detector is scale-invariant and discovers cell
     /// size from the seed itself, so v1's `expected_rows` / `expected_cols`
     /// / `completeness_threshold` / explicit `min_corners` gates are no
     /// longer needed — ChArUco's marker-driven alignment is the geometry

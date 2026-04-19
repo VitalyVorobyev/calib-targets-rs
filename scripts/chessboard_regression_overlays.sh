@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Chessboard-v2 regression inspection driver.
+# Chessboard regression inspection driver.
 #
-# Runs the v2 detector on every image in the curated testdata set,
-# emits per-image CompactFrame JSONs for both the default config and
-# the 3-config sweep best, renders overlays, and writes a summary TSV.
-# Everything lands under bench_results/chessboard_regression/
+# Runs the chessboard detector on every image in the curated testdata
+# set, emits per-image CompactFrame JSONs for both the default config
+# and the 3-config sweep best, renders overlays, and writes a summary
+# TSV. Everything lands under bench_results/chessboard_regression/
 # (already in .gitignore).
 #
 # Usage:
@@ -109,13 +109,13 @@ for img in "${IMAGES[@]}"; do
   png_default="$PNG_DEFAULT_DIR/${slug}_default.png"
   png_sweep="$PNG_SWEEP_DIR/${slug}_sweep.png"
   if [[ -f "$json_default" ]]; then
-    uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
+    uv run python crates/calib-targets-py/examples/overlay_chessboard.py \
       --single-image "$img" --frame-json "$json_default" --out "$png_default" --tag default \
       >/dev/null
     render_count=$((render_count + 1))
   fi
   if [[ -f "$json_sweep" ]]; then
-    uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
+    uv run python crates/calib-targets-py/examples/overlay_chessboard.py \
       --single-image "$img" --frame-json "$json_sweep" --out "$png_sweep" --tag sweep \
       >/dev/null
     render_count=$((render_count + 1))

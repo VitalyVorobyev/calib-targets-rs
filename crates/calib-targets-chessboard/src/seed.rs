@@ -1,4 +1,4 @@
-//! Seed finder for the v2 detector.
+//! Seed finder for the detector.
 //!
 //! Find a `2×2` cell whose 4 corners satisfy the per-corner and
 //! per-edge invariants, **and estimate the cell size from that

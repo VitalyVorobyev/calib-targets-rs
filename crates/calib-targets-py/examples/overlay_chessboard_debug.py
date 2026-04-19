@@ -2,7 +2,7 @@
 
 Usage:
     uv run python crates/calib-targets-py/examples/overlay_chessboard_debug.py \\
-        --image testdata/3536119669/target_0.png --snap 0 --out /tmp/overlay.png
+        --image path/to/target.png --snap 0 --out /tmp/overlay.png
 
 Running without the bindings is a no-op; the script re-runs the instrumented
 detector via calib_targets.detect_chessboard_debug, then draws the strong
@@ -11,7 +11,7 @@ coordinates on top of the source image.
 
 Positional arguments are kept minimal on purpose — the overlay is a visual
 spot-check, not a batch tool. For batch / regression sweeps use
-chessboard_sweep_v2.
+overlay_chessboard.py's dataset mode.
 """
 
 from __future__ import annotations

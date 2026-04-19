@@ -157,7 +157,7 @@ fn log_detector_params(params: &CharucoParams) {
         params.px_per_square, params.min_marker_inliers, params.max_hamming
     );
     debug!(
-        "Chessboard (v2) params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, seed_edge_tol={:.2}, attach_search_rel={:.2}, max_components={}",
+        "Chessboard params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, seed_edge_tol={:.2}, attach_search_rel={:.2}, max_components={}",
         params.chessboard.min_corner_strength,
         params.chessboard.max_fit_rms_ratio,
         params.chessboard.cluster_tol_deg,
@@ -220,7 +220,7 @@ fn log_corner_stats(corners: &[Corner], _params: &CharucoParams) {
         percentile(&strengths, 1.0)
     );
     debug!(
-        "Nearest-neighbor distances[min/p10/p50/p90/max]={:.1}/{:.1}/{:.1}/{:.1}/{:.1} (v2 chessboard discovers cell size from the seed; no fixed spacing window)",
+        "Nearest-neighbor distances[min/p10/p50/p90/max]={:.1}/{:.1}/{:.1}/{:.1}/{:.1} (chessboard discovers cell size from the seed; no fixed spacing window)",
         percentile(&nearest_neighbor, 0.0),
         percentile(&nearest_neighbor, 0.1),
         percentile(&nearest_neighbor, 0.5),

@@ -1,5 +1,5 @@
 {
-  "description": "Per-image gates for the chessboard-v2 regression harness (tests/testdata_regression.rs).",
+  "description": "Per-image gates for the chessboard regression harness (tests/testdata_regression.rs).",
   "detector": "calib_targets_chessboard::Detector with DetectorParams::default()",
   "hard_invariants": {
     "no_duplicate_labels": true,

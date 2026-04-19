@@ -153,7 +153,7 @@ impl CharucoDetector {
         chessboard: &ChessDetection,
         min_marker_inliers: usize,
     ) -> Result<CharucoDetectionResult, CharucoDetectError> {
-        // v2 emits only validated corners — every entry in target.corners is
+        // detector emits only validated corners — every entry in target.corners is
         // an inlier by construction.
         let inliers: Vec<usize> = (0..chessboard.target.corners.len()).collect();
         let mut corner_map = build_corner_map(&chessboard.target.corners, &inliers);

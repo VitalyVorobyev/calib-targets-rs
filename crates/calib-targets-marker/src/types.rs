@@ -91,7 +91,7 @@ pub struct MarkerBoardParams {
 
 impl MarkerBoardParams {
     pub fn new(layout: MarkerBoardSpec) -> Self {
-        // v2 chessboard detector is scale-invariant — `expected_rows/cols`
+        // chessboard detector is scale-invariant — `expected_rows/cols`
         // and `completeness_threshold` from v1 no longer apply. The marker
         // circles supply the geometry constraint.
         Self {

@@ -141,7 +141,7 @@ impl PuzzleBoardDetector {
         chess: &ChessDetection,
     ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
         let labeled: &[LabeledCorner] = &chess.target.corners;
-        // v2 emits only validated corners in `target.corners` — every entry
+        // detector emits only validated corners in `target.corners` — every entry
         // is an inlier by construction. The original inliers index list
         // (subset of v1's pre-quality-filtered corners) is no longer
         // meaningful; we treat every labelled corner as an inlier.

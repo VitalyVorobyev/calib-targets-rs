@@ -12,10 +12,10 @@
 //! 1. A detection is produced (the 6×6 board is recovered).
 //! 2. None of the marker-internal input indices appears as a labelled corner.
 //!
-//! v2's empirical precision contract on REAL ChArUco scenes (119/120 on the
-//! 3536119669 dataset with 0 wrong labels) is validated separately in
-//! `dataset_3536119669.rs`. This test provides a fast synthetic gate that
-//! catches cluster-level regressions.
+//! The detector's empirical precision contract on REAL ChArUco scenes
+//! (119/120 with 0 wrong labels on our private flagship dataset) is
+//! validated separately in `private_dataset.rs`. This test provides a
+//! fast synthetic gate that catches cluster-level regressions.
 
 use calib_targets_chessboard::{Detector, DetectorParams};
 use calib_targets_core::{AxisEstimate, Corner};
@@ -136,7 +136,8 @@ fn marker_internal_corners_never_labelled() {
     );
 
     // And the detection itself should have at most 36 corners (the board).
-    // v2 may legitimately miss a few on the edges; it must never exceed 36
+    // The detector may legitimately miss a few on the edges; it must
+    // never exceed 36
     // or land a corner at a non-board position.
     assert!(
         detection.target.corners.len() <= board_count,

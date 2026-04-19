@@ -240,10 +240,10 @@ fn detect_charuco(
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = charuco_params_from_py(Some(params))?;
-    // The v2 chessboard detector does not carry a nested ChESS config; the
+    // The chessboard detector does not carry a nested ChESS config; the
     // facade `detect_charuco` uses `default_chess_config()` for corner
     // detection. The `chess_cfg` parameter is accepted for backward
-    // compatibility but currently has no effect on the v2 chessboard
+    // compatibility but currently has no effect on the chessboard
     // params shape — callers that need custom ChESS settings should call
     // `detect_corners` directly and assemble the pipeline themselves.
     let _ = chess_cfg;

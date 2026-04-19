@@ -33,7 +33,7 @@ fn run_config(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let cfg = PuzzleBoardDetectConfig::from_reader(file)?;
     let params = cfg.detector.clone();
-    // The v2 chessboard detector no longer carries a nested ChESS config;
+    // The chessboard detector no longer carries a nested ChESS config;
     // any `cfg.chess_config` override would have to be applied via the
     // standalone `detect::detect_corners` helper, not the params struct.
     let _ = cfg.chess_config;

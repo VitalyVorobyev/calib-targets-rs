@@ -20,7 +20,7 @@ pub struct MarkerBoardDetector {
 
 impl MarkerBoardDetector {
     pub fn new(params: MarkerBoardParams) -> Self {
-        // v2 chessboard detector is scale-invariant — it does not need
+        // chessboard detector is scale-invariant — it does not need
         // expected_rows/cols hints. The marker circles supply the geometry
         // constraint.
         let chessboard_detector = ChessDetector::new(params.chessboard.clone());
