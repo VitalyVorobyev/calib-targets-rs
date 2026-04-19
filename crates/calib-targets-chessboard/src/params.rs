@@ -137,7 +137,13 @@ impl Default for DetectorParams {
             step_tol: 0.25,
             edge_axis_tol_deg: 15.0,
 
-            line_tol_rel: 0.15,
+            // Raised from 0.15 → 0.18: under extreme perspective on
+            // dense boards, straight-line fits over long columns
+            // legitimately deviate from the fit by ~0.15-0.18 × s.
+            // The invariant-first contract still holds because
+            // line-failure is only one of several conditions for a
+            // blacklist (see validate::attribution).
+            line_tol_rel: 0.18,
             projective_line_tol_rel: 0.25,
             line_min_members: 3,
             local_h_tol_rel: 0.20,
