@@ -1,10 +1,12 @@
 //! Detector orchestrator: run the precision core end-to-end.
 //!
 //! Stages 5–7 loop with a blacklist until validation converges or
-//! `max_validation_iters` is reached. The recall boosters (Stage 8)
-//! are out of scope for this initial wiring — they will extend
-//! the labelled set without compromising invariants once the core
-//! is proven on the 120-snap dataset.
+//! `max_validation_iters` is reached. Stage 8 (recall boosters) extends
+//! the labelled set without compromising invariants. `detect_all` peels
+//! off disconnected components by re-entering the pipeline with already-
+//! labelled inputs marked consumed.
+//!
+//! See `book/src/chessboard.md` for the full algorithm description.
 
 use crate::boosters::{apply_boosters, BoosterResult};
 use crate::cluster::{cluster_axes, ClusterCenters};
@@ -70,6 +72,82 @@ pub struct IterationTrace {
     pub converged: bool,
 }
 
+/// Compact per-stage counters derived from a [`DebugFrame`].
+///
+/// Cheaper to log / dashboard than the full [`DebugFrame`]: each field is a
+/// single integer (or boolean). Use [`Detector::detect_instrumented`] to get
+/// these alongside the detection.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub struct StageCounts {
+    /// Corners passed into the detector.
+    pub input_corners: usize,
+    /// Corners reaching `CornerStage::Strong` (Stage 1 survivors).
+    pub after_strength_filter: usize,
+    /// Corners reaching `CornerStage::Clustered` (Stage 3 survivors).
+    pub after_clustering: usize,
+    /// `true` if a seed was found (Stage 5 succeeded).
+    pub seed_found: bool,
+    /// Number of validation iterations executed (Stages 5–7 loop).
+    pub validation_iterations: u32,
+    /// Total corners blacklisted across all validation iterations.
+    pub blacklisted_total: usize,
+    /// Final labelled corner count after Stage 8 boosters
+    /// (`0` if no detection was emitted).
+    pub labelled_final: usize,
+}
+
+impl StageCounts {
+    /// Derive counts from a [`DebugFrame`].
+    pub fn from_frame(frame: &DebugFrame) -> Self {
+        let mut counts = StageCounts {
+            input_corners: frame.input_count,
+            ..Default::default()
+        };
+        for aug in &frame.corners {
+            match aug.stage {
+                CornerStage::Strong
+                | CornerStage::Clustered { .. }
+                | CornerStage::AttachmentAmbiguous { .. }
+                | CornerStage::AttachmentFailedInvariants { .. }
+                | CornerStage::Labeled { .. }
+                | CornerStage::LabeledThenBlacklisted { .. } => {
+                    counts.after_strength_filter += 1;
+                }
+                CornerStage::Raw | CornerStage::NoCluster { .. } => {}
+            }
+            match aug.stage {
+                CornerStage::Clustered { .. }
+                | CornerStage::AttachmentAmbiguous { .. }
+                | CornerStage::AttachmentFailedInvariants { .. }
+                | CornerStage::Labeled { .. }
+                | CornerStage::LabeledThenBlacklisted { .. } => {
+                    counts.after_clustering += 1;
+                }
+                _ => {}
+            }
+            if matches!(aug.stage, CornerStage::LabeledThenBlacklisted { .. }) {
+                counts.blacklisted_total += 1;
+            }
+        }
+        counts.seed_found = frame.seed.is_some();
+        counts.validation_iterations = frame.iterations.len() as u32;
+        if let Some(d) = &frame.detection {
+            counts.labelled_final = d.target.corners.len();
+        }
+        counts
+    }
+}
+
+/// A [`Detection`] (when produced) paired with derived [`StageCounts`].
+///
+/// `detection` may be `None` even when counts are populated — the pipeline
+/// always runs to whichever stage failed first.
+#[derive(Clone, Debug, Serialize)]
+pub struct InstrumentedResult {
+    pub detection: Option<Detection>,
+    pub counts: StageCounts,
+}
+
 /// Top-level detector.
 pub struct Detector {
     pub params: DetectorParams,
@@ -133,6 +211,46 @@ impl Detector {
             .collect()
     }
 
+    /// Single-detection entry with derived per-stage counts.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_instrumented(&self, corners: &[Corner]) -> InstrumentedResult {
+        let frame = self.detect_debug(corners);
+        let counts = StageCounts::from_frame(&frame);
+        InstrumentedResult {
+            detection: frame.detection,
+            counts,
+        }
+    }
+
+    /// Multi-component entry with per-component derived counts.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all_instrumented(&self, corners: &[Corner]) -> Vec<InstrumentedResult> {
+        self.detect_all_debug(corners)
+            .into_iter()
+            .map(|frame| {
+                let counts = StageCounts::from_frame(&frame);
+                InstrumentedResult {
+                    detection: frame.detection,
+                    counts,
+                }
+            })
+            .collect()
+    }
+
     /// Full-debug multi-component entry point. See [`Self::detect_all`].
     #[cfg_attr(
         feature = "tracing",
@@ -166,11 +284,7 @@ impl Detector {
         frames
     }
 
-    fn detect_debug_excluding(
-        &self,
-        corners: &[Corner],
-        consumed: &HashSet<usize>,
-    ) -> DebugFrame {
+    fn detect_debug_excluding(&self, corners: &[Corner], consumed: &HashSet<usize>) -> DebugFrame {
         let input_count = corners.len();
         let mut augs: Vec<CornerAug> = corners
             .iter()
@@ -446,5 +560,31 @@ mod tests {
     fn rejects_when_too_few_corners() {
         let det = Detector::new(DetectorParams::default());
         assert!(det.detect(&[]).is_none());
+    }
+
+    #[test]
+    fn instrumented_counts_match_clean_grid() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let res = det.detect_instrumented(&corners);
+        assert!(res.detection.is_some(), "expected detection on 7x7 grid");
+        assert_eq!(res.counts.input_corners, 49);
+        assert_eq!(res.counts.after_strength_filter, 49);
+        assert_eq!(res.counts.after_clustering, 49);
+        assert!(res.counts.seed_found);
+        assert_eq!(res.counts.labelled_final, 49);
+        assert_eq!(res.counts.blacklisted_total, 0);
+        assert!(res.counts.validation_iterations >= 1);
     }
 }

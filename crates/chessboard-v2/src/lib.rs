@@ -43,7 +43,10 @@ pub use boosters::{apply_boosters, BoosterResult};
 pub use cell_size::estimate_cell_size;
 pub use cluster::{cluster_axes, AxisCluster, ClusterCenters};
 pub use corner::{ClusterLabel, CornerAug, CornerStage};
-pub use detector::{DebugFrame, Detection, Detector, IterationTrace, DEBUG_FRAME_SCHEMA};
+pub use detector::{
+    DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace, StageCounts,
+    DEBUG_FRAME_SCHEMA,
+};
 pub use grow::{grow_from_seed, GrowResult};
 pub use params::DetectorParams;
 pub use seed::{find_seed, Seed, SeedOutput};
