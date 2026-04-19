@@ -21,6 +21,7 @@ pub mod index;
 pub mod mesh;
 pub mod rectify;
 pub mod smoothness;
+pub mod validate;
 pub mod validators;
 
 pub use alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
@@ -31,4 +32,5 @@ pub use rectify::GridHomography;
 pub use smoothness::{
     find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
 };
+pub use validate::{validate, LabelledEntry, ValidationParams, ValidationResult};
 pub use validators::{SpatialSquareValidator, XJunctionValidator};

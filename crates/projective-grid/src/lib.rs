@@ -26,6 +26,7 @@
 
 mod float_helpers;
 
+pub mod circular_stats;
 pub mod global_step;
 pub mod graph;
 pub mod graph_cleanup;

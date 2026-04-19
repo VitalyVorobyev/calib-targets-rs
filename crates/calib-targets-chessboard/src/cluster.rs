@@ -46,8 +46,14 @@
 
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
+use projective_grid::circular_stats as cs;
 use serde::Serialize;
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::PI;
+
+// Re-export the hoisted angle helpers under their old local names so
+// sibling modules (`seed`, `grow`, `boosters`) keep their existing
+// `use crate::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
+pub(crate) use projective_grid::circular_stats::{angular_dist_pi, wrap_pi};
 
 /// Result of clustering: two grid-direction centers in `[0, π)`
 /// with `theta0 < theta1`.
@@ -91,12 +97,16 @@ pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Optio
     if hist.total_weight <= 0.0 {
         return None;
     }
-    let smoothed = smooth_circular(&hist.bins);
+    let smoothed = cs::smooth_circular_5(&hist.bins);
+    let peak_opts = cs::PeakPickOptions::new(
+        params.min_peak_weight_fraction,
+        params.peak_min_separation_deg.to_radians(),
+    );
+    let (theta0_seed, theta1_seed) = cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)?;
 
-    let (theta0_seed, theta1_seed) = pick_two_peaks(&smoothed, params, hist.total_weight)?;
-
+    let votes = collect_axis_votes(corners);
     let (theta0, theta1) =
-        refine_2means(corners, [theta0_seed, theta1_seed], params.max_iters_2means);
+        cs::refine_2means_double_angle(&votes, [theta0_seed, theta1_seed], params.max_iters_2means);
 
     let (a, b) = if theta0 <= theta1 {
         (theta0, theta1)
@@ -190,8 +200,7 @@ fn build_histogram(corners: &[CornerAug], params: &DetectorParams) -> Histogram 
             if w <= 0.0 {
                 continue;
             }
-            let theta = wrap_pi(axis.angle);
-            let bin = angle_to_bin(theta, n);
+            let bin = cs::angle_to_bin(cs::wrap_pi(axis.angle), n);
             bins[bin] += w;
             total += w;
         }
@@ -209,67 +218,10 @@ fn weight(strength: f32, sigma: f32) -> f32 {
     base / (1.0 + sigma.max(0.0))
 }
 
-fn smooth_circular(hist: &[f32]) -> Vec<f32> {
-    let n = hist.len();
-    if n == 0 {
-        return Vec::new();
-    }
-    const K: [f32; 5] = [1.0, 4.0, 6.0, 4.0, 1.0];
-    const K_SUM: f32 = 16.0;
-    let mut out = vec![0.0_f32; n];
-    for (i, bin) in out.iter_mut().enumerate() {
-        let mut acc = 0.0_f32;
-        for (k, &w) in K.iter().enumerate() {
-            let offset = k as isize - 2;
-            let j = ((i as isize + offset).rem_euclid(n as isize)) as usize;
-            acc += w * hist[j];
-        }
-        *bin = acc / K_SUM;
-    }
-    out
-}
-
-fn pick_two_peaks(
-    smoothed: &[f32],
-    params: &DetectorParams,
-    total_weight: f32,
-) -> Option<(f32, f32)> {
-    let n = smoothed.len();
-    let min_w = total_weight * params.min_peak_weight_fraction;
-    // Collect local maxima (circular).
-    let mut peaks: Vec<(usize, f32)> = Vec::new();
-    for i in 0..n {
-        let prev = smoothed[(i + n - 1) % n];
-        let here = smoothed[i];
-        let next = smoothed[(i + 1) % n];
-        if here > prev && here > next && here >= min_w {
-            peaks.push((i, here));
-        }
-    }
-    // Descending by weight.
-    peaks.sort_by(|a, b| b.1.total_cmp(&a.1));
-    if peaks.is_empty() {
-        return None;
-    }
-    let sep = params.peak_min_separation_deg.to_radians();
-    let theta_of = |bin: usize| bin_to_angle(bin, n);
-    let first = theta_of(peaks[0].0);
-    for (bin, _w) in peaks.iter().skip(1) {
-        let cand = theta_of(*bin);
-        if angular_dist_pi(first, cand) >= sep {
-            return Some((first, cand));
-        }
-    }
-    None
-}
-
-fn refine_2means(corners: &[CornerAug], seed: [f32; 2], max_iters: usize) -> (f32, f32) {
-    // Per-axis votes materialised.
-    struct Vote {
-        angle: f32,
-        weight: f32,
-    }
-    let mut votes: Vec<Vote> = Vec::new();
+/// Materialise per-axis votes in the shape expected by the hoisted
+/// [`cs::refine_2means_double_angle`] helper.
+fn collect_axis_votes(corners: &[CornerAug]) -> Vec<cs::AngleVote> {
+    let mut votes: Vec<cs::AngleVote> = Vec::new();
     for corner in corners {
         if !matches!(corner.stage, CornerStage::Strong) {
             continue;
@@ -282,101 +234,13 @@ fn refine_2means(corners: &[CornerAug], seed: [f32; 2], max_iters: usize) -> (f3
             if w <= 0.0 {
                 continue;
             }
-            votes.push(Vote {
-                angle: wrap_pi(axis.angle),
+            votes.push(cs::AngleVote {
+                angle: cs::wrap_pi(axis.angle),
                 weight: w,
             });
         }
     }
-    if votes.is_empty() {
-        return (seed[0], seed[1]);
-    }
-
-    let mut centers = seed;
-
-    for _ in 0..max_iters {
-        // Assignment: each vote to the nearest center.
-        let mut sum_2cos = [0.0_f32; 2];
-        let mut sum_2sin = [0.0_f32; 2];
-        let mut sum_w = [0.0_f32; 2];
-        for v in &votes {
-            let d0 = angular_dist_pi(v.angle, centers[0]);
-            let d1 = angular_dist_pi(v.angle, centers[1]);
-            let k = if d0 <= d1 { 0 } else { 1 };
-            // Double-angle accumulation: 2θ lives on full circle,
-            // so the circular mean of θ (mod π) is half the
-            // circular mean of 2θ (mod 2π).
-            let two_theta = 2.0 * v.angle;
-            sum_2cos[k] += v.weight * two_theta.cos();
-            sum_2sin[k] += v.weight * two_theta.sin();
-            sum_w[k] += v.weight;
-        }
-        let mut new_centers = centers;
-        for k in 0..2 {
-            if sum_w[k] > 0.0 {
-                let two_theta = sum_2sin[k].atan2(sum_2cos[k]);
-                let theta = wrap_pi(two_theta * 0.5);
-                new_centers[k] = theta;
-            }
-        }
-        if (new_centers[0] - centers[0]).abs() < 1e-5 && (new_centers[1] - centers[1]).abs() < 1e-5
-        {
-            return (new_centers[0], new_centers[1]);
-        }
-        centers = new_centers;
-    }
-    (centers[0], centers[1])
-}
-
-// --- angle helpers --------------------------------------------------------
-
-/// Wrap an angle to `[0, π)`. Works for any finite input.
-#[inline]
-pub(crate) fn wrap_pi(theta: f32) -> f32 {
-    let mut t = theta % PI;
-    if t < 0.0 {
-        t += PI;
-    }
-    // Guard against `t == PI` after FP wobble on the boundary.
-    if t >= PI {
-        t -= PI;
-    }
-    t
-}
-
-/// Smallest angular distance on the circle with period π. Result in
-/// `[0, π/2]`.
-#[inline]
-pub(crate) fn angular_dist_pi(a: f32, b: f32) -> f32 {
-    let pi = PI;
-    let diff = ((a - b) % pi + pi) % pi;
-    diff.min(pi - diff)
-}
-
-#[inline]
-fn angle_to_bin(theta: f32, n: usize) -> usize {
-    let t = wrap_pi(theta);
-    let x = t / PI * n as f32;
-    let mut idx = x.floor() as isize;
-    if idx < 0 {
-        idx = 0;
-    }
-    if idx as usize >= n {
-        idx = (n - 1) as isize;
-    }
-    idx as usize
-}
-
-#[inline]
-fn bin_to_angle(bin: usize, n: usize) -> f32 {
-    let step = PI / n as f32;
-    (bin as f32 + 0.5) * step
-}
-
-#[allow(dead_code)]
-#[inline]
-fn two_pi() -> f32 {
-    TAU
+    votes
 }
 
 // --- tests ----------------------------------------------------------------
@@ -538,5 +402,83 @@ mod tests {
         let mut corners: Vec<CornerAug> = Vec::new();
         let params = DetectorParams::default();
         assert!(cluster_axes(&mut corners, &params).is_none());
+    }
+}
+
+#[cfg(test)]
+mod plateau_peak_regression {
+    //! Regression: when a physical direction falls on the `π` wrap
+    //! boundary (ChESS reports `3.1415925 ≈ π − ε`, which `wrap_pi`
+    //! leaves near `π` instead of folding to 0), the smoothed
+    //! histogram gains two equal-height adjacent bins at 0 and
+    //! `n − 1`. A strict `here > prev && here > next` peak check
+    //! misses the flat-top plateau and `cluster_axes` returns
+    //! `None`. This happens in practice on perfectly rectilinear
+    //! synthetic puzzleboards (testdata example8/example9).
+    //!
+    //! See the plateau-aware branch in `pick_two_peaks`.
+    use super::*;
+    use crate::corner::CornerAug;
+    use calib_targets_core::{AxisEstimate, Corner};
+    use nalgebra::Point2;
+
+    #[test]
+    fn near_pi_wrap_still_clusters() {
+        // Use 3.1415925 (what the real ChESS adapter reports on the
+        // synthetic puzzleboard) rather than f32::consts::PI, so the
+        // wrap-boundary bug is reproduced exactly.
+        const NEAR_PI: f32 = 3.1415925;
+        let mut augs: Vec<CornerAug> = Vec::new();
+        for j in 0..10_i32 {
+            for i in 0..10_i32 {
+                let swapped = (i + j).rem_euclid(2) == 1;
+                let (a0, a1) = if swapped {
+                    (std::f32::consts::FRAC_PI_2, NEAR_PI)
+                } else {
+                    (0.0_f32, std::f32::consts::FRAC_PI_2)
+                };
+                let c = Corner {
+                    position: Point2::new(i as f32 * 100.0 + 50.0, j as f32 * 100.0 + 50.0),
+                    orientation_cluster: None,
+                    axes: [
+                        AxisEstimate {
+                            angle: a0,
+                            sigma: 0.008,
+                        },
+                        AxisEstimate {
+                            angle: a1,
+                            sigma: 0.008,
+                        },
+                    ],
+                    contrast: 136.0,
+                    fit_rms: 4.7,
+                    strength: 612.0,
+                };
+                let mut aug = CornerAug::from_corner(augs.len(), &c);
+                aug.stage = CornerStage::Strong;
+                augs.push(aug);
+            }
+        }
+        let params = DetectorParams::default();
+        let centers =
+            cluster_axes(&mut augs, &params).expect("near-π plateau must still yield two peaks");
+        // Centers should settle at ≈0 and ≈π/2 after 2-means.
+        assert!(
+            angular_dist_pi(centers.theta0, 0.0) < 1.0_f32.to_radians(),
+            "Θ₀ = {:.3}° too far from 0°",
+            centers.theta0.to_degrees()
+        );
+        assert!(
+            angular_dist_pi(centers.theta1, std::f32::consts::FRAC_PI_2) < 1.0_f32.to_radians(),
+            "Θ₁ = {:.3}° too far from 90°",
+            centers.theta1.to_degrees()
+        );
+        // Every input corner should now be clustered — on a perfect
+        // grid there should be no stragglers.
+        let n_clustered = augs
+            .iter()
+            .filter(|a| matches!(a.stage, CornerStage::Clustered { .. }))
+            .count();
+        assert_eq!(n_clustered, 100);
     }
 }
