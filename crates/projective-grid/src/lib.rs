@@ -23,6 +23,7 @@ mod float_helpers;
 pub mod direction;
 pub mod global_step;
 pub mod graph;
+pub mod graph_cleanup;
 pub mod grid_alignment;
 pub mod grid_index;
 pub mod grid_mesh;
@@ -44,6 +45,10 @@ impl<T: nalgebra::RealField + Copy> Float for T {}
 pub use direction::{NeighborDirection, NodeNeighbor};
 pub use global_step::{estimate_global_cell_size, GlobalStepEstimate, GlobalStepParams};
 pub use graph::{GridGraph, GridGraphParams, NeighborCandidate, NeighborValidator};
+pub use graph_cleanup::{
+    enforce_symmetry, prune_by_edge_straightness, prune_crossing_edges, prune_isolated_pairs,
+    segments_properly_cross,
+};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 pub use grid_index::GridIndex;
 pub use grid_mesh::GridHomographyMesh;

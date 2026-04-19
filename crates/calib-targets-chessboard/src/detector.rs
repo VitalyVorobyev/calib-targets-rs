@@ -11,6 +11,9 @@ use calib_targets_core::{
 };
 use log::{debug, warn};
 use nalgebra::Point2;
+use projective_grid::graph_cleanup::{
+    enforce_symmetry, prune_by_edge_straightness, prune_crossing_edges,
+};
 use projective_grid::{GridGraph, GridIndex, NeighborDirection};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -91,6 +94,23 @@ pub struct ChessboardStageCounts {
     pub after_global_homography_prune: Option<usize>,
     /// Corners in the final [`TargetDetection`]. Zero when detection failed.
     pub final_labeled_corners: usize,
+
+    /// Phase 2 cleanup: directed edges dropped because the reverse was missing.
+    #[serde(default)]
+    pub cleanup_asymmetric_edges: usize,
+    /// Phase 2 cleanup: directed edges dropped because the Right/Left or
+    /// Up/Down pair at the source bent by more than `max_straightness_deg`.
+    #[serde(default)]
+    pub cleanup_bent_edges: usize,
+    /// Phase 2 cleanup: directed edges dropped because the undirected edge
+    /// crosses another undirected edge in the graph.
+    #[serde(default)]
+    pub cleanup_crossing_edges: usize,
+
+    /// Phase 5 gap-fill: corners attached by predicting missing `(i, j)`
+    /// positions from labelled neighbors.
+    #[serde(default)]
+    pub gap_filled_corners: usize,
 }
 
 impl ChessboardStageCounts {
@@ -366,7 +386,7 @@ impl ChessboardDetector {
         }
 
         let mut rejection_counter = RejectionCounter::default();
-        let graph = build_chessboard_grid_graph_instrumented(
+        let mut graph = build_chessboard_grid_graph_instrumented(
             &strong,
             &self.params.graph,
             graph_diagonals,
@@ -376,6 +396,9 @@ impl ChessboardDetector {
         counts.graph_nodes = graph.neighbors.len();
         counts.graph_edges = graph.neighbors.iter().map(|n| n.len()).sum();
         counts.edges_by_reject_reason = ChessboardStageCounts::from_counter(&rejection_counter);
+
+        // Phase 2: geometric-sanity graph cleanup.
+        self.run_graph_cleanup(&mut graph, &strong, &mut counts);
 
         let components = connected_components(&graph);
         counts.num_components = components.len();
@@ -485,7 +508,7 @@ impl ChessboardDetector {
         // Stage 4: build the graph with rejection counters. Skipped when
         // not enough corners to form a board — still emit the debug frame.
         let mut rejection_counter = RejectionCounter::default();
-        let graph = if strong.len() >= self.params.min_corners {
+        let mut graph = if strong.len() >= self.params.min_corners {
             build_chessboard_grid_graph_instrumented(
                 &strong,
                 &self.params.graph,
@@ -500,6 +523,9 @@ impl ChessboardDetector {
         counts.graph_nodes = graph.neighbors.len();
         counts.graph_edges = graph.neighbors.iter().map(|n| n.len()).sum();
         counts.edges_by_reject_reason = ChessboardStageCounts::from_counter(&rejection_counter);
+
+        // Phase 2: geometric-sanity graph cleanup (mirrors non-debug path).
+        self.run_graph_cleanup(&mut graph, &strong, &mut counts);
 
         // Stage 5: components + BFS coord assignment via the normal path.
         let components = connected_components(&graph);
@@ -562,6 +588,59 @@ impl ChessboardDetector {
         }
     }
 
+    /// Phase 2: Run the configured post-graph geometric-sanity cleanups.
+    ///
+    /// Drops directed edges that pass every per-edge validator in
+    /// isolation but violate graph-global invariants of a planar grid:
+    /// asymmetric Right/Left/Up/Down edges, bent chord pairs at a node,
+    /// and crossing edges. Counts for each pass flow into `counts` so
+    /// they appear in the instrumentation output.
+    ///
+    /// Only runs under [`ChessboardGraphMode::TwoAxis`]; under
+    /// `Legacy` the cleanups can drop legitimate edges (the Simple /
+    /// Cluster validators allow a broad distance window that makes
+    /// Right/Left pairs legitimately non-antiparallel, and the
+    /// per-direction scoring admits asymmetric choices). The caller
+    /// flipped to `TwoAxis` opts into the stricter geometry.
+    fn run_graph_cleanup(
+        &self,
+        graph: &mut GridGraph,
+        strong: &[Corner],
+        counts: &mut ChessboardStageCounts,
+    ) {
+        if !matches!(
+            self.params.graph.mode,
+            crate::params::ChessboardGraphMode::TwoAxis
+        ) {
+            return;
+        }
+        let cleanup = &self.params.graph_cleanup;
+        let positions: Vec<nalgebra::Point2<f32>> = strong.iter().map(|c| c.position).collect();
+
+        // Straightness first: a bent pair means one of the two edges is
+        // spurious. Dropping it frees up the other edge to be part of a
+        // real chain. Symmetry enforcement is run after straightness so
+        // the dangling reverse of a dropped bent edge is cleaned up.
+        if cleanup.enforce_straightness {
+            let dropped =
+                prune_by_edge_straightness(graph, &positions, cleanup.max_straightness_deg);
+            counts.cleanup_bent_edges += dropped;
+        }
+
+        if cleanup.enforce_planarity {
+            let dropped = prune_crossing_edges(graph, &positions);
+            counts.cleanup_crossing_edges += dropped;
+        }
+
+        if cleanup.enforce_symmetry {
+            let dropped = enforce_symmetry(graph);
+            counts.cleanup_asymmetric_edges += dropped;
+        }
+
+        // Re-count after cleanup so downstream sees the truth.
+        counts.graph_edges = graph.neighbors.iter().map(|n| n.len()).sum();
+    }
+
     /// Shared logic: iterate components, convert to board coords, return all qualifying results.
     fn collect_components(
         &self,
@@ -579,9 +658,13 @@ impl ChessboardDetector {
         let mut sorted_indices: Vec<usize> = (0..components.len()).collect();
         sorted_indices.sort_unstable_by(|&a, &b| components[b].len().cmp(&components[a].len()));
 
+        let min_component = self
+            .params
+            .min_component_size
+            .unwrap_or(self.params.min_corners);
         for &ci in &sorted_indices {
             let component = &components[ci];
-            if component.len() < self.params.min_corners {
+            if component.len() < min_component {
                 continue;
             }
             let coords = assign_grid_coordinates(graph, component);
@@ -803,6 +886,19 @@ impl ChessboardDetector {
             }
         }
 
+        // Phase 5: gap-fill. For each (i, j) in the bounding box with
+        // no labelled corner but ≥min_neighbors labelled neighbors in a
+        // window_half-cell window, predict the missing pixel position
+        // via a local affine fit and attach the nearest unlabelled
+        // strong corner within search_rel × local_step.
+        let gap_filled = if self.params.gap_fill.enable {
+            let before = labeled.len();
+            labeled = fill_gaps_via_local_affine(labeled, corners, &self.params.gap_fill);
+            labeled.len().saturating_sub(before)
+        } else {
+            0
+        };
+
         if let Some(counts) = counts {
             counts.assigned_grid_corners = assigned_count;
             counts.after_local_homography_prune = if self.params.local_homography.enable {
@@ -815,6 +911,7 @@ impl ChessboardDetector {
             } else {
                 None
             };
+            counts.gap_filled_corners = gap_filled;
         }
 
         labeled.sort_by(|a, b| {
@@ -1142,6 +1239,222 @@ fn compute_residuals(labeled: &[LabeledCorner]) -> Option<(Vec<f32>, f32)> {
     sorted.sort_by(|a, b| a.total_cmp(b));
     let median = sorted[sorted.len() / 2];
     Some((residuals, median))
+}
+
+/// Phase 5: Recover missing `(i, j)` positions whose labelled neighbors
+/// permit a local affine prediction.
+///
+/// Iterates over integer `(i, j)` inside the bounding box of the
+/// labelled set. For each position not yet labelled that has
+/// `≥ min_neighbors` labelled neighbors inside a
+/// `window_half`-cell window, fits an affine map `[x, y] = A·[i, j] + b`
+/// by least-squares, predicts the missing pixel position, and attaches
+/// the nearest unlabelled strong corner within
+/// `search_rel × median_local_step`.
+///
+/// The pass iterates up to `params.max_iters` times because newly-
+/// attached corners can unlock further predictions. Stops early when a
+/// full pass attaches nothing.
+fn fill_gaps_via_local_affine(
+    mut labeled: Vec<LabeledCorner>,
+    strong: &[Corner],
+    params: &crate::params::GapFillParams,
+) -> Vec<LabeledCorner> {
+    use std::collections::HashSet;
+
+    if labeled.len() < params.min_neighbors {
+        return labeled;
+    }
+
+    // Keyed strong-corner set: track which corners are already labelled by
+    // exact position — labelled positions are copied from `strong` without
+    // modification, so equality holds.
+    let pos_key = |p: nalgebra::Point2<f32>| -> (u32, u32) { (p.x.to_bits(), p.y.to_bits()) };
+
+    for _iter in 0..params.max_iters.max(1) {
+        let mut used: HashSet<(u32, u32)> = HashSet::new();
+        for lc in &labeled {
+            used.insert(pos_key(lc.position));
+        }
+
+        // Build (i, j) -> pixel lookup.
+        let mut by_ij: std::collections::HashMap<GridCoords, Point2<f32>> =
+            std::collections::HashMap::new();
+        for lc in &labeled {
+            if let Some(g) = lc.grid {
+                by_ij.insert(g, lc.position);
+            }
+        }
+
+        let (min_i, max_i, min_j, max_j) = by_ij.keys().fold(
+            (i32::MAX, i32::MIN, i32::MAX, i32::MIN),
+            |(ai0, ai1, aj0, aj1), g| (ai0.min(g.i), ai1.max(g.i), aj0.min(g.j), aj1.max(g.j)),
+        );
+        if min_i == i32::MAX {
+            return labeled;
+        }
+
+        let mut attached: Vec<LabeledCorner> = Vec::new();
+
+        for j in min_j..=max_j {
+            for i in min_i..=max_i {
+                let target = GridCoords { i, j };
+                if by_ij.contains_key(&target) {
+                    continue;
+                }
+
+                // Collect labelled neighbors in the window.
+                let wh = params.window_half;
+                let mut ns: Vec<(GridCoords, Point2<f32>)> = Vec::new();
+                for dj in -wh..=wh {
+                    for di in -wh..=wh {
+                        if di == 0 && dj == 0 {
+                            continue;
+                        }
+                        let nij = GridCoords {
+                            i: i + di,
+                            j: j + dj,
+                        };
+                        if let Some(&p) = by_ij.get(&nij) {
+                            ns.push((nij, p));
+                        }
+                    }
+                }
+                if ns.len() < params.min_neighbors {
+                    continue;
+                }
+
+                // Fit affine [x, y] = A·[i, j] + b  by least squares:
+                // Solve the normal equations for 3 unknowns per axis.
+                let Some((ax, bx, cx, ay, by_, cy)) = fit_affine_ij_to_xy(&ns) else {
+                    continue;
+                };
+                let ii = i as f32;
+                let jj = j as f32;
+                let pred = Point2::new(ax * ii + bx * jj + cx, ay * ii + by_ * jj + cy);
+
+                // Median labelled-neighbor chord as local cell size.
+                let mut chords: Vec<f32> = Vec::new();
+                for k in 0..ns.len() {
+                    for m in (k + 1)..ns.len() {
+                        let dij_i = ns[k].0.i - ns[m].0.i;
+                        let dij_j = ns[k].0.j - ns[m].0.j;
+                        let gd = ((dij_i * dij_i + dij_j * dij_j) as f32).sqrt();
+                        if gd < 0.5 {
+                            continue;
+                        }
+                        let pd = (ns[k].1 - ns[m].1).norm();
+                        chords.push(pd / gd);
+                    }
+                }
+                if chords.is_empty() {
+                    continue;
+                }
+                chords.sort_by(|a, b| a.total_cmp(b));
+                let local_step = chords[chords.len() / 2];
+                let search_px = params.search_rel * local_step;
+
+                // Find nearest unlabelled strong corner within the search
+                // radius.
+                let mut best: Option<(usize, f32)> = None;
+                for (ci, c) in strong.iter().enumerate() {
+                    if used.contains(&pos_key(c.position)) {
+                        continue;
+                    }
+                    let d = (c.position - pred).norm();
+                    if d <= search_px && best.map(|b| d < b.1).unwrap_or(true) {
+                        best = Some((ci, d));
+                    }
+                }
+                let Some((ci, _d)) = best else { continue };
+
+                let corner = &strong[ci];
+                let new_lc = LabeledCorner {
+                    position: corner.position,
+                    grid: Some(target),
+                    id: None,
+                    target_position: None,
+                    score: corner.strength,
+                };
+                used.insert(pos_key(corner.position));
+                attached.push(new_lc);
+            }
+        }
+
+        if attached.is_empty() {
+            return labeled;
+        }
+        labeled.extend(attached);
+    }
+
+    labeled
+}
+
+/// Least-squares fit of an affine map `[x, y] = A·[i, j] + b`.
+/// Returns `(A[0,0], A[0,1], b[0], A[1,0], A[1,1], b[1])` or `None`
+/// when the 3×3 normal matrix is singular.
+fn fit_affine_ij_to_xy(
+    samples: &[(GridCoords, Point2<f32>)],
+) -> Option<(f32, f32, f32, f32, f32, f32)> {
+    // Design matrix rows [i, j, 1]. Normal matrix M = X^T X (3×3).
+    let mut m = [[0.0f64; 3]; 3];
+    let mut rhs_x = [0.0f64; 3];
+    let mut rhs_y = [0.0f64; 3];
+    for (g, p) in samples {
+        let i = g.i as f64;
+        let j = g.j as f64;
+        let row = [i, j, 1.0];
+        for a in 0..3 {
+            for b in 0..3 {
+                m[a][b] += row[a] * row[b];
+            }
+            rhs_x[a] += row[a] * p.x as f64;
+            rhs_y[a] += row[a] * p.y as f64;
+        }
+    }
+
+    let inv = invert_3x3(&m)?;
+    let bx = [
+        inv[0][0] * rhs_x[0] + inv[0][1] * rhs_x[1] + inv[0][2] * rhs_x[2],
+        inv[1][0] * rhs_x[0] + inv[1][1] * rhs_x[1] + inv[1][2] * rhs_x[2],
+        inv[2][0] * rhs_x[0] + inv[2][1] * rhs_x[1] + inv[2][2] * rhs_x[2],
+    ];
+    let by_ = [
+        inv[0][0] * rhs_y[0] + inv[0][1] * rhs_y[1] + inv[0][2] * rhs_y[2],
+        inv[1][0] * rhs_y[0] + inv[1][1] * rhs_y[1] + inv[1][2] * rhs_y[2],
+        inv[2][0] * rhs_y[0] + inv[2][1] * rhs_y[1] + inv[2][2] * rhs_y[2],
+    ];
+
+    Some((
+        bx[0] as f32,
+        bx[1] as f32,
+        bx[2] as f32,
+        by_[0] as f32,
+        by_[1] as f32,
+        by_[2] as f32,
+    ))
+}
+
+/// Invert a 3×3 matrix. Returns `None` on near-singular input.
+fn invert_3x3(m: &[[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+    let mut inv = [[0.0f64; 3]; 3];
+    inv[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) * inv_det;
+    inv[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) * inv_det;
+    inv[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) * inv_det;
+    inv[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) * inv_det;
+    inv[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) * inv_det;
+    inv[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) * inv_det;
+    inv[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) * inv_det;
+    inv[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) * inv_det;
+    inv[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) * inv_det;
+    Some(inv)
 }
 
 fn select_board_size(

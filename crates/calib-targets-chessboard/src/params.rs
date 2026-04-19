@@ -159,6 +159,136 @@ pub struct ChessboardParams {
     /// `None` (default) disables the gate for back-compat.
     #[serde(default)]
     pub max_local_homography_p95_px: Option<f32>,
+
+    /// Post-graph geometric-sanity cleanup parameters.
+    ///
+    /// These run **after** the neighbor graph is built and **before**
+    /// connected-component extraction. They drop edges that pass every
+    /// per-edge validator in isolation but violate graph-global planar-
+    /// grid invariants (asymmetric directed edges, bent Right/Left or
+    /// Up/Down chains, crossing edges).
+    #[serde(default)]
+    pub graph_cleanup: GraphCleanupParams,
+
+    /// Minimum size of a connected graph component to be promoted to a
+    /// `TargetDetection`. Components smaller than this are dropped as
+    /// chaff. When `None`, falls back to [`Self::min_corners`] for
+    /// back-compat.
+    #[serde(default)]
+    pub min_component_size: Option<usize>,
+
+    /// Phase 5 gap-fill parameters. After BFS + local-H prune, predict
+    /// missing `(i, j)` positions from labelled neighbors and attach
+    /// nearby strong corners.
+    #[serde(default)]
+    pub gap_fill: GapFillParams,
+}
+
+/// Phase 5 gap-fill: recover missing `(i, j)` positions whose neighbors
+/// are labelled.
+///
+/// After BFS + local-H prune, for each integer `(i, j)` in the
+/// bounding box of the labelled set, if enough labelled neighbors
+/// exist inside a `window_half`-cell window, fit a local affine
+/// `(i, j) → (x, y)` map, predict the missing pixel position, and
+/// search the strong-corner pool for the nearest unlabelled corner
+/// within `search_rel × local_step`. Attach if found.
+///
+/// Targets the "missing corner with all 4 neighbors detected" failure
+/// mode from `docs/120issues.txt`.
+#[non_exhaustive]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GapFillParams {
+    /// Whether the gap-fill pass runs.
+    #[serde(default = "default_true")]
+    pub enable: bool,
+    /// Window half-width in grid cells. `2` means labelled neighbors
+    /// are collected from a 5×5 window around the target `(i, j)`.
+    #[serde(default = "default_gap_window_half")]
+    pub window_half: i32,
+    /// Minimum labelled neighbors required for the affine fit. With
+    /// 2 parameters per axis (`a, b`) an affine needs 3 points
+    /// minimum; we require 4 by default for noise robustness.
+    #[serde(default = "default_gap_min_neighbors")]
+    pub min_neighbors: usize,
+    /// Search radius as a fraction of the local cell size. A candidate
+    /// strong corner must lie within `search_rel × local_step` of the
+    /// predicted position to be attached.
+    #[serde(default = "default_gap_search_rel")]
+    pub search_rel: f32,
+    /// Maximum refit iterations. Newly-attached corners enable further
+    /// gap-fill for their neighbors, so the pass iterates until no
+    /// further corners are attached (or the cap is reached).
+    #[serde(default = "default_gap_max_iters")]
+    pub max_iters: u32,
+}
+
+impl Default for GapFillParams {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            window_half: default_gap_window_half(),
+            min_neighbors: default_gap_min_neighbors(),
+            search_rel: default_gap_search_rel(),
+            max_iters: default_gap_max_iters(),
+        }
+    }
+}
+
+fn default_gap_window_half() -> i32 {
+    2
+}
+fn default_gap_min_neighbors() -> usize {
+    4
+}
+fn default_gap_search_rel() -> f32 {
+    0.4
+}
+fn default_gap_max_iters() -> u32 {
+    3
+}
+
+/// Knobs for the post-graph geometric-sanity cleanup passes.
+///
+/// All three passes default on because the cost is tiny and the wins
+/// on the 120-snap dataset are large: planarity kills cross-cell
+/// spurious edges, straightness kills bent L/R or U/D pairs that let
+/// BFS walk across visually-disconnected regions of the image, and
+/// symmetry kills one-sided "best candidate" edges where the reverse
+/// vote went elsewhere.
+#[non_exhaustive]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct GraphCleanupParams {
+    /// Drop directed edges whose reverse is missing.
+    #[serde(default = "default_true")]
+    pub enforce_symmetry: bool,
+    /// Drop the worse of each Right/Left or Up/Down pair whose chord
+    /// angle deviates from 180° by more than `max_straightness_deg`.
+    #[serde(default = "default_true")]
+    pub enforce_straightness: bool,
+    /// Drop the worse of each crossing edge pair.
+    #[serde(default = "default_true")]
+    pub enforce_planarity: bool,
+    /// Max allowed deviation (degrees) of a Right/Left or Up/Down chord
+    /// pair from 180°. Above this the pair is considered bent and the
+    /// worse edge is dropped. Default 15°.
+    #[serde(default = "default_max_straightness_deg")]
+    pub max_straightness_deg: f32,
+}
+
+impl Default for GraphCleanupParams {
+    fn default() -> Self {
+        Self {
+            enforce_symmetry: true,
+            enforce_straightness: true,
+            enforce_planarity: true,
+            max_straightness_deg: default_max_straightness_deg(),
+        }
+    }
+}
+
+fn default_max_straightness_deg() -> f32 {
+    15.0
 }
 
 /// Parameters for the local-homography residual prune (Phase B).
@@ -265,6 +395,9 @@ impl Default for ChessboardParams {
             enable_global_homography_prune: true,
             local_homography: LocalHomographyPruneParams::default(),
             max_local_homography_p95_px: None,
+            graph_cleanup: GraphCleanupParams::default(),
+            min_component_size: None,
+            gap_fill: GapFillParams::default(),
         }
     }
 }

@@ -130,6 +130,22 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 
 **MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
 
+## Local-Only Artifacts — Never Commit
+
+`bench_results/`, rendered overlays, per-frame JSONLs, aggregate JSONs,
+profiling dumps, sweep CSVs, and any similarly-generated data are
+**local-only** and must stay out of Git. These files are large, noisy in
+diffs, and image-heavy — they bloat the repo and contaminate history.
+
+- Write sweep / overlay output under `bench_results/`, `tmpdata/`, or a
+  local scratch directory that matches an existing `.gitignore` rule.
+- Do not `git add -A` / `git add .` inside directories that may contain
+  `bench_results/`, `.DS_Store`, or any sweep artifacts — stage files
+  individually.
+- If you discover bench/sweep files already tracked, untrack them with
+  `git rm --cached <path>` and add a `.gitignore` rule in the same
+  commit rather than silently leaving them in the tree.
+
 ## Pre-Release Quality Gates
 
 These checks must all pass before tagging a release. Several produce generated

@@ -8,6 +8,13 @@ stereo
 *.so
 testdata/charuco_detect_config_test.json
 
+# Benchmark / sweep artifacts — local-only, never commit.
+# Contains per-frame JSONLs, aggregate JSONs, rendered overlays, etc.
+bench_results/
+# macOS Finder metadata.
+.DS_Store
+**/.DS_Store
+
 # WASM build artifacts
 crates/calib-targets-wasm/pkg/
 demo/pkg/

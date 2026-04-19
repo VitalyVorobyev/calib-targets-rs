@@ -46,7 +46,8 @@ pub use gridgraph::{EdgeRejectReason, RejectionCounter};
 pub use io::{ChessboardDetectConfig, ChessboardDetectReport, ChessboardIoError};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{
-    ChessboardGraphMode, ChessboardParams, GridGraphParams, LocalHomographyPruneParams,
+    ChessboardGraphMode, ChessboardParams, GapFillParams, GraphCleanupParams, GridGraphParams,
+    LocalHomographyPruneParams,
 };
 pub use quality::{
     score_frame, score_frame_full, GridFrameMetrics, VisibleSubsetGate,

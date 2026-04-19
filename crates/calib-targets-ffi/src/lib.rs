@@ -1193,6 +1193,10 @@ fn convert_orientation_clustering_params(
             "orientation_clustering.min_peak_weight_fraction",
         )?,
         use_weights: flag_to_bool(params.use_weights, "orientation_clustering.use_weights")?,
+        // Phase 4: dual-axis clustering. Default off via FFI — an
+        // algorithmic improvement disabled until the FFI surface
+        // grows the knob.
+        use_dual_axis: false,
     })
 }
 
@@ -1264,6 +1268,17 @@ fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<Chess
         // FFI surface does not yet expose the Phase B post-prune quality
         // gate; default to disabled.
         max_local_homography_p95_px: None,
+        // FFI surface does not yet expose the Phase 2 graph-cleanup knobs;
+        // default is "all on" which is an algorithmic improvement with no
+        // ABI impact. Clients that want pre-Phase-2 behaviour can mutate
+        // the returned struct before using it.
+        graph_cleanup: calib_targets::chessboard::GraphCleanupParams::default(),
+        // FFI surface does not yet expose the Phase 1 min-component-size
+        // knob; `None` falls back to `min_corners` for back-compat.
+        min_component_size: None,
+        // FFI surface does not yet expose the Phase 5 gap-fill knobs.
+        // Default is "on" — an algorithm improvement with no ABI impact.
+        gap_fill: calib_targets::chessboard::GapFillParams::default(),
     })
 }
 

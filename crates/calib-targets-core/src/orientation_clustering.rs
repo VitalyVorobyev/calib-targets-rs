@@ -26,6 +26,13 @@ pub struct OrientationClusteringParams {
     pub min_peak_weight_fraction: f32,
     /// Whether to use weights when clustering.
     pub use_weights: bool,
+    /// Phase 4: feed both `Corner.axes[0]` and `Corner.axes[1]` into the
+    /// histogram, each weighted by `w / (1 + σ)` using the axis's own
+    /// sigma. Per-corner labels still come from `Corner.orientation` to
+    /// preserve back-compat with the legacy graph validator. Default
+    /// `false`.
+    #[serde(default)]
+    pub use_dual_axis: bool,
 }
 
 impl Default for OrientationClusteringParams {
@@ -37,6 +44,7 @@ impl Default for OrientationClusteringParams {
             outlier_threshold_deg: 30f32,
             min_peak_weight_fraction: 0.05, // 5% of total weight
             use_weights: true,
+            use_dual_axis: false,
         }
     }
 }
@@ -251,14 +259,35 @@ fn build_smoothed_histogram(
     for c in corners {
         let t = wrap_angle_pi(c.orientation);
         let bin = angle_to_bin(t, params.num_bins);
-        let w = if params.use_weights {
+        // Single-axis pathway: vote once with full weight at `orientation`.
+        // `corner_bins` always follows this legacy assignment so downstream
+        // label-by-bin code stays correct even under dual-axis histograms.
+        corner_bins.push(bin);
+
+        let base_w = if params.use_weights {
             c.strength.max(0.0)
         } else {
             1.0
         };
-        hist[bin] += w;
-        total_weight += w;
-        corner_bins.push(bin);
+
+        if params.use_dual_axis {
+            // Phase 4: drop the single `orientation` vote and replace with
+            // two separate votes, one per axis, each weighted by its own
+            // sigma (`w / (1 + σ)` — sharp axes vote stronger). axes[0]
+            // typically equals `orientation` so we do not double-count;
+            // axes[1] brings the orthogonal peak which single-axis mode
+            // ignores.
+            for axis in &c.axes {
+                let at = wrap_angle_pi(axis.angle);
+                let ab = angle_to_bin(at, params.num_bins);
+                let aw = base_w / (1.0 + axis.sigma.max(0.0));
+                hist[ab] += aw;
+                total_weight += aw;
+            }
+        } else {
+            hist[bin] += base_w;
+            total_weight += base_w;
+        }
     }
 
     if total_weight <= 0.0 {
