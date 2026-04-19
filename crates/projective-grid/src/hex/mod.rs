@@ -17,6 +17,7 @@ pub mod mesh;
 pub mod rectify;
 pub mod smoothness;
 pub mod traverse;
+pub mod validators;
 
 pub use alignment::GRID_TRANSFORMS_D6;
 pub use direction::{HexDirection, HexNodeNeighbor};
@@ -25,3 +26,4 @@ pub use mesh::{AffineTransform2D, HexGridHomographyMesh, HexMeshError};
 pub use rectify::{HexGridHomography, HexRectifyError};
 pub use smoothness::{hex_find_inconsistent_corners, hex_predict_grid_position};
 pub use traverse::{hex_assign_grid_coordinates, hex_connected_components};
+pub use validators::SpatialHexValidator;

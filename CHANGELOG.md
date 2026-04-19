@@ -6,6 +6,148 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0]
+
+Coordinated workspace release that lands the **invariant-first
+chessboard detector rewrite**: 119 / 120 detections with 0 wrong
+`(i, j)` labels on a private regression set of 120 frames with
+non-negligible lens distortion and motion blur. This release breaks
+the old chessboard API wholesale (rename + flat params shape), hoists
+the pattern-agnostic pieces into `projective-grid` as a first-class
+standalone library, reshapes the C ABI to match, and refreshes every
+book chapter and crate README for the new surface. Workspace minor-
+bumps in lockstep: every crate publishes at `0.7.0`.
+
+### Changed — breaking
+
+- **Chessboard detector rewrite.** The prior `calib-targets-chessboard`
+  implementation (graph-based, with nested `GridGraphParams`,
+  `LocalHomographyPruneParams`, `GraphCleanupParams`,
+  `GapFillParams`, `OrientationClusteringParams`) is replaced by the
+  invariant-first detector. Type names change from
+  `ChessboardDetector` / `ChessboardParams` /
+  `ChessboardDetectionResult` to `Detector` / `DetectorParams` /
+  `Detection`. `DetectorParams` is flat — 30 tuning fields covering
+  the 8-stage pipeline (pre-filter, clustering, cell size, seed,
+  grow, validate, boosters, output gates). The detector enforces two
+  hard invariants on its output: no duplicate `(i, j)` labels, and
+  the bounding-box minimum rebased to `(0, 0)` with `(0, 0)` sitting
+  at the **visual top-left** of the detected grid (`+i` right, `+j`
+  down).
+- **Facade surface update.**
+  `calib_targets::detect::detect_chessboard` now takes
+  `&DetectorParams`. New helpers:
+  `detect_chessboard_all` (multi-component, same-board pieces),
+  `detect_chessboard_best` (3-config sweep), and
+  `detect_chessboard_debug` (full per-stage `DebugFrame`).
+- **ChArUco chessboard field.** `CharucoParams.chessboard` is now
+  `DetectorParams`. Nested `graph` / `graph_cleanup` / `gap_fill` /
+  `local_homography` sub-fields are removed.
+- **C ABI reshape (breaking — `publish = false`).**
+  `ct_chessboard_params_t` is reshaped to the flat 30-field layout
+  mirroring `DetectorParams`. Removed:
+  `ct_grid_graph_params_t`, `ct_orientation_clustering_params_t`,
+  `min_corners`, `expected_rows`, `expected_cols`,
+  `completeness_threshold`, `use_orientation_clustering`,
+  `orientation_clustering_params`, `graph`. The chessboard result
+  struct replaces `has_orientations` / `orientation_0` /
+  `orientation_1` with always-populated `grid_direction_0_rad` /
+  `grid_direction_1_rad` / `cell_size`. New initialiser
+  `ct_chessboard_params_init_default` populates a valid default-
+  configured value so C callers don't hand-fill 30 fields.
+- **Python binding field shape.** The Python-side
+  `ChessboardParams` class keeps its name but its fields now mirror
+  the new flat `DetectorParams` (no more nested `graph` /
+  `graph_cleanup` / `gap_fill` / `local_homography` sub-structs).
+
+### Added
+
+- **Standalone `projective-grid` crate.** Pattern-agnostic
+  grid-detection primitives, usable without any calibration
+  dependencies:
+  - `projective_grid::square::validate` — line-collinearity + local-
+    H-residual validator with attribution rules.
+  - `projective_grid::circular_stats` — `wrap_pi`,
+    `angular_dist_pi`, `smooth_circular_5`, plateau-aware
+    `pick_two_peaks`, double-angle `refine_2means_double_angle`.
+  - `projective_grid::square::grow` — generic BFS grid grower
+    behind a `GrowValidator` trait. Chessboard's detector plugs in a
+    chess-parity impl; non-calibration consumers supply their own.
+  - `projective_grid::square::seed` — `Seed` / `SeedOutput` data
+    types, `seed_cell_size`, `seed_homography`, and the pure-geometry
+    `seed_has_midpoint_violation` helper that rejects 2× spacing
+    mislabels.
+- **testdata regression harness.**
+  `crates/calib-targets-chessboard/tests/testdata_regression.rs` +
+  `testdata/chessboard_regression_baselines.json` gate detection on
+  the broader testdata set (mid, large, small0..5, and 10
+  `puzzleboard_reference/example*.png` images) with per-image
+  minimums + hard invariants (no duplicate labels, origin rebased,
+  `(0, 0)` at visual top-left). Runs in every `cargo test`
+  invocation.
+- **Single-image inspection pipeline.** New
+  `calib-targets-chessboard/examples/debug_single.rs` emits a per-
+  image `CompactFrame` JSON; the Python overlay at
+  `crates/calib-targets-py/examples/overlay_chessboard.py` grows a
+  `--single-image` mode. `scripts/chessboard_regression_overlays.sh`
+  drives the 19-image set end-to-end.
+- **Book chapters.** New `book/src/projective_grid.md`. Rewrites of
+  `book/src/chessboard.md` (folded-in algorithm spec),
+  `pipeline.md`, `tuning.md`, `troubleshooting.md`,
+  `example_chessboard.md`, `roadmap.md`.
+
+### Fixed
+
+- **Grid origin.** `(0, 0)` now always lands at the visually top-
+  left corner of the detected grid (`+i` right, `+j` down in image
+  pixels). Previously the axis assignment was tied to the seed's
+  internal slot convention, so `(0, 0)` could appear anywhere on the
+  board.
+- **Plateau-aware peak detection.** Clustering no longer fails on
+  perfectly rectilinear boards (synthetic puzzleboards at
+  `testdata/puzzleboard_reference/example8.png` /
+  `example9.png`) where a physical direction's mass splits across a
+  histogram bin boundary and the smoothed peak becomes flat-topped.
+- **`min_peak_weight_fraction` default 0.05 → 0.02.** On noisy real-
+  world ChArUco snaps (`small1`, `small3`, `small4` from the
+  testdata set), the real per-peak weight on fine 2° bins is ~2-3%
+  of total vote weight, below the old threshold. The new default
+  stays comfortably above pure-noise bins.
+- **Soft convergence for oscillating validation.** The
+  validate→blacklist→regrow loop now accepts a "near-converged"
+  state when the most recent iteration's new blacklist is ≤ 2
+  corners and the labelled count has reached `min_labeled_corners`.
+  This unblocks `testdata/puzzleboard_reference/example1.png` where
+  the loop oscillated on 2–4 borderline-outlier corners and
+  previously exhausted `max_validation_iters` without emitting.
+- **`line_tol_rel` default 0.15 → 0.18.** Under extreme perspective
+  on dense boards (`testdata/puzzleboard_reference/example2.png`),
+  legitimate inner corners near the near-camera edge were blacklisted
+  because their perpendicular residual against a long-column
+  straight-line fit slightly exceeded the old tolerance. The
+  invariant-first contract still holds — line-failure is only one of
+  several independent blacklist conditions.
+- **`max_validation_iters` default 3 → 6.** Absorbs wider real-
+  world variance on dense boards.
+- Three post-swap regressions in `calib-targets-charuco/tests/
+  regression.rs` (`detects_charuco_on_small_png`,
+  `detects_plain_chessboard_on_mid_png`) and
+  `calib-targets-puzzleboard/tests/end_to_end.rs`
+  (`fixed_board_agrees_across_disjoint_partial_views`) now pass and
+  are un-ignored.
+
+### Infrastructure
+
+- **Privatedata split.** The private 120-frame regression benchmark
+  is copyrighted customer material and is not committed to the
+  repository. Tests and benches read it from `privatedata/` when it
+  is available and skip (never panic) when it is not, so CI on a
+  fresh public checkout passes without any private asset.
+  `.gitignore` adds `privatedata`.
+- Regenerated FFI headers
+  (`crates/calib-targets-ffi/include/calib_targets_ffi.h`) match the
+  new struct layout.
+
 ## [0.6.0]
 
 Coordinated workspace release that ships the new

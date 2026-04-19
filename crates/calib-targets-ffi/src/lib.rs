@@ -25,13 +25,17 @@ use calib_targets::charuco::{
     CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetector, CharucoParams,
     MarkerLayout,
 };
-use calib_targets::chessboard::{ChessboardDetector, ChessboardParams, GridGraphParams};
+use calib_targets::chessboard::{
+    Detector as ChessboardDetector, DetectorParams as ChessboardDetectorParams,
+};
 use calib_targets::core::{
     ChessCornerParams as ChessParams, CoarseToFineParams, GrayImageView, GridAlignment, GridCoords,
     LabeledCorner, PyramidParams, RefinerKindConfig, TargetDetection,
 };
 use calib_targets::detect;
-use calib_targets::detect::{CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig};
+use calib_targets::detect::{
+    CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig, UpscaleConfig,
+};
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
     MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
@@ -82,6 +86,11 @@ pub type ct_refiner_kind_t = u32;
 pub const CT_REFINER_KIND_CENTER_OF_MASS: ct_refiner_kind_t = 1;
 pub const CT_REFINER_KIND_FORSTNER: ct_refiner_kind_t = 2;
 pub const CT_REFINER_KIND_SADDLE_POINT: ct_refiner_kind_t = 3;
+
+/// Fixed upscaling mode identifier type for ChESS pre-detection upscaling.
+pub type ct_upscale_mode_t = u32;
+pub const CT_UPSCALE_MODE_DISABLED: ct_upscale_mode_t = 0;
+pub const CT_UPSCALE_MODE_FIXED: ct_upscale_mode_t = 1;
 
 /// Fixed board marker-layout identifier type.
 pub type ct_marker_layout_t = u32;
@@ -140,6 +149,7 @@ impl ct_optional_u32_t {
         }
     }
 
+    #[allow(dead_code)]
     fn to_option(self, field: &str) -> FfiResult<Option<u32>> {
         match self.has_value {
             CT_FALSE => Ok(None),
@@ -365,13 +375,18 @@ pub struct ct_circle_match_t {
 }
 
 /// Chessboard detection header.
+///
+/// The detector always populates `grid_direction_0_rad` and
+/// `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
+/// discovered by the chessboard detector's clustering stage) plus
+/// `cell_size` in pixels.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_result_t {
     pub detection: ct_target_detection_t,
-    pub has_orientations: u32,
-    pub orientation_0: f32,
-    pub orientation_1: f32,
+    pub grid_direction_0_rad: f32,
+    pub grid_direction_1_rad: f32,
+    pub cell_size: f32,
 }
 
 /// ChArUco detection header.
@@ -478,48 +493,78 @@ pub struct ct_coarse_to_fine_params_t {
     pub merge_radius: f32,
 }
 
+/// Optional ChESS pre-detection upscaling configuration.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_upscale_config_t {
+    pub mode: ct_upscale_mode_t,
+    pub factor: u32,
+}
+
 /// Shared ChESS configuration for raw corner detection.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chess_config_t {
     pub params: ct_chess_params_t,
     pub multiscale: ct_coarse_to_fine_params_t,
-}
-
-/// Orientation clustering parameters for chessboard-family detectors.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ct_orientation_clustering_params_t {
-    pub num_bins: usize,
-    pub max_iters: usize,
-    pub peak_min_separation_deg: f32,
-    pub outlier_threshold_deg: f32,
-    pub min_peak_weight_fraction: f32,
-    pub use_weights: u32,
-}
-
-/// Grid-graph search parameters.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ct_grid_graph_params_t {
-    pub min_spacing_pix: f32,
-    pub max_spacing_pix: f32,
-    pub k_neighbors: usize,
-    pub orientation_tolerance_deg: f32,
+    pub upscale: ct_upscale_config_t,
 }
 
 /// Chessboard detector parameters.
+///
+/// Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+/// (flat shape — no nested graph / orientation-clustering sub-structs
+/// like the pre-v0.7.0 ABI). Use [`ct_chessboard_params_init_default`]
+/// to populate a valid default-configured value rather than struct-
+/// literal zero-initialisation.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_params_t {
+    // Stage 1 — pre-filter
     pub min_corner_strength: f32,
-    pub min_corners: usize,
-    pub expected_rows: ct_optional_u32_t,
-    pub expected_cols: ct_optional_u32_t,
-    pub completeness_threshold: f32,
-    pub use_orientation_clustering: u32,
-    pub orientation_clustering_params: ct_orientation_clustering_params_t,
-    pub graph: ct_grid_graph_params_t,
+    pub max_fit_rms_ratio: f32,
+
+    // Stages 2–3 — axes clustering
+    pub num_bins: usize,
+    pub max_iters_2means: usize,
+    pub cluster_tol_deg: f32,
+    pub peak_min_separation_deg: f32,
+    pub min_peak_weight_fraction: f32,
+
+    // Stage 4 — caller cell-size hint (optional)
+    pub cell_size_hint: ct_optional_f32_t,
+
+    // Stage 5 — seed
+    pub seed_edge_tol: f32,
+    pub seed_axis_tol_deg: f32,
+    pub seed_close_tol: f32,
+
+    // Stage 6 — grow
+    pub attach_search_rel: f32,
+    pub attach_axis_tol_deg: f32,
+    pub attach_ambiguity_factor: f32,
+    pub step_tol: f32,
+    pub edge_axis_tol_deg: f32,
+
+    // Stage 7 — validate
+    pub line_tol_rel: f32,
+    pub projective_line_tol_rel: f32,
+    pub line_min_members: usize,
+    pub local_h_tol_rel: f32,
+    pub max_validation_iters: u32,
+
+    // Stage 8 — recall boosters
+    pub enable_line_extrapolation: u32,
+    pub enable_gap_fill: u32,
+    pub enable_component_merge: u32,
+    pub enable_weak_cluster_rescue: u32,
+    pub weak_cluster_tol_deg: f32,
+    pub component_merge_min_boundary_pairs: usize,
+    pub max_booster_iters: u32,
+
+    // Output gates
+    pub min_labeled_corners: usize,
+    pub max_components: u32,
 }
 
 /// Full create-time configuration for the chessboard detector handle.
@@ -933,6 +978,7 @@ fn require_fraction(value: f32, field: &str) -> FfiResult<f32> {
     Ok(value)
 }
 
+#[allow(dead_code)]
 fn require_optional_positive_u32(value: Option<u32>, field: &str) -> FfiResult<Option<u32>> {
     if let Some(value) = value {
         if value == 0 {
@@ -1117,6 +1163,21 @@ fn convert_pyramid_params(params: &ct_pyramid_params_t) -> FfiResult<PyramidPara
     })
 }
 
+fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConfig> {
+    let cfg = match config.mode {
+        CT_UPSCALE_MODE_DISABLED => UpscaleConfig::disabled(),
+        CT_UPSCALE_MODE_FIXED => UpscaleConfig::fixed(config.factor),
+        other => {
+            return Err(FfiError::config_error(format!(
+                "chess.upscale.mode must be a valid ct_upscale_mode_t constant, got {other}"
+            )))
+        }
+    };
+    cfg.validate()
+        .map_err(|err| FfiError::config_error(format!("chess.upscale.{err}")))?;
+    Ok(cfg)
+}
+
 fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
     let params = convert_chess_params(&config.params)?;
     let multiscale = CoarseToFineParams {
@@ -1128,95 +1189,173 @@ fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
         )?,
     };
 
-    Ok(ChessConfig::from_parts(&params, &multiscale))
+    let mut chess = ChessConfig::from_parts(&params, &multiscale);
+    chess.upscale = convert_upscale_config(&config.upscale)?;
+    Ok(chess)
 }
 
-fn convert_orientation_clustering_params(
-    params: &ct_orientation_clustering_params_t,
-) -> FfiResult<calib_targets::core::OrientationClusteringParams> {
+fn convert_chessboard_params(
+    params: &ct_chessboard_params_t,
+) -> FfiResult<ChessboardDetectorParams> {
     if params.num_bins < 4 {
+        return Err(FfiError::config_error("chessboard.num_bins must be >= 4"));
+    }
+    if params.max_iters_2means == 0 {
         return Err(FfiError::config_error(
-            "orientation_clustering.num_bins must be >= 4",
+            "chessboard.max_iters_2means must be > 0",
         ));
     }
-    if params.max_iters == 0 {
+    if params.line_min_members < 2 {
         return Err(FfiError::config_error(
-            "orientation_clustering.max_iters must be > 0",
+            "chessboard.line_min_members must be >= 2",
         ));
     }
-    Ok(calib_targets::core::OrientationClusteringParams {
-        num_bins: params.num_bins,
-        max_iters: params.max_iters,
-        peak_min_separation_deg: require_nonnegative(
-            params.peak_min_separation_deg,
-            "orientation_clustering.peak_min_separation_deg",
-        )?,
-        outlier_threshold_deg: require_nonnegative(
-            params.outlier_threshold_deg,
-            "orientation_clustering.outlier_threshold_deg",
-        )?,
-        min_peak_weight_fraction: require_fraction(
-            params.min_peak_weight_fraction,
-            "orientation_clustering.min_peak_weight_fraction",
-        )?,
-        use_weights: flag_to_bool(params.use_weights, "orientation_clustering.use_weights")?,
-    })
+    if params.max_validation_iters == 0 {
+        return Err(FfiError::config_error(
+            "chessboard.max_validation_iters must be > 0",
+        ));
+    }
+    if params.max_components == 0 {
+        return Err(FfiError::config_error(
+            "chessboard.max_components must be > 0",
+        ));
+    }
+    // `DetectorParams` is `#[non_exhaustive]`; start from `Default`
+    // and overwrite every field we expose over the ABI. New fields
+    // added in future Rust releases keep their defaults until the
+    // C ABI explicitly surfaces them.
+    let mut out = ChessboardDetectorParams::default();
+    out.min_corner_strength =
+        require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
+    out.max_fit_rms_ratio =
+        require_finite(params.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
+    out.num_bins = params.num_bins;
+    out.max_iters_2means = params.max_iters_2means;
+    out.cluster_tol_deg =
+        require_nonnegative(params.cluster_tol_deg, "chessboard.cluster_tol_deg")?;
+    out.peak_min_separation_deg = require_nonnegative(
+        params.peak_min_separation_deg,
+        "chessboard.peak_min_separation_deg",
+    )?;
+    out.min_peak_weight_fraction = require_fraction(
+        params.min_peak_weight_fraction,
+        "chessboard.min_peak_weight_fraction",
+    )?;
+    out.cell_size_hint = params
+        .cell_size_hint
+        .to_option("chessboard.cell_size_hint")?;
+    out.seed_edge_tol = require_nonnegative(params.seed_edge_tol, "chessboard.seed_edge_tol")?;
+    out.seed_axis_tol_deg =
+        require_nonnegative(params.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
+    out.seed_close_tol = require_nonnegative(params.seed_close_tol, "chessboard.seed_close_tol")?;
+    out.attach_search_rel =
+        require_positive(params.attach_search_rel, "chessboard.attach_search_rel")?;
+    out.attach_axis_tol_deg =
+        require_nonnegative(params.attach_axis_tol_deg, "chessboard.attach_axis_tol_deg")?;
+    out.attach_ambiguity_factor = require_positive(
+        params.attach_ambiguity_factor,
+        "chessboard.attach_ambiguity_factor",
+    )?;
+    out.step_tol = require_nonnegative(params.step_tol, "chessboard.step_tol")?;
+    out.edge_axis_tol_deg =
+        require_nonnegative(params.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
+    out.line_tol_rel = require_nonnegative(params.line_tol_rel, "chessboard.line_tol_rel")?;
+    out.projective_line_tol_rel = require_nonnegative(
+        params.projective_line_tol_rel,
+        "chessboard.projective_line_tol_rel",
+    )?;
+    out.line_min_members = params.line_min_members;
+    out.local_h_tol_rel =
+        require_nonnegative(params.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
+    out.max_validation_iters = params.max_validation_iters;
+    out.enable_line_extrapolation = flag_to_bool(
+        params.enable_line_extrapolation,
+        "chessboard.enable_line_extrapolation",
+    )?;
+    out.enable_gap_fill = flag_to_bool(params.enable_gap_fill, "chessboard.enable_gap_fill")?;
+    out.enable_component_merge = flag_to_bool(
+        params.enable_component_merge,
+        "chessboard.enable_component_merge",
+    )?;
+    out.enable_weak_cluster_rescue = flag_to_bool(
+        params.enable_weak_cluster_rescue,
+        "chessboard.enable_weak_cluster_rescue",
+    )?;
+    out.weak_cluster_tol_deg = require_nonnegative(
+        params.weak_cluster_tol_deg,
+        "chessboard.weak_cluster_tol_deg",
+    )?;
+    out.component_merge_min_boundary_pairs = params.component_merge_min_boundary_pairs;
+    out.max_booster_iters = params.max_booster_iters;
+    out.min_labeled_corners = params.min_labeled_corners;
+    out.max_components = params.max_components;
+    Ok(out)
 }
 
-fn convert_grid_graph_params(params: &ct_grid_graph_params_t) -> FfiResult<GridGraphParams> {
-    let min_spacing = require_positive(params.min_spacing_pix, "graph.min_spacing_pix")?;
-    let max_spacing = require_positive(params.max_spacing_pix, "graph.max_spacing_pix")?;
-    if max_spacing < min_spacing {
-        return Err(FfiError::config_error(
-            "graph.max_spacing_pix must be >= graph.min_spacing_pix",
-        ));
-    }
-    if params.k_neighbors == 0 {
-        return Err(FfiError::config_error("graph.k_neighbors must be > 0"));
-    }
-    Ok(GridGraphParams {
-        min_spacing_pix: min_spacing,
-        max_spacing_pix: max_spacing,
-        k_neighbors: params.k_neighbors,
-        orientation_tolerance_deg: require_positive(
-            params.orientation_tolerance_deg,
-            "graph.orientation_tolerance_deg",
-        )?,
-    })
+/// Return a `ct_chessboard_params_t` populated from
+/// `DetectorParams::default()`. Exposed as a C symbol so callers don't
+/// need to hand-fill 30+ fields.
+/// # Safety
+/// `out` must be a valid, properly aligned pointer to a writable
+/// `ct_chessboard_params_t` storage location. `NULL` is allowed and
+/// is a no-op. The caller retains ownership of the storage.
+#[no_mangle]
+pub unsafe extern "C" fn ct_chessboard_params_init_default(out: *mut ct_chessboard_params_t) {
+    let Some(out) = (unsafe { out.as_mut() }) else {
+        return;
+    };
+    *out = chessboard_params_default_values();
 }
 
-fn convert_chessboard_params(params: &ct_chessboard_params_t) -> FfiResult<ChessboardParams> {
-    if params.min_corners == 0 {
-        return Err(FfiError::config_error("chessboard.min_corners must be > 0"));
+fn chessboard_params_default_values() -> ct_chessboard_params_t {
+    let d = ChessboardDetectorParams::default();
+    ct_chessboard_params_t {
+        min_corner_strength: d.min_corner_strength,
+        max_fit_rms_ratio: d.max_fit_rms_ratio,
+        num_bins: d.num_bins,
+        max_iters_2means: d.max_iters_2means,
+        cluster_tol_deg: d.cluster_tol_deg,
+        peak_min_separation_deg: d.peak_min_separation_deg,
+        min_peak_weight_fraction: d.min_peak_weight_fraction,
+        cell_size_hint: match d.cell_size_hint {
+            Some(v) => ct_optional_f32_t::some(v),
+            None => ct_optional_f32_t::none(),
+        },
+        seed_edge_tol: d.seed_edge_tol,
+        seed_axis_tol_deg: d.seed_axis_tol_deg,
+        seed_close_tol: d.seed_close_tol,
+        attach_search_rel: d.attach_search_rel,
+        attach_axis_tol_deg: d.attach_axis_tol_deg,
+        attach_ambiguity_factor: d.attach_ambiguity_factor,
+        step_tol: d.step_tol,
+        edge_axis_tol_deg: d.edge_axis_tol_deg,
+        line_tol_rel: d.line_tol_rel,
+        projective_line_tol_rel: d.projective_line_tol_rel,
+        line_min_members: d.line_min_members,
+        local_h_tol_rel: d.local_h_tol_rel,
+        max_validation_iters: d.max_validation_iters,
+        enable_line_extrapolation: if d.enable_line_extrapolation {
+            CT_TRUE
+        } else {
+            CT_FALSE
+        },
+        enable_gap_fill: if d.enable_gap_fill { CT_TRUE } else { CT_FALSE },
+        enable_component_merge: if d.enable_component_merge {
+            CT_TRUE
+        } else {
+            CT_FALSE
+        },
+        enable_weak_cluster_rescue: if d.enable_weak_cluster_rescue {
+            CT_TRUE
+        } else {
+            CT_FALSE
+        },
+        weak_cluster_tol_deg: d.weak_cluster_tol_deg,
+        component_merge_min_boundary_pairs: d.component_merge_min_boundary_pairs,
+        max_booster_iters: d.max_booster_iters,
+        min_labeled_corners: d.min_labeled_corners,
+        max_components: d.max_components,
     }
-    Ok(ChessboardParams {
-        chess: ChessConfig::default(),
-        min_corner_strength: require_finite(
-            params.min_corner_strength,
-            "chessboard.min_corner_strength",
-        )?,
-        min_corners: params.min_corners,
-        expected_rows: require_optional_positive_u32(
-            params.expected_rows.to_option("chessboard.expected_rows")?,
-            "chessboard.expected_rows",
-        )?,
-        expected_cols: require_optional_positive_u32(
-            params.expected_cols.to_option("chessboard.expected_cols")?,
-            "chessboard.expected_cols",
-        )?,
-        completeness_threshold: require_fraction(
-            params.completeness_threshold,
-            "chessboard.completeness_threshold",
-        )?,
-        use_orientation_clustering: flag_to_bool(
-            params.use_orientation_clustering,
-            "chessboard.use_orientation_clustering",
-        )?,
-        orientation_clustering_params: convert_orientation_clustering_params(
-            &params.orientation_clustering_params,
-        )?,
-        graph: convert_grid_graph_params(&params.graph)?,
-    })
 }
 
 fn convert_scan_decode_config(params: &ct_scan_decode_config_t) -> FfiResult<ScanDecodeConfig> {
@@ -1452,9 +1591,9 @@ fn map_charuco_detect_error(err: CharucoDetectError) -> FfiError {
         CharucoDetectError::AlignmentFailed { inliers } => FfiError::not_found(format!(
             "marker-to-board alignment failed during ChArUco detection (inliers={inliers})"
         )),
-        CharucoDetectError::MeshWarp(err) => {
-            FfiError::not_found(format!("mesh warp failed during ChArUco detection: {err}"))
-        }
+        // `CharucoDetectError` is `#[non_exhaustive]`; any variant
+        // not enumerated above (mesh-warp failures, etc.) falls
+        // through to the generic `ChArUco detection failed` status.
         _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
     }
 }
@@ -1760,7 +1899,7 @@ unsafe fn chessboard_detector_detect_impl(
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
 
-    let Some(detection) = detector.detector.detect_from_corners(&corners) else {
+    let Some(detection) = detector.detector.detect(&corners) else {
         unsafe {
             write_required_len(out_corners_len, 0, "out_corners_len")?;
             write_optional_result(out_result, ct_chessboard_result_t::default());
@@ -1769,20 +1908,16 @@ unsafe fn chessboard_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
+        .target
         .corners
         .iter()
         .map(labeled_corner_to_ffi)
         .collect();
     let result = ct_chessboard_result_t {
-        detection: build_detection_header(&detection.detection),
-        has_orientations: if detection.orientations.is_some() {
-            CT_TRUE
-        } else {
-            CT_FALSE
-        },
-        orientation_0: detection.orientations.map(|value| value[0]).unwrap_or(0.0),
-        orientation_1: detection.orientations.map(|value| value[1]).unwrap_or(0.0),
+        detection: build_detection_header(&detection.target),
+        grid_direction_0_rad: detection.grid_directions[0],
+        grid_direction_1_rad: detection.grid_directions[1],
+        cell_size: detection.cell_size,
     };
 
     unsafe {
@@ -2506,38 +2641,23 @@ mod tests {
                 refinement_radius: 3,
                 merge_radius: 3.0,
             },
+            upscale: ct_upscale_config_t {
+                mode: CT_UPSCALE_MODE_DISABLED,
+                factor: 2,
+            },
         }
     }
 
-    fn default_orientation_clustering() -> ct_orientation_clustering_params_t {
-        ct_orientation_clustering_params_t {
-            num_bins: 90,
-            max_iters: 10,
-            peak_min_separation_deg: 10.0,
-            outlier_threshold_deg: 30.0,
-            min_peak_weight_fraction: 0.05,
-            use_weights: CT_TRUE,
-        }
+    fn chessboard_params_with_strength(strength: f32) -> ct_chessboard_params_t {
+        let mut p = chessboard_params_default_values();
+        p.min_corner_strength = strength;
+        p
     }
 
     fn chessboard_config_mid_png() -> ct_chessboard_detector_config_t {
         ct_chessboard_detector_config_t {
             chess: default_shared_chess_config(),
-            chessboard: ct_chessboard_params_t {
-                min_corner_strength: 0.5,
-                min_corners: 20,
-                expected_rows: ct_optional_u32_t::some(7),
-                expected_cols: ct_optional_u32_t::some(11),
-                completeness_threshold: 0.9,
-                use_orientation_clustering: CT_TRUE,
-                orientation_clustering_params: default_orientation_clustering(),
-                graph: ct_grid_graph_params_t {
-                    min_spacing_pix: 10.0,
-                    max_spacing_pix: 120.0,
-                    k_neighbors: 8,
-                    orientation_tolerance_deg: 22.5,
-                },
-            },
+            chessboard: chessboard_params_with_strength(0.5),
         }
     }
 
@@ -2546,21 +2666,7 @@ mod tests {
             chess: default_shared_chess_config(),
             detector: ct_charuco_detector_params_t {
                 px_per_square: 60.0,
-                chessboard: ct_chessboard_params_t {
-                    min_corner_strength: 0.0,
-                    min_corners: 10,
-                    expected_rows: ct_optional_u32_t::none(),
-                    expected_cols: ct_optional_u32_t::none(),
-                    completeness_threshold: 0.02,
-                    use_orientation_clustering: CT_TRUE,
-                    orientation_clustering_params: default_orientation_clustering(),
-                    graph: ct_grid_graph_params_t {
-                        min_spacing_pix: 5.0,
-                        max_spacing_pix: 60.0,
-                        k_neighbors: 8,
-                        orientation_tolerance_deg: 22.5,
-                    },
-                },
+                chessboard: chessboard_params_default_values(),
                 charuco: ct_charuco_board_spec_t {
                     rows: 22,
                     cols: 22,
@@ -2617,28 +2723,7 @@ mod tests {
                         },
                     ],
                 },
-                chessboard: ct_chessboard_params_t {
-                    min_corner_strength: 0.2,
-                    min_corners: 50,
-                    expected_rows: ct_optional_u32_t::some(22),
-                    expected_cols: ct_optional_u32_t::some(22),
-                    completeness_threshold: 0.05,
-                    use_orientation_clustering: CT_TRUE,
-                    orientation_clustering_params: ct_orientation_clustering_params_t {
-                        num_bins: 90,
-                        max_iters: 10,
-                        peak_min_separation_deg: 15.0,
-                        outlier_threshold_deg: 30.0,
-                        min_peak_weight_fraction: 0.2,
-                        use_weights: CT_TRUE,
-                    },
-                    graph: ct_grid_graph_params_t {
-                        min_spacing_pix: 20.0,
-                        max_spacing_pix: 100.0,
-                        k_neighbors: 8,
-                        orientation_tolerance_deg: 22.5,
-                    },
-                },
+                chessboard: chessboard_params_with_strength(0.2),
                 circle_score: ct_circle_score_params_t {
                     patch_size: 64,
                     diameter_frac: 0.5,
@@ -2667,21 +2752,7 @@ mod tests {
             chess,
             detector: ct_puzzleboard_params_t {
                 px_per_square: 60.0,
-                chessboard: ct_chessboard_params_t {
-                    min_corner_strength: 0.1,
-                    min_corners: 20,
-                    expected_rows: ct_optional_u32_t::some(9),
-                    expected_cols: ct_optional_u32_t::some(9),
-                    completeness_threshold: 0.02,
-                    use_orientation_clustering: CT_TRUE,
-                    orientation_clustering_params: default_orientation_clustering(),
-                    graph: ct_grid_graph_params_t {
-                        min_spacing_pix: 8.0,
-                        max_spacing_pix: 600.0,
-                        k_neighbors: 8,
-                        orientation_tolerance_deg: 22.5,
-                    },
-                },
+                chessboard: chessboard_params_with_strength(0.1),
                 board: ct_puzzleboard_spec_t {
                     rows: 10,
                     cols: 10,
@@ -2707,6 +2778,30 @@ mod tests {
                 },
             },
         }
+    }
+
+    #[test]
+    fn shared_chess_config_converts_upscale_settings() {
+        let mut config = default_shared_chess_config();
+        config.upscale = ct_upscale_config_t {
+            mode: CT_UPSCALE_MODE_FIXED,
+            factor: 2,
+        };
+
+        let converted = convert_chess_config(&config).unwrap();
+        assert_eq!(converted.upscale, UpscaleConfig::fixed(2));
+        assert_eq!(converted.upscale.effective_factor(), 2);
+    }
+
+    #[test]
+    fn shared_chess_config_rejects_invalid_upscale_factor() {
+        let mut config = default_shared_chess_config();
+        config.upscale = ct_upscale_config_t {
+            mode: CT_UPSCALE_MODE_FIXED,
+            factor: 1,
+        };
+
+        assert!(convert_chess_config(&config).is_err());
     }
 
     #[test]

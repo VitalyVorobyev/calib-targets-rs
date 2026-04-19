@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use nalgebra::Point2;
 
-use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
+use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
 use calib_targets_core::{
     Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind,
 };
@@ -15,19 +15,15 @@ use calib_targets_core::{
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {
     params: MarkerBoardParams,
-    chessboard_detector: ChessboardDetector,
+    chessboard_detector: ChessDetector,
 }
 
 impl MarkerBoardDetector {
-    pub fn new(mut params: MarkerBoardParams) -> Self {
-        if params.chessboard.expected_rows.is_none() {
-            params.chessboard.expected_rows = Some(params.layout.rows);
-        }
-        if params.chessboard.expected_cols.is_none() {
-            params.chessboard.expected_cols = Some(params.layout.cols);
-        }
-
-        let chessboard_detector = ChessboardDetector::new(params.chessboard.clone());
+    pub fn new(params: MarkerBoardParams) -> Self {
+        // chessboard detector is scale-invariant — it does not need
+        // expected_rows/cols hints. The marker circles supply the geometry
+        // constraint.
+        let chessboard_detector = ChessDetector::new(params.chessboard.clone());
 
         Self {
             params,
@@ -41,7 +37,7 @@ impl MarkerBoardDetector {
 
     /// Chessboard-only detection (no circle verification).
     pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<MarkerBoardDetectionResult> {
-        let chess = self.chessboard_detector.detect_from_corners(corners)?;
+        let chess = self.chessboard_detector.detect(corners)?;
         Some(self.result_from_chessboard(chess, Vec::new(), Vec::new(), None, 0))
     }
 
@@ -54,8 +50,8 @@ impl MarkerBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[Corner],
     ) -> Option<MarkerBoardDetectionResult> {
-        let chess = self.chessboard_detector.detect_from_corners(corners)?;
-        let corner_map = build_corner_map(&chess.detection);
+        let chess = self.chessboard_detector.detect(corners)?;
+        let corner_map = build_corner_map(&chess.target);
         let roi = self
             .params
             .roi_cells
@@ -104,13 +100,13 @@ impl MarkerBoardDetector {
 
     fn result_from_chessboard(
         &self,
-        chess: ChessboardDetectionResult,
+        chess: ChessDetection,
         circle_candidates: Vec<CircleCandidate>,
         circle_matches: Vec<CircleMatch>,
         alignment: Option<GridAlignment>,
         alignment_inliers: usize,
     ) -> MarkerBoardDetectionResult {
-        let mut detection = relabel_as_marker(chess.detection);
+        let mut detection = relabel_as_marker(chess.target);
         if let Some(alignment) = alignment {
             for corner in &mut detection.corners {
                 if let Some(grid) = &mut corner.grid {
@@ -153,7 +149,7 @@ impl MarkerBoardDetector {
         }
         MarkerBoardDetectionResult {
             detection,
-            inliers: chess.inliers,
+            inliers: chess.strong_indices,
             circle_candidates,
             circle_matches,
             alignment,

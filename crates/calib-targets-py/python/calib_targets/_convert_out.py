@@ -408,48 +408,44 @@ def chessboard_debug_from_dict(data: Mapping[str, Any]) -> ChessboardDebug:
 
 
 def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dict[str, Any]:
-    orientations = (
-        [float(value.orientations[0]), float(value.orientations[1])]
-        if value.orientations is not None
-        else None
-    )
     return {
-        "detection": target_detection_to_dict(value.detection),
-        "inliers": [int(item) for item in value.inliers],
-        "orientations": orientations,
-        "debug": chessboard_debug_to_dict(value.debug),
+        "grid_directions": [
+            float(value.grid_directions[0]),
+            float(value.grid_directions[1]),
+        ],
+        "cell_size": float(value.cell_size),
+        "target": target_detection_to_dict(value.detection),
+        "strong_indices": [int(item) for item in value.strong_indices],
     }
 
 
 def chessboard_detection_result_from_dict(
     data: Mapping[str, Any],
 ) -> ChessboardDetectionResult:
+    # Rust shape: `{ grid_directions, cell_size, target,
+    # strong_indices }`. Matches `serde_json::to_value(Detection)`
+    # byte-for-byte.
     obj = _ensure_mapping(data, "ChessboardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"detection", "inliers", "orientations", "debug"},
-        required={"detection", "inliers", "orientations", "debug"},
+        allowed={"grid_directions", "cell_size", "target", "strong_indices"},
+        required={"grid_directions", "cell_size", "target", "strong_indices"},
         ctx="ChessboardDetectionResult",
     )
-    inliers = _to_int_list(obj["inliers"], "ChessboardDetectionResult.inliers")
-    orientations_raw = obj["orientations"]
-    orientations: tuple[float, float] | None
-    if orientations_raw is None:
-        orientations = None
-    else:
-        seq = _to_sequence(orientations_raw, "ChessboardDetectionResult.orientations")
-        if len(seq) != 2:
-            raise ValueError("ChessboardDetectionResult.orientations must have 2 floats")
-        orientations = (
-            _to_float(seq[0], "ChessboardDetectionResult.orientations[0]"),
-            _to_float(seq[1], "ChessboardDetectionResult.orientations[1]"),
-        )
-
+    gd_seq = _to_sequence(obj["grid_directions"], "ChessboardDetectionResult.grid_directions")
+    if len(gd_seq) != 2:
+        raise ValueError("ChessboardDetectionResult.grid_directions must have 2 floats")
+    grid_directions = (
+        _to_float(gd_seq[0], "ChessboardDetectionResult.grid_directions[0]"),
+        _to_float(gd_seq[1], "ChessboardDetectionResult.grid_directions[1]"),
+    )
     return ChessboardDetectionResult(
-        detection=target_detection_from_dict(obj["detection"]),
-        inliers=inliers,
-        orientations=orientations,
-        debug=chessboard_debug_from_dict(obj["debug"]),
+        detection=target_detection_from_dict(obj["target"]),
+        grid_directions=grid_directions,
+        cell_size=_to_float(obj["cell_size"], "ChessboardDetectionResult.cell_size"),
+        strong_indices=_to_int_list(
+            obj["strong_indices"], "ChessboardDetectionResult.strong_indices"
+        ),
     )
 
 

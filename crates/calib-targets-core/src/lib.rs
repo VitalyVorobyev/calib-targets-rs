@@ -12,8 +12,10 @@
 //!
 //! let corner = Corner {
 //!     position: Point2::new(10.0, 20.0),
-//!     orientation: 0.0,
 //!     orientation_cluster: None,
+//!     axes: Default::default(),
+//!     contrast: 0.0,
+//!     fit_rms: 0.0,
 //!     strength: 1.0,
 //! };
 //!
@@ -52,9 +54,10 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 pub use chess::{
     CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, DescriptorMode,
     DetectorMode, ForstnerConfig, PyramidParams, RefinementMethod, RefinerConfig,
-    RefinerKindConfig, SaddlePointConfig, ThresholdMode,
+    RefinerKindConfig, SaddlePointConfig, ThresholdMode, UpscaleConfig, UpscaleConfigError,
+    UpscaleMode,
 };
-pub use corner::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+pub use corner::{AxisEstimate, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 #[cfg(feature = "tracing")]

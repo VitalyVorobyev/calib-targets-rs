@@ -15,8 +15,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo test --workspace --all-features
 
-# Docs
-cargo doc --workspace --all-features
+# Docs — MUST produce zero warnings; run before every commit
+cargo doc --workspace --no-deps
 
 # Build book
 mdbook build book
@@ -81,6 +81,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
 | `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
 | `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
+| `chessboard` | **Invariant-first rewrite** of the chessboard detector. Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap private dataset |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-puzzleboard` | PuzzleBoard self-identifying chessboard: edge-dot decode + absolute corner IDs |
@@ -106,6 +107,79 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 
 **`tracing` feature** — optional, gates all performance-tracing instrumentation across the workspace.
 
+## Corner orientation contract (axes-only)
+
+`Corner::orientation` has been **removed** workspace-wide. The only
+per-corner orientation signal is `Corner.axes: [AxisEstimate; 2]`,
+populated by the `chess-corners` adapter.
+
+Convention (matches chess-corners 0.6 and enforced across the workspace):
+
+- `axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`.
+- `axes[1] − axes[0] ≈ π/2` (the two axes are orthogonal grid directions, NOT
+  diagonals of unit squares).
+- The CCW sweep from `axes[0]` to `axes[1]` crosses a **dark** sector.
+  This is what encodes parity: at parity-0 corners `axes[0] ≈ Θ_horizontal`
+  (dark-entering), at parity-1 corners `axes[0] ≈ Θ_vertical`. Adjacent
+  chessboard corners therefore have opposite axis-slot assignments.
+- Default-constructed axes carry `sigma = π` (no information).
+
+**Do not reintroduce `Corner::orientation`** or derive a "legacy"
+single-axis angle. All clustering and edge-validation logic now uses
+`axes` directly. In particular, edges in the grid graph align with
+one of the corner's own axes (no ±π/4 offset).
+
+**Undirected circular mean.** Any function computing a circular mean
+of axis angles (e.g. 2-means refinement, histogram peak centroid)
+MUST accumulate `(cos 2θ, sin 2θ)` and halve the atan2 result.
+Accumulating raw `(cos θ, sin θ)` breaks at the 0°/180° seam and
+silently returns garbage centers when a peak sits near 0°. This was
+the root cause of the v1 Phase-4 regression; the fix is in
+`calib-targets-core/src/orientation_clustering.rs` and
+`crates/calib-targets-chessboard/src/cluster.rs`.
+
+## Regression dataset: 3536119669
+
+`privatedata/3536119669/target_*.png` (20 images, 6 × 720×540 snaps each
+= 120 frames) is the canonical chessboard precision-and-recall
+benchmark. The known failure modes are enumerated in
+`docs/120issues.txt`.
+
+```bash
+# v2 end-to-end sweep (emits per-snap DebugFrame JSON).
+cargo run --release -p calib-targets-chessboard --features dataset --example run_dataset -- \
+    --dataset privatedata/3536119669 \
+    --out bench_results/chessboard_v2_overlays
+
+# Render overlays from the JSONs (local-only output).
+uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
+    --dataset privatedata/3536119669 \
+    --frames bench_results/chessboard_v2_overlays \
+    --out   bench_results/chessboard_v2_overlays/png
+```
+
+**Precision contract.** v2 treats wrong `(i, j)` labels as unrecoverable
+(they would corrupt calibration), whereas missing corners are
+acceptable. The current sweep posts **119/120 detected, avg 43
+labelled, zero wrong labels** (t11s2 is the only empty frame — the
+Stage 2 clustering fails on a very-bad-light frame flagged as
+excluded). Any algorithmic change that drops
+this precision contract is a regression, full stop.
+
+## Cell-size estimation gotcha
+
+Do **not** pass a pre-computed global cell-size into a seed or graph-
+build step. Cross-cluster nearest-neighbor distance distributions are
+bimodal on boards with ArUco markers (marker-internal pairs vs true
+board pairs), and all mode finders — multimodal mean-shift included —
+can pick the wrong mode. The v2 detector solves this by **deriving
+cell size from a self-consistent 4-corner seed** (edges match each
+other within a ratio tolerance, not against a prior scalar); see
+`crates/chessboard-v2/src/seed.rs`. If a future detector must commit
+to a cell size up front, validate it by trying a seed and only trust
+the estimate if the seed closes; otherwise fall back to the seed's
+own edge-length mean.
+
 ## Key Conventions
 
 **Coordinate system:**
@@ -118,7 +192,26 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 
 **Marker decoding:** grid-aware scan in rectified space (not generic contour/quad detection). Keep bit packing order, polarity (black=1 or black=0), and `borderBits` explicit in code.
 
+**Grid labels are non-negative.** Every detector that returns
+`LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the
+labelled bounding-box minimum is `(0, 0)`. This is a hard invariant
+for overlay / calibration consumers and for `chessboard-v2` is
+enforced inside `grow::grow_from_seed`.
+
 **New warnings:** fix them; do not suppress.
+
+**Pre-commit gate — always run before `git commit`:**
+
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo doc --workspace --no-deps
+```
+
+`cargo doc` must produce zero warnings. Broken intra-doc links and
+ambiguous references (e.g. a name that is both a module and a function)
+are hard errors under this gate. Fix them at source — do not rely on
+CI to catch them.
 
 **`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
 
@@ -129,6 +222,22 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 - This policy applies to every new detector crate going forward.
 
 **MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
+
+## Local-Only Artifacts — Never Commit
+
+`bench_results/`, rendered overlays, per-frame JSONLs, aggregate JSONs,
+profiling dumps, sweep CSVs, and any similarly-generated data are
+**local-only** and must stay out of Git. These files are large, noisy in
+diffs, and image-heavy — they bloat the repo and contaminate history.
+
+- Write sweep / overlay output under `bench_results/`, `tmpdata/`, or a
+  local scratch directory that matches an existing `.gitignore` rule.
+- Do not `git add -A` / `git add .` inside directories that may contain
+  `bench_results/`, `.DS_Store`, or any sweep artifacts — stage files
+  individually.
+- If you discover bench/sweep files already tracked, untrack them with
+  `git rm --cached <path>` and add a `.gitignore` rule in the same
+  commit rather than silently leaving them in the tree.
 
 ## Pre-Release Quality Gates
 

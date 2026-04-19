@@ -1,7 +1,5 @@
-use crate::direction::NeighborDirection;
 use crate::graph::GridGraph;
-use crate::grid_index::GridIndex;
-use crate::Float;
+use crate::{Float, GridIndex, NeighborDirection};
 
 /// Find connected components in the grid graph.
 ///

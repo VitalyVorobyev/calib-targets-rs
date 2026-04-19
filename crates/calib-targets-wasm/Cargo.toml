@@ -18,7 +18,7 @@ calib-targets-aruco = { workspace = true }
 calib-targets-marker = { workspace = true }
 calib-targets-print = { workspace = true }
 calib-targets-puzzleboard = { workspace = true }
-chess-corners = { version = "0.5", default-features = false }
+chess-corners = { workspace = true }
 nalgebra = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }

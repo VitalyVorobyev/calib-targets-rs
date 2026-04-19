@@ -32,10 +32,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run_config(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let cfg = PuzzleBoardDetectConfig::from_reader(file)?;
-    let mut params = cfg.detector.clone();
-    if let Some(chess_config) = cfg.chess_config {
-        params.chessboard.chess = chess_config;
-    }
+    let params = cfg.detector.clone();
+    // The chessboard detector no longer carries a nested ChESS config;
+    // any `cfg.chess_config` override would have to be applied via the
+    // standalone `detect::detect_corners` helper, not the params struct.
+    let _ = cfg.chess_config;
     let result = run_image(&cfg.image_path, &params)?;
     if let Some(output_path) = cfg.output_path {
         let report = PuzzleBoardDetectReport {

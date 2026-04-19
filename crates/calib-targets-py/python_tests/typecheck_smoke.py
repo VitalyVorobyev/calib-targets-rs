@@ -7,7 +7,9 @@ import calib_targets as ct
 
 img: np.ndarray = np.zeros((16, 16), dtype=np.uint8)
 
-chess = ct.detect_chessboard(img, params=ct.ChessboardParams(min_corners=16))
+chess = ct.detect_chessboard(
+    img, params=ct.ChessboardParams(min_corner_strength=0.1)
+)
 if chess is not None:
     _kind: ct.TargetKind = chess.detection.kind
     _corners: list[ct.LabeledCorner] = chess.detection.corners

@@ -1,5 +1,5 @@
-use crate::direction::{NeighborDirection, NodeNeighbor};
 use crate::Float;
+use crate::{NeighborDirection, NodeNeighbor};
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 

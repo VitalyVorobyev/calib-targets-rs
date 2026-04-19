@@ -1,4 +1,4 @@
-use calib_targets::chessboard::ChessboardParams;
+use calib_targets::chessboard::DetectorParams;
 use calib_targets::detect;
 use image::ImageReader;
 
@@ -16,12 +16,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
-    // Use the built-in three-config sweep: default, high-threshold, low-threshold.
-    let configs = ChessboardParams::sweep_default();
+    // Use the built-in three-config sweep: default, tighter, looser.
+    let configs = DetectorParams::sweep_default();
 
     let result = detect::detect_chessboard_best(&img, &configs);
     match result {
-        Some(found) => println!("detected {} corners", found.detection.corners.len()),
+        Some(found) => println!("detected {} corners", found.target.corners.len()),
         None => println!("no board detected with any config"),
     }
 

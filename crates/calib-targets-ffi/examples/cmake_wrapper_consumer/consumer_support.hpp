@@ -188,17 +188,6 @@ inline ct_refiner_config_t default_refiner() {
   return config;
 }
 
-inline ct_orientation_clustering_params_t default_orientation_clustering() {
-  ct_orientation_clustering_params_t params{};
-  params.num_bins = 90;
-  params.max_iters = 10;
-  params.peak_min_separation_deg = 10.0f;
-  params.outlier_threshold_deg = 30.0f;
-  params.min_peak_weight_fraction = 0.05f;
-  params.use_weights = CT_TRUE;
-  return params;
-}
-
 inline ct_chess_config_t default_shared_chess_config() {
   ct_chess_config_t config{};
   config.params.use_radius10 = CT_FALSE;
@@ -212,23 +201,20 @@ inline ct_chess_config_t default_shared_chess_config() {
   config.multiscale.pyramid.min_size = 128;
   config.multiscale.refinement_radius = 3;
   config.multiscale.merge_radius = 3.0f;
+  config.upscale.mode = CT_UPSCALE_MODE_DISABLED;
+  config.upscale.factor = 2;
   return config;
 }
 
 inline ct_chessboard_detector_config_t default_chessboard_detector_config() {
   ct_chessboard_detector_config_t config{};
   config.chess = default_shared_chess_config();
+  // C ABI: the chessboard detector's 30-field `ct_chessboard_params_t`
+  // mirrors `DetectorParams`. The `init_default` helper populates a
+  // valid default-configured value; callers override individual fields
+  // as needed (here: raise `min_corner_strength` from 0 → 0.5).
+  ct_chessboard_params_init_default(&config.chessboard);
   config.chessboard.min_corner_strength = 0.5f;
-  config.chessboard.min_corners = 20;
-  config.chessboard.expected_rows = some_u32(7);
-  config.chessboard.expected_cols = some_u32(11);
-  config.chessboard.completeness_threshold = 0.9f;
-  config.chessboard.use_orientation_clustering = CT_TRUE;
-  config.chessboard.orientation_clustering_params = default_orientation_clustering();
-  config.chessboard.graph.min_spacing_pix = 10.0f;
-  config.chessboard.graph.max_spacing_pix = 120.0f;
-  config.chessboard.graph.k_neighbors = 8;
-  config.chessboard.graph.orientation_tolerance_deg = 22.5f;
   return config;
 }
 

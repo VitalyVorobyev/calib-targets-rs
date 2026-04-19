@@ -8,9 +8,9 @@ Before tuning anything, confirm you are starting from the library defaults:
 
 ```rust,no_run
 use calib_targets::detect::detect_chessboard;
-use calib_targets::ChessboardParams;
+use calib_targets::chessboard::DetectorParams;
 
-let params = ChessboardParams::default();  // includes ChESS corner config
+let params = DetectorParams::default();
 ```
 
 For ChArUco:
@@ -22,38 +22,55 @@ use calib_targets::charuco::CharucoParams;
 let params = CharucoParams::for_board(&board);
 ```
 
-Each params struct embeds the ChESS corner detector config in `params.chess`
-(chessboard) or `params.chessboard.chess` (charuco, puzzleboard, marker). The defaults use
-single-scale detection with `threshold_mode = Relative`,
-`threshold_value = 0.2`, and `nms_radius = 2`.
+The chessboard detector's ChESS corner config is **not** carried inside
+`DetectorParams` — it's a separate argument via
+`calib_targets::detect::default_chess_config()` (used automatically by
+the `detect_chessboard*` facade helpers). If you need to override it,
+call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
+directly and pass the resulting `Vec<Corner>` into
+`calib_targets::chessboard::Detector::new(params).detect(&corners)`.
 
-For ChArUco, board sampling scale is controlled separately by
+For ChArUco, `CharucoParams.chessboard` is a `DetectorParams` (flat
+shape — no nested sub-structs). Board sampling scale is controlled separately by
 `CharucoParams::for_board`, which starts with `px_per_square = 60`.
-If marker decoding is the problem and the board appears at a very different
-pixel scale, adjust `px_per_square` there before touching other parameters.
+If marker decoding is the problem and the board appears at a very
+different pixel scale, adjust `px_per_square` before touching other
+parameters.
 
 ## Challenging images: multi-config sweep
 
-For images with uneven lighting, Scheimpflug optics, or narrow focus strips,
-a single threshold may miss corners in some regions. Use the multi-config sweep
-to try several parameter variants and keep the best result:
+For images with uneven lighting, Scheimpflug optics, or narrow focus
+strips, a single threshold may miss corners in some regions. Use the
+multi-config sweep to try several parameter variants and keep the best
+result:
 
 ```rust,no_run
-use calib_targets::detect::detect_charuco_best;
+use calib_targets::detect::{detect_chessboard_best, detect_charuco_best};
+use calib_targets::chessboard::DetectorParams;
 use calib_targets::charuco::CharucoParams;
+# let img: image::GrayImage = todo!();
 # let board = todo!();
 
-let configs = CharucoParams::sweep_for_board(&board);
-let result = detect_charuco_best(&img, &configs);
+let chess_configs = DetectorParams::sweep_default();
+let chess_result = detect_chessboard_best(&img, &chess_configs);
+
+let charuco_configs = CharucoParams::sweep_for_board(&board);
+let charuco_result = detect_charuco_best(&img, &charuco_configs);
 ```
 
-`sweep_for_board()` returns three configs: default + high-threshold +
-low-threshold. For chessboards, use `ChessboardParams::sweep_default()`.
+`DetectorParams::sweep_default()` returns three configs: default +
+tighter + looser on `cluster_tol_deg`, `seed_edge_tol`, and
+`attach_axis_tol_deg`. All three preserve the detector's precision-
+by-construction invariants; only recall-affecting tolerances are
+varied.
+
 For PuzzleBoard, use `PuzzleBoardParams::sweep_for_board(&spec)`.
 
-Multi-component merge (built into the ChArUco detector) further helps by
-independently aligning disconnected grid fragments and merging them, recovering
-30-50% more corners on challenging images.
+Multi-component detection (via `Detector::detect_all` / the facade
+`detect_chessboard_all`) recovers fragmented grids where markers break
+contiguity — each disconnected piece comes back as its own
+`Detection` with its own locally-rebased `(i, j)` labels. Capped by
+`DetectorParams::max_components` (default 3).
 
 ---
 
@@ -61,96 +78,83 @@ independently aligning disconnected grid fragments and merging them, recovering
 
 | Symptom | Parameter to adjust |
 |---|---|
-| `ChessboardNotDetected` | `min_corners` ↓, `min_corner_strength` ↓ |
-| Grid too small / partial board | `completeness_threshold` ↓ |
-| Detects wrong connected component | `expected_rows` / `expected_cols` → set explicitly |
-| Fast perspective / wide-angle lens | `max_spacing_pix` ↑, `orientation_tolerance_deg` ↑ |
-| Dense board, corners falsely merged | `min_spacing_pix` ↑ |
-| `NoMarkers` on blurry image | `min_border_score` ↓, `multi_threshold: true` |
+| `detect_chessboard` returns `None` | `min_corner_strength` ↓, `cluster_tol_deg` ↑, `min_peak_weight_fraction` ↓, or try `detect_chessboard_best` |
+| Partial board, many holes | `attach_search_rel` ↑, `attach_axis_tol_deg` ↑, `seed_edge_tol` ↑ |
+| Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
+| Validation loop oscillates, no detection | `max_validation_iters` ↑ (default 3) |
+| Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `projective_line_tol_rel` ↑ |
+| Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
+| `NoMarkers` on blurry ChArUco | `min_border_score` ↓, `multi_threshold: true` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
 | `DecodeFailed` on PuzzleBoard | `decode.min_bit_confidence` ↓, `decode.max_bit_error_rate` ↑ |
 
 ---
 
-## Per-parameter reference: `ChessboardParams`
+## Per-parameter reference: `chessboard::DetectorParams`
 
-### `min_corner_strength`
+`DetectorParams` is a flat `#[non_exhaustive]` struct with ~30 fields
+covering every stage of the pipeline. The fields below are the ones
+users typically touch; see the [chessboard chapter](chessboard.md) for
+the full invariant-to-parameter mapping and
+`crates/calib-targets-chessboard/src/params.rs` for defaults.
 
-**Default:** `0.0` (accept everything from the ChESS detector).
+### Stage 1 — pre-filter
 
-**When to raise:** On real-world images with textures that produce many spurious
-saddle points, raise to `0.3`–`0.5` to drop weak corners before graph construction.
-Raising too far discards valid but low-contrast corners near board edges.
+| Field | Default | Guidance |
+|---|---|---|
+| `min_corner_strength` | `0.0` | Raise to `0.3`–`0.5` on noisy scenes with many spurious saddles. Drops weak corners before clustering. |
+| `max_fit_rms_ratio` | `0.5` | ChESS `fit_rms` must be ≤ ratio × `contrast`. Raise to `0.8` when accepting softer corners; lower tightens the pre-filter. |
 
-### `min_corners`
+### Stages 2-3 — grid-direction clustering
 
-**Default:** `16`.
+| Field | Default | Guidance |
+|---|---|---|
+| `num_bins` | `90` | Histogram resolution (π / n per bin). Rarely adjusted. |
+| `cluster_tol_deg` | `12.0` | Per-axis absolute tolerance vs cluster centre for a corner to be labelled. Raise to `16` on noisy axes; tighter risks unclustering legitimate corners. |
+| `peak_min_separation_deg` | `60.0` | Minimum angle between the two returned peaks. Guards against twin-peak collisions. |
+| `min_peak_weight_fraction` | `0.02` | Fraction of total axis-vote weight a peak must carry. Lower on dense boards where each real peak only carries a few percent; higher rejects spurious noise peaks. |
 
-**Guidance:** Set to roughly 70 % of the expected inner-corner count for your board
-(e.g. 7 × 9 inner corners → `min_corners = 44`). Lowering allows partial detections;
-raising avoids spurious small detections.
+### Stage 5 — seed
 
-### `expected_rows` / `expected_cols`
+| Field | Default | Guidance |
+|---|---|---|
+| `seed_edge_tol` | `0.25` | Edge-length ratio tolerance within a candidate quad. Larger accepts more irregular perspective. |
+| `seed_axis_tol_deg` | `15.0` | Angular tolerance classifying the 32 kNN into "+i direction" vs "+j direction" off the A-corner. |
+| `seed_close_tol` | `0.25` | Parallelogram closure tolerance (fraction of the seed's own edge length). |
 
-**Default:** `None` (auto-detect from the largest connected component).
+### Stage 6 — grow
 
-**When to set:** If the scene contains multiple chessboard-like objects and the wrong
-one is returned, set these to the inner corner count of the board you care about. The
-detector will only accept a component that matches these dimensions.
+| Field | Default | Guidance |
+|---|---|---|
+| `attach_search_rel` | `0.35` | KD-tree search radius around each prediction (fraction of `cell_size`). Raise to `0.45`–`0.55` on images with noticeable perspective; tighter rejects more holes. |
+| `attach_axis_tol_deg` | `15.0` | Candidate's axes must match both cluster centres within this tolerance. |
+| `attach_ambiguity_factor` | `1.5` | If the second-nearest candidate is within `factor × nearest`, attachment is skipped (the position is marked ambiguous). |
+| `step_tol` | `0.25` | Edge-length window at attachment (`[1 − step_tol, 1 + step_tol] × s`). |
+| `edge_axis_tol_deg` | `15.0` | Induced-edge axis alignment at attachment. |
 
-### `completeness_threshold`
+### Stage 7 — validate
 
-**Default:** `0.7`.
+| Field | Default | Guidance |
+|---|---|---|
+| `line_tol_rel` | `0.15` | Straight-line perpendicular residual tolerance (fraction of `s`). |
+| `projective_line_tol_rel` | `0.25` | Projective-fit residual tolerance — looser to absorb mild lens distortion. |
+| `line_min_members` | `3` | Minimum row/column length for a line fit to be attempted. |
+| `local_h_tol_rel` | `0.20` | Local 4-point homography residual tolerance. |
+| `max_validation_iters` | `3` | Blacklist-retry cap. If validation keeps oscillating, raise to `5`–`8`. |
 
-**Guidance:** The fraction of expected corners that must be found for the detection to
-be accepted. Lower to `0.3`–`0.5` when the board is partially occluded or at the image
-border. Lower to `0.05` when exploring a very large, partially-visible board.
+### Stage 8 — recall boosters
 
-### `use_orientation_clustering`
+Per-stage toggles: `enable_line_extrapolation`, `enable_gap_fill`,
+`enable_component_merge`, `enable_weak_cluster_rescue` (all default
+`true`). Leave them on unless a specific booster is producing false
+positives for you.
 
-**Default:** `true`.
+### Output gates
 
-**When to disable:** Only on synthetic or perfectly axis-aligned images where all
-corners lie on a regular grid. On real images, orientation clustering is critical for
-separating the two edge directions and should remain on.
-
----
-
-## Per-parameter reference: `GridGraphParams`
-
-### `min_spacing_pix`
-
-**Default:** `5.0` pixels.
-
-**Guidance:** Minimum distance between two corners for them to be considered separate
-nodes. Raise (e.g. to `10`–`20`) when corners are dense and two nearby ChESS responses
-correspond to a single physical corner, causing false links.
-
-### `max_spacing_pix`
-
-**Default:** `50.0` pixels.
-
-**Guidance:** Maximum edge length in the proximity graph. For high-resolution images or
-large printed boards, raise to roughly `image_width / expected_cols / 2`. If too small,
-the graph is disconnected and large grids are not assembled.
-
-### `k_neighbors`
-
-**Default:** `8`.
-
-**Guidance:** Number of nearest neighbors considered per corner during graph
-construction. Rarely needs tuning. Lower values (e.g. `4`) can speed up graph
-construction on very large corner sets at the cost of slightly lower robustness to
-uneven corner spacing.
-
-### `orientation_tolerance_deg`
-
-**Default:** `22.5` degrees.
-
-**Guidance:** Tolerance for the angular difference between an edge direction and the
-dominant grid orientation. Tighten to `10`–`15°` in structured indoor scenes with many
-false corners (e.g. tile patterns). Relax to `30°` or more for extreme perspective or a
-handheld camera at a steep angle.
+| Field | Default | Guidance |
+|---|---|---|
+| `min_labeled_corners` | `8` | Detection rejected below this labelled count. Raise for validation boards with an expected floor. |
+| `max_components` | `3` | Cap for `detect_all`. Raise if a scene legitimately fragments into more pieces of the same board (rare). |
 
 ---
 
@@ -195,10 +199,24 @@ Verify against the printed board or the JSON spec used to generate it.
 
 ## Quick checklist
 
-1. Start with defaults; run with `RUST_LOG=debug` to see corner counts and alignment scores.
-2. If **no corners** are found: loosen `min_corner_strength`, check image resolution.
-3. If **corners found but no grid**: check `max_spacing_pix` vs. actual square size.
-4. If **grid found but no markers**: enable `multi_threshold`, lower `min_border_score`.
-5. If **alignment fails**: verify board spec (rows, cols, dictionary, `marker_size_rel`).
+1. Start with defaults; run with `RUST_LOG=debug` to see corner counts
+   and per-stage counters.
+2. If **no corners** are found: loosen `min_corner_strength`, check
+   image resolution and contrast.
+3. If **corners found but no grid** (`detect_chessboard` returns
+   `None`): inspect the `DebugFrame` via `detect_chessboard_debug` —
+   the `grid_directions: None` case means clustering failed (try
+   lowering `min_peak_weight_fraction`), `seed: None` means seeding
+   failed (try `detect_chessboard_best`), and an iteration trace that
+   never converges means `max_validation_iters` was hit (raise it).
+4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
+   lower `min_border_score`.
+5. If **alignment fails**: verify board spec (rows, cols, dictionary,
+   `marker_size_rel`).
+6. If you observe **wrong `(i, j)` labels**, that's a precision-
+   contract bug — file an issue rather than tuning around it. The detector is
+   engineered to drop corners before it labels them wrong.
 
-See also: [Troubleshooting](troubleshooting.md) for per-error checklists.
+See also: [Troubleshooting](troubleshooting.md) for per-error
+checklists and the [Chessboard Detector chapter](chessboard.md) for
+the full invariant stack.

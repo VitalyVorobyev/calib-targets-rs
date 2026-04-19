@@ -89,8 +89,19 @@ fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
     raw.iter()
         .map(|c| TargetCorner {
             position: Point2::new(c.x, c.y),
-            orientation: c.orientation,
             orientation_cluster: None,
+            axes: [
+                calib_targets_core::AxisEstimate {
+                    angle: c.axes[0].angle,
+                    sigma: c.axes[0].sigma,
+                },
+                calib_targets_core::AxisEstimate {
+                    angle: c.axes[1].angle,
+                    sigma: c.axes[1].sigma,
+                },
+            ],
+            contrast: c.contrast,
+            fit_rms: c.fit_rms,
             strength: c.response,
         })
         .collect()

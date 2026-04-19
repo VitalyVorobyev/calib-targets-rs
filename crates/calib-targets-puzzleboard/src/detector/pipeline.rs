@@ -1,6 +1,6 @@
 //! End-to-end PuzzleBoard detection pipeline.
 
-use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
+use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
 use calib_targets_core::{
     Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
 };
@@ -21,7 +21,7 @@ use crate::params::PuzzleBoardParams;
 /// Owned PuzzleBoard detector.
 pub struct PuzzleBoardDetector {
     params: PuzzleBoardParams,
-    chessboard: ChessboardDetector,
+    chessboard: ChessDetector,
 }
 
 impl PuzzleBoardDetector {
@@ -38,7 +38,7 @@ impl PuzzleBoardDetector {
             params.board.origin_row,
             params.board.origin_col,
         )?;
-        let chessboard = ChessboardDetector::new(params.chessboard.clone());
+        let chessboard = ChessDetector::new(params.chessboard.clone());
         Ok(Self { params, chessboard })
     }
 
@@ -81,7 +81,7 @@ impl PuzzleBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[Corner],
     ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
-        let chess_results = self.chessboard.detect_all_from_corners(corners);
+        let chess_results = self.chessboard.detect_all(corners);
         if chess_results.is_empty() {
             return Err(PuzzleBoardDetectError::ChessboardNotDetected);
         }
@@ -138,10 +138,15 @@ impl PuzzleBoardDetector {
     fn decode_component(
         &self,
         image: &GrayImageView<'_>,
-        chess: &ChessboardDetectionResult,
+        chess: &ChessDetection,
     ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
-        let labeled: &[LabeledCorner] = &chess.detection.corners;
-        let inliers: &[usize] = &chess.inliers;
+        let labeled: &[LabeledCorner] = &chess.target.corners;
+        // detector emits only validated corners in `target.corners` — every entry
+        // is an inlier by construction. The original inliers index list
+        // (subset of v1's pre-quality-filtered corners) is no longer
+        // meaningful; we treat every labelled corner as an inlier.
+        let inliers: Vec<usize> = (0..labeled.len()).collect();
+        let inliers: &[usize] = &inliers;
 
         let observed = self.sample_all_edges(image, labeled, inliers);
         let min_edges = required_edges(self.params.decode.min_window);

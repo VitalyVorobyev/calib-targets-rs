@@ -250,7 +250,145 @@ impl CoarseToFineParams {
     }
 }
 
-/// Workspace-owned high-level ChESS detector configuration matching chess-corners 0.5.
+/// Optional pre-detection integer upscaling.
+///
+/// This mirrors `chess-corners` 0.6 without making `calib-targets-core`
+/// depend on the detector crate. When enabled, upstream returns corner
+/// positions rescaled back into the original input image frame.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UpscaleMode {
+    /// Do not upscale before ChESS detection.
+    #[default]
+    Disabled,
+    /// Upscale by a fixed integer factor.
+    Fixed,
+}
+
+/// Configuration for the optional pre-pipeline upscaling stage.
+///
+/// JSON shape:
+/// - `{ "mode": "disabled" }`
+/// - `{ "mode": "fixed", "factor": 2 }`
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UpscaleConfig {
+    pub mode: UpscaleMode,
+    /// Integer factor used when `mode == Fixed`. Valid fixed factors are 2, 3,
+    /// and 4; ignored when disabled.
+    pub factor: u32,
+}
+
+impl Default for UpscaleConfig {
+    fn default() -> Self {
+        Self {
+            mode: UpscaleMode::Disabled,
+            factor: 2,
+        }
+    }
+}
+
+impl Serialize for UpscaleConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+
+        match self.mode {
+            UpscaleMode::Disabled => {
+                let mut state = serializer.serialize_struct("UpscaleConfig", 1)?;
+                state.serialize_field("mode", &self.mode)?;
+                state.end()
+            }
+            UpscaleMode::Fixed => {
+                let mut state = serializer.serialize_struct("UpscaleConfig", 2)?;
+                state.serialize_field("mode", &self.mode)?;
+                state.serialize_field("factor", &self.factor)?;
+                state.end()
+            }
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for UpscaleConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(default)]
+        struct Helper {
+            mode: UpscaleMode,
+            factor: u32,
+        }
+
+        impl Default for Helper {
+            fn default() -> Self {
+                let cfg = UpscaleConfig::default();
+                Self {
+                    mode: cfg.mode,
+                    factor: cfg.factor,
+                }
+            }
+        }
+
+        let helper = Helper::deserialize(deserializer)?;
+        Ok(Self {
+            mode: helper.mode,
+            factor: helper.factor,
+        })
+    }
+}
+
+impl UpscaleConfig {
+    pub fn disabled() -> Self {
+        Self::default()
+    }
+
+    pub fn fixed(factor: u32) -> Self {
+        Self {
+            mode: UpscaleMode::Fixed,
+            factor,
+        }
+    }
+
+    pub fn effective_factor(&self) -> u32 {
+        match self.mode {
+            UpscaleMode::Disabled => 1,
+            UpscaleMode::Fixed => self.factor,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), UpscaleConfigError> {
+        if matches!(self.mode, UpscaleMode::Fixed) && !matches!(self.factor, 2..=4) {
+            return Err(UpscaleConfigError::InvalidFactor(self.factor));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UpscaleConfigError {
+    InvalidFactor(u32),
+}
+
+impl std::fmt::Display for UpscaleConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidFactor(factor) => {
+                write!(
+                    f,
+                    "upscale factor {factor} not supported (expected 2, 3, or 4)"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for UpscaleConfigError {}
+
+/// Workspace-owned high-level ChESS detector configuration.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ChessConfig {
@@ -265,14 +403,21 @@ pub struct ChessConfig {
     pub pyramid_min_size: usize,
     pub refinement_radius: u32,
     pub merge_radius: f32,
+    pub upscale: UpscaleConfig,
 }
 
 impl Default for ChessConfig {
     fn default() -> Self {
+        // Workspace-level default intentionally layers an adaptive
+        // fraction-of-max threshold (`Relative 0.2`) on top of the paper's
+        // strict `R > 0` rule that chess-corners 0.6 exposes by default.
+        // Downstream detectors (chessboard / charuco / puzzleboard) rely
+        // on this mild pre-filter to keep candidate counts manageable;
+        // callers wanting the raw upstream behavior set `Absolute 0.0`.
         Self {
             detector_mode: DetectorMode::default(),
             descriptor_mode: DescriptorMode::default(),
-            threshold_mode: ThresholdMode::default(),
+            threshold_mode: ThresholdMode::Relative,
             threshold_value: 0.2,
             nms_radius: 2,
             min_cluster_size: 2,
@@ -281,6 +426,7 @@ impl Default for ChessConfig {
             pyramid_min_size: 128,
             refinement_radius: 3,
             merge_radius: 3.0,
+            upscale: UpscaleConfig::default(),
         }
     }
 }
@@ -362,6 +508,65 @@ impl ChessConfig {
             pyramid_min_size: multiscale.pyramid.min_size,
             refinement_radius: multiscale.refinement_radius,
             merge_radius: multiscale.merge_radius,
+            upscale: UpscaleConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upscale_default_is_disabled_with_factor_two_hint() {
+        let cfg = UpscaleConfig::default();
+        assert_eq!(cfg.mode, UpscaleMode::Disabled);
+        assert_eq!(cfg.factor, 2);
+        assert_eq!(cfg.effective_factor(), 1);
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn upscale_fixed_validation_accepts_supported_factors() {
+        for factor in [2, 3, 4] {
+            let cfg = UpscaleConfig::fixed(factor);
+            assert_eq!(cfg.effective_factor(), factor);
+            assert!(cfg.validate().is_ok());
+        }
+    }
+
+    #[test]
+    fn upscale_fixed_validation_rejects_unsupported_factors() {
+        for factor in [0, 1, 5] {
+            assert_eq!(
+                UpscaleConfig::fixed(factor).validate(),
+                Err(UpscaleConfigError::InvalidFactor(factor))
+            );
+        }
+    }
+
+    #[test]
+    fn upscale_config_roundtrips_json() {
+        let cfg = UpscaleConfig::fixed(3);
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert_eq!(json, r#"{"mode":"fixed","factor":3}"#);
+        let roundtrip: UpscaleConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, cfg);
+    }
+
+    #[test]
+    fn upscale_disabled_serializes_without_factor() {
+        let cfg = UpscaleConfig::disabled();
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert_eq!(json, r#"{"mode":"disabled"}"#);
+        let roundtrip: UpscaleConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtrip, cfg);
+    }
+
+    #[test]
+    fn chess_config_missing_upscale_deserializes_to_disabled() {
+        let json = r#"{"threshold_mode":"relative","threshold_value":0.08}"#;
+        let cfg: ChessConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(cfg.upscale, UpscaleConfig::disabled());
     }
 }

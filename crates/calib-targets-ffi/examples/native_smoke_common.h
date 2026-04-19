@@ -187,18 +187,6 @@ static ct_refiner_config_t ct_native_default_refiner(void) {
   return config;
 }
 
-static ct_orientation_clustering_params_t ct_native_default_orientation_clustering(void) {
-  ct_orientation_clustering_params_t params;
-  memset(&params, 0, sizeof(params));
-  params.num_bins = 90;
-  params.max_iters = 10;
-  params.peak_min_separation_deg = 10.0f;
-  params.outlier_threshold_deg = 30.0f;
-  params.min_peak_weight_fraction = 0.05f;
-  params.use_weights = CT_TRUE;
-  return params;
-}
-
 static ct_chess_config_t ct_native_default_shared_chess_config(void) {
   ct_chess_config_t config;
   memset(&config, 0, sizeof(config));
@@ -213,6 +201,8 @@ static ct_chess_config_t ct_native_default_shared_chess_config(void) {
   config.multiscale.pyramid.min_size = 128;
   config.multiscale.refinement_radius = 3;
   config.multiscale.merge_radius = 3.0f;
+  config.upscale.mode = CT_UPSCALE_MODE_DISABLED;
+  config.upscale.factor = 2;
   return config;
 }
 
@@ -220,17 +210,13 @@ static ct_chessboard_detector_config_t ct_native_default_chessboard_detector_con
   ct_chessboard_detector_config_t config;
   memset(&config, 0, sizeof(config));
   config.chess = ct_native_default_shared_chess_config();
+  // C ABI: the chessboard detector's 30-field `ct_chessboard_params_t`
+  // mirrors `DetectorParams`. The `init_default` helper populates a
+  // valid default-configured value; callers override individual fields
+  // as needed (here: raise `min_corner_strength` from 0 → 0.5 to trim
+  // weak ChESS responses on test images).
+  ct_chessboard_params_init_default(&config.chessboard);
   config.chessboard.min_corner_strength = 0.5f;
-  config.chessboard.min_corners = 20;
-  config.chessboard.expected_rows = ct_native_some_u32(7);
-  config.chessboard.expected_cols = ct_native_some_u32(11);
-  config.chessboard.completeness_threshold = 0.9f;
-  config.chessboard.use_orientation_clustering = CT_TRUE;
-  config.chessboard.orientation_clustering_params = ct_native_default_orientation_clustering();
-  config.chessboard.graph.min_spacing_pix = 10.0f;
-  config.chessboard.graph.max_spacing_pix = 120.0f;
-  config.chessboard.graph.k_neighbors = 8;
-  config.chessboard.graph.orientation_tolerance_deg = 22.5f;
   return config;
 }
 

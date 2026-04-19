@@ -1,7 +1,7 @@
 [package]
 name = "calib-targets-chessboard"
 version.workspace = true
-description = "Plain chessboard detector built on top of ChESS corners"
+description = "Invariant-first chessboard detector built on top of ChESS corners"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -13,8 +13,9 @@ keywords = ["calibration", "computer-vision", "chessboard", "detection", "grid"]
 categories = ["computer-vision", "science"]
 
 [features]
-tracing = ["calib-targets-core/tracing", "dep:tracing", "dep:tracing-log",
-    "dep:tracing-subscriber"]
+default = []
+dataset = ["dep:serde_json"]
+tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
 calib-targets-core.workspace = true
@@ -23,15 +24,30 @@ nalgebra.workspace = true
 log.workspace = true
 kiddo.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json.workspace = true
+serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
-tracing-log = { workspace = true, optional = true }
-tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
-image.workspace = true
+approx = "0.5"
+calib-targets.workspace = true
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+env_logger = "0.11"
+image.workspace = true
+serde_json.workspace = true
+
+[[example]]
+name = "run_dataset"
+required-features = ["dataset"]
+
+[[example]]
+name = "debug_single"
+required-features = ["dataset"]
+
+[[bench]]
+name = "chessboard_timing"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true

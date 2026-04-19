@@ -7,7 +7,7 @@ mod convert;
 mod gray;
 
 use calib_targets_charuco::{CharucoDetector, CharucoParams};
-use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
+use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
 use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
@@ -62,6 +62,23 @@ fn detect_corners_impl(pixels: &[u8], width: u32, height: u32, cfg: &ChessConfig
         .collect()
 }
 
+/// Resolve a ChESS detector config, falling back to defaults when JS supplies
+/// `undefined` / `null`. The chessboard detector no longer carries a
+/// nested ChESS config in `DetectorParams`, so callers (or this helper) must
+/// supply one for the corner-detection step.
+fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        from_js(chess_cfg)
+    } else {
+        Ok(ChessConfig {
+            threshold_mode: ThresholdMode::Relative,
+            threshold_value: 0.2,
+            nms_radius: 2,
+            ..ChessConfig::single_scale()
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Default configs (exported so the JS side can populate UI with defaults)
 // ---------------------------------------------------------------------------
@@ -78,10 +95,10 @@ pub fn default_chess_config() -> Result<JsValue, JsError> {
     to_js(&cfg)
 }
 
-/// Return the default `ChessboardParams` as a JS object.
+/// Return the default `DetectorParams` as a JS object.
 #[wasm_bindgen]
 pub fn default_chessboard_params() -> Result<JsValue, JsError> {
-    to_js(&ChessboardParams::default())
+    to_js(&DetectorParams::default())
 }
 
 /// Return the default `MarkerBoardParams` (with a minimal placeholder layout) as a JS object.
@@ -207,14 +224,12 @@ pub fn detect_chessboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut cb_params: ChessboardParams = from_js(params)?;
-    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
-        cb_params.chess = from_js(chess_cfg)?;
-    }
+    let cb_params: DetectorParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
 
-    let corners = detect_corners_impl(pixels, width, height, &cb_params.chess);
-    let detector = ChessboardDetector::new(cb_params);
-    let result = detector.detect_from_corners(&corners);
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector = ChessDetector::new(cb_params);
+    let result = detector.detect(&corners);
     to_js(&result)
 }
 
@@ -235,12 +250,10 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
-        charuco_params.chessboard.chess = from_js(chess_cfg)?;
-    }
+    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
 
-    let corners = detect_corners_impl(pixels, width, height, &charuco_params.chessboard.chess);
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
         CharucoDetector::new(charuco_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
@@ -267,12 +280,10 @@ pub fn detect_marker_board(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut mb_params: MarkerBoardParams = from_js(params)?;
-    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
-        mb_params.chessboard.chess = from_js(chess_cfg)?;
-    }
+    let mb_params: MarkerBoardParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
 
-    let corners = detect_corners_impl(pixels, width, height, &mb_params.chessboard.chess);
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector = MarkerBoardDetector::new(mb_params);
     let view = make_view(pixels, width, height);
     let result = detector.detect_from_image_and_corners(&view, &corners);
@@ -296,12 +307,10 @@ pub fn detect_puzzleboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
-    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
-        puzzle_params.chessboard.chess = from_js(chess_cfg)?;
-    }
+    let puzzle_params: PuzzleBoardParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
 
-    let corners = detect_corners_impl(pixels, width, height, &puzzle_params.chessboard.chess);
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
         PuzzleBoardDetector::new(puzzle_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
@@ -327,16 +336,17 @@ pub fn detect_chessboard_best(
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let configs: Vec<ChessboardParams> = from_js(configs)?;
+    let configs: Vec<DetectorParams> = from_js(configs)?;
+
+    // The chessboard detector does not carry a ChESS config; reuse the
+    // default ChESS settings for corner detection across every sweep config.
+    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    let corners = detect_corners_impl(pixels, width, height, &chess);
 
     let best = configs
         .iter()
-        .filter_map(|params| {
-            let corners = detect_corners_impl(pixels, width, height, &params.chess);
-            let detector = ChessboardDetector::new(params.clone());
-            detector.detect_from_corners(&corners)
-        })
-        .max_by_key(|r| r.detection.corners.len());
+        .filter_map(|params| ChessDetector::new(params.clone()).detect(&corners))
+        .max_by_key(|d| d.target.corners.len());
     to_js(&best)
 }
 
@@ -355,8 +365,9 @@ pub fn detect_charuco_best(
     let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;
     let mut last_err = None;
 
+    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     for params in &configs {
-        let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
         let detector = match CharucoDetector::new(params.clone()) {
             Ok(d) => d,
             Err(e) => {
@@ -403,10 +414,11 @@ pub fn detect_marker_board_best(
     validate_gray(pixels, width, height)?;
     let configs: Vec<MarkerBoardParams> = from_js(configs)?;
 
+    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     let best = configs
         .iter()
         .filter_map(|params| {
-            let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
             let detector = MarkerBoardDetector::new(params.clone());
             let view = make_view(pixels, width, height);
             detector.detect_from_image_and_corners(&view, &corners)
@@ -430,8 +442,9 @@ pub fn detect_puzzleboard_best(
     let mut best: Option<calib_targets_puzzleboard::PuzzleBoardDetectionResult> = None;
     let mut last_err = None;
 
+    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    let corners = detect_corners_impl(pixels, width, height, &chess);
     for params in &configs {
-        let corners = detect_corners_impl(pixels, width, height, &params.chessboard.chess);
         let detector = match PuzzleBoardDetector::new(params.clone()) {
             Ok(d) => d,
             Err(e) => {

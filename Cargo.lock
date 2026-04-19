@@ -285,9 +285,9 @@ dependencies = [
 
 [[package]]
 name = "box-image-pyramid"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47cbd8c91ad3b98cf5295d8e54182193a5ae3d8290e445310eca8538bc0e2e5d"
+checksum = "58b98343f595652ccc4da8ba4bb349ed9ce9c77b0472bad0e9d0858295dd092e"
 dependencies = [
  "rayon",
 ]
@@ -341,7 +341,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "calib-targets"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-charuco"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-chessboard",
@@ -401,10 +401,14 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
+ "approx",
+ "calib-targets",
  "calib-targets-core",
  "chess-corners",
+ "criterion",
+ "env_logger",
  "image",
  "kiddo",
  "log",
@@ -414,13 +418,11 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
- "tracing-log",
- "tracing-subscriber",
 ]
 
 [[package]]
 name = "calib-targets-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_cmd",
  "calib-targets-aruco",
@@ -436,7 +438,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "log",
  "nalgebra",
@@ -450,7 +452,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets",
  "cbindgen",
@@ -463,7 +465,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -479,7 +481,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-print"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -495,7 +497,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-puzzleboard"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets",
  "calib-targets-chessboard",
@@ -515,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets",
  "chess-corners",
@@ -529,7 +531,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-wasm"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -592,9 +594,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1448c561f13a731b2b91ce4716f2a85cd2d360b3df401227d4826fb7cb20a842"
+checksum = "48621dcb7fc750c0c56563b604af9a9c4c74f482d1c81b004dbb86c67aafec04"
 dependencies = [
  "box-image-pyramid",
  "chess-corners-core",
@@ -607,9 +609,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4796914389ee03fe0c156cdb3f87bdb465e25a46ec2e96eee02e7f400d0b7e18"
+checksum = "7c484dc3dc9736d59400c6439d27a81bdee9fcaa22bc8796f0ec573cf412e7d7"
 dependencies = [
  "log",
  "rayon",
@@ -618,9 +620,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-ml"
-version = "0.5.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "508745def32e585524de19d8cbdc2b276b4f26cece63226dbe1c08d9badb92de"
+checksum = "a943392ba88f9e418976030f720801b6e7268527a7ef1f9e22c7d907acd154e1"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -870,6 +872,29 @@ name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
+
+[[package]]
+name = "env_filter"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32e90c2accc4b07a8456ea0debdc2e7587bdd890680d71173a15d4ae604f6eef"
+dependencies = [
+ "log",
+ "regex",
+]
+
+[[package]]
+name = "env_logger"
+version = "0.11.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0621c04f2196ac3f488dd583365b9c09be011a4ab8b9f37248ffcc8f6198b56a"
+dependencies = [
+ "anstream",
+ "anstyle",
+ "env_filter",
+ "jiff",
+ "log",
+]
 
 [[package]]
 name = "equator"
@@ -1357,6 +1382,30 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jiff"
+version = "0.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a3546dc96b6d42c5f24902af9e2538e82e39ad350b0c766eb3fbf2d8f3d8359"
+dependencies = [
+ "jiff-static",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+]
+
+[[package]]
+name = "jiff-static"
+version = "0.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a8c8b344124222efd714b73bb41f8b5120b27a7cc1c75593a6ff768d9d05aa4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "jobserver"
@@ -2072,7 +2121,7 @@ dependencies = [
 
 [[package]]
 name = "projective-grid"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "kiddo",
  "nalgebra",
@@ -3085,9 +3134,9 @@ checksum = "8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e"
 
 [[package]]
 name = "typenum"
-version = "1.19.0"
+version = "1.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
+checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "ucd-trie"

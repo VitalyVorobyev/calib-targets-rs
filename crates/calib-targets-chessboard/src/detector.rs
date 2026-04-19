@@ -1,542 +1,779 @@
-use crate::gridgraph::{
-    assign_grid_coordinates, build_chessboard_grid_graph, connected_components,
-};
-use crate::params::ChessboardParams;
-use calib_targets_core::{
-    cluster_orientations, estimate_grid_axes_from_orientations, Corner, GridCoords, LabeledCorner,
-    OrientationHistogram, TargetDetection, TargetKind,
-};
-use log::{debug, warn};
-use projective_grid::{GridGraph, GridIndex, NeighborDirection};
+//! Detector orchestrator: run the precision core end-to-end.
+//!
+//! Stages 5–7 loop with a blacklist until validation converges or
+//! `max_validation_iters` is reached. Stage 8 (recall boosters) extends
+//! the labelled set without compromising invariants. `detect_all` peels
+//! off disconnected components by re-entering the pipeline with already-
+//! labelled inputs marked consumed.
+//!
+//! See `book/src/chessboard.md` for the full algorithm description.
+
+use crate::boosters::{apply_boosters, BoosterResult};
+use crate::cluster::{cluster_axes, ClusterCenters};
+use crate::corner::{CornerAug, CornerStage};
+use crate::grow::{grow_from_seed, GrowResult};
+use crate::params::DetectorParams;
+use crate::seed::{find_seed, SeedOutput};
+use crate::validate::{validate, ValidationResult};
+use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use serde::Serialize;
-use std::f32::consts::FRAC_PI_2;
+use std::collections::HashSet;
 
-#[cfg(feature = "tracing")]
-use tracing::instrument;
-
-/// Simple chessboard detector using ChESS orientations + grid fitting in (u, v) space.
-#[derive(Debug)]
-pub struct ChessboardDetector {
-    pub params: ChessboardParams,
+/// Final detection output.
+#[derive(Clone, Debug, Serialize)]
+pub struct Detection {
+    pub grid_directions: [f32; 2],
+    pub cell_size: f32,
+    pub target: TargetDetection,
+    /// Indices into the input `corners` slice for the labelled corners,
+    /// in the same order as `target.corners`.
+    ///
+    /// Consumers that need to map labelled grid points back to raw ChESS
+    /// inputs (e.g., ChArUco marker alignment) should read this vector
+    /// rather than reconstructing the mapping from positions.
+    pub strong_indices: Vec<usize>,
 }
 
-#[derive(Debug, Serialize)]
-pub struct ChessboardDetectionResult {
-    pub detection: TargetDetection,
-    pub inliers: Vec<usize>,
-    pub orientations: Option<[f32; 2]>,
-    pub debug: ChessboardDebug,
+/// Current [`DebugFrame`] schema version.
+///
+/// Bumped when fields are removed, renamed, or their semantics change.
+/// Adding new optional fields does NOT bump the schema. Downstream
+/// tooling (Python overlay script, etc.) should warn on mismatch.
+pub const DEBUG_FRAME_SCHEMA: u32 = 1;
+
+/// Compact debug payload — one per detection call.
+///
+/// Flat and serde-friendly so the Python overlay script can render
+/// every decision stage.
+#[derive(Clone, Debug, Serialize)]
+pub struct DebugFrame {
+    /// Schema version — see [`DEBUG_FRAME_SCHEMA`].
+    pub schema: u32,
+    pub input_count: usize,
+    pub grid_directions: Option<[f32; 2]>,
+    pub cell_size: Option<f32>,
+    pub seed: Option<[usize; 4]>,
+    pub iterations: Vec<IterationTrace>,
+    /// Summary from the Stage-8 recall boosters (`None` when
+    /// boosters didn't run — e.g., empty or Stage-5 failure).
+    pub boosters: Option<BoosterResult>,
+    pub detection: Option<Detection>,
+    /// All corners carried through the pipeline (same indexing as
+    /// the input slice). `stage` captures where each corner ended
+    /// up.
+    pub corners: Vec<CornerAug>,
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct ChessboardDebug {
-    pub orientation_histogram: Option<OrientationHistogram>,
-    pub graph: Option<GridGraphDebug>,
+pub struct IterationTrace {
+    pub iter: u32,
+    pub labelled_count: usize,
+    pub new_blacklist: Vec<usize>,
+    pub converged: bool,
 }
 
+/// Compact per-stage counters derived from a [`DebugFrame`].
+///
+/// Cheaper to log / dashboard than the full [`DebugFrame`]: each field is a
+/// single integer (or boolean). Use [`Detector::detect_instrumented`] to get
+/// these alongside the detection.
+#[derive(Clone, Copy, Debug, Default, Serialize)]
+pub struct StageCounts {
+    /// Corners passed into the detector.
+    pub input_corners: usize,
+    /// Corners reaching `CornerStage::Strong` (Stage 1 survivors).
+    pub after_strength_filter: usize,
+    /// Corners reaching `CornerStage::Clustered` (Stage 3 survivors).
+    pub after_clustering: usize,
+    /// `true` if a seed was found (Stage 5 succeeded).
+    pub seed_found: bool,
+    /// Number of validation iterations executed (Stages 5–7 loop).
+    pub validation_iterations: u32,
+    /// Total corners blacklisted across all validation iterations.
+    pub blacklisted_total: usize,
+    /// Final labelled corner count after Stage 8 boosters
+    /// (`0` if no detection was emitted).
+    pub labelled_final: usize,
+}
+
+impl StageCounts {
+    /// Derive counts from a [`DebugFrame`].
+    pub fn from_frame(frame: &DebugFrame) -> Self {
+        let mut counts = StageCounts {
+            input_corners: frame.input_count,
+            ..Default::default()
+        };
+        for aug in &frame.corners {
+            match aug.stage {
+                CornerStage::Strong
+                | CornerStage::Clustered { .. }
+                | CornerStage::AttachmentAmbiguous { .. }
+                | CornerStage::AttachmentFailedInvariants { .. }
+                | CornerStage::Labeled { .. }
+                | CornerStage::LabeledThenBlacklisted { .. } => {
+                    counts.after_strength_filter += 1;
+                }
+                CornerStage::Raw | CornerStage::NoCluster { .. } => {}
+            }
+            match aug.stage {
+                CornerStage::Clustered { .. }
+                | CornerStage::AttachmentAmbiguous { .. }
+                | CornerStage::AttachmentFailedInvariants { .. }
+                | CornerStage::Labeled { .. }
+                | CornerStage::LabeledThenBlacklisted { .. } => {
+                    counts.after_clustering += 1;
+                }
+                _ => {}
+            }
+            if matches!(aug.stage, CornerStage::LabeledThenBlacklisted { .. }) {
+                counts.blacklisted_total += 1;
+            }
+        }
+        counts.seed_found = frame.seed.is_some();
+        counts.validation_iterations = frame.iterations.len() as u32;
+        if let Some(d) = &frame.detection {
+            counts.labelled_final = d.target.corners.len();
+        }
+        counts
+    }
+}
+
+/// A [`Detection`] (when produced) paired with derived [`StageCounts`].
+///
+/// `detection` may be `None` even when counts are populated — the pipeline
+/// always runs to whichever stage failed first.
 #[derive(Clone, Debug, Serialize)]
-pub struct GridGraphDebug {
-    pub nodes: Vec<GridGraphNodeDebug>,
+pub struct InstrumentedResult {
+    pub detection: Option<Detection>,
+    pub counts: StageCounts,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct GridGraphNodeDebug {
-    pub position: [f32; 2],
-    pub neighbors: Vec<GridGraphNeighborDebug>,
+/// Top-level detector.
+pub struct Detector {
+    pub params: DetectorParams,
 }
 
-#[derive(Clone, Debug, Serialize)]
-pub struct GridGraphNeighborDebug {
-    pub index: usize,
-    pub direction: &'static str,
-    pub distance: f32,
-}
-
-impl ChessboardDetector {
-    pub fn new(params: ChessboardParams) -> Self {
+impl Detector {
+    pub fn new(params: DetectorParams) -> Self {
         Self { params }
     }
 
-    /// Main entry point: find chessboard(s) in a cloud of ChESS corners.
-    ///
-    /// This function expects corners already computed by your ChESS crate.
-    /// For now it returns at most one detection (the best-scoring grid component).
-    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
-    pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<ChessboardDetectionResult> {
-        // 1. Filter by strength.
-        let mut strong: Vec<Corner> = corners
-            .iter()
-            .filter(|c| c.strength >= self.params.min_corner_strength)
-            .cloned()
-            .collect();
-
-        debug!(
-            "found {} raw ChESS corners after strength filter",
-            strong.len()
-        );
-
-        if strong.len() < self.params.min_corners {
-            debug!(
-                "rejecting chessboard before graph build: {} corners < min_corners={}",
-                strong.len(),
-                self.params.min_corners
-            );
-            return None;
-        }
-
-        // 2. Estimate grid axes from orientations.
-        let mut grid_diagonals = None;
-        let mut graph_diagonals = None;
-        let mut orientation_histogram = None;
-
-        if self.params.use_orientation_clustering {
-            if let Some(clusters) =
-                cluster_orientations(&strong, &self.params.orientation_clustering_params)
-            {
-                orientation_histogram = clusters.histogram;
-                grid_diagonals = Some(clusters.centers);
-                graph_diagonals = grid_diagonals;
-                strong = strong
-                    .into_iter()
-                    .zip(clusters.labels)
-                    .filter_map(|(mut corner, label)| {
-                        label.map(|cluster| {
-                            corner.orientation_cluster = Some(cluster);
-                            corner
-                        })
-                    })
-                    .collect();
-            }
-        }
-
-        if grid_diagonals.is_none() {
-            warn!("Orientation clustering failed. Fallback to a simple estimate");
-            if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
-                let c0 = wrap_angle_pi(theta);
-                let c1 = wrap_angle_pi(theta + FRAC_PI_2);
-                grid_diagonals = Some([c0, c1]);
-            }
-        }
-
-        if let Some(diagonals) = grid_diagonals {
-            let mut cluster_counts = [0usize; 2];
-            for corner in &strong {
-                if let Some(cluster) = corner.orientation_cluster {
-                    if let Some(slot) = cluster_counts.get_mut(cluster) {
-                        *slot += 1;
-                    }
-                }
-            }
-            debug!(
-                "grid diagonals estimated at {:.1} deg / {:.1} deg; orientation cluster counts = [{}, {}]",
-                diagonals[0].to_degrees(),
-                diagonals[1].to_degrees(),
-                cluster_counts[0],
-                cluster_counts[1]
-            );
-        }
-
-        debug!(
-            "kept {} ChESS corners after orientation consistency filter",
-            strong.len()
-        );
-
-        if strong.len() < self.params.min_corners {
-            debug!(
-                "rejecting chessboard after orientation filtering: {} corners < min_corners={}",
-                strong.len(),
-                self.params.min_corners
-            );
-            return None;
-        }
-
-        let graph = build_chessboard_grid_graph(&strong, &self.params.graph, graph_diagonals);
-
-        let components = connected_components(&graph);
-        log_graph_summary(&graph, &components, self.params.min_corners);
-        debug!(
-            "found {} connected grid components after orientation filtering",
-            components.len()
-        );
-
-        let results = self.collect_components(
-            &graph,
-            &components,
-            &strong,
-            grid_diagonals,
-            orientation_histogram,
-        );
-        results.into_iter().next()
-    }
-
-    /// Return detections for **all** qualifying grid components, sorted by
-    /// corner count (largest first).
-    ///
-    /// This is the multi-component counterpart of [`Self::detect_from_corners`].
-    /// Callers that can merge multiple components (e.g. the ChArUco detector)
-    /// should prefer this method.
-    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, corners), fields(num_corners=corners.len())))]
-    pub fn detect_all_from_corners(&self, corners: &[Corner]) -> Vec<ChessboardDetectionResult> {
-        // Duplicate the pre-processing from detect_from_corners.
-        let mut strong: Vec<Corner> = corners
-            .iter()
-            .filter(|c| c.strength >= self.params.min_corner_strength)
-            .cloned()
-            .collect();
-
-        if strong.len() < self.params.min_corners {
-            return Vec::new();
-        }
-
-        let mut grid_diagonals = None;
-        let mut graph_diagonals = None;
-        let mut orientation_histogram = None;
-
-        if self.params.use_orientation_clustering {
-            if let Some(clusters) =
-                cluster_orientations(&strong, &self.params.orientation_clustering_params)
-            {
-                orientation_histogram = clusters.histogram;
-                grid_diagonals = Some(clusters.centers);
-                graph_diagonals = grid_diagonals;
-                strong = strong
-                    .into_iter()
-                    .zip(clusters.labels)
-                    .filter_map(|(mut corner, label)| {
-                        label.map(|cluster| {
-                            corner.orientation_cluster = Some(cluster);
-                            corner
-                        })
-                    })
-                    .collect();
-            }
-        }
-
-        if grid_diagonals.is_none() {
-            if let Some(theta) = estimate_grid_axes_from_orientations(&strong) {
-                let c0 = wrap_angle_pi(theta);
-                let c1 = wrap_angle_pi(theta + FRAC_PI_2);
-                grid_diagonals = Some([c0, c1]);
-            }
-        }
-
-        if strong.len() < self.params.min_corners {
-            return Vec::new();
-        }
-
-        let graph = build_chessboard_grid_graph(&strong, &self.params.graph, graph_diagonals);
-        let components = connected_components(&graph);
-        log_graph_summary(&graph, &components, self.params.min_corners);
-
-        self.collect_components(
-            &graph,
-            &components,
-            &strong,
-            grid_diagonals,
-            orientation_histogram,
+    /// Simple entry point: run the pipeline and return the best detection.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
         )
+    )]
+    pub fn detect(&self, corners: &[Corner]) -> Option<Detection> {
+        self.detect_debug(corners).detection
     }
 
-    /// Shared logic: iterate components, convert to board coords, return all qualifying results.
-    fn collect_components(
-        &self,
-        graph: &GridGraph,
-        components: &[Vec<usize>],
-        strong: &[Corner],
-        grid_diagonals: Option<[f32; 2]>,
-        orientation_histogram: Option<OrientationHistogram>,
-    ) -> Vec<ChessboardDetectionResult> {
-        let mut results: Vec<(TargetDetection, Vec<usize>, usize)> = Vec::new();
-        let mut found_primary = false;
+    /// Full-debug entry point for a single best detection.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_debug(&self, corners: &[Corner]) -> DebugFrame {
+        self.detect_debug_excluding(corners, &HashSet::new())
+    }
 
-        // Sort components by size descending so primary is processed first.
-        let mut sorted_indices: Vec<usize> = (0..components.len()).collect();
-        sorted_indices.sort_unstable_by(|&a, &b| components[b].len().cmp(&components[a].len()));
-
-        for &ci in &sorted_indices {
-            let component = &components[ci];
-            if component.len() < self.params.min_corners {
-                continue;
-            }
-            let coords = assign_grid_coordinates(graph, component);
-            if coords.is_empty() {
-                debug!(
-                    "rejecting component with {} nodes because BFS assigned no grid coordinates",
-                    component.len()
-                );
-                continue;
-            }
-            let skip_completeness = found_primary;
-            let Some((detection, inliers)) =
-                self.component_to_board_coords(&coords, strong, skip_completeness)
-            else {
-                continue;
-            };
-            let score = detection.corners.len();
-            debug!(
-                "accepted chessboard component with {} corners and {} inliers (primary={})",
-                detection.corners.len(),
-                inliers.len(),
-                !found_primary
-            );
-            results.push((detection, inliers, score));
-            found_primary = true;
-        }
-
-        // Sort by corner count descending.
-        results.sort_unstable_by_key(|r| std::cmp::Reverse(r.2));
-
-        let graph_debug = Some(build_graph_debug(graph, strong));
-        results
+    /// Return every qualifying grid component from a single scene.
+    ///
+    /// Useful for ChArUco and similar setups where a single physical board
+    /// can be split into multiple disconnected chessboard pieces by
+    /// markers or occlusions. Each returned [`Detection`] carries its own
+    /// locally-rebased `(i, j)` labels; alignment to a global frame is the
+    /// caller's responsibility (ChArUco's marker decoding does this).
+    ///
+    /// Capped by [`DetectorParams::max_components`].
+    ///
+    /// Does NOT support scenes with multiple separate physical boards — one
+    /// target per frame is the contract.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all(&self, corners: &[Corner]) -> Vec<Detection> {
+        self.detect_all_debug(corners)
             .into_iter()
-            .map(|(detection, inliers, _)| ChessboardDetectionResult {
-                detection,
-                inliers,
-                orientations: grid_diagonals,
-                debug: ChessboardDebug {
-                    orientation_histogram: orientation_histogram.clone(),
-                    graph: graph_debug.clone(),
-                },
+            .filter_map(|f| f.detection)
+            .collect()
+    }
+
+    /// Single-detection entry with derived per-stage counts.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_instrumented(&self, corners: &[Corner]) -> InstrumentedResult {
+        let frame = self.detect_debug(corners);
+        let counts = StageCounts::from_frame(&frame);
+        InstrumentedResult {
+            detection: frame.detection,
+            counts,
+        }
+    }
+
+    /// Multi-component entry with per-component derived counts.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all_instrumented(&self, corners: &[Corner]) -> Vec<InstrumentedResult> {
+        self.detect_all_debug(corners)
+            .into_iter()
+            .map(|frame| {
+                let counts = StageCounts::from_frame(&frame);
+                InstrumentedResult {
+                    detection: frame.detection,
+                    counts,
+                }
             })
             .collect()
     }
 
-    fn component_to_board_coords(
-        &self,
-        coords: &[(usize, GridIndex)],
-        corners: &[Corner],
-        skip_completeness: bool,
-    ) -> Option<(TargetDetection, Vec<usize>)> {
-        let (min_i, max_i, min_j, max_j) =
-            coords
-                .iter()
-                .fold((i32::MAX, i32::MIN, i32::MAX, i32::MIN), |acc, &(_, g)| {
-                    (
-                        acc.0.min(g.i),
-                        acc.1.max(g.i),
-                        acc.2.min(g.j),
-                        acc.3.max(g.j),
-                    )
-                });
+    /// Full-debug multi-component entry point. See [`Self::detect_all`].
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all_debug(&self, corners: &[Corner]) -> Vec<DebugFrame> {
+        let cap = self.params.max_components.max(1) as usize;
+        let mut consumed: HashSet<usize> = HashSet::new();
+        let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
 
-        if min_i == i32::MAX || min_j == i32::MAX {
-            return None;
+        for _ in 0..cap {
+            let frame = self.detect_debug_excluding(corners, &consumed);
+            let Some(detection) = frame.detection.as_ref() else {
+                // No further detectable component — include the empty frame
+                // so caller can introspect the failure stage if desired.
+                if frames.is_empty() {
+                    frames.push(frame);
+                }
+                break;
+            };
+            for &idx in &detection.strong_indices {
+                consumed.insert(idx);
+            }
+            frames.push(frame);
         }
 
-        let width = (max_i - min_i + 1) as u32;
-        let height = (max_j - min_j + 1) as u32;
+        frames
+    }
 
-        let Some((board_cols, board_rows, swap_axes)) =
-            select_board_size(width, height, &self.params)
-        else {
-            debug!(
-                "rejecting component with {} nodes: grid span {}x{} does not fit expected board cols={:?} rows={:?}",
-                coords.len(),
-                width,
-                height,
-                self.params.expected_cols,
-                self.params.expected_rows
-            );
-            return None;
+    fn detect_debug_excluding(&self, corners: &[Corner], consumed: &HashSet<usize>) -> DebugFrame {
+        let input_count = corners.len();
+        let mut augs: Vec<CornerAug> = corners
+            .iter()
+            .enumerate()
+            .map(|(i, c)| CornerAug::from_corner(i, c))
+            .collect();
+
+        let mut frame = DebugFrame {
+            schema: DEBUG_FRAME_SCHEMA,
+            input_count,
+            grid_directions: None,
+            cell_size: None,
+            seed: None,
+            iterations: Vec::new(),
+            boosters: None,
+            detection: None,
+            corners: Vec::new(),
         };
 
-        let grid_area = (board_cols * board_rows) as f32;
-        if grid_area <= f32::EPSILON {
-            debug!(
-                "rejecting component with {} nodes: degenerate grid area for board {}x{}",
-                coords.len(),
-                board_cols,
-                board_rows
-            );
-            return None;
+        // Stage 1: pre-filter.
+        // Corners already consumed by a previous `detect_all` iteration are
+        // left at `Raw` stage, which makes them invisible to clustering,
+        // seed search, grow, and validation.
+        for aug in augs.iter_mut() {
+            if consumed.contains(&aug.input_index) {
+                continue;
+            }
+            if passes_strength(aug, &self.params) && passes_fit_quality(aug, &self.params) {
+                aug.stage = CornerStage::Strong;
+            }
+        }
+        if augs
+            .iter()
+            .filter(|a| matches!(a.stage, CornerStage::Strong))
+            .count()
+            < self.params.min_labeled_corners
+        {
+            frame.corners = augs;
+            return frame;
         }
 
-        // De-duplicate by grid coordinate: in noisy graphs, a component can contain
-        // multiple corners that get mapped to the same (i,j). Keep the strongest one.
-        let mut by_grid: std::collections::HashMap<GridCoords, LabeledCorner> =
-            std::collections::HashMap::new();
-        for &(node_idx, g) in coords {
-            let corner = &corners[node_idx];
-            let (gi, gj) = if swap_axes {
-                (g.j - min_j, g.i - min_i)
-            } else {
-                (g.i - min_i, g.j - min_j)
-            };
-            let grid = GridCoords { i: gi, j: gj };
-            let candidate = LabeledCorner {
-                position: corner.position,
-                grid: Some(grid),
-                id: None,
-                target_position: None,
-                score: corner.strength,
-            };
+        // Stage 2 + 3: clustering.
+        let centers = match cluster_axes(&mut augs, &self.params) {
+            Some(c) => c,
+            None => {
+                frame.corners = augs;
+                return frame;
+            }
+        };
+        frame.grid_directions = Some([centers.theta0, centers.theta1]);
 
-            match by_grid.get(&grid) {
-                None => {
-                    by_grid.insert(grid, candidate);
-                }
-                Some(prev) => {
-                    if candidate.score > prev.score {
-                        by_grid.insert(grid, candidate);
+        // Stages 4+5 (fused): the seed finder is now self-consistent
+        // — it finds a 4-corner quad that matches itself in edge
+        // lengths, and reports `cell_size` as the mean seed-edge
+        // length. This avoids the bimodal-histogram failure where
+        // the old global cell-size estimator picked a too-small
+        // mode (typically marker-internal spacing rather than true
+        // board spacing), leaving the downstream edge-window
+        // `[0.75s, 1.25s]` excluding every legitimate neighbor.
+        //
+        // The detector loops with a blacklist; each iteration re-
+        // runs the seed + growth pair.
+        let mut blacklist: HashSet<usize> = HashSet::new();
+        let max_iters = self.params.max_validation_iters.max(1);
+
+        for it in 0..max_iters {
+            // Reset any Labeled stage on corners not in blacklist —
+            // re-run means re-label from scratch in this iteration.
+            for aug in augs.iter_mut() {
+                if matches!(aug.stage, CornerStage::Labeled { .. })
+                    && !blacklist.contains(&aug.input_index)
+                {
+                    // Stage-3 → Stage-5 invariant: every Labeled corner
+                    // carries its cluster label. If it's somehow missing,
+                    // leave the stage as-is rather than panicking — the
+                    // next iteration's checks will re-handle this corner.
+                    if let Some(label) = aug.label {
+                        aug.stage = CornerStage::Clustered { label };
                     }
                 }
             }
-        }
 
-        let completeness = by_grid.len() as f32 / grid_area;
-        if !skip_completeness {
-            if let (Some(_), Some(_)) = (self.params.expected_cols, self.params.expected_rows) {
-                if completeness < self.params.completeness_threshold {
-                    debug!(
-                        "rejecting component with {} nodes: completeness {:.3} below threshold {:.3} for board {}x{} ({} unique corners)",
-                        coords.len(),
-                        completeness,
-                        self.params.completeness_threshold,
-                        board_cols,
-                        board_rows,
-                        by_grid.len()
-                    );
-                    return None;
-                }
-            }
-        }
-
-        let mut labeled: Vec<LabeledCorner> = by_grid.into_values().collect();
-
-        labeled.sort_by(|a, b| {
-            let ga = a.grid.as_ref().unwrap();
-            let gb = b.grid.as_ref().unwrap();
-            (ga.j, ga.i).cmp(&(gb.j, gb.i))
-        });
-
-        let detection = TargetDetection {
-            kind: TargetKind::Chessboard,
-            corners: labeled,
-        };
-
-        let inliers = (0..detection.corners.len()).collect();
-        debug!(
-            "component with {} nodes produced board {}x{} (swap_axes={swap_axes}) with {} unique corners and completeness {:.3}",
-            coords.len(),
-            board_cols,
-            board_rows,
-            detection.corners.len(),
-            completeness
-        );
-
-        Some((detection, inliers))
-    }
-}
-
-fn select_board_size(
-    width: u32,
-    height: u32,
-    params: &ChessboardParams,
-) -> Option<(u32, u32, bool)> {
-    match (params.expected_cols, params.expected_rows) {
-        (Some(expected_cols), Some(expected_rows)) => {
-            let fits_direct = width <= expected_cols && height <= expected_rows;
-            let fits_swapped = width <= expected_rows && height <= expected_cols;
-
-            if !fits_direct && !fits_swapped {
-                return None;
-            }
-
-            let swap_axes = if fits_direct && !fits_swapped {
-                false
-            } else if !fits_direct && fits_swapped {
-                true
-            } else {
-                let gap_direct = (expected_cols - width) + (expected_rows - height);
-                let gap_swapped = (expected_rows - width) + (expected_cols - height);
-                gap_swapped < gap_direct
+            let seed_out: SeedOutput = match find_seed(&augs, centers, &self.params) {
+                Some(s) => s,
+                None => break,
             };
+            let seed = seed_out.seed;
+            let cell_size = seed_out.cell_size;
+            frame.cell_size = Some(cell_size);
+            frame.seed = Some([seed.a, seed.b, seed.c, seed.d]);
 
-            Some((expected_cols, expected_rows, swap_axes))
-        }
-        _ => Some((width, height, false)),
-    }
-}
+            let mut grow_res: GrowResult = grow_from_seed(
+                &mut augs,
+                seed,
+                centers,
+                cell_size,
+                &blacklist,
+                &self.params,
+            );
+            let labelled_count = grow_res.labelled.len();
 
-fn build_graph_debug(graph: &GridGraph, corners: &[Corner]) -> GridGraphDebug {
-    let nodes = graph
-        .neighbors
-        .iter()
-        .enumerate()
-        .map(|(idx, neighs)| {
-            let neighbors = neighs
+            let v: ValidationResult = validate(&augs, &grow_res.labelled, cell_size, &self.params);
+            let new_blacklist: Vec<usize> = v
+                .blacklist
                 .iter()
-                .map(|n| GridGraphNeighborDebug {
-                    index: n.index,
-                    direction: neighbor_dir_name(n.direction),
-                    distance: n.distance,
-                })
+                .filter(|idx| !blacklist.contains(idx))
+                .copied()
                 .collect();
-            GridGraphNodeDebug {
-                position: [corners[idx].position.x, corners[idx].position.y],
-                neighbors,
+
+            let converged = new_blacklist.is_empty();
+            // Soft convergence: when the validator keeps flagging a
+            // small residual set (≤ 2 corners) over multiple rounds,
+            // the labelled set has effectively stabilised — we're
+            // oscillating on borderline-outlier corners. Apply the
+            // current round's blacklist and accept. Bounded below
+            // by `iter >= 2` so we never emit until we've seen
+            // at least two validation passes confirm the bulk of
+            // the labels.
+            let soft_converged = !converged
+                && it + 1 >= 2
+                && new_blacklist.len() <= 2
+                && labelled_count >= self.params.min_labeled_corners;
+            frame.iterations.push(IterationTrace {
+                iter: it,
+                labelled_count,
+                new_blacklist: new_blacklist.clone(),
+                converged: converged || soft_converged,
+            });
+
+            if converged || soft_converged {
+                if soft_converged {
+                    // Apply the current round's blacklist before
+                    // accepting so the emitted detection excludes
+                    // the flagged outliers.
+                    for &idx in &new_blacklist {
+                        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                                at,
+                                reason: "soft-convergence outlier".into(),
+                            };
+                        }
+                        grow_res.labelled.retain(|_, &mut v| v != idx);
+                        grow_res.by_corner.remove(&idx);
+                        blacklist.insert(idx);
+                    }
+                }
+                let mut grow_mut = grow_res;
+
+                // Phase E recall boosters: interior gap fill + line
+                // extrapolation. Runs only after the precision core
+                // has converged with no new blacklist entries, so
+                // every candidate is validated against the same
+                // attachment invariants as growth.
+                let booster: BoosterResult = apply_boosters(
+                    &mut augs,
+                    &mut grow_mut,
+                    centers,
+                    cell_size,
+                    &blacklist,
+                    &self.params,
+                );
+                frame.boosters = Some(booster);
+
+                // Write local-H residuals onto labelled corners.
+                for (&c_idx, &resid) in &v.local_h_residuals {
+                    if let CornerStage::Labeled { at, .. } = augs[c_idx].stage {
+                        augs[c_idx].stage = CornerStage::Labeled {
+                            at,
+                            local_h_residual_px: Some(resid),
+                        };
+                    }
+                }
+                let final_count = grow_mut.labelled.len();
+                if final_count >= self.params.min_labeled_corners {
+                    frame.detection = Some(build_detection(&augs, &grow_mut, centers, cell_size));
+                }
+                break;
             }
-        })
-        .collect();
 
-    GridGraphDebug { nodes }
+            // Mark blacklisted corners and retry.
+            for &idx in &new_blacklist {
+                if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                    augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                        at,
+                        reason: "post-validation outlier".into(),
+                    };
+                }
+                blacklist.insert(idx);
+            }
+        }
+
+        frame.corners = augs;
+        frame
+    }
 }
 
-fn log_graph_summary(graph: &GridGraph, components: &[Vec<usize>], min_corners: usize) {
-    let mut component_sizes: Vec<usize> =
-        components.iter().map(|component| component.len()).collect();
-    component_sizes.sort_unstable_by(|a, b| b.cmp(a));
+fn passes_strength(aug: &CornerAug, params: &DetectorParams) -> bool {
+    aug.strength >= params.min_corner_strength
+}
 
-    let degrees: Vec<usize> = graph
-        .neighbors
-        .iter()
-        .map(|neighbors| neighbors.len())
-        .collect();
-    let isolated_nodes = degrees.iter().filter(|&&degree| degree == 0).count();
-    let nodes_with_neighbors = degrees.len().saturating_sub(isolated_nodes);
-    let directed_edges: usize = degrees.iter().sum();
-    let min_degree = degrees.iter().copied().min().unwrap_or(0);
-    let max_degree = degrees.iter().copied().max().unwrap_or(0);
-    let avg_degree = if degrees.is_empty() {
-        0.0
+fn passes_fit_quality(aug: &CornerAug, params: &DetectorParams) -> bool {
+    if !params.max_fit_rms_ratio.is_finite() {
+        return true;
+    }
+    if aug.contrast <= 0.0 {
+        return true;
+    }
+    aug.fit_rms <= params.max_fit_rms_ratio * aug.contrast
+}
+
+fn build_detection(
+    corners: &[CornerAug],
+    grow: &GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+) -> Detection {
+    // Grow rebases (i, j) to non-negative already, but late-stage
+    // mutations (soft-convergence outlier removal, booster additions
+    // that extend the grid past the prior bbox) can leave the set
+    // un-rebased. Re-rebase here so the non-negative invariant is a
+    // `build_detection`-side guarantee.
+    let mut labelled_pairs: Vec<((i32, i32), usize)> =
+        grow.labelled.iter().map(|(&k, &v)| (k, v)).collect();
+    if !labelled_pairs.is_empty() {
+        let (min_i, min_j) = labelled_pairs
+            .iter()
+            .fold((i32::MAX, i32::MAX), |(a, b), &((i, j), _)| {
+                (a.min(i), b.min(j))
+            });
+        if min_i != 0 || min_j != 0 {
+            for ((i, j), _) in labelled_pairs.iter_mut() {
+                *i -= min_i;
+                *j -= min_j;
+            }
+        }
+    }
+
+    // Canonicalize orientation so +i points roughly +x (right) and +j
+    // points roughly +y (down) in image coords. The grow stage assigns
+    // (i, j) from the seed's internal axis-slot convention, which has
+    // no relation to image orientation; without this step, (0, 0) can
+    // land anywhere on the detected board.
+    let swap_axes = canonicalize_orientation(&mut labelled_pairs, corners);
+
+    // Sort by (j, i) so the output order is stable and we don't need a
+    // post-hoc unwrap on `grid` downstream.
+    labelled_pairs.sort_by_key(|&((i, j), _)| (j, i));
+
+    let mut labeled_corners: Vec<LabeledCorner> = Vec::with_capacity(labelled_pairs.len());
+    let mut strong_indices: Vec<usize> = Vec::with_capacity(labelled_pairs.len());
+    for ((i, j), c_idx) in labelled_pairs {
+        let c = &corners[c_idx];
+        labeled_corners.push(LabeledCorner {
+            position: c.position,
+            grid: Some(GridCoords { i, j }),
+            id: None,
+            target_position: None,
+            score: c.strength,
+        });
+        strong_indices.push(c.input_index);
+    }
+
+    // Swap the reported grid-direction angles when axes were swapped so
+    // `grid_directions[0]` still describes the +i axis.
+    let grid_directions = if swap_axes {
+        [centers.theta1, centers.theta0]
     } else {
-        directed_edges as f32 / degrees.len() as f32
+        [centers.theta0, centers.theta1]
     };
-    let candidate_components = component_sizes
+
+    Detection {
+        grid_directions,
+        cell_size,
+        target: TargetDetection {
+            kind: TargetKind::Chessboard,
+            corners: labeled_corners,
+        },
+        strong_indices,
+    }
+}
+
+/// Canonicalize grid orientation so +i points roughly +x (right) and +j
+/// points roughly +y (down) in image pixel coordinates. Preserves the
+/// labelling up to axis permutation / sign flips and keeps `(i, j)`
+/// non-negative with the bounding-box minimum at `(0, 0)`. Returns
+/// `true` when the i- and j-axes were swapped — the caller may need to
+/// swap any parallel axis-indexed data (e.g. `grid_directions`).
+fn canonicalize_orientation(
+    labelled_pairs: &mut [((i32, i32), usize)],
+    corners: &[CornerAug],
+) -> bool {
+    if labelled_pairs.len() < 2 {
+        return false;
+    }
+
+    use std::collections::HashMap;
+    let pos_by_ij: HashMap<(i32, i32), (f32, f32)> = labelled_pairs
         .iter()
-        .filter(|&&size| size >= min_corners)
-        .count();
-    let top_n = component_sizes.len().min(8);
+        .map(|&((i, j), idx)| ((i, j), (corners[idx].position.x, corners[idx].position.y)))
+        .collect();
 
-    debug!(
-        "grid graph summary: nodes={}, nodes_with_neighbors={}, isolated_nodes={}, directed_edges={}, degree[min/avg/max]={}/{:.2}/{}, components={}, candidate_components={}, largest_components={:?}",
-        degrees.len(),
-        nodes_with_neighbors,
-        isolated_nodes,
-        directed_edges,
-        min_degree,
-        avg_degree,
-        max_degree,
-        component_sizes.len(),
-        candidate_components,
-        &component_sizes[..top_n]
-    );
+    // Mean +i and +j step vectors (in image pixels) over all adjacent
+    // labelled pairs. Averaging across the full grid makes the direction
+    // robust to individual corner noise and perspective distortion.
+    let mut vi_sum = (0.0_f32, 0.0_f32);
+    let mut vj_sum = (0.0_f32, 0.0_f32);
+    let mut vi_n = 0u32;
+    let mut vj_n = 0u32;
+    for (&(i, j), &(x, y)) in pos_by_ij.iter() {
+        if let Some(&(xn, yn)) = pos_by_ij.get(&(i + 1, j)) {
+            vi_sum.0 += xn - x;
+            vi_sum.1 += yn - y;
+            vi_n += 1;
+        }
+        if let Some(&(xn, yn)) = pos_by_ij.get(&(i, j + 1)) {
+            vj_sum.0 += xn - x;
+            vj_sum.1 += yn - y;
+            vj_n += 1;
+        }
+    }
+    if vi_n == 0 || vj_n == 0 {
+        return false;
+    }
+    let vi = (vi_sum.0 / vi_n as f32, vi_sum.1 / vi_n as f32);
+    let vj = (vj_sum.0 / vj_n as f32, vj_sum.1 / vj_n as f32);
+
+    // Decide which original axis should become the "horizontal" (i)
+    // axis. Swap when the +j axis has a larger |x| component than +i.
+    let swap = vi.0.abs() < vj.0.abs();
+    let new_vi = if swap { vj } else { vi };
+    let new_vj = if swap { vi } else { vj };
+    let flip_i = new_vi.0 < 0.0;
+    let flip_j = new_vj.1 < 0.0;
+
+    if !swap && !flip_i && !flip_j {
+        return false;
+    }
+
+    // Compute extents of the post-swap labelling before rewriting, so
+    // the sign flip stays within the non-negative domain.
+    let mut imax = i32::MIN;
+    let mut jmax = i32::MIN;
+    for &((i, j), _) in labelled_pairs.iter() {
+        let (ni, nj) = if swap { (j, i) } else { (i, j) };
+        imax = imax.max(ni);
+        jmax = jmax.max(nj);
+    }
+
+    for ((i, j), _) in labelled_pairs.iter_mut() {
+        let (mut ni, mut nj) = if swap { (*j, *i) } else { (*i, *j) };
+        if flip_i {
+            ni = imax - ni;
+        }
+        if flip_j {
+            nj = jmax - nj;
+        }
+        *i = ni;
+        *j = nj;
+    }
+    swap
 }
 
-fn neighbor_dir_name(dir: NeighborDirection) -> &'static str {
-    match dir {
-        NeighborDirection::Right => "right",
-        NeighborDirection::Left => "left",
-        NeighborDirection::Up => "up",
-        NeighborDirection::Down => "down",
-        _ => "unknown",
-    }
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calib_targets_core::{AxisEstimate, Corner};
+    use nalgebra::Point2;
 
-fn wrap_angle_pi(theta: f32) -> f32 {
-    let mut t = theta % std::f32::consts::PI;
-    if t < 0.0 {
-        t += std::f32::consts::PI;
+    fn make_corner(idx: usize, x: f32, y: f32, swapped: bool) -> Corner {
+        let (a0, a1) = if swapped {
+            (std::f32::consts::FRAC_PI_2, 0.0)
+        } else {
+            (0.0, std::f32::consts::FRAC_PI_2)
+        };
+        let _ = idx;
+        Corner {
+            position: Point2::new(x, y),
+            orientation_cluster: None,
+            axes: [
+                AxisEstimate {
+                    angle: a0,
+                    sigma: 0.01,
+                },
+                AxisEstimate {
+                    angle: a1,
+                    sigma: 0.01,
+                },
+            ],
+            contrast: 10.0,
+            fit_rms: 1.0,
+            strength: 1.0,
+        }
     }
-    t
+
+    #[test]
+    fn end_to_end_clean_grid() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let d = det.detect(&corners).expect("detection");
+        assert_eq!(d.target.corners.len(), 49);
+    }
+
+    #[test]
+    fn rejects_when_too_few_corners() {
+        let det = Detector::new(DetectorParams::default());
+        assert!(det.detect(&[]).is_none());
+    }
+
+    #[test]
+    fn grid_origin_at_visual_top_left() {
+        // Synthesize a 7×7 grid where the +x image axis corresponds to
+        // (1, 0) and +y to (0, 1). Regardless of which axis-slot the
+        // clusterer picks, `build_detection` must canonicalize so
+        // (0, 0) lands at the smallest (x, y) corner.
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let d = det.detect(&corners).expect("detection");
+        // Locate (0, 0) and the two neighbors.
+        let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
+            .target
+            .corners
+            .iter()
+            .filter_map(|c| {
+                let g = c.grid?;
+                Some(((g.i, g.j), (c.position.x, c.position.y)))
+            })
+            .collect();
+        let p00 = by_ij.get(&(0, 0)).copied().expect("(0,0) labelled");
+        let p10 = by_ij.get(&(1, 0)).copied().expect("(1,0) labelled");
+        let p01 = by_ij.get(&(0, 1)).copied().expect("(0,1) labelled");
+        // (0, 0) must be the top-left in pixel coords.
+        assert!(
+            p00.0 <= p10.0 && p00.1 <= p01.1,
+            "(0,0) at {:?} not top-left vs (1,0)={:?} (0,1)={:?}",
+            p00,
+            p10,
+            p01
+        );
+        // +i step must move right (+x).
+        assert!(p10.0 > p00.0, "+i axis not right-pointing");
+        // +j step must move down (+y).
+        assert!(p01.1 > p00.1, "+j axis not down-pointing");
+    }
+
+    #[test]
+    fn instrumented_counts_match_clean_grid() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let res = det.detect_instrumented(&corners);
+        assert!(res.detection.is_some(), "expected detection on 7x7 grid");
+        assert_eq!(res.counts.input_corners, 49);
+        assert_eq!(res.counts.after_strength_filter, 49);
+        assert_eq!(res.counts.after_clustering, 49);
+        assert!(res.counts.seed_found);
+        assert_eq!(res.counts.labelled_final, 49);
+        assert_eq!(res.counts.blacklisted_total, 0);
+        assert!(res.counts.validation_iterations >= 1);
+    }
 }

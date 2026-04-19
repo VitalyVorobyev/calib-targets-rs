@@ -35,33 +35,65 @@ the binary, not in a parent process.
 
 ---
 
-## `ChessboardNotDetected`
+## `detect_chessboard` returns `None`
 
-The chessboard assembly stage found fewer corners than `min_corners`, or could not form
-a connected grid from the detected corners.
+The detector has no single error variant — a `None` return means
+some stage failed to converge. To diagnose, use
+`detect_chessboard_debug` to get a full `DebugFrame` and follow the
+chain:
+
+```rust,no_run
+use calib_targets::detect::detect_chessboard_debug;
+use calib_targets::chessboard::DetectorParams;
+# let img: image::GrayImage = todo!();
+
+let frame = detect_chessboard_debug(&img, &DetectorParams::default());
+println!("stage counts: {:#?}", frame.corners.iter().fold(
+    std::collections::HashMap::new(),
+    |mut acc, c| {
+        *acc.entry(format!("{:?}", c.stage)).or_insert(0u32) += 1;
+        acc
+    },
+));
+println!("grid_directions: {:?}", frame.grid_directions);
+println!("cell_size: {:?}", frame.cell_size);
+println!("seed: {:?}", frame.seed);
+println!("iterations: {:#?}", frame.iterations);
+```
 
 **Checklist:**
 
-1. **How many corners were detected?** Look for `input_corners=N` in the log.
-   - If `N < min_corners`: lower `min_corners` or lower `min_corner_strength`.
-   - If `N` is zero or very small: the ChESS detector found nothing. Check image
-     resolution and corner contrast. If needed, lower
-     `detect::ChessConfig.threshold_value` (with
-     `detect::ChessConfig.threshold_mode = Relative`), reduce
-     `detect::ChessConfig.min_cluster_size`, or capture a higher-resolution image.
+1. **No ChESS corners found?** Look for `input_count: 0` in the frame.
+   The ChESS detector saw nothing. Check image resolution / contrast;
+   override `calib_targets::detect::default_chess_config()` with a
+   custom `ChessConfig` (lower `threshold_value`, change
+   `threshold_mode`) if necessary.
 
-2. **Corners found but grid assembly fails?**
-   - Check `max_spacing_pix`: if the physical board squares are larger than this value
-     in pixels, the graph edges are pruned and the grid cannot be assembled.
-   - Check `min_spacing_pix`: if two ChESS responses land on the same corner, they may
-     confuse the graph. Raise `min_spacing_pix`.
+2. **Corners found, `grid_directions: None`?** Clustering failed.
+   Most common causes:
+   - Noisy axes: raise `cluster_tol_deg` (default `12.0` → try `16.0`).
+   - Few real corners: lower `min_peak_weight_fraction` (default
+     `0.02` → try `0.01`).
+   - Perfectly rectilinear board with axes exactly at the π-wrap
+     boundary: the detector handles this via plateau-aware peak picking — if
+     you hit this, verify you're on v0.6.0+.
 
-3. **Orientation clustering failing?** If the board is close to axis-aligned and the two
-   corner directions are not well separated, try setting `use_orientation_clustering =
-   false` (synthetic / controlled images only).
+3. **`grid_directions` set, `seed: None`?** Seeding failed — no
+   qualifying 2×2 quad was found.
+   - Try `detect_chessboard_best` with
+     `DetectorParams::sweep_default()` (widens seed tolerances).
+   - Raise `seed_edge_tol` (default `0.25`) if the board has
+     noticeable cell-size variation under perspective.
 
-4. **Multiple boards in the scene?** Set `expected_rows` / `expected_cols` so the
-   detector only accepts the correct grid size.
+4. **`seed` set, `detection: None`?** Validation failed to converge.
+   - Check `iterations`: if the labelled count oscillates, raise
+     `max_validation_iters` (default `3` → try `6`).
+   - Scene may contain multiple boards — try
+     `detect_chessboard_all` and handle each component separately.
+
+5. **Multiple same-board components in the scene** (ChArUco markers
+   break contiguity): this is expected. Use `detect_chessboard_all`;
+   each piece comes back with its own locally-rebased `(i, j)`.
 
 ---
 
@@ -123,12 +155,12 @@ specification in a geometrically consistent way.
 |---|---|
 | Strong blur | Lower `min_border_score` to `0.65`, enable `multi_threshold` |
 | Uneven / gradient lighting | `multi_threshold` (already default) |
-| Strong perspective / wide-angle | Raise `max_spacing_pix`, raise `orientation_tolerance_deg` |
-| Partial occlusion | Lower `completeness_threshold`, lower `min_marker_inliers` |
+| Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `projective_line_tol_rel` on the chessboard side |
+| Partial occlusion | Use `detect_chessboard_all`; for ChArUco, lower `min_marker_inliers` |
+| Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
-| Very large board / high-res image | Raise `max_spacing_pix` to ≥ `image_width / cols / 2` |
-| Multiple boards in frame | Set `expected_rows` / `expected_cols` explicitly |
-| Specular reflections on board | Pre-process with local contrast normalization (CLAHE) |
+| Specular reflections on board | Pre-process with local contrast normalisation (CLAHE); if pre-processing is off the table, lower `min_peak_weight_fraction` so clustering can cope with the reduced corner count |
+| Validation loop oscillates (seed found, detection `None`) | Raise `max_validation_iters`; inspect `DebugFrame.iterations` to confirm the labelled count is bouncing |
 
 ---
 

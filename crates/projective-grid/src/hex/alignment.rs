@@ -5,7 +5,7 @@
 //!
 //! Reuses [`GridTransform`] — same struct, different values.
 
-use crate::grid_alignment::GridTransform;
+use crate::GridTransform;
 
 /// The 12 dihedral transforms D6 on the hexagonal integer grid (axial coordinates).
 ///

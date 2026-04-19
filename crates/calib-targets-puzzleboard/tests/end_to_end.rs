@@ -15,8 +15,19 @@ use nalgebra::Point2;
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation: c.orientation,
         orientation_cluster: None,
+        axes: [
+            calib_targets_core::AxisEstimate {
+                angle: c.axes[0].angle,
+                sigma: c.axes[0].sigma,
+            },
+            calib_targets_core::AxisEstimate {
+                angle: c.axes[1].angle,
+                sigma: c.axes[1].sigma,
+            },
+        ],
+        contrast: c.contrast,
+        fit_rms: c.fit_rms,
         strength: c.response,
     }
 }
@@ -265,11 +276,10 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
     .expect("board");
     let mut params = PuzzleBoardParams::for_board(&board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-    // The 5×5 partial views have fewer interior corners (4×4=16), which is the
-    // default `min_corners`. Relax slightly so the chessboard stage fits them.
-    params.chessboard.min_corners = 12;
-    params.chessboard.expected_rows = None;
-    params.chessboard.expected_cols = None;
+    // chessboard detector is scale-invariant and has no expected_rows /
+    // expected_cols / min_corners gates; the smallest meaningful detection
+    // is governed by `min_labeled_corners` (default 8 — fine for a 4×4
+    // partial view).
     let detector = PuzzleBoardDetector::new(params).expect("detector");
 
     // Three overlapping subsets of the image. Each covers ~half the board in

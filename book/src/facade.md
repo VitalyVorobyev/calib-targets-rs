@@ -7,15 +7,17 @@ The `calib-targets` crate is the unified entry point for the workspace. It re-ex
 
 ## Single-config detection
 
-Each `detect_*` function takes a single params struct that includes the ChESS
-corner detector configuration (`params.chess` or `params.chessboard.chess`):
+Each `detect_*` function takes a single params struct. The chessboard
+detector uses the workspace's `default_chess_config()` for ChESS
+corner detection automatically; ChArUco / PuzzleBoard / marker board
+params embed a `DetectorParams` under `params.chessboard`.
 
 ```rust,no_run
 use calib_targets::detect;
-use calib_targets::chessboard::ChessboardParams;
+use calib_targets::chessboard::DetectorParams;
 
 let img = image::open("board.png").unwrap().to_luma8();
-let params = ChessboardParams::default();
+let params = DetectorParams::default();
 let result = detect::detect_chessboard(&img, &params);
 ```
 
