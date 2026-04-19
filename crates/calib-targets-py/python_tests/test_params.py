@@ -9,7 +9,9 @@ def _image() -> np.ndarray:
 
 
 def test_detect_chessboard_typed_params() -> None:
-    params = calib_targets.ChessboardParams(min_corners=16)
+    # v2 `ChessboardParams` has no `min_corners` field; `min_labeled_corners`
+    # is the output floor and `min_corner_strength` is the Stage-1 pre-filter.
+    params = calib_targets.ChessboardParams(min_corner_strength=0.1)
     result = calib_targets.detect_chessboard(_image(), params=params)
     assert result is None or isinstance(result, calib_targets.ChessboardDetectionResult)
 
@@ -92,9 +94,12 @@ def test_chess_config_roundtrip() -> None:
 
 
 def test_chessboard_params_roundtrip() -> None:
+    # Exercise a couple of v2-specific fields to confirm the round-trip
+    # covers the flat DetectorParams shape.
     params = calib_targets.ChessboardParams(
-        min_corners=20,
-        graph=calib_targets.GridGraphParams(min_spacing_pix=15.0),
+        min_corner_strength=0.25,
+        cluster_tol_deg=10.0,
+        max_validation_iters=5,
     )
     serialized = params.to_dict()
     restored = calib_targets.ChessboardParams.from_dict(serialized)
@@ -126,8 +131,12 @@ def test_puzzleboard_printing_roundtrip() -> None:
 
 
 def _sample_chessboard_result() -> dict:
+    # Schema matches `serde_json::to_value(
+    # calib_targets_chessboard::Detection)` byte-for-byte.
     return {
-        "detection": {
+        "grid_directions": [0.1, 1.6],
+        "cell_size": 25.0,
+        "target": {
             "kind": "chessboard",
             "corners": [
                 {
@@ -139,19 +148,7 @@ def _sample_chessboard_result() -> dict:
                 }
             ],
         },
-        "inliers": [0],
-        "orientations": [0.1, 1.6],
-        "debug": {
-            "orientation_histogram": {"bin_centers": [0.1], "values": [2.0]},
-            "graph": {
-                "nodes": [
-                    {
-                        "position": [10.0, 20.0],
-                        "neighbors": [{"index": 0, "direction": "x", "distance": 1.0}],
-                    }
-                ]
-            },
-        },
+        "strong_indices": [0],
     }
 
 

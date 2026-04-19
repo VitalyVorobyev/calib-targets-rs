@@ -203,10 +203,19 @@ class ChessboardDebug:
 
 @dataclass(slots=True)
 class ChessboardDetectionResult:
+    """Chessboard detection result — v2 schema.
+
+    `detection` wraps the labelled corners. `grid_directions` are the
+    two global grid-axis angles in `[0, π)`. `cell_size` is the pixel
+    spacing of the detected grid. `strong_indices` maps each labelled
+    corner back to its index in the caller's raw `Corner` array (useful
+    for ChArUco alignment and similar post-processing).
+    """
+
     detection: TargetDetection
-    inliers: list[int]
-    orientations: tuple[float, float] | None
-    debug: ChessboardDebug
+    grid_directions: tuple[float, float]
+    cell_size: float
+    strong_indices: list[int]
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import chessboard_detection_result_to_dict

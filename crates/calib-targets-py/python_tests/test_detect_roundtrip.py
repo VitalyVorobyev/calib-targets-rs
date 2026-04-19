@@ -50,17 +50,7 @@ def _charuco_params_small2() -> ct.CharucoParams:
             marker_layout=ct.MarkerLayout.OPENCV_CHARUCO,
         ),
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.2,
-            min_corners=16,
-            completeness_threshold=0.05,
-            graph=ct.GridGraphParams(
-                min_spacing_pix=10.0,
-                max_spacing_pix=50.0,
-                k_neighbors=8,
-                orientation_tolerance_deg=12.5,
-            ),
-        ),
+        chessboard=ct.ChessboardParams(min_corner_strength=0.2),
         scan=ct.ScanDecodeConfig(
             border_bits=1,
             inset_frac=0.06,
@@ -84,18 +74,7 @@ def _marker_board_params() -> ct.MarkerBoardParams:
                 ct.MarkerCircleSpec(i=12, j=12, polarity=ct.CirclePolarity.WHITE),
             ),
         ),
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.2,
-            min_corners=50,
-            expected_rows=22,
-            expected_cols=22,
-            graph=ct.GridGraphParams(
-                min_spacing_pix=20.0,
-                max_spacing_pix=140.0,
-                k_neighbors=8,
-                orientation_tolerance_deg=22.5,
-            ),
-        ),
+        chessboard=ct.ChessboardParams(min_corner_strength=0.2),
         circle_score=ct.CircleScoreParams(
             patch_size=64,
             diameter_frac=0.5,
@@ -137,7 +116,10 @@ def test_detect_chessboard_roundtrip() -> None:
 
 def test_detect_chessboard_best_roundtrip() -> None:
     image = _load_gray("mid.png")
-    configs = [ct.ChessboardParams(), ct.ChessboardParams(min_corners=16)]
+    configs = [
+        ct.ChessboardParams(),
+        ct.ChessboardParams(min_corner_strength=0.1),
+    ]
     result = ct.detect_chessboard_best(image, configs)
     if result is None:
         pytest.skip("no chessboard detected on testdata/mid.png")
@@ -150,109 +132,78 @@ def test_detect_chessboard_best_roundtrip() -> None:
 
 
 def _assert_debug_frame_shape(frame: dict[str, Any]) -> None:
-    """Structural check for the ChessboardDebugFrame payload.
+    """Structural check for the v2 `DebugFrame` payload.
 
-    Asserts the top-level keys Rust serializes plus the nested shapes the
-    Python overlay script depends on. If Rust ever renames a field, this
-    test flags it before the overlay breaks silently.
+    Asserts the top-level keys Rust's `calib_targets_chessboard::
+    DebugFrame` serializes so the Python overlay script stays in
+    sync. If Rust ever renames a field, this test flags it before
+    the overlay breaks silently.
     """
     expected_top = {
-        "image_width",
-        "image_height",
-        "strong_corners",
-        "graph_neighbors",
-        "orientations",
-        "orientation_histogram",
-        "stage_counts",
-        "metrics",
-        "result",
+        "schema",
+        "input_count",
+        "grid_directions",
+        "cell_size",
+        "seed",
+        "iterations",
+        "boosters",
+        "detection",
+        "corners",
     }
     assert expected_top.issubset(frame.keys()), (
         f"missing top-level keys: {expected_top - frame.keys()}"
     )
-
-    assert isinstance(frame["image_width"], int)
-    assert isinstance(frame["image_height"], int)
-    assert frame["image_width"] > 0
-    assert frame["image_height"] > 0
-
-    # strong_corners and graph_neighbors must be index-aligned.
-    n = len(frame["strong_corners"])
-    assert len(frame["graph_neighbors"]) == n, (
-        "strong_corners and graph_neighbors must share indices"
-    )
-
-    if n > 0:
-        c0 = frame["strong_corners"][0]
+    assert isinstance(frame["schema"], int) and frame["schema"] >= 1
+    assert isinstance(frame["input_count"], int) and frame["input_count"] >= 0
+    # `corners` mirrors the input corner array, with per-corner stage.
+    assert len(frame["corners"]) == frame["input_count"]
+    if frame["input_count"] > 0:
+        c0 = frame["corners"][0]
         expected_corner_keys = {
-            "x",
-            "y",
+            "input_index",
+            "position",
             "axes",
-            "orientation",
-            "orientation_cluster",
             "strength",
             "contrast",
             "fit_rms",
-            "local_step_u",
-            "local_step_v",
-            "local_step_confidence",
+            "stage",
+            "label",
         }
         assert expected_corner_keys.issubset(c0.keys()), (
-            f"strong_corner missing keys: {expected_corner_keys - c0.keys()}"
+            f"corner missing keys: {expected_corner_keys - c0.keys()}"
         )
-        # Axes are serialized as a 2-element list of {angle, sigma}.
         assert len(c0["axes"]) == 2
         for axis in c0["axes"]:
             assert {"angle", "sigma"}.issubset(axis.keys())
 
-    # stage_counts has every required stage count (even on failure paths).
-    counts = frame["stage_counts"]
-    for key in ("raw_corners", "after_strength_filter", "graph_nodes", "graph_edges"):
-        assert key in counts, f"stage_counts missing {key}"
-        assert isinstance(counts[key], int) and counts[key] >= 0
-    # edges_by_reject_reason maps reason-name strings to integer counts.
-    assert isinstance(counts["edges_by_reject_reason"], dict)
-    for reason, count in counts["edges_by_reject_reason"].items():
-        assert isinstance(reason, str)
-        assert isinstance(count, int) and count >= 0
-
-    # metrics has at minimum the legacy pass/fail fields.
-    metrics = frame["metrics"]
-    for key in ("corner_count", "extent_i", "extent_j"):
-        assert key in metrics
-
 
 def test_detect_chessboard_debug_success_path() -> None:
-    """Debug frame on an image that normally detects: must have non-empty
-    strong_corners, a labelled result, and a populated metrics block."""
+    """Debug frame on an image that normally detects: must have
+    a labelled `detection` block plus a populated iteration trace."""
     image = _load_gray("mid.png")
     frame = ct.detect_chessboard_debug(image)
     _assert_debug_frame_shape(frame)
-    assert len(frame["strong_corners"]) > 0
-    if frame["result"] is None:
+    assert frame["input_count"] > 0
+    if frame["detection"] is None:
         pytest.skip("no chessboard detected on testdata/mid.png")
-    assert frame["stage_counts"]["final_labeled_corners"] > 0
-    assert frame["metrics"]["corner_count"] > 0
-    # horizontal_coverage_frac populated when a detection exists.
-    assert frame["metrics"]["horizontal_coverage_frac"] is not None
+    assert frame["cell_size"] is not None
+    assert frame["grid_directions"] is not None
 
 
 def test_detect_chessboard_debug_failure_path_still_emits_counts() -> None:
-    """Debug frame on a failure path: no result, but raw_corners is
-    populated and the caller can see why detection bailed via the stage
-    counts. Uses min_corner_strength well above typical ChESS responses
-    to drop every corner before graph build."""
+    """Debug frame on a failure path: no detection, but `input_count` is
+    populated and the caller can see which stage each corner reached via
+    `corners[*].stage`. Uses `min_corner_strength` well above typical
+    ChESS responses to drop every corner before clustering."""
     image = _load_gray("mid.png")
-    params = ct.ChessboardParams(
-        min_corner_strength=1e9,  # unreachable
-        min_corners=16,
-    )
+    params = ct.ChessboardParams(min_corner_strength=1e9)  # unreachable
     frame = ct.detect_chessboard_debug(image, params=params)
     _assert_debug_frame_shape(frame)
-    assert frame["result"] is None
-    assert frame["stage_counts"]["raw_corners"] > 0
-    assert frame["stage_counts"]["after_strength_filter"] == 0
-    assert frame["stage_counts"]["final_labeled_corners"] == 0
+    assert frame["detection"] is None
+    # Every corner should stay at `Raw` because the strength filter
+    # drops every input.
+    n_raw = sum(1 for c in frame["corners"] if c["stage"] == "Raw")
+    assert n_raw == frame["input_count"]
 
 
 # ---------------------------------------------------------------------------

@@ -241,38 +241,94 @@ class GridGraphParams:
 
 @dataclass(slots=True)
 class ChessboardParams:
-    """Chessboard detection parameters, including embedded grid graph params.
+    """Chessboard detection parameters — v2 flat shape.
 
-    The ``chess`` field holds the ChESS corner detector configuration.
-    When passed to ``detect_chessboard``, this is the single config object
-    (no separate ``chess_cfg`` needed).
+    Mirrors ``calib_targets_chessboard::DetectorParams`` field-for-field.
+    The ChESS corner detector config is *not* embedded here — the Rust
+    facade uses ``default_chess_config()`` for chessboard detection.
+    Pass a ``chess_cfg`` argument separately to ``detect_chessboard`` if
+    you need to override it.
+
+    The ``chess`` field is preserved as a convenience carrier for
+    round-tripping: when set, ``to_dict`` nests it under ``"chess"`` so
+    external pipelines (e.g., JSON configs) can keep ChESS + chessboard
+    params together, but the Rust detector itself ignores it.
     """
 
     chess: ChessConfig = field(default_factory=ChessConfig)
-    min_corner_strength: float = 0.2
-    min_corners: int = 10
-    expected_rows: int | None = None
-    expected_cols: int | None = None
-    completeness_threshold: float = 0.1
-    use_orientation_clustering: bool = True
-    orientation_clustering_params: OrientationClusteringParams = field(
-        default_factory=OrientationClusteringParams
-    )
-    graph: GridGraphParams = field(default_factory=GridGraphParams)
+    # Stage 1 — pre-filter
+    min_corner_strength: float = 0.0
+    max_fit_rms_ratio: float = 0.5
+    # Stages 2-3 — clustering
+    num_bins: int = 90
+    max_iters_2means: int = 10
+    cluster_tol_deg: float = 12.0
+    peak_min_separation_deg: float = 60.0
+    min_peak_weight_fraction: float = 0.02
+    # Stage 4 — cell-size hint
+    cell_size_hint: float | None = None
+    # Stage 5 — seed
+    seed_edge_tol: float = 0.25
+    seed_axis_tol_deg: float = 15.0
+    seed_close_tol: float = 0.25
+    # Stage 6 — grow
+    attach_search_rel: float = 0.35
+    attach_axis_tol_deg: float = 15.0
+    attach_ambiguity_factor: float = 1.5
+    step_tol: float = 0.25
+    edge_axis_tol_deg: float = 15.0
+    # Stage 7 — validate
+    line_tol_rel: float = 0.18
+    projective_line_tol_rel: float = 0.25
+    line_min_members: int = 3
+    local_h_tol_rel: float = 0.20
+    max_validation_iters: int = 6
+    # Stage 8 — recall boosters
+    enable_line_extrapolation: bool = True
+    enable_gap_fill: bool = True
+    enable_component_merge: bool = True
+    enable_weak_cluster_rescue: bool = True
+    weak_cluster_tol_deg: float = 18.0
+    component_merge_min_boundary_pairs: int = 2
+    max_booster_iters: int = 5
+    # Output gates
+    min_labeled_corners: int = 8
+    max_components: int = 3
 
     def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
+        return {
             "chess": self.chess.to_dict(),
             "min_corner_strength": self.min_corner_strength,
-            "min_corners": self.min_corners,
-            "expected_rows": self.expected_rows,
-            "expected_cols": self.expected_cols,
-            "completeness_threshold": self.completeness_threshold,
-            "use_orientation_clustering": self.use_orientation_clustering,
-            "orientation_clustering_params": self.orientation_clustering_params.to_dict(),
-            "graph": self.graph.to_dict(),
+            "max_fit_rms_ratio": self.max_fit_rms_ratio,
+            "num_bins": self.num_bins,
+            "max_iters_2means": self.max_iters_2means,
+            "cluster_tol_deg": self.cluster_tol_deg,
+            "peak_min_separation_deg": self.peak_min_separation_deg,
+            "min_peak_weight_fraction": self.min_peak_weight_fraction,
+            "cell_size_hint": self.cell_size_hint,
+            "seed_edge_tol": self.seed_edge_tol,
+            "seed_axis_tol_deg": self.seed_axis_tol_deg,
+            "seed_close_tol": self.seed_close_tol,
+            "attach_search_rel": self.attach_search_rel,
+            "attach_axis_tol_deg": self.attach_axis_tol_deg,
+            "attach_ambiguity_factor": self.attach_ambiguity_factor,
+            "step_tol": self.step_tol,
+            "edge_axis_tol_deg": self.edge_axis_tol_deg,
+            "line_tol_rel": self.line_tol_rel,
+            "projective_line_tol_rel": self.projective_line_tol_rel,
+            "line_min_members": self.line_min_members,
+            "local_h_tol_rel": self.local_h_tol_rel,
+            "max_validation_iters": self.max_validation_iters,
+            "enable_line_extrapolation": self.enable_line_extrapolation,
+            "enable_gap_fill": self.enable_gap_fill,
+            "enable_component_merge": self.enable_component_merge,
+            "enable_weak_cluster_rescue": self.enable_weak_cluster_rescue,
+            "weak_cluster_tol_deg": self.weak_cluster_tol_deg,
+            "component_merge_min_boundary_pairs": self.component_merge_min_boundary_pairs,
+            "max_booster_iters": self.max_booster_iters,
+            "min_labeled_corners": self.min_labeled_corners,
+            "max_components": self.max_components,
         }
-        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessboardParams:
@@ -280,19 +336,60 @@ class ChessboardParams:
         return cls(
             chess=ChessConfig.from_dict(data.get("chess", {})),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
-            min_corners=data.get("min_corners", d.min_corners),
-            expected_rows=data.get("expected_rows"),
-            expected_cols=data.get("expected_cols"),
-            completeness_threshold=data.get(
-                "completeness_threshold", d.completeness_threshold
+            max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
+            num_bins=data.get("num_bins", d.num_bins),
+            max_iters_2means=data.get("max_iters_2means", d.max_iters_2means),
+            cluster_tol_deg=data.get("cluster_tol_deg", d.cluster_tol_deg),
+            peak_min_separation_deg=data.get(
+                "peak_min_separation_deg", d.peak_min_separation_deg
             ),
-            use_orientation_clustering=data.get(
-                "use_orientation_clustering", d.use_orientation_clustering
+            min_peak_weight_fraction=data.get(
+                "min_peak_weight_fraction", d.min_peak_weight_fraction
             ),
-            orientation_clustering_params=OrientationClusteringParams.from_dict(
-                data.get("orientation_clustering_params", {})
+            cell_size_hint=data.get("cell_size_hint"),
+            seed_edge_tol=data.get("seed_edge_tol", d.seed_edge_tol),
+            seed_axis_tol_deg=data.get("seed_axis_tol_deg", d.seed_axis_tol_deg),
+            seed_close_tol=data.get("seed_close_tol", d.seed_close_tol),
+            attach_search_rel=data.get("attach_search_rel", d.attach_search_rel),
+            attach_axis_tol_deg=data.get(
+                "attach_axis_tol_deg", d.attach_axis_tol_deg
             ),
-            graph=GridGraphParams.from_dict(data.get("graph", {})),
+            attach_ambiguity_factor=data.get(
+                "attach_ambiguity_factor", d.attach_ambiguity_factor
+            ),
+            step_tol=data.get("step_tol", d.step_tol),
+            edge_axis_tol_deg=data.get("edge_axis_tol_deg", d.edge_axis_tol_deg),
+            line_tol_rel=data.get("line_tol_rel", d.line_tol_rel),
+            projective_line_tol_rel=data.get(
+                "projective_line_tol_rel", d.projective_line_tol_rel
+            ),
+            line_min_members=data.get("line_min_members", d.line_min_members),
+            local_h_tol_rel=data.get("local_h_tol_rel", d.local_h_tol_rel),
+            max_validation_iters=data.get(
+                "max_validation_iters", d.max_validation_iters
+            ),
+            enable_line_extrapolation=data.get(
+                "enable_line_extrapolation", d.enable_line_extrapolation
+            ),
+            enable_gap_fill=data.get("enable_gap_fill", d.enable_gap_fill),
+            enable_component_merge=data.get(
+                "enable_component_merge", d.enable_component_merge
+            ),
+            enable_weak_cluster_rescue=data.get(
+                "enable_weak_cluster_rescue", d.enable_weak_cluster_rescue
+            ),
+            weak_cluster_tol_deg=data.get(
+                "weak_cluster_tol_deg", d.weak_cluster_tol_deg
+            ),
+            component_merge_min_boundary_pairs=data.get(
+                "component_merge_min_boundary_pairs",
+                d.component_merge_min_boundary_pairs,
+            ),
+            max_booster_iters=data.get("max_booster_iters", d.max_booster_iters),
+            min_labeled_corners=data.get(
+                "min_labeled_corners", d.min_labeled_corners
+            ),
+            max_components=data.get("max_components", d.max_components),
         )
 
 
@@ -721,19 +818,14 @@ class PuzzleBoardParams:
 
     @classmethod
     def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
-        chessboard = ChessboardParams(
-            min_corner_strength=0.1,
-            min_corners=20,
-            expected_rows=board.rows - 1,
-            expected_cols=board.cols - 1,
-            completeness_threshold=0.02,
-            graph=GridGraphParams(
-                min_spacing_pix=8.0,
-                max_spacing_pix=600.0,
-                k_neighbors=8,
-                orientation_tolerance_deg=22.5,
-            ),
-        )
+        # v2: chessboard defaults already cover seed/grow/validate on
+        # dense puzzleboards. The only field worth overriding is the
+        # pre-filter `min_corner_strength` — the puzzle-piece cutout
+        # pattern tends to produce a lot of weak spurious corners that
+        # we can drop before clustering.
+        chessboard = ChessboardParams()
+        chessboard.min_corner_strength = 0.1
+        _ = board  # board dims no longer constrain chessboard params in v2
         return cls(board=board, px_per_square=60.0, chessboard=chessboard)
 
     @classmethod
