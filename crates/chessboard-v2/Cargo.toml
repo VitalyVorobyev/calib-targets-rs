@@ -16,16 +16,23 @@ kiddo.workspace = true
 log.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx = "0.5"
 calib-targets.workspace = true
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 env_logger = "0.11"
 image.workspace = true
 
 [features]
 default = []
 dataset = ["serde_json"]
+tracing = ["dep:tracing", "calib-targets-core/tracing"]
+
+[[bench]]
+name = "chessboard_v2_timing"
+harness = false
 
 [[example]]
 name = "run_dataset"

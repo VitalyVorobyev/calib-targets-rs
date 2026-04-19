@@ -20,6 +20,10 @@ use kiddo::{KdTree, SquaredEuclidean};
 /// The optional `cell_size_hint` in [`DetectorParams`] is consulted
 /// and, if close enough, returned directly — this lets dataset-
 /// specific callers lock in a known step.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(level = "debug", skip_all, fields(num_corners = corners.len()))
+)]
 pub fn estimate_cell_size(corners: &[CornerAug], params: &DetectorParams) -> Option<f32> {
     let mut canonical_idx: Vec<usize> = Vec::new();
     let mut swapped_idx: Vec<usize> = Vec::new();

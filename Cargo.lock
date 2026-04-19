@@ -634,6 +634,7 @@ dependencies = [
  "approx",
  "calib-targets",
  "calib-targets-core",
+ "criterion",
  "env_logger",
  "image",
  "kiddo",
@@ -642,6 +643,7 @@ dependencies = [
  "projective-grid",
  "serde",
  "serde_json",
+ "tracing",
 ]
 
 [[package]]

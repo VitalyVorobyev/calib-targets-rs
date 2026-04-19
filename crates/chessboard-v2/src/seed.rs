@@ -73,6 +73,10 @@ pub struct SeedOutput {
 
 /// Find a valid seed. Cell size comes OUT of the seed (no cell-
 /// size input).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(level = "debug", skip_all, fields(num_corners = corners.len()))
+)]
 pub fn find_seed(
     corners: &[CornerAug],
     centers: ClusterCenters,
@@ -501,7 +505,9 @@ mod tests {
 
         let label_of = |i: usize| match corners[i].stage {
             CornerStage::Clustered { label } => label,
-            _ => panic!("unclustered"),
+            ref other => {
+                unreachable!("seed corner {i} must be Clustered after find_seed, got {other:?}")
+            }
         };
         assert_eq!(label_of(out.seed.a), ClusterLabel::Canonical);
         assert_eq!(label_of(out.seed.b), ClusterLabel::Swapped);

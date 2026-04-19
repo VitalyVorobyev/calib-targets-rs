@@ -46,6 +46,14 @@ pub struct ValidationResult {
 }
 
 /// Run both validation passes and produce a blacklist.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(labelled = labelled.len(), cell_size = cell_size)
+    )
+)]
 pub fn validate(
     corners: &[CornerAug],
     labelled: &HashMap<(i32, i32), usize>,
@@ -99,8 +107,14 @@ pub fn validate(
         if blacklist.contains(&idx) {
             continue;
         }
-        // Re-collect base for attribution.
-        let (&at, _) = labelled.iter().find(|(_, &v)| v == idx).unwrap();
+        // Re-collect base for attribution. `idx` came from
+        // `local_h_flagged`, which is populated in 7b by iterating over
+        // `labelled`; so `idx` is guaranteed to appear in `labelled`
+        // as some value. If the invariant is violated, skip the entry
+        // rather than panicking.
+        let Some((&at, _)) = labelled.iter().find(|(_, &v)| v == idx) else {
+            continue;
+        };
         let base = pick_local_h_base(labelled, idx, corners, at);
         // Pick worst-line-flagged base.
         let mut worst: Option<(usize, u32)> = None;

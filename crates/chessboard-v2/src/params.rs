@@ -91,6 +91,18 @@ pub struct DetectorParams {
     // --- Stage 9: output ----------------------------------------------------
     /// Minimum labelled corners for a Detection to be emitted.
     pub min_labeled_corners: usize,
+
+    // --- Multi-component (same-board, disconnected pieces) ------------------
+    /// Maximum number of components returned by [`crate::Detector::detect_all`].
+    ///
+    /// A chessboard can split into multiple disconnected pieces on ChArUco
+    /// scenes where markers break contiguity. Each iteration peels off one
+    /// grown grid from the unconsumed corners and re-runs seed → grow →
+    /// validate. Default `3`.
+    ///
+    /// Does NOT claim to support scenes with two separate physical boards —
+    /// one target per frame is the contract.
+    pub max_components: u32,
 }
 
 impl Default for DetectorParams {
@@ -132,6 +144,52 @@ impl Default for DetectorParams {
             max_booster_iters: 5,
 
             min_labeled_corners: 8,
+
+            max_components: 3,
         }
+    }
+}
+
+impl DetectorParams {
+    /// Three-config sweep preset: default + tighter + looser angular tolerances.
+    ///
+    /// Intended for `detect_chessboard_best`-style flows that try multiple
+    /// configurations and return the result with the most labelled corners.
+    /// All three configurations preserve the detector's
+    /// precision-by-construction invariants; only recall-affecting
+    /// tolerances are varied.
+    pub fn sweep_default() -> Vec<Self> {
+        let base = Self::default();
+        let tight = Self {
+            cluster_tol_deg: 9.0,
+            seed_edge_tol: 0.18,
+            attach_axis_tol_deg: 12.0,
+            ..base.clone()
+        };
+        let loose = Self {
+            cluster_tol_deg: 16.0,
+            seed_edge_tol: 0.32,
+            attach_axis_tol_deg: 18.0,
+            ..base.clone()
+        };
+        vec![base, tight, loose]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sweep_default_has_three_configs() {
+        let configs = DetectorParams::sweep_default();
+        assert_eq!(configs.len(), 3);
+        let base = &configs[0];
+        let tight = &configs[1];
+        let loose = &configs[2];
+        assert!(tight.cluster_tol_deg < base.cluster_tol_deg);
+        assert!(loose.cluster_tol_deg > base.cluster_tol_deg);
+        assert!(tight.seed_edge_tol < base.seed_edge_tol);
+        assert!(loose.seed_edge_tol > base.seed_edge_tol);
     }
 }

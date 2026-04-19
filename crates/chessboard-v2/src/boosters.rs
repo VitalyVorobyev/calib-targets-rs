@@ -52,6 +52,14 @@ pub struct BoosterResult {
 ///
 /// `blacklist` — corner indices to keep excluded from candidate
 /// searches, same as the precision core.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(labelled = grow.labelled.len(), cell_size = cell_size)
+    )
+)]
 pub fn apply_boosters(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,

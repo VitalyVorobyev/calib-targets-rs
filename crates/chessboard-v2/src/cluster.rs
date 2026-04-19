@@ -78,6 +78,10 @@ pub enum AxisCluster {
 /// Returns `Some(centers)` on success, `None` when fewer than two
 /// qualifying peaks were found (the detector should return no
 /// detection in that case).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(level = "debug", skip_all, fields(num_corners = corners.len()))
+)]
 pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Option<ClusterCenters> {
     if corners.is_empty() || params.num_bins < 4 {
         return None;
@@ -519,10 +523,12 @@ mod tests {
         let params = DetectorParams::default();
         cluster_axes(&mut corners, &params).expect("centers");
 
-        let last = corners.last().unwrap();
+        let last = corners.last().expect("corners is non-empty");
         match &last.stage {
             CornerStage::NoCluster { .. } => {}
-            other => panic!("expected NoCluster, got {other:?}"),
+            other => unreachable!(
+                "a corner with axes 25° off both centers must end in NoCluster, got {other:?}"
+            ),
         }
         assert!(last.label.is_none());
     }

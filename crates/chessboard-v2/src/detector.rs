@@ -23,7 +23,21 @@ pub struct Detection {
     pub grid_directions: [f32; 2],
     pub cell_size: f32,
     pub target: TargetDetection,
+    /// Indices into the input `corners` slice for the labelled corners,
+    /// in the same order as `target.corners`.
+    ///
+    /// Consumers that need to map labelled grid points back to raw ChESS
+    /// inputs (e.g., ChArUco marker alignment) should read this vector
+    /// rather than reconstructing the mapping from positions.
+    pub strong_indices: Vec<usize>,
 }
+
+/// Current [`DebugFrame`] schema version.
+///
+/// Bumped when fields are removed, renamed, or their semantics change.
+/// Adding new optional fields does NOT bump the schema. Downstream
+/// tooling (Python overlay script, etc.) should warn on mismatch.
+pub const DEBUG_FRAME_SCHEMA: u32 = 1;
 
 /// Compact debug payload — one per detection call.
 ///
@@ -31,6 +45,8 @@ pub struct Detection {
 /// every decision stage.
 #[derive(Clone, Debug, Serialize)]
 pub struct DebugFrame {
+    /// Schema version — see [`DEBUG_FRAME_SCHEMA`].
+    pub schema: u32,
     pub input_count: usize,
     pub grid_directions: Option<[f32; 2]>,
     pub cell_size: Option<f32>,
@@ -64,13 +80,97 @@ impl Detector {
         Self { params }
     }
 
-    /// Simple entry point: run the pipeline and return a detection.
+    /// Simple entry point: run the pipeline and return the best detection.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
     pub fn detect(&self, corners: &[Corner]) -> Option<Detection> {
         self.detect_debug(corners).detection
     }
 
-    /// Full-debug entry point.
+    /// Full-debug entry point for a single best detection.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
     pub fn detect_debug(&self, corners: &[Corner]) -> DebugFrame {
+        self.detect_debug_excluding(corners, &HashSet::new())
+    }
+
+    /// Return every qualifying grid component from a single scene.
+    ///
+    /// Useful for ChArUco and similar setups where a single physical board
+    /// can be split into multiple disconnected chessboard pieces by
+    /// markers or occlusions. Each returned [`Detection`] carries its own
+    /// locally-rebased `(i, j)` labels; alignment to a global frame is the
+    /// caller's responsibility (ChArUco's marker decoding does this).
+    ///
+    /// Capped by [`DetectorParams::max_components`].
+    ///
+    /// Does NOT support scenes with multiple separate physical boards — one
+    /// target per frame is the contract.
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all(&self, corners: &[Corner]) -> Vec<Detection> {
+        self.detect_all_debug(corners)
+            .into_iter()
+            .filter_map(|f| f.detection)
+            .collect()
+    }
+
+    /// Full-debug multi-component entry point. See [`Self::detect_all`].
+    #[cfg_attr(
+        feature = "tracing",
+        tracing::instrument(
+            level = "info",
+            skip(self, corners),
+            fields(num_corners = corners.len())
+        )
+    )]
+    pub fn detect_all_debug(&self, corners: &[Corner]) -> Vec<DebugFrame> {
+        let cap = self.params.max_components.max(1) as usize;
+        let mut consumed: HashSet<usize> = HashSet::new();
+        let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
+
+        for _ in 0..cap {
+            let frame = self.detect_debug_excluding(corners, &consumed);
+            let Some(detection) = frame.detection.as_ref() else {
+                // No further detectable component — include the empty frame
+                // so caller can introspect the failure stage if desired.
+                if frames.is_empty() {
+                    frames.push(frame);
+                }
+                break;
+            };
+            for &idx in &detection.strong_indices {
+                consumed.insert(idx);
+            }
+            frames.push(frame);
+        }
+
+        frames
+    }
+
+    fn detect_debug_excluding(
+        &self,
+        corners: &[Corner],
+        consumed: &HashSet<usize>,
+    ) -> DebugFrame {
         let input_count = corners.len();
         let mut augs: Vec<CornerAug> = corners
             .iter()
@@ -79,6 +179,7 @@ impl Detector {
             .collect();
 
         let mut frame = DebugFrame {
+            schema: DEBUG_FRAME_SCHEMA,
             input_count,
             grid_directions: None,
             cell_size: None,
@@ -90,7 +191,13 @@ impl Detector {
         };
 
         // Stage 1: pre-filter.
+        // Corners already consumed by a previous `detect_all` iteration are
+        // left at `Raw` stage, which makes them invisible to clustering,
+        // seed search, grow, and validation.
         for aug in augs.iter_mut() {
+            if consumed.contains(&aug.input_index) {
+                continue;
+            }
             if passes_strength(aug, &self.params) && passes_fit_quality(aug, &self.params) {
                 aug.stage = CornerStage::Strong;
             }
@@ -136,9 +243,13 @@ impl Detector {
                 if matches!(aug.stage, CornerStage::Labeled { .. })
                     && !blacklist.contains(&aug.input_index)
                 {
-                    aug.stage = CornerStage::Clustered {
-                        label: aug.label.unwrap(),
-                    };
+                    // Stage-3 → Stage-5 invariant: every Labeled corner
+                    // carries its cluster label. If it's somehow missing,
+                    // leave the stage as-is rather than panicking — the
+                    // next iteration's checks will re-handle this corner.
+                    if let Some(label) = aug.label {
+                        aug.stage = CornerStage::Clustered { label };
+                    }
                 }
             }
 
@@ -248,25 +359,26 @@ fn build_detection(
     centers: ClusterCenters,
     cell_size: f32,
 ) -> Detection {
-    // Growth rebases (i, j) to non-negative already — just pass through.
-    let mut labeled_corners: Vec<LabeledCorner> = grow
-        .labelled
-        .iter()
-        .map(|(&(i, j), &c_idx)| {
-            let c = &corners[c_idx];
-            LabeledCorner {
-                position: c.position,
-                grid: Some(GridCoords { i, j }),
-                id: None,
-                target_position: None,
-                score: c.strength,
-            }
-        })
-        .collect();
-    labeled_corners.sort_by_key(|lc| {
-        let g = lc.grid.unwrap();
-        (g.j, g.i)
-    });
+    // Growth rebases (i, j) to non-negative already.
+    // Sort by (j, i) before building LabeledCorner so the output order is
+    // stable and we don't need a post-hoc unwrap on `grid`.
+    let mut labelled_pairs: Vec<((i32, i32), usize)> =
+        grow.labelled.iter().map(|(&k, &v)| (k, v)).collect();
+    labelled_pairs.sort_by_key(|&((i, j), _)| (j, i));
+
+    let mut labeled_corners: Vec<LabeledCorner> = Vec::with_capacity(labelled_pairs.len());
+    let mut strong_indices: Vec<usize> = Vec::with_capacity(labelled_pairs.len());
+    for ((i, j), c_idx) in labelled_pairs {
+        let c = &corners[c_idx];
+        labeled_corners.push(LabeledCorner {
+            position: c.position,
+            grid: Some(GridCoords { i, j }),
+            id: None,
+            target_position: None,
+            score: c.strength,
+        });
+        strong_indices.push(c.input_index);
+    }
 
     Detection {
         grid_directions: [centers.theta0, centers.theta1],
@@ -275,6 +387,7 @@ fn build_detection(
             kind: TargetKind::Chessboard,
             corners: labeled_corners,
         },
+        strong_indices,
     }
 }
 

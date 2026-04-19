@@ -41,10 +41,34 @@ SNAP_WIDTH = 720
 SNAP_HEIGHT = 540
 SNAPS_PER_IMAGE = 6
 
+# Keep in sync with `chessboard_v2::DEBUG_FRAME_SCHEMA`.
+EXPECTED_DEBUG_FRAME_SCHEMA = 1
+_warned_schemas: set[int] = set()
+
 
 def extract_snap(image: np.ndarray, snap_idx: int) -> np.ndarray:
     x0 = snap_idx * SNAP_WIDTH
     return image[:SNAP_HEIGHT, x0 : x0 + SNAP_WIDTH]
+
+
+def _check_schema(dbg: dict, tag: str) -> None:
+    """Warn once per observed schema version when it differs from EXPECTED_DEBUG_FRAME_SCHEMA."""
+    schema = dbg.get("schema")
+    if schema == EXPECTED_DEBUG_FRAME_SCHEMA:
+        return
+    if schema in _warned_schemas:
+        return
+    _warned_schemas.add(schema)
+    if schema is None:
+        print(
+            f"[warn] {tag}: DebugFrame missing 'schema' field "
+            f"(expected v{EXPECTED_DEBUG_FRAME_SCHEMA}). Overlay may be inaccurate."
+        )
+    else:
+        print(
+            f"[warn] {tag}: DebugFrame schema v{schema} "
+            f"(expected v{EXPECTED_DEBUG_FRAME_SCHEMA}). Overlay may be inaccurate."
+        )
 
 
 def render_overlay(
@@ -58,6 +82,7 @@ def render_overlay(
 
     input_corners = frame["input_corners"]
     dbg = frame["frame"]
+    _check_schema(dbg, tag)
     corners = dbg["corners"]
     detection = dbg.get("detection")
 

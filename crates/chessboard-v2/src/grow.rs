@@ -65,6 +65,14 @@ pub struct GrowResult {
 /// Grow from the seed. Returns accepted `(i, j) → index` labels.
 ///
 /// `blacklist` — corner indices to exclude from candidate searches.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_corners = corners.len(), cell_size = cell_size, blacklist_size = blacklist.len())
+    )
+)]
 pub fn grow_from_seed(
     corners: &mut [CornerAug],
     seed: Seed,
