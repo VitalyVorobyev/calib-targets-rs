@@ -54,22 +54,18 @@ use crate::params::DetectorParams;
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 
-/// Handle for the four seed corners.
-#[derive(Clone, Copy, Debug)]
-pub struct Seed {
-    pub a: usize, // (0, 0), Canonical
-    pub b: usize, // (1, 0), Swapped
-    pub c: usize, // (0, 1), Swapped
-    pub d: usize, // (1, 1), Canonical
-}
-
-/// Output of the seed finder: the 4-corner quad **plus the local
-/// cell size** measured directly from the seed.
-#[derive(Clone, Copy, Debug)]
-pub struct SeedOutput {
-    pub seed: Seed,
-    pub cell_size: f32,
-}
+// `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
+// non-chessboard grid-detector pipelines can share the same 2×2 seed
+// data carrier + `(seed, cell_size)` bundle. Chessboard re-exports
+// them here under their historical names.
+//
+// The positional convention (A at (0, 0) / B at (1, 0) / C at (0, 1)
+// / D at (1, 1)) matches [`projective_grid::square::grow::bfs_grow`]
+// exactly — the seed comes out of this module and goes directly into
+// grow with no index permutation. For chessboards, A and D are
+// `Canonical`-cluster corners and B, C are `Swapped` under the seed's
+// parity-fixing convention.
+pub use projective_grid::square::seed::{Seed, SeedOutput};
 
 /// Find a valid seed. Cell size comes OUT of the seed (no cell-
 /// size input).

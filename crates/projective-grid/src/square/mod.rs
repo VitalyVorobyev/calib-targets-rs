@@ -21,6 +21,7 @@ pub mod grow;
 pub mod index;
 pub mod mesh;
 pub mod rectify;
+pub mod seed;
 pub mod smoothness;
 pub mod validate;
 pub mod validators;
@@ -34,6 +35,9 @@ pub use grow::{
 pub use index::GridIndex;
 pub use mesh::GridHomographyMesh;
 pub use rectify::GridHomography;
+pub use seed::{
+    seed_cell_size, seed_has_midpoint_violation, seed_homography, SeedOutput, SEED_QUAD_GRID,
+};
 pub use smoothness::{
     find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
 };
