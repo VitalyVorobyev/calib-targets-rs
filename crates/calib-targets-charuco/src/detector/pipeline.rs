@@ -9,7 +9,7 @@ use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
-use calib_targets_chessboard::{ChessboardDetectionResult, ChessboardDetector};
+use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
 use calib_targets_core::{Corner, GrayImageView};
 use log::{debug, warn};
 
@@ -28,13 +28,6 @@ impl CharucoDetector {
     /// Create a detector from parameters (board spec lives in `params.board`).
     pub fn new(mut params: CharucoParams) -> Result<Self, CharucoBoardError> {
         let board_cfg = params.board;
-        if params.chessboard.expected_rows.is_none() {
-            // `board_cfg.rows/cols` are square counts; chessboard detector expects inner corners.
-            params.chessboard.expected_rows = board_cfg.rows.checked_sub(1);
-        }
-        if params.chessboard.expected_cols.is_none() {
-            params.chessboard.expected_cols = board_cfg.cols.checked_sub(1);
-        }
         if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
@@ -96,19 +89,16 @@ impl CharucoDetector {
             self.params.px_per_square,
             self.params.min_marker_inliers
         );
-        let detector = ChessboardDetector::new(self.params.chessboard.clone());
-        let components = detector.detect_all_from_corners(corners);
+        let detector = ChessDetector::new(self.params.chessboard.clone());
+        let components = detector.detect_all(corners);
 
         if components.is_empty() {
             warn!(
-                "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, min_corners={}, spacing=[{:.1}, {:.1}], k_neighbors={}, orientation_tol={:.1} deg",
+                "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, cluster_tol={:.1} deg, max_components={}",
                 corners.len(),
                 self.params.chessboard.min_corner_strength,
-                self.params.chessboard.min_corners,
-                self.params.chessboard.graph.min_spacing_pix,
-                self.params.chessboard.graph.max_spacing_pix,
-                self.params.chessboard.graph.k_neighbors,
-                self.params.chessboard.graph.orientation_tolerance_deg
+                self.params.chessboard.cluster_tol_deg,
+                self.params.chessboard.max_components,
             );
             return Err(CharucoDetectError::ChessboardNotDetected);
         }
@@ -118,7 +108,7 @@ impl CharucoDetector {
             components.len(),
             components
                 .iter()
-                .map(|c| c.detection.corners.len())
+                .map(|c| c.target.corners.len())
                 .collect::<Vec<_>>()
         );
 
@@ -160,10 +150,13 @@ impl CharucoDetector {
     fn detect_component(
         &self,
         image: &GrayImageView<'_>,
-        chessboard: &ChessboardDetectionResult,
+        chessboard: &ChessDetection,
         min_marker_inliers: usize,
     ) -> Result<CharucoDetectionResult, CharucoDetectError> {
-        let mut corner_map = build_corner_map(&chessboard.detection.corners, &chessboard.inliers);
+        // v2 emits only validated corners — every entry in target.corners is
+        // an inlier by construction.
+        let inliers: Vec<usize> = (0..chessboard.target.corners.len()).collect();
+        let mut corner_map = build_corner_map(&chessboard.target.corners, &inliers);
         let corner_redetect_params = to_chess_params(&self.params.corner_redetect_params);
         smooth_grid_corners(
             &mut corner_map,
@@ -221,7 +214,7 @@ impl CharucoDetector {
             });
         }
 
-        let detection = map_charuco_corners(&self.board, &chessboard.detection, &alignment);
+        let detection = map_charuco_corners(&self.board, &chessboard.target, &alignment);
         debug!(
             "mapped {} ChArUco corners before validation",
             detection.corners.len()

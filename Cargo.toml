@@ -1,9 +1,12 @@
 [workspace]
+# `calib-targets-ffi` is temporarily excluded — its C ABI mirrors the v1
+# chessboard params shape (with nested grid_graph_params, gap_fill,
+# graph_cleanup, local_homography sub-structs). Rewriting it for v2 is a
+# follow-up commit; until then the C bindings will not build.
 members = [
     "crates/calib-targets-cli",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
-    "crates/calib-targets-ffi",
     "crates/calib-targets",
     "crates/calib-targets-core",
     "crates/calib-targets-chessboard",
@@ -12,14 +15,13 @@ members = [
     "crates/calib-targets-marker",
     "crates/calib-targets-puzzleboard",
     "crates/calib-targets-wasm",
-    "crates/chessboard-v2",
     "crates/projective-grid",
 ]
+exclude = ["crates/calib-targets-ffi"]
 default-members = [
     "crates/calib-targets-cli",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
-    "crates/calib-targets-ffi",
     "crates/calib-targets",
     "crates/calib-targets-core",
     "crates/calib-targets-chessboard",
@@ -27,7 +29,6 @@ default-members = [
     "crates/calib-targets-aruco",
     "crates/calib-targets-marker",
     "crates/calib-targets-puzzleboard",
-    "crates/chessboard-v2",
     "crates/projective-grid",
 ]
 

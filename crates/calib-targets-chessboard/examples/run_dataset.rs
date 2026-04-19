@@ -7,15 +7,15 @@
 //!
 //! Usage:
 //! ```text
-//! cargo run --release -p chessboard-v2 --example run_dataset --features dataset -- \
-//!     --dataset testdata/3536119669 --out bench_results/chessboard_v2_overlays
+//! cargo run --release -p calib-targets-chessboard --example run_dataset --features dataset -- \
+//!     --dataset testdata/3536119669 --out bench_results/chessboard_overlays
 //! ```
 
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use chessboard_v2::{DebugFrame, Detector, DetectorParams};
+use calib_targets_chessboard::{DebugFrame, Detector, DetectorParams};
 use image::GenericImageView;
 
 use calib_targets::detect::{default_chess_config, detect_corners};

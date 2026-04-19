@@ -152,28 +152,18 @@ fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
 }
 
 fn log_detector_params(params: &CharucoParams) {
-    let expected_cols = format_optional_u32(params.chessboard.expected_cols);
-    let expected_rows = format_optional_u32(params.chessboard.expected_rows);
-
     debug!(
         "Detector params: px_per_square={:.1}, min_marker_inliers={}, max_hamming={}",
         params.px_per_square, params.min_marker_inliers, params.max_hamming
     );
     debug!(
-        "Chessboard params: min_corner_strength={:.3}, min_corners={}, expected_cols={}, expected_rows={}, completeness_threshold={:.3}, use_orientation_clustering={}",
+        "Chessboard (v2) params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, seed_edge_tol={:.2}, attach_search_rel={:.2}, max_components={}",
         params.chessboard.min_corner_strength,
-        params.chessboard.min_corners,
-        expected_cols,
-        expected_rows,
-        params.chessboard.completeness_threshold,
-        params.chessboard.use_orientation_clustering
-    );
-    debug!(
-        "Grid graph params: min_spacing_pix={:.1}, max_spacing_pix={:.1}, k_neighbors={}, orientation_tolerance_deg={:.1}",
-        params.chessboard.graph.min_spacing_pix,
-        params.chessboard.graph.max_spacing_pix,
-        params.chessboard.graph.k_neighbors,
-        params.chessboard.graph.orientation_tolerance_deg
+        params.chessboard.max_fit_rms_ratio,
+        params.chessboard.cluster_tol_deg,
+        params.chessboard.seed_edge_tol,
+        params.chessboard.attach_search_rel,
+        params.chessboard.max_components,
     );
     debug!(
         "Marker scan params: marker_size_rel={:.3}, inset_frac={:.3}, border_bits={}, min_border_score={:.3}, dedup_by_id={}",
@@ -185,7 +175,7 @@ fn log_detector_params(params: &CharucoParams) {
     );
 }
 
-fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
+fn log_corner_stats(corners: &[Corner], _params: &CharucoParams) {
     if corners.is_empty() {
         warn!("ChESS scan returned no raw corners");
         return;
@@ -195,7 +185,6 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
     let mut ys = Vec::with_capacity(corners.len());
     let mut strengths = Vec::with_capacity(corners.len());
     let mut nearest_neighbor = Vec::with_capacity(corners.len());
-    let mut corners_with_spacing_match = 0usize;
 
     for (idx, corner) in corners.iter().enumerate() {
         xs.push(corner.position.x);
@@ -203,26 +192,15 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
         strengths.push(corner.strength);
 
         let mut best_distance = f32::INFINITY;
-        let mut has_spacing_match = false;
         for (other_idx, other) in corners.iter().enumerate() {
             if idx == other_idx {
                 continue;
             }
-
             let distance = (other.position - corner.position).norm();
             best_distance = best_distance.min(distance);
-            if distance >= params.chessboard.graph.min_spacing_pix
-                && distance <= params.chessboard.graph.max_spacing_pix
-            {
-                has_spacing_match = true;
-            }
         }
-
         if best_distance.is_finite() {
             nearest_neighbor.push(best_distance);
-        }
-        if has_spacing_match {
-            corners_with_spacing_match += 1;
         }
     }
 
@@ -242,16 +220,12 @@ fn log_corner_stats(corners: &[Corner], params: &CharucoParams) {
         percentile(&strengths, 1.0)
     );
     debug!(
-        "Nearest-neighbor distances[min/p10/p50/p90/max]={:.1}/{:.1}/{:.1}/{:.1}/{:.1}; graph spacing window [{:.1}, {:.1}] hits {}/{} corners",
+        "Nearest-neighbor distances[min/p10/p50/p90/max]={:.1}/{:.1}/{:.1}/{:.1}/{:.1} (v2 chessboard discovers cell size from the seed; no fixed spacing window)",
         percentile(&nearest_neighbor, 0.0),
         percentile(&nearest_neighbor, 0.1),
         percentile(&nearest_neighbor, 0.5),
         percentile(&nearest_neighbor, 0.9),
         percentile(&nearest_neighbor, 1.0),
-        params.chessboard.graph.min_spacing_pix,
-        params.chessboard.graph.max_spacing_pix,
-        corners_with_spacing_match,
-        corners.len()
     );
 }
 
@@ -282,6 +256,3 @@ fn percentile(sorted: &[f32], q: f32) -> f32 {
     sorted[idx]
 }
 
-fn format_optional_u32(value: Option<u32>) -> String {
-    value.map_or_else(|| "auto".to_owned(), |v| v.to_string())
-}

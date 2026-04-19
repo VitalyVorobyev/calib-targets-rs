@@ -166,12 +166,12 @@ fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<ChessConfig> {
 
 fn chessboard_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<chessboard::ChessboardParams> {
+) -> PyResult<chessboard::DetectorParams> {
     let Some(obj) = obj else {
-        return Ok(chessboard::ChessboardParams::default());
+        return Ok(chessboard::DetectorParams::default());
     };
     if obj.is_none() {
-        return Ok(chessboard::ChessboardParams::default());
+        return Ok(chessboard::DetectorParams::default());
     }
     from_py_json(obj, "params")
 }
@@ -239,11 +239,14 @@ fn detect_charuco(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let mut params = charuco_params_from_py(Some(params))?;
-    if chess_cfg.is_some() {
-        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
-    }
-
+    let params = charuco_params_from_py(Some(params))?;
+    // The v2 chessboard detector does not carry a nested ChESS config; the
+    // facade `detect_charuco` uses `default_chess_config()` for corner
+    // detection. The `chess_cfg` parameter is accepted for backward
+    // compatibility but currently has no effect on the v2 chessboard
+    // params shape — callers that need custom ChESS settings should call
+    // `detect_corners` directly and assemble the pipeline themselves.
+    let _ = chess_cfg;
     let result = py.detach(move || detect::detect_charuco(&img, &params));
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let json =
@@ -270,9 +273,9 @@ fn detect_chessboard(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let mut params = chessboard_params_from_py(params)?;
+    let params = chessboard_params_from_py(params)?;
     if chess_cfg.is_some() {
-        params.chess = chess_cfg_from_py(chess_cfg)?;
+        let _ = chess_cfg_from_py(chess_cfg)?;
     }
 
     let result = py.detach(move || detect::detect_chessboard(&img, &params));
@@ -312,9 +315,9 @@ fn detect_chessboard_debug(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let mut params = chessboard_params_from_py(params)?;
+    let params = chessboard_params_from_py(params)?;
     if chess_cfg.is_some() {
-        params.chess = chess_cfg_from_py(chess_cfg)?;
+        let _ = chess_cfg_from_py(chess_cfg)?;
     }
 
     let frame = py.detach(move || detect::detect_chessboard_debug(&img, &params));
@@ -342,9 +345,9 @@ fn detect_marker_board(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let mut params = marker_board_params_from_py(params)?;
+    let params = marker_board_params_from_py(params)?;
     if chess_cfg.is_some() {
-        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
+        let _ = chess_cfg_from_py(chess_cfg)?;
     }
 
     let result = py.detach(move || detect::detect_marker_board(&img, &params));
@@ -377,9 +380,9 @@ fn detect_puzzleboard(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let mut params = puzzleboard_params_from_py(Some(params))?;
+    let params = puzzleboard_params_from_py(Some(params))?;
     if chess_cfg.is_some() {
-        params.chessboard.chess = chess_cfg_from_py(chess_cfg)?;
+        let _ = chess_cfg_from_py(chess_cfg)?;
     }
 
     let result = py.detach(move || detect::detect_puzzleboard(&img, &params));
@@ -414,7 +417,7 @@ fn detect_chessboard_best(
         .map_err(|_| value_error("configs must be a list"))?;
     let mut params_vec = Vec::with_capacity(list.len());
     for item in list.iter() {
-        params_vec.push(from_py_json::<chessboard::ChessboardParams>(
+        params_vec.push(from_py_json::<chessboard::DetectorParams>(
             &item,
             "configs[]",
         )?);

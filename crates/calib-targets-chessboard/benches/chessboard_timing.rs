@@ -14,14 +14,14 @@
 //!
 //! Run with:
 //! ```text
-//! cargo bench -p chessboard-v2 --bench chessboard_v2_timing
+//! cargo bench -p calib-targets-chessboard --bench chessboard_timing
 //! ```
 
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_core::Corner;
-use chessboard_v2::{Detector, DetectorParams};
+use calib_targets_chessboard::{Detector, DetectorParams};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::GenericImageView;
 
@@ -55,7 +55,7 @@ fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {
 }
 
 fn bench_detection(c: &mut Criterion) {
-    let mut group = c.benchmark_group("chessboard_v2/detect");
+    let mut group = c.benchmark_group("chessboard/detect");
     let params = DetectorParams::default();
     for (t, s, label) in FIXTURES {
         let Some(corners) = load_snap_corners(*t, *s) else {

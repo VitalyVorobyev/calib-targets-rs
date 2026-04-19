@@ -13,7 +13,7 @@
 //! Multi-physical-board scenes are explicitly out of scope.
 
 use calib_targets_core::{AxisEstimate, Corner};
-use chessboard_v2::{Detector, DetectorParams};
+use calib_targets_chessboard::{Detector, DetectorParams};
 use nalgebra::Point2;
 use std::collections::HashSet;
 

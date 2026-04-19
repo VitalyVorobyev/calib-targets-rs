@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::ChessboardParams;
+use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
@@ -10,9 +10,9 @@ pub struct CharucoParams {
     /// Pixels per board square in the canonical sampling space.
     #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
-    /// Chessboard detection parameters (includes grid graph settings).
+    /// Chessboard detection parameters.
     #[serde(default)]
-    pub chessboard: ChessboardParams,
+    pub chessboard: DetectorParams,
     /// ChArUco board parameters
     #[serde(alias = "charuco")]
     pub board: CharucoBoardSpec,
@@ -142,29 +142,33 @@ fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKi
 }
 
 impl CharucoParams {
-    /// Three-config sweep preset: canonical + high-threshold + low-threshold.
-    ///
-    /// Useful for challenging images where a single threshold may miss corners
-    /// (e.g. Scheimpflug optics, uneven lighting, narrow focus strips).
+    /// Three-config sweep preset built on top of
+    /// [`DetectorParams::sweep_default`] (canonical + tighter + looser
+    /// chessboard tolerances).
     pub fn sweep_for_board(board: &CharucoBoardSpec) -> Vec<Self> {
         let base = Self::for_board(board);
-        let mut high = base.clone();
-        high.chessboard.chess.threshold_value = 0.15;
-        let mut low = base.clone();
-        low.chessboard.chess.threshold_value = 0.08;
-        vec![base, high, low]
+        DetectorParams::sweep_default()
+            .into_iter()
+            .map(|mut chessboard| {
+                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                Self {
+                    chessboard,
+                    ..base.clone()
+                }
+            })
+            .collect()
     }
 
     /// Build a reasonable default configuration for the given board.
+    ///
+    /// The v2 chessboard detector is scale-invariant and discovers cell
+    /// size from the seed itself, so v1's `expected_rows` / `expected_cols`
+    /// / `completeness_threshold` / explicit `min_corners` gates are no
+    /// longer needed — ChArUco's marker-driven alignment is the geometry
+    /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
-        let chessboard = ChessboardParams {
-            min_corner_strength: 0.5,
-            min_corners: 32,
-            expected_rows: Some(board.rows - 1),
-            expected_cols: Some(board.cols - 1),
-            completeness_threshold: 0.05,
-            ..ChessboardParams::default()
-        };
+        let mut chessboard = DetectorParams::default();
+        chessboard.min_corner_strength = 0.5;
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.marker_size_rel,

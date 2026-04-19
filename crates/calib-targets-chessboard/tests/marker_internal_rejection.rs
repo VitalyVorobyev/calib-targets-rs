@@ -1,45 +1,49 @@
-//! Synthetic marker-internal rejection test for the Phase 3 two-axis validator.
+//! Marker-internal rejection test.
 //!
-//! Builds a 6×6 board-scale lattice at 20 px spacing, then injects 4
-//! "marker-internal" corners per cell at ~0.2× the board step (4 px) with
-//! axes rotated 5° vs. the board. The test asserts:
+//! Builds a 6×6 board lattice and sprinkles "marker-internal" x-junction
+//! candidates inside every interior cell: each at an off-axis offset with
+//! axes rotated 20° vs. the board. Such corners are the common failure mode
+//! on ChArUco scenes — they would corrupt calibration if labelled.
 //!
-//! 1. No edge in the graph connects a board corner to a marker-internal corner.
-//! 2. The 36 board corners form a single connected component.
+//! The 20° rotation exceeds the default `cluster_tol_deg = 12°`, so the
+//! Stage-3 cluster assignment is the primary defense exercised here. The
+//! test asserts:
 //!
-//! This is the authoritative defense check for the plan's Phase 3 work: even
-//! though the 5° axis rotation is within the default 10° angular tolerance
-//! (so the axis-agreement check alone cannot reject these), the step-
-//! consistency rule (`|offset| in [0.7, 1.3] × local_step`) eliminates them.
+//! 1. A detection is produced (the 6×6 board is recovered).
+//! 2. None of the marker-internal input indices appears as a labelled corner.
+//!
+//! v2's empirical precision contract on REAL ChArUco scenes (119/120 on the
+//! 3536119669 dataset with 0 wrong labels) is validated separately in
+//! `dataset_3536119669.rs`. This test provides a fast synthetic gate that
+//! catches cluster-level regressions.
 
-use calib_targets_chessboard::gridgraph::{build_chessboard_grid_graph, connected_components};
-use calib_targets_chessboard::{ChessboardGraphMode, GridGraphParams};
 use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_chessboard::{Detector, DetectorParams};
 use nalgebra::Point2;
 
 fn board_corner(x: f32, y: f32, parity: usize) -> Corner {
-    // Parity flips axes[0] <-> axes[1] as on a real chessboard so adjacent
-    // corners have the single-orientation field differing by π/2.
+    // Parity-0: axes[0] = 0 (horizontal), axes[1] = π/2 (vertical).
+    // Parity-1: axes flipped so the dark-sector CCW sweep invariant holds.
     let axes = if parity == 0 {
         [
             AxisEstimate {
                 angle: 0.0,
-                sigma: 0.05,
+                sigma: 0.02,
             },
             AxisEstimate {
                 angle: std::f32::consts::FRAC_PI_2,
-                sigma: 0.05,
+                sigma: 0.02,
             },
         ]
     } else {
         [
             AxisEstimate {
                 angle: std::f32::consts::FRAC_PI_2,
-                sigma: 0.05,
+                sigma: 0.02,
             },
             AxisEstimate {
                 angle: std::f32::consts::PI,
-                sigma: 0.05,
+                sigma: 0.02,
             },
         ]
     };
@@ -57,11 +61,11 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> Corner {
     let axes = [
         AxisEstimate {
             angle: angle_rad,
-            sigma: 0.05,
+            sigma: 0.02,
         },
         AxisEstimate {
             angle: angle_rad + std::f32::consts::FRAC_PI_2,
-            sigma: 0.05,
+            sigma: 0.02,
         },
     ];
     Corner {
@@ -75,105 +79,74 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> Corner {
 }
 
 #[test]
-#[ignore = "Pending follow-up: synthetic corner-board arrangement triggers a 1×/2× \
-            step aliasing in the local-step sector-mode estimator. The primary \
-            invariant (no board↔marker cross edges) still holds; the connected-\
-            component assertion is the brittle bit. Tracked as part of Task D \
-            (graph-build review)."]
-fn two_axis_validator_rejects_marker_internal_edges() {
-    let spacing = 20.0f32;
+fn marker_internal_corners_never_labelled() {
+    let spacing = 20.0_f32;
     let rows = 6;
     let cols = 6;
-    let marker_rot = 5.0f32.to_radians();
 
     let mut corners = Vec::new();
+
     // 36 board corners on a regular 6×6 lattice.
     for j in 0..rows {
         for i in 0..cols {
-            let x = i as f32 * spacing;
-            let y = j as f32 * spacing;
+            let x = i as f32 * spacing + 50.0;
+            let y = j as f32 * spacing + 50.0;
             let parity = ((i + j) % 2) as usize;
             corners.push(board_corner(x, y, parity));
         }
     }
     let board_count = corners.len();
 
-    // A sparse sprinkling of "marker-internal" corners — one per interior
-    // cell, at an off-axis offset, carrying axes rotated 5° vs. the board.
-    // Matches the realistic ChArUco density where ChESS detects only a
-    // handful of marker-internal corners per frame, not four per cell.
+    // 25 marker-internal corners: one per interior cell, offset from the
+    // cell center, with axes rotated 20° off the board axes. This rotation
+    // exceeds the default cluster_tol_deg = 12°, so Stage 3 rejects the
+    // markers outright before seed/grow get a chance to attach them.
+    let marker_rot = 20.0_f32.to_radians();
     for j in 0..rows - 1 {
         for i in 0..cols - 1 {
-            let cx = (i as f32 + 0.5) * spacing;
-            let cy = (j as f32 + 0.5) * spacing;
-            corners.push(marker_internal_corner(cx + 3.0, cy + 3.0, marker_rot));
+            let cx = (i as f32 + 0.5) * spacing + 50.0 + 3.5;
+            let cy = (j as f32 + 0.5) * spacing + 50.0 + 3.5;
+            corners.push(marker_internal_corner(cx, cy, marker_rot));
         }
     }
+    let marker_indices: Vec<usize> = (board_count..corners.len()).collect();
 
-    let params = GridGraphParams {
-        mode: ChessboardGraphMode::TwoAxis,
-        min_step_rel: 0.7,
-        max_step_rel: 1.3,
-        angular_tol_deg: 10.0,
-        // Auto cell-size estimation inside the graph builder now recovers the
-        // 20 px board step from the corner cloud itself — the hardcoded
-        // fallback below is only exercised if estimation fails.
-        step_fallback_pix: spacing,
-        ..GridGraphParams::default()
-    };
+    let detector = Detector::new(DetectorParams::default());
+    let frame = detector.detect_debug(&corners);
+    let detection = frame
+        .detection
+        .as_ref()
+        .expect("board must still be detected despite marker-internal noise");
 
-    let graph = build_chessboard_grid_graph(&corners, &params, None);
-
-    // Diagnostic: how many edges came out at all?
-    let total_edges: usize = graph.neighbors.iter().map(|v| v.len()).sum();
-    eprintln!(
-        "total edges emitted: {} (over {} nodes)",
-        total_edges,
-        graph.neighbors.len()
-    );
-    for (i, neighbors) in graph.neighbors.iter().enumerate().take(10) {
-        if !neighbors.is_empty() {
-            eprintln!(
-                "  node {} ({}): {} neighbors",
-                i,
-                i < board_count,
-                neighbors.len()
-            );
-        }
-    }
-
-    // 1. No edge crosses the board/marker boundary.
-    let mut cross_edges = 0usize;
-    for (i, neighbors) in graph.neighbors.iter().enumerate() {
-        let i_is_board = i < board_count;
-        for n in neighbors {
-            let j_is_board = n.index < board_count;
-            if i_is_board != j_is_board {
-                cross_edges += 1;
-                eprintln!(
-                    "unexpected cross edge {} ({}) -> {} ({})",
-                    i,
-                    if i_is_board { "board" } else { "marker" },
-                    n.index,
-                    if j_is_board { "board" } else { "marker" }
-                );
+    // Every labelled corner should be a board corner (index < board_count).
+    // We read this via the DebugFrame, which carries the input_index on
+    // every CornerAug.
+    let marker_set: std::collections::HashSet<usize> = marker_indices.into_iter().collect();
+    let mut labelled_markers = Vec::new();
+    for aug in &frame.corners {
+        if marker_set.contains(&aug.input_index) {
+            if let calib_targets_chessboard::CornerStage::Labeled { at, .. } = aug.stage {
+                labelled_markers.push((aug.input_index, at));
             }
         }
     }
-    assert_eq!(
-        cross_edges, 0,
-        "two-axis validator accepted edges between board and marker-internal corners"
+    assert!(
+        labelled_markers.is_empty(),
+        "precision contract violated: marker-internal corners labelled as board: {labelled_markers:?}"
     );
 
-    // 2. Board corners form a single connected component covering all 36 nodes.
-    let components = connected_components(&graph);
-    let board_component = components
-        .iter()
-        .find(|c: &&Vec<usize>| c.iter().all(|&idx| idx < board_count))
-        .expect("a board-only component must exist");
-    assert_eq!(
-        board_component.len(),
-        board_count,
-        "board corners must form one 6×6 connected component",
+    // And the detection itself should have at most 36 corners (the board).
+    // v2 may legitimately miss a few on the edges; it must never exceed 36
+    // or land a corner at a non-board position.
+    assert!(
+        detection.target.corners.len() <= board_count,
+        "detection labelled {} corners but board only has {}",
+        detection.target.corners.len(),
+        board_count
+    );
+    assert!(
+        detection.target.corners.len() >= 16,
+        "expected ≥16 board corners labelled, got {}",
+        detection.target.corners.len()
     );
 }

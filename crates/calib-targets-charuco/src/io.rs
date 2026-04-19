@@ -5,7 +5,7 @@ use crate::{
     CharucoDetector, CharucoParams,
 };
 use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
-use calib_targets_chessboard::ChessboardParams;
+use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub struct CharucoDetectConfig {
     #[serde(default)]
     pub min_marker_inliers: Option<usize>,
     #[serde(default)]
-    pub chessboard: Option<ChessboardParams>,
+    pub chessboard: Option<DetectorParams>,
     #[serde(default)]
     pub aruco: Option<ArucoScanConfig>,
 }
@@ -72,10 +72,14 @@ impl CharucoDetectConfig {
     }
 
     /// Build detector parameters, applying overrides from the config.
+    ///
+    /// Note: the v2 chessboard detector (`DetectorParams`) does not include a
+    /// nested ChESS detector config — `cfg.chess` is consumed upstream by
+    /// the corner-detection step (`calib_targets::detect_corners`), not by
+    /// the chessboard stage itself.
     pub fn build_params(&self) -> CharucoParams {
         let mut params = CharucoParams::for_board(&self.board);
         params.px_per_square = self.px_per_square;
-        params.chessboard.chess = self.chess.clone();
         if let Some(min_marker_inliers) = self.min_marker_inliers {
             params.min_marker_inliers = min_marker_inliers;
         }

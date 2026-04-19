@@ -8,13 +8,13 @@
 //! sub-frames (20 targets × 6 snaps) and enforces the precision contract:
 //! ≥ 119 detections and no duplicate `(i, j)` labels in any detection. It is
 //! marked `#[ignore]` because it reads 20 images and is slow; run it with
-//! `cargo test -p chessboard-v2 --release -- --ignored`.
+//! `cargo test -p calib-targets-chessboard --release -- --ignored`.
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use chessboard_v2::{Detector, DetectorParams};
+use calib_targets_chessboard::{Detection, Detector, DetectorParams};
 use image::GenericImageView;
 
 const SNAP_WIDTH: u32 = 720;
@@ -36,7 +36,7 @@ fn extract_snap(image: &image::GrayImage, snap_idx: u32) -> image::GrayImage {
     image.view(x0, 0, SNAP_WIDTH, SNAP_HEIGHT).to_image()
 }
 
-fn assert_no_duplicate_labels(detection: &chessboard_v2::Detection, context: &str) {
+fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     for lc in &detection.target.corners {
         let g = lc
@@ -50,7 +50,7 @@ fn assert_no_duplicate_labels(detection: &chessboard_v2::Detection, context: &st
     }
 }
 
-fn assert_grid_rebased_to_origin(detection: &chessboard_v2::Detection, context: &str) {
+fn assert_grid_rebased_to_origin(detection: &Detection, context: &str) {
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
     for lc in &detection.target.corners {

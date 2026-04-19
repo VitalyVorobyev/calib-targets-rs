@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use calib_targets_chessboard::ChessboardParams;
+use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::{GridAlignment, TargetDetection};
 
 use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
@@ -79,7 +79,7 @@ impl Default for CircleMatchParams {
 pub struct MarkerBoardParams {
     pub layout: MarkerBoardSpec,
     #[serde(default = "default_marker_chessboard_params")]
-    pub chessboard: ChessboardParams,
+    pub chessboard: DetectorParams,
     #[serde(default)]
     pub circle_score: CircleScoreParams,
     #[serde(default)]
@@ -91,12 +91,12 @@ pub struct MarkerBoardParams {
 
 impl MarkerBoardParams {
     pub fn new(layout: MarkerBoardSpec) -> Self {
-        let mut chessboard = default_marker_chessboard_params();
-        chessboard.expected_rows = Some(layout.rows);
-        chessboard.expected_cols = Some(layout.cols);
+        // v2 chessboard detector is scale-invariant — `expected_rows/cols`
+        // and `completeness_threshold` from v1 no longer apply. The marker
+        // circles supply the geometry constraint.
         Self {
             layout,
-            chessboard,
+            chessboard: default_marker_chessboard_params(),
             circle_score: CircleScoreParams::default(),
             match_params: CircleMatchParams::default(),
             roi_cells: None,
@@ -110,11 +110,8 @@ impl Default for MarkerBoardParams {
     }
 }
 
-fn default_marker_chessboard_params() -> ChessboardParams {
-    ChessboardParams {
-        completeness_threshold: 0.05,
-        ..ChessboardParams::default()
-    }
+fn default_marker_chessboard_params() -> DetectorParams {
+    DetectorParams::default()
 }
 
 /// Result of matching expected circles to detected candidates.
