@@ -240,14 +240,12 @@ fn detect_charuco(
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = charuco_params_from_py(Some(params))?;
-    // The chessboard detector does not carry a nested ChESS config; the
-    // facade `detect_charuco` uses `default_chess_config()` for corner
-    // detection. The `chess_cfg` parameter is accepted for backward
-    // compatibility but currently has no effect on the chessboard
-    // params shape — callers that need custom ChESS settings should call
-    // `detect_corners` directly and assemble the pipeline themselves.
-    let _ = chess_cfg;
-    let result = py.detach(move || detect::detect_charuco(&img, &params));
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let result = py.detach(move || -> Result<_, detect::DetectError> {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        let detector = charuco::CharucoDetector::new(params.clone())?;
+        Ok(detector.detect(&detect::gray_view(&img), &corners)?)
+    });
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let json =
         serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -274,11 +272,12 @@ fn detect_chessboard(
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let params = chessboard_params_from_py(params)?;
-    if chess_cfg.is_some() {
-        let _ = chess_cfg_from_py(chess_cfg)?;
-    }
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let result = py.detach(move || detect::detect_chessboard(&img, &params));
+    let result = py.detach(move || {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        chessboard::Detector::new(params.clone()).detect(&corners)
+    });
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -316,11 +315,12 @@ fn detect_chessboard_debug(
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = chessboard_params_from_py(params)?;
-    if chess_cfg.is_some() {
-        let _ = chess_cfg_from_py(chess_cfg)?;
-    }
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let frame = py.detach(move || detect::detect_chessboard_debug(&img, &params));
+    let frame = py.detach(move || {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        chessboard::Detector::new(params.clone()).detect_debug(&corners)
+    });
     let json =
         serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)
@@ -346,11 +346,13 @@ fn detect_marker_board(
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let params = marker_board_params_from_py(params)?;
-    if chess_cfg.is_some() {
-        let _ = chess_cfg_from_py(chess_cfg)?;
-    }
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let result = py.detach(move || detect::detect_marker_board(&img, &params));
+    let result = py.detach(move || {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        marker::MarkerBoardDetector::new(params.clone())
+            .detect_from_image_and_corners(&detect::gray_view(&img), &corners)
+    });
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -381,11 +383,13 @@ fn detect_puzzleboard(
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = puzzleboard_params_from_py(Some(params))?;
-    if chess_cfg.is_some() {
-        let _ = chess_cfg_from_py(chess_cfg)?;
-    }
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let result = py.detach(move || detect::detect_puzzleboard(&img, &params));
+    let result = py.detach(move || -> Result<_, detect::DetectError> {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
+        Ok(detector.detect(&detect::gray_view(&img), &corners)?)
+    });
     let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     let json =
         serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;

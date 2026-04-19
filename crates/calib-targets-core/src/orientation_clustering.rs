@@ -292,8 +292,22 @@ pub fn cluster_orientations(
 /// we fall back to `1 / (1 + σ)` so those corners still influence the
 /// histogram. When `use_weights` is false the `strength` multiplier is
 /// disabled entirely.
+///
+/// Returns **zero** for no-information axes — `σ = π` is the sentinel
+/// value produced by `AxisEstimate::default()` and by the `chess-corners`
+/// adapter when a corner has insufficient orientation evidence. Giving
+/// those axes a non-trivial `1 / (1 + π)` vote would let default-
+/// constructed or legacy corners still shape the histogram and 2-means
+/// centers, creating artificial peaks that the clusterer cannot tell
+/// from real ones. Zeroing them out means the stage fails cleanly when
+/// orientation data is truly missing, rather than succeeding on noise.
 fn axis_vote_weight(corner: &Corner, axis_slot: usize, use_weights: bool) -> f32 {
     let axis = &corner.axes[axis_slot];
+    // No-info sentinel: σ ≥ π (with a small epsilon to tolerate FP
+    // drift near the boundary). Also reject non-finite σ.
+    if !axis.sigma.is_finite() || axis.sigma >= std::f32::consts::PI - f32::EPSILON {
+        return 0.0;
+    }
     let sigma_term = 1.0 / (1.0 + axis.sigma.max(0.0));
     if use_weights {
         let s = corner.strength;
