@@ -1,7 +1,9 @@
 # The Chessboard Detector
 
-> Code: `chessboard-v2` crate (slated to replace `calib-targets-chessboard`).
-> Reference spec: [`docs/chessboard_v2_spec.md`](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/docs/chessboard_v2_spec.md).
+> Code: [`calib-targets-chessboard`](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/crates/calib-targets-chessboard).
+> Related: the generic BFS growth, circular-histogram peak picking, and
+> line/local-H validation live in the standalone
+> [`projective-grid`](projective_grid.md) crate.
 
 The chessboard detector takes a cloud of ChESS X-junction corners and produces
 an integer-labelled chessboard grid `(i, j) → image position`. It is
@@ -244,8 +246,8 @@ multimodal mean-shift can pick the wrong mode. The v2 detector instead
 finds a 4-corner quad that matches itself in edge lengths and reports the
 mean of those 4 edge lengths as `s`. The window is whatever the seed
 itself agrees on — there is no global scalar to mispick. See
-`crates/chessboard-v2/src/seed.rs` and the **Cell-size gotcha** in
-`CLAUDE.md`.
+`crates/calib-targets-chessboard/src/seed.rs` and the **Cell-size
+gotcha** in `CLAUDE.md`.
 
 **Edges align with axes, not diagonals.** Some chessboard detectors model
 ChESS corners as having a single orientation `θ` and check that grid
@@ -359,7 +361,7 @@ handful of integers.
 ## 8. Quickstart
 
 ```rust,ignore
-use chessboard_v2::{Detector, DetectorParams};
+use calib_targets_chessboard::{Detector, DetectorParams};
 use calib_targets_core::Corner;
 
 fn detect(corners: &[Corner]) {
@@ -392,7 +394,12 @@ fn detect_multi(corners: &[Corner]) {
 
 The full driver — including ChESS corner detection, JSON debug-frame
 output, and a 120-snap dataset sweep — lives in
-`crates/chessboard-v2/examples/run_dataset.rs`.
+`crates/calib-targets-chessboard/examples/run_dataset.rs`. A single-
+image variant (`examples/debug_single.rs`) + the driver script
+`scripts/chessboard_regression_overlays.sh` emit per-image overlays for
+the broader `testdata/` regression set and are wired into a
+`#[test]` harness at
+`crates/calib-targets-chessboard/tests/testdata_regression.rs`.
 
 ---
 

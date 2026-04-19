@@ -11,6 +11,7 @@
 - [Pipeline Overview](pipeline.md)
 - [Crates](crates.md)
   - [calib-targets-core](core.md)
+  - [projective-grid](projective_grid.md)
   - [calib-targets-chessboard](chessboard.md)
   - [calib-targets-aruco](aruco.md)
     - [ArUco Decoding Details](aruco_decoding.md)
