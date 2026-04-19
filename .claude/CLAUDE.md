@@ -81,7 +81,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
 | `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
 | `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
-| `chessboard` | **Invariant-first rewrite** of the chessboard detector (standalone prototype, not yet wired into production facade). Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap 3536119669 dataset. See `docs/chessboard_v2_spec.md`. |
+| `chessboard` | **Invariant-first rewrite** of the chessboard detector. Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap private dataset |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-puzzleboard` | PuzzleBoard self-identifying chessboard: edge-dot decode + absolute corner IDs |
@@ -136,24 +136,24 @@ Accumulating raw `(cos θ, sin θ)` breaks at the 0°/180° seam and
 silently returns garbage centers when a peak sits near 0°. This was
 the root cause of the v1 Phase-4 regression; the fix is in
 `calib-targets-core/src/orientation_clustering.rs` and
-`crates/chessboard-v2/src/cluster.rs`.
+`crates/calib-targets-chessboard/src/cluster.rs`.
 
 ## Regression dataset: 3536119669
 
-`testdata/3536119669/target_*.png` (20 images, 6 × 720×540 snaps each
+`privatedata/3536119669/target_*.png` (20 images, 6 × 720×540 snaps each
 = 120 frames) is the canonical chessboard precision-and-recall
 benchmark. The known failure modes are enumerated in
 `docs/120issues.txt`.
 
 ```bash
 # v2 end-to-end sweep (emits per-snap DebugFrame JSON).
-cargo run --release -p chessboard-v2 --features dataset --example run_dataset -- \
-    --dataset testdata/3536119669 \
+cargo run --release -p calib-targets-chessboard --features dataset --example run_dataset -- \
+    --dataset privatedata/3536119669 \
     --out bench_results/chessboard_v2_overlays
 
 # Render overlays from the JSONs (local-only output).
 uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
-    --dataset testdata/3536119669 \
+    --dataset privatedata/3536119669 \
     --frames bench_results/chessboard_v2_overlays \
     --out   bench_results/chessboard_v2_overlays/png
 ```
@@ -163,7 +163,7 @@ uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \
 acceptable. The current sweep posts **119/120 detected, avg 43
 labelled, zero wrong labels** (t11s2 is the only empty frame — the
 Stage 2 clustering fails on a very-bad-light frame flagged as
-excluded in `docs/120issues.txt`). Any algorithmic change that drops
+excluded). Any algorithmic change that drops
 this precision contract is a regression, full stop.
 
 ## Cell-size estimation gotcha
