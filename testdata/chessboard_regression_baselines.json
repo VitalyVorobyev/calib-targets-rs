@@ -1,0 +1,126 @@
+{
+  "description": "Per-image gates for the chessboard-v2 regression harness (tests/testdata_regression.rs).",
+  "detector": "calib_targets_chessboard::Detector with DetectorParams::default()",
+  "hard_invariants": {
+    "no_duplicate_labels": true,
+    "origin_rebased_to_zero": true,
+    "origin_top_left_visual": true
+  },
+  "excluded": [
+    {
+      "path": "testdata/small.png",
+      "reason": "identical to testdata/small0.png (same sha-1), covered by small0.png"
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example4.png",
+      "reason": "multi-board 3D scene (three planar targets in one frame); out of single-target contract"
+    }
+  ],
+  "images": [
+    {
+      "path": "testdata/mid.png",
+      "require_detection": true,
+      "min_labelled": 70,
+      "max_components": 1
+    },
+    {
+      "path": "testdata/large.png",
+      "require_detection": true,
+      "min_labelled": 340,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small0.png",
+      "require_detection": true,
+      "min_labelled": 100,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small1.png",
+      "require_detection": true,
+      "min_labelled": 90,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small2.png",
+      "require_detection": true,
+      "min_labelled": 100,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small3.png",
+      "require_detection": true,
+      "min_labelled": 75,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small4.png",
+      "require_detection": true,
+      "min_labelled": 100,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/small5.png",
+      "require_detection": true,
+      "min_labelled": 90,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example0.png",
+      "require_detection": true,
+      "min_labelled": 85,
+      "max_components": 1
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example1.png",
+      "require_detection": false,
+      "min_labelled": 0,
+      "max_components": 2,
+      "ratchet_note": "TODO: validation loop oscillates (228->238->236) and hits max_validation_iters=3; detection emits None despite 200+ labelled corners. Fix raises require_detection to true and min_labelled to >=200."
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example2.png",
+      "require_detection": true,
+      "min_labelled": 70,
+      "max_components": 2,
+      "note": "extreme view angle; detector recovers only a subset; see follow-up task"
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example3.png",
+      "require_detection": true,
+      "min_labelled": 25,
+      "max_components": 1
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example5.png",
+      "require_detection": true,
+      "min_labelled": 2400,
+      "max_components": 2
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example6.png",
+      "require_detection": true,
+      "min_labelled": 300,
+      "max_components": 4,
+      "note": "multiple planar boards visible; detector returns the largest single grid, plus partial components"
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example7.png",
+      "require_detection": true,
+      "min_labelled": 14,
+      "max_components": 1
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example8.png",
+      "require_detection": true,
+      "min_labelled": 95,
+      "max_components": 1
+    },
+    {
+      "path": "testdata/puzzleboard_reference/example9.png",
+      "require_detection": true,
+      "min_labelled": 280,
+      "max_components": 1
+    }
+  ]
+}

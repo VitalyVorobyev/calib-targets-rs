@@ -255,4 +255,3 @@ fn percentile(sorted: &[f32], q: f32) -> f32 {
     let idx = ((sorted.len() - 1) as f32 * q).round() as usize;
     sorted[idx]
 }
-

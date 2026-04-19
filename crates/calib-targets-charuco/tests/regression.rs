@@ -1,6 +1,8 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
-use calib_targets_chessboard::{Detector as ChessboardDetector, DetectorParams as ChessboardParams};
+use calib_targets_chessboard::{
+    Detector as ChessboardDetector, DetectorParams as ChessboardParams,
+};
 use calib_targets_core::{
     estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,
 };
@@ -258,13 +260,6 @@ fn detects_charuco_on_large_png() {
 }
 
 #[test]
-#[ignore = "Post-v2-swap regression: v2 chessboard finds no usable grid in \
-            small.png with default DetectorParams (NoMarkers). The previous v1 \
-            test relied on graph.min_spacing_pix=5.0 / max_spacing_pix=60.0 to \
-            cover the small board's tight cell pitch; v2 has no graph stage and \
-            relies on its self-discovered cell size, which apparently mispicks \
-            on this image. Tracked as part of the v1->v2 swap follow-up — needs \
-            a v2-tuned DetectorParams preset for thumbnail-sized boards."]
 fn detects_charuco_on_small_png() {
     let img_path = testdata_path("small.png");
     let img = load_gray(&img_path);
@@ -306,13 +301,6 @@ fn detects_charuco_on_small_png() {
 }
 
 #[test]
-#[ignore = "Post-v2-swap regression: v2 detector recovers only 7 of the 11 \
-            inner-corner columns on mid.png. v2's invariants (line collinearity, \
-            local-H residuals) trade some recall for precision-by-construction; \
-            this image hits the recall side of the trade. The 119/120 / 0-wrong \
-            contract on the canonical 3536119669 dataset still holds. Follow-up: \
-            either (a) tune DetectorParams::sweep_default to recover this image \
-            or (b) document the recall trade-off and update the test expectation."]
 fn detects_plain_chessboard_on_mid_png() {
     let img_path = testdata_path("mid.png");
     let img = load_gray(&img_path);

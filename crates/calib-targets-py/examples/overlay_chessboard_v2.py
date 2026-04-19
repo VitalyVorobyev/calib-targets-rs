@@ -1,11 +1,19 @@
 """Render overlays from chessboard-v2's per-snap DebugFrame JSON.
 
-Input: a directory of `t{T}s{S}.json` files produced by
-`cargo run -p chessboard-v2 --example run_dataset`. Each file wraps a
-compact debug frame (labelled corners, cluster centers, blacklist,
-etc.).
+Two input modes:
 
-Output: one PNG overlay per snap at `<out>/t{T}s{S}_v2.png`.
+1. **Dataset mode** (original): a directory of `t{T}s{S}.json` files
+   produced by
+   `cargo run -p calib-targets-chessboard --example run_dataset`.
+   Each JSON wraps a compact debug frame and corresponds to one
+   720×540 snap within a stacked `target_*.png` image. Output: one
+   PNG overlay per snap at `<out>/t{T}s{S}_{tag}.png`.
+
+2. **Single-image mode**: one image + one JSON (produced by
+   `cargo run -p calib-targets-chessboard --example debug_single`).
+   Image dimensions come from the JSON's `width` / `height` fields,
+   so arbitrary resolutions are supported. Output: one PNG overlay
+   at the path given by `--out`.
 
 The overlay renders:
 - labelled corners in gold with their (i, j) annotation,
@@ -14,11 +22,17 @@ The overlay renders:
 - all input corners as faint grey dots for context,
 - cluster centers drawn as tangent lines in cyan and magenta.
 
-Usage:
+Usage (dataset):
     uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \\
         --dataset testdata/3536119669 \\
         --frames bench_results/chessboard_v2_overlays \\
         --out bench_results/chessboard_v2_overlays/png
+
+Usage (single image):
+    uv run python crates/calib-targets-py/examples/overlay_chessboard_v2.py \\
+        --single-image testdata/mid.png \\
+        --frame-json bench_results/.../mid_default.json \\
+        --out bench_results/.../mid_default.png
 """
 
 from __future__ import annotations
@@ -51,6 +65,15 @@ def extract_snap(image: np.ndarray, snap_idx: int) -> np.ndarray:
     return image[:SNAP_HEIGHT, x0 : x0 + SNAP_WIDTH]
 
 
+def _dims_from_frame(frame: dict, fallback: tuple[int, int]) -> tuple[int, int]:
+    """Read `(width, height)` from the CompactFrame JSON with a fallback."""
+    w = frame.get("width")
+    h = frame.get("height")
+    if isinstance(w, int) and isinstance(h, int) and w > 0 and h > 0:
+        return w, h
+    return fallback
+
+
 def _check_schema(dbg: dict, tag: str) -> None:
     """Warn once per observed schema version when it differs from EXPECTED_DEBUG_FRAME_SCHEMA."""
     schema = dbg.get("schema")
@@ -76,7 +99,16 @@ def render_overlay(
     frame: dict,
     tag: str,
     out_path: Path,
+    width: int | None = None,
+    height: int | None = None,
 ) -> dict:
+    # Prefer explicit caller dims, then JSON's width/height, then the
+    # image's own shape. The dataset path passes the 720×540 snap
+    # crop; single-image mode reads the real resolution from JSON.
+    if width is None or height is None:
+        w_from_frame, h_from_frame = _dims_from_frame(frame, (snap.shape[1], snap.shape[0]))
+        width = width if width is not None else w_from_frame
+        height = height if height is not None else h_from_frame
     fig, ax = plt.subplots(figsize=(12, 9), dpi=110)
     ax.imshow(snap, cmap="gray", vmin=0, vmax=255)
 
@@ -157,8 +189,8 @@ def render_overlay(
     # Cluster direction lines in the image center.
     gd = dbg.get("grid_directions")
     if gd is not None:
-        cx, cy = SNAP_WIDTH / 2.0, SNAP_HEIGHT / 2.0
-        span = 0.4 * min(SNAP_WIDTH, SNAP_HEIGHT)
+        cx, cy = width / 2.0, height / 2.0
+        span = 0.4 * min(width, height)
         for theta, color in zip(gd, ["cyan", "magenta"]):
             dx = math.cos(theta) * span
             dy = math.sin(theta) * span
@@ -199,8 +231,8 @@ def render_overlay(
         Line2D([0], [0], marker="o", color="#444444", lw=0, markersize=4, label="input corner"),
     ]
     ax.legend(handles=handles, loc="lower right", fontsize=7, framealpha=0.9)
-    ax.set_xlim(0, SNAP_WIDTH)
-    ax.set_ylim(SNAP_HEIGHT, 0)
+    ax.set_xlim(0, width)
+    ax.set_ylim(height, 0)
     ax.set_aspect("equal")
     ax.axis("off")
     fig.tight_layout()
@@ -215,18 +247,8 @@ def render_overlay(
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", required=True, type=Path,
-                        help="directory of target_*.png files")
-    parser.add_argument("--frames", required=True, type=Path,
-                        help="directory of per-snap DebugFrame JSON files")
-    parser.add_argument("--out", required=True, type=Path,
-                        help="output directory for PNG overlays")
-    parser.add_argument("--tag", default="v2",
-                        help="suffix tag appended to every output filename")
-    args = parser.parse_args()
-
+def _run_dataset_mode(args: argparse.Namespace) -> None:
+    """Render overlays for the stacked 6×(720×540) dataset layout."""
     # Enumerate target PNGs.
     targets: dict[int, Path] = {}
     for p in args.dataset.iterdir():
@@ -257,7 +279,14 @@ def main() -> None:
                 frame = json.load(f)
             snap = extract_snap(img, snap_idx)
             out_path = args.out / f"t{idx}s{snap_idx}_{args.tag}.png"
-            stats = render_overlay(snap, frame, f"t{idx}s{snap_idx} {args.tag}", out_path)
+            stats = render_overlay(
+                snap,
+                frame,
+                f"t{idx}s{snap_idx} {args.tag}",
+                out_path,
+                width=SNAP_WIDTH,
+                height=SNAP_HEIGHT,
+            )
             n_total += 1
             if stats["detection"]:
                 n_detected += 1
@@ -277,6 +306,76 @@ def main() -> None:
     summary = args.out / f"_{args.tag}_summary.tsv"
     summary.write_text("\n".join(per_frame_rows) + "\n")
     print(f"per-frame stats: {summary}")
+
+
+def _run_single_image_mode(args: argparse.Namespace) -> None:
+    """Render one overlay for an arbitrary-resolution single image."""
+    img = np.asarray(Image.open(args.single_image).convert("L"), dtype=np.uint8)
+    with open(args.frame_json) as f:
+        frame = json.load(f)
+    width, height = _dims_from_frame(frame, (img.shape[1], img.shape[0]))
+    # If the JSON's dims disagree with the image (shouldn't happen),
+    # trust the image — it's the ground truth for the display canvas.
+    if img.shape[1] != width or img.shape[0] != height:
+        print(
+            f"[warn] frame dims ({width}×{height}) disagree with image "
+            f"({img.shape[1]}×{img.shape[0]}); using image dims"
+        )
+        width, height = img.shape[1], img.shape[0]
+    tag = args.single_image.stem
+    stats = render_overlay(
+        img,
+        frame,
+        f"{tag} {args.tag}",
+        args.out,
+        width=width,
+        height=height,
+    )
+    print(
+        f"wrote {args.out}  det={stats['detection']}  "
+        f"labelled={stats['labelled']}  blacklisted={stats['blacklisted']}"
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tag", default="v2",
+                        help="suffix tag appended to filenames / title")
+    # Dataset mode
+    parser.add_argument("--dataset", type=Path,
+                        help="(dataset mode) directory of target_*.png files")
+    parser.add_argument("--frames", type=Path,
+                        help="(dataset mode) directory of per-snap DebugFrame JSON files")
+    # Single-image mode
+    parser.add_argument("--single-image", type=Path,
+                        help="(single-image mode) one PNG to overlay")
+    parser.add_argument("--frame-json", type=Path,
+                        help="(single-image mode) the matching DebugFrame JSON")
+    # Shared
+    parser.add_argument("--out", required=True, type=Path,
+                        help="dataset mode: output directory; single-image mode: output PNG path")
+    args = parser.parse_args()
+
+    single = args.single_image is not None or args.frame_json is not None
+    dataset = args.dataset is not None or args.frames is not None
+
+    if single and dataset:
+        parser.error(
+            "choose one mode: --dataset/--frames (dataset) or --single-image/--frame-json"
+        )
+    if single:
+        if args.single_image is None or args.frame_json is None:
+            parser.error("--single-image requires --frame-json")
+        if args.out.suffix.lower() != ".png":
+            parser.error("--out must be a .png path in single-image mode")
+        _run_single_image_mode(args)
+        return
+    if dataset:
+        if args.dataset is None or args.frames is None:
+            parser.error("--dataset requires --frames")
+        _run_dataset_mode(args)
+        return
+    parser.error("provide either --dataset/--frames or --single-image/--frame-json")
 
 
 if __name__ == "__main__":

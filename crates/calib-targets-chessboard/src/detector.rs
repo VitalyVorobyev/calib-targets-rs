@@ -474,10 +474,18 @@ fn build_detection(
     cell_size: f32,
 ) -> Detection {
     // Growth rebases (i, j) to non-negative already.
-    // Sort by (j, i) before building LabeledCorner so the output order is
-    // stable and we don't need a post-hoc unwrap on `grid`.
     let mut labelled_pairs: Vec<((i32, i32), usize)> =
         grow.labelled.iter().map(|(&k, &v)| (k, v)).collect();
+
+    // Canonicalize orientation so +i points roughly +x (right) and +j
+    // points roughly +y (down) in image coords. The grow stage assigns
+    // (i, j) from the seed's internal axis-slot convention, which has
+    // no relation to image orientation; without this step, (0, 0) can
+    // land anywhere on the detected board.
+    let swap_axes = canonicalize_orientation(&mut labelled_pairs, corners);
+
+    // Sort by (j, i) so the output order is stable and we don't need a
+    // post-hoc unwrap on `grid` downstream.
     labelled_pairs.sort_by_key(|&((i, j), _)| (j, i));
 
     let mut labeled_corners: Vec<LabeledCorner> = Vec::with_capacity(labelled_pairs.len());
@@ -494,8 +502,16 @@ fn build_detection(
         strong_indices.push(c.input_index);
     }
 
+    // Swap the reported grid-direction angles when axes were swapped so
+    // `grid_directions[0]` still describes the +i axis.
+    let grid_directions = if swap_axes {
+        [centers.theta1, centers.theta0]
+    } else {
+        [centers.theta0, centers.theta1]
+    };
+
     Detection {
-        grid_directions: [centers.theta0, centers.theta1],
+        grid_directions,
         cell_size,
         target: TargetDetection {
             kind: TargetKind::Chessboard,
@@ -503,6 +519,87 @@ fn build_detection(
         },
         strong_indices,
     }
+}
+
+/// Canonicalize grid orientation so +i points roughly +x (right) and +j
+/// points roughly +y (down) in image pixel coordinates. Preserves the
+/// labelling up to axis permutation / sign flips and keeps `(i, j)`
+/// non-negative with the bounding-box minimum at `(0, 0)`. Returns
+/// `true` when the i- and j-axes were swapped — the caller may need to
+/// swap any parallel axis-indexed data (e.g. `grid_directions`).
+fn canonicalize_orientation(
+    labelled_pairs: &mut [((i32, i32), usize)],
+    corners: &[CornerAug],
+) -> bool {
+    if labelled_pairs.len() < 2 {
+        return false;
+    }
+
+    use std::collections::HashMap;
+    let pos_by_ij: HashMap<(i32, i32), (f32, f32)> = labelled_pairs
+        .iter()
+        .map(|&((i, j), idx)| ((i, j), (corners[idx].position.x, corners[idx].position.y)))
+        .collect();
+
+    // Mean +i and +j step vectors (in image pixels) over all adjacent
+    // labelled pairs. Averaging across the full grid makes the direction
+    // robust to individual corner noise and perspective distortion.
+    let mut vi_sum = (0.0_f32, 0.0_f32);
+    let mut vj_sum = (0.0_f32, 0.0_f32);
+    let mut vi_n = 0u32;
+    let mut vj_n = 0u32;
+    for (&(i, j), &(x, y)) in pos_by_ij.iter() {
+        if let Some(&(xn, yn)) = pos_by_ij.get(&(i + 1, j)) {
+            vi_sum.0 += xn - x;
+            vi_sum.1 += yn - y;
+            vi_n += 1;
+        }
+        if let Some(&(xn, yn)) = pos_by_ij.get(&(i, j + 1)) {
+            vj_sum.0 += xn - x;
+            vj_sum.1 += yn - y;
+            vj_n += 1;
+        }
+    }
+    if vi_n == 0 || vj_n == 0 {
+        return false;
+    }
+    let vi = (vi_sum.0 / vi_n as f32, vi_sum.1 / vi_n as f32);
+    let vj = (vj_sum.0 / vj_n as f32, vj_sum.1 / vj_n as f32);
+
+    // Decide which original axis should become the "horizontal" (i)
+    // axis. Swap when the +j axis has a larger |x| component than +i.
+    let swap = vi.0.abs() < vj.0.abs();
+    let new_vi = if swap { vj } else { vi };
+    let new_vj = if swap { vi } else { vj };
+    let flip_i = new_vi.0 < 0.0;
+    let flip_j = new_vj.1 < 0.0;
+
+    if !swap && !flip_i && !flip_j {
+        return false;
+    }
+
+    // Compute extents of the post-swap labelling before rewriting, so
+    // the sign flip stays within the non-negative domain.
+    let mut imax = i32::MIN;
+    let mut jmax = i32::MIN;
+    for &((i, j), _) in labelled_pairs.iter() {
+        let (ni, nj) = if swap { (j, i) } else { (i, j) };
+        imax = imax.max(ni);
+        jmax = jmax.max(nj);
+    }
+
+    for ((i, j), _) in labelled_pairs.iter_mut() {
+        let (mut ni, mut nj) = if swap { (*j, *i) } else { (*i, *j) };
+        if flip_i {
+            ni = imax - ni;
+        }
+        if flip_j {
+            nj = jmax - nj;
+        }
+        *i = ni;
+        *j = nj;
+    }
+    swap
 }
 
 #[cfg(test)]
@@ -560,6 +657,53 @@ mod tests {
     fn rejects_when_too_few_corners() {
         let det = Detector::new(DetectorParams::default());
         assert!(det.detect(&[]).is_none());
+    }
+
+    #[test]
+    fn grid_origin_at_visual_top_left() {
+        // Synthesize a 7×7 grid where the +x image axis corresponds to
+        // (1, 0) and +y to (0, 1). Regardless of which axis-slot the
+        // clusterer picks, `build_detection` must canonicalize so
+        // (0, 0) lands at the smallest (x, y) corner.
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let d = det.detect(&corners).expect("detection");
+        // Locate (0, 0) and the two neighbors.
+        let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
+            .target
+            .corners
+            .iter()
+            .filter_map(|c| {
+                let g = c.grid?;
+                Some(((g.i, g.j), (c.position.x, c.position.y)))
+            })
+            .collect();
+        let p00 = by_ij.get(&(0, 0)).copied().expect("(0,0) labelled");
+        let p10 = by_ij.get(&(1, 0)).copied().expect("(1,0) labelled");
+        let p01 = by_ij.get(&(0, 1)).copied().expect("(0,1) labelled");
+        // (0, 0) must be the top-left in pixel coords.
+        assert!(
+            p00.0 <= p10.0 && p00.1 <= p01.1,
+            "(0,0) at {:?} not top-left vs (1,0)={:?} (0,1)={:?}",
+            p00,
+            p10,
+            p01
+        );
+        // +i step must move right (+x).
+        assert!(p10.0 > p00.0, "+i axis not right-pointing");
+        // +j step must move down (+y).
+        assert!(p01.1 > p00.1, "+j axis not down-pointing");
     }
 
     #[test]

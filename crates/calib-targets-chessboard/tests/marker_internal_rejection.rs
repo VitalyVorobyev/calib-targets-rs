@@ -17,8 +17,8 @@
 //! `dataset_3536119669.rs`. This test provides a fast synthetic gate that
 //! catches cluster-level regressions.
 
-use calib_targets_core::{AxisEstimate, Corner};
 use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_core::{AxisEstimate, Corner};
 use nalgebra::Point2;
 
 fn board_corner(x: f32, y: f32, parity: usize) -> Corner {

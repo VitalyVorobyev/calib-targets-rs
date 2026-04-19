@@ -20,8 +20,8 @@
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_core::Corner;
 use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_core::Corner;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::GenericImageView;
 

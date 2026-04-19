@@ -115,7 +115,15 @@ impl Default for DetectorParams {
             max_iters_2means: 10,
             cluster_tol_deg: 12.0,
             peak_min_separation_deg: 60.0,
-            min_peak_weight_fraction: 0.05,
+            // Raised from 0.05 → 0.02: with fine (2°) bins and
+            // realistic axis noise, the per-bin weight of a genuine
+            // grid-direction peak on a 500-corner scene can fall to
+            // ~2–3% of total axis-vote weight (see small1/3/4
+            // ChArUco snaps in testdata/). 0.05 was tuned for the
+            // 3536119669 dataset where corners are cleaner and mass
+            // concentrates tightly; 0.02 is still comfortably above
+            // pure-noise bins.
+            min_peak_weight_fraction: 0.02,
 
             cell_size_hint: None,
 
