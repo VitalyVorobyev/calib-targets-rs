@@ -36,7 +36,17 @@ const FIXTURES: &[(u32, u32, &str)] = &[
 ];
 
 fn dataset_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/3536119669")
+    // Prefer privatedata/ (where the 120-snap dataset lives — it's
+    // copyrighted and uncommitted); fall back to testdata/ for
+    // working trees that still have the old layout.
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for candidate in ["privatedata/3536119669", "testdata/3536119669"] {
+        let p = root.join(candidate);
+        if p.exists() {
+            return p;
+        }
+    }
+    root.join("privatedata/3536119669")
 }
 
 fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {

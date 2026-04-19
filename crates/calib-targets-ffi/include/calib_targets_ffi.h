@@ -56,20 +56,62 @@ typedef struct ct_marker_board_detector_t ct_marker_board_detector_t;
 typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 
 /**
- * Optional boolean convention used by fixed ABI structs.
- */
-typedef struct ct_optional_bool_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_bool_t;
-
-/**
  * Optional `float` convention used by fixed ABI structs.
  */
 typedef struct ct_optional_f32_t {
   uint32_t has_value;
   float value;
 } ct_optional_f32_t;
+
+/**
+ * Chessboard detector parameters — v2 ABI.
+ *
+ * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+ * (flat shape — no nested graph / orientation-clustering sub-structs
+ * like the pre-v0.7.0 ABI). Use [`ct_chessboard_params_init_default`]
+ * to populate a valid default-configured value rather than struct-
+ * literal zero-initialisation.
+ */
+typedef struct ct_chessboard_params_t {
+  float min_corner_strength;
+  float max_fit_rms_ratio;
+  size_t num_bins;
+  size_t max_iters_2means;
+  float cluster_tol_deg;
+  float peak_min_separation_deg;
+  float min_peak_weight_fraction;
+  struct ct_optional_f32_t cell_size_hint;
+  float seed_edge_tol;
+  float seed_axis_tol_deg;
+  float seed_close_tol;
+  float attach_search_rel;
+  float attach_axis_tol_deg;
+  float attach_ambiguity_factor;
+  float step_tol;
+  float edge_axis_tol_deg;
+  float line_tol_rel;
+  float projective_line_tol_rel;
+  size_t line_min_members;
+  float local_h_tol_rel;
+  uint32_t max_validation_iters;
+  uint32_t enable_line_extrapolation;
+  uint32_t enable_gap_fill;
+  uint32_t enable_component_merge;
+  uint32_t enable_weak_cluster_rescue;
+  float weak_cluster_tol_deg;
+  size_t component_merge_min_boundary_pairs;
+  uint32_t max_booster_iters;
+  size_t min_labeled_corners;
+  uint32_t max_components;
+} ct_chessboard_params_t;
+
+/**
+ * Optional boolean convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_bool_t {
+  uint32_t has_value;
+  uint32_t value;
+} ct_optional_bool_t;
 
 /**
  * Fixed refiner identifier type for ChESS subpixel refinement.
@@ -167,50 +209,6 @@ typedef struct ct_chess_config_t {
 } ct_chess_config_t;
 
 /**
- * Optional `uint32_t` convention used by fixed ABI structs.
- */
-typedef struct ct_optional_u32_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_u32_t;
-
-/**
- * Orientation clustering parameters for chessboard-family detectors.
- */
-typedef struct ct_orientation_clustering_params_t {
-  size_t num_bins;
-  size_t max_iters;
-  float peak_min_separation_deg;
-  float outlier_threshold_deg;
-  float min_peak_weight_fraction;
-  uint32_t use_weights;
-} ct_orientation_clustering_params_t;
-
-/**
- * Grid-graph search parameters.
- */
-typedef struct ct_grid_graph_params_t {
-  float min_spacing_pix;
-  float max_spacing_pix;
-  size_t k_neighbors;
-  float orientation_tolerance_deg;
-} ct_grid_graph_params_t;
-
-/**
- * Chessboard detector parameters.
- */
-typedef struct ct_chessboard_params_t {
-  float min_corner_strength;
-  size_t min_corners;
-  struct ct_optional_u32_t expected_rows;
-  struct ct_optional_u32_t expected_cols;
-  float completeness_threshold;
-  uint32_t use_orientation_clustering;
-  struct ct_orientation_clustering_params_t orientation_clustering_params;
-  struct ct_grid_graph_params_t graph;
-} ct_chessboard_params_t;
-
-/**
  * Full create-time configuration for the chessboard detector handle.
  */
 typedef struct ct_chessboard_detector_config_t {
@@ -246,12 +244,17 @@ typedef struct ct_target_detection_t {
 
 /**
  * Chessboard detection header.
+ *
+ * v2 ABI: the detector always populates `grid_direction_0_rad` and
+ * `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
+ * discovered by the chessboard detector's clustering stage) plus
+ * `cell_size` in pixels.
  */
 typedef struct ct_chessboard_result_t {
   struct ct_target_detection_t detection;
-  uint32_t has_orientations;
-  float orientation_0;
-  float orientation_1;
+  float grid_direction_0_rad;
+  float grid_direction_1_rad;
+  float cell_size;
 } ct_chessboard_result_t;
 
 /**
@@ -269,6 +272,14 @@ typedef struct ct_grid_coords_t {
   int32_t i;
   int32_t j;
 } ct_grid_coords_t;
+
+/**
+ * Optional `uint32_t` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_u32_t {
+  uint32_t has_value;
+  uint32_t value;
+} ct_optional_u32_t;
 
 /**
  * One detected labeled corner.
@@ -617,6 +628,17 @@ typedef struct ct_puzzleboard_result_t {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+/**
+ * Return a `ct_chessboard_params_t` populated from
+ * `DetectorParams::default()`. Exposed as a C symbol so callers don't
+ * need to hand-fill 30+ fields.
+ * # Safety
+ * `out` must be a valid, properly aligned pointer to a writable
+ * `ct_chessboard_params_t` storage location. `NULL` is allowed and
+ * is a no-op. The caller retains ownership of the storage.
+ */
+void ct_chessboard_params_init_default(struct ct_chessboard_params_t *out);
 
 /**
  * Return the shared library version string.

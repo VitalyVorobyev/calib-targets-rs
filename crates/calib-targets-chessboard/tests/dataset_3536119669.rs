@@ -23,8 +23,21 @@ const SNAPS_PER_IMAGE: u32 = 6;
 const NUM_TARGETS: u32 = 20;
 const MIN_DETECTIONS: usize = 119;
 
+/// Look for the dataset first under `privatedata/3536119669` (where the
+/// 20 target PNGs now live — they're copyrighted and not committed to
+/// the repo), then under `testdata/3536119669` for back-compat with
+/// older working trees that still had the assets there.
 fn dataset_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/3536119669")
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for candidate in ["privatedata/3536119669", "testdata/3536119669"] {
+        let p = root.join(candidate);
+        if p.exists() {
+            return p;
+        }
+    }
+    // Return the private path as the canonical answer — callers use
+    // `.exists()` to decide whether to skip.
+    root.join("privatedata/3536119669")
 }
 
 fn target_path(idx: u32) -> PathBuf {
@@ -70,7 +83,9 @@ fn smoke_first_subframe_detects() {
     let path = target_path(0);
     if !path.exists() {
         eprintln!(
-            "skipping smoke test: testdata/3536119669/target_0.png missing ({})",
+            "skipping smoke test: 3536119669/target_0.png missing ({}). \
+             The 120-snap dataset lives under privatedata/ (not committed) \
+             — drop it in there to enable this test.",
             path.display()
         );
         return;
@@ -100,10 +115,13 @@ fn smoke_first_subframe_detects() {
 fn full_dataset_precision_contract() {
     let dir = dataset_dir();
     if !dir.exists() {
-        panic!(
-            "dataset dir missing: {} — run from repo root",
+        eprintln!(
+            "skipping full dataset test: {} not present. \
+             The 120-snap dataset lives under privatedata/ — drop \
+             the target_*.png files there to enable this test.",
             dir.display()
         );
+        return;
     }
 
     let chess_cfg = default_chess_config();
