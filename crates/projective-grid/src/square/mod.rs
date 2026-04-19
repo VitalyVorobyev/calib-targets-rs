@@ -17,6 +17,7 @@
 
 pub mod alignment;
 pub mod direction;
+pub mod grow;
 pub mod index;
 pub mod mesh;
 pub mod rectify;
@@ -26,6 +27,10 @@ pub mod validators;
 
 pub use alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 pub use direction::{NeighborDirection, NodeNeighbor};
+pub use grow::{
+    bfs_grow, predict_from_neighbours, Admit, GrowParams, GrowResult, GrowValidator,
+    LabelledNeighbour, Seed,
+};
 pub use index::GridIndex;
 pub use mesh::GridHomographyMesh;
 pub use rectify::GridHomography;
