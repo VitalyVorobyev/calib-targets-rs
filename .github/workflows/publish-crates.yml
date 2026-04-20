@@ -112,10 +112,6 @@ jobs:
                 echo "$pkg: version already uploaded; treating as success."
                 return 0
               fi
-              if grep -qE 'failed to select a version for' "$log"; then
-                echo "$pkg: non-retryable dep resolution failure; aborting."
-                return 1
-              fi
               echo "Publish failed (likely waiting for index). Sleeping 20s..."
               sleep 20
             done

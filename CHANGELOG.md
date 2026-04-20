@@ -83,8 +83,10 @@ Packaging-only follow-up to `0.7.0`. No API or behavior changes.
   existing convention). Also added `calib-targets-puzzleboard` to the
   publish order so `calib-targets-print` can resolve its regular
   dependency on it, and hardened the retry loop in
-  `.github/workflows/publish-crates.yml` to exit fast on non-transient
-  failures (`failed to select a version`, `already uploaded`).
+  `.github/workflows/publish-crates.yml` to treat an already-uploaded
+  version as success (idempotent re-runs). Version-resolution failures
+  remain retryable — the crates.io index can legitimately lag behind a
+  just-uploaded dependency in the same publish chain.
 
 ## [0.7.0]
 
