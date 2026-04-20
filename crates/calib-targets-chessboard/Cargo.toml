@@ -49,6 +49,14 @@ required-features = ["dataset"]
 name = "chessboard_timing"
 harness = false
 
+[[bench]]
+name = "dataset_corners"
+harness = false
+
+[[bench]]
+name = "dataset_chessboard"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
