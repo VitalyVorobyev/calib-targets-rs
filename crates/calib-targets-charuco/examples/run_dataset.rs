@@ -385,6 +385,11 @@ fn run_one(
             height,
             upscale,
             detect: detect_diag,
+            input_corners: corners
+                .iter()
+                .map(|c| [c.position.x, c.position.y])
+                .collect(),
+            result: outcome.as_ref().ok().map(DetectionSummary::from_result),
         })
     } else {
         None
@@ -404,6 +409,88 @@ struct FrameDiag {
     height: u32,
     upscale: u32,
     detect: CharucoDetectDiagnostics,
+    /// Raw ChESS corners fed into the detector — useful to overlay the full
+    /// input cloud alongside the labelled subset.
+    input_corners: Vec<[f32; 2]>,
+    /// Final detection result (ChArUco corners with IDs, decoded markers,
+    /// alignment). Present only when the detector returned `Ok`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    result: Option<DetectionSummary>,
+}
+
+/// Compact per-detection summary suitable for overlay rendering.
+#[derive(Serialize)]
+struct DetectionSummary {
+    corners: Vec<CornerSummary>,
+    markers: Vec<MarkerSummary>,
+    alignment_transform: [i32; 4],
+    alignment_translation: [i32; 2],
+}
+
+#[derive(Serialize)]
+struct CornerSummary {
+    id: Option<u32>,
+    grid: Option<[i32; 2]>,
+    position: [f32; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_position: Option<[f32; 2]>,
+    score: f32,
+}
+
+#[derive(Serialize)]
+struct MarkerSummary {
+    id: u32,
+    gc: [i32; 2],
+    rotation: u8,
+    score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    corners_img: Option<[[f32; 2]; 4]>,
+}
+
+impl DetectionSummary {
+    fn from_result(res: &CharucoDetectionResult) -> Self {
+        let corners = res
+            .detection
+            .corners
+            .iter()
+            .map(|c| CornerSummary {
+                id: c.id,
+                grid: c.grid.map(|g| [g.i, g.j]),
+                position: [c.position.x, c.position.y],
+                target_position: c.target_position.map(|p| [p.x, p.y]),
+                score: c.score,
+            })
+            .collect();
+        let markers = res
+            .markers
+            .iter()
+            .map(|m| MarkerSummary {
+                id: m.id,
+                gc: [m.gc.i, m.gc.j],
+                rotation: m.rotation,
+                score: m.score,
+                corners_img: m.corners_img.map(|arr| {
+                    [
+                        [arr[0].x, arr[0].y],
+                        [arr[1].x, arr[1].y],
+                        [arr[2].x, arr[2].y],
+                        [arr[3].x, arr[3].y],
+                    ]
+                }),
+            })
+            .collect();
+        Self {
+            corners,
+            markers,
+            alignment_transform: [
+                res.alignment.transform.a,
+                res.alignment.transform.b,
+                res.alignment.transform.c,
+                res.alignment.transform.d,
+            ],
+            alignment_translation: res.alignment.translation,
+        }
+    }
 }
 
 fn detection_report_from_result(

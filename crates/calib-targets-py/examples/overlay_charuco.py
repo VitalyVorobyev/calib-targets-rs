@@ -1,28 +1,28 @@
-"""Render ChArUco detector diagnostics produced by
+"""Render ChArUco detection + matcher diagnostics produced by
 `calib-targets-charuco/examples/run_dataset.rs --emit-diag --save-snaps`.
 
 For each `t{T}s{S}_diag.json` it reads the companion `t{T}s{S}.png` (the
 pre-upscaled snap) and overlays:
 
-  * marker-cell quads, filled by match status
-      green  = expected_id set & score ≥ expected_score_threshold
+  * input ChESS corners (small blue dots).
+  * candidate marker-cell quads filled by match status:
+      green  = expected_id set & score ≥ SCORE_OK_THRESHOLD
       orange = expected_id set & score <  threshold  (weak match)
       gray   = mapped to a black square (no marker expected)
       red    = not sampled (too small / off-image)
-  * a per-bit log-likelihood mini-heatmap for the TOP_N best + TOP_N worst
-    cells (identified by `expected_score`).
-  * chess-corner dots derived from the union of all cell corners.
-  * header text: chosen / runner-up hypothesis, margin, rejection reason.
+  * ChArUco grid edges connecting adjacent (i,j) labelled corners.
+  * labelled ChArUco corners (yellow dots with tiny id labels).
+  * decoded marker quads drawn as cyan outlines with their id at the
+    centroid.
+  * header text: chosen / runner-up hypothesis, margin, rejection reason,
+    final detection stats.
+  * per-bit log-likelihood mini-heatmap for the TOP_N best + TOP_N worst
+    cells (identified by expected_score).
 
 Usage:
     uv run python crates/calib-targets-py/examples/overlay_charuco.py \\
-        --dir bench_results/charuco/target_0_diag \\
-        --out bench_results/charuco/target_0_diag/overlay
-
-Or single-frame:
-    uv run python crates/calib-targets-py/examples/overlay_charuco.py \\
-        --diag <path/to/t0s1_diag.json> --snap <path/to/t0s1.png> \\
-        --out <path/to/out.png>
+        --dir bench_results/charuco/target_0_final \\
+        --out bench_results/charuco/target_0_final/overlay
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -38,13 +39,13 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.collections import LineCollection, PatchCollection
 from matplotlib.patches import Polygon
-from matplotlib.collections import PatchCollection
 from PIL import Image
 
 
-SCORE_OK_THRESHOLD = -1.0  # per-cell LL ≥ this counts as "strong match"
-TOP_N_HEATMAPS = 12
+SCORE_OK_THRESHOLD = -8.0  # per-cell LL ≥ this counts as "strong match" (κ=36 regime)
+TOP_N_HEATMAPS = 10
 
 
 def load_diag(path: Path) -> dict[str, Any]:
@@ -61,81 +62,196 @@ def iter_cells(diag: dict[str, Any]) -> Iterable[dict[str, Any]]:
             yield cell
 
 
-def chess_corner_points(diag: dict[str, Any]) -> np.ndarray:
-    pts: set[tuple[float, float]] = set()
-    for cell in iter_cells(diag):
-        for p in cell["corners_img"]:
-            pts.add((round(p[0], 1), round(p[1], 1)))
-    if not pts:
-        return np.zeros((0, 2), dtype=float)
-    return np.array(sorted(pts), dtype=float)
-
-
-def classify_cell(cell: dict[str, Any]) -> tuple[str, str]:
-    """Return (fill_color, legend_label)."""
+def classify_cell(cell: dict[str, Any]) -> str:
     if not cell.get("sampled", False):
-        return "#ff4d4d", "not sampled"
+        return "#e03b3b"
     expected_id = cell.get("expected_id")
     expected_score = cell.get("expected_score")
-    if expected_id is None or expected_score is None or not math.isfinite(expected_score):
-        return "#8a8a8a", "black square / unmapped"
+    if (
+        expected_id is None
+        or expected_score is None
+        or not math.isfinite(expected_score)
+    ):
+        return "#8a8a8a"
     if expected_score >= SCORE_OK_THRESHOLD:
-        return "#2ca02c", f"strong match ≥{SCORE_OK_THRESHOLD:g}"
-    return "#ff7f0e", f"weak match <{SCORE_OK_THRESHOLD:g}"
+        return "#2ca02c"
+    return "#ff7f0e"
 
 
 def draw_cells(ax: plt.Axes, diag: dict[str, Any]) -> None:
     patches = []
     colors = []
     for cell in iter_cells(diag):
-        poly = Polygon(cell["corners_img"], closed=True)
-        fill, _ = classify_cell(cell)
-        patches.append(poly)
-        colors.append(fill)
+        patches.append(Polygon(cell["corners_img"], closed=True))
+        colors.append(classify_cell(cell))
     if not patches:
         return
-    pc = PatchCollection(patches, alpha=0.35)
+    pc = PatchCollection(patches, alpha=0.28)
     pc.set_facecolor(colors)
     pc.set_edgecolor("black")
-    pc.set_linewidth(0.6)
+    pc.set_linewidth(0.5)
     ax.add_collection(pc)
 
-    # cell id labels
-    for cell in iter_cells(diag):
-        if cell.get("expected_id") is None:
+
+def draw_markers(ax: plt.Axes, diag: dict[str, Any]) -> None:
+    markers = None
+    for comp in diag["detect"]["components"]:
+        outcome = comp.get("outcome", {})
+        if outcome.get("status") != "ok":
             continue
-        centroid = np.mean(cell["corners_img"], axis=0)
+        # pull markers from the top-level result block we added
+        break
+    result = diag.get("result")
+    if not result:
+        return
+    markers = result.get("markers", [])
+    if not markers:
+        return
+    patches = []
+    for m in markers:
+        quad = m.get("corners_img")
+        if quad:
+            patches.append(Polygon(quad, closed=True))
+    if patches:
+        pc = PatchCollection(patches, alpha=1.0)
+        pc.set_facecolor("none")
+        pc.set_edgecolor("#00bcd4")
+        pc.set_linewidth(1.3)
+        ax.add_collection(pc)
+    for m in markers:
+        quad = m.get("corners_img")
+        if not quad:
+            continue
+        centroid = np.mean(quad, axis=0)
         ax.text(
             centroid[0],
             centroid[1],
-            str(cell["expected_id"]),
+            str(m["id"]),
             fontsize=5,
             ha="center",
             va="center",
             color="white",
-            path_effects=None,
+            bbox=dict(
+                boxstyle="round,pad=0.1",
+                facecolor="#0097a7",
+                edgecolor="none",
+                alpha=0.85,
+            ),
+            zorder=15,
         )
 
 
-def inset_heatmap(
-    ax: plt.Axes,
-    cell: dict[str, Any],
-    bits: int,
-    size_px: float,
-) -> None:
-    """Draw a tiny bit-LL heatmap over the cell quad."""
+def draw_grid_edges(ax: plt.Axes, diag: dict[str, Any]) -> None:
+    result = diag.get("result")
+    if not result:
+        return
+    corners = result.get("corners") or []
+    if not corners:
+        return
+    by_grid: dict[tuple[int, int], tuple[float, float]] = {}
+    for c in corners:
+        grid = c.get("grid")
+        if grid is None:
+            continue
+        by_grid[(int(grid[0]), int(grid[1]))] = (
+            float(c["position"][0]),
+            float(c["position"][1]),
+        )
+    if not by_grid:
+        return
+    segments: list[list[tuple[float, float]]] = []
+    for (i, j), p in by_grid.items():
+        for di, dj in ((1, 0), (0, 1)):
+            q = by_grid.get((i + di, j + dj))
+            if q is None:
+                continue
+            segments.append([p, q])
+    if not segments:
+        return
+    lc = LineCollection(segments, colors="#ffd54f", linewidths=0.7, alpha=0.9, zorder=12)
+    ax.add_collection(lc)
+
+
+def draw_charuco_corners(ax: plt.Axes, diag: dict[str, Any]) -> None:
+    result = diag.get("result")
+    if not result:
+        return
+    corners = result.get("corners") or []
+    if not corners:
+        return
+    xs = [c["position"][0] for c in corners]
+    ys = [c["position"][1] for c in corners]
+    ax.scatter(
+        xs, ys, s=18, c="#ffd54f", edgecolors="#333333", linewidths=0.5, zorder=13
+    )
+    # Label every corner; if too many, fall back to every 4th.
+    stride = 1 if len(corners) <= 40 else 4
+    for idx, c in enumerate(corners):
+        if idx % stride != 0:
+            continue
+        cid = c.get("id")
+        if cid is None:
+            continue
+        ax.text(
+            c["position"][0] + 3.0,
+            c["position"][1] - 3.0,
+            str(cid),
+            fontsize=5,
+            color="#ffd54f",
+            zorder=14,
+            bbox=dict(
+                boxstyle="round,pad=0.05",
+                facecolor="black",
+                edgecolor="none",
+                alpha=0.55,
+            ),
+        )
+
+
+def draw_input_corners(ax: plt.Axes, diag: dict[str, Any]) -> None:
+    pts = diag.get("input_corners") or []
+    if not pts:
+        return
+    arr = np.asarray(pts, dtype=float)
+    ax.scatter(arr[:, 0], arr[:, 1], s=1.5, c="#1f77b4", alpha=0.45, zorder=11)
+
+
+def inset_heatmap(ax: plt.Axes, cell: dict[str, Any], bits: int, size_px: float) -> None:
     ll = cell.get("expected_bit_ll") or []
     if len(ll) != bits * bits:
         return
     arr = np.array(ll, dtype=float).reshape(bits, bits)
-    # Normalize: ~0 = right, very negative = wrong.
-    # Use a diverging-ish cmap with center at 0.
-    vmin = min(-6.0, arr.min())
+    vmin = min(-6.0, float(arr.min()))
     vmax = 0.0
     centroid = np.mean(cell["corners_img"], axis=0)
     half = size_px * 0.5
-    extent = [centroid[0] - half, centroid[0] + half, centroid[1] + half, centroid[1] - half]
-    ax.imshow(arr, cmap="RdYlGn", vmin=vmin, vmax=vmax, extent=extent, interpolation="nearest", alpha=0.85, zorder=10)
+    extent = [
+        centroid[0] - half,
+        centroid[0] + half,
+        centroid[1] + half,
+        centroid[1] - half,
+    ]
+    ax.imshow(
+        arr,
+        cmap="RdYlGn",
+        vmin=vmin,
+        vmax=vmax,
+        extent=extent,
+        interpolation="nearest",
+        alpha=0.8,
+        zorder=10,
+    )
+
+
+def approximate_cell_side(cells: list[dict[str, Any]]) -> float:
+    if not cells:
+        return 10.0
+    sides: list[float] = []
+    for c in cells[: min(len(cells), 30)]:
+        pts = np.array(c["corners_img"], dtype=float)
+        sides.append(float(np.linalg.norm(pts[1] - pts[0])))
+        sides.append(float(np.linalg.norm(pts[2] - pts[1])))
+    return float(np.median(sides)) if sides else 10.0
 
 
 def header_text(diag: dict[str, Any]) -> str:
@@ -153,15 +269,18 @@ def header_text(diag: dict[str, Any]) -> str:
     matcher = comp.get("matcher", "?")
 
     lines = [
-        f"matcher={matcher} status={status} cells={comp.get('candidate_cell_count')} chess_corners={comp.get('chess_corner_count')}",
+        f"matcher={matcher}  status={status}  cells={comp.get('candidate_cell_count')}  "
+        f"chess_corners={comp.get('chess_corner_count')}",
     ]
     if chosen:
         lines.append(
-            f"chosen: rot={chosen['rotation']} t={tuple(chosen['translation'])} score={chosen['score']:.2f} contrib={chosen['contributing_cells']}"
+            f"chosen: rot={chosen['rotation']}  t={tuple(chosen['translation'])}  "
+            f"score={chosen['score']:.2f}  contrib={chosen['contributing_cells']}"
         )
     if runner:
         lines.append(
-            f"runner: rot={runner['rotation']} t={tuple(runner['translation'])} score={runner['score']:.2f} contrib={runner['contributing_cells']}"
+            f"runner: rot={runner['rotation']}  t={tuple(runner['translation'])}  "
+            f"score={runner['score']:.2f}  contrib={runner['contributing_cells']}"
         )
     if margin is not None:
         lines.append(f"margin={margin:.4f}")
@@ -169,7 +288,8 @@ def header_text(diag: dict[str, Any]) -> str:
         lines.append(f"rejection: {reject}")
     if status == "ok":
         lines.append(
-            f"ok: markers={outcome.get('markers')} charuco_corners={outcome.get('charuco_corners')}"
+            f"detected: markers={outcome.get('markers')}  "
+            f"charuco_corners={outcome.get('charuco_corners')}"
         )
     return "\n".join(lines)
 
@@ -184,47 +304,40 @@ def render_one(diag_path: Path, snap_path: Path, out_path: Path) -> None:
     ax.set_xlim(0, w)
     ax.set_ylim(h, 0)
 
+    # Order matters: cells under grid under markers under labels.
+    draw_input_corners(ax, diag)
     draw_cells(ax, diag)
 
-    # pick top/bot cells by expected_score for heatmap insets
     cells = list(iter_cells(diag))
     scored = [
-        c for c in cells if c.get("expected_score") is not None and math.isfinite(c["expected_score"])
+        c
+        for c in cells
+        if c.get("expected_score") is not None
+        and math.isfinite(c["expected_score"])
     ]
     scored.sort(key=lambda c: c["expected_score"])
     worst = scored[:TOP_N_HEATMAPS]
     best = scored[-TOP_N_HEATMAPS:]
-    bits = diag["detect"]["components"][0].get("board", {}).get("bits_per_side", 0)
+    bits = (
+        diag["detect"]["components"][0].get("board", {}).get("bits_per_side", 0)
+        if diag["detect"]["components"]
+        else 0
+    )
     if bits > 0:
-        cell_side_px = approximate_cell_side(cells)
-        heatmap_size = 0.65 * cell_side_px
+        size = 0.5 * approximate_cell_side(cells)
         for cell in (*best, *worst):
-            inset_heatmap(ax, cell, bits, heatmap_size)
+            inset_heatmap(ax, cell, bits, size)
 
-    pts = chess_corner_points(diag)
-    if pts.size:
-        ax.scatter(pts[:, 0], pts[:, 1], s=2.0, c="#1f77b4", alpha=0.5, zorder=11)
+    draw_grid_edges(ax, diag)
+    draw_markers(ax, diag)
+    draw_charuco_corners(ax, diag)
 
     ax.set_axis_off()
     fig.suptitle(header_text(diag), fontsize=9, ha="left", x=0.01, y=0.995)
-    fig.tight_layout(rect=(0, 0, 1, 0.87))
+    fig.tight_layout(rect=(0, 0, 1, 0.85))
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
-
-
-def approximate_cell_side(cells: list[dict[str, Any]]) -> float:
-    if not cells:
-        return 10.0
-    sides = []
-    for c in cells[: min(len(cells), 30)]:
-        pts = np.array(c["corners_img"], dtype=float)
-        d1 = np.linalg.norm(pts[1] - pts[0])
-        d2 = np.linalg.norm(pts[2] - pts[1])
-        sides.extend([d1, d2])
-    if not sides:
-        return 10.0
-    return float(np.median(sides))
 
 
 def batch_render(dir_: Path, out_dir: Path) -> list[Path]:
@@ -244,8 +357,17 @@ def batch_render(dir_: Path, out_dir: Path) -> list[Path]:
 
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dir", type=Path, help="dataset out dir (containing {stem}_diag.json + {stem}.png)")
-    p.add_argument("--out", type=Path, required=True, help="output directory (batch) or file (single)")
+    p.add_argument(
+        "--dir",
+        type=Path,
+        help="dataset out dir (containing {stem}_diag.json + {stem}.png)",
+    )
+    p.add_argument(
+        "--out",
+        type=Path,
+        required=True,
+        help="output directory (batch) or file (single)",
+    )
     p.add_argument("--diag", type=Path, help="single-frame diag JSON")
     p.add_argument("--snap", type=Path, help="single-frame snap PNG")
     args = p.parse_args()
