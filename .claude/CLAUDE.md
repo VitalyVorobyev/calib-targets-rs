@@ -205,91 +205,31 @@ this precision contract is a regression, full stop.
 
 ## Regression dataset: 130x130_puzzle
 
-**Same disclosure rules as 3536119669** — do not cite the dataset
-name, concrete counts (`119/120`, `120 snaps`), or per-frame
-identifiers (`t11s2`) in READMEs, book, CHANGELOG, rustdoc,
-Python-package docstrings, commit messages on `main`, or PR
-descriptions. General performance statements only.
-
 `privatedata/130x130_puzzle/` is the real-world **PuzzleBoard**
-regression set (sibling to 3536119669, which covers the chessboard
-stage). Board: 130×130 squares, cell size 1.014 mm, origin `(0, 0)`
-on the 501×501 master. Layout: 20 `target_{0..19}.png` at 4320×540
-(= 6 × 720×540 stacked snaps, same as 3536119669), plus 20
-`laser_*.png` pairs and a `poses.json` carrying `tcp2base` per
-image. **120 snaps total.**
+regression set (sibling to `3536119669`, which covers the chessboard
+stage). Baseline 2026-04-20, naive decoder, `--upscale 2`: **119/120
+detected, zero wrong labels in practice**. Same disclosure rules as
+`3536119669` — general performance statements only in public surfaces.
 
-Each snap must be upscaled **≥ 2×** before ChESS fires reliably
-(1.014 mm cells give ≲ 2 native pixels per cell; the edge-bit
-sampling disk reads 1–4 pixels at native res and produces noise-
-level confidence). The runner, overlays, and benches all default to
-`--upscale 2`.
+**Precision contract.** Wrong master-(i, j) labels are unrecoverable
+(they corrupt calibration); missing corners are acceptable. Any
+change that raises max BER above ~0.01, or introduces a failure
+variant other than `edge_sampling / NotEnoughEdges`, is a regression.
 
-**Current baseline (2026-04-20, `--upscale 2`, naive decoder):**
-- **119/120** detected (99.17%).
-- Single failure: `edge_sampling / NotEnoughEdges` on t11s2 —
-  reflection-limited, only ~28 chess corners survive.
-- **max BER = 0.01** across all 119 successes (median 0, p90 0) —
-  effectively zero wrong master-(i, j) labels.
-- `edges_matched == edges_observed` on almost every frame.
-- Per-stage median ms at 1440×1080 upscaled: corners 3.9,
-  chessboard 1.1, puzzleboard 3-config sweep 12.9.
+**Decoder-algorithm decision (2026-04-20).** Do **not** pre-emptively
+rewrite the puzzleboard decoder from its current naive form
+(per-edge hard-bit + 501²×D4 exhaustive origin sweep + hard BER
+gate) to a ChArUco-style coherent-hypothesis matcher (soft bits,
+joint likelihood, best-vs-runner-up margin). The naive decoder
+already clears the 116/120 success target on this dataset with
+effectively zero wrong labels; revisit only if a new dataset
+demonstrates a concrete precision or recall gap. See
+`memory/feedback_puzzleboard_decoder_is_good_enough.md`.
 
-**Precision contract.** Same as 3536119669: wrong master-(i, j)
-labels are unrecoverable (they corrupt calibration); missing or
-unlabelled corners are acceptable. Any change that raises max BER
-above ~0.01 or introduces failure modes outside
-`edge_sampling / NotEnoughEdges` is a regression.
-
-**Decoder-algorithm decision.** The current puzzleboard decode is
-the "naive" form — per-edge hard-bit decision + confidence weight,
-exhaustive 501²×D4 origin sweep, lexicographic `(edges_matched,
-mean_conf)` ranking, hard BER acceptance gate. A ChArUco-style
-coherent-hypothesis rewrite (soft-bit log-likelihoods, joint
-likelihood score, best-vs-runner-up margin gate) was compared on
-2026-04-20 and **deferred**: the naive decoder already clears the
-116/120 success target set for this dataset by 3 snaps with zero
-wrong labels in practice. Do not pre-emptively upgrade the decoder
-without a dataset that demonstrates a concrete precision or recall
-gap. See `memory/feedback_puzzleboard_decoder_is_good_enough.md`.
-
-```bash
-# End-to-end puzzleboard sweep (emits per-snap PuzzleboardFrameReport
-# JSON + summary.json aggregate).
-cargo run --release -p calib-targets-puzzleboard \
-    --example run_dataset --features dataset -- \
-    --dataset privatedata/130x130_puzzle \
-    --out     bench_results/130x130_puzzle/phase3 \
-    --upscale 2 --rows 130 --cols 130 --cell-size-mm 1.014
-
-# Render puzzleboard overlays (master-(row,col) gradient — wrong labels
-# pop as a hue jump).
-uv run python crates/calib-targets-py/examples/overlay_puzzleboard_dataset.py \
-    --dataset privatedata/130x130_puzzle \
-    --frames  bench_results/130x130_puzzle/phase3 \
-    --out     bench_results/130x130_puzzle/phase3/png
-
-# Stage-isolation benches (ChESS corners, chessboard build, puzzle decode).
-cargo bench -p calib-targets-chessboard  --bench dataset_corners
-cargo bench -p calib-targets-chessboard  --bench dataset_chessboard
-cargo bench -p calib-targets-puzzleboard --bench dataset_decode
-
-# Phase 1/2 corner- and grid-only overlays (read the chessboard runner
-# JSON — no detection re-run).
-cargo run --release -p calib-targets-chessboard \
-    --example run_dataset --features dataset -- \
-    --dataset privatedata/130x130_puzzle \
-    --out     bench_results/130x130_puzzle/phase1 \
-    --upscale 2
-uv run python crates/calib-targets-py/examples/overlay_chessboard_corners.py \
-    --dataset privatedata/130x130_puzzle \
-    --frames  bench_results/130x130_puzzle/phase1 \
-    --out     bench_results/130x130_puzzle/phase1/png
-uv run python crates/calib-targets-py/examples/overlay_chessboard_grid.py \
-    --dataset privatedata/130x130_puzzle \
-    --frames  bench_results/130x130_puzzle/phase1 \
-    --out     bench_results/130x130_puzzle/phase2/png
-```
+Full dataset description, layout, preprocessing requirements,
+per-stage timings, command snippets (end-to-end run + overlays +
+stage-isolation benches), and algorithm-decision context in
+[`docs/datasets/130x130_puzzle.md`](../docs/datasets/130x130_puzzle.md).
 
 ## Cell-size estimation gotcha
 
