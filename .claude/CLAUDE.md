@@ -71,6 +71,18 @@ scripts/build-wasm.sh
 cd demo && bun install && bun run dev
 ```
 
+Printable-target CLI (Rust binary in the facade crate, mirrored in the Python
+package via `[project.scripts]`):
+```bash
+# One-step generation (flags → JSON + SVG + PNG bundle)
+cargo run -p calib-targets --features cli --bin calib-targets -- \
+    gen puzzleboard --rows 8 --cols 10 --square-size-mm 15 --out-stem /tmp/puzzle
+
+# Python console script (after `maturin develop`)
+uv run calib-targets gen chessboard --inner-rows 6 --inner-cols 8 \
+    --square-size-mm 20 --out-stem /tmp/board
+```
+
 ## Architecture
 
 This is a Cargo workspace. All publishable crates live under `crates/`:
@@ -80,8 +92,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets` | Facade crate — `detect_*` and `detect_*_best` helpers, `default_chess_config()` |
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
 | `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
-| `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
-| `chessboard` | **Invariant-first rewrite** of the chessboard detector. Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap private dataset |
+| `calib-targets-chessboard` | Invariant-first chessboard detector on top of ChESS corners (precision-by-construction) |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-puzzleboard` | PuzzleBoard self-identifying chessboard: edge-dot decode + absolute corner IDs |
@@ -90,7 +101,8 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets-ffi` | C ABI bindings with generated header and CMake package (not published) |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
 | `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (not published to crates.io) |
-| `calib-targets-cli` | CLI utilities (not published) |
+
+**CLI**: the `calib-targets` binary lives in the facade crate behind the default `cli` feature (`cargo install calib-targets`), and the Python package exposes the same subcommands as a console script via `[project.scripts]`.
 
 **Dependency rules:** `projective-grid` is standalone (no internal deps). `core` depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`. No cyclic deps.
 
@@ -140,10 +152,35 @@ the root cause of the v1 Phase-4 regression; the fix is in
 
 ## Regression dataset: 3536119669
 
-`privatedata/3536119669/target_*.png` (20 images, 6 × 720×540 snaps each
-= 120 frames) is the canonical chessboard precision-and-recall
-benchmark. The known failure modes are enumerated in
-`docs/120issues.txt`.
+**Do not mention this dataset — or any concrete count like "120 snaps",
+"120 frames", "119/120", "target_3536119669", "t11s2" — in public-facing
+documentation.** Public docs include: every crate `README.md`, every file
+under `book/src/`, the top-level `README.md`, `CHANGELOG.md` entries for
+tagged releases, rustdoc / public docstring comments, Python-package
+README and docstrings, commit messages on `main`, and PR descriptions.
+Use **general performance statements only** in those surfaces (e.g.
+"high detection rate on our internal regression set with zero wrong
+labels", "precision-by-construction on a private dataset of real-world
+snaps") — never the raw counts, filenames, dataset hash, or per-frame
+identifiers. Concrete numbers are fine in internal notes, local test
+fixtures under `privatedata/` or `bench_results/`, this CLAUDE.md, and
+PR review discussion that is not checked in.
+
+Why: the dataset belongs to a private engagement; leaking its size or
+failure breakdown into published crates / book / GitHub undermines the
+confidentiality agreement and freezes a specific number into a surface
+we can't update without a release.
+
+How to apply: before editing any file outside `privatedata/` or the
+agent/session memory, grep the change for `120`, `3536119669`, `snap`,
+`t11s2`, `target_*.png` specifics; if any appear, rewrite to a general
+performance statement. Existing leaks in READMEs and `book/src/` are
+pre-existing — clean them up opportunistically when editing those files,
+but do not ship new ones.
+
+`privatedata/3536119669/target_*.png` is the canonical chessboard
+precision-and-recall benchmark. The known failure modes are enumerated
+in `docs/120issues.txt`.
 
 ```bash
 # v2 end-to-end sweep (emits per-snap DebugFrame JSON).
@@ -256,7 +293,7 @@ cargo test --workspace --all-features
 cargo doc --workspace --no-deps  # must produce zero warnings
 
 # 3. Generated FFI header (stale after any change to FFI-visible types/enums)
-cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 
 # 4. Python typing stubs (stale after any change to #[pyfunction] or #[pyclass])
 uv run maturin develop --release -m crates/calib-targets-py/Cargo.toml
@@ -281,6 +318,15 @@ Always regenerate both after such changes.
 - Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
 - WASM bindings: `crates/calib-targets-wasm/src/lib.rs`
 - FFI bindings: `crates/calib-targets-ffi/src/lib.rs` + regenerated headers
+
+**CLI parity:** the printable-target CLI has two mirrors — the Rust binary in
+`crates/calib-targets/src/cli/` (gated on the `cli` feature, default on) and
+the Python console script in
+`crates/calib-targets-py/python/calib_targets/cli.py`. When adding a new
+target family, subcommand, or flag, update **both** and add integration
+coverage in `crates/calib-targets/tests/cli.rs` (Rust, uses `assert_cmd`) and
+`crates/calib-targets-py/python_tests/test_cli.py` (Python, uses `cli.main`
+in-process).
 
 **Binding dict-key parity:** Python result wrappers in
 `crates/calib-targets-py/python/calib_targets/_convert_out.py` deserialize the

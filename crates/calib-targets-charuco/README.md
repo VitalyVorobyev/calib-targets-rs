@@ -1,17 +1,32 @@
 # calib-targets-charuco
 
-![ChArUco detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/img/charuco_detect_report_small2_overlay.png)
+![ChArUco detection overlay](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/src/img/charuco_detect_report_small2_overlay.png)
 
-ChArUco board detector: chessboard grid assembly + ArUco marker
-decoding + ID alignment, producing a fully-labelled set of inner-corner
-points with global `(i, j)` grid coordinates and logical marker IDs.
+ChArUco board detector: chessboard grid assembly, per-cell ArUco decoding,
+and board-wide ID alignment. Emits a labelled set of inner corners with
+`(i, j)` grid coordinates plus each corner's logical ChArUco ID. Fully
+compatible with OpenCV's aruco / charuco dictionaries and layouts.
 
-Fully compatible with OpenCV's aruco / charuco dictionaries and board
-layouts. Built on top of
-[`calib-targets-chessboard`](../calib-targets-chessboard) (invariant-
-first detector) and
-[`calib-targets-aruco`](../calib-targets-aruco) (dictionary + bit
-decoding).
+Built on [`calib-targets-chessboard`][cb] (invariant-first detector) and
+[`calib-targets-aruco`][aruco] (dictionary + bit decoding). Most users
+call the facade [`calib-targets`][facade] helper `detect_charuco`; use
+this crate directly for full control over diagnostics.
+
+[cb]: https://docs.rs/calib-targets-chessboard
+[aruco]: https://docs.rs/calib-targets-aruco
+[facade]: https://docs.rs/calib-targets
+
+Algorithm deep-dive and diagnostic workflow: [book chapter][book-chapter]
+and [alignment & refinement chapter][book-alignment].
+
+## Install
+
+```toml
+[dependencies]
+calib-targets-charuco = "0.7"
+calib-targets-core = "0.7"
+calib-targets-aruco = "0.7"
+```
 
 ## Quickstart
 
@@ -27,15 +42,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rows: 5,
         cols: 7,
         cell_size: 1.0,
-        marker_size_rel: 0.7,
+        marker_size_rel: 0.70,
         dictionary: builtins::DICT_4X4_50,
         marker_layout: MarkerLayout::OpenCvCharuco,
     };
+    let detector = CharucoDetector::new(CharucoParams::for_board(&board))?;
 
-    let params = CharucoParams::for_board(&board);
-    let detector = CharucoDetector::new(params)?;
-
-    // Replace with your decoded image + pre-detected ChESS corners.
     let pixels = vec![0u8; 32 * 32];
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
     let corners: Vec<Corner> = Vec::new();
@@ -45,70 +57,127 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-For an image-in convenience helper, use
-[`calib_targets::detect::detect_charuco`] from the facade crate.
+Use [`calib_targets::detect::detect_charuco`] for an `image::GrayImage`-
+in, result-out helper; it runs corner detection, calls this detector, and
+returns the same `CharucoDetectionResult`.
 
-## Core concepts
+## Inputs
 
-- **`CharucoBoardSpec`** — rows, cols, cell size, marker size ratio,
-  ArUco dictionary, marker layout. Convert to a runtime `CharucoBoard`
-  via `CharucoBoard::from_spec(&spec)`.
-- **`CharucoParams`** — detector tuning: chessboard detector params
-  (flat `DetectorParams` from `calib-targets-chessboard`), marker
-  decoding knobs, alignment tolerances. Use
-  `CharucoParams::for_board(&spec)` for sensible defaults.
-- **`CharucoDetector`** — one-shot: takes pre-detected ChESS corners
-  + the grayscale image, returns a `CharucoDetectionResult` with
-  labelled inner corners, marker decodes, and IDs.
+- `&GrayImageView` — the input image.
+- `&[Corner]` — ChESS corners from `chess-corners` (the facade does this
+  for you).
+- [`CharucoBoardSpec`] — board layout: `rows`, `cols`, `cell_size`,
+  `marker_size_rel`, `dictionary` (ArUco / AprilTag), `marker_layout`.
+- [`CharucoParams`] — detector tuning. Use `CharucoParams::for_board(&spec)`
+  for defaults, or `CharucoParams::sweep_default(&spec)` for a 3-config
+  sweep.
 
-## What you get back
+## Outputs
 
-`CharucoDetectionResult` wraps the shared `TargetDetection` with
-ChArUco-specific extras: decoded marker IDs, marker corner pixel
-positions, the alignment transform mapping chessboard `(i, j)` to
-board master IDs, and reprojection diagnostics.
+`detector.detect(...)` returns `CharucoDetectionResult`:
 
-Every `LabeledCorner` in `result.detection.corners` carries:
-- `position` — inner-corner pixel location (sub-pixel refined).
-- `grid` — `(i, j)` in the board's local coordinate system (always
-  rebased so the bounding-box minimum is `(0, 0)`).
-- `id` — the board's logical corner ID (from the ChArUco layout).
-- `target_position` — physical mm coordinates on the printed board
-  (populated when cell size is known and alignment succeeds).
+| Field | Meaning |
+|---|---|
+| `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` (rebased to `(0, 0)`), `id` (ChArUco logical corner ID), `target_position` (mm in board space). |
+| `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `grid_coords`, `rotation`, `hamming`, and rectified/image corners. |
+| `alignment: GridAlignment` | D4 rotation + translation mapping chessboard `(i, j)` to the board's canonical ID space. |
+| `raw_marker_count`, `raw_marker_wrong_id_count` | Pre-alignment counters used by the precision contract. |
 
-## Multi-component scenes
+Use `detector.detect_with_diagnostics(...)` for per-component rejection
+reasons, per-cell sample scores, hypothesis margins, and expected-vs-found
+marker IDs — rendered by the `overlay_charuco.py` tool.
 
-ChArUco markers can fragment the chessboard grid into disconnected
-components (markers break contiguity, specular regions drop corners).
-The underlying chessboard detector supports multi-component
-recovery via `Detector::detect_all`; ChArUco's alignment then uses
-marker decodes to reconcile components against the board's global IDs.
+## Choosing a dictionary
 
-This is the only supported multi-component scenario — scenes with two
-separate physical boards are **not** in scope.
+| Family | Tolerance | When to use |
+|---|---|---|
+| `DICT_4X4_{50, 100, 250, 1000}` | Tight; only a few bit-errors before confusion. | Small boards with large markers. |
+| `DICT_5X5_*`, `DICT_6X6_*`, `DICT_7X7_*` | Progressively looser; more bits, better Hamming margin. | Medium boards, mild blur. |
+| `DICT_APRILTAG_{16h5, 25h9, 36h10, 36h11}` | Strong error-correcting codes (min. Hamming distance ≥ 10). | Large boards, motion blur, small markers. Combine with the board-level matcher. |
+| `DICT_ARUCO_MIP_36h12` | AprilTag-grade codes in an ArUco layout. | Fine-grained printed targets. |
+
+Match `CharucoBoardSpec::dictionary` exactly to what was printed.
+
+## Two matchers
+
+Controlled by `CharucoParams::use_board_level_matcher`:
+
+- **Legacy (default)** — per-cell hard-threshold decode, rotation & offset
+  vote. Fast (~1.5 ms / 22×22 frame). Best on small boards with big,
+  in-focus markers.
+- **Board-level matcher** — per-cell soft-bit log-likelihood scored
+  against every candidate `(rotation, translation)` hypothesis. Slower
+  (4–50× legacy depending on dictionary) but massive recall win on
+  blurred, tiny-marker, or large-board inputs. Precision is guaranteed
+  by construction: markers are re-emitted under the chosen hypothesis.
+
+See the [book chapter][book-chapter] for matcher-selection guidance and
+full parameter documentation.
+
+## Configuration highlights
+
+[`CharucoParams`] is `#[non_exhaustive]`; fields are grouped by stage.
+Defaults from `for_board(&spec)` work for most targets.
+
+| Group | Key knobs | Effect |
+|---|---|---|
+| Chessboard stage | `chessboard: DetectorParams` | Inherits from [`calib-targets-chessboard`]. Tune there first. |
+| Pixel sampling | `px_per_square` (default 60) | Rectified cell side in pixels. Drop to 40 if cells are small; raise to 80 for very fine markers. |
+| Grid validation | `grid_smoothness_threshold_rel`, `corner_validation_threshold_rel` | Smoothness / local-H residuals on refined corners. Loosen under lens distortion. |
+| Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold`, `max_hamming` | Marker sampling and dictionary-matching. |
+| Legacy alignment | `min_marker_inliers`, `min_secondary_marker_inliers` | Accept threshold for legacy matcher. |
+| Board-level matcher | `use_board_level_matcher`, `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) validated on the 120-frame regression set. |
+
+## Tuning difficult cases
+
+- **Tiny markers (< ~8 px / bit)** — enable `use_board_level_matcher`; the
+  legacy matcher's hard-threshold decode fails at that scale.
+- **Motion blur or defocus** — board-level matcher; increase `max_hamming`
+  on the underlying [`Matcher`] to 2–3.
+- **Uneven illumination** — `scan.multi_threshold = true` (default).
+- **Tight near-tie hypotheses** — lower `alignment_min_margin` to 0.02 for
+  permissive detection, or raise to 0.10 for stricter precision.
+- **Large or distorted boards fragmenting the grid** — the chessboard
+  layer auto-recovers multiple components; the matcher reconciles them via
+  marker decodes.
+
+For the full field-by-field reference and a diagnostic cookbook
+(`rejection = margin_below_gate`, weak per-cell likelihoods, etc.), see
+the [book chapter][book-chapter].
+
+## Limitations
+
+- **One ChArUco board per image.** Multiple separate boards in one image
+  are not disambiguated.
+- **No fisheye support.** Moderate radial distortion is absorbed by
+  per-cell homographies; severe wide-angle lenses are not supported.
+- **Dictionary must be printed on the board.** This is a matching step,
+  not a discovery step — `CharucoBoardSpec::dictionary` must match what
+  you printed.
+- **Small cell sizes in pixels** (< ~5 px per cell) require input
+  upscaling before detection; the detector does not auto-upscale.
 
 ## Features
 
-- `tracing` — enables tracing instrumentation across the detection
-  pipeline.
+- `tracing` — enables tracing spans across the detection pipeline.
+- `dataset` — builds the `run_dataset` benchmark example and pulls in
+  `env_logger` + `serde_json`.
 
-## Chessboard migration note
+## Examples
 
-Prior to v0.6.0, `CharucoParams.chessboard` was of type
-`ChessboardParams`. It is now `DetectorParams` (re-exported from
-[`calib-targets-chessboard`](../calib-targets-chessboard)). Rename
-imports accordingly; field shapes are flat (no nested
-`grid_graph_params` / `gap_fill` / `graph_cleanup` / `local_homography`
-sub-structs).
+```bash
+# Single image detection using the facade (recommended entry point):
+cargo run --release --example detect_charuco -- testdata/small2.png
+```
 
-## Python bindings
+The paired Python overlay renderer lives at
+`crates/calib-targets-py/examples/overlay_charuco.py`.
 
-Python bindings are provided via the workspace facade (`calib_targets`
-module). See `crates/calib-targets-py/README.md` in the repo root for
-setup.
+## Related
 
-## Links
+- [Book: ChArUco detector][book-chapter]
+- [Book: alignment & refinement][book-alignment]
+- [Book: tuning the detector](https://vitalyvorobyev.github.io/calib-targets-rs/tuning.html)
 
-- Docs: https://docs.rs/calib-targets-charuco
-- Repository: https://github.com/VitalyVorobyev/calib-targets-rs
-- Book: https://vitalyvorobyev.github.io/calib-targets-rs/
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/charuco.html
+[book-alignment]: https://vitalyvorobyev.github.io/calib-targets-rs/charuco_alignment.html

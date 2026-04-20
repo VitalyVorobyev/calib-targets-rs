@@ -4,6 +4,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::coords::CellCoords;
 
+/// Whether the circle marker prints as white-on-black or black-on-white.
+///
+/// # Adding a variant
+///
+/// `#[non_exhaustive]` forces external matchers to use a `_` arm. When you
+/// add a variant you MUST also update every adapter site in lockstep
+/// (guarded by `circle_polarity_variant_guard` in this file's tests):
+/// - `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -238,4 +246,22 @@ fn sample_disk_and_ring(
     let mean_disk = sum_disk / n;
     let mean_ring = (sum_r0 + sum_r1) / (2.0 * n);
     Some((mean_disk, mean_ring))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Workspace-internal exhaustive match — fails to compile when a new
+    /// `CirclePolarity` variant is added, prompting an update to every
+    /// adapter listed in the [`CirclePolarity`] doc-comment.
+    #[test]
+    fn circle_polarity_variant_guard() {
+        for polarity in [CirclePolarity::White, CirclePolarity::Black] {
+            match polarity {
+                CirclePolarity::White => (),
+                CirclePolarity::Black => (),
+            }
+        }
+    }
 }

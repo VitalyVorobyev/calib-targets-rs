@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/calib-targets-cli",
     "crates/calib-targets-ffi",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
@@ -15,7 +14,6 @@ members = [
     "crates/projective-grid",
 ]
 default-members = [
-    "crates/calib-targets-cli",
     "crates/calib-targets-ffi",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
@@ -50,11 +48,14 @@ calib-targets-marker = { version = "0.7", path = "crates/calib-targets-marker" }
 calib-targets-puzzleboard = { version = "0.7", path = "crates/calib-targets-puzzleboard" }
 projective-grid = { version = "0.7", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.7", path = "crates/calib-targets-print" }
+approx = "0.5"
 assert_cmd = "2"
 cbindgen = "0.29"
 chess-corners = "0.6"
 chess-corners-core = "0.6"
 clap = "4.5"
+criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+env_logger = "0.11"
 flate2 = "1"
 image = { version = "0.25", default-features = true }
 kiddo = "5"

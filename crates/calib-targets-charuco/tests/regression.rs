@@ -259,6 +259,164 @@ fn detects_charuco_on_large_png() {
     }
 }
 
+struct PublicCase {
+    img_name: &'static str,
+    dict_name: &'static str,
+    rows: u32,
+    cols: u32,
+    cell_size: f32,
+    min_marker_inliers: usize,
+    min_markers: usize,
+    min_corners: usize,
+    use_board_level: bool,
+}
+
+/// Shared helper: run the detector on one public testdata image and
+/// assert basic contracts (kind, minimum markers/corners, unique ids,
+/// zero self-consistency wrong-id).
+#[allow(clippy::too_many_arguments)]
+fn run_public_charuco(case: &PublicCase) {
+    let img_name = case.img_name;
+    let dict_name = case.dict_name;
+    let rows = case.rows;
+    let cols = case.cols;
+    let cell_size = case.cell_size;
+    let min_marker_inliers = case.min_marker_inliers;
+    let min_markers = case.min_markers;
+    let min_corners = case.min_corners;
+    let use_board_level = case.use_board_level;
+    let img_path = testdata_path(img_name);
+    let img = load_gray(&img_path);
+    let raw_corners = detect_corners(&img);
+    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+
+    let dict = builtins::builtin_dictionary(dict_name).expect("builtin dict");
+    let board = CharucoBoardSpec {
+        rows,
+        cols,
+        cell_size,
+        marker_size_rel: 0.75,
+        dictionary: dict,
+        marker_layout: MarkerLayout::OpenCvCharuco,
+    };
+
+    let mut params = CharucoParams::for_board(&board);
+    params.px_per_square = 60.0;
+    params.min_marker_inliers = min_marker_inliers;
+    params.use_board_level_matcher = use_board_level;
+    if use_board_level {
+        // The board-level matcher is its own inlier gate — keep the
+        // downstream min_marker_inliers low so the matcher's margin
+        // gate is what decides accept/reject.
+        params.min_marker_inliers = 1;
+        params.min_secondary_marker_inliers = 1;
+    }
+
+    let detector = CharucoDetector::new(params).expect("detector");
+    let src_view = GrayImageView {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        data: img.as_raw(),
+    };
+    let res = detector.detect(&src_view, &corners).unwrap_or_else(|e| {
+        panic!(
+            "{img_name} ({}) detect: {e}",
+            if use_board_level {
+                "board-level"
+            } else {
+                "legacy"
+            }
+        )
+    });
+    assert_eq!(res.detection.kind, TargetKind::Charuco);
+    assert!(
+        res.markers.len() >= min_markers,
+        "{img_name} ({}): markers {} < {}",
+        if use_board_level {
+            "board-level"
+        } else {
+            "legacy"
+        },
+        res.markers.len(),
+        min_markers,
+    );
+    assert!(
+        res.detection.corners.len() >= min_corners,
+        "{img_name} ({}): corners {} < {}",
+        if use_board_level {
+            "board-level"
+        } else {
+            "legacy"
+        },
+        res.detection.corners.len(),
+        min_corners,
+    );
+    assert!(res
+        .detection
+        .corners
+        .iter()
+        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
+    assert_unique_ids(&res, rows * cols);
+    assert_eq!(
+        res.raw_marker_wrong_id_count,
+        0,
+        "{img_name} ({}): wrong-id count must be 0",
+        if use_board_level {
+            "board-level"
+        } else {
+            "legacy"
+        },
+    );
+}
+
+#[test]
+fn board_matcher_detects_small_png() {
+    run_public_charuco(&PublicCase {
+        img_name: "small.png",
+        dict_name: "DICT_4X4_250",
+        rows: 22,
+        cols: 22,
+        cell_size: 5.2,
+        min_marker_inliers: 12,
+        min_markers: 20,
+        min_corners: 60,
+        use_board_level: true,
+    });
+}
+
+#[test]
+fn board_matcher_detects_small2_png() {
+    // small2.png is the same nominal board as small.png (22×22 DICT_4X4_250)
+    // from a slightly different pose — asserts the tuned matcher keeps
+    // working under geometric variation.
+    run_public_charuco(&PublicCase {
+        img_name: "small2.png",
+        dict_name: "DICT_4X4_250",
+        rows: 22,
+        cols: 22,
+        cell_size: 5.2,
+        min_marker_inliers: 12,
+        min_markers: 20,
+        min_corners: 60,
+        use_board_level: true,
+    });
+}
+
+#[test]
+fn board_matcher_detects_large_png() {
+    run_public_charuco(&PublicCase {
+        img_name: "large.png",
+        dict_name: "DICT_4X4_1000",
+        rows: 22,
+        cols: 22,
+        cell_size: 1.0,
+        min_marker_inliers: 64,
+        min_markers: 100,
+        min_corners: 200,
+        use_board_level: true,
+    });
+}
+
 #[test]
 fn detects_charuco_on_small_png() {
     let img_path = testdata_path("small.png");

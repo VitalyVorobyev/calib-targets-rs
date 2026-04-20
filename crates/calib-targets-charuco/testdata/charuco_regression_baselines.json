@@ -1,0 +1,45 @@
+{
+    "_note": "Ratcheting ChArUco benchmark baselines. The legacy matcher is the default; set CharucoParams.use_board_level_matcher = true to opt into the soft-bit board-level matcher from docs/charuco_concept.md.",
+    "_generated": "2026-04-20",
+    "_source": "crates/calib-targets-charuco/examples/run_dataset.rs with CharucoParams::for_board defaults (bit_likelihood_slope κ=36)",
+    "datasets": {
+        "3536119669": {
+            "description": "20 targets × 6 snaps (720×540), 22x22 cells, 5.2 mm, dict DICT_4X4_1000, marker_scale 0.75",
+            "upscale": 1,
+            "frames": 120,
+            "legacy_matcher": {
+                "min_detected": 108,
+                "min_markers_decoded_mean": 11.0,
+                "min_charuco_corners_mean": 44.0,
+                "max_raw_wrong_id_total": 3
+            },
+            "board_level_matcher_kappa36": {
+                "min_detected": 120,
+                "min_markers_decoded_mean": 11.0,
+                "min_charuco_corners_mean": 42.0,
+                "max_raw_wrong_id_total": 0
+            }
+        },
+        "target_0": {
+            "description": "1 target × 6 snaps (720×540), 68x68 cells, 1.69 mm, dict DICT_APRILTAG_36h10, marker_scale 0.75; upscaled 3× before detection",
+            "upscale": 3,
+            "frames": 6,
+            "legacy_matcher": {
+                "min_detected": 0,
+                "min_markers_decoded_mean": 0.0,
+                "min_charuco_corners_mean": 0.0,
+                "max_raw_wrong_id_total": 0
+            },
+            "board_level_matcher_kappa36": {
+                "min_detected": 6,
+                "min_markers_decoded_mean": 15.0,
+                "min_charuco_corners_mean": 68.0,
+                "max_raw_wrong_id_total": 0
+            }
+        }
+    },
+    "_history": {
+        "2026-04-19 kappa=12": "3536119669: 109/120 @ 0 wrong-id; target_0: 3/6",
+        "2026-04-20 kappa=36": "3536119669: 120/120 @ 0 wrong-id; target_0: 6/6 — empirical minimum for both datasets to clear the 5% margin gate."
+    }
+}

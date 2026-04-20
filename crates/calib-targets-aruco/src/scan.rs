@@ -213,6 +213,99 @@ pub fn scan_decode_markers_in_cells(
     }
 }
 
+/// Rectified per-cell intensity samples suitable for custom match scoring.
+///
+/// Produced by [`sample_cell`]; callers (e.g. the ChArUco board-level
+/// matcher) use it to compute arbitrary score functions against expected
+/// marker templates without re-running the homography warp.
+#[derive(Clone, Debug)]
+pub struct CellSamples {
+    /// Number of cells per side in the sampled grid: `bits + 2 * border_bits`.
+    pub cells_per_side: usize,
+    /// Number of inner bits per side (`Matcher::dictionary().marker_size`).
+    pub bits_per_side: usize,
+    /// Border ring width, in cells (matches [`ScanDecodeConfig::border_bits`]).
+    pub border_bits: usize,
+    /// Row-major mean-of-3x3 intensity per grid cell, `cells_per_side²` values.
+    pub mean_grid: Vec<u8>,
+    /// Otsu threshold computed from dense interior samples; in `[0, 255]`.
+    pub otsu_threshold: u8,
+    /// Fraction of border cells that are darker than [`Self::otsu_threshold`],
+    /// in `[0, 1]`. `1.0` means every border sample is black. Useful as a
+    /// confidence weight.
+    pub border_black_fraction: f32,
+}
+
+/// Sample a rectified per-cell intensity grid from an image using a cell
+/// quad, without decoding any marker id.
+///
+/// Returns `None` if the cell is smaller than the minimum decode side, or if
+/// the homography / bit count is invalid.
+pub fn sample_cell(
+    image: &GrayImageView<'_>,
+    cell: &MarkerCell,
+    px_per_square: f32,
+    cfg: &ScanDecodeConfig,
+    bits: usize,
+) -> Option<CellSamples> {
+    let grid = SampleGrid::new(cfg, bits, px_per_square)?;
+    let cell_rect = cell_rect_corners(px_per_square);
+    let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
+
+    let mut mean_grid = Vec::with_capacity(grid.points.len());
+    for p in &grid.points {
+        let q = h.apply(*p);
+        let v = sample_mean_3x3(image, q.x, q.y)?;
+        mean_grid.push(v);
+    }
+
+    let mut thr_samples = Vec::with_capacity(grid.threshold_points.len());
+    for p in &grid.threshold_points {
+        let q = h.apply(*p);
+        if let Some(v) = sample_mean_3x3(image, q.x, q.y) {
+            thr_samples.push(v);
+        }
+    }
+    if thr_samples.is_empty() {
+        // fall back to the mean grid itself to keep otsu well-defined
+        thr_samples.extend_from_slice(&mean_grid);
+    }
+    let otsu = otsu_threshold_from_samples(&thr_samples);
+
+    let cells = grid.cells;
+    let border = cfg.border_bits;
+    let mut border_total = 0u32;
+    let mut border_black = 0u32;
+    if border > 0 {
+        for cy in 0..cells {
+            for cx in 0..cells {
+                let is_border = cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells;
+                if !is_border {
+                    continue;
+                }
+                border_total += 1;
+                if mean_grid[cy * cells + cx] < otsu {
+                    border_black += 1;
+                }
+            }
+        }
+    }
+    let border_black_fraction = if border_total == 0 {
+        1.0
+    } else {
+        border_black as f32 / border_total as f32
+    };
+
+    Some(CellSamples {
+        cells_per_side: cells,
+        bits_per_side: bits,
+        border_bits: border,
+        mean_grid,
+        otsu_threshold: otsu,
+        border_black_fraction,
+    })
+}
+
 /// Decode a single marker from one square cell in image space.
 pub fn decode_marker_in_cell(
     image: &GrayImageView<'_>,
@@ -500,8 +593,8 @@ fn binarize_and_score(
             if inverted {
                 is_black = !is_black;
             }
-            let is_border =
-                use_border && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
+            let is_border = use_border
+                && (cx < border || cy < border || cx + border >= cells || cy + border >= cells);
             if is_border {
                 border_total += 1;
                 if is_black {

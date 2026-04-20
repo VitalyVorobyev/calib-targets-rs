@@ -13,8 +13,9 @@ keywords = ["calibration", "computer-vision", "chessboard", "charuco", "aruco"]
 categories = ["computer-vision", "science"]
 
 [features]
-default = ["image"]
+default = ["image", "cli"]
 image = ["dep:chess-corners", "dep:image"]
+cli = ["dep:clap"]
 tracing = [
     "dep:tracing",
     "dep:tracing-log",
@@ -25,6 +26,7 @@ tracing = [
     "calib-targets-core/tracing",
     "calib-targets-marker/tracing",
     "calib-targets-puzzleboard/tracing",
+    "projective-grid/tracing",
 ]
 
 [dependencies]
@@ -35,7 +37,9 @@ calib-targets-chessboard.workspace = true
 calib-targets-marker.workspace = true
 calib-targets-print.workspace = true
 calib-targets-puzzleboard.workspace = true
+projective-grid.workspace = true
 chess-corners = { workspace = true, optional = true, features = ["rayon", "ml-refiner"] }
+clap = { workspace = true, optional = true, features = ["derive"] }
 nalgebra.workspace = true
 thiserror.workspace = true
 image = { workspace = true, optional = true }
@@ -44,11 +48,19 @@ tracing-log = { workspace = true, optional = true }
 tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "env-filter"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+assert_cmd.workspace = true
+criterion.workspace = true
 log.workspace = true
+predicates.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[bin]]
+name = "calib-targets"
+path = "src/bin/calib_targets.rs"
+required-features = ["cli"]
+doc = false
 
 [[bench]]
 name = "puzzleboard_sizes"

@@ -12,11 +12,11 @@
 //!
 //! let corner = Corner {
 //!     position: Point2::new(10.0, 20.0),
-//!     orientation_cluster: None,
-//!     axes: Default::default(),
-//!     contrast: 0.0,
-//!     fit_rms: 0.0,
+//!     contrast: 0.5,
 //!     strength: 1.0,
+//!     // `orientation_cluster` is runtime-assigned by the clustering pass; leave as default.
+//!     // `axes` carries the orientation signal — default means "no info" (sigma = π).
+//!     ..Corner::default()
 //! };
 //!
 //! let detection = TargetDetection {

@@ -5,6 +5,8 @@ description = "Python bindings for chess-corners"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
+rust-version.workspace = true
+readme = "README.md"
 publish = false
 autobins = false
 

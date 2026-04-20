@@ -233,6 +233,31 @@ pub fn detect_chessboard(
     to_js(&result)
 }
 
+/// Detect all chessboard components in a grayscale image.
+///
+/// Like `detect_chessboard` but returns every same-board component the detector
+/// recovers (up to `params.max_components`), rather than just the first one.
+///
+/// Returns a JS array of `ChessboardDetectionResult` objects (may be empty).
+/// If `chess_cfg` is provided, it overrides `params.chess`.
+#[wasm_bindgen]
+pub fn detect_chessboard_all(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let cb_params: DetectorParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
+
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector = ChessDetector::new(cb_params);
+    let results = detector.detect_all(&corners);
+    to_js(&results)
+}
+
 // ---------------------------------------------------------------------------
 // ChArUco detection
 // ---------------------------------------------------------------------------

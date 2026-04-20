@@ -13,8 +13,8 @@
 //! 2. None of the marker-internal input indices appears as a labelled corner.
 //!
 //! The detector's empirical precision contract on REAL ChArUco scenes
-//! (119/120 with 0 wrong labels on our private flagship dataset) is
-//! validated separately in `private_dataset.rs`. This test provides a
+//! (high detection rate, zero wrong labels on our private regression dataset)
+//! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
 use calib_targets_chessboard::{Detector, DetectorParams};

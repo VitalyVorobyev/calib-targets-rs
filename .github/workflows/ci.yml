@@ -43,7 +43,7 @@ jobs:
 
       - name: Check generated FFI header
         if: matrix.toolchain == 'stable'
-        run: cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+        run: cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 
       - name: CMake consumer smoke
         if: matrix.toolchain == 'stable'

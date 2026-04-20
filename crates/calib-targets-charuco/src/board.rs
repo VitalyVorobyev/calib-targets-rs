@@ -53,6 +53,10 @@ pub enum CharucoBoardError {
 pub struct CharucoBoard {
     spec: CharucoBoardSpec,
     marker_positions: Vec<GridCoords>,
+    /// Reverse lookup: board square `(i, j)` → marker id. Keyed as
+    /// `j * cols + i` so `None` ⇒ no marker at that square (a black square
+    /// in the OpenCV layout).
+    id_at_square: Vec<Option<u32>>,
 }
 
 impl CharucoBoard {
@@ -84,9 +88,23 @@ impl CharucoBoard {
             return Err(CharucoBoardError::NotEnoughDictionaryCodes { needed, available });
         }
 
+        let mut id_at_square = vec![None; (spec.rows as usize) * (spec.cols as usize)];
+        for (id, bc) in marker_positions.iter().enumerate() {
+            if bc.i < 0 || bc.j < 0 {
+                continue;
+            }
+            let i = bc.i as usize;
+            let j = bc.j as usize;
+            if i >= spec.cols as usize || j >= spec.rows as usize {
+                continue;
+            }
+            id_at_square[j * spec.cols as usize + i] = Some(id as u32);
+        }
+
         Ok(Self {
             spec,
             marker_positions,
+            id_at_square,
         })
     }
 
@@ -143,6 +161,31 @@ impl CharucoBoard {
     #[inline]
     pub fn marker_count(&self) -> usize {
         self.marker_positions.len()
+    }
+
+    /// Reverse lookup: marker id at a given board square coordinate, if any.
+    ///
+    /// Returns `None` for out-of-range `bc` and for squares where the board
+    /// layout places no marker (e.g. black squares in the OpenCV layout).
+    #[inline]
+    pub fn marker_id_at(&self, bc: GridCoords) -> Option<u32> {
+        if bc.i < 0 || bc.j < 0 {
+            return None;
+        }
+        let i = bc.i as usize;
+        let j = bc.j as usize;
+        if i >= self.spec.cols as usize || j >= self.spec.rows as usize {
+            return None;
+        }
+        self.id_at_square[j * self.spec.cols as usize + i]
+    }
+
+    /// Iterate all marker `(id, position)` pairs for this board.
+    pub fn iter_marker_positions(&self) -> impl Iterator<Item = (u32, GridCoords)> + '_ {
+        self.marker_positions
+            .iter()
+            .enumerate()
+            .map(|(id, bc)| (id as u32, *bc))
     }
 
     /// Convert a board **corner coordinate** `(i, j)` into a ChArUco corner id.

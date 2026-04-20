@@ -1,194 +1,153 @@
 # projective-grid
 
-A standalone Rust crate for recovering **locally-planar 2D grids** — square
-chessboards, hexagonal lattices, or any other structured point cloud — from
-arbitrary 2D point sets. The crate is pattern-agnostic: you plug in a
-validator that knows "does this nearby point qualify as a grid neighbor of
-this one?" and the crate does the rest (graph construction, coordinate
-assignment, homography fitting, post-growth validation).
+Pattern-agnostic algorithms for turning a cloud of 2D points into a grid:
+graph construction, connected components, integer `(i, j)` coordinate
+assignment, line/local-homography validation, and per-cell rectification.
 
-`projective-grid` is the algorithmic core behind
-[`calib-targets-chessboard`](../calib-targets-chessboard), but has no
-calibration-specific dependencies. Callers outside computer vision — mesh
-extraction from point clouds, game-board rectification, laser-dot grid
-fitting — can consume it directly.
+`projective-grid` is the algorithmic backbone behind every grid-based
+detector in the [calib-targets] workspace — chessboard, ChArUco, marker
+board, PuzzleBoard — but it has no calibration-specific dependencies.
+Callers outside computer vision (mesh extraction from point clouds, game
+board rectification, laser-dot grid fitting, printed-PCB alignment) can use
+it directly.
+
+Full API reference: see the [`projective-grid` book chapter][book-chapter].
 
 ## Install
 
 ```toml
 [dependencies]
-projective-grid = "0.6"
+projective-grid = "0.7"
 nalgebra = "0.34"    # Point2<f32> is the shared coordinate type
 ```
 
-## Quickstart — square grid
+## Quickstart
 
 ```rust
-use projective_grid::{
-    GridGraph, GridGraphParams, NeighborCandidate, NeighborDirection,
-    NeighborValidator, assign_grid_coordinates, connected_components,
-};
 use nalgebra::Point2;
+use projective_grid::{
+    GridGraph, GridGraphParams, SpatialSquareValidator,
+    assign_grid_coordinates, connected_components,
+};
 
-struct QuadrantValidator;
+let positions: Vec<Point2<f32>> = /* detected points */;
+let data = vec![(); positions.len()];        // no per-point metadata
 
-impl NeighborValidator for QuadrantValidator {
-    type PointData = ();
-
-    fn validate(
-        &self,
-        _source_index: usize,
-        _source_data: &(),
-        candidate: &NeighborCandidate,
-        _candidate_data: &(),
-    ) -> Option<(NeighborDirection, f32)> {
-        let dir = if candidate.offset.x.abs() > candidate.offset.y.abs() {
-            if candidate.offset.x > 0.0 { NeighborDirection::Right }
-            else { NeighborDirection::Left }
-        } else if candidate.offset.y > 0.0 {
-            NeighborDirection::Down
-        } else {
-            NeighborDirection::Up
-        };
-        Some((dir, candidate.distance))
-    }
-}
-
-let positions = vec![
-    Point2::new(0.0_f32, 0.0), Point2::new(10.0, 0.0),
-    Point2::new(0.0, 10.0),    Point2::new(10.0, 10.0),
-];
-let data = vec![(); 4];
-
+let validator = SpatialSquareValidator::<f32> {
+    min_spacing: 5.0,
+    max_spacing: 200.0,
+};
 let graph = GridGraph::build(
-    &positions, &data, &QuadrantValidator, &GridGraphParams::default(),
+    &positions,
+    &data,
+    &validator,
+    &GridGraphParams { k_neighbors: 8, max_distance: 200.0 },
 );
 
-let components = connected_components(&graph);
-let coords = assign_grid_coordinates(&graph, &components[0]);
+for component in connected_components(&graph) {
+    // assign_grid_coordinates returns (point_index, GridIndex { i, j }) pairs.
+    for (point_idx, grid_idx) in assign_grid_coordinates(&graph, &component) {
+        let p = positions[point_idx];
+        println!("({}, {}) at ({}, {})", grid_idx.i, grid_idx.j, p.x, p.y);
+    }
+}
 ```
 
-## Quickstart — hex grid
+The input is an array of 2D points; the output is one `(i, j)` label per
+point in each connected component. The calibration-specific detectors plug
+in richer validators (e.g. `XJunctionValidator`, which also requires
+corner-axis alignment between neighbours), but the pipeline is the same.
 
-See `hex::HexGridGraph` + `hex::HexNeighborValidator`. Same shape, axial
-`(q, r)` coordinates, six neighbor directions.
+## Inputs and outputs
 
-## Core concepts
-
-The crate is organised around four stages that most grid-detection pipelines
-share. Each can be used standalone or as part of a full pipeline.
-
-| Stage | Entry points | What it does |
+| Stage | Input | Output |
 |---|---|---|
-| **Cell-size estimate** | [`estimate_global_cell_size`], [`estimate_local_steps`] | Infer an approximate lattice spacing from a raw point cloud. |
-| **Graph construction** | [`GridGraph::build`], [`hex::HexGridGraph::build`], [`NeighborValidator`] | KD-tree based nearest-neighbour search + validator-driven edge admission. |
-| **Coordinate assignment** | [`assign_grid_coordinates`], [`connected_components`] | BFS from one seed corner, producing integer `(i, j)` / axial `(q, r)` labels. |
-| **Post-growth validation** | [`square::validate`] | Line-collinearity + local-homography residuals → blacklist of outlier corners. |
+| Cell-size estimate | `&[Point2<f32>]` | [`GlobalStepEstimate`] (`cell_size`, `confidence`, …) |
+| Graph build | points + per-point data + [`NeighborValidator`] + [`GridGraphParams`] | [`GridGraph`] |
+| Component split | [`GridGraph`] | `Vec<Vec<usize>>` — each component is a list of point indices |
+| Coordinate assignment | graph + one component | `Vec<(usize, GridIndex)>` — point index + its `(i, j)` label |
+| Post-growth validation | labelled corners + [`ValidationParams`] | [`ValidationResult`] — inlier mask + rejection reasons |
+| Rectification | labelled corners | [`GridHomography`] (single) or [`GridHomographyMesh`] (per-cell) |
 
-Alongside those stages, the crate ships reusable utilities:
+All public types re-exported at the crate root; the detailed module layout
+sits under [`square`] (4-connected) and [`hex`] (6-connected pointy-top).
 
-- **Circular statistics** ([`circular_stats`]) — plateau-aware peak detection
-  and double-angle 2-means for axis-angle histograms.
-- **Homography** ([`homography`]) — 4-point DLT solver with Hartley
-  normalization.
-- **Mesh rectification** ([`square::mesh`], [`hex::mesh`]) — per-cell
-  homographies for distortion-robust unwarp on curved lenses.
+## Configuration
 
-## API tour
+Tuning knobs cluster into three groups. Defaults are chosen so that clean
+synthetic grids "just work"; tune only when a specific input fails.
 
-### Square (4-connected)
+- **[`GridGraphParams`]** — `k_neighbors` (KD-tree fan-out, default 8) and
+  `max_distance` (radius cap on candidate edges). Raise `max_distance` so
+  the largest real cell in your image comfortably fits; lower it to stop
+  false edges jumping across gaps in sparse point clouds.
+- **[`SpatialSquareValidator`] / [`XJunctionValidator`]** — pattern-specific
+  neighbour admission. `SpatialSquareValidator` filters by absolute
+  `min_spacing` / `max_spacing`; `XJunctionValidator` additionally reads
+  per-corner axis estimates and rejects neighbours whose edges don't lie
+  on the corner's own axes.
+- **[`ValidationParams`]** — line-collinearity (`line_tol_rel`,
+  `projective_line_tol_rel`, `line_min_members`) and local-homography
+  (`local_h_tol_rel`) residual thresholds for post-growth cleanup. Loosen
+  under heavy radial distortion; tighten for near-pinhole cameras.
 
-Top-level square-grid re-exports at the crate root (back-compat), with full
-module paths under [`square`]:
+See the book chapter for parameter-by-parameter guidance.
 
-| Item | Path | Purpose |
-|---|---|---|
-| `GridIndex` | `square::index::GridIndex` | `(i, j)` cell identifier, shared with hex as axial `(q, r)` |
-| `NeighborDirection`, `NodeNeighbor` | `square::direction` | Four cardinal directions + the stored-edge struct |
-| `GridAlignment`, `GridTransform`, `GRID_TRANSFORMS_D4` | `square::alignment` | Dihedral group D4 (8 transforms) over `(i, j)` |
-| `GridHomography` | `square::rectify` | Global homography from assigned grid corners |
-| `GridHomographyMesh` | `square::mesh` | Per-cell homographies |
-| `find_inconsistent_corners`, `predict_grid_position` | `square::smoothness` | Midpoint prediction / outlier detection |
-| `SpatialSquareValidator`, `XJunctionValidator` | `square::validators` | Ready-to-use validators |
-| `validate`, `ValidationParams`, `ValidationResult`, `LabelledEntry` | `square::validate` | Post-growth line / local-H validation |
+## Tuning difficult inputs
 
-### Hex (6-connected)
+- **Fragmented grid** — `connected_components` returns several components.
+  Reconnect by rerunning with a larger `GridGraphParams::max_distance`, or
+  keep the fragments and merge downstream.
+- **Moderate oblique perspective** — defaults hold. If real edges are
+  rejected, widen `GridGraphParams::k_neighbors` so perspective-
+  foreshortened candidates survive the KD-tree fan-out.
+- **Moderate radial distortion** — use [`GridHomographyMesh`] rather than
+  [`GridHomography`] for rectification: per-cell homographies absorb
+  curvature that a single global homography cannot.
+- **Dense clutter (dot-pattern detectors, laser spots)** — feed
+  [`estimate_global_cell_size`] on a central crop first, then seed
+  `SpatialSquareValidator::{min_spacing, max_spacing}` with a band around
+  the returned `cell_size`.
 
-Lives under [`hex`]. Same module shape — `HexGridGraph`, `HexDirection`,
-`HexGridHomography`, `HexGridHomographyMesh`, etc. Uses pointy-top axial
-coordinates `(q, r)`:
+## Limitations
 
-- `q` increases east, `r` increases south-east.
-- Six directions: E / W / NE / SW / NW / SE.
-- Rectified mapping: `x = s · (q + r/2)`, `y = s · r · √3/2`.
+- **2D only.** Coordinates are `nalgebra::Point2<f32>`; no 3D support.
+- **4-connected square grid by default.** Diagonal neighbours require a
+  custom validator; they aren't part of the stock `NeighborDirection` enum.
+- **Synchronous validator.** The graph builder calls validators serially
+  per candidate; no async or streaming API.
+- **Roughly-square cells.** Strongly anisotropic aspect ratios (>3:1)
+  degrade the graph; rescale the input cloud first.
+- **No parameter auto-tuning.** When defaults do not close the grid,
+  callers must tune — usually by estimating cell size first and seeding
+  `GridGraphParams` with it.
 
-### Shared
+## Design notes (why it works under distortion)
 
-| Item | Purpose |
-|---|---|
-| [`graph::NeighborValidator`] | The one trait every grid-detection pipeline implements. |
-| [`graph::GridGraphParams`] | KD-tree radius + max-candidates knobs. |
-| [`graph_cleanup`] | Symmetry enforcement, straightness pruning, crossing-edge removal. |
-| [`homography::homography_from_4pt`] | 4-point DLT with Hartley normalization. |
-| [`circular_stats`] | Axis-angle histogram + plateau peaks + double-angle 2-means. |
-
-## Design notes
-
-### Validator pattern
-
-`NeighborValidator` is the one trait you must implement for a new pattern.
-Implementors take a *candidate* (spatially close point + its data payload)
-and return `Some((direction, quality_score))` iff that candidate qualifies
-as a neighbor. The graph builder takes it from there.
-
-Two ready-to-use validators live in `square::validators`:
-
-- `SpatialSquareValidator` — pure distance / angle quadrant validation, no
-  corner orientation required.
-- `XJunctionValidator` — additionally consumes per-corner X-junction axis
-  estimates (e.g. from ChESS), rejecting neighbors whose axes don't match.
-
-### Undirected-angle (mod-π) circular means
-
-When averaging axis directions (orientation, not headings), accumulate
-`(cos 2θ, sin 2θ)` and halve the resulting atan2. `circular_stats::
-refine_2means_double_angle` does this correctly; naive `(cos θ, sin θ)`
-averaging silently breaks at the 0°/180° seam. This was a real bug in
-chessboard v1 and is documented in the workspace's `CLAUDE.md`.
-
-### Plateau-aware peak picking
-
-When a physical direction's mass straddles a histogram bin boundary, the
-smoothed peak is flat-topped across two adjacent bins. Naive strict
-local-maximum detection misses it. `circular_stats::pick_two_peaks`
-detects plateau peaks — a maximal run of equal-valued bins bordered on both
-sides by strictly lower values — and returns the plateau midpoint.
+- **Local invariants, not global homography.** The graph builder only ever
+  reasons about a point and its nearest neighbours, which is affine-locally
+  valid even under moderate perspective or radial distortion.
+- **Undirected-angle circular means.** Any function averaging axis angles
+  accumulates `(cos 2θ, sin 2θ)` and halves the resulting `atan2` — naive
+  `(cos θ, sin θ)` averaging breaks at the 0°/180° seam. See
+  [`circular_stats::refine_2means_double_angle`].
+- **Plateau-aware peak picking.** When a physical direction's mass
+  straddles a histogram-bin boundary, the smoothed peak is flat-topped
+  across two adjacent bins. [`circular_stats::pick_two_peaks`] detects the
+  plateau midpoint so axis estimates stay stable as input rotates.
 
 ## Features
 
 - `tracing` — enables tracing instrumentation (reserved for future use).
 
-## Known caveats
-
-- **`NeighborValidator` is synchronous.** There's no async validator trait;
-  the graph builder calls the validator serially per candidate edge.
-- **2D only.** Coordinates are `nalgebra::Point2<f32>`. There's no 3D grid
-  support.
-- **Square grid assumes 4-connectivity.** Diagonal neighbors are not part
-  of the default `NeighborDirection` enum; implement a custom validator
-  that returns only cardinal directions.
-
 ## Related crates
 
-- [`calib-targets-chessboard`](../calib-targets-chessboard) — the
-  invariant-first chessboard detector; the reference consumer of this crate.
-- [`calib-targets-puzzleboard`](../calib-targets-puzzleboard) — self-
-  identifying chessboard variant, also consumes `projective-grid` for
-  graph construction.
-- [`calib-targets`](../calib-targets) — facade crate with `detect_*` and
-  `detect_*_best` helpers.
+- [calib-targets-chessboard][] — the reference consumer: invariant-first
+  chessboard detector.
+- [calib-targets-puzzleboard][] — self-identifying chessboard variant.
+- [calib-targets][] — workspace facade with `detect_*` / `detect_*_best`.
 
-## Book
-
-The `book/` at the repository root has a chapter dedicated to
-`projective-grid`'s pipeline with end-to-end worked examples.
+[calib-targets]: https://docs.rs/calib-targets
+[calib-targets-chessboard]: https://docs.rs/calib-targets-chessboard
+[calib-targets-puzzleboard]: https://docs.rs/calib-targets-puzzleboard
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/projective_grid.html

@@ -102,31 +102,45 @@ crate; within this workspace it lives at `crates/calib-targets-print`.
 
 ## CLI quickstart
 
-The CLI currently lives in the repo-local `crates/calib-targets-cli` crate.
-Today it is the official repo-local app for printable target generation, and
-it is not published on crates.io.
+The `calib-targets` CLI ships with the facade crate and the Python package:
+`cargo install calib-targets` provides the Rust binary and `pip install
+calib-targets` installs the same command as a Python console script. Both use
+the same subcommand taxonomy.
 
-If you need a valid ChArUco dictionary name, list the built-ins first:
+List the built-in ArUco dictionaries:
 
 ```bash
-cargo run -p calib-targets-cli -- list-dictionaries
+calib-targets list-dictionaries
 ```
 
-To initialize a ChArUco spec, validate it, and then render it:
+One-step generation (flags → JSON + SVG + PNG bundle):
 
 ```bash
-cargo run -p calib-targets-cli -- init charuco \
+calib-targets gen chessboard \
+  --out-stem tmpdata/printable/chessboard \
+  --inner-rows 6 --inner-cols 8 --square-size-mm 20
+
+calib-targets gen charuco \
+  --out-stem tmpdata/printable/charuco_a4 \
+  --rows 5 --cols 7 --square-size-mm 20 \
+  --marker-size-rel 0.75 --dictionary DICT_4X4_50
+
+calib-targets gen puzzleboard \
+  --out-stem tmpdata/printable/puzzle \
+  --rows 8 --cols 10 --square-size-mm 15
+```
+
+Two-step `init → validate → generate` for reviewable / committable specs:
+
+```bash
+calib-targets init charuco \
   --out tmpdata/printable/charuco_a4.json \
-  --rows 5 \
-  --cols 7 \
-  --square-size-mm 20 \
-  --marker-size-rel 0.75 \
-  --dictionary DICT_4X4_50
+  --rows 5 --cols 7 --square-size-mm 20 \
+  --marker-size-rel 0.75 --dictionary DICT_4X4_50
 
-cargo run -p calib-targets-cli -- validate \
-  --spec tmpdata/printable/charuco_a4.json
+calib-targets validate --spec tmpdata/printable/charuco_a4.json
 
-cargo run -p calib-targets-cli -- generate \
+calib-targets generate \
   --spec tmpdata/printable/charuco_a4.json \
   --out-stem tmpdata/printable/charuco_a4
 ```
@@ -134,28 +148,10 @@ cargo run -p calib-targets-cli -- generate \
 `validate` prints `valid <target-kind>` on success and exits non-zero if the
 spec fails printable validation.
 
-If you already have a spec file, generation is a single command:
-
-```bash
-cargo run -p calib-targets-cli -- generate \
-  --spec testdata/printable/charuco_a4.json \
-  --out-stem tmpdata/printable/charuco_a4
-```
-
-The current `init` subcommands are:
-
-- `chessboard`
-- `charuco`
-- `marker-board`
-
-PuzzleBoard generation is available from an existing JSON spec; the CLI does
-not yet have an `init puzzle-board` shortcut.
-
-Other printable workflow commands:
-
-- `list-dictionaries`
-- `validate`
-- `generate`
+Both `init` and `gen` support all four target families: `chessboard`,
+`charuco`, `puzzleboard`, `marker-board`. Page and render options
+(`--page-size`, `--orientation`, `--margin-mm`, `--png-dpi`,
+`--debug-annotations`) are shared across every subcommand.
 
 ## Python quickstart
 
@@ -186,5 +182,5 @@ For a physically accurate calibration target:
 
 - Use `calib_targets::printable` when you want the published Rust facade crate.
 - Use `calib-targets-print` when you want the dedicated published printable-target crate.
-- Use `crates/calib-targets-cli` when you want a repo-local init/render tool.
+- Use the `calib-targets` CLI (`cargo install calib-targets` or `pip install calib-targets`) when you want a command-line init/render tool.
 - Use the Python bindings when your downstream workflow is already in Python.

@@ -31,7 +31,7 @@ const SNAP_HEIGHT: u32 = 540;
 const FIXTURES: &[(u32, u32, &str)] = &[
     (0, 0, "clean_t0s0"),
     (5, 2, "moderate_t5s2"),
-    (11, 2, "hard_t11s2"),
+    (11, 2, "bad_light_frame"),
     (19, 5, "mid_t19s5"),
 ];
 

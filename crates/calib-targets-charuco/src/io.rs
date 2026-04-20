@@ -2,9 +2,9 @@
 
 use crate::{
     CharucoBoard, CharucoBoardError, CharucoBoardSpec, CharucoDetectError, CharucoDetectionResult,
-    CharucoDetector, CharucoParams,
+    CharucoDetector, CharucoParams, MarkerLayout,
 };
-use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
+use calib_targets_aruco::{builtins, ArucoScanConfig, Dictionary, MarkerDetection};
 use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
@@ -18,6 +18,77 @@ pub type CharucoIoError = IoError;
 pub enum CharucoConfigError {
     #[error(transparent)]
     Board(#[from] CharucoBoardError),
+}
+
+/// Errors from loading a board specification via [`load_board_spec_any`].
+#[non_exhaustive]
+#[derive(thiserror::Error, Debug)]
+pub enum BoardSpecLoadError {
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("parse error: {0}")]
+    Parse(#[from] serde_json::Error),
+    #[error("board JSON is missing required field '{0}'")]
+    MissingField(&'static str),
+    #[error("unknown dictionary '{0}' (tried '{0}' and 'DICT_{0}')")]
+    UnknownDictionary(String),
+}
+
+/// Resolve a dictionary name tolerating both the prefixed (`DICT_4X4_1000`)
+/// and un-prefixed (`4X4_1000`, `APRILTAG_36h10`) spellings used in
+/// different tooling JSON files.
+pub fn resolve_dictionary(name: &str) -> Option<Dictionary> {
+    if let Some(d) = builtins::builtin_dictionary(name) {
+        return Some(d);
+    }
+    let prefixed = format!("DICT_{name}");
+    builtins::builtin_dictionary(&prefixed)
+}
+
+#[derive(Debug, Deserialize)]
+struct RawBoardSpec {
+    ncols: u32,
+    nrows: u32,
+    cellsize_mm: f32,
+    marker_scale: f32,
+    dict: String,
+    #[serde(default)]
+    layout: Option<MarkerLayout>,
+}
+
+impl RawBoardSpec {
+    fn into_spec(self) -> Result<CharucoBoardSpec, BoardSpecLoadError> {
+        let dict = resolve_dictionary(&self.dict)
+            .ok_or_else(|| BoardSpecLoadError::UnknownDictionary(self.dict.clone()))?;
+        Ok(CharucoBoardSpec {
+            rows: self.nrows,
+            cols: self.ncols,
+            cell_size: self.cellsize_mm,
+            marker_size_rel: self.marker_scale,
+            dictionary: dict,
+            marker_layout: self.layout.unwrap_or_default(),
+        })
+    }
+}
+
+/// Load a [`CharucoBoardSpec`] from JSON accepting either the flat
+/// `board.json` layout (`{"ncols": ..., "dict": "..."}`) or the nested
+/// `config.json` layout (`{"target": {"ncols": ..., "dict": "..."}}`).
+///
+/// Field names follow the printing-tool convention:
+/// `ncols`, `nrows`, `cellsize_mm`, `marker_scale`, `dict`, optional `layout`.
+pub fn load_board_spec_any(path: impl AsRef<Path>) -> Result<CharucoBoardSpec, BoardSpecLoadError> {
+    let raw = std::fs::read_to_string(path.as_ref())?;
+    let value: serde_json::Value = serde_json::from_str(&raw)?;
+
+    let board_value = if let Some(inner) = value.get("target") {
+        inner.clone()
+    } else {
+        value
+    };
+
+    let spec: RawBoardSpec = serde_json::from_value(board_value)?;
+    spec.into_spec()
 }
 
 fn default_px_per_square() -> f32 {

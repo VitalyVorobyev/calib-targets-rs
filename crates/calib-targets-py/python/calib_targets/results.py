@@ -315,6 +315,8 @@ class CharucoDetectionResult:
     detection: TargetDetection
     markers: list[MarkerDetection]
     alignment: GridAlignment
+    raw_marker_count: int = 0
+    raw_marker_wrong_id_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import charuco_detection_result_to_dict

@@ -364,6 +364,109 @@ def write_target_bundle(
     return WrittenTargetBundle.from_dict(raw)
 
 
+def chessboard_document(
+    inner_rows: int,
+    inner_cols: int,
+    square_size_mm: float,
+    *,
+    page: PageSpec | None = None,
+    render: RenderOptions | None = None,
+) -> PrintableTargetDocument:
+    """Build a chessboard printable document with optional page/render overrides."""
+    return PrintableTargetDocument(
+        target=ChessboardTargetSpec(
+            inner_rows=int(inner_rows),
+            inner_cols=int(inner_cols),
+            square_size_mm=float(square_size_mm),
+        ),
+        page=page if page is not None else PageSpec(),
+        render=render if render is not None else RenderOptions(),
+    )
+
+
+def charuco_document(
+    rows: int,
+    cols: int,
+    square_size_mm: float,
+    marker_size_rel: float,
+    dictionary: str,
+    *,
+    marker_layout: MarkerLayout = MarkerLayout.OPENCV_CHARUCO,
+    border_bits: int = 1,
+    page: PageSpec | None = None,
+    render: RenderOptions | None = None,
+) -> PrintableTargetDocument:
+    """Build a ChArUco printable document. `dictionary` is the built-in name (see `list-dictionaries`)."""
+    return PrintableTargetDocument(
+        target=CharucoTargetSpec(
+            rows=int(rows),
+            cols=int(cols),
+            square_size_mm=float(square_size_mm),
+            marker_size_rel=float(marker_size_rel),
+            dictionary=str(dictionary),
+            marker_layout=marker_layout,
+            border_bits=int(border_bits),
+        ),
+        page=page if page is not None else PageSpec(),
+        render=render if render is not None else RenderOptions(),
+    )
+
+
+def puzzleboard_document(
+    rows: int,
+    cols: int,
+    square_size_mm: float,
+    *,
+    origin_row: int = 0,
+    origin_col: int = 0,
+    dot_diameter_rel: float | None = None,
+    page: PageSpec | None = None,
+    render: RenderOptions | None = None,
+) -> PrintableTargetDocument:
+    """Build a PuzzleBoard printable document anchored at `(origin_row, origin_col)`."""
+    kwargs: dict[str, Any] = {
+        "rows": int(rows),
+        "cols": int(cols),
+        "square_size_mm": float(square_size_mm),
+        "origin_row": int(origin_row),
+        "origin_col": int(origin_col),
+    }
+    if dot_diameter_rel is not None:
+        kwargs["dot_diameter_rel"] = float(dot_diameter_rel)
+    return PrintableTargetDocument(
+        target=PuzzleBoardTargetSpec(**kwargs),
+        page=page if page is not None else PageSpec(),
+        render=render if render is not None else RenderOptions(),
+    )
+
+
+def marker_board_document(
+    inner_rows: int,
+    inner_cols: int,
+    square_size_mm: float,
+    *,
+    circles: tuple[MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec] | None = None,
+    circle_diameter_rel: float = 0.5,
+    page: PageSpec | None = None,
+    render: RenderOptions | None = None,
+) -> PrintableTargetDocument:
+    """Build a marker-board printable document. Defaults to the library's standard 3-circle pattern."""
+    resolved_circles = circles if circles is not None else MarkerBoardTargetSpec.default_circles(
+        int(inner_rows), int(inner_cols)
+    )
+    return PrintableTargetDocument(
+        target=MarkerBoardTargetSpec(
+            inner_rows=int(inner_rows),
+            inner_cols=int(inner_cols),
+            square_size_mm=float(square_size_mm),
+            circles=resolved_circles,
+            circle_diameter_rel=float(circle_diameter_rel),
+        ),
+        page=page if page is not None else PageSpec(),
+        render=render if render is not None else RenderOptions(),
+    )
+
+
 __all__ = [
     "PageOrientation",
     "PageSizeKind",
@@ -379,4 +482,8 @@ __all__ = [
     "WrittenTargetBundle",
     "render_target_bundle",
     "write_target_bundle",
+    "chessboard_document",
+    "charuco_document",
+    "puzzleboard_document",
+    "marker_board_document",
 ]

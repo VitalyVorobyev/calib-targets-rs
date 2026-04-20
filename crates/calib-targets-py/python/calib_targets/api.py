@@ -54,6 +54,32 @@ def detect_chessboard(
     return ChessboardDetectionResult.from_dict(raw)
 
 
+def detect_chessboard_all(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: ChessboardParams | None = None,
+) -> list[ChessboardDetectionResult]:
+    """Detect all chessboard components in a grayscale image.
+
+    Like :func:`detect_chessboard` but returns every same-board component the
+    detector recovers (up to ``params.max_components``), rather than just the
+    first one.  Useful when the board is partially occluded and multiple
+    disjoint patches are visible.
+    """
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    if params is not None:
+        _check_type("params", params, ChessboardParams)
+
+    raw = _core.detect_chessboard_all(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=chessboard_params_to_payload(params),
+    )
+    return [ChessboardDetectionResult.from_dict(item) for item in raw]
+
+
 def detect_chessboard_debug(
     image: npt.NDArray[np.uint8],
     *,
@@ -210,6 +236,7 @@ def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:
 
 __all__ = [
     "detect_chessboard",
+    "detect_chessboard_all",
     "detect_charuco",
     "detect_marker_board",
     "detect_puzzleboard",

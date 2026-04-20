@@ -87,6 +87,9 @@ pub(crate) fn merge_charuco_results(
     let mut markers: Vec<MarkerDetection> = markers_by_id.into_values().collect();
     markers.sort_by_key(|m| m.id);
 
+    let raw_marker_count = best_group.iter().map(|r| r.raw_marker_count).sum();
+    let raw_marker_wrong_id_count = best_group.iter().map(|r| r.raw_marker_wrong_id_count).sum();
+
     debug!(
         "merged result: {} corners, {} markers",
         corners.len(),
@@ -100,6 +103,8 @@ pub(crate) fn merge_charuco_results(
         },
         markers,
         alignment: best_alignment,
+        raw_marker_count,
+        raw_marker_wrong_id_count,
     }
 }
 
@@ -145,6 +150,7 @@ mod tests {
         corners: Vec<LabeledCorner>,
         markers: Vec<MarkerDetection>,
     ) -> CharucoDetectionResult {
+        let raw = markers.len();
         CharucoDetectionResult {
             detection: TargetDetection {
                 kind: TargetKind::Charuco,
@@ -152,6 +158,8 @@ mod tests {
             },
             markers,
             alignment: identity_alignment(),
+            raw_marker_count: raw,
+            raw_marker_wrong_id_count: 0,
         }
     }
 

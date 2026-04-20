@@ -343,6 +343,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 name = "calib-targets"
 version = "0.7.0"
 dependencies = [
+ "assert_cmd",
  "calib-targets-aruco",
  "calib-targets-charuco",
  "calib-targets-chessboard",
@@ -351,10 +352,13 @@ dependencies = [
  "calib-targets-print",
  "calib-targets-puzzleboard",
  "chess-corners",
+ "clap",
  "criterion",
  "image",
  "log",
  "nalgebra",
+ "predicates",
+ "projective-grid",
  "serde",
  "serde_json",
  "tempfile",
@@ -383,11 +387,13 @@ dependencies = [
 name = "calib-targets-charuco"
 version = "0.7.0"
 dependencies = [
+ "calib-targets",
  "calib-targets-aruco",
  "calib-targets-chessboard",
  "calib-targets-core",
  "chess-corners",
  "chess-corners-core",
+ "env_logger",
  "image",
  "log",
  "nalgebra",
@@ -418,22 +424,6 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tracing",
-]
-
-[[package]]
-name = "calib-targets-cli"
-version = "0.7.0"
-dependencies = [
- "assert_cmd",
- "calib-targets-aruco",
- "calib-targets-charuco",
- "calib-targets-marker",
- "calib-targets-print",
- "clap",
- "predicates",
- "serde_json",
- "tempfile",
- "thiserror",
 ]
 
 [[package]]

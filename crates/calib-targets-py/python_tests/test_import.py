@@ -32,6 +32,7 @@ def test_import_and_smoke() -> None:
 
 def test_module_exports() -> None:
     assert callable(calib_targets.detect_chessboard)
+    assert callable(calib_targets.detect_chessboard_all)
     assert callable(calib_targets.detect_charuco)
     assert callable(calib_targets.detect_marker_board)
     assert isinstance(calib_targets.DICTIONARY_NAMES, tuple)

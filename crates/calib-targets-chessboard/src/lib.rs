@@ -6,9 +6,8 @@
 //! to sit at a real grid intersection.* Missing corners are acceptable;
 //! wrong corners are not.
 //!
-//! On a private 120-frame regression set with non-negligible lens
-//! distortion and motion blur: **119 / 120 frames detected, 0 wrong
-//! `(i, j)` labels**.
+//! **High detection rate on our private regression set with zero wrong
+//! `(i, j)` labels** (non-negligible lens distortion and motion blur).
 //!
 //! Algorithm reference: see `book/src/chessboard.md`.
 //!

@@ -11,12 +11,10 @@ an integer-labelled chessboard grid `(i, j) → image position`. It is
 a real grid intersection by a stack of independent geometric invariants.
 Missing corners are acceptable; wrong corners are not.
 
-The current sweep on our private 120-frame regression dataset
-(captured with non-negligible lens distortion and motion blur —
-uncommitted; see `privatedata/` for how to reproduce locally) posts:
-
-- **119 / 120 frames detected**, average **43 labelled corners** per detection.
-- **Zero wrong `(i, j)` labels.**
+On our private regression dataset (captured with non-negligible lens
+distortion and motion blur — uncommitted; see `privatedata/` for how
+to reproduce locally) the detector achieves a **high detection rate
+with zero wrong `(i, j)` labels** — precision-by-construction.
 
 A wrong label would corrupt downstream calibration; that is the constraint
 the algorithm refuses to break.
@@ -278,15 +276,15 @@ stage from the `DebugFrame` (see §7) and consult this table.
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
-| `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Common on very-bad-light frames (see `docs/120issues.txt` — t11s2 is the canonical example). |
+| `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Common on very-bad-light frames (see `docs/120issues.txt` for a canonical example). |
 | `frame.cell_size.is_none()` | Stage 5 (seed) | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | No 4-corner quad passed the consistency check. |
 | `frame.detection` has very few corners | Stage 6 (grow) | `attach_search_rel`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg` | Seed succeeded but growth couldn't extend. Common on heavily distorted views. |
 | Many `LabeledThenBlacklisted` corners | Stage 7 (validate) | `line_tol_rel`, `local_h_tol_rel` | Invariants found outliers; check the blacklist reasons. |
 | Wrong `(i, j)` labels emitted | **never** | — | If you ever see this, file a bug. The precision contract has been violated. |
 
-The 1/120 unrecovered frame on the regression dataset is **t11s2**, a
-very-bad-light frame whose Stage-2 clustering never converges. It is
-flagged as excluded in `docs/120issues.txt`.
+The one unrecovered frame in our regression dataset is a very-bad-light
+capture whose Stage-2 clustering never converges. It is flagged as
+excluded in `docs/120issues.txt`.
 
 ---
 
