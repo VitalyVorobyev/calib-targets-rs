@@ -221,9 +221,7 @@ dataclasses.
 
 ## Feature parity vs Rust facade
 
-- `detect_chessboard` / `_best` / `_debug` — ✔
-- `detect_chessboard_all` (multi-component) — not yet exposed; use
-  chessboard-v2 Rust directly.
+- `detect_chessboard` / `_all` / `_best` / `_debug` — ✔
 - `detect_charuco` / `_best`, `detect_puzzleboard` / `_best`,
   `detect_marker_board` / `_best` — ✔
 - Printable targets for all four target kinds — ✔

@@ -358,6 +358,7 @@ dependencies = [
  "log",
  "nalgebra",
  "predicates",
+ "projective-grid",
  "serde",
  "serde_json",
  "tempfile",

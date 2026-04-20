@@ -593,8 +593,8 @@ fn binarize_and_score(
             if inverted {
                 is_black = !is_black;
             }
-            let is_border =
-                use_border && (cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells);
+            let is_border = use_border
+                && (cx < border || cy < border || cx + border >= cells || cy + border >= cells);
             if is_border {
                 border_total += 1;
                 if is_black {

@@ -92,8 +92,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets` | Facade crate — `detect_*` and `detect_*_best` helpers, `default_chess_config()` |
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
 | `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
-| `calib-targets-chessboard` | ChESS feature graph → chessboard grid assembly (uses `projective-grid` for graph/traversal) |
-| `chessboard` | **Invariant-first rewrite** of the chessboard detector. Precision-by-construction; 99.2% detection / 0 wrong on the 120-snap private dataset |
+| `calib-targets-chessboard` | Invariant-first chessboard detector on top of ChESS corners (precision-by-construction) |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
 | `calib-targets-puzzleboard` | PuzzleBoard self-identifying chessboard: edge-dot decode + absolute corner IDs |
@@ -294,7 +293,7 @@ cargo test --workspace --all-features
 cargo doc --workspace --no-deps  # must produce zero warnings
 
 # 3. Generated FFI header (stale after any change to FFI-visible types/enums)
-cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 
 # 4. Python typing stubs (stale after any change to #[pyfunction] or #[pyclass])
 uv run maturin develop --release -m crates/calib-targets-py/Cargo.toml

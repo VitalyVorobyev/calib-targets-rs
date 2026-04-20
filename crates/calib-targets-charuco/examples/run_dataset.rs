@@ -16,9 +16,9 @@
 //! ```text
 //! cargo run --release -p calib-targets-charuco --features dataset \
 //!     --example run_dataset -- \
-//!     --dataset privatedata/3536119669 \
-//!     --board   privatedata/3536119669/board.json \
-//!     --out     bench_results/charuco/3536119669
+//!     --dataset privatedata/<dataset-dir> \
+//!     --board   privatedata/<dataset-dir>/board.json \
+//!     --out     bench_results/charuco/<dataset-dir>
 //! ```
 
 use std::env;

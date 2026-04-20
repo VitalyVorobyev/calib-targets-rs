@@ -68,7 +68,7 @@ typedef struct ct_optional_f32_t {
  *
  * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
  * (flat shape — no nested graph / orientation-clustering sub-structs
- * like the pre-v0.7.0 ABI). Use [`ct_chessboard_params_init_default`]
+ * like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
  * to populate a valid default-configured value rather than struct-
  * literal zero-initialisation.
  */
@@ -630,17 +630,6 @@ extern "C" {
 #endif // __cplusplus
 
 /**
- * Return a `ct_chessboard_params_t` populated from
- * `DetectorParams::default()`. Exposed as a C symbol so callers don't
- * need to hand-fill 30+ fields.
- * # Safety
- * `out` must be a valid, properly aligned pointer to a writable
- * `ct_chessboard_params_t` storage location. `NULL` is allowed and
- * is a no-op. The caller retains ownership of the storage.
- */
-void ct_chessboard_params_init_default(struct ct_chessboard_params_t *out);
-
-/**
  * Return the shared library version string.
  *
  * The returned pointer is static storage and must not be freed by the caller.
@@ -662,6 +651,17 @@ const char *ct_version_string(void);
  * `out_capacity` bytes. `out_len` must always be a valid writable pointer.
  */
 enum ct_status_t ct_last_error_message(char *out_utf8, size_t out_capacity, size_t *out_len);
+
+/**
+ * Return a `ct_chessboard_params_t` populated from
+ * `DetectorParams::default()`. Exposed as a C symbol so callers don't
+ * need to hand-fill 30+ fields.
+ * # Safety
+ * `out` must be a valid, properly aligned pointer to a writable
+ * `ct_chessboard_params_t` storage location. `NULL` is allowed and
+ * is a no-op. The caller retains ownership of the storage.
+ */
+void ct_chessboard_params_init_default(struct ct_chessboard_params_t *out);
 
 /**
  * Create a chessboard detector handle.
@@ -707,6 +707,35 @@ enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect
                                                struct ct_labeled_corner_t *out_corners,
                                                size_t corners_capacity,
                                                size_t *out_corners_len);
+
+/**
+ * Run end-to-end multi-component chessboard detection on a grayscale image.
+ *
+ * Returns every same-board component the detector recovers, up to
+ * `DetectorParams::max_components`. The `out_corners` buffer receives all
+ * corners from all components concatenated; use `result[i].detection.corners_len`
+ * to slice each component's contribution.
+ *
+ * Both `out_results_len` and `out_all_corners_len` are required and always
+ * receive the required array lengths. Passing `NULL` output arrays with
+ * capacity `0` queries the required lengths without copying data.
+ *
+ * # Safety
+ *
+ * `detector`, `image`, `out_results_len`, and `out_all_corners_len` must be
+ * valid non-null pointers. If `out_results` is non-null it must point to
+ * writable storage for at least `results_capacity` entries. If `out_corners`
+ * is non-null it must point to writable storage for at least
+ * `all_corners_capacity` entries.
+ */
+enum ct_status_t ct_chessboard_detector_detect_all(const struct ct_chessboard_detector_t *detector,
+                                                   const struct ct_gray_image_u8_t *image,
+                                                   struct ct_chessboard_result_t *out_results,
+                                                   size_t results_capacity,
+                                                   size_t *out_results_len,
+                                                   struct ct_labeled_corner_t *out_corners,
+                                                   size_t all_corners_capacity,
+                                                   size_t *out_all_corners_len);
 
 /**
  * Create a ChArUco detector handle.

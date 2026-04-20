@@ -123,10 +123,10 @@ fn default_min_secondary_marker_inliers() -> usize {
 }
 
 fn default_bit_likelihood_slope() -> f32 {
-    // Empirically tuned on the 3536119669 (22×22 DICT_4X4_1000) and
-    // target_0 (68×68 DICT_APRILTAG_36h10, 3× upscaled) private datasets:
-    // κ=36 is the minimum value that clears every frame on both
-    // (120/120 and 6/6 respectively) with zero self-consistency wrong-ids.
+    // Empirically tuned on a 22×22 DICT_4X4_1000 private dataset and a
+    // 68×68 DICT_APRILTAG_36h10 (3× upscaled) private dataset:
+    // κ=36 is the minimum value that clears every frame on both datasets
+    // with zero self-consistency wrong-ids.
     // Smaller κ compresses the per-bit logit and lets runner-up
     // hypotheses nearly tie the top; larger κ does not change outcomes.
     36.0
@@ -198,7 +198,8 @@ fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKi
                 min_abs_det: cfg.min_abs_det,
             })
         }
-        _ => unimplemented!("unknown RefinerKindConfig variant"),
+        // NOTE: update this adapter when new RefinerKindConfig variants are added upstream.
+        _ => unreachable!("unhandled RefinerKindConfig variant — update to_refiner_kind"),
     }
 }
 

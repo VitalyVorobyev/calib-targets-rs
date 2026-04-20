@@ -304,10 +304,11 @@ fn build_marker_board(
             cx_mm: layout.board_origin_mm[0] + (circle.i as f64 + 0.5) * spec.square_size_mm,
             cy_mm: layout.board_origin_mm[1] + (circle.j as f64 + 0.5) * spec.square_size_mm,
             radius_mm,
+            // NOTE: update this adapter when new CirclePolarity variants are added upstream.
             fill: match circle.polarity {
                 CirclePolarity::White => Fill::White,
                 CirclePolarity::Black => Fill::Black,
-                _ => unimplemented!("unknown CirclePolarity variant"),
+                _ => unreachable!("unhandled CirclePolarity variant — update render_marker_board"),
             },
         });
     }

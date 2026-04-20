@@ -58,6 +58,16 @@ impl Default for SaddlePointConfig {
 }
 
 /// Detector sampling mode for the ChESS response kernel.
+///
+/// # Adding a variant
+///
+/// `#[non_exhaustive]` forces external matchers to use a `_` arm, so adding
+/// a variant here will not surface as a compile error in downstream crates.
+/// When you add a variant you MUST also update every adapter site in lockstep
+/// (each guarded by the workspace-internal exhaustive match in this crate's
+/// tests below):
+/// - `crates/calib-targets/src/detect.rs::to_detector_mode`
+/// - `crates/calib-targets-wasm/src/convert.rs::to_detector_mode`
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,6 +78,12 @@ pub enum DetectorMode {
 }
 
 /// Descriptor sampling mode for orientation/descriptor extraction.
+///
+/// # Adding a variant
+///
+/// See [`DetectorMode`]. Adapter sites:
+/// - `crates/calib-targets/src/detect.rs::to_descriptor_mode`
+/// - `crates/calib-targets-wasm/src/convert.rs::to_descriptor_mode`
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -79,6 +95,12 @@ pub enum DescriptorMode {
 }
 
 /// Threshold interpretation mode for ChESS corner detection.
+///
+/// # Adding a variant
+///
+/// See [`DetectorMode`]. Adapter sites:
+/// - `crates/calib-targets/src/detect.rs::to_threshold_mode`
+/// - `crates/calib-targets-wasm/src/convert.rs::to_threshold_mode`
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -89,6 +111,12 @@ pub enum ThresholdMode {
 }
 
 /// User-facing refiner method selector for the high-level ChESS config.
+///
+/// # Adding a variant
+///
+/// See [`DetectorMode`]. Adapter sites:
+/// - `crates/calib-targets/src/detect.rs::to_refinement_method`
+/// - `crates/calib-targets-wasm/src/convert.rs::to_refinement_method`
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -100,6 +128,11 @@ pub enum RefinementMethod {
 }
 
 /// Workspace-owned selection of the low-level ChESS subpixel refiner.
+///
+/// # Adding a variant
+///
+/// See [`DetectorMode`]. Adapter sites:
+/// - `crates/calib-targets-charuco/src/detector/params.rs::to_refiner_kind`
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -255,6 +288,12 @@ impl CoarseToFineParams {
 /// This mirrors `chess-corners` 0.6 without making `calib-targets-core`
 /// depend on the detector crate. When enabled, upstream returns corner
 /// positions rescaled back into the original input image frame.
+///
+/// # Adding a variant
+///
+/// See [`DetectorMode`]. Adapter sites:
+/// - `crates/calib-targets/src/detect.rs::to_upscale_config`
+/// - `crates/calib-targets-wasm/src/convert.rs::to_upscale_config`
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -568,5 +607,109 @@ mod tests {
         let json = r#"{"threshold_mode":"relative","threshold_value":0.08}"#;
         let cfg: ChessConfig = serde_json::from_str(json).unwrap();
         assert_eq!(cfg.upscale, UpscaleConfig::disabled());
+    }
+
+    // -----------------------------------------------------------------------
+    // Variant-guard tests for `#[non_exhaustive]` enums consumed by external
+    // adapters.
+    //
+    // Inside the defining crate, `#[non_exhaustive]` does not suppress the
+    // exhaustiveness check, so the matches below WILL fail to compile when a
+    // new variant is added. That compile error is the workspace's stable-Rust
+    // substitute for the unstable `non_exhaustive_omitted_patterns` lint:
+    // when it triggers, update the listed adapter sites in lockstep.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn upscale_mode_variant_guard() {
+        // ADAPTERS:
+        //   crates/calib-targets/src/detect.rs::to_upscale_config
+        //   crates/calib-targets-wasm/src/convert.rs::to_upscale_config
+        for mode in [UpscaleMode::Disabled, UpscaleMode::Fixed] {
+            match mode {
+                UpscaleMode::Disabled => (),
+                UpscaleMode::Fixed => (),
+            }
+        }
+    }
+
+    #[test]
+    fn detector_mode_variant_guard() {
+        // ADAPTERS:
+        //   crates/calib-targets/src/detect.rs::to_detector_mode
+        //   crates/calib-targets-wasm/src/convert.rs::to_detector_mode
+        for mode in [DetectorMode::Canonical, DetectorMode::Broad] {
+            match mode {
+                DetectorMode::Canonical => (),
+                DetectorMode::Broad => (),
+            }
+        }
+    }
+
+    #[test]
+    fn descriptor_mode_variant_guard() {
+        // ADAPTERS:
+        //   crates/calib-targets/src/detect.rs::to_descriptor_mode
+        //   crates/calib-targets-wasm/src/convert.rs::to_descriptor_mode
+        for mode in [
+            DescriptorMode::FollowDetector,
+            DescriptorMode::Canonical,
+            DescriptorMode::Broad,
+        ] {
+            match mode {
+                DescriptorMode::FollowDetector => (),
+                DescriptorMode::Canonical => (),
+                DescriptorMode::Broad => (),
+            }
+        }
+    }
+
+    #[test]
+    fn threshold_mode_variant_guard() {
+        // ADAPTERS:
+        //   crates/calib-targets/src/detect.rs::to_threshold_mode
+        //   crates/calib-targets-wasm/src/convert.rs::to_threshold_mode
+        for mode in [ThresholdMode::Relative, ThresholdMode::Absolute] {
+            match mode {
+                ThresholdMode::Relative => (),
+                ThresholdMode::Absolute => (),
+            }
+        }
+    }
+
+    #[test]
+    fn refinement_method_variant_guard() {
+        // ADAPTERS:
+        //   crates/calib-targets/src/detect.rs::to_refinement_method
+        //   crates/calib-targets-wasm/src/convert.rs::to_refinement_method
+        for method in [
+            RefinementMethod::CenterOfMass,
+            RefinementMethod::Forstner,
+            RefinementMethod::SaddlePoint,
+        ] {
+            match method {
+                RefinementMethod::CenterOfMass => (),
+                RefinementMethod::Forstner => (),
+                RefinementMethod::SaddlePoint => (),
+            }
+        }
+    }
+
+    #[test]
+    fn refiner_kind_config_variant_guard() {
+        // ADAPTER:
+        //   crates/calib-targets-charuco/src/detector/params.rs::to_refiner_kind
+        let configs = [
+            RefinerKindConfig::CenterOfMass(CenterOfMassConfig::default()),
+            RefinerKindConfig::Forstner(ForstnerConfig::default()),
+            RefinerKindConfig::SaddlePoint(SaddlePointConfig::default()),
+        ];
+        for cfg in configs {
+            match cfg {
+                RefinerKindConfig::CenterOfMass(_) => (),
+                RefinerKindConfig::Forstner(_) => (),
+                RefinerKindConfig::SaddlePoint(_) => (),
+            }
+        }
     }
 }

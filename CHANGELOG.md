@@ -8,6 +8,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **`detect_chessboard_all` exposed in Python, WASM, and FFI bindings.**
+  The multi-component chessboard detection helper (returns every same-board
+  component up to `max_components`) is now available in all three bindings,
+  closing the parity gap noted in the Python and WASM READMEs. FFI entry
+  point: `ct_chessboard_detector_detect_all`. Python entry point:
+  `calib_targets.detect_chessboard_all`. WASM entry point:
+  `detect_chessboard_all`.
+
 - **Published CLI for printable-target generation.** The `calib-targets`
   binary now ships with the facade crate behind the default `cli` feature
   (`cargo install calib-targets`) and is mirrored as a Python console
@@ -64,9 +72,9 @@ This project follows [Semantic Versioning](https://semver.org/).
 ## [0.7.0]
 
 Coordinated workspace release that lands the **invariant-first
-chessboard detector rewrite**: 119 / 120 detections with 0 wrong
-`(i, j)` labels on a private regression set of 120 frames with
-non-negligible lens distortion and motion blur. This release breaks
+chessboard detector rewrite** with precision-by-construction on a
+private regression dataset (non-negligible lens distortion and motion
+blur): high detection rate, zero wrong `(i, j)` labels. This release breaks
 the old chessboard API wholesale (rename + flat params shape), hoists
 the pattern-agnostic pieces into `projective-grid` as a first-class
 standalone library, reshapes the C ABI to match, and refreshes every

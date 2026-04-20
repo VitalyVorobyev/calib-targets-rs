@@ -28,8 +28,8 @@ positions.
    `calib_targets::detect::default_chess_config()`.
 3. **Target-specific detector** — see the dedicated chapters:
    - [Chessboard](chessboard.md) — invariant-first detector
-     (119 / 120 detections, 0 wrong labels on the canonical 120-snap
-     regression dataset).
+     precision-by-construction on our private regression dataset
+     (high detection rate, zero wrong labels).
    - [ChArUco](charuco.md) — chessboard detector + ArUco marker
      decoding + alignment.
    - [PuzzleBoard](puzzleboard.md) — chessboard detector + edge-dot

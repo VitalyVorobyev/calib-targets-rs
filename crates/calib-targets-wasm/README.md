@@ -198,8 +198,7 @@ cross-language payload.
   calling any detector.
 - **No threads.** The WASM build is single-threaded; heavy detection on
   4K images may exceed 100 ms per call. Consider Web Workers.
-- **No `detect_chessboard_debug` / `detect_chessboard_all`.** The
-  multi-component and debug-frame helpers are Rust-only.
+- **No `detect_chessboard_debug`.** The debug-frame helper is Rust-only.
 
 [py]: https://pypi.org/project/calib-targets/
 [cli]: https://crates.io/crates/calib-targets

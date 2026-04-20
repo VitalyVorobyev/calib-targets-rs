@@ -13,9 +13,17 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "generate-ffi-header"
+path = "src/bin/generate-ffi-header.rs"
+required-features = ["generate-header"]
+
+[features]
+generate-header = ["dep:cbindgen"]
+
 [dependencies]
 calib-targets = { workspace = true, features = ["image"] }
-cbindgen.workspace = true
+cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
 flate2.workspace = true
 tar.workspace = true

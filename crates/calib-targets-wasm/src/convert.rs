@@ -51,7 +51,8 @@ fn to_upscale_config(cfg: UpscaleConfig) -> chess_corners::UpscaleConfig {
     match cfg.mode {
         UpscaleMode::Disabled => chess_corners::UpscaleConfig::disabled(),
         UpscaleMode::Fixed => chess_corners::UpscaleConfig::fixed(cfg.factor),
-        _ => unimplemented!("unknown UpscaleMode variant"),
+        // NOTE: update this adapter when new UpscaleMode variants are added upstream.
+        _ => unreachable!("unhandled UpscaleMode variant — update to_upscale_config"),
     }
 }
 
@@ -59,7 +60,8 @@ fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {
     match mode {
         DetectorMode::Canonical => chess_corners::DetectorMode::Canonical,
         DetectorMode::Broad => chess_corners::DetectorMode::Broad,
-        _ => unimplemented!("unknown DetectorMode variant"),
+        // NOTE: update this adapter when new DetectorMode variants are added upstream.
+        _ => unreachable!("unhandled DetectorMode variant — update to_detector_mode"),
     }
 }
 
@@ -68,7 +70,8 @@ fn to_descriptor_mode(mode: DescriptorMode) -> chess_corners::DescriptorMode {
         DescriptorMode::FollowDetector => chess_corners::DescriptorMode::FollowDetector,
         DescriptorMode::Canonical => chess_corners::DescriptorMode::Canonical,
         DescriptorMode::Broad => chess_corners::DescriptorMode::Broad,
-        _ => unimplemented!("unknown DescriptorMode variant"),
+        // NOTE: update this adapter when new DescriptorMode variants are added upstream.
+        _ => unreachable!("unhandled DescriptorMode variant — update to_descriptor_mode"),
     }
 }
 
@@ -76,7 +79,8 @@ fn to_threshold_mode(mode: ThresholdMode) -> chess_corners::ThresholdMode {
     match mode {
         ThresholdMode::Relative => chess_corners::ThresholdMode::Relative,
         ThresholdMode::Absolute => chess_corners::ThresholdMode::Absolute,
-        _ => unimplemented!("unknown ThresholdMode variant"),
+        // NOTE: update this adapter when new ThresholdMode variants are added upstream.
+        _ => unreachable!("unhandled ThresholdMode variant — update to_threshold_mode"),
     }
 }
 
@@ -85,7 +89,8 @@ fn to_refinement_method(method: RefinementMethod) -> chess_corners::RefinementMe
         RefinementMethod::CenterOfMass => chess_corners::RefinementMethod::CenterOfMass,
         RefinementMethod::Forstner => chess_corners::RefinementMethod::Forstner,
         RefinementMethod::SaddlePoint => chess_corners::RefinementMethod::SaddlePoint,
-        _ => unimplemented!("unknown RefinementMethod variant"),
+        // NOTE: update this adapter when new RefinementMethod variants are added upstream.
+        _ => unreachable!("unhandled RefinementMethod variant — update to_refinement_method"),
     }
 }
 

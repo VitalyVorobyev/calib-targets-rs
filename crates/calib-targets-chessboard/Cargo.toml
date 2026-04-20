@@ -29,11 +29,11 @@ thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
-approx = "0.5"
+approx.workspace = true
 calib-targets.workspace = true
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
-env_logger = "0.11"
+criterion.workspace = true
+env_logger.workspace = true
 image.workspace = true
 serde_json.workspace = true
 

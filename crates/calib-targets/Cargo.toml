@@ -26,6 +26,7 @@ tracing = [
     "calib-targets-core/tracing",
     "calib-targets-marker/tracing",
     "calib-targets-puzzleboard/tracing",
+    "projective-grid/tracing",
 ]
 
 [dependencies]
@@ -36,6 +37,7 @@ calib-targets-chessboard.workspace = true
 calib-targets-marker.workspace = true
 calib-targets-print.workspace = true
 calib-targets-puzzleboard.workspace = true
+projective-grid.workspace = true
 chess-corners = { workspace = true, optional = true, features = ["rayon", "ml-refiner"] }
 clap = { workspace = true, optional = true, features = ["derive"] }
 nalgebra.workspace = true
@@ -47,7 +49,7 @@ tracing-subscriber = { workspace = true, optional = true, features = ["fmt", "en
 
 [dev-dependencies]
 assert_cmd.workspace = true
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
+criterion.workspace = true
 log.workspace = true
 predicates.workspace = true
 serde = { workspace = true, features = ["derive"] }

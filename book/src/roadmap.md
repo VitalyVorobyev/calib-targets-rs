@@ -5,9 +5,9 @@ Known gaps against the v0.6.0 release.
 ## Shipped in v0.6.0
 
 - **Chessboard detector rewrite.** `calib-targets-chessboard` is the
-  invariant-first rewrite (119 / 120 detected, 0 wrong labels on the
-  private flagship regression dataset of blurred, lens-distorted
-  frames). Types renamed: `ChessboardDetector` / `ChessboardParams` /
+  invariant-first rewrite — precision-by-construction on a private
+  regression dataset of blurred, lens-distorted frames (high detection
+  rate, zero wrong labels). Types renamed: `ChessboardDetector` / `ChessboardParams` /
   `ChessboardDetectionResult` → `Detector` / `DetectorParams` /
   `Detection`.
 - **Grid origin contract.** `Detection.target.corners` is rebased to
