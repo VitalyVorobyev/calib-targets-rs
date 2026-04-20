@@ -1408,19 +1408,22 @@ fn convert_charuco_detector_params(
         )?
     };
 
-    Ok(CharucoParams {
-        px_per_square: require_positive(params.px_per_square, "charuco.px_per_square")?,
-        chessboard: convert_chessboard_params(&params.chessboard)?,
-        board: convert_charuco_board_spec(&params.charuco)?,
-        scan: convert_scan_decode_config(&params.scan)?,
-        max_hamming: u8::try_from(params.max_hamming)
-            .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?,
-        min_marker_inliers: params.min_marker_inliers,
-        min_secondary_marker_inliers: 2,
-        grid_smoothness_threshold_rel,
-        corner_validation_threshold_rel,
-        corner_redetect_params: convert_chess_params(&params.corner_redetect_params)?,
-    })
+    // Start from the defaults (so that future additions to CharucoParams —
+    // such as the board-level matcher knobs — don't break the C ABI) and
+    // overwrite only the fields that the C side exposes today.
+    let board_spec = convert_charuco_board_spec(&params.charuco)?;
+    let mut out = CharucoParams::for_board(&board_spec);
+    out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
+    out.chessboard = convert_chessboard_params(&params.chessboard)?;
+    out.board = board_spec;
+    out.scan = convert_scan_decode_config(&params.scan)?;
+    out.max_hamming = u8::try_from(params.max_hamming)
+        .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?;
+    out.min_marker_inliers = params.min_marker_inliers;
+    out.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
+    out.corner_validation_threshold_rel = corner_validation_threshold_rel;
+    out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
+    Ok(out)
 }
 
 fn convert_marker_circle_spec(

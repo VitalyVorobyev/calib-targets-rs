@@ -13,6 +13,8 @@ keywords = ["calibration", "computer-vision", "charuco", "aruco", "chessboard"]
 categories = ["computer-vision", "science"]
 
 [features]
+default = []
+dataset = ["dep:env_logger"]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
@@ -27,11 +29,17 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 log.workspace = true
+env_logger = { version = "0.11", optional = true }
 
 [dev-dependencies]
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
 tempfile.workspace = true
+calib-targets.workspace = true
+
+[[example]]
+name = "run_dataset"
+required-features = ["dataset"]
 
 [package.metadata.docs.rs]
 all-features = true

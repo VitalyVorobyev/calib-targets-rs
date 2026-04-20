@@ -383,11 +383,13 @@ dependencies = [
 name = "calib-targets-charuco"
 version = "0.7.0"
 dependencies = [
+ "calib-targets",
  "calib-targets-aruco",
  "calib-targets-chessboard",
  "calib-targets-core",
  "chess-corners",
  "chess-corners-core",
+ "env_logger",
  "image",
  "log",
  "nalgebra",

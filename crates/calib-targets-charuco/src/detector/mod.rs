@@ -4,6 +4,7 @@
 //! alignment to a known board definition, and ChArUco corner ID assignment.
 
 mod alignment_select;
+mod board_match;
 mod corner_mapping;
 mod corner_validation;
 mod error;
@@ -14,7 +15,13 @@ mod params;
 mod pipeline;
 mod result;
 
+pub use board_match::{
+    BoardMatchDiagnostics, CellBestMatch, CellDiag, DiagHypothesis, RejectReason,
+};
 pub use error::CharucoDetectError;
 pub use params::CharucoParams;
-pub use pipeline::CharucoDetector;
+pub use pipeline::{
+    CharucoDetectDiagnostics, CharucoDetector, ComponentDiagnostics, ComponentOutcome,
+    MatcherDiagKind,
+};
 pub use result::CharucoDetectionResult;

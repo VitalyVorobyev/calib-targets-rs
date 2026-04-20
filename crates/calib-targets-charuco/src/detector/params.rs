@@ -65,6 +65,41 @@ pub struct CharucoParams {
     /// Not serialised — reconstructed from defaults on deserialisation.
     #[serde(skip)]
     pub corner_redetect_params: ChessCornerParams,
+    /// Replace the per-marker hard-threshold decode + rotation/translation
+    /// vote alignment with a board-level soft-bit log-likelihood matcher
+    /// (see `docs/charuco_concept.md`).
+    ///
+    /// When `true`, the detector computes a per-cell × per-marker-id score
+    /// matrix, enumerates (D4 rotation × integer translation) board
+    /// hypotheses, and picks the one that maximises Σᵢ wᵢ · sᵢ(m_{p_i(H)}).
+    ///
+    /// Default: `false` (legacy rotation + translation vote alignment).
+    /// Opt in by setting this to `true` when decoding difficult targets
+    /// such as small-cell AprilTag boards; the ChArUco regression sweep on
+    /// `privatedata/target_0.png` goes from 0/6 to 3/6 detected frames
+    /// with the board-level matcher, and the flagship dataset improves
+    /// wrong-id count from 3 to 0.
+    #[serde(default = "default_use_board_level_matcher")]
+    pub use_board_level_matcher: bool,
+    /// Logistic slope κ used in the soft-bit log-likelihood when
+    /// [`Self::use_board_level_matcher`] is `true`. Larger = more confident
+    /// per bit; 8–16 is a reasonable range.
+    #[serde(default = "default_bit_likelihood_slope")]
+    pub bit_likelihood_slope: f32,
+    /// Clip floor applied to each per-bit log-likelihood term before
+    /// summing across bits, so a single wildly-wrong bit cannot dominate
+    /// a cell score.
+    #[serde(default = "default_per_bit_floor")]
+    pub per_bit_floor: f32,
+    /// Minimum `(best − runner-up) / |best|` margin required for the
+    /// board-level matcher to accept a hypothesis. Below this, detection
+    /// is rejected rather than mislabelled.
+    #[serde(default = "default_alignment_min_margin")]
+    pub alignment_min_margin: f32,
+    /// Border-black fraction threshold below which a cell's weight is
+    /// attenuated linearly toward 0 in the board-level score.
+    #[serde(default = "default_cell_weight_border_threshold")]
+    pub cell_weight_border_threshold: f32,
 }
 
 fn default_grid_smoothness_threshold_rel() -> f32 {
@@ -85,6 +120,32 @@ fn default_min_marker_inliers() -> usize {
 
 fn default_min_secondary_marker_inliers() -> usize {
     2
+}
+
+fn default_bit_likelihood_slope() -> f32 {
+    // Empirically tuned on the 3536119669 (22×22 DICT_4X4_1000) and
+    // target_0 (68×68 DICT_APRILTAG_36h10, 3× upscaled) private datasets:
+    // κ=36 is the minimum value that clears every frame on both
+    // (120/120 and 6/6 respectively) with zero self-consistency wrong-ids.
+    // Smaller κ compresses the per-bit logit and lets runner-up
+    // hypotheses nearly tie the top; larger κ does not change outcomes.
+    36.0
+}
+
+fn default_per_bit_floor() -> f32 {
+    -6.0
+}
+
+fn default_alignment_min_margin() -> f32 {
+    0.05
+}
+
+fn default_cell_weight_border_threshold() -> f32 {
+    0.5
+}
+
+fn default_use_board_level_matcher() -> bool {
+    false
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -193,6 +254,11 @@ impl CharucoParams {
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
+            use_board_level_matcher: false,
+            bit_likelihood_slope: default_bit_likelihood_slope(),
+            per_bit_floor: default_per_bit_floor(),
+            alignment_min_margin: default_alignment_min_margin(),
+            cell_weight_border_threshold: default_cell_weight_border_threshold(),
         }
     }
 }

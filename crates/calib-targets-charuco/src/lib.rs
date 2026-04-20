@@ -48,8 +48,15 @@ mod validation;
 
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
-pub use detector::{CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams};
-pub use io::{CharucoConfigError, CharucoDetectConfig, CharucoDetectReport, CharucoIoError};
+pub use detector::{
+    BoardMatchDiagnostics, CellBestMatch, CellDiag, CharucoDetectDiagnostics, CharucoDetectError,
+    CharucoDetectionResult, CharucoDetector, CharucoParams, ComponentDiagnostics, ComponentOutcome,
+    DiagHypothesis, MatcherDiagKind, RejectReason,
+};
+pub use io::{
+    load_board_spec_any, resolve_dictionary, BoardSpecLoadError, CharucoConfigError,
+    CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
+};
 pub use validation::{
     validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,
     LinkViolationKind, MarkerCornerLink,
