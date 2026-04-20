@@ -35,7 +35,7 @@ env_logger = { workspace = true, optional = true }
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
 tempfile.workspace = true
-calib-targets.workspace = true
+calib-targets = { path = "../calib-targets" }
 
 [[example]]
 name = "run_dataset"

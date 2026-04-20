@@ -30,7 +30,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx.workspace = true
-calib-targets.workspace = true
+calib-targets = { path = "../calib-targets" }
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 criterion.workspace = true
 env_logger.workspace = true
