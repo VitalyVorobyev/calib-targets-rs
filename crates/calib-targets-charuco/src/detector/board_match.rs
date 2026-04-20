@@ -185,7 +185,14 @@ pub(crate) fn match_board_diag(
         return (None, diag);
     }
 
-    let markers = emit_markers(board, cells, &samples, &matrix, &chosen_align);
+    let markers = emit_markers(
+        board,
+        cells,
+        &samples,
+        &matrix,
+        &chosen_align,
+        cfg.px_per_square,
+    );
     if markers.is_empty() {
         diag.rejection = Some(RejectReason::NoEmittedMarkers);
         return (None, diag);
@@ -552,6 +559,13 @@ fn score_hypothesis(
         total += w * s;
         contributing += 1;
     }
+    // Per-cell scores are log-likelihoods (≤ 0). A hypothesis with no
+    // contributing cells would score 0, beating every real hypothesis with
+    // negative evidence. Treat zero-evidence as invalid so the comparison
+    // loop discards it; diagnostics still observe `contributing == 0`.
+    if contributing == 0 {
+        return (f32::NEG_INFINITY, 0);
+    }
     (total, contributing)
 }
 
@@ -561,6 +575,7 @@ fn emit_markers(
     samples: &[Option<CellSamples>],
     matrix: &ScoreMatrix,
     alignment: &GridAlignment,
+    px_per_square: f32,
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
     for (ci, cell) in cells.iter().enumerate() {
@@ -583,6 +598,14 @@ fn emit_markers(
         let observed_code = rotate_code_u64(base, bits, rot);
         let gc = rotate_gc_top_left(cell.gc, rot);
 
+        // Rectified-pixel cell corners: a `px_per_square × px_per_square`
+        // square anchored at the cell's pre-rotation top-left in the
+        // rectified canvas. Mirrors the legacy decode path
+        // (calib-targets-aruco scan.rs ~line 487) so downstream consumers
+        // (FFI / JSON / overlays) get real geometry instead of a unit
+        // square.
+        let corners_rect = cell_rect_corners_at(cell.gc, px_per_square);
+
         let m = MarkerDetection {
             id: expected_id,
             gc,
@@ -592,7 +615,7 @@ fn emit_markers(
             border_score: samp.border_black_fraction,
             code: observed_code,
             inverted: false,
-            corners_rect: PLACEHOLDER_RECT,
+            corners_rect,
             corners_img: Some(cell.corners_img),
         };
         out.push(m);
@@ -600,12 +623,17 @@ fn emit_markers(
     out
 }
 
-const PLACEHOLDER_RECT: [Point2<f32>; 4] = [
-    Point2::new(0.0, 0.0),
-    Point2::new(1.0, 0.0),
-    Point2::new(1.0, 1.0),
-    Point2::new(0.0, 1.0),
-];
+fn cell_rect_corners_at(gc: GridCoords, px_per_square: f32) -> [Point2<f32>; 4] {
+    let x0 = gc.i as f32 * px_per_square;
+    let y0 = gc.j as f32 * px_per_square;
+    let s = px_per_square;
+    [
+        Point2::new(x0, y0),
+        Point2::new(x0 + s, y0),
+        Point2::new(x0 + s, y0 + s),
+        Point2::new(x0, y0 + s),
+    ]
+}
 
 fn samples_bit_count(s: &CellSamples) -> usize {
     (s.bits_per_side * s.bits_per_side).max(1)
