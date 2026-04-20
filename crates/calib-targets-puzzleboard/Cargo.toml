@@ -13,6 +13,7 @@ keywords = ["calibration", "computer-vision", "puzzleboard", "chessboard", "de-b
 categories = ["computer-vision", "science"]
 
 [features]
+dataset = []
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
@@ -31,9 +32,20 @@ calib-targets = { path = "../calib-targets" }
 calib-targets-core.workspace = true
 calib-targets-print = { path = "../calib-targets-print" }
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
+criterion.workspace = true
+env_logger.workspace = true
 image.workspace = true
+log.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
+
+[[example]]
+name = "run_dataset"
+required-features = ["dataset"]
+
+[[bench]]
+name = "dataset_decode"
+harness = false
 
 [[bin]]
 name = "generate-puzzleboard-code-maps"
