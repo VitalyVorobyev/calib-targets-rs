@@ -69,6 +69,23 @@ This project follows [Semantic Versioning](https://semver.org/).
   the Rust serialiser, so `detect_charuco` returns instead of raising
   `ValueError: CharucoDetectionResult: unknown keys ...`.
 
+## [0.7.1]
+
+Packaging-only follow-up to `0.7.0`. No API or behavior changes.
+
+### Fixed
+
+- **Release workflow.** Broke a dev-dependency cycle between
+  `calib-targets-chessboard` / `calib-targets-charuco` and the
+  `calib-targets` facade that caused `cargo publish --verify` to fail
+  when resolving the not-yet-uploaded facade against crates.io. The
+  dev-deps are now path-only (matching `calib-targets-puzzleboard`'s
+  existing convention). Also added `calib-targets-puzzleboard` to the
+  publish order so `calib-targets-print` can resolve its regular
+  dependency on it, and hardened the retry loop in
+  `.github/workflows/publish-crates.yml` to exit fast on non-transient
+  failures (`failed to select a version`, `already uploaded`).
+
 ## [0.7.0]
 
 Coordinated workspace release that lands the **invariant-first

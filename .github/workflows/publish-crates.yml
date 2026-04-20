@@ -15,6 +15,7 @@ jobs:
         calib-targets-chessboard
         calib-targets-aruco
         calib-targets-charuco
+        calib-targets-puzzleboard
         calib-targets-marker
         calib-targets-print
         calib-targets
@@ -99,10 +100,21 @@ jobs:
 
           publish_with_retry() {
             local pkg="$1"
+            local log
+            log="$(mktemp)"
+            trap 'rm -f "$log"' RETURN
             for attempt in 1 2 3 4 5 6 7 8 9 10; do
               echo "Attempt $attempt: publishing $pkg..."
-              if cargo publish -p "$pkg" --locked; then
+              if cargo publish -p "$pkg" --locked 2>&1 | tee "$log"; then
                 return 0
+              fi
+              if grep -qE 'crate version .* is already uploaded' "$log"; then
+                echo "$pkg: version already uploaded; treating as success."
+                return 0
+              fi
+              if grep -qE 'failed to select a version for' "$log"; then
+                echo "$pkg: non-retryable dep resolution failure; aborting."
+                return 1
               fi
               echo "Publish failed (likely waiting for index). Sleeping 20s..."
               sleep 20
