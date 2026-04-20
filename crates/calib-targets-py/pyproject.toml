@@ -21,6 +21,9 @@ Homepage = "https://vitalyvorobyev.github.io/calib-targets-rs/"
 Source = "https://github.com/VitalyVorobyev/calib-targets-rs"
 Issues = "https://github.com/VitalyVorobyev/calib-targets-rs/issues"
 
+[project.scripts]
+calib-targets = "calib_targets.cli:main"
+
 [tool.maturin]
 bindings = "pyo3"
 module-name = "calib_targets._core"

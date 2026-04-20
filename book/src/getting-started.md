@@ -70,22 +70,26 @@ doc = ct.PrintableTargetDocument(
 ct.write_target_bundle(doc, "my_board/chessboard_a4")
 ```
 
-### CLI (from source)
+### CLI
+
+`cargo install calib-targets` installs the Rust binary;
+`pip install calib-targets` installs the same command as a Python console
+script. One-step generation:
 
 ```bash
-# list available ArUco dictionaries
-cargo run -p calib-targets-cli -- list-dictionaries
+calib-targets gen charuco \
+  --out-stem my_board/charuco_a4 \
+  --rows 5 --cols 7 --square-size-mm 20 \
+  --marker-size-rel 0.75 --dictionary DICT_4X4_50
 
-# initialise a spec, validate, then render
-cargo run -p calib-targets-cli -- init charuco \
+# Or the reviewable three-step flow:
+calib-targets list-dictionaries
+calib-targets init charuco \
   --out my_board/charuco_a4.json \
-  --rows 5 --cols 7 \
-  --square-size-mm 20 \
-  --marker-size-rel 0.75 \
-  --dictionary DICT_4X4_50
-
-cargo run -p calib-targets-cli -- validate --spec my_board/charuco_a4.json
-cargo run -p calib-targets-cli -- generate  --spec my_board/charuco_a4.json \
+  --rows 5 --cols 7 --square-size-mm 20 \
+  --marker-size-rel 0.75 --dictionary DICT_4X4_50
+calib-targets validate --spec my_board/charuco_a4.json
+calib-targets generate --spec my_board/charuco_a4.json \
   --out-stem my_board/charuco_a4
 ```
 

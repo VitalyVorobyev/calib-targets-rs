@@ -59,3 +59,8 @@ pub use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection,
 
 #[cfg(feature = "image")]
 pub mod detect;
+
+pub mod generate;
+
+#[cfg(feature = "cli")]
+pub mod cli;

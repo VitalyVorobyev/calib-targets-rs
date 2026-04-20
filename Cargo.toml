@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "crates/calib-targets-cli",
     "crates/calib-targets-ffi",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
@@ -15,7 +14,6 @@ members = [
     "crates/projective-grid",
 ]
 default-members = [
-    "crates/calib-targets-cli",
     "crates/calib-targets-ffi",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
