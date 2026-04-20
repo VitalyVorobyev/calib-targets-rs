@@ -6,69 +6,6 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Added
-
-- **`detect_chessboard_all` exposed in Python, WASM, and FFI bindings.**
-  The multi-component chessboard detection helper (returns every same-board
-  component up to `max_components`) is now available in all three bindings,
-  closing the parity gap noted in the Python and WASM READMEs. FFI entry
-  point: `ct_chessboard_detector_detect_all`. Python entry point:
-  `calib_targets.detect_chessboard_all`. WASM entry point:
-  `detect_chessboard_all`.
-
-- **Published CLI for printable-target generation.** The `calib-targets`
-  binary now ships with the facade crate behind the default `cli` feature
-  (`cargo install calib-targets`) and is mirrored as a Python console
-  script in `calib-targets-py` via `[project.scripts]`
-  (`pip install calib-targets`). Both CLIs expose the same subcommand
-  taxonomy:
-  - `gen {chessboard,charuco,puzzleboard,marker-board}` — one-step flags
-    → JSON + SVG + PNG bundle, backed by new ergonomic helpers in
-    `calib_targets::generate` (Rust) and `calib_targets.printing`
-    (Python): `chessboard_document`, `charuco_document`,
-    `puzzleboard_document`, `marker_board_document`.
-  - `init {chessboard,charuco,puzzleboard,marker-board}` — write a
-    reviewable spec JSON first; closes the long-standing gap where
-    PuzzleBoard was missing from the CLI init surface.
-  - `generate`, `validate`, `list-dictionaries` — unchanged semantics,
-    now accessible from a `pip`- or `cargo`-installed binary rather than
-    a repo-local crate.
-
-### Changed
-
-- **Retired the `calib-targets-cli` crate.** Its binary (`calib-targets`)
-  moved into the facade crate at `crates/calib-targets/src/cli/`,
-  split across per-subcommand modules (`init`, `gen`, `generate`,
-  `validate`, `dictionaries`, `args`, `error`). Integration tests
-  moved to `crates/calib-targets/tests/cli.rs` and were extended with
-  coverage for every `gen <target>` path and the new PuzzleBoard init
-  flow. End-user command invocations are unchanged.
-
-### Documentation & onboarding
-
-- Rewrote every crate README (repo root, facade, `projective-grid`,
-  `calib-targets-core`, `calib-targets-chessboard`, `calib-targets-aruco`,
-  `calib-targets-charuco`, `calib-targets-puzzleboard`,
-  `calib-targets-marker`, `calib-targets-print`, `calib-targets-py`,
-  `calib-targets-wasm`) for new-user friendliness,
-  with explicit Inputs / Outputs, Configuration, Tuning, and Limitations
-  sections, and crates.io-compatible links into the mdBook.
-- Added a composed target-gallery hero image at
-  `docs/img/target_gallery.png`, generated reproducibly from
-  `scripts/compose_target_gallery.py`.
-- Added per-target-type Python round-trip examples (generate → detect →
-  export JSON) under `crates/calib-targets-py/examples/`:
-  `chessboard_roundtrip.py`, `charuco_roundtrip.py`,
-  `markerboard_roundtrip.py` (the `puzzleboard_roundtrip.py` example
-  already existed).
-
-### Fixed
-
-- Python binding: `CharucoDetectionResult.from_dict` now accepts the
-  `raw_marker_count` / `raw_marker_wrong_id_count` fields emitted by
-  the Rust serialiser, so `detect_charuco` returns instead of raising
-  `ValueError: CharucoDetectionResult: unknown keys ...`.
-
 ## [0.7.1]
 
 Packaging-only follow-up to `0.7.0`. No API or behavior changes.
@@ -141,6 +78,13 @@ bumps in lockstep: every crate publishes at `0.7.0`.
   `ChessboardParams` class keeps its name but its fields now mirror
   the new flat `DetectorParams` (no more nested `graph` /
   `graph_cleanup` / `gap_fill` / `local_homography` sub-structs).
+- **Retired the `calib-targets-cli` crate.** Its binary (`calib-targets`)
+  moved into the facade crate at `crates/calib-targets/src/cli/`,
+  split across per-subcommand modules (`init`, `gen`, `generate`,
+  `validate`, `dictionaries`, `args`, `error`). Integration tests
+  moved to `crates/calib-targets/tests/cli.rs` and were extended with
+  coverage for every `gen <target>` path and the new PuzzleBoard init
+  flow. End-user command invocations are unchanged.
 
 ### Added
 
@@ -177,6 +121,30 @@ bumps in lockstep: every crate publishes at `0.7.0`.
   `book/src/chessboard.md` (folded-in algorithm spec),
   `pipeline.md`, `tuning.md`, `troubleshooting.md`,
   `example_chessboard.md`, `roadmap.md`.
+- **`detect_chessboard_all` exposed in Python, WASM, and FFI bindings.**
+  The multi-component chessboard detection helper (returns every same-board
+  component up to `max_components`) is now available in all three bindings,
+  closing the parity gap noted in the Python and WASM READMEs. FFI entry
+  point: `ct_chessboard_detector_detect_all`. Python entry point:
+  `calib_targets.detect_chessboard_all`. WASM entry point:
+  `detect_chessboard_all`.
+- **Published CLI for printable-target generation.** The `calib-targets`
+  binary now ships with the facade crate behind the default `cli` feature
+  (`cargo install calib-targets`) and is mirrored as a Python console
+  script in `calib-targets-py` via `[project.scripts]`
+  (`pip install calib-targets`). Both CLIs expose the same subcommand
+  taxonomy:
+  - `gen {chessboard,charuco,puzzleboard,marker-board}` — one-step flags
+    → JSON + SVG + PNG bundle, backed by new ergonomic helpers in
+    `calib_targets::generate` (Rust) and `calib_targets.printing`
+    (Python): `chessboard_document`, `charuco_document`,
+    `puzzleboard_document`, `marker_board_document`.
+  - `init {chessboard,charuco,puzzleboard,marker-board}` — write a
+    reviewable spec JSON first; closes the long-standing gap where
+    PuzzleBoard was missing from the CLI init surface.
+  - `generate`, `validate`, `list-dictionaries` — unchanged semantics,
+    now accessible from a `pip`- or `cargo`-installed binary rather than
+    a repo-local crate.
 
 ### Fixed
 
@@ -217,6 +185,10 @@ bumps in lockstep: every crate publishes at `0.7.0`.
   `calib-targets-puzzleboard/tests/end_to_end.rs`
   (`fixed_board_agrees_across_disjoint_partial_views`) now pass and
   are un-ignored.
+- Python binding: `CharucoDetectionResult.from_dict` now accepts the
+  `raw_marker_count` / `raw_marker_wrong_id_count` fields emitted by
+  the Rust serialiser, so `detect_charuco` returns instead of raising
+  `ValueError: CharucoDetectionResult: unknown keys ...`.
 
 ### Infrastructure
 
@@ -229,6 +201,24 @@ bumps in lockstep: every crate publishes at `0.7.0`.
 - Regenerated FFI headers
   (`crates/calib-targets-ffi/include/calib_targets_ffi.h`) match the
   new struct layout.
+
+### Documentation & onboarding
+
+- Rewrote every crate README (repo root, facade, `projective-grid`,
+  `calib-targets-core`, `calib-targets-chessboard`, `calib-targets-aruco`,
+  `calib-targets-charuco`, `calib-targets-puzzleboard`,
+  `calib-targets-marker`, `calib-targets-print`, `calib-targets-py`,
+  `calib-targets-wasm`) for new-user friendliness,
+  with explicit Inputs / Outputs, Configuration, Tuning, and Limitations
+  sections, and crates.io-compatible links into the mdBook.
+- Added a composed target-gallery hero image at
+  `docs/img/target_gallery.png`, generated reproducibly from
+  `scripts/compose_target_gallery.py`.
+- Added per-target-type Python round-trip examples (generate → detect →
+  export JSON) under `crates/calib-targets-py/examples/`:
+  `chessboard_roundtrip.py`, `charuco_roundtrip.py`,
+  `markerboard_roundtrip.py` (the `puzzleboard_roundtrip.py` example
+  already existed).
 
 ## [0.6.0]
 
