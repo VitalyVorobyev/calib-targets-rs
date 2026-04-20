@@ -33,10 +33,11 @@ from matplotlib.patches import Circle
 import calib_targets as ct
 
 
-# Matches demo/src/components/ImageCanvas.tsx
-WHITE_BIT_STROKE = "#38bdf8"  # sky-400
-BLACK_BIT_STROKE = "#f97316"  # orange-500
-GRID_STROKE = (0.25, 0.95, 0.55, 0.35)
+# Matches demo/src/components/ImageCanvas.tsx, but saturated so the overlay
+# survives downscaling to thumbnail sizes (repo README gallery, etc.).
+WHITE_BIT_STROKE = "#22d3ee"  # cyan-400 — for bit=1 (white puzzle dot)
+BLACK_BIT_STROKE = "#f43f5e"  # rose-500 — for bit=0 (black puzzle dot)
+GRID_STROKE = (0.34, 0.91, 0.47, 0.75)  # brighter green mesh
 
 
 def synthesise(rows: int, cols: int, dpi: int) -> tuple[np.ndarray, ct.PuzzleBoardSpec]:
@@ -117,11 +118,12 @@ def draw_overlay(ax, image, result) -> None:
             grid_segments.append((c.position, down.position))
     if grid_segments:
         ax.add_collection(
-            LineCollection(grid_segments, colors=[GRID_STROKE], linewidths=0.8)
+            LineCollection(grid_segments, colors=[GRID_STROKE], linewidths=1.4)
         )
 
     # Edge-bit rings. Radius is 25% of edge length to roughly match the
-    # physical puzzle bump.
+    # physical puzzle bump. Bright saturated colours so the overlay is
+    # readable when the image is downscaled for a README thumbnail.
     white_patches: list[Circle] = []
     black_patches: list[Circle] = []
     white_alpha: list[float] = []
@@ -134,8 +136,17 @@ def draw_overlay(ax, image, result) -> None:
         mid = (0.5 * (x0 + x1), 0.5 * (y0 + y1))
         edge_len = float(np.hypot(x1 - x0, y1 - y0))
         radius = max(3.0, 0.25 * edge_len)
-        alpha = 0.35 + 0.65 * max(0.0, min(1.0, float(edge.confidence)))
-        circ = Circle(mid, radius=radius, fill=False, linewidth=max(1.5, radius * 0.12))
+        alpha = 0.70 + 0.30 * max(0.0, min(1.0, float(edge.confidence)))
+        linewidth = max(2.5, radius * 0.28)
+        color = WHITE_BIT_STROKE if edge.bit == 1 else BLACK_BIT_STROKE
+        circ = Circle(
+            mid,
+            radius=radius,
+            fill=False,
+            linewidth=linewidth,
+            edgecolor=color,
+            facecolor="none",
+        )
         if edge.bit == 1:
             white_patches.append(circ)
             white_alpha.append(alpha)
@@ -144,15 +155,11 @@ def draw_overlay(ax, image, result) -> None:
             black_alpha.append(alpha)
 
     if white_patches:
-        pc = PatchCollection(
-            white_patches, match_original=True, edgecolors=WHITE_BIT_STROKE
-        )
+        pc = PatchCollection(white_patches, match_original=True, zorder=4)
         pc.set_alpha(np.asarray(white_alpha))
         ax.add_collection(pc)
     if black_patches:
-        pc = PatchCollection(
-            black_patches, match_original=True, edgecolors=BLACK_BIT_STROKE
-        )
+        pc = PatchCollection(black_patches, match_original=True, zorder=4)
         pc.set_alpha(np.asarray(black_alpha))
         ax.add_collection(pc)
 

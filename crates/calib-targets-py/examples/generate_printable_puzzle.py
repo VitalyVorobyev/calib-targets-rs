@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import calib_targets as ct
+
+
+def main() -> None:
+    out_stem = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("tmpdata/printable_puzzle")
+    doc = ct.puzzleboard_document(rows=130, cols=130, square_size_mm=1.0)
+    written = ct.write_target_bundle(doc, out_stem)
+    print(written.json_path)
+    print(written.svg_path)
+    print(written.png_path)
+
+
+if __name__ == "__main__":
+    main()

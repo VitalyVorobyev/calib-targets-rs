@@ -1,127 +1,33 @@
 # calib-targets-puzzleboard
 
-![detection overlay on a 10 x 10 PuzzleBoard](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/src/img/puzzleboard_detect_overlay.png)
+![detection overlay on a 10x10 PuzzleBoard](https://raw.githubusercontent.com/VitalyVorobyev/calib-targets-rs/main/book/src/img/puzzleboard_detect_overlay.png)
 
-PuzzleBoard detector for self-identifying chessboard calibration targets.
+Self-identifying chessboard detector. A PuzzleBoard is an ordinary
+checkerboard with a binary dot at every interior edge midpoint; the dots
+encode the board's absolute position inside a 501 × 501 "master" pattern.
+**Any visible fragment of a printed PuzzleBoard yields globally consistent
+`(i, j)` labels and corner IDs** — ideal for multi-camera rigs, partial
+views, and occluded boards, without needing marker-dictionary overhead.
 
-PuzzleBoard, introduced by Stelldinger (2024, arXiv:2409.20127), is a standard
-checkerboard with one binary dot at every interior edge midpoint. The dots make
-small visible board fragments localizable inside a 501 x 501 master pattern, so
-detected chessboard corners receive absolute IDs and target-space coordinates
-even when only a partial board is visible.
+Based on Stelldinger 2024 ([arXiv:2409.20127]). Built on
+[`calib-targets-chessboard`][cb]. Most users call the facade helper
+[`calib_targets::detect::detect_puzzleboard`][facade-detect].
 
-## Geometry
+[arXiv:2409.20127]: https://arxiv.org/abs/2409.20127
+[cb]: https://docs.rs/calib-targets-chessboard
+[facade-detect]: https://docs.rs/calib-targets/latest/calib_targets/detect/fn.detect_puzzleboard.html
 
-`PuzzleBoardSpec` uses square counts:
+Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
-- `rows`, `cols`: printed checkerboard squares.
-- Inner chessboard corners: `(rows - 1) x (cols - 1)`.
-- `cell_size`: physical square size in board units.
-- `origin_row`, `origin_col`: top-left square of this printable sub-rectangle
-  inside the 501 x 501 master pattern.
+## Install
 
-Corner IDs are assigned from master coordinates:
-
-```text
-id = master_j * 501 + master_i
-target_position = (master_i * cell_size, master_j * cell_size)
+```toml
+[dependencies]
+calib-targets-puzzleboard = "0.7"
+calib-targets-core = "0.7"
 ```
 
-## Bit Layout
-
-The target carries two cyclic binary maps:
-
-- map A: `(3, 167)`, sampled on horizontal interior edges.
-- map B: `(167, 3)`, sampled on vertical interior edges.
-
-Dots encode bits directly: white dot = `0`, black dot = `1`.
-
-```text
-corner (i,j) ---- A(j,i) ---- corner (i+1,j)
-     |                            |
-   B(j,i)                      B(j,i+1)
-     |                            |
-corner (i,j+1) -- A(j+1,i) -- corner (i+1,j+1)
-```
-
-The committed maps live in `src/data/map_a.bin` and `src/data/map_b.bin` and
-are loaded with `include_bytes!`. The generator and verifier are kept under
-`tools/` so the detector path performs only lookups.
-
-## Detection
-
-The detector is grid-first:
-
-1. Detect ChESS corners and assemble chessboard components with
-   `calib-targets-chessboard`.
-2. Sample dot bits at visible edge midpoints using local black/white
-   references from neighboring cells.
-3. Filter low-confidence edge bits.
-4. Cross-correlate the observed edge bits against the 501 x 501 master pattern
-   over all D4 grid transforms.
-5. Label inlier corners with absolute master-grid coordinates, IDs, and
-   `target_position`.
-
-The default decode window is 4 x 4 squares. It can be lowered through
-`PuzzleBoardDecodeConfig::min_window`, but 4 x 4 is the conservative default.
-
-## Search Modes
-
-The default `PuzzleBoardSearchMode::Full` scans all 501 x 501 x 8 (D4)
-origins in the master map. When the caller already knows which board
-they printed, `PuzzleBoardSearchMode::FixedBoard` matches observations
-directly against that board's own bit pattern under
-`8 x (rows+1)^2` candidate shifts — cheaper than `Full` for small
-boards and fast enough for the large ones. Any partial view of the
-declared board decodes to the same master IDs a full-view decode would
-produce, so per-frame or per-camera subsets stitch without extra work.
-
-```rust,no_run
-use calib_targets::{
-    detect,
-    puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec},
-};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
-    let mut params = PuzzleBoardParams::for_board(&spec);
-    params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-
-    let img = image::open("camera0.png")?.to_luma8();
-    let _ = detect::detect_puzzleboard(&img, &params)?;
-    Ok(())
-}
-```
-
-`FixedBoard` is a zero-field marker — the geometry (`rows`, `cols`,
-`origin_row`, `origin_col`) comes from the `PuzzleBoardSpec` passed to
-`PuzzleBoardParams::for_board`.
-
-## Quickstart
-
-```rust,no_run
-use calib_targets_core::{Corner, GrayImageView};
-use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
-    let params = PuzzleBoardParams::for_board(&spec);
-    let detector = PuzzleBoardDetector::new(params)?;
-
-    let pixels = vec![0u8; 1024 * 768];
-    let image = GrayImageView {
-        width: 1024,
-        height: 768,
-        data: &pixels,
-    };
-    let corners: Vec<Corner> = Vec::new();
-
-    let _result = detector.detect(&image, &corners)?;
-    Ok(())
-}
-```
-
-Most applications should use the facade crate instead:
+## Quickstart (facade)
 
 ```rust,no_run
 use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec}};
@@ -131,39 +37,120 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
     let params = PuzzleBoardParams::for_board(&spec);
     let result = detect::detect_puzzleboard(&img, &params)?;
-    println!("{} corners", result.detection.corners.len());
+    println!("{} corners with absolute IDs", result.detection.corners.len());
     Ok(())
 }
 ```
 
-## Printable Targets
+## Inputs
 
-Use `calib-targets-print` or the facade re-export to generate matching JSON,
-SVG, and PNG bundles:
+- **Image** — grayscale `&GrayImageView` (or `image::GrayImage` via the
+  facade).
+- **Corners** — ChESS X-junction corners (the facade runs these for you).
+- [`PuzzleBoardSpec`] — board definition: `rows` × `cols` of squares,
+  physical `cell_size`, and the top-left origin inside the master pattern.
+- [`PuzzleBoardParams`] — detector config (see below).
+
+## Outputs
+
+`PuzzleBoardDetectionResult`:
+
+| Field | Meaning |
+|---|---|
+| `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space). |
+| `decode: PuzzleBoardDecodeInfo` | Per-frame decoding diagnostics: `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, D4 transform. |
+| `observed_edges` | Per-edge bit samples with confidence. Consumable by overlay tools. |
+
+Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.
+Fragments printed from different regions share the master ID space, so
+multi-camera detections stitch naturally.
+
+## Configuration
+
+[`PuzzleBoardParams`] is `#[non_exhaustive]`. Use `for_board(spec)` for
+defaults or `sweep_default(spec)` for a 3-config preset.
+
+| Group | Key knobs | Effect |
+|---|---|---|
+| Chessboard stage | `chessboard: DetectorParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
+| Decode | `decode.search_mode`, `decode.min_window` | Matching strategy and minimum visible patch size. |
+
+### Search modes
+
+- [`PuzzleBoardSearchMode::Full`] (default) — cross-correlate the observed
+  edge bits against the **full 501 × 501 master pattern** over all 8 D4
+  transforms. Recovers any printed sub-rectangle without prior knowledge,
+  but scales with master size.
+- [`PuzzleBoardSearchMode::FixedBoard`] — match observations against only
+  the declared board's own bit pattern under its `8 × (rows+1)²` shifts.
+  Cheaper for known small boards and still partial-view correct: any
+  fragment decodes to the same master IDs a full-view decode would
+  produce.
 
 ```rust,no_run
-use calib_targets_print::{
-    write_target_bundle, PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
+# use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec}};
+# fn demo() -> Result<(), Box<dyn std::error::Error>> {
+let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
+let mut params = PuzzleBoardParams::for_board(&spec);
+params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+# Ok(()) }
+```
+
+## Tuning difficult cases
+
+- **Few visible squares** — `min_window` defaults to 4 (decode needs a
+  4×4 square fragment). Lower to 3 only if coverage is guaranteed
+  reliable; anything below 4×4 risks ambiguous fragments.
+- **Low contrast / glare on the dots** — drop `chessboard.chess.
+  threshold_value` so more corners survive; edge-bit sampling is gated on
+  the corners, not a separate threshold.
+- **Motion blur** — use `PuzzleBoardSearchMode::Full` and
+  `PuzzleBoardParams::sweep_default(&spec)` via
+  `detect_puzzleboard_best`; the stronger-contrast config often recovers
+  blurred dots.
+- **Multi-camera sub-fragments** — keep `Full` mode; every camera
+  decodes to the same master coordinates, so downstream calibration gets
+  directly-comparable observations.
+
+## Limitations
+
+- **One PuzzleBoard per image.** Multiple separate boards are not
+  disambiguated.
+- **Minimum visible area** — 4×4 inner-corner fragment by default; smaller
+  fragments are ambiguous under the cyclic edge-map encoding.
+- **No fisheye support.** Moderate radial distortion is handled by the
+  chessboard layer's local invariants.
+- **501×501 master.** Printable sub-rectangles must fit inside the master
+  pattern; the generator enforces this at target-specification time.
+
+## Generate printable targets
+
+Via the facade re-export of `calib-targets-print`:
+
+```rust,no_run
+use calib_targets::printable::{
+    write_target_bundle, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(
+    let doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(
         PuzzleBoardTargetSpec {
-            rows: 12,
-            cols: 12,
-            square_size_mm: 20.0,
-            origin_row: 0,
-            origin_col: 0,
+            rows: 12, cols: 12, square_size_mm: 20.0,
+            origin_row: 0, origin_col: 0,
             dot_diameter_rel: 1.0 / 3.0,
         },
     ));
-    doc.page.size = PageSize::A4;
     write_target_bundle(&doc, "tmpdata/printable/puzzleboard_a4")?;
     Ok(())
 }
 ```
 
-## Links
+Ready-to-use specs live under [`testdata/printable/*.json`](../../testdata/printable).
 
-- Paper: https://arxiv.org/abs/2409.20127
-- Repository: https://github.com/VitalyVorobyev/calib-targets-rs
+## Related
+
+- [Book: PuzzleBoard detector][book-chapter]
+- [Book: printable targets](https://vitalyvorobyev.github.io/calib-targets-rs/printable.html)
+- [Paper: Stelldinger 2024, arXiv:2409.20127][arXiv:2409.20127]
+
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/puzzleboard.html

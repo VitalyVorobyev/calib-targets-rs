@@ -184,6 +184,8 @@ def _sample_charuco_result() -> dict:
             "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
             "translation": [0, 0],
         },
+        "raw_marker_count": 1,
+        "raw_marker_wrong_id_count": 0,
     }
 
 

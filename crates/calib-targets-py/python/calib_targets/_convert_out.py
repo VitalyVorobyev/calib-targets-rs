@@ -607,6 +607,8 @@ def charuco_detection_result_to_dict(value: CharucoDetectionResult) -> dict[str,
         "detection": target_detection_to_dict(value.detection),
         "markers": [marker_detection_to_dict(item) for item in value.markers],
         "alignment": grid_alignment_to_dict(value.alignment),
+        "raw_marker_count": int(value.raw_marker_count),
+        "raw_marker_wrong_id_count": int(value.raw_marker_wrong_id_count),
     }
 
 
@@ -614,7 +616,13 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
     obj = _ensure_mapping(data, "CharucoDetectionResult")
     _validate_keys(
         obj,
-        allowed={"detection", "markers", "alignment"},
+        allowed={
+            "detection",
+            "markers",
+            "alignment",
+            "raw_marker_count",
+            "raw_marker_wrong_id_count",
+        },
         required={"detection", "markers", "alignment"},
         ctx="CharucoDetectionResult",
     )
@@ -623,6 +631,8 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
         detection=target_detection_from_dict(obj["detection"]),
         markers=[marker_detection_from_dict(item) for item in markers],
         alignment=grid_alignment_from_dict(obj["alignment"]),
+        raw_marker_count=int(obj.get("raw_marker_count", 0)),
+        raw_marker_wrong_id_count=int(obj.get("raw_marker_wrong_id_count", 0)),
     )
 
 
