@@ -354,3 +354,189 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
         "no overlapping corners across views — test boxes need adjustment",
     );
 }
+
+/// Image-rotation D4 consistency: render a board, detect on the original
+/// and on the same image rotated 90° CW, and verify every shared physical
+/// corner gets the same `target_position` in both decodes.
+///
+/// This reproduces the failure pattern reported on the 130x130 real dataset,
+/// where snaps in different rotation classes disagree by a pure translation
+/// on `target_position`.
+#[test]
+fn fixed_board_target_position_consistent_under_90cw_image_rotation() {
+    run_image_rotation_test(1, 90);
+}
+
+/// Same contract as `fixed_board_target_position_consistent_under_90cw_image_rotation`
+/// but with `upscale=2` applied before detection — matches the configuration
+/// the 130x130 real dataset uses in `run_dataset.rs`.
+#[test]
+fn fixed_board_target_position_consistent_under_90cw_with_upscale() {
+    run_image_rotation_test(2, 90);
+}
+
+#[test]
+fn fixed_board_target_position_consistent_under_180_with_upscale() {
+    run_image_rotation_test(2, 180);
+}
+
+#[test]
+fn fixed_board_target_position_consistent_under_270_with_upscale() {
+    run_image_rotation_test(2, 270);
+}
+
+fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
+    let spec = PuzzleBoardTargetSpec {
+        rows: 10,
+        cols: 10,
+        square_size_mm: 12.0,
+        origin_row: 0,
+        origin_col: 0,
+        dot_diameter_rel: 1.0 / 3.0,
+    };
+    let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
+    doc.page.size = PageSize::Custom {
+        width_mm: 200.0,
+        height_mm: 200.0,
+    };
+    doc.page.margin_mm = 5.0;
+    doc.render.png_dpi = 300;
+
+    let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
+    let gray_native = render_png_to_gray_image(&bundle.png_bytes);
+    let gray_orig = if upscale == 1 {
+        gray_native.clone()
+    } else {
+        let (w, h) = gray_native.dimensions();
+        image::imageops::resize(
+            &gray_native,
+            w * upscale,
+            h * upscale,
+            image::imageops::FilterType::Triangle,
+        )
+    };
+    let gray_rot = match rotation_deg {
+        90 => image::imageops::rotate90(&gray_orig),
+        180 => image::imageops::rotate180(&gray_orig),
+        270 => image::imageops::rotate270(&gray_orig),
+        _ => panic!("unsupported rotation {rotation_deg}"),
+    };
+
+    let mut cfg = ChessConfig::single_scale();
+    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
+    cfg.threshold_value = 0.15;
+    cfg.nms_radius = 3;
+
+    let board_spec = PuzzleBoardSpec::with_origin(
+        spec.rows,
+        spec.cols,
+        spec.square_size_mm as f32,
+        spec.origin_row,
+        spec.origin_col,
+    )
+    .expect("board");
+    let mut params = PuzzleBoardParams::for_board(&board_spec);
+    params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+    let detector = PuzzleBoardDetector::new(params).expect("detector");
+
+    // Detect on the original image.
+    let descriptors_orig = find_chess_corners_image(&gray_orig, &cfg);
+    let corners_orig: Vec<TargetCorner> = descriptors_orig.iter().map(adapt).collect();
+    let view_orig = GrayImageView {
+        width: gray_orig.width() as usize,
+        height: gray_orig.height() as usize,
+        data: gray_orig.as_raw(),
+    };
+    let res_orig = detector
+        .detect(&view_orig, &corners_orig)
+        .expect("orig decode");
+
+    // Detect on the 90° CW rotated image.
+    let descriptors_rot = find_chess_corners_image(&gray_rot, &cfg);
+    let corners_rot: Vec<TargetCorner> = descriptors_rot.iter().map(adapt).collect();
+    let view_rot = GrayImageView {
+        width: gray_rot.width() as usize,
+        height: gray_rot.height() as usize,
+        data: gray_rot.as_raw(),
+    };
+    let res_rot = detector
+        .detect(&view_rot, &corners_rot)
+        .expect("rotated decode");
+
+    // Map each rotated detection back to original image pixel coords.
+    // - rotate90 (CW):  orig (x, y) → rot (h - 1 - y, x); inverse: (xr, yr) → (yr, h - 1 - xr).
+    // - rotate180:      orig (x, y) → rot (w - 1 - x, h - 1 - y); inverse: (xr, yr) → (w - 1 - xr, h - 1 - yr).
+    // - rotate270 (CCW):orig (x, y) → rot (y, w - 1 - x); inverse: (xr, yr) → (w - 1 - yr, xr).
+    let w_orig = gray_orig.width() as f32;
+    let h_orig = gray_orig.height() as f32;
+    let mut orig_map: std::collections::HashMap<(i32, i32), Point2<f32>> =
+        std::collections::HashMap::new();
+    for lc in &res_orig.detection.corners {
+        // Quantise by 0.5× to tolerate subpixel jitter but still uniquely
+        // key each physical corner.
+        let key = (
+            (lc.position.x * 0.5).round() as i32,
+            (lc.position.y * 0.5).round() as i32,
+        );
+        orig_map.insert(
+            key,
+            lc.target_position.expect("target_position missing on orig"),
+        );
+    }
+
+    let mut checks = 0usize;
+    let mut mismatches: Vec<(Point2<f32>, Point2<f32>, Point2<f32>)> = Vec::new();
+    for lc in &res_rot.detection.corners {
+        let xr = lc.position.x;
+        let yr = lc.position.y;
+        let (x_in_orig, y_in_orig) = match rotation_deg {
+            90 => (yr, h_orig - 1.0 - xr),
+            180 => (w_orig - 1.0 - xr, h_orig - 1.0 - yr),
+            270 => (w_orig - 1.0 - yr, xr),
+            _ => unreachable!(),
+        };
+        let key = (
+            (x_in_orig * 0.5).round() as i32,
+            (y_in_orig * 0.5).round() as i32,
+        );
+        if let Some(target_orig) = orig_map.get(&key) {
+            let target_rot = lc.target_position.expect("target_position missing on rot");
+            checks += 1;
+            if (target_rot.x - target_orig.x).abs() > 1e-3
+                || (target_rot.y - target_orig.y).abs() > 1e-3
+            {
+                mismatches.push((Point2::new(x_in_orig, y_in_orig), target_rot, *target_orig));
+            }
+        }
+    }
+
+    assert!(
+        checks >= 30,
+        "too few shared-corner comparisons ({checks}) — test miscalibrated"
+    );
+    if !mismatches.is_empty() {
+        let (pos, got, expected) = mismatches[0];
+        panic!(
+            "{} / {} shared corners disagree on target_position under {}° image \
+             rotation (upscale={}); first: unrotated pixel=({:.1},{:.1}) \
+             rotated-decoded=({},{}) unrotated-decoded=({},{}); \
+             rot_alignment={:?} rot_origin=({}, {}) orig_alignment={:?} orig_origin=({}, {})",
+            mismatches.len(),
+            checks,
+            rotation_deg,
+            upscale,
+            pos.x,
+            pos.y,
+            got.x,
+            got.y,
+            expected.x,
+            expected.y,
+            res_rot.alignment,
+            res_rot.decode.master_origin_row,
+            res_rot.decode.master_origin_col,
+            res_orig.alignment,
+            res_orig.decode.master_origin_row,
+            res_orig.decode.master_origin_col,
+        );
+    }
+}

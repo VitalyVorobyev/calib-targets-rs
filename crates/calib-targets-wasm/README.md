@@ -102,8 +102,11 @@ import { default_puzzleboard_params, detect_puzzleboard, render_puzzleboard_png 
 const pngBytes = render_puzzleboard_png(10, 10, /*square_mm=*/20.0, /*dpi=*/150);
 
 const params = default_puzzleboard_params(10, 10);
+params.decode.search_mode = { kind: "fixed_board" };
+params.decode.scoring_mode = { kind: "soft_log_likelihood" };
 const result = detect_puzzleboard(width, height, gray, default_chess_config(), params);
 // Every corner has an absolute master ID: result.detection.corners[0].id
+// Soft mode also reports result.decode.score_margin and the runner-up hypothesis.
 ```
 
 ### Marker board
@@ -138,6 +141,10 @@ const result = detect_marker_board(width, height, gray, default_chess_config(), 
 All result types deserialise to plain JS objects matching the Rust
 `serde_json` schema — `JSON.stringify(result)` gives you a canonical,
 cross-language payload.
+
+For PuzzleBoard this includes the selected `decode.scoring_mode`, and in
+soft mode the extra decode diagnostics `score_best`, `score_runner_up`,
+`score_margin`, and runner-up origin / transform.
 
 **`LabeledCorner`** (shared across grid detectors):
 

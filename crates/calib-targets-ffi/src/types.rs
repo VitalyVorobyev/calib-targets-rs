@@ -56,6 +56,16 @@ pub const CT_TARGET_KIND_CHARUCO: ct_target_kind_t = 2;
 pub const CT_TARGET_KIND_CHECKERBOARD_MARKER: ct_target_kind_t = 3;
 pub const CT_TARGET_KIND_PUZZLEBOARD: ct_target_kind_t = 4;
 
+/// Fixed PuzzleBoard search-mode identifier type.
+pub type ct_puzzleboard_search_mode_t = u32;
+pub const CT_PUZZLEBOARD_SEARCH_MODE_FULL: ct_puzzleboard_search_mode_t = 1;
+pub const CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD: ct_puzzleboard_search_mode_t = 2;
+
+/// Fixed PuzzleBoard scoring-mode identifier type.
+pub type ct_puzzleboard_scoring_mode_t = u32;
+pub const CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED: ct_puzzleboard_scoring_mode_t = 1;
+pub const CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD: ct_puzzleboard_scoring_mode_t = 2;
+
 /// Fixed circle polarity identifier type.
 pub type ct_circle_polarity_t = u32;
 pub const CT_CIRCLE_POLARITY_WHITE: ct_circle_polarity_t = 1;
@@ -338,6 +348,12 @@ pub struct ct_puzzleboard_result_t {
     pub bit_error_rate: f32,
     pub master_origin_row: i32,
     pub master_origin_col: i32,
+    pub score_best: ct_optional_f32_t,
+    pub score_runner_up: ct_optional_f32_t,
+    pub score_margin: ct_optional_f32_t,
+    pub scoring_mode: ct_puzzleboard_scoring_mode_t,
+    pub has_runner_up_alignment: u32,
+    pub runner_up_alignment: ct_grid_alignment_t,
     pub observed_edges_len: usize,
 }
 
@@ -603,6 +619,11 @@ pub struct ct_puzzleboard_decode_config_t {
     pub max_bit_error_rate: f32,
     pub search_all_components: u32,
     pub sample_radius_rel: f32,
+    pub search_mode: ct_puzzleboard_search_mode_t,
+    pub scoring_mode: ct_puzzleboard_scoring_mode_t,
+    pub bit_likelihood_slope: f32,
+    pub per_bit_floor: f32,
+    pub alignment_min_margin: f32,
 }
 
 /// PuzzleBoard detector parameters.

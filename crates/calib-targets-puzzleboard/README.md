@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Field | Meaning |
 |---|---|
 | `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space). |
-| `decode: PuzzleBoardDecodeInfo` | Per-frame decoding diagnostics: `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, D4 transform. |
+| `decode: PuzzleBoardDecodeInfo` | Per-frame decoding diagnostics: `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, `scoring_mode`, and in soft mode `score_best`, `score_runner_up`, `score_margin`, plus the runner-up origin / D4 transform. |
 | `observed_edges` | Per-edge bit samples with confidence. Consumable by overlay tools. |
 
 Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.
@@ -68,12 +68,12 @@ multi-camera detections stitch naturally.
 ## Configuration
 
 [`PuzzleBoardParams`] is `#[non_exhaustive]`. Use `for_board(spec)` for
-defaults or `sweep_default(spec)` for a 3-config preset.
+defaults or `sweep_for_board(spec)` for a 3-config preset.
 
 | Group | Key knobs | Effect |
 |---|---|---|
 | Chessboard stage | `chessboard: DetectorParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
-| Decode | `decode.search_mode`, `decode.min_window` | Matching strategy and minimum visible patch size. |
+| Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, and minimum visible patch size. |
 
 ### Search modes
 
@@ -87,12 +87,22 @@ defaults or `sweep_default(spec)` for a 3-config preset.
   fragment decodes to the same master IDs a full-view decode would
   produce.
 
+### Scoring modes
+
+- [`PuzzleBoardScoringMode::SoftLogLikelihood`] (default) — per-bit
+  log-likelihood with a best-vs-runner-up margin gate. Recommended for
+  real data and multi-view consistency checks.
+- [`PuzzleBoardScoringMode::HardWeighted`] — legacy hard match-count
+  ranking with a confidence-weighted tie-break. Kept for diagnostics and
+  backward-compatibility.
+
 ```rust,no_run
-# use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec}};
+# use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode, PuzzleBoardSpec}};
 # fn demo() -> Result<(), Box<dyn std::error::Error>> {
 let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
 let mut params = PuzzleBoardParams::for_board(&spec);
 params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 # Ok(()) }
 ```
 
@@ -105,12 +115,15 @@ params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
   threshold_value` so more corners survive; edge-bit sampling is gated on
   the corners, not a separate threshold.
 - **Motion blur** — use `PuzzleBoardSearchMode::Full` and
-  `PuzzleBoardParams::sweep_default(&spec)` via
+  `PuzzleBoardParams::sweep_for_board(&spec)` via
   `detect_puzzleboard_best`; the stronger-contrast config often recovers
   blurred dots.
 - **Multi-camera sub-fragments** — keep `Full` mode; every camera
   decodes to the same master coordinates, so downstream calibration gets
-  directly-comparable observations.
+  directly-comparable observations. If you're validating consistency on a
+  known printed board, `FixedBoard + SoftLogLikelihood` is the most
+  informative mode: it preserves partial-view correctness and surfaces
+  `score_margin` when a frame's winner is weak.
 
 ## Limitations
 

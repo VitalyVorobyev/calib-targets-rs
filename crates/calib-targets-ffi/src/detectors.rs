@@ -20,6 +20,7 @@ use super::{
     FfiResult, MarkerBoardDetectCall, MarkerBoardDetector, PreparedGrayImage,
     PuzzleBoardDetectCall, PuzzleBoardDetector,
 };
+use crate::convert::puzzleboard_scoring_mode_to_ffi;
 use crate::error::ffi_status;
 use crate::types::{
     ct_charuco_detector_config_t, ct_charuco_result_t, ct_chessboard_detector_config_t,
@@ -386,6 +387,47 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         bit_error_rate: detection.decode.bit_error_rate,
         master_origin_row: detection.decode.master_origin_row,
         master_origin_col: detection.decode.master_origin_col,
+        score_best: detection
+            .decode
+            .score_best
+            .map(crate::types::ct_optional_f32_t::some)
+            .unwrap_or_default(),
+        score_runner_up: detection
+            .decode
+            .score_runner_up
+            .map(crate::types::ct_optional_f32_t::some)
+            .unwrap_or_default(),
+        score_margin: detection
+            .decode
+            .score_margin
+            .map(crate::types::ct_optional_f32_t::some)
+            .unwrap_or_default(),
+        scoring_mode: detection
+            .decode
+            .scoring_mode
+            .map(puzzleboard_scoring_mode_to_ffi)
+            .unwrap_or_default(),
+        has_runner_up_alignment: if detection.decode.runner_up_origin_row.is_some()
+            && detection.decode.runner_up_origin_col.is_some()
+            && detection.decode.runner_up_transform.is_some()
+        {
+            CT_TRUE
+        } else {
+            CT_FALSE
+        },
+        runner_up_alignment: match (
+            detection.decode.runner_up_transform,
+            detection.decode.runner_up_origin_col,
+            detection.decode.runner_up_origin_row,
+        ) {
+            (Some(transform), Some(origin_col), Some(origin_row)) => {
+                alignment_to_ffi(calib_targets::core::GridAlignment {
+                    transform,
+                    translation: [origin_col, origin_row],
+                })
+            }
+            _ => Default::default(),
+        },
         observed_edges_len: detection.observed_edges.len(),
     };
 

@@ -37,6 +37,7 @@ use calib_targets_chessboard::{DebugFrame, Detector as ChessDetector, DetectorPa
 use calib_targets_core::Corner;
 use calib_targets_puzzleboard::{
     PuzzleBoardDetectError, PuzzleBoardDetectionResult, PuzzleBoardDetector,
+    PuzzleBoardScoringMode, PuzzleBoardSearchMode,
 };
 use calib_targets_puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
 use image::imageops::FilterType;
@@ -56,15 +57,43 @@ struct Args {
     cell_size_mm: f32,
     origin_row: u32,
     origin_col: u32,
+    search_mode: PuzzleBoardSearchMode,
+    scoring_mode: PuzzleBoardScoringMode,
 }
 
 fn usage_and_exit() -> ! {
     eprintln!(
         "usage: run_dataset --dataset <dir> --out <dir> \
          --rows N --cols N --cell-size-mm F \
-         [--upscale N] [--origin-row N] [--origin-col N]"
+         [--upscale N] [--origin-row N] [--origin-col N] \
+         [--search-mode full|fixed-board] \
+         [--scoring-mode hard|soft]"
     );
     std::process::exit(2);
+}
+
+fn parse_search_mode(s: &str) -> PuzzleBoardSearchMode {
+    match s {
+        "full" => PuzzleBoardSearchMode::Full,
+        "fixed-board" | "fixed_board" | "fixedboard" => PuzzleBoardSearchMode::FixedBoard,
+        other => {
+            eprintln!("--search-mode must be 'full' or 'fixed-board' (got '{other}')");
+            std::process::exit(2);
+        }
+    }
+}
+
+fn parse_scoring_mode(s: &str) -> PuzzleBoardScoringMode {
+    match s {
+        "hard" | "hard-weighted" | "hard_weighted" => PuzzleBoardScoringMode::HardWeighted,
+        "soft" | "soft-log-likelihood" | "soft_log_likelihood" => {
+            PuzzleBoardScoringMode::SoftLogLikelihood
+        }
+        other => {
+            eprintln!("--scoring-mode must be 'hard' or 'soft' (got '{other}')");
+            std::process::exit(2);
+        }
+    }
 }
 
 fn parse_args() -> Args {
@@ -76,6 +105,8 @@ fn parse_args() -> Args {
     let mut cell_size_mm: Option<f32> = None;
     let mut origin_row = 0u32;
     let mut origin_col = 0u32;
+    let mut search_mode = PuzzleBoardSearchMode::Full;
+    let mut scoring_mode = PuzzleBoardScoringMode::default();
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -92,6 +123,18 @@ fn parse_args() -> Args {
             "--cell-size-mm" => cell_size_mm = args.next().and_then(|v| v.parse().ok()),
             "--origin-row" => origin_row = args.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--origin-col" => origin_col = args.next().and_then(|v| v.parse().ok()).unwrap_or(0),
+            "--search-mode" => {
+                search_mode = args
+                    .next()
+                    .map(|v| parse_search_mode(&v))
+                    .unwrap_or_else(|| usage_and_exit());
+            }
+            "--scoring-mode" => {
+                scoring_mode = args
+                    .next()
+                    .map(|v| parse_scoring_mode(&v))
+                    .unwrap_or_else(|| usage_and_exit());
+            }
             "-h" | "--help" => usage_and_exit(),
             other => {
                 eprintln!("unknown arg: {other}");
@@ -121,6 +164,8 @@ fn parse_args() -> Args {
         cell_size_mm,
         origin_row,
         origin_col,
+        search_mode,
+        scoring_mode,
     }
 }
 
@@ -141,15 +186,21 @@ fn main() {
         args.origin_col,
     )
     .expect("build puzzleboard spec");
-    let configs = PuzzleBoardParams::sweep_for_board(&spec);
+    let mut configs = PuzzleBoardParams::sweep_for_board(&spec);
+    for cfg in configs.iter_mut() {
+        cfg.decode.search_mode = args.search_mode;
+        cfg.decode.scoring_mode = args.scoring_mode;
+    }
     eprintln!(
-        "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={}",
+        "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={} search_mode={:?} scoring_mode={:?}",
         args.rows,
         args.cols,
         args.cell_size_mm,
         args.origin_row,
         args.origin_col,
-        configs.len()
+        configs.len(),
+        args.search_mode,
+        args.scoring_mode,
     );
 
     let targets = collect_targets(&args.dataset);

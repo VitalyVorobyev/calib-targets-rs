@@ -46,7 +46,7 @@ pub use code_maps::{
 };
 pub use detector::{
     PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError,
-    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardSearchMode,
+    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
 };
 pub use io::{PuzzleBoardDetectConfig, PuzzleBoardDetectReport, PuzzleBoardIoError};
 pub use params::PuzzleBoardParams;

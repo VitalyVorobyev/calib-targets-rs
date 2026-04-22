@@ -346,6 +346,13 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
         "bit_error_rate",
         "master_origin_row",
         "master_origin_col",
+        "score_best",
+        "score_runner_up",
+        "score_margin",
+        "runner_up_origin_row",
+        "runner_up_origin_col",
+        "runner_up_transform",
+        "scoring_mode",
     }
     for edge in raw["observed_edges"]:
         assert set(edge.keys()) == {"row", "col", "orientation", "bit", "confidence"}

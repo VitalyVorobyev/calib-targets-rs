@@ -114,8 +114,11 @@ Runnable: [`examples/markerboard_roundtrip.py`](examples/markerboard_roundtrip.p
 
 ```python
 params = ct.default_puzzleboard_params(rows=10, cols=10)
+params.decode.search_mode = ct.PuzzleBoardSearchMode.fixed_board()
+params.decode.scoring_mode = ct.PuzzleBoardScoringMode.soft_log_likelihood()
 result = ct.detect_puzzleboard(image, params=params)
 # Every corner has an absolute master ID: result.detection.corners[0].id
+# Soft mode also exposes result.decode.score_margin and the runner-up hypothesis.
 ```
 
 Runnable: [`examples/puzzleboard_roundtrip.py`](examples/puzzleboard_roundtrip.py).

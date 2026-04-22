@@ -110,7 +110,12 @@ def test_puzzleboard_params_roundtrip() -> None:
     params = calib_targets.PuzzleBoardParams.for_board(
         calib_targets.PuzzleBoardSpec(rows=12, cols=13, cell_size=2.5, origin_row=4, origin_col=7)
     )
+    params.decode.search_mode = calib_targets.PuzzleBoardSearchMode.fixed_board()
+    params.decode.scoring_mode = calib_targets.PuzzleBoardScoringMode.soft_log_likelihood()
     params.decode.max_bit_error_rate = 0.25
+    params.decode.bit_likelihood_slope = 15.0
+    params.decode.per_bit_floor = -5.0
+    params.decode.alignment_min_margin = 0.05
     serialized = params.to_dict()
     restored = calib_targets.PuzzleBoardParams.from_dict(serialized)
     assert restored.to_dict() == serialized
@@ -254,6 +259,13 @@ def _sample_puzzleboard_result() -> dict:
             "bit_error_rate": 0.0,
             "master_origin_row": 5,
             "master_origin_col": 4,
+            "score_best": 1.8,
+            "score_runner_up": 1.2,
+            "score_margin": 0.25,
+            "runner_up_origin_row": 8,
+            "runner_up_origin_col": 7,
+            "runner_up_transform": {"a": -1, "b": 0, "c": 0, "d": -1},
+            "scoring_mode": {"kind": "soft_log_likelihood"},
         },
         "observed_edges": [
             {

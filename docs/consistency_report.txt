@@ -1,0 +1,24 @@
+Artifacts
+
+  - crates/calib-targets-py/examples/overlay_puzzleboard_board_frame.py — per-target board-frame scatter, colored per camera, with
+    sequential ring-overlap (0-1, 1-2, ..., 5-0) shown as green/red edges and per-snap centroid labels.
+  - crates/calib-targets-py/examples/export_calibration_pairs.py — calibration-ready CSV with optional upscale-back-to-native pixels,
+    plus stdout diagnostics for per-target ring consistency and per-snap pixel cell-size.
+  - crates/calib-targets-puzzleboard/examples/run_dataset.rs — now supports both `--search-mode full|fixed-board` and
+    `--scoring-mode hard|soft`.
+
+What the updated data says
+
+1. The old fixed-board CRT alias problem is gone from the decoder output: `master_origin_row` / `master_origin_col` now report the
+   physical board placement directly.
+2. The large axis-aligned board-frame jumps that previously split one target across 2–4 quadrants are fixed. On the fresh
+   `130x130_puzzle` fixed-board run, `target_00` collapses into one shared board-frame region across all six snaps.
+3. Adjacent-camera shared-ID overlap improved materially:
+   - old fixed-board run: `4530` shared IDs across sequential camera pairs
+   - new fixed-board run: `9400`
+4. Per-target ring-neighbour consistency improved from `1 / 20` targets to `16 / 20`.
+
+Current implication
+
+The remaining failures are no longer consistent with a decoder-frame bug. They are concentrated in weak narrow views with low corner count.
+When two snaps now share a decoded corner ID, they agree on `target_position` exactly.

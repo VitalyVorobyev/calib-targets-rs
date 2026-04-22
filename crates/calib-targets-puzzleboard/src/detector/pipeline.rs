@@ -8,13 +8,18 @@ use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
-use crate::detector::decode::{decode as run_decode, decode_fixed_board};
+use crate::detector::decode::{
+    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, SoftLlConfig,
+};
 use crate::detector::edge_sampling::{
     corner_at_map, local_cell_references, observed_horizontal_edge, observed_vertical_edge,
     sample_edge_bit,
 };
 use crate::detector::error::PuzzleBoardDetectError;
-use crate::detector::params::{ensure_min_edges, required_edges, PuzzleBoardSearchMode};
+use crate::detector::params::{
+    ensure_min_edges, required_edges, PuzzleBoardDecodeConfig, PuzzleBoardScoringMode,
+    PuzzleBoardSearchMode,
+};
 use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetectionResult};
 use crate::params::PuzzleBoardParams;
 
@@ -116,9 +121,24 @@ impl PuzzleBoardDetector {
                     let better = match &best {
                         None => true,
                         Some(b) => {
-                            result.decode.edges_matched > b.decode.edges_matched
-                                || (result.decode.edges_matched == b.decode.edges_matched
-                                    && result.decode.mean_confidence > b.decode.mean_confidence)
+                            match self.params.decode.scoring_mode {
+                                PuzzleBoardScoringMode::SoftLogLikelihood => {
+                                    // Rank by soft-LL score, break ties on
+                                    // hard match count to stay deterministic.
+                                    let cand =
+                                        result.decode.score_best.unwrap_or(f32::NEG_INFINITY);
+                                    let cur = b.decode.score_best.unwrap_or(f32::NEG_INFINITY);
+                                    cand > cur
+                                        || (cand == cur
+                                            && result.decode.edges_matched > b.decode.edges_matched)
+                                }
+                                PuzzleBoardScoringMode::HardWeighted => {
+                                    result.decode.edges_matched > b.decode.edges_matched
+                                        || (result.decode.edges_matched == b.decode.edges_matched
+                                            && result.decode.mean_confidence
+                                                > b.decode.mean_confidence)
+                                }
+                            }
                         }
                     };
                     if better {
@@ -160,16 +180,38 @@ impl PuzzleBoardDetector {
         ensure_min_edges(filtered.len(), min_edges)?;
 
         let max_err = self.params.decode.max_bit_error_rate;
-        let decoded = match self.params.decode.search_mode {
-            PuzzleBoardSearchMode::Full => run_decode(&filtered, max_err),
-            PuzzleBoardSearchMode::FixedBoard => decode_fixed_board(
-                &filtered,
-                self.params.board.origin_row,
-                self.params.board.origin_col,
-                self.params.board.rows,
-                self.params.board.cols,
-                max_err,
-            ),
+        let soft_cfg = soft_cfg_from(&self.params.decode);
+        let decoded = match (
+            self.params.decode.search_mode,
+            self.params.decode.scoring_mode,
+        ) {
+            (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::HardWeighted) => {
+                run_decode(&filtered, max_err)
+            }
+            (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::SoftLogLikelihood) => {
+                decode_soft(&filtered, &soft_cfg, max_err)
+            }
+            (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::HardWeighted) => {
+                decode_fixed_board(
+                    &filtered,
+                    self.params.board.origin_row,
+                    self.params.board.origin_col,
+                    self.params.board.rows,
+                    self.params.board.cols,
+                    max_err,
+                )
+            }
+            (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
+                decode_fixed_board_soft(
+                    &filtered,
+                    self.params.board.origin_row,
+                    self.params.board.origin_col,
+                    self.params.board.rows,
+                    self.params.board.cols,
+                    &soft_cfg,
+                    max_err,
+                )
+            }
         }
         .ok_or(PuzzleBoardDetectError::DecodeFailed)?;
 
@@ -207,6 +249,13 @@ impl PuzzleBoardDetector {
             kind: TargetKind::PuzzleBoard,
             corners: out_corners,
         };
+        let scoring_mode = self.params.decode.scoring_mode;
+        let (score_best, score_margin) = match scoring_mode {
+            PuzzleBoardScoringMode::SoftLogLikelihood => {
+                (Some(decoded.score_best), Some(decoded.score_margin))
+            }
+            PuzzleBoardScoringMode::HardWeighted => (None, None),
+        };
         let decode_info = PuzzleBoardDecodeInfo {
             edges_observed: decoded.edges_observed,
             edges_matched: decoded.edges_matched,
@@ -214,6 +263,13 @@ impl PuzzleBoardDetector {
             bit_error_rate: decoded.bit_error_rate,
             master_origin_row: decoded.master_origin_row,
             master_origin_col: decoded.master_origin_col,
+            score_best,
+            score_runner_up: decoded.score_runner_up,
+            score_margin,
+            runner_up_origin_row: decoded.runner_up_origin_row,
+            runner_up_origin_col: decoded.runner_up_origin_col,
+            runner_up_transform: decoded.runner_up_transform,
+            scoring_mode: Some(scoring_mode),
         };
 
         Ok(PuzzleBoardDetectionResult {
@@ -244,16 +300,20 @@ impl PuzzleBoardDetector {
         // Edge-coordinate convention (matches PStelldinger/PuzzleBoard authors' convention):
         //
         // The rightward horizontal edge between corners `(c, r)` and `(c+1, r)` is
-        // `hbits[r][c]` in the authors' Python code, which maps to master `(pos_row + r, pos_col + c)`.
-        // We record it as local `(r, c)` so the decode formula
-        //   `horizontal_edge_bit(master_origin_row + r, master_origin_col + c)`
-        // correctly recovers the master position when `master_origin = (pos_row, pos_col)`.
+        // anchored at local corner `(c, r)` but looks up the dot in cell
+        // `(r-1, c)`, i.e.
+        //   `horizontal_edge_bit(master_origin_row + r - 1, master_origin_col + c)`.
+        // We therefore record the anchor as local `(r, c)` and let the decoder
+        // apply the `(-1, 0)` lookup offset in the original observation frame
+        // before any D4 transform.
         //
         // The downward vertical edge between corners `(c, r)` and `(c, r+1)` is
-        // `vbits[r][c]` in the authors' Python code, which maps to master `(pos_row + r, pos_col + c)`.
-        // We record it as local `(r, c)` so the decode formula
-        //   `vertical_edge_bit(master_origin_row + r, master_origin_col + c)`
-        // correctly recovers the master position when `master_origin = (pos_row, pos_col)`.
+        // anchored at local corner `(c, r)` but looks up the dot in cell
+        // `(r, c-1)`, i.e.
+        //   `vertical_edge_bit(master_origin_row + r, master_origin_col + c - 1)`.
+        // Again we record the anchor as local `(r, c)` and let the decoder
+        // transform the `(-1, 0)` / `(0, -1)` lookup offsets together with
+        // the edge orientation.
         for (idx, lc) in corners.iter().enumerate() {
             if !inliers.contains(&idx) {
                 continue;
@@ -352,6 +412,16 @@ fn origins_conflict(row_a: i32, col_a: i32, row_b: i32, col_b: i32) -> bool {
     let rb = row_b.rem_euclid(MASTER_ROWS as i32);
     let cb = col_b.rem_euclid(MASTER_COLS as i32);
     (ra, ca) != (rb, cb)
+}
+
+/// Extract the soft-LL knobs from a decode config into the decoder-level
+/// [`SoftLlConfig`] structure.
+fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
+    SoftLlConfig {
+        kappa: cfg.bit_likelihood_slope,
+        per_bit_floor: cfg.per_bit_floor,
+        alignment_min_margin: cfg.alignment_min_margin,
+    }
 }
 
 #[cfg(test)]

@@ -6,6 +6,41 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.2]
+
+PuzzleBoard feature-and-fix release. This version removes the large
+axis-aligned master-alias jumps seen on real multi-camera data, exposes
+the new PuzzleBoard search/scoring surfaces consistently across every
+binding layer, and refreshes the documentation around the supported
+workflow.
+
+### Fixed
+
+- **PuzzleBoard fixed-board origin recovery.** `decode_fixed_board*`
+  now uses the same D4-aware edge-lookup convention as the full search
+  path and reports the physical board placement directly instead of a
+  CRT-selected master alias. This removes the `~350 mm` horizontal /
+  vertical target-position jumps that previously split different camera
+  views of the same target into different board-frame quadrants.
+
+### Added
+
+- **PuzzleBoard scoring modes.** `PuzzleBoardScoringMode` is now part of
+  the public Rust crate surface, with `SoftLogLikelihood` as the default
+  and `HardWeighted` kept as a legacy diagnostic mode.
+- **Richer PuzzleBoard diagnostics.** `PuzzleBoardDecodeInfo` now
+  carries `scoring_mode`, `score_best`, `score_runner_up`,
+  `score_margin`, and the runner-up origin / D4 transform when
+  available.
+- **Binding parity for PuzzleBoard.** Python, WASM, and the repo-local C
+  ABI now all expose the PuzzleBoard search/scoring knobs and decode
+  diagnostics, so `Full` / `FixedBoard` and `HardWeighted` /
+  `SoftLogLikelihood` can be selected consistently across languages.
+- **PuzzleBoard dataset tooling.** The dataset runner accepts
+  `--search-mode full|fixed-board` and `--scoring-mode hard|soft`, and
+  the new regression surface covers D4-invariant fixed-board decoding
+  plus the previously failing `180° + upscale=2` rotation case.
+
 ## [0.7.1]
 
 Packaging-only follow-up to `0.7.0`. No API or behavior changes.

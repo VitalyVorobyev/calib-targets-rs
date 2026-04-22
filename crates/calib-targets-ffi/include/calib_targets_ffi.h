@@ -513,6 +513,16 @@ typedef struct ct_puzzleboard_spec_t {
 } ct_puzzleboard_spec_t;
 
 /**
+ * Fixed PuzzleBoard search-mode identifier type.
+ */
+typedef uint32_t ct_puzzleboard_search_mode_t;
+
+/**
+ * Fixed PuzzleBoard scoring-mode identifier type.
+ */
+typedef uint32_t ct_puzzleboard_scoring_mode_t;
+
+/**
  * PuzzleBoard edge-bit decode parameters.
  */
 typedef struct ct_puzzleboard_decode_config_t {
@@ -521,6 +531,11 @@ typedef struct ct_puzzleboard_decode_config_t {
   float max_bit_error_rate;
   uint32_t search_all_components;
   float sample_radius_rel;
+  ct_puzzleboard_search_mode_t search_mode;
+  ct_puzzleboard_scoring_mode_t scoring_mode;
+  float bit_likelihood_slope;
+  float per_bit_floor;
+  float alignment_min_margin;
 } ct_puzzleboard_decode_config_t;
 
 /**
@@ -554,6 +569,12 @@ typedef struct ct_puzzleboard_result_t {
   float bit_error_rate;
   int32_t master_origin_row;
   int32_t master_origin_col;
+  struct ct_optional_f32_t score_best;
+  struct ct_optional_f32_t score_runner_up;
+  struct ct_optional_f32_t score_margin;
+  ct_puzzleboard_scoring_mode_t scoring_mode;
+  uint32_t has_runner_up_alignment;
+  struct ct_grid_alignment_t runner_up_alignment;
   size_t observed_edges_len;
 } ct_puzzleboard_result_t;
 
@@ -620,6 +641,14 @@ typedef struct ct_puzzleboard_result_t {
 #define CT_TARGET_KIND_CHECKERBOARD_MARKER 3
 
 #define CT_TARGET_KIND_PUZZLEBOARD 4
+
+#define CT_PUZZLEBOARD_SEARCH_MODE_FULL 1
+
+#define CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD 2
+
+#define CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED 1
+
+#define CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD 2
 
 #define CT_CIRCLE_POLARITY_WHITE 1
 

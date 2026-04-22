@@ -20,7 +20,7 @@ stable C ABI. One grid-first algorithmic core; a single
 |---|---|
 | **Chessboard** | Simplest option; no markers needed. |
 | **ChArUco** | Partial views OK, unique corner IDs. |
-| **PuzzleBoard** | Self-identifying chessboard; any visible fragment yields the **same absolute corner IDs** a full-view decode would. Multi-camera rigs, heavy occlusion. |
+| **PuzzleBoard** | Self-identifying chessboard with `Full` / `FixedBoard` search, soft-log-likelihood scoring, and per-frame decode diagnostics. Any visible fragment yields the **same absolute corner IDs** a full-view decode would. Multi-camera rigs, heavy occlusion. |
 | **Marker board** | Checkerboard + circle markers; unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
@@ -43,6 +43,10 @@ Full documentation: [book][book] · [API reference][api] · [getting-started tut
   single visible fragment; ChArUco / marker boards label whatever is
   visible and the facade `detect_*_all` helpers return every connected
   component.
+- **Consistency diagnostics built in.** PuzzleBoard surfaces both the
+  chosen search/scoring mode and soft-decoder confidence diagnostics
+  (`score_margin`, runner-up origin/transform) so downstream tools can
+  distinguish trusted cross-view matches from weak hypotheses.
 - **Multi-config sweeps.** `detect_*_best` tries three built-in presets
   and keeps the best result — no hand-tuning required for the common
   failure cases.

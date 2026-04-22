@@ -587,6 +587,11 @@ mod tests {
                     max_bit_error_rate: 0.3,
                     search_all_components: CT_TRUE,
                     sample_radius_rel: 1.0 / 6.0,
+                    search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FULL,
+                    scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
+                    bit_likelihood_slope: 12.0,
+                    per_bit_floor: -6.0,
+                    alignment_min_margin: 0.02,
                 },
                 corner_redetect_params: ct_chess_params_t {
                     use_radius10: CT_FALSE,
@@ -961,6 +966,12 @@ mod tests {
         assert!(corners_len > 0);
         assert!(result.edges_observed > 0);
         assert!(result.mean_bit_confidence > 0.0);
+        assert_eq!(
+            result.scoring_mode,
+            CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD
+        );
+        assert_eq!(result.score_best.has_value, CT_TRUE);
+        assert_eq!(result.score_margin.has_value, CT_TRUE);
 
         let mut short = vec![ct_labeled_corner_t::default(); corners_len - 1];
         let status = unsafe {
@@ -994,6 +1005,36 @@ mod tests {
         }));
 
         unsafe { ct_puzzleboard_detector_destroy(detector) };
+    }
+
+    #[test]
+    fn puzzleboard_decode_config_converts_new_modes_and_soft_fields() {
+        let converted =
+            convert::convert_puzzleboard_decode_config(&ct_puzzleboard_decode_config_t {
+                min_window: 4,
+                min_bit_confidence: 0.15,
+                max_bit_error_rate: 0.30,
+                search_all_components: CT_TRUE,
+                sample_radius_rel: 1.0 / 6.0,
+                search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
+                scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+                bit_likelihood_slope: 9.0,
+                per_bit_floor: -4.5,
+                alignment_min_margin: 0.0,
+            })
+            .expect("convert puzzleboard decode config");
+
+        assert_eq!(
+            converted.search_mode,
+            calib_targets::puzzleboard::PuzzleBoardSearchMode::FixedBoard
+        );
+        assert_eq!(
+            converted.scoring_mode,
+            calib_targets::puzzleboard::PuzzleBoardScoringMode::HardWeighted
+        );
+        assert_eq!(converted.bit_likelihood_slope, 9.0);
+        assert_eq!(converted.per_bit_floor, -4.5);
+        assert_eq!(converted.alignment_min_margin, 0.0);
     }
 
     #[test]
