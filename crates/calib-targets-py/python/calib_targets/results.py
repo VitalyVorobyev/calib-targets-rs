@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .config import PuzzleBoardScoringMode
 from .enums import CirclePolarity, TargetKind
 
 Point2 = tuple[float, float]
@@ -383,6 +384,13 @@ class PuzzleBoardDecodeInfo:
     bit_error_rate: float
     master_origin_row: int
     master_origin_col: int
+    score_best: float | None = None
+    score_runner_up: float | None = None
+    score_margin: float | None = None
+    runner_up_origin_row: int | None = None
+    runner_up_origin_col: int | None = None
+    runner_up_transform: GridTransform | None = None
+    scoring_mode: PuzzleBoardScoringMode | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzleboard_decode_info_to_dict

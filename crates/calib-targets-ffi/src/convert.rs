@@ -16,8 +16,9 @@ use crate::types::{
     ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t, ct_marker_board_layout_t,
     ct_marker_board_params_t, ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t,
     ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t, ct_puzzleboard_decode_config_t,
-    ct_puzzleboard_params_t, ct_puzzleboard_spec_t, ct_scan_decode_config_t, ct_target_detection_t,
-    ct_target_kind_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
+    ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t,
+    ct_puzzleboard_spec_t, ct_scan_decode_config_t, ct_target_detection_t, ct_target_kind_t,
+    ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
     CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
     CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
     CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
@@ -26,7 +27,9 @@ use crate::types::{
     CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
     CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
     CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
-    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER,
+    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+    CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
+    CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER,
     CT_REFINER_KIND_SADDLE_POINT, CT_TARGET_KIND_CHARUCO, CT_TARGET_KIND_CHECKERBOARD_MARKER,
     CT_TARGET_KIND_CHESSBOARD, CT_TARGET_KIND_PUZZLEBOARD, CT_TRUE, CT_UPSCALE_MODE_DISABLED,
     CT_UPSCALE_MODE_FIXED,
@@ -50,7 +53,8 @@ use calib_targets::marker::{
     MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use calib_targets::puzzleboard::{
-    PuzzleBoardDecodeConfig, PuzzleBoardParams, PuzzleBoardSpec, PuzzleBoardSpecError,
+    PuzzleBoardDecodeConfig, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
+    PuzzleBoardSpec, PuzzleBoardSpecError,
 };
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
@@ -690,7 +694,7 @@ pub(crate) fn convert_puzzleboard_decode_config(
             "puzzleboard.decode.min_window must be >= 3",
         ));
     }
-    Ok(PuzzleBoardDecodeConfig::new(
+    let mut out = PuzzleBoardDecodeConfig::new(
         params.min_window,
         require_fraction(
             params.min_bit_confidence,
@@ -708,7 +712,31 @@ pub(crate) fn convert_puzzleboard_decode_config(
             params.sample_radius_rel,
             "puzzleboard.decode.sample_radius_rel",
         )?,
-    ))
+    );
+    out.search_mode =
+        convert_puzzleboard_search_mode(params.search_mode, "puzzleboard.decode.search_mode")?;
+    out.scoring_mode =
+        convert_puzzleboard_scoring_mode(params.scoring_mode, "puzzleboard.decode.scoring_mode")?;
+    let scoring_mode_omitted = params.scoring_mode == 0;
+    // Keep the Rust defaults seeded by `PuzzleBoardDecodeConfig::new()` when
+    // a legacy C caller leaves newly-added soft-LL fields zeroed.
+    if params.bit_likelihood_slope != 0.0 {
+        out.bit_likelihood_slope = require_positive(
+            params.bit_likelihood_slope,
+            "puzzleboard.decode.bit_likelihood_slope",
+        )?;
+    }
+    if !(scoring_mode_omitted && params.per_bit_floor == 0.0) {
+        out.per_bit_floor =
+            require_finite(params.per_bit_floor, "puzzleboard.decode.per_bit_floor")?;
+    }
+    if !(scoring_mode_omitted && params.alignment_min_margin == 0.0) {
+        out.alignment_min_margin = require_nonnegative(
+            params.alignment_min_margin,
+            "puzzleboard.decode.alignment_min_margin",
+        )?;
+    }
+    Ok(out)
 }
 
 pub(crate) fn convert_puzzleboard_params(
@@ -721,6 +749,46 @@ pub(crate) fn convert_puzzleboard_params(
     out.decode = convert_puzzleboard_decode_config(&params.decode)?;
     out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
     Ok(out)
+}
+
+pub(crate) fn convert_puzzleboard_search_mode(
+    value: ct_puzzleboard_search_mode_t,
+    field: &str,
+) -> FfiResult<PuzzleBoardSearchMode> {
+    match value {
+        0 | CT_PUZZLEBOARD_SEARCH_MODE_FULL => Ok(PuzzleBoardSearchMode::Full),
+        CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD => Ok(PuzzleBoardSearchMode::FixedBoard),
+        other => Err(FfiError::config_error(format!(
+            "{field} must be FULL({CT_PUZZLEBOARD_SEARCH_MODE_FULL}) or FIXED_BOARD({CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD}); got {other}"
+        ))),
+    }
+}
+
+pub(crate) fn convert_puzzleboard_scoring_mode(
+    value: ct_puzzleboard_scoring_mode_t,
+    field: &str,
+) -> FfiResult<PuzzleBoardScoringMode> {
+    match value {
+        0 | CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD => {
+            Ok(PuzzleBoardScoringMode::SoftLogLikelihood)
+        }
+        CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED => Ok(PuzzleBoardScoringMode::HardWeighted),
+        other => Err(FfiError::config_error(format!(
+            "{field} must be HARD_WEIGHTED({CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED}) or SOFT_LOG_LIKELIHOOD({CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD}); got {other}"
+        ))),
+    }
+}
+
+pub(crate) fn puzzleboard_scoring_mode_to_ffi(
+    value: PuzzleBoardScoringMode,
+) -> ct_puzzleboard_scoring_mode_t {
+    match value {
+        PuzzleBoardScoringMode::HardWeighted => CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+        PuzzleBoardScoringMode::SoftLogLikelihood => {
+            CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD
+        }
+        _ => CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
+    }
 }
 
 // ─── Output builders (Rust → ct_*_t) ────────────────────────────────────────

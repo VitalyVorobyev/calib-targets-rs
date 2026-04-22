@@ -1,5 +1,7 @@
 //! End-to-end PuzzleBoard detection pipeline.
 
+use std::cmp::Ordering;
+
 use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
 use calib_targets_core::{
     Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
@@ -8,13 +10,18 @@ use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
-use crate::detector::decode::{decode as run_decode, decode_fixed_board};
+use crate::detector::decode::{
+    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, SoftLlConfig,
+};
 use crate::detector::edge_sampling::{
     corner_at_map, local_cell_references, observed_horizontal_edge, observed_vertical_edge,
     sample_edge_bit,
 };
 use crate::detector::error::PuzzleBoardDetectError;
-use crate::detector::params::{ensure_min_edges, required_edges, PuzzleBoardSearchMode};
+use crate::detector::params::{
+    ensure_min_edges, required_edges, PuzzleBoardDecodeConfig, PuzzleBoardScoringMode,
+    PuzzleBoardSearchMode,
+};
 use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetectionResult};
 use crate::params::PuzzleBoardParams;
 
@@ -72,10 +79,15 @@ impl PuzzleBoardDetector {
     /// # Tie-breaking
     ///
     /// When `params.decode.search_all_components` is `true`, all chessboard
-    /// components are decoded and the one with the highest `edges_matched`
-    /// count (or `mean_confidence` on a tie) is returned, unless two
-    /// successful decodes disagree on the master origin, in which case
-    /// `InconsistentPosition` is returned instead.
+    /// components are decoded and the best-supported component is returned.
+    /// Ranking stays support-first in both scoring modes:
+    /// - higher `edges_matched` wins
+    /// - lower `bit_error_rate` breaks ties
+    /// - soft mode then prefers higher `score_margin` / normalized soft score
+    /// - hard mode then prefers higher `mean_confidence`
+    ///
+    /// If two successful decodes disagree on the master origin,
+    /// [`PuzzleBoardDetectError::InconsistentPosition`] is returned instead.
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
@@ -115,11 +127,11 @@ impl PuzzleBoardDetector {
 
                     let better = match &best {
                         None => true,
-                        Some(b) => {
-                            result.decode.edges_matched > b.decode.edges_matched
-                                || (result.decode.edges_matched == b.decode.edges_matched
-                                    && result.decode.mean_confidence > b.decode.mean_confidence)
-                        }
+                        Some(b) => is_better_component_decode(
+                            self.params.decode.scoring_mode,
+                            &result.decode,
+                            &b.decode,
+                        ),
                     };
                     if better {
                         best = Some(result);
@@ -160,16 +172,38 @@ impl PuzzleBoardDetector {
         ensure_min_edges(filtered.len(), min_edges)?;
 
         let max_err = self.params.decode.max_bit_error_rate;
-        let decoded = match self.params.decode.search_mode {
-            PuzzleBoardSearchMode::Full => run_decode(&filtered, max_err),
-            PuzzleBoardSearchMode::FixedBoard => decode_fixed_board(
-                &filtered,
-                self.params.board.origin_row,
-                self.params.board.origin_col,
-                self.params.board.rows,
-                self.params.board.cols,
-                max_err,
-            ),
+        let soft_cfg = soft_cfg_from(&self.params.decode);
+        let decoded = match (
+            self.params.decode.search_mode,
+            self.params.decode.scoring_mode,
+        ) {
+            (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::HardWeighted) => {
+                run_decode(&filtered, max_err)
+            }
+            (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::SoftLogLikelihood) => {
+                decode_soft(&filtered, &soft_cfg, max_err)
+            }
+            (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::HardWeighted) => {
+                decode_fixed_board(
+                    &filtered,
+                    self.params.board.origin_row,
+                    self.params.board.origin_col,
+                    self.params.board.rows,
+                    self.params.board.cols,
+                    max_err,
+                )
+            }
+            (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
+                decode_fixed_board_soft(
+                    &filtered,
+                    self.params.board.origin_row,
+                    self.params.board.origin_col,
+                    self.params.board.rows,
+                    self.params.board.cols,
+                    &soft_cfg,
+                    max_err,
+                )
+            }
         }
         .ok_or(PuzzleBoardDetectError::DecodeFailed)?;
 
@@ -207,6 +241,13 @@ impl PuzzleBoardDetector {
             kind: TargetKind::PuzzleBoard,
             corners: out_corners,
         };
+        let scoring_mode = self.params.decode.scoring_mode;
+        let (score_best, score_margin) = match scoring_mode {
+            PuzzleBoardScoringMode::SoftLogLikelihood => {
+                (Some(decoded.score_best), Some(decoded.score_margin))
+            }
+            PuzzleBoardScoringMode::HardWeighted => (None, None),
+        };
         let decode_info = PuzzleBoardDecodeInfo {
             edges_observed: decoded.edges_observed,
             edges_matched: decoded.edges_matched,
@@ -214,6 +255,13 @@ impl PuzzleBoardDetector {
             bit_error_rate: decoded.bit_error_rate,
             master_origin_row: decoded.master_origin_row,
             master_origin_col: decoded.master_origin_col,
+            score_best,
+            score_runner_up: decoded.score_runner_up,
+            score_margin,
+            runner_up_origin_row: decoded.runner_up_origin_row,
+            runner_up_origin_col: decoded.runner_up_origin_col,
+            runner_up_transform: decoded.runner_up_transform,
+            scoring_mode: Some(scoring_mode),
         };
 
         Ok(PuzzleBoardDetectionResult {
@@ -244,16 +292,20 @@ impl PuzzleBoardDetector {
         // Edge-coordinate convention (matches PStelldinger/PuzzleBoard authors' convention):
         //
         // The rightward horizontal edge between corners `(c, r)` and `(c+1, r)` is
-        // `hbits[r][c]` in the authors' Python code, which maps to master `(pos_row + r, pos_col + c)`.
-        // We record it as local `(r, c)` so the decode formula
-        //   `horizontal_edge_bit(master_origin_row + r, master_origin_col + c)`
-        // correctly recovers the master position when `master_origin = (pos_row, pos_col)`.
+        // anchored at local corner `(c, r)` but looks up the dot in cell
+        // `(r-1, c)`, i.e.
+        //   `horizontal_edge_bit(master_origin_row + r - 1, master_origin_col + c)`.
+        // We therefore record the anchor as local `(r, c)` and let the decoder
+        // apply the `(-1, 0)` lookup offset in the original observation frame
+        // before any D4 transform.
         //
         // The downward vertical edge between corners `(c, r)` and `(c, r+1)` is
-        // `vbits[r][c]` in the authors' Python code, which maps to master `(pos_row + r, pos_col + c)`.
-        // We record it as local `(r, c)` so the decode formula
-        //   `vertical_edge_bit(master_origin_row + r, master_origin_col + c)`
-        // correctly recovers the master position when `master_origin = (pos_row, pos_col)`.
+        // anchored at local corner `(c, r)` but looks up the dot in cell
+        // `(r, c-1)`, i.e.
+        //   `vertical_edge_bit(master_origin_row + r, master_origin_col + c - 1)`.
+        // Again we record the anchor as local `(r, c)` and let the decoder
+        // transform the `(-1, 0)` / `(0, -1)` lookup offsets together with
+        // the edge orientation.
         for (idx, lc) in corners.iter().enumerate() {
             if !inliers.contains(&idx) {
                 continue;
@@ -354,9 +406,121 @@ fn origins_conflict(row_a: i32, col_a: i32, row_b: i32, col_b: i32) -> bool {
     (ra, ca) != (rb, cb)
 }
 
+fn cmp_higher(candidate: f32, current: f32) -> Option<bool> {
+    match candidate.partial_cmp(&current) {
+        Some(Ordering::Greater) => Some(true),
+        Some(Ordering::Less) => Some(false),
+        _ => None,
+    }
+}
+
+fn cmp_lower(candidate: f32, current: f32) -> Option<bool> {
+    match candidate.partial_cmp(&current) {
+        Some(Ordering::Less) => Some(true),
+        Some(Ordering::Greater) => Some(false),
+        _ => None,
+    }
+}
+
+fn normalized_soft_component_score(decode: &PuzzleBoardDecodeInfo) -> f32 {
+    let edges = decode.edges_observed.max(1) as f32;
+    decode.score_best.unwrap_or(f32::NEG_INFINITY) / edges
+}
+
+fn is_better_component_decode(
+    scoring_mode: PuzzleBoardScoringMode,
+    candidate: &PuzzleBoardDecodeInfo,
+    current: &PuzzleBoardDecodeInfo,
+) -> bool {
+    if candidate.edges_matched != current.edges_matched {
+        return candidate.edges_matched > current.edges_matched;
+    }
+    if let Some(wins) = cmp_lower(candidate.bit_error_rate, current.bit_error_rate) {
+        return wins;
+    }
+    match scoring_mode {
+        PuzzleBoardScoringMode::SoftLogLikelihood => {
+            if let Some(wins) = cmp_higher(
+                candidate.score_margin.unwrap_or(f32::NEG_INFINITY),
+                current.score_margin.unwrap_or(f32::NEG_INFINITY),
+            ) {
+                return wins;
+            }
+            if let Some(wins) = cmp_higher(
+                normalized_soft_component_score(candidate),
+                normalized_soft_component_score(current),
+            ) {
+                return wins;
+            }
+            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+        }
+        PuzzleBoardScoringMode::HardWeighted => {
+            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+        }
+    }
+}
+
+/// Extract the soft-LL knobs from a decode config into the decoder-level
+/// [`SoftLlConfig`] structure.
+fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
+    SoftLlConfig {
+        kappa: cfg.bit_likelihood_slope,
+        per_bit_floor: cfg.per_bit_floor,
+        alignment_min_margin: cfg.alignment_min_margin,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn soft_decode_info(
+        edges_observed: usize,
+        edges_matched: usize,
+        bit_error_rate: f32,
+        mean_confidence: f32,
+        score_best: f32,
+        score_margin: f32,
+    ) -> PuzzleBoardDecodeInfo {
+        PuzzleBoardDecodeInfo {
+            edges_observed,
+            edges_matched,
+            mean_confidence,
+            bit_error_rate,
+            master_origin_row: 0,
+            master_origin_col: 0,
+            score_best: Some(score_best),
+            score_runner_up: Some(score_best - score_margin * edges_observed.max(1) as f32),
+            score_margin: Some(score_margin),
+            runner_up_origin_row: Some(1),
+            runner_up_origin_col: Some(1),
+            runner_up_transform: None,
+            scoring_mode: Some(PuzzleBoardScoringMode::SoftLogLikelihood),
+        }
+    }
+
+    fn hard_decode_info(
+        edges_observed: usize,
+        edges_matched: usize,
+        bit_error_rate: f32,
+        mean_confidence: f32,
+    ) -> PuzzleBoardDecodeInfo {
+        PuzzleBoardDecodeInfo {
+            edges_observed,
+            edges_matched,
+            mean_confidence,
+            bit_error_rate,
+            master_origin_row: 0,
+            master_origin_col: 0,
+            score_best: None,
+            score_runner_up: None,
+            score_margin: None,
+            runner_up_origin_row: None,
+            runner_up_origin_col: None,
+            runner_up_transform: None,
+            scoring_mode: Some(PuzzleBoardScoringMode::HardWeighted),
+        }
+    }
 
     // --- C1 regression: wrap_master / id / target_position consistency -----------
 
@@ -451,5 +615,56 @@ mod tests {
         let m = MASTER_ROWS as i32;
         assert!(!origins_conflict(3, 4, 3 + m, 4));
         assert!(!origins_conflict(3, 4, 3, 4 + m));
+    }
+
+    #[test]
+    fn soft_component_ranking_prefers_support_over_raw_sum_score() {
+        let stronger = soft_decode_info(60, 40, 20.0 / 60.0, 0.82, -8.0, 0.10);
+        let smaller_but_less_negative = soft_decode_info(24, 24, 0.0, 0.91, -2.0, 0.30);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &stronger,
+            &smaller_but_less_negative,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &smaller_but_less_negative,
+            &stronger,
+        ));
+    }
+
+    #[test]
+    fn soft_component_ranking_uses_lower_error_before_raw_score() {
+        let cleaner = soft_decode_info(24, 24, 0.0, 0.80, -3.5, 0.18);
+        let noisier = soft_decode_info(30, 24, 0.2, 0.92, -2.2, 0.35);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &cleaner,
+            &noisier,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &noisier,
+            &cleaner,
+        ));
+    }
+
+    #[test]
+    fn hard_component_ranking_still_breaks_ties_on_mean_confidence() {
+        let stronger = hard_decode_info(24, 20, 4.0 / 24.0, 0.81);
+        let weaker = hard_decode_info(24, 20, 4.0 / 24.0, 0.74);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::HardWeighted,
+            &stronger,
+            &weaker,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::HardWeighted,
+            &weaker,
+            &stronger,
+        ));
     }
 }

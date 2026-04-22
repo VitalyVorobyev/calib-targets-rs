@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Iterable
 
+from .config import PuzzleBoardScoringMode
 from .enums import CirclePolarity, TargetKind
 from .results import (
     CellOffset,
@@ -732,7 +733,7 @@ def observed_edge_from_dict(data: Mapping[str, Any]) -> PuzzleBoardObservedEdge:
 
 
 def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, Any]:
-    return {
+    out = {
         "edges_observed": int(value.edges_observed),
         "edges_matched": int(value.edges_matched),
         "mean_confidence": float(value.mean_confidence),
@@ -740,6 +741,21 @@ def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, A
         "master_origin_row": int(value.master_origin_row),
         "master_origin_col": int(value.master_origin_col),
     }
+    if value.score_best is not None:
+        out["score_best"] = float(value.score_best)
+    if value.score_runner_up is not None:
+        out["score_runner_up"] = float(value.score_runner_up)
+    if value.score_margin is not None:
+        out["score_margin"] = float(value.score_margin)
+    if value.runner_up_origin_row is not None:
+        out["runner_up_origin_row"] = int(value.runner_up_origin_row)
+    if value.runner_up_origin_col is not None:
+        out["runner_up_origin_col"] = int(value.runner_up_origin_col)
+    if value.runner_up_transform is not None:
+        out["runner_up_transform"] = grid_transform_to_dict(value.runner_up_transform)
+    if value.scoring_mode is not None:
+        out["scoring_mode"] = value.scoring_mode.to_dict()
+    return out
 
 
 def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDecodeInfo:
@@ -753,6 +769,13 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
             "bit_error_rate",
             "master_origin_row",
             "master_origin_col",
+            "score_best",
+            "score_runner_up",
+            "score_margin",
+            "runner_up_origin_row",
+            "runner_up_origin_col",
+            "runner_up_transform",
+            "scoring_mode",
         },
         required={
             "edges_observed",
@@ -776,6 +799,54 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
         ),
         master_origin_col=_to_int(
             obj["master_origin_col"], "PuzzleBoardDecodeInfo.master_origin_col"
+        ),
+        score_best=(
+            _to_float(obj["score_best"], "PuzzleBoardDecodeInfo.score_best")
+            if "score_best" in obj
+            else None
+        ),
+        score_runner_up=(
+            _to_float(obj["score_runner_up"], "PuzzleBoardDecodeInfo.score_runner_up")
+            if "score_runner_up" in obj
+            else None
+        ),
+        score_margin=(
+            _to_float(obj["score_margin"], "PuzzleBoardDecodeInfo.score_margin")
+            if "score_margin" in obj
+            else None
+        ),
+        runner_up_origin_row=(
+            _to_int(
+                obj["runner_up_origin_row"],
+                "PuzzleBoardDecodeInfo.runner_up_origin_row",
+            )
+            if "runner_up_origin_row" in obj
+            else None
+        ),
+        runner_up_origin_col=(
+            _to_int(
+                obj["runner_up_origin_col"],
+                "PuzzleBoardDecodeInfo.runner_up_origin_col",
+            )
+            if "runner_up_origin_col" in obj
+            else None
+        ),
+        runner_up_transform=(
+            grid_transform_from_dict(
+                _ensure_mapping(
+                    obj["runner_up_transform"],
+                    "PuzzleBoardDecodeInfo.runner_up_transform",
+                )
+            )
+            if "runner_up_transform" in obj
+            else None
+        ),
+        scoring_mode=(
+            PuzzleBoardScoringMode.from_dict(
+                _ensure_mapping(obj["scoring_mode"], "PuzzleBoardDecodeInfo.scoring_mode")
+            )
+            if "scoring_mode" in obj
+            else None
         ),
     )
 

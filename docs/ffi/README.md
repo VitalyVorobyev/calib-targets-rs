@@ -53,6 +53,17 @@ The native ABI currently exposes:
 - caller-owned result arrays with query/fill patterns instead of heap ownership
   crossing the ABI boundary
 
+PuzzleBoard-specific create-time knobs and result diagnostics are also
+part of the ABI:
+
+- `ct_puzzleboard_decode_config_t.search_mode` selects `FULL` vs
+  `FIXED_BOARD` matching.
+- `ct_puzzleboard_decode_config_t.scoring_mode` selects legacy
+  hard-weighted ranking vs soft log-likelihood ranking.
+- `ct_puzzleboard_result_t` carries the chosen scoring mode plus optional
+  `score_best`, `score_runner_up`, `score_margin`, and runner-up
+  alignment data when the decoder computed them.
+
 ## Download Native Release Archives
 
 Supported tagged releases attach one native archive per platform. Archive names

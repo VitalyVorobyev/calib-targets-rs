@@ -36,6 +36,35 @@ pub enum PuzzleBoardSearchMode {
     FixedBoard,
 }
 
+/// Scoring function used when ranking candidate `(D4, origin)` hypotheses.
+///
+/// - [`PuzzleBoardScoringMode::HardWeighted`] (legacy): rank by
+///   `edges_matched` (hard bit-match count) with confidence-weighted sum as
+///   the tie-break. No margin gate; the highest-match-count hypothesis always
+///   wins.
+/// - [`PuzzleBoardScoringMode::SoftLogLikelihood`] (default): rank by a
+///   summed per-bit `log_sigmoid` of a linear logit proportional to the
+///   per-bit confidence. Rejects the winner if it does not clear a
+///   best-vs-runner-up margin gate. Mirrors the ChArUco board-level
+///   matcher in `calib-targets-charuco/src/detector/board_match.rs`.
+///
+/// Soft scoring is more robust to real-world bit noise and small observation
+/// windows; in particular, on multi-camera captures of the same physical
+/// board it produces per-camera decodes that agree on the same `(D4, origin)`
+/// far more consistently than hard-weighted scoring.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PuzzleBoardScoringMode {
+    /// Hard bit-match count with confidence-weighted tie-break. Kept for
+    /// one or two releases so callers can opt out while the soft scorer is
+    /// evaluated on new datasets.
+    HardWeighted,
+    /// Soft per-bit log-likelihood with margin gate. Default.
+    #[default]
+    SoftLogLikelihood,
+}
+
 /// Tuning parameters for the decoding stage.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,6 +96,28 @@ pub struct PuzzleBoardDecodeConfig {
     /// within the master grid.
     #[serde(default)]
     pub search_mode: PuzzleBoardSearchMode,
+    /// Scoring function used when ranking candidate hypotheses. Defaults
+    /// to [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    #[serde(default)]
+    pub scoring_mode: PuzzleBoardScoringMode,
+    /// Soft-LL logit slope: `logit = bit_likelihood_slope × confidence` at a
+    /// clean match. Higher values produce sharper soft-match/soft-mismatch
+    /// separation. Only used under
+    /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    #[serde(default = "default_bit_likelihood_slope")]
+    pub bit_likelihood_slope: f32,
+    /// Lower bound applied to each per-bit `log_sigmoid` contribution.
+    /// Prevents a single catastrophically wrong bit from dominating the
+    /// hypothesis score. Only used under
+    /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    #[serde(default = "default_per_bit_floor")]
+    pub per_bit_floor: f32,
+    /// Minimum per-observation score gap between the winning hypothesis and
+    /// the runner-up. Detections below this gate are rejected with
+    /// [`crate::detector::error::PuzzleBoardDetectError::DecodeFailed`].
+    /// Only used under [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    #[serde(default = "default_alignment_min_margin")]
+    pub alignment_min_margin: f32,
 }
 
 fn default_min_window() -> u32 {
@@ -84,6 +135,15 @@ fn default_search_all_components() -> bool {
 fn default_sample_radius_rel() -> f32 {
     1.0 / 6.0
 }
+fn default_bit_likelihood_slope() -> f32 {
+    12.0
+}
+fn default_per_bit_floor() -> f32 {
+    -6.0
+}
+fn default_alignment_min_margin() -> f32 {
+    0.02
+}
 
 impl Default for PuzzleBoardDecodeConfig {
     fn default() -> Self {
@@ -94,18 +154,26 @@ impl Default for PuzzleBoardDecodeConfig {
             search_all_components: default_search_all_components(),
             sample_radius_rel: default_sample_radius_rel(),
             search_mode: PuzzleBoardSearchMode::default(),
+            scoring_mode: PuzzleBoardScoringMode::default(),
+            bit_likelihood_slope: default_bit_likelihood_slope(),
+            per_bit_floor: default_per_bit_floor(),
+            alignment_min_margin: default_alignment_min_margin(),
         }
     }
 }
 
 impl PuzzleBoardDecodeConfig {
     /// Construct with explicit values for every field except `search_mode`,
-    /// which defaults to [`PuzzleBoardSearchMode::Full`].
+    /// `scoring_mode`, and the soft-LL knobs, which default to
+    /// [`PuzzleBoardSearchMode::Full`] / [`PuzzleBoardScoringMode::SoftLogLikelihood`]
+    /// and the canonical soft-LL tuning.
     ///
-    /// To use a different search mode, assign the field after construction:
+    /// To use a different search or scoring mode, assign the field after
+    /// construction:
     /// ```ignore
     /// let mut cfg = PuzzleBoardDecodeConfig::new(...);
-    /// cfg.search_mode = PuzzleBoardSearchMode::KnownOrigin { window_radius: 2 };
+    /// cfg.search_mode = PuzzleBoardSearchMode::FixedBoard;
+    /// cfg.scoring_mode = PuzzleBoardScoringMode::HardWeighted;
     /// ```
     pub fn new(
         min_window: u32,
@@ -121,6 +189,10 @@ impl PuzzleBoardDecodeConfig {
             search_all_components,
             sample_radius_rel,
             search_mode: PuzzleBoardSearchMode::default(),
+            scoring_mode: PuzzleBoardScoringMode::default(),
+            bit_likelihood_slope: default_bit_likelihood_slope(),
+            per_bit_floor: default_per_bit_floor(),
+            alignment_min_margin: default_alignment_min_margin(),
         }
     }
 }

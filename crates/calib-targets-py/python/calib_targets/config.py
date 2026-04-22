@@ -764,6 +764,42 @@ class PuzzleBoardSearchMode:
 
 
 @dataclass(slots=True)
+class PuzzleBoardScoringMode:
+    """Strategy for ranking candidate ``(D4, origin)`` hypotheses.
+
+    - ``kind="soft_log_likelihood"`` (the default) — per-bit soft
+      log-likelihood with a best-vs-runner-up margin gate. Recommended for
+      real data and cross-view consistency checks.
+    - ``kind="hard_weighted"`` — legacy hard match-count ranking with a
+      confidence-weighted tie-break.
+    """
+
+    kind: str = "soft_log_likelihood"
+
+    @classmethod
+    def soft_log_likelihood(cls) -> PuzzleBoardScoringMode:
+        return cls(kind="soft_log_likelihood")
+
+    @classmethod
+    def hard_weighted(cls) -> PuzzleBoardScoringMode:
+        return cls(kind="hard_weighted")
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind in ("soft_log_likelihood", "hard_weighted"):
+            return {"kind": self.kind}
+        raise ValueError(f"unknown PuzzleBoardScoringMode kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardScoringMode:
+        kind = str(data.get("kind", "soft_log_likelihood"))
+        if kind == "soft_log_likelihood":
+            return cls.soft_log_likelihood()
+        if kind == "hard_weighted":
+            return cls.hard_weighted()
+        raise ValueError(f"unknown PuzzleBoardScoringMode kind: {kind!r}")
+
+
+@dataclass(slots=True)
 class PuzzleBoardDecodeConfig:
     """PuzzleBoard edge-bit decode parameters."""
 
@@ -773,6 +809,12 @@ class PuzzleBoardDecodeConfig:
     search_all_components: bool = True
     sample_radius_rel: float = 1.0 / 6.0
     search_mode: PuzzleBoardSearchMode = field(default_factory=PuzzleBoardSearchMode.full)
+    scoring_mode: PuzzleBoardScoringMode = field(
+        default_factory=PuzzleBoardScoringMode.soft_log_likelihood
+    )
+    bit_likelihood_slope: float = 12.0
+    per_bit_floor: float = -6.0
+    alignment_min_margin: float = 0.02
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -782,6 +824,10 @@ class PuzzleBoardDecodeConfig:
             "search_all_components": self.search_all_components,
             "sample_radius_rel": self.sample_radius_rel,
             "search_mode": self.search_mode.to_dict(),
+            "scoring_mode": self.scoring_mode.to_dict(),
+            "bit_likelihood_slope": self.bit_likelihood_slope,
+            "per_bit_floor": self.per_bit_floor,
+            "alignment_min_margin": self.alignment_min_margin,
         }
 
     @classmethod
@@ -799,6 +845,16 @@ class PuzzleBoardDecodeConfig:
             sample_radius_rel=float(data.get("sample_radius_rel", d.sample_radius_rel)),
             search_mode=PuzzleBoardSearchMode.from_dict(
                 data.get("search_mode", {"kind": "full"})
+            ),
+            scoring_mode=PuzzleBoardScoringMode.from_dict(
+                data.get("scoring_mode", {"kind": "soft_log_likelihood"})
+            ),
+            bit_likelihood_slope=float(
+                data.get("bit_likelihood_slope", d.bit_likelihood_slope)
+            ),
+            per_bit_floor=float(data.get("per_bit_floor", d.per_bit_floor)),
+            alignment_min_margin=float(
+                data.get("alignment_min_margin", d.alignment_min_margin)
             ),
         )
 
@@ -878,6 +934,7 @@ __all__ = [
     "MarkerBoardParams",
     "PuzzleBoardSpec",
     "PuzzleBoardSearchMode",
+    "PuzzleBoardScoringMode",
     "PuzzleBoardDecodeConfig",
     "DecodeConfig",  # backward-compatible alias
     "PuzzleBoardParams",
