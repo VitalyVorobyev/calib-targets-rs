@@ -1038,6 +1038,62 @@ mod tests {
     }
 
     #[test]
+    fn puzzleboard_decode_config_defaults_omitted_soft_fields_for_legacy_callers() {
+        let converted =
+            convert::convert_puzzleboard_decode_config(&ct_puzzleboard_decode_config_t {
+                min_window: 4,
+                min_bit_confidence: 0.15,
+                max_bit_error_rate: 0.30,
+                search_all_components: CT_TRUE,
+                sample_radius_rel: 1.0 / 6.0,
+                search_mode: 0,
+                scoring_mode: 0,
+                bit_likelihood_slope: 0.0,
+                per_bit_floor: 0.0,
+                alignment_min_margin: 0.0,
+            })
+            .expect("convert zeroed legacy soft fields");
+
+        assert_eq!(
+            converted.search_mode,
+            calib_targets::puzzleboard::PuzzleBoardSearchMode::Full
+        );
+        assert_eq!(
+            converted.scoring_mode,
+            calib_targets::puzzleboard::PuzzleBoardScoringMode::SoftLogLikelihood
+        );
+        assert_eq!(converted.bit_likelihood_slope, 12.0);
+        assert_eq!(converted.per_bit_floor, -6.0);
+        assert_eq!(converted.alignment_min_margin, 0.02);
+    }
+
+    #[test]
+    fn puzzleboard_decode_config_allows_zero_slope_in_hard_mode() {
+        let converted =
+            convert::convert_puzzleboard_decode_config(&ct_puzzleboard_decode_config_t {
+                min_window: 4,
+                min_bit_confidence: 0.15,
+                max_bit_error_rate: 0.30,
+                search_all_components: CT_TRUE,
+                sample_radius_rel: 1.0 / 6.0,
+                search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
+                scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+                bit_likelihood_slope: 0.0,
+                per_bit_floor: 0.0,
+                alignment_min_margin: 0.0,
+            })
+            .expect("convert hard mode with zeroed soft slope");
+
+        assert_eq!(
+            converted.scoring_mode,
+            calib_targets::puzzleboard::PuzzleBoardScoringMode::HardWeighted
+        );
+        assert_eq!(converted.bit_likelihood_slope, 12.0);
+        assert_eq!(converted.per_bit_floor, 0.0);
+        assert_eq!(converted.alignment_min_margin, 0.0);
+    }
+
+    #[test]
     fn detectors_report_not_found_on_blank_image() {
         let blank = image::GrayImage::from_vec(32, 32, vec![0; 32 * 32]).unwrap();
         let descriptor = image_descriptor(&blank);

@@ -1,5 +1,7 @@
 //! End-to-end PuzzleBoard detection pipeline.
 
+use std::cmp::Ordering;
+
 use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
 use calib_targets_core::{
     Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
@@ -77,10 +79,15 @@ impl PuzzleBoardDetector {
     /// # Tie-breaking
     ///
     /// When `params.decode.search_all_components` is `true`, all chessboard
-    /// components are decoded and the one with the highest `edges_matched`
-    /// count (or `mean_confidence` on a tie) is returned, unless two
-    /// successful decodes disagree on the master origin, in which case
-    /// `InconsistentPosition` is returned instead.
+    /// components are decoded and the best-supported component is returned.
+    /// Ranking stays support-first in both scoring modes:
+    /// - higher `edges_matched` wins
+    /// - lower `bit_error_rate` breaks ties
+    /// - soft mode then prefers higher `score_margin` / normalized soft score
+    /// - hard mode then prefers higher `mean_confidence`
+    ///
+    /// If two successful decodes disagree on the master origin,
+    /// [`PuzzleBoardDetectError::InconsistentPosition`] is returned instead.
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
@@ -120,26 +127,11 @@ impl PuzzleBoardDetector {
 
                     let better = match &best {
                         None => true,
-                        Some(b) => {
-                            match self.params.decode.scoring_mode {
-                                PuzzleBoardScoringMode::SoftLogLikelihood => {
-                                    // Rank by soft-LL score, break ties on
-                                    // hard match count to stay deterministic.
-                                    let cand =
-                                        result.decode.score_best.unwrap_or(f32::NEG_INFINITY);
-                                    let cur = b.decode.score_best.unwrap_or(f32::NEG_INFINITY);
-                                    cand > cur
-                                        || (cand == cur
-                                            && result.decode.edges_matched > b.decode.edges_matched)
-                                }
-                                PuzzleBoardScoringMode::HardWeighted => {
-                                    result.decode.edges_matched > b.decode.edges_matched
-                                        || (result.decode.edges_matched == b.decode.edges_matched
-                                            && result.decode.mean_confidence
-                                                > b.decode.mean_confidence)
-                                }
-                            }
-                        }
+                        Some(b) => is_better_component_decode(
+                            self.params.decode.scoring_mode,
+                            &result.decode,
+                            &b.decode,
+                        ),
                     };
                     if better {
                         best = Some(result);
@@ -414,6 +406,60 @@ fn origins_conflict(row_a: i32, col_a: i32, row_b: i32, col_b: i32) -> bool {
     (ra, ca) != (rb, cb)
 }
 
+fn cmp_higher(candidate: f32, current: f32) -> Option<bool> {
+    match candidate.partial_cmp(&current) {
+        Some(Ordering::Greater) => Some(true),
+        Some(Ordering::Less) => Some(false),
+        _ => None,
+    }
+}
+
+fn cmp_lower(candidate: f32, current: f32) -> Option<bool> {
+    match candidate.partial_cmp(&current) {
+        Some(Ordering::Less) => Some(true),
+        Some(Ordering::Greater) => Some(false),
+        _ => None,
+    }
+}
+
+fn normalized_soft_component_score(decode: &PuzzleBoardDecodeInfo) -> f32 {
+    let edges = decode.edges_observed.max(1) as f32;
+    decode.score_best.unwrap_or(f32::NEG_INFINITY) / edges
+}
+
+fn is_better_component_decode(
+    scoring_mode: PuzzleBoardScoringMode,
+    candidate: &PuzzleBoardDecodeInfo,
+    current: &PuzzleBoardDecodeInfo,
+) -> bool {
+    if candidate.edges_matched != current.edges_matched {
+        return candidate.edges_matched > current.edges_matched;
+    }
+    if let Some(wins) = cmp_lower(candidate.bit_error_rate, current.bit_error_rate) {
+        return wins;
+    }
+    match scoring_mode {
+        PuzzleBoardScoringMode::SoftLogLikelihood => {
+            if let Some(wins) = cmp_higher(
+                candidate.score_margin.unwrap_or(f32::NEG_INFINITY),
+                current.score_margin.unwrap_or(f32::NEG_INFINITY),
+            ) {
+                return wins;
+            }
+            if let Some(wins) = cmp_higher(
+                normalized_soft_component_score(candidate),
+                normalized_soft_component_score(current),
+            ) {
+                return wins;
+            }
+            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+        }
+        PuzzleBoardScoringMode::HardWeighted => {
+            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+        }
+    }
+}
+
 /// Extract the soft-LL knobs from a decode config into the decoder-level
 /// [`SoftLlConfig`] structure.
 fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
@@ -427,6 +473,54 @@ fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn soft_decode_info(
+        edges_observed: usize,
+        edges_matched: usize,
+        bit_error_rate: f32,
+        mean_confidence: f32,
+        score_best: f32,
+        score_margin: f32,
+    ) -> PuzzleBoardDecodeInfo {
+        PuzzleBoardDecodeInfo {
+            edges_observed,
+            edges_matched,
+            mean_confidence,
+            bit_error_rate,
+            master_origin_row: 0,
+            master_origin_col: 0,
+            score_best: Some(score_best),
+            score_runner_up: Some(score_best - score_margin * edges_observed.max(1) as f32),
+            score_margin: Some(score_margin),
+            runner_up_origin_row: Some(1),
+            runner_up_origin_col: Some(1),
+            runner_up_transform: None,
+            scoring_mode: Some(PuzzleBoardScoringMode::SoftLogLikelihood),
+        }
+    }
+
+    fn hard_decode_info(
+        edges_observed: usize,
+        edges_matched: usize,
+        bit_error_rate: f32,
+        mean_confidence: f32,
+    ) -> PuzzleBoardDecodeInfo {
+        PuzzleBoardDecodeInfo {
+            edges_observed,
+            edges_matched,
+            mean_confidence,
+            bit_error_rate,
+            master_origin_row: 0,
+            master_origin_col: 0,
+            score_best: None,
+            score_runner_up: None,
+            score_margin: None,
+            runner_up_origin_row: None,
+            runner_up_origin_col: None,
+            runner_up_transform: None,
+            scoring_mode: Some(PuzzleBoardScoringMode::HardWeighted),
+        }
+    }
 
     // --- C1 regression: wrap_master / id / target_position consistency -----------
 
@@ -521,5 +615,56 @@ mod tests {
         let m = MASTER_ROWS as i32;
         assert!(!origins_conflict(3, 4, 3 + m, 4));
         assert!(!origins_conflict(3, 4, 3, 4 + m));
+    }
+
+    #[test]
+    fn soft_component_ranking_prefers_support_over_raw_sum_score() {
+        let stronger = soft_decode_info(60, 40, 20.0 / 60.0, 0.82, -8.0, 0.10);
+        let smaller_but_less_negative = soft_decode_info(24, 24, 0.0, 0.91, -2.0, 0.30);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &stronger,
+            &smaller_but_less_negative,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &smaller_but_less_negative,
+            &stronger,
+        ));
+    }
+
+    #[test]
+    fn soft_component_ranking_uses_lower_error_before_raw_score() {
+        let cleaner = soft_decode_info(24, 24, 0.0, 0.80, -3.5, 0.18);
+        let noisier = soft_decode_info(30, 24, 0.2, 0.92, -2.2, 0.35);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &cleaner,
+            &noisier,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::SoftLogLikelihood,
+            &noisier,
+            &cleaner,
+        ));
+    }
+
+    #[test]
+    fn hard_component_ranking_still_breaks_ties_on_mean_confidence() {
+        let stronger = hard_decode_info(24, 20, 4.0 / 24.0, 0.81);
+        let weaker = hard_decode_info(24, 20, 4.0 / 24.0, 0.74);
+
+        assert!(is_better_component_decode(
+            PuzzleBoardScoringMode::HardWeighted,
+            &stronger,
+            &weaker,
+        ));
+        assert!(!is_better_component_decode(
+            PuzzleBoardScoringMode::HardWeighted,
+            &weaker,
+            &stronger,
+        ));
     }
 }

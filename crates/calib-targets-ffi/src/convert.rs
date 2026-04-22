@@ -717,15 +717,25 @@ pub(crate) fn convert_puzzleboard_decode_config(
         convert_puzzleboard_search_mode(params.search_mode, "puzzleboard.decode.search_mode")?;
     out.scoring_mode =
         convert_puzzleboard_scoring_mode(params.scoring_mode, "puzzleboard.decode.scoring_mode")?;
-    out.bit_likelihood_slope = require_positive(
-        params.bit_likelihood_slope,
-        "puzzleboard.decode.bit_likelihood_slope",
-    )?;
-    out.per_bit_floor = require_finite(params.per_bit_floor, "puzzleboard.decode.per_bit_floor")?;
-    out.alignment_min_margin = require_nonnegative(
-        params.alignment_min_margin,
-        "puzzleboard.decode.alignment_min_margin",
-    )?;
+    let scoring_mode_omitted = params.scoring_mode == 0;
+    // Keep the Rust defaults seeded by `PuzzleBoardDecodeConfig::new()` when
+    // a legacy C caller leaves newly-added soft-LL fields zeroed.
+    if params.bit_likelihood_slope != 0.0 {
+        out.bit_likelihood_slope = require_positive(
+            params.bit_likelihood_slope,
+            "puzzleboard.decode.bit_likelihood_slope",
+        )?;
+    }
+    if !(scoring_mode_omitted && params.per_bit_floor == 0.0) {
+        out.per_bit_floor =
+            require_finite(params.per_bit_floor, "puzzleboard.decode.per_bit_floor")?;
+    }
+    if !(scoring_mode_omitted && params.alignment_min_margin == 0.0) {
+        out.alignment_min_margin = require_nonnegative(
+            params.alignment_min_margin,
+            "puzzleboard.decode.alignment_min_margin",
+        )?;
+    }
     Ok(out)
 }
 
