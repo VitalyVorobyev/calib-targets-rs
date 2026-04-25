@@ -6,13 +6,14 @@
 mod convert;
 mod gray;
 
-use calib_targets_charuco::{CharucoDetector, CharucoParams};
+use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
+use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
 use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
-    render_target_bundle, PageSize, PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec,
-    RenderOptions, TargetSpec,
+    render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
+    PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec, RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::find_chess_corners_u8;
@@ -118,9 +119,203 @@ pub fn default_puzzleboard_params(rows: u32, cols: u32) -> Result<JsValue, JsErr
     to_js(&PuzzleBoardParams::for_board(&spec))
 }
 
+/// Return default `CharucoParams` for the given board geometry.
+///
+/// `rows` / `cols` are **square counts** (not inner-corner counts).
+/// `marker_size_rel` ∈ (0, 1] is the marker side length relative to the
+/// square. `dictionary_name` is one of [`list_aruco_dictionaries`] (e.g.
+/// `"DICT_4X4_50"`).
+#[wasm_bindgen]
+pub fn default_charuco_params(
+    rows: u32,
+    cols: u32,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+) -> Result<JsValue, JsError> {
+    let spec = charuco_board_spec(rows, cols, marker_size_rel, dictionary_name)?;
+    to_js(&CharucoParams::for_board(&spec))
+}
+
+/// List the names of every built-in ArUco / AprilTag dictionary.
+///
+/// The returned strings are valid `dictionary_name` arguments for
+/// [`default_charuco_params`] and [`render_charuco_png`].
+#[wasm_bindgen]
+pub fn list_aruco_dictionaries() -> Result<JsValue, JsError> {
+    to_js(&BUILTIN_DICTIONARY_NAMES)
+}
+
 // ---------------------------------------------------------------------------
-// Synthetic PuzzleBoard generation
+// Multi-config sweep presets
 // ---------------------------------------------------------------------------
+
+/// Return the 3-config chessboard sweep preset (`DetectorParams::sweep_default()`).
+///
+/// Pass the array directly to [`detect_chessboard_best`].
+#[wasm_bindgen]
+pub fn chessboard_sweep_default() -> Result<JsValue, JsError> {
+    to_js(&DetectorParams::sweep_default())
+}
+
+/// Return the ChArUco sweep preset for a given board (`CharucoParams::sweep_for_board(&spec)`).
+///
+/// Pass the array directly to [`detect_charuco_best`].
+#[wasm_bindgen]
+pub fn charuco_sweep_for_board(
+    rows: u32,
+    cols: u32,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+) -> Result<JsValue, JsError> {
+    let spec = charuco_board_spec(rows, cols, marker_size_rel, dictionary_name)?;
+    to_js(&CharucoParams::sweep_for_board(&spec))
+}
+
+/// Return the PuzzleBoard sweep preset for a given board (`PuzzleBoardParams::sweep_for_board(&spec)`).
+///
+/// Pass the array directly to [`detect_puzzleboard_best`].
+#[wasm_bindgen]
+pub fn puzzleboard_sweep_for_board(rows: u32, cols: u32) -> Result<JsValue, JsError> {
+    let spec = PuzzleBoardSpec::new(rows, cols, 1.0).map_err(|e| JsError::new(&e.to_string()))?;
+    to_js(&PuzzleBoardParams::sweep_for_board(&spec))
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic target generation
+// ---------------------------------------------------------------------------
+
+/// Build a `CharucoBoardSpec` from JS-friendly arguments.
+fn charuco_board_spec(
+    rows: u32,
+    cols: u32,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+) -> Result<CharucoBoardSpec, JsError> {
+    let dictionary = builtin_dictionary(dictionary_name).ok_or_else(|| {
+        JsError::new(&format!(
+            "unknown dictionary {:?}; call list_aruco_dictionaries() for valid names",
+            dictionary_name
+        ))
+    })?;
+    Ok(CharucoBoardSpec {
+        rows,
+        cols,
+        cell_size: 1.0,
+        marker_size_rel: marker_size_rel as f32,
+        dictionary,
+        marker_layout: MarkerLayout::default(),
+    })
+}
+
+/// Wrap a target spec in a `PrintableTargetDocument` sized to fit the board
+/// exactly (board extent + 20 mm margin), at `dpi`.
+fn fitted_document(
+    target: TargetSpec,
+    width_mm: f64,
+    height_mm: f64,
+    dpi: u32,
+) -> PrintableTargetDocument {
+    let mut doc = PrintableTargetDocument::new(target);
+    doc.page = PageSpec {
+        size: PageSize::Custom {
+            width_mm: width_mm + 20.0,
+            height_mm: height_mm + 20.0,
+        },
+        margin_mm: 5.0,
+        ..PageSpec::default()
+    };
+    doc.render = RenderOptions {
+        debug_annotations: false,
+        png_dpi: dpi,
+    };
+    doc
+}
+
+/// Synthesise a chessboard target PNG in memory.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts (each ≥ 2). The
+/// printed board has `(inner_cols + 1) × (inner_rows + 1)` squares of side
+/// `square_size_mm`. Returns raw PNG bytes for a tightly-cropped page.
+#[wasm_bindgen]
+pub fn render_chessboard_png(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let target = TargetSpec::Chessboard(ChessboardTargetSpec {
+        inner_rows,
+        inner_cols,
+        square_size_mm,
+    });
+    let w = f64::from(inner_cols + 1) * square_size_mm;
+    let h = f64::from(inner_rows + 1) * square_size_mm;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Synthesise a ChArUco target PNG in memory.
+///
+/// `rows` / `cols` are **square counts** (≥ 2 each). `marker_size_rel` ∈ (0, 1]
+/// sets the marker side length relative to the square; `dictionary_name` is
+/// one of [`list_aruco_dictionaries`] (e.g. `"DICT_4X4_50"`).
+#[wasm_bindgen]
+pub fn render_charuco_png(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let dictionary = builtin_dictionary(dictionary_name).ok_or_else(|| {
+        JsError::new(&format!(
+            "unknown dictionary {:?}; call list_aruco_dictionaries() for valid names",
+            dictionary_name
+        ))
+    })?;
+    let target = TargetSpec::Charuco(CharucoTargetSpec {
+        rows,
+        cols,
+        square_size_mm,
+        marker_size_rel,
+        dictionary,
+        marker_layout: MarkerLayout::default(),
+        border_bits: 1,
+    });
+    let w = f64::from(cols) * square_size_mm;
+    let h = f64::from(rows) * square_size_mm;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Synthesise a marker-board target PNG in memory.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts. The default
+/// 3-circle layout from `MarkerBoardTargetSpec::default_circles` is used; for
+/// custom circle placement, call the Rust facade directly.
+#[wasm_bindgen]
+pub fn render_marker_board_png(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let target = TargetSpec::MarkerBoard(MarkerBoardTargetSpec {
+        inner_rows,
+        inner_cols,
+        square_size_mm,
+        circles: MarkerBoardTargetSpec::default_circles(inner_rows, inner_cols),
+        circle_diameter_rel: 0.5,
+    });
+    let w = f64::from(inner_cols + 1) * square_size_mm;
+    let h = f64::from(inner_rows + 1) * square_size_mm;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
 
 /// Synthesise a PuzzleBoard target PNG in memory.
 ///
@@ -135,28 +330,18 @@ pub fn render_puzzleboard_png(
     square_size_mm: f64,
     dpi: u32,
 ) -> Result<Vec<u8>, JsError> {
-    let target = PuzzleBoardTargetSpec {
+    let target = TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec {
         rows,
         cols,
         square_size_mm,
         origin_row: 0,
         origin_col: 0,
         dot_diameter_rel: 1.0 / 3.0,
-    };
-    let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(target));
-    doc.page = PageSpec {
-        size: PageSize::Custom {
-            width_mm: f64::from(cols) * square_size_mm + 20.0,
-            height_mm: f64::from(rows) * square_size_mm + 20.0,
-        },
-        margin_mm: 5.0,
-        ..PageSpec::default()
-    };
-    doc.render = RenderOptions {
-        debug_annotations: false,
-        png_dpi: dpi,
-    };
-    let bundle = render_target_bundle(&doc).map_err(|e| JsError::new(&e.to_string()))?;
+    });
+    let w = f64::from(cols) * square_size_mm;
+    let h = f64::from(rows) * square_size_mm;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
     Ok(bundle.png_bytes)
 }
 

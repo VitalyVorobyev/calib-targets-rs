@@ -43,6 +43,15 @@ jobs:
       - name: Copy README into pkg
         run: cp crates/calib-targets-wasm/README.md crates/calib-targets-wasm/pkg/README.md
 
+      - name: Append object-shape TypeScript declarations
+        run: |
+          cat crates/calib-targets-wasm/typescript-extras.d.ts \
+            >> crates/calib-targets-wasm/pkg/calib_targets_wasm.d.ts
+
+      - name: Set scoped npm package name
+        working-directory: crates/calib-targets-wasm/pkg
+        run: npm pkg set name=@vitavision/calib-targets
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

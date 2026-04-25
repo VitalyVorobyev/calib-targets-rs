@@ -100,7 +100,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets-print` | Printable target generation: JSON/SVG/PNG output bundles |
 | `calib-targets-ffi` | C ABI bindings with generated header and CMake package (not published) |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
-| `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (not published to crates.io) |
+| `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (published to npm as `@vitavision/calib-targets`, not published to crates.io) |
 
 **CLI**: the `calib-targets` binary lives in the facade crate behind the default `cli` feature (`cargo install calib-targets`), and the Python package exposes the same subcommands as a console script via `[project.scripts]`.
 

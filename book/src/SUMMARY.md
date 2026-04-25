@@ -1,6 +1,7 @@
 # Summary
 
 - [Introduction](intro.md)
+- [Interactive Playground](playground.md)
 - [User Guide]()
   - [Getting Started](getting-started.md)
   - [Tuning the Detector](tuning.md)

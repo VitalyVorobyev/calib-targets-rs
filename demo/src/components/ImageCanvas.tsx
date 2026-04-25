@@ -5,7 +5,7 @@ import type {
   Corner,
   GridAlignment,
   LabeledCorner,
-  ObservedEdge,
+  PuzzleBoardObservedEdge,
 } from "../types/calib-targets";
 
 interface Props {
@@ -39,9 +39,16 @@ function cornerColor(corner: LabeledCorner, _idx: number): string {
   return "#00ff00";
 }
 
+function cornerAxisAngle(corner: Corner): number {
+  // The first grid axis (in [0, π)) doubles as a hue source and a stroke
+  // direction; chessboard parity flips axes[0]/axes[1] but the absolute
+  // direction is what we want for an at-a-glance overlay.
+  return corner.axes[0].angle;
+}
+
 function rawCornerColor(corner: Corner, _idx: number): string {
-  // Color by orientation (hue from 0..pi mapped to 0..360)
-  const hue = ((corner.orientation / Math.PI) * 360 + 360) % 360;
+  // Color by axis-0 angle (hue from 0..π mapped to 0..360°).
+  const hue = ((cornerAxisAngle(corner) / Math.PI) * 360 + 360) % 360;
   return `hsl(${hue}, 100%, 50%)`;
 }
 
@@ -72,7 +79,9 @@ export function ImageCanvas({ image, detection }: Props) {
       for (let i = 0; i < detection.corners.length; i++) {
         const c = detection.corners[i]!;
         const color = rawCornerColor(c, i);
-        const radius = Math.max(2, Math.min(6, c.strength * 3));
+        // c.strength is integer corner response (typically 100s–1000s);
+        // bound the dot radius to a sensible UI range.
+        const radius = Math.max(2, Math.min(6, c.strength / 200));
         const [cx, cy] = c.position;
 
         ctx.beginPath();
@@ -81,14 +90,12 @@ export function ImageCanvas({ image, detection }: Props) {
         ctx.globalAlpha = 0.8;
         ctx.fill();
 
-        // Draw orientation line
+        // Draw axis-0 direction line
+        const angle = cornerAxisAngle(c);
         const len = radius * 2.5;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
-        ctx.lineTo(
-          cx + len * Math.cos(c.orientation),
-          cy + len * Math.sin(c.orientation),
-        );
+        ctx.lineTo(cx + len * Math.cos(angle), cy + len * Math.sin(angle));
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.stroke();
@@ -99,10 +106,10 @@ export function ImageCanvas({ image, detection }: Props) {
 
     // For detection results with TargetDetection
     let corners: LabeledCorner[] = [];
-    let edges: ObservedEdge[] | null = null;
+    let edges: PuzzleBoardObservedEdge[] | null = null;
     let alignment: GridAlignment | null = null;
     if (detection.mode === "chessboard" && detection.result) {
-      corners = detection.result.detection.corners;
+      corners = detection.result.target.corners;
     } else if (detection.mode === "charuco") {
       corners = detection.result.detection.corners;
     } else if (detection.mode === "marker_board" && detection.result) {
@@ -164,7 +171,7 @@ export function ImageCanvas({ image, detection }: Props) {
       // Horizontal edge at (row=r, col=c): connects local grid (i=c, j=r) → (i=c+1, j=r).
       // Vertical   edge at (row=r, col=c): connects local grid (i=c, j=r) → (i=c,   j=r+1).
       const endpointsFor = (
-        e: ObservedEdge,
+        e: PuzzleBoardObservedEdge,
       ): [LabeledCorner, LabeledCorner] | null => {
         const [ai, aj] = toMaster(e.col, e.row);
         const [bi, bj] =

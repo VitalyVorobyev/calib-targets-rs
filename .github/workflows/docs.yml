@@ -32,11 +32,20 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rust-docs
+          targets: wasm32-unknown-unknown
 
       - name: Install mdBook
         uses: taiki-e/install-action@v2
         with:
           tool: mdbook
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Cache cargo build
         uses: Swatinem/rust-cache@v2
@@ -51,11 +60,19 @@ jobs:
           echo '<meta http-equiv="refresh" content="0; url=calib_targets_core/index.html">' > target/doc/index.html
           mdbook build book
 
+      - name: Build playground (WASM + demo)
+        run: |
+          ./scripts/build-wasm.sh
+          cd demo
+          bun install --frozen-lockfile
+          bun run build
+
       - name: Assemble Pages artifact
         run: |
-          mkdir -p public/api
+          mkdir -p public/api public/playground
           rsync -a target/doc/ public/api/
           rsync -a book/book/ public/
+          rsync -a demo/dist/ public/playground/
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3

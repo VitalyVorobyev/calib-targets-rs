@@ -4,14 +4,18 @@ import {
   isReady,
   detectCorners,
   detectChessboard,
+  detectChessboardBest,
   detectCharuco,
+  detectCharucoBest,
   detectMarkerBoard,
+  detectMarkerBoardBest,
   detectPuzzleBoard,
+  detectPuzzleBoardBest,
 } from "../lib/detector";
 import type {
   ChessConfig,
   ChessboardParams,
-  CharucoDetectorParams,
+  CharucoParams,
   MarkerBoardParams,
   PuzzleBoardParams,
   Corner,
@@ -29,6 +33,51 @@ export type DetectionResult =
   | { mode: "marker_board"; result: MarkerBoardDetectionResult | null }
   | { mode: "puzzleboard"; result: PuzzleBoardDetectionResult };
 
+export type DetectArgs =
+  | {
+      mode: "corners";
+      gray: Uint8Array;
+      width: number;
+      height: number;
+      chessCfg: ChessConfig;
+    }
+  | {
+      mode: "chessboard";
+      gray: Uint8Array;
+      width: number;
+      height: number;
+      chessCfg: ChessConfig;
+      params: ChessboardParams;
+      sweep?: ChessboardParams[];
+    }
+  | {
+      mode: "charuco";
+      gray: Uint8Array;
+      width: number;
+      height: number;
+      chessCfg: ChessConfig;
+      params: CharucoParams;
+      sweep?: CharucoParams[];
+    }
+  | {
+      mode: "marker_board";
+      gray: Uint8Array;
+      width: number;
+      height: number;
+      chessCfg: ChessConfig;
+      params: MarkerBoardParams;
+      sweep?: MarkerBoardParams[];
+    }
+  | {
+      mode: "puzzleboard";
+      gray: Uint8Array;
+      width: number;
+      height: number;
+      chessCfg: ChessConfig;
+      params: PuzzleBoardParams;
+      sweep?: PuzzleBoardParams[];
+    };
+
 interface UseDetectorReturn {
   ready: boolean;
   initError: string | null;
@@ -36,14 +85,7 @@ interface UseDetectorReturn {
   result: DetectionResult | null;
   error: string | null;
   timeMs: number | null;
-  detect: (
-    mode: DetectionMode,
-    gray: Uint8Array,
-    width: number,
-    height: number,
-    chessCfg: ChessConfig,
-    params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams | PuzzleBoardParams,
-  ) => void;
+  detect: (args: DetectArgs) => void;
 }
 
 export function useDetector(): UseDetectorReturn {
@@ -72,100 +114,123 @@ export function useDetector(): UseDetectorReturn {
     };
   }, []);
 
-  const detect = useCallback(
-    (
-      mode: DetectionMode,
-      gray: Uint8Array,
-      width: number,
-      height: number,
-      chessCfg: ChessConfig,
-      params: ChessboardParams | CharucoDetectorParams | MarkerBoardParams | PuzzleBoardParams,
-    ) => {
-      setLoading(true);
-      setError(null);
+  const detect = useCallback((args: DetectArgs) => {
+    setLoading(true);
+    setError(null);
 
-      // Run detection synchronously (it's WASM, no async needed)
-      // but wrap in setTimeout to allow React to show loading state
-      setTimeout(() => {
-        try {
-          const t0 = performance.now();
-          let detectionResult: DetectionResult;
+    setTimeout(() => {
+      try {
+        const t0 = performance.now();
+        let detectionResult: DetectionResult;
 
-          switch (mode) {
-            case "corners":
-              detectionResult = {
-                mode: "corners",
-                corners: detectCorners(gray, width, height, chessCfg),
-              };
-              break;
-            case "chessboard":
-              detectionResult = {
-                mode: "chessboard",
-                result: detectChessboard(
-                  gray,
-                  width,
-                  height,
-                  chessCfg,
-                  params as ChessboardParams,
-                ),
-              };
-              break;
-            case "charuco":
-              detectionResult = {
-                mode: "charuco",
-                result: detectCharuco(
-                  gray,
-                  width,
-                  height,
-                  chessCfg,
-                  params as CharucoDetectorParams,
-                ),
-              };
-              break;
-            case "marker_board":
-              detectionResult = {
-                mode: "marker_board",
-                result: detectMarkerBoard(
-                  gray,
-                  width,
-                  height,
-                  chessCfg,
-                  params as MarkerBoardParams,
-                ),
-              };
-              break;
-            case "puzzleboard":
-              detectionResult = {
-                mode: "puzzleboard",
-                result: detectPuzzleBoard(
-                  gray,
-                  width,
-                  height,
-                  chessCfg,
-                  params as PuzzleBoardParams,
-                ),
-              };
-              break;
-          }
-
-          const elapsed = performance.now() - t0;
-          if (mountedRef.current) {
-            setResult(detectionResult);
-            setTimeMs(elapsed);
-            setLoading(false);
-          }
-        } catch (e: unknown) {
-          if (mountedRef.current) {
-            setError(e instanceof Error ? e.message : String(e));
-            setResult(null);
-            setTimeMs(null);
-            setLoading(false);
-          }
+        switch (args.mode) {
+          case "corners":
+            detectionResult = {
+              mode: "corners",
+              corners: detectCorners(
+                args.gray,
+                args.width,
+                args.height,
+                args.chessCfg,
+              ),
+            };
+            break;
+          case "chessboard":
+            detectionResult = {
+              mode: "chessboard",
+              result: args.sweep
+                ? detectChessboardBest(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.sweep,
+                  )
+                : detectChessboard(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.chessCfg,
+                    args.params,
+                  ),
+            };
+            break;
+          case "charuco":
+            detectionResult = {
+              mode: "charuco",
+              result: args.sweep
+                ? detectCharucoBest(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.sweep,
+                  )
+                : detectCharuco(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.chessCfg,
+                    args.params,
+                  ),
+            };
+            break;
+          case "marker_board":
+            detectionResult = {
+              mode: "marker_board",
+              result: args.sweep
+                ? detectMarkerBoardBest(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.sweep,
+                  )
+                : detectMarkerBoard(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.chessCfg,
+                    args.params,
+                  ),
+            };
+            break;
+          case "puzzleboard":
+            detectionResult = {
+              mode: "puzzleboard",
+              result: args.sweep
+                ? detectPuzzleBoardBest(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.sweep,
+                  )
+                : detectPuzzleBoard(
+                    args.gray,
+                    args.width,
+                    args.height,
+                    args.chessCfg,
+                    args.params,
+                  ),
+            };
+            break;
         }
-      }, 0);
-    },
-    [],
-  );
+
+        const elapsed = performance.now() - t0;
+        if (mountedRef.current) {
+          setResult(detectionResult);
+          setTimeMs(elapsed);
+          setLoading(false);
+        }
+      } catch (e: unknown) {
+        if (mountedRef.current) {
+          setError(e instanceof Error ? e.message : String(e));
+          setResult(null);
+          setTimeMs(null);
+          setLoading(false);
+        }
+      }
+    }, 0);
+  }, []);
 
   return { ready, initError, loading, result, error, timeMs, detect };
 }
+
+export type { DetectionMode };

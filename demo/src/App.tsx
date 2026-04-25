@@ -5,110 +5,27 @@ import { ConfigPanel } from "./components/ConfigPanel";
 import { ResultsPanel } from "./components/ResultsPanel";
 import { useDetector } from "./hooks/useDetector";
 import {
+  charucoSweepForBoard,
+  chessboardSweepDefault,
+  defaultCharucoParams,
   defaultChessConfig,
   defaultChessboardParams,
+  defaultMarkerBoardParams,
   defaultPuzzleBoardParams,
+  puzzleboardSweepForBoard,
 } from "./lib/detector";
 import type { ImageData } from "./lib/image-utils";
 import type {
+  CharucoParams,
   ChessConfig,
   ChessboardParams,
-  CharucoDetectorParams,
+  DetectionMode,
   MarkerBoardParams,
   PuzzleBoardParams,
-  DetectionMode,
 } from "./types/calib-targets";
 
-const DEFAULT_CHARUCO_PARAMS: CharucoDetectorParams = {
-  charuco: {
-    rows: 22,
-    cols: 22,
-    marker_size_rel: 0.75,
-    dictionary: "DICT_4X4_1000",
-    marker_layout: "opencv_charuco",
-  },
-  px_per_square: 60,
-  chessboard: {
-    min_corner_strength: 0.5,
-    min_corners: 32,
-    expected_rows: 21,
-    expected_cols: 21,
-    completeness_threshold: 0.05,
-    use_orientation_clustering: true,
-    orientation_clustering_params: {
-      num_bins: 90,
-      max_iters: 10,
-      peak_min_separation_deg: 10,
-      outlier_threshold_deg: 30,
-      min_peak_weight_fraction: 0.05,
-      use_weights: true,
-    },
-    graph: {
-      min_spacing_pix: 5,
-      max_spacing_pix: 50,
-      k_neighbors: 8,
-      orientation_tolerance_deg: 22.5,
-    },
-  },
-  scan: {
-    marker_size_rel: 0.75,
-    inset_frac: 0.06,
-    border_bits: 1,
-    min_border_score: 0.85,
-    dedup_by_id: true,
-  },
-  max_hamming: 2,
-  min_marker_inliers: 8,
-  corner_validation_threshold_rel: 0.3,
-};
-
-const DEFAULT_MARKER_PARAMS: MarkerBoardParams = {
-  layout: {
-    rows: 22,
-    cols: 22,
-    cell_size: 1.0,
-    circles: [
-      { i: 11, j: 11, polarity: "white" },
-      { i: 12, j: 11, polarity: "black" },
-      { i: 12, j: 12, polarity: "white" },
-    ],
-  },
-  chessboard: {
-    min_corner_strength: 0.0,
-    min_corners: 16,
-    expected_rows: 22,
-    expected_cols: 22,
-    completeness_threshold: 0.05,
-    use_orientation_clustering: true,
-    orientation_clustering_params: {
-      num_bins: 90,
-      max_iters: 10,
-      peak_min_separation_deg: 10,
-      outlier_threshold_deg: 30,
-      min_peak_weight_fraction: 0.05,
-      use_weights: true,
-    },
-    graph: {
-      min_spacing_pix: 5,
-      max_spacing_pix: 50,
-      k_neighbors: 8,
-      orientation_tolerance_deg: 22.5,
-    },
-  },
-  circle_score: {
-    patch_size: 64,
-    diameter_frac: 0.5,
-    ring_thickness_frac: 0.35,
-    ring_radius_mul: 1.6,
-    min_contrast: 10,
-    samples: 48,
-    center_search_px: 2,
-  },
-  match_params: {
-    max_candidates_per_polarity: 6,
-    min_offset_inliers: 1,
-  },
-};
+const DEFAULT_CHARUCO_DICTIONARY = "DICT_4X4_50";
+const DEFAULT_CHARUCO_MARKER_REL = 0.75;
 
 export default function App() {
   const { ready, initError, loading, result, error, timeMs, detect } =
@@ -116,59 +33,117 @@ export default function App() {
 
   const [image, setImage] = useState<ImageData | null>(null);
   const [mode, setMode] = useState<DetectionMode>("chessboard");
+  const [useSweep, setUseSweep] = useState(false);
   const [chessCfg, setChessCfg] = useState<ChessConfig | null>(null);
   const [cbParams, setCbParams] = useState<ChessboardParams | null>(null);
-  const [charucoParams, setCharucoParams] =
-    useState<CharucoDetectorParams>(DEFAULT_CHARUCO_PARAMS);
-  const [markerParams, setMarkerParams] =
-    useState<MarkerBoardParams>(DEFAULT_MARKER_PARAMS);
+  const [charucoParams, setCharucoParams] = useState<CharucoParams | null>(null);
+  const [markerParams, setMarkerParams] = useState<MarkerBoardParams | null>(
+    null,
+  );
   const [puzzleParams, setPuzzleParams] = useState<PuzzleBoardParams | null>(
     null,
   );
 
-  // Load defaults from WASM once initialized
+  // Load defaults from WASM once initialised
   useEffect(() => {
     if (ready && !chessCfg) {
       setChessCfg(defaultChessConfig());
       setCbParams(defaultChessboardParams());
+      setCharucoParams(
+        defaultCharucoParams(
+          5,
+          7,
+          DEFAULT_CHARUCO_MARKER_REL,
+          DEFAULT_CHARUCO_DICTIONARY,
+        ),
+      );
+      setMarkerParams(defaultMarkerBoardParams());
       setPuzzleParams(defaultPuzzleBoardParams(10, 10));
     }
   }, [ready, chessCfg]);
 
   const handleDetect = useCallback(() => {
-    if (!image || !chessCfg || !cbParams || !puzzleParams) return;
+    if (
+      !image ||
+      !chessCfg ||
+      !cbParams ||
+      !charucoParams ||
+      !markerParams ||
+      !puzzleParams
+    )
+      return;
 
-    let params:
-      | ChessboardParams
-      | CharucoDetectorParams
-      | MarkerBoardParams
-      | PuzzleBoardParams;
+    const common = {
+      gray: image.gray,
+      width: image.width,
+      height: image.height,
+      chessCfg,
+    };
+
     switch (mode) {
       case "corners":
-        params = cbParams; // unused, but required by signature
+        detect({ mode: "corners", ...common });
         break;
       case "chessboard":
-        params = cbParams;
+        detect({
+          mode: "chessboard",
+          ...common,
+          params: cbParams,
+          sweep: useSweep ? chessboardSweepDefault() : undefined,
+        });
         break;
-      case "charuco":
-        params = charucoParams;
+      case "charuco": {
+        const sweep = useSweep
+          ? charucoSweepForBoard(
+              charucoParams.board.rows,
+              charucoParams.board.cols,
+              charucoParams.board.marker_size_rel,
+              charucoParams.board.dictionary,
+            )
+          : undefined;
+        detect({ mode: "charuco", ...common, params: charucoParams, sweep });
         break;
+      }
       case "marker_board":
-        params = markerParams;
+        // The marker-board crate does not yet ship a sweep preset; the toggle
+        // is a no-op for this mode and falls through to the single-config path.
+        detect({ mode: "marker_board", ...common, params: markerParams });
         break;
-      case "puzzleboard":
-        params = puzzleParams;
+      case "puzzleboard": {
+        const sweep = useSweep
+          ? puzzleboardSweepForBoard(
+              puzzleParams.board.rows,
+              puzzleParams.board.cols,
+            )
+          : undefined;
+        detect({ mode: "puzzleboard", ...common, params: puzzleParams, sweep });
         break;
+      }
     }
-
-    detect(mode, image.gray, image.width, image.height, chessCfg, params);
-  }, [image, mode, chessCfg, cbParams, charucoParams, markerParams, puzzleParams, detect]);
+  }, [
+    image,
+    mode,
+    useSweep,
+    chessCfg,
+    cbParams,
+    charucoParams,
+    markerParams,
+    puzzleParams,
+    detect,
+  ]);
 
   if (initError) {
     return <div className="init-error">Failed to load WASM: {initError}</div>;
   }
 
-  if (!ready || !chessCfg || !cbParams || !puzzleParams) {
+  if (
+    !ready ||
+    !chessCfg ||
+    !cbParams ||
+    !charucoParams ||
+    !markerParams ||
+    !puzzleParams
+  ) {
     return <div className="loading">Loading WASM module...</div>;
   }
 
@@ -187,6 +162,8 @@ export default function App() {
           <ConfigPanel
             mode={mode}
             onModeChange={setMode}
+            useSweep={useSweep}
+            onUseSweepChange={setUseSweep}
             chessCfg={chessCfg}
             onChessCfgChange={setChessCfg}
             chessboardParams={cbParams}
