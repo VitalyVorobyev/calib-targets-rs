@@ -75,6 +75,10 @@ jobs:
       - name: Build WASM package
         run: wasm-pack build crates/calib-targets-wasm --target web --release --out-dir ../../demo/pkg --out-name calib_targets_wasm
 
+      - name: Set scoped npm package name
+        working-directory: demo/pkg
+        run: npm pkg set name=@vitavition/calib-targets
+
       - name: Verify WASM output
         run: |
           test -f demo/pkg/calib_targets_wasm.js

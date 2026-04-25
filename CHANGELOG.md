@@ -6,6 +6,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **WASM npm package renamed** from `calib-targets-wasm` to the scoped
+  public package `@vitavition/calib-targets`. The Rust crate name
+  (`calib-targets-wasm`) is unchanged. Update consumers to
+  `npm install @vitavition/calib-targets` and rewrite imports from
+  `"calib-targets-wasm"` to `"@vitavition/calib-targets"`.
+
 ## [0.7.2]
 
 PuzzleBoard feature-and-fix release. This version removes the large

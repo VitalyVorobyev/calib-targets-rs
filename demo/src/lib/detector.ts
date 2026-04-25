@@ -1,4 +1,4 @@
-// Typed wrapper over the raw calib-targets-wasm WASM API.
+// Typed wrapper over the raw @vitavition/calib-targets WASM API.
 
 import init, {
   detect_corners as _detect_corners,
@@ -11,7 +11,7 @@ import init, {
   default_chess_config as _default_chess_config,
   default_chessboard_params as _default_chessboard_params,
   default_puzzleboard_params as _default_puzzleboard_params,
-} from "calib-targets-wasm";
+} from "@vitavition/calib-targets";
 
 import type {
   ChessConfig,

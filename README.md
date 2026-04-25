@@ -121,8 +121,9 @@ scripts/build-wasm.sh
 cd demo && bun install && bun run dev
 ```
 
-See [`crates/calib-targets-wasm`](crates/calib-targets-wasm) for the
-TypeScript API and per-target snippets.
+See [`@vitavition/calib-targets`](crates/calib-targets-wasm) on npm
+(source under `crates/calib-targets-wasm/`) for the TypeScript API
+and per-target snippets.
 
 ### Printable targets
 
@@ -171,7 +172,7 @@ Canonical guide: [printable-target chapter][printable-chapter].
 | [`calib-targets-marker`](crates/calib-targets-marker) | [published](https://crates.io/crates/calib-targets-marker) | Checkerboard + 3-circle marker boards. |
 | [`calib-targets-print`](crates/calib-targets-print) | [published](https://crates.io/crates/calib-targets-print) | Printable target generation (JSON / SVG / PNG). |
 | [`calib-targets-py`](crates/calib-targets-py) | PyPI | Python bindings (PyO3 / maturin). |
-| [`calib-targets-wasm`](crates/calib-targets-wasm) | npm / repo-local | WebAssembly bindings. |
+| [`@vitavition/calib-targets`](crates/calib-targets-wasm) | npm / repo-local | WebAssembly bindings. |
 | [`calib-targets-ffi`](crates/calib-targets-ffi) | repo-local | C ABI bindings ([docs](./docs/ffi/README.md)). |
 
 The printable-target CLI now ships with both the facade crate and the Python

@@ -1,4 +1,4 @@
-# calib-targets-wasm
+# @vitavition/calib-targets
 
 WebAssembly bindings for the [calib-targets] Rust workspace. Run
 chessboard, ChArUco, PuzzleBoard, and marker-board detection directly in
@@ -17,7 +17,7 @@ Book & per-target chapters: <https://vitalyvorobyev.github.io/calib-targets-rs/>
 ## Install
 
 ```bash
-npm install calib-targets-wasm
+npm install @vitavition/calib-targets
 # or, for the local build output:
 scripts/build-wasm.sh   # produces demo/pkg/
 ```
@@ -30,7 +30,7 @@ import init, {
   default_chessboard_params,
   detect_chessboard,
   rgba_to_gray,
-} from "calib-targets-wasm";
+} from "@vitavition/calib-targets";
 
 await init(); // initialise the WASM module once per page
 
@@ -58,7 +58,7 @@ plain JS object you can `JSON.stringify`.
 ### Chessboard
 
 ```typescript
-import { default_chess_config, default_chessboard_params, detect_chessboard_best } from "calib-targets-wasm";
+import { default_chess_config, default_chessboard_params, detect_chessboard_best } from "@vitavition/calib-targets";
 
 const base = default_chessboard_params();
 const configs = [0.20, 0.15, 0.08].map(t => ({
@@ -71,7 +71,7 @@ const best = detect_chessboard_best(width, height, gray, configs);
 ### ChArUco
 
 ```typescript
-import { detect_charuco } from "calib-targets-wasm";
+import { detect_charuco } from "@vitavition/calib-targets";
 
 const board = {
   rows: 5, cols: 7, cell_size: 1.0,
@@ -95,7 +95,7 @@ const result = detect_charuco(width, height, gray, default_chess_config(), param
 ### PuzzleBoard
 
 ```typescript
-import { default_puzzleboard_params, detect_puzzleboard, render_puzzleboard_png } from "calib-targets-wasm";
+import { default_puzzleboard_params, detect_puzzleboard, render_puzzleboard_png } from "@vitavition/calib-targets";
 
 // Generate a PuzzleBoard PNG in the browser (only PuzzleBoard is supported
 // in-browser — see Limitations below).
@@ -112,7 +112,7 @@ const result = detect_puzzleboard(width, height, gray, default_chess_config(), p
 ### Marker board
 
 ```typescript
-import { default_marker_board_params, detect_marker_board } from "calib-targets-wasm";
+import { default_marker_board_params, detect_marker_board } from "@vitavition/calib-targets";
 
 const params = default_marker_board_params();
 params.layout = {

@@ -11,7 +11,7 @@
   "dependencies": {
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "calib-targets-wasm": "file:./pkg"
+    "@vitavition/calib-targets": "file:./pkg"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",
