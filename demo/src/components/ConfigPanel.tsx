@@ -1,22 +1,25 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import { listArucoDictionaries } from "../lib/detector";
 import type {
+  CharucoParams,
   ChessConfig,
   ChessboardParams,
-  CharucoDetectorParams,
+  DetectionMode,
   MarkerBoardParams,
   PuzzleBoardParams,
-  DetectionMode,
 } from "../types/calib-targets";
 
 interface Props {
   mode: DetectionMode;
   onModeChange: (mode: DetectionMode) => void;
+  useSweep: boolean;
+  onUseSweepChange: (v: boolean) => void;
   chessCfg: ChessConfig;
   onChessCfgChange: (cfg: ChessConfig) => void;
   chessboardParams: ChessboardParams;
   onChessboardParamsChange: (p: ChessboardParams) => void;
-  charucoParams: CharucoDetectorParams;
-  onCharucoParamsChange: (p: CharucoDetectorParams) => void;
+  charucoParams: CharucoParams;
+  onCharucoParamsChange: (p: CharucoParams) => void;
   markerParams: MarkerBoardParams;
   onMarkerParamsChange: (p: MarkerBoardParams) => void;
   puzzleParams: PuzzleBoardParams;
@@ -92,6 +95,8 @@ function NumberInput({
 export function ConfigPanel({
   mode,
   onModeChange,
+  useSweep,
+  onUseSweepChange,
   chessCfg,
   onChessCfgChange,
   chessboardParams,
@@ -106,6 +111,8 @@ export function ConfigPanel({
   loading,
   hasImage,
 }: Props) {
+  const dictionaries = useMemo(() => listArucoDictionaries(), []);
+
   const updateChess = useCallback(
     (partial: Partial<ChessConfig>) => {
       onChessCfgChange({ ...chessCfg, ...partial });
@@ -121,7 +128,7 @@ export function ConfigPanel({
   );
 
   const updateCharuco = useCallback(
-    (partial: Partial<CharucoDetectorParams>) => {
+    (partial: Partial<CharucoParams>) => {
       onCharucoParamsChange({ ...charucoParams, ...partial });
     },
     [charucoParams, onCharucoParamsChange],
@@ -140,6 +147,8 @@ export function ConfigPanel({
     },
     [puzzleParams, onPuzzleParamsChange],
   );
+
+  const sweepDisabled = mode === "corners" || mode === "marker_board";
 
   return (
     <div className="config-panel">
@@ -166,6 +175,16 @@ export function ConfigPanel({
           </label>
         ))}
       </div>
+
+      <label className="sweep-toggle">
+        <input
+          type="checkbox"
+          checked={useSweep && !sweepDisabled}
+          disabled={sweepDisabled}
+          onChange={(e) => onUseSweepChange(e.target.checked)}
+        />
+        Use 3-config sweep ({sweepDisabled ? "n/a for this mode" : "detect_*_best"})
+      </label>
 
       <h3>ChESS Corner Config</h3>
       <Slider
@@ -197,7 +216,7 @@ export function ConfigPanel({
         <>
           <h3>Chessboard Params</h3>
           <Slider
-            label="Min Strength"
+            label="Min Corner Strength"
             value={chessboardParams.min_corner_strength}
             min={0}
             max={1}
@@ -205,45 +224,28 @@ export function ConfigPanel({
             onChange={(v) => updateCb({ min_corner_strength: v })}
           />
           <Slider
-            label="Min Corners"
-            value={chessboardParams.min_corners}
+            label="Min Labeled Corners"
+            value={chessboardParams.min_labeled_corners}
             min={4}
-            max={200}
+            max={64}
             step={1}
-            onChange={(v) => updateCb({ min_corners: v })}
-          />
-          <NumberInput
-            label="Expected Rows"
-            value={chessboardParams.expected_rows}
-            min={2}
-            max={100}
-            onChange={(v) => updateCb({ expected_rows: v })}
-          />
-          <NumberInput
-            label="Expected Cols"
-            value={chessboardParams.expected_cols}
-            min={2}
-            max={100}
-            onChange={(v) => updateCb({ expected_cols: v })}
+            onChange={(v) => updateCb({ min_labeled_corners: v })}
           />
           <Slider
-            label="Completeness"
-            value={chessboardParams.completeness_threshold}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(v) => updateCb({ completeness_threshold: v })}
+            label="Max Components"
+            value={chessboardParams.max_components}
+            min={1}
+            max={8}
+            step={1}
+            onChange={(v) => updateCb({ max_components: v })}
           />
-          <Slider
-            label="Max Spacing (px)"
-            value={chessboardParams.graph.max_spacing_pix}
-            min={10}
+          <NumberInput
+            label="Cell Size Hint (px)"
+            value={chessboardParams.cell_size_hint}
+            min={1}
             max={500}
-            step={5}
             onChange={(v) =>
-              updateCb({
-                graph: { ...chessboardParams.graph, max_spacing_pix: v },
-              })
+              updateCb({ cell_size_hint: v ?? undefined })
             }
           />
         </>
@@ -254,38 +256,55 @@ export function ConfigPanel({
           <h3>ChArUco Board</h3>
           <NumberInput
             label="Board Rows"
-            value={charucoParams.charuco.rows}
+            value={charucoParams.board.rows}
             min={2}
             max={50}
             onChange={(v) =>
               updateCharuco({
-                charuco: { ...charucoParams.charuco, rows: v ?? 8 },
+                board: { ...charucoParams.board, rows: v ?? 5 },
               })
             }
           />
           <NumberInput
             label="Board Cols"
-            value={charucoParams.charuco.cols}
+            value={charucoParams.board.cols}
             min={2}
             max={50}
             onChange={(v) =>
               updateCharuco({
-                charuco: { ...charucoParams.charuco, cols: v ?? 8 },
+                board: { ...charucoParams.board, cols: v ?? 7 },
               })
             }
           />
           <Slider
             label="Marker Size Rel"
-            value={charucoParams.charuco.marker_size_rel}
+            value={charucoParams.board.marker_size_rel}
             min={0.1}
             max={0.95}
             step={0.05}
             onChange={(v) =>
               updateCharuco({
-                charuco: { ...charucoParams.charuco, marker_size_rel: v },
+                board: { ...charucoParams.board, marker_size_rel: v },
               })
             }
           />
+          <div className="input-row">
+            <label>Dictionary:</label>
+            <select
+              value={charucoParams.board.dictionary}
+              onChange={(e) =>
+                updateCharuco({
+                  board: { ...charucoParams.board, dictionary: e.target.value },
+                })
+              }
+            >
+              {dictionaries.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
           <Slider
             label="Px Per Square"
             value={charucoParams.px_per_square}
@@ -315,7 +334,7 @@ export function ConfigPanel({
             max={50}
             onChange={(v) =>
               updateMarker({
-                layout: { ...markerParams.layout, rows: v ?? 22 },
+                layout: { ...markerParams.layout, rows: v ?? 6 },
               })
             }
           />
@@ -326,7 +345,7 @@ export function ConfigPanel({
             max={50}
             onChange={(v) =>
               updateMarker({
-                layout: { ...markerParams.layout, cols: v ?? 22 },
+                layout: { ...markerParams.layout, cols: v ?? 8 },
               })
             }
           />

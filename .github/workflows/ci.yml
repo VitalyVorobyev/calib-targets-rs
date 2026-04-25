@@ -75,6 +75,11 @@ jobs:
       - name: Build WASM package
         run: wasm-pack build crates/calib-targets-wasm --target web --release --out-dir ../../demo/pkg --out-name calib_targets_wasm
 
+      - name: Append object-shape TypeScript declarations
+        run: |
+          cat crates/calib-targets-wasm/typescript-extras.d.ts \
+            >> demo/pkg/calib_targets_wasm.d.ts
+
       - name: Set scoped npm package name
         working-directory: demo/pkg
         run: npm pkg set name=@vitavision/calib-targets

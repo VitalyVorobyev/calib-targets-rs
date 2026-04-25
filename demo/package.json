@@ -9,9 +9,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vitavision/calib-targets": "file:./pkg",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "@vitavision/calib-targets": "file:./pkg"
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
     "@types/react": "^19.1.0",

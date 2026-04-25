@@ -2,6 +2,7 @@ target
 .vscode
 *.pyc
 book/book
+public/
 tmpdata
 synthetic
 stereo
