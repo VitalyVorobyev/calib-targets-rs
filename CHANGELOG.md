@@ -6,6 +6,14 @@ This project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.3]
+
+WASM-and-tooling release. The npm WASM package gains feature parity with
+the Rust facade and a typed object-shape surface, the published GitHub
+Pages site picks up an interactive playground, and a new dataset-gated
+PuzzleBoard regression locks the `Full` vs `FixedBoard` agreement
+contract on a known printed-board dataset. No Rust API breakage.
+
 ### Changed
 
 - **WASM npm package renamed** from `calib-targets-wasm` to the scoped
@@ -13,6 +21,55 @@ This project follows [Semantic Versioning](https://semver.org/).
   (`calib-targets-wasm`) is unchanged. Update consumers to
   `npm install @vitavision/calib-targets` and rewrite imports from
   `"calib-targets-wasm"` to `"@vitavision/calib-targets"`.
+
+### Added
+
+- **WASM API parity with the Rust facade.** New exports in
+  `calib-targets-wasm`: `default_charuco_params`,
+  `list_aruco_dictionaries`, `chessboard_sweep_default`,
+  `charuco_sweep_for_board`, `puzzleboard_sweep_for_board`,
+  `render_chessboard_png`, `render_charuco_png`,
+  `render_marker_board_png`. PuzzleBoard PNG rendering ceases to be a
+  special case — every supported target family renders through the
+  same surface.
+- **Typed WASM object shapes for TypeScript.** A hand-written
+  `typescript-extras.d.ts` (43 result and parameter shapes — `Corner`
+  with `axes`, the flat 30-field `DetectorParams`, PuzzleBoard
+  search/scoring tagged enums, every supporting struct) is appended
+  to the auto-generated `calib_targets_wasm.d.ts` during build, so
+  npm consumers get strongly-typed object shapes alongside function
+  signatures. Wired into both `scripts/build-wasm.sh` and the npm
+  release workflow.
+- **mdBook playground.** New `book/src/playground.md` chapter
+  iframes the React/Vite demo at `./playground/` so the published
+  GitHub Pages site has an interactive playground. The docs workflow
+  builds the WASM crate, runs `vite build`, and rsyncs `demo/dist/`
+  into `public/playground/` alongside the existing `api/` and `book/`
+  trees.
+- **Demo refresh.** The interactive demo now uses the WASM default
+  helpers (`default_charuco_params`, `list_aruco_dictionaries`, the
+  three sweep presets) instead of pre-0.7-schema constants that
+  silently no-op'd on the current deserializer. Adds a
+  "use 3-config sweep" toggle wired to the `detect_*_best` family,
+  generates synthetic targets across all four target kinds, and
+  exposes a dictionary dropdown for ChArUco.
+- **Dataset-gated PuzzleBoard regression test.**
+  `crates/calib-targets-puzzleboard/tests/dataset_full_mode_bounds.rs`
+  freezes three contracts on a known printed-board dataset:
+  `FixedBoard + SoftLogLikelihood` keeps every decoded
+  `target_position` inside the declared board's bounds at low BER;
+  `Full` and `FixedBoard` pick the same `(D4, master_origin_*)` on
+  the pinned fixtures; and an on-demand `--ignored` sweep covers
+  every available snap under both scoring modes. Skips silently
+  when the dataset is missing.
+
+### Fixed
+
+- **Demo ChArUco sliders bind to the post-0.7 schema.** Sliders
+  now read and write `charucoParams.board.*` (not the stale
+  `.charuco.*`) and chessboard sliders use the flat-`DetectorParams`
+  field names (`min_corner_strength`, `min_labeled_corners`,
+  `max_components`, `cell_size_hint`).
 
 ## [0.7.2]
 
