@@ -206,7 +206,7 @@ cargo run -p calib-targets --example generate_printable \
 
 - **Python** — [`calib-targets-py`](../calib-targets-py) wraps the same
   facade via `maturin`. The Python package name is `calib_targets`.
-- **WebAssembly** — [`@vitavition/calib-targets`](../calib-targets-wasm)
+- **WebAssembly** — [`@vitavision/calib-targets`](../calib-targets-wasm)
   on npm exposes the detectors to the browser.
 - **C FFI** — [`calib-targets-ffi`](../calib-targets-ffi) exposes a
   stable C ABI with CMake package.

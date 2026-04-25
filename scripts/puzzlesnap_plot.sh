@@ -1,0 +1,1 @@
+python crates/calib-targets-py/examples/inspect_puzzleboard_snap.py --target privatedata/130x130_puzzle/target_11.png --snap 1

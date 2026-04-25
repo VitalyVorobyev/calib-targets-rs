@@ -45,7 +45,7 @@ jobs:
 
       - name: Set scoped npm package name
         working-directory: crates/calib-targets-wasm/pkg
-        run: npm pkg set name=@vitavition/calib-targets
+        run: npm pkg set name=@vitavision/calib-targets
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

@@ -77,7 +77,7 @@ jobs:
 
       - name: Set scoped npm package name
         working-directory: demo/pkg
-        run: npm pkg set name=@vitavition/calib-targets
+        run: npm pkg set name=@vitavision/calib-targets
 
       - name: Verify WASM output
         run: |

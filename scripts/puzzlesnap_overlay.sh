@@ -1,0 +1,2 @@
+cargo run -p calib-targets-puzzleboard --release --example run_dataset --features="dataset" -- --dataset privatedata/130x130_puzzle --out bench_results/130x130_puzzle/manual --rows 130 --cols 130 --cell-size-mm 1.014 --search-mode fixed-board --scoring-mode soft
+python crates/calib-targets-py/examples/overlay_puzzleboard_board_frame.py --reports bench_results/130x130_puzzle/manual --out bench_results/130x130_puzzle/manual

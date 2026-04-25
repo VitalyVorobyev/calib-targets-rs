@@ -9,10 +9,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - **WASM npm package renamed** from `calib-targets-wasm` to the scoped
-  public package `@vitavition/calib-targets`. The Rust crate name
+  public package `@vitavision/calib-targets`. The Rust crate name
   (`calib-targets-wasm`) is unchanged. Update consumers to
-  `npm install @vitavition/calib-targets` and rewrite imports from
-  `"calib-targets-wasm"` to `"@vitavition/calib-targets"`.
+  `npm install @vitavision/calib-targets` and rewrite imports from
+  `"calib-targets-wasm"` to `"@vitavision/calib-targets"`.
 
 ## [0.7.2]
 
