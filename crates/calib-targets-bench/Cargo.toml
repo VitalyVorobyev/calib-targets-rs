@@ -11,6 +11,7 @@ description = "Internal regression / performance harness for the chessboard grid
 calib-targets = { workspace = true }
 calib-targets-chessboard = { workspace = true }
 calib-targets-core = { workspace = true }
+projective-grid = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }
 nalgebra = { workspace = true }

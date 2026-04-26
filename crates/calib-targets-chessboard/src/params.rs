@@ -6,7 +6,50 @@
 //!
 //! Default values follow spec §6.
 
+use projective_grid::{LocalMergeParams, TopologicalParams};
 use serde::{Deserialize, Serialize};
+
+/// Which graph-build algorithm to run.
+///
+/// The detector ships two pipelines side by side:
+///
+/// - [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2) — invariant-rich
+///   8-stage seed-and-grow pipeline (axis clustering → cell-size
+///   estimate → 4-corner seed → BFS grow → validate → boosters).
+///   **Current default.** Pinned for ChArUco because non-uniform marker
+///   cells defeat the topological cell test.
+/// - [`Topological`](GraphBuildAlgorithm::Topological) — Delaunay
+///   triangulation + axis-driven cell test (Shu/Brunton/Fiala 2009 with
+///   image-free classification). Lower setup cost, no global cell-size
+///   dependency. **Currently opt-in only.** Designed to handle severe
+///   radial distortion and low view angles that the seed-and-grow
+///   pipeline stalls on (the PuzzleBoard `130x130_puzzle` low-angle
+///   target). Recall on the chessboard testdata regression set is
+///   below ChessboardV2's; the default will flip once tolerances are
+///   tuned to match the precision-and-recall baseline. Opt in per call
+///   via [`DetectorParams::graph_build_algorithm`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum GraphBuildAlgorithm {
+    Topological,
+    /// Conservative default while topological recall catches up to
+    /// ChessboardV2 on the public testdata regression set.
+    #[default]
+    ChessboardV2,
+}
+
+fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
+    GraphBuildAlgorithm::default()
+}
+
+fn default_topological_params() -> TopologicalParams {
+    TopologicalParams::default()
+}
+
+fn default_component_merge_params() -> LocalMergeParams {
+    LocalMergeParams::default()
+}
 
 fn default_validate_step_aware() -> bool {
     // Default off: shipping the capability without changing behaviour.
@@ -96,6 +139,23 @@ fn default_stage6_local_k_nearest() -> usize {
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DetectorParams {
+    // --- Pipeline dispatch ---------------------------------------------------
+    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
+    /// Default: [`GraphBuildAlgorithm::Topological`].
+    #[serde(default = "default_graph_build_algorithm")]
+    pub graph_build_algorithm: GraphBuildAlgorithm,
+
+    /// Tuning knobs for the [`GraphBuildAlgorithm::Topological`] path.
+    /// Ignored when [`graph_build_algorithm`](Self::graph_build_algorithm)
+    /// is [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2).
+    #[serde(default = "default_topological_params")]
+    pub topological: TopologicalParams,
+
+    /// Tuning knobs for the shared local-geometry component merger.
+    /// Used by both the topological and chessboard-v2 pipelines.
+    #[serde(default = "default_component_merge_params")]
+    pub component_merge: LocalMergeParams,
+
     // --- Stage 1: pre-filter -------------------------------------------------
     /// Minimum corner strength (ChESS response). `0.0` disables the filter.
     pub min_corner_strength: f32,
@@ -320,6 +380,10 @@ pub struct DetectorParams {
 impl Default for DetectorParams {
     fn default() -> Self {
         Self {
+            graph_build_algorithm: GraphBuildAlgorithm::default(),
+            topological: TopologicalParams::default(),
+            component_merge: LocalMergeParams::default(),
+
             min_corner_strength: 0.0,
             max_fit_rms_ratio: 0.5,
 

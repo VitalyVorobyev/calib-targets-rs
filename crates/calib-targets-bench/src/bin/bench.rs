@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use calib_targets::chessboard::{CornerStage, DetectorParams};
+use calib_targets::chessboard::{CornerStage, DetectorParams, GraphBuildAlgorithm};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
@@ -59,6 +59,20 @@ struct DiagnoseArgs {
     /// Local-only output; do not commit.
     #[arg(long)]
     dump_frame: Option<String>,
+    /// Which graph-build algorithm to diagnose. `chessboard-v2` produces a
+    /// full `DebugFrame`; `topological` reports the
+    /// [`TopologicalStats`](projective_grid::TopologicalStats) counters and
+    /// renders an overlay of which corners ended up labelled.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    algorithm: AlgorithmArg,
+    /// Override the topological pipeline's `axis_align_tol_rad` (in degrees).
+    /// Larger values accept more edges as "grid" (potentially raising recall
+    /// in distorted regions at the cost of precision).
+    #[arg(long)]
+    axis_align_tol_deg: Option<f32>,
+    /// Override the topological pipeline's `diagonal_angle_tol_rad` (in degrees).
+    #[arg(long)]
+    diagonal_angle_tol_deg: Option<f32>,
 }
 
 #[derive(Args)]
@@ -69,6 +83,9 @@ struct RunArgs {
     /// Restrict to a single image (relative path under workspace root).
     #[arg(long)]
     image: Option<String>,
+    /// Which graph-build algorithm to exercise.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    algorithm: AlgorithmArg,
 }
 
 #[derive(Args)]
@@ -85,6 +102,11 @@ struct PreviewArgs {
     /// Render every image, even when the dataset filter / image filter would skip.
     #[arg(long)]
     all: bool,
+    /// Which graph-build algorithm to exercise. Output filenames carry the
+    /// algorithm name as a suffix so two runs can coexist in the same `--out`
+    /// directory.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    algorithm: AlgorithmArg,
 }
 
 #[derive(Args)]
@@ -115,6 +137,36 @@ impl From<DatasetKindArg> for ImageKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
+enum AlgorithmArg {
+    Topological,
+    ChessboardV2,
+}
+
+impl AlgorithmArg {
+    fn slug(self) -> &'static str {
+        match self {
+            AlgorithmArg::Topological => "topological",
+            AlgorithmArg::ChessboardV2 => "chessboard_v2",
+        }
+    }
+}
+
+impl From<AlgorithmArg> for GraphBuildAlgorithm {
+    fn from(v: AlgorithmArg) -> Self {
+        match v {
+            AlgorithmArg::Topological => GraphBuildAlgorithm::Topological,
+            AlgorithmArg::ChessboardV2 => GraphBuildAlgorithm::ChessboardV2,
+        }
+    }
+}
+
+fn params_with(algorithm: AlgorithmArg) -> DetectorParams {
+    let mut p = DetectorParams::default();
+    p.graph_build_algorithm = algorithm.into();
+    p
+}
+
 // --- report types ----------------------------------------------------------
 
 #[derive(Serialize)]
@@ -141,7 +193,7 @@ struct Summary {
 struct RunReport {
     schema: u32,
     detector: &'static str,
-    config_id: &'static str,
+    config_id: String,
     summary: Summary,
     per_image: Vec<PerImageReport>,
 }
@@ -187,7 +239,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     .into_iter()
     .collect();
 
-    let params = DetectorParams::default();
+    let params = params_with(args.algorithm);
     let mut per_image = Vec::with_capacity(entries.len());
     let mut elapsed: Vec<f64> = Vec::with_capacity(entries.len());
 
@@ -218,7 +270,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     let report = RunReport {
         schema: SCHEMA_VERSION,
         detector: "chessboard",
-        config_id: "default",
+        config_id: args.algorithm.slug().to_string(),
         summary,
         per_image,
     };
@@ -227,7 +279,8 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
         eprintln!("print summary: {e}");
     }
 
-    let report_path = bench_results_dir().join("chessboard.json");
+    let report_path =
+        bench_results_dir().join(format!("chessboard.{}.json", args.algorithm.slug()));
     if let Err(e) = save_report(&report, &report_path) {
         eprintln!("save report: {e}");
     } else {
@@ -265,7 +318,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
     }
 
     let out_root = workspace_root().join(&args.out);
-    let params = DetectorParams::default();
+    let params = params_with(args.algorithm);
     let mut wrote = 0usize;
     for entry in &entries {
         let abs = entry.absolute();
@@ -289,7 +342,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
                 .as_ref()
                 .map(|d| d.labelled_count)
                 .unwrap_or(0);
-            let dst = preview_path(&out_root, &outcome.label);
+            let dst = preview_path(&out_root, &outcome.label, args.algorithm.slug());
             if let Err(e) =
                 render_overlay_on_gray(&outcome.fed_image, outcome.detection.as_ref(), &dst)
             {
@@ -447,6 +500,9 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
 
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&upscaled, &chess_cfg);
+    if args.algorithm == AlgorithmArg::Topological {
+        return diagnose_topological(&args, &upscaled, &corners);
+    }
     let detector_params = DetectorParams::default();
     let detector = calib_targets::chessboard::Detector::new(detector_params);
     let frame = detector.detect_debug(&corners);
@@ -620,6 +676,252 @@ fn diagnose_filename(label: &str) -> String {
     format!("{safe}.diagnose.png")
 }
 
+/// Topological-pipeline diagnostics: print [`TopologicalStats`] and per-
+/// component sizes, render an overlay showing labelled vs unlabelled
+/// corners, and report which pre-filter or classification step
+/// dropped the unlabelled ones.
+fn diagnose_topological(
+    args: &DiagnoseArgs,
+    upscaled: &image::GrayImage,
+    corners: &[calib_targets::core::Corner],
+) -> ExitCode {
+    use projective_grid::{build_grid_topological, AxisHint, TopologicalParams};
+
+    let mut params = TopologicalParams::default();
+    if let Some(deg) = args.axis_align_tol_deg {
+        params.axis_align_tol_rad = deg.to_radians();
+    }
+    if let Some(deg) = args.diagonal_angle_tol_deg {
+        params.diagonal_angle_tol_rad = deg.to_radians();
+    }
+    println!(
+        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  diagonal_angle_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)",
+        args.image,
+        corners.len(),
+        params.axis_align_tol_rad,
+        (params.axis_align_tol_rad.to_degrees() as i32),
+        params.diagonal_angle_tol_rad,
+        (params.diagonal_angle_tol_rad.to_degrees() as i32),
+        params.max_axis_sigma_rad,
+        (params.max_axis_sigma_rad.to_degrees() as i32),
+    );
+
+    // Pre-filter: at least one axis with sigma below threshold AND the
+    // standard chessboard strength + fit-quality gates.
+    let chess_params = DetectorParams::default();
+    let mut survives_strength = 0usize;
+    let mut survives_fit = 0usize;
+    let mut survives_axis = 0usize;
+    for c in corners {
+        let strong = c.strength >= chess_params.min_corner_strength;
+        let fit_ok = !chess_params.max_fit_rms_ratio.is_finite()
+            || c.contrast <= 0.0
+            || c.fit_rms <= chess_params.max_fit_rms_ratio * c.contrast;
+        let axis_ok = c.axes[0].sigma < params.max_axis_sigma_rad
+            || c.axes[1].sigma < params.max_axis_sigma_rad;
+        if strong {
+            survives_strength += 1;
+        }
+        if strong && fit_ok {
+            survives_fit += 1;
+        }
+        if strong && fit_ok && axis_ok {
+            survives_axis += 1;
+        }
+    }
+    println!(
+        "  pre-filter: strength→{} fit→{} axis→{} (lost {} on axis sigma alone)",
+        survives_strength,
+        survives_fit,
+        survives_axis,
+        survives_fit - survives_axis,
+    );
+
+    let positions: Vec<nalgebra::Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let axes: Vec<[AxisHint; 2]> = corners
+        .iter()
+        .map(|c| {
+            [
+                AxisHint {
+                    angle: c.axes[0].angle,
+                    sigma: c.axes[0].sigma,
+                },
+                AxisHint {
+                    angle: c.axes[1].angle,
+                    sigma: c.axes[1].sigma,
+                },
+            ]
+        })
+        .collect();
+
+    let grid = match build_grid_topological(&positions, &axes, &params) {
+        Ok(g) => g,
+        Err(e) => {
+            println!("  build_grid_topological failed: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let s = &grid.diagnostics;
+    println!(
+        "  triangles: {}  edges classified: grid={}  diagonal={}  spurious={}",
+        s.triangles, s.grid_edges, s.diagonal_edges, s.spurious_edges,
+    );
+    println!(
+        "  triangle composition: mergeable(1d,2g)={}  all-grid(0d,3g)={}  multi-diag(>=2d)={}  has-spurious={}",
+        s.triangles_mergeable,
+        s.triangles_all_grid,
+        s.triangles_multi_diag,
+        s.triangles_has_spurious,
+    );
+    println!(
+        "  quads merged: {}  quads kept: {}  components: {}",
+        s.quads_merged, s.quads_kept, s.components,
+    );
+    let labelled_corner_set: std::collections::HashSet<usize> = grid
+        .components
+        .iter()
+        .flat_map(|c| c.labelled.values().copied())
+        .collect();
+    println!(
+        "  labelled corners (unique across components): {} / {} usable",
+        labelled_corner_set.len(),
+        s.corners_used,
+    );
+    for (k, c) in grid.components.iter().enumerate() {
+        let max_i = c.labelled.keys().map(|(i, _)| *i).max().unwrap_or(0);
+        let max_j = c.labelled.keys().map(|(_, j)| *j).max().unwrap_or(0);
+        println!(
+            "  component {k}: labelled={} bbox=({}+1)x({}+1)",
+            c.labelled.len(),
+            max_i,
+            max_j,
+        );
+    }
+
+    // Bin the unlabelled corner positions into quadrants so we can see
+    // *where* the dropouts cluster (top-left, bottom-right, etc.).
+    let (img_w, img_h) = upscaled.dimensions();
+    let half_w = img_w as f32 * 0.5;
+    let half_h = img_h as f32 * 0.5;
+    let mut q_lab = [0usize; 4];
+    let mut q_unl = [0usize; 4];
+    let mut unlabelled_positions: Vec<(f32, f32, f32, f32)> = Vec::new();
+    for (k, c) in corners.iter().enumerate() {
+        let qx = if c.position.x < half_w { 0 } else { 1 };
+        let qy = if c.position.y < half_h { 0 } else { 1 };
+        let q = qy * 2 + qx;
+        if labelled_corner_set.contains(&k) {
+            q_lab[q] += 1;
+        } else {
+            q_unl[q] += 1;
+            unlabelled_positions.push((
+                c.position.x,
+                c.position.y,
+                c.axes[0].sigma,
+                c.axes[1].sigma,
+            ));
+        }
+    }
+    println!(
+        "\n  per-quadrant labelled / unlabelled (bottom-left = corners with x<W/2, y>H/2):"
+    );
+    println!(
+        "    TL: {:>4}/{:<4}    TR: {:>4}/{:<4}",
+        q_lab[0], q_unl[0], q_lab[1], q_unl[1],
+    );
+    println!(
+        "    BL: {:>4}/{:<4}    BR: {:>4}/{:<4}",
+        q_lab[2], q_unl[2], q_lab[3], q_unl[3],
+    );
+    if !unlabelled_positions.is_empty() {
+        println!(
+            "\n  unlabelled corner positions (x, y, axis0_sigma_deg, axis1_sigma_deg):"
+        );
+        // Sort by y descending so bottom-of-image first; cap output.
+        let mut sorted = unlabelled_positions.clone();
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        for (i, (x, y, s0, s1)) in sorted.iter().take(20).enumerate() {
+            println!(
+                "    [{:>2}] ({:>6.1}, {:>6.1})  σ0={:>5.1}°  σ1={:>5.1}°",
+                i,
+                x,
+                y,
+                s0.to_degrees(),
+                s1.to_degrees()
+            );
+        }
+        if sorted.len() > 20 {
+            println!("    ... ({} more)", sorted.len() - 20);
+        }
+    }
+
+    // Render an overlay: green dots = labelled corners, red dots = corners
+    // dropped by the pre-filter or classification.
+    let label = args.image.clone();
+    let dst = args.out.as_deref().map_or_else(
+        || {
+            workspace_root()
+                .join("preview/diagnose")
+                .join(format!("{}.topological.png", diagnose_filename(&label).trim_end_matches(".png")))
+        },
+        |p| workspace_root().join(p),
+    );
+    if let Err(e) =
+        render_topological_overlay(upscaled, corners, &labelled_corner_set, &dst)
+    {
+        eprintln!("render topological overlay: {e}");
+        return ExitCode::from(2);
+    }
+    println!(
+        "\nwrote topological overlay → {}",
+        dst.strip_prefix(workspace_root()).unwrap_or(&dst).display(),
+    );
+    ExitCode::SUCCESS
+}
+
+fn render_topological_overlay(
+    base: &image::GrayImage,
+    corners: &[calib_targets::core::Corner],
+    labelled: &std::collections::HashSet<usize>,
+    dst: &Path,
+) -> std::io::Result<()> {
+    use image::{Rgb, RgbImage};
+    let (w, h) = base.dimensions();
+    let mut rgb = RgbImage::new(w, h);
+    for (x, y, p) in base.enumerate_pixels() {
+        rgb.put_pixel(x, y, Rgb([p[0], p[0], p[0]]));
+    }
+    let stamp =
+        |rgb: &mut RgbImage, cx: f32, cy: f32, color: [u8; 3]| {
+            let r = 2i32;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx * dx + dy * dy > r * r {
+                        continue;
+                    }
+                    let x = cx as i32 + dx;
+                    let y = cy as i32 + dy;
+                    if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                        continue;
+                    }
+                    rgb.put_pixel(x as u32, y as u32, Rgb(color));
+                }
+            }
+        };
+    for (k, c) in corners.iter().enumerate() {
+        let color = if labelled.contains(&k) {
+            [50, 220, 80] // green = labelled
+        } else {
+            [220, 50, 50] // red = dropped
+        };
+        stamp(&mut rgb, c.position.x, c.position.y, color);
+    }
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    rgb.save(dst).map_err(std::io::Error::other)
+}
+
 // --- helpers --------------------------------------------------------------
 
 fn filter_entries<'a>(
@@ -765,7 +1067,7 @@ fn bench_results_dir() -> PathBuf {
     workspace_root().join("bench_results")
 }
 
-fn preview_path(out_root: &Path, label: &str) -> PathBuf {
+fn preview_path(out_root: &Path, label: &str, algorithm_slug: &str) -> PathBuf {
     let (base, sub) = match label.rsplit_once('#') {
         Some((b, s)) => (b, Some(s)),
         None => (label, None),
@@ -784,8 +1086,8 @@ fn preview_path(out_root: &Path, label: &str) -> PathBuf {
         out_root.join(parent_dir)
     };
     let filename = match sub {
-        Some(s) => format!("{stem}.{s}.chessboard.png"),
-        None => format!("{stem}.chessboard.png"),
+        Some(s) => format!("{stem}.{s}.chessboard.{algorithm_slug}.png"),
+        None => format!("{stem}.chessboard.{algorithm_slug}.png"),
     };
     mirror.join(filename)
 }

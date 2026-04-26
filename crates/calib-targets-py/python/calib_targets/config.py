@@ -256,6 +256,12 @@ class ChessboardParams:
     """
 
     chess: ChessConfig = field(default_factory=ChessConfig)
+    # Pipeline dispatch
+    # See `calib_targets_chessboard::GraphBuildAlgorithm`. Accepted
+    # snake_case values: "topological" or "chessboard_v2". Default
+    # ChessboardV2 — flip to "topological" when targeting low-view-angle
+    # PuzzleBoard captures or other distortion-heavy scenes.
+    graph_build_algorithm: str = "chessboard_v2"
     # Stage 1 — pre-filter
     min_corner_strength: float = 0.0
     max_fit_rms_ratio: float = 0.5
@@ -298,6 +304,7 @@ class ChessboardParams:
     def to_dict(self) -> dict[str, Any]:
         return {
             "chess": self.chess.to_dict(),
+            "graph_build_algorithm": self.graph_build_algorithm,
             "min_corner_strength": self.min_corner_strength,
             "max_fit_rms_ratio": self.max_fit_rms_ratio,
             "num_bins": self.num_bins,
@@ -335,6 +342,9 @@ class ChessboardParams:
         d = cls()
         return cls(
             chess=ChessConfig.from_dict(data.get("chess", {})),
+            graph_build_algorithm=data.get(
+                "graph_build_algorithm", d.graph_build_algorithm
+            ),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
             max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
             num_bins=data.get("num_bins", d.num_bins),

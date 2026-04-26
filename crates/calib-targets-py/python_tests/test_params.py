@@ -106,6 +106,21 @@ def test_chessboard_params_roundtrip() -> None:
     assert restored.to_dict() == serialized
 
 
+def test_chessboard_params_graph_build_algorithm() -> None:
+    # Default keeps callers on the historical seed-and-grow pipeline.
+    default = calib_targets.ChessboardParams()
+    assert default.graph_build_algorithm == "chessboard_v2"
+    assert default.to_dict()["graph_build_algorithm"] == "chessboard_v2"
+
+    # Topological is opt-in via the snake_case enum value.
+    topo = calib_targets.ChessboardParams(graph_build_algorithm="topological")
+    assert topo.to_dict()["graph_build_algorithm"] == "topological"
+
+    # Round-trip preserves the selector exactly.
+    restored = calib_targets.ChessboardParams.from_dict(topo.to_dict())
+    assert restored.graph_build_algorithm == "topological"
+
+
 def test_puzzleboard_params_roundtrip() -> None:
     params = calib_targets.PuzzleBoardParams.for_board(
         calib_targets.PuzzleBoardSpec(rows=12, cols=13, cell_size=2.5, origin_row=4, origin_col=7)

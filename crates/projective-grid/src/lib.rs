@@ -28,11 +28,13 @@
 mod float_helpers;
 
 pub mod circular_stats;
+pub mod component_merge;
 pub mod global_step;
 pub mod hex;
 pub mod homography;
 pub mod local_step;
 pub mod square;
+pub mod topological;
 
 /// Trait alias for floating-point types supported by this crate.
 ///
@@ -56,4 +58,16 @@ pub use square::mesh::GridHomographyMesh;
 pub use square::rectify::GridHomography;
 pub use square::smoothness::{
     find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
+};
+
+// --- Topological-grid surface --------------------------------
+pub use topological::{
+    build_grid_topological, AxisHint, TopologicalComponent, TopologicalError, TopologicalGrid,
+    TopologicalParams, TopologicalStats,
+};
+
+// --- Component merge (shared by both pipelines) --------------
+pub use component_merge::{
+    merge_components_local, ComponentInput, ComponentMergeResult, ComponentMergeStats,
+    LocalMergeParams,
 };

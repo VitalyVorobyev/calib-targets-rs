@@ -12,8 +12,9 @@ use crate::boosters::{apply_boosters, BoosterResult};
 use crate::cluster::{cluster_axes_debug, ClusterCenters, ClusterDebug};
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::{grow_from_seed, ChessboardGrowValidator, ChessboardRescueValidator, GrowResult};
-use crate::params::DetectorParams;
+use crate::params::{DetectorParams, GraphBuildAlgorithm};
 use crate::seed::{find_seed, SeedOutput};
+use crate::topological::detect_all_topological;
 use crate::validate::{validate, ValidationResult};
 use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
@@ -218,7 +219,10 @@ impl Detector {
         )
     )]
     pub fn detect(&self, corners: &[Corner]) -> Option<Detection> {
-        self.detect_debug(corners).detection
+        match self.params.graph_build_algorithm {
+            GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
+            GraphBuildAlgorithm::ChessboardV2 => self.detect_debug(corners).detection,
+        }
     }
 
     /// Full-debug entry point for a single best detection.
@@ -255,10 +259,14 @@ impl Detector {
         )
     )]
     pub fn detect_all(&self, corners: &[Corner]) -> Vec<Detection> {
-        self.detect_all_debug(corners)
-            .into_iter()
-            .filter_map(|f| f.detection)
-            .collect()
+        match self.params.graph_build_algorithm {
+            GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
+            GraphBuildAlgorithm::ChessboardV2 => self
+                .detect_all_debug(corners)
+                .into_iter()
+                .filter_map(|f| f.detection)
+                .collect(),
+        }
     }
 
     /// Single-detection entry with derived per-stage counts.
@@ -750,6 +758,18 @@ fn passes_fit_quality(aug: &CornerAug, params: &DetectorParams) -> bool {
         return true;
     }
     aug.fit_rms <= params.max_fit_rms_ratio * aug.contrast
+}
+
+/// Public re-export so the topological dispatch path can reuse the same
+/// canonicalisation + non-negative-rebase logic as the seed-and-grow
+/// pipeline. The two pipelines emit identical [`Detection`] shapes.
+pub fn build_detection_from_grow(
+    corners: &[CornerAug],
+    grow: &GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+) -> Detection {
+    build_detection(corners, grow, centers, cell_size)
 }
 
 fn build_detection(

@@ -56,6 +56,16 @@ typedef struct ct_marker_board_detector_t ct_marker_board_detector_t;
 typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 
 /**
+ * Selector for the chessboard graph-build algorithm. Mirrors the
+ * `calib_targets_chessboard::GraphBuildAlgorithm` enum.
+ *
+ * Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
+ * keeps zero-initialised C structs on the historical seed-and-grow
+ * pipeline (`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`).
+ */
+typedef uint32_t ct_graph_build_algorithm_t;
+
+/**
  * Optional `float` convention used by fixed ABI structs.
  */
 typedef struct ct_optional_f32_t {
@@ -73,6 +83,11 @@ typedef struct ct_optional_f32_t {
  * literal zero-initialisation.
  */
 typedef struct ct_chessboard_params_t {
+  /**
+   * Pipeline selector. See [`ct_graph_build_algorithm_t`].
+   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
+   */
+  ct_graph_build_algorithm_t graph_build_algorithm;
   float min_corner_strength;
   float max_fit_rms_ratio;
   size_t num_bins;
@@ -576,6 +591,16 @@ typedef struct ct_puzzleboard_result_t {
   struct ct_grid_alignment_t runner_up_alignment;
   size_t observed_edges_len;
 } ct_puzzleboard_result_t;
+
+/**
+ * Seed-and-grow pipeline. Currently the default.
+ */
+#define CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2 0
+
+/**
+ * Topological pipeline (Delaunay + axis-driven cell test).
+ */
+#define CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL 1
 
 #define CT_DICTIONARY_DICT_4X4_50 1
 

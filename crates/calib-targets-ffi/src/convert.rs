@@ -254,6 +254,19 @@ pub(crate) fn convert_chessboard_params(
     // added in future Rust releases keep their defaults until the
     // C ABI explicitly surfaces them.
     let mut out = ChessboardDetectorParams::default();
+    out.graph_build_algorithm = match params.graph_build_algorithm {
+        crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2 => {
+            calib_targets::chessboard::GraphBuildAlgorithm::ChessboardV2
+        }
+        crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL => {
+            calib_targets::chessboard::GraphBuildAlgorithm::Topological
+        }
+        other => {
+            return Err(FfiError::config_error(format!(
+                "chessboard.graph_build_algorithm: unknown value {other}"
+            )));
+        }
+    };
     out.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
     out.max_fit_rms_ratio =
@@ -319,6 +332,19 @@ pub(crate) fn convert_chessboard_params(
 pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
     let d = ChessboardDetectorParams::default();
     ct_chessboard_params_t {
+        graph_build_algorithm: match d.graph_build_algorithm {
+            calib_targets::chessboard::GraphBuildAlgorithm::ChessboardV2 => {
+                crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2
+            }
+            calib_targets::chessboard::GraphBuildAlgorithm::Topological => {
+                crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL
+            }
+            // GraphBuildAlgorithm is `#[non_exhaustive]`; new pipelines
+            // added on the Rust side fall back to the historical
+            // ChessboardV2 selector until the FFI explicitly surfaces
+            // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
+            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2,
+        },
         min_corner_strength: d.min_corner_strength,
         max_fit_rms_ratio: d.max_fit_rms_ratio,
         num_bins: d.num_bins,
