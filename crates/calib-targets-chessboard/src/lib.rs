@@ -64,7 +64,7 @@ pub mod validate;
 
 pub use boosters::{apply_boosters, BoosterResult};
 pub use cell_size::estimate_cell_size;
-pub use cluster::{cluster_axes, AxisCluster, ClusterCenters};
+pub use cluster::{cluster_axes, cluster_axes_debug, AxisCluster, ClusterCenters, ClusterDebug};
 pub use corner::{ClusterLabel, CornerAug, CornerStage};
 pub use detector::{
     DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace, StageCounts,

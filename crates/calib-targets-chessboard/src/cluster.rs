@@ -78,35 +78,87 @@ pub enum AxisCluster {
     Unclustered { max_d_rad: f32 },
 }
 
+/// Stage-3 introspection captured during a single [`cluster_axes_debug`]
+/// run. Surfaced through `DebugFrame` so an offline tool can plot the
+/// histogram and check whether 2-means refinement walked off the
+/// visible peaks. Local-only: never serialized into a public report.
+#[derive(Clone, Debug, Serialize)]
+pub struct ClusterDebug {
+    pub num_bins: usize,
+    pub histogram: Vec<f32>,
+    pub smoothed: Vec<f32>,
+    pub total_weight: f32,
+    /// Peak seeds picked from the smoothed histogram, in radians (`[0, π)`),
+    /// before 2-means refinement. `None` when peak picking failed.
+    pub peak_seeds_rad: Option<[f32; 2]>,
+    /// Centers after 2-means refinement, in radians. `None` when peak
+    /// picking failed (refinement isn't run).
+    pub refined_centers_rad: Option<[f32; 2]>,
+}
+
 /// Run clustering over a slice of [`CornerAug`]. Mutates each
 /// corner's `stage` and `label` fields in place.
 ///
 /// Returns `Some(centers)` on success, `None` when fewer than two
 /// qualifying peaks were found (the detector should return no
 /// detection in that case).
+///
+/// Thin wrapper over [`cluster_axes_debug`]; callers wanting the
+/// histogram + peak seeds should call `cluster_axes_debug` directly.
+pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Option<ClusterCenters> {
+    cluster_axes_debug(corners, params).0
+}
+
+/// Same as [`cluster_axes`] but also returns a [`ClusterDebug`] payload
+/// with the smoothed histogram and the peak seeds — useful for offline
+/// triage of clustering failures. The caller pays the cost of carrying
+/// the histogram (a few KB).
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(level = "debug", skip_all, fields(num_corners = corners.len()))
 )]
-pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Option<ClusterCenters> {
+pub fn cluster_axes_debug(
+    corners: &mut [CornerAug],
+    params: &DetectorParams,
+) -> (Option<ClusterCenters>, ClusterDebug) {
+    let mut debug = ClusterDebug {
+        num_bins: params.num_bins,
+        histogram: Vec::new(),
+        smoothed: Vec::new(),
+        total_weight: 0.0,
+        peak_seeds_rad: None,
+        refined_centers_rad: None,
+    };
+
     if corners.is_empty() || params.num_bins < 4 {
-        return None;
+        return (None, debug);
     }
 
     let hist = build_histogram(corners, params);
+    debug.histogram = hist.bins.clone();
+    debug.total_weight = hist.total_weight;
     if hist.total_weight <= 0.0 {
-        return None;
+        return (None, debug);
     }
+
     let smoothed = cs::smooth_circular_5(&hist.bins);
+    debug.smoothed = smoothed.clone();
+
     let peak_opts = cs::PeakPickOptions::new(
         params.min_peak_weight_fraction,
         params.peak_min_separation_deg.to_radians(),
     );
-    let (theta0_seed, theta1_seed) = cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)?;
+    let Some((theta0_seed, theta1_seed)) =
+        cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)
+    else {
+        return (None, debug);
+    };
+    debug.peak_seeds_rad = Some([theta0_seed, theta1_seed]);
 
     let votes = collect_axis_votes(corners);
     let (theta0, theta1) =
         cs::refine_2means_double_angle(&votes, [theta0_seed, theta1_seed], params.max_iters_2means);
+    debug.refined_centers_rad = Some([theta0, theta1]);
 
     let (a, b) = if theta0 <= theta1 {
         (theta0, theta1)
@@ -118,12 +170,16 @@ pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Optio
         theta1: b,
     };
 
-    // Assign per-corner label.
-    let tol_rad = params.cluster_tol_deg.to_radians();
+    // Assign per-corner label. The effective per-corner tolerance is
+    // `cluster_tol_rad + cluster_sigma_k * max(σ_a0, σ_a1)` so noisy
+    // axes get proportional slack — see `DetectorParams::cluster_sigma_k`.
+    let base_tol_rad = params.cluster_tol_deg.to_radians();
+    let sigma_k = params.cluster_sigma_k;
     for corner in corners.iter_mut() {
         if !matches!(corner.stage, CornerStage::Strong) {
             continue;
         }
+        let tol_rad = effective_tol_rad(corner, base_tol_rad, sigma_k);
         let assign = assign_corner(corner, centers, tol_rad);
         match assign {
             AxisCluster::Labeled { label, .. } => {
@@ -139,7 +195,40 @@ pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Optio
         }
     }
 
-    Some(centers)
+    (Some(centers), debug)
+}
+
+/// Per-corner cluster admission threshold in radians.
+///
+/// `min(cluster_tol_rad + cluster_sigma_k * max(σ_a0, σ_a1),
+///      cluster_tol_rad + max_sigma_bonus_rad)` — sigma bonus is
+/// capped so a single noisy corner cannot blow open the gate. Sigmas
+/// at the no-info sentinel (≈ π) are clamped to a finite ceiling.
+///
+/// The cap exists because admitting too many borderline corners
+/// destabilises the seed finder: with more clustered candidates the
+/// first-rank seed quad can land on a sub-grid spaced 1.4× cell
+/// (sqrt(2)×, the diagonal step), which then grows a sparse,
+/// inconsistent (i, j) frame. Confirmed empirically on
+/// `puzzleboard_reference/example2.png` — uncapped bonus turned a
+/// 134-label / 32-pixel-cell detection into a 127-label /
+/// 45-pixel-cell detection with `SHIFT-INCONSISTENT` errors.
+#[inline]
+pub(crate) fn effective_tol_rad(corner: &CornerAug, base_tol_rad: f32, sigma_k: f32) -> f32 {
+    if sigma_k <= 0.0 {
+        return base_tol_rad;
+    }
+    // Hard cap on sigma input. The no-info sentinel is π, and any
+    // sigma above ~10° on a real corner is already noise-dominated.
+    let sigma_cap = 10.0_f32.to_radians();
+    let s0 = corner.axes[0].sigma.clamp(0.0, sigma_cap);
+    let s1 = corner.axes[1].sigma.clamp(0.0, sigma_cap);
+    let bonus = sigma_k * s0.max(s1);
+    // Hard cap on the bonus itself: never exceed +3° over the base
+    // tolerance. This keeps the effective gate within `[base_tol,
+    // base_tol + 3°]` regardless of sigma.
+    let max_bonus = 3.0_f32.to_radians();
+    base_tol_rad + bonus.min(max_bonus)
 }
 
 /// Pure assignment of one corner to a label given known centers —

@@ -149,17 +149,21 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
         slot_a != slot_b
     }
 
-    /// 2×-spacing rejection: the seed quad is invalid when a
-    /// `Swapped`-cluster corner sits near any of the four edge
-    /// midpoints, OR a `Canonical`-cluster corner sits near the
-    /// parallelogram center. Both indicate the seed has accidentally
-    /// skipped a real intermediate corner.
+    /// 2×-spacing rejection: the seed quad is invalid when ANY real
+    /// corner (clustered or not) sits near an edge midpoint or the
+    /// parallelogram center, on top of the chessboard-specific
+    /// signals (a `Swapped`-cluster corner at a midpoint, a
+    /// `Canonical`-cluster corner at the center). The "any real
+    /// corner" fallback catches sqrt(2)× (diagonal) and 2× cases
+    /// where the intermediate corner failed Stage-3 clustering and
+    /// isn't in `self.swapped` / `self.canonical`.
     fn has_midpoint_violation(
         &self,
         seed: projective_grid::square::seed::Seed,
         cell_size: f32,
     ) -> bool {
         let positions: Vec<Point2<f32>> = self.corners.iter().map(|c| c.position).collect();
+        let all_idx: Vec<usize> = (0..self.corners.len()).collect();
         projective_grid::square::seed::seed_has_midpoint_violation(
             &positions,
             [seed.a, seed.b, seed.c, seed.d],
@@ -167,6 +171,7 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
             0.3,
             &self.swapped,
             &self.canonical,
+            &all_idx,
         )
     }
 }

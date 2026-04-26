@@ -54,6 +54,11 @@ struct DiagnoseArgs {
     /// Output overlay path (default: `preview/diagnose/<stem>.png`).
     #[arg(long)]
     out: Option<String>,
+    /// Optional path to dump the full `DebugFrame` (cluster histogram +
+    /// per-corner stages + iteration traces) as JSON for offline triage.
+    /// Local-only output; do not commit.
+    #[arg(long)]
+    dump_frame: Option<String>,
 }
 
 #[derive(Args)]
@@ -486,6 +491,35 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
         "\nwrote diagnose overlay → {}",
         dst.strip_prefix(workspace_root()).unwrap_or(&dst).display()
     );
+
+    if let Some(dump_path) = args.dump_frame.as_deref() {
+        let dump_dst = workspace_root().join(dump_path);
+        if let Some(parent) = dump_dst.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                eprintln!("create dump-frame parent dir: {e}");
+                return ExitCode::from(2);
+            }
+        }
+        let json = match serde_json::to_string_pretty(&frame) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("serialize debug frame: {e}");
+                return ExitCode::from(2);
+            }
+        };
+        if let Err(e) = std::fs::write(&dump_dst, json) {
+            eprintln!("write debug frame to {}: {e}", dump_dst.display());
+            return ExitCode::from(2);
+        }
+        println!(
+            "wrote debug frame → {}",
+            dump_dst
+                .strip_prefix(workspace_root())
+                .unwrap_or(&dump_dst)
+                .display()
+        );
+    }
+
     ExitCode::SUCCESS
 }
 

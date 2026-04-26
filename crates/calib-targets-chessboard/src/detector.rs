@@ -9,9 +9,9 @@
 //! See `book/src/chessboard.md` for the full algorithm description.
 
 use crate::boosters::{apply_boosters, BoosterResult};
-use crate::cluster::{cluster_axes, ClusterCenters};
+use crate::cluster::{cluster_axes_debug, ClusterCenters, ClusterDebug};
 use crate::corner::{CornerAug, CornerStage};
-use crate::grow::{grow_from_seed, ChessboardGrowValidator, GrowResult};
+use crate::grow::{grow_from_seed, ChessboardGrowValidator, ChessboardRescueValidator, GrowResult};
 use crate::params::DetectorParams;
 use crate::seed::{find_seed, SeedOutput};
 use crate::validate::{validate, ValidationResult};
@@ -67,6 +67,11 @@ pub struct DebugFrame {
     /// the input slice). `stage` captures where each corner ended
     /// up.
     pub corners: Vec<CornerAug>,
+    /// Stage-3 introspection — smoothed histogram, peak seeds,
+    /// refined centers. Surfaced for offline triage. `None` only when
+    /// Stage 1 produced no Strong corners (clustering wasn't run).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cluster_debug: Option<ClusterDebug>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -347,6 +352,7 @@ impl Detector {
             boosters: None,
             detection: None,
             corners: Vec::new(),
+            cluster_debug: None,
         };
 
         // Stage 1: pre-filter.
@@ -372,7 +378,9 @@ impl Detector {
         }
 
         // Stage 2 + 3: clustering.
-        let centers = match cluster_axes(&mut augs, &self.params) {
+        let (centers_opt, cluster_debug) = cluster_axes_debug(&mut augs, &self.params);
+        frame.cluster_debug = Some(cluster_debug);
+        let centers = match centers_opt {
             Some(c) => c,
             None => {
                 frame.corners = augs;
@@ -521,6 +529,40 @@ impl Detector {
                         blacklist.insert(idx);
                     }
                 }
+
+                // Stage 6.5: NoCluster rescue. Re-considers `Strong` /
+                // `NoCluster` corners as candidates using the same
+                // local-H prediction machinery as Stage 6, with a
+                // wider axis-tolerance (`rescue_axis_tol_deg`) and
+                // inferred parity. Position match + parity match +
+                // axis-slot-swap edge invariant keep precision.
+                if self.params.enable_stage6_5_rescue {
+                    let rescue_stats = run_stage6_5_rescue(
+                        &augs,
+                        &mut grow_res,
+                        centers,
+                        cell_size,
+                        &blacklist,
+                        &self.params,
+                    );
+                    for (k, &idx) in rescue_stats.attached_indices.iter().enumerate() {
+                        let at = rescue_stats.attached_cells[k];
+                        augs[idx].stage = CornerStage::Labeled {
+                            at,
+                            local_h_residual_px: None,
+                        };
+                    }
+                    // No post-rescue revalidation: the rescue's
+                    // per-candidate gates (position match against
+                    // local-H, parity match against the cluster
+                    // centers, axis-slot-swap edge invariant,
+                    // ambiguity gate) already enforce precision on
+                    // every addition. Re-running line-collinearity /
+                    // local-H residual after rescue empirically
+                    // over-flags borderline corners that the booster
+                    // would have admitted, costing more recall than
+                    // the rescue gains.
+                }
                 // Stage 6 ran if it produced residual stats (either
                 // global-H, which sets `h_quality`, or local-H, which
                 // sets `h_residual_median_px` per-candidate aggregate).
@@ -644,6 +686,50 @@ fn run_stage6(
             &validator,
         )
     };
+
+    grow_res.labelled = pg_grow.labelled;
+    grow_res.by_corner = pg_grow.by_corner;
+    grow_res.ambiguous = pg_grow.ambiguous;
+    grow_res.holes = pg_grow.holes;
+    stats
+}
+
+/// Stage 6.5: NoCluster rescue. Reuses
+/// [`projective_grid::square::grow_extension::extend_via_local_homography`]
+/// with [`ChessboardRescueValidator`] (admits `Strong` / `NoCluster`
+/// corners within `rescue_axis_tol_deg` and infers parity from axes).
+/// Same per-cell local-H prediction + position match + ambiguity
+/// gate + edge invariant as Stage 6 — only the eligibility / label
+/// gates are relaxed.
+fn run_stage6_5_rescue(
+    corners: &[CornerAug],
+    grow_res: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+) -> ExtensionStats {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let mut pg_grow = projective_grid::square::grow::GrowResult {
+        labelled: std::mem::take(&mut grow_res.labelled),
+        by_corner: std::mem::take(&mut grow_res.by_corner),
+        ambiguous: std::mem::take(&mut grow_res.ambiguous),
+        holes: std::mem::take(&mut grow_res.holes),
+        grid_u: grow_res.grid_u,
+        grid_v: grow_res.grid_v,
+    };
+
+    let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params);
+    let mut local_params = LocalExtensionParams::default();
+    local_params.k_nearest = params.stage6_5_local_k_nearest;
+    local_params.search_rel = params.rescue_search_rel;
+    let stats = extend_via_local_homography(
+        &positions,
+        &mut pg_grow,
+        cell_size,
+        &local_params,
+        &validator,
+    );
 
     grow_res.labelled = pg_grow.labelled;
     grow_res.by_corner = pg_grow.by_corner;

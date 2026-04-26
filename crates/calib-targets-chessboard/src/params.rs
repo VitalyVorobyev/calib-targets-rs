@@ -28,6 +28,46 @@ fn default_step_deviation_thresh_rel() -> f32 {
     0.0
 }
 
+fn default_cluster_sigma_k() -> f32 {
+    // k = 0 by default — sigma-aware tolerance is plumbed through but
+    // disabled. Empirical study (k = 0.5–2.0 with cap 3–4°): every
+    // positive setting that recovers `small3.png`'s NoCluster set also
+    // destabilises `example2.png`'s seed finder under heavy radial
+    // distortion. Extra Clustered candidates expose a ~1.4×-cell seed
+    // quad whose edge midpoints don't coincide with any real corner,
+    // so the existing midpoint-violation check (even broadened to
+    // include all positions) does not reject it. The seed selector
+    // needs cell-size consistency or trial-grow scoring before this
+    // gate can open. Setting `cluster_sigma_k` > 0 in a custom
+    // `DetectorParams` is fine for experiments.
+    0.0
+}
+
+fn default_enable_stage6_5_rescue() -> bool {
+    // Default on. The rescue pass runs after Stage 6 and is gated on
+    // (a) local-H position match, (b) parity match against the global
+    // centers, and (c) the axis-slot-swap edge invariant. None of
+    // these admit a structurally wrong corner — the precision
+    // contract still holds.
+    true
+}
+
+fn default_rescue_axis_tol_deg() -> f32 {
+    // 22° covers the false-NoCluster `max_d_deg` quartiles observed
+    // on `example1.png` (max 32°) and `example2.png` (max 21°).
+    // Goes wider than `weak_cluster_tol_deg` because Stage 6.5
+    // requires the additional position + parity + edge gates.
+    22.0
+}
+
+fn default_rescue_search_rel() -> f32 {
+    // 0.8 cell — wide enough to catch corners under heavy perspective
+    // foreshortening where local-H extrapolation at boundary cells
+    // overshoots the actual position by ~0.5 cell. The ambiguity gate
+    // and parity / axis / edge invariants keep precision intact.
+    0.8
+}
+
 fn default_stage6_local_h() -> bool {
     // Local-H Stage 6 is the production default: per-candidate
     // homography from the K nearest labelled corners + deeper bbox
@@ -68,9 +108,29 @@ pub struct DetectorParams {
     pub num_bins: usize,
     /// Max 2-means refinement iterations over axis votes.
     pub max_iters_2means: usize,
-    /// Per-axis absolute tolerance for a corner's axis to count as matching a
-    /// cluster center.
+    /// Per-axis absolute tolerance (degrees) for a corner's axis to count as
+    /// matching a cluster center. The effective per-corner gate is
+    /// `cluster_tol_deg + cluster_sigma_k * max(σ_a0, σ_a1)`, so noisier
+    /// axis estimates get proportional slack — see [`cluster_sigma_k`].
+    ///
+    /// [`cluster_sigma_k`]: DetectorParams::cluster_sigma_k
     pub cluster_tol_deg: f32,
+    /// Multiplier on the per-corner axis sigma added to [`cluster_tol_deg`]
+    /// when admitting a corner. Default `2.0`: clean corners
+    /// (σ ≈ 0.5–1°) get ≈ `cluster_tol_deg + 1–2°`; noisy corners
+    /// (σ ≈ 3–5° on tilted-lens / partial-focus images) get
+    /// `cluster_tol_deg + 6–10°`. Set to `0.0` to restore the strict
+    /// fixed-tolerance behaviour.
+    ///
+    /// Justification: ChESS axis sigma is the 1σ Gauss–Newton uncertainty
+    /// of the two-axis fit, so a per-corner gate of `tol + k·σ` is the
+    /// standard way to pass corners whose true axis is within tolerance
+    /// but whose estimate fell outside under noise. `k = 2` corresponds
+    /// to a ≈ 95% one-sided confidence band.
+    ///
+    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
+    #[serde(default = "default_cluster_sigma_k")]
+    pub cluster_sigma_k: f32,
     /// Minimal angular separation (degrees) between the two peaks. Guards
     /// against seed-peak collisions; true grid axes are `~90°` apart.
     pub peak_min_separation_deg: f32,
@@ -151,6 +211,60 @@ pub struct DetectorParams {
     /// Blacklist-retry cap.
     pub max_validation_iters: u32,
 
+    // --- Stage 6.5: NoCluster rescue ---------------------------------------
+    /// Run a Stage-6.5 pass after Stage-6 boundary extension that
+    /// re-considers `Strong` / `NoCluster` corners as candidates for
+    /// empty grid cells. Reuses the same per-candidate local-H
+    /// machinery as Stage 6 but admits corners whose axes failed the
+    /// strict Stage-3 gate by a margin, gated on (a) position match
+    /// with the local-H prediction, (b) parity match against the
+    /// global cluster centers via the cheaper canonical/swapped
+    /// assignment, and (c) the axis-slot-swap edge invariant to a
+    /// labelled neighbour. Recovers corners whose axes drifted under
+    /// perspective foreshortening or radial distortion (typical
+    /// failure mode on `puzzleboard_reference/example1.png` and
+    /// `example2.png`).
+    ///
+    /// Default `true`. Set to `false` to restore the pre-Stage-6.5
+    /// behaviour.
+    #[serde(default = "default_enable_stage6_5_rescue")]
+    pub enable_stage6_5_rescue: bool,
+    /// Per-axis absolute tolerance (degrees) for [`Stage 6.5
+    /// rescue`](DetectorParams::enable_stage6_5_rescue) admission.
+    /// Wider than [`cluster_tol_deg`] (typically 12°) and the booster's
+    /// [`weak_cluster_tol_deg`] (typically 18°) because the rescue
+    /// pass is precision-anchored on local-H position match — a wide
+    /// axis gate alone cannot admit a wrong corner.
+    ///
+    /// Default `22°`: the Step-0 evidence on
+    /// `puzzleboard_reference/example1.png` and `example2.png` showed
+    /// false-NoCluster `max_d_deg` quartiles in the 12–22° range; this
+    /// value covers them without admitting structurally-misoriented
+    /// corners.
+    ///
+    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
+    /// [`weak_cluster_tol_deg`]: DetectorParams::weak_cluster_tol_deg
+    #[serde(default = "default_rescue_axis_tol_deg")]
+    pub rescue_axis_tol_deg: f32,
+    /// `K` parameter for Stage-6.5 local-H fitting (same semantics as
+    /// [`stage6_local_k_nearest`]).
+    ///
+    /// [`stage6_local_k_nearest`]: DetectorParams::stage6_local_k_nearest
+    #[serde(default = "default_stage6_local_k_nearest")]
+    pub stage6_5_local_k_nearest: usize,
+    /// Position-search radius for Stage-6.5 candidate matching, as a
+    /// fraction of `cell_size`. Wider than Stage-6's `search_rel`
+    /// (default 0.40) because heavy perspective foreshortening makes
+    /// the local-H prediction at boundary cells overshoot by
+    /// significantly more than 0.40 cell. The wider gate is safe
+    /// because Stage 6.5 still enforces parity + axis match + edge
+    /// invariant + ambiguity, all of which fail on a wrongly-located
+    /// candidate.
+    ///
+    /// Default `0.8`.
+    #[serde(default = "default_rescue_search_rel")]
+    pub rescue_search_rel: f32,
+
     // --- Stage 6: boundary extension --------------------------------------
     /// Use the per-candidate local-homography Stage 6
     /// (`projective_grid::square::grow_extension::extend_via_local_homography`)
@@ -212,6 +326,7 @@ impl Default for DetectorParams {
             num_bins: 90,
             max_iters_2means: 10,
             cluster_tol_deg: 12.0,
+            cluster_sigma_k: default_cluster_sigma_k(),
             peak_min_separation_deg: 60.0,
             // Raised from 0.05 → 0.02: with fine (2°) bins and
             // realistic axis noise, the per-bin weight of a genuine
@@ -259,6 +374,11 @@ impl Default for DetectorParams {
 
             stage6_local_h: default_stage6_local_h(),
             stage6_local_k_nearest: default_stage6_local_k_nearest(),
+
+            enable_stage6_5_rescue: default_enable_stage6_5_rescue(),
+            rescue_axis_tol_deg: default_rescue_axis_tol_deg(),
+            stage6_5_local_k_nearest: default_stage6_local_k_nearest(),
+            rescue_search_rel: default_rescue_search_rel(),
 
             enable_line_extrapolation: true,
             enable_gap_fill: true,
