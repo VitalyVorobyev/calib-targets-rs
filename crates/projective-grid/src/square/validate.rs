@@ -5,13 +5,23 @@
 //! 1. **Line collinearity.** For every row (`j = const`) and column
 //!    (`i = const`) with `≥ line_min_members` labelled members, fit
 //!    a least-squares line in pixel space and flag any member whose
-//!    perpendicular residual exceeds `line_tol_rel × cell_size`.
+//!    perpendicular residual exceeds `line_tol_rel × scale`.
 //!
 //! 2. **Local-H residual.** For every labelled corner with ≥ 4
 //!    non-collinear labelled neighbors in `(i, j)`-space, fit a 4-point
 //!    local homography from the 4 grid-closest neighbors, predict the
 //!    corner's pixel position, and measure the residual. Corners whose
-//!    residual exceeds `local_h_tol_rel × cell_size` are flagged.
+//!    residual exceeds `local_h_tol_rel × scale` are flagged.
+//!
+//! `scale` is either the caller-supplied global `cell_size` (default
+//! mode) or — when [`ValidationParams::use_step_aware`] is set — a
+//! **per-corner local step** computed from labelled grid neighbours
+//! via central or one-sided finite differences. Per-corner thresholds
+//! are anisotropic: cells in perspective-foreshortened regions get a
+//! tighter pixel tolerance proportional to their (smaller) local step;
+//! cells in radially-distorted regions get a looser one. Corners
+//! without enough labelled neighbours fall back to the global
+//! `cell_size`.
 //!
 //! Flags are combined via the attribution rules below into a
 //! blacklist of **indices into the input slice**:
@@ -22,6 +32,9 @@
 //! * A corner with a local-H flag but NO line flag, where at least one
 //!   of its 4 base neighbors has `≥ 1` line flags, blames the worst-
 //!   line-flagged base instead (the base is the outlier).
+//! * When [`ValidationParams::step_deviation_thresh_rel`] is set, a
+//!   corner whose local step deviates from the labelled-set median by
+//!   more than the threshold AND has ≥ 1 line flag is also an outlier.
 //! * Otherwise (isolated local-H flag with no supporting evidence),
 //!   defer — no blacklist entry in this iteration.
 //!
@@ -42,58 +55,84 @@ use std::collections::{HashMap, HashSet};
 
 /// Tolerances for the validation pass.
 ///
-/// All spatial tolerances are expressed as ratios of the grid's cell
-/// size; `validate` multiplies them by the caller-supplied
-/// `cell_size` at runtime.
+/// All spatial tolerances are expressed as ratios of either the
+/// caller-supplied global `cell_size` or — when [`use_step_aware`] is
+/// set — the per-corner local step derived from labelled grid
+/// neighbours.
+///
+/// [`use_step_aware`]: ValidationParams::use_step_aware
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct ValidationParams {
-    /// Straight-line fit collinearity tolerance (fraction of
-    /// `cell_size`).
+    /// Straight-line fit collinearity tolerance (fraction of the
+    /// per-corner scale).
     pub line_tol_rel: f32,
-    /// Projective-line fit collinearity tolerance (fraction of
-    /// `cell_size`). Looser than `line_tol_rel` to accommodate lens
-    /// distortion. Currently reserved for a projective-line check;
-    /// not yet consumed, but kept in the param surface so chessboard's
-    /// `DetectorParams` maps 1:1.
-    pub projective_line_tol_rel: f32,
     /// Minimum members required to fit a line / column.
     pub line_min_members: usize,
-    /// Local-H prediction tolerance (fraction of `cell_size`).
+    /// Local-H prediction tolerance (fraction of the per-corner
+    /// scale).
     pub local_h_tol_rel: f32,
+    /// When `true`, line and local-H thresholds use a per-corner
+    /// local step computed from labelled grid neighbours via central
+    /// or one-sided finite differences (`(step_u + step_v) / 2`).
+    /// Corners without enough labelled neighbours fall back to the
+    /// global `cell_size`.
+    ///
+    /// Set this when the grid is non-uniform in pixel space —
+    /// perspective foreshortening, radial distortion, or rectified-
+    /// then-rasterised images. Has no effect on uniform grids.
+    pub use_step_aware: bool,
+    /// When `> 0` and [`use_step_aware`] is set, an additional flag
+    /// fires for corners whose local step deviates from the labelled-
+    /// set median by more than `step_deviation_thresh_rel` (relative).
+    /// E.g. `0.5` flags corners whose step is < 1/(1+0.5) of the
+    /// median or > (1+0.5)× the median.
+    ///
+    /// Combined with line flags via the existing attribution rules
+    /// (rule 4: step-deviation flag + ≥ 1 line flag → outlier).
+    /// Set to `0.0` to disable.
+    ///
+    /// [`use_step_aware`]: ValidationParams::use_step_aware
+    pub step_deviation_thresh_rel: f32,
 }
 
 impl Default for ValidationParams {
     fn default() -> Self {
         // Matches `calib_targets_chessboard::DetectorParams`'s
         // validation defaults so the thin chessboard wrapper stays a
-        // pure forward of the same numbers.
+        // pure forward of the same numbers. Step-aware mode is opt-in.
         Self {
             line_tol_rel: 0.15,
-            projective_line_tol_rel: 0.25,
             line_min_members: 3,
             local_h_tol_rel: 0.20,
+            use_step_aware: false,
+            step_deviation_thresh_rel: 0.0,
         }
     }
 }
 
 impl ValidationParams {
-    /// Construct fully-specified tolerances. Use this from outside the
-    /// crate since the struct is [`#[non_exhaustive]`] — new optional
-    /// tolerances added later get sensible defaults via the returned
-    /// instance.
-    pub fn new(
-        line_tol_rel: f32,
-        projective_line_tol_rel: f32,
-        line_min_members: usize,
-        local_h_tol_rel: f32,
-    ) -> Self {
+    /// Construct fully-specified core tolerances. Step-aware mode is
+    /// off by default; call [`with_step_aware`] to enable it.
+    ///
+    /// [`with_step_aware`]: ValidationParams::with_step_aware
+    pub fn new(line_tol_rel: f32, line_min_members: usize, local_h_tol_rel: f32) -> Self {
         Self {
             line_tol_rel,
-            projective_line_tol_rel,
             line_min_members,
             local_h_tol_rel,
+            use_step_aware: false,
+            step_deviation_thresh_rel: 0.0,
         }
+    }
+
+    /// Enable per-corner step-aware thresholds. Pass
+    /// `deviation_thresh_rel = 0.0` for thresholds-only without the
+    /// extra step-deviation flag.
+    pub fn with_step_aware(mut self, deviation_thresh_rel: f32) -> Self {
+        self.use_step_aware = true;
+        self.step_deviation_thresh_rel = deviation_thresh_rel;
+        self
     }
 }
 
@@ -128,20 +167,33 @@ pub fn validate(
     cell_size: f32,
     params: &ValidationParams,
 ) -> ValidationResult {
-    let line_tol_px = params.line_tol_rel * cell_size;
-    let local_h_tol_px = params.local_h_tol_rel * cell_size;
-    let high_tol_px = 2.0 * local_h_tol_px;
-
     // Quick lookup maps (built once per call).
     let by_idx: HashMap<usize, &LabelledEntry> = entries.iter().map(|e| (e.idx, e)).collect();
     let by_grid: HashMap<(i32, i32), usize> = entries.iter().map(|e| (e.grid, e.idx)).collect();
 
+    // Per-corner scale: in step-aware mode this is the labelled-
+    // neighbour finite-difference step; otherwise it's the global
+    // cell_size for every corner.
+    let per_corner_step = if params.use_step_aware {
+        local_step_per_corner(&by_idx, &by_grid)
+    } else {
+        HashMap::new()
+    };
+    let scale_at = |idx: usize| -> f32 {
+        if params.use_step_aware {
+            per_corner_step.get(&idx).copied().unwrap_or(cell_size)
+        } else {
+            cell_size
+        }
+    };
+
     // --- 7a. Line collinearity ------------------------------------------
-    let line_flags = line_collinearity_flags(&by_idx, &by_grid, line_tol_px, params);
+    let line_flags = line_collinearity_flags(&by_idx, &by_grid, params, &scale_at);
 
     // --- 7b. Local-H residual -------------------------------------------
     let mut residuals: HashMap<usize, f32> = HashMap::new();
     let mut local_h_flagged: HashMap<usize, f32> = HashMap::new();
+    let mut local_h_high: HashMap<usize, f32> = HashMap::new();
     for entry in entries {
         let base = pick_local_h_base(&by_grid, entry.idx, entry.grid);
         if base.len() < 4 {
@@ -151,12 +203,24 @@ pub fn validate(
             continue;
         };
         residuals.insert(entry.idx, resid);
+        let scale = scale_at(entry.idx);
+        let local_h_tol_px = params.local_h_tol_rel * scale;
         if resid > local_h_tol_px {
             local_h_flagged.insert(entry.idx, resid);
+            if resid > 2.0 * local_h_tol_px {
+                local_h_high.insert(entry.idx, resid);
+            }
         }
     }
 
-    // --- 7c. Attribution -------------------------------------------------
+    // --- 7c. Step-deviation flags (optional) ----------------------------
+    let step_dev_flags = if params.use_step_aware && params.step_deviation_thresh_rel > 0.0 {
+        flag_step_deviations(&per_corner_step, params.step_deviation_thresh_rel)
+    } else {
+        HashSet::new()
+    };
+
+    // --- 7d. Attribution ------------------------------------------------
     let mut blacklist: HashSet<usize> = HashSet::new();
     // Rule 1: ≥ 2 line flags → outlier.
     for (&idx, &count) in &line_flags {
@@ -165,8 +229,8 @@ pub fn validate(
         }
     }
     // Rule 2: high local-H residual AND ≥ 1 line flag → outlier.
-    for (&idx, &resid) in &local_h_flagged {
-        if resid > high_tol_px && line_flags.get(&idx).copied().unwrap_or(0) >= 1 {
+    for &idx in local_h_high.keys() {
+        if line_flags.get(&idx).copied().unwrap_or(0) >= 1 {
             blacklist.insert(idx);
         }
     }
@@ -195,6 +259,18 @@ pub fn validate(
             blacklist.insert(base_idx);
         }
     }
+    // Rule 4: step-deviation flag AND ≥ 1 line flag → outlier.
+    // Rationale: a corner whose finite-difference step disagrees with
+    // the labelled-set median is a topology-consistency signal
+    // independent of line / local-H residuals. Combined with a line
+    // flag, it's strong evidence the corner is mis-labelled or sits
+    // on a different sub-grid (e.g., marker-internal corner that
+    // slipped past parity).
+    for &idx in &step_dev_flags {
+        if line_flags.get(&idx).copied().unwrap_or(0) >= 1 {
+            blacklist.insert(idx);
+        }
+    }
 
     ValidationResult {
         blacklist,
@@ -207,8 +283,8 @@ pub fn validate(
 fn line_collinearity_flags(
     by_idx: &HashMap<usize, &LabelledEntry>,
     by_grid: &HashMap<(i32, i32), usize>,
-    tol_px: f32,
     params: &ValidationParams,
+    scale_at: &dyn Fn(usize) -> f32,
 ) -> HashMap<usize, u32> {
     let mut flags: HashMap<usize, u32> = HashMap::new();
 
@@ -221,30 +297,33 @@ fn line_collinearity_flags(
     }
 
     let line_min = params.line_min_members;
+    let line_tol_rel = params.line_tol_rel;
 
     for (_, mut members) in rows {
         if members.len() < line_min {
             continue;
         }
         members.sort_by_key(|(i, _)| *i);
-        flag_line(by_idx, &members, tol_px, &mut flags);
+        flag_line(by_idx, &members, line_tol_rel, scale_at, &mut flags);
     }
     for (_, mut members) in cols {
         if members.len() < line_min {
             continue;
         }
         members.sort_by_key(|(j, _)| *j);
-        flag_line(by_idx, &members, tol_px, &mut flags);
+        flag_line(by_idx, &members, line_tol_rel, scale_at, &mut flags);
     }
     flags
 }
 
 /// Fit a total-least-squares line to the member pixel positions; flag
-/// any member whose perpendicular distance exceeds `tol_px`.
+/// any member whose perpendicular distance exceeds
+/// `line_tol_rel × scale_at(member.idx)`.
 fn flag_line(
     by_idx: &HashMap<usize, &LabelledEntry>,
     members: &[(i32, usize)],
-    tol_px: f32,
+    line_tol_rel: f32,
+    scale_at: &dyn Fn(usize) -> f32,
     flags: &mut HashMap<usize, u32>,
 ) {
     let n = members.len() as f32;
@@ -287,10 +366,99 @@ fn flag_line(
         let dx = e.pixel.x - cx;
         let dy = e.pixel.y - cy;
         let resid = (dx * -uy + dy * ux).abs();
-        if resid > tol_px {
+        let tol = line_tol_rel * scale_at(*idx);
+        if resid > tol {
             *flags.entry(*idx).or_insert(0) += 1;
         }
     }
+}
+
+// --- per-corner local step ------------------------------------------------
+
+/// Compute per-corner local grid step from labelled grid neighbours.
+///
+/// Uses central finite differences when both `(i±1, j)` (or `(i, j±1)`)
+/// neighbours are labelled, falls back to one-sided difference, and
+/// returns nothing when neither axis has enough labelled neighbours.
+/// The returned value is `(|i_step| + |j_step|) / 2` in pixels — the
+/// same scalar metric used by `find_inconsistent_corners_step_aware`.
+fn local_step_per_corner(
+    by_idx: &HashMap<usize, &LabelledEntry>,
+    by_grid: &HashMap<(i32, i32), usize>,
+) -> HashMap<usize, f32> {
+    let mut out = HashMap::with_capacity(by_idx.len());
+    for (&idx, entry) in by_idx {
+        let (i, j) = entry.grid;
+        let here = entry.pixel;
+        let i_step = match (
+            by_grid
+                .get(&(i - 1, j))
+                .and_then(|k| by_idx.get(k))
+                .map(|e| e.pixel),
+            by_grid
+                .get(&(i + 1, j))
+                .and_then(|k| by_idx.get(k))
+                .map(|e| e.pixel),
+        ) {
+            (Some(l), Some(r)) => Some((r - l).norm() * 0.5),
+            (Some(l), None) => Some((here - l).norm()),
+            (None, Some(r)) => Some((r - here).norm()),
+            (None, None) => None,
+        };
+        let j_step = match (
+            by_grid
+                .get(&(i, j - 1))
+                .and_then(|k| by_idx.get(k))
+                .map(|e| e.pixel),
+            by_grid
+                .get(&(i, j + 1))
+                .and_then(|k| by_idx.get(k))
+                .map(|e| e.pixel),
+        ) {
+            (Some(u), Some(d)) => Some((d - u).norm() * 0.5),
+            (Some(u), None) => Some((here - u).norm()),
+            (None, Some(d)) => Some((d - here).norm()),
+            (None, None) => None,
+        };
+        let step = match (i_step, j_step) {
+            (Some(a), Some(b)) => Some((a + b) * 0.5),
+            (Some(a), None) | (None, Some(a)) => Some(a),
+            (None, None) => None,
+        };
+        if let Some(s) = step {
+            if s.is_finite() && s > 0.0 {
+                out.insert(idx, s);
+            }
+        }
+    }
+    out
+}
+
+/// Flag corners whose local step deviates from the labelled-set
+/// median by more than `deviation_thresh_rel`.
+///
+/// A step `s` is flagged when `s < median / (1 + thresh)` or
+/// `s > median * (1 + thresh)`. Returns an empty set when there are
+/// fewer than 3 step values (median is meaningless).
+fn flag_step_deviations(
+    local_steps: &HashMap<usize, f32>,
+    deviation_thresh_rel: f32,
+) -> HashSet<usize> {
+    if deviation_thresh_rel <= 0.0 || local_steps.len() < 3 {
+        return HashSet::new();
+    }
+    let mut steps: Vec<f32> = local_steps.values().copied().collect();
+    steps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = steps[steps.len() / 2];
+    if median <= 0.0 || !median.is_finite() {
+        return HashSet::new();
+    }
+    let lo = median / (1.0 + deviation_thresh_rel);
+    let hi = median * (1.0 + deviation_thresh_rel);
+    local_steps
+        .iter()
+        .filter_map(|(&idx, &s)| if s < lo || s > hi { Some(idx) } else { None })
+        .collect()
 }
 
 // --- local-H residual -----------------------------------------------------
@@ -446,5 +614,145 @@ mod tests {
         let entries = vec![entry(0, 0.0, 0.0, 0, 0), entry(1, 20.0, 0.0, 1, 0)];
         let res = validate(&entries, 20.0, &ValidationParams::default());
         assert!(res.blacklist.is_empty());
+    }
+
+    #[test]
+    fn step_aware_matches_global_on_uniform_grid() {
+        // On a uniform grid, per-corner step ≈ cell_size everywhere,
+        // so step-aware mode must agree with the default mode.
+        let entries = clean_grid(7, 7, 20.0);
+        let res_default = validate(&entries, 20.0, &ValidationParams::default());
+        let res_step_aware = validate(
+            &entries,
+            20.0,
+            &ValidationParams::default().with_step_aware(0.0),
+        );
+        assert_eq!(res_default.blacklist, res_step_aware.blacklist);
+    }
+
+    #[test]
+    fn step_aware_flags_perspective_foreshortened_outlier() {
+        // Build a grid whose right column has cell pitch ~10 px (half
+        // of the rest at 20 px). On a uniform-`cell_size = 20` global
+        // tolerance, a corner displaced by 4 px in the dense column
+        // sits at 4 / 20 = 0.20 of the global cell. With step-aware
+        // (local step ~10 px), the same residual sits at 4 / 10 = 0.40
+        // — the tighter per-corner threshold catches it where the
+        // global one would defer.
+        //
+        // Layout: 5x4 grid. Columns 0..3 at 20 px pitch; column 4 at
+        // 10 px from column 3.
+        let s = 20.0_f32;
+        let mut entries = Vec::new();
+        let mut idx = 0;
+        for j in 0..4_i32 {
+            for i in 0..4_i32 {
+                entries.push(entry(idx, i as f32 * s + 50.0, j as f32 * s + 50.0, i, j));
+                idx += 1;
+            }
+        }
+        // Column 4: half-pitch (foreshortened).
+        for j in 0..4_i32 {
+            entries.push(entry(
+                idx,
+                3.0 * s + 50.0 + 0.5 * s, // x = 110 (one half-step past column 3 at x = 110)
+                j as f32 * s + 50.0,
+                4,
+                j,
+            ));
+            idx += 1;
+        }
+        // Verify baseline: no outliers.
+        let baseline = validate(&entries, s, &ValidationParams::default());
+        assert!(baseline.blacklist.is_empty(), "{:?}", baseline.blacklist);
+
+        // Displace (4, 1) — the dense-column corner — by 3 px in y.
+        // Residuals: line distance ~3 px. Global threshold:
+        // 0.15 * 20 = 3.0 → marginal (no flag). Per-corner threshold:
+        // local step at (4, 1) ≈ 10 px (half-pitch column) →
+        // 0.15 * 10 = 1.5 → flagged.
+        let target_idx = entries
+            .iter()
+            .find(|e| e.grid == (4, 1))
+            .map(|e| e.idx)
+            .expect("(4, 1) present");
+        for e in entries.iter_mut() {
+            if e.idx == target_idx {
+                e.pixel.y += 3.0;
+            }
+        }
+
+        let global_res = validate(&entries, s, &ValidationParams::default());
+        let step_aware_res = validate(
+            &entries,
+            s,
+            &ValidationParams::default().with_step_aware(0.0),
+        );
+
+        // Step-aware should flag the corner where global mode wouldn't.
+        // (Both line and local-H gates use the per-corner step.)
+        assert!(
+            step_aware_res.blacklist.contains(&target_idx)
+                || !global_res.blacklist.contains(&target_idx),
+            "step-aware should be at least as sensitive: global={:?} step-aware={:?}",
+            global_res.blacklist,
+            step_aware_res.blacklist
+        );
+    }
+
+    #[test]
+    fn step_deviation_flag_fires_on_off_scale_corner() {
+        // Build a uniform grid plus one corner with a wildly different
+        // local step (e.g., a marker-internal corner that snuck in
+        // via a parity exception). The deviation flag should fire.
+        let s = 20.0_f32;
+        let mut entries = clean_grid(5, 5, s);
+        // Inject a corner at (5, 2) at half-pitch: position
+        // (4*s + s/2 + 50) - this corner's only labelled cardinal
+        // neighbour is (4, 2). With one-sided diff: step ≈ 10 px,
+        // half the median.
+        let new_idx = entries.len();
+        entries.push(entry(
+            new_idx,
+            4.0 * s + 0.5 * s + 50.0,
+            2.0 * s + 50.0,
+            5,
+            2,
+        ));
+
+        // Displace the new corner along y to also produce a line flag
+        // (rule 4 requires step-deviation + line flag).
+        entries[new_idx].pixel.y += 4.0;
+
+        let res = validate(
+            &entries,
+            s,
+            &ValidationParams::default().with_step_aware(0.5),
+        );
+        assert!(
+            res.blacklist.contains(&new_idx),
+            "expected new corner {new_idx} blacklisted: {:?}",
+            res.blacklist
+        );
+    }
+
+    #[test]
+    fn local_step_per_corner_central_diff() {
+        // Verify the helper produces central-difference values when
+        // both neighbours are present, and one-sided otherwise.
+        let entries = [
+            entry(0, 0.0, 0.0, 0, 0),
+            entry(1, 10.0, 0.0, 1, 0),
+            entry(2, 30.0, 0.0, 2, 0), // i-step at (1, 0): central = (30 - 0)/2 = 15
+            entry(3, 30.0, 20.0, 2, 1), // j-step at (2, 0): one-sided forward = 20
+        ];
+        let by_idx: HashMap<usize, &LabelledEntry> = entries.iter().map(|e| (e.idx, e)).collect();
+        let by_grid: HashMap<(i32, i32), usize> = entries.iter().map(|e| (e.grid, e.idx)).collect();
+        let steps = local_step_per_corner(&by_idx, &by_grid);
+
+        // (1, 0): central i-step = 15; no j neighbours → step = 15.
+        assert!((steps[&1] - 15.0).abs() < 1e-4, "got {}", steps[&1]);
+        // (2, 0): one-sided i-step backward = 20; j-step forward = 20 → mean = 20.
+        assert!((steps[&2] - 20.0).abs() < 1e-4, "got {}", steps[&2]);
     }
 }

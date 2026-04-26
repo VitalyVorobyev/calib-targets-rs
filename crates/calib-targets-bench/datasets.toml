@@ -1,0 +1,91 @@
+# Image set for the chessboard grid-builder regression / performance bench.
+#
+# Only the chessboard detector is exercised — ChArUco, marker, and puzzle
+# detectors all consume the same chessboard grid output, so a chessboard
+# regression covers them implicitly for grid-builder changes.
+#
+# `kind = "public"` images live in testdata/ and have committed baselines
+# under crates/calib-targets-bench/baselines/chessboard.json.
+# `kind = "private"` images live in privatedata/ (gitignored); their
+# baselines live alongside them under privatedata/baselines/ (also
+# gitignored).
+#
+# Stitched entries: the on-disk file is a horizontal tiling of `count`
+# sub-snaps, each `snap_width × snap_height`. Each sub-snap is detected
+# independently and gets its own baseline entry keyed by `path#snap_index`.
+
+[[image]]
+path = "testdata/mid.png"
+kind = "public"
+note = "Simple, well-lit reference frame — sanity baseline."
+
+[[image]]
+path = "testdata/large.png"
+kind = "public"
+note = "High-res ChArUco — exercises rejection of marker-internal corners."
+
+[[image]]
+path = "testdata/small0.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus, significant distortion (stress test)."
+
+[[image]]
+path = "testdata/small1.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus."
+
+[[image]]
+path = "testdata/small2.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus."
+
+[[image]]
+path = "testdata/small3.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus."
+
+[[image]]
+path = "testdata/small4.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus."
+
+[[image]]
+path = "testdata/small5.png"
+kind = "public"
+note = "Tilted-lens ChArUco, partial focus."
+
+# Extreme view-angle PuzzleBoard frames. The cross-tile pattern produces
+# ChESS X-junctions at every tile-corner intersection, so detect_chessboard
+# should still build a labelled grid; we use these as a stress test for
+# perspective foreshortening and (in example2) radial distortion.
+[[image]]
+path = "testdata/puzzleboard_reference/example1.png"
+kind = "public"
+note = "PuzzleBoard at extreme oblique perspective (~45° tilt)."
+
+[[image]]
+path = "testdata/puzzleboard_reference/example2.png"
+kind = "public"
+note = "PuzzleBoard with visible radial distortion — Stage 6 refusal expected."
+
+[[image]]
+path = "testdata/puzzleboard_reference/example3.png"
+kind = "public"
+note = "PuzzleBoard, third extreme-angle reference frame."
+
+# Low-res PuzzleBoard, moderate perspective.
+# Stitched composite: 6 × 720 × 540 sub-snaps. Detector consumes 2× upscale.
+[[image]]
+path = "privatedata/130x130_puzzle/target_15.png"
+kind = "private"
+upscale = 2
+stitched = { count = 6, snap_width = 720, snap_height = 540 }
+note = "6 puzzle sub-snaps, 2× upscale before detection."
+
+# Challenging-focus ChArUco, six camera positions.
+# Stitched composite: 6 × 720 × 540 sub-snaps, no upscale.
+[[image]]
+path = "privatedata/3536119669/target_7.png"
+kind = "private"
+stitched = { count = 6, snap_width = 720, snap_height = 540 }
+note = "6 charuco sub-snaps, native resolution."

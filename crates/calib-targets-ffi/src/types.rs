@@ -480,7 +480,6 @@ pub struct ct_chessboard_params_t {
 
     // Stage 7 — validate
     pub line_tol_rel: f32,
-    pub projective_line_tol_rel: f32,
     pub line_min_members: usize,
     pub local_h_tol_rel: f32,
     pub max_validation_iters: u32,

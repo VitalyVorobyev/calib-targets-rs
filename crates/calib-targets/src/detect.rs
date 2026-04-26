@@ -503,6 +503,7 @@ fn to_refiner_config(refiner: &RefinerConfig) -> chess_corners::RefinerConfig {
             max_offset: refiner.saddle_point.max_offset,
             min_abs_det: refiner.saddle_point.min_abs_det,
         },
+        radon_peak: chess_corners::RadonPeakConfig::default(),
     }
 }
 
@@ -629,6 +630,7 @@ mod tests {
                 max_offset: 2.5,
             },
             saddle_point: chess_corners::SaddlePointConfig::default(),
+            radon_peak: chess_corners::RadonPeakConfig::default(),
         };
         expected.pyramid_levels = 4;
         expected.pyramid_min_size = 96;

@@ -11,11 +11,16 @@
 use crate::boosters::{apply_boosters, BoosterResult};
 use crate::cluster::{cluster_axes, ClusterCenters};
 use crate::corner::{CornerAug, CornerStage};
-use crate::grow::{grow_from_seed, GrowResult};
+use crate::grow::{grow_from_seed, ChessboardGrowValidator, GrowResult};
 use crate::params::DetectorParams;
 use crate::seed::{find_seed, SeedOutput};
 use crate::validate::{validate, ValidationResult};
 use calib_targets_core::{Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use nalgebra::Point2;
+use projective_grid::square::grow_extension::{
+    extend_via_global_homography, extend_via_local_homography, ExtensionParams, ExtensionStats,
+    LocalExtensionParams,
+};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -70,6 +75,46 @@ pub struct IterationTrace {
     pub labelled_count: usize,
     pub new_blacklist: Vec<usize>,
     pub converged: bool,
+    /// Stage-6 (boundary extrapolation) summary for this iteration.
+    /// `None` when too few BFS labels were available, or when the
+    /// fitted-H residual gate refused to extrapolate. Records what
+    /// happened so we can compare blacklist scope strategies on real
+    /// data (Q2 of the deep-dive roadmap).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension: Option<ExtensionTrace>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct ExtensionTrace {
+    pub h_trusted: bool,
+    pub h_residual_median_px: Option<f32>,
+    pub h_residual_max_px: Option<f32>,
+    pub iterations: u32,
+    pub attached: u32,
+    pub rejected_no_candidate: u32,
+    pub rejected_ambiguous: u32,
+    pub rejected_label: u32,
+    pub rejected_validator: u32,
+    pub rejected_edge: u32,
+    pub attached_indices: Vec<usize>,
+}
+
+impl From<&ExtensionStats> for ExtensionTrace {
+    fn from(s: &ExtensionStats) -> Self {
+        Self {
+            h_trusted: s.h_trusted,
+            h_residual_median_px: s.h_residual_median_px,
+            h_residual_max_px: s.h_residual_max_px,
+            iterations: s.iterations,
+            attached: s.attached,
+            rejected_no_candidate: s.rejected_no_candidate,
+            rejected_ambiguous: s.rejected_ambiguous,
+            rejected_label: s.rejected_label,
+            rejected_validator: s.rejected_validator,
+            rejected_edge: s.rejected_edge,
+            attached_indices: s.attached_indices.clone(),
+        }
+    }
 }
 
 /// Compact per-stage counters derived from a [`DebugFrame`].
@@ -384,6 +429,7 @@ impl Detector {
                 &blacklist,
                 &self.params,
             );
+
             let labelled_count = grow_res.labelled.len();
 
             let v: ValidationResult = validate(&augs, &grow_res.labelled, cell_size, &self.params);
@@ -407,12 +453,9 @@ impl Detector {
                 && it + 1 >= 2
                 && new_blacklist.len() <= 2
                 && labelled_count >= self.params.min_labeled_corners;
-            frame.iterations.push(IterationTrace {
-                iter: it,
-                labelled_count,
-                new_blacklist: new_blacklist.clone(),
-                converged: converged || soft_converged,
-            });
+            // `iteration_extension` is filled below, after Stage 6 runs
+            // on the converged labelled set.
+            let iteration_extension: Option<ExtensionTrace>;
 
             if converged || soft_converged {
                 if soft_converged {
@@ -431,12 +474,69 @@ impl Detector {
                         blacklist.insert(idx);
                     }
                 }
+
+                // Stage 6: boundary extrapolation via globally-fit
+                // homography. Runs on the **converged + validated**
+                // labelled set so the H fit isn't pulled by mid-loop
+                // candidates that the validator would later reject.
+                // Same parity / axis-cluster / edge invariants as BFS,
+                // plus a tighter ambiguity gate. Approach (b) blacklist
+                // scope (Q2): we re-validate immediately after Stage 6
+                // and drop any extension attachments the validator
+                // rejects, but DON'T re-run the BFS / re-fit H.
+                let extension_stats = run_stage6(
+                    &augs,
+                    &mut grow_res,
+                    centers,
+                    cell_size,
+                    &blacklist,
+                    &self.params,
+                );
+                for (k, &idx) in extension_stats.attached_indices.iter().enumerate() {
+                    let at = extension_stats.attached_cells[k];
+                    augs[idx].stage = CornerStage::Labeled {
+                        at,
+                        local_h_residual_px: None,
+                    };
+                }
+                if extension_stats.attached > 0 {
+                    // Re-validate on the extended set. Any rejection that
+                    // targets an extension attachment is dropped via
+                    // approach (b); rejections that target BFS labels
+                    // are also applied (the H fit may have surfaced a
+                    // borderline corner the inner loop missed).
+                    let v_post = validate(&augs, &grow_res.labelled, cell_size, &self.params);
+                    for &idx in v_post.blacklist.iter() {
+                        if blacklist.contains(&idx) {
+                            continue;
+                        }
+                        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                                at,
+                                reason: "post-extension outlier".into(),
+                            };
+                        }
+                        grow_res.labelled.retain(|_, &mut v| v != idx);
+                        grow_res.by_corner.remove(&idx);
+                        blacklist.insert(idx);
+                    }
+                }
+                // Stage 6 ran if it produced residual stats (either
+                // global-H, which sets `h_quality`, or local-H, which
+                // sets `h_residual_median_px` per-candidate aggregate).
+                iteration_extension = if extension_stats.h_quality.is_some()
+                    || extension_stats.h_residual_median_px.is_some()
+                {
+                    Some(ExtensionTrace::from(&extension_stats))
+                } else {
+                    None
+                };
+
                 let mut grow_mut = grow_res;
 
                 // Phase E recall boosters: interior gap fill + line
-                // extrapolation. Runs only after the precision core
-                // has converged with no new blacklist entries, so
-                // every candidate is validated against the same
+                // extrapolation. Runs after Stage 6 so it can fill
+                // any holes the global-H pass left behind. Same
                 // attachment invariants as growth.
                 let booster: BoosterResult = apply_boosters(
                     &mut augs,
@@ -457,12 +557,28 @@ impl Detector {
                         };
                     }
                 }
+                frame.iterations.push(IterationTrace {
+                    iter: it,
+                    labelled_count,
+                    new_blacklist: new_blacklist.clone(),
+                    converged: converged || soft_converged,
+                    extension: iteration_extension,
+                });
                 let final_count = grow_mut.labelled.len();
                 if final_count >= self.params.min_labeled_corners {
                     frame.detection = Some(build_detection(&augs, &grow_mut, centers, cell_size));
                 }
                 break;
             }
+
+            // Non-converged iteration: record trace without extension.
+            frame.iterations.push(IterationTrace {
+                iter: it,
+                labelled_count,
+                new_blacklist: new_blacklist.clone(),
+                converged: false,
+                extension: None,
+            });
 
             // Mark blacklisted corners and retry.
             for &idx in &new_blacklist {
@@ -479,6 +595,61 @@ impl Detector {
         frame.corners = augs;
         frame
     }
+}
+
+/// Stage 6: boundary extrapolation via globally-fit homography.
+///
+/// Builds a `Point2<f32>` view of the corner positions and a fresh
+/// chessboard validator, then delegates to
+/// [`projective_grid::square::grow_extension::extend_via_global_homography`].
+/// The extension's blacklist tracking is approach (b): rejected
+/// attachments fall through to the regular Stage-7 mechanism on the
+/// next iteration. Stats include `attached_indices` for future
+/// approach-(a) comparison work.
+fn run_stage6(
+    corners: &[CornerAug],
+    grow_res: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+) -> ExtensionStats {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let mut pg_grow = projective_grid::square::grow::GrowResult {
+        labelled: std::mem::take(&mut grow_res.labelled),
+        by_corner: std::mem::take(&mut grow_res.by_corner),
+        ambiguous: std::mem::take(&mut grow_res.ambiguous),
+        holes: std::mem::take(&mut grow_res.holes),
+        grid_u: grow_res.grid_u,
+        grid_v: grow_res.grid_v,
+    };
+
+    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
+    let stats = if params.stage6_local_h {
+        let mut local_params = LocalExtensionParams::default();
+        local_params.k_nearest = params.stage6_local_k_nearest;
+        extend_via_local_homography(
+            &positions,
+            &mut pg_grow,
+            cell_size,
+            &local_params,
+            &validator,
+        )
+    } else {
+        extend_via_global_homography(
+            &positions,
+            &mut pg_grow,
+            cell_size,
+            &ExtensionParams::default(),
+            &validator,
+        )
+    };
+
+    grow_res.labelled = pg_grow.labelled;
+    grow_res.by_corner = pg_grow.by_corner;
+    grow_res.ambiguous = pg_grow.ambiguous;
+    grow_res.holes = pg_grow.holes;
+    stats
 }
 
 fn passes_strength(aug: &CornerAug, params: &DetectorParams) -> bool {

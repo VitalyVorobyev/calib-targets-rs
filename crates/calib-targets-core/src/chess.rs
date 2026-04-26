@@ -127,6 +127,7 @@ pub enum RefinementMethod {
     SaddlePoint,
 }
 
+/// TODO: do we really need it?
 /// Workspace-owned selection of the low-level ChESS subpixel refiner.
 ///
 /// # Adding a variant

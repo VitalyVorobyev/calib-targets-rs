@@ -1,48 +1,38 @@
-//! Generic 2D projective grid graph construction, traversal, and homography tools.
+//! Generic 2D projective grid construction and homography tools.
 //!
-//! This crate provides reusable algorithms for building 4- or 6-connected grid
-//! graphs from detected 2D points, assigning grid coordinates via BFS traversal,
-//! and computing projective mappings (homographies) for grid rectification.
+//! This crate provides reusable algorithms for turning a cloud of 2D
+//! points into a labelled grid: seed-and-grow BFS, boundary extension
+//! via fitted homography, and per-cell / global rectification.
 //!
-//! It is pattern-agnostic: the [`NeighborValidator`] trait lets callers plug in
-//! pattern-specific logic (chessboard orientation checks, marker constraints,
-//! etc.) while the graph construction, traversal, and geometry remain generic.
+//! Pattern-agnostic at the bottom (KD-tree, circular stats, mean-shift,
+//! DLT homography); pattern-specific at the top via the
+//! [`square::grow::GrowValidator`] trait — chessboard parity, ChArUco
+//! marker rules, etc. plug in there.
 //!
 //! # Module layout
 //!
 //! | Module | Responsibility |
 //! |---|---|
-//! | [`square`] | Square (4-connected) grid: direction, alignment, index, mesh, rectify, smoothness, validators |
-//! | [`hex`] | Hex (6-connected) grid: mirrored submodules for axial `(q, r)` coordinates |
-//! | [`graph`] | Generic KD-tree-based graph builder + [`NeighborValidator`] trait |
-//! | [`graph_cleanup`] | Graph-level cleanup passes (symmetry, straightness, crossing pruning) |
-//! | [`global_step`] / [`local_step`] | Cell-size / local-step estimation on point clouds |
-//! | [`traverse`] | BFS / DFS on grid graphs (connected components, `(i, j)` assignment) |
-//! | [`homography`] | Projective geometry (4-point homography, DLT) |
-//!
-//! Top-level types from [`square`] are re-exported here at the crate root so
-//! existing consumers (e.g., `projective_grid::GridIndex`) continue to work
-//! unchanged.
+//! | [`square::grow`] | Seed-and-grow BFS over a square lattice |
+//! | [`square::grow_extension`] | Boundary extension via globally-fit homography |
+//! | [`square::seed`] | 2×2 seed primitives (cell size, midpoint violation) |
+//! | [`square::validate`](mod@square::validate) | Post-grow line / local-H residual checks |
+//! | [`square::mesh`] / [`square::rectify`] | Per-cell mesh / global homography rectification |
+//! | [`square::smoothness`] | Midpoint prediction + step-aware outlier detection |
+//! | [`square::alignment`] | D4 transforms on integer grid coordinates |
+//! | [`hex`] | Hex grid: index, mesh, rectify, smoothness, alignment (no grow path yet) |
+//! | [`circular_stats`] | Undirected-angle helpers (smoothing, plateau peak picking, double-angle 2-means) |
+//! | [`global_step`] / [`local_step`] | Cell-size estimation primitives |
+//! | [`homography`] | 4-point + DLT homography with reprojection-quality diagnostics |
 
 mod float_helpers;
 
 pub mod circular_stats;
 pub mod global_step;
-pub mod graph;
-pub mod graph_cleanup;
 pub mod hex;
 pub mod homography;
 pub mod local_step;
 pub mod square;
-pub mod traverse;
-
-/// Re-export of the square-grid submodule at the legacy `validators` path.
-///
-/// Kept for back-compat with doc-comment examples that wrote
-/// `projective_grid::validators::XJunctionValidator`.
-pub mod validators {
-    pub use crate::square::validators::{SpatialSquareValidator, XJunctionValidator};
-}
 
 /// Trait alias for floating-point types supported by this crate.
 ///
@@ -53,26 +43,17 @@ impl<T: nalgebra::RealField + Copy> Float for T {}
 
 // --- Generic building blocks (no square / hex assumption) --------------------
 pub use global_step::{estimate_global_cell_size, GlobalStepEstimate, GlobalStepParams};
-pub use graph::{GridGraph, GridGraphParams, NeighborCandidate, NeighborValidator};
-pub use graph_cleanup::{
-    enforce_symmetry, prune_by_edge_straightness, prune_crossing_edges, prune_isolated_pairs,
-    segments_properly_cross,
+pub use homography::{
+    estimate_homography, estimate_homography_with_quality, homography_from_4pt,
+    homography_from_4pt_with_quality, Homography, HomographyQuality,
 };
-pub use homography::{estimate_homography, homography_from_4pt, Homography};
 pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStepPointData};
-pub use traverse::{assign_grid_coordinates, connected_components};
 
-// --- Square-grid surface re-exported at the crate root (back-compat) --------
+// --- Square-grid surface re-exported at the crate root --------
 pub use square::alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
-pub use square::direction::{NeighborDirection, NodeNeighbor};
 pub use square::index::GridIndex;
 pub use square::mesh::GridHomographyMesh;
 pub use square::rectify::GridHomography;
 pub use square::smoothness::{
     find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
 };
-pub use square::validators::{SpatialSquareValidator, XJunctionValidator};
-
-// `SpatialHexValidator` stays namespaced under `hex::validators` and
-// `hex::SpatialHexValidator` — it's hex-specific and does not need a
-// crate-root re-export.

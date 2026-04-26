@@ -82,7 +82,7 @@ contiguity — each disconnected piece comes back as its own
 | Partial board, many holes | `attach_search_rel` ↑, `attach_axis_tol_deg` ↑, `seed_edge_tol` ↑ |
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
 | Validation loop oscillates, no detection | `max_validation_iters` ↑ (default 3) |
-| Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `projective_line_tol_rel` ↑ |
+| Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `local_h_tol_rel` ↑ |
 | Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
 | `NoMarkers` on blurry ChArUco | `min_border_score` ↓, `multi_threshold: true` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
@@ -137,7 +137,6 @@ the full invariant-to-parameter mapping and
 | Field | Default | Guidance |
 |---|---|---|
 | `line_tol_rel` | `0.15` | Straight-line perpendicular residual tolerance (fraction of `s`). |
-| `projective_line_tol_rel` | `0.25` | Projective-fit residual tolerance — looser to absorb mild lens distortion. |
 | `line_min_members` | `3` | Minimum row/column length for a line fit to be attempted. |
 | `local_h_tol_rel` | `0.20` | Local 4-point homography residual tolerance. |
 | `max_validation_iters` | `3` | Blacklist-retry cap. If validation keeps oscillating, raise to `5`–`8`. |

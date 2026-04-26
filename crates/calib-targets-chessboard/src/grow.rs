@@ -77,15 +77,7 @@ pub fn grow_from_seed(
     };
     let pg_params =
         pg_grow::GrowParams::new(params.attach_search_rel, params.attach_ambiguity_factor);
-    let validator = ChessboardGrowValidator {
-        corners,
-        blacklist,
-        centers,
-        cell_size,
-        attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
-        edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
-        step_tol: params.step_tol,
-    };
+    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
 
     let pg_result = pg_grow::bfs_grow(&positions, pg_seed, cell_size, &pg_params, &validator);
 
@@ -108,14 +100,39 @@ pub fn grow_from_seed(
 /// clustering output + per-call tolerances. The BFS does not mutate
 /// per-corner state via this trait — `grow_from_seed` does that after
 /// the generic walk returns (see above).
-struct ChessboardGrowValidator<'a> {
-    corners: &'a [CornerAug],
-    blacklist: &'a HashSet<usize>,
-    centers: ClusterCenters,
-    cell_size: f32,
-    attach_tol_rad: f32,
-    edge_tol_rad: f32,
-    step_tol: f32,
+pub(crate) struct ChessboardGrowValidator<'a> {
+    pub(crate) corners: &'a [CornerAug],
+    pub(crate) blacklist: &'a HashSet<usize>,
+    pub(crate) centers: ClusterCenters,
+    pub(crate) cell_size: f32,
+    pub(crate) attach_tol_rad: f32,
+    pub(crate) edge_tol_rad: f32,
+    pub(crate) step_tol: f32,
+}
+
+impl<'a> ChessboardGrowValidator<'a> {
+    /// Construct from chessboard `DetectorParams` + the same inputs the
+    /// BFS-grow validator uses. Re-used by Stage-6
+    /// `grow_extension::extend_via_global_homography` to keep parity /
+    /// axis-cluster gates identical between BFS and boundary
+    /// extrapolation.
+    pub(crate) fn new(
+        corners: &'a [CornerAug],
+        blacklist: &'a HashSet<usize>,
+        centers: ClusterCenters,
+        cell_size: f32,
+        params: &DetectorParams,
+    ) -> Self {
+        Self {
+            corners,
+            blacklist,
+            centers,
+            cell_size,
+            attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
+            edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
+            step_tol: params.step_tol,
+        }
+    }
 }
 
 impl<'a> pg_grow::GrowValidator for ChessboardGrowValidator<'a> {

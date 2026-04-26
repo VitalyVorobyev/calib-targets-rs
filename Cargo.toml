@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/calib-targets-bench",
     "crates/calib-targets-ffi",
     "crates/calib-targets-py",
     "crates/calib-targets-print",
@@ -51,8 +52,7 @@ calib-targets-print = { version = "0.7", path = "crates/calib-targets-print" }
 approx = "0.5"
 assert_cmd = "2"
 cbindgen = "0.29"
-chess-corners = "0.6"
-chess-corners-core = "0.6"
+chess-corners = "0.7"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 env_logger = "0.11"

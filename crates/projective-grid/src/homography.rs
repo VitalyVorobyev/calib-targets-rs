@@ -10,6 +10,71 @@ pub struct Homography<F: Float = f32> {
     pub h: Matrix3<F>,
 }
 
+/// Numerical quality of a homography matrix.
+///
+/// Computed from the SVD of the 3×3 matrix `H`. Use these fields to gate
+/// downstream consumers (mesh cells, validators) against degenerate
+/// solutions: a near-singular `H` arises when the source or destination
+/// quad has three near-collinear points and would lead to large
+/// re-projection error away from the fitted points.
+///
+/// `condition` is a unitless ratio; the other two are in the same units
+/// as `H`'s entries.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub struct HomographyQuality<F: Float = f32> {
+    /// Largest singular value of `H`.
+    pub max_singular_value: F,
+    /// Smallest singular value of `H`. Approaches zero as the source or
+    /// destination quad degenerates (three collinear points).
+    pub min_singular_value: F,
+    /// Condition number `max_singular_value / min_singular_value`. Healthy
+    /// homographies for calibration targets sit below ~100; values above
+    /// ~10⁴ indicate the fit is dominated by noise on the smallest
+    /// principal direction.
+    pub condition: F,
+    /// Determinant of `H`. Sign indicates orientation; `|det|` decays to
+    /// zero as the map becomes singular.
+    pub determinant: F,
+}
+
+impl<F: Float> HomographyQuality<F> {
+    /// Compute quality from a homography matrix.
+    pub fn from_homography(h: &Homography<F>) -> Self {
+        let svd = h.h.svd(false, false);
+        let mut s_max = F::zero();
+        let mut s_min = F::max_value().unwrap_or_else(|| lit(1e30));
+        for k in 0..3 {
+            let s = svd.singular_values[k];
+            if s > s_max {
+                s_max = s;
+            }
+            if s < s_min {
+                s_min = s;
+            }
+        }
+        let condition = if s_min > F::default_epsilon() {
+            s_max / s_min
+        } else {
+            F::max_value().unwrap_or_else(|| lit(1e30))
+        };
+        let determinant = h.h.determinant();
+        Self {
+            max_singular_value: s_max,
+            min_singular_value: s_min,
+            condition,
+            determinant,
+        }
+    }
+
+    /// `true` when `min_singular_value < threshold`. Useful as a single
+    /// boolean gate for `mesh::from_corners_with_min_singular_value` and
+    /// similar opt-in conditioning checks.
+    pub fn is_ill_conditioned(&self, min_singular_value_threshold: F) -> bool {
+        self.min_singular_value < min_singular_value_threshold
+    }
+}
+
 impl<F: Float> Homography<F> {
     pub fn new(h: Matrix3<F>) -> Self {
         Self { h }
@@ -146,6 +211,32 @@ fn denormalize_homography<F: Float>(
 ) -> Option<Matrix3<F>> {
     let t_dst_inv = t_dst.try_inverse()?;
     Some(t_dst_inv * hn * t_src)
+}
+
+/// Estimate H such that `p_dst ~ H * p_src` from N >= 4 point correspondences,
+/// returning the matrix together with its [`HomographyQuality`].
+///
+/// Wraps [`estimate_homography`]; callers that already discard the quality
+/// data can keep using that. Use this entry point to reject cells whose
+/// minimum singular value falls below a tolerance, or to log conditioning
+/// information for diagnostic surfaces.
+pub fn estimate_homography_with_quality<F: Float>(
+    src_pts: &[Point2<F>],
+    dst_pts: &[Point2<F>],
+) -> Option<(Homography<F>, HomographyQuality<F>)> {
+    let h = estimate_homography(src_pts, dst_pts)?;
+    let q = HomographyQuality::from_homography(&h);
+    Some((h, q))
+}
+
+/// 4-point variant of [`estimate_homography_with_quality`].
+pub fn homography_from_4pt_with_quality<F: Float>(
+    src: &[Point2<F>; 4],
+    dst: &[Point2<F>; 4],
+) -> Option<(Homography<F>, HomographyQuality<F>)> {
+    let h = homography_from_4pt(src, dst)?;
+    let q = HomographyQuality::from_homography(&h);
+    Some((h, q))
 }
 
 /// Estimate H such that `p_dst ~ H * p_src` from N >= 4 point correspondences.
@@ -356,6 +447,123 @@ mod tests {
         let rect = [Point2::new(0.0_f32, 0.0); 4];
         let img = [Point2::new(1.0_f32, 1.0); 3];
         assert!(estimate_homography(&rect, &img).is_none());
+    }
+
+    #[test]
+    fn quality_reports_finite_metrics_for_clean_homography() {
+        let rect = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(100.0, 0.0),
+            Point2::new(100.0, 100.0),
+            Point2::new(0.0, 100.0),
+        ];
+        // Mild rotation + translation — well-defined homography.
+        let dst = [
+            Point2::new(50.0, 50.0),
+            Point2::new(150.0, 60.0),
+            Point2::new(140.0, 160.0),
+            Point2::new(40.0, 150.0),
+        ];
+        let (_, q) = homography_from_4pt_with_quality(&rect, &dst).expect("h");
+        // All metrics are finite and non-degenerate for a clean fit.
+        assert!(q.max_singular_value.is_finite() && q.max_singular_value > 0.0);
+        assert!(q.min_singular_value > 0.0);
+        assert!(q.condition.is_finite());
+        assert!(q.determinant.abs() > 1e-3);
+        // For a clean homography the smallest singular value is at the same
+        // order as the determinant of the upper-left 2×2 — i.e., not near
+        // machine epsilon.
+        assert!(
+            q.min_singular_value > 1e-2,
+            "min_sv {} unexpectedly tiny on a clean fit",
+            q.min_singular_value
+        );
+    }
+
+    #[test]
+    fn quality_min_sv_separates_clean_from_degenerate() {
+        // The min singular value of H — and the ratio σ_min / σ_max — both
+        // collapse when the destination quad has three near-collinear
+        // points. Test on a unit-scale source so absolute and relative
+        // metrics tell the same story.
+        let rect = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(0.0, 1.0),
+        ];
+        let clean_dst = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(2.0, 2.0),
+            Point2::new(0.0, 2.0),
+        ];
+        let degen_dst = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1e-6),
+            Point2::new(0.0, 1e-6),
+        ];
+        let (_, q_clean) = homography_from_4pt_with_quality(&rect, &clean_dst).expect("clean");
+        let (_, q_degen) = homography_from_4pt_with_quality(&rect, &degen_dst).expect("degen");
+
+        assert!(
+            q_clean.min_singular_value > q_degen.min_singular_value * 100.0,
+            "clean min_sv {} must be much larger than degenerate {}",
+            q_clean.min_singular_value,
+            q_degen.min_singular_value
+        );
+        // Reciprocal condition (σ_min / σ_max) is the scale-invariant flag.
+        let recip_clean = q_clean.min_singular_value / q_clean.max_singular_value;
+        let recip_degen = q_degen.min_singular_value / q_degen.max_singular_value;
+        assert!(
+            recip_clean > 0.1,
+            "clean recip_cond {recip_clean} too small"
+        );
+        assert!(
+            recip_degen < 1e-3,
+            "degenerate recip_cond {recip_degen} too large"
+        );
+    }
+
+    #[test]
+    fn is_ill_conditioned_threshold_works() {
+        let rect = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1.0),
+            Point2::new(0.0, 1.0),
+        ];
+        let degen_dst = [
+            Point2::new(0.0_f32, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, 1e-6),
+            Point2::new(0.0, 1e-6),
+        ];
+        let (_, q) = homography_from_4pt_with_quality(&rect, &degen_dst).expect("h");
+        assert!(q.is_ill_conditioned(1e-3));
+        assert!(!q.is_ill_conditioned(1e-12));
+    }
+
+    #[test]
+    fn estimate_with_quality_matches_direct_call() {
+        let ground_truth: Homography<f32> = Homography::new(Matrix3::new(
+            1.0, 0.2, 12.0, //
+            -0.1, 0.9, 6.0, //
+            0.0006, 0.0004, 1.0,
+        ));
+        let rect: Vec<Point2<f32>> = (0..3)
+            .flat_map(|y| (0..3).map(move |x| Point2::new(x as f32 * 40.0, y as f32 * 50.0)))
+            .collect();
+        let img: Vec<Point2<f32>> = rect.iter().map(|&p| ground_truth.apply(p)).collect();
+
+        let h = estimate_homography(&rect, &img).expect("h");
+        let (h_with_q, _) = estimate_homography_with_quality(&rect, &img).expect("h+q");
+        for r in 0..3 {
+            for c in 0..3 {
+                assert!((h.h[(r, c)] - h_with_q.h[(r, c)]).abs() < 1e-6);
+            }
+        }
     }
 
     #[test]

@@ -313,7 +313,6 @@ overwrite specific fields, or call `DetectorParams::sweep_default()` for a
 | `step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
 | `edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
 | `line_tol_rel` | 0.15 | 7 | Straight-line collinearity tolerance. |
-| `projective_line_tol_rel` | 0.25 | 7 | Projective-line collinearity tolerance. |
 | `line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
 | `local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
 | `max_validation_iters` | 3 | 7 | Blacklist-retry cap. |

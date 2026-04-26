@@ -35,6 +35,7 @@ use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, RealField};
 
 /// Estimated global grid step.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct GlobalStepEstimate<F: Float = f32> {
     /// Dominant nearest-neighbor distance, in pixels.
@@ -50,6 +51,14 @@ pub struct GlobalStepEstimate<F: Float = f32> {
     /// `support / sample_count`, saturated to `[0, 1]`. A confident
     /// unimodal cloud sits near 1.0; noisy or multi-scale clouds sit lower.
     pub confidence: F,
+    /// `true` when at least two of the three percentile-seeded mean-shift
+    /// runs converged to *different* modes (separated by more than a
+    /// bandwidth). Signals the underlying nearest-neighbour distance
+    /// distribution is multi-modal — typical for ChArUco frames where
+    /// marker-internal corners coexist with board corners. Downstream
+    /// callers may want to fall back to a self-consistent seed estimate
+    /// when this is set.
+    pub multimodal: bool,
 }
 
 /// Tuning knobs for [`estimate_global_cell_size`].
@@ -124,11 +133,13 @@ pub fn estimate_global_cell_size<F: Float + kiddo::float::kdtree::Axis>(
     // corners has comparable support — we always want the lattice step, not
     // the within-cell step.
     let mut best: Option<(F, u32, F)> = None; // (mode, support, score)
+    let mut converged_modes: Vec<F> = Vec::new();
     for seed in seeds {
         if let Some((mode, support)) = mean_shift_mode(&nn_distances, seed, params) {
             if support == 0 {
                 continue;
             }
+            converged_modes.push(mode);
             let score = F::from_subset(&(support as f64)) * mode;
             if best.map(|b: (F, u32, F)| score > b.2).unwrap_or(true) {
                 best = Some((mode, support, score));
@@ -144,11 +155,22 @@ pub fn estimate_global_cell_size<F: Float + kiddo::float::kdtree::Axis>(
         F::zero(),
     );
 
+    // Multimodality: at least two seeds converged to modes that
+    // differ by more than one bandwidth. Bandwidth here is computed
+    // from the winning `cell_size`.
+    let bandwidth = cell_size * params.bandwidth_rel;
+    let multimodal = converged_modes.iter().any(|&m| {
+        let diff: F = m - cell_size;
+        let abs_diff: F = if diff < F::zero() { -diff } else { diff };
+        abs_diff > bandwidth
+    });
+
     Some(GlobalStepEstimate {
         cell_size,
         support,
         sample_count,
         confidence,
+        multimodal,
     })
 }
 
@@ -291,6 +313,18 @@ mod tests {
             "expected larger-grid cell ~40 but got {}",
             est.cell_size
         );
+        // The two clusters' cell-size modes are an order of magnitude
+        // apart — multiple percentile seeds converge to different modes,
+        // so the multimodal flag fires.
+        assert!(est.multimodal, "expected multimodal=true on bimodal cloud");
+    }
+
+    #[test]
+    fn unimodal_grid_has_multimodal_false() {
+        let pts = rectangular_grid(7, 7, 25.0);
+        let est =
+            estimate_global_cell_size(&pts, &GlobalStepParams::<f32>::default()).expect("estimate");
+        assert!(!est.multimodal, "expected multimodal=false on a clean grid");
     }
 
     #[test]

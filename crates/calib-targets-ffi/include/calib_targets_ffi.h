@@ -90,7 +90,6 @@ typedef struct ct_chessboard_params_t {
   float step_tol;
   float edge_axis_tol_deg;
   float line_tol_rel;
-  float projective_line_tol_rel;
   size_t line_min_members;
   float local_h_tol_rel;
   uint32_t max_validation_iters;

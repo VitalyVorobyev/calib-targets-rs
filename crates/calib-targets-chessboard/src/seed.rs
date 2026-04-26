@@ -1,11 +1,11 @@
-//! Seed finder for the detector.
+//! Chessboard seed finder.
 //!
-//! Find a `2×2` cell whose 4 corners satisfy the per-corner and
-//! per-edge invariants, **and estimate the cell size from that
-//! seed**. The seed output therefore replaces the global
-//! `cell_size` estimator — which empirically mispicks a ~40 px
-//! mode in frames whose true cell spacing is ~55-60 px, because
-//! the cross-cluster nearest-neighbor histogram is bimodal.
+//! Find a `2×2` cell whose 4 corners satisfy the chessboard's per-edge
+//! invariants — axis-slot swap, parity-required cluster labels, no 2×-
+//! spacing midpoint violation — and estimate the cell size from that
+//! seed. The cell-size output replaces the global cell-size estimator
+//! (which empirically mispicks under bimodal distance distributions
+//! produced by ChArUco markers).
 //!
 //! Layout and parity:
 //! ```text
@@ -19,40 +19,18 @@
 //!   Swapped                   Canonical
 //! ```
 //!
-//! # Algorithm
-//!
-//! 1. Split `Clustered` corners by label.
-//! 2. Rank `Canonical` corners by descending strength (best A
-//!    candidates first).
-//! 3. For each `A`:
-//!    - kNN-search up to 32 Swapped corners (no distance window at
-//!      all — cell-size is an output, not an input).
-//!    - Classify each Swapped candidate by which of `A.axes[0]` or
-//!      `A.axes[1]` the chord `A→N` is angularly closer to, within
-//!      `seed_axis_tol_deg`.
-//!    - Separate the classified candidates into two axis-specific
-//!      sorted-by-distance lists `B_cands` and `C_cands`.
-//! 4. For each pair `(B, C)` among the shortest few in each list:
-//!    - Require `|AB|` and `|AC|` to match each other within the
-//!      `seed_edge_ratio` window (e.g., smaller/larger ≥ 1 - tol).
-//!    - Predict `D_pred = A + (B−A) + (C−A)` (parallelogram
-//!      completion).
-//!    - Find the nearest `Canonical` corner to `D_pred` within
-//!      `seed_close_tol × avg_edge`.
-//!    - Verify `|BD|` and `|CD|` match the other edges within the
-//!      same tolerance.
-//!    - Verify axis-slot swap on every edge (parity).
-//! 5. First quad passing every check wins. Return the seed **and
-//!    the estimated cell size = mean of the 4 edge lengths**.
-//!
-//! If no seed is found under the primary tolerance, a retry pass
-//! widens every tolerance by `1.5×`. Still nothing → `None`.
+//! The pattern-agnostic geometry — KD-tree neighbour search, axis
+//! classification of B vs C, parallelogram completion, edge-ratio
+//! match — lives in `projective_grid::square::seed_finder`. This
+//! module supplies the chessboard-specific `SeedQuadValidator` impl:
+//! parity-aware A/BC partition, the axis-slot-swap edge gate, and
+//! the chessboard's midpoint-violation test.
 
 use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
-use kiddo::{KdTree, SquaredEuclidean};
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
+use projective_grid::square::seed_finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 
 // `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
 // non-chessboard grid-detector pipelines can share the same 2×2 seed
@@ -67,8 +45,10 @@ use nalgebra::{Point2, Vector2};
 // parity-fixing convention.
 pub use projective_grid::square::seed::{Seed, SeedOutput};
 
-/// Find a valid seed. Cell size comes OUT of the seed (no cell-
-/// size input).
+/// Find a valid seed. Cell size comes OUT of the seed (no cell-size input).
+///
+/// Tries the primary tolerance first; on no seed, retries with every
+/// tolerance widened by 1.5×.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(level = "debug", skip_all, fields(num_corners = corners.len()))
@@ -78,355 +58,118 @@ pub fn find_seed(
     centers: ClusterCenters,
     params: &DetectorParams,
 ) -> Option<SeedOutput> {
-    try_find_seed(corners, centers, params, 1.0)
-        .or_else(|| try_find_seed(corners, centers, params, 1.5))
+    let _ = centers; // kept in the signature for caller stability; not used
+    let validator = ChessboardSeedValidator::new(corners);
+    find_with_slack(&validator, params, 1.0).or_else(|| find_with_slack(&validator, params, 1.5))
 }
 
-/// Backward-compatible alias for old callers that still pass a
-/// cell-size estimate. Ignored in the new implementation.
-pub fn find_seed_with_hint(
-    corners: &[CornerAug],
-    centers: ClusterCenters,
-    _cell_size_hint: f32,
-    params: &DetectorParams,
-) -> Option<SeedOutput> {
-    find_seed(corners, centers, params)
-}
-
-fn try_find_seed(
-    corners: &[CornerAug],
-    centers: ClusterCenters,
+fn find_with_slack<V: SeedQuadValidator>(
+    v: &V,
     params: &DetectorParams,
     slack: f32,
 ) -> Option<SeedOutput> {
-    if corners.is_empty() {
-        return None;
-    }
-    let axis_tol = params.seed_axis_tol_deg.to_radians() * slack;
-    // `edge_ratio_tol` caps the |AB|/|AC| mismatch (and the other
-    // pairs) — replaces the absolute cell-size window.
-    let edge_ratio_tol = params.seed_edge_tol * slack;
-    let min_ratio = 1.0 - edge_ratio_tol;
-    let max_ratio = 1.0 + edge_ratio_tol;
-    let close_tol = params.seed_close_tol * slack;
+    let pg_params = SeedQuadParams::new(
+        params.seed_axis_tol_deg.to_radians() * slack,
+        params.seed_edge_tol * slack,
+        params.seed_close_tol * slack,
+    );
+    find_quad(v, &pg_params)
+}
 
-    // Split clustered corners by label.
-    let label_of = |i: usize| match corners[i].stage {
-        CornerStage::Clustered { label } => Some(label),
-        _ => None,
-    };
+/// Chessboard plug-in for the generic
+/// [`SeedQuadValidator`](projective_grid::square::seed_finder::SeedQuadValidator).
+struct ChessboardSeedValidator<'a> {
+    corners: &'a [CornerAug],
+    /// Canonical-cluster indices, sorted by descending strength so the
+    /// highest-quality A candidates are tried first.
+    canonical: Vec<usize>,
+    /// Swapped-cluster indices.
+    swapped: Vec<usize>,
+}
 
-    let canonical: Vec<usize> = (0..corners.len())
-        .filter(|&i| label_of(i) == Some(ClusterLabel::Canonical))
-        .collect();
-    let swapped: Vec<usize> = (0..corners.len())
-        .filter(|&i| label_of(i) == Some(ClusterLabel::Swapped))
-        .collect();
-    if canonical.is_empty() || swapped.is_empty() {
-        return None;
-    }
-
-    // KD-trees (we do NOT prefilter by distance here — the seed's
-    // "cell size" is determined by its own 4 edges).
-    let mut canon_tree: KdTree<f32, 2> = KdTree::new();
-    for (slot, &i) in canonical.iter().enumerate() {
-        let p = corners[i].position;
-        canon_tree.add(&[p.x, p.y], slot as u64);
-    }
-    let mut swap_tree: KdTree<f32, 2> = KdTree::new();
-    for (slot, &i) in swapped.iter().enumerate() {
-        let p = corners[i].position;
-        swap_tree.add(&[p.x, p.y], slot as u64);
-    }
-
-    // Rank A candidates by descending strength.
-    let mut a_order: Vec<usize> = canonical.clone();
-    a_order.sort_by(|&i, &j| corners[j].strength.total_cmp(&corners[i].strength));
-
-    // Consider up to this many Swapped kNN per A (captures board
-    // neighbors even when the a priori cell size is unknown).
-    const K_SWAP: usize = 32;
-    // Consider at most this many B / C candidates per axis when
-    // enumerating quads.
-    const TOP_PER_AXIS: usize = 6;
-
-    for &a_idx in &a_order {
-        let a = &corners[a_idx];
-        let a_axis0 = wrap_pi(a.axes[0].angle);
-        let a_axis1 = wrap_pi(a.axes[1].angle);
-
-        // Fetch the K nearest Swapped corners; sort asc by distance.
-        let mut neighbors: Vec<(usize, f32, Vector2<f32>)> = swap_tree
-            .nearest_n::<SquaredEuclidean>(&[a.position.x, a.position.y], K_SWAP)
-            .into_iter()
-            .map(|nn| {
-                let slot = nn.item as usize;
-                let idx = swapped[slot];
-                let p = corners[idx].position;
-                let off = Vector2::new(p.x - a.position.x, p.y - a.position.y);
-                let d = nn.distance.sqrt();
-                (idx, d, off)
-            })
-            .filter(|(_, d, _)| d.is_finite() && *d > 1e-3)
+impl<'a> ChessboardSeedValidator<'a> {
+    fn new(corners: &'a [CornerAug]) -> Self {
+        let label_of = |i: usize| match corners[i].stage {
+            CornerStage::Clustered { label } => Some(label),
+            _ => None,
+        };
+        let mut canonical: Vec<usize> = (0..corners.len())
+            .filter(|&i| label_of(i) == Some(ClusterLabel::Canonical))
             .collect();
-        neighbors.sort_by(|a, b| a.1.total_cmp(&b.1));
-        if neighbors.len() < 2 {
-            continue;
-        }
-
-        // Classify by which axis at A the chord aligns with.
-        let mut b_cands: Vec<(usize, f32, Vector2<f32>)> = Vec::new();
-        let mut c_cands: Vec<(usize, f32, Vector2<f32>)> = Vec::new();
-        for (idx, dist, off) in &neighbors {
-            let ang = wrap_pi(off.y.atan2(off.x));
-            let d0 = angular_dist_pi(ang, a_axis0);
-            let d1 = angular_dist_pi(ang, a_axis1);
-            if d0 <= axis_tol && d0 < d1 {
-                b_cands.push((*idx, *dist, *off));
-            } else if d1 <= axis_tol && d1 < d0 {
-                c_cands.push((*idx, *dist, *off));
-            }
-        }
-        if b_cands.is_empty() || c_cands.is_empty() {
-            continue;
-        }
-
-        // Enumerate (B, C) pairs among the shortest candidates.
-        for (b_idx, b_dist, b_off) in b_cands.iter().take(TOP_PER_AXIS) {
-            for (c_idx, c_dist, c_off) in c_cands.iter().take(TOP_PER_AXIS) {
-                if b_idx == c_idx {
-                    continue;
-                }
-                let ab = *b_dist;
-                let ac = *c_dist;
-                let ratio = ab.min(ac) / ab.max(ac);
-                if ratio < min_ratio / max_ratio {
-                    continue;
-                }
-
-                // Predict D.
-                let pred = a.position + b_off + c_off;
-                let avg_edge = (ab + ac) * 0.5;
-                let close_px = close_tol * avg_edge;
-                let close_px_sq = close_px * close_px;
-
-                // Find nearest Canonical corner within close_px of pred.
-                let mut best: Option<(usize, f32, Vector2<f32>)> = None;
-                for nn in canon_tree
-                    .within_unsorted::<SquaredEuclidean>(&[pred.x, pred.y], close_px_sq)
-                    .into_iter()
-                {
-                    let slot = nn.item as usize;
-                    let d_idx = canonical[slot];
-                    if d_idx == a_idx {
-                        continue;
-                    }
-                    let p = corners[d_idx].position;
-                    let d = nn.distance.sqrt();
-                    if best.map(|b| d < b.1).unwrap_or(true) {
-                        best = Some((
-                            d_idx,
-                            d,
-                            Vector2::new(p.x - a.position.x, p.y - a.position.y),
-                        ));
-                    }
-                }
-                let Some((d_idx, _gap, _d_off_from_a)) = best else {
-                    continue;
-                };
-
-                // Validate edges BD (along B's perpendicular axis to the BA edge)
-                // and CD (along C's perpendicular axis to the CA edge).
-                let b_to_d = corners[d_idx].position - corners[*b_idx].position;
-                let c_to_d = corners[d_idx].position - corners[*c_idx].position;
-                let bd = b_to_d.norm();
-                let cd = c_to_d.norm();
-
-                // All 4 edges must match pairwise within the ratio tolerance.
-                let all_edges = [ab, ac, bd, cd];
-                let emin = all_edges.iter().copied().fold(f32::INFINITY, f32::min);
-                let emax = all_edges.iter().copied().fold(0.0_f32, f32::max);
-                if emax <= 0.0 || emin / emax < min_ratio / max_ratio {
-                    continue;
-                }
-
-                // Axis-slot-swap check on all 4 edges.
-                if !edge_has_axis_slot_swap(corners, a_idx, *b_idx, axis_tol)
-                    || !edge_has_axis_slot_swap(corners, a_idx, *c_idx, axis_tol)
-                    || !edge_has_axis_slot_swap(corners, *b_idx, d_idx, axis_tol)
-                    || !edge_has_axis_slot_swap(corners, *c_idx, d_idx, axis_tol)
-                {
-                    continue;
-                }
-
-                // Cluster-center cross-check (belts-and-suspenders): the
-                // direction of AB should roughly match one of the two
-                // global cluster centers. (We already know it matches
-                // A's axes[0]; this extra filter catches rare frames
-                // where A's local axes drifted far from centers.)
-                let ab_ang = wrap_pi(b_off.y.atan2(b_off.x));
-                let ac_ang = wrap_pi(c_off.y.atan2(c_off.x));
-                let _ = (centers, ab_ang, ac_ang); // no-op placeholder; centers cross-check left to grow-stage axes_match_centers.
-
-                let cell_size = (ab + ac + bd + cd) * 0.25;
-
-                // 2×-spacing rejection. A legitimate 2×2 quad has no
-                // detected corners at any of its edge midpoints nor at
-                // the parallelogram center (those positions lie inside
-                // cells, between grid intersections). If the seed
-                // accidentally picked a 2×-wider quad — e.g., `A=(0,0),
-                // B=(2,0), C=(0,2), D=(2,2)` in the real grid, wrongly
-                // labelled as `(0,0),(1,0),(0,1),(1,1)` — then those
-                // midpoints DO coincide with real Swapped / Canonical
-                // corners (the intermediate `(1,0), (0,1), (1,1)`
-                // positions in the real grid). Detect and reject.
-                if seed_has_midpoint_violation(
-                    corners,
-                    a_idx,
-                    *b_idx,
-                    *c_idx,
-                    d_idx,
-                    &canon_tree,
-                    &canonical,
-                    &swap_tree,
-                    &swapped,
-                    cell_size,
-                ) {
-                    continue;
-                }
-
-                return Some(SeedOutput {
-                    seed: Seed {
-                        a: a_idx,
-                        b: *b_idx,
-                        c: *c_idx,
-                        d: d_idx,
-                    },
-                    cell_size,
-                });
-            }
+        canonical.sort_by(|&i, &j| corners[j].strength.total_cmp(&corners[i].strength));
+        let swapped: Vec<usize> = (0..corners.len())
+            .filter(|&i| label_of(i) == Some(ClusterLabel::Swapped))
+            .collect();
+        Self {
+            corners,
+            canonical,
+            swapped,
         }
     }
-
-    None
 }
 
-/// Reject a seed quad whose edges skip intermediate real grid
-/// corners.
-///
-/// A valid `(0,0)-(1,0)-(0,1)-(1,1)` quad has:
-///   - no `Swapped` corner near the midpoint of `AB` (between the
-///     two `Canonical` corners A and `D`/B on that edge of the
-///     seed — wait, AB connects Canonical-A and Swapped-B, so the
-///     midpoint is halfway between, inside one cell),
-///   - no `Canonical` corner near the midpoint of `AD` /
-///     `BC` (the parallelogram center, which sits at `(0.5, 0.5)`
-///     — not a grid intersection).
-///
-/// When the seed has accidentally picked a 2×-wider quad — e.g.,
-/// `A=(0,0), B=(2,0), C=(0,2), D=(2,2)` mislabelled as
-/// `(0,0),(1,0),(0,1),(1,1)` — the midpoints DO coincide with real
-/// intermediate corners (respectively Swapped at `(1,0), (0,1),
-/// (1,2), (2,1)`, and Canonical at the center `(1,1)`).
-///
-/// Midpoint tolerance: `midpoint_match_rel × cell_size`. Corners
-/// within this radius of the midpoint trigger rejection.
-#[allow(clippy::too_many_arguments)]
-fn seed_has_midpoint_violation(
-    corners: &[CornerAug],
-    a: usize,
-    b: usize,
-    c: usize,
-    d: usize,
-    canon_tree: &KdTree<f32, 2>,
-    canonical: &[usize],
-    swap_tree: &KdTree<f32, 2>,
-    swapped: &[usize],
-    cell_size: f32,
-) -> bool {
-    // Match-radius: a corner within this distance of a midpoint is
-    // considered "at the midpoint". `0.3 × s` is tight enough to
-    // ignore noise but large enough to catch real 2×-spacing
-    // mislabels where the intermediate corner sits nearly exactly at
-    // the midpoint.
-    let tol = 0.3 * cell_size;
-    let tol_sq = tol * tol;
+impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
+    fn position(&self, idx: usize) -> Point2<f32> {
+        self.corners[idx].position
+    }
 
-    let pa = corners[a].position;
-    let pb = corners[b].position;
-    let pc = corners[c].position;
-    let pd = corners[d].position;
+    fn axes(&self, idx: usize) -> [f32; 2] {
+        let c = &self.corners[idx];
+        [c.axes[0].angle, c.axes[1].angle]
+    }
 
-    // Edge midpoints — expect NO Swapped corner nearby.
-    let edge_midpoints = [
-        Point2::from((pa.coords + pb.coords) * 0.5),
-        Point2::from((pa.coords + pc.coords) * 0.5),
-        Point2::from((pb.coords + pd.coords) * 0.5),
-        Point2::from((pc.coords + pd.coords) * 0.5),
-    ];
-    for mp in edge_midpoints {
-        if nearest_non_seed_within(swap_tree, swapped, mp, tol_sq, &[a, b, c, d]) {
-            return true;
+    fn a_candidates(&self) -> Vec<usize> {
+        self.canonical.clone()
+    }
+
+    fn bc_candidates(&self) -> Vec<usize> {
+        self.swapped.clone()
+    }
+
+    /// Axis-slot-swap invariant on the directed edge `from → to`: the
+    /// chord direction must match one slot at `from` and the OTHER
+    /// slot at `to`. Same check the BFS validator's `edge_ok` uses.
+    fn edge_ok(&self, from: usize, to: usize, axis_tol_rad: f32) -> bool {
+        let a = &self.corners[from];
+        let b = &self.corners[to];
+        let off = b.position - a.position;
+        let ang = wrap_pi(off.y.atan2(off.x));
+        let d_a0 = angular_dist_pi(ang, wrap_pi(a.axes[0].angle));
+        let d_a1 = angular_dist_pi(ang, wrap_pi(a.axes[1].angle));
+        let (slot_a, d_a) = if d_a0 <= d_a1 { (0, d_a0) } else { (1, d_a1) };
+        if d_a > axis_tol_rad {
+            return false;
         }
-    }
-
-    // Parallelogram center — expect NO Canonical corner nearby.
-    let center = Point2::from((pa.coords + pd.coords) * 0.5);
-    if nearest_non_seed_within(canon_tree, canonical, center, tol_sq, &[a, b, c, d]) {
-        return true;
-    }
-
-    false
-}
-
-/// Check whether the KD-tree contains a non-seed point within
-/// `tol_sq` of `pos`. Returns `true` if such a point exists.
-fn nearest_non_seed_within(
-    tree: &KdTree<f32, 2>,
-    slot_to_idx: &[usize],
-    pos: Point2<f32>,
-    tol_sq: f32,
-    seed_indices: &[usize],
-) -> bool {
-    for nn in tree
-        .within_unsorted::<SquaredEuclidean>(&[pos.x, pos.y], tol_sq)
-        .into_iter()
-    {
-        let slot = nn.item as usize;
-        let idx = slot_to_idx[slot];
-        if !seed_indices.contains(&idx) {
-            return true;
+        let d_b0 = angular_dist_pi(ang, wrap_pi(b.axes[0].angle));
+        let d_b1 = angular_dist_pi(ang, wrap_pi(b.axes[1].angle));
+        let (slot_b, d_b) = if d_b0 <= d_b1 { (0, d_b0) } else { (1, d_b1) };
+        if d_b > axis_tol_rad {
+            return false;
         }
+        slot_a != slot_b
     }
-    false
-}
 
-/// Verify the axis-slot-swap invariant on an edge `A→B`: the edge
-/// direction matches one slot at A and the OTHER slot at B.
-fn edge_has_axis_slot_swap(corners: &[CornerAug], a_idx: usize, b_idx: usize, tol: f32) -> bool {
-    let a = &corners[a_idx];
-    let b = &corners[b_idx];
-    let off = b.position - a.position;
-    let ang = wrap_pi(off.y.atan2(off.x));
-    let d_a0 = angular_dist_pi(ang, wrap_pi(a.axes[0].angle));
-    let d_a1 = angular_dist_pi(ang, wrap_pi(a.axes[1].angle));
-    let (slot_a, d_a) = if d_a0 <= d_a1 { (0, d_a0) } else { (1, d_a1) };
-    if d_a > tol {
-        return false;
+    /// 2×-spacing rejection: the seed quad is invalid when a
+    /// `Swapped`-cluster corner sits near any of the four edge
+    /// midpoints, OR a `Canonical`-cluster corner sits near the
+    /// parallelogram center. Both indicate the seed has accidentally
+    /// skipped a real intermediate corner.
+    fn has_midpoint_violation(
+        &self,
+        seed: projective_grid::square::seed::Seed,
+        cell_size: f32,
+    ) -> bool {
+        let positions: Vec<Point2<f32>> = self.corners.iter().map(|c| c.position).collect();
+        projective_grid::square::seed::seed_has_midpoint_violation(
+            &positions,
+            [seed.a, seed.b, seed.c, seed.d],
+            cell_size,
+            0.3,
+            &self.swapped,
+            &self.canonical,
+        )
     }
-    let d_b0 = angular_dist_pi(ang, wrap_pi(b.axes[0].angle));
-    let d_b1 = angular_dist_pi(ang, wrap_pi(b.axes[1].angle));
-    let (slot_b, d_b) = if d_b0 <= d_b1 { (0, d_b0) } else { (1, d_b1) };
-    if d_b > tol {
-        return false;
-    }
-    slot_a != slot_b
 }
-
-/// Discard — unused under the new self-consistent seed. Retained so
-/// `&Point2` isn't flagged as dead.
-#[allow(dead_code)]
-fn _point2_retain(_: Point2<f32>) {}
 
 #[cfg(test)]
 mod tests {
@@ -570,11 +313,8 @@ mod tests {
 
     #[test]
     fn handles_widely_varying_cell_size_among_clusters() {
-        // Create a grid where TRUE cell is 60 but there are many
-        // (non-clustered) noise points at spacing 30 — the old
-        // cell_size estimator would pick 30 and the seed would
-        // fail. The new self-consistent seed uses the cluster
-        // corners only to measure cell size.
+        // Create a grid where TRUE cell is 60 — the new self-consistent
+        // seed uses the cluster corners only to measure cell size.
         let s = 60.0_f32;
         let mut corners = build_clean_grid(4, 4, s);
         let params = DetectorParams::default();

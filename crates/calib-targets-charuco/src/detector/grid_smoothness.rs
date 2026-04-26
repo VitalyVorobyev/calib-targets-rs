@@ -11,7 +11,7 @@
 use super::corner_validation::redetect_corner_in_roi;
 use super::marker_sampling::CornerMap;
 use calib_targets_core::{GrayImageView, GridCoords};
-use chess_corners_core::ChessParams;
+use chess_corners::ChessParams;
 use log::debug;
 use nalgebra::Point2;
 use projective_grid::predict_grid_position;

@@ -8,7 +8,7 @@
 //! is left to the caller.
 
 use crate::float_helpers::lit;
-use crate::homography::{estimate_homography, Homography};
+use crate::homography::{estimate_homography_with_quality, Homography, HomographyQuality};
 use crate::Float;
 use crate::GridIndex;
 use nalgebra::Point2;
@@ -28,6 +28,7 @@ pub enum GridMeshError {
 #[derive(Clone, Copy, Debug)]
 struct CellHomography<F: Float> {
     h_img_from_cellrect: Homography<F>,
+    quality: HomographyQuality<F>,
     valid: bool,
 }
 
@@ -62,9 +63,37 @@ impl<F: Float> GridHomographyMesh<F> {
     ///
     /// - `corners`: map from grid index to image position.
     /// - `px_per_cell`: rectified pixels per grid cell.
+    ///
+    /// Equivalent to [`Self::from_corners_with_min_singular_value`] with
+    /// `F::zero()` — every cell whose four corners are present and whose
+    /// homography solves successfully is accepted, regardless of
+    /// conditioning.
     pub fn from_corners(
         corners: &HashMap<GridIndex, Point2<F>>,
         px_per_cell: F,
+    ) -> Result<Self, GridMeshError> {
+        Self::from_corners_with_min_singular_value(corners, px_per_cell, F::zero())
+    }
+
+    /// Variant of [`Self::from_corners`] that skips cells whose homography
+    /// is ill-conditioned.
+    ///
+    /// A cell is treated as invalid (a "hole") when the smallest singular
+    /// value of its 3×3 homography matrix falls below
+    /// `min_singular_value`. The threshold is in the same units as the
+    /// matrix entries; for the standard `(grid_corner_space → image_pixels)`
+    /// fit, a threshold around `1e-3 × px_per_cell` rejects cells where
+    /// three of the four corners are nearly collinear in pixel space.
+    ///
+    /// Cells skipped this way are silently ignored, exactly like cells
+    /// missing one or more corners. The error variant
+    /// [`GridMeshError::HomographyFailed`] is still returned only when the
+    /// underlying solver fails — a strictly different failure mode from
+    /// "the solver succeeded but the result is degenerate".
+    pub fn from_corners_with_min_singular_value(
+        corners: &HashMap<GridIndex, Point2<F>>,
+        px_per_cell: F,
+        min_singular_value: F,
     ) -> Result<Self, GridMeshError> {
         if corners.len() < 4 {
             return Err(GridMeshError::NotEnoughCorners);
@@ -107,9 +136,16 @@ impl<F: Float> GridHomographyMesh<F> {
             Point2::new(s, s),
         ];
 
+        let zero_quality = HomographyQuality {
+            max_singular_value: F::zero(),
+            min_singular_value: F::zero(),
+            condition: F::zero(),
+            determinant: F::zero(),
+        };
         let mut cells = vec![
             CellHomography {
                 h_img_from_cellrect: Homography::zero(),
+                quality: zero_quality,
                 valid: false,
             };
             cells_x * cells_y
@@ -145,15 +181,19 @@ impl<F: Float> GridHomographyMesh<F> {
 
                 let img_quad = [p00, p10, p01, p11];
 
-                let h = estimate_homography(&cell_rect, &img_quad)
+                let (h, quality) = estimate_homography_with_quality(&cell_rect, &img_quad)
                     .ok_or(GridMeshError::HomographyFailed { ci, cj })?;
 
                 let idx = cj * cells_x + ci;
+                let valid = quality.min_singular_value >= min_singular_value;
                 cells[idx] = CellHomography {
                     h_img_from_cellrect: h,
-                    valid: true,
+                    quality,
+                    valid,
                 };
-                valid_cells += 1;
+                if valid {
+                    valid_cells += 1;
+                }
             }
         }
 
@@ -196,6 +236,20 @@ impl<F: Float> GridHomographyMesh<F> {
         self.cell_rect_to_img(ci as usize, cj as usize, Point2::new(x_local, y_local))
     }
 
+    /// Per-cell homography quality, or `None` when the cell is missing or
+    /// outside the mesh. Returns the quality even for cells marked invalid
+    /// by the conditioning gate so callers can introspect *why* a cell was
+    /// rejected.
+    pub fn cell_quality(&self, ci: usize, cj: usize) -> Option<HomographyQuality<F>> {
+        let idx = cj.checked_mul(self.cells_x)?.checked_add(ci)?;
+        let cell = self.cells.get(idx)?;
+        if cell.quality.max_singular_value <= F::zero() {
+            None
+        } else {
+            Some(cell.quality)
+        }
+    }
+
     /// Map a point in **cell-local rectified coordinates** to image coordinates.
     ///
     /// - `ci`, `cj`: cell indices in `0..cells_x × 0..cells_y`
@@ -224,5 +278,91 @@ impl<F: Float> GridHomographyMesh<F> {
             self.cell_rect_to_img(ci, cj, pts[2])?,
             self.cell_rect_to_img(ci, cj, pts[3])?,
         ])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn axis_aligned_grid(rows: i32, cols: i32, spacing: f32) -> HashMap<GridIndex, Point2<f32>> {
+        let mut out = HashMap::new();
+        for j in 0..rows {
+            for i in 0..cols {
+                out.insert(
+                    GridIndex { i, j },
+                    Point2::new(i as f32 * spacing, j as f32 * spacing),
+                );
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn from_corners_default_accepts_clean_grid() {
+        let corners = axis_aligned_grid(3, 3, 50.0);
+        let mesh = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("mesh builds");
+        // 3x3 corners = 2x2 cells.
+        assert_eq!(mesh.cells_x, 2);
+        assert_eq!(mesh.cells_y, 2);
+        assert_eq!(mesh.valid_cells, 4);
+        // Quality recorded on every cell.
+        for cj in 0..2 {
+            for ci in 0..2 {
+                let q = mesh.cell_quality(ci, cj).expect("quality");
+                assert!(q.min_singular_value > 0.0);
+                assert!(q.condition.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn min_singular_value_threshold_skips_degenerate_cells() {
+        // A 2x2 grid of corners where 3 of 4 are collinear in pixel space.
+        // The cell homography is rank-deficient and should be flagged.
+        let mut corners = HashMap::new();
+        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0_f32, 0.0));
+        corners.insert(GridIndex { i: 1, j: 0 }, Point2::new(50.0, 0.0));
+        // A near-collinear corner: (1, 1) sits 1e-4 px below the (1, 0) line.
+        corners.insert(GridIndex { i: 1, j: 1 }, Point2::new(50.0, 1e-4));
+        corners.insert(GridIndex { i: 0, j: 1 }, Point2::new(0.0, 1e-4));
+
+        // Lenient: accept everything.
+        let lenient = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("lenient");
+        assert_eq!(lenient.valid_cells, 1);
+
+        // Strict: reject ill-conditioned cells.
+        let strict =
+            GridHomographyMesh::<f32>::from_corners_with_min_singular_value(&corners, 32.0, 0.01);
+        // All cells skipped → NoValidCells.
+        assert!(strict.is_err());
+    }
+
+    #[test]
+    fn cell_quality_returns_none_for_skipped_cell() {
+        // 3×3 corners, drop the centre one. Cells (0,0), (1,0), (0,1), (1,1)
+        // each need the centre corner for one of their four vertices, so
+        // every cell is skipped — but the surrounding bounding box still
+        // builds a 2×2 cell mesh with `valid_cells = 0`.
+        let mut corners = axis_aligned_grid(3, 3, 50.0);
+        corners.remove(&GridIndex { i: 1, j: 1 });
+        let result = GridHomographyMesh::<f32>::from_corners(&corners, 32.0);
+        assert!(matches!(result, Err(GridMeshError::NoValidCells)));
+    }
+
+    #[test]
+    fn cell_quality_partial_mesh_keeps_intact_cells() {
+        // 4×4 corners, drop a corner that touches only a single cell (the
+        // top-left corner of the bottom-right cell).
+        let mut corners = axis_aligned_grid(4, 4, 50.0);
+        corners.remove(&GridIndex { i: 2, j: 2 });
+        let mesh = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("partial mesh");
+        // 9 total cells in a 4×4-corner grid, of which 4 share corner (2,2).
+        // (Each of the 4 corner-touching cells is invalidated.)
+        assert_eq!(mesh.valid_cells, 9 - 4);
+        // A cell that does not touch (2,2) is valid and has quality.
+        assert!(mesh.cell_quality(0, 0).is_some());
+        // A cell that touches (2,2) is skipped → quality returns None.
+        assert!(mesh.cell_quality(1, 1).is_none());
     }
 }

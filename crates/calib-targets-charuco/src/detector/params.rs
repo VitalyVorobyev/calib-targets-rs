@@ -162,8 +162,8 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
     }
 }
 
-pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners_core::ChessParams {
-    let mut out = chess_corners_core::ChessParams::default();
+pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::ChessParams {
+    let mut out = chess_corners::ChessParams::default();
     out.use_radius10 = params.use_radius10;
     out.descriptor_use_radius10 = params.descriptor_use_radius10;
     out.threshold_rel = params.threshold_rel;
@@ -174,15 +174,15 @@ pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners_core:
     out
 }
 
-fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKind {
+fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners::RefinerKind {
     match refiner {
         RefinerKindConfig::CenterOfMass(cfg) => {
-            chess_corners_core::RefinerKind::CenterOfMass(chess_corners_core::CenterOfMassConfig {
+            chess_corners::RefinerKind::CenterOfMass(chess_corners::CenterOfMassConfig {
                 radius: cfg.radius,
             })
         }
         RefinerKindConfig::Forstner(cfg) => {
-            chess_corners_core::RefinerKind::Forstner(chess_corners_core::ForstnerConfig {
+            chess_corners::RefinerKind::Forstner(chess_corners::ForstnerConfig {
                 radius: cfg.radius,
                 min_trace: cfg.min_trace,
                 min_det: cfg.min_det,
@@ -191,7 +191,7 @@ fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners_core::RefinerKi
             })
         }
         RefinerKindConfig::SaddlePoint(cfg) => {
-            chess_corners_core::RefinerKind::SaddlePoint(chess_corners_core::SaddlePointConfig {
+            chess_corners::RefinerKind::SaddlePoint(chess_corners::SaddlePointConfig {
                 radius: cfg.radius,
                 det_margin: cfg.det_margin,
                 max_offset: cfg.max_offset,

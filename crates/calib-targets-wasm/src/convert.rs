@@ -113,5 +113,9 @@ fn to_refiner_config(refiner: &RefinerConfig) -> chess_corners::RefinerConfig {
             max_offset: refiner.saddle_point.max_offset,
             min_abs_det: refiner.saddle_point.min_abs_det,
         },
+        // chess-corners 0.7 added a radon_peak refinement method. The
+        // wasm bindings haven't grown a knob for it yet; default keeps
+        // the existing behaviour (only used when kind = RadonPeak).
+        ..Default::default()
     }
 }

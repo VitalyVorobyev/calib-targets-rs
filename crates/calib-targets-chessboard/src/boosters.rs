@@ -33,7 +33,8 @@ use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use kiddo::{KdTree, SquaredEuclidean};
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
+use projective_grid::square::grow::{predict_from_neighbours as pg_predict, LabelledNeighbour};
 use std::collections::HashSet;
 
 /// Diagnostic returned by [`apply_boosters`].
@@ -212,8 +213,22 @@ fn try_attach_at(
         return false;
     }
 
-    // Axis-vector prediction from each neighbor; average.
-    let pred = predict_from_neighbors(pos, &neighbors, grow.grid_u, grow.grid_v, cell_size);
+    // Adaptive prediction shared with BFS-grow: each labelled neighbour
+    // contributes a finite-difference local-step from its own labelled
+    // peers when available, falling back to the global `(u, v) ×
+    // cell_size` step otherwise. This is materially better than the
+    // booster's previous constant-step predictor under perspective
+    // foreshortening.
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let pred = pg_predict(
+        pos,
+        &neighbors,
+        grow.grid_u,
+        grow.grid_v,
+        cell_size,
+        &grow.labelled,
+        &positions,
+    );
 
     // Candidate search.
     let attach_tol = params.attach_axis_tol_deg.to_radians();
@@ -309,7 +324,7 @@ fn collect_labelled_neighbors(
     window_half: i32,
     grow: &GrowResult,
     corners: &[CornerAug],
-) -> Vec<((i32, i32), Point2<f32>)> {
+) -> Vec<LabelledNeighbour> {
     let mut out = Vec::new();
     for dj in -window_half..=window_half {
         for di in -window_half..=window_half {
@@ -318,32 +333,15 @@ fn collect_labelled_neighbors(
             }
             let neigh = (pos.0 + di, pos.1 + dj);
             if let Some(&idx) = grow.labelled.get(&neigh) {
-                out.push((neigh, corners[idx].position));
+                out.push(LabelledNeighbour {
+                    idx,
+                    at: neigh,
+                    position: corners[idx].position,
+                });
             }
         }
     }
     out
-}
-
-fn predict_from_neighbors(
-    target: (i32, i32),
-    neighbors: &[((i32, i32), Point2<f32>)],
-    u: Vector2<f32>,
-    v: Vector2<f32>,
-    cell_size: f32,
-) -> Point2<f32> {
-    debug_assert!(!neighbors.is_empty());
-    let mut sum_x = 0.0_f32;
-    let mut sum_y = 0.0_f32;
-    for ((ni, nj), p) in neighbors {
-        let di = (target.0 - ni) as f32;
-        let dj = (target.1 - nj) as f32;
-        let off = u * (di * cell_size) + v * (dj * cell_size);
-        sum_x += p.x + off.x;
-        sum_y += p.y + off.y;
-    }
-    let n = neighbors.len() as f32;
-    Point2::new(sum_x / n, sum_y / n)
 }
 
 /// Infer cluster label for a weakly-clustered corner: pick the

@@ -25,6 +25,17 @@ tracing = ["dep:tracing"]
 workspace = true
 optional = true
 
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "grow"
+harness = false
+
+[[bench]]
+name = "homography"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

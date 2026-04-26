@@ -155,7 +155,7 @@ specification in a geometrically consistent way.
 |---|---|
 | Strong blur | Lower `min_border_score` to `0.65`, enable `multi_threshold` |
 | Uneven / gradient lighting | `multi_threshold` (already default) |
-| Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `projective_line_tol_rel` on the chessboard side |
+| Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `local_h_tol_rel` on the chessboard side |
 | Partial occlusion | Use `detect_chessboard_all`; for ChArUco, lower `min_marker_inliers` |
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |

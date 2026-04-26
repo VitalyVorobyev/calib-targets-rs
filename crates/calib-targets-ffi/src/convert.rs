@@ -288,10 +288,6 @@ pub(crate) fn convert_chessboard_params(
     out.edge_axis_tol_deg =
         require_nonnegative(params.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
     out.line_tol_rel = require_nonnegative(params.line_tol_rel, "chessboard.line_tol_rel")?;
-    out.projective_line_tol_rel = require_nonnegative(
-        params.projective_line_tol_rel,
-        "chessboard.projective_line_tol_rel",
-    )?;
     out.line_min_members = params.line_min_members;
     out.local_h_tol_rel =
         require_nonnegative(params.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
@@ -343,7 +339,6 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
         step_tol: d.step_tol,
         edge_axis_tol_deg: d.edge_axis_tol_deg,
         line_tol_rel: d.line_tol_rel,
-        projective_line_tol_rel: d.projective_line_tol_rel,
         line_min_members: d.line_min_members,
         local_h_tol_rel: d.local_h_tol_rel,
         max_validation_iters: d.max_validation_iters,
