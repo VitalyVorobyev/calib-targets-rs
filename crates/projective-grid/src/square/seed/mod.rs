@@ -7,11 +7,28 @@
 //! geometry — the four-corner seed quad, its edge / cell-size bundle,
 //! and the 2×-spacing "midpoint violation" rejection — live here so
 //! non-calibration consumers can reuse them.
+//!
+//! The pattern-agnostic seed *finder* (KD-tree search, axis classification,
+//! parallelogram completion) lives in the [`finder`] submodule so the
+//! data types and the search logic have separate homes.
+
+pub mod finder;
 
 use crate::homography::homography_from_4pt;
 use nalgebra::Point2;
 
-pub use crate::square::grow::Seed;
+/// Seed quad: corner indices at grid cells `(0, 0), (1, 0), (0, 1),
+/// `(1, 1)` respectively.
+///
+/// Created by the seed finder and consumed by
+/// [`crate::square::grow::bfs_grow`].
+#[derive(Clone, Copy, Debug)]
+pub struct Seed {
+    pub a: usize,
+    pub b: usize,
+    pub c: usize,
+    pub d: usize,
+}
 
 /// Output of a seed finder: the 2×2 quad plus a cell size derived
 /// directly from the seed's own edge lengths.

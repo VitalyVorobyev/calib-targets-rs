@@ -16,6 +16,7 @@ categories = ["computer-vision", "science"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
+chess-corners = { workspace = true }
 projective-grid = { workspace = true }
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 serde = { workspace = true, features = ["derive"] }

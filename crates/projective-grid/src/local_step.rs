@@ -12,7 +12,7 @@
 //!    coarse outlier reject that avoids bleed-through from distant marker
 //!    cells or second-order lattice copies.
 //! 3. Classify each surviving neighbor into the axis-u or axis-v sector,
-//!    using the point's own `(axis_u, axis_v)` folded to undirected lines
+//!    using the point's own two axes folded to undirected lines
 //!    (mod π). Neighbors outside `sector_half_width_rad` of either axis are
 //!    discarded as ambiguous.
 //! 4. Per sector, run 1-D mean-shift on the collected `|offset|` values with
@@ -31,6 +31,7 @@
 //! See `docs/grid_plan.md` Phase 2 and the plan file stored under
 //! `.claude/plans/we-need-to-plan-breezy-pixel.md` for the full context.
 
+use crate::topological::AxisHint;
 use crate::Float;
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, RealField, Vector2};
@@ -47,9 +48,9 @@ pub struct LocalStep<F: Float = f32> {
     /// where supporters = (u-sector supporters + v-sector supporters).
     pub confidence: F,
     /// How many neighbors fed the u-sector mode (for diagnostics).
-    pub supporters_u: u32,
+    pub supporters_u: usize,
     /// How many neighbors fed the v-sector mode.
-    pub supporters_v: u32,
+    pub supporters_v: usize,
 }
 
 impl<F: Float> Default for LocalStep<F> {
@@ -58,24 +59,28 @@ impl<F: Float> Default for LocalStep<F> {
             step_u: F::zero(),
             step_v: F::zero(),
             confidence: F::zero(),
-            supporters_u: 0,
-            supporters_v: 0,
+            supporters_u: 0_usize,
+            supporters_v: 0_usize,
         }
     }
 }
 
 /// Per-point data consumed by [`estimate_local_steps`].
 ///
-/// `axis_u` and `axis_v` are the point's two local grid-axis directions in
-/// radians. They need not be orthogonal — the routine treats them as
-/// undirected lines and folds every angle to `[0, π)` before sector
-/// classification, so perspective-warped corners whose axes deviate from 90°
-/// are handled naturally.
+/// `axes[0]` and `axes[1]` are the point's two local grid-axis directions.
+/// The estimator uses only the `angle` field; `sigma` is stored for
+/// completeness but not consumed by this module.  Angles need not be
+/// orthogonal — the routine treats them as undirected lines and folds every
+/// angle to `[0, π)` before sector classification, so perspective-warped
+/// corners whose axes deviate from 90° are handled naturally.
+///
+/// Use [`AxisHint::from_angle`] when you do not track per-axis uncertainty.
 #[derive(Clone, Copy, Debug)]
 pub struct LocalStepPointData<F: Float = f32> {
     pub position: Point2<F>,
-    pub axis_u: F,
-    pub axis_v: F,
+    /// Two grid-axis hints. The `angle` field is used for sector binning;
+    /// `sigma` is carried through but not inspected.
+    pub axes: [AxisHint; 2],
 }
 
 /// Tuning knobs for [`estimate_local_steps`].
@@ -196,8 +201,8 @@ fn estimate_one<F: Float + kiddo::float::kdtree::Axis>(
     }
 
     // Bin into u/v sectors via each axis folded to [0, π).
-    let line_u = fold_to_line(source.axis_u);
-    let line_v = fold_to_line(source.axis_v);
+    let line_u = fold_to_line(F::from_subset(&(source.axes[0].angle as f64)));
+    let line_v = fold_to_line(F::from_subset(&(source.axes[1].angle as f64)));
     let mut u_steps: Vec<F> = Vec::new();
     let mut v_steps: Vec<F> = Vec::new();
 
@@ -229,8 +234,8 @@ fn estimate_one<F: Float + kiddo::float::kdtree::Axis>(
         step_u,
         step_v,
         confidence,
-        supporters_u: sup_u,
-        supporters_v: sup_v,
+        supporters_u: sup_u as usize,
+        supporters_v: sup_v as usize,
     }
 }
 
@@ -338,8 +343,10 @@ mod tests {
     fn lspd(x: f32, y: f32, axis_u: f32) -> LocalStepPointData<f32> {
         LocalStepPointData {
             position: Point2::new(x, y),
-            axis_u,
-            axis_v: axis_u + std::f32::consts::FRAC_PI_2,
+            axes: [
+                AxisHint::from_angle(axis_u),
+                AxisHint::from_angle(axis_u + std::f32::consts::FRAC_PI_2),
+            ],
         }
     }
 
@@ -443,8 +450,10 @@ mod tests {
             let c = pts[idx].position;
             pts.push(LocalStepPointData {
                 position: Point2::new(c.x + 3.0, c.y + 3.0),
-                axis_u: marker_angle,
-                axis_v: marker_angle + std::f32::consts::FRAC_PI_2,
+                axes: [
+                    AxisHint::from_angle(marker_angle),
+                    AxisHint::from_angle(marker_angle + std::f32::consts::FRAC_PI_2),
+                ],
             });
         }
         let steps = estimate_local_steps(&pts, &LocalStepParams::<f32>::default());

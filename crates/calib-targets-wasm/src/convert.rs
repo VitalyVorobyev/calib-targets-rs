@@ -3,11 +3,13 @@
 //! These functions mirror `crates/calib-targets/src/detect.rs` to avoid
 //! depending on the facade crate (which pulls in `image` codecs and `rayon`
 //! via the `image` feature).
+//!
+//! In 0.8, the workspace chess-config types are direct re-exports from
+//! `chess-corners`, so conversion between workspace and upstream types is a
+//! no-op. [`to_chess_corners_config`] delegates to the shared
+//! [`ChessConfig::to_chess_corners_config`] method.
 
-use calib_targets_core::{
-    AxisEstimate, ChessConfig, Corner, DescriptorMode, DetectorMode, RefinementMethod,
-    RefinerConfig, ThresholdMode, UpscaleConfig, UpscaleMode,
-};
+use calib_targets_core::{AxisEstimate, ChessConfig, Corner};
 use nalgebra::Point2;
 
 pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
@@ -31,91 +33,5 @@ pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
 }
 
 pub fn to_chess_corners_config(cfg: &ChessConfig) -> chess_corners::ChessConfig {
-    let mut out = chess_corners::ChessConfig::default();
-    out.detector_mode = to_detector_mode(cfg.detector_mode);
-    out.descriptor_mode = to_descriptor_mode(cfg.descriptor_mode);
-    out.threshold_mode = to_threshold_mode(cfg.threshold_mode);
-    out.threshold_value = cfg.threshold_value;
-    out.nms_radius = cfg.nms_radius;
-    out.min_cluster_size = cfg.min_cluster_size;
-    out.refiner = to_refiner_config(&cfg.refiner);
-    out.pyramid_levels = cfg.pyramid_levels;
-    out.pyramid_min_size = cfg.pyramid_min_size;
-    out.refinement_radius = cfg.refinement_radius;
-    out.merge_radius = cfg.merge_radius;
-    out.upscale = to_upscale_config(cfg.upscale);
-    out
-}
-
-fn to_upscale_config(cfg: UpscaleConfig) -> chess_corners::UpscaleConfig {
-    match cfg.mode {
-        UpscaleMode::Disabled => chess_corners::UpscaleConfig::disabled(),
-        UpscaleMode::Fixed => chess_corners::UpscaleConfig::fixed(cfg.factor),
-        // NOTE: update this adapter when new UpscaleMode variants are added upstream.
-        _ => unreachable!("unhandled UpscaleMode variant — update to_upscale_config"),
-    }
-}
-
-fn to_detector_mode(mode: DetectorMode) -> chess_corners::DetectorMode {
-    match mode {
-        DetectorMode::Canonical => chess_corners::DetectorMode::Canonical,
-        DetectorMode::Broad => chess_corners::DetectorMode::Broad,
-        // NOTE: update this adapter when new DetectorMode variants are added upstream.
-        _ => unreachable!("unhandled DetectorMode variant — update to_detector_mode"),
-    }
-}
-
-fn to_descriptor_mode(mode: DescriptorMode) -> chess_corners::DescriptorMode {
-    match mode {
-        DescriptorMode::FollowDetector => chess_corners::DescriptorMode::FollowDetector,
-        DescriptorMode::Canonical => chess_corners::DescriptorMode::Canonical,
-        DescriptorMode::Broad => chess_corners::DescriptorMode::Broad,
-        // NOTE: update this adapter when new DescriptorMode variants are added upstream.
-        _ => unreachable!("unhandled DescriptorMode variant — update to_descriptor_mode"),
-    }
-}
-
-fn to_threshold_mode(mode: ThresholdMode) -> chess_corners::ThresholdMode {
-    match mode {
-        ThresholdMode::Relative => chess_corners::ThresholdMode::Relative,
-        ThresholdMode::Absolute => chess_corners::ThresholdMode::Absolute,
-        // NOTE: update this adapter when new ThresholdMode variants are added upstream.
-        _ => unreachable!("unhandled ThresholdMode variant — update to_threshold_mode"),
-    }
-}
-
-fn to_refinement_method(method: RefinementMethod) -> chess_corners::RefinementMethod {
-    match method {
-        RefinementMethod::CenterOfMass => chess_corners::RefinementMethod::CenterOfMass,
-        RefinementMethod::Forstner => chess_corners::RefinementMethod::Forstner,
-        RefinementMethod::SaddlePoint => chess_corners::RefinementMethod::SaddlePoint,
-        // NOTE: update this adapter when new RefinementMethod variants are added upstream.
-        _ => unreachable!("unhandled RefinementMethod variant — update to_refinement_method"),
-    }
-}
-
-fn to_refiner_config(refiner: &RefinerConfig) -> chess_corners::RefinerConfig {
-    chess_corners::RefinerConfig {
-        kind: to_refinement_method(refiner.kind),
-        center_of_mass: chess_corners::CenterOfMassConfig {
-            radius: refiner.center_of_mass.radius,
-        },
-        forstner: chess_corners::ForstnerConfig {
-            radius: refiner.forstner.radius,
-            min_trace: refiner.forstner.min_trace,
-            min_det: refiner.forstner.min_det,
-            max_condition_number: refiner.forstner.max_condition_number,
-            max_offset: refiner.forstner.max_offset,
-        },
-        saddle_point: chess_corners::SaddlePointConfig {
-            radius: refiner.saddle_point.radius,
-            det_margin: refiner.saddle_point.det_margin,
-            max_offset: refiner.saddle_point.max_offset,
-            min_abs_det: refiner.saddle_point.min_abs_det,
-        },
-        // chess-corners 0.7 added a radon_peak refinement method. The
-        // wasm bindings haven't grown a knob for it yet; default keeps
-        // the existing behaviour (only used when kind = RadonPeak).
-        ..Default::default()
-    }
+    cfg.to_chess_corners_config()
 }

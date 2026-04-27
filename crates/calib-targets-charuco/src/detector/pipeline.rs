@@ -450,8 +450,8 @@ fn count_wrong_id_raw_markers(
             let Some(expected_bc) = board.marker_position(m.id) else {
                 return false; // pure dict noise — not counted as "wrong id"
             };
-            let [bx, by] = alignment.map(m.gc.i, m.gc.j);
-            bx != expected_bc.i || by != expected_bc.j
+            let bc = alignment.map(m.gc.i, m.gc.j);
+            bc.i != expected_bc.i || bc.j != expected_bc.j
         })
         .count()
 }

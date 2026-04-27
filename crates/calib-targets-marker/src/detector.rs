@@ -87,10 +87,10 @@ impl MarkerBoardDetector {
                 let Some(cand) = candidates.get(idx) else {
                     continue;
                 };
-                let [rx, ry] = alignment.transform.apply(cand.cell.i, cand.cell.j);
+                let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
                 m.offset_cells = Some(crate::coords::CellOffset {
-                    di: m.expected.cell.i - rx,
-                    dj: m.expected.cell.j - ry,
+                    di: m.expected.cell.i - r.i,
+                    dj: m.expected.cell.j - r.j,
                 });
             }
         }
@@ -110,9 +110,9 @@ impl MarkerBoardDetector {
         if let Some(alignment) = alignment {
             for corner in &mut detection.corners {
                 if let Some(grid) = &mut corner.grid {
-                    let [i, j] = alignment.map(grid.i, grid.j);
-                    grid.i = i;
-                    grid.j = j;
+                    let g = alignment.map(grid.i, grid.j);
+                    grid.i = g.i;
+                    grid.j = g.j;
                 }
             }
 

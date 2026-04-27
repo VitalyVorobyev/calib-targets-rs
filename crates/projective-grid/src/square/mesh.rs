@@ -10,7 +10,7 @@
 use crate::float_helpers::lit;
 use crate::homography::{estimate_homography_with_quality, Homography, HomographyQuality};
 use crate::Float;
-use crate::GridIndex;
+use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -37,7 +37,7 @@ struct CellHomography<F: Float> {
 /// Maps between a rectified coordinate system (uniform grid spacing) and
 /// the original image coordinates, using one homography per grid cell.
 #[derive(Clone, Debug)]
-pub struct GridHomographyMesh<F: Float = f32> {
+pub struct SquareGridHomographyMesh<F: Float = f32> {
     /// Minimum grid index (corner space).
     pub min_i: i32,
     /// Minimum grid index (corner space).
@@ -58,7 +58,7 @@ pub struct GridHomographyMesh<F: Float = f32> {
     cells: Vec<CellHomography<F>>,
 }
 
-impl<F: Float> GridHomographyMesh<F> {
+impl<F: Float> SquareGridHomographyMesh<F> {
     /// Build per-cell homographies from a grid corner map.
     ///
     /// - `corners`: map from grid index to image position.
@@ -69,7 +69,7 @@ impl<F: Float> GridHomographyMesh<F> {
     /// homography solves successfully is accepted, regardless of
     /// conditioning.
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<F>>,
+        corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
     ) -> Result<Self, GridMeshError> {
         Self::from_corners_with_min_singular_value(corners, px_per_cell, F::zero())
@@ -91,7 +91,7 @@ impl<F: Float> GridHomographyMesh<F> {
     /// underlying solver fails — a strictly different failure mode from
     /// "the solver succeeded but the result is degenerate".
     pub fn from_corners_with_min_singular_value(
-        corners: &HashMap<GridIndex, Point2<F>>,
+        corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
         min_singular_value: F,
     ) -> Result<Self, GridMeshError> {
@@ -158,10 +158,10 @@ impl<F: Float> GridHomographyMesh<F> {
                 let i0 = min_i + ci as i32;
                 let j0 = min_j + cj as i32;
 
-                let g00 = GridIndex { i: i0, j: j0 };
-                let g10 = GridIndex { i: i0 + 1, j: j0 };
-                let g01 = GridIndex { i: i0, j: j0 + 1 };
-                let g11 = GridIndex {
+                let g00 = GridCoords { i: i0, j: j0 };
+                let g10 = GridCoords { i: i0 + 1, j: j0 };
+                let g01 = GridCoords { i: i0, j: j0 + 1 };
+                let g11 = GridCoords {
                     i: i0 + 1,
                     j: j0 + 1,
                 };
@@ -285,12 +285,12 @@ impl<F: Float> GridHomographyMesh<F> {
 mod tests {
     use super::*;
 
-    fn axis_aligned_grid(rows: i32, cols: i32, spacing: f32) -> HashMap<GridIndex, Point2<f32>> {
+    fn axis_aligned_grid(rows: i32, cols: i32, spacing: f32) -> HashMap<GridCoords, Point2<f32>> {
         let mut out = HashMap::new();
         for j in 0..rows {
             for i in 0..cols {
                 out.insert(
-                    GridIndex { i, j },
+                    GridCoords { i, j },
                     Point2::new(i as f32 * spacing, j as f32 * spacing),
                 );
             }
@@ -301,7 +301,8 @@ mod tests {
     #[test]
     fn from_corners_default_accepts_clean_grid() {
         let corners = axis_aligned_grid(3, 3, 50.0);
-        let mesh = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("mesh builds");
+        let mesh =
+            SquareGridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("mesh builds");
         // 3x3 corners = 2x2 cells.
         assert_eq!(mesh.cells_x, 2);
         assert_eq!(mesh.cells_y, 2);
@@ -321,19 +322,21 @@ mod tests {
         // A 2x2 grid of corners where 3 of 4 are collinear in pixel space.
         // The cell homography is rank-deficient and should be flagged.
         let mut corners = HashMap::new();
-        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0_f32, 0.0));
-        corners.insert(GridIndex { i: 1, j: 0 }, Point2::new(50.0, 0.0));
+        corners.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0_f32, 0.0));
+        corners.insert(GridCoords { i: 1, j: 0 }, Point2::new(50.0, 0.0));
         // A near-collinear corner: (1, 1) sits 1e-4 px below the (1, 0) line.
-        corners.insert(GridIndex { i: 1, j: 1 }, Point2::new(50.0, 1e-4));
-        corners.insert(GridIndex { i: 0, j: 1 }, Point2::new(0.0, 1e-4));
+        corners.insert(GridCoords { i: 1, j: 1 }, Point2::new(50.0, 1e-4));
+        corners.insert(GridCoords { i: 0, j: 1 }, Point2::new(0.0, 1e-4));
 
         // Lenient: accept everything.
-        let lenient = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("lenient");
+        let lenient =
+            SquareGridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("lenient");
         assert_eq!(lenient.valid_cells, 1);
 
         // Strict: reject ill-conditioned cells.
-        let strict =
-            GridHomographyMesh::<f32>::from_corners_with_min_singular_value(&corners, 32.0, 0.01);
+        let strict = SquareGridHomographyMesh::<f32>::from_corners_with_min_singular_value(
+            &corners, 32.0, 0.01,
+        );
         // All cells skipped → NoValidCells.
         assert!(strict.is_err());
     }
@@ -345,8 +348,8 @@ mod tests {
         // every cell is skipped — but the surrounding bounding box still
         // builds a 2×2 cell mesh with `valid_cells = 0`.
         let mut corners = axis_aligned_grid(3, 3, 50.0);
-        corners.remove(&GridIndex { i: 1, j: 1 });
-        let result = GridHomographyMesh::<f32>::from_corners(&corners, 32.0);
+        corners.remove(&GridCoords { i: 1, j: 1 });
+        let result = SquareGridHomographyMesh::<f32>::from_corners(&corners, 32.0);
         assert!(matches!(result, Err(GridMeshError::NoValidCells)));
     }
 
@@ -355,8 +358,9 @@ mod tests {
         // 4×4 corners, drop a corner that touches only a single cell (the
         // top-left corner of the bottom-right cell).
         let mut corners = axis_aligned_grid(4, 4, 50.0);
-        corners.remove(&GridIndex { i: 2, j: 2 });
-        let mesh = GridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("partial mesh");
+        corners.remove(&GridCoords { i: 2, j: 2 });
+        let mesh =
+            SquareGridHomographyMesh::<f32>::from_corners(&corners, 32.0).expect("partial mesh");
         // 9 total cells in a 4×4-corner grid, of which 4 share corner (2,2).
         // (Each of the 4 corner-touching cells is invalidated.)
         assert_eq!(mesh.valid_cells, 9 - 4);

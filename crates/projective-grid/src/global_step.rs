@@ -43,11 +43,11 @@ pub struct GlobalStepEstimate<F: Float = f32> {
     /// Density at the returned mode: number of input points whose nearest-
     /// neighbor distance lies within `±bandwidth` of `cell_size`. Useful for
     /// downstream sanity checks.
-    pub support: u32,
+    pub support: usize,
     /// Total points whose nearest-neighbor distance was collected (= input
     /// length, minus isolated points that have no reachable neighbors in the
     /// KD-tree search).
-    pub sample_count: u32,
+    pub sample_count: usize,
     /// `support / sample_count`, saturated to `[0, 1]`. A confident
     /// unimodal cloud sits near 1.0; noisy or multi-scale clouds sit lower.
     pub confidence: F,
@@ -121,7 +121,7 @@ pub fn estimate_global_cell_size<F: Float + kiddo::float::kdtree::Axis>(
     }
     nn_distances.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    let sample_count = nn_distances.len() as u32;
+    let sample_count = nn_distances.len();
     let seeds = [
         percentile_sorted(&nn_distances, F::from_subset(&0.25)),
         percentile_sorted(&nn_distances, F::from_subset(&0.5)),
@@ -132,16 +132,17 @@ pub fn estimate_global_cell_size<F: Float + kiddo::float::kdtree::Axis>(
     // favour of larger cell sizes when a minority sub-mode from marker-internal
     // corners has comparable support — we always want the lattice step, not
     // the within-cell step.
-    let mut best: Option<(F, u32, F)> = None; // (mode, support, score)
+    let mut best: Option<(F, usize, F)> = None; // (mode, support, score)
     let mut converged_modes: Vec<F> = Vec::new();
     for seed in seeds {
-        if let Some((mode, support)) = mean_shift_mode(&nn_distances, seed, params) {
-            if support == 0 {
+        if let Some((mode, support_u32)) = mean_shift_mode(&nn_distances, seed, params) {
+            if support_u32 == 0 {
                 continue;
             }
+            let support = support_u32 as usize;
             converged_modes.push(mode);
             let score = F::from_subset(&(support as f64)) * mode;
-            if best.map(|b: (F, u32, F)| score > b.2).unwrap_or(true) {
+            if best.map(|b: (F, usize, F)| score > b.2).unwrap_or(true) {
                 best = Some((mode, support, score));
             }
         }

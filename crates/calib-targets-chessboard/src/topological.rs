@@ -165,15 +165,12 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
         return Vec::new();
     }
 
-    // Run the shared component merger. We never inspect axes inside the
-    // merger v1, so passing `None` keeps it simple.
     let component_views: Vec<ComponentInput<'_>> = topo
         .components
         .iter()
         .map(|c| ComponentInput {
             labelled: &c.labelled,
             positions: &positions,
-            axes: None,
         })
         .collect();
     let merged = merge_components_local(&component_views, &params.component_merge);

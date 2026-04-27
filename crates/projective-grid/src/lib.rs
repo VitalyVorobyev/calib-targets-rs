@@ -14,7 +14,7 @@
 //! | Module | Responsibility |
 //! |---|---|
 //! | [`square::grow`] | Seed-and-grow BFS over a square lattice |
-//! | [`square::grow_extension`] | Boundary extension via globally-fit homography |
+//! | [`square::extension`] | Boundary extension via globally-fit or local homography |
 //! | [`square::seed`] | 2×2 seed primitives (cell size, midpoint violation) |
 //! | [`square::validate`](mod@square::validate) | Post-grow line / local-H residual checks |
 //! | [`square::mesh`] / [`square::rectify`] | Per-cell mesh / global homography rectification |
@@ -27,6 +27,7 @@
 
 mod float_helpers;
 
+pub mod affine;
 pub mod circular_stats;
 pub mod component_merge;
 pub mod global_step;
@@ -44,6 +45,7 @@ pub trait Float: nalgebra::RealField + Copy {}
 impl<T: nalgebra::RealField + Copy> Float for T {}
 
 // --- Generic building blocks (no square / hex assumption) --------------------
+pub use affine::AffineTransform2D;
 pub use global_step::{estimate_global_cell_size, GlobalStepEstimate, GlobalStepParams};
 pub use homography::{
     estimate_homography, estimate_homography_with_quality, homography_from_4pt,
@@ -53,11 +55,12 @@ pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStep
 
 // --- Square-grid surface re-exported at the crate root --------
 pub use square::alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
-pub use square::index::GridIndex;
-pub use square::mesh::GridHomographyMesh;
-pub use square::rectify::GridHomography;
+pub use square::index::GridCoords;
+pub use square::mesh::SquareGridHomographyMesh;
+pub use square::rectify::SquareGridHomography;
 pub use square::smoothness::{
-    find_inconsistent_corners, find_inconsistent_corners_step_aware, predict_grid_position,
+    square_find_inconsistent_corners, square_find_inconsistent_corners_step_aware,
+    square_predict_grid_position,
 };
 
 // --- Topological-grid surface --------------------------------

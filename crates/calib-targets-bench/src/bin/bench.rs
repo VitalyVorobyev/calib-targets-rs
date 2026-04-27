@@ -73,6 +73,12 @@ struct DiagnoseArgs {
     /// Override the topological pipeline's `diagonal_angle_tol_rad` (in degrees).
     #[arg(long)]
     diagonal_angle_tol_deg: Option<f32>,
+    /// Optional JSON file with a serialised `DetectorParams` to override
+    /// chessboard-v2 defaults. Use for parameter sweeps without
+    /// recompilation. Unspecified fields fall back to defaults via the
+    /// `DetectorParams` `#[serde(default = ...)]` attributes.
+    #[arg(long)]
+    chessboard_config: Option<String>,
 }
 
 #[derive(Args)]
@@ -86,6 +92,11 @@ struct RunArgs {
     /// Which graph-build algorithm to exercise.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
     algorithm: AlgorithmArg,
+    /// Optional JSON file with a serialised partial `DetectorParams` that
+    /// overrides chessboard-v2 defaults. Same semantics as the diagnose
+    /// subcommand's `--chessboard-config` flag.
+    #[arg(long)]
+    chessboard_config: Option<String>,
 }
 
 #[derive(Args)]
@@ -167,6 +178,28 @@ fn params_with(algorithm: AlgorithmArg) -> DetectorParams {
     p
 }
 
+/// Load a chessboard-v2 [`DetectorParams`] from an optional JSON file, falling
+/// back to [`DetectorParams::default`] when the path is `None`. Partial files
+/// are supported: any field present overrides the default; missing fields keep
+/// their default value. Used by the diagnose subcommand to sweep params
+/// without rebuilding the binary.
+fn load_chessboard_config(path: Option<&str>) -> std::io::Result<DetectorParams> {
+    let Some(path) = path else {
+        return Ok(DetectorParams::default());
+    };
+    let text = std::fs::read_to_string(path)?;
+    let overrides: serde_json::Value =
+        serde_json::from_str(&text).map_err(std::io::Error::other)?;
+    let mut base =
+        serde_json::to_value(DetectorParams::default()).map_err(std::io::Error::other)?;
+    if let (Some(base_obj), Some(over_obj)) = (base.as_object_mut(), overrides.as_object()) {
+        for (k, v) in over_obj {
+            base_obj.insert(k.clone(), v.clone());
+        }
+    }
+    serde_json::from_value(base).map_err(std::io::Error::other)
+}
+
 // --- report types ----------------------------------------------------------
 
 #[derive(Serialize)]
@@ -239,7 +272,14 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     .into_iter()
     .collect();
 
-    let params = params_with(args.algorithm);
+    let mut params = match load_chessboard_config(args.chessboard_config.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("load --chessboard-config: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    params.graph_build_algorithm = args.algorithm.into();
     let mut per_image = Vec::with_capacity(entries.len());
     let mut elapsed: Vec<f64> = Vec::with_capacity(entries.len());
 
@@ -503,8 +543,14 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     if args.algorithm == AlgorithmArg::Topological {
         return diagnose_topological(&args, &upscaled, &corners);
     }
-    let detector_params = DetectorParams::default();
-    let detector = calib_targets::chessboard::Detector::new(detector_params);
+    let detector_params = match load_chessboard_config(args.chessboard_config.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("load --chessboard-config: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    let detector = calib_targets::chessboard::Detector::new(detector_params.clone());
     let frame = detector.detect_debug(&corners);
 
     print_stage_summary(&args.image, &frame);
@@ -512,7 +558,7 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // Also probe how many components `detect_all` recovers — useful when a
     // ChArUco split produces several disjoint chessboard subgraphs that the
     // single-best `detect()` call hides.
-    let detector_for_all = calib_targets::chessboard::Detector::new(DetectorParams::default());
+    let detector_for_all = calib_targets::chessboard::Detector::new(detector_params);
     let all_frames = detector_for_all.detect_all_debug(&corners);
     if all_frames.len() > 1 {
         println!("\n  --- detect_all_debug ---");
@@ -635,6 +681,30 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::DebugFram
                     ext.rejected_edge,
                 );
             }
+            if let Some(rescue) = &it.rescue {
+                let med = rescue
+                    .h_residual_median_px
+                    .map(|v| format!("{v:.2}"))
+                    .unwrap_or_else(|| "—".to_string());
+                let max = rescue
+                    .h_residual_max_px
+                    .map(|v| format!("{v:.2}"))
+                    .unwrap_or_else(|| "—".to_string());
+                println!(
+                    "    stage6.5: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
+                     rej(no_cand={} ambig={} label={} validator={} edge={})",
+                    rescue.h_trusted,
+                    med,
+                    max,
+                    rescue.iterations,
+                    rescue.attached,
+                    rescue.rejected_no_candidate,
+                    rescue.rejected_ambiguous,
+                    rescue.rejected_label,
+                    rescue.rejected_validator,
+                    rescue.rejected_edge,
+                );
+            }
         }
     }
     if let Some(b) = &frame.boosters {
@@ -676,10 +746,10 @@ fn diagnose_filename(label: &str) -> String {
     format!("{safe}.diagnose.png")
 }
 
-/// Topological-pipeline diagnostics: print [`TopologicalStats`] and per-
-/// component sizes, render an overlay showing labelled vs unlabelled
-/// corners, and report which pre-filter or classification step
-/// dropped the unlabelled ones.
+/// Topological-pipeline diagnostics: print
+/// [`projective_grid::TopologicalStats`] and per-component sizes, render
+/// an overlay showing labelled vs unlabelled corners, and report which
+/// pre-filter or classification step dropped the unlabelled ones.
 fn diagnose_topological(
     args: &DiagnoseArgs,
     upscaled: &image::GrayImage,
@@ -822,9 +892,7 @@ fn diagnose_topological(
             ));
         }
     }
-    println!(
-        "\n  per-quadrant labelled / unlabelled (bottom-left = corners with x<W/2, y>H/2):"
-    );
+    println!("\n  per-quadrant labelled / unlabelled (bottom-left = corners with x<W/2, y>H/2):");
     println!(
         "    TL: {:>4}/{:<4}    TR: {:>4}/{:<4}",
         q_lab[0], q_unl[0], q_lab[1], q_unl[1],
@@ -834,9 +902,7 @@ fn diagnose_topological(
         q_lab[2], q_unl[2], q_lab[3], q_unl[3],
     );
     if !unlabelled_positions.is_empty() {
-        println!(
-            "\n  unlabelled corner positions (x, y, axis0_sigma_deg, axis1_sigma_deg):"
-        );
+        println!("\n  unlabelled corner positions (x, y, axis0_sigma_deg, axis1_sigma_deg):");
         // Sort by y descending so bottom-of-image first; cap output.
         let mut sorted = unlabelled_positions.clone();
         sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
@@ -860,15 +926,14 @@ fn diagnose_topological(
     let label = args.image.clone();
     let dst = args.out.as_deref().map_or_else(
         || {
-            workspace_root()
-                .join("preview/diagnose")
-                .join(format!("{}.topological.png", diagnose_filename(&label).trim_end_matches(".png")))
+            workspace_root().join("preview/diagnose").join(format!(
+                "{}.topological.png",
+                diagnose_filename(&label).trim_end_matches(".png")
+            ))
         },
         |p| workspace_root().join(p),
     );
-    if let Err(e) =
-        render_topological_overlay(upscaled, corners, &labelled_corner_set, &dst)
-    {
+    if let Err(e) = render_topological_overlay(upscaled, corners, &labelled_corner_set, &dst) {
         eprintln!("render topological overlay: {e}");
         return ExitCode::from(2);
     }
@@ -891,23 +956,22 @@ fn render_topological_overlay(
     for (x, y, p) in base.enumerate_pixels() {
         rgb.put_pixel(x, y, Rgb([p[0], p[0], p[0]]));
     }
-    let stamp =
-        |rgb: &mut RgbImage, cx: f32, cy: f32, color: [u8; 3]| {
-            let r = 2i32;
-            for dy in -r..=r {
-                for dx in -r..=r {
-                    if dx * dx + dy * dy > r * r {
-                        continue;
-                    }
-                    let x = cx as i32 + dx;
-                    let y = cy as i32 + dy;
-                    if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
-                        continue;
-                    }
-                    rgb.put_pixel(x as u32, y as u32, Rgb(color));
+    let stamp = |rgb: &mut RgbImage, cx: f32, cy: f32, color: [u8; 3]| {
+        let r = 2i32;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx * dx + dy * dy > r * r {
+                    continue;
                 }
+                let x = cx as i32 + dx;
+                let y = cy as i32 + dy;
+                if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                    continue;
+                }
+                rgb.put_pixel(x as u32, y as u32, Rgb(color));
             }
-        };
+        }
+    };
     for (k, c) in corners.iter().enumerate() {
         let color = if labelled.contains(&k) {
             [50, 220, 80] // green = labelled

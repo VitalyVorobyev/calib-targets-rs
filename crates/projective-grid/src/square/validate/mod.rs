@@ -49,7 +49,10 @@
 //! Consumers that carry per-stage metadata should pre-filter to the
 //! "labelled" subset before calling.
 
-use crate::homography::homography_from_4pt;
+mod lines;
+mod local_h;
+mod step;
+
 use nalgebra::Point2;
 use std::collections::{HashMap, HashSet};
 
@@ -175,7 +178,7 @@ pub fn validate(
     // neighbour finite-difference step; otherwise it's the global
     // cell_size for every corner.
     let per_corner_step = if params.use_step_aware {
-        local_step_per_corner(&by_idx, &by_grid)
+        step::local_step_per_corner(&by_idx, &by_grid)
     } else {
         HashMap::new()
     };
@@ -188,18 +191,20 @@ pub fn validate(
     };
 
     // --- 7a. Line collinearity ------------------------------------------
-    let line_flags = line_collinearity_flags(&by_idx, &by_grid, params, &scale_at);
+    let line_flags = lines::line_collinearity_flags(&by_idx, &by_grid, params, &scale_at);
 
     // --- 7b. Local-H residual -------------------------------------------
     let mut residuals: HashMap<usize, f32> = HashMap::new();
     let mut local_h_flagged: HashMap<usize, f32> = HashMap::new();
     let mut local_h_high: HashMap<usize, f32> = HashMap::new();
     for entry in entries {
-        let base = pick_local_h_base(&by_grid, entry.idx, entry.grid);
+        let base = local_h::pick_local_h_base(&by_grid, entry.idx, entry.grid);
         if base.len() < 4 {
             continue;
         }
-        let Some(resid) = local_h_residual(&by_idx, entry.idx, entry.grid, &base, &by_grid) else {
+        let Some(resid) =
+            local_h::local_h_residual(&by_idx, entry.idx, entry.grid, &base, &by_grid)
+        else {
             continue;
         };
         residuals.insert(entry.idx, resid);
@@ -215,7 +220,7 @@ pub fn validate(
 
     // --- 7c. Step-deviation flags (optional) ----------------------------
     let step_dev_flags = if params.use_step_aware && params.step_deviation_thresh_rel > 0.0 {
-        flag_step_deviations(&per_corner_step, params.step_deviation_thresh_rel)
+        step::flag_step_deviations(&per_corner_step, params.step_deviation_thresh_rel)
     } else {
         HashSet::new()
     };
@@ -246,7 +251,7 @@ pub fn validate(
         let Some(entry) = by_idx.get(&idx) else {
             continue;
         };
-        let base = pick_local_h_base(&by_grid, idx, entry.grid);
+        let base = local_h::pick_local_h_base(&by_grid, idx, entry.grid);
         let mut worst: Option<(usize, u32)> = None;
         for base_idx in &base {
             if let Some(&flags) = line_flags.get(base_idx) {
@@ -276,286 +281,6 @@ pub fn validate(
         blacklist,
         local_h_residuals: residuals,
     }
-}
-
-// --- line collinearity ----------------------------------------------------
-
-fn line_collinearity_flags(
-    by_idx: &HashMap<usize, &LabelledEntry>,
-    by_grid: &HashMap<(i32, i32), usize>,
-    params: &ValidationParams,
-    scale_at: &dyn Fn(usize) -> f32,
-) -> HashMap<usize, u32> {
-    let mut flags: HashMap<usize, u32> = HashMap::new();
-
-    // Group by row (j = const) and column (i = const).
-    let mut rows: HashMap<i32, Vec<(i32, usize)>> = HashMap::new();
-    let mut cols: HashMap<i32, Vec<(i32, usize)>> = HashMap::new();
-    for (&(i, j), &idx) in by_grid {
-        rows.entry(j).or_default().push((i, idx));
-        cols.entry(i).or_default().push((j, idx));
-    }
-
-    let line_min = params.line_min_members;
-    let line_tol_rel = params.line_tol_rel;
-
-    for (_, mut members) in rows {
-        if members.len() < line_min {
-            continue;
-        }
-        members.sort_by_key(|(i, _)| *i);
-        flag_line(by_idx, &members, line_tol_rel, scale_at, &mut flags);
-    }
-    for (_, mut members) in cols {
-        if members.len() < line_min {
-            continue;
-        }
-        members.sort_by_key(|(j, _)| *j);
-        flag_line(by_idx, &members, line_tol_rel, scale_at, &mut flags);
-    }
-    flags
-}
-
-/// Fit a total-least-squares line to the member pixel positions; flag
-/// any member whose perpendicular distance exceeds
-/// `line_tol_rel × scale_at(member.idx)`.
-fn flag_line(
-    by_idx: &HashMap<usize, &LabelledEntry>,
-    members: &[(i32, usize)],
-    line_tol_rel: f32,
-    scale_at: &dyn Fn(usize) -> f32,
-    flags: &mut HashMap<usize, u32>,
-) {
-    let n = members.len() as f32;
-    let mut cx = 0.0_f32;
-    let mut cy = 0.0_f32;
-    for (_, idx) in members {
-        let Some(e) = by_idx.get(idx) else { continue };
-        cx += e.pixel.x;
-        cy += e.pixel.y;
-    }
-    cx /= n;
-    cy /= n;
-    let mut sxx = 0.0_f32;
-    let mut sxy = 0.0_f32;
-    let mut syy = 0.0_f32;
-    for (_, idx) in members {
-        let Some(e) = by_idx.get(idx) else { continue };
-        let dx = e.pixel.x - cx;
-        let dy = e.pixel.y - cy;
-        sxx += dx * dx;
-        sxy += dx * dy;
-        syy += dy * dy;
-    }
-    let trace = sxx + syy;
-    let det = sxx * syy - sxy * sxy;
-    let disc = (trace * trace * 0.25 - det).max(0.0).sqrt();
-    let lambda = trace * 0.5 + disc;
-    let (vx, vy) = if sxy.abs() > f32::EPSILON {
-        (sxy, lambda - sxx)
-    } else if sxx >= syy {
-        (1.0, 0.0)
-    } else {
-        (0.0, 1.0)
-    };
-    let vn = (vx * vx + vy * vy).sqrt().max(f32::EPSILON);
-    let ux = vx / vn;
-    let uy = vy / vn;
-    for (_, idx) in members {
-        let Some(e) = by_idx.get(idx) else { continue };
-        let dx = e.pixel.x - cx;
-        let dy = e.pixel.y - cy;
-        let resid = (dx * -uy + dy * ux).abs();
-        let tol = line_tol_rel * scale_at(*idx);
-        if resid > tol {
-            *flags.entry(*idx).or_insert(0) += 1;
-        }
-    }
-}
-
-// --- per-corner local step ------------------------------------------------
-
-/// Compute per-corner local grid step from labelled grid neighbours.
-///
-/// Uses central finite differences when both `(i±1, j)` (or `(i, j±1)`)
-/// neighbours are labelled, falls back to one-sided difference, and
-/// returns nothing when neither axis has enough labelled neighbours.
-/// The returned value is `(|i_step| + |j_step|) / 2` in pixels — the
-/// same scalar metric used by `find_inconsistent_corners_step_aware`.
-fn local_step_per_corner(
-    by_idx: &HashMap<usize, &LabelledEntry>,
-    by_grid: &HashMap<(i32, i32), usize>,
-) -> HashMap<usize, f32> {
-    let mut out = HashMap::with_capacity(by_idx.len());
-    for (&idx, entry) in by_idx {
-        let (i, j) = entry.grid;
-        let here = entry.pixel;
-        let i_step = match (
-            by_grid
-                .get(&(i - 1, j))
-                .and_then(|k| by_idx.get(k))
-                .map(|e| e.pixel),
-            by_grid
-                .get(&(i + 1, j))
-                .and_then(|k| by_idx.get(k))
-                .map(|e| e.pixel),
-        ) {
-            (Some(l), Some(r)) => Some((r - l).norm() * 0.5),
-            (Some(l), None) => Some((here - l).norm()),
-            (None, Some(r)) => Some((r - here).norm()),
-            (None, None) => None,
-        };
-        let j_step = match (
-            by_grid
-                .get(&(i, j - 1))
-                .and_then(|k| by_idx.get(k))
-                .map(|e| e.pixel),
-            by_grid
-                .get(&(i, j + 1))
-                .and_then(|k| by_idx.get(k))
-                .map(|e| e.pixel),
-        ) {
-            (Some(u), Some(d)) => Some((d - u).norm() * 0.5),
-            (Some(u), None) => Some((here - u).norm()),
-            (None, Some(d)) => Some((d - here).norm()),
-            (None, None) => None,
-        };
-        let step = match (i_step, j_step) {
-            (Some(a), Some(b)) => Some((a + b) * 0.5),
-            (Some(a), None) | (None, Some(a)) => Some(a),
-            (None, None) => None,
-        };
-        if let Some(s) = step {
-            if s.is_finite() && s > 0.0 {
-                out.insert(idx, s);
-            }
-        }
-    }
-    out
-}
-
-/// Flag corners whose local step deviates from the labelled-set
-/// median by more than `deviation_thresh_rel`.
-///
-/// A step `s` is flagged when `s < median / (1 + thresh)` or
-/// `s > median * (1 + thresh)`. Returns an empty set when there are
-/// fewer than 3 step values (median is meaningless).
-fn flag_step_deviations(
-    local_steps: &HashMap<usize, f32>,
-    deviation_thresh_rel: f32,
-) -> HashSet<usize> {
-    if deviation_thresh_rel <= 0.0 || local_steps.len() < 3 {
-        return HashSet::new();
-    }
-    let mut steps: Vec<f32> = local_steps.values().copied().collect();
-    steps.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median = steps[steps.len() / 2];
-    if median <= 0.0 || !median.is_finite() {
-        return HashSet::new();
-    }
-    let lo = median / (1.0 + deviation_thresh_rel);
-    let hi = median * (1.0 + deviation_thresh_rel);
-    local_steps
-        .iter()
-        .filter_map(|(&idx, &s)| if s < lo || s > hi { Some(idx) } else { None })
-        .collect()
-}
-
-// --- local-H residual -----------------------------------------------------
-
-/// Pick the 4 grid-closest labelled neighbors of `c_idx` at `pos`
-/// that form a non-degenerate quad (i.e., not all collinear in grid
-/// coordinates).
-fn pick_local_h_base(
-    by_grid: &HashMap<(i32, i32), usize>,
-    c_idx: usize,
-    pos: (i32, i32),
-) -> Vec<usize> {
-    let mut cands: Vec<((i32, i32), usize, f32)> = Vec::new();
-    for dj in -2..=2_i32 {
-        for di in -2..=2_i32 {
-            if di == 0 && dj == 0 {
-                continue;
-            }
-            let neigh = (pos.0 + di, pos.1 + dj);
-            if let Some(&idx) = by_grid.get(&neigh) {
-                if idx == c_idx {
-                    continue;
-                }
-                let d = ((di * di + dj * dj) as f32).sqrt();
-                cands.push((neigh, idx, d));
-            }
-        }
-    }
-    cands.sort_by(|a, b| a.2.total_cmp(&b.2));
-
-    let mut chosen: Vec<((i32, i32), usize)> = Vec::new();
-    for (ij, idx, _) in &cands {
-        chosen.push((*ij, *idx));
-        if chosen.len() == 4 && !are_collinear_grid(&chosen) {
-            return chosen.iter().map(|(_, i)| *i).collect();
-        }
-        if chosen.len() >= 4 {
-            chosen.pop();
-        }
-    }
-    chosen.iter().map(|(_, i)| *i).collect()
-}
-
-fn are_collinear_grid(pts: &[((i32, i32), usize)]) -> bool {
-    if pts.len() < 3 {
-        return false;
-    }
-    let (i0, j0) = pts[0].0;
-    let (i1, j1) = pts[1].0;
-    let dx1 = i1 - i0;
-    let dy1 = j1 - j0;
-    for &((i, j), _) in &pts[2..] {
-        let dx = i - i0;
-        let dy = j - j0;
-        if dx1 * dy - dy1 * dx != 0 {
-            return false;
-        }
-    }
-    true
-}
-
-fn local_h_residual(
-    by_idx: &HashMap<usize, &LabelledEntry>,
-    c_idx: usize,
-    c_grid: (i32, i32),
-    base: &[usize],
-    by_grid: &HashMap<(i32, i32), usize>,
-) -> Option<f32> {
-    if base.len() < 4 {
-        return None;
-    }
-    // Resolve each base index back to its grid coordinate. The base
-    // list came from neighbourhood enumeration so each one is present
-    // in `by_grid` under some unique key.
-    let mut base_grid: [(i32, i32); 4] = [(0, 0); 4];
-    let mut base_pixel: [Point2<f32>; 4] = [Point2::new(0.0, 0.0); 4];
-    for (k, &b_idx) in base.iter().take(4).enumerate() {
-        let grid = by_grid
-            .iter()
-            .find_map(|(&g, &v)| if v == b_idx { Some(g) } else { None })?;
-        base_grid[k] = grid;
-        base_pixel[k] = by_idx.get(&b_idx)?.pixel;
-    }
-
-    let grid_pts = [
-        Point2::new(base_grid[0].0 as f32, base_grid[0].1 as f32),
-        Point2::new(base_grid[1].0 as f32, base_grid[1].1 as f32),
-        Point2::new(base_grid[2].0 as f32, base_grid[2].1 as f32),
-        Point2::new(base_grid[3].0 as f32, base_grid[3].1 as f32),
-    ];
-    let h = homography_from_4pt(&grid_pts, &base_pixel)?;
-
-    let c_pixel = by_idx.get(&c_idx)?.pixel;
-    let pred = h.apply(Point2::new(c_grid.0 as f32, c_grid.1 as f32));
-    let dx = pred.x - c_pixel.x;
-    let dy = pred.y - c_pixel.y;
-    Some((dx * dx + dy * dy).sqrt())
 }
 
 #[cfg(test)]
@@ -667,10 +392,6 @@ mod tests {
         assert!(baseline.blacklist.is_empty(), "{:?}", baseline.blacklist);
 
         // Displace (4, 1) — the dense-column corner — by 3 px in y.
-        // Residuals: line distance ~3 px. Global threshold:
-        // 0.15 * 20 = 3.0 → marginal (no flag). Per-corner threshold:
-        // local step at (4, 1) ≈ 10 px (half-pitch column) →
-        // 0.15 * 10 = 1.5 → flagged.
         let target_idx = entries
             .iter()
             .find(|e| e.grid == (4, 1))
@@ -689,8 +410,6 @@ mod tests {
             &ValidationParams::default().with_step_aware(0.0),
         );
 
-        // Step-aware should flag the corner where global mode wouldn't.
-        // (Both line and local-H gates use the per-corner step.)
         assert!(
             step_aware_res.blacklist.contains(&target_idx)
                 || !global_res.blacklist.contains(&target_idx),
@@ -702,15 +421,8 @@ mod tests {
 
     #[test]
     fn step_deviation_flag_fires_on_off_scale_corner() {
-        // Build a uniform grid plus one corner with a wildly different
-        // local step (e.g., a marker-internal corner that snuck in
-        // via a parity exception). The deviation flag should fire.
         let s = 20.0_f32;
         let mut entries = clean_grid(5, 5, s);
-        // Inject a corner at (5, 2) at half-pitch: position
-        // (4*s + s/2 + 50) - this corner's only labelled cardinal
-        // neighbour is (4, 2). With one-sided diff: step ≈ 10 px,
-        // half the median.
         let new_idx = entries.len();
         entries.push(entry(
             new_idx,
@@ -719,9 +431,6 @@ mod tests {
             5,
             2,
         ));
-
-        // Displace the new corner along y to also produce a line flag
-        // (rule 4 requires step-deviation + line flag).
         entries[new_idx].pixel.y += 4.0;
 
         let res = validate(
@@ -748,7 +457,7 @@ mod tests {
         ];
         let by_idx: HashMap<usize, &LabelledEntry> = entries.iter().map(|e| (e.idx, e)).collect();
         let by_grid: HashMap<(i32, i32), usize> = entries.iter().map(|e| (e.grid, e.idx)).collect();
-        let steps = local_step_per_corner(&by_idx, &by_grid);
+        let steps = step::local_step_per_corner(&by_idx, &by_grid);
 
         // (1, 0): central i-step = 15; no j neighbours → step = 15.
         assert!((steps[&1] - 15.0).abs() < 1e-4, "got {}", steps[&1]);

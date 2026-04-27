@@ -65,17 +65,48 @@ implement their pattern-specific `GrowValidator` and call the same
 machinery; their orchestrators iterate Stage 5–7 with a blacklist until
 the labelled set converges, then run Stage 6, then re-validate.
 
+### Alternative Stage 6: local homography
+
+`extend_via_local_homography` (in `square::grow_extension`) is an
+opt-in replacement for `extend_via_global_homography`. Instead of
+fitting one global H, it fits a separate H from the K nearest labelled
+corners for each candidate cell. The per-candidate trust gate tolerates
+heavy radial distortion and multi-region perspective where a single H
+breaks. Configure it via `LocalExtensionParams`.
+
+### Topological pipeline
+
+For images where corners arrive in a dense, nearly-regular cloud, the
+topological pipeline is an image-free alternative to seed-and-grow:
+
+```rust
+use projective_grid::{build_grid_topological, merge_components_local,
+    ComponentInput, LocalMergeParams, TopologicalParams};
+
+let params = TopologicalParams::default();
+let topo = build_grid_topological(&positions, &axes_hints, &params)?;
+
+// merge_components_local reunites partial components (shared by both pipelines).
+let views: Vec<ComponentInput<'_>> = topo.components.iter()
+    .map(|c| ComponentInput { labelled: &c.labelled, positions: &positions })
+    .collect();
+let merged = merge_components_local(&views, &LocalMergeParams::default());
+```
+
+See `docs/TOPOLOGICAL_PIPELINE.md` in the workspace for a detailed
+description of the algorithm and known limitations.
+
 ## Inputs and outputs
 
 | Stage | Input | Output |
 |---|---|---|
 | Cell-size estimate | `&[Point2<f32>]` | [`GlobalStepEstimate`] (`cell_size`, `confidence`, …) |
-| Local-step refinement | per-corner positions + axes | `Vec<LocalStep<F>>` (for `find_inconsistent_corners_step_aware`) |
+| Local-step refinement | per-corner positions + axes | `Vec<LocalStep<F>>` (for `square_find_inconsistent_corners_step_aware`) |
 | Seed primitives | corner positions + quad indices | [`SeedOutput`] (`seed`, `cell_size`) |
 | BFS-grow | positions + seed + validator + [`GrowParams`] | [`GrowResult`] (`labelled`, `holes`, `ambiguous`) |
 | Boundary extension | positions + `GrowResult` + validator + [`ExtensionParams`] | [`ExtensionStats`] (residuals, attached, rejection counters) |
 | Validation | labelled corners + [`ValidationParams`] | [`ValidationResult`] (blacklist + per-corner local-H residuals) |
-| Rectification | labelled corners | [`GridHomography`] (single global) or [`GridHomographyMesh`] (per-cell) |
+| Rectification | labelled corners | [`SquareGridHomography`] (single global) or [`SquareGridHomographyMesh`] (per-cell) |
 
 All public types re-exported at the crate root; the detailed module
 layout sits under [`square`] and [`hex`].
@@ -107,7 +138,7 @@ synthetic grids "just work"; tune only when a specific input fails.
   homography mesh + smoothness, but not seed-and-grow yet.
 - **Heavy radial distortion.** A single global H can't fit fish-eye
   data; the H-residual gate refuses to extrapolate in that case
-  (Stage 6 becomes a no-op). Use [`GridHomographyMesh`] for per-cell
+  (Stage 6 becomes a no-op). Use [`SquareGridHomographyMesh`] for per-cell
   rectification.
 
 ## Design notes
@@ -130,10 +161,6 @@ synthetic grids "just work"; tune only when a specific input fails.
   straddles a histogram-bin boundary, the smoothed peak is flat-topped
   across two adjacent bins. [`circular_stats::pick_two_peaks`] detects
   the plateau midpoint so axis estimates stay stable as input rotates.
-
-## Features
-
-- `tracing` — enables tracing instrumentation (reserved for future use).
 
 ## Related crates
 

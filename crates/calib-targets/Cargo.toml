@@ -26,7 +26,6 @@ tracing = [
     "calib-targets-core/tracing",
     "calib-targets-marker/tracing",
     "calib-targets-puzzleboard/tracing",
-    "projective-grid/tracing",
 ]
 
 [dependencies]

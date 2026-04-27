@@ -111,6 +111,74 @@ fn default_rescue_search_rel() -> f32 {
     0.8
 }
 
+fn default_enable_post_grow_refit() -> bool {
+    // Default on. After Stage 6.5 / boosters converge, recompute
+    // cluster centres from the labelled axes alone (no marker
+    // contribution), and re-run Stage 6 / 6.5 once with the new
+    // centres. Recovers chessboard parity-B corners on images where
+    // the histogram-driven Stage-3 centres are biased downward by
+    // marker-internal corners.
+    true
+}
+
+fn default_refit_min_labelled() -> usize {
+    8
+}
+
+fn default_refit_min_shift_deg() -> f32 {
+    // Below 0.5° the centre shift cannot move a borderline corner
+    // across the cluster gate; skip the second Stage-6 / 6.5 pass.
+    0.5
+}
+
+fn default_enable_post_grow_bfs_regrow() -> bool {
+    // Default ON. Runs first when the refit triggers; lifts recall
+    // on cases where the orphan strip is 1+ cells past the existing
+    // labelled set's bbox edge (small3.png left strip, +21 corners
+    // on the public bench). The destructive regrow can flip a few
+    // borderline parity slots under the small (~3°) centre shift —
+    // those losses are recovered immediately by
+    // `enable_post_grow_bfs_extend` running after, which walks the
+    // regrown labelled set's boundary and re-attaches dropped
+    // corners via cardinal-neighbour prediction.
+    true
+}
+
+fn default_enable_post_grow_bfs_extend() -> bool {
+    // Default ON. After refit produces refined centres, walk the
+    // existing labelled set's boundary with a non-destructive BFS
+    // (`projective_grid::square::grow_extend::extend_from_labelled`),
+    // attaching newly-Clustered corners via cardinal-neighbour
+    // propagation. Reaches interior-hole / left-strip corners that
+    // local-H extrapolation (Stage 6 / 6.5) cannot, but unlike the
+    // destructive `enable_post_grow_bfs_regrow` it never demotes
+    // existing Labeled corners — so it preserves perimeter rows
+    // on heavy-distortion images that the destructive regrow would
+    // strip.
+    true
+}
+
+fn default_geometry_check_line_tol_rel() -> f32 {
+    // Final geometry check uses a much looser line-collinearity
+    // tolerance than the BFS-validation pass (`line_tol_rel = 0.18`).
+    // The geometry check's role is to catch gross mislabels —
+    // full-cell or diagonal shifts (~1.4 cell residual) — not the
+    // borderline perspective drift that the BFS-validation loop
+    // already worked through and accepted. A tight tolerance here
+    // produces catastrophic recall regressions on
+    // `puzzleboard_reference/example2.png` (heavy radial distortion)
+    // and the 130x130_puzzle dataset.
+    0.45
+}
+
+fn default_geometry_check_local_h_tol_rel() -> f32 {
+    // Same logic as above for local-H residual. A diagonal mislabel
+    // shifts a corner by ~1.4 cell from its predicted position; a
+    // tolerance of 0.6 cell is well below that gap while leaving the
+    // legitimate perspective-distorted corners alone.
+    0.6
+}
+
 fn default_stage6_local_h() -> bool {
     // Local-H Stage 6 is the production default: per-candidate
     // homography from the K nearest labelled corners + deeper bbox
@@ -325,6 +393,93 @@ pub struct DetectorParams {
     #[serde(default = "default_rescue_search_rel")]
     pub rescue_search_rel: f32,
 
+    // --- Stage 6.75: post-grow centre refit -------------------------------
+    /// Recompute Stage-3 cluster centres from the labelled set's axes
+    /// after Stage 6.5 / boosters converge, and re-run Stage 6 / 6.5
+    /// once with the refined centres. Recovers chessboard parity-B
+    /// corners on images where the histogram-driven Stage-3 centres
+    /// are biased downward by marker-internal corners (small3.png
+    /// case study in CLAUDE.md "Evidence-driven detector debugging").
+    ///
+    /// Default `true`.
+    #[serde(default = "default_enable_post_grow_refit")]
+    pub enable_post_grow_refit: bool,
+    /// Minimum labelled corners required for the refit to run. Below
+    /// this, the labelled set is too small to estimate the centres
+    /// reliably; the original centres are kept.
+    ///
+    /// Default `8`.
+    #[serde(default = "default_refit_min_labelled")]
+    pub refit_min_labelled: usize,
+    /// Minimum centre shift (degrees) required to trigger a second
+    /// Stage 6 / 6.5 pass. Below this, the shift cannot move a
+    /// borderline corner across the cluster gate, so the second pass
+    /// is skipped.
+    ///
+    /// Default `0.5°`.
+    #[serde(default = "default_refit_min_shift_deg")]
+    pub refit_min_shift_deg: f32,
+    /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
+    /// the second pass demotes the `Labeled` set back to `Clustered`
+    /// and re-runs `grow_from_seed` with the refined centres. This
+    /// absorbs newly-Clustered corners via cardinal-neighbour BFS
+    /// propagation — reaching interior-hole / left-strip corners
+    /// that local-H extrapolation (Stage 6 / 6.5) cannot.
+    ///
+    /// Default `false`. Trade-off: a small centre shift can flip
+    /// borderline BFS slot assignments and produce SHIFT-INCONSISTENT
+    /// labelling on heavy-distortion ChArUco-style images
+    /// (`puzzleboard_reference/example2.png` regresses miss=68 with
+    /// this on). Turn on for chessboard-only datasets where the
+    /// distortion is mild and the recall lift outweighs that risk.
+    ///
+    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
+    #[serde(default = "default_enable_post_grow_bfs_regrow")]
+    pub enable_post_grow_bfs_regrow: bool,
+    /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
+    /// run a non-destructive cardinal-neighbour BFS extension
+    /// (`projective_grid::square::grow_extend::extend_from_labelled`) over
+    /// the existing labelled set with the refined centres. Walks the
+    /// labelled bbox boundary one cell at a time, predicts each cell
+    /// from cardinal labelled neighbours only (K=1 — much more
+    /// reliable than Stage 6 / 6.5's K=12 local-H when extrapolating
+    /// past the bbox edge), and attaches eligible corners via the
+    /// chessboard edge-slot-swap invariant.
+    ///
+    /// Default `true`. Replaces the destructive
+    /// [`enable_post_grow_bfs_regrow`] — same recall lift on
+    /// chessboard-only datasets without the perimeter-row losses on
+    /// heavy-distortion puzzleboard images. Both can run together,
+    /// in the order extend → regrow.
+    ///
+    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
+    /// [`enable_post_grow_bfs_regrow`]: DetectorParams::enable_post_grow_bfs_regrow
+    #[serde(default = "default_enable_post_grow_bfs_extend")]
+    pub enable_post_grow_bfs_extend: bool,
+
+    // --- Final mandatory geometry check -----------------------------------
+    /// Line-collinearity tolerance (fraction of cell_size) for the
+    /// MANDATORY final geometry check that runs before any detection
+    /// is emitted. Must be looser than [`line_tol_rel`] because the
+    /// geometry check's role is to catch gross mislabels (diagonal /
+    /// full-cell shifts), not the borderline perspective drift the
+    /// BFS-validation loop already accepted.
+    ///
+    /// Default `0.45` of cell_size.
+    ///
+    /// [`line_tol_rel`]: DetectorParams::line_tol_rel
+    #[serde(default = "default_geometry_check_line_tol_rel")]
+    pub geometry_check_line_tol_rel: f32,
+    /// Local-H residual tolerance (fraction of cell_size) for the
+    /// MANDATORY final geometry check. A diagonal mislabel shifts a
+    /// corner by ~1.4 cell from its predicted position; a tolerance
+    /// of `0.6 × cell_size` is well below that gap while leaving the
+    /// legitimate perspective-distorted corners alone.
+    ///
+    /// Default `0.6` of cell_size.
+    #[serde(default = "default_geometry_check_local_h_tol_rel")]
+    pub geometry_check_local_h_tol_rel: f32,
+
     // --- Stage 6: boundary extension --------------------------------------
     /// Use the per-candidate local-homography Stage 6
     /// (`projective_grid::square::grow_extension::extend_via_local_homography`)
@@ -443,6 +598,14 @@ impl Default for DetectorParams {
             rescue_axis_tol_deg: default_rescue_axis_tol_deg(),
             stage6_5_local_k_nearest: default_stage6_local_k_nearest(),
             rescue_search_rel: default_rescue_search_rel(),
+
+            enable_post_grow_refit: default_enable_post_grow_refit(),
+            refit_min_labelled: default_refit_min_labelled(),
+            refit_min_shift_deg: default_refit_min_shift_deg(),
+            enable_post_grow_bfs_regrow: default_enable_post_grow_bfs_regrow(),
+            enable_post_grow_bfs_extend: default_enable_post_grow_bfs_extend(),
+            geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
+            geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
 
             enable_line_extrapolation: true,
             enable_gap_fill: true,

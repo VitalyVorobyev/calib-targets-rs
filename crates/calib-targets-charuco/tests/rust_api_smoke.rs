@@ -45,7 +45,7 @@ calib-targets-core = {{ path = '{}' }}
         &main_path,
         r#"use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
-use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
+use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
 
 fn main() {
     let board = CharucoBoardSpec {
@@ -58,15 +58,13 @@ fn main() {
     };
 
     let mut params = CharucoParams::for_board(&board);
-    let named: ChessCornerParams = ChessCornerParams {
-        threshold_rel: 0.05,
-        min_cluster_size: 1,
-        refiner: RefinerKindConfig::SaddlePoint(SaddlePointConfig {
-            radius: 3,
-            ..SaddlePointConfig::default()
-        }),
-        ..ChessCornerParams::default()
-    };
+    let mut named = ChessCornerParams::default();
+    named.threshold_rel = 0.05;
+    named.min_cluster_size = 1;
+    named.refiner = RefinerKind::SaddlePoint(SaddlePointConfig {
+        radius: 3,
+        ..SaddlePointConfig::default()
+    });
 
     params.corner_redetect_params = named;
     params.corner_redetect_params.threshold_abs = Some(3.0);

@@ -40,7 +40,6 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 use crate::square::alignment::GridTransform;
-use crate::AxisHint;
 
 /// Tuning knobs for [`merge_components_local`].
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -77,9 +76,6 @@ pub struct ComponentInput<'a> {
     /// `(i, j) → corner_idx` (indices into `positions`).
     pub labelled: &'a HashMap<(i32, i32), usize>,
     pub positions: &'a [Point2<f32>],
-    /// Optional per-corner axes; passed through but currently unused
-    /// in v1 (reserved for axis-agreement scoring later).
-    pub axes: Option<&'a [[AxisHint; 2]]>,
 }
 
 /// Output of [`merge_components_local`].
@@ -129,7 +125,7 @@ fn estimate_cell_size(c: &ComponentInput<'_>) -> f32 {
 #[inline]
 fn apply_transform(t: GridTransform, ij: (i32, i32)) -> (i32, i32) {
     let v = t.apply(ij.0, ij.1);
-    (v[0], v[1])
+    (v.i, v.j)
 }
 
 /// For a candidate alignment of `c_p` into `c_q`'s frame (transform `t`,
@@ -242,7 +238,6 @@ pub fn merge_components_local(
     let mut working: Vec<HashMap<(i32, i32), usize>> =
         inputs.iter().map(|c| c.labelled.clone()).collect();
     let positions_per: Vec<&[Point2<f32>]> = inputs.iter().map(|c| c.positions).collect();
-    let axes_per: Vec<Option<&[[AxisHint; 2]]>> = inputs.iter().map(|c| c.axes).collect();
     let mut cell_sizes: Vec<f32> = inputs.iter().map(estimate_cell_size).collect();
 
     let mut alive: Vec<bool> = vec![true; inputs.len()];
@@ -270,12 +265,10 @@ pub fn merge_components_local(
                 let c_p = ComponentInput {
                     labelled: &working[i],
                     positions: positions_per[i],
-                    axes: axes_per[i],
                 };
                 let c_q = ComponentInput {
                     labelled: &working[j],
                     positions: positions_per[j],
-                    axes: axes_per[j],
                 };
                 let Some((t, delta, _overlap)) = find_best_alignment(&c_p, &c_q, cell_size, params)
                 else {
@@ -344,12 +337,10 @@ mod tests {
             ComponentInput {
                 labelled: &l1,
                 positions: &p1,
-                axes: None,
             },
             ComponentInput {
                 labelled: &l2,
                 positions: &p2,
-                axes: None,
             },
         ];
         let res = merge_components_local(&inputs, &LocalMergeParams::default());
@@ -386,12 +377,10 @@ mod tests {
             ComponentInput {
                 labelled: &l1,
                 positions: &p1,
-                axes: None,
             },
             ComponentInput {
                 labelled: &l2,
                 positions: &p2,
-                axes: None,
             },
         ];
         let res = merge_components_local(&inputs, &LocalMergeParams::default());
@@ -417,12 +406,10 @@ mod tests {
             ComponentInput {
                 labelled: &l1,
                 positions: &p1,
-                axes: None,
             },
             ComponentInput {
                 labelled: &l2,
                 positions: &p2,
-                axes: None,
             },
         ];
         let res = merge_components_local(&inputs, &LocalMergeParams::default());

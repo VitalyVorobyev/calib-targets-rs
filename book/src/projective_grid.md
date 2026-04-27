@@ -29,7 +29,7 @@ generic.
 | **Seed-and-grow** | `square::grow::bfs_grow` + `GrowValidator` | BFS from a 2×2 seed quad, predicting each next cell with adaptive per-neighbour local-step. |
 | **Boundary extension** | `square::grow_extension::extend_via_global_homography` | Fit a global H over the BFS-validated set; extend outward into perspective-foreshortened territory. Residual gate disables the pass under heavy lens distortion. |
 | **Validation** | `square::validate` | Line collinearity + local-homography residuals → blacklist of outlier corners; iterate Stages 5–7 until convergence. |
-| **Rectification** | `square::rectify::GridHomography`, `square::mesh::GridHomographyMesh`, hex equivalents | Single global homography or per-cell mesh, depending on distortion regime. |
+| **Rectification** | `square::rectify::SquareGridHomography`, `square::mesh::SquareGridHomographyMesh`, hex equivalents | Single global homography or per-cell mesh, depending on distortion regime. |
 
 Reusable utilities:
 
@@ -94,16 +94,36 @@ projective-grid/src/
 ├── homography.rs             Homography, HomographyQuality, 4pt + DLT
 ├── circular_stats.rs         wrap_pi, smooth_circular_5, pick_two_peaks,
 │                             refine_2means_double_angle
+├── affine.rs                 AffineTransform2D (generic 2D)
+├── component_merge.rs        merge_components_local
 ├── square/                   4-connected square-grid support
 │   ├── alignment.rs          D4 transforms
-│   ├── grow.rs               GrowValidator, bfs_grow, Seed, GrowResult
-│   ├── grow_extension.rs     extend_via_global_homography (Stage 6)
-│   ├── index.rs              GridIndex (i, j)
-│   ├── mesh.rs               GridHomographyMesh (per-cell)
-│   ├── rectify.rs            GridHomography (global)
-│   ├── seed.rs               Seed primitives (cell size, midpoint check)
-│   ├── smoothness.rs         predict_grid_position, find_inconsistent_corners
-│   └── validate.rs           line + local-H post-grow validator
+│   ├── grow.rs               GrowValidator, bfs_grow, GrowResult
+│   ├── grow_extend.rs        extend_from_labelled (post-cluster boost)
+│   ├── extension/            Stage 6 — global / local homography
+│   │   ├── common.rs         try_attach_at_cell (shared per-cell ladder)
+│   │   ├── global.rs         extend_via_global_homography
+│   │   └── local.rs          extend_via_local_homography
+│   ├── index.rs              GridCoords (i, j)
+│   ├── mesh.rs               SquareGridHomographyMesh (per-cell)
+│   ├── rectify.rs            SquareGridHomography (global)
+│   ├── seed/                 2×2 seed primitives + finder
+│   │   ├── mod.rs            Seed, SeedOutput, midpoint check
+│   │   └── finder.rs         find_quad, SeedQuadValidator
+│   ├── smoothness.rs         square_predict_grid_position,
+│   │                         square_find_inconsistent_corners
+│   └── validate/             post-grow validation
+│       ├── mod.rs            validate(), LabelledEntry, ValidationParams
+│       ├── lines.rs          line collinearity flags
+│       ├── local_h.rs        local-H residual
+│       └── step.rs           per-corner step + step-deviation flags
+├── topological/              Shu/Brunton/Fiala 2009 grid finder
+│   ├── mod.rs                build_grid_topological, AxisHint
+│   ├── classify.rs           edge classification
+│   ├── delaunay.rs           triangulation wrapper
+│   ├── quads.rs              triangle-pair → quad merge
+│   ├── topo_filter.rs        topological + geometric filter
+│   └── walk.rs               flood-fill (i, j) labelling
 └── hex/                      6-connected hex-grid (geometry only,
     ├── alignment.rs           no seed-and-grow path yet)
     ├── mesh.rs

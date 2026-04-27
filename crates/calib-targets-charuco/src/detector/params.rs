@@ -1,7 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
+use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -163,54 +163,20 @@ fn default_use_board_level_matcher() -> bool {
 /// Lower threshold and looser cluster requirement compared to the global scan,
 /// because we already know approximately where the true corner should be.
 pub(crate) fn default_redetect_params() -> ChessCornerParams {
-    ChessCornerParams {
-        threshold_rel: 0.05,
-        nms_radius: 2,
-        min_cluster_size: 1,
-        refiner: RefinerKindConfig::SaddlePoint(SaddlePointConfig::default()),
-        ..ChessCornerParams::default()
-    }
+    let mut params = ChessCornerParams::default();
+    params.threshold_rel = 0.05;
+    params.nms_radius = 2;
+    params.min_cluster_size = 1;
+    params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
+    params
 }
 
+/// Convert a `ChessCornerParams` into the upstream `chess_corners::ChessParams`.
+///
+/// Since `ChessCornerParams` is now a re-export of `chess_corners::ChessParams`,
+/// this is an identity-like operation.
 pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::ChessParams {
-    let mut out = chess_corners::ChessParams::default();
-    out.use_radius10 = params.use_radius10;
-    out.descriptor_use_radius10 = params.descriptor_use_radius10;
-    out.threshold_rel = params.threshold_rel;
-    out.threshold_abs = params.threshold_abs;
-    out.nms_radius = params.nms_radius;
-    out.min_cluster_size = params.min_cluster_size;
-    out.refiner = to_refiner_kind(&params.refiner);
-    out
-}
-
-fn to_refiner_kind(refiner: &RefinerKindConfig) -> chess_corners::RefinerKind {
-    match refiner {
-        RefinerKindConfig::CenterOfMass(cfg) => {
-            chess_corners::RefinerKind::CenterOfMass(chess_corners::CenterOfMassConfig {
-                radius: cfg.radius,
-            })
-        }
-        RefinerKindConfig::Forstner(cfg) => {
-            chess_corners::RefinerKind::Forstner(chess_corners::ForstnerConfig {
-                radius: cfg.radius,
-                min_trace: cfg.min_trace,
-                min_det: cfg.min_det,
-                max_condition_number: cfg.max_condition_number,
-                max_offset: cfg.max_offset,
-            })
-        }
-        RefinerKindConfig::SaddlePoint(cfg) => {
-            chess_corners::RefinerKind::SaddlePoint(chess_corners::SaddlePointConfig {
-                radius: cfg.radius,
-                det_margin: cfg.det_margin,
-                max_offset: cfg.max_offset,
-                min_abs_det: cfg.min_abs_det,
-            })
-        }
-        // NOTE: update this adapter when new RefinerKindConfig variants are added upstream.
-        _ => unreachable!("unhandled RefinerKindConfig variant — update to_refiner_kind"),
-    }
+    params.clone()
 }
 
 impl CharucoParams {
@@ -277,141 +243,29 @@ impl CharucoParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_core::{CenterOfMassConfig, ForstnerConfig};
 
-    fn assert_refiner_eq(
-        actual: &chess_corners_core::RefinerKind,
-        expected: &chess_corners_core::RefinerKind,
-    ) {
-        match (actual, expected) {
-            (
-                chess_corners_core::RefinerKind::CenterOfMass(actual),
-                chess_corners_core::RefinerKind::CenterOfMass(expected),
-            ) => assert_eq!(actual.radius, expected.radius),
-            (
-                chess_corners_core::RefinerKind::Forstner(actual),
-                chess_corners_core::RefinerKind::Forstner(expected),
-            ) => {
-                assert_eq!(actual.radius, expected.radius);
-                assert_eq!(actual.min_trace, expected.min_trace);
-                assert_eq!(actual.min_det, expected.min_det);
-                assert_eq!(actual.max_condition_number, expected.max_condition_number);
-                assert_eq!(actual.max_offset, expected.max_offset);
-            }
-            (
-                chess_corners_core::RefinerKind::SaddlePoint(actual),
-                chess_corners_core::RefinerKind::SaddlePoint(expected),
-            ) => {
-                assert_eq!(actual.radius, expected.radius);
-                assert_eq!(actual.det_margin, expected.det_margin);
-                assert_eq!(actual.max_offset, expected.max_offset);
-                assert_eq!(actual.min_abs_det, expected.min_abs_det);
-            }
-            _ => unreachable!("refiner kind mismatch"),
-        }
-    }
-
-    fn assert_chess_params_eq(
-        actual: &chess_corners_core::ChessParams,
-        expected: &chess_corners_core::ChessParams,
-    ) {
-        assert_eq!(actual.use_radius10, expected.use_radius10);
-        assert_eq!(
-            actual.descriptor_use_radius10,
-            expected.descriptor_use_radius10
+    #[test]
+    fn default_redetect_params_uses_saddle_point_refiner() {
+        let params = default_redetect_params();
+        assert!((params.threshold_rel - 0.05).abs() < 1e-6);
+        assert_eq!(params.nms_radius, 2);
+        assert_eq!(params.min_cluster_size, 1);
+        assert!(
+            matches!(params.refiner, RefinerKind::SaddlePoint(_)),
+            "expected SaddlePoint refiner, got {:?}",
+            params.refiner,
         );
-        assert_eq!(actual.threshold_rel, expected.threshold_rel);
-        assert_eq!(actual.threshold_abs, expected.threshold_abs);
-        assert_eq!(actual.nms_radius, expected.nms_radius);
-        assert_eq!(actual.min_cluster_size, expected.min_cluster_size);
-        assert_refiner_eq(&actual.refiner, &expected.refiner);
     }
 
     #[test]
-    fn default_redetect_params_match_previous_external_values() {
-        let actual = to_chess_params(&default_redetect_params());
-
-        let mut expected = chess_corners_core::ChessParams::default();
-        expected.threshold_rel = 0.05;
-        // chess-corners 0.6 ships `threshold_abs = Some(0.0)` by default.
-        // The ChArUco re-detect path deliberately opts into relative mode
-        // (to apply a sensitive 0.05 fraction-of-max threshold), so the
-        // converted params clear `threshold_abs` to let `threshold_rel`
-        // take effect.
-        expected.threshold_abs = None;
-        expected.nms_radius = 2;
-        expected.min_cluster_size = 1;
-        expected.refiner = chess_corners_core::RefinerKind::SaddlePoint(
-            chess_corners_core::SaddlePointConfig::default(),
-        );
-
-        assert_chess_params_eq(&actual, &expected);
-    }
-
-    #[test]
-    fn conversion_preserves_non_default_fields() {
-        let params = ChessCornerParams {
-            use_radius10: true,
-            descriptor_use_radius10: Some(false),
-            threshold_rel: 0.3,
-            threshold_abs: Some(7.5),
-            nms_radius: 4,
-            min_cluster_size: 3,
-            refiner: RefinerKindConfig::Forstner(ForstnerConfig {
-                radius: 5,
-                min_trace: 12.0,
-                min_det: 0.5,
-                max_condition_number: 64.0,
-                max_offset: 2.0,
-            }),
-        };
-
-        let actual = to_chess_params(&params);
-        let mut expected = chess_corners_core::ChessParams::default();
-        expected.use_radius10 = true;
-        expected.descriptor_use_radius10 = Some(false);
-        expected.threshold_rel = 0.3;
-        expected.threshold_abs = Some(7.5);
-        expected.nms_radius = 4;
-        expected.min_cluster_size = 3;
-        expected.refiner =
-            chess_corners_core::RefinerKind::Forstner(chess_corners_core::ForstnerConfig {
-                radius: 5,
-                min_trace: 12.0,
-                min_det: 0.5,
-                max_condition_number: 64.0,
-                max_offset: 2.0,
-            });
-
-        assert_chess_params_eq(&actual, &expected);
-    }
-
-    #[test]
-    fn all_refiner_variants_convert() {
-        let variants = [
-            RefinerKindConfig::CenterOfMass(CenterOfMassConfig { radius: 6 }),
-            RefinerKindConfig::Forstner(ForstnerConfig {
-                radius: 3,
-                min_trace: 10.0,
-                min_det: 0.25,
-                max_condition_number: 128.0,
-                max_offset: 1.0,
-            }),
-            RefinerKindConfig::SaddlePoint(SaddlePointConfig {
-                radius: 4,
-                det_margin: 0.05,
-                max_offset: 0.75,
-                min_abs_det: 0.025,
-            }),
-        ];
-
-        for refiner in variants {
-            let params = ChessCornerParams {
-                refiner,
-                ..ChessCornerParams::default()
-            };
-            let converted = to_chess_params(&params);
-            assert_refiner_eq(&converted.refiner, &to_refiner_kind(&params.refiner));
-        }
+    fn to_chess_params_is_identity() {
+        // Since ChessCornerParams IS chess_corners::ChessParams, to_chess_params
+        // should round-trip perfectly.
+        let mut params = ChessCornerParams::default();
+        params.threshold_rel = 0.3;
+        params.nms_radius = 4;
+        let converted = to_chess_params(&params);
+        assert!((converted.threshold_rel - 0.3).abs() < 1e-6);
+        assert_eq!(converted.nms_radius, 4);
     }
 }

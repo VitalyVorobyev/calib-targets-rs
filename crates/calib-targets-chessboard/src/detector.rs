@@ -9,7 +9,10 @@
 //! See `book/src/chessboard.md` for the full algorithm description.
 
 use crate::boosters::{apply_boosters, BoosterResult};
-use crate::cluster::{cluster_axes_debug, ClusterCenters, ClusterDebug};
+use crate::cluster::{
+    angular_dist_pi, assign_corner, cluster_axes_debug, effective_tol_rad,
+    refit_centers_from_labelled, AxisCluster, ClusterCenters, ClusterDebug,
+};
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::{grow_from_seed, ChessboardGrowValidator, ChessboardRescueValidator, GrowResult};
 use crate::params::{DetectorParams, GraphBuildAlgorithm};
@@ -76,6 +79,7 @@ pub struct DebugFrame {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct IterationTrace {
     pub iter: u32,
     pub labelled_count: usize,
@@ -88,6 +92,94 @@ pub struct IterationTrace {
     /// data (Q2 of the deep-dive roadmap).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionTrace>,
+    /// Stage-6.5 (NoCluster rescue) summary for this iteration.
+    /// `None` when the rescue pass didn't run (Stage 6.5 disabled, or
+    /// no converged iteration produced a labelled set to rescue
+    /// around). Records the same `attached / rejected_*` breakdown as
+    /// `extension`, so a diagnose dump can tell whether the rescue
+    /// gate is firing or whether the relevant cells are not even
+    /// being enumerated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rescue: Option<ExtensionTrace>,
+    /// Stage-6.75 (post-grow centre refit) summary for this iteration.
+    /// `None` when the refit was disabled, when too few labels were
+    /// available, or when the refit shift was below the trigger
+    /// threshold (no second Stage-6 / 6.5 pass needed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refit: Option<RefitTrace>,
+    /// Stage-6.75 cardinal-neighbour BFS extension after refit, if
+    /// `enable_post_grow_bfs_extend` is set. Records `attached /
+    /// rejected_*` from
+    /// `projective_grid::square::grow_extend::extend_from_labelled`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bfs_extend: Option<BfsExtendTrace>,
+    /// Stage-6.75 second-pass extension after refit, if it ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extension2: Option<ExtensionTrace>,
+    /// Stage-6.75 second-pass rescue after refit, if it ran.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rescue2: Option<ExtensionTrace>,
+    /// Final geometry-check summary. The geometry check is a
+    /// MANDATORY precision gate — it always runs on every emitted
+    /// detection. `None` only if no detection was emitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub geometry_check: Option<GeometryCheckTrace>,
+}
+
+/// Diagnose payload for the post-grow cardinal-neighbour BFS
+/// extension (Stage 6.75 — `enable_post_grow_bfs_extend`).
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct BfsExtendTrace {
+    pub attached: usize,
+    pub rejected_no_candidate: usize,
+    pub rejected_ambiguous: usize,
+    pub rejected_edge: usize,
+    pub attached_indices: Vec<usize>,
+}
+
+/// Diagnose payload for the post-grow centre refit (Stage 6.75).
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct RefitTrace {
+    /// Magnitude of the centre shift (degrees, max over both axes).
+    pub shift_deg: f32,
+    /// New `(θ₀, θ₁)` after refit, in degrees.
+    pub new_centers_deg: [f32; 2],
+    /// Number of labelled corners used in the refit.
+    pub labelled_used: usize,
+    /// Number of `Strong` / `NoCluster` corners promoted to
+    /// `Clustered` under the new centres.
+    pub promoted: u32,
+    /// Whether the second Stage 6 / 6.5 pass actually ran (i.e. the
+    /// shift was above `refit_min_shift_deg`).
+    pub second_pass_ran: bool,
+}
+
+/// Diagnose payload for the mandatory final geometry check.
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct GeometryCheckTrace {
+    /// Number of labelled corners that failed the geometry check
+    /// and were dropped from the final detection.
+    pub dropped: u32,
+    /// Reason summary: count of drops attributed to each predicate.
+    pub dropped_line_collinearity: u32,
+    pub dropped_local_h_residual: u32,
+    pub dropped_edge_invariant: u32,
+    /// Number of labelled corners dropped because they were not in
+    /// the largest cardinally-connected component. Catches isolated
+    /// false-positive labels (a marker corner that happened to pass
+    /// the cluster + edge gates but sits below or to the side of the
+    /// main grid with no cardinal labelled neighbours).
+    pub dropped_disconnected: u32,
+    /// Number of cardinally-connected components found before the
+    /// drop pass. `1` is the chessboard contract; `> 1` always
+    /// triggers `dropped_disconnected > 0`.
+    pub components_seen: u32,
+    /// Whether the detection was refused entirely because the
+    /// surviving labelled count fell below `min_labeled_corners`.
+    pub detection_refused: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -95,13 +187,13 @@ pub struct ExtensionTrace {
     pub h_trusted: bool,
     pub h_residual_median_px: Option<f32>,
     pub h_residual_max_px: Option<f32>,
-    pub iterations: u32,
-    pub attached: u32,
-    pub rejected_no_candidate: u32,
-    pub rejected_ambiguous: u32,
-    pub rejected_label: u32,
-    pub rejected_validator: u32,
-    pub rejected_edge: u32,
+    pub iterations: usize,
+    pub attached: usize,
+    pub rejected_no_candidate: usize,
+    pub rejected_ambiguous: usize,
+    pub rejected_label: usize,
+    pub rejected_validator: usize,
+    pub rejected_edge: usize,
     pub attached_indices: Vec<usize>,
 }
 
@@ -491,6 +583,13 @@ impl Detector {
                     }
                 }
 
+                // `active_centers` is the cluster pair currently in
+                // effect for downstream stages. It starts at the
+                // Stage-3 estimate; the Stage-6.75 refit may replace
+                // it with a labelled-set-only estimate that's
+                // unbiased by marker corners.
+                let mut active_centers = centers;
+
                 // Stage 6: boundary extrapolation via globally-fit
                 // homography. Runs on the **converged + validated**
                 // labelled set so the H fit isn't pulled by mid-loop
@@ -503,7 +602,7 @@ impl Detector {
                 let extension_stats = run_stage6(
                     &augs,
                     &mut grow_res,
-                    centers,
+                    active_centers,
                     cell_size,
                     &blacklist,
                     &self.params,
@@ -544,11 +643,12 @@ impl Detector {
                 // wider axis-tolerance (`rescue_axis_tol_deg`) and
                 // inferred parity. Position match + parity match +
                 // axis-slot-swap edge invariant keep precision.
+                let mut iteration_rescue: Option<ExtensionTrace> = None;
                 if self.params.enable_stage6_5_rescue {
                     let rescue_stats = run_stage6_5_rescue(
                         &augs,
                         &mut grow_res,
-                        centers,
+                        active_centers,
                         cell_size,
                         &blacklist,
                         &self.params,
@@ -560,6 +660,7 @@ impl Detector {
                             local_h_residual_px: None,
                         };
                     }
+                    iteration_rescue = Some(ExtensionTrace::from(&rescue_stats));
                     // No post-rescue revalidation: the rescue's
                     // per-candidate gates (position match against
                     // local-H, parity match against the cluster
@@ -582,6 +683,214 @@ impl Detector {
                     None
                 };
 
+                // Stage 6.75: post-grow centre refit. Recompute the
+                // cluster centres from the labelled axes alone (no
+                // marker contribution), and if the shift is large
+                // enough to move a borderline corner across the gate,
+                // re-classify Strong/NoCluster corners and run Stage
+                // 6 / 6.5 again. See CLAUDE.md "Evidence-driven
+                // detector debugging" for the small3.png case study.
+                let mut iteration_refit: Option<RefitTrace> = None;
+                let mut iteration_bfs_extend: Option<BfsExtendTrace> = None;
+                let mut iteration_extension2: Option<ExtensionTrace> = None;
+                let mut iteration_rescue2: Option<ExtensionTrace> = None;
+                if self.params.enable_post_grow_refit {
+                    let labelled_indices: Vec<usize> =
+                        grow_res.labelled.values().copied().collect();
+                    if let Some(new_centers) = refit_centers_from_labelled(
+                        &augs,
+                        &labelled_indices,
+                        active_centers,
+                        self.params.refit_min_labelled,
+                    ) {
+                        let shift_rad = angular_dist_pi(new_centers.theta0, active_centers.theta0)
+                            .max(angular_dist_pi(new_centers.theta1, active_centers.theta1));
+                        let trigger_rad = self.params.refit_min_shift_deg.to_radians();
+                        let mut promoted = 0u32;
+                        let second_pass_ran = shift_rad > trigger_rad;
+                        if second_pass_ran {
+                            // Re-classify Strong + NoCluster under the
+                            // refined centres. Already-Labeled corners
+                            // keep their `(i, j)`; their `label` slot
+                            // is preserved from the original assignment
+                            // (the slot doesn't flip under a small
+                            // centre shift).
+                            let base_tol = self.params.cluster_tol_deg.to_radians();
+                            let sigma_k = self.params.cluster_sigma_k;
+                            for aug in augs.iter_mut() {
+                                if !matches!(
+                                    aug.stage,
+                                    CornerStage::Strong | CornerStage::NoCluster { .. }
+                                ) {
+                                    continue;
+                                }
+                                let tol = effective_tol_rad(aug, base_tol, sigma_k);
+                                match assign_corner(aug, new_centers, tol) {
+                                    AxisCluster::Labeled { label, .. } => {
+                                        aug.label = Some(label);
+                                        aug.stage = CornerStage::Clustered { label };
+                                        promoted += 1;
+                                    }
+                                    AxisCluster::Unclustered { max_d_rad } => {
+                                        aug.stage = CornerStage::NoCluster {
+                                            max_d_deg: max_d_rad.to_degrees(),
+                                        };
+                                    }
+                                }
+                            }
+                            // Optionally re-grow BFS from scratch
+                            // first. The destructive regrow lifts
+                            // recall on cases where the existing
+                            // labelled set's bbox doesn't reach the
+                            // orphans (small3.png left strip, 1+
+                            // cells past the bbox edge — extend
+                            // alone cannot reach those without
+                            // widening the search radius into the
+                            // SHIFT-INCONSISTENT regime). The
+                            // trade-off is that grow_from_seed under
+                            // a small (~3°) centre shift can flip
+                            // borderline parity slots and lose some
+                            // existing corners — the cardinal
+                            // extend below recovers them.
+                            if self.params.enable_post_grow_bfs_regrow {
+                                for aug in augs.iter_mut() {
+                                    if blacklist.contains(&aug.input_index) {
+                                        continue;
+                                    }
+                                    if let CornerStage::Labeled { .. } = aug.stage {
+                                        if let Some(label) = aug.label {
+                                            aug.stage = CornerStage::Clustered { label };
+                                        }
+                                    }
+                                }
+                                grow_res = grow_from_seed(
+                                    &mut augs,
+                                    seed,
+                                    new_centers,
+                                    cell_size,
+                                    &blacklist,
+                                    &self.params,
+                                );
+                            }
+
+                            // Non-destructive cardinal-neighbour BFS
+                            // extension: walks the labelled bbox
+                            // boundary one cell at a time using
+                            // cardinal-only prediction (K=1).
+                            // Default ON. When the regrow above
+                            // dropped a few previously-labelled
+                            // corners under the new centres
+                            // (small1.png / small4.png case), extend
+                            // recovers them — the dropped corners
+                            // are typically one cell past the
+                            // regrown bbox boundary. Same tolerances
+                            // as initial BFS (wider radii produce
+                            // SHIFT-INCONSISTENT labelling per the
+                            // small3.png precision verification).
+                            if self.params.enable_post_grow_bfs_extend {
+                                let positions: Vec<Point2<f32>> =
+                                    augs.iter().map(|c| c.position).collect();
+                                let mut pg_grow = projective_grid::square::grow::GrowResult {
+                                    labelled: std::mem::take(&mut grow_res.labelled),
+                                    by_corner: std::mem::take(&mut grow_res.by_corner),
+                                    ambiguous: std::mem::take(&mut grow_res.ambiguous),
+                                    holes: std::mem::take(&mut grow_res.holes),
+                                    grid_u: grow_res.grid_u,
+                                    grid_v: grow_res.grid_v,
+                                };
+                                let bfs_validator = ChessboardGrowValidator::new(
+                                    &augs,
+                                    &blacklist,
+                                    new_centers,
+                                    cell_size,
+                                    &self.params,
+                                );
+                                let bfs_params = projective_grid::square::grow::GrowParams::new(
+                                    self.params.attach_search_rel,
+                                    self.params.attach_ambiguity_factor,
+                                );
+                                let bfs_stats =
+                                    projective_grid::square::grow_extend::extend_from_labelled(
+                                        &positions,
+                                        &mut pg_grow,
+                                        cell_size,
+                                        &bfs_params,
+                                        &bfs_validator,
+                                    );
+                                for (k, &idx) in bfs_stats.attached_indices.iter().enumerate() {
+                                    let at = bfs_stats.attached_cells[k];
+                                    augs[idx].stage = CornerStage::Labeled {
+                                        at,
+                                        local_h_residual_px: None,
+                                    };
+                                }
+                                grow_res.labelled = pg_grow.labelled;
+                                grow_res.by_corner = pg_grow.by_corner;
+                                grow_res.ambiguous = pg_grow.ambiguous;
+                                grow_res.holes = pg_grow.holes;
+                                iteration_bfs_extend = Some(BfsExtendTrace {
+                                    attached: bfs_stats.attached,
+                                    rejected_no_candidate: bfs_stats.rejected_no_candidate,
+                                    rejected_ambiguous: bfs_stats.rejected_ambiguous,
+                                    rejected_edge: bfs_stats.rejected_edge,
+                                    attached_indices: bfs_stats.attached_indices.clone(),
+                                });
+                            }
+                            // Second-pass Stage 6 / 6.5 with the new
+                            // centres so any cells the BFS still
+                            // missed get a second look at the wider
+                            // local-H prediction radius.
+                            let ext2 = run_stage6(
+                                &augs,
+                                &mut grow_res,
+                                new_centers,
+                                cell_size,
+                                &blacklist,
+                                &self.params,
+                            );
+                            for (k, &idx) in ext2.attached_indices.iter().enumerate() {
+                                let at = ext2.attached_cells[k];
+                                augs[idx].stage = CornerStage::Labeled {
+                                    at,
+                                    local_h_residual_px: None,
+                                };
+                            }
+                            if ext2.h_quality.is_some() || ext2.h_residual_median_px.is_some() {
+                                iteration_extension2 = Some(ExtensionTrace::from(&ext2));
+                            }
+                            if self.params.enable_stage6_5_rescue {
+                                let rescue2 = run_stage6_5_rescue(
+                                    &augs,
+                                    &mut grow_res,
+                                    new_centers,
+                                    cell_size,
+                                    &blacklist,
+                                    &self.params,
+                                );
+                                for (k, &idx) in rescue2.attached_indices.iter().enumerate() {
+                                    let at = rescue2.attached_cells[k];
+                                    augs[idx].stage = CornerStage::Labeled {
+                                        at,
+                                        local_h_residual_px: None,
+                                    };
+                                }
+                                iteration_rescue2 = Some(ExtensionTrace::from(&rescue2));
+                            }
+                            active_centers = new_centers;
+                        }
+                        iteration_refit = Some(RefitTrace {
+                            shift_deg: shift_rad.to_degrees(),
+                            new_centers_deg: [
+                                new_centers.theta0.to_degrees(),
+                                new_centers.theta1.to_degrees(),
+                            ],
+                            labelled_used: labelled_indices.len(),
+                            promoted,
+                            second_pass_ran,
+                        });
+                    }
+                }
+
                 let mut grow_mut = grow_res;
 
                 // Phase E recall boosters: interior gap fill + line
@@ -591,7 +900,7 @@ impl Detector {
                 let booster: BoosterResult = apply_boosters(
                     &mut augs,
                     &mut grow_mut,
-                    centers,
+                    active_centers,
                     cell_size,
                     &blacklist,
                     &self.params,
@@ -607,16 +916,41 @@ impl Detector {
                         };
                     }
                 }
+
+                // Mandatory final geometry check. Drops any labelled
+                // corner that fails the line-collinearity / local-H
+                // residual test from the shared validator OR the
+                // chessboard per-edge axis-slot-swap parity test.
+                // Refuses the detection entirely if the surviving
+                // labelled count drops below `min_labeled_corners`.
+                let geometry_check_trace = run_geometry_check(
+                    &mut augs,
+                    &mut grow_mut,
+                    active_centers,
+                    cell_size,
+                    &mut blacklist,
+                    &self.params,
+                );
+
                 frame.iterations.push(IterationTrace {
                     iter: it,
                     labelled_count,
                     new_blacklist: new_blacklist.clone(),
                     converged: converged || soft_converged,
                     extension: iteration_extension,
+                    rescue: iteration_rescue,
+                    refit: iteration_refit,
+                    bfs_extend: iteration_bfs_extend,
+                    extension2: iteration_extension2,
+                    rescue2: iteration_rescue2,
+                    geometry_check: Some(geometry_check_trace.clone()),
                 });
                 let final_count = grow_mut.labelled.len();
-                if final_count >= self.params.min_labeled_corners {
-                    frame.detection = Some(build_detection(&augs, &grow_mut, centers, cell_size));
+                if !geometry_check_trace.detection_refused
+                    && final_count >= self.params.min_labeled_corners
+                {
+                    frame.detection =
+                        Some(build_detection(&augs, &grow_mut, active_centers, cell_size));
                 }
                 break;
             }
@@ -628,6 +962,12 @@ impl Detector {
                 new_blacklist: new_blacklist.clone(),
                 converged: false,
                 extension: None,
+                rescue: None,
+                refit: None,
+                bfs_extend: None,
+                extension2: None,
+                rescue2: None,
+                geometry_check: None,
             });
 
             // Mark blacklisted corners and retry.
@@ -730,7 +1070,7 @@ fn run_stage6_5_rescue(
     let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params);
     let mut local_params = LocalExtensionParams::default();
     local_params.k_nearest = params.stage6_5_local_k_nearest;
-    local_params.search_rel = params.rescue_search_rel;
+    local_params.common.search_rel = params.rescue_search_rel;
     let stats = extend_via_local_homography(
         &positions,
         &mut pg_grow,
@@ -744,6 +1084,169 @@ fn run_stage6_5_rescue(
     grow_res.ambiguous = pg_grow.ambiguous;
     grow_res.holes = pg_grow.holes;
     stats
+}
+
+/// Mandatory final precision gate. Runs after every other stage and
+/// can only remove corners or refuse the detection — never add or
+/// relabel.
+///
+/// Drops any labelled corner that fails:
+/// - the shared [`validate`] pass (line collinearity + local-H
+///   residual, attribution rules from
+///   [`projective_grid::square::validate`]); **or**
+/// - the per-cardinal-edge axis-slot-swap parity check from
+///   [`ChessboardGrowValidator::edge_ok`] — every edge between two
+///   cardinal-labelled corners must satisfy the same edge invariant
+///   that BFS enforced at attachment time. This catches wrong
+///   `(i, j)` labels introduced by Stage 6 / 6.5 / boosters / refit
+///   even when each individual attachment satisfied the invariant
+///   against *some* labelled neighbour at the time.
+///
+/// `detection_refused` is set when the surviving labelled count
+/// drops below `min_labeled_corners` — the caller MUST then return
+/// `None` for the detection rather than ship a half-broken grid.
+fn run_geometry_check(
+    augs: &mut [CornerAug],
+    grow_res: &mut GrowResult,
+    _centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &mut HashSet<usize>,
+    params: &DetectorParams,
+) -> GeometryCheckTrace {
+    use std::collections::HashSet as Set;
+    // Test 1: line collinearity + local-H residual via shared
+    // validator, but with the LOOSER `geometry_check_*` tolerances —
+    // the BFS-validation loop already accepted borderline perspective
+    // drift; the geometry check's job is to catch gross mislabels
+    // (full-cell or diagonal shifts) only.
+    let geom_entries: Vec<projective_grid::square::validate::LabelledEntry> = grow_res
+        .labelled
+        .iter()
+        .map(
+            |(&grid, &idx)| projective_grid::square::validate::LabelledEntry {
+                idx,
+                pixel: augs[idx].position,
+                grid,
+            },
+        )
+        .collect();
+    let mut geom_params = projective_grid::square::validate::ValidationParams::new(
+        params.geometry_check_line_tol_rel,
+        params.line_min_members,
+        params.geometry_check_local_h_tol_rel,
+    );
+    if params.validate_step_aware {
+        // Geometry check stays step-aware so heavily distorted boards
+        // get the same scale-relative thresholds as BFS validation.
+        // Step-deviation gate is BFS-only — set to 0 (disabled).
+        geom_params = geom_params.with_step_aware(0.0);
+    }
+    let v = projective_grid::square::validate::validate(&geom_entries, cell_size, &geom_params);
+    let validate_drop: Set<usize> = v.blacklist.iter().copied().collect();
+
+    // Per-edge axis-slot-swap was tried as an additional check but
+    // was too rigid for heavily distorted boards (every cell with a
+    // perspective-foreshortened edge failed the length test, even
+    // requiring 2-of-4 failing edges still flagged 27+ corners on
+    // `puzzleboard_reference/example2.png`). Local-H residual via
+    // `validate()` with looser geometry-check tolerances handles the
+    // diagonal-mislabel case (residual ~1.4 cell on a wrong-cell
+    // attachment, well above the 0.6 cell threshold) without
+    // touching legitimate perspective-distorted corners.
+    let mut all_drop: Set<usize> = Set::new();
+    all_drop.extend(validate_drop.iter().copied());
+
+    // Test 3: cardinally-connected components. A chessboard detection
+    // is by construction one (i, j)-labelled connected planar graph;
+    // any singleton or small-component that survived earlier stages
+    // is a false positive (commonly a marker corner that passed the
+    // axis cluster + parity gates but sits in isolation, well outside
+    // the main grid). Keep only the largest component; drop the rest.
+    //
+    // Implemented after the validate() drops so a corner that's both
+    // a residual outlier AND disconnected gets attributed to validate
+    // (dominant reason). Components are computed AFTER the validate
+    // drops so dropping a "bridge" corner can split a component, and
+    // then the smaller half is correctly removed.
+    let surviving_labels: Vec<((i32, i32), usize)> = grow_res
+        .labelled
+        .iter()
+        .filter(|(_, &idx)| !all_drop.contains(&idx))
+        .map(|(&k, &v)| (k, v))
+        .collect();
+    let label_set: std::collections::HashMap<(i32, i32), usize> =
+        surviving_labels.iter().copied().collect();
+    let mut visited: Set<(i32, i32)> = Set::new();
+    let mut components: Vec<Vec<(i32, i32)>> = Vec::new();
+    for &(ij, _) in &surviving_labels {
+        if visited.contains(&ij) {
+            continue;
+        }
+        let mut comp = Vec::new();
+        let mut stack = vec![ij];
+        while let Some(cur) = stack.pop() {
+            if !visited.insert(cur) {
+                continue;
+            }
+            comp.push(cur);
+            for (di, dj) in [(1i32, 0i32), (-1, 0), (0, 1), (0, -1)] {
+                let n = (cur.0 + di, cur.1 + dj);
+                if label_set.contains_key(&n) && !visited.contains(&n) {
+                    stack.push(n);
+                }
+            }
+        }
+        components.push(comp);
+    }
+    let components_seen = components.len() as u32;
+    // Largest component wins; everything else is a false positive.
+    let mut disconnect_drop: Set<usize> = Set::new();
+    if components.len() > 1 {
+        let largest_idx = components
+            .iter()
+            .enumerate()
+            .max_by_key(|(_, c)| c.len())
+            .map(|(i, _)| i)
+            .unwrap_or(0);
+        for (ci, comp) in components.iter().enumerate() {
+            if ci == largest_idx {
+                continue;
+            }
+            for ij in comp {
+                if let Some(&idx) = label_set.get(ij) {
+                    disconnect_drop.insert(idx);
+                }
+            }
+        }
+    }
+    all_drop.extend(disconnect_drop.iter().copied());
+
+    let dropped_validate = validate_drop.len() as u32;
+    let dropped_edge_only = 0u32;
+    let dropped_disconnected = disconnect_drop.len() as u32;
+
+    for &idx in &all_drop {
+        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                at,
+                reason: "geometry-check".into(),
+            };
+        }
+        grow_res.labelled.retain(|_, &mut v| v != idx);
+        grow_res.by_corner.remove(&idx);
+        blacklist.insert(idx);
+    }
+
+    let detection_refused = grow_res.labelled.len() < params.min_labeled_corners;
+    GeometryCheckTrace {
+        dropped: all_drop.len() as u32,
+        dropped_line_collinearity: dropped_validate,
+        dropped_local_h_residual: 0, // shared validator lumps these — kept for forward-compat
+        dropped_edge_invariant: dropped_edge_only,
+        dropped_disconnected,
+        components_seen,
+        detection_refused,
+    }
 }
 
 fn passes_strength(aug: &CornerAug, params: &DetectorParams) -> bool {

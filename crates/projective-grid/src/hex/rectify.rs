@@ -7,7 +7,7 @@
 use crate::float_helpers::lit;
 use crate::homography::{estimate_homography, Homography};
 use crate::Float;
-use crate::GridIndex;
+use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -64,7 +64,7 @@ impl<F: Float> HexGridHomography<F> {
     /// - `px_per_cell`: rectified pixels per grid cell edge.
     /// - `margin_cells`: extra margin around the grid bounding box (in cell units).
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<F>>,
+        corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
         margin_cells: F,
     ) -> Result<Self, HexRectifyError> {
@@ -184,7 +184,7 @@ impl<F: Float> HexGridHomography<F> {
 mod tests {
     use super::*;
 
-    fn make_hex_corners(radius: i32, spacing: f32) -> HashMap<GridIndex, Point2<f32>> {
+    fn make_hex_corners(radius: i32, spacing: f32) -> HashMap<GridCoords, Point2<f32>> {
         let sqrt3 = 3.0f32.sqrt();
         let mut map = HashMap::new();
         for q in -radius..=radius {
@@ -194,7 +194,7 @@ mod tests {
                 }
                 let x = spacing * (q as f32 + r as f32 * 0.5);
                 let y = spacing * (r as f32 * sqrt3 / 2.0);
-                map.insert(GridIndex { i: q, j: r }, Point2::new(x, y));
+                map.insert(GridCoords { i: q, j: r }, Point2::new(x, y));
             }
         }
         map
@@ -269,8 +269,8 @@ mod tests {
     #[test]
     fn too_few_corners_errors() {
         let mut corners = HashMap::new();
-        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        corners.insert(GridIndex { i: 1, j: 0 }, Point2::new(50.0, 0.0));
+        corners.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        corners.insert(GridCoords { i: 1, j: 0 }, Point2::new(50.0, 0.0));
 
         let result = HexGridHomography::from_corners(&corners, 50.0, 0.0);
         assert!(result.is_err());

@@ -36,7 +36,9 @@ use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 
 use crate::circular_stats::{angular_dist_pi, wrap_pi};
-use crate::square::seed::{Seed, SeedOutput};
+use crate::topological::AxisHint;
+
+use super::{Seed, SeedOutput};
 
 /// Pattern-specific hooks used by [`find_quad`].
 ///
@@ -47,10 +49,15 @@ pub trait SeedQuadValidator {
     /// Per-corner pixel position. Indices are stable across the call.
     fn position(&self, idx: usize) -> Point2<f32>;
 
-    /// Per-corner two grid-axis angles in radians. The finder folds
+    /// Per-corner two grid-axis directions. The finder uses only the
+    /// `angle` field; `sigma` is available for pattern-specific gates
+    /// but ignored by the generic find-quad logic.  The finder folds
     /// each angle into `[0, π)` before angular distance calculations,
-    /// so callers may supply them in any range.
-    fn axes(&self, idx: usize) -> [f32; 2];
+    /// so callers may supply angles in any range.
+    ///
+    /// Use [`AxisHint::from_angle`] when you do not track per-axis
+    /// uncertainty.
+    fn axes(&self, idx: usize) -> [AxisHint; 2];
 
     /// Indices eligible to act as the seed's `A` (and `D`) corners,
     /// sorted in **descending preference order** — the finder
@@ -170,8 +177,8 @@ pub fn find_quad<V: SeedQuadValidator>(
     for &a_idx in &a_indices {
         let a_pos = validator.position(a_idx);
         let a_axes = validator.axes(a_idx);
-        let a_axis0 = wrap_pi(a_axes[0]);
-        let a_axis1 = wrap_pi(a_axes[1]);
+        let a_axis0 = wrap_pi(a_axes[0].angle);
+        let a_axis1 = wrap_pi(a_axes[1].angle);
 
         // Nearest BC neighbours (sorted asc by distance).
         let mut neighbors: Vec<(usize, f32, Vector2<f32>)> = bc_tree
@@ -289,7 +296,7 @@ mod tests {
     /// indices come from a parity bitmask the test fixture supplies.
     struct ToyValidator<'a> {
         positions: &'a [Point2<f32>],
-        axes: &'a [[f32; 2]],
+        axes: &'a [[AxisHint; 2]],
         is_a: Vec<bool>,
     }
 
@@ -297,7 +304,7 @@ mod tests {
         fn position(&self, idx: usize) -> Point2<f32> {
             self.positions[idx]
         }
-        fn axes(&self, idx: usize) -> [f32; 2] {
+        fn axes(&self, idx: usize) -> [AxisHint; 2] {
             self.axes[idx]
         }
         fn a_candidates(&self) -> Vec<usize> {
@@ -317,7 +324,10 @@ mod tests {
         for j in 0..rows {
             for i in 0..cols {
                 positions.push(Point2::new(i as f32 * s + 50.0, j as f32 * s + 50.0));
-                axes.push([0.0_f32, std::f32::consts::FRAC_PI_2]);
+                axes.push([
+                    AxisHint::from_angle(0.0_f32),
+                    AxisHint::from_angle(std::f32::consts::FRAC_PI_2),
+                ]);
                 is_a.push((i + j).rem_euclid(2) == 0);
             }
         }
@@ -342,9 +352,19 @@ mod tests {
 
     #[test]
     fn returns_none_when_one_class_is_empty() {
+        let axes_arr: &[[AxisHint; 2]] = &[
+            [
+                AxisHint::from_angle(0.0),
+                AxisHint::from_angle(std::f32::consts::FRAC_PI_2),
+            ],
+            [
+                AxisHint::from_angle(0.0),
+                AxisHint::from_angle(std::f32::consts::FRAC_PI_2),
+            ],
+        ];
         let v = ToyValidator {
             positions: &[Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)],
-            axes: &[[0.0, std::f32::consts::FRAC_PI_2]; 2],
+            axes: axes_arr,
             is_a: vec![true, true],
         };
         assert!(find_quad(&v, &SeedQuadParams::default()).is_none());
@@ -358,7 +378,7 @@ mod tests {
             fn position(&self, idx: usize) -> Point2<f32> {
                 self.0.position(idx)
             }
-            fn axes(&self, idx: usize) -> [f32; 2] {
+            fn axes(&self, idx: usize) -> [AxisHint; 2] {
                 self.0.axes(idx)
             }
             fn a_candidates(&self) -> Vec<usize> {
@@ -383,7 +403,7 @@ mod tests {
             fn position(&self, idx: usize) -> Point2<f32> {
                 self.0.position(idx)
             }
-            fn axes(&self, idx: usize) -> [f32; 2] {
+            fn axes(&self, idx: usize) -> [AxisHint; 2] {
                 self.0.axes(idx)
             }
             fn a_candidates(&self) -> Vec<usize> {

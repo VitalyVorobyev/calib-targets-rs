@@ -5,11 +5,12 @@
 //! The hex lattice is decomposed into parallelogram cells, each split into
 //! two triangles.
 
+use crate::affine::AffineTransform2D;
 use crate::float_helpers::lit;
 use crate::homography::{estimate_homography, Homography};
 use crate::Float;
-use crate::GridIndex;
-use nalgebra::{Matrix2, Point2, Vector2};
+use crate::GridCoords;
+use nalgebra::Point2;
 use std::collections::HashMap;
 
 fn sqrt3_half<F: Float>() -> F {
@@ -23,47 +24,6 @@ pub enum HexMeshError {
     NotEnoughCorners,
     #[error("no valid triangles found")]
     NoValidTriangles,
-}
-
-/// A 2D affine transform: `dst = M * [src_x, src_y]^T + t`.
-#[derive(Clone, Copy, Debug)]
-pub struct AffineTransform2D<F: Float = f32> {
-    /// 2x2 linear part.
-    pub linear: Matrix2<F>,
-    /// Translation part.
-    pub translation: Vector2<F>,
-}
-
-impl<F: Float> AffineTransform2D<F> {
-    /// Compute the affine transform mapping `src` triangle to `dst` triangle.
-    ///
-    /// Returns `None` if the source triangle is degenerate (collinear points).
-    pub fn from_triangle_correspondence(src: [Point2<F>; 3], dst: [Point2<F>; 3]) -> Option<Self> {
-        let ds1 = src[1] - src[0];
-        let ds2 = src[2] - src[0];
-        let dd1 = dst[1] - dst[0];
-        let dd2 = dst[2] - dst[0];
-
-        let src_mat = Matrix2::new(ds1.x, ds2.x, ds1.y, ds2.y);
-        let src_inv = src_mat.try_inverse()?;
-
-        let dst_mat = Matrix2::new(dd1.x, dd2.x, dd1.y, dd2.y);
-        let linear = dst_mat * src_inv;
-
-        let t = dst[0] - linear * Vector2::new(src[0].x, src[0].y);
-        let translation = Vector2::new(t.x, t.y);
-
-        Some(Self {
-            linear,
-            translation,
-        })
-    }
-
-    /// Apply the transform to a 2D point.
-    pub fn apply(&self, p: Point2<F>) -> Point2<F> {
-        let v = self.linear * Vector2::new(p.x, p.y) + self.translation;
-        Point2::new(v.x, v.y)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -106,7 +66,7 @@ impl<F: Float> HexGridHomographyMesh<F> {
     /// - `corners`: map from axial grid index `(q=i, r=j)` to image position.
     /// - `px_per_cell`: rectified pixels per grid cell edge.
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<F>>,
+        corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
     ) -> Result<Self, HexMeshError> {
         if corners.len() < 3 {
@@ -170,10 +130,10 @@ impl<F: Float> HexGridHomographyMesh<F> {
                 let q0 = min_q + cq as i32;
                 let r0 = min_r + cr as i32;
 
-                let g00 = GridIndex { i: q0, j: r0 };
-                let g10 = GridIndex { i: q0 + 1, j: r0 };
-                let g01 = GridIndex { i: q0, j: r0 + 1 };
-                let g11 = GridIndex {
+                let g00 = GridCoords { i: q0, j: r0 };
+                let g10 = GridCoords { i: q0 + 1, j: r0 };
+                let g01 = GridCoords { i: q0, j: r0 + 1 };
+                let g11 = GridCoords {
                     i: q0 + 1,
                     j: r0 + 1,
                 };
@@ -335,7 +295,7 @@ fn centroid<F: Float>(tri: &[Point2<F>; 3]) -> Point2<F> {
 mod tests {
     use super::*;
 
-    fn make_hex_corners(radius: i32, spacing: f32) -> HashMap<GridIndex, Point2<f32>> {
+    fn make_hex_corners(radius: i32, spacing: f32) -> HashMap<GridCoords, Point2<f32>> {
         let sqrt3 = 3.0f32.sqrt();
         let mut map = HashMap::new();
         for q in -radius..=radius {
@@ -345,7 +305,7 @@ mod tests {
                 }
                 let x = spacing * (q as f32 + r as f32 * 0.5);
                 let y = spacing * (r as f32 * sqrt3 / 2.0);
-                map.insert(GridIndex { i: q, j: r }, Point2::new(x, y));
+                map.insert(GridCoords { i: q, j: r }, Point2::new(x, y));
             }
         }
         map
@@ -476,8 +436,8 @@ mod tests {
     #[test]
     fn too_few_corners_errors() {
         let mut corners = HashMap::new();
-        corners.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0f32, 0.0));
-        corners.insert(GridIndex { i: 1, j: 0 }, Point2::new(50.0, 0.0));
+        corners.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0f32, 0.0));
+        corners.insert(GridCoords { i: 1, j: 0 }, Point2::new(50.0, 0.0));
 
         let result = HexGridHomographyMesh::from_corners(&corners, 50.0);
         assert!(result.is_err());
@@ -486,8 +446,8 @@ mod tests {
     #[test]
     fn missing_corners_handled_gracefully() {
         let mut corners = make_hex_corners(3, 60.0);
-        corners.remove(&GridIndex { i: 0, j: 0 });
-        corners.remove(&GridIndex { i: 1, j: 1 });
+        corners.remove(&GridCoords { i: 0, j: 0 });
+        corners.remove(&GridCoords { i: 1, j: 1 });
 
         let mesh = HexGridHomographyMesh::from_corners(&corners, 60.0);
         assert!(mesh.is_ok());

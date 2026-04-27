@@ -78,6 +78,18 @@ impl Default for AxisHint {
     }
 }
 
+impl AxisHint {
+    /// Construct an `AxisHint` from a bare angle, with no uncertainty
+    /// information (`sigma = 0.0`).  Useful for callers that only have
+    /// an angle (e.g. [`SeedQuadValidator::axes`] impls that do not track
+    /// per-corner uncertainty).
+    ///
+    /// [`SeedQuadValidator::axes`]: crate::square::seed_finder::SeedQuadValidator::axes
+    pub fn from_angle(angle: f32) -> Self {
+        Self { angle, sigma: 0.0 }
+    }
+}
+
 /// Tuning knobs for [`build_grid_topological`].
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[non_exhaustive]

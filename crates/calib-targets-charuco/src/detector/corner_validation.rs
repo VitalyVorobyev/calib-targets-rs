@@ -140,11 +140,11 @@ fn collect_board_to_image_correspondences(
         let (gc0_x, gc0_y) = recover_gc0(marker);
 
         for (img_idx, &(di, dj)) in GRID_CORNER_OFFSETS.iter().enumerate() {
-            let [bi, bj] = alignment.map(gc0_x + di, gc0_y + dj);
+            let bc = alignment.map(gc0_x + di, gc0_y + dj);
             // Use charuco_object_xy for the board point so the coordinate
             // system matches corner.target_position used in the prediction.
             // Only inner corners (those with a ChArUco ID) are included.
-            let Some(charuco_id) = board.charuco_corner_id_from_board_corner(bi, bj) else {
+            let Some(charuco_id) = board.charuco_corner_id_from_board_corner(bc.i, bc.j) else {
                 continue;
             };
             let Some(board_pt) = board.charuco_object_xy(charuco_id) else {

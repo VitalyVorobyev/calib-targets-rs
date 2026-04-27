@@ -40,6 +40,8 @@ use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 use std::collections::{HashMap, HashSet, VecDeque};
 
+pub use crate::square::seed::Seed;
+
 /// Per-candidate decision from a [`GrowValidator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Admit {
@@ -145,19 +147,9 @@ impl GrowParams {
         Self {
             attach_search_rel,
             attach_ambiguity_factor,
-            boundary_search_factor: 2.0,
+            ..Self::default()
         }
     }
-}
-
-/// Seed quad: corner indices at grid cells `(0, 0), (1, 0), (0, 1),
-/// (1, 1)` respectively.
-#[derive(Clone, Copy, Debug)]
-pub struct Seed {
-    pub a: usize,
-    pub b: usize,
-    pub c: usize,
-    pub d: usize,
 }
 
 /// Outcome of a grow pass.
@@ -237,75 +229,31 @@ pub fn bfs_grow<V: GrowValidator>(
         enqueue_cardinal_neighbours(ij, &labelled, &mut boundary, &mut seen_boundary);
     }
 
-    let search_r = params.attach_search_rel * cell_size;
-
     while let Some(pos) = boundary.pop_front() {
         if labelled.contains_key(&pos) {
             continue;
         }
-
-        let neighbours = collect_labelled_neighbours(pos, 1, &labelled, positions);
-        if neighbours.is_empty() {
-            holes.insert(pos);
-            continue;
-        }
-
-        let prediction = predict_from_neighbours(
+        let (decision, _neighbours) = process_boundary_cell(
             pos,
-            &neighbours,
+            positions,
+            &labelled,
+            &by_corner,
+            &tree,
+            &tree_slot_to_corner,
             grid_u,
             grid_v,
             cell_size,
-            &labelled,
-            positions,
-        );
-
-        // Boundary-aware search radius. When every labelled neighbour sits
-        // on the same side of `pos` along i AND/OR j (extrapolating
-        // outward instead of interpolating), the prediction is more
-        // uncertain — perspective foreshortening makes cells smaller than
-        // the seed-derived `cell_size` near the image edge, and BFS would
-        // overshoot the true corner with the default radius. Open the
-        // search up by `boundary_search_factor` (default 2×) in that case.
-        let extrapolating = is_extrapolating(pos, &neighbours);
-        let local_search_r = if extrapolating {
-            search_r * params.boundary_search_factor
-        } else {
-            search_r
-        };
-
-        let required_label = validator.required_label_at(pos.0, pos.1);
-        let candidates = collect_candidates(
-            &tree,
-            &tree_slot_to_corner,
-            prediction,
-            local_search_r,
+            params,
             validator,
-            required_label,
-            &by_corner,
         );
-
-        let choice = choose_unambiguous(
-            &candidates,
-            params.attach_ambiguity_factor,
-            prediction,
-            positions,
-            validator,
-            pos,
-            &neighbours,
-        );
-        match choice {
-            CandidateChoice::None => {
+        match decision {
+            BoundaryDecision::Hole | BoundaryDecision::EdgeRejected => {
                 holes.insert(pos);
             }
-            CandidateChoice::Ambiguous => {
+            BoundaryDecision::Ambiguous => {
                 ambiguous.insert(pos);
             }
-            CandidateChoice::Unique(c_idx) => {
-                if !any_cardinal_edge_ok(c_idx, pos, &labelled, validator) {
-                    holes.insert(pos);
-                    continue;
-                }
+            BoundaryDecision::Attach(c_idx) => {
                 labelled.insert(pos, c_idx);
                 by_corner.insert(c_idx, pos);
                 enqueue_cardinal_neighbours(pos, &labelled, &mut boundary, &mut seen_boundary);
@@ -341,7 +289,7 @@ pub fn bfs_grow<V: GrowValidator>(
     }
 }
 
-fn enqueue_cardinal_neighbours(
+pub(super) fn enqueue_cardinal_neighbours(
     pos: (i32, i32),
     labelled: &HashMap<(i32, i32), usize>,
     boundary: &mut VecDeque<(i32, i32)>,
@@ -355,7 +303,7 @@ fn enqueue_cardinal_neighbours(
     }
 }
 
-fn collect_labelled_neighbours(
+pub(super) fn collect_labelled_neighbours(
     pos: (i32, i32),
     window_half: i32,
     labelled: &HashMap<(i32, i32), usize>,
@@ -381,6 +329,11 @@ fn collect_labelled_neighbours(
 }
 
 /// Distance-weighted average of per-neighbour axis-vector predictions.
+///
+/// Use this function for in-the-loop BFS attachment where arbitrary
+/// labelled neighbours are available. For post-grow outlier detection
+/// using cardinal midpoint averaging, see
+/// [`crate::square::smoothness::square_predict_grid_position`].
 ///
 /// For each labelled neighbour `N_k` at `(i_k, j_k)`, the prediction is
 /// `pred_k = pos(N_k) + (Δi · i_step_k) + (Δj · j_step_k)` where
@@ -452,7 +405,7 @@ pub fn predict_from_neighbours(
 /// reliable: extrapolation accumulates foreshortening error linearly,
 /// while interpolation has neighbours on both sides bracketing the
 /// truth.
-fn is_extrapolating(target: (i32, i32), neighbours: &[LabelledNeighbour]) -> bool {
+pub(super) fn is_extrapolating(target: (i32, i32), neighbours: &[LabelledNeighbour]) -> bool {
     let mut has_neg_di = false;
     let mut has_pos_di = false;
     let mut has_neg_dj = false;
@@ -478,7 +431,7 @@ fn is_extrapolating(target: (i32, i32), neighbours: &[LabelledNeighbour]) -> boo
 /// direction `step = (di, dj)` using a finite-difference of labelled
 /// neighbours. Returns `None` when neither the forward nor backward
 /// neighbour is labelled.
-fn local_step_at(
+pub(super) fn local_step_at(
     at: (i32, i32),
     step: (i32, i32),
     labelled: &HashMap<(i32, i32), usize>,
@@ -500,7 +453,7 @@ fn local_step_at(
     }
 }
 
-fn collect_candidates<V: GrowValidator>(
+pub(super) fn collect_candidates<V: GrowValidator>(
     tree: &KdTree<f32, 2>,
     slot_to_corner: &[usize],
     prediction: Point2<f32>,
@@ -534,13 +487,13 @@ fn collect_candidates<V: GrowValidator>(
     out
 }
 
-enum CandidateChoice {
+pub(super) enum CandidateChoice {
     None,
     Ambiguous,
     Unique(usize),
 }
 
-fn choose_unambiguous<V: GrowValidator>(
+pub(super) fn choose_unambiguous<V: GrowValidator>(
     candidates: &[(usize, f32)],
     ambiguity_factor: f32,
     prediction: Point2<f32>,
@@ -576,7 +529,7 @@ fn choose_unambiguous<V: GrowValidator>(
     CandidateChoice::None
 }
 
-fn any_cardinal_edge_ok<V: GrowValidator>(
+pub(super) fn any_cardinal_edge_ok<V: GrowValidator>(
     c_idx: usize,
     pos: (i32, i32),
     labelled: &HashMap<(i32, i32), usize>,
@@ -595,6 +548,106 @@ fn any_cardinal_edge_ok<V: GrowValidator>(
     // No cardinal neighbours → defer (position reached via BFS from a
     // labelled neighbour, so this is a safety net).
     !found_any
+}
+
+/// Outcome of processing one boundary cell.
+pub(super) enum BoundaryDecision {
+    /// No eligible candidates in the search radius.
+    Hole,
+    /// Multiple near-equidistant candidates — cannot pick unambiguously.
+    Ambiguous,
+    /// The edge check blocked the unique candidate.
+    EdgeRejected,
+    /// Unique candidate accepted; caller should attach this corner index.
+    Attach(usize),
+}
+
+/// Process one cell from the BFS boundary queue.
+///
+/// Collects labelled neighbours, predicts the target pixel position,
+/// searches candidates, resolves ambiguity, and checks `edge_ok`.
+/// Returns a [`BoundaryDecision`] that the caller applies to the mutable
+/// state. Keeping the decision logic in one place makes `bfs_grow` and
+/// `extend_from_labelled` share the same filter pipeline without
+/// duplicating code.
+///
+/// # Parameters
+/// - `pos`: the cell being processed.
+/// - `positions`: full corner position array.
+/// - `labelled` / `by_corner`: current label state.
+/// - `tree` / `tree_slot_to_corner`: KD-tree over eligible candidates.
+/// - `grid_u`, `grid_v`, `cell_size`, `params`: growth geometry.
+/// - `validator`: pattern-specific filter.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn process_boundary_cell<V: GrowValidator>(
+    pos: (i32, i32),
+    positions: &[Point2<f32>],
+    labelled: &HashMap<(i32, i32), usize>,
+    by_corner: &HashMap<usize, (i32, i32)>,
+    tree: &KdTree<f32, 2>,
+    tree_slot_to_corner: &[usize],
+    grid_u: Vector2<f32>,
+    grid_v: Vector2<f32>,
+    cell_size: f32,
+    params: &GrowParams,
+    validator: &V,
+) -> (BoundaryDecision, Vec<LabelledNeighbour>) {
+    let neighbours = collect_labelled_neighbours(pos, 1, labelled, positions);
+    if neighbours.is_empty() {
+        return (BoundaryDecision::Hole, neighbours);
+    }
+
+    let prediction = predict_from_neighbours(
+        pos,
+        &neighbours,
+        grid_u,
+        grid_v,
+        cell_size,
+        labelled,
+        positions,
+    );
+
+    let search_r = params.attach_search_rel * cell_size;
+    let extrapolating = is_extrapolating(pos, &neighbours);
+    let local_search_r = if extrapolating {
+        search_r * params.boundary_search_factor
+    } else {
+        search_r
+    };
+
+    let required_label = validator.required_label_at(pos.0, pos.1);
+    let candidates = collect_candidates(
+        tree,
+        tree_slot_to_corner,
+        prediction,
+        local_search_r,
+        validator,
+        required_label,
+        by_corner,
+    );
+
+    let choice = choose_unambiguous(
+        &candidates,
+        params.attach_ambiguity_factor,
+        prediction,
+        positions,
+        validator,
+        pos,
+        &neighbours,
+    );
+
+    let decision = match choice {
+        CandidateChoice::None => BoundaryDecision::Hole,
+        CandidateChoice::Ambiguous => BoundaryDecision::Ambiguous,
+        CandidateChoice::Unique(c_idx) => {
+            if !any_cardinal_edge_ok(c_idx, pos, labelled, validator) {
+                BoundaryDecision::EdgeRejected
+            } else {
+                BoundaryDecision::Attach(c_idx)
+            }
+        }
+    };
+    (decision, neighbours)
 }
 
 #[cfg(test)]

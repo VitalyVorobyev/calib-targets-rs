@@ -19,7 +19,7 @@ pub struct CharucoAlignment {
 impl CharucoAlignment {
     /// Map grid coordinates `(i, j)` into board coordinates.
     #[inline]
-    pub fn map(&self, i: i32, j: i32) -> [i32; 2] {
+    pub fn map(&self, i: i32, j: i32) -> GridCoords {
         self.alignment.map(i, j)
     }
 }
@@ -93,8 +93,8 @@ fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2
     let mut counts: std::collections::HashMap<[i32; 2], (f32, usize)> =
         std::collections::HashMap::new();
     for p in pairs {
-        let [rx, ry] = transform.apply(p.gc.i, p.gc.j);
-        let t = [p.bc.i - rx, p.bc.j - ry];
+        let r = transform.apply(p.gc.i, p.gc.j);
+        let t = [p.bc.i - r.i, p.bc.j - r.j];
         let entry = counts.entry(t).or_insert((0.0, 0));
         entry.0 += p.weight;
         entry.1 += 1;
@@ -115,8 +115,8 @@ fn inliers_for_transform(
 ) -> Vec<usize> {
     let mut inliers = Vec::new();
     for p in pairs {
-        let [x, y] = transform.apply(p.gc.i, p.gc.j);
-        if x + translation[0] == p.bc.i && y + translation[1] == p.bc.j {
+        let g = transform.apply(p.gc.i, p.gc.j);
+        if g.i + translation[0] == p.bc.i && g.j + translation[1] == p.bc.j {
             inliers.push(p.idx);
         }
     }

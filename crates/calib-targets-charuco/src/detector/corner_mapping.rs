@@ -14,8 +14,8 @@ pub(crate) fn map_charuco_corners(
         let Some(grid) = corner.grid else {
             continue;
         };
-        let [bi, bj] = alignment.map(grid.i, grid.j);
-        let Some(id) = board.charuco_corner_id_from_board_corner(bi, bj) else {
+        let bc = alignment.map(grid.i, grid.j);
+        let Some(id) = board.charuco_corner_id_from_board_corner(bc.i, bc.j) else {
             continue;
         };
         let Some(grid) = grid_from_charuco_id(board, id) else {

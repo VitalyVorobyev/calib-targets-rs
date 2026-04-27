@@ -6,7 +6,7 @@
 //!
 //! # Coordinate Convention
 //!
-//! Axial coordinates `(q, r)` are stored in [`GridIndex`](crate::GridIndex)
+//! Axial coordinates `(q, r)` are stored in [`GridCoords`](crate::GridCoords)
 //! where `i = q` and `j = r`. Pointy-top orientation: `q` increases eastward,
 //! `r` increases south-eastward.
 
@@ -15,7 +15,8 @@ pub mod mesh;
 pub mod rectify;
 pub mod smoothness;
 
+pub use crate::affine::AffineTransform2D;
 pub use alignment::GRID_TRANSFORMS_D6;
-pub use mesh::{AffineTransform2D, HexGridHomographyMesh, HexMeshError};
+pub use mesh::{HexGridHomographyMesh, HexMeshError};
 pub use rectify::{HexGridHomography, HexRectifyError};
 pub use smoothness::{hex_find_inconsistent_corners, hex_predict_grid_position};

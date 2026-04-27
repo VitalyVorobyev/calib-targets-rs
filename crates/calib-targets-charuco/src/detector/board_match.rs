@@ -252,7 +252,7 @@ fn enumerate_hypotheses(
 
     for rot_idx in 0..4u8 {
         let transform = GRID_TRANSFORMS_D4[rot_idx as usize];
-        let mapped: Vec<[i32; 2]> = cells
+        let mapped: Vec<GridCoords> = cells
             .iter()
             .map(|c| transform.apply(c.gc.i, c.gc.j))
             .collect();
@@ -349,12 +349,11 @@ fn fill_expected_from_board(
     let dict = board.spec().dictionary;
 
     for (ci, cell) in diag.cells.iter_mut().enumerate() {
-        let [bx, by] = alignment.map(cell.gc.i, cell.gc.j);
-        cell.mapped_bc = Some([bx, by]);
-        if bx < 0 || by < 0 || bx >= cols || by >= rows {
+        let bc = alignment.map(cell.gc.i, cell.gc.j);
+        cell.mapped_bc = Some([bc.i, bc.j]);
+        if bc.i < 0 || bc.j < 0 || bc.i >= cols || bc.j >= rows {
             continue;
         }
-        let bc = GridCoords { i: bx, j: by };
         let Some(id) = board.marker_id_at(bc) else {
             continue;
         };
@@ -510,16 +509,16 @@ fn log_sigmoid(x: f32) -> f32 {
     }
 }
 
-fn translation_window(mapped: &[[i32; 2]], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {
+fn translation_window(mapped: &[GridCoords], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {
     let mut min_x = i32::MAX;
     let mut max_x = i32::MIN;
     let mut min_y = i32::MAX;
     let mut max_y = i32::MIN;
-    for &[x, y] in mapped {
-        min_x = min_x.min(x);
-        max_x = max_x.max(x);
-        min_y = min_y.min(y);
-        max_y = max_y.max(y);
+    for g in mapped {
+        min_x = min_x.min(g.i);
+        max_x = max_x.max(g.i);
+        min_y = min_y.min(g.j);
+        max_y = max_y.max(g.j);
     }
     if min_x == i32::MAX {
         return None;
@@ -537,16 +536,16 @@ fn translation_window(mapped: &[[i32; 2]], cols: i32, rows: i32) -> Option<(i32,
 fn score_hypothesis(
     board: &CharucoBoard,
     matrix: &ScoreMatrix,
-    mapped: &[[i32; 2]],
+    mapped: &[GridCoords],
     translation: [i32; 2],
     rot: u8,
 ) -> (f32, usize) {
     let mut total = 0.0f32;
     let mut contributing = 0usize;
-    for (ci, &[mx, my]) in mapped.iter().enumerate() {
+    for (ci, g) in mapped.iter().enumerate() {
         let bc = GridCoords {
-            i: mx + translation[0],
-            j: my + translation[1],
+            i: g.i + translation[0],
+            j: g.j + translation[1],
         };
         let Some(expected_id) = board.marker_id_at(bc) else {
             continue;
@@ -579,8 +578,7 @@ fn emit_markers(
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
     for (ci, cell) in cells.iter().enumerate() {
-        let [bx, by] = alignment.map(cell.gc.i, cell.gc.j);
-        let bc = GridCoords { i: bx, j: by };
+        let bc = alignment.map(cell.gc.i, cell.gc.j);
         let Some(expected_id) = board.marker_id_at(bc) else {
             continue;
         };
@@ -686,14 +684,18 @@ mod tests {
 
     #[test]
     fn translation_window_clamps_to_board() {
-        let mapped = [[0, 0], [1, 1], [2, 2]];
+        let mapped = [
+            GridCoords { i: 0, j: 0 },
+            GridCoords { i: 1, j: 1 },
+            GridCoords { i: 2, j: 2 },
+        ];
         let win = translation_window(&mapped, 5, 5).unwrap();
         assert_eq!(win, (0, 2, 0, 2));
     }
 
     #[test]
     fn translation_window_rejects_oversize() {
-        let mapped = [[0, 0], [10, 10]];
+        let mapped = [GridCoords { i: 0, j: 0 }, GridCoords { i: 10, j: 10 }];
         assert!(translation_window(&mapped, 5, 5).is_none());
     }
 }
