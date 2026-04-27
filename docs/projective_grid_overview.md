@@ -44,14 +44,40 @@ crate is biased toward dropping rather than mislabelling.
 
 ## 2. The pipeline at a glance
 
-The crate ships a single labelling strategy: **seed-and-grow with
-global-H boundary extension.** The entry point is
-`square::grow::bfs_grow` driven by a 2×2 seed and a pattern-specific
-`GrowValidator`. After BFS converges, `square::grow_extension::
-extend_via_global_homography` extends the labelled set past the BFS
-reach using a single global homography, gated on pixel-unit
-reprojection residuals. Used by `calib-targets-chessboard`,
-`calib-targets-charuco`, and `calib-targets-puzzleboard`.
+The crate ships **two labelling strategies** behind a single
+[`calib_targets_chessboard::GraphBuildAlgorithm`] enum, both producing
+the same `(i, j) → corner_idx` map so downstream consumers
+(chessboard, ChArUco, marker board, PuzzleBoard) are agnostic to which
+ran:
+
+- **Seed-and-grow with global-H boundary extension** (`ChessboardV2`,
+  default). Entry point `square::grow::bfs_grow` driven by a 2×2 seed
+  and a pattern-specific `GrowValidator`. After BFS converges,
+  `square::grow_extension::extend_via_global_homography` extends the
+  labelled set past the BFS reach using a single global homography,
+  gated on pixel-unit reprojection residuals. The historical default;
+  every published detector pipeline used this until April 2026.
+
+- **Topological grid finder** (`Topological`, opt-in). Entry point
+  `topological::build_grid_topological`. Delaunay-triangulates the
+  corner cloud (Shu/Brunton/Fiala 2009 [14]), classifies each
+  Delaunay edge as *grid* / *diagonal* / *spurious* using the
+  per-corner ChESS axes (replacing the paper's image-color test),
+  merges triangle pairs sharing a diagonal into chessboard-cell
+  quads, prunes by quad-mesh degree and parallelogram geometry, then
+  flood-fills `(i, j)` labels through the quad mesh. Image-free —
+  consumes only positions and axes, so the crate stays standalone.
+
+Both pipelines feed an optional shared **component-merge** pass
+(`projective_grid::component_merge`) that reunites disconnected
+labelled components using local geometry only — no global homography,
+to survive heavy radial distortion that would break a global fit.
+
+ChArUco pins to `ChessboardV2` regardless of caller choice: marker
+cells carry sub-cell features whose ChESS axes lock to the marker's
+local orientation, defeating the per-cell axis test. The override
+lives in
+[`calib_targets_charuco::CharucoDetector::new`](../crates/calib-targets-charuco/src/detector/pipeline.rs).
 
 A historical "Pipeline A" (KD-tree slot graph + cleanup +
 `assign_grid_coordinates`) was removed in the April 2026 refactor. The
@@ -185,13 +211,15 @@ distortion that varies the local cell size by 20-30 % across the image.
 
 ## 5. Building the graph
 
-The crate uses a two-stage labelling pipeline: **seed-and-grow BFS**
-followed by **global-H boundary extension**.
+The crate offers **two labelling pipelines** selected by the
+`GraphBuildAlgorithm` enum. Both consume positions + axes and emit a
+`(i, j) → corner_idx` map. Their post-stages are identical: validate
+(line + local-H residual), then optionally merge components.
 
-### 5.1 `bfs_grow` (seed-and-grow)
+### 5.1 `bfs_grow` (seed-and-grow, default)
 
-The chessboard, ChArUco, and PuzzleBoard detectors all build their grid
-this way. Algorithm:
+The chessboard (when `graph_build_algorithm = ChessboardV2`), ChArUco,
+and PuzzleBoard detectors all build their grid this way. Algorithm:
 
 1. **Find a 4-corner seed quad** — pattern-specific. The chessboard
    detector picks one Canonical-cluster corner `A`, classifies its
@@ -306,14 +334,162 @@ The function is a no-op when the labelled set is too small, the DLT
 solver fails, or the residual gate fires. In all three cases the
 labels survive untouched and `ExtensionStats::h_trusted = false`.
 
+### 5.3 `build_grid_topological` (Shu 2009, axis-driven variant)
+
+Selected via `graph_build_algorithm = Topological`. Skips axis
+clustering and global cell-size estimation entirely — the algorithm
+is image-free and works directly off the ChESS corner positions and
+per-corner axes. Pipeline:
+
+1. **Pre-filter.** Drop corners whose two axes both have
+   `sigma >= max_axis_sigma_rad` (default 34°). The remainder is
+   passed to Delaunay.
+
+2. **Delaunay triangulation** of all surviving positions, via the
+   `delaunator` crate (Mapbox port of Watson's algorithm [15]). Returns
+   triangle vertex indices plus half-edge buddy pointers for O(1)
+   neighbour lookup.
+
+3. **Axis-driven edge classification.** For each Delaunay half-edge
+   `(a → b)`, compute the edge angle `θ = atan2(p_b − p_a)`. At each
+   endpoint, take the minimum angular distance from `θ` to the
+   corner's two axes (modulo π — axes are undirected). Classify:
+
+   - **Grid** if the min-distance is within `axis_align_tol_rad`
+     (default 15°) at both endpoints — the edge runs along a cell
+     side.
+   - **Diagonal** if the min-distance is within
+     `diagonal_angle_tol_rad` (default 15°) of `π/4` at both
+     endpoints — the edge crosses a cell diagonal.
+   - **Spurious** otherwise — background, noise, or a corner whose
+     local axes don't align with the global grid (e.g. corners
+     inside an ArUco marker).
+
+   This replaces Shu's original color test (which sampled triangle
+   interior pixels). The axis test naturally rejects background
+   corners and stays valid under any image rotation, but breaks
+   when the per-corner axes locally rotate fast — see Gap 8 below.
+
+4. **Triangle-pair merging.** A triangle is *mergeable* iff exactly
+   one of its three edges is `Diagonal` and the other two are `Grid`.
+   For each mergeable triangle, look up the buddy of its diagonal
+   half-edge. If the buddy's triangle is also mergeable with the
+   same diagonal, the two triangles fuse into a quadrilateral whose
+   four perimeter edges are all grid edges — one chessboard cell.
+   Quads are stored TL/TR/BR/BL in clockwise order around their
+   centroid, matching the workspace `LabeledCorner` quad convention.
+
+5. **Topological filtering** (paper §4). For each corner in the
+   quad mesh, count the number of incident perimeter half-edges. A
+   regular interior corner has 4 incident quad edges (= 8 half-edge
+   incidences). Corners exceeding 8 incidences are *illegal* —
+   typically caused by a noise corner near a real grid intersection.
+   Quads with ≥ 2 illegal corners are dropped.
+
+6. **Geometric filtering** (paper §4). For each surviving quad,
+   compute the ratio of opposing edge lengths. Drop the quad if
+   either ratio exceeds `edge_ratio_max` (default 10.0, matching the
+   paper). This is a generous bound — the gate fires only on
+   pathologically degenerate quads.
+
+7. **Topological walking** (paper §5). Each connected component of
+   the quad mesh is labelled independently. Pick an arbitrary seed
+   quad, assign its four corners `(0,0), (1,0), (1,1), (0,1)` in CW
+   order, then BFS through neighbour quads sharing a perimeter edge.
+   For each neighbour, the two shared corners' labels are already
+   set; the other two get `current_label + outward_step` where
+   `outward_step` is the integer cell-step direction perpendicular
+   to the shared edge, away from the parent quad. Pure topology — no
+   pixel-coordinate predictions, so radial distortion that bends
+   grid lines does not break the labelling.
+
+8. **Bounding-box rebase.** Each component's labels are translated so
+   `min(i) = min(j) = 0`. Workspace invariant.
+
+The output is `Vec<TopologicalComponent>` plus a
+`TopologicalStats` diagnostic counter for triangle composition
+(mergeable / multi-diagonal / has-spurious / all-grid), edge
+classification counts, and per-component sizes. The bench harness
+surfaces these via `bench diagnose --algorithm topological`.
+
+**Where it shines.** Clean PuzzleBoards and lightly-distorted
+chessboards: dense recall *within* its labelled bbox, dramatically
+faster than seed-and-grow on sparse boards (no axis clustering, no
+seed search, no validation-blacklist loop). On the public
+`testdata/puzzleboard_reference/example1-3` images, topological
+typically labels 15-30% more corners than ChessboardV2 in 5-20× less
+wall-clock time.
+
+**Where it fails.** ArUco markers (corners detected inside marker
+bits poison the per-corner axes) and extreme low-view-angle regions
+(triangles span multiple cells, breaking the 1-diagonal-2-grid
+classification — paper §2.1 Fig 4). The first case is dodged by
+pinning ChArUco to seed-and-grow; the second is documented in Gap 8.
+
+**Paper context.** Shu/Brunton/Fiala [14] proposed the
+Delaunay-+-color-test pipeline for printed checkerboards. ROCHADE
+[11] adds saddle-point sub-pixel refinement orthogonally. Our
+contribution is the axis-driven cell test that lifts the image-free
+constraint, plus the explicit triangle-composition diagnostic that
+tells operators *why* the pipeline missed corners in distorted
+regions (Gap 8).
+
 ---
 
-## 6. Validation — `square::validate`
+## 6. Component merge — `projective_grid::component_merge`
+
+When the labelling stage (either pipeline) leaves multiple
+disconnected components — typical when an entire row of corners drops
+below the strength threshold, or when topological filtering removes a
+noisy quad in the middle of the board — `merge_components_local`
+attempts to reunite them into a single labelling. **Local geometry
+only**: never a global homography, because strong radial distortion
+breaks a single global H across the whole board.
+
+Acceptance criterion for merging two components `(C_p, C_q)`:
+
+1. **Per-component cell size** estimated as the median nearest-
+   neighbour pixel distance along the labelled `i` and `j` axes.
+   Reject the pair upfront if `|s_p − s_q| / max(s_p, s_q) >
+   cell_size_ratio_tol` (default 20%).
+
+2. **Anchor search.** Try every (transform, anchor pair) where
+   transform ranges over the eight elements of D4
+   ([`crate::GRID_TRANSFORMS_D4`]). Each anchor pair fixes a
+   candidate translation `Δ = ij_q − T(ij_p)`.
+
+3. **Position scoring.** For each `(T, Δ)`, transform every label
+   in `C_p` into `C_q`'s frame and count overlap. Accept if
+   `overlap ≥ min_overlap` (default 2) and the worst per-corner
+   position disagreement on overlapping labels is below
+   `position_tol_rel × cell_size` (default 0.20 × cell_size).
+
+4. **Greedy merge.** Sort surviving components by labelled count
+   descending and merge in that order, re-running the alignment
+   search on each pass until no further merges are possible or the
+   `max_components` cap (default 4) is hit.
+
+The current implementation (v1) requires ≥ 1 overlapping label
+between merge candidates, which handles the most common gap-induced
+splits. **Disjoint label sets** (e.g. two patches of the same board
+separated by a missing row, where labels never coincide) are
+out-of-scope until we add a "predict next corner from each side and
+match" boundary check — see Gap 9.
+
+The chessboard crate's historical `enable_component_merge` and
+`component_merge_min_boundary_pairs` knobs were the placeholders for
+this functionality; the actual implementation now lives in
+`projective-grid` and is reused from both pipelines via the
+`DetectorParams::component_merge: LocalMergeParams` field.
+
+---
+
+## 7. Validation — `square::validate`
 
 Once the labelled set is built, two independent residual passes flag
 outliers:
 
-### 6.1 Line collinearity
+### 7.1 Line collinearity
 
 For every row (`j = const`) and column (`i = const`) with ≥ 3 members,
 fit a total-least-squares line in pixel space (closed-form via the 2×2
@@ -326,7 +502,7 @@ because under moderate radial distortion the chord between two true
 grid corners is straighter in pixel space than the projective ideal
 predicts.
 
-### 6.2 Local-H residual
+### 7.2 Local-H residual
 
 For every labelled corner, pick its 4 grid-closest non-collinear
 labelled neighbours, fit a 4-point homography on those, predict the
@@ -340,7 +516,7 @@ The 4-point variant uses Hartley-normalised LU as a closed-form
 4×8 solve (no SVD needed), which is exactly the construction in
 Hartley & Zisserman [13], chapter 4.
 
-### 6.3 Attribution
+### 7.3 Attribution
 
 Three rules turn raw flags into a single blacklist of corner indices:
 
@@ -362,7 +538,7 @@ peels off accepted components and re-enters the pipeline.
 
 ---
 
-## 7. Gaps and follow-ups
+## 8. Gaps and follow-ups
 
 The pipeline ships zero wrong labels on the workspace's regression
 datasets. The remaining structural gaps are tracked here. Resolved
@@ -451,6 +627,74 @@ downstream. This is intentionally outside `projective-grid`'s scope —
 the crate has no image data — but worth flagging as the natural next
 layer.
 
+### Gap 8 — Topological recall in heavy-distortion regions (OPEN)
+
+In severe perspective + radial distortion, the topological pipeline
+loses corners in the most foreshortened region. On
+`testdata/puzzleboard_reference/example2.png` it labels 173/183
+usable corners (versus seed-and-grow's 136), but 8 of the 10 missed
+corners cluster in the heavily distorted bottom-left strip. The
+`bench diagnose --algorithm topological` triangle-composition
+counters (`triangles_mergeable / triangles_multi_diag /
+triangles_has_spurious / triangles_all_grid`) localise the failure
+to triangle pair-merging: in distorted regions Delaunay produces
+triangles whose two long edges classify as both `Diagonal` (because
+the cell's diagonal is no longer at 45° to its sides), making the
+unique-diagonal merge step refuse the pair.
+
+Loosening `axis_align_tol_rad` and `diagonal_angle_tol_rad` from 15°
+to 30° barely helps (173 → 174 corners): it's not classification
+noise, it's the strict 1-diagonal-2-grid pairing rule itself.
+
+**Fix options, in order of decreasing scope.**
+- *Permissive pairing.* When a triangle has ≥ 2 `Diagonal` edges,
+  pick the longest one as the diagonal (longest edge of a
+  cell-spanning triangle is its diagonal up to extreme
+  foreshortening). Smallest code change; should recover most of the
+  multi-diag triangles.
+- *Spurious salvage.* Treat one `Spurious` edge in a triangle as
+  `Grid` if its length matches the other Grid edge within a ratio.
+  Recovers `triangles_has_spurious` boundary cases.
+- *Hybrid extension.* After the topological pass, run
+  `square::grow_extension::extend_via_local_homography` on
+  unlabelled corners adjacent to the topological bbox. Combines
+  topological's dense interior with seed-and-grow's reach into the
+  distorted boundary.
+
+### Gap 9 — Component merge handles only overlapping label sets (OPEN)
+
+`projective_grid::component_merge::merge_components_local` currently
+requires `min_overlap ≥ 1` shared label between two components. This
+handles the majority case (gap-induced splits where a few edge
+corners straddle both components), but disjoint patches separated by
+a missing row never satisfy the overlap test and stay split.
+
+**Fix.** Add a "predict next corner from each side" boundary check:
+for each component, walk the labelled bbox boundary outward by one
+cell using the local cell-step direction, and accept a merge when
+the predicted boundary positions of one component land near actual
+labelled positions of the other. Same scoring (cell-size + position
+agreement) but applied to predicted-vs-labelled rather than
+labelled-vs-labelled pairs.
+
+### Gap 10 — Topological pipeline default vs `ChessboardV2` (OPEN)
+
+`GraphBuildAlgorithm::default()` returns `ChessboardV2`. The
+topological pipeline regresses recall on the public ChArUco-style
+testdata (`testdata/small0..5.png`, `large.png`) because ChESS
+detects corners *inside* marker bits whose axes lock to the
+marker's local orientation, not the global grid. ChArUco detection
+already pins to seed-and-grow regardless of caller choice, but the
+public bench harness exercises `detect_chessboard` directly on
+those images and the recall regression makes flipping the default
+unsafe today.
+
+**Fix.** Add a "drop corners with axes inconsistent with the global
+mode" pre-filter that runs *before* Delaunay, removing the marker-
+internal X-corners whose local axes don't agree with the histogram
+peak found by `circular_stats`. Once that pre-filter ships, retest
+the public bench and flip the default.
+
 ### Resolved gaps (April 2026 refactor)
 
 - **Pipeline A removal** (was Gap 1, Gap 2, Gap 5, Gap 9). The
@@ -472,32 +716,66 @@ layer.
   fall back to seed-derived cell size on bimodal clouds.
 - **Dead `wrap_pi` import-keepalive** (was Gap 11). Removed.
 
+### Resolved gaps (April 2026 topological pipeline)
+
+- **Topological / Shu 2009 grid finder** (was the open
+  "alternative-pipeline-based-on-Shu-2009" item). Shipped as
+  `projective_grid::topological::build_grid_topological` with an
+  axis-driven cell test (replacing the paper's image-color test) so
+  the crate stays standalone. Selectable via
+  `DetectorParams::graph_build_algorithm =
+  GraphBuildAlgorithm::Topological`. Default is still
+  `ChessboardV2` until Gap 10 closes; topological is opt-in for
+  PuzzleBoard low-view-angle work where it already wins on
+  recall + speed.
+- **Shared component merge** (was the long-standing
+  `enable_component_merge` flag with no implementation). Now lives
+  in `projective_grid::component_merge::merge_components_local`,
+  uses local-geometry-only acceptance (D4 + anchor pair + cell-size
+  + position-residual gates, no global homography), and is callable
+  from both pipelines via `DetectorParams::component_merge:
+  LocalMergeParams`.
+
 ---
 
-## 8. Summary
+## 9. Summary
 
 `projective-grid` solves the cloud-to-grid combinatorial step in a way
 that is:
 
 - **Pattern-agnostic** at the bottom (KD-tree, circular stats,
-  mean-shift, DLT homography) and pattern-specific at the top via the
-  `GrowValidator` trait. Each pattern crate (chessboard, ChArUco,
-  PuzzleBoard) supplies its own validator implementing parity / axis
-  cluster / marker-label rules; the generic `bfs_grow` consumes them.
+  mean-shift, DLT homography, Delaunay triangulation) and pattern-
+  specific at the top via the `GrowValidator` trait (seed-and-grow)
+  or the per-corner axes contract (topological). Each pattern crate
+  (chessboard, ChArUco, PuzzleBoard) supplies its own validator
+  implementing parity / axis cluster / marker-label rules; the
+  generic `bfs_grow` consumes them.
+- **Two-pipeline architecture.** A `GraphBuildAlgorithm` enum on
+  `DetectorParams` selects either seed-and-grow (current default,
+  battle-tested across all pattern types) or topological (opt-in,
+  faster + denser on clean PuzzleBoards, image-free). Both produce
+  identical `(i, j) → corner_idx` outputs and feed the shared
+  validator + component-merge stages. ChArUco overrides to
+  seed-and-grow internally because marker-internal corners poison
+  the per-cell axis test.
 - **Precision-by-construction** rather than precision-by-RANSAC: the
-  seed-and-grow loop refuses ambiguous attachments, the validator
-  attributes outliers deterministically, the loop converges in a
-  handful of iterations, and Stage 6's residual gate refuses to
+  seed-and-grow loop refuses ambiguous attachments, the topological
+  pipeline rejects triangles with ambiguous diagonals or out-of-
+  parallelogram quads, the validator attributes outliers
+  deterministically, and Stage 6's residual gate refuses to
   extrapolate when the global-H assumption breaks (heavy radial
   distortion, dual-region perspective).
 - **Distortion-tolerant** by design: every threshold is expressed in
   units of the locally-estimated cell size, the per-cell homography
-  mesh absorbs curvature at *rectification* time, and the local-H
-  residual check is the leave-one-out version of
-  as-projective-as-possible warping.
+  mesh absorbs curvature at *rectification* time, the local-H
+  residual check is the leave-one-out version of as-projective-as-
+  possible warping, and the topological walk uses pure topology so
+  curved grid lines do not break the labelling.
 
-The next architectural moves are wiring `estimate_local_steps` into
-the production pipeline (Phase 5), unifying the chessboard booster
+The next architectural moves are closing Gap 8 (topological recall in
+heavy-distortion regions) and Gap 10 (default-flip for the
+topological pipeline), wiring `estimate_local_steps` into the
+production pipeline (Phase 5), unifying the chessboard booster
 with the generic extension machinery (Phase 2), and tightening the
 homography-quality public surface (Gap 3). Hex-grid grow (Phase 7)
 and `circular_stats` `Float`-genericisation (Phase 6) are smaller
@@ -557,3 +835,14 @@ incremental items.
 [13] R. Hartley, A. Zisserman. *Multiple View Geometry in Computer
      Vision*, 2nd ed. Cambridge, 2003. Chapter 4 covers normalised
      DLT for homography estimation.
+
+[14] C. Shu, A. Brunton, M. Fiala. "A topological approach to finding
+     grids in calibration patterns." *Machine Vision and Applications*
+     21(6), 2010. The Delaunay-+-color-test grid finder that
+     `topological::build_grid_topological` re-implements with an
+     axis-driven cell test.
+
+[15] D. F. Watson. "Computing the n-dimensional Delaunay tessellation
+     with application to Voronoi polytopes." *Computer J.* 24(2),
+     1981. The Delaunay algorithm underlying the `delaunator` crate
+     used in `topological::delaunay`.

@@ -108,12 +108,57 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 
 **Detection pipeline** (same structure for all target types):
 1. Run `chess-corners` (external crate) to detect ChESS corner features.
-2. Build a proximity/orientation graph over corners and assemble a chessboard grid.
+2. Build a proximity/orientation graph over corners and assemble a chessboard grid. Two algorithms are available behind `DetectorParams::graph_build_algorithm` (see "Graph-build algorithm selection" below).
 3. For ChArUco/marker boards: locally warp candidate cells and decode markers/circles.
 4. For PuzzleBoard: sample edge-midpoint dots and decode the master edge-code pattern.
 5. Output a `TargetDetection` (or wrapping result struct) containing `LabeledCorner` entries.
 
 **Multi-config sweep:** `detect_*_best` functions try multiple parameter configs and return the best result (most markers/corners). Built-in presets: `ChessboardParams::sweep_default()`, `CharucoParams::sweep_for_board()`, and `PuzzleBoardParams::sweep_for_board()`.
+
+## Graph-build algorithm selection
+
+`calib_targets_chessboard::DetectorParams::graph_build_algorithm`
+selects between two grid builders, both producing the same
+`(i, j) → corner_idx` map so downstream consumers stay agnostic:
+
+- `GraphBuildAlgorithm::ChessboardV2` (**current default**) — the
+  invariant-rich seed-and-grow pipeline (`square::grow::bfs_grow` +
+  `square::grow_extension::extend_via_global_homography`). Battle-
+  tested across all four target families.
+- `GraphBuildAlgorithm::Topological` (**opt-in**) — Shu/Brunton/Fiala
+  2009 grid finder (`projective_grid::topological::build_grid_topological`)
+  with an axis-driven cell test that replaces the paper's image-
+  color sampling so `projective-grid` stays standalone.
+  Image-free; faster + denser on clean PuzzleBoards. Currently
+  regresses recall on ChArUco-style images (corners detected inside
+  marker bits poison the per-cell axis test). Default flip is gated
+  on closing that gap; see `docs/projective_grid_overview.md` Gap 8 + 10.
+
+**ChArUco pinning.** `CharucoDetector::new`
+(`crates/calib-targets-charuco/src/detector/pipeline.rs`)
+unconditionally overrides `chessboard.graph_build_algorithm =
+ChessboardV2` regardless of caller choice — marker-cell features
+defeat the topological cell test, so the override is a precision
+guarantee, not a configuration choice. PuzzleBoard and marker board
+inherit the caller's choice via their nested `DetectorParams`.
+
+**Component merge** (`projective_grid::component_merge::merge_components_local`)
+runs as a post-stage for **both** pipelines and uses local geometry
+only — no global homography, so it tolerates heavy radial
+distortion that would break a global fit. The chessboard crate's
+historical `enable_component_merge` flag is now backed by this
+shared implementation via `DetectorParams::component_merge:
+LocalMergeParams`.
+
+**Bench harness selector.** `cargo run -p calib-targets-bench --
+{run,preview,diagnose} --algorithm {topological,chessboard-v2}` runs
+either pipeline; output JSON / overlay filenames carry the algorithm
+slug so two runs coexist in the same directory.
+`bench diagnose --algorithm topological` reports the per-triangle
+composition counters (mergeable / multi-diagonal / has-spurious /
+all-grid) plus per-quadrant labelled/unlabelled counts and the
+unlabelled corners' axis sigmas — the right starting point when
+investigating recall holes.
 
 **`TargetDetection` / `LabeledCorner`** — the common output container. Fields: `position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`. See README for per-target field usage.
 
