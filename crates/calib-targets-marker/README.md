@@ -19,8 +19,8 @@ Algorithm details: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-marker = "0.7"
-calib-targets-core = "0.7"
+calib-targets-marker = "0.8"
+calib-targets-core = "0.8"
 ```
 
 ## Quickstart

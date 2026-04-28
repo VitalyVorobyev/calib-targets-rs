@@ -23,9 +23,9 @@ and [alignment & refinement chapter][book-alignment].
 
 ```toml
 [dependencies]
-calib-targets-charuco = "0.7"
-calib-targets-core = "0.7"
-calib-targets-aruco = "0.7"
+calib-targets-charuco = "0.8"
+calib-targets-core = "0.8"
+calib-targets-aruco = "0.8"
 ```
 
 ## Quickstart
@@ -89,14 +89,17 @@ marker IDs — rendered by the `overlay_charuco.py` tool.
 
 ## Choosing a dictionary
 
-| Family | Tolerance | When to use |
+| Family | Bit grid | Hamming margin |
 |---|---|---|
-| `DICT_4X4_{50, 100, 250, 1000}` | Tight; only a few bit-errors before confusion. | Small boards with large markers. |
-| `DICT_5X5_*`, `DICT_6X6_*`, `DICT_7X7_*` | Progressively looser; more bits, better Hamming margin. | Medium boards, mild blur. |
-| `DICT_APRILTAG_{16h5, 25h9, 36h10, 36h11}` | Strong error-correcting codes (min. Hamming distance ≥ 10). | Large boards, motion blur, small markers. Combine with the board-level matcher. |
-| `DICT_ARUCO_MIP_36h12` | AprilTag-grade codes in an ArUco layout. | Fine-grained printed targets. |
+| `DICT_4X4_{50, 100, 250, 1000}` | 4×4 payload | Tight; only a few bit-errors before confusion. |
+| `DICT_5X5_*`, `DICT_6X6_*`, `DICT_7X7_*` | 5×5 / 6×6 / 7×7 payload | Progressively looser as bit count grows. |
+| `DICT_APRILTAG_{16h5, 25h9, 36h10, 36h11}` | AprilTag layouts | Strong error-correcting codes (min. Hamming distance ≥ 10). |
+| `DICT_ARUCO_MIP_36h12` | 6×6 payload | AprilTag-grade codes in an ArUco-style layout. |
 
-Match `CharucoBoardSpec::dictionary` exactly to what was printed.
+`CharucoBoardSpec::dictionary` must match the printed dictionary
+exactly. AprilTag families combined with the board-level matcher are
+typical for motion-blurred or distant captures; the smaller 4×4 ArUco
+families fit small boards with large per-marker pixel area.
 
 ## Two matchers
 

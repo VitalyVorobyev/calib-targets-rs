@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
-use crate::homography::estimate_homography_with_quality;
+use crate::homography::estimate_homography;
 use crate::square::extension::common::{try_attach_at_cell, TryCellResult};
 use crate::square::extension::{ExtensionStats, LocalExtensionParams};
 use crate::square::grow::{GrowResult, GrowValidator};
@@ -89,7 +89,7 @@ pub fn extend_via_local_homography<V: GrowValidator>(
                 .collect();
             let img_pts: Vec<Point2<f32>> =
                 nearest.iter().map(|&(_, _, idx)| positions[idx]).collect();
-            let Some((h, _)) = estimate_homography_with_quality(&grid_pts, &img_pts) else {
+            let Some(h) = estimate_homography(&grid_pts, &img_pts) else {
                 continue;
             };
 

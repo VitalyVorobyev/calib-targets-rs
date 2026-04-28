@@ -16,8 +16,8 @@ Most users go through the facade [`calib-targets`][facade] or the
 
 ```toml
 [dependencies]
-calib-targets-aruco = "0.7"
-calib-targets-core = "0.7"
+calib-targets-aruco = "0.8"
+calib-targets-core = "0.8"
 ```
 
 ## Quickstart

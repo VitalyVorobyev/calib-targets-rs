@@ -45,7 +45,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(&cfg.image_path)?.decode()?.to_luma8();
 
     let chess_cfg = make_chess_config();
-    let raw_corners = find_chess_corners_image(&img, &chess_cfg);
+    let raw_corners = find_chess_corners_image(&img, &chess_cfg)?;
     info!("raw ChESS corners: {}", raw_corners.len());
 
     let corners = adapt_corners(&raw_corners);

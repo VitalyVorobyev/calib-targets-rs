@@ -80,7 +80,7 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
     cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
     cfg.threshold_value = 0.15;
     cfg.nms_radius = 3;
-    let descriptors = find_chess_corners_image(&gray, &cfg);
+    let descriptors = find_chess_corners_image(&gray, &cfg).expect("ChESS detection");
     let all_corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
 
     let view = GrayImageView {

@@ -4,187 +4,114 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
-
-### Performance
-
-- **`projective_grid::component_merge::merge_components_local` rewritten**
-  as a position-based Hough transform on `(transform, label-delta)`. The
-  old anchor-pair enumeration was O(P² Q) per (component, component) pair
-  and dominated the topological pipeline on real images with multiple
-  fragmented components. The new implementation indexes one component's
-  positions in a KD-tree, queries each label of the other component
-  within `pos_tol`, and votes each match into a histogram bin keyed by
-  the candidate alignment. Two- to three-orders-of-magnitude wins on
-  microbenches (`merge_components_local/overlap/2_components_large`:
-  about 5000× on the criterion fixture). End-to-end the topological
-  pipeline measured on a representative high-resolution chessboard image
-  goes from multi-second to tens-of-milliseconds, with **zero precision
-  regression** on the internal regression set. The original tiebreaker
-  (preferring identity-transform matches by iteration order) is
-  preserved as an explicit tiebreaker on transform index.
-- **`projective_grid::square::extension::local::nearest_labelled_by_grid`
-  switched from full-sort to bounded max-heap.** The previous
-  implementation allocated a `Vec` of all labelled corners, sorted by
-  Manhattan distance, and took the top-K — `O(L log L)` per cell. With
-  ~1100 labelled corners and ~9000 candidate cells per extension pass,
-  this routine accounted for roughly 84 % of `extend_via_local_homography`
-  self-time on a representative high-resolution frame. The new
-  bounded-heap variant is `O(L log K)` per cell (`K = 8` by default)
-  and avoids the per-cell allocation entirely. Cuts the overall
-  ChessboardV2 extension stage wall-clock by roughly 4× end-to-end on
-  the same frame, with the same deterministic
-  `(distance, i, j, idx)` ordering downstream callers depend on, and
-  zero precision regression on the internal regression set.
-
-### Profiling tooling
-
-- Added an opt-in `tracing` Cargo feature on `projective-grid` (off by
-  default, kept in tree as the permanent observability surface). When
-  enabled, the hot-path entry points (`bfs_grow`,
-  `build_grid_topological` and its substages,
-  `merge_components_local`, `square::validate::validate`,
-  `extend_via_local_homography`, `extend_via_global_homography`,
-  `extend_from_labelled`, `estimate_global_cell_size`,
-  `estimate_local_steps`) emit `tracing::instrument` spans for
-  per-call p50/p95 timing.
-- Added a `[profile.profiling]` Cargo profile (release with
-  line-tables-only debug info) so `samply record` flamegraphs
-  symbolicate without doubling binary size.
-- Added `crates/calib-targets/examples/profile_grid.rs` as a thin
-  driver for `samply record` and `RUST_LOG=info` tracing dumps.
-- Added `docs/profiling.md` with the full samply + tracing recipe.
-- New criterion microbenches in `crates/projective-grid/benches/`:
-  `topological.rs`, `merge.rs`, `validate.rs`. Existing `grow.rs`
-  and `homography.rs` benches preserved as the baseline.
+Older releases are archived under [`docs/changelog/`](docs/changelog/);
+see [Older releases](#older-releases) at the bottom for the index.
 
 ## 0.8.0
 
-### Breaking changes
+Hardens the chessboard detector with a mandatory final-geometry
+check, lands an opt-in topological grid pipeline alongside the
+seed-and-grow default, and rewrites the per-cell DLT and
+component-merge hot paths for an order-of-magnitude speedup on
+high-resolution frames.
 
-- **N-17** `calib-targets-core/src/chess.rs`: replaced the near-verbatim mirror of
-  `chess-corners` config types with direct `pub use` re-exports for all non-divergent
-  types (`CenterOfMassConfig`, `ForstnerConfig`, `SaddlePointConfig`, `UpscaleConfig`,
-  `UpscaleMode`, `DescriptorMode`, `ThresholdMode`, `ChessCornerParams`, `PyramidParams`,
-  `CoarseToFineParams`). `chess-corners` is now a direct dependency of
-  `calib-targets-core`. `DetectorMode` adds `Radon` variant, `RefinementMethod` adds
-  `RadonPeak`, `ChessConfig` exposes `radon_detector`. `RefinerKindConfig` and
-  `ChessConfig::from_parts` are removed. Adapter shims in `detect.rs` collapsed.
+### Breaking
 
-- **N-1** `GridIndex` renamed to `GridCoords` across the entire workspace (the name
-  `calib-targets-core` consumers already used). The old `GridCoords` alias in
-  `calib-targets-core` is now the actual type definition. All `(i32, i32)` tuple
-  maps in the grow/validate/topological/merge pipelines replaced with `GridCoords`.
-  `GridTransform::apply` returns `GridCoords` instead of `[i32; 2]`.
-
-- **N-2** Square-grid types gain `Square` prefix: `GridHomography` →
-  `SquareGridHomography`, `GridHomographyMesh` → `SquareGridHomographyMesh`,
-  `predict_grid_position` → `square_predict_grid_position`,
-  `find_inconsistent_corners` → `square_find_inconsistent_corners`,
-  `find_inconsistent_corners_step_aware` → `square_find_inconsistent_corners_step_aware`.
-
-- **N-3** `SeedQuadValidator::axes` returns `[AxisHint; 2]` instead of `[f32; 2]`.
-  `LocalStepPointData::{axis_u, axis_v}` merged into `axes: [AxisHint; 2]`.
-  `AxisHint::from_angle` constructor added.
-
-- **N-5** `seed_finder.rs` merged into `seed/finder.rs` submodule. `Seed` struct
-  moved from `grow.rs` to `seed/mod.rs`. External import paths unchanged via
-  re-exports in `square/mod.rs`.
-
-- **N-6** `ExtensionCommonParams` extracted from `ExtensionParams` and
-  `LocalExtensionParams`. Both now hold `pub common: ExtensionCommonParams`.
-
-- **N-10** All "count of items" public diagnostic fields standardised on `usize`
-  (`GlobalStepEstimate.support`, `LocalStep.supporters_*`, `ExtensionStats.attached`,
-  `BfsExtensionStats.attached`, etc.).
-
-- **N-16** Module splits: `grow_extension.rs` → `extension/{mod,common,global,local}.rs`;
-  `grow.rs` → `grow.rs` + `grow_extend.rs`; `validate.rs` →
-  `validate/{mod,lines,local_h,step}.rs`. Inner `bfs_grow` body extracted to
-  `process_boundary_cell`. All public re-exports unchanged.
+- `chess-corners` bumped 0.7 → 0.8; the direct `chess-corners-core`
+  dep is gone (the 0.8 facade re-exports every primitive we used).
+  Several upstream config types are now `#[non_exhaustive]` —
+  downstream construction must use `RefinerConfig::saddle_point()` /
+  `::build(...)` rather than struct literals.
+- `calib-targets-core::chess` now `pub use`-re-exports
+  `chess-corners` config types directly instead of mirroring them.
+  `DetectorMode::Radon` and `RefinementMethod::RadonPeak` are
+  exposed; `RefinerKindConfig` and `ChessConfig::from_parts` are
+  removed.
+- `GridIndex` renamed to `GridCoords` workspace-wide; square-grid
+  types gain a `Square` prefix (`SquareGridHomography`,
+  `SquareGridHomographyMesh`, `square_predict_grid_position`, …).
+- `SeedQuadValidator::axes` now returns `[AxisHint; 2]`;
+  `LocalStepPointData::{axis_u, axis_v}` merged into `axes`.
+- `ExtensionCommonParams` extracted as `pub common` on
+  `ExtensionParams` / `LocalExtensionParams`.
+- Public `count` diagnostic fields standardised on `usize`.
+- Internal module splits in `calib-targets-chessboard` (extension/,
+  validate/, grow_extend); public re-exports preserved.
 
 ### Added
 
-- **Mandatory final geometry check** in chessboard-v2 detector —
-  every emitted `Detection` now goes through a Stage-9 precision gate
-  that:
-  1. drops gross mislabels via `validate()` with looser tolerances
-     (`geometry_check_line_tol_rel = 0.45`,
-     `geometry_check_local_h_tol_rel = 0.6` of cell_size) — full-
-     cell / diagonal shifts produce ~1.4 cell residuals, well above
-     these tolerances; perspective-distorted corners are spared;
-  2. drops labelled corners not in the largest cardinally-connected
-     component. A chessboard detection is by construction one
-     `(i, j)`-labelled connected planar graph; isolated singletons
-     and small-component leaks are false positives (typically a
-     marker corner that passed the cluster + parity gates but sits
-     well outside the main grid — e.g. `small2.png` had two such
-     orphans below the labelled grid before this filter).
-  `min_labeled_corners` survivors are required after the drop,
-  otherwise the detection is refused entirely. Catches wrong `(i, j)`
-  labels and isolated false positives that the per-attachment gates
-  couldn't — bench `pos=` does not validate new `(i, j)`
-  assignments, so this is the precision safety net.
-- **Stage 6.75 — post-grow centre refit.** After Stage 6.5 / boosters
-  converge, recompute `(θ₀, θ₁)` from the labelled set's axes alone
-  using the undirected circular mean. Marker-internal corners — which
-  bias the histogram-driven Stage-3 centres ~3° below the true
-  chessboard axes on some ChArUco-style images — don't contribute
-  here, so the refined centres are unbiased. If the shift exceeds
-  `refit_min_shift_deg`, re-classify Strong / NoCluster corners under
-  the new centres, then run two complementary growth passes (in
-  order):
-  - **BFS regrow** (`enable_post_grow_bfs_regrow`, default `true`):
-    demote every `Labeled` corner back to `Clustered` and re-run
-    `grow_from_seed` with the refined centres. Lifts recall on
-    cases where the orphan strip is 1+ cells past the existing
-    bbox edge (small3.png left strip, +21 corners). Can drop a few
-    borderline corners under the centre shift.
-  - **Cardinal-neighbour BFS extension**
-    (`enable_post_grow_bfs_extend`, default `true`,
-    `projective_grid::square::grow::extend_from_labelled`):
-    non-destructive walk over the labelled bbox boundary using
-    cardinal-only prediction (K=1). Recovers corners the regrow
-    above dropped under the centre shift, without precision risk
-    (same tolerances as the initial BFS — wider radii produce
-    SHIFT-INCONSISTENT labelling).
-  - Then Stage 6 / 6.5 with the refined centres for any cells the
-    BFS still missed.
-  Defaults: enabled, `refit_min_labelled = 8`,
-  `refit_min_shift_deg = 0.5°`. Trade-off: chessboard targets gain
-  recall (small3.png 91→104); puzzleboard targets that go through
-  chessboard-v2 incidentally lose perimeter rows
-  (`example2.png` 136→91 — these go through their own pipeline
-  in production). Zero `pos` / `id` / `dup` / SHIFT-INCONSISTENT
-  regressions across the entire bench.
-- **`projective_grid::square::grow::extend_from_labelled`** — new
-  public BFS extension over an existing labelled set. Used by the
-  chessboard refit pass; reusable by any pattern-specific detector
-  that wants to absorb newly-eligible corners without re-running
-  BFS from scratch. Returns `BfsExtensionStats` with
-  `attached / rejected_*` counters.
-- **PIPELINE.md docs** for chessboard, charuco, puzzleboard, marker,
-  and the topological grid sub-pipeline. Concise atomic stage tables
-  (input / decision / output / failure modes / knobs) at
-  `crates/<crate>/docs/PIPELINE.md` (and
-  `crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`). Working
-  reference for diagnosing failures, supersedes the prose sections
-  of `docs/projective_grid_overview.md` for per-pipeline depth.
-- **`IterationTrace.rescue / refit / extension2 / rescue2 /
-  geometry_check`** in `calib-targets-chessboard` — every post-BFS
-  stage now records its `attached / rejected_*` breakdown, so a
-  `bench diagnose` JSON pinpoints exactly where a corner was dropped.
-  `IterationTrace` is now `#[non_exhaustive]` (matches the workspace
-  convention for diagnostic structs).
-- **`bench {run,check,diagnose} --chessboard-config <FILE>`** —
-  optional partial-JSON override for `DetectorParams`, used to sweep
-  detector knobs without rebuilding. Missing fields fall back to
-  defaults via the existing `#[serde(default)]` attributes.
-- **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — atomic
-  stage-by-stage map of the chessboard-v2 detector: per-stage input,
-  decision predicate, output, dominant failure modes, and governing
-  `DetectorParams` knobs. Working reference for diagnosing failures
-  on real images.
+- **Mandatory final geometry check** in the chessboard detector:
+  every emitted `Detection` is run through a precision gate that
+  drops gross mislabels (looser line/local-H tolerances than the
+  per-attachment gates) and any corner outside the largest
+  cardinally-connected component. Catches wrong `(i, j)` labels
+  and isolated false positives that prior stages miss.
+- **Post-grow centre refit (Stage 6.75)**: after the boosters
+  converge, recompute axis centres from the labelled set alone
+  (undirected circular mean), reclassify, and run a BFS regrow
+  plus a cardinal-only BFS extension to pick up cells the original
+  centres missed. Trades 1-2 borderline corners for whole orphan
+  strips on ChArUco-style images.
+- **Topological grid pipeline.**
+  `projective_grid::build_grid_topological` implements the
+  Shu / Brunton / Fiala 2009 grid finder (Delaunay → triangle
+  classification → quad merge → flood-fill labelling). Image-free
+  (axis-driven cell predicate replaces the paper's colour test).
+  Opt-in via
+  `DetectorParams::graph_build_algorithm = Topological`; default
+  stays `ChessboardV2`. ChArUco pins `ChessboardV2` regardless of
+  caller choice.
+- **Local-homography extension.**
+  `extend_via_local_homography` fits a per-candidate `H` from the
+  `K` nearest labelled corners instead of one global fit; tolerates
+  heavy radial distortion and multi-region perspective.
+- **Shared component-merge.**
+  `projective_grid::component_merge::merge_components_local`
+  reunites partial components from either pipeline using local
+  geometry only. The chessboard crate's `enable_component_merge`
+  flag is backed by this shared implementation.
+- **`projective_grid::square::grow::extend_from_labelled`** —
+  reusable cardinal-only BFS extension over an existing labelled
+  set.
+- **PIPELINE.md** per-detector docs (chessboard, charuco,
+  puzzleboard, marker, topological): atomic stage tables of input
+  / decision / output / failure modes / knobs.
+- **Per-stage diagnostics.** `IterationTrace` gains
+  `rescue / refit / extension2 / rescue2 / geometry_check` buckets
+  with `attached / rejected_*` counters; now `#[non_exhaustive]`.
+- `bench {run,check,diagnose} --chessboard-config <FILE>` for
+  partial-JSON override of `DetectorParams` without rebuilds.
+
+### Performance
+
+End-to-end: full `detect_chessboard` on a 12 MP frame drops from
+seconds to tens of milliseconds, zero precision regression on the
+internal regression set.
+
+- `projective_grid::homography::estimate_homography` rewritten via
+  normal equations + 9×9 symmetric eigendecomposition (was a full
+  `(2N × 9)` SVD). Hartley normalisation preserved; agreement with
+  the SVD reference is ≤ 0.01 px in pixel-domain on a randomised
+  battery. Microbench: 1.8× / 2× / 2.6× / 3.3× speedups at
+  N = 9 / 25 / 100 / 225.
+- `extend_via_local_homography` drops the wasted 3×3 quality SVD
+  per cell.
+- `merge_components_local` rewritten as a KD-tree-indexed Hough
+  vote on `(transform, label-delta)`; was `O(P² Q)` per component
+  pair, now linear in matched corners. Two-to-three orders of
+  magnitude on microbenches.
+- `nearest_labelled_by_grid` switched from full-sort to bounded
+  max-heap (`O(L log K)`); cuts the extension stage ~4× end-to-end.
+
+### Tooling
+
+- Opt-in `tracing` feature on `projective-grid`; hot-path entry
+  points emit `tracing::instrument` spans.
+- New `[profile.profiling]` Cargo profile and
+  `examples/profile_grid.rs` driver for `samply record` /
+  `RUST_LOG` tracing dumps; full recipe in `docs/profiling.md`.
+- New criterion microbenches: `topological.rs`, `merge.rs`,
+  `validate.rs`; `homography.rs` adds `K=8/12/20` cases.
 
 ## [0.7.3]
 
@@ -500,445 +427,18 @@ bumps in lockstep: every crate publishes at `0.7.0`.
   `markerboard_roundtrip.py` (the `puzzleboard_roundtrip.py` example
   already existed).
 
-## [0.6.0]
-
-Coordinated workspace release that ships the new
-`calib-targets-puzzleboard` crate. `calib-targets-core` adds the
-`TargetKind::PuzzleBoard` variant, which is a non-additive change to a
-`#[non_exhaustive]` enum but bumps the workspace minor version anyway so
-all crates publish in lockstep at `0.6.0`.
-
-### Added
-
-- Add first-class PuzzleBoard support with a new
-  `calib-targets-puzzleboard` crate. The detector samples edge-midpoint code
-  dots on a chessboard grid, decodes the embedded 501 x 501 master pattern,
-  and returns absolute corner IDs plus target-space positions.
-- Add `TargetKind::PuzzleBoard` variant in `calib-targets-core` so the new
-  detector can populate `TargetDetection.kind`.
-- Add committed PuzzleBoard code-map blobs, generation/verification tools,
-  synthetic and real-image regression tests, and generated PuzzleBoard
-  testdata.
-- Ship the PStelldinger/PuzzleBoard author-canonical `code1`/`code2` maps
-  (`map_a.bin` / `map_b.bin`) and a new `import_author_maps.rs` tool so the
-  shipped maps match the upstream reference implementation; add
-  `tests/interop_authors.rs` to keep the maps byte-compatible.
-- Add PuzzleBoard printable target generation through `calib-targets-print`,
-  including JSON/SVG/PNG output bundles and Python printable dataclasses.
-- Add PuzzleBoard facade helpers, Rust examples, Python bindings, WASM
-  bindings, FFI C ABI structs/functions, and regenerated native headers.
-- Add PuzzleBoard documentation in the crate README, workspace README,
-  mdBook, and release/development command references.
-- Add `PuzzleBoardSearchMode::FixedBoard`. Matches observations directly
-  against the declared board's own bit pattern (derived from
-  `PuzzleBoardSpec` at decode time) under `8 × (rows+1)²` candidate
-  shifts, so any partial view of that specific board decodes to the same
-  master IDs a full-view decode would produce. Cheaper than `Full` for
-  small boards and fast enough for the large ones. Default stays `Full`;
-  opt in via `params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard`.
-  Mirrored in the Python dataclass and WASM TypeScript types; FFI stays
-  on `Full`.
-- Add `cargo bench -p calib-targets --bench puzzleboard_sizes` (criterion
-  comparison of `Full` vs `FixedBoard` across sizes 6, 8, 10, 12, 13, 16,
-  20, 30) and `cargo run --release -p calib-targets --example
-  puzzleboard_size_sweep` (per-stage success/failure/timing table used to
-  pinpoint which pipeline stage a given board size fails at).
-- Overlay every decoded PuzzleBoard edge-bit dot in the WASM demo: sky-blue
-  ring around `bit=1` (white puzzle dot), orange ring around `bit=0` (black
-  puzzle dot), opacity scaled by per-bit confidence.
-
-### Fixed
-
-- Filter PuzzleBoard decode candidates by bit-error rate before selecting the
-  best weighted score, avoiding false negatives when a higher-score candidate
-  exceeds the configured error budget.
-- Re-check the PuzzleBoard minimum edge count after confidence filtering so
-  weak edge samples cannot pass into the decoder as an undersized window.
-- Demo dev server no longer 404s on `calib_targets_wasm_bg.wasm` — Vite's
-  esbuild pre-bundler was rewriting the JS into `.vite/deps/` without
-  copying the sibling `.wasm`, so the `new URL(..., import.meta.url)` fetch
-  hit the SPA fallback. Fixed by adding `calib-targets-wasm` to
-  `optimizeDeps.exclude`.
-- Demo `ResultsPanel` grid readout now reports `max − min + 1` instead of
-  `max + 1`, so a 10 × 10 PuzzleBoard no longer displays as "177 × 177"
-  (master-grid indices start near 167).
-- Demo PuzzleBoard edge-bit overlay now maps `observed_edges` from local to
-  master coordinates via the alignment's D4 + translation before looking up
-  corners, fixing the previously empty overlay.
-- Fix `GridAlignment.transform` TypeScript type in the WASM demo (was
-  `string`; actual serde shape is `{a, b, c, d}`).
-
-### Changed
-
-- Demo toolchain switched from `npm` to `bun` (`demo/bun.lock` is the
-  committed lockfile; `demo/package-lock.json` removed). CI wasm job now
-  uses `oven-sh/setup-bun` + `bun install --frozen-lockfile`.
-- `.claude/CLAUDE.md` gains the new bench + diagnostic example commands
-  and documents the `bun` switch.
-
-## [0.5.3]
-
-### Fixes
-
-- **Python bindings:** fix `MarkerDetection.gc` deserialization. Rust emits
-  `{"i","j"}` (from `GridCoords`), but the Python wrapper was typed as a
-  separate `GridCell` dataclass requiring `{"gx","gy"}`, so every
-  `detect_charuco` call with markers crashed in `from_dict`. Dropped the
-  redundant `GridCell` type; `MarkerDetection.gc` now uses `GridCoords`,
-  matching `LabeledCorner.grid` and `CircleCandidate.cell`.
-- Added `python_tests/test_detect_roundtrip.py` that runs the real extension
-  on repo test images and round-trips result dicts, so Rust/Python dict-key
-  drift fails loudly instead of being masked by hand-written fixtures.
-
-## [0.5.2]
-
-### Changed
-
-- **`projective-grid`:** all public types and functions are now generic over
-  floating-point type (`f32` / `f64`). All types default to `f32`, so existing
-  code compiles unchanged. New `Float` trait alias (`RealField + Copy`) is
-  re-exported from the crate root.
-- `Homography` internal matrix is now `Matrix3<F>` (previously always `f64`).
-  For `f32` users this means slightly less internal precision but no
-  cross-type conversions; `f64` users get full double-precision throughout.
-
-## [0.5.1]
-
-### Fixes
-
-- Fix FFI C++ consumer examples: `config.graph.*` → `config.chessboard.graph.*`
-  after API redesign nested `GridGraphParams` inside `ChessboardParams`.
-- Fix broken intra-doc links (`detect_from_corners`, `min_marker_inliers`).
-- Fix `cargo doc` binary name collision by adding `doc = false` to CLI bin.
-- Regenerate FFI header and Python typing stubs after `#[non_exhaustive]` changes.
-- Add `detect_*_best` sweep functions to Python and WASM bindings.
-- Document pre-release quality gates in CLAUDE.md.
-
-## [0.5.0]
-
-### API redesign
-
-- **Breaking:** `ChessConfig` is now embedded inside each detector's params struct.
-  Facade `detect_*` functions take a single `&Params` argument instead of
-  separate `(&ChessConfig, Params)`. Removed `detect_charuco_default` and
-  `detect_marker_board_default`.
-- **Breaking:** `CharucoDetectorParams` renamed to `CharucoParams`.
-- **Breaking:** `CharucoParams.charuco` field renamed to `.board`.
-- **Breaking:** `MarkerBoardLayout` renamed to `MarkerBoardSpec`.
-- **Breaking:** `GridCell` replaced with `GridCoords` in aruco crate.
-  `BoardCell` removed.
-- Add multi-config sweep API: `detect_chessboard_best`, `detect_charuco_best`,
-  `detect_marker_board_best` try multiple parameter configs and return the best
-  result (most markers, then most corners).
-- Add `CharucoParams::sweep_for_board()` and `ChessboardParams::sweep_default()`
-  presets for common multi-threshold sweep scenarios.
-- Extract shared `calib_targets_core::io::{load_json, write_json, IoError}` to
-  replace duplicated IO boilerplate across crates.
-- Python and WASM bindings accept the new single-config API. The `chess_cfg`
-  parameter is still accepted for backward compatibility (overrides
-  `params.chess` or `params.chessboard.chess` when provided).
-- Python: `CharucoParams` and `MarkerBoardSpec` are the canonical names;
-  `CharucoDetectorParams` and `MarkerBoardLayout` remain as aliases.
-
-### Multi-component ChArUco detection
-
-- Merge disconnected grid components for 30-50% more corners on challenging
-  images (Scheimpflug optics, narrow focus strips). Each component is aligned
-  independently via marker-based D4 rotation, then merged.
-
-### AprilTag max_hamming fix
-
-- `CharucoParams::for_board()` now sets `max_hamming` to
-  `min(2, dictionary.max_correction_bits)` instead of 0, improving recall for
-  AprilTag-based ChArUco boards (e.g. `DICT_APRILTAG_36h10`).
-
-### WebAssembly bindings and browser demo
-
-- Add the new `calib-targets-wasm` crate (`crates/calib-targets-wasm/`) with
-  `wasm-bindgen` exports for all detection pipelines: `detect_corners`,
-  `detect_chessboard`, `detect_charuco`, and `detect_marker_board`. The crate
-  depends directly on the detector crates and `chess-corners` (without `rayon`
-  or `ml-refiner`) so it compiles cleanly for `wasm32-unknown-unknown`.
-- Expose `rgba_to_gray` for browser canvas RGBA-to-grayscale conversion and
-  `default_chess_config` / `default_chessboard_params` /
-  `default_marker_board_params` helpers for populating UI defaults from Rust.
-- Config and result objects are passed as plain JS objects via
-  `serde-wasm-bindgen` (no JSON string round-trips).
-- WASM binary: ~436 KB raw, ~195 KB gzipped.
-- Add a React/TypeScript demo app at `demo/` (Vite 6, React 19) with:
-  image upload (drag-and-drop), detection mode selector (Corners / Chessboard /
-  ChArUco / Marker Board), interactive parameter sliders, canvas overlay with
-  colored corners and grid edges, and a results panel with timing and JSON view.
-- Add `wasm` CI job to `.github/workflows/ci.yml`: builds WASM with
-  `wasm-pack`, verifies output artifacts, and builds the demo app with
-  TypeScript checking.
-- Add `scripts/build-wasm.sh` helper to build WASM into `demo/pkg/`.
-- Add `default-members` to the root workspace manifest so `cargo test` excludes
-  the WASM crate by default.
-
-### Python bindings API refactoring
-
-- Flatten `ChessConfig` in Python: remove nested `ChessCornerParams`,
-  `CoarseToFineParams`, `PyramidParams`; all fields are now top-level with
-  concrete defaults. Add `RefinerConfig`, `CenterOfMassConfig`,
-  `ForstnerConfig`, `SaddlePointConfig`.
-- Fold `GridGraphParams` into `ChessboardParams` as `chessboard.graph` across
-  all Rust crates, Python bindings, FFI, and JSON configs.
-- Add `ChessboardDetectConfig` / `ChessboardDetectReport` and
-  `MarkerBoardDetectConfig` / `MarkerBoardDetectReport` for JSON-driven
-  detection workflows.
-- Rewrite `calib-targets-py/src/lib.rs` from ~3600 lines to ~290 lines using a
-  dict-based JSON bridge (Python dataclass `to_dict()` -> `serde_json` ->
-  Rust type). Remove all `*Source` enums, `*Overrides` structs, and manual
-  extraction functions.
-
-## [0.4.2]
-
-### Release engineering
-
-- Technical release: bump coordinated crate versions to `0.4.2` after
-  publish-workflow fixes.
-
-## [0.4.1]
-
-### Release engineering
-
-- Technical release: bump coordinated crate versions to `0.4.1` to fix
-  publication issues.
-
-## [0.4.0]
-
-### Standalone `projective-grid` crate
-
-- Add the new publishable [`projective-grid`](https://crates.io/crates/projective-grid)
-  crate for pattern-agnostic 2D grid tooling: pluggable `NeighborValidator`
-  traits, grid graph construction, connected-component traversal, BFS grid
-  coordinate assignment, homography estimation, global rectification, per-cell
-  mesh rectification, and grid smoothness prediction.
-- Extract the generic square-grid geometry and homography machinery from
-  `calib-targets-core` into `projective-grid`. `calib-targets-core` keeps the
-  image-space pieces (`GrayImage*`, sampling, `warp_perspective_gray`) and
-  re-exports `Homography`, `GridCoords` (`GridIndex` alias), `GridAlignment`,
-  `GridTransform`, and homography-estimation helpers for downstream
-  compatibility.
-- Refactor `calib-targets-chessboard` to delegate grid-graph construction and
-  traversal to `projective-grid`, while keeping chessboard-specific neighbor
-  validation in-crate. Switch ChArUco grid smoothness to the shared
-  `projective_grid::predict_grid_position` helper instead of maintaining a
-  separate midpoint-prediction implementation.
-
-### Hex grids and built-in validators
-
-- Add `projective_grid::hex` with pointy-top axial-coordinate support for
-  6-connected graph construction, BFS coordinate assignment, grid smoothness
-  prediction, `D6` alignment transforms, `HexGridHomography`, and
-  `HexGridHomographyMesh` for per-triangle affine/projective rectification.
-- Add ready-to-use validator implementations in
-  `projective_grid::validators`:
-  `XJunctionValidator` for ChESS-like oriented square-grid corners,
-  `SpatialSquareValidator` for unoriented square lattices, and
-  `SpatialHexValidator` for unoriented hex lattices such as ringgrids.
-
-### Native C API and bindings
-
-- Expose `ScanDecodeConfig::multi_threshold` in the FFI as
-  `ct_scan_decode_config_t::multi_threshold` so native callers can control the
-  multi-threshold marker decode path instead of being forced to the Rust
-  default.
-- Add native test coverage that verifies `ct_scan_decode_config_t` preserves
-  the `multi_threshold` flag when converting into the Rust
-  `ScanDecodeConfig`.
-- Make the Python typing-artifact generator robust to multiline
-  `#[pyclass(...)]` attributes so generated `_core.pyi` stubs stay in sync
-  after adding `skip_from_py_object` to config-heavy binding classes.
-
-### Workspace and release engineering
-
-- Centralize shared crate metadata and dependency versions in the workspace
-  root via `[workspace.package]` and `[workspace.dependencies]` so the Rust
-  crates inherit coordinated `0.4` versioning and one dependency set.
-- Raise the documented MSRV to Rust `1.88` and surface it in the workspace
-  metadata and top-level README badge.
-- Update docs and packaging references from `0.3` to `0.4`, including the
-  getting-started dependency snippets and the coordinated Rust/Python/native
-  release metadata.
-- Include `projective-grid` in the coordinated crates.io release flow and add
-  CI validation that the publish order matches inter-crate dependencies before
-  attempting the tagged publish job.
-
-## [0.3.2]
-
-### ChArUco — local grid smoothness pre-filter
-
-- **New `grid_smoothness` module** in `calib-targets-charuco`: runs between
-  `build_corner_map` and `build_marker_cells` to detect corners whose pixel
-  position is inconsistent with their grid neighbors (midpoint prediction).
-  This catches false corners from ArUco marker internal features picked up by
-  ChESS under a loose orientation tolerance (e.g. 22.5°).  Flagged corners are
-  re-detected locally via `redetect_corner_in_roi`; if re-detection fails, the
-  corner is snapped to the predicted position (never removed) so that marker
-  cell completeness — and thus marker detection recall — is preserved.
-- **New `grid_smoothness_threshold_rel` parameter** on
-  `CharucoDetectorParams` (default `0.05`, i.e. 3 px at 60 px/sq).
-  Set to `f32::INFINITY` to disable.  Also exposed in the FFI
-  (`ct_charuco_detector_params_t`) with the same default.
-- Promote `redetect_corner_in_roi` from private to `pub(crate)` in
-  `corner_validation.rs` so the grid smoothness module can reuse it.
-
-## [0.3.1]
-
-### Chessboard grid graph — perspective-invariant neighbor direction fix
-
-- **Fix direction symmetry in `is_good_neighbor_with_orientation`**: the old
-  code indexed diagonal directions by the source/neighbor cluster index
-  (`grid_diagonals[ci]` / `grid_diagonals[cj]`), so the sign of `v_minus = oi
-  - oj` depended on which corner was the "source" and which was the "neighbor".
-  This broke the A→B Right ↔ B→A Left invariant the BFS relies on, causing
-  spurious disconnected components and missing grid edges on rotated or
-  perspective-distorted boards.
-- **Canonical reference frame**: switch to `grid_diagonals[0]` and
-  `grid_diagonals[1]` (independent of edge direction) so all edges in the graph
-  share the same `v_plus`/`v_minus` axes. Canonicalize the sign of `v_minus`
-  via the cross-product determinant so that `(v_minus, v_plus)` always form a
-  right-handed frame in image coordinates, regardless of the arbitrary order
-  produced by orientation clustering.
-- **Perspective-invariant direction classification**: replace the image-space
-  `direction_quadrant` heuristic (which broke for rotated boards) with signed
-  dot products against the local grid axes. The resulting Right/Left/Down/Up
-  labels are now consistent with the local grid geometry under perspective, not
-  just when the board is nearly axis-aligned.
-- Add a `rotated_grid_forms_single_component` unit test that constructs a 4×4
-  corner grid at an arbitrary 40° rotation and verifies the graph BFS produces
-  a single connected component with correct grid coordinates.
-
-### ChArUco marker detection — improved recall on blurry images
-
-- **Multi-threshold binarization**: the marker decode step now tries multiple
-  binarization thresholds per cell (Otsu, Otsu±10, Otsu±15, two percentile
-  thresholds, and a border-guided midpoint) and selects the one that yields a
-  valid dictionary match with hamming=0. This recovers markers that were
-  previously lost on blurry or unevenly-lit images because a single Otsu
-  threshold flipped one or two border or payload bits. Controlled by the new
-  `ScanDecodeConfig::multi_threshold` field (default `true`); exposed as
-  `ArucoScanConfig::multi_threshold` for JSON-level overrides.
-- **Lower default `min_border_score` for ChArUco**: the per-cell border-black
-  ratio threshold is now `0.75` (was `0.85`) in `CharucoDetectorParams::for_board`.
-  The downstream alignment and corner-validation stages already act as
-  false-positive guards, so the looser scan-stage bar improves recall without
-  introducing spurious detections.
-- Add `percentile_threshold`, `border_guided_threshold`, and
-  `compute_threshold_candidates` helper functions to `calib-targets-aruco`
-  (crate-private).
-- Move `log` from a dev-dependency to a regular dependency in
-  `calib-targets-aruco` to support debug logging in production builds.
-
-### Diagnostic logging across the detection pipeline
-
-- **`calib-targets-chessboard`**: add `log::debug!` at every significant
-  rejection point in the chessboard detector — early corner count check,
-  post-orientation-filter count, per-component BFS/grid-fit/completeness
-  rejections, and the accepted-candidate summary. Add `log_graph_summary`
-  helper that logs grid-graph component sizes and node-degree distribution.
-- **`calib-targets-charuco` pipeline**: add `log::debug!` / `log::warn!` at
-  each stage — chessboard success/failure (with config details on failure),
-  marker sampling cell counts, scan result count, alignment result (transform +
-  inlier count), pre- and post-validation corner counts. Failed-cell details
-  (border-score, observed code) now logged at `debug` level from
-  `scan_decode_markers_in_cells`.
-- **`charuco_detect` example**: switch default log level to `debug`; add
-  config-echo logging on startup.
-
-## [0.3.0]
-
-### Printable targets
-
-- Add the dedicated `calib-targets-print` crates.io crate to the coordinated
-  Rust release flow and document it as a first-class published printable-target
-  entry point alongside `calib_targets::printable`.
-- Add a canonical printable-target guide with JSON, Rust, CLI, and Python
-  flows, output-bundle expectations, and print-at-100%-scale guidance.
-- Productize the repo-local `calib-targets-cli` workflow with
-  `list-dictionaries` and `validate`, clearer help text, and integration
-  coverage for discover/init/validate/generate flows.
-- Add explicit millimeter-aware conversions from `CharucoBoardSpec` and
-  `MarkerBoardLayout` into printable target specs and printable documents.
-
-### Native C API
-
-- Add the repo-local `calib-targets-ffi` crate and generated public C header
-  for native consumers. The FFI crate remains `publish = false` and is built
-  from the workspace rather than distributed on crates.io.
-- Add fixed-struct C detector APIs for chessboard, ChArUco, and checkerboard
-  marker-board detection over 8-bit grayscale images, with opaque handles,
-  explicit status codes, caller-owned query/fill buffers, full ChESS
-  configuration, and built-in dictionary names only.
-- Add repo-owned native validation for the C API: generated-header drift
-  checks, a plain C smoke example, a thin header-only C++17 RAII
-  wrapper/example, and a Cargo-driven smoke test that compiles and runs
-  external C and C++ consumers against the built shared library.
-- Add repo-local ergonomic C++/CMake consumer packaging: stage Cargo-built
-  artifacts into a deterministic CMake package prefix, export
-  `calib_targets_ffi::c` and `calib_targets_ffi::cpp` targets, and validate a
-  repo-owned `find_package(...)` consumer example in CI.
-- Add tagged native release assets for `calib-targets-ffi`: supported GitHub
-  releases now attach per-platform archives containing the staged `include/`,
-  `lib/`, and `lib/cmake/` prefix so downstream C/C++ consumers can integrate
-  without building Rust from source.
-- Clarify current native-consumer boundaries: the release archives are the
-  supported distribution format for Linux, macOS, and Windows tags, but there
-  is still no crates.io/package-manager distribution, installer flow, or signed
-  native package.
-
-## [0.2.5]
-- Maintenance release: bump crate versions to `0.2.5`.
-
-## [0.2.4]
-- Fix ChArUco false-corner detection: ArUco marker-interior saddle points
-  could displace true chessboard-grid corners in the graph BFS and produce
-  ChArUco corners with correct IDs but wrong pixel positions.
-- Add marker-constrained corner validation stage in `calib-targets-charuco`:
-  estimates a board-to-image homography from all inlier marker corners and
-  flags corners whose reprojection error exceeds `corner_validation_threshold_rel
-  * px_per_square` (default 8%). Flagged corners are re-detected via a local
-  ChESS patch search seeded at the projected position.
-- Add `corner_validation_threshold_rel` and `corner_redetect_params` to
-  `CharucoDetectorParams`.
-- Add `chess-corners-core` as a production dependency of `calib-targets-charuco`.
-
-## [0.2.3]
-- Python bindings: switch to a mixed Rust/Python package layout with private
-  extension module `calib_targets._core` and typed public package sources.
-- Python API: hard reset to a dataclass-first surface with typed-only config
-  inputs and typed detector result objects.
-- Add `to_dict()` / `from_dict(...)` compatibility helpers on public config and
-  result models.
-- Add generated typing artifacts (`_core.pyi`, dictionary literal definitions)
-  and a generator script with `--check` mode for CI.
-- Add Python type-check smoke coverage (Pyright + mypy) in CI.
-
-## [0.2.2]
-- Remove redundant ChArUco board parameter; board spec now lives in params for Rust and Python APIs.
-- `CharucoDetector::new` now takes only `CharucoDetectorParams`.
-- Add typed Python classes for `CharucoBoardSpec`, `MarkerBoardLayout`, and `MarkerCircleSpec`.
-- Make Python config classes mutable via settable attributes.
-- Document authoritative Python output schema in `crates/calib-targets-py/README.md`.
-
-## [0.2.1]
-- Add Python-friendly config/params classes with IDE signatures while keeping dict overrides.
-- Allow partial dict overrides for detector params without specifying full structs.
-- Validate unknown keys in Python config dicts with clearer error paths.
-- Improve Python conversion errors to include parameter paths and accept NumPy scalars.
-
-## [0.2.0]
-- Document the Python bindings across the workspace README, crate readmes, and book.
-- Clarify marker-board `cell_size` usage so `target_position` is populated when alignment succeeds.
-- Fix macOS Python binding linking via a PyO3 build script.
-- Refresh PyO3 bindings to the Bound API to remove deprecation warnings.
-- Bump `chess-corners` dependency to v0.3.
-
-## [0.1.2]
-- Speed up marker circle scoring with LUT-based sampling and a center precheck.
-- Add a fast in-bounds bilinear sampling helper for hot paths.
-
-## [0.1.1]
-- Initial public release of the calib-targets crates.
+## Older releases
+
+The full release history is preserved under
+[`docs/changelog/`](docs/changelog/), grouped by minor-version family:
+
+- [`0.6.x`](docs/changelog/0.6.x.md) — PuzzleBoard crate launch
+- [`0.5.x`](docs/changelog/0.5.x.md) — single-config detector API,
+  multi-component ChArUco, WebAssembly bindings
+- [`0.4.x`](docs/changelog/0.4.x.md) — standalone `projective-grid`
+  crate, hex grids, native C API hardening
+- [`0.3.x`](docs/changelog/0.3.x.md) — printable-target tooling,
+  C ABI / FFI crate, ChArUco recall improvements
+- [`0.2.x`](docs/changelog/0.2.x.md) — Python bindings refresh,
+  ChArUco false-corner fix
+- [`0.1.x`](docs/changelog/0.1.x.md) — initial public releases

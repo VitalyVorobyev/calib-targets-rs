@@ -48,11 +48,9 @@ use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
     estimate_homography_rect_to_img, GrayImageView, LabeledCorner, TargetDetection, TargetKind,
 };
-use chess_corners_core::{
-    detect::detect_corners_from_response_with_refiner,
-    imageview::ImageView,
-    response::{chess_response_u8_patch, Roi},
-    ChessParams, Refiner,
+use chess_corners::{
+    chess_response_u8_patch, detect_corners_from_response_with_refiner, ChessParams, ImageView,
+    Refiner, Roi,
 };
 use nalgebra::Point2;
 

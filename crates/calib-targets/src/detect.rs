@@ -64,6 +64,7 @@ pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
 pub fn detect_corners(img: &::image::GrayImage, cfg: &ChessConfig) -> Vec<core::Corner> {
     let cfg = to_chess_corners_config(cfg);
     find_chess_corners_image(img, &cfg)
+        .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
         .collect()
@@ -508,6 +509,17 @@ mod tests {
 
     #[test]
     fn non_default_conversion_preserves_all_fields() {
+        let forstner = ForstnerConfig {
+            radius: 3,
+            min_trace: 9.0,
+            min_det: 2.0,
+            max_condition_number: 123.0,
+            max_offset: 2.5,
+        };
+        let mut refiner = RefinerConfig::default();
+        refiner.kind = RefinementMethod::Forstner;
+        refiner.forstner = forstner;
+
         let cfg = ChessConfig {
             detector_mode: DetectorMode::Broad,
             descriptor_mode: DescriptorMode::Canonical,
@@ -515,17 +527,7 @@ mod tests {
             threshold_value: 12.5,
             nms_radius: 5,
             min_cluster_size: 7,
-            refiner: RefinerConfig {
-                kind: RefinementMethod::Forstner,
-                forstner: ForstnerConfig {
-                    radius: 3,
-                    min_trace: 9.0,
-                    min_det: 2.0,
-                    max_condition_number: 123.0,
-                    max_offset: 2.5,
-                },
-                ..RefinerConfig::default()
-            },
+            refiner,
             pyramid_levels: 4,
             pyramid_min_size: 96,
             refinement_radius: 6,
@@ -542,19 +544,13 @@ mod tests {
         expected.threshold_value = 12.5;
         expected.nms_radius = 5;
         expected.min_cluster_size = 7;
-        expected.refiner = chess_corners::RefinerConfig {
-            kind: chess_corners::RefinementMethod::Forstner,
-            center_of_mass: chess_corners::CenterOfMassConfig::default(),
-            forstner: chess_corners::ForstnerConfig {
-                radius: 3,
-                min_trace: 9.0,
-                min_det: 2.0,
-                max_condition_number: 123.0,
-                max_offset: 2.5,
-            },
-            saddle_point: chess_corners::SaddlePointConfig::default(),
-            radon_peak: chess_corners::RadonPeakConfig::default(),
-        };
+        expected.refiner = chess_corners::RefinerConfig::build(
+            chess_corners::RefinementMethod::Forstner,
+            chess_corners::CenterOfMassConfig::default(),
+            forstner,
+            chess_corners::SaddlePointConfig::default(),
+            chess_corners::RadonPeakConfig::default(),
+        );
         expected.pyramid_levels = 4;
         expected.pyramid_min_size = 96;
         expected.refinement_radius = 6;
@@ -568,34 +564,30 @@ mod tests {
     fn all_refiner_variants_convert() {
         // Since RefinerConfig is a direct re-export from chess-corners,
         // to_chess_corners_config must pass it through unchanged.
-        let refiners = [
-            RefinerConfig {
-                kind: RefinementMethod::CenterOfMass,
-                center_of_mass: CenterOfMassConfig { radius: 4 },
-                ..RefinerConfig::default()
-            },
-            RefinerConfig {
-                kind: RefinementMethod::Forstner,
-                forstner: ForstnerConfig {
-                    radius: 3,
-                    min_trace: 11.0,
-                    min_det: 0.75,
-                    max_condition_number: 512.0,
-                    max_offset: 1.75,
-                },
-                ..RefinerConfig::default()
-            },
-            RefinerConfig {
-                kind: RefinementMethod::SaddlePoint,
-                saddle_point: SaddlePointConfig {
-                    radius: 5,
-                    det_margin: 0.25,
-                    max_offset: 1.25,
-                    min_abs_det: 0.125,
-                },
-                ..RefinerConfig::default()
-            },
-        ];
+        let mut com = RefinerConfig::default();
+        com.kind = RefinementMethod::CenterOfMass;
+        com.center_of_mass = CenterOfMassConfig { radius: 4 };
+
+        let mut forstner = RefinerConfig::default();
+        forstner.kind = RefinementMethod::Forstner;
+        forstner.forstner = ForstnerConfig {
+            radius: 3,
+            min_trace: 11.0,
+            min_det: 0.75,
+            max_condition_number: 512.0,
+            max_offset: 1.75,
+        };
+
+        let mut saddle = RefinerConfig::default();
+        saddle.kind = RefinementMethod::SaddlePoint;
+        saddle.saddle_point = SaddlePointConfig {
+            radius: 5,
+            det_margin: 0.25,
+            max_offset: 1.25,
+            min_abs_det: 0.125,
+        };
+
+        let refiners = [com, forstner, saddle];
 
         for refiner in refiners.iter() {
             let cfg = ChessConfig {

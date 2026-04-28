@@ -1,6 +1,6 @@
 use crate::float_helpers::lit;
 use crate::Float;
-use nalgebra::{DMatrix, Matrix3, Point2, SMatrix, SVector, Vector3};
+use nalgebra::{Matrix3, Point2, SMatrix, SVector, Vector3};
 
 /// A 3×3 projective homography matrix.
 ///
@@ -260,34 +260,63 @@ pub fn estimate_homography<F: Float>(
     let (im, ti) = normalize_points(dst_pts);
 
     let n = src_pts.len();
-    let rows = 2 * n;
-    let mut a = DMatrix::<F>::zeros(rows, 9);
+    let zero = F::zero();
+    let neg_one = -F::one();
 
+    // Accumulate Aᵀ A directly into a stack 9×9 without ever
+    // materialising the (2N × 9) matrix A. For correspondence
+    // `(x, y) ↦ (u, v)` the two DLT rows are
+    //   row₂ₖ   = [-x, -y, -1,  0,  0,  0, ux, uy, u]
+    //   row₂ₖ₊₁ = [ 0,  0,  0, -x, -y, -1, vx, vy, v]
+    // and Aᵀ A = Σₖ (rowᵀ row) summed over both rows of each pair.
+    let mut m: SMatrix<F, 9, 9> = SMatrix::zeros();
     for k in 0..n {
         let x = r[k].x;
         let y = r[k].y;
         let u = im[k].x;
         let v = im[k].y;
 
-        a[(2 * k, 0)] = -x;
-        a[(2 * k, 1)] = -y;
-        a[(2 * k, 2)] = -F::one();
-        a[(2 * k, 6)] = u * x;
-        a[(2 * k, 7)] = u * y;
-        a[(2 * k, 8)] = u;
-
-        a[(2 * k + 1, 3)] = -x;
-        a[(2 * k + 1, 4)] = -y;
-        a[(2 * k + 1, 5)] = -F::one();
-        a[(2 * k + 1, 6)] = v * x;
-        a[(2 * k + 1, 7)] = v * y;
-        a[(2 * k + 1, 8)] = v;
+        let row1 = SVector::<F, 9>::from_column_slice(&[
+            -x,
+            -y,
+            neg_one,
+            zero,
+            zero,
+            zero,
+            u * x,
+            u * y,
+            u,
+        ]);
+        let row2 = SVector::<F, 9>::from_column_slice(&[
+            zero,
+            zero,
+            zero,
+            -x,
+            -y,
+            neg_one,
+            v * x,
+            v * y,
+            v,
+        ]);
+        m += row1 * row1.transpose();
+        m += row2 * row2.transpose();
     }
 
-    let svd = a.svd(true, true);
-    let vt = svd.v_t?;
-    let last = vt.nrows().checked_sub(1)?;
-    let h = vt.row(last);
+    // The right singular vector of A for σ_min is the eigenvector of
+    // Aᵀ A for the smallest eigenvalue: A = U Σ Vᵀ ⇒ Aᵀ A = V Σ² Vᵀ.
+    // Hartley normalisation keeps cond(A) ≲ 10³, so cond(Aᵀ A) ≲ 10⁶ —
+    // comfortably within f32 precision. Sign is unconstrained here but
+    // pinned downstream by `normalize_homography` dividing by h[(2,2)].
+    let eig = m.symmetric_eigen();
+    let mut min_idx = 0usize;
+    let mut min_val = eig.eigenvalues[0];
+    for k in 1..9 {
+        if eig.eigenvalues[k] < min_val {
+            min_val = eig.eigenvalues[k];
+            min_idx = k;
+        }
+    }
+    let h = eig.eigenvectors.column(min_idx);
 
     let hn = Matrix3::<F>::from_row_slice(&[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]]);
 
@@ -611,5 +640,171 @@ mod tests {
             assert!((a.x - b.x).abs() < 1e-8);
             assert!((a.y - b.y).abs() < 1e-8);
         }
+    }
+
+    /// Reference DLT path matching the SVD-based implementation that
+    /// existed before the normal-equations + 9×9 sym-eig rewrite. Kept
+    /// inline so the cross-check test below has a frozen baseline that
+    /// the production path can drift away from only within the
+    /// numerical-equivalence contract.
+    fn dlt_via_svd_reference(
+        src_pts: &[Point2<f32>],
+        dst_pts: &[Point2<f32>],
+    ) -> Option<Homography<f32>> {
+        if src_pts.len() != dst_pts.len() || src_pts.len() < 4 {
+            return None;
+        }
+        let (r, tr) = normalize_points(src_pts);
+        let (im, ti) = normalize_points(dst_pts);
+
+        let n = src_pts.len();
+        let rows = 2 * n;
+        let mut a = nalgebra::DMatrix::<f32>::zeros(rows, 9);
+        for k in 0..n {
+            let x = r[k].x;
+            let y = r[k].y;
+            let u = im[k].x;
+            let v = im[k].y;
+            a[(2 * k, 0)] = -x;
+            a[(2 * k, 1)] = -y;
+            a[(2 * k, 2)] = -1.0;
+            a[(2 * k, 6)] = u * x;
+            a[(2 * k, 7)] = u * y;
+            a[(2 * k, 8)] = u;
+
+            a[(2 * k + 1, 3)] = -x;
+            a[(2 * k + 1, 4)] = -y;
+            a[(2 * k + 1, 5)] = -1.0;
+            a[(2 * k + 1, 6)] = v * x;
+            a[(2 * k + 1, 7)] = v * y;
+            a[(2 * k + 1, 8)] = v;
+        }
+        let svd = a.svd(true, true);
+        let vt = svd.v_t?;
+        let last = vt.nrows().checked_sub(1)?;
+        let h = vt.row(last);
+        let hn =
+            Matrix3::<f32>::from_row_slice(&[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]]);
+        let h_den = denormalize_homography(hn, tr, ti)?;
+        let h_den = normalize_homography(h_den)?;
+        Some(Homography::new(h_den))
+    }
+
+    /// Tiny deterministic xorshift32 PRNG so the random-battery test
+    /// is reproducible without pulling in a `rand` dev-dependency for
+    /// one helper.
+    struct XorShift32(u32);
+    impl XorShift32 {
+        fn new(seed: u32) -> Self {
+            Self(seed.max(1))
+        }
+        fn next_u32(&mut self) -> u32 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            self.0 = x;
+            x
+        }
+        /// Uniform draw in `(-1, 1)`.
+        fn unit(&mut self) -> f32 {
+            (self.next_u32() as f32 / u32::MAX as f32) * 2.0 - 1.0
+        }
+    }
+
+    #[test]
+    fn dlt_matches_old_svd_path_on_random_battery() {
+        // Forward-error contract: for a random battery of well-
+        // conditioned ground-truth homographies, the new
+        // normal-equations + 9×9 sym-eig path produces warped points
+        // that agree with the SVD reference to ≤ 0.01 px on a 100-px
+        // scale (equivalent to ~1e-4 relative). Both paths likewise
+        // agree with the ground-truth H to ≤ 0.01 px. Comparing in
+        // pixel-domain is the contract that actually matters
+        // downstream: H is consumed via `apply(...)` to predict cell
+        // positions, never read entry-by-entry.
+        //
+        // Per-entry relative error on `H` itself can drift up to ~1e-3
+        // because Hartley-normalised cond(A) ≈ 10²-10³ and the
+        // normal-equations route squares it (cond(AᵀA) ≈ 10⁴-10⁶);
+        // in f32 the resulting backward error on the smallest
+        // eigenvector can hit 1e-3 on individual entries. The
+        // pixel-domain test absorbs the gauge-like cancellation that
+        // makes per-entry comparison overly pessimistic.
+        let mut rng = XorShift32::new(42);
+
+        let mut max_fwd_err_new = 0.0f32;
+        let mut max_fwd_err_ref = 0.0f32;
+        let mut max_pair_err = 0.0f32;
+        let mut sample_count = 0usize;
+
+        for _ in 0..1000 {
+            // Random ground-truth H with mild perspective.
+            let gt = Homography::new(Matrix3::new(
+                1.0 + 0.5 * rng.unit(),
+                0.2 * rng.unit(),
+                50.0 * rng.unit(),
+                0.2 * rng.unit(),
+                1.0 + 0.5 * rng.unit(),
+                50.0 * rng.unit(),
+                0.001 * rng.unit(),
+                0.001 * rng.unit(),
+                1.0,
+            ));
+            // 12 source points uniformly on ~cell-grid scale.
+            let src: Vec<Point2<f32>> = (0..12)
+                .map(|_| Point2::new(100.0 * rng.unit(), 100.0 * rng.unit()))
+                .collect();
+            let dst: Vec<Point2<f32>> = src.iter().map(|&p| gt.apply(p)).collect();
+
+            let Some(new_h) = estimate_homography(&src, &dst) else {
+                continue;
+            };
+            let Some(ref_h) = dlt_via_svd_reference(&src, &dst) else {
+                continue;
+            };
+
+            // Forward errors against ground truth at the source points.
+            for &p in &src {
+                let new_p = new_h.apply(p);
+                let ref_p = ref_h.apply(p);
+                let gt_p = gt.apply(p);
+                let new_err = ((new_p.x - gt_p.x).powi(2) + (new_p.y - gt_p.y).powi(2)).sqrt();
+                let ref_err = ((ref_p.x - gt_p.x).powi(2) + (ref_p.y - gt_p.y).powi(2)).sqrt();
+                let pair_err = ((new_p.x - ref_p.x).powi(2) + (new_p.y - ref_p.y).powi(2)).sqrt();
+                if new_err > max_fwd_err_new {
+                    max_fwd_err_new = new_err;
+                }
+                if ref_err > max_fwd_err_ref {
+                    max_fwd_err_ref = ref_err;
+                }
+                if pair_err > max_pair_err {
+                    max_pair_err = pair_err;
+                }
+            }
+
+            sample_count += 1;
+        }
+
+        assert!(
+            sample_count > 900,
+            "expected most random samples to be valid, got {sample_count}"
+        );
+        // Both paths agree with ground truth to well below 0.01 px on
+        // a 100-px scale.
+        assert!(
+            max_fwd_err_new < 1e-2,
+            "new path max forward error {max_fwd_err_new} px exceeds 1e-2"
+        );
+        assert!(
+            max_fwd_err_ref < 1e-2,
+            "reference SVD max forward error {max_fwd_err_ref} px exceeds 1e-2"
+        );
+        // New vs reference: similarly bounded since both are within
+        // their backward-error budget against gt.
+        assert!(
+            max_pair_err < 1e-2,
+            "new vs reference max pixel divergence {max_pair_err} px exceeds 1e-2"
+        );
     }
 }

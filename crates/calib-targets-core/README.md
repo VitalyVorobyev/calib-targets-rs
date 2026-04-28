@@ -14,7 +14,7 @@ writing a new detector or consuming detection results without the facade.
 
 ```toml
 [dependencies]
-calib-targets-core = "0.7"
+calib-targets-core = "0.8"
 nalgebra = "0.34"
 ```
 
