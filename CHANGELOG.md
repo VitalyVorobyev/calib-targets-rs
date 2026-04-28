@@ -23,6 +23,19 @@ This project follows [Semantic Versioning](https://semver.org/).
   regression** on the internal regression set. The original tiebreaker
   (preferring identity-transform matches by iteration order) is
   preserved as an explicit tiebreaker on transform index.
+- **`projective_grid::square::extension::local::nearest_labelled_by_grid`
+  switched from full-sort to bounded max-heap.** The previous
+  implementation allocated a `Vec` of all labelled corners, sorted by
+  Manhattan distance, and took the top-K — `O(L log L)` per cell. With
+  ~1100 labelled corners and ~9000 candidate cells per extension pass,
+  this routine accounted for roughly 84 % of `extend_via_local_homography`
+  self-time on a representative high-resolution frame. The new
+  bounded-heap variant is `O(L log K)` per cell (`K = 8` by default)
+  and avoids the per-cell allocation entirely. Cuts the overall
+  ChessboardV2 extension stage wall-clock by roughly 4× end-to-end on
+  the same frame, with the same deterministic
+  `(distance, i, j, idx)` ordering downstream callers depend on, and
+  zero precision regression on the internal regression set.
 
 ### Profiling tooling
 
