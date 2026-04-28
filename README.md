@@ -13,15 +13,15 @@ stable C ABI. One grid-first algorithmic core; a single
 
 ![Target gallery — chessboard, ChArUco, PuzzleBoard, marker board](docs/img/target_gallery.png)
 
-> **Status:** feature-complete, heading into a 0.7 release. APIs are
+> **Status:** feature-complete, heading into a 0.8 release. APIs are
 > stabilising but may still change at minor versions.
 
-| Target | When to use |
+| Target | What it is |
 |---|---|
-| **Chessboard** | Simplest option; no markers needed. |
-| **ChArUco** | Partial views OK, unique corner IDs. |
-| **PuzzleBoard** | Self-identifying chessboard with `Full` / `FixedBoard` search, soft-log-likelihood scoring, and per-frame decode diagnostics. Any visible fragment yields the **same absolute corner IDs** a full-view decode would. Multi-camera rigs, heavy occlusion. |
-| **Marker board** | Checkerboard + circle markers; unique origin without a dictionary. |
+| **Chessboard** | Plain checkerboard. Detector returns labelled corner positions with `(0, 0)` rebased to the visual top-left. No markers; corners are not individually identified. |
+| **ChArUco** | Chessboard with ArUco markers in white squares. Each labelled corner gets a globally-unique ID derived from the surrounding markers; partial views decode. |
+| **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood scoring with `score_margin` / runner-up diagnostics for downstream consistency checks. |
+| **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
 
@@ -35,18 +35,32 @@ Full documentation: [book][book] · [API reference][api] · [getting-started tut
   then decode anchors / dots / circles in rectified cells". The heavy
   lifting lives in [`calib-targets-chessboard`] and
   [`projective-grid`][projective-grid-readme].
+- **Two grid pipelines, one output type.** The default ChessboardV2
+  pipeline is invariant-first seed-and-grow with adaptive local-step
+  prediction, battle-tested across all four target families. The
+  opt-in topological pipeline (Shu / Brunton / Fiala 2009) is image-
+  free Delaunay + edge-classification + flood-fill labelling that runs
+  faster and denser on clean PuzzleBoards. Selectable per call via
+  `DetectorParams::graph_build_algorithm`; ChArUco unconditionally
+  pins ChessboardV2.
 - **Local invariants, not global warps.** Graph construction, seed
-  formation, and validation all work on local neighbourhoods — so
-  moderate perspective and radial distortion degrade gracefully without
-  an explicit distortion model.
+  formation, and validation all work on local neighbourhoods, so
+  moderate perspective and radial distortion degrade gracefully
+  without an explicit distortion model. Stage 6 boundary extension
+  comes in two flavours — global-H over the labelled set (gated on
+  reprojection residuals so it disables itself under heavy distortion)
+  and per-candidate local-H over the K nearest labels (tolerates
+  stronger distortion).
 - **Partial boards supported.** PuzzleBoard gives absolute IDs from a
   single visible fragment; ChArUco / marker boards label whatever is
   visible and the facade `detect_*_all` helpers return every connected
   component.
-- **Consistency diagnostics built in.** PuzzleBoard surfaces both the
-  chosen search/scoring mode and soft-decoder confidence diagnostics
-  (`score_margin`, runner-up origin/transform) so downstream tools can
-  distinguish trusted cross-view matches from weak hypotheses.
+- **Consistency diagnostics built in.** PuzzleBoard surfaces the
+  chosen search / scoring mode and soft-decoder confidence diagnostics
+  (`score_margin`, runner-up origin / transform). The chessboard
+  detector ends in a Stage 9 final-geometry check that drops gross
+  mislabels and isolated false positives before emitting any
+  `Detection`.
 - **Multi-config sweeps.** `detect_*_best` tries three built-in presets
   and keeps the best result — no hand-tuning required for the common
   failure cases.

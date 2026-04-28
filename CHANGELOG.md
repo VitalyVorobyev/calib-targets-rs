@@ -4,61 +4,16 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
-
-### Performance
-
-- **`projective_grid::component_merge::merge_components_local` rewritten**
-  as a position-based Hough transform on `(transform, label-delta)`. The
-  old anchor-pair enumeration was O(P² Q) per (component, component) pair
-  and dominated the topological pipeline on real images with multiple
-  fragmented components. The new implementation indexes one component's
-  positions in a KD-tree, queries each label of the other component
-  within `pos_tol`, and votes each match into a histogram bin keyed by
-  the candidate alignment. Two- to three-orders-of-magnitude wins on
-  microbenches (`merge_components_local/overlap/2_components_large`:
-  about 5000× on the criterion fixture). End-to-end the topological
-  pipeline measured on a representative high-resolution chessboard image
-  goes from multi-second to tens-of-milliseconds, with **zero precision
-  regression** on the internal regression set. The original tiebreaker
-  (preferring identity-transform matches by iteration order) is
-  preserved as an explicit tiebreaker on transform index.
-- **`projective_grid::square::extension::local::nearest_labelled_by_grid`
-  switched from full-sort to bounded max-heap.** The previous
-  implementation allocated a `Vec` of all labelled corners, sorted by
-  Manhattan distance, and took the top-K — `O(L log L)` per cell. With
-  ~1100 labelled corners and ~9000 candidate cells per extension pass,
-  this routine accounted for roughly 84 % of `extend_via_local_homography`
-  self-time on a representative high-resolution frame. The new
-  bounded-heap variant is `O(L log K)` per cell (`K = 8` by default)
-  and avoids the per-cell allocation entirely. Cuts the overall
-  ChessboardV2 extension stage wall-clock by roughly 4× end-to-end on
-  the same frame, with the same deterministic
-  `(distance, i, j, idx)` ordering downstream callers depend on, and
-  zero precision regression on the internal regression set.
-
-### Profiling tooling
-
-- Added an opt-in `tracing` Cargo feature on `projective-grid` (off by
-  default, kept in tree as the permanent observability surface). When
-  enabled, the hot-path entry points (`bfs_grow`,
-  `build_grid_topological` and its substages,
-  `merge_components_local`, `square::validate::validate`,
-  `extend_via_local_homography`, `extend_via_global_homography`,
-  `extend_from_labelled`, `estimate_global_cell_size`,
-  `estimate_local_steps`) emit `tracing::instrument` spans for
-  per-call p50/p95 timing.
-- Added a `[profile.profiling]` Cargo profile (release with
-  line-tables-only debug info) so `samply record` flamegraphs
-  symbolicate without doubling binary size.
-- Added `crates/calib-targets/examples/profile_grid.rs` as a thin
-  driver for `samply record` and `RUST_LOG=info` tracing dumps.
-- Added `docs/profiling.md` with the full samply + tracing recipe.
-- New criterion microbenches in `crates/projective-grid/benches/`:
-  `topological.rs`, `merge.rs`, `validate.rs`. Existing `grow.rs`
-  and `homography.rs` benches preserved as the baseline.
-
 ## 0.8.0
+
+Coordinated workspace release that hardens the ChessboardV2 detector
+with a mandatory final-geometry check, lands an opt-in topological
+grid pipeline alongside the seed-and-grow default, and rewrites the
+per-cell DLT and component-merge hot paths for an order-of-magnitude
+speedup on high-resolution frames. Several internal modules are
+re-organised into per-stage subdirectories and `GridIndex` /
+`GridHomography` / `GridHomographyMesh` are renamed; see "Breaking
+changes" below. Workspace minor-bumps in lockstep at `0.8.0`.
 
 ### Breaking changes
 
@@ -185,6 +140,110 @@ This project follows [Semantic Versioning](https://semver.org/).
   decision predicate, output, dominant failure modes, and governing
   `DetectorParams` knobs. Working reference for diagnosing failures
   on real images.
+- **Topological grid pipeline.** `projective_grid::build_grid_topological`
+  implements the Shu / Brunton / Fiala 2009 grid finder: Delaunay
+  triangulation over the corner cloud, edge classification by
+  per-edge axis match, triangle-pair → quad merge, and flood-fill
+  `(i, j)` labelling. Image-free (no per-cell colour sampling — the
+  original paper's image-domain test is replaced by an axis-driven
+  cell predicate so `projective-grid` stays standalone). Selectable
+  from chessboard-v2 via
+  `DetectorParams::graph_build_algorithm = GraphBuildAlgorithm::Topological`;
+  default stays `ChessboardV2` because the topological pipeline
+  currently regresses recall on ChArUco-style images (marker-internal
+  corners poison the per-cell axis test). Runs faster + denser on
+  clean PuzzleBoards. ChArUco unconditionally pins `ChessboardV2`
+  inside `CharucoDetector::new` regardless of caller choice.
+- **Stage 6 local-homography extension.**
+  `projective_grid::square::extension::local::extend_via_local_homography`
+  fits a per-candidate `H` from the `K` nearest labelled corners (by
+  grid Manhattan distance) instead of one global homography. Tolerates
+  heavy radial distortion and multi-region perspective where a single
+  `H` breaks. Configured via `LocalExtensionParams`; complements the
+  pre-existing global-H pass.
+- **Shared component-merge.**
+  `projective_grid::component_merge::merge_components_local` is the
+  post-stage that reunites partial components from either pipeline
+  (ChessboardV2 boosters or topological flood-fill) using local
+  geometry only — no global homography, so it tolerates heavy radial
+  distortion. The chessboard crate's historical
+  `enable_component_merge` flag is now backed by this shared
+  implementation via `DetectorParams::component_merge: LocalMergeParams`.
+
+### Performance
+
+- **`projective_grid::homography::estimate_homography` rewritten** to
+  use normal equations + a 9×9 symmetric eigendecomposition of `Aᵀ A`
+  instead of a full `(2N × 9)` SVD on the DLT data matrix. Hartley
+  normalisation stays — preconditioning matters more under normal
+  equations because cond(`Aᵀ A`) = cond(`A`)² — and the f32 condition
+  number stays comfortable on real workloads. The 4-point fast path
+  (`homography_from_4pt`, 8×8 LU) is unchanged. Microbench shows 1.8×
+  at `N=9`, 2× at `N=25`, 2.6× at `N=100`, 3.3× at `N=225` (the
+  speedup grows because the old path's bidiagonalisation is `O(N²)`
+  while the new path's `Aᵀ A` accumulation is `O(N)`). Sign of the
+  smallest eigenvector is unconstrained; downstream
+  `normalize_homography` (divides by `h[(2,2)]`) pins it. Numerical
+  contract: agrees with the SVD reference to ≤ 0.01 px in
+  pixel-domain on a 1000-sample randomised homography battery; H
+  entries themselves can drift up to ~1e-3 relative (the textbook f32
+  cond² penalty), but downstream consumers feed `H` through
+  `apply(...)` to predict cell positions and never read entries.
+  `HomographyQuality::from_homography` stays on the 3×3 SVD path —
+  same penalty would apply there too and the consumer is no longer
+  in the per-cell hot loop.
+- **`extend_via_local_homography` skips the wasted 3×3 quality SVD.**
+  The local-extension call site discarded the `HomographyQuality`
+  struct (`let Some((h, _)) = ...`) and gates on manually-computed
+  reprojection residuals over the K supports. Switched to bare
+  `estimate_homography` so each per-cell call drops one nalgebra
+  `Matrix3::svd`. No behaviour change.
+- **`projective_grid::component_merge::merge_components_local`
+  rewritten** as a position-based Hough transform on
+  `(transform, label-delta)`. The old anchor-pair enumeration was
+  `O(P² Q)` per (component, component) pair and dominated the
+  topological pipeline on real images with multiple fragmented
+  components. The new implementation indexes one component's positions
+  in a KD-tree, queries each label of the other component within
+  `pos_tol`, and votes each match into a histogram bin keyed by the
+  candidate alignment. Two- to three-orders-of-magnitude wins on
+  microbenches; the topological pipeline measured on a representative
+  high-resolution chessboard image goes from multi-second to
+  tens-of-milliseconds. The original tiebreaker (preferring
+  identity-transform matches by iteration order) is preserved as an
+  explicit tiebreaker on transform index.
+- **`extension::local::nearest_labelled_by_grid` switched from
+  full-sort to bounded max-heap.** Allocates once and runs in
+  `O(L log K)` per cell instead of `O(L log L)` (`L = labelled
+  corners`, `K = k_nearest`). Cuts the overall ChessboardV2 extension
+  stage wall-clock by roughly 4× end-to-end on a representative
+  high-resolution frame, with the same deterministic
+  `(distance, i, j, idx)` ordering downstream callers depend on.
+- Combined effect on a 12 MP chessboard frame: full
+  `detect_chessboard` runs in tens of milliseconds instead of seconds,
+  with zero precision regression on the internal regression set.
+
+### Tooling
+
+- Added an opt-in `tracing` Cargo feature on `projective-grid` (off by
+  default). When enabled, the hot-path entry points (`bfs_grow`,
+  `build_grid_topological` and its substages,
+  `merge_components_local`, `square::validate::validate`,
+  `extend_via_local_homography`, `extend_via_global_homography`,
+  `extend_from_labelled`, `estimate_global_cell_size`,
+  `estimate_local_steps`) emit `tracing::instrument` spans for
+  per-call p50/p95 timing.
+- Added a `[profile.profiling]` Cargo profile (release with
+  line-tables-only debug info) so `samply record` flamegraphs
+  symbolicate without doubling binary size.
+- `crates/calib-targets/examples/profile_grid.rs` is a thin driver for
+  `samply record` and `RUST_LOG=info` tracing dumps.
+- `docs/profiling.md` documents the full samply + tracing recipe.
+- New criterion microbenches in `crates/projective-grid/benches/`:
+  `topological.rs`, `merge.rs`, `validate.rs`. Existing `grow.rs` and
+  `homography.rs` benches preserved as the baseline; `homography.rs`
+  gains `K=8/12/20` cases mirroring the production
+  `LocalExtensionParams` defaults.
 
 ## [0.7.3]
 

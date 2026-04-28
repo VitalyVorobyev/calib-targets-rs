@@ -14,21 +14,25 @@ Full API reference: see the [`projective-grid` book chapter][book-chapter].
 
 ```toml
 [dependencies]
-projective-grid = "0.7"
+projective-grid = "0.8"
 nalgebra = "0.34"
 ```
 
 ## Pipeline at a glance
 
-The crate centres on a five-stage pipeline. Pattern-specific gates
-(parity, axis-cluster, marker rules, …) plug into the
-[`square::grow::GrowValidator`] trait; the geometric machinery underneath
-is generic.
+`projective-grid` ships two grid-construction pipelines that produce
+the same `(i, j) → corner_idx` map and share the same downstream
+validation, rectification, and component-merge machinery. Pattern-
+specific gates (parity, axis-cluster, marker rules, …) plug into the
+[`square::grow::GrowValidator`] trait; the geometric machinery
+underneath is generic.
+
+### Square seed-and-grow (default)
 
 ```rust
 use projective_grid::square::{
     grow::{bfs_grow, GrowParams, GrowValidator, Seed},
-    grow_extension::{extend_via_global_homography, ExtensionParams},
+    extension::{extend_via_global_homography, ExtensionParams},
     validate::{validate, LabelledEntry, ValidationParams},
 };
 
@@ -62,22 +66,25 @@ let _result = validate(&entries, cell_size, &ValidationParams::default());
 
 The chessboard / ChArUco / PuzzleBoard detectors in the workspace
 implement their pattern-specific `GrowValidator` and call the same
-machinery; their orchestrators iterate Stage 5–7 with a blacklist until
-the labelled set converges, then run Stage 6, then re-validate.
+machinery. Their orchestrators iterate grow + validate with a
+blacklist until the labelled set converges, then run boundary
+extension, then re-validate.
 
-### Alternative Stage 6: local homography
+### Local-homography boundary extension
 
-`extend_via_local_homography` (in `square::grow_extension`) is an
-opt-in replacement for `extend_via_global_homography`. Instead of
-fitting one global H, it fits a separate H from the K nearest labelled
-corners for each candidate cell. The per-candidate trust gate tolerates
-heavy radial distortion and multi-region perspective where a single H
-breaks. Configure it via `LocalExtensionParams`.
+`square::extension::extend_via_local_homography` is the per-candidate
+counterpart to `extend_via_global_homography`. Instead of fitting one
+global `H`, it fits a separate `H` from the `K` nearest labelled
+corners for each candidate cell. The per-candidate worst-residual
+gate tolerates heavy radial distortion and multi-region perspective
+where a single `H` breaks. Configured via `LocalExtensionParams`.
 
-### Topological pipeline
+### Topological grid finder
 
-For images where corners arrive in a dense, nearly-regular cloud, the
-topological pipeline is an image-free alternative to seed-and-grow:
+`projective_grid::build_grid_topological` is the image-free Shu /
+Brunton / Fiala 2009 grid finder: Delaunay triangulation, edge
+classification by per-edge axis match, triangle-pair → quad merge,
+and flood-fill `(i, j)` labelling.
 
 ```rust
 use projective_grid::{build_grid_topological, merge_components_local,
@@ -93,8 +100,12 @@ let views: Vec<ComponentInput<'_>> = topo.components.iter()
 let merged = merge_components_local(&views, &LocalMergeParams::default());
 ```
 
-See `docs/TOPOLOGICAL_PIPELINE.md` in the workspace for a detailed
-description of the algorithm and known limitations.
+See `docs/TOPOLOGICAL_PIPELINE.md` in the workspace for the per-stage
+algorithm description and known limitations. The chessboard detector
+selects between the two pipelines via
+`DetectorParams::graph_build_algorithm`; ChArUco unconditionally
+pins seed-and-grow because marker-internal corners poison the per-cell
+axis test the topological path relies on.
 
 ## Inputs and outputs
 
