@@ -34,8 +34,9 @@
 //! one component's predicted boundary position to the other's actual
 //! boundary corner.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
+use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -128,32 +129,22 @@ fn apply_transform(t: GridTransform, ij: (i32, i32)) -> (i32, i32) {
     (v.i, v.j)
 }
 
-/// For a candidate alignment of `c_p` into `c_q`'s frame (transform `t`,
-/// offset `delta`), count overlapping labels and the worst position
-/// disagreement.
-fn score_alignment(
-    c_p: &ComponentInput<'_>,
-    c_q: &ComponentInput<'_>,
-    t: GridTransform,
-    delta: (i32, i32),
-) -> (usize, f32) {
-    let mut overlap = 0usize;
-    let mut max_err = 0.0f32;
-    for (&ij_p, &idx_p) in c_p.labelled.iter() {
-        let ij_t = apply_transform(t, ij_p);
-        let ij_q = (ij_t.0 + delta.0, ij_t.1 + delta.1);
-        if let Some(&idx_q) = c_q.labelled.get(&ij_q) {
-            let err = euclidean(c_p.positions[idx_p], c_q.positions[idx_q]);
-            overlap += 1;
-            if err > max_err {
-                max_err = err;
-            }
-        }
-    }
-    (overlap, max_err)
-}
-
 /// Find the best (transform, offset) for merging `c_p` into `c_q`'s frame.
+///
+/// Strategy: position-based Hough transform on (transform, label-delta).
+///
+/// For two components to merge, every overlapping label pair must have
+/// near-identical pixel positions (since the labels refer to the same
+/// physical corner in different label frames). We exploit this by
+/// indexing `c_q`'s positions in a KD-tree, then for each label in
+/// `c_p` finding all `c_q` labels whose pixel position is within
+/// `pos_tol`. Each such pair is a vote for whatever (transform, delta)
+/// would map them onto each other. The (t, δ) bin with the most votes
+/// is the right alignment.
+///
+/// This replaces the previous O(P²Q) anchor enumeration with
+/// O(P log Q) KD-tree queries, scaling many orders of magnitude better
+/// on realistic component sizes (200+ labels per component).
 fn find_best_alignment(
     c_p: &ComponentInput<'_>,
     c_q: &ComponentInput<'_>,
@@ -161,38 +152,81 @@ fn find_best_alignment(
     params: &LocalMergeParams,
 ) -> Option<(GridTransform, (i32, i32), usize)> {
     let pos_tol = params.position_tol_rel * cell_size.max(1.0);
-    let mut best: Option<(GridTransform, (i32, i32), usize, f32)> = None;
-    // Anchor: pair one corner from each component, derive offset, score.
-    let p_iter: Vec<((i32, i32), usize)> = c_p.labelled.iter().map(|(k, v)| (*k, *v)).collect();
-    let q_iter: Vec<((i32, i32), usize)> = c_q.labelled.iter().map(|(k, v)| (*k, *v)).collect();
-    for t in crate::GRID_TRANSFORMS_D4.iter().copied() {
-        // Choose anchors that have a labelled neighbour to disambiguate
-        // reflections vs rotations. Cheap heuristic: just iterate.
-        let mut tried: HashSet<(i32, i32)> = HashSet::new();
-        for &(ij_p, _) in &p_iter {
-            for &(ij_q, _) in &q_iter {
-                let tij_p = apply_transform(t, ij_p);
-                let delta = (ij_q.0 - tij_p.0, ij_q.1 - tij_p.1);
-                if !tried.insert(delta) {
-                    continue; // Same offset already tried for this transform.
-                }
-                let (overlap, max_err) = score_alignment(c_p, c_q, t, delta);
-                if overlap < params.min_overlap || max_err > pos_tol {
-                    continue;
-                }
-                let take = match &best {
-                    None => true,
-                    Some((_, _, best_overlap, best_err)) => {
-                        overlap > *best_overlap || (overlap == *best_overlap && max_err < *best_err)
-                    }
-                };
-                if take {
-                    best = Some((t, delta, overlap, max_err));
+    let pos_tol_sq = pos_tol * pos_tol;
+
+    // KD-tree over c_q label positions. The slot index maps back to
+    // q_entries[slot] = (ij_q, idx_q).
+    let q_entries: Vec<((i32, i32), usize)> = c_q.labelled.iter().map(|(k, v)| (*k, *v)).collect();
+    if q_entries.is_empty() {
+        return None;
+    }
+    let mut tree: KdTree<f32, 2> = KdTree::new();
+    for (slot, (_, idx)) in q_entries.iter().enumerate() {
+        let pos = c_q.positions[*idx];
+        tree.add(&[pos.x, pos.y], slot as u64);
+    }
+
+    // Histogram bin: (transform_index, delta_i, delta_j) →
+    // (overlap_count, max_position_error).
+    let mut hist: HashMap<(u8, i32, i32), (usize, f32)> = HashMap::new();
+
+    for (&ij_p, &idx_p) in c_p.labelled.iter() {
+        let pos_p = c_p.positions[idx_p];
+        for nn in tree
+            .within_unsorted::<SquaredEuclidean>(&[pos_p.x, pos_p.y], pos_tol_sq)
+            .into_iter()
+        {
+            let slot = nn.item as usize;
+            let (ij_q, idx_q) = q_entries[slot];
+            let err = euclidean(pos_p, c_q.positions[idx_q]);
+            for (t_idx, t) in crate::GRID_TRANSFORMS_D4.iter().enumerate() {
+                let tij_p = apply_transform(*t, ij_p);
+                let key = (t_idx as u8, ij_q.0 - tij_p.0, ij_q.1 - tij_p.1);
+                let entry = hist.entry(key).or_insert((0usize, 0.0f32));
+                entry.0 += 1;
+                if err > entry.1 {
+                    entry.1 = err;
                 }
             }
         }
     }
-    best.map(|(t, d, n, _)| (t, d, n))
+
+    // Tiebreaker: prefer higher overlap, then lower max_err, then
+    // smaller transform index (identity = 0, so identity wins ties),
+    // then lexicographic delta. The transform-index tiebreaker
+    // matches the original algorithm's iteration order, which
+    // implicitly preferred identity when multiple D4 transforms
+    // produced valid alignments at the same overlap (e.g. on highly
+    // symmetric synthetic test grids).
+    let mut best: Option<(u8, (i32, i32), usize, f32)> = None;
+    for ((t_idx, di, dj), (overlap, max_err)) in hist.into_iter() {
+        if overlap < params.min_overlap {
+            continue;
+        }
+        // The KD-tree query already enforced max_err ≤ pos_tol per
+        // contribution, so re-checking max_err is defensive only.
+        if max_err > pos_tol {
+            continue;
+        }
+        let take = match &best {
+            None => true,
+            Some((best_t_idx, best_delta, best_overlap, best_err)) => {
+                if overlap != *best_overlap {
+                    overlap > *best_overlap
+                } else if (max_err - *best_err).abs() > f32::EPSILON {
+                    max_err < *best_err
+                } else if t_idx != *best_t_idx {
+                    t_idx < *best_t_idx
+                } else {
+                    (di, dj) < *best_delta
+                }
+            }
+        };
+        if take {
+            best = Some((t_idx, (di, dj), overlap, max_err));
+        }
+    }
+    best.map(|(t_idx, d, n, _)| (crate::GRID_TRANSFORMS_D4[t_idx as usize], d, n))
 }
 
 fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
