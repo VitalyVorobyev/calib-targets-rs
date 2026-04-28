@@ -41,6 +41,18 @@ harness = false
 name = "homography"
 harness = false
 
+[[bench]]
+name = "topological"
+harness = false
+
+[[bench]]
+name = "merge"
+harness = false
+
+[[bench]]
+name = "validate"
+harness = false
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
