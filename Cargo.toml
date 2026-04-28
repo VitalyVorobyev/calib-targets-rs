@@ -79,3 +79,14 @@ wasm-bindgen = "0.2"
 js-sys = "0.3"
 serde-wasm-bindgen = "0.6"
 zip = { version = "8", default-features = false }
+
+# `cargo build --profile profiling` produces release-optimised binaries with
+# enough debuginfo for samply / cargo-flamegraph to symbolicate hot frames.
+# `line-tables-only` keeps debug data small while still mapping every sample
+# to a file:line. `split-debuginfo = "unpacked"` is the macOS default and
+# avoids ballooning the executable.
+[profile.profiling]
+inherits = "release"
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+strip = false

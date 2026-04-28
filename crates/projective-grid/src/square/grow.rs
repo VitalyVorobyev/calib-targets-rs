@@ -179,6 +179,14 @@ pub struct GrowResult {
 /// `(0, 0)`. The caller is responsible for any per-corner state
 /// updates after the call (e.g., marking corners as "labelled" in a
 /// local stage enum).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = positions.len(), cell_size = cell_size),
+    )
+)]
 pub fn bfs_grow<V: GrowValidator>(
     positions: &[Point2<f32>],
     seed: Seed,

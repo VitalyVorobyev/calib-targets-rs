@@ -2150,6 +2150,7 @@ dependencies = [
  "nalgebra",
  "serde",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]

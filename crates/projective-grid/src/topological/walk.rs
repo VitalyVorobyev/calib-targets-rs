@@ -169,6 +169,14 @@ fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
 
 /// Walk the quad mesh and produce one labelled component per connected
 /// piece. Components below `min_quads_per_component` are dropped.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_quads = quads.len()),
+    )
+)]
 pub(crate) fn label_components(quads: &[Quad], min_quads: usize) -> Vec<TopologicalComponent> {
     if quads.is_empty() {
         return Vec::new();

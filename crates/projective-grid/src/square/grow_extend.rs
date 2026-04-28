@@ -61,6 +61,14 @@ pub struct BfsExtensionStats {
 /// A [`BfsExtensionStats`] summary. The caller is responsible for any
 /// per-corner state updates (e.g., marking newly-attached corners as
 /// "Labeled" in a local stage enum).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = positions.len(), num_labelled = grow.labelled.len(), cell_size = cell_size),
+    )
+)]
 pub fn extend_from_labelled<V: GrowValidator>(
     positions: &[Point2<f32>],
     grow: &mut GrowResult,

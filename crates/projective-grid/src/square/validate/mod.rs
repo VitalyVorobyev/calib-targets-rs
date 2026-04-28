@@ -165,6 +165,14 @@ pub struct ValidationResult {
 }
 
 /// Run both validation passes and produce a blacklist.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_labelled = entries.len(), cell_size = cell_size),
+    )
+)]
 pub fn validate(
     entries: &[LabelledEntry],
     cell_size: f32,

@@ -28,6 +28,14 @@ use crate::square::grow::{GrowResult, GrowValidator};
 /// aggregate residuals across **all** per-candidate fits in this pass
 /// (median / worst across all supports). `h_trusted` is `true` if at
 /// least one candidate's local fit passed its trust gate.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = positions.len(), num_labelled = grow.labelled.len(), cell_size = cell_size),
+    )
+)]
 pub fn extend_via_local_homography<V: GrowValidator>(
     positions: &[Point2<f32>],
     grow: &mut GrowResult,

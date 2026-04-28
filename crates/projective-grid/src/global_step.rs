@@ -89,6 +89,14 @@ impl<F: Float> Default for GlobalStepParams<F> {
 ///
 /// Returns `None` when the cloud is too small (≤ 1 point) or degenerate
 /// (all nearest-neighbor distances are zero).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_points = positions.len()),
+    )
+)]
 pub fn estimate_global_cell_size<F: Float + kiddo::float::kdtree::Axis>(
     positions: &[Point2<F>],
     params: &GlobalStepParams<F>,

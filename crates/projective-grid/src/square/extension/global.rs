@@ -18,6 +18,14 @@ use crate::square::grow::{GrowResult, GrowValidator};
 /// Try to extend the labelled grid outward (and into interior holes)
 /// using a globally-fit homography. Mutates `grow.labelled` and
 /// `grow.by_corner` in place.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = positions.len(), num_labelled = grow.labelled.len(), cell_size = cell_size),
+    )
+)]
 pub fn extend_via_global_homography<V: GrowValidator>(
     positions: &[Point2<f32>],
     grow: &mut GrowResult,

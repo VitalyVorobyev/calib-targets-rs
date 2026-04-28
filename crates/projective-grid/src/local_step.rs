@@ -134,6 +134,14 @@ impl<F: Float> Default for LocalStepParams<F> {
 /// Returns a vector whose length matches `points`. Points that end up with no
 /// usable neighbors receive [`LocalStep::default`] (all zeros + zero
 /// confidence), letting downstream validators fall back to a global step.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_points = points.len()),
+    )
+)]
 pub fn estimate_local_steps<F: Float + kiddo::float::kdtree::Axis>(
     points: &[LocalStepPointData<F>],
     params: &LocalStepParams<F>,

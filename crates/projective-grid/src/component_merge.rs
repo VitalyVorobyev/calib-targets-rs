@@ -219,6 +219,14 @@ fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
 /// tolerances. On success, rewrite `p`'s labels into `q`'s frame and
 /// merge into `q`. Repeat until no further merges are possible or the
 /// `max_components` cap is reached.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_components = inputs.len()),
+    )
+)]
 pub fn merge_components_local(
     inputs: &[ComponentInput<'_>],
     params: &LocalMergeParams,

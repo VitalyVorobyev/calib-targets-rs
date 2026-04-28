@@ -32,6 +32,14 @@ fn passes_geometric(quad: &Quad, positions: &[Point2<f32>], params: &Topological
 }
 
 /// Apply topological + geometric filtering and return the surviving quads.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_quads_in = quads.len()),
+    )
+)]
 pub(crate) fn filter_quads(
     quads: &[Quad],
     positions: &[Point2<f32>],
