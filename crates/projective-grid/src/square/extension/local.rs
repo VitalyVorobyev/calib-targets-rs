@@ -268,8 +268,16 @@ pub(super) fn nearest_labelled_by_grid(
     // on `KnnEntry` matches the full-sort tiebreaker
     // (distance, i, j, idx) ascending; the heap is therefore a max-heap
     // over that ordering and `peek()` returns the *farthest* item.
+    //
+    // Cap the initial capacity by the labelled-set size so a large
+    // misconfigured `k` cannot trigger a huge up-front allocation when
+    // the labelled set is small. The heap content is naturally
+    // bounded by `min(k, labelled.len())`; the previous full-sort path
+    // also only allocated proportional to `labelled.len()`, so this
+    // preserves robustness against untrusted parameters.
+    let cap = k.min(labelled.len());
     let mut heap: std::collections::BinaryHeap<KnnEntry> =
-        std::collections::BinaryHeap::with_capacity(k);
+        std::collections::BinaryHeap::with_capacity(cap);
 
     for (&(i, j), &idx) in labelled {
         let d = (i - target.0).abs() + (j - target.1).abs();
