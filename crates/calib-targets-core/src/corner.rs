@@ -1,7 +1,7 @@
 use nalgebra::{Point2, Vector2};
 use serde::{Deserialize, Serialize};
 
-pub use projective_grid::GridIndex as GridCoords;
+pub use projective_grid::GridCoords;
 
 /// One local grid-axis direction at a corner, with its 1σ angular uncertainty.
 ///

@@ -4,7 +4,133 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## 0.8.0
+
+### Breaking changes
+
+- **N-17** `calib-targets-core/src/chess.rs`: replaced the near-verbatim mirror of
+  `chess-corners` config types with direct `pub use` re-exports for all non-divergent
+  types (`CenterOfMassConfig`, `ForstnerConfig`, `SaddlePointConfig`, `UpscaleConfig`,
+  `UpscaleMode`, `DescriptorMode`, `ThresholdMode`, `ChessCornerParams`, `PyramidParams`,
+  `CoarseToFineParams`). `chess-corners` is now a direct dependency of
+  `calib-targets-core`. `DetectorMode` adds `Radon` variant, `RefinementMethod` adds
+  `RadonPeak`, `ChessConfig` exposes `radon_detector`. `RefinerKindConfig` and
+  `ChessConfig::from_parts` are removed. Adapter shims in `detect.rs` collapsed.
+
+- **N-1** `GridIndex` renamed to `GridCoords` across the entire workspace (the name
+  `calib-targets-core` consumers already used). The old `GridCoords` alias in
+  `calib-targets-core` is now the actual type definition. All `(i32, i32)` tuple
+  maps in the grow/validate/topological/merge pipelines replaced with `GridCoords`.
+  `GridTransform::apply` returns `GridCoords` instead of `[i32; 2]`.
+
+- **N-2** Square-grid types gain `Square` prefix: `GridHomography` →
+  `SquareGridHomography`, `GridHomographyMesh` → `SquareGridHomographyMesh`,
+  `predict_grid_position` → `square_predict_grid_position`,
+  `find_inconsistent_corners` → `square_find_inconsistent_corners`,
+  `find_inconsistent_corners_step_aware` → `square_find_inconsistent_corners_step_aware`.
+
+- **N-3** `SeedQuadValidator::axes` returns `[AxisHint; 2]` instead of `[f32; 2]`.
+  `LocalStepPointData::{axis_u, axis_v}` merged into `axes: [AxisHint; 2]`.
+  `AxisHint::from_angle` constructor added.
+
+- **N-5** `seed_finder.rs` merged into `seed/finder.rs` submodule. `Seed` struct
+  moved from `grow.rs` to `seed/mod.rs`. External import paths unchanged via
+  re-exports in `square/mod.rs`.
+
+- **N-6** `ExtensionCommonParams` extracted from `ExtensionParams` and
+  `LocalExtensionParams`. Both now hold `pub common: ExtensionCommonParams`.
+
+- **N-10** All "count of items" public diagnostic fields standardised on `usize`
+  (`GlobalStepEstimate.support`, `LocalStep.supporters_*`, `ExtensionStats.attached`,
+  `BfsExtensionStats.attached`, etc.).
+
+- **N-16** Module splits: `grow_extension.rs` → `extension/{mod,common,global,local}.rs`;
+  `grow.rs` → `grow.rs` + `grow_extend.rs`; `validate.rs` →
+  `validate/{mod,lines,local_h,step}.rs`. Inner `bfs_grow` body extracted to
+  `process_boundary_cell`. All public re-exports unchanged.
+
+### Added
+
+- **Mandatory final geometry check** in chessboard-v2 detector —
+  every emitted `Detection` now goes through a Stage-9 precision gate
+  that:
+  1. drops gross mislabels via `validate()` with looser tolerances
+     (`geometry_check_line_tol_rel = 0.45`,
+     `geometry_check_local_h_tol_rel = 0.6` of cell_size) — full-
+     cell / diagonal shifts produce ~1.4 cell residuals, well above
+     these tolerances; perspective-distorted corners are spared;
+  2. drops labelled corners not in the largest cardinally-connected
+     component. A chessboard detection is by construction one
+     `(i, j)`-labelled connected planar graph; isolated singletons
+     and small-component leaks are false positives (typically a
+     marker corner that passed the cluster + parity gates but sits
+     well outside the main grid — e.g. `small2.png` had two such
+     orphans below the labelled grid before this filter).
+  `min_labeled_corners` survivors are required after the drop,
+  otherwise the detection is refused entirely. Catches wrong `(i, j)`
+  labels and isolated false positives that the per-attachment gates
+  couldn't — bench `pos=` does not validate new `(i, j)`
+  assignments, so this is the precision safety net.
+- **Stage 6.75 — post-grow centre refit.** After Stage 6.5 / boosters
+  converge, recompute `(θ₀, θ₁)` from the labelled set's axes alone
+  using the undirected circular mean. Marker-internal corners — which
+  bias the histogram-driven Stage-3 centres ~3° below the true
+  chessboard axes on some ChArUco-style images — don't contribute
+  here, so the refined centres are unbiased. If the shift exceeds
+  `refit_min_shift_deg`, re-classify Strong / NoCluster corners under
+  the new centres, then run two complementary growth passes (in
+  order):
+  - **BFS regrow** (`enable_post_grow_bfs_regrow`, default `true`):
+    demote every `Labeled` corner back to `Clustered` and re-run
+    `grow_from_seed` with the refined centres. Lifts recall on
+    cases where the orphan strip is 1+ cells past the existing
+    bbox edge (small3.png left strip, +21 corners). Can drop a few
+    borderline corners under the centre shift.
+  - **Cardinal-neighbour BFS extension**
+    (`enable_post_grow_bfs_extend`, default `true`,
+    `projective_grid::square::grow::extend_from_labelled`):
+    non-destructive walk over the labelled bbox boundary using
+    cardinal-only prediction (K=1). Recovers corners the regrow
+    above dropped under the centre shift, without precision risk
+    (same tolerances as the initial BFS — wider radii produce
+    SHIFT-INCONSISTENT labelling).
+  - Then Stage 6 / 6.5 with the refined centres for any cells the
+    BFS still missed.
+  Defaults: enabled, `refit_min_labelled = 8`,
+  `refit_min_shift_deg = 0.5°`. Trade-off: chessboard targets gain
+  recall (small3.png 91→104); puzzleboard targets that go through
+  chessboard-v2 incidentally lose perimeter rows
+  (`example2.png` 136→91 — these go through their own pipeline
+  in production). Zero `pos` / `id` / `dup` / SHIFT-INCONSISTENT
+  regressions across the entire bench.
+- **`projective_grid::square::grow::extend_from_labelled`** — new
+  public BFS extension over an existing labelled set. Used by the
+  chessboard refit pass; reusable by any pattern-specific detector
+  that wants to absorb newly-eligible corners without re-running
+  BFS from scratch. Returns `BfsExtensionStats` with
+  `attached / rejected_*` counters.
+- **PIPELINE.md docs** for chessboard, charuco, puzzleboard, marker,
+  and the topological grid sub-pipeline. Concise atomic stage tables
+  (input / decision / output / failure modes / knobs) at
+  `crates/<crate>/docs/PIPELINE.md` (and
+  `crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`). Working
+  reference for diagnosing failures, supersedes the prose sections
+  of `docs/projective_grid_overview.md` for per-pipeline depth.
+- **`IterationTrace.rescue / refit / extension2 / rescue2 /
+  geometry_check`** in `calib-targets-chessboard` — every post-BFS
+  stage now records its `attached / rejected_*` breakdown, so a
+  `bench diagnose` JSON pinpoints exactly where a corner was dropped.
+  `IterationTrace` is now `#[non_exhaustive]` (matches the workspace
+  convention for diagnostic structs).
+- **`bench {run,check,diagnose} --chessboard-config <FILE>`** —
+  optional partial-JSON override for `DetectorParams`, used to sweep
+  detector knobs without rebuilding. Missing fields fall back to
+  defaults via the existing `#[serde(default)]` attributes.
+- **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — atomic
+  stage-by-stage map of the chessboard-v2 detector: per-stage input,
+  decision predicate, output, dominant failure modes, and governing
+  `DetectorParams` knobs. Working reference for diagnosing failures
+  on real images.
 
 ## [0.7.3]
 

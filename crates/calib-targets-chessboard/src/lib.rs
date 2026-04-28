@@ -60,19 +60,21 @@ pub mod mesh_warp;
 pub mod params;
 pub mod rectified_view;
 pub mod seed;
+pub mod topological;
 pub mod validate;
 
 pub use boosters::{apply_boosters, BoosterResult};
 pub use cell_size::estimate_cell_size;
-pub use cluster::{cluster_axes, AxisCluster, ClusterCenters};
+pub use cluster::{cluster_axes, cluster_axes_debug, AxisCluster, ClusterCenters, ClusterDebug};
 pub use corner::{ClusterLabel, CornerAug, CornerStage};
 pub use detector::{
-    DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace, StageCounts,
-    DEBUG_FRAME_SCHEMA,
+    build_detection_from_grow, DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace,
+    StageCounts, DEBUG_FRAME_SCHEMA,
 };
 pub use grow::{grow_from_seed, GrowResult};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::DetectorParams;
+pub use params::{DetectorParams, GraphBuildAlgorithm};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 pub use seed::{find_seed, Seed, SeedOutput};
+pub use topological::detect_all_topological;
 pub use validate::{validate, ValidationResult};

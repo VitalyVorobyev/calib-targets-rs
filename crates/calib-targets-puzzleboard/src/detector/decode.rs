@@ -525,8 +525,10 @@ fn transform_edge_lookup(
         EdgeOrientation::Horizontal => ((edge.col, edge.row), (edge.col + 1, edge.row)),
         EdgeOrientation::Vertical => ((edge.col, edge.row), (edge.col, edge.row + 1)),
     };
-    let [p0_col, p0_row] = t.apply(p0_i, p0_j);
-    let [p1_col, p1_row] = t.apply(p1_i, p1_j);
+    let p0 = t.apply(p0_i, p0_j);
+    let p1 = t.apply(p1_i, p1_j);
+    let (p0_col, p0_row) = (p0.i, p0.j);
+    let (p1_col, p1_row) = (p1.i, p1.j);
     let orientation = if p0_row == p1_row {
         EdgeOrientation::Horizontal
     } else {
@@ -1013,8 +1015,10 @@ mod tests {
             EdgeOrientation::Horizontal => ((edge.col, edge.row), (edge.col + 1, edge.row)),
             EdgeOrientation::Vertical => ((edge.col, edge.row), (edge.col, edge.row + 1)),
         };
-        let [p0_col, p0_row] = t.apply(p0_i, p0_j);
-        let [p1_col, p1_row] = t.apply(p1_i, p1_j);
+        let p0 = t.apply(p0_i, p0_j);
+        let p1 = t.apply(p1_i, p1_j);
+        let (p0_col, p0_row) = (p0.i, p0.j);
+        let (p1_col, p1_row) = (p1.i, p1.j);
         let orientation = if p0_row == p1_row {
             EdgeOrientation::Horizontal
         } else {
@@ -1633,9 +1637,9 @@ mod tests {
         let mut reference_targets: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
         for gi in 0..n_corners {
             for gj in 0..n_corners {
-                let [x, y] = reference.alignment.map(gi, gj);
-                let mi = x.rem_euclid(MASTER_COLS as i32);
-                let mj = y.rem_euclid(MASTER_ROWS as i32);
+                let g = reference.alignment.map(gi, gj);
+                let mi = g.i.rem_euclid(MASTER_COLS as i32);
+                let mj = g.j.rem_euclid(MASTER_ROWS as i32);
                 reference_targets.insert((gi, gj), (mi, mj));
             }
         }
@@ -1668,12 +1672,12 @@ mod tests {
             let mut mismatches = Vec::new();
             for gi in 0..n_corners {
                 for gj in 0..n_corners {
-                    let [new_col, new_row] = rot.apply(gi, gj);
-                    let rebased_i = new_col - min_col;
-                    let rebased_j = new_row - min_row;
-                    let [x, y] = result.alignment.map(rebased_i, rebased_j);
-                    let mi = x.rem_euclid(MASTER_COLS as i32);
-                    let mj = y.rem_euclid(MASTER_ROWS as i32);
+                    let nr = rot.apply(gi, gj);
+                    let rebased_i = nr.i - min_col;
+                    let rebased_j = nr.j - min_row;
+                    let g = result.alignment.map(rebased_i, rebased_j);
+                    let mi = g.i.rem_euclid(MASTER_COLS as i32);
+                    let mj = g.j.rem_euclid(MASTER_ROWS as i32);
                     let reference_xy = reference_targets[&(gi, gj)];
                     if (mi, mj) != reference_xy {
                         mismatches.push((gi, gj, (mi, mj), reference_xy));

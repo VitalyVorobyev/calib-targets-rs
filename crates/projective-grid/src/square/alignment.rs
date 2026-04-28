@@ -1,3 +1,4 @@
+use crate::square::index::GridCoords;
 use serde::{Deserialize, Serialize};
 
 /// Integer 2D grid transform (a 2×2 matrix) for aligning detected grids to a board model.
@@ -23,10 +24,13 @@ impl GridTransform {
         d: 1,
     };
 
-    /// Apply the transform to `(i, j)`.
+    /// Apply the transform to `(i, j)`, returning the result as [`GridCoords`].
     #[inline]
-    pub fn apply(&self, i: i32, j: i32) -> [i32; 2] {
-        [self.a * i + self.b * j, self.c * i + self.d * j]
+    pub fn apply(&self, i: i32, j: i32) -> GridCoords {
+        GridCoords {
+            i: self.a * i + self.b * j,
+            j: self.c * i + self.d * j,
+        }
     }
 
     /// Invert the transform if it is unimodular (det = ±1).
@@ -57,20 +61,23 @@ impl GridAlignment {
         translation: [0, 0],
     };
 
-    /// Map grid coordinates `(i, j)` using this alignment.
+    /// Map grid coordinates `(i, j)` using this alignment, returning [`GridCoords`].
     #[inline]
-    pub fn map(&self, i: i32, j: i32) -> [i32; 2] {
-        let [x, y] = self.transform.apply(i, j);
-        [x + self.translation[0], y + self.translation[1]]
+    pub fn map(&self, i: i32, j: i32) -> GridCoords {
+        let g = self.transform.apply(i, j);
+        GridCoords {
+            i: g.i + self.translation[0],
+            j: g.j + self.translation[1],
+        }
     }
 
     pub fn inverse(&self) -> Option<GridAlignment> {
         let inv = self.transform.inverse()?;
         let [tx, ty] = self.translation;
-        let [itx, ity] = inv.apply(-tx, -ty);
+        let g = inv.apply(-tx, -ty);
         Some(GridAlignment {
             transform: inv,
-            translation: [itx, ity],
+            translation: [g.i, g.j],
         })
     }
 }

@@ -53,9 +53,9 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use chess::{
     CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, DescriptorMode,
-    DetectorMode, ForstnerConfig, PyramidParams, RefinementMethod, RefinerConfig,
-    RefinerKindConfig, SaddlePointConfig, ThresholdMode, UpscaleConfig, UpscaleConfigError,
-    UpscaleMode,
+    DetectorMode, ForstnerConfig, PyramidParams, RadonDetectorParams, RefinementMethod,
+    RefinerConfig, RefinerKind, SaddlePointConfig, ThresholdMode, UpscaleConfig,
+    UpscaleConfigError, UpscaleMode,
 };
 pub use corner::{AxisEstimate, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

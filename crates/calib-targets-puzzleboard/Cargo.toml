@@ -20,7 +20,6 @@ tracing = ["calib-targets-core/tracing", "dep:tracing"]
 calib-targets-core.workspace = true
 calib-targets-chessboard.workspace = true
 projective-grid.workspace = true
-chess-corners-core.workspace = true
 nalgebra.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true

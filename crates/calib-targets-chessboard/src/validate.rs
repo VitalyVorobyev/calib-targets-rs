@@ -40,12 +40,14 @@ pub fn validate(
             grid,
         })
         .collect();
-    let pg_params = pg_validate::ValidationParams::new(
+    let mut pg_params = pg_validate::ValidationParams::new(
         params.line_tol_rel,
-        params.projective_line_tol_rel,
         params.line_min_members,
         params.local_h_tol_rel,
     );
+    if params.validate_step_aware {
+        pg_params = pg_params.with_step_aware(params.validate_step_deviation_thresh_rel);
+    }
     pg_validate::validate(&entries, cell_size, &pg_params)
 }
 

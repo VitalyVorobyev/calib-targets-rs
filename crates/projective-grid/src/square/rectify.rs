@@ -2,12 +2,12 @@
 //!
 //! Computes a global projective mapping between a rectified coordinate system
 //! (uniform grid spacing) and the original image. Suitable when lens distortion
-//! is negligible. For distorted images, prefer [`GridHomographyMesh`](crate::GridHomographyMesh).
+//! is negligible. For distorted images, prefer [`SquareGridHomographyMesh`](crate::SquareGridHomographyMesh).
 
 use crate::float_helpers::lit;
 use crate::homography::{estimate_homography, Homography};
 use crate::Float;
-use crate::GridIndex;
+use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ pub enum GridRectifyError {
 
 /// A global homography mapping between rectified grid space and image space.
 #[derive(Clone, Debug)]
-pub struct GridHomography<F: Float = f32> {
+pub struct SquareGridHomography<F: Float = f32> {
     /// Maps rectified coordinates to image coordinates.
     pub h_img_from_rect: Homography<F>,
     /// Maps image coordinates to rectified coordinates.
@@ -41,14 +41,14 @@ pub struct GridHomography<F: Float = f32> {
     pub rect_height: usize,
 }
 
-impl<F: Float> GridHomography<F> {
+impl<F: Float> SquareGridHomography<F> {
     /// Compute a global homography from grid corners to a rectified coordinate system.
     ///
     /// - `corners`: map from grid index to image position.
     /// - `px_per_cell`: rectified pixels per grid cell.
     /// - `margin_cells`: extra margin around the grid bounding box (in cell units).
     pub fn from_corners(
-        corners: &HashMap<GridIndex, Point2<F>>,
+        corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
         margin_cells: F,
     ) -> Result<Self, GridRectifyError> {

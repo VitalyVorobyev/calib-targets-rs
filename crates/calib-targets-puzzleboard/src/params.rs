@@ -3,7 +3,7 @@
 use crate::board::PuzzleBoardSpec;
 use crate::detector::PuzzleBoardDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{ChessCornerParams, RefinerKindConfig, SaddlePointConfig};
+use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
@@ -33,13 +33,12 @@ fn default_px_per_square() -> f32 {
 }
 
 pub(crate) fn default_redetect_params() -> ChessCornerParams {
-    ChessCornerParams {
-        threshold_rel: 0.05,
-        nms_radius: 2,
-        min_cluster_size: 1,
-        refiner: RefinerKindConfig::SaddlePoint(SaddlePointConfig::default()),
-        ..ChessCornerParams::default()
-    }
+    let mut params = ChessCornerParams::default();
+    params.threshold_rel = 0.05;
+    params.nms_radius = 2;
+    params.min_cluster_size = 1;
+    params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
+    params
 }
 
 impl PuzzleBoardParams {

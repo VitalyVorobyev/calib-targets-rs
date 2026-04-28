@@ -12,6 +12,8 @@ testdata/charuco_detect_config_test.json
 # Benchmark / sweep artifacts — local-only, never commit.
 # Contains per-frame JSONLs, aggregate JSONs, rendered overlays, etc.
 bench_results/
+# calib-targets-bench overlay output for visual inspection of detector results.
+preview/
 # Private-dataset deep notes — concrete counts, frame IDs, failure
 # breakdowns. Keep locally; public surfaces get general performance
 # statements only (see CLAUDE.md disclosure policy).

@@ -7,11 +7,28 @@
 //! geometry — the four-corner seed quad, its edge / cell-size bundle,
 //! and the 2×-spacing "midpoint violation" rejection — live here so
 //! non-calibration consumers can reuse them.
+//!
+//! The pattern-agnostic seed *finder* (KD-tree search, axis classification,
+//! parallelogram completion) lives in the [`finder`] submodule so the
+//! data types and the search logic have separate homes.
+
+pub mod finder;
 
 use crate::homography::homography_from_4pt;
 use nalgebra::Point2;
 
-pub use crate::square::grow::Seed;
+/// Seed quad: corner indices at grid cells `(0, 0), (1, 0), (0, 1),
+/// `(1, 1)` respectively.
+///
+/// Created by the seed finder and consumed by
+/// [`crate::square::grow::bfs_grow`].
+#[derive(Clone, Copy, Debug)]
+pub struct Seed {
+    pub a: usize,
+    pub b: usize,
+    pub c: usize,
+    pub d: usize,
+}
 
 /// Output of a seed finder: the 2×2 quad plus a cell size derived
 /// directly from the seed's own edge lengths.
@@ -43,17 +60,23 @@ pub const SEED_QUAD_GRID: [(i32, i32); 4] = [(0, 0), (1, 0), (0, 1), (1, 1)];
 /// `seed_quad` — the four corner indices in the seed.
 /// `cell_size` — the seed's own estimated cell size.
 /// `midpoint_tol_rel` — tolerance as a fraction of `cell_size`.
-/// `on_edge_midpoint` — candidate indices to test against the four
-///                       edge midpoints. Pattern-specific callers
-///                       pass the set that should NOT be near the
-///                       midpoints (e.g., "Swapped"-label corners
-///                       for a chessboard).
-/// `on_parallelogram_center` — candidate indices to test against
-///                              the parallelogram center `(0.5,
-///                              0.5)`. Pattern-specific callers
-///                              pass the set that should NOT be
-///                              near the center (e.g., "Canonical"-
-///                              label corners for a chessboard).
+/// `on_edge_midpoint` — pattern-specific candidate indices to test
+///                       against the four edge midpoints. Callers
+///                       pass the set whose presence at a midpoint
+///                       is a stronger violation signal (e.g.,
+///                       "Swapped"-label corners for a chessboard,
+///                       which would lie at midpoints if the seed
+///                       skipped a Swapped row).
+/// `on_parallelogram_center` — pattern-specific candidate indices to
+///                              test against the parallelogram center
+///                              `(0.5, 0.5)`. Same convention as
+///                              `on_edge_midpoint`.
+/// `all_positions` — full-population fallback indices to test against
+///                    midpoints AND center, regardless of cluster
+///                    label. Catches 2× / sqrt(2)× / general N× cases
+///                    where the intermediate corner failed Stage-3
+///                    clustering and isn't in the pattern-specific
+///                    lists. Pass `&[]` to disable.
 pub fn seed_has_midpoint_violation(
     positions: &[Point2<f32>],
     seed_quad: [usize; 4],
@@ -61,6 +84,7 @@ pub fn seed_has_midpoint_violation(
     midpoint_tol_rel: f32,
     on_edge_midpoint: &[usize],
     on_parallelogram_center: &[usize],
+    all_positions: &[usize],
 ) -> bool {
     let tol = midpoint_tol_rel * cell_size;
     let tol_sq = tol * tol;
@@ -77,8 +101,21 @@ pub fn seed_has_midpoint_violation(
         Point2::from((pb.coords + pd.coords) * 0.5),
         Point2::from((pc.coords + pd.coords) * 0.5),
     ];
+
+    // The `all_positions` fallback uses a tighter tolerance (half the
+    // pattern-aware tolerance) because it admits arbitrary corners,
+    // including marker-internal ones that may legitimately fall near
+    // a grid-cell midpoint without indicating a 2×-spacing seed bug.
+    // The pattern-aware lists are already cluster-filtered, so they
+    // can use the wider tolerance.
+    let fallback_tol = tol * 0.5;
+    let fallback_tol_sq = fallback_tol * fallback_tol;
+
     for mp in midpoints {
         if any_within(positions, on_edge_midpoint, mp, tol_sq, &seed_quad) {
+            return true;
+        }
+        if any_within(positions, all_positions, mp, fallback_tol_sq, &seed_quad) {
             return true;
         }
     }
@@ -89,6 +126,15 @@ pub fn seed_has_midpoint_violation(
         on_parallelogram_center,
         center,
         tol_sq,
+        &seed_quad,
+    ) {
+        return true;
+    }
+    if any_within(
+        positions,
+        all_positions,
+        center,
+        fallback_tol_sq,
         &seed_quad,
     ) {
         return true;
@@ -208,6 +254,7 @@ mod tests {
             0.3,
             &[4], // "swapped" candidates
             &[],  // no canonical to check center
+            &[],  // no all-position fallback (already caught by swapped)
         );
         assert!(violation);
     }
@@ -215,7 +262,34 @@ mod tests {
     #[test]
     fn midpoint_violation_absent_on_clean_seed() {
         let positions = positions_4((0.0, 0.0), (10.0, 0.0), (0.0, 10.0), (10.0, 10.0));
-        let violation = seed_has_midpoint_violation(&positions, [0, 1, 2, 3], 10.0, 0.3, &[], &[]);
+        let violation =
+            seed_has_midpoint_violation(&positions, [0, 1, 2, 3], 10.0, 0.3, &[], &[], &[]);
         assert!(!violation);
+    }
+
+    #[test]
+    fn midpoint_violation_detects_2x_via_unclustered_fallback() {
+        // Same shape as `midpoint_violation_detects_2x_mislabel` but
+        // the intermediate corner failed Stage-3 clustering, so it
+        // is NOT in the chessboard-specific `on_edge_midpoint` set.
+        // The new `all_positions` fallback must still flag it.
+        let positions = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(20.0, 0.0),
+            Point2::new(0.0, 20.0),
+            Point2::new(20.0, 20.0),
+            Point2::new(10.0, 0.0), // intermediate, not clustered
+        ];
+        let all = vec![0, 1, 2, 3, 4];
+        let violation = seed_has_midpoint_violation(
+            &positions,
+            [0, 1, 2, 3],
+            20.0,
+            0.3,
+            &[], // no clustered candidates
+            &[],
+            &all,
+        );
+        assert!(violation);
     }
 }

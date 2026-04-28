@@ -285,9 +285,9 @@ dependencies = [
 
 [[package]]
 name = "box-image-pyramid"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58b98343f595652ccc4da8ba4bb349ed9ce9c77b0472bad0e9d0858295dd092e"
+checksum = "2b5edf15332ed706ed668d5e1b1e92564c647dd204abec517c1454483c6f746c"
 dependencies = [
  "rayon",
 ]
@@ -341,7 +341,7 @@ checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
 
 [[package]]
 name = "calib-targets"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "assert_cmd",
  "calib-targets-aruco",
@@ -370,7 +370,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -384,8 +384,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "calib-targets-bench"
+version = "0.8.0"
+dependencies = [
+ "calib-targets",
+ "calib-targets-chessboard",
+ "calib-targets-core",
+ "clap",
+ "image",
+ "nalgebra",
+ "projective-grid",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
+]
+
+[[package]]
 name = "calib-targets-charuco"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets",
  "calib-targets-aruco",
@@ -407,7 +423,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "approx",
  "calib-targets",
@@ -428,8 +444,9 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
+ "chess-corners",
  "log",
  "nalgebra",
  "projective-grid",
@@ -442,7 +459,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets",
  "cbindgen",
@@ -455,7 +472,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -471,7 +488,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-print"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -487,14 +504,13 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-puzzleboard"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets",
  "calib-targets-chessboard",
  "calib-targets-core",
  "calib-targets-print",
  "chess-corners",
- "chess-corners-core",
  "criterion",
  "env_logger",
  "image",
@@ -510,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets",
  "chess-corners",
@@ -524,7 +540,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-wasm"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -534,6 +550,7 @@ dependencies = [
  "calib-targets-print",
  "calib-targets-puzzleboard",
  "chess-corners",
+ "getrandom 0.2.17",
  "js-sys",
  "nalgebra",
  "serde",
@@ -564,7 +581,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.117",
  "tempfile",
- "toml",
+ "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -587,9 +604,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48621dcb7fc750c0c56563b604af9a9c4c74f482d1c81b004dbb86c67aafec04"
+checksum = "25f9cb585916709874c7f163e50d9c27558120af972fc5baff270a0fc7ea556a"
 dependencies = [
  "box-image-pyramid",
  "chess-corners-core",
@@ -602,9 +619,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c484dc3dc9736d59400c6439d27a81bdee9fcaa22bc8796f0ec573cf412e7d7"
+checksum = "8422fd91df635f17da3334e3e8f1d799d78593d777df87d14f21a99428edf473"
 dependencies = [
  "log",
  "rayon",
@@ -613,9 +630,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-ml"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a943392ba88f9e418976030f720801b6e7268527a7ef1f9e22c7d907acd154e1"
+checksum = "7a6f75f6a7380faace5fc1f69b0886a84ed036ec9dda6c5d49f017f144fb4c85"
 dependencies = [
  "anyhow",
  "serde_json",
@@ -798,6 +815,15 @@ checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "delaunator"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ab46e386c7a38300a0d93b0f3e484bc2ee0aded66c47b14762ec9ab383934fa"
+dependencies = [
+ "robust",
 ]
 
 [[package]]
@@ -1062,8 +1088,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -2114,13 +2142,14 @@ dependencies = [
 
 [[package]]
 name = "projective-grid"
-version = "0.7.3"
+version = "0.8.0"
 dependencies = [
+ "criterion",
+ "delaunator",
  "kiddo",
  "nalgebra",
  "serde",
  "thiserror",
- "tracing",
 ]
 
 [[package]]
@@ -2445,6 +2474,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 
 [[package]]
+name = "robust"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5864e7ef1a6b7bcf1d6ca3f655e65e724ed3b52546a0d0a663c991522f552ea"
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2584,6 +2619,15 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_spanned"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bf41e0cfaf7226dca15e8197172c295a782857fcb97fad1808a166870dee75a3"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2855,17 +2899,38 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "toml"
+version = "0.8.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc1beb996b9d83529a9e75c17a1686767d148d70663143c7854d8b4a09ced362"
+dependencies = [
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_edit",
+]
+
+[[package]]
+name = "toml"
 version = "0.9.12+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
 dependencies = [
  "indexmap",
  "serde_core",
- "serde_spanned",
- "toml_datetime",
+ "serde_spanned 1.1.1",
+ "toml_datetime 0.7.5+spec-1.1.0",
  "toml_parser",
  "toml_writer",
  "winnow 0.7.15",
+]
+
+[[package]]
+name = "toml_datetime"
+version = "0.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
@@ -2878,6 +2943,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "toml_edit"
+version = "0.22.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41fe8c660ae4257887cf66394862d21dbca4a6ddd26f04a3560410406a2f819a"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_spanned 0.6.9",
+ "toml_datetime 0.6.11",
+ "toml_write",
+ "winnow 0.7.15",
+]
+
+[[package]]
 name = "toml_parser"
 version = "1.1.2+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2885,6 +2964,12 @@ checksum = "a2abe9b86193656635d2411dc43050282ca48aa31c2451210f4202550afb7526"
 dependencies = [
  "winnow 1.0.2",
 ]
+
+[[package]]
+name = "toml_write"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
 name = "toml_writer"
@@ -3369,6 +3454,9 @@ name = "winnow"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
+dependencies = [
+ "memchr",
+]
 
 [[package]]
 name = "winnow"
@@ -3508,9 +3596,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "8.5.1"
+version = "8.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dcab981e19633ebcf0b001ddd37dd802996098bc1864f90b7c5d970ce76c1d59"
+checksum = "2d04a6b5381502aa6087c94c669499eb1602eb9c5e8198e534de571f7154809b"
 dependencies = [
  "crc32fast",
  "indexmap",

@@ -77,15 +77,7 @@ pub fn grow_from_seed(
     };
     let pg_params =
         pg_grow::GrowParams::new(params.attach_search_rel, params.attach_ambiguity_factor);
-    let validator = ChessboardGrowValidator {
-        corners,
-        blacklist,
-        centers,
-        cell_size,
-        attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
-        edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
-        step_tol: params.step_tol,
-    };
+    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
 
     let pg_result = pg_grow::bfs_grow(&positions, pg_seed, cell_size, &pg_params, &validator);
 
@@ -108,14 +100,39 @@ pub fn grow_from_seed(
 /// clustering output + per-call tolerances. The BFS does not mutate
 /// per-corner state via this trait — `grow_from_seed` does that after
 /// the generic walk returns (see above).
-struct ChessboardGrowValidator<'a> {
-    corners: &'a [CornerAug],
-    blacklist: &'a HashSet<usize>,
-    centers: ClusterCenters,
-    cell_size: f32,
-    attach_tol_rad: f32,
-    edge_tol_rad: f32,
-    step_tol: f32,
+pub(crate) struct ChessboardGrowValidator<'a> {
+    pub(crate) corners: &'a [CornerAug],
+    pub(crate) blacklist: &'a HashSet<usize>,
+    pub(crate) centers: ClusterCenters,
+    pub(crate) cell_size: f32,
+    pub(crate) attach_tol_rad: f32,
+    pub(crate) edge_tol_rad: f32,
+    pub(crate) step_tol: f32,
+}
+
+impl<'a> ChessboardGrowValidator<'a> {
+    /// Construct from chessboard `DetectorParams` + the same inputs the
+    /// BFS-grow validator uses. Re-used by Stage-6
+    /// `grow_extension::extend_via_global_homography` to keep parity /
+    /// axis-cluster gates identical between BFS and boundary
+    /// extrapolation.
+    pub(crate) fn new(
+        corners: &'a [CornerAug],
+        blacklist: &'a HashSet<usize>,
+        centers: ClusterCenters,
+        cell_size: f32,
+        params: &DetectorParams,
+    ) -> Self {
+        Self {
+            corners,
+            blacklist,
+            centers,
+            cell_size,
+            attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
+            edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
+            step_tol: params.step_tol,
+        }
+    }
 }
 
 impl<'a> pg_grow::GrowValidator for ChessboardGrowValidator<'a> {
@@ -209,6 +226,165 @@ fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f3
     let canon_max = angular_dist_pi(a0, centers.theta0).max(angular_dist_pi(a1, centers.theta1));
     let swap_max = angular_dist_pi(a0, centers.theta1).max(angular_dist_pi(a1, centers.theta0));
     canon_max.min(swap_max) <= tol
+}
+
+/// Like `assign_corner` but doesn't impose the strict tolerance:
+/// returns the cheaper of canonical/swapped along with its `max_d`,
+/// or `None` only when both axes are at the no-info sentinel. Used by
+/// [`ChessboardRescueValidator`] to infer parity for `NoCluster` /
+/// `Strong` corners at Stage 6.5.
+#[inline]
+fn infer_label_with_max_d(
+    axes: &[AxisEstimate; 2],
+    centers: ClusterCenters,
+) -> (ClusterLabel, f32) {
+    let a0 = wrap_pi(axes[0].angle);
+    let a1 = wrap_pi(axes[1].angle);
+    let canon_max = angular_dist_pi(a0, centers.theta0).max(angular_dist_pi(a1, centers.theta1));
+    let swap_max = angular_dist_pi(a0, centers.theta1).max(angular_dist_pi(a1, centers.theta0));
+    if canon_max <= swap_max {
+        (ClusterLabel::Canonical, canon_max)
+    } else {
+        (ClusterLabel::Swapped, swap_max)
+    }
+}
+
+/// Stage-6.5 rescue: a relaxed-eligibility variant of
+/// [`ChessboardGrowValidator`] that admits `Strong` / `NoCluster`
+/// corners (in addition to `Clustered`) when their inferred parity
+/// matches the required cell parity AND their axes match the global
+/// cluster centers within `rescue_tol_rad`. Position match is enforced
+/// by [`projective_grid::square::grow_extension::extend_via_local_homography`]'s
+/// per-cell local-H prediction; this validator only owns the
+/// label-side gates.
+///
+/// Composed with the same `edge_ok` invariant used at growth time, so
+/// rescued corners still respect the axis-slot-swap edge rule.
+pub(crate) struct ChessboardRescueValidator<'a> {
+    pub(crate) corners: &'a [CornerAug],
+    pub(crate) blacklist: &'a HashSet<usize>,
+    pub(crate) centers: ClusterCenters,
+    pub(crate) cell_size: f32,
+    pub(crate) rescue_tol_rad: f32,
+    pub(crate) edge_tol_rad: f32,
+    pub(crate) step_tol: f32,
+}
+
+impl<'a> ChessboardRescueValidator<'a> {
+    pub(crate) fn new(
+        corners: &'a [CornerAug],
+        blacklist: &'a HashSet<usize>,
+        centers: ClusterCenters,
+        cell_size: f32,
+        params: &DetectorParams,
+    ) -> Self {
+        Self {
+            corners,
+            blacklist,
+            centers,
+            cell_size,
+            rescue_tol_rad: params.rescue_axis_tol_deg.to_radians(),
+            edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
+            step_tol: params.step_tol,
+        }
+    }
+}
+
+impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
+    fn is_eligible(&self, idx: usize) -> bool {
+        if self.blacklist.contains(&idx) {
+            return false;
+        }
+        let c = &self.corners[idx];
+        match c.stage {
+            // Already-Clustered corners are obviously eligible.
+            CornerStage::Clustered { .. } => true,
+            // Strong corners that didn't get clustered (Stage 1
+            // survivors that hit the no-info sentinel on one axis).
+            // Eligibility checked structurally; tolerance applied in
+            // `accept_candidate`.
+            CornerStage::Strong => {
+                let (_, max_d) = infer_label_with_max_d(&c.axes, self.centers);
+                max_d <= self.rescue_tol_rad
+            }
+            // The headline case: NoCluster with axes within the
+            // rescue tolerance. `assign_corner` already computed the
+            // minimum-`max_d` assignment when stamping the stage; we
+            // re-derive it here from the live axes.
+            CornerStage::NoCluster { .. } => {
+                let (_, max_d) = infer_label_with_max_d(&c.axes, self.centers);
+                max_d <= self.rescue_tol_rad
+            }
+            _ => false,
+        }
+    }
+
+    fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
+        Some(label_to_u8(required_label_at(i, j)))
+    }
+
+    fn label_of(&self, idx: usize) -> Option<u8> {
+        let c = &self.corners[idx];
+        match c.stage {
+            CornerStage::Clustered { label } => Some(label_to_u8(label)),
+            CornerStage::Strong | CornerStage::NoCluster { .. } => {
+                let (label, max_d) = infer_label_with_max_d(&c.axes, self.centers);
+                if max_d <= self.rescue_tol_rad {
+                    Some(label_to_u8(label))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn accept_candidate(
+        &self,
+        idx: usize,
+        _at: (i32, i32),
+        _prediction: Point2<f32>,
+        _neighbours: &[pg_grow::LabelledNeighbour],
+    ) -> pg_grow::Admit {
+        let c = &self.corners[idx];
+        if axes_match_centers(&c.axes, self.centers, self.rescue_tol_rad) {
+            pg_grow::Admit::Accept
+        } else {
+            pg_grow::Admit::Reject
+        }
+    }
+
+    fn edge_ok(
+        &self,
+        candidate_idx: usize,
+        neighbour_idx: usize,
+        _at_candidate: (i32, i32),
+        _at_neighbour: (i32, i32),
+    ) -> bool {
+        let c = &self.corners[candidate_idx];
+        let n = &self.corners[neighbour_idx];
+        let min_len = (1.0 - self.step_tol) * self.cell_size;
+        let max_len = (1.0 + self.step_tol) * self.cell_size;
+        let off = n.position - c.position;
+        let dist = off.norm();
+        if dist < min_len || dist > max_len {
+            return false;
+        }
+        let ang = wrap_pi(off.y.atan2(off.x));
+        let d_c0 = angular_dist_pi(ang, wrap_pi(c.axes[0].angle));
+        let d_c1 = angular_dist_pi(ang, wrap_pi(c.axes[1].angle));
+        let (slot_c, d_c) = if d_c0 <= d_c1 { (0, d_c0) } else { (1, d_c1) };
+        if d_c > self.edge_tol_rad {
+            return false;
+        }
+        let d_n0 = angular_dist_pi(ang, wrap_pi(n.axes[0].angle));
+        let d_n1 = angular_dist_pi(ang, wrap_pi(n.axes[1].angle));
+        let (slot_n, d_n) = if d_n0 <= d_n1 { (0, d_n0) } else { (1, d_n1) };
+        if d_n > self.edge_tol_rad {
+            return false;
+        }
+        slot_c != slot_n
+    }
 }
 
 #[cfg(test)]

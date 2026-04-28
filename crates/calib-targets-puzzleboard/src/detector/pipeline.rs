@@ -215,7 +215,8 @@ impl PuzzleBoardDetector {
             let Some(grid) = lc.grid else {
                 continue;
             };
-            let [raw_i, raw_j] = decoded.alignment.map(grid.i, grid.j);
+            let raw = decoded.alignment.map(grid.i, grid.j);
+            let (raw_i, raw_j) = (raw.i, raw.j);
             // Invariant: master coords must be wrapped into [0, 501) so that
             // `target_position == Point2::new((id % 501) * cell, (id / 501) * cell)`
             // holds for every LabeledCorner regardless of which D4 transform was

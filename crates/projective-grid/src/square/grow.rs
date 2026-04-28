@@ -36,10 +36,11 @@
 //! [`crate::square::validate`](mod@crate::square::validate) for
 //! that.
 
-use crate::circular_stats as cs;
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 use std::collections::{HashMap, HashSet, VecDeque};
+
+pub use crate::square::seed::Seed;
 
 /// Per-candidate decision from a [`GrowValidator`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -115,11 +116,20 @@ pub trait GrowValidator {
 #[derive(Clone, Copy, Debug)]
 pub struct GrowParams {
     /// Candidate-search radius (fraction of `cell_size`) around each
-    /// prediction.
+    /// prediction. Applies when the target is being **interpolated**
+    /// between labelled neighbours on opposite sides.
     pub attach_search_rel: f32,
     /// Ambiguity factor: if the second-nearest candidate is within
     /// `factor × nearest_distance`, the attachment is skipped.
     pub attach_ambiguity_factor: f32,
+    /// Multiplier on `attach_search_rel` when the target is being
+    /// **extrapolated** outward from the labelled set (every labelled
+    /// neighbour sits on the same side of the target along at least one
+    /// axis). Defaults to 2.0 — opens the search up enough to absorb
+    /// the perspective-foreshortening overshoot at the image edge while
+    /// still rejecting marker-internal corners which sit several cell-
+    /// widths away.
+    pub boundary_search_factor: f32,
 }
 
 impl Default for GrowParams {
@@ -127,6 +137,7 @@ impl Default for GrowParams {
         Self {
             attach_search_rel: 0.35,
             attach_ambiguity_factor: 1.5,
+            boundary_search_factor: 2.0,
         }
     }
 }
@@ -136,18 +147,9 @@ impl GrowParams {
         Self {
             attach_search_rel,
             attach_ambiguity_factor,
+            ..Self::default()
         }
     }
-}
-
-/// Seed quad: corner indices at grid cells `(0, 0), (1, 0), (0, 1),
-/// (1, 1)` respectively.
-#[derive(Clone, Copy, Debug)]
-pub struct Seed {
-    pub a: usize,
-    pub b: usize,
-    pub c: usize,
-    pub d: usize,
 }
 
 /// Outcome of a grow pass.
@@ -184,8 +186,6 @@ pub fn bfs_grow<V: GrowValidator>(
     params: &GrowParams,
     validator: &V,
 ) -> GrowResult {
-    let _ = cs::wrap_pi; // keeps `cs` in scope for future use
-
     // Grid unit vectors inferred from the seed corners (pixel space).
     let grid_u = {
         let raw = positions[seed.b] - positions[seed.a];
@@ -229,53 +229,31 @@ pub fn bfs_grow<V: GrowValidator>(
         enqueue_cardinal_neighbours(ij, &labelled, &mut boundary, &mut seen_boundary);
     }
 
-    let search_r = params.attach_search_rel * cell_size;
-
     while let Some(pos) = boundary.pop_front() {
         if labelled.contains_key(&pos) {
             continue;
         }
-
-        let neighbours = collect_labelled_neighbours(pos, 1, &labelled, positions);
-        if neighbours.is_empty() {
-            holes.insert(pos);
-            continue;
-        }
-
-        let prediction = predict_from_neighbours(pos, &neighbours, grid_u, grid_v, cell_size);
-
-        let required_label = validator.required_label_at(pos.0, pos.1);
-        let candidates = collect_candidates(
+        let (decision, _neighbours) = process_boundary_cell(
+            pos,
+            positions,
+            &labelled,
+            &by_corner,
             &tree,
             &tree_slot_to_corner,
-            prediction,
-            search_r,
+            grid_u,
+            grid_v,
+            cell_size,
+            params,
             validator,
-            required_label,
-            &by_corner,
         );
-
-        let choice = choose_unambiguous(
-            &candidates,
-            params.attach_ambiguity_factor,
-            prediction,
-            positions,
-            validator,
-            pos,
-            &neighbours,
-        );
-        match choice {
-            CandidateChoice::None => {
+        match decision {
+            BoundaryDecision::Hole | BoundaryDecision::EdgeRejected => {
                 holes.insert(pos);
             }
-            CandidateChoice::Ambiguous => {
+            BoundaryDecision::Ambiguous => {
                 ambiguous.insert(pos);
             }
-            CandidateChoice::Unique(c_idx) => {
-                if !any_cardinal_edge_ok(c_idx, pos, &labelled, validator) {
-                    holes.insert(pos);
-                    continue;
-                }
+            BoundaryDecision::Attach(c_idx) => {
                 labelled.insert(pos, c_idx);
                 by_corner.insert(c_idx, pos);
                 enqueue_cardinal_neighbours(pos, &labelled, &mut boundary, &mut seen_boundary);
@@ -311,7 +289,7 @@ pub fn bfs_grow<V: GrowValidator>(
     }
 }
 
-fn enqueue_cardinal_neighbours(
+pub(super) fn enqueue_cardinal_neighbours(
     pos: (i32, i32),
     labelled: &HashMap<(i32, i32), usize>,
     boundary: &mut VecDeque<(i32, i32)>,
@@ -325,7 +303,7 @@ fn enqueue_cardinal_neighbours(
     }
 }
 
-fn collect_labelled_neighbours(
+pub(super) fn collect_labelled_neighbours(
     pos: (i32, i32),
     window_half: i32,
     labelled: &HashMap<(i32, i32), usize>,
@@ -350,30 +328,132 @@ fn collect_labelled_neighbours(
     out
 }
 
-/// Average of per-neighbour axis-vector predictions:
-/// `pred_k = pos(N_k) + di·s·u + dj·s·v`, averaged equally.
+/// Distance-weighted average of per-neighbour axis-vector predictions.
+///
+/// Use this function for in-the-loop BFS attachment where arbitrary
+/// labelled neighbours are available. For post-grow outlier detection
+/// using cardinal midpoint averaging, see
+/// [`crate::square::smoothness::square_predict_grid_position`].
+///
+/// For each labelled neighbour `N_k` at `(i_k, j_k)`, the prediction is
+/// `pred_k = pos(N_k) + (Δi · i_step_k) + (Δj · j_step_k)` where
+/// `Δi = target.i − i_k`, `Δj = target.j − j_k`, and `i_step_k` /
+/// `j_step_k` are the **local** grid-step vectors observed at `N_k`:
+///
+/// - If `(i_k+1, j_k)` and `(i_k−1, j_k)` are both labelled, the i-step is
+///   the central difference `(pos(i_k+1, j_k) − pos(i_k−1, j_k)) / 2`.
+/// - Otherwise, a one-sided difference from whichever neighbour is
+///   labelled.
+/// - Otherwise, fall back to the global `cell_size · u`. Same for j.
+///
+/// This linearises the grid **at every neighbour individually** instead of
+/// trusting the seed's global `(u, v, cell_size)` — critical under strong
+/// perspective foreshortening, where the cell pitch on the far edge of
+/// the labelled set is materially different from the seed's mean. With
+/// the global-only model, BFS predictions on the foreshortened side
+/// overshoot the next true corner by more than the search radius and
+/// growth terminates prematurely.
+///
+/// Predictions are averaged with weights `1 / (Δi² + Δj²)` so cardinal
+/// neighbours (grid distance 1) carry weight 1.0 while diagonal
+/// neighbours (grid distance √2) carry weight 0.5 — variance addition
+/// per grid step.
+///
+/// A neighbour at the target cell itself (`Δi = Δj = 0`) would yield an
+/// infinite weight; in practice [`bfs_grow`] never enqueues such a
+/// neighbour (they're already labelled), but for robustness we treat
+/// `Δi = Δj = 0` as weight 1.0 to avoid `NaN`.
 pub fn predict_from_neighbours(
     target: (i32, i32),
     neighbours: &[LabelledNeighbour],
     u: Vector2<f32>,
     v: Vector2<f32>,
     cell_size: f32,
+    labelled: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
 ) -> Point2<f32> {
     debug_assert!(!neighbours.is_empty());
+    let global_i_step = u * cell_size;
+    let global_j_step = v * cell_size;
+
     let mut sum_x = 0.0_f32;
     let mut sum_y = 0.0_f32;
+    let mut sum_w = 0.0_f32;
     for n in neighbours {
         let di = (target.0 - n.at.0) as f32;
         let dj = (target.1 - n.at.1) as f32;
-        let off = u * (di * cell_size) + v * (dj * cell_size);
-        sum_x += n.position.x + off.x;
-        sum_y += n.position.y + off.y;
+        let d2 = di * di + dj * dj;
+        let w = if d2 > 0.0 { 1.0 / d2 } else { 1.0 };
+
+        let i_step = local_step_at(n.at, (1, 0), labelled, positions).unwrap_or(global_i_step);
+        let j_step = local_step_at(n.at, (0, 1), labelled, positions).unwrap_or(global_j_step);
+
+        let off = i_step * di + j_step * dj;
+        sum_x += w * (n.position.x + off.x);
+        sum_y += w * (n.position.y + off.y);
+        sum_w += w;
     }
-    let denom = neighbours.len() as f32;
-    Point2::new(sum_x / denom, sum_y / denom)
+    Point2::new(sum_x / sum_w, sum_y / sum_w)
 }
 
-fn collect_candidates<V: GrowValidator>(
+/// True when every labelled neighbour sits on the same side of `target`
+/// along at least one of the two grid axes — i.e., the target is being
+/// extrapolated outward from the labelled set rather than interpolated
+/// between two opposing sides.
+///
+/// This is the geometric signal that the search prediction is less
+/// reliable: extrapolation accumulates foreshortening error linearly,
+/// while interpolation has neighbours on both sides bracketing the
+/// truth.
+pub(super) fn is_extrapolating(target: (i32, i32), neighbours: &[LabelledNeighbour]) -> bool {
+    let mut has_neg_di = false;
+    let mut has_pos_di = false;
+    let mut has_neg_dj = false;
+    let mut has_pos_dj = false;
+    for n in neighbours {
+        let di = target.0 - n.at.0;
+        let dj = target.1 - n.at.1;
+        if di > 0 {
+            has_neg_di = true; // neighbour is on the −i side of target
+        } else if di < 0 {
+            has_pos_di = true;
+        }
+        if dj > 0 {
+            has_neg_dj = true;
+        } else if dj < 0 {
+            has_pos_dj = true;
+        }
+    }
+    !(has_neg_di && has_pos_di && has_neg_dj && has_pos_dj)
+}
+
+/// Estimate the local grid-step vector at labelled cell `at` along
+/// direction `step = (di, dj)` using a finite-difference of labelled
+/// neighbours. Returns `None` when neither the forward nor backward
+/// neighbour is labelled.
+pub(super) fn local_step_at(
+    at: (i32, i32),
+    step: (i32, i32),
+    labelled: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
+) -> Option<Vector2<f32>> {
+    let here = labelled.get(&at).map(|&i| positions[i])?;
+    let fwd = (at.0 + step.0, at.1 + step.1);
+    let bwd = (at.0 - step.0, at.1 - step.1);
+    let fwd_pos = labelled.get(&fwd).map(|&i| positions[i]);
+    let bwd_pos = labelled.get(&bwd).map(|&i| positions[i]);
+    match (fwd_pos, bwd_pos) {
+        (Some(f), Some(b)) => {
+            let v = (f - b) * 0.5;
+            Some(v)
+        }
+        (Some(f), None) => Some(f - here),
+        (None, Some(b)) => Some(here - b),
+        (None, None) => None,
+    }
+}
+
+pub(super) fn collect_candidates<V: GrowValidator>(
     tree: &KdTree<f32, 2>,
     slot_to_corner: &[usize],
     prediction: Point2<f32>,
@@ -407,13 +487,13 @@ fn collect_candidates<V: GrowValidator>(
     out
 }
 
-enum CandidateChoice {
+pub(super) enum CandidateChoice {
     None,
     Ambiguous,
     Unique(usize),
 }
 
-fn choose_unambiguous<V: GrowValidator>(
+pub(super) fn choose_unambiguous<V: GrowValidator>(
     candidates: &[(usize, f32)],
     ambiguity_factor: f32,
     prediction: Point2<f32>,
@@ -449,7 +529,7 @@ fn choose_unambiguous<V: GrowValidator>(
     CandidateChoice::None
 }
 
-fn any_cardinal_edge_ok<V: GrowValidator>(
+pub(super) fn any_cardinal_edge_ok<V: GrowValidator>(
     c_idx: usize,
     pos: (i32, i32),
     labelled: &HashMap<(i32, i32), usize>,
@@ -468,6 +548,106 @@ fn any_cardinal_edge_ok<V: GrowValidator>(
     // No cardinal neighbours → defer (position reached via BFS from a
     // labelled neighbour, so this is a safety net).
     !found_any
+}
+
+/// Outcome of processing one boundary cell.
+pub(super) enum BoundaryDecision {
+    /// No eligible candidates in the search radius.
+    Hole,
+    /// Multiple near-equidistant candidates — cannot pick unambiguously.
+    Ambiguous,
+    /// The edge check blocked the unique candidate.
+    EdgeRejected,
+    /// Unique candidate accepted; caller should attach this corner index.
+    Attach(usize),
+}
+
+/// Process one cell from the BFS boundary queue.
+///
+/// Collects labelled neighbours, predicts the target pixel position,
+/// searches candidates, resolves ambiguity, and checks `edge_ok`.
+/// Returns a [`BoundaryDecision`] that the caller applies to the mutable
+/// state. Keeping the decision logic in one place makes `bfs_grow` and
+/// `extend_from_labelled` share the same filter pipeline without
+/// duplicating code.
+///
+/// # Parameters
+/// - `pos`: the cell being processed.
+/// - `positions`: full corner position array.
+/// - `labelled` / `by_corner`: current label state.
+/// - `tree` / `tree_slot_to_corner`: KD-tree over eligible candidates.
+/// - `grid_u`, `grid_v`, `cell_size`, `params`: growth geometry.
+/// - `validator`: pattern-specific filter.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn process_boundary_cell<V: GrowValidator>(
+    pos: (i32, i32),
+    positions: &[Point2<f32>],
+    labelled: &HashMap<(i32, i32), usize>,
+    by_corner: &HashMap<usize, (i32, i32)>,
+    tree: &KdTree<f32, 2>,
+    tree_slot_to_corner: &[usize],
+    grid_u: Vector2<f32>,
+    grid_v: Vector2<f32>,
+    cell_size: f32,
+    params: &GrowParams,
+    validator: &V,
+) -> (BoundaryDecision, Vec<LabelledNeighbour>) {
+    let neighbours = collect_labelled_neighbours(pos, 1, labelled, positions);
+    if neighbours.is_empty() {
+        return (BoundaryDecision::Hole, neighbours);
+    }
+
+    let prediction = predict_from_neighbours(
+        pos,
+        &neighbours,
+        grid_u,
+        grid_v,
+        cell_size,
+        labelled,
+        positions,
+    );
+
+    let search_r = params.attach_search_rel * cell_size;
+    let extrapolating = is_extrapolating(pos, &neighbours);
+    let local_search_r = if extrapolating {
+        search_r * params.boundary_search_factor
+    } else {
+        search_r
+    };
+
+    let required_label = validator.required_label_at(pos.0, pos.1);
+    let candidates = collect_candidates(
+        tree,
+        tree_slot_to_corner,
+        prediction,
+        local_search_r,
+        validator,
+        required_label,
+        by_corner,
+    );
+
+    let choice = choose_unambiguous(
+        &candidates,
+        params.attach_ambiguity_factor,
+        prediction,
+        positions,
+        validator,
+        pos,
+        &neighbours,
+    );
+
+    let decision = match choice {
+        CandidateChoice::None => BoundaryDecision::Hole,
+        CandidateChoice::Ambiguous => BoundaryDecision::Ambiguous,
+        CandidateChoice::Unique(c_idx) => {
+            if !any_cardinal_edge_ok(c_idx, pos, labelled, validator) {
+                BoundaryDecision::EdgeRejected
+            } else {
+                BoundaryDecision::Attach(c_idx)
+            }
+        }
+    };
+    (decision, neighbours)
 }
 
 #[cfg(test)]
@@ -497,6 +677,169 @@ mod tests {
         ) -> Admit {
             Admit::Accept
         }
+    }
+
+    #[test]
+    fn predict_weights_diagonal_less_than_cardinal() {
+        // Demonstrate the 1/(Δi² + Δj²) weighting on **isolated** labelled
+        // neighbours — placed far enough apart in (i, j) that the local-step
+        // lookup returns `None` for both, exercising the global (u, v,
+        // cell_size) fallback path.
+        //
+        // target = (5, 5)
+        //   - cardinal at (5, 4), pos = (50, 40)
+        //   - diagonal at (3, 3), pos = (30, 30 + 4)  (4 px y-bias)
+        //
+        // Both neighbours' adjacent (i, j) cells are unlabelled, so each
+        // falls back to the global step `cell_size · u`, `cell_size · v`.
+        // Cardinal prediction at target: (50, 40) + (0, 10) = (50, 50).
+        // Diagonal prediction at target: (30, 34) + (20, 20) = (50, 54).
+        //
+        // Weights: cardinal Δd²=1 → w=1.0; diagonal Δd²=8 → w=0.125.
+        // Weighted y: (50 + 0.125·54) / 1.125 ≈ 50.444 px.
+        // Equal-weight average would be (50 + 54)/2 = 52, so the
+        // diagonal's bias has been suppressed by the d² down-weighting.
+        let s = 10.0_f32;
+        let u = Vector2::new(1.0, 0.0);
+        let v = Vector2::new(0.0, 1.0);
+        let target = (5, 5);
+        let cardinal = LabelledNeighbour {
+            idx: 0,
+            at: (5, 4),
+            position: Point2::new(50.0, 40.0),
+        };
+        let diagonal = LabelledNeighbour {
+            idx: 1,
+            at: (3, 3),
+            position: Point2::new(30.0, 34.0),
+        };
+        let positions = vec![cardinal.position, diagonal.position];
+        let mut labelled = HashMap::new();
+        labelled.insert(cardinal.at, 0usize);
+        labelled.insert(diagonal.at, 1usize);
+        let pred = predict_from_neighbours(
+            target,
+            &[cardinal, diagonal],
+            u,
+            v,
+            s,
+            &labelled,
+            &positions,
+        );
+        let expected_y = (50.0 + 0.125 * 54.0) / 1.125;
+        assert!(
+            (pred.x - 50.0).abs() < 1e-4,
+            "predicted x {} should equal 50",
+            pred.x
+        );
+        assert!(
+            (pred.y - expected_y).abs() < 1e-4,
+            "predicted y {} should equal {} (1/d² weighted)",
+            pred.y,
+            expected_y
+        );
+        let equal_weight_y = (50.0 + 54.0) * 0.5;
+        assert!(
+            (pred.y - 50.0) < (equal_weight_y - 50.0),
+            "weighted bias {} should be smaller than equal-weight bias {}",
+            pred.y - 50.0,
+            equal_weight_y - 50.0,
+        );
+    }
+
+    #[test]
+    fn predict_with_only_cardinal_recovers_exact_offset() {
+        let s = 12.0_f32;
+        let u = Vector2::new(1.0, 0.0);
+        let v = Vector2::new(0.0, 1.0);
+        let target = (2, 2);
+        let neighbour = LabelledNeighbour {
+            idx: 0,
+            at: (1, 2),
+            position: Point2::new(s, 2.0 * s),
+        };
+        let positions = vec![neighbour.position];
+        let mut labelled = HashMap::new();
+        labelled.insert(neighbour.at, 0usize);
+        let pred = predict_from_neighbours(target, &[neighbour], u, v, s, &labelled, &positions);
+        assert!((pred.x - 2.0 * s).abs() < 1e-4);
+        assert!((pred.y - 2.0 * s).abs() < 1e-4);
+    }
+
+    #[test]
+    fn predict_uses_local_step_when_neighbour_has_own_neighbours() {
+        // Foreshortened-grid scenario:
+        //   labelled (i, j) | image position
+        //   ---------------- | --------------
+        //   (3, 0)            | (300, 0)   ← neighbour we extrapolate from
+        //   (4, 0)            | (310, 0)   ← +1 step at (3,0) is only +10 px
+        //   (5, 0)            | (320, 0)
+        //
+        // The seed's global cell_size is 50 px (a far-region estimate). The
+        // global model would predict target (2, 0) at (300 - 50, 0) = (250, 0),
+        // missing the actual location at (290, 0) by 40 px.
+        //
+        // The local-step model uses the central-difference at (3, 0):
+        //   i_step = (pos(4, 0) − pos(2, 0)) / 2  but (2, 0) is unlabelled
+        //   so it falls back to one-sided: pos(3, 0) − pos(4, 0) = (−10, 0)
+        //   wait — that's BACKWARD. Let me redo: forward (4, 0) is labelled,
+        //   so i_step ← pos(4, 0) − pos(3, 0) = (+10, 0). For target (2, 0),
+        //   prediction = pos(3, 0) + (2 − 3) · (+10, 0) = (290, 0). ✓
+        let u = Vector2::new(1.0, 0.0);
+        let v = Vector2::new(0.0, 1.0);
+        let global_cell_size = 50.0_f32;
+        let neighbour = LabelledNeighbour {
+            idx: 0,
+            at: (3, 0),
+            position: Point2::new(300.0, 0.0),
+        };
+        let mut positions = vec![neighbour.position];
+        let mut labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        labelled.insert((3, 0), 0);
+        positions.push(Point2::new(310.0, 0.0));
+        labelled.insert((4, 0), 1);
+        positions.push(Point2::new(320.0, 0.0));
+        labelled.insert((5, 0), 2);
+
+        let pred = predict_from_neighbours(
+            (2, 0),
+            &[neighbour],
+            u,
+            v,
+            global_cell_size,
+            &labelled,
+            &positions,
+        );
+        // Adaptive prediction lands on the foreshortened position, not the
+        // 50-px global step.
+        assert!(
+            (pred.x - 290.0).abs() < 1e-3,
+            "expected adaptive prediction at x=290, got {}",
+            pred.x
+        );
+        assert!((pred.y - 0.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn predict_falls_back_to_global_when_no_local_steps() {
+        // Single isolated neighbour with no labelled +i / +j peers — the
+        // local-step lookup returns None for both directions and the global
+        // (u, v, cell_size) fallback produces the same answer as the
+        // pre-refactor implementation.
+        let u = Vector2::new(1.0, 0.0);
+        let v = Vector2::new(0.0, 1.0);
+        let s = 25.0_f32;
+        let neighbour = LabelledNeighbour {
+            idx: 0,
+            at: (4, 4),
+            position: Point2::new(100.0, 100.0),
+        };
+        let positions = vec![neighbour.position];
+        let mut labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        labelled.insert((4, 4), 0);
+        let pred = predict_from_neighbours((5, 4), &[neighbour], u, v, s, &labelled, &positions);
+        assert!((pred.x - (100.0 + s)).abs() < 1e-3);
+        assert!((pred.y - 100.0).abs() < 1e-3);
     }
 
     #[test]

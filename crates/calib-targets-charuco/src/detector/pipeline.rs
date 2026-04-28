@@ -10,7 +10,9 @@ use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
-use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
+use calib_targets_chessboard::{
+    Detection as ChessDetection, Detector as ChessDetector, GraphBuildAlgorithm,
+};
 use calib_targets_core::{Corner, GrayImageView};
 use log::{debug, warn};
 
@@ -161,7 +163,17 @@ impl CharucoDetector {
             self.params.px_per_square,
             self.params.min_marker_inliers
         );
-        let detector = ChessDetector::new(self.params.chessboard.clone());
+        // ChArUco MUST run on the seed-and-grow pipeline. The topological
+        // pipeline's axis-driven cell test assumes uniform black/white
+        // tiles, which marker squares break: a marker carries embedded
+        // bit features whose ChESS axes do not align with the global
+        // board directions, so triangle-pair merging into chessboard
+        // cells fails on every marker-bearing cell. We override the
+        // caller's choice unconditionally and document it on
+        // `CharucoParams::chessboard`.
+        let mut chess_params = self.params.chessboard.clone();
+        chess_params.graph_build_algorithm = GraphBuildAlgorithm::ChessboardV2;
+        let detector = ChessDetector::new(chess_params);
         let components = detector.detect_all(corners);
 
         if components.is_empty() {
@@ -438,8 +450,8 @@ fn count_wrong_id_raw_markers(
             let Some(expected_bc) = board.marker_position(m.id) else {
                 return false; // pure dict noise — not counted as "wrong id"
             };
-            let [bx, by] = alignment.map(m.gc.i, m.gc.j);
-            bx != expected_bc.i || by != expected_bc.j
+            let bc = alignment.map(m.gc.i, m.gc.j);
+            bc.i != expected_bc.i || bc.j != expected_bc.j
         })
         .count()
 }

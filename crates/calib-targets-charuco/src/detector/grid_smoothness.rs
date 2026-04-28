@@ -11,10 +11,10 @@
 use super::corner_validation::redetect_corner_in_roi;
 use super::marker_sampling::CornerMap;
 use calib_targets_core::{GrayImageView, GridCoords};
-use chess_corners_core::ChessParams;
+use chess_corners::ChessParams;
 use log::debug;
 use nalgebra::Point2;
-use projective_grid::predict_grid_position;
+use projective_grid::square_predict_grid_position;
 
 /// Check grid corners for smoothness and fix or remove outliers.
 ///
@@ -51,7 +51,7 @@ pub(crate) fn smooth_grid_corners(
     for gc in &keys {
         let pos = corner_map[gc];
 
-        let Some(predicted) = predict_grid_position(corner_map, *gc) else {
+        let Some(predicted) = square_predict_grid_position(corner_map, *gc) else {
             continue;
         };
 

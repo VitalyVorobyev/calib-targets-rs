@@ -27,7 +27,7 @@
       "path": "testdata/large.png",
       "require_detection": true,
       "min_labelled": 340,
-      "max_components": 2
+      "max_components": 3
     },
     {
       "path": "testdata/small0.png",

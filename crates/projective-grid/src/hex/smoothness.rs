@@ -6,7 +6,7 @@
 
 use crate::float_helpers::lit;
 use crate::Float;
-use crate::GridIndex;
+use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
@@ -32,19 +32,19 @@ const HEX_AXIS_PAIRS: [((i32, i32), (i32, i32)); 3] = [
 /// Returns the average of available predictions, or `None` if no complete
 /// neighbor pair exists.
 pub fn hex_predict_grid_position<F: Float>(
-    grid: &HashMap<GridIndex, Point2<F>>,
-    idx: GridIndex,
+    grid: &HashMap<GridCoords, Point2<F>>,
+    idx: GridCoords,
 ) -> Option<Point2<F>> {
     let half: F = lit(0.5);
     let mut pred_sum = Point2::new(F::zero(), F::zero());
     let mut pred_count = 0u32;
 
     for &((dq_a, dr_a), (dq_b, dr_b)) in &HEX_AXIS_PAIRS {
-        let a = GridIndex {
+        let a = GridCoords {
             i: idx.i + dq_a,
             j: idx.j + dr_a,
         };
-        let b = GridIndex {
+        let b = GridCoords {
             i: idx.i + dq_b,
             j: idx.j + dr_b,
         };
@@ -68,9 +68,9 @@ pub fn hex_predict_grid_position<F: Float>(
 ///
 /// Returns `(grid_index, predicted_position)` for each inconsistent corner.
 pub fn hex_find_inconsistent_corners<F: Float>(
-    grid: &HashMap<GridIndex, Point2<F>>,
+    grid: &HashMap<GridCoords, Point2<F>>,
     threshold: F,
-) -> Vec<(GridIndex, Point2<F>)> {
+) -> Vec<(GridCoords, Point2<F>)> {
     let threshold_sq = threshold * threshold;
     let mut flagged = Vec::new();
 
@@ -91,7 +91,7 @@ pub fn hex_find_inconsistent_corners<F: Float>(
 mod tests {
     use super::*;
 
-    fn make_hex_grid(radius: i32, spacing: f32) -> HashMap<GridIndex, Point2<f32>> {
+    fn make_hex_grid(radius: i32, spacing: f32) -> HashMap<GridCoords, Point2<f32>> {
         let sqrt3 = 3.0f32.sqrt();
         let mut map = HashMap::new();
         for q in -radius..=radius {
@@ -101,7 +101,7 @@ mod tests {
                 }
                 let x = spacing * (q as f32 + r as f32 * 0.5);
                 let y = spacing * (r as f32 * sqrt3 / 2.0);
-                map.insert(GridIndex { i: q, j: r }, Point2::new(x, y));
+                map.insert(GridCoords { i: q, j: r }, Point2::new(x, y));
             }
         }
         map
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn displaced_corner_is_flagged() {
         let mut grid = make_hex_grid(2, 60.0);
-        let center = GridIndex { i: 0, j: 0 };
+        let center = GridCoords { i: 0, j: 0 };
         // Displace center by (9, 9) pixels
         grid.insert(center, Point2::new(9.0, 9.0));
 
@@ -134,8 +134,8 @@ mod tests {
     #[test]
     fn isolated_nodes_are_skipped() {
         let mut grid = HashMap::new();
-        grid.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        grid.insert(GridIndex { i: 10, j: 10 }, Point2::new(500.0, 500.0));
+        grid.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        grid.insert(GridCoords { i: 10, j: 10 }, Point2::new(500.0, 500.0));
 
         let flagged = hex_find_inconsistent_corners(&grid, 3.0);
         assert!(flagged.is_empty());
@@ -147,27 +147,27 @@ mod tests {
         let sqrt3 = 3.0f32.sqrt();
         let mut grid = HashMap::new();
         // Just three points along the E/W axis: q = -1, 0, 1 at r = 0
-        grid.insert(GridIndex { i: -1, j: 0 }, Point2::new(-spacing, 0.0));
-        grid.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        grid.insert(GridIndex { i: 1, j: 0 }, Point2::new(spacing, 0.0));
+        grid.insert(GridCoords { i: -1, j: 0 }, Point2::new(-spacing, 0.0));
+        grid.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        grid.insert(GridCoords { i: 1, j: 0 }, Point2::new(spacing, 0.0));
 
-        let pred = hex_predict_grid_position(&grid, GridIndex { i: 0, j: 0 }).unwrap();
+        let pred = hex_predict_grid_position(&grid, GridCoords { i: 0, j: 0 }).unwrap();
         assert!((pred.x - 0.0f32).abs() < 0.01);
         assert!((pred.y - 0.0f32).abs() < 0.01);
 
         // Three points along the NW/SE axis: (0,-1), (0,0), (0,1)
         let mut grid2 = HashMap::new();
         grid2.insert(
-            GridIndex { i: 0, j: -1 },
+            GridCoords { i: 0, j: -1 },
             Point2::new(-0.5 * spacing, -sqrt3 / 2.0 * spacing),
         );
-        grid2.insert(GridIndex { i: 0, j: 0 }, Point2::new(0.0, 0.0));
+        grid2.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
         grid2.insert(
-            GridIndex { i: 0, j: 1 },
+            GridCoords { i: 0, j: 1 },
             Point2::new(0.5 * spacing, sqrt3 / 2.0 * spacing),
         );
 
-        let pred2 = hex_predict_grid_position(&grid2, GridIndex { i: 0, j: 0 }).unwrap();
+        let pred2 = hex_predict_grid_position(&grid2, GridCoords { i: 0, j: 0 }).unwrap();
         assert!((pred2.x - 0.0f32).abs() < 0.01);
         assert!((pred2.y - 0.0f32).abs() < 0.01);
     }
@@ -187,7 +187,7 @@ mod tests {
                 let y = spacing * (r as f32 * sqrt3 / 2.0);
                 // Mild perspective: scale increases with y
                 let scale = 1.0 + 0.01 * y / spacing;
-                grid.insert(GridIndex { i: q, j: r }, Point2::new(x * scale, y * scale));
+                grid.insert(GridCoords { i: q, j: r }, Point2::new(x * scale, y * scale));
             }
         }
 

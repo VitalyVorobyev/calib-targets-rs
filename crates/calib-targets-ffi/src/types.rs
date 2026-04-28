@@ -9,6 +9,18 @@ pub const CT_FALSE: u32 = 0;
 /// ABI boolean true.
 pub const CT_TRUE: u32 = 1;
 
+/// Selector for the chessboard graph-build algorithm. Mirrors the
+/// `calib_targets_chessboard::GraphBuildAlgorithm` enum.
+///
+/// Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
+/// keeps zero-initialised C structs on the historical seed-and-grow
+/// pipeline (`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`).
+pub type ct_graph_build_algorithm_t = u32;
+/// Seed-and-grow pipeline. Currently the default.
+pub const CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2: ct_graph_build_algorithm_t = 0;
+/// Topological pipeline (Delaunay + axis-driven cell test).
+pub const CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL: ct_graph_build_algorithm_t = 1;
+
 /// Fixed dictionary identifier type for built-in marker dictionaries.
 pub type ct_dictionary_id_t = u32;
 pub const CT_DICTIONARY_DICT_4X4_50: ct_dictionary_id_t = 1;
@@ -452,6 +464,10 @@ pub struct ct_chess_config_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_params_t {
+    /// Pipeline selector. See [`ct_graph_build_algorithm_t`].
+    /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
+    pub graph_build_algorithm: ct_graph_build_algorithm_t,
+
     // Stage 1 — pre-filter
     pub min_corner_strength: f32,
     pub max_fit_rms_ratio: f32,
@@ -480,7 +496,6 @@ pub struct ct_chessboard_params_t {
 
     // Stage 7 — validate
     pub line_tol_rel: f32,
-    pub projective_line_tol_rel: f32,
     pub line_min_members: usize,
     pub local_h_tol_rel: f32,
     pub max_validation_iters: u32,

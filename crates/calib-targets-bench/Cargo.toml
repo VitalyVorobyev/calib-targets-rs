@@ -1,0 +1,24 @@
+[package]
+name = "calib-targets-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Internal regression / performance harness for the chessboard grid builder"
+
+[dependencies]
+calib-targets = { workspace = true }
+calib-targets-chessboard = { workspace = true }
+calib-targets-core = { workspace = true }
+projective-grid = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+image = { workspace = true }
+nalgebra = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = "0.8"
+
+[[bin]]
+name = "bench"
+path = "src/bin/bench.rs"

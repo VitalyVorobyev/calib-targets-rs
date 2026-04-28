@@ -6,12 +6,224 @@
 //!
 //! Default values follow spec §6.
 
+use projective_grid::{LocalMergeParams, TopologicalParams};
 use serde::{Deserialize, Serialize};
+
+/// Which graph-build algorithm to run.
+///
+/// The detector ships two pipelines side by side:
+///
+/// - [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2) — invariant-rich
+///   8-stage seed-and-grow pipeline (axis clustering → cell-size
+///   estimate → 4-corner seed → BFS grow → validate → boosters).
+///   **Current default.** Pinned for ChArUco because non-uniform marker
+///   cells defeat the topological cell test.
+/// - [`Topological`](GraphBuildAlgorithm::Topological) — Delaunay
+///   triangulation + axis-driven cell test (Shu/Brunton/Fiala 2009 with
+///   image-free classification). Lower setup cost, no global cell-size
+///   dependency. **Currently opt-in only.** Designed to handle severe
+///   radial distortion and low view angles that the seed-and-grow
+///   pipeline stalls on (the PuzzleBoard `130x130_puzzle` low-angle
+///   target). Recall on the chessboard testdata regression set is
+///   below ChessboardV2's; the default will flip once tolerances are
+///   tuned to match the precision-and-recall baseline. Opt in per call
+///   via [`DetectorParams::graph_build_algorithm`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum GraphBuildAlgorithm {
+    Topological,
+    /// Conservative default while topological recall catches up to
+    /// ChessboardV2 on the public testdata regression set.
+    #[default]
+    ChessboardV2,
+}
+
+fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
+    GraphBuildAlgorithm::default()
+}
+
+fn default_topological_params() -> TopologicalParams {
+    TopologicalParams::default()
+}
+
+fn default_component_merge_params() -> LocalMergeParams {
+    LocalMergeParams::default()
+}
+
+fn default_validate_step_aware() -> bool {
+    // Default off: shipping the capability without changing behaviour.
+    // The step-aware threshold is anisotropic per-corner — tighter in
+    // perspective-foreshortened regions, looser in radially-distorted
+    // ones. On the public bench, enabling it drops one labelled corner
+    // on `testdata/puzzleboard_reference/example1.png` (the tighter
+    // back-edge tolerance over-flags). Treat enabling it as a focused
+    // experiment per dataset until we have a tuned `line_tol_rel` /
+    // `local_h_tol_rel` pair that holds the precision contract on
+    // every blessed image.
+    false
+}
+
+fn default_step_deviation_thresh_rel() -> f32 {
+    // Off by default. Set to e.g. 0.5 to flag corners whose local
+    // step deviates from the labelled-set median by more than 50%.
+    // Combined with a line flag, the corner is blacklisted (rule 4).
+    0.0
+}
+
+fn default_cluster_sigma_k() -> f32 {
+    // k = 0 by default — sigma-aware tolerance is plumbed through but
+    // disabled. Empirical study (k = 0.5–2.0 with cap 3–4°): every
+    // positive setting that recovers `small3.png`'s NoCluster set also
+    // destabilises `example2.png`'s seed finder under heavy radial
+    // distortion. Extra Clustered candidates expose a ~1.4×-cell seed
+    // quad whose edge midpoints don't coincide with any real corner,
+    // so the existing midpoint-violation check (even broadened to
+    // include all positions) does not reject it. The seed selector
+    // needs cell-size consistency or trial-grow scoring before this
+    // gate can open. Setting `cluster_sigma_k` > 0 in a custom
+    // `DetectorParams` is fine for experiments.
+    0.0
+}
+
+fn default_enable_stage6_5_rescue() -> bool {
+    // Default on. The rescue pass runs after Stage 6 and is gated on
+    // (a) local-H position match, (b) parity match against the global
+    // centers, and (c) the axis-slot-swap edge invariant. None of
+    // these admit a structurally wrong corner — the precision
+    // contract still holds.
+    true
+}
+
+fn default_rescue_axis_tol_deg() -> f32 {
+    // 22° covers the false-NoCluster `max_d_deg` quartiles observed
+    // on `example1.png` (max 32°) and `example2.png` (max 21°).
+    // Goes wider than `weak_cluster_tol_deg` because Stage 6.5
+    // requires the additional position + parity + edge gates.
+    22.0
+}
+
+fn default_rescue_search_rel() -> f32 {
+    // 0.8 cell — wide enough to catch corners under heavy perspective
+    // foreshortening where local-H extrapolation at boundary cells
+    // overshoots the actual position by ~0.5 cell. The ambiguity gate
+    // and parity / axis / edge invariants keep precision intact.
+    0.8
+}
+
+fn default_enable_post_grow_refit() -> bool {
+    // Default on. After Stage 6.5 / boosters converge, recompute
+    // cluster centres from the labelled axes alone (no marker
+    // contribution), and re-run Stage 6 / 6.5 once with the new
+    // centres. Recovers chessboard parity-B corners on images where
+    // the histogram-driven Stage-3 centres are biased downward by
+    // marker-internal corners.
+    true
+}
+
+fn default_refit_min_labelled() -> usize {
+    8
+}
+
+fn default_refit_min_shift_deg() -> f32 {
+    // Below 0.5° the centre shift cannot move a borderline corner
+    // across the cluster gate; skip the second Stage-6 / 6.5 pass.
+    0.5
+}
+
+fn default_enable_post_grow_bfs_regrow() -> bool {
+    // Default ON. Runs first when the refit triggers; lifts recall
+    // on cases where the orphan strip is 1+ cells past the existing
+    // labelled set's bbox edge (small3.png left strip, +21 corners
+    // on the public bench). The destructive regrow can flip a few
+    // borderline parity slots under the small (~3°) centre shift —
+    // those losses are recovered immediately by
+    // `enable_post_grow_bfs_extend` running after, which walks the
+    // regrown labelled set's boundary and re-attaches dropped
+    // corners via cardinal-neighbour prediction.
+    true
+}
+
+fn default_enable_post_grow_bfs_extend() -> bool {
+    // Default ON. After refit produces refined centres, walk the
+    // existing labelled set's boundary with a non-destructive BFS
+    // (`projective_grid::square::grow_extend::extend_from_labelled`),
+    // attaching newly-Clustered corners via cardinal-neighbour
+    // propagation. Reaches interior-hole / left-strip corners that
+    // local-H extrapolation (Stage 6 / 6.5) cannot, but unlike the
+    // destructive `enable_post_grow_bfs_regrow` it never demotes
+    // existing Labeled corners — so it preserves perimeter rows
+    // on heavy-distortion images that the destructive regrow would
+    // strip.
+    true
+}
+
+fn default_geometry_check_line_tol_rel() -> f32 {
+    // Final geometry check uses a much looser line-collinearity
+    // tolerance than the BFS-validation pass (`line_tol_rel = 0.18`).
+    // The geometry check's role is to catch gross mislabels —
+    // full-cell or diagonal shifts (~1.4 cell residual) — not the
+    // borderline perspective drift that the BFS-validation loop
+    // already worked through and accepted. A tight tolerance here
+    // produces catastrophic recall regressions on
+    // `puzzleboard_reference/example2.png` (heavy radial distortion)
+    // and the 130x130_puzzle dataset.
+    0.45
+}
+
+fn default_geometry_check_local_h_tol_rel() -> f32 {
+    // Same logic as above for local-H residual. A diagonal mislabel
+    // shifts a corner by ~1.4 cell from its predicted position; a
+    // tolerance of 0.6 cell is well below that gap while leaving the
+    // legitimate perspective-distorted corners alone.
+    0.6
+}
+
+fn default_stage6_local_h() -> bool {
+    // Local-H Stage 6 is the production default: per-candidate
+    // homography from the K nearest labelled corners + deeper bbox
+    // enumeration (`extend_depth = 3`). On the public bench it lifts
+    // `testdata/puzzleboard_reference/example2.png` from 75 → 134
+    // labelled corners (heavy radial distortion, where global-H's
+    // residual gate refused). All other public images stay byte-exact.
+    // p95 latency goes from ~10 ms to ~18 ms — the cost of one DLT
+    // per candidate cell, within the Phase 5 budget (≤ 1.3× baseline).
+    //
+    // Set to `false` to fall back to the single-global-H Stage 6 if
+    // the latency or determinism behaviour ever needs to be compared
+    // back-to-back.
+    true
+}
+
+fn default_stage6_local_k_nearest() -> usize {
+    // K = 12 gives 3× over-determination on the 9-DOF DLT and is
+    // wide enough to capture local perspective without diluting it
+    // with far-away labels. Reduce to 8 for very small labelled sets;
+    // raise to 16 for large/dense grids.
+    12
+}
 
 /// Top-level detector configuration.
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DetectorParams {
+    // --- Pipeline dispatch ---------------------------------------------------
+    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
+    /// Default: [`GraphBuildAlgorithm::Topological`].
+    #[serde(default = "default_graph_build_algorithm")]
+    pub graph_build_algorithm: GraphBuildAlgorithm,
+
+    /// Tuning knobs for the [`GraphBuildAlgorithm::Topological`] path.
+    /// Ignored when [`graph_build_algorithm`](Self::graph_build_algorithm)
+    /// is [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2).
+    #[serde(default = "default_topological_params")]
+    pub topological: TopologicalParams,
+
+    /// Tuning knobs for the shared local-geometry component merger.
+    /// Used by both the topological and chessboard-v2 pipelines.
+    #[serde(default = "default_component_merge_params")]
+    pub component_merge: LocalMergeParams,
+
     // --- Stage 1: pre-filter -------------------------------------------------
     /// Minimum corner strength (ChESS response). `0.0` disables the filter.
     pub min_corner_strength: f32,
@@ -24,9 +236,29 @@ pub struct DetectorParams {
     pub num_bins: usize,
     /// Max 2-means refinement iterations over axis votes.
     pub max_iters_2means: usize,
-    /// Per-axis absolute tolerance for a corner's axis to count as matching a
-    /// cluster center.
+    /// Per-axis absolute tolerance (degrees) for a corner's axis to count as
+    /// matching a cluster center. The effective per-corner gate is
+    /// `cluster_tol_deg + cluster_sigma_k * max(σ_a0, σ_a1)`, so noisier
+    /// axis estimates get proportional slack — see [`cluster_sigma_k`].
+    ///
+    /// [`cluster_sigma_k`]: DetectorParams::cluster_sigma_k
     pub cluster_tol_deg: f32,
+    /// Multiplier on the per-corner axis sigma added to [`cluster_tol_deg`]
+    /// when admitting a corner. Default `2.0`: clean corners
+    /// (σ ≈ 0.5–1°) get ≈ `cluster_tol_deg + 1–2°`; noisy corners
+    /// (σ ≈ 3–5° on tilted-lens / partial-focus images) get
+    /// `cluster_tol_deg + 6–10°`. Set to `0.0` to restore the strict
+    /// fixed-tolerance behaviour.
+    ///
+    /// Justification: ChESS axis sigma is the 1σ Gauss–Newton uncertainty
+    /// of the two-axis fit, so a per-corner gate of `tol + k·σ` is the
+    /// standard way to pass corners whose true axis is within tolerance
+    /// but whose estimate fell outside under noise. `k = 2` corresponds
+    /// to a ≈ 95% one-sided confidence band.
+    ///
+    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
+    #[serde(default = "default_cluster_sigma_k")]
+    pub cluster_sigma_k: f32,
     /// Minimal angular separation (degrees) between the two peaks. Guards
     /// against seed-peak collisions; true grid axes are `~90°` apart.
     pub peak_min_separation_deg: f32,
@@ -62,18 +294,213 @@ pub struct DetectorParams {
     pub edge_axis_tol_deg: f32,
 
     // --- Stage 7: validate ---------------------------------------------------
-    /// Straight-line-fit collinearity tolerance (fraction of `s`).
+    /// Straight-line-fit collinearity tolerance (fraction of the
+    /// per-corner scale — see [`validate_step_aware`]).
+    ///
+    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
     pub line_tol_rel: f32,
-    /// Projective-line-fit collinearity tolerance (fraction of `s`). Looser
-    /// than `line_tol_rel` to accommodate lens distortion.
-    pub projective_line_tol_rel: f32,
     /// Minimum members required to fit a line / column for collinearity
     /// checks.
     pub line_min_members: usize,
-    /// Local-H prediction tolerance (fraction of `s`).
+    /// Local-H prediction tolerance (fraction of the per-corner scale
+    /// — see [`validate_step_aware`]).
+    ///
+    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
     pub local_h_tol_rel: f32,
+    /// When `true`, [`line_tol_rel`] / [`local_h_tol_rel`] are
+    /// multiplied by a per-corner local step (computed from labelled
+    /// grid neighbours via central or one-sided finite differences)
+    /// instead of the global cell size. Anisotropic thresholds catch
+    /// outliers in dense (perspective-foreshortened) regions that a
+    /// global threshold would miss, and stay loose enough in
+    /// distorted regions where the local cell pitch grows. Falls back
+    /// to global cell size for corners with too few labelled
+    /// neighbours.
+    ///
+    /// Default `true`. Set to `false` to restore the pre-2026-04
+    /// behaviour.
+    ///
+    /// [`line_tol_rel`]: DetectorParams::line_tol_rel
+    /// [`local_h_tol_rel`]: DetectorParams::local_h_tol_rel
+    #[serde(default = "default_validate_step_aware")]
+    pub validate_step_aware: bool,
+    /// When `> 0` and [`validate_step_aware`] is set, an extra flag
+    /// fires for corners whose local step deviates from the labelled-
+    /// set median by more than this fraction (e.g. `0.5` flags
+    /// corners whose step is < 1/(1+0.5) of the median or > 1.5×
+    /// median). Combined with a line flag, the corner is
+    /// blacklisted.
+    ///
+    /// Default `0.5`. Set to `0.0` to disable the deviation flag.
+    ///
+    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
+    #[serde(default = "default_step_deviation_thresh_rel")]
+    pub validate_step_deviation_thresh_rel: f32,
     /// Blacklist-retry cap.
     pub max_validation_iters: u32,
+
+    // --- Stage 6.5: NoCluster rescue ---------------------------------------
+    /// Run a Stage-6.5 pass after Stage-6 boundary extension that
+    /// re-considers `Strong` / `NoCluster` corners as candidates for
+    /// empty grid cells. Reuses the same per-candidate local-H
+    /// machinery as Stage 6 but admits corners whose axes failed the
+    /// strict Stage-3 gate by a margin, gated on (a) position match
+    /// with the local-H prediction, (b) parity match against the
+    /// global cluster centers via the cheaper canonical/swapped
+    /// assignment, and (c) the axis-slot-swap edge invariant to a
+    /// labelled neighbour. Recovers corners whose axes drifted under
+    /// perspective foreshortening or radial distortion (typical
+    /// failure mode on `puzzleboard_reference/example1.png` and
+    /// `example2.png`).
+    ///
+    /// Default `true`. Set to `false` to restore the pre-Stage-6.5
+    /// behaviour.
+    #[serde(default = "default_enable_stage6_5_rescue")]
+    pub enable_stage6_5_rescue: bool,
+    /// Per-axis absolute tolerance (degrees) for [`Stage 6.5
+    /// rescue`](DetectorParams::enable_stage6_5_rescue) admission.
+    /// Wider than [`cluster_tol_deg`] (typically 12°) and the booster's
+    /// [`weak_cluster_tol_deg`] (typically 18°) because the rescue
+    /// pass is precision-anchored on local-H position match — a wide
+    /// axis gate alone cannot admit a wrong corner.
+    ///
+    /// Default `22°`: the Step-0 evidence on
+    /// `puzzleboard_reference/example1.png` and `example2.png` showed
+    /// false-NoCluster `max_d_deg` quartiles in the 12–22° range; this
+    /// value covers them without admitting structurally-misoriented
+    /// corners.
+    ///
+    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
+    /// [`weak_cluster_tol_deg`]: DetectorParams::weak_cluster_tol_deg
+    #[serde(default = "default_rescue_axis_tol_deg")]
+    pub rescue_axis_tol_deg: f32,
+    /// `K` parameter for Stage-6.5 local-H fitting (same semantics as
+    /// [`stage6_local_k_nearest`]).
+    ///
+    /// [`stage6_local_k_nearest`]: DetectorParams::stage6_local_k_nearest
+    #[serde(default = "default_stage6_local_k_nearest")]
+    pub stage6_5_local_k_nearest: usize,
+    /// Position-search radius for Stage-6.5 candidate matching, as a
+    /// fraction of `cell_size`. Wider than Stage-6's `search_rel`
+    /// (default 0.40) because heavy perspective foreshortening makes
+    /// the local-H prediction at boundary cells overshoot by
+    /// significantly more than 0.40 cell. The wider gate is safe
+    /// because Stage 6.5 still enforces parity + axis match + edge
+    /// invariant + ambiguity, all of which fail on a wrongly-located
+    /// candidate.
+    ///
+    /// Default `0.8`.
+    #[serde(default = "default_rescue_search_rel")]
+    pub rescue_search_rel: f32,
+
+    // --- Stage 6.75: post-grow centre refit -------------------------------
+    /// Recompute Stage-3 cluster centres from the labelled set's axes
+    /// after Stage 6.5 / boosters converge, and re-run Stage 6 / 6.5
+    /// once with the refined centres. Recovers chessboard parity-B
+    /// corners on images where the histogram-driven Stage-3 centres
+    /// are biased downward by marker-internal corners (small3.png
+    /// case study in CLAUDE.md "Evidence-driven detector debugging").
+    ///
+    /// Default `true`.
+    #[serde(default = "default_enable_post_grow_refit")]
+    pub enable_post_grow_refit: bool,
+    /// Minimum labelled corners required for the refit to run. Below
+    /// this, the labelled set is too small to estimate the centres
+    /// reliably; the original centres are kept.
+    ///
+    /// Default `8`.
+    #[serde(default = "default_refit_min_labelled")]
+    pub refit_min_labelled: usize,
+    /// Minimum centre shift (degrees) required to trigger a second
+    /// Stage 6 / 6.5 pass. Below this, the shift cannot move a
+    /// borderline corner across the cluster gate, so the second pass
+    /// is skipped.
+    ///
+    /// Default `0.5°`.
+    #[serde(default = "default_refit_min_shift_deg")]
+    pub refit_min_shift_deg: f32,
+    /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
+    /// the second pass demotes the `Labeled` set back to `Clustered`
+    /// and re-runs `grow_from_seed` with the refined centres. This
+    /// absorbs newly-Clustered corners via cardinal-neighbour BFS
+    /// propagation — reaching interior-hole / left-strip corners
+    /// that local-H extrapolation (Stage 6 / 6.5) cannot.
+    ///
+    /// Default `false`. Trade-off: a small centre shift can flip
+    /// borderline BFS slot assignments and produce SHIFT-INCONSISTENT
+    /// labelling on heavy-distortion ChArUco-style images
+    /// (`puzzleboard_reference/example2.png` regresses miss=68 with
+    /// this on). Turn on for chessboard-only datasets where the
+    /// distortion is mild and the recall lift outweighs that risk.
+    ///
+    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
+    #[serde(default = "default_enable_post_grow_bfs_regrow")]
+    pub enable_post_grow_bfs_regrow: bool,
+    /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
+    /// run a non-destructive cardinal-neighbour BFS extension
+    /// (`projective_grid::square::grow_extend::extend_from_labelled`) over
+    /// the existing labelled set with the refined centres. Walks the
+    /// labelled bbox boundary one cell at a time, predicts each cell
+    /// from cardinal labelled neighbours only (K=1 — much more
+    /// reliable than Stage 6 / 6.5's K=12 local-H when extrapolating
+    /// past the bbox edge), and attaches eligible corners via the
+    /// chessboard edge-slot-swap invariant.
+    ///
+    /// Default `true`. Replaces the destructive
+    /// [`enable_post_grow_bfs_regrow`] — same recall lift on
+    /// chessboard-only datasets without the perimeter-row losses on
+    /// heavy-distortion puzzleboard images. Both can run together,
+    /// in the order extend → regrow.
+    ///
+    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
+    /// [`enable_post_grow_bfs_regrow`]: DetectorParams::enable_post_grow_bfs_regrow
+    #[serde(default = "default_enable_post_grow_bfs_extend")]
+    pub enable_post_grow_bfs_extend: bool,
+
+    // --- Final mandatory geometry check -----------------------------------
+    /// Line-collinearity tolerance (fraction of cell_size) for the
+    /// MANDATORY final geometry check that runs before any detection
+    /// is emitted. Must be looser than [`line_tol_rel`] because the
+    /// geometry check's role is to catch gross mislabels (diagonal /
+    /// full-cell shifts), not the borderline perspective drift the
+    /// BFS-validation loop already accepted.
+    ///
+    /// Default `0.45` of cell_size.
+    ///
+    /// [`line_tol_rel`]: DetectorParams::line_tol_rel
+    #[serde(default = "default_geometry_check_line_tol_rel")]
+    pub geometry_check_line_tol_rel: f32,
+    /// Local-H residual tolerance (fraction of cell_size) for the
+    /// MANDATORY final geometry check. A diagonal mislabel shifts a
+    /// corner by ~1.4 cell from its predicted position; a tolerance
+    /// of `0.6 × cell_size` is well below that gap while leaving the
+    /// legitimate perspective-distorted corners alone.
+    ///
+    /// Default `0.6` of cell_size.
+    #[serde(default = "default_geometry_check_local_h_tol_rel")]
+    pub geometry_check_local_h_tol_rel: f32,
+
+    // --- Stage 6: boundary extension --------------------------------------
+    /// Use the per-candidate local-homography Stage 6
+    /// (`projective_grid::square::grow_extension::extend_via_local_homography`)
+    /// instead of the single-global-H one. The local-H variant fits an
+    /// H per candidate cell from the K nearest labelled corners, gets
+    /// per-candidate trust gates, and reaches further past the bbox
+    /// because each iteration shifts the local-H window with the
+    /// growing labelled set.
+    ///
+    /// Default `false` (single-global-H, baseline today). Flip to
+    /// `true` after A/B confirms parity / superset on every blessed
+    /// image.
+    #[serde(default = "default_stage6_local_h")]
+    pub stage6_local_h: bool,
+    /// `K` parameter for [`stage6_local_h`]: the number of nearest
+    /// labelled corners (by grid Manhattan distance) used to fit each
+    /// candidate cell's local H.
+    ///
+    /// [`stage6_local_h`]: DetectorParams::stage6_local_h
+    #[serde(default = "default_stage6_local_k_nearest")]
+    pub stage6_local_k_nearest: usize,
 
     // --- Stage 8: recall boosters -------------------------------------------
     pub enable_line_extrapolation: bool,
@@ -108,12 +535,17 @@ pub struct DetectorParams {
 impl Default for DetectorParams {
     fn default() -> Self {
         Self {
+            graph_build_algorithm: GraphBuildAlgorithm::default(),
+            topological: TopologicalParams::default(),
+            component_merge: LocalMergeParams::default(),
+
             min_corner_strength: 0.0,
             max_fit_rms_ratio: 0.5,
 
             num_bins: 90,
             max_iters_2means: 10,
             cluster_tol_deg: 12.0,
+            cluster_sigma_k: default_cluster_sigma_k(),
             peak_min_separation_deg: 60.0,
             // Raised from 0.05 → 0.02: with fine (2°) bins and
             // realistic axis noise, the per-bin weight of a genuine
@@ -144,9 +576,10 @@ impl Default for DetectorParams {
             // line-failure is only one of several conditions for a
             // blacklist (see validate::attribution).
             line_tol_rel: 0.18,
-            projective_line_tol_rel: 0.25,
             line_min_members: 3,
             local_h_tol_rel: 0.20,
+            validate_step_aware: default_validate_step_aware(),
+            validate_step_deviation_thresh_rel: default_step_deviation_thresh_rel(),
             // Raised from 3 → 6: on dense boards with many
             // borderline-outlier corners near the edge, the
             // validate→blacklist→regrow loop can take 4–5 iterations
@@ -157,6 +590,22 @@ impl Default for DetectorParams {
             // first pass; 6 absorbs the wider real-world variance
             // without noticeable cost (each iter is cheap).
             max_validation_iters: 6,
+
+            stage6_local_h: default_stage6_local_h(),
+            stage6_local_k_nearest: default_stage6_local_k_nearest(),
+
+            enable_stage6_5_rescue: default_enable_stage6_5_rescue(),
+            rescue_axis_tol_deg: default_rescue_axis_tol_deg(),
+            stage6_5_local_k_nearest: default_stage6_local_k_nearest(),
+            rescue_search_rel: default_rescue_search_rel(),
+
+            enable_post_grow_refit: default_enable_post_grow_refit(),
+            refit_min_labelled: default_refit_min_labelled(),
+            refit_min_shift_deg: default_refit_min_shift_deg(),
+            enable_post_grow_bfs_regrow: default_enable_post_grow_bfs_regrow(),
+            enable_post_grow_bfs_extend: default_enable_post_grow_bfs_extend(),
+            geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
+            geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
 
             enable_line_extrapolation: true,
             enable_gap_fill: true,

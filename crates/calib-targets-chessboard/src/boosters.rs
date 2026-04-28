@@ -33,7 +33,8 @@ use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use kiddo::{KdTree, SquaredEuclidean};
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
+use projective_grid::square::grow::{predict_from_neighbours as pg_predict, LabelledNeighbour};
 use std::collections::HashSet;
 
 /// Diagnostic returned by [`apply_boosters`].
@@ -71,6 +72,12 @@ pub fn apply_boosters(
     let mut result = BoosterResult::default();
     let mut total_added = 0usize;
 
+    // Corner positions are immutable across booster iterations — only
+    // `stage` is mutated by `try_attach_at`. Build the slice once and
+    // share it with `pg_predict`, which would otherwise rebuild it for
+    // every candidate cell on every iteration.
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+
     // KD-tree over every non-blacklisted, non-labelled Clustered
     // corner. We rebuild it each outer iteration since labels
     // change.
@@ -93,6 +100,7 @@ pub fn apply_boosters(
                 &tree,
                 &eligible_indices,
                 blacklist,
+                &positions,
                 params,
             );
             if attached {
@@ -189,6 +197,10 @@ fn enumerate_candidate_positions(grow: &GrowResult) -> Vec<(i32, i32)> {
 
 /// Try to attach a single corner at `pos`. Returns `true` if
 /// attached.
+///
+/// `positions` is a precomputed snapshot of `corners[i].position`,
+/// shared across every candidate cell in an `apply_boosters`
+/// iteration to avoid rebuilding an O(num_corners) `Vec` per call.
 #[allow(clippy::too_many_arguments)]
 fn try_attach_at(
     pos: (i32, i32),
@@ -199,6 +211,7 @@ fn try_attach_at(
     tree: &KdTree<f32, 2>,
     eligible_indices: &[usize],
     blacklist: &HashSet<usize>,
+    positions: &[Point2<f32>],
     params: &DetectorParams,
 ) -> bool {
     let required_label = required_label_at(pos.0, pos.1);
@@ -212,8 +225,21 @@ fn try_attach_at(
         return false;
     }
 
-    // Axis-vector prediction from each neighbor; average.
-    let pred = predict_from_neighbors(pos, &neighbors, grow.grid_u, grow.grid_v, cell_size);
+    // Adaptive prediction shared with BFS-grow: each labelled neighbour
+    // contributes a finite-difference local-step from its own labelled
+    // peers when available, falling back to the global `(u, v) ×
+    // cell_size` step otherwise. This is materially better than the
+    // booster's previous constant-step predictor under perspective
+    // foreshortening.
+    let pred = pg_predict(
+        pos,
+        &neighbors,
+        grow.grid_u,
+        grow.grid_v,
+        cell_size,
+        &grow.labelled,
+        positions,
+    );
 
     // Candidate search.
     let attach_tol = params.attach_axis_tol_deg.to_radians();
@@ -309,7 +335,7 @@ fn collect_labelled_neighbors(
     window_half: i32,
     grow: &GrowResult,
     corners: &[CornerAug],
-) -> Vec<((i32, i32), Point2<f32>)> {
+) -> Vec<LabelledNeighbour> {
     let mut out = Vec::new();
     for dj in -window_half..=window_half {
         for di in -window_half..=window_half {
@@ -318,32 +344,15 @@ fn collect_labelled_neighbors(
             }
             let neigh = (pos.0 + di, pos.1 + dj);
             if let Some(&idx) = grow.labelled.get(&neigh) {
-                out.push((neigh, corners[idx].position));
+                out.push(LabelledNeighbour {
+                    idx,
+                    at: neigh,
+                    position: corners[idx].position,
+                });
             }
         }
     }
     out
-}
-
-fn predict_from_neighbors(
-    target: (i32, i32),
-    neighbors: &[((i32, i32), Point2<f32>)],
-    u: Vector2<f32>,
-    v: Vector2<f32>,
-    cell_size: f32,
-) -> Point2<f32> {
-    debug_assert!(!neighbors.is_empty());
-    let mut sum_x = 0.0_f32;
-    let mut sum_y = 0.0_f32;
-    for ((ni, nj), p) in neighbors {
-        let di = (target.0 - ni) as f32;
-        let dj = (target.1 - nj) as f32;
-        let off = u * (di * cell_size) + v * (dj * cell_size);
-        sum_x += p.x + off.x;
-        sum_y += p.y + off.y;
-    }
-    let n = neighbors.len() as f32;
-    Point2::new(sum_x / n, sum_y / n)
 }
 
 /// Infer cluster label for a weakly-clustered corner: pick the
