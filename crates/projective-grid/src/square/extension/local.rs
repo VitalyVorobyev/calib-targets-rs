@@ -245,28 +245,134 @@ pub(super) fn enumerate_extension_cells_deep(
 
 /// Find the K labelled corners closest to `target` by Manhattan distance
 /// in `(i, j)`-space. Ties broken deterministically by `(i, j, idx)`.
-/// Returns `(i, j, idx)` triples.
+/// Returns `(i, j, idx)` triples sorted ascending by
+/// `(distance, i, j, idx)`.
+///
+/// Implementation uses a bounded max-heap of size `k` so the cost is
+/// `O(L log K)` instead of `O(L log L)` where `L` is the labelled count.
+/// On a 12 MP frame with ~1100 labelled corners and ~9000 candidate
+/// cells per pass the previous full-sort version dominated the
+/// extension stage (~90% of `extend_via_local_homography` self-time);
+/// the bounded heap collapses that cost while keeping the same
+/// deterministic ordering downstream callers depend on.
 pub(super) fn nearest_labelled_by_grid(
     labelled: &HashMap<(i32, i32), usize>,
     target: (i32, i32),
     k: usize,
 ) -> Vec<(i32, i32, usize)> {
-    let mut sorted: Vec<((i32, i32), usize, i32)> = labelled
-        .iter()
-        .map(|(&(i, j), &idx)| {
-            let d = (i - target.0).abs() + (j - target.1).abs();
-            ((i, j), idx, d)
-        })
-        .collect();
-    sorted.sort_by(|a, b| {
-        a.2.cmp(&b.2)
-            .then_with(|| a.0 .0.cmp(&b.0 .0))
-            .then_with(|| a.0 .1.cmp(&b.0 .1))
-            .then_with(|| a.1.cmp(&b.1))
-    });
-    sorted
+    if k == 0 || labelled.is_empty() {
+        return Vec::new();
+    }
+
+    // Bounded max-heap of K nearest candidates so far. The natural ord
+    // on `KnnEntry` matches the full-sort tiebreaker
+    // (distance, i, j, idx) ascending; the heap is therefore a max-heap
+    // over that ordering and `peek()` returns the *farthest* item.
+    //
+    // Cap the initial capacity by the labelled-set size so a large
+    // misconfigured `k` cannot trigger a huge up-front allocation when
+    // the labelled set is small. The heap content is naturally
+    // bounded by `min(k, labelled.len())`; the previous full-sort path
+    // also only allocated proportional to `labelled.len()`, so this
+    // preserves robustness against untrusted parameters.
+    let cap = k.min(labelled.len());
+    let mut heap: std::collections::BinaryHeap<KnnEntry> =
+        std::collections::BinaryHeap::with_capacity(cap);
+
+    for (&(i, j), &idx) in labelled {
+        let d = (i - target.0).abs() + (j - target.1).abs();
+        let entry = KnnEntry { d, i, j, idx };
+        if heap.len() < k {
+            heap.push(entry);
+        } else if entry < *heap.peek().unwrap() {
+            heap.pop();
+            heap.push(entry);
+        }
+    }
+
+    // `into_sorted_vec` returns ascending order, matching the previous
+    // full-sort output element-for-element.
+    heap.into_sorted_vec()
         .into_iter()
-        .take(k)
-        .map(|((i, j), idx, _)| (i, j, idx))
+        .map(|e| (e.i, e.j, e.idx))
         .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct KnnEntry {
+    d: i32,
+    i: i32,
+    j: i32,
+    idx: usize,
+}
+
+impl Ord for KnnEntry {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.d
+            .cmp(&other.d)
+            .then_with(|| self.i.cmp(&other.i))
+            .then_with(|| self.j.cmp(&other.j))
+            .then_with(|| self.idx.cmp(&other.idx))
+    }
+}
+
+impl PartialOrd for KnnEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nearest_labelled_returns_k_closest_in_deterministic_order() {
+        // Place a 5×5 grid of labels at integer coordinates and ask for
+        // the 3 nearest to (2, 2). Expected: (2,2)=d0, (1,2)=(2,1)=(2,3)=(3,2)=d1.
+        let mut labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        let mut idx = 0;
+        for j in 0..5 {
+            for i in 0..5 {
+                labelled.insert((i, j), idx);
+                idx += 1;
+            }
+        }
+
+        let result = nearest_labelled_by_grid(&labelled, (2, 2), 3);
+        assert_eq!(result.len(), 3);
+        // First must be the exact match at distance 0.
+        assert_eq!(result[0], (2, 2, 12));
+        // Remaining two have distance 1 — the deterministic tiebreaker
+        // is (i asc, j asc, idx asc), so we expect (1, 2) and (2, 1).
+        assert_eq!(result[1], (1, 2, 11));
+        assert_eq!(result[2], (2, 1, 7));
+    }
+
+    #[test]
+    fn nearest_labelled_handles_k_larger_than_set() {
+        let mut labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        labelled.insert((0, 0), 0);
+        labelled.insert((1, 0), 1);
+
+        let result = nearest_labelled_by_grid(&labelled, (0, 0), 10);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0], (0, 0, 0));
+        assert_eq!(result[1], (1, 0, 1));
+    }
+
+    #[test]
+    fn nearest_labelled_with_k_zero_returns_empty() {
+        let mut labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        labelled.insert((0, 0), 0);
+        let result = nearest_labelled_by_grid(&labelled, (0, 0), 0);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn nearest_labelled_with_empty_set_returns_empty() {
+        let labelled: HashMap<(i32, i32), usize> = HashMap::new();
+        let result = nearest_labelled_by_grid(&labelled, (0, 0), 5);
+        assert!(result.is_empty());
+    }
 }
