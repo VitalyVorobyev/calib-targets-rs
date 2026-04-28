@@ -129,22 +129,67 @@ fn apply_transform(t: GridTransform, ij: (i32, i32)) -> (i32, i32) {
     (v.i, v.j)
 }
 
+/// For a candidate `(transform, delta)`, score the alignment by full
+/// label-space overlap.
+///
+/// Counts every `c_p` label whose `transform · ij_p + delta` exists as a
+/// key in `c_q.labelled` (regardless of pixel distance), and tracks the
+/// worst pixel-position disagreement among those overlapping label
+/// pairs. The histogram-based candidate enumeration in
+/// [`find_best_alignment`] only sees pairs already within `pos_tol`, so
+/// without this re-scoring an alignment whose label-space overlap
+/// includes one or more pairs *outside* `pos_tol` would silently merge.
+/// That would corrupt downstream calibration. Use this re-scoring as
+/// the precision gate before accepting a candidate.
+fn score_alignment(
+    c_p: &ComponentInput<'_>,
+    c_q: &ComponentInput<'_>,
+    t: GridTransform,
+    delta: (i32, i32),
+) -> (usize, f32) {
+    let mut overlap = 0usize;
+    let mut max_err = 0.0f32;
+    for (&ij_p, &idx_p) in c_p.labelled.iter() {
+        let ij_t = apply_transform(t, ij_p);
+        let ij_q = (ij_t.0 + delta.0, ij_t.1 + delta.1);
+        if let Some(&idx_q) = c_q.labelled.get(&ij_q) {
+            let err = euclidean(c_p.positions[idx_p], c_q.positions[idx_q]);
+            overlap += 1;
+            if err > max_err {
+                max_err = err;
+            }
+        }
+    }
+    (overlap, max_err)
+}
+
 /// Find the best (transform, offset) for merging `c_p` into `c_q`'s frame.
 ///
-/// Strategy: position-based Hough transform on (transform, label-delta).
+/// Two-pass strategy:
 ///
-/// For two components to merge, every overlapping label pair must have
-/// near-identical pixel positions (since the labels refer to the same
-/// physical corner in different label frames). We exploit this by
-/// indexing `c_q`'s positions in a KD-tree, then for each label in
-/// `c_p` finding all `c_q` labels whose pixel position is within
-/// `pos_tol`. Each such pair is a vote for whatever (transform, delta)
-/// would map them onto each other. The (t, δ) bin with the most votes
-/// is the right alignment.
+/// 1. **Hough enumeration.** Index `c_q`'s positions in a KD-tree, then
+///    for each label in `c_p` find every `c_q` label whose pixel
+///    position is within `pos_tol` and vote each match into a histogram
+///    bin keyed by the candidate `(transform, label-delta)`. This
+///    surfaces a small set of candidate alignments in `O(P log Q)`,
+///    replacing the previous `O(P² Q)` anchor enumeration.
+/// 2. **Full-overlap re-scoring.** Each surviving candidate is
+///    re-scored by [`score_alignment`] over the *full* label-space
+///    overlap (every `c_p` label whose `transform · ij_p + delta` is a
+///    key in `c_q.labelled`, regardless of pixel distance). The
+///    candidate is accepted only when the re-scored overlap meets
+///    `min_overlap` AND the re-scored `max_err` is within `pos_tol`.
+///    This is the precision gate: a histogram bin can pass with
+///    `min_overlap` position-close inliers even when other label-space
+///    overlaps under the same alignment sit far above tolerance, and
+///    accepting such an alignment would corrupt downstream calibration.
+///    Re-scoring catches that case.
 ///
-/// This replaces the previous O(P²Q) anchor enumeration with
-/// O(P log Q) KD-tree queries, scaling many orders of magnitude better
-/// on realistic component sizes (200+ labels per component).
+/// The accepted candidate set is then ranked by
+/// `(overlap_full desc, max_err_full asc, transform_index asc,
+/// delta asc)` — a strict total order that matches the original
+/// algorithm's tiebreaker (which preferred identity by D4 iteration
+/// order).
 fn find_best_alignment(
     c_p: &ComponentInput<'_>,
     c_q: &ComponentInput<'_>,
@@ -166,10 +211,9 @@ fn find_best_alignment(
         tree.add(&[pos.x, pos.y], slot as u64);
     }
 
-    // Histogram bin: (transform_index, delta_i, delta_j) →
-    // (overlap_count, max_position_error).
-    let mut hist: HashMap<(u8, i32, i32), (usize, f32)> = HashMap::new();
-
+    // Pass 1: Hough enumeration. The bin counts position-close votes
+    // only — that's a *lower bound* on the full label-space overlap.
+    let mut hist: HashMap<(u8, i32, i32), usize> = HashMap::new();
     for (&ij_p, &idx_p) in c_p.labelled.iter() {
         let pos_p = c_p.positions[idx_p];
         for nn in tree
@@ -177,44 +221,47 @@ fn find_best_alignment(
             .into_iter()
         {
             let slot = nn.item as usize;
-            let (ij_q, idx_q) = q_entries[slot];
-            let err = euclidean(pos_p, c_q.positions[idx_q]);
+            let (ij_q, _idx_q) = q_entries[slot];
             for (t_idx, t) in crate::GRID_TRANSFORMS_D4.iter().enumerate() {
                 let tij_p = apply_transform(*t, ij_p);
                 let key = (t_idx as u8, ij_q.0 - tij_p.0, ij_q.1 - tij_p.1);
-                let entry = hist.entry(key).or_insert((0usize, 0.0f32));
-                entry.0 += 1;
-                if err > entry.1 {
-                    entry.1 = err;
-                }
+                *hist.entry(key).or_insert(0usize) += 1;
             }
         }
     }
 
+    // Pass 2: re-score each candidate over the full label-space
+    // overlap. A bin survives only when every `c_p` label that maps
+    // (under this t/δ) to a key in `c_q.labelled` is within `pos_tol`
+    // — see `score_alignment` for the precision contract.
+    //
     // Tiebreaker: prefer higher overlap, then lower max_err, then
     // smaller transform index (identity = 0, so identity wins ties),
-    // then lexicographic delta. The transform-index tiebreaker
-    // matches the original algorithm's iteration order, which
-    // implicitly preferred identity when multiple D4 transforms
-    // produced valid alignments at the same overlap (e.g. on highly
-    // symmetric synthetic test grids).
+    // then lexicographic delta — matching the original algorithm's
+    // iteration order on highly symmetric synthetic test grids.
     let mut best: Option<(u8, (i32, i32), usize, f32)> = None;
-    for ((t_idx, di, dj), (overlap, max_err)) in hist.into_iter() {
-        if overlap < params.min_overlap {
+    for (&(t_idx, di, dj), &kdtree_overlap) in &hist {
+        if kdtree_overlap < params.min_overlap {
+            // Histogram is a lower bound on the full overlap, but only
+            // for pairs already within `pos_tol`. A bin that fails the
+            // KD-tree-overlap floor cannot reach `min_overlap`
+            // position-close pairs and is rejected outright; we don't
+            // even bother re-scoring.
             continue;
         }
-        // The KD-tree query already enforced max_err ≤ pos_tol per
-        // contribution, so re-checking max_err is defensive only.
-        if max_err > pos_tol {
+        let t = crate::GRID_TRANSFORMS_D4[t_idx as usize];
+        let delta = (di, dj);
+        let (overlap_full, max_err_full) = score_alignment(c_p, c_q, t, delta);
+        if overlap_full < params.min_overlap || max_err_full > pos_tol {
             continue;
         }
         let take = match &best {
             None => true,
             Some((best_t_idx, best_delta, best_overlap, best_err)) => {
-                if overlap != *best_overlap {
-                    overlap > *best_overlap
-                } else if (max_err - *best_err).abs() > f32::EPSILON {
-                    max_err < *best_err
+                if overlap_full != *best_overlap {
+                    overlap_full > *best_overlap
+                } else if (max_err_full - *best_err).abs() > f32::EPSILON {
+                    max_err_full < *best_err
                 } else if t_idx != *best_t_idx {
                     t_idx < *best_t_idx
                 } else {
@@ -223,7 +270,7 @@ fn find_best_alignment(
             }
         };
         if take {
-            best = Some((t_idx, (di, dj), overlap, max_err));
+            best = Some((t_idx, (di, dj), overlap_full, max_err_full));
         }
     }
     best.map(|(t_idx, d, n, _)| (crate::GRID_TRANSFORMS_D4[t_idx as usize], d, n))
@@ -456,6 +503,66 @@ mod tests {
         ];
         let res = merge_components_local(&inputs, &LocalMergeParams::default());
         assert_eq!(res.components.len(), 2);
+        assert_eq!(res.diagnostics.merges_accepted, 0);
+    }
+
+    /// Regression for the precision contract: a histogram bin can pass
+    /// `min_overlap` on position-close votes alone while another
+    /// label-aligned pair under the same `(transform, delta)` sits far
+    /// outside `pos_tol`. Without the full-overlap re-score, the merge
+    /// would proceed and corrupt the grid labelling.
+    ///
+    /// Setup: two 2×2 components share three corners exactly, but one
+    /// corner has drifted ~5× the cell size in `c_q`. The histogram
+    /// counts three position-close votes for `(identity, (0, 0))` —
+    /// enough to clear `min_overlap = 2`. The full label-space
+    /// overlap is four with `max_err ≈ 56 px`, which the precision
+    /// gate must reject.
+    #[test]
+    fn drifted_overlapping_corner_blocks_merge() {
+        let cell = 10.0_f32;
+        // C1: 4 labels on the unit cell, exact positions.
+        let mut l1: Labels = HashMap::new();
+        let mut p1: Positions = Vec::new();
+        for j in 0..2 {
+            for i in 0..2 {
+                let idx = p1.len();
+                l1.insert((i, j), idx);
+                p1.push(Point2::new(i as f32 * cell, j as f32 * cell));
+            }
+        }
+        // C2: same labels, but the (1, 1) corner is drifted to (50, 50)
+        // — far outside `pos_tol = 0.20 × cell = 2.0` from c_p's (10, 10).
+        let mut l2: Labels = HashMap::new();
+        let mut p2: Positions = Vec::new();
+        for j in 0..2 {
+            for i in 0..2 {
+                let idx = p2.len();
+                l2.insert((i, j), idx);
+                let pos = if (i, j) == (1, 1) {
+                    Point2::new(50.0, 50.0)
+                } else {
+                    Point2::new(i as f32 * cell, j as f32 * cell)
+                };
+                p2.push(pos);
+            }
+        }
+        let inputs = vec![
+            ComponentInput {
+                labelled: &l1,
+                positions: &p1,
+            },
+            ComponentInput {
+                labelled: &l2,
+                positions: &p2,
+            },
+        ];
+        let res = merge_components_local(&inputs, &LocalMergeParams::default());
+        assert_eq!(
+            res.components.len(),
+            2,
+            "drifted corner should block the merge entirely"
+        );
         assert_eq!(res.diagnostics.merges_accepted, 0);
     }
 }
