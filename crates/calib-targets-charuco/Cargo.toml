@@ -22,7 +22,6 @@ calib-targets-core.workspace = true
 calib-targets-chessboard.workspace = true
 calib-targets-aruco.workspace = true
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
-chess-corners-core = "0.7"
 projective-grid.workspace = true
 nalgebra.workspace = true
 serde = { workspace = true, features = ["derive"] }

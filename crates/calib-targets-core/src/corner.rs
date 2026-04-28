@@ -5,7 +5,7 @@ pub use projective_grid::GridCoords;
 
 /// One local grid-axis direction at a corner, with its 1σ angular uncertainty.
 ///
-/// Mirrors the upstream `chess_corners_core::AxisEstimate` so that
+/// Mirrors the upstream `chess_corners::AxisEstimate` so that
 /// `calib-targets-core`'s public API does not leak the external detector crate.
 /// The conversion from upstream to this type happens in the single
 /// `adapt_chess_corner` adapter per consumer crate.

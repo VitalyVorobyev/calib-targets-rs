@@ -52,7 +52,7 @@ calib-targets-print = { version = "0.8", path = "crates/calib-targets-print" }
 approx = "0.5"
 assert_cmd = "2"
 cbindgen = "0.29"
-chess-corners = "0.7"
+chess-corners = "0.8"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 delaunator = "1.0"

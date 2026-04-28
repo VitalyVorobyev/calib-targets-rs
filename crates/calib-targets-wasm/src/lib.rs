@@ -58,6 +58,7 @@ fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> 
 fn detect_corners_impl(pixels: &[u8], width: u32, height: u32, cfg: &ChessConfig) -> Vec<Corner> {
     let cc_cfg = to_chess_corners_config(cfg);
     find_chess_corners_u8(pixels, width, height, &cc_cfg)
+        .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
         .collect()

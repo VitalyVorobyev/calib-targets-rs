@@ -36,26 +36,26 @@ image = "0.25"
         &main_path,
         r#"use calib_targets::detect::{
     self, ChessConfig, DetectorMode, DescriptorMode, RefinementMethod, RefinerConfig,
-    SaddlePointConfig, ThresholdMode,
+    ThresholdMode,
 };
 
 fn main() {
     let _named_default: ChessConfig = detect::default_chess_config();
+    // `RefinerConfig` is `#[non_exhaustive]`, so downstream crates must
+    // build it via the preset constructors / `build` rather than a literal.
+    let refiner = RefinerConfig::saddle_point();
     let cfg = ChessConfig {
         detector_mode: DetectorMode::Broad,
         descriptor_mode: DescriptorMode::Canonical,
         threshold_mode: ThresholdMode::Relative,
         threshold_value: 0.15,
         min_cluster_size: 1,
-        refiner: RefinerConfig {
-            kind: RefinementMethod::SaddlePoint,
-            saddle_point: SaddlePointConfig::default(),
-            ..RefinerConfig::default()
-        },
+        refiner,
         pyramid_levels: 2,
         pyramid_min_size: 64,
         ..ChessConfig::default()
     };
+    assert_eq!(cfg.refiner.kind, RefinementMethod::SaddlePoint);
 
     let img = image::GrayImage::new(16, 16);
     let _ = detect::detect_corners(&img, &cfg);

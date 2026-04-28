@@ -94,7 +94,7 @@ fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
         "Running ChESS corner scan with threshold={:.3} ({:?}), nms_radius={}",
         chess_cfg.threshold_value, chess_cfg.threshold_mode, chess_cfg.nms_radius
     );
-    find_chess_corners_image(img, &chess_cfg)
+    find_chess_corners_image(img, &chess_cfg).expect("ChESS detection")
 }
 
 fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<Corner> {

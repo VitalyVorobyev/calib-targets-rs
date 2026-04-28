@@ -25,7 +25,7 @@ fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
     chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
     chess_cfg.threshold_value = 0.2;
     chess_cfg.nms_radius = 2;
-    find_chess_corners_image(img, &chess_cfg)
+    find_chess_corners_image(img, &chess_cfg).expect("ChESS detection")
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
