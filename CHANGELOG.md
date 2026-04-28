@@ -49,8 +49,6 @@ This project follows [Semantic Versioning](https://semver.org/).
   `validate/{mod,lines,local_h,step}.rs`. Inner `bfs_grow` body extracted to
   `process_boundary_cell`. All public re-exports unchanged.
 
-## [Unreleased]
-
 ### Added
 
 - **Mandatory final geometry check** in chessboard-v2 detector —
