@@ -73,5 +73,45 @@ fn bench_dlt(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_4pt, bench_dlt);
+/// K values that match the per-cell hot path in
+/// `extend_via_local_homography`: `min_k=4..8` and `k_nearest=8..12`
+/// from `LocalExtensionParams` defaults and sweep variants. The bench
+/// covers K=8 / 12 / 20 to bracket the realistic range.
+fn bench_dlt_local_extension_sizes(c: &mut Criterion) {
+    let mut group = c.benchmark_group("estimate_homography_local_extension");
+    let h = truth_homography();
+    for &k in &[8usize, 12, 20] {
+        // K points scattered on a grid scale comparable to the labelled
+        // corners that feed the per-candidate fit. Use a fractional-row
+        // grid so non-square K values still place points sanely.
+        let mut src: Vec<Point2<f32>> = Vec::with_capacity(k);
+        let cols = (k as f32).sqrt().ceil() as usize;
+        for idx in 0..k {
+            let i = idx % cols;
+            let j = idx / cols;
+            src.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
+        }
+        let dst: Vec<Point2<f32>> = src.iter().map(|&p| h.apply(p)).collect();
+
+        group.bench_function(format!("K={k}"), |b| {
+            b.iter(|| black_box(estimate_homography(black_box(&src), black_box(&dst))));
+        });
+        group.bench_function(format!("K={k}+quality"), |b| {
+            b.iter(|| {
+                black_box(estimate_homography_with_quality(
+                    black_box(&src),
+                    black_box(&dst),
+                ))
+            });
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_4pt,
+    bench_dlt,
+    bench_dlt_local_extension_sizes
+);
 criterion_main!(benches);
