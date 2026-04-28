@@ -214,7 +214,7 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
 
     // Sort by labelled count desc so callers see the most populous
     // component first, then cap by `max_components`.
-    out.sort_by(|a, b| b.target.corners.len().cmp(&a.target.corners.len()));
+    out.sort_by_key(|d| std::cmp::Reverse(d.target.corners.len()));
     out.truncate(params.max_components.max(1) as usize);
     out
 }

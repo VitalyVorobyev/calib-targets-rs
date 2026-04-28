@@ -72,6 +72,12 @@ pub fn apply_boosters(
     let mut result = BoosterResult::default();
     let mut total_added = 0usize;
 
+    // Corner positions are immutable across booster iterations — only
+    // `stage` is mutated by `try_attach_at`. Build the slice once and
+    // share it with `pg_predict`, which would otherwise rebuild it for
+    // every candidate cell on every iteration.
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+
     // KD-tree over every non-blacklisted, non-labelled Clustered
     // corner. We rebuild it each outer iteration since labels
     // change.
@@ -94,6 +100,7 @@ pub fn apply_boosters(
                 &tree,
                 &eligible_indices,
                 blacklist,
+                &positions,
                 params,
             );
             if attached {
@@ -190,6 +197,10 @@ fn enumerate_candidate_positions(grow: &GrowResult) -> Vec<(i32, i32)> {
 
 /// Try to attach a single corner at `pos`. Returns `true` if
 /// attached.
+///
+/// `positions` is a precomputed snapshot of `corners[i].position`,
+/// shared across every candidate cell in an `apply_boosters`
+/// iteration to avoid rebuilding an O(num_corners) `Vec` per call.
 #[allow(clippy::too_many_arguments)]
 fn try_attach_at(
     pos: (i32, i32),
@@ -200,6 +211,7 @@ fn try_attach_at(
     tree: &KdTree<f32, 2>,
     eligible_indices: &[usize],
     blacklist: &HashSet<usize>,
+    positions: &[Point2<f32>],
     params: &DetectorParams,
 ) -> bool {
     let required_label = required_label_at(pos.0, pos.1);
@@ -219,7 +231,6 @@ fn try_attach_at(
     // cell_size` step otherwise. This is materially better than the
     // booster's previous constant-step predictor under perspective
     // foreshortening.
-    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
     let pred = pg_predict(
         pos,
         &neighbors,
@@ -227,7 +238,7 @@ fn try_attach_at(
         grow.grid_v,
         cell_size,
         &grow.labelled,
-        &positions,
+        positions,
     );
 
     // Candidate search.
