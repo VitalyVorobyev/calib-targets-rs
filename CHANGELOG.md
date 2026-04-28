@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Performance
+
+- **`projective_grid::component_merge::merge_components_local` rewritten**
+  as a position-based Hough transform on `(transform, label-delta)`. The
+  old anchor-pair enumeration was O(P² Q) per (component, component) pair
+  and dominated the topological pipeline on real images with multiple
+  fragmented components. The new implementation indexes one component's
+  positions in a KD-tree, queries each label of the other component
+  within `pos_tol`, and votes each match into a histogram bin keyed by
+  the candidate alignment. Two- to three-orders-of-magnitude wins on
+  microbenches (`merge_components_local/overlap/2_components_large`:
+  about 5000× on the criterion fixture). End-to-end the topological
+  pipeline measured on a representative high-resolution chessboard image
+  goes from multi-second to tens-of-milliseconds, with **zero precision
+  regression** on the internal regression set. The original tiebreaker
+  (preferring identity-transform matches by iteration order) is
+  preserved as an explicit tiebreaker on transform index.
+
+### Profiling tooling
+
+- Added an opt-in `tracing` Cargo feature on `projective-grid` (off by
+  default, kept in tree as the permanent observability surface). When
+  enabled, the hot-path entry points (`bfs_grow`,
+  `build_grid_topological` and its substages,
+  `merge_components_local`, `square::validate::validate`,
+  `extend_via_local_homography`, `extend_via_global_homography`,
+  `extend_from_labelled`, `estimate_global_cell_size`,
+  `estimate_local_steps`) emit `tracing::instrument` spans for
+  per-call p50/p95 timing.
+- Added a `[profile.profiling]` Cargo profile (release with
+  line-tables-only debug info) so `samply record` flamegraphs
+  symbolicate without doubling binary size.
+- Added `crates/calib-targets/examples/profile_grid.rs` as a thin
+  driver for `samply record` and `RUST_LOG=info` tracing dumps.
+- Added `docs/profiling.md` with the full samply + tracing recipe.
+- New criterion microbenches in `crates/projective-grid/benches/`:
+  `topological.rs`, `merge.rs`, `validate.rs`. Existing `grow.rs`
+  and `homography.rs` benches preserved as the baseline.
+
 ## 0.8.0
 
 ### Breaking changes

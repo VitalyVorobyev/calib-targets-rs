@@ -113,6 +113,14 @@ fn build_quad(verts: [usize; 4], positions: &[Point2<f32>]) -> Quad {
 /// Walk the triangulation and emit one quad per matching pair of
 /// triangles. Pairs are deduplicated (each diagonal edge is processed
 /// from the side with the smaller triangle index).
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_triangles = triangulation.num_tri()),
+    )
+)]
 pub(crate) fn merge_triangle_pairs(
     triangulation: &Triangulation,
     kinds: &[EdgeKind],

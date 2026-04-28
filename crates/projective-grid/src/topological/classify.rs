@@ -87,6 +87,14 @@ fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalPara
 /// Classify every directed half-edge in the triangulation.
 ///
 /// Length matches `triangulation.triangles.len()`.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_edges = triangulation.triangles.len()),
+    )
+)]
 pub(crate) fn classify_all_edges(
     positions: &[Point2<f32>],
     axes: &[[AxisHint; 2]],

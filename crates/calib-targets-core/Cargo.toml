@@ -13,7 +13,7 @@ keywords = ["calibration", "computer-vision", "geometry", "homography", "chessbo
 categories = ["computer-vision", "science"]
 
 [features]
-tracing = ["dep:tracing", "dep:tracing-subscriber"]
+tracing = ["dep:tracing", "dep:tracing-subscriber", "projective-grid/tracing"]
 
 [dependencies]
 chess-corners = { workspace = true }

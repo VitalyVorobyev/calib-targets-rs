@@ -194,6 +194,14 @@ pub enum TopologicalError {
 /// Returns one [`TopologicalComponent`] per connected component of the
 /// surviving quad mesh. Use [`crate::component_merge`] to attempt to
 /// merge components into a single grid.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = positions.len()),
+    )
+)]
 pub fn build_grid_topological(
     positions: &[Point2<f32>],
     axes: &[[AxisHint; 2]],

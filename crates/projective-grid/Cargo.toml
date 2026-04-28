@@ -12,12 +12,22 @@ description = "Generic 2D projective grid graph construction, traversal, and hom
 keywords = ["computer-vision", "geometry", "homography", "grid", "calibration"]
 categories = ["computer-vision", "science", "algorithms"]
 
+[features]
+default = []
+# Optional `tracing` feature. Off by default — when enabled, the hot-path
+# functions (`bfs_grow`, `build_grid_topological` and its substages,
+# `merge_components_local`, `estimate_homography_with_quality`) are wrapped
+# in `tracing::instrument` so callers can collect per-span p50/p95 timing.
+# Kept as the permanent observability surface for future regression debug.
+tracing = ["dep:tracing"]
+
 [dependencies]
 delaunator = { workspace = true }
 kiddo = { workspace = true }
 nalgebra = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+tracing = { workspace = true, optional = true }
 
 
 [dev-dependencies]
@@ -29,6 +39,18 @@ harness = false
 
 [[bench]]
 name = "homography"
+harness = false
+
+[[bench]]
+name = "topological"
+harness = false
+
+[[bench]]
+name = "merge"
+harness = false
+
+[[bench]]
+name = "validate"
 harness = false
 
 [package.metadata.docs.rs]
