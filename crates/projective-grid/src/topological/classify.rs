@@ -21,11 +21,13 @@
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 use nalgebra::Point2;
+use serde::{Deserialize, Serialize};
 
 use super::delaunay::Triangulation;
 use super::{AxisHint, TopologicalParams};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum EdgeKind {
     /// Edge runs along a grid line (cell edge in the chessboard pattern).
@@ -44,6 +46,14 @@ enum EdgeAt {
     Spurious,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct EdgeMetric {
+    pub(crate) grid_distance_rad: Option<f32>,
+    pub(crate) diagonal_distance_rad: Option<f32>,
+    pub(crate) grid_margin_rad: Option<f32>,
+    pub(crate) diagonal_margin_rad: Option<f32>,
+}
+
 /// Smallest unsigned angle between two undirected directions, in `[0, π/2]`.
 ///
 /// Both `theta` and `alpha` are interpreted modulo π (axes are
@@ -57,7 +67,11 @@ fn axis_diff(theta: f32, alpha: f32) -> f32 {
     d
 }
 
-fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> EdgeAt {
+fn distances_at_corner(
+    theta: f32,
+    axes: &[AxisHint; 2],
+    params: &TopologicalParams,
+) -> Option<(f32, f32)> {
     // Pick the smaller axis-distance over the two axes; this is well-defined
     // even when one axis has sigma = π, because we only use angles, and the
     // pre-filter already excludes corners where both axes are unusable.
@@ -72,16 +86,69 @@ fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalPara
         }
     }
     if !min_d.is_finite() {
-        return EdgeAt::Spurious;
+        return None;
     }
-    if min_d < params.axis_align_tol_rad {
+    Some((min_d, (min_d - FRAC_PI_4).abs()))
+}
+
+fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> EdgeAt {
+    let Some((grid_distance, diagonal_distance)) = distances_at_corner(theta, axes, params) else {
+        return EdgeAt::Spurious;
+    };
+    if grid_distance < params.axis_align_tol_rad {
         return EdgeAt::Grid;
     }
-    let dia = (min_d - FRAC_PI_4).abs();
-    if dia < params.diagonal_angle_tol_rad {
+    if diagonal_distance < params.diagonal_angle_tol_rad {
         return EdgeAt::Diagonal;
     }
     EdgeAt::Spurious
+}
+
+pub(crate) fn classify_edge_metric(
+    positions: &[Point2<f32>],
+    axes: &[[AxisHint; 2]],
+    usable: &[bool],
+    triangulation: &Triangulation,
+    edge: usize,
+    params: &TopologicalParams,
+) -> EdgeMetric {
+    let a = triangulation.triangles[edge];
+    let b = triangulation.triangles[Triangulation::next_edge(edge)];
+    if !usable[a] || !usable[b] {
+        return EdgeMetric {
+            grid_distance_rad: None,
+            diagonal_distance_rad: None,
+            grid_margin_rad: None,
+            diagonal_margin_rad: None,
+        };
+    }
+    let pa = positions[a];
+    let pb = positions[b];
+    let theta = (pb.y - pa.y).atan2(pb.x - pa.x);
+    let Some((a_grid, a_diag)) = distances_at_corner(theta, &axes[a], params) else {
+        return EdgeMetric {
+            grid_distance_rad: None,
+            diagonal_distance_rad: None,
+            grid_margin_rad: None,
+            diagonal_margin_rad: None,
+        };
+    };
+    let Some((b_grid, b_diag)) = distances_at_corner(theta, &axes[b], params) else {
+        return EdgeMetric {
+            grid_distance_rad: None,
+            diagonal_distance_rad: None,
+            grid_margin_rad: None,
+            diagonal_margin_rad: None,
+        };
+    };
+    let grid_distance_rad = a_grid.max(b_grid);
+    let diagonal_distance_rad = a_diag.max(b_diag);
+    EdgeMetric {
+        grid_distance_rad: Some(grid_distance_rad),
+        diagonal_distance_rad: Some(diagonal_distance_rad),
+        grid_margin_rad: Some(params.axis_align_tol_rad - grid_distance_rad),
+        diagonal_margin_rad: Some(params.diagonal_angle_tol_rad - diagonal_distance_rad),
+    }
 }
 
 /// Classify every directed half-edge in the triangulation.

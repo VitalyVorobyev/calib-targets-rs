@@ -54,6 +54,10 @@ pub struct ChessConfig {
     pub pyramid_min_size: usize,
     pub refinement_radius: u32,
     pub merge_radius: f32,
+    /// Optional same-size Gaussian pre-blur applied before ChESS corner
+    /// extraction. `0.0` disables preprocessing. Corner positions remain in
+    /// the original image frame.
+    pub pre_blur_sigma_px: f32,
     pub upscale: UpscaleConfig,
     /// Parameters for the whole-image Radon detector. Only consulted when
     /// [`detector_mode`](Self::detector_mode) is [`DetectorMode::Radon`];
@@ -77,6 +81,7 @@ impl Default for ChessConfig {
             pyramid_min_size: 128,
             refinement_radius: 3,
             merge_radius: 3.0,
+            pre_blur_sigma_px: 0.0,
             upscale: UpscaleConfig::default(),
             radon_detector: RadonDetectorParams::default(),
         }
@@ -151,6 +156,7 @@ mod tests {
         let cfg = ChessConfig::default();
         assert_eq!(cfg.threshold_mode, ThresholdMode::Relative);
         assert!((cfg.threshold_value - 0.2).abs() < 1e-6);
+        assert_eq!(cfg.pre_blur_sigma_px, 0.0);
     }
 
     #[test]
@@ -187,5 +193,17 @@ mod tests {
         let json = r#"{"threshold_mode":"relative","threshold_value":0.08}"#;
         let cfg: ChessConfig = serde_json::from_str(json).unwrap();
         assert_eq!(cfg.upscale, UpscaleConfig::disabled());
+        assert_eq!(cfg.pre_blur_sigma_px, 0.0);
+    }
+
+    #[test]
+    fn chess_config_pre_blur_roundtrips_json() {
+        let cfg = ChessConfig {
+            pre_blur_sigma_px: 1.5,
+            ..ChessConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        let roundtrip: ChessConfig = serde_json::from_str(&json).unwrap();
+        assert!((roundtrip.pre_blur_sigma_px - 1.5).abs() < 1e-6);
     }
 }

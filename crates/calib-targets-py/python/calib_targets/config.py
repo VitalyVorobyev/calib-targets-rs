@@ -136,6 +136,7 @@ class ChessConfig:
     pyramid_min_size: int = 128
     refinement_radius: int = 3
     merge_radius: float = 3.0
+    pre_blur_sigma_px: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,6 +151,7 @@ class ChessConfig:
             "pyramid_min_size": self.pyramid_min_size,
             "refinement_radius": self.refinement_radius,
             "merge_radius": self.merge_radius,
+            "pre_blur_sigma_px": self.pre_blur_sigma_px,
         }
 
     @classmethod
@@ -167,6 +169,7 @@ class ChessConfig:
             pyramid_min_size=data.get("pyramid_min_size", d.pyramid_min_size),
             refinement_radius=data.get("refinement_radius", d.refinement_radius),
             merge_radius=data.get("merge_radius", d.merge_radius),
+            pre_blur_sigma_px=data.get("pre_blur_sigma_px", d.pre_blur_sigma_px),
         )
 
 
@@ -240,6 +243,39 @@ class GridGraphParams:
 
 
 @dataclass(slots=True)
+class TopologicalParams:
+    axis_align_tol_rad: float = 0.3839724354387525
+    diagonal_angle_tol_rad: float = 0.3141592653589793
+    max_axis_sigma_rad: float = 0.6
+    edge_ratio_max: float = 10.0
+    min_quads_per_component: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "axis_align_tol_rad": self.axis_align_tol_rad,
+            "diagonal_angle_tol_rad": self.diagonal_angle_tol_rad,
+            "max_axis_sigma_rad": self.max_axis_sigma_rad,
+            "edge_ratio_max": self.edge_ratio_max,
+            "min_quads_per_component": self.min_quads_per_component,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TopologicalParams:
+        d = cls()
+        return cls(
+            axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
+            diagonal_angle_tol_rad=data.get(
+                "diagonal_angle_tol_rad", d.diagonal_angle_tol_rad
+            ),
+            max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
+            edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
+            min_quads_per_component=data.get(
+                "min_quads_per_component", d.min_quads_per_component
+            ),
+        )
+
+
+@dataclass(slots=True)
 class ChessboardParams:
     """Chessboard detection parameters — flat shape.
 
@@ -262,6 +298,7 @@ class ChessboardParams:
     # ChessboardV2 — flip to "topological" when targeting low-view-angle
     # PuzzleBoard captures or other distortion-heavy scenes.
     graph_build_algorithm: str = "chessboard_v2"
+    topological: TopologicalParams = field(default_factory=TopologicalParams)
     # Stage 1 — pre-filter
     min_corner_strength: float = 0.0
     max_fit_rms_ratio: float = 0.5
@@ -305,6 +342,7 @@ class ChessboardParams:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
+            "topological": self.topological.to_dict(),
             "min_corner_strength": self.min_corner_strength,
             "max_fit_rms_ratio": self.max_fit_rms_ratio,
             "num_bins": self.num_bins,
@@ -345,6 +383,7 @@ class ChessboardParams:
             graph_build_algorithm=data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
             ),
+            topological=TopologicalParams.from_dict(data.get("topological", {})),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
             max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
             num_bins=data.get("num_bins", d.num_bins),

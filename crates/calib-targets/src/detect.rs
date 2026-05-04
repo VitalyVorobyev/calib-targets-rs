@@ -62,6 +62,13 @@ pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
     instrument(level = "info", skip(img, cfg), fields(width = img.width(), height = img.height()))
 )]
 pub fn detect_corners(img: &::image::GrayImage, cfg: &ChessConfig) -> Vec<core::Corner> {
+    let blurred;
+    let img = if cfg.pre_blur_sigma_px.is_finite() && cfg.pre_blur_sigma_px > 0.0 {
+        blurred = ::image::imageops::blur(img, cfg.pre_blur_sigma_px);
+        &blurred
+    } else {
+        img
+    };
     let cfg = to_chess_corners_config(cfg);
     find_chess_corners_image(img, &cfg)
         .unwrap_or_default()
@@ -532,6 +539,7 @@ mod tests {
             pyramid_min_size: 96,
             refinement_radius: 6,
             merge_radius: 4.5,
+            pre_blur_sigma_px: 1.25,
             upscale: UpscaleConfig::fixed(3),
             radon_detector: RadonDetectorParams::default(),
         };

@@ -14,11 +14,10 @@ categories = ["computer-vision", "science", "algorithms"]
 
 [features]
 default = []
-# Optional `tracing` feature. Off by default — when enabled, the hot-path
-# functions (`bfs_grow`, `build_grid_topological` and its substages,
-# `merge_components_local`, `estimate_homography_with_quality`) are wrapped
-# in `tracing::instrument` so callers can collect per-span p50/p95 timing.
-# Kept as the permanent observability surface for future regression debug.
+# Optional `tracing` feature. Off by default. When enabled, hot-path functions
+# (`bfs_grow`, `build_grid_topological` and its substages,
+# `merge_components_local`, `estimate_homography_with_quality`) emit spans so
+# callers can collect per-stage timings without adding parallel timed APIs.
 tracing = ["dep:tracing"]
 
 [dependencies]
@@ -32,6 +31,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
+serde_json = { workspace = true }
 
 [[bench]]
 name = "grow"

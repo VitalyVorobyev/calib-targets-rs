@@ -6,6 +6,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PyString, PyTuple};
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::{Map, Number, Value};
 
 // ---------------------------------------------------------------------------
@@ -220,6 +221,16 @@ fn printable_document_from_py(
 // Detection functions
 // ---------------------------------------------------------------------------
 
+#[derive(Serialize)]
+struct TopologicalCornerPayload {
+    index: usize,
+    position: [f32; 2],
+    axes: [::calib_targets::core::AxisEstimate; 2],
+    strength: f32,
+    contrast: f32,
+    fit_rms: f32,
+}
+
 /// Detect a ChArUco board in a grayscale image.
 ///
 /// Args:
@@ -361,6 +372,79 @@ fn detect_chessboard_debug(
     let json =
         serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)
+}
+
+/// Run ChESS corner detection plus the topological grid trace.
+///
+/// This is an offline diagnostics / visualization entry point. It always
+/// forces `DetectorParams.graph_build_algorithm = "topological"` before
+/// running final detections, then returns the raw corners, the
+/// `projective-grid` topological trace when at least three usable corners are
+/// available, and the final merged detections produced by the chessboard
+/// detector.
+#[pyfunction]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+fn trace_chessboard_topological(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    chess_cfg: Option<&Bound<'_, PyAny>>,
+    params: Option<&Bound<'_, PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let width = img.width();
+    let height = img.height();
+    let mut params = chessboard_params_from_py(params)?;
+    params.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+
+    let payload = py.detach(move || -> Result<Value, String> {
+        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corner_payload: Vec<TopologicalCornerPayload> = corners
+            .iter()
+            .enumerate()
+            .map(|(index, c)| TopologicalCornerPayload {
+                index,
+                position: [c.position.x, c.position.y],
+                axes: c.axes,
+                strength: c.strength,
+                contrast: c.contrast,
+                fit_rms: c.fit_rms,
+            })
+            .collect();
+
+        let trace_result = chessboard::trace_topological(&corners, &params);
+        let detections = chessboard::Detector::new(params.clone()).detect_all(&corners);
+
+        let mut payload = serde_json::json!({
+            "schema": 1,
+            "image": {
+                "width": width,
+                "height": height,
+            },
+            "graph_build_algorithm": "topological",
+            "corners": corner_payload,
+            "detections": detections,
+        });
+        let obj = payload
+            .as_object_mut()
+            .expect("topological trace payload is an object");
+        match trace_result {
+            Ok(trace) => {
+                obj.insert(
+                    "trace".to_string(),
+                    serde_json::to_value(trace).map_err(|e| e.to_string())?,
+                );
+                obj.insert("error".to_string(), Value::Null);
+            }
+            Err(err) => {
+                obj.insert("trace".to_string(), Value::Null);
+                obj.insert("error".to_string(), Value::String(err.to_string()));
+            }
+        }
+        Ok(payload)
+    });
+    let payload = payload.map_err(PyRuntimeError::new_err)?;
+    json_to_py(py, &payload)
 }
 
 /// Detect a marker-board target in a grayscale image.
@@ -638,6 +722,7 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_all, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_debug, m)?)?;
+    m.add_function(wrap_pyfunction!(trace_chessboard_topological, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_best, m)?)?;

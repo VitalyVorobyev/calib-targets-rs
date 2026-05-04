@@ -47,12 +47,18 @@ mod classify;
 mod delaunay;
 mod quads;
 mod topo_filter;
+mod trace;
 mod walk;
 
 #[cfg(test)]
 mod tests;
 
 pub use classify::EdgeKind;
+pub use trace::{
+    build_grid_topological_trace, TopologicalComponentTrace, TopologicalCornerTrace,
+    TopologicalEdgeMetricTrace, TopologicalLabelTrace, TopologicalQuadTrace, TopologicalTrace,
+    TopologicalTriangleTrace,
+};
 
 /// One local grid-axis direction at a corner with its 1σ angular uncertainty.
 ///
@@ -96,11 +102,11 @@ impl AxisHint {
 pub struct TopologicalParams {
     /// Maximum angular distance, in radians, between an edge's direction
     /// and a corner's axis for the edge to be classified as a *grid edge*
-    /// at that corner. Default: `15° = 0.262`.
+    /// at that corner. Default: `22° = 0.384`.
     pub axis_align_tol_rad: f32,
     /// Maximum angular distance, in radians, between an edge's direction
     /// and `axis ± π/4` for the edge to be classified as a *diagonal* at
-    /// that corner. Default: `15° = 0.262`.
+    /// that corner. Default: `18° = 0.314`.
     pub diagonal_angle_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a corner to participate
     /// in classification. Corners whose both axes have `sigma >=
@@ -117,8 +123,8 @@ pub struct TopologicalParams {
 impl Default for TopologicalParams {
     fn default() -> Self {
         Self {
-            axis_align_tol_rad: 0.262, // 15°
-            diagonal_angle_tol_rad: 0.262,
+            axis_align_tol_rad: 22.0_f32.to_radians(),
+            diagonal_angle_tol_rad: 18.0_f32.to_radians(),
             max_axis_sigma_rad: 0.6,
             edge_ratio_max: 10.0,
             min_quads_per_component: 1,
@@ -136,7 +142,7 @@ pub struct TopologicalComponent {
 }
 
 /// Diagnostic counters from one [`build_grid_topological`] run.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalStats {
     /// Corners passed in.
@@ -177,6 +183,21 @@ pub struct TopologicalGrid {
     pub diagnostics: TopologicalStats,
 }
 
+/// Per-triangle edge-composition bucket used by diagnostics and tracing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[non_exhaustive]
+pub enum TriangleClass {
+    /// Exactly one diagonal edge and two grid edges.
+    Mergeable,
+    /// All three edges classified as grid.
+    AllGrid,
+    /// Two or three diagonal edges.
+    MultiDiagonal,
+    /// At least one spurious edge.
+    HasSpurious,
+}
+
 /// Errors from [`build_grid_topological`].
 #[derive(Clone, Copy, Debug, thiserror::Error)]
 pub enum TopologicalError {
@@ -187,6 +208,63 @@ pub enum TopologicalError {
     /// the minimum for Delaunay triangulation.
     #[error("not enough usable corners ({usable}) for Delaunay triangulation")]
     NotEnoughCorners { usable: usize },
+}
+
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "debug",
+        skip_all,
+        fields(num_corners = axes.len()),
+    )
+)]
+fn usable_mask(axes: &[[AxisHint; 2]], params: &TopologicalParams) -> Vec<bool> {
+    axes.iter()
+        .map(|a| a[0].sigma < params.max_axis_sigma_rad || a[1].sigma < params.max_axis_sigma_rad)
+        .collect()
+}
+
+pub(super) fn triangle_class(edge_kinds: &[EdgeKind], t: usize) -> TriangleClass {
+    let mut g = 0;
+    let mut d = 0;
+    let mut sp = 0;
+    for k in 0..3 {
+        match edge_kinds[3 * t + k] {
+            EdgeKind::Grid => g += 1,
+            EdgeKind::Diagonal => d += 1,
+            EdgeKind::Spurious => sp += 1,
+        }
+    }
+    if sp > 0 {
+        TriangleClass::HasSpurious
+    } else if d == 1 && g == 2 {
+        TriangleClass::Mergeable
+    } else if d == 0 && g == 3 {
+        TriangleClass::AllGrid
+    } else {
+        TriangleClass::MultiDiagonal
+    }
+}
+
+pub(super) fn update_edge_stats(stats: &mut TopologicalStats, edge_kinds: &[EdgeKind]) {
+    for &k in edge_kinds {
+        match k {
+            EdgeKind::Grid => stats.grid_edges += 1,
+            EdgeKind::Diagonal => stats.diagonal_edges += 1,
+            EdgeKind::Spurious => stats.spurious_edges += 1,
+        }
+    }
+}
+
+pub(super) fn update_triangle_stats(stats: &mut TopologicalStats, edge_kinds: &[EdgeKind]) {
+    for t in 0..stats.triangles {
+        match triangle_class(edge_kinds, t) {
+            TriangleClass::Mergeable => stats.triangles_mergeable += 1,
+            TriangleClass::AllGrid => stats.triangles_all_grid += 1,
+            TriangleClass::MultiDiagonal => stats.triangles_multi_diag += 1,
+            TriangleClass::HasSpurious => stats.triangles_has_spurious += 1,
+        }
+    }
 }
 
 /// Build labelled grid components from corners + per-corner axes.
@@ -219,10 +297,7 @@ pub fn build_grid_topological(
     };
 
     // Pre-filter corners: at least one axis must have a usable sigma.
-    let usable_mask: Vec<bool> = axes
-        .iter()
-        .map(|a| a[0].sigma < params.max_axis_sigma_rad || a[1].sigma < params.max_axis_sigma_rad)
-        .collect();
+    let usable_mask = usable_mask(axes, params);
     stats.corners_used = usable_mask.iter().filter(|&&b| b).count();
     if stats.corners_used < 3 {
         return Err(TopologicalError::NotEnoughCorners {
@@ -238,39 +313,13 @@ pub fn build_grid_topological(
     // Classify every half-edge.
     let edge_kinds =
         classify::classify_all_edges(positions, axes, &usable_mask, &triangulation, params);
-    for &k in &edge_kinds {
-        match k {
-            EdgeKind::Grid => stats.grid_edges += 1,
-            EdgeKind::Diagonal => stats.diagonal_edges += 1,
-            EdgeKind::Spurious => stats.spurious_edges += 1,
-        }
-    }
+    update_edge_stats(&mut stats, &edge_kinds);
 
     // Per-triangle classification breakdown — tells us at a glance
     // whether the merge step is starving on noise (all-spurious),
     // saturated by perspective foreshortening (all-grid spans cells),
     // or jammed by ambiguity (≥ 2 diagonals).
-    for t in 0..stats.triangles {
-        let mut g = 0;
-        let mut d = 0;
-        let mut sp = 0;
-        for k in 0..3 {
-            match edge_kinds[3 * t + k] {
-                EdgeKind::Grid => g += 1,
-                EdgeKind::Diagonal => d += 1,
-                EdgeKind::Spurious => sp += 1,
-            }
-        }
-        if sp > 0 {
-            stats.triangles_has_spurious += 1;
-        } else if d == 1 && g == 2 {
-            stats.triangles_mergeable += 1;
-        } else if d == 0 && g == 3 {
-            stats.triangles_all_grid += 1;
-        } else if d >= 2 {
-            stats.triangles_multi_diag += 1;
-        }
-    }
+    update_triangle_stats(&mut stats, &edge_kinds);
 
     // Merge triangle pairs sharing a diagonal whose other edges are grid.
     let raw_quads = quads::merge_triangle_pairs(&triangulation, &edge_kinds, positions);
