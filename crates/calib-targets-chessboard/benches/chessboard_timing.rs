@@ -57,7 +57,7 @@ fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {
     }
     let snap = img.view(x0, 0, SNAP_WIDTH, SNAP_HEIGHT).to_image();
     let cfg = default_chess_config();
-    Some(detect_corners(&snap, &cfg))
+    Some(detect_corners(&snap, &cfg, 0.0))
 }
 
 fn bench_detection(c: &mut Criterion) {

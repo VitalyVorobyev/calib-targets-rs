@@ -80,7 +80,7 @@ fn bench_all(c: &mut Criterion) {
         .iter()
         .filter_map(|(t, s, label)| {
             let snap = load_snap(*t, *s, upscale)?;
-            let corners = detect_corners(&snap, &cfg);
+            let corners = detect_corners(&snap, &cfg, 0.0);
             Some(((*label).to_string(), snap, corners))
         })
         .collect();
@@ -97,7 +97,7 @@ fn bench_all(c: &mut Criterion) {
     for (label, snap, _) in &fixtures {
         corners_group.bench_with_input(BenchmarkId::from_parameter(label), snap, |b, snap| {
             b.iter(|| {
-                let out = detect_corners(snap, &cfg);
+                let out = detect_corners(snap, &cfg, 0.0);
                 criterion::black_box(out)
             });
         });

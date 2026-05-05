@@ -17,6 +17,11 @@
 //! `Grid`, `Diagonal` iff both see it as `Diagonal`, otherwise
 //! `Spurious`. This is the axis-only analogue of the paper's "shared
 //! edge of a same-color triangle pair is the diagonal of a cell".
+//!
+//! Both endpoints of every edge are guaranteed to have at least one
+//! usable axis: high-`sigma` corners are filtered out at triangulation
+//! time (see [`super::triangulate_usable`]), so `Spurious` here only
+//! flags genuine geometric misalignment, not uncertainty rejection.
 
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
@@ -67,14 +72,14 @@ fn axis_diff(theta: f32, alpha: f32) -> f32 {
     d
 }
 
-fn distances_at_corner(
-    theta: f32,
-    axes: &[AxisHint; 2],
-    params: &TopologicalParams,
-) -> Option<(f32, f32)> {
-    // Pick the smaller axis-distance over the two axes; this is well-defined
-    // even when one axis has sigma = π, because we only use angles, and the
-    // pre-filter already excludes corners where both axes are unusable.
+/// Smallest axis distance + smallest diagonal distance, in radians.
+///
+/// Both endpoints of every classified edge are guaranteed usable by the
+/// upstream pre-filter (see [`super::triangulate_usable`]) — at least one
+/// axis at each endpoint has `sigma < max_axis_sigma_rad`. The per-axis
+/// `sigma` check below still skips an individual axis whose uncertainty
+/// is too high while keeping the corner's other (good) axis active.
+fn distances_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> (f32, f32) {
     let mut min_d = f32::INFINITY;
     for a in axes.iter() {
         if a.sigma >= params.max_axis_sigma_rad {
@@ -85,16 +90,15 @@ fn distances_at_corner(
             min_d = d;
         }
     }
-    if !min_d.is_finite() {
-        return None;
-    }
-    Some((min_d, (min_d - FRAC_PI_4).abs()))
+    debug_assert!(
+        min_d.is_finite(),
+        "topological pre-filter must guarantee at least one usable axis per endpoint"
+    );
+    (min_d, (min_d - FRAC_PI_4).abs())
 }
 
 fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> EdgeAt {
-    let Some((grid_distance, diagonal_distance)) = distances_at_corner(theta, axes, params) else {
-        return EdgeAt::Spurious;
-    };
+    let (grid_distance, diagonal_distance) = distances_at_corner(theta, axes, params);
     if grid_distance < params.axis_align_tol_rad {
         return EdgeAt::Grid;
     }
@@ -107,40 +111,17 @@ fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalPara
 pub(crate) fn classify_edge_metric(
     positions: &[Point2<f32>],
     axes: &[[AxisHint; 2]],
-    usable: &[bool],
     triangulation: &Triangulation,
     edge: usize,
     params: &TopologicalParams,
 ) -> EdgeMetric {
     let a = triangulation.triangles[edge];
     let b = triangulation.triangles[Triangulation::next_edge(edge)];
-    if !usable[a] || !usable[b] {
-        return EdgeMetric {
-            grid_distance_rad: None,
-            diagonal_distance_rad: None,
-            grid_margin_rad: None,
-            diagonal_margin_rad: None,
-        };
-    }
     let pa = positions[a];
     let pb = positions[b];
     let theta = (pb.y - pa.y).atan2(pb.x - pa.x);
-    let Some((a_grid, a_diag)) = distances_at_corner(theta, &axes[a], params) else {
-        return EdgeMetric {
-            grid_distance_rad: None,
-            diagonal_distance_rad: None,
-            grid_margin_rad: None,
-            diagonal_margin_rad: None,
-        };
-    };
-    let Some((b_grid, b_diag)) = distances_at_corner(theta, &axes[b], params) else {
-        return EdgeMetric {
-            grid_distance_rad: None,
-            diagonal_distance_rad: None,
-            grid_margin_rad: None,
-            diagonal_margin_rad: None,
-        };
-    };
+    let (a_grid, a_diag) = distances_at_corner(theta, &axes[a], params);
+    let (b_grid, b_diag) = distances_at_corner(theta, &axes[b], params);
     let grid_distance_rad = a_grid.max(b_grid);
     let diagonal_distance_rad = a_diag.max(b_diag);
     EdgeMetric {
@@ -165,7 +146,6 @@ pub(crate) fn classify_edge_metric(
 pub(crate) fn classify_all_edges(
     positions: &[Point2<f32>],
     axes: &[[AxisHint; 2]],
-    usable: &[bool],
     triangulation: &Triangulation,
     params: &TopologicalParams,
 ) -> Vec<EdgeKind> {
@@ -174,10 +154,6 @@ pub(crate) fn classify_all_edges(
     for (e, kind) in kinds.iter_mut().enumerate().take(n) {
         let a = triangulation.triangles[e];
         let b = triangulation.triangles[Triangulation::next_edge(e)];
-        if !usable[a] || !usable[b] {
-            // Corner without axis info — drop the edge.
-            continue;
-        }
         let pa = positions[a];
         let pb = positions[b];
         let theta = (pb.y - pa.y).atan2(pb.x - pa.x);

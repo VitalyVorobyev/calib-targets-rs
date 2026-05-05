@@ -75,7 +75,7 @@ fn bench_grid(c: &mut Criterion) {
             );
             continue;
         };
-        let corners: Vec<Corner> = detect_corners(&snap, &cfg);
+        let corners: Vec<Corner> = detect_corners(&snap, &cfg, 0.0);
         loaded_any = true;
         group.bench_with_input(
             BenchmarkId::from_parameter(label),

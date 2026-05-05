@@ -91,15 +91,13 @@ def test_chess_config_roundtrip() -> None:
         threshold_value=0.3,
         pyramid_levels=2,
         pyramid_min_size=64,
-        pre_blur_sigma_px=1.25,
         refiner=calib_targets.RefinerConfig(kind="forstner"),
     )
     serialized = cfg.to_dict()
-    assert serialized["pre_blur_sigma_px"] == 1.25
+    assert serialized["threshold_value"] == 0.3
+    assert "pre_blur_sigma_px" not in serialized
     restored = calib_targets.ChessConfig.from_dict(serialized)
     assert restored.to_dict() == serialized
-    from_partial = calib_targets.ChessConfig.from_dict({"pre_blur_sigma_px": 0.75})
-    assert from_partial.pre_blur_sigma_px == 0.75
 
 
 def test_chessboard_params_roundtrip() -> None:

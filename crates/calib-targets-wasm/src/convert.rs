@@ -1,15 +1,10 @@
-//! ChESS config conversion and corner adaptation.
+//! Corner adaptation helper.
 //!
-//! These functions mirror `crates/calib-targets/src/detect.rs` to avoid
+//! Mirrors `crates/calib-targets/src/detect.rs::adapt_chess_corner` to avoid
 //! depending on the facade crate (which pulls in `image` codecs and `rayon`
 //! via the `image` feature).
-//!
-//! In 0.8, the workspace chess-config types are direct re-exports from
-//! `chess-corners`, so conversion between workspace and upstream types is a
-//! no-op. [`to_chess_corners_config`] delegates to the shared
-//! [`ChessConfig::to_chess_corners_config`] method.
 
-use calib_targets_core::{AxisEstimate, ChessConfig, Corner};
+use calib_targets_core::{AxisEstimate, Corner};
 use nalgebra::Point2;
 
 pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
@@ -30,8 +25,4 @@ pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
         fit_rms: c.fit_rms,
         strength: c.response,
     }
-}
-
-pub fn to_chess_corners_config(cfg: &ChessConfig) -> chess_corners::ChessConfig {
-    cfg.to_chess_corners_config()
 }

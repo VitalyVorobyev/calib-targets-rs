@@ -10,7 +10,7 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    classify, delaunay, quads, topo_filter, triangle_class, update_edge_stats,
+    classify, quads, topo_filter, triangle_class, triangulate_usable, update_edge_stats,
     update_triangle_stats, usable_mask, walk, AxisHint, EdgeKind, TopologicalComponent,
     TopologicalError, TopologicalParams, TopologicalStats, TriangleClass,
 };
@@ -140,10 +140,9 @@ pub fn build_grid_topological_trace(
         });
     }
 
-    let triangulation = delaunay::triangulate(positions);
+    let (triangulation, _packed_to_global) = triangulate_usable(positions, &usable_mask);
     stats.triangles = triangulation.triangles.len() / 3;
-    let edge_kinds =
-        classify::classify_all_edges(positions, axes, &usable_mask, &triangulation, params);
+    let edge_kinds = classify::classify_all_edges(positions, axes, &triangulation, params);
     update_edge_stats(&mut stats, &edge_kinds);
     update_triangle_stats(&mut stats, &edge_kinds);
 
@@ -198,7 +197,6 @@ pub fn build_grid_topological_trace(
                     let metric = classify::classify_edge_metric(
                         positions,
                         axes,
-                        &usable_mask,
                         &triangulation,
                         base + k,
                         params,

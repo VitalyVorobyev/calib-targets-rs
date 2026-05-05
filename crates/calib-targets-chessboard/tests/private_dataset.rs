@@ -98,7 +98,7 @@ fn smoke_first_subframe_detects() {
     let snap = extract_snap(&img, 0);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
+    let corners = detect_corners(&snap, &chess_cfg, 0.0);
 
     let detector = Detector::new(DetectorParams::default());
     let detection = detector
@@ -143,7 +143,7 @@ fn full_dataset_precision_contract() {
             .to_luma8();
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap = extract_snap(&img, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&snap, &chess_cfg, 0.0);
             n_frames += 1;
             let Some(detection) = detector.detect(&corners) else {
                 continue;

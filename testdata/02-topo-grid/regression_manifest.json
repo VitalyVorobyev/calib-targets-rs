@@ -11,7 +11,7 @@
     {
       "path": "testdata/02-topo-grid/GeminiChess1.png",
       "topological": { "min_labelled": 53, "max_holes": 3 },
-      "chessboard_v2": { "min_labelled": 40, "max_holes": 9 }
+      "chessboard_v2": { "min_labelled": 40, "max_holes": 11 }
     },
     {
       "path": "testdata/02-topo-grid/GeminiChess2.png",

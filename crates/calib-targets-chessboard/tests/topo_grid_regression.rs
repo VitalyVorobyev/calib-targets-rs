@@ -121,9 +121,10 @@ fn params_for(algorithm: GraphBuildAlgorithm) -> DetectorParams {
 fn run_detector(
     img: &GrayImage,
     chess_cfg: &ChessConfig,
+    pre_blur_sigma_px: f32,
     algorithm: GraphBuildAlgorithm,
 ) -> Option<Detection> {
-    let corners = detect_corners(img, chess_cfg);
+    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
     Detector::new(params_for(algorithm)).detect(&corners)
 }
 
@@ -227,7 +228,7 @@ fn topo_grid_manifest_gates_hold() {
         let path = root.join(&case.path);
         let img = load_image(&path);
         let default_cfg = default_chess_config();
-        let default_corners = detect_corners(&img, &default_cfg);
+        let default_corners = detect_corners(&img, &default_cfg, 0.0);
 
         if let Some(gate) = &case.topological {
             let detection = Detector::new(params_for(GraphBuildAlgorithm::Topological))
@@ -241,10 +242,19 @@ fn topo_grid_manifest_gates_hold() {
         }
         if let Some(gate) = &case.low_res {
             let fed = maybe_upscale(&img, gate.upscale);
+            // Manifest `threshold_value` is the historical relative
+            // ChESS-response cutoff (set on top of the workspace default,
+            // which is now an absolute floor). Force the mode explicitly
+            // so the JSON keeps its original semantics.
             let mut cfg = default_chess_config();
+            cfg.threshold_mode = calib_targets::detect::ThresholdMode::Relative;
             cfg.threshold_value = gate.chess.threshold_value;
-            cfg.pre_blur_sigma_px = gate.chess.pre_blur_sigma_px;
-            let detection = run_detector(&fed, &cfg, algorithm_from_name(&gate.algorithm));
+            let detection = run_detector(
+                &fed,
+                &cfg,
+                gate.chess.pre_blur_sigma_px,
+                algorithm_from_name(&gate.algorithm),
+            );
             let context = format!("{} low_res", case.path);
             let detection =
                 detection.unwrap_or_else(|| panic!("{context}: detector returned None"));

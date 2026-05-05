@@ -242,18 +242,20 @@ struct TopologicalCornerPayload {
 /// Returns:
 ///   dict with detection data, or raises RuntimeError on detection errors.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
+#[pyo3(signature = (image, *, chess_cfg=None, params, pre_blur_sigma_px=None))]
 fn detect_charuco(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: &Bound<'_, PyAny>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = charuco_params_from_py(Some(params))?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         let detector = charuco::CharucoDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });
@@ -274,19 +276,21 @@ fn detect_charuco(
 /// Returns:
 ///   dict with detection data, or None if no board is found.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None, pre_blur_sigma_px=None))]
 fn detect_chessboard(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let result = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         chessboard::Detector::new(params.clone()).detect(&corners)
     });
     match result {
@@ -316,19 +320,21 @@ fn detect_chessboard(
 ///   list of dicts, each with the `ChessboardDetectionResult` schema.
 ///   Empty list if no board components are found.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None, pre_blur_sigma_px=None))]
 fn detect_chessboard_all(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let results = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         chessboard::Detector::new(params.clone()).detect_all(&corners)
     });
     let json =
@@ -354,19 +360,21 @@ fn detect_chessboard_all(
 /// Returns:
 ///   dict with the `ChessboardDebugFrame` schema.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None, pre_blur_sigma_px=None))]
 fn detect_chessboard_debug(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let frame = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         chessboard::Detector::new(params.clone()).detect_debug(&corners)
     });
     let json =
@@ -383,12 +391,13 @@ fn detect_chessboard_debug(
 /// available, and the final merged detections produced by the chessboard
 /// detector.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None, pre_blur_sigma_px=None))]
 fn trace_chessboard_topological(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let width = img.width();
@@ -396,9 +405,10 @@ fn trace_chessboard_topological(
     let mut params = chessboard_params_from_py(params)?;
     params.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         let corner_payload: Vec<TopologicalCornerPayload> = corners
             .iter()
             .enumerate()
@@ -458,19 +468,21 @@ fn trace_chessboard_topological(
 /// Returns:
 ///   dict with detection data, or None if no board is found.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
+#[pyo3(signature = (image, *, chess_cfg=None, params=None, pre_blur_sigma_px=None))]
 fn detect_marker_board(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: Option<&Bound<'_, PyAny>>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let params = marker_board_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let result = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         marker::MarkerBoardDetector::new(params.clone())
             .detect_from_image_and_corners(&detect::gray_view(&img), &corners)
     });
@@ -495,19 +507,21 @@ fn detect_marker_board(
 /// Returns:
 ///   dict with detection data. Raises RuntimeError on detection errors.
 #[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
+#[pyo3(signature = (image, *, chess_cfg=None, params, pre_blur_sigma_px=None))]
 fn detect_puzzleboard(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: &Bound<'_, PyAny>,
+    pre_blur_sigma_px: Option<f32>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
     let params = puzzleboard_params_from_py(Some(params))?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let pre_blur_sigma_px = pre_blur_sigma_px.unwrap_or(0.0);
 
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &chess_cfg, pre_blur_sigma_px);
         let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });

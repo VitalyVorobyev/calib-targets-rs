@@ -190,38 +190,32 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Ches
         "chess.multiscale.merge_radius",
     )?;
 
-    // Reconstruct `ChessConfig` from the low-level `ChessParams`. Since
-    // `ChessConfig::from_parts` was removed in 0.8, we build directly.
-    let use_radius10 = params.use_radius10;
-    let descriptor_use_radius10 = params.descriptor_use_radius10;
-    let nms_radius = params.nms_radius;
-    let min_cluster_size = params.min_cluster_size;
-
-    let mut chess = ChessConfig {
-        detector_mode: if use_radius10 {
-            calib_targets::detect::DetectorMode::Broad
-        } else {
-            calib_targets::detect::DetectorMode::Canonical
-        },
-        descriptor_mode: match descriptor_use_radius10 {
-            None => calib_targets::detect::DescriptorMode::FollowDetector,
-            Some(false) => calib_targets::detect::DescriptorMode::Canonical,
-            Some(true) => calib_targets::detect::DescriptorMode::Broad,
-        },
-        threshold_mode: if params.threshold_abs.is_some() {
-            calib_targets::detect::ThresholdMode::Absolute
-        } else {
-            calib_targets::detect::ThresholdMode::Relative
-        },
-        threshold_value: params.threshold_abs.unwrap_or(params.threshold_rel),
-        nms_radius,
-        min_cluster_size,
-        pyramid_levels: multiscale_pyramid.num_levels,
-        pyramid_min_size: multiscale_pyramid.min_size,
-        refinement_radius: config.multiscale.refinement_radius,
-        merge_radius,
-        ..ChessConfig::default()
+    // Reconstruct `ChessConfig` from the low-level `ChessParams`. Upstream
+    // `chess_corners::ChessConfig` is `#[non_exhaustive]`, so we start
+    // from `default()` and assign each field.
+    let mut chess = ChessConfig::default();
+    chess.detector_mode = if params.use_radius10 {
+        calib_targets::detect::DetectorMode::Broad
+    } else {
+        calib_targets::detect::DetectorMode::Canonical
     };
+    chess.descriptor_mode = match params.descriptor_use_radius10 {
+        None => calib_targets::detect::DescriptorMode::FollowDetector,
+        Some(false) => calib_targets::detect::DescriptorMode::Canonical,
+        Some(true) => calib_targets::detect::DescriptorMode::Broad,
+    };
+    chess.threshold_mode = if params.threshold_abs.is_some() {
+        calib_targets::detect::ThresholdMode::Absolute
+    } else {
+        calib_targets::detect::ThresholdMode::Relative
+    };
+    chess.threshold_value = params.threshold_abs.unwrap_or(params.threshold_rel);
+    chess.nms_radius = params.nms_radius;
+    chess.min_cluster_size = params.min_cluster_size;
+    chess.pyramid_levels = multiscale_pyramid.num_levels;
+    chess.pyramid_min_size = multiscale_pyramid.min_size;
+    chess.refinement_radius = config.multiscale.refinement_radius;
+    chess.merge_radius = merge_radius;
     chess.upscale = convert_upscale_config(&config.upscale)?;
     Ok(chess)
 }

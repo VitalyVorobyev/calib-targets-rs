@@ -82,7 +82,7 @@ fn smoke_flagship_snap_0_detects() {
     let snap = extract_snap(&img, 0);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
+    let corners = detect_corners(&snap, &chess_cfg, 0.0);
 
     let params = CharucoParams::for_board(&spec);
     let detector = CharucoDetector::new(params).expect("detector");
@@ -142,7 +142,7 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
         for snap_idx in 0..SNAPS_PER_IMAGE {
             frames += 1;
             let snap = extract_snap(&img, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&snap, &chess_cfg, 0.0);
             let view = GrayImageView {
                 width: snap.width() as usize,
                 height: snap.height() as usize,
@@ -215,7 +215,7 @@ fn smoke_apriltag_image_does_not_panic() {
     let snap = upscale(&snap, 3);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
+    let corners = detect_corners(&snap, &chess_cfg, 0.0);
 
     // Legacy matcher path: the target_0 AprilTag board has 1.69 mm cells
     // and even at 3× upscale the per-cell hard-threshold decode returns

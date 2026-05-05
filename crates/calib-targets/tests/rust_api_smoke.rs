@@ -11,7 +11,7 @@ fn write_file(path: &Path, contents: &str) {
 }
 
 #[test]
-fn downstream_can_name_and_construct_workspace_owned_chess_config() {
+fn downstream_can_name_and_configure_chess_config() {
     let dir = tempdir().expect("tempdir");
     let manifest_path = dir.path().join("Cargo.toml");
     let main_path = dir.path().join("src/main.rs");
@@ -21,7 +21,7 @@ fn downstream_can_name_and_construct_workspace_owned_chess_config() {
         &manifest_path,
         &format!(
             r#"[package]
-name = "workspace_owned_chess_config"
+name = "chess_config_downstream"
 version = "0.1.0"
 edition = "2021"
 
@@ -40,25 +40,23 @@ image = "0.25"
 };
 
 fn main() {
+    // `ChessConfig` is `#[non_exhaustive]` (re-exported from `chess-corners`),
+    // so downstream crates must seed it via a preset and assign the fields
+    // they care about; struct literal syntax is intentionally forbidden.
     let _named_default: ChessConfig = detect::default_chess_config();
-    // `RefinerConfig` is `#[non_exhaustive]`, so downstream crates must
-    // build it via the preset constructors / `build` rather than a literal.
-    let refiner = RefinerConfig::saddle_point();
-    let cfg = ChessConfig {
-        detector_mode: DetectorMode::Broad,
-        descriptor_mode: DescriptorMode::Canonical,
-        threshold_mode: ThresholdMode::Relative,
-        threshold_value: 0.15,
-        min_cluster_size: 1,
-        refiner,
-        pyramid_levels: 2,
-        pyramid_min_size: 64,
-        ..ChessConfig::default()
-    };
+    let mut cfg = ChessConfig::single_scale();
+    cfg.detector_mode = DetectorMode::Broad;
+    cfg.descriptor_mode = DescriptorMode::Canonical;
+    cfg.threshold_mode = ThresholdMode::Relative;
+    cfg.threshold_value = 0.15;
+    cfg.min_cluster_size = 1;
+    cfg.refiner = RefinerConfig::saddle_point();
+    cfg.pyramid_levels = 2;
+    cfg.pyramid_min_size = 64;
     assert_eq!(cfg.refiner.kind, RefinementMethod::SaddlePoint);
 
     let img = image::GrayImage::new(16, 16);
-    let _ = detect::detect_corners(&img, &cfg);
+    let _ = detect::detect_corners(&img, &cfg, 0.0);
 }
 "#,
     );

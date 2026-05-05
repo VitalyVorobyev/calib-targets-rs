@@ -19,7 +19,7 @@ use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBo
 use chess_corners::find_chess_corners_u8;
 use wasm_bindgen::prelude::*;
 
-use convert::{adapt_chess_corner, to_chess_corners_config};
+use convert::adapt_chess_corner;
 use gray::make_view;
 
 // ---------------------------------------------------------------------------
@@ -56,28 +56,31 @@ fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> 
 }
 
 fn detect_corners_impl(pixels: &[u8], width: u32, height: u32, cfg: &ChessConfig) -> Vec<Corner> {
-    let cc_cfg = to_chess_corners_config(cfg);
-    find_chess_corners_u8(pixels, width, height, &cc_cfg)
+    find_chess_corners_u8(pixels, width, height, cfg)
         .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
         .collect()
 }
 
-/// Resolve a ChESS detector config, falling back to defaults when JS supplies
-/// `undefined` / `null`. The chessboard detector no longer carries a
-/// nested ChESS config in `DetectorParams`, so callers (or this helper) must
-/// supply one for the corner-detection step.
+/// Build the workspace-default ChESS detector config. Mirrors the threshold
+/// override applied in `calib_targets::detect::default_chess_config` (paired
+/// with `single_scale` otherwise) — see the rustdoc on that function for the
+/// rationale and sweep evidence.
+fn workspace_default_chess_cfg() -> ChessConfig {
+    let mut cfg = ChessConfig::single_scale();
+    cfg.threshold_mode = ThresholdMode::Absolute;
+    cfg.threshold_value = 15.0;
+    cfg
+}
+
+/// Resolve a ChESS detector config, falling back to the workspace default
+/// when JS supplies `undefined` / `null`.
 fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
     if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
         from_js(chess_cfg)
     } else {
-        Ok(ChessConfig {
-            threshold_mode: ThresholdMode::Relative,
-            threshold_value: 0.2,
-            nms_radius: 2,
-            ..ChessConfig::single_scale()
-        })
+        Ok(workspace_default_chess_cfg())
     }
 }
 
@@ -88,13 +91,7 @@ fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
 /// Return the default `ChessConfig` as a JS object.
 #[wasm_bindgen]
 pub fn default_chess_config() -> Result<JsValue, JsError> {
-    let cfg = ChessConfig {
-        threshold_mode: ThresholdMode::Relative,
-        threshold_value: 0.2,
-        nms_radius: 2,
-        ..ChessConfig::single_scale()
-    };
-    to_js(&cfg)
+    to_js(&workspace_default_chess_cfg())
 }
 
 /// Return the default `DetectorParams` as a JS object.
