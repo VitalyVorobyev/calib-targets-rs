@@ -27,6 +27,32 @@ high-resolution frames.
   `DetectorMode::Radon` and `RefinementMethod::RadonPeak` are
   exposed; `RefinerKindConfig` and `ChessConfig::from_parts` are
   removed.
+- **`ChessConfig` is now a direct re-export of
+  `chess_corners::ChessConfig`** (the workspace shadow struct, its
+  `Default` override, and `to_chess_corners_config()` are gone).
+  `calib_targets::detect::default_chess_config` now returns
+  `ChessConfig::single_scale()` with one workspace-tuned override —
+  `ThresholdMode::Absolute` paired with `threshold_value = 15.0`,
+  a small noise floor that keeps both the seed-and-grow chessboard
+  detector and the topological pipeline from drowning in weak
+  responses (chosen by sweeping the public testdata regression set;
+  see `crates/calib-targets/examples/threshold_sweep.rs`). The
+  previous workspace default was `Relative 0.2`. Callers that depend
+  on the old behaviour must set `threshold_mode` / `threshold_value`
+  explicitly.
+- **`pre_blur_sigma_px` is no longer a field on `ChessConfig`.**
+  `calib_targets::detect::detect_corners` now accepts the pre-blur
+  sigma as an explicit third argument; the Python `detect_*`
+  wrappers gain a sibling `pre_blur_sigma_px` keyword. The Python
+  `ChessConfig` dataclass no longer carries the field. The C ABI
+  never exposed it (was always defaulted to `0.0`) — behaviour
+  unchanged on that side.
+- **Topological pipeline pre-filters Delaunay input.** Corners with
+  both axes above `max_axis_sigma_rad` are now removed before
+  triangulation rather than producing `Spurious` edges downstream.
+  Pure performance / cleanliness change — labelled corner counts on
+  the regression set are unchanged. `EdgeKind::Spurious` now only
+  flags genuine geometric misalignment.
 - `GridIndex` renamed to `GridCoords` workspace-wide; square-grid
   types gain a `Square` prefix (`SquareGridHomography`,
   `SquareGridHomographyMesh`, `square_predict_grid_position`, …).
@@ -61,6 +87,40 @@ high-resolution frames.
   `DetectorParams::graph_build_algorithm = Topological`; default
   stays `ChessboardV2`. ChArUco pins `ChessboardV2` regardless of
   caller choice.
+- **Topological pipeline precision/recall hardening.** Four
+  composable filters tighten the topological path so it can stand
+  alongside chessboard-v2 on real-world boards while keeping zero
+  wrong `(i, j)` labels:
+  - **Pre-Delaunay axis-cluster gate.** New
+    `TopologicalParams::axis_cluster_centers` +
+    `cluster_axis_tol_rad`; the chessboard adapter hoists
+    `cluster_axes` to before `build_grid_topological` and feeds
+    centers in. Mirror of the chessboard-v2 cluster gate, the
+    precision bedrock that lets the angle thresholds tighten safely.
+  - **Geometry verification on topological output.**
+    `run_geometry_check` (line collinearity + local-H residual +
+    largest cardinal component) now runs on every topological
+    detection — previously only chessboard-v2 emitted detections
+    through this final gate.
+  - **Tighter angle defaults.** `axis_align_tol_rad` and
+    `diagonal_angle_tol_rad` move from 22°/18° back to 15°/15°.
+    With the cluster gate active the wider tolerances were a
+    precision risk; tighter is correct. The sum stays below π/4 so
+    classification is unambiguous by construction.
+  - **Per-component cell-size upper bound.** New
+    `quad_edge_max_rel` (default 1.8) rejects quads whose perimeter
+    edges run more than 1.8× the local component median —
+    catches the cross-cell hops that fragment large boards.
+    `quad_edge_min_rel` defaults to 0.0 (disabled) since the lower
+    bound rejects too many small-but-valid quads on heavily
+    distorted Gemini-style boards.
+  - Combined effect on internal regression sets: the topological
+    chessboard path now matches chessboard-v2's any-detection
+    contract on a private real-world board sweep, with substantially
+    higher mean labelled corner count per detection. Public
+    02-topo-grid Gemini gates remain green at full ceiling. New
+    ignored regression test mirrors the chessboard-v2 contract for
+    the topological path so future changes have a pinned gate.
 - **Local-homography extension.**
   `extend_via_local_homography` fits a per-candidate `H` from the
   `K` nearest labelled corners instead of one global fit; tolerates

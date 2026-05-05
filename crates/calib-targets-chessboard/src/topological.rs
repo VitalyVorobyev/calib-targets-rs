@@ -17,10 +17,11 @@ mod recovery;
 
 use calib_targets_core::Corner;
 use projective_grid::{
-    build_grid_topological, build_grid_topological_trace, merge_components_local, ComponentInput,
-    TopologicalGrid, TopologicalTrace,
+    build_grid_topological, build_grid_topological_trace, merge_components_local,
+    AxisClusterCenters, ComponentInput, TopologicalGrid, TopologicalTrace,
 };
 
+use crate::cluster::ClusterCenters;
 use crate::detector::Detection;
 use crate::params::DetectorParams;
 
@@ -28,6 +29,11 @@ use self::inputs::topological_inputs;
 use self::recovery::{
     build_topological_detections, clustered_augs, recover_topological_components,
 };
+
+#[inline]
+fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisClusterCenters> {
+    centers.map(|c| AxisClusterCenters::new(c.theta0, c.theta1))
+}
 
 /// Run the topological pipeline and return one [`Detection`] per surviving
 /// labelled component.
@@ -44,13 +50,27 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
         return Vec::new();
     }
 
+    // Hoist clustering: chessboard-v2 uses `cluster_axes` as a precision
+    // bedrock before its seed-and-grow. Topological used to skip this and
+    // pay the cost in spurious-edge admissions; we now compute centers
+    // once up front, gate Delaunay through them, and reuse the same
+    // `(augs, centers)` pair for booster recovery (no re-clustering).
+    let (base_augs, clustered_centers) = clustered_augs(corners, params);
+
     let inputs = topological_inputs(corners, params);
     if inputs.usable_count < params.min_labeled_corners {
         return Vec::new();
     }
 
+    let mut topo_params = params.topological;
+    topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
+    // Keep `topo_params.cluster_axis_tol_rad` from `TopologicalParams::default`
+    // (16°). Don't reuse `params.cluster_tol_deg` (12°) — chessboard-v2's
+    // cluster gate has a sigma bonus and a booster fallback that
+    // topological lacks; matching the 12° literally regresses Gemini2.
+
     let topo: TopologicalGrid =
-        match build_grid_topological(&inputs.positions, &inputs.axes, &params.topological) {
+        match build_grid_topological(&inputs.positions, &inputs.axes, &topo_params) {
             Ok(g) => g,
             Err(_) => return Vec::new(),
         };
@@ -79,7 +99,6 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
     #[cfg(not(feature = "tracing"))]
     let merged = merge_components_local(&component_views, &params.component_merge);
 
-    let (base_augs, clustered_centers) = clustered_augs(corners, params);
     let final_components = recover_topological_components(
         &merged.components,
         &inputs.positions,
@@ -116,5 +135,8 @@ pub fn trace_topological(
     params: &DetectorParams,
 ) -> Result<TopologicalTrace, projective_grid::TopologicalError> {
     let inputs = topological_inputs(corners, params);
-    build_grid_topological_trace(&inputs.positions, &inputs.axes, &params.topological)
+    let (_augs, clustered_centers) = clustered_augs(corners, params);
+    let mut topo_params = params.topological;
+    topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
+    build_grid_topological_trace(&inputs.positions, &inputs.axes, &topo_params)
 }

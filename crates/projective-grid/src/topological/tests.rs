@@ -4,7 +4,10 @@ use std::f32::consts::FRAC_PI_2;
 
 use nalgebra::Point2;
 
-use super::{build_grid_topological, build_grid_topological_trace, AxisHint, TopologicalParams};
+use super::{
+    build_grid_topological, build_grid_topological_trace, AxisClusterCenters, AxisHint,
+    TopologicalParams,
+};
 
 fn axes_axis_aligned() -> [AxisHint; 2] {
     [
@@ -42,8 +45,12 @@ fn build_axis_aligned_grid(
 #[test]
 fn default_tolerances_are_regression_values() {
     let params = TopologicalParams::default();
-    assert!((params.axis_align_tol_rad - 22.0_f32.to_radians()).abs() < 1e-6);
-    assert!((params.diagonal_angle_tol_rad - 18.0_f32.to_radians()).abs() < 1e-6);
+    // 15°/15° — paired with the pre-Delaunay cluster gate. Together the
+    // two are below π/4 = 45° so an edge can never satisfy both Grid and
+    // Diagonal simultaneously: classification is unambiguous by
+    // construction, no margin-gate disambiguation is needed.
+    assert!((params.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
+    assert!((params.diagonal_angle_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
 
     let json = serde_json::to_string(&params).unwrap();
     let restored: TopologicalParams = serde_json::from_str(&json).unwrap();
@@ -211,6 +218,105 @@ fn trace_matches_production_grid_and_serializes() {
     assert!(!json["triangles"].as_array().unwrap().is_empty());
     assert!(json["triangles"][0]["edge_metrics"].is_array());
     assert!(!json["quads"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn cluster_centers_default_to_none_and_legacy_behavior_holds() {
+    let p = TopologicalParams::default();
+    assert!(p.axis_cluster_centers.is_none());
+    assert!((p.cluster_axis_tol_rad - 16.0_f32.to_radians()).abs() < 1e-6);
+}
+
+#[test]
+fn cluster_gate_drops_off_axis_noiser_when_centers_supplied() {
+    // 5×5 grid (axes ≈ 0°/90°) plus 4 spurious corners with axes at 30°.
+    let (mut pts, mut axs) = build_axis_aligned_grid(5, 5, 10.0);
+    let off_axis = [
+        AxisHint {
+            angle: 30.0_f32.to_radians(),
+            sigma: 0.05,
+        },
+        AxisHint {
+            angle: 30.0_f32.to_radians() + FRAC_PI_2,
+            sigma: 0.05,
+        },
+    ];
+    pts.push(Point2::new(60.0, 5.0));
+    axs.push(off_axis);
+    pts.push(Point2::new(-10.0, 25.0));
+    axs.push(off_axis);
+    pts.push(Point2::new(45.0, 60.0));
+    axs.push(off_axis);
+    pts.push(Point2::new(15.0, -8.0));
+    axs.push(off_axis);
+
+    // Without centers: legacy gate (sigma only). Off-axis noisers enter
+    // Delaunay; whether they label depends on the angle test, but they
+    // pollute the diagnostic count.
+    let no_gate = build_grid_topological(&pts, &axs, &TopologicalParams::default()).unwrap();
+    assert_eq!(no_gate.diagnostics.corners_used, 29);
+
+    // With centers at 0°/90°: noisers fail the cluster gate at the
+    // default tol — see `cluster_centers_default_to_none_and_legacy_behavior_holds`.
+    let params = TopologicalParams {
+        axis_cluster_centers: Some(AxisClusterCenters::new(0.0, FRAC_PI_2)),
+        ..TopologicalParams::default()
+    };
+    let gated = build_grid_topological(&pts, &axs, &params).unwrap();
+    assert_eq!(
+        gated.diagnostics.corners_used, 25,
+        "cluster gate must reject the four 30° noisers"
+    );
+    // The 5×5 grid should still recover.
+    assert_eq!(gated.components.len(), 1);
+    assert_eq!(gated.components[0].labelled.len(), 25);
+}
+
+#[test]
+fn cluster_gate_widens_with_tolerance() {
+    // The 30° noiser that was filtered out at 12° tol should pass at
+    // 35° tol — sanity check that `cluster_axis_tol_rad` is honoured.
+    let (mut pts, mut axs) = build_axis_aligned_grid(5, 5, 10.0);
+    pts.push(Point2::new(60.0, 5.0));
+    axs.push([
+        AxisHint {
+            angle: 30.0_f32.to_radians(),
+            sigma: 0.05,
+        },
+        AxisHint {
+            angle: 30.0_f32.to_radians() + FRAC_PI_2,
+            sigma: 0.05,
+        },
+    ]);
+
+    let strict_params = TopologicalParams {
+        axis_cluster_centers: Some(AxisClusterCenters::new(0.0, FRAC_PI_2)),
+        cluster_axis_tol_rad: 12.0_f32.to_radians(),
+        ..TopologicalParams::default()
+    };
+    let strict = build_grid_topological(&pts, &axs, &strict_params).unwrap();
+    assert_eq!(strict.diagnostics.corners_used, 25);
+
+    let lax_params = TopologicalParams {
+        cluster_axis_tol_rad: 35.0_f32.to_radians(),
+        ..strict_params
+    };
+    let lax = build_grid_topological(&pts, &axs, &lax_params).unwrap();
+    assert_eq!(lax.diagnostics.corners_used, 26);
+}
+
+#[test]
+fn axis_cluster_centers_are_ordered_and_wrapped() {
+    let c = AxisClusterCenters::new(2.5, 0.5);
+    assert!(c.theta0 < c.theta1);
+    assert!((c.theta0 - 0.5).abs() < 1e-6);
+    assert!((c.theta1 - 2.5).abs() < 1e-6);
+
+    let wrapped = AxisClusterCenters::new(std::f32::consts::PI + 0.1, 0.5);
+    // π + 0.1 → 0.1 after wrap_pi to [0, π); ordered with 0.5 → (0.1, 0.5).
+    assert!(wrapped.theta0 < wrapped.theta1);
+    assert!(wrapped.theta0 < std::f32::consts::PI);
+    assert!(wrapped.theta1 < std::f32::consts::PI);
 }
 
 #[test]

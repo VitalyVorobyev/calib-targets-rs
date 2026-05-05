@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "dataset_dir": "privatedata/130x130_puzzle",
+  "out_dir": "docs/img/130x130_puzzle",
+  "upscale": 2,
+  "frames": [
+    {
+      "frame": {
+        "target_idx": 0,
+        "snap_idx": 0
+      },
+      "labelled": {
+        "ChessboardV2": 659,
+        "Topological": 604
+      }
+    },
+    {
+      "frame": {
+        "target_idx": 15,
+        "snap_idx": 0
+      },
+      "labelled": {
+        "ChessboardV2": 796,
+        "Topological": 754
+      }
+    },
+    {
+      "frame": {
+        "target_idx": 18,
+        "snap_idx": 3
+      },
+      "labelled": {
+        "ChessboardV2": 275,
+        "Topological": 251
+      }
+    },
+    {
+      "frame": {
+        "target_idx": 10,
+        "snap_idx": 2
+      },
+      "labelled": {
+        "ChessboardV2": 152,
+        "Topological": 130
+      }
+    }
+  ]
+}

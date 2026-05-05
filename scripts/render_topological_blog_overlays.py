@@ -325,12 +325,12 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         max_axis_sigma_rad=math.radians(args.max_axis_sigma_deg),
         edge_ratio_max=args.edge_ratio_max,
         min_quads_per_component=args.min_quads_per_component,
+        cluster_axis_tol_rad=math.radians(args.cluster_axis_tol_deg),
+        quad_edge_min_rel=args.quad_edge_min_rel,
+        quad_edge_max_rel=args.quad_edge_max_rel,
     )
     trace_params = ct.ChessboardParams(graph_build_algorithm="topological", topological=topo)
-    chess_cfg = ct.ChessConfig(
-        threshold_value=args.chess_threshold,
-        pre_blur_sigma_px=args.pre_blur_sigma,
-    )
+    chess_cfg = ct.ChessConfig(threshold_value=args.chess_threshold)
     payload = ct.trace_chessboard_topological(image, chess_cfg=chess_cfg, params=trace_params)
     if args.final_algorithm != "topological":
         final_params = ct.ChessboardParams(graph_build_algorithm=args.final_algorithm)
@@ -413,14 +413,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
     parser.add_argument("--final-algorithm", choices=["topological", "chessboard_v2"], default="topological")
-    parser.add_argument("--chess-threshold", type=float, default=0.2)
+    parser.add_argument("--chess-threshold", type=float, default=15.0)
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
-    parser.add_argument("--axis-align-tol-deg", type=float, default=22.0)
-    parser.add_argument("--diagonal-angle-tol-deg", type=float, default=18.0)
+    parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
+    parser.add_argument("--diagonal-angle-tol-deg", type=float, default=15.0)
     parser.add_argument("--max-axis-sigma-deg", type=float, default=math.degrees(0.6))
     parser.add_argument("--edge-ratio-max", type=float, default=10.0)
     parser.add_argument("--min-quads-per-component", type=int, default=1)
+    parser.add_argument("--cluster-axis-tol-deg", type=float, default=16.0)
+    parser.add_argument("--quad-edge-min-rel", type=float, default=0.0)
+    parser.add_argument("--quad-edge-max-rel", type=float, default=1.8)
     return parser.parse_args()
 
 
@@ -448,6 +451,9 @@ def main() -> None:
             "max_axis_sigma_deg": args.max_axis_sigma_deg,
             "edge_ratio_max": args.edge_ratio_max,
             "min_quads_per_component": args.min_quads_per_component,
+            "cluster_axis_tol_deg": args.cluster_axis_tol_deg,
+            "quad_edge_min_rel": args.quad_edge_min_rel,
+            "quad_edge_max_rel": args.quad_edge_max_rel,
         },
         "images": rows,
     }

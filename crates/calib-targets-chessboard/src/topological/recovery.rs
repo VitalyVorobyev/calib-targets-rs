@@ -366,7 +366,7 @@ pub(super) fn build_topological_detections(
         let mut augs = base_augs.to_vec();
         mark_labelled(&mut augs, &labelled);
         let cell_size = estimate_cell_size_from_labels(&labelled, positions);
-        let grow = GrowResult {
+        let mut grow = GrowResult {
             by_corner: labelled.iter().map(|(&k, &v)| (v, k)).collect(),
             labelled,
             ambiguous: Default::default(),
@@ -374,6 +374,32 @@ pub(super) fn build_topological_detections(
             grid_u,
             grid_v,
         };
+
+        // Geometry verification (Phase B). The chessboard-v2 path runs
+        // this gate unconditionally before shipping a detection; the
+        // topological dispatch used to skip it. The check can only drop
+        // labelled corners (line collinearity / local-H residual /
+        // largest cardinal component) — it never adds wrong labels —
+        // and it sets `detection_refused` if too few survive. Skip when
+        // cell_size is degenerate (would divide-by-zero in validate).
+        if cell_size > 0.0 {
+            let mut blacklist: HashSet<usize> = HashSet::new();
+            let trace = crate::detector::run_geometry_check(
+                &mut augs,
+                &mut grow,
+                centers,
+                cell_size,
+                &mut blacklist,
+                params,
+            );
+            if trace.detection_refused {
+                continue;
+            }
+        }
+        if grow.labelled.len() < params.min_labeled_corners {
+            continue;
+        }
+
         out.push(build_detection_from_grow(&augs, &grow, centers, cell_size));
     }
 

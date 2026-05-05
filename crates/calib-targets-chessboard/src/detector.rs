@@ -1105,7 +1105,7 @@ fn run_stage6_5_rescue(
 /// `detection_refused` is set when the surviving labelled count
 /// drops below `min_labeled_corners` — the caller MUST then return
 /// `None` for the detection rather than ship a half-broken grid.
-fn run_geometry_check(
+pub(crate) fn run_geometry_check(
     augs: &mut [CornerAug],
     grow_res: &mut GrowResult,
     _centers: ClusterCenters,

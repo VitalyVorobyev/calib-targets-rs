@@ -120,15 +120,24 @@ class RefinerConfig:
 
 @dataclass(slots=True)
 class ChessConfig:
-    """Flat ChESS corner detector configuration matching the Rust ChessConfig.
+    """Flat ChESS corner detector configuration matching the upstream
+    ``chess_corners::ChessConfig``.
 
-    All fields have concrete defaults matching the Rust side.
+    Defaults match the workspace-tuned settings used by
+    ``calib_targets::detect::default_chess_config`` — ``threshold_mode =
+    "absolute"`` paired with ``threshold_value = 10.0``, a small positive
+    noise floor that keeps the seed-and-grow chessboard detector from
+    drowning in weak responses. See the threshold sweep example in
+    ``crates/calib-targets/examples/threshold_sweep.rs`` for the evidence.
+
+    Pre-blur preprocessing is no longer carried on this struct; pass
+    ``pre_blur_sigma_px`` directly to the ``detect_*`` calls instead.
     """
 
     detector_mode: str = "canonical"
     descriptor_mode: str = "follow_detector"
-    threshold_mode: str = "relative"
-    threshold_value: float = 0.2
+    threshold_mode: str = "absolute"
+    threshold_value: float = 15.0
     nms_radius: int = 2
     min_cluster_size: int = 2
     refiner: RefinerConfig = field(default_factory=RefinerConfig)
@@ -136,7 +145,6 @@ class ChessConfig:
     pyramid_min_size: int = 128
     refinement_radius: int = 3
     merge_radius: float = 3.0
-    pre_blur_sigma_px: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -151,7 +159,6 @@ class ChessConfig:
             "pyramid_min_size": self.pyramid_min_size,
             "refinement_radius": self.refinement_radius,
             "merge_radius": self.merge_radius,
-            "pre_blur_sigma_px": self.pre_blur_sigma_px,
         }
 
     @classmethod
@@ -169,7 +176,6 @@ class ChessConfig:
             pyramid_min_size=data.get("pyramid_min_size", d.pyramid_min_size),
             refinement_radius=data.get("refinement_radius", d.refinement_radius),
             merge_radius=data.get("merge_radius", d.merge_radius),
-            pre_blur_sigma_px=data.get("pre_blur_sigma_px", d.pre_blur_sigma_px),
         )
 
 
@@ -243,12 +249,48 @@ class GridGraphParams:
 
 
 @dataclass(slots=True)
+class AxisClusterCenters:
+    """Two global grid-axis directions for the topological pre-Delaunay gate.
+
+    Mirrors ``projective_grid::AxisClusterCenters``. Both fields are in
+    ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
+    you have an unbiased estimate; the chessboard detector's topological
+    dispatch path supplies these from its own ``cluster_axes`` so callers
+    of ``detect_chessboard`` rarely need to set this manually.
+    """
+
+    theta0: float
+    theta1: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"theta0": self.theta0, "theta1": self.theta1}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AxisClusterCenters:
+        return cls(theta0=data["theta0"], theta1=data["theta1"])
+
+
+@dataclass(slots=True)
 class TopologicalParams:
-    axis_align_tol_rad: float = 0.3839724354387525
-    diagonal_angle_tol_rad: float = 0.3141592653589793
+    """Tuning knobs for ``projective_grid::build_grid_topological``.
+
+    Defaults match the Rust workspace defaults in
+    ``crates/projective-grid/src/topological/mod.rs`` and have been
+    co-tuned against ``02-topo-grid`` (Gemini chessboards) and
+    ``130x130_puzzle``. See
+    ``crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`` for the
+    stage-by-stage picture.
+    """
+
+    axis_align_tol_rad: float = 0.2617993877991494  # 15°
+    diagonal_angle_tol_rad: float = 0.2617993877991494  # 15°
     max_axis_sigma_rad: float = 0.6
     edge_ratio_max: float = 10.0
     min_quads_per_component: int = 1
+    axis_cluster_centers: "AxisClusterCenters | None" = None
+    cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
+    quad_edge_min_rel: float = 0.0
+    quad_edge_max_rel: float = 1.8
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -257,11 +299,20 @@ class TopologicalParams:
             "max_axis_sigma_rad": self.max_axis_sigma_rad,
             "edge_ratio_max": self.edge_ratio_max,
             "min_quads_per_component": self.min_quads_per_component,
+            "axis_cluster_centers": (
+                self.axis_cluster_centers.to_dict()
+                if self.axis_cluster_centers is not None
+                else None
+            ),
+            "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
+            "quad_edge_min_rel": self.quad_edge_min_rel,
+            "quad_edge_max_rel": self.quad_edge_max_rel,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> TopologicalParams:
         d = cls()
+        centers = data.get("axis_cluster_centers", None)
         return cls(
             axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
             diagonal_angle_tol_rad=data.get(
@@ -272,6 +323,14 @@ class TopologicalParams:
             min_quads_per_component=data.get(
                 "min_quads_per_component", d.min_quads_per_component
             ),
+            axis_cluster_centers=(
+                AxisClusterCenters.from_dict(centers) if centers is not None else None
+            ),
+            cluster_axis_tol_rad=data.get(
+                "cluster_axis_tol_rad", d.cluster_axis_tol_rad
+            ),
+            quad_edge_min_rel=data.get("quad_edge_min_rel", d.quad_edge_min_rel),
+            quad_edge_max_rel=data.get("quad_edge_max_rel", d.quad_edge_max_rel),
         )
 
 
