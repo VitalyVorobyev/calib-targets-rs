@@ -101,8 +101,15 @@ def load_snap(path: Path, snap_idx: int, upscale: int) -> np.ndarray:
     return snap
 
 
-def run_detector(image: np.ndarray, algorithm: str) -> dict | None:
-    params = ct.ChessboardParams(graph_build_algorithm=algorithm)
+def run_detector(
+    image: np.ndarray,
+    algorithm: str,
+    min_corner_strength: float,
+) -> dict | None:
+    params = ct.ChessboardParams(
+        graph_build_algorithm=algorithm,
+        min_corner_strength=min_corner_strength,
+    )
     result = ct.detect_chessboard(image, params=params)
     if result is None:
         return None
@@ -173,7 +180,10 @@ def draw_overlay(ax, image: np.ndarray, detection: dict | None, title: str) -> i
 
 
 def render_frame(
-    image: np.ndarray, frame: FrameSpec, out_dir: Path
+    image: np.ndarray,
+    frame: FrameSpec,
+    out_dir: Path,
+    min_corner_strength: float,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     Image.fromarray(image).save(out_dir / "00-input.png")
@@ -185,7 +195,7 @@ def render_frame(
     counts: dict[str, int] = {}
     detections: dict[str, dict | None] = {}
     for label, algorithm, filename in methods:
-        det = run_detector(image, algorithm)
+        det = run_detector(image, algorithm, min_corner_strength)
         detections[label] = det
         fig, ax = plt.subplots(figsize=(6, 5), dpi=180)
         title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
@@ -235,6 +245,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--upscale", type=int, default=DEFAULT_UPSCALE, help="2× matches the regression test."
     )
+    parser.add_argument(
+        "--min-corner-strength",
+        type=float,
+        default=25.0,
+        help=(
+            "ChESS-strength floor passed to the chessboard detector for both "
+            "methods. The workspace default is `0.0` (no filter); we use "
+            "25.0 here to drop the blurred-region corners that make the "
+            "overlay look noisier than the actual signal. Empirically this "
+            "trades ~15%% labelled-count for noticeably cleaner detection "
+            "extent (focused, in-focus corners only). The Rust regression "
+            "contracts run with the workspace default, not this override."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -263,7 +287,7 @@ def main() -> None:
             continue
         image = load_snap(path, frame.snap_idx, args.upscale)
         out_dir = args.out_dir / frame.stem
-        row = render_frame(image, frame, out_dir)
+        row = render_frame(image, frame, out_dir, args.min_corner_strength)
         print(
             f"target_{frame.target_idx} snap {frame.snap_idx}: "
             f"v2={row['labelled']['ChessboardV2']} topo={row['labelled']['Topological']}"
@@ -274,6 +298,7 @@ def main() -> None:
         "dataset_dir": str(args.dataset_dir),
         "out_dir": str(args.out_dir),
         "upscale": args.upscale,
+        "min_corner_strength": args.min_corner_strength,
         "frames": rows,
     }
     (args.out_dir / "manifest.json").write_text(

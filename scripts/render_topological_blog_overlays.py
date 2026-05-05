@@ -135,15 +135,39 @@ def draw_corner_axes(ax: plt.Axes, payload: dict[str, Any]) -> None:
             ax.plot([x - dx, x + dx], [y - dy, y + dy], color=color, lw=0.55, alpha=0.75)
 
 
-def draw_usable(ax: plt.Axes, payload: dict[str, Any]) -> None:
+def usable_indices(payload: dict[str, Any]) -> set[int]:
+    trace = payload.get("trace")
+    if trace is None:
+        return set()
+    return {int(c["index"]) for c in trace["corners"] if c.get("usable")}
+
+
+def draw_usable(
+    ax: plt.Axes,
+    payload: dict[str, Any],
+    *,
+    only_usable: bool = False,
+    show_unusable: bool = True,
+) -> None:
+    """Plot corner markers.
+
+    `only_usable`: draw only the usable subset (post-Stage-2 plots).
+    `show_unusable`: when both flags are False, render red unusable
+        corners alongside green usable ones (Stage 2 itself).
+    """
     trace = payload.get("trace")
     pos = corner_positions(payload)
     if trace is None:
         draw_corner_axes(ax, payload)
         return
-    usable = {c["index"]: c["usable"] for c in trace["corners"]}
+    usable_set = usable_indices(payload)
     for idx, (x, y) in pos.items():
-        color = "#2ca25f" if usable.get(idx, False) else "#de2d26"
+        is_usable = idx in usable_set
+        if only_usable and not is_usable:
+            continue
+        if not is_usable and not show_unusable:
+            continue
+        color = "#2ca25f" if is_usable else "#de2d26"
         ax.scatter([x], [y], s=15, c=color, edgecolors="black", linewidths=0.25, zorder=4)
 
 
@@ -165,13 +189,19 @@ def draw_delaunay(ax: plt.Axes, payload: dict[str, Any]) -> None:
         draw_usable(ax, payload)
         return
     pos = corner_positions(payload)
+    usable_set = usable_indices(payload)
     for a, b, kind in unique_edges(trace):
         if a not in pos or b not in pos:
+            continue
+        # Skip Delaunay edges to / from unusable corners — they would only
+        # ever classify as Spurious by the per-endpoint rule and clutter
+        # the plot with background noise.
+        if a not in usable_set or b not in usable_set:
             continue
         x0, y0 = pos[a]
         x1, y1 = pos[b]
         ax.plot([x0, x1], [y0, y1], color=EDGE_COLORS[kind], lw=0.6, alpha=0.75)
-    draw_usable(ax, payload)
+    draw_usable(ax, payload, only_usable=True)
 
 
 def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
@@ -180,7 +210,10 @@ def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
         draw_usable(ax, payload)
         return
     pos = corner_positions(payload)
+    usable_set = usable_indices(payload)
     for tri in trace["triangles"]:
+        if not all(v in usable_set for v in tri["vertices"]):
+            continue
         pts = [pos[v] for v in tri["vertices"] if v in pos]
         if len(pts) != 3:
             continue
@@ -189,7 +222,7 @@ def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
         alpha = 0.18 if tri["class"] == "mergeable" else 0.07
         ax.fill(xs, ys, color=color, alpha=alpha)
         ax.plot(xs, ys, color=color, lw=0.45, alpha=0.45)
-    draw_usable(ax, payload)
+    draw_usable(ax, payload, only_usable=True)
 
 
 def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
@@ -217,7 +250,7 @@ def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
                 color = "#de2d26"
             alpha, lw = 0.9, 0.85
         ax.plot(xs, ys, color=color, lw=lw, alpha=alpha)
-    draw_usable(ax, payload)
+    draw_usable(ax, payload, only_usable=True)
 
 
 def component_labels_from_trace(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -266,38 +299,64 @@ def draw_grid_labels(
 
 
 def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
-    draw_quads(ax, payload, "geometry")
+    """Stage 8: per-component projective-grid walk labels.
+
+    Renders every labelled component produced by `build_grid_topological`
+    directly from the projective-grid trace. Each component carries an
+    independent `(i, j)` origin, so components with overlapping labels
+    can co-exist in the plot without a merge step. Stage 9 below shows
+    what's left after the chessboard adapter's mandatory final geometry
+    gate runs over these.
+    """
     draw_grid_labels(ax, payload, component_labels_from_trace(payload))
 
 
-def final_detection_labels(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
+    """Largest detection from the trace payload, after geometry check.
+
+    The Rust trace endpoint runs the full chessboard detector with
+    `GraphBuildAlgorithm::Topological` alongside the per-stage trace and
+    pickles the resulting `Detection`s into the payload. We pick the
+    first (largest by labelled-corner count) — same selection
+    `Detector::detect()` makes — so Stage 9 reflects the precision-gated
+    output a calibration consumer would see, *not* the raw topological
+    walk.
+    """
     detections = payload.get("detections") or []
     if not detections:
-        return component_labels_from_trace(payload)
-    labels = []
+        return {}
+    by_grid: dict[tuple[int, int], tuple[float, float]] = {}
     for corner in detections[0]["target"]["corners"]:
         grid = corner.get("grid")
-        if grid is None:
+        pos = corner.get("position")
+        if grid is None or pos is None:
             continue
-        # Final detections no longer carry raw corner_idx; use a synthetic
-        # point table appended into the payload drawing path.
-        labels.append(
-            {
-                "i": grid["i"],
-                "j": grid["j"],
-                "position": corner["position"],
-            }
-        )
-    return labels
+        by_grid[(int(grid["i"]), int(grid["j"]))] = (float(pos[0]), float(pos[1]))
+    return by_grid
 
 
 def draw_final(ax: plt.Axes, payload: dict[str, Any]) -> None:
-    detections = payload.get("detections") or []
-    if not detections:
-        draw_grid_labels(ax, payload, component_labels_from_trace(payload))
-        return
-    labels = final_detection_labels(payload)
-    by_grid = {(int(l["i"]), int(l["j"])): tuple(l["position"]) for l in labels}
+    """Stage 9: final detection emitted by the chessboard adapter.
+
+    The chessboard adapter consumes the topological walk labels (Stage
+    8 above), runs `merge_components_local` on the per-component
+    output, then runs the same `run_geometry_check` precision gate that
+    chessboard-v2 uses (line collinearity / local-H residual / largest
+    cardinally-connected component). Anything that survives is what the
+    public `Detection` carries; that's what's drawn here.
+    """
+    by_grid = detection_grid_points(payload)
+    if not by_grid:
+        # Fallback to the largest topological component when the
+        # adapter refused to ship a detection (mostly diagnostic
+        # frames with too few labelled corners).
+        labels = component_labels_from_trace(payload)
+        pos = corner_positions(payload)
+        for entry in labels:
+            idx = int(entry["corner_idx"])
+            if idx not in pos:
+                continue
+            by_grid[(int(entry["i"]), int(entry["j"]))] = pos[idx]
     for (i, j), (x, y) in by_grid.items():
         for nb, color in [((i + 1, j), "#1b9e77"), ((i, j + 1), "#377eb8")]:
             p = by_grid.get(nb)
@@ -413,7 +472,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
     parser.add_argument("--final-algorithm", choices=["topological", "chessboard_v2"], default="topological")
-    parser.add_argument("--chess-threshold", type=float, default=15.0)
+    parser.add_argument("--chess-threshold", type=float, default=30.0)
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
