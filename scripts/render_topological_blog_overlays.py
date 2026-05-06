@@ -472,7 +472,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
     parser.add_argument("--final-algorithm", choices=["topological", "chessboard_v2"], default="topological")
-    parser.add_argument("--chess-threshold", type=float, default=30.0)
+    parser.add_argument("--chess-threshold", type=float, default=100.0)
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
