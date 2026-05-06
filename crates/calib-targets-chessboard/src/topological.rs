@@ -1,166 +1,79 @@
 //! Topological dispatch path for the chessboard detector.
 //!
-//! Wraps [`projective_grid::build_grid_topological`] and the shared
-//! component merger so the detector's `detect_all` entry point can
-//! select between the historical seed-and-grow pipeline and the new
-//! topological pipeline at runtime via
-//! [`crate::params::GraphBuildAlgorithm`].
+//! This module is the adapter between two layers:
 //!
-//! The topological pipeline is image-free: it consumes only the corner
-//! positions and the per-corner ChESS axes, and produces the same
-//! `(i, j) → corner_idx` labelling as the seed-and-grow pipeline so the
-//! detector's existing [`build_detection`](crate::detector) helper can
-//! finalise the output unchanged.
+//! - `projective-grid`, which is image-free and labels connected quad-mesh
+//!   components from positions plus per-corner axis hints;
+//! - `calib-targets-chessboard`, which owns ChESS corner filtering, recall
+//!   boosters, final canonicalisation, and the public [`Detection`] type.
+//!
+//! The production path intentionally remains one path. Blog overlays use
+//! [`trace_topological`] for intermediate `projective-grid` stages; benchmark
+//! reports use the optional `tracing` feature to time the same functions rather
+//! than a second timed implementation.
 
-use std::collections::HashMap;
+mod inputs;
+mod recovery;
 
 use calib_targets_core::Corner;
-use nalgebra::{Point2, Vector2};
 use projective_grid::{
-    build_grid_topological, merge_components_local, AxisHint, ComponentInput, TopologicalGrid,
+    build_grid_topological, build_grid_topological_trace, merge_components_local,
+    AxisClusterCenters, ComponentInput, TopologicalGrid, TopologicalTrace,
 };
 
 use crate::cluster::ClusterCenters;
-use crate::corner::{CornerAug, CornerStage};
-use crate::detector::{build_detection_from_grow, Detection};
-use crate::grow::GrowResult;
+use crate::detector::Detection;
 use crate::params::DetectorParams;
 
-/// Adapt a `Corner.axes: [AxisEstimate; 2]` slot to projective-grid's
-/// equivalent [`AxisHint`].
+use self::inputs::topological_inputs;
+use self::recovery::{
+    build_topological_detections, clustered_augs, recover_topological_components,
+};
+
 #[inline]
-fn axis_hint_from(c: &Corner) -> [AxisHint; 2] {
-    [
-        AxisHint {
-            angle: c.axes[0].angle,
-            sigma: c.axes[0].sigma,
-        },
-        AxisHint {
-            angle: c.axes[1].angle,
-            sigma: c.axes[1].sigma,
-        },
-    ]
+fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisClusterCenters> {
+    centers.map(|c| AxisClusterCenters::new(c.theta0, c.theta1))
 }
 
-/// Filter corners by strength and fit-quality, mirroring the chessboard-v2
-/// pre-filter exactly so the two pipelines share the same eligibility set.
-fn prefilter(corners: &[Corner], params: &DetectorParams) -> Vec<bool> {
-    corners
-        .iter()
-        .map(|c| {
-            let strong = c.strength >= params.min_corner_strength;
-            let fit_ok = !params.max_fit_rms_ratio.is_finite()
-                || c.contrast <= 0.0
-                || c.fit_rms <= params.max_fit_rms_ratio * c.contrast;
-            strong && fit_ok
-        })
-        .collect()
-}
-
-/// Estimate the global cell size of a labelled component as the median
-/// nearest-neighbour pixel distance along the labelled `i` and `j` axes.
-fn estimate_cell_size_from_labels(
-    labelled: &HashMap<(i32, i32), usize>,
-    positions: &[Point2<f32>],
-) -> f32 {
-    let mut dists: Vec<f32> = Vec::new();
-    for (&(i, j), &idx) in labelled.iter() {
-        let p = positions[idx];
-        if let Some(&right) = labelled.get(&(i + 1, j)) {
-            let q = positions[right];
-            dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-        if let Some(&down) = labelled.get(&(i, j + 1)) {
-            let q = positions[down];
-            dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-    }
-    if dists.is_empty() {
-        return 0.0;
-    }
-    dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    dists[dists.len() / 2]
-}
-
-/// Mean step vectors along the labelled `i` and `j` axes. Returns
-/// `(grid_u, grid_v)` where `grid_u` is the mean pixel displacement
-/// from `(i, j)` to `(i + 1, j)` and `grid_v` to `(i, j + 1)`.
-fn estimate_grid_steps(
-    labelled: &HashMap<(i32, i32), usize>,
-    positions: &[Point2<f32>],
-) -> (Vector2<f32>, Vector2<f32>) {
-    let mut u_sum = Vector2::zeros();
-    let mut u_n = 0u32;
-    let mut v_sum = Vector2::zeros();
-    let mut v_n = 0u32;
-    for (&(i, j), &idx) in labelled.iter() {
-        let p = positions[idx];
-        if let Some(&right) = labelled.get(&(i + 1, j)) {
-            let q = positions[right];
-            u_sum += Vector2::new(q.x - p.x, q.y - p.y);
-            u_n += 1;
-        }
-        if let Some(&down) = labelled.get(&(i, j + 1)) {
-            let q = positions[down];
-            v_sum += Vector2::new(q.x - p.x, q.y - p.y);
-            v_n += 1;
-        }
-    }
-    let u = if u_n > 0 {
-        u_sum / u_n as f32
-    } else {
-        Vector2::new(1.0, 0.0)
-    };
-    let v = if v_n > 0 {
-        v_sum / v_n as f32
-    } else {
-        Vector2::new(0.0, 1.0)
-    };
-    (u, v)
-}
-
-/// Synthetic [`ClusterCenters`] derived from labelled grid step
-/// directions. Used purely to populate `Detection::grid_directions` —
-/// none of the downstream consumers compare the topological pipeline's
-/// `theta0/theta1` against the chessboard-v2's clustered axes.
-fn cluster_centers_from_grid(grid_u: Vector2<f32>, grid_v: Vector2<f32>) -> ClusterCenters {
-    let theta0 = grid_u.y.atan2(grid_u.x);
-    let theta1 = grid_v.y.atan2(grid_v.x);
-    ClusterCenters { theta0, theta1 }
-}
-
-/// Run the topological pipeline and return one [`Detection`] per
-/// surviving labelled component.
+/// Run the topological pipeline and return one [`Detection`] per surviving
+/// labelled component.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = corners.len()),
+    )
+)]
 pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Vec<Detection> {
     if corners.is_empty() {
         return Vec::new();
     }
-    let mask = prefilter(corners, params);
-    if mask.iter().filter(|&&b| b).count() < params.min_labeled_corners {
+
+    // Hoist clustering: chessboard-v2 uses `cluster_axes` as a precision
+    // bedrock before its seed-and-grow. Topological used to skip this and
+    // pay the cost in spurious-edge admissions; we now compute centers
+    // once up front, gate Delaunay through them, and reuse the same
+    // `(augs, centers)` pair for booster recovery (no re-clustering).
+    let (base_augs, clustered_centers) = clustered_augs(corners, params);
+
+    let inputs = topological_inputs(corners, params);
+    if inputs.usable_count < params.min_labeled_corners {
         return Vec::new();
     }
 
-    // Adapt to projective-grid inputs. Corners that fail the pre-filter
-    // get a "no info" axis pair so the topological classifier excludes
-    // them naturally without needing to reindex the position slice.
-    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisHint; 2]> = corners
-        .iter()
-        .zip(mask.iter())
-        .map(|(c, ok)| {
-            if *ok {
-                axis_hint_from(c)
-            } else {
-                [AxisHint::default(); 2]
-            }
-        })
-        .collect();
+    let mut topo_params = params.topological;
+    topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
+    // Keep `topo_params.cluster_axis_tol_rad` from `TopologicalParams::default`
+    // (16°). Don't reuse `params.cluster_tol_deg` (12°) — chessboard-v2's
+    // cluster gate has a sigma bonus and a booster fallback that
+    // topological lacks; matching the 12° literally regresses Gemini2.
 
-    let topo: TopologicalGrid = match build_grid_topological(&positions, &axes, &params.topological)
-    {
-        Ok(g) => g,
-        Err(_) => return Vec::new(),
-    };
+    let topo: TopologicalGrid =
+        match build_grid_topological(&inputs.positions, &inputs.axes, &topo_params) {
+            Ok(g) => g,
+            Err(_) => return Vec::new(),
+        };
     if topo.components.is_empty() {
         return Vec::new();
     }
@@ -170,51 +83,60 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
         .iter()
         .map(|c| ComponentInput {
             labelled: &c.labelled,
-            positions: &positions,
+            positions: &inputs.positions,
         })
         .collect();
+
+    #[cfg(feature = "tracing")]
+    let merged = {
+        let _span = tracing::debug_span!(
+            "topological_initial_component_merge",
+            num_components = component_views.len()
+        )
+        .entered();
+        merge_components_local(&component_views, &params.component_merge)
+    };
+    #[cfg(not(feature = "tracing"))]
     let merged = merge_components_local(&component_views, &params.component_merge);
 
-    // For each surviving component, build a Detection. We need a fresh
-    // `CornerAug` slice per component so `build_detection`'s
-    // canonicalisation can flag labels via stage updates without
-    // bleeding state across components.
-    let mut out: Vec<Detection> = Vec::new();
-    for labelled in &merged.components {
-        if labelled.len() < params.min_labeled_corners {
-            continue;
-        }
-        let cell_size = estimate_cell_size_from_labels(labelled, &positions);
-        let (grid_u, grid_v) = estimate_grid_steps(labelled, &positions);
-        let centers = cluster_centers_from_grid(grid_u, grid_v);
+    let final_components = recover_topological_components(
+        &merged.components,
+        &inputs.positions,
+        &base_augs,
+        clustered_centers,
+        params,
+    );
 
-        let mut augs: Vec<CornerAug> = corners
-            .iter()
-            .enumerate()
-            .map(|(i, c)| CornerAug::from_corner(i, c))
-            .collect();
-        for (&at, &idx) in labelled.iter() {
-            augs[idx].stage = CornerStage::Labeled {
-                at,
-                local_h_residual_px: None,
-            };
-        }
+    build_topological_detections(
+        final_components,
+        &inputs.positions,
+        &base_augs,
+        clustered_centers,
+        params,
+    )
+}
 
-        let grow = GrowResult {
-            labelled: labelled.clone(),
-            by_corner: labelled.iter().map(|(&k, &v)| (v, k)).collect(),
-            ambiguous: Default::default(),
-            holes: Default::default(),
-            grid_u,
-            grid_v,
-        };
-
-        out.push(build_detection_from_grow(&augs, &grow, centers, cell_size));
-    }
-
-    // Sort by labelled count desc so callers see the most populous
-    // component first, then cap by `max_components`.
-    out.sort_by_key(|d| std::cmp::Reverse(d.target.corners.len()));
-    out.truncate(params.max_components.max(1) as usize);
-    out
+/// Run the same topological input adaptation as [`detect_all_topological`],
+/// but return the full projective-grid trace instead of detections.
+///
+/// Corners that fail the chessboard strength / fit pre-filter are passed to
+/// `projective-grid` with no-information axes, matching the production
+/// topological dispatch path.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        level = "info",
+        skip_all,
+        fields(num_corners = corners.len()),
+    )
+)]
+pub fn trace_topological(
+    corners: &[Corner],
+    params: &DetectorParams,
+) -> Result<TopologicalTrace, projective_grid::TopologicalError> {
+    let inputs = topological_inputs(corners, params);
+    let (_augs, clustered_centers) = clustered_augs(corners, params);
+    let mut topo_params = params.topological;
+    topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
+    build_grid_topological_trace(&inputs.positions, &inputs.axes, &topo_params)
 }

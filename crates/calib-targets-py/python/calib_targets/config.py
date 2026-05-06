@@ -120,15 +120,24 @@ class RefinerConfig:
 
 @dataclass(slots=True)
 class ChessConfig:
-    """Flat ChESS corner detector configuration matching the Rust ChessConfig.
+    """Flat ChESS corner detector configuration matching the upstream
+    ``chess_corners::ChessConfig``.
 
-    All fields have concrete defaults matching the Rust side.
+    Defaults match the workspace-tuned settings used by
+    ``calib_targets::detect::default_chess_config`` — ``threshold_mode =
+    "absolute"`` paired with ``threshold_value = 10.0``, a small positive
+    noise floor that keeps the seed-and-grow chessboard detector from
+    drowning in weak responses. See the threshold sweep example in
+    ``crates/calib-targets/examples/threshold_sweep.rs`` for the evidence.
+
+    Pre-blur preprocessing is no longer carried on this struct; pass
+    ``pre_blur_sigma_px`` directly to the ``detect_*`` calls instead.
     """
 
     detector_mode: str = "canonical"
     descriptor_mode: str = "follow_detector"
-    threshold_mode: str = "relative"
-    threshold_value: float = 0.2
+    threshold_mode: str = "absolute"
+    threshold_value: float = 15.0
     nms_radius: int = 2
     min_cluster_size: int = 2
     refiner: RefinerConfig = field(default_factory=RefinerConfig)
@@ -240,6 +249,92 @@ class GridGraphParams:
 
 
 @dataclass(slots=True)
+class AxisClusterCenters:
+    """Two global grid-axis directions for the topological pre-Delaunay gate.
+
+    Mirrors ``projective_grid::AxisClusterCenters``. Both fields are in
+    ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
+    you have an unbiased estimate; the chessboard detector's topological
+    dispatch path supplies these from its own ``cluster_axes`` so callers
+    of ``detect_chessboard`` rarely need to set this manually.
+    """
+
+    theta0: float
+    theta1: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"theta0": self.theta0, "theta1": self.theta1}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AxisClusterCenters:
+        return cls(theta0=data["theta0"], theta1=data["theta1"])
+
+
+@dataclass(slots=True)
+class TopologicalParams:
+    """Tuning knobs for ``projective_grid::build_grid_topological``.
+
+    Defaults match the Rust workspace defaults in
+    ``crates/projective-grid/src/topological/mod.rs`` and have been
+    co-tuned against ``02-topo-grid`` (Gemini chessboards) and
+    ``130x130_puzzle``. See
+    ``crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`` for the
+    stage-by-stage picture.
+    """
+
+    axis_align_tol_rad: float = 0.2617993877991494  # 15°
+    diagonal_angle_tol_rad: float = 0.2617993877991494  # 15°
+    max_axis_sigma_rad: float = 0.6
+    edge_ratio_max: float = 10.0
+    min_quads_per_component: int = 1
+    axis_cluster_centers: "AxisClusterCenters | None" = None
+    cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
+    quad_edge_min_rel: float = 0.0
+    quad_edge_max_rel: float = 1.8
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "axis_align_tol_rad": self.axis_align_tol_rad,
+            "diagonal_angle_tol_rad": self.diagonal_angle_tol_rad,
+            "max_axis_sigma_rad": self.max_axis_sigma_rad,
+            "edge_ratio_max": self.edge_ratio_max,
+            "min_quads_per_component": self.min_quads_per_component,
+            "axis_cluster_centers": (
+                self.axis_cluster_centers.to_dict()
+                if self.axis_cluster_centers is not None
+                else None
+            ),
+            "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
+            "quad_edge_min_rel": self.quad_edge_min_rel,
+            "quad_edge_max_rel": self.quad_edge_max_rel,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TopologicalParams:
+        d = cls()
+        centers = data.get("axis_cluster_centers", None)
+        return cls(
+            axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
+            diagonal_angle_tol_rad=data.get(
+                "diagonal_angle_tol_rad", d.diagonal_angle_tol_rad
+            ),
+            max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
+            edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
+            min_quads_per_component=data.get(
+                "min_quads_per_component", d.min_quads_per_component
+            ),
+            axis_cluster_centers=(
+                AxisClusterCenters.from_dict(centers) if centers is not None else None
+            ),
+            cluster_axis_tol_rad=data.get(
+                "cluster_axis_tol_rad", d.cluster_axis_tol_rad
+            ),
+            quad_edge_min_rel=data.get("quad_edge_min_rel", d.quad_edge_min_rel),
+            quad_edge_max_rel=data.get("quad_edge_max_rel", d.quad_edge_max_rel),
+        )
+
+
+@dataclass(slots=True)
 class ChessboardParams:
     """Chessboard detection parameters — flat shape.
 
@@ -262,6 +357,7 @@ class ChessboardParams:
     # ChessboardV2 — flip to "topological" when targeting low-view-angle
     # PuzzleBoard captures or other distortion-heavy scenes.
     graph_build_algorithm: str = "chessboard_v2"
+    topological: TopologicalParams = field(default_factory=TopologicalParams)
     # Stage 1 — pre-filter
     min_corner_strength: float = 0.0
     max_fit_rms_ratio: float = 0.5
@@ -305,6 +401,7 @@ class ChessboardParams:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
+            "topological": self.topological.to_dict(),
             "min_corner_strength": self.min_corner_strength,
             "max_fit_rms_ratio": self.max_fit_rms_ratio,
             "num_bins": self.num_bins,
@@ -345,6 +442,7 @@ class ChessboardParams:
             graph_build_algorithm=data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
             ),
+            topological=TopologicalParams.from_dict(data.get("topological", {})),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
             max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
             num_bins=data.get("num_bins", d.num_bins),

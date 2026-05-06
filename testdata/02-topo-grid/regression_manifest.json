@@ -1,0 +1,69 @@
+{
+  "schema": 1,
+  "description": "Regression gates for synthetic topological-grid recovery images.",
+  "hard_invariants": {
+    "finite_positions": true,
+    "no_duplicate_labels": true,
+    "origin_rebased_to_zero": true,
+    "origin_top_left_visual": true
+  },
+  "images": [
+    {
+      "path": "testdata/02-topo-grid/GeminiChess1.png",
+      "topological": { "min_labelled": 53, "max_holes": 3 },
+      "chessboard_v2": { "min_labelled": 40, "max_holes": 11 }
+    },
+    {
+      "path": "testdata/02-topo-grid/GeminiChess2.png",
+      "topological": { "min_labelled": 26, "max_holes": 10 },
+      "chessboard_v2": { "min_labelled": 19, "max_holes": 11 },
+      "diagnostic_topological": {
+        "min_labeled_corners": 4,
+        "axis_align_tol_deg": 15.0,
+        "diagonal_angle_tol_deg": 15.0,
+        "min_trace_components": 3,
+        "min_total_labelled": 22
+      }
+    },
+    {
+      "path": "testdata/02-topo-grid/GeminiChess3.png",
+      "topological": { "min_labelled": 42, "max_holes": 0 },
+      "chessboard_v2": { "min_labelled": 42, "max_holes": 0 }
+    },
+    {
+      "path": "testdata/02-topo-grid/gptchess1.png",
+      "topological": { "min_labelled": 60, "max_holes": 0 },
+      "chessboard_v2": { "min_labelled": 35, "max_holes": 1 }
+    },
+    {
+      "path": "testdata/02-topo-grid/gptchess2.png",
+      "topological": { "diagnostic_only": true },
+      "chessboard_v2": { "diagnostic_only": true },
+      "low_res": {
+        "algorithm": "chessboard_v2",
+        "upscale": 2.0,
+        "chess": {
+          "pre_blur_sigma_px": 1.5,
+          "threshold_value": 0.2
+        },
+        "min_labelled": 26,
+        "max_holes": 12
+      }
+    },
+    {
+      "path": "testdata/02-topo-grid/GeminiChess4.png",
+      "topological": { "diagnostic_only": true },
+      "chessboard_v2": { "diagnostic_only": true },
+      "low_res": {
+        "algorithm": "chessboard_v2",
+        "upscale": 1.0,
+        "chess": {
+          "pre_blur_sigma_px": 2.0,
+          "threshold_value": 0.2
+        },
+        "min_labelled": 32,
+        "max_holes": 14
+      }
+    }
+  ]
+}

@@ -1,3 +1,8 @@
+import json
+import subprocess
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -89,6 +94,8 @@ def test_chess_config_roundtrip() -> None:
         refiner=calib_targets.RefinerConfig(kind="forstner"),
     )
     serialized = cfg.to_dict()
+    assert serialized["threshold_value"] == 0.3
+    assert "pre_blur_sigma_px" not in serialized
     restored = calib_targets.ChessConfig.from_dict(serialized)
     assert restored.to_dict() == serialized
 
@@ -100,6 +107,7 @@ def test_chessboard_params_roundtrip() -> None:
         min_corner_strength=0.25,
         cluster_tol_deg=10.0,
         max_validation_iters=5,
+        topological=calib_targets.TopologicalParams(axis_align_tol_rad=0.30),
     )
     serialized = params.to_dict()
     restored = calib_targets.ChessboardParams.from_dict(serialized)
@@ -119,6 +127,50 @@ def test_chessboard_params_graph_build_algorithm() -> None:
     # Round-trip preserves the selector exactly.
     restored = calib_targets.ChessboardParams.from_dict(topo.to_dict())
     assert restored.graph_build_algorithm == "topological"
+
+
+def test_topological_trace_wrapper_shape() -> None:
+    params = calib_targets.ChessboardParams(graph_build_algorithm="topological")
+    payload = calib_targets.trace_chessboard_topological(_image(), params=params)
+    assert payload["schema"] == 1
+    assert payload["graph_build_algorithm"] == "topological"
+    assert payload["image"] == {"width": 32, "height": 32}
+    assert isinstance(payload["corners"], list)
+    assert "trace" in payload
+    assert "detections" in payload
+
+
+def test_topo_grid_regression_evaluator_smoke(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[3]
+    image = repo / "testdata/02-topo-grid/GeminiChess3.png"
+    if not image.exists():
+        pytest.skip("topological regression fixture is not available")
+
+    script = repo / "scripts/evaluate_topo_grid_regression.py"
+    subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--image",
+            image.name,
+            "--algorithm",
+            "topological",
+            "--repeats",
+            "1",
+            "--warmup",
+            "0",
+            "--output-dir",
+            str(tmp_path),
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    report_path = tmp_path / "report.json"
+    payload = json.loads(report_path.read_text())
+    assert payload["runs"]
+    assert payload["runs"][0]["labelled_count"] >= 42
 
 
 def test_puzzleboard_params_roundtrip() -> None:

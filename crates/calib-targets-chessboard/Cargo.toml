@@ -15,7 +15,7 @@ categories = ["computer-vision", "science"]
 [features]
 default = []
 dataset = ["dep:serde_json"]
-tracing = ["calib-targets-core/tracing", "dep:tracing"]
+tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 
 [dependencies]
 calib-targets-core.workspace = true

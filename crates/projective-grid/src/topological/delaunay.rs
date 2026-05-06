@@ -42,6 +42,15 @@ impl Triangulation {
     }
 }
 
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        name = "delaunay_triangulate",
+        level = "debug",
+        skip_all,
+        fields(num_points = positions.len()),
+    )
+)]
 pub(crate) fn triangulate(positions: &[Point2<f32>]) -> Triangulation {
     let pts: Vec<delaunator::Point> = positions
         .iter()

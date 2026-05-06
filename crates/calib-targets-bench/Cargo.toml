@@ -8,17 +8,23 @@ publish = false
 description = "Internal regression / performance harness for the chessboard grid builder"
 
 [dependencies]
-calib-targets = { workspace = true }
-calib-targets-chessboard = { workspace = true }
+calib-targets = { workspace = true, features = ["tracing"] }
+calib-targets-chessboard = { workspace = true, features = ["tracing"] }
 calib-targets-core = { workspace = true }
-projective-grid = { workspace = true }
+projective-grid = { workspace = true, features = ["tracing"] }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }
 nalgebra = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 toml = "0.8"
 
 [[bin]]
 name = "bench"
 path = "src/bin/bench.rs"
+
+[[bin]]
+name = "topo_stage_timing"
+path = "src/bin/topo_stage_timing.rs"

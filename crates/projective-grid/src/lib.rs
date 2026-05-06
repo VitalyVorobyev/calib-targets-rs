@@ -65,8 +65,11 @@ pub use square::smoothness::{
 
 // --- Topological-grid surface --------------------------------
 pub use topological::{
-    build_grid_topological, AxisHint, TopologicalComponent, TopologicalError, TopologicalGrid,
-    TopologicalParams, TopologicalStats,
+    build_grid_topological, build_grid_topological_trace, AxisClusterCenters, AxisHint,
+    TopologicalComponent, TopologicalComponentTrace, TopologicalCornerTrace,
+    TopologicalEdgeMetricTrace, TopologicalError, TopologicalGrid, TopologicalLabelTrace,
+    TopologicalParams, TopologicalQuadTrace, TopologicalStats, TopologicalTrace,
+    TopologicalTriangleTrace, TriangleClass,
 };
 
 // --- Component merge (shared by both pipelines) --------------

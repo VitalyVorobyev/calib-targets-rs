@@ -97,7 +97,7 @@ fn detect_one(
     let detector = PuzzleBoardDetector::new(params).expect("detector");
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(image, &chess_cfg);
+    let corners = detect_corners(image, &chess_cfg, 0.0);
     detector.detect(&gray_view(image), &corners).ok()
 }
 

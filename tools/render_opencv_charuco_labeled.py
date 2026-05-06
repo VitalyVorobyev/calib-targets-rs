@@ -186,7 +186,7 @@ def main() -> None:
     fig, ax = plt.subplots(figsize=(12, 9))
     ax.imshow(img, cmap="gray", origin="upper")
     ax.set_axis_off()
-    ax.set_title(f"OpenCV ChArUco {args.squares_x}x{args.squares_y} ({args.dict})")
+    # ax.set_title(f"OpenCV ChArUco {args.squares_x}x{args.squares_y} ({args.dict})")
 
     stroke = [pe.withStroke(linewidth=2.0, foreground="black", alpha=0.7)]
 

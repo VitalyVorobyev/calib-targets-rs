@@ -86,7 +86,7 @@ fn bench_corners(c: &mut Criterion) {
         loaded_any = true;
         group.bench_with_input(BenchmarkId::from_parameter(label), &snap, |b, snap| {
             b.iter(|| {
-                let corners = detect_corners(snap, &cfg);
+                let corners = detect_corners(snap, &cfg, 0.0);
                 criterion::black_box(corners)
             });
         });

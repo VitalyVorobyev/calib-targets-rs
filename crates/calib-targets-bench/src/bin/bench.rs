@@ -539,7 +539,7 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     };
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&upscaled, &chess_cfg);
+    let corners = detect_corners(&upscaled, &chess_cfg, 0.0);
     if args.algorithm == AlgorithmArg::Topological {
         return diagnose_topological(&args, &upscaled, &corners);
     }

@@ -20,7 +20,7 @@ use super::TopologicalComponent;
 
 /// Build adjacency: canonical undirected edge `(min, max)` → list of
 /// `(quad_idx, edge_idx)` where edge `k` of a quad is `Q[k] → Q[(k+1) % 4]`.
-fn build_edge_index(quads: &[Quad]) -> HashMap<(usize, usize), Vec<(usize, usize)>> {
+pub(super) fn build_edge_index(quads: &[Quad]) -> HashMap<(usize, usize), Vec<(usize, usize)>> {
     let mut idx: HashMap<(usize, usize), Vec<(usize, usize)>> = HashMap::new();
     for (qi, q) in quads.iter().enumerate() {
         for (k, (u, v)) in q.perimeter_edges().iter().enumerate() {
@@ -34,7 +34,7 @@ fn build_edge_index(quads: &[Quad]) -> HashMap<(usize, usize), Vec<(usize, usize
 /// Connected components by quad-mesh adjacency: two quads are
 /// neighbours iff they share a perimeter edge. Returns `comp_of[qi]`
 /// = component id.
-fn connected_components(
+pub(super) fn connected_components(
     quads: &[Quad],
     edge_index: &HashMap<(usize, usize), Vec<(usize, usize)>>,
 ) -> (Vec<u32>, u32) {

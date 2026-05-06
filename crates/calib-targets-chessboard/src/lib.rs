@@ -76,5 +76,5 @@ pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{DetectorParams, GraphBuildAlgorithm};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 pub use seed::{find_seed, Seed, SeedOutput};
-pub use topological::detect_all_topological;
+pub use topological::{detect_all_topological, trace_topological};
 pub use validate::{validate, ValidationResult};
