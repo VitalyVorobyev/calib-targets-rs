@@ -21,20 +21,24 @@ keeps the workspace default on `RingFit`.
 
 ### Breaking
 
-- **C ABI (`calib-targets-ffi` 0.8 → 1.0): `ct_chessboard_detector_detect_all`
-  redesigned around argument/buffer structs.** The previous 8-positional-
-  argument signature
-  `(detector, image, out_results, results_capacity, out_results_len,
-   out_corners, all_corners_capacity, out_all_corners_len)` has been
-  replaced by
-  `(const ct_chessboard_detect_all_args_t *args,
-    ct_chessboard_detect_all_buffers_t *bufs)`. The two new structs
-  bundle the inputs (detector handle + image) and the output buffers
-  (each `*_buf` + `*_capacity` + `*_len_out`) respectively. The
-  "NULL buffer + capacity 0 queries the required length" behaviour is
-  preserved per-buffer. The FFI crate is bumped to `1.0.0` to mark
-  the ABI break; downstream C/C++ callers must regenerate against the
-  new header in `crates/calib-targets-ffi/include/calib_targets_ffi.h`.
+- **C ABI (`calib-targets-ffi` 0.8 → 1.0): all five detect entry points
+  redesigned around `args` / `buffers` struct pairs.** Each positional-
+  argument signature has been replaced by
+  `(const ct_*_detect_args_t *args, ct_*_detect_buffers_t *bufs)`.
+  The `args` struct bundles the detector handle and image pointer; the
+  `buffers` struct bundles each output array pointer with its capacity and
+  required-length out-pointer. The "NULL buffer + capacity 0 queries the
+  required length" behaviour is preserved per-buffer. The five redesigned
+  entry points are:
+  - `ct_chessboard_detector_detect_all` (8 positional args → 2)
+  - `ct_charuco_detector_detect` (9 positional args → 2)
+  - `ct_marker_board_detector_detect` (12 positional args → 2)
+  - `ct_chessboard_detector_detect` (6 positional args → 2)
+  - `ct_puzzleboard_detector_detect` (6 positional args → 2)
+
+  The FFI crate is bumped to `1.0.0` to mark the ABI break; downstream
+  C/C++ callers must regenerate against the new header in
+  `crates/calib-targets-ffi/include/calib_targets_ffi.h`.
 
 - **`chess-corners` 0.8 → 0.10.** The upstream
   `ChessConfig` has been split into a tagged-enum tree:

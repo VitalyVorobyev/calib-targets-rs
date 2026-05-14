@@ -244,6 +244,23 @@ typedef struct ct_gray_image_u8_t {
 } ct_gray_image_u8_t;
 
 /**
+ * Input arguments for [`ct_chessboard_detector_detect`].
+ *
+ * Groups the detector handle and image pointer so the entry point's
+ * signature stays compact even as future fields are added.
+ */
+typedef struct ct_chessboard_detect_args_t {
+  /**
+   * Detector handle (from [`ct_chessboard_detector_create`]).
+   */
+  const struct ct_chessboard_detector_t *detector;
+  /**
+   * Grayscale image to scan.
+   */
+  const struct ct_gray_image_u8_t *image;
+} ct_chessboard_detect_args_t;
+
+/**
  * Fixed target kind identifier type.
  */
 typedef uint32_t ct_target_kind_t;
@@ -307,6 +324,30 @@ typedef struct ct_labeled_corner_t {
   struct ct_point2f_t target_position;
   float score;
 } ct_labeled_corner_t;
+
+/**
+ * Caller-provided output buffers for [`ct_chessboard_detector_detect`].
+ *
+ * `out_corners_len` is required and always receives the required number of
+ * labeled-corner entries. Passing `out_corners = NULL` with
+ * `corners_capacity = 0` queries the required length without copying
+ * corner data.
+ */
+typedef struct ct_chessboard_detect_buffers_t {
+  /**
+   * Optional scalar result header. May be null.
+   */
+  struct ct_chessboard_result_t *out_result;
+  /**
+   * Output array of labelled corners. May be null when `corners_capacity = 0`.
+   */
+  struct ct_labeled_corner_t *out_corners;
+  size_t corners_capacity;
+  /**
+   * Required: always receives the number of corners detected.
+   */
+  size_t *out_corners_len;
+} ct_chessboard_detect_buffers_t;
 
 /**
  * Input arguments for [`ct_chessboard_detector_detect_all`].
@@ -410,6 +451,23 @@ typedef struct ct_charuco_detector_config_t {
 } ct_charuco_detector_config_t;
 
 /**
+ * Input arguments for [`ct_charuco_detector_detect`].
+ *
+ * Groups the detector handle and image pointer so the entry point's
+ * signature stays compact even as future fields are added.
+ */
+typedef struct ct_charuco_detect_args_t {
+  /**
+   * Detector handle (from [`ct_charuco_detector_create`]).
+   */
+  const struct ct_charuco_detector_t *detector;
+  /**
+   * Grayscale image to scan.
+   */
+  const struct ct_gray_image_u8_t *image;
+} ct_charuco_detect_args_t;
+
+/**
  * Fixed integer grid transform output.
  */
 typedef struct ct_grid_transform_t {
@@ -454,6 +512,38 @@ typedef struct ct_marker_detection_t {
   uint32_t has_corners_img;
   struct ct_point2f_t corners_img[4];
 } ct_marker_detection_t;
+
+/**
+ * Caller-provided output buffers for [`ct_charuco_detector_detect`].
+ *
+ * `out_corners_len` and `out_markers_len` are required and always receive
+ * the required array lengths. Passing a `NULL` output array with
+ * `*_capacity = 0` queries the required length without copying array data.
+ */
+typedef struct ct_charuco_detect_buffers_t {
+  /**
+   * Optional scalar result header. May be null.
+   */
+  struct ct_charuco_result_t *out_result;
+  /**
+   * Output array of labelled corners. May be null when `corners_capacity = 0`.
+   */
+  struct ct_labeled_corner_t *out_corners;
+  size_t corners_capacity;
+  /**
+   * Required: always receives the number of corners detected.
+   */
+  size_t *out_corners_len;
+  /**
+   * Output array of decoded marker detections. May be null when `markers_capacity = 0`.
+   */
+  struct ct_marker_detection_t *out_markers;
+  size_t markers_capacity;
+  /**
+   * Required: always receives the number of markers detected.
+   */
+  size_t *out_markers_len;
+} ct_charuco_detect_buffers_t;
 
 /**
  * Fixed circle polarity identifier type.
@@ -521,6 +611,23 @@ typedef struct ct_marker_board_detector_config_t {
 } ct_marker_board_detector_config_t;
 
 /**
+ * Input arguments for [`ct_marker_board_detector_detect`].
+ *
+ * Groups the detector handle and image pointer so the entry point's
+ * signature stays compact even as future fields are added.
+ */
+typedef struct ct_marker_board_detect_args_t {
+  /**
+   * Detector handle (from [`ct_marker_board_detector_create`]).
+   */
+  const struct ct_marker_board_detector_t *detector;
+  /**
+   * Grayscale image to scan.
+   */
+  const struct ct_gray_image_u8_t *image;
+} ct_marker_board_detect_args_t;
+
+/**
  * Marker-board detection header.
  */
 typedef struct ct_marker_board_result_t {
@@ -555,6 +662,48 @@ typedef struct ct_circle_match_t {
   uint32_t has_offset_cells;
   struct ct_grid_coords_t offset_cells;
 } ct_circle_match_t;
+
+/**
+ * Caller-provided output buffers for [`ct_marker_board_detector_detect`].
+ *
+ * The three `*_len` pointers are required and always receive the required
+ * lengths for the corresponding output arrays. Passing a `NULL` output
+ * array with `*_capacity = 0` queries the required length without
+ * copying array data.
+ */
+typedef struct ct_marker_board_detect_buffers_t {
+  /**
+   * Optional scalar result header. May be null.
+   */
+  struct ct_marker_board_result_t *out_result;
+  /**
+   * Output array of labelled corners. May be null when `corners_capacity = 0`.
+   */
+  struct ct_labeled_corner_t *out_corners;
+  size_t corners_capacity;
+  /**
+   * Required: always receives the number of corners detected.
+   */
+  size_t *out_corners_len;
+  /**
+   * Output array of circle candidates. May be null when `circle_candidates_capacity = 0`.
+   */
+  struct ct_circle_candidate_t *out_circle_candidates;
+  size_t circle_candidates_capacity;
+  /**
+   * Required: always receives the number of circle candidates found.
+   */
+  size_t *out_circle_candidates_len;
+  /**
+   * Output array of circle matches. May be null when `circle_matches_capacity = 0`.
+   */
+  struct ct_circle_match_t *out_circle_matches;
+  size_t circle_matches_capacity;
+  /**
+   * Required: always receives the number of circle matches found.
+   */
+  size_t *out_circle_matches_len;
+} ct_marker_board_detect_buffers_t;
 
 /**
  * PuzzleBoard board specification.
@@ -613,6 +762,23 @@ typedef struct ct_puzzleboard_detector_config_t {
 } ct_puzzleboard_detector_config_t;
 
 /**
+ * Input arguments for [`ct_puzzleboard_detector_detect`].
+ *
+ * Groups the detector handle and image pointer so the entry point's
+ * signature stays compact even as future fields are added.
+ */
+typedef struct ct_puzzleboard_detect_args_t {
+  /**
+   * Detector handle (from [`ct_puzzleboard_detector_create`]).
+   */
+  const struct ct_puzzleboard_detector_t *detector;
+  /**
+   * Grayscale image to scan.
+   */
+  const struct ct_gray_image_u8_t *image;
+} ct_puzzleboard_detect_args_t;
+
+/**
  * PuzzleBoard detection header and decode diagnostics.
  */
 typedef struct ct_puzzleboard_result_t {
@@ -632,6 +798,31 @@ typedef struct ct_puzzleboard_result_t {
   struct ct_grid_alignment_t runner_up_alignment;
   size_t observed_edges_len;
 } ct_puzzleboard_result_t;
+
+/**
+ * Caller-provided output buffers for [`ct_puzzleboard_detector_detect`].
+ *
+ * `out_corners_len` is required and always receives the required number of
+ * labeled-corner entries. Passing `out_corners = NULL` with
+ * `corners_capacity = 0` queries the required length without copying
+ * corner data. The returned corner grid coordinates are master-board
+ * `(I, J)` labels.
+ */
+typedef struct ct_puzzleboard_detect_buffers_t {
+  /**
+   * Optional scalar result header. May be null.
+   */
+  struct ct_puzzleboard_result_t *out_result;
+  /**
+   * Output array of labelled corners. May be null when `corners_capacity = 0`.
+   */
+  struct ct_labeled_corner_t *out_corners;
+  size_t corners_capacity;
+  /**
+   * Required: always receives the number of corners detected.
+   */
+  size_t *out_corners_len;
+} ct_puzzleboard_detect_buffers_t;
 
 /**
  * Seed-and-grow pipeline. Currently the default.
@@ -783,24 +974,22 @@ void ct_chessboard_detector_destroy(struct ct_chessboard_detector_t *detector);
 /**
  * Run end-to-end chessboard detection on a grayscale image.
  *
- * `out_corners_len` is required and always receives the required number of
- * labeled-corner entries. Passing `out_corners = NULL` and
- * `corners_capacity = 0` queries the required length without copying corner
- * data.
+ * `bufs.out_corners_len` is required and always receives the required number
+ * of labeled-corner entries. Passing `bufs.out_corners = NULL` and
+ * `bufs.corners_capacity = 0` queries the required length without copying
+ * corner data.
  *
  * # Safety
  *
- * `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
- * If `out_result` is non-null it must be writable. If `out_corners` is
- * non-null it must point to writable storage for at least `corners_capacity`
- * entries.
+ * `args` and `bufs` must be valid non-null pointers to populated struct
+ * instances. Inside `args`: `detector` and `image` must be valid non-null
+ * pointers. Inside `bufs`: `out_corners_len` must be a valid non-null
+ * writable pointer; `out_result` may be null; `out_corners` may be null
+ * when `corners_capacity = 0`, otherwise it must point to writable storage
+ * of at least `corners_capacity` entries.
  */
-enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detector_t *detector,
-                                               const struct ct_gray_image_u8_t *image,
-                                               struct ct_chessboard_result_t *out_result,
-                                               struct ct_labeled_corner_t *out_corners,
-                                               size_t corners_capacity,
-                                               size_t *out_corners_len);
+enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect_args_t *args,
+                                               struct ct_chessboard_detect_buffers_t *bufs);
 
 /**
  * Run end-to-end multi-component chessboard detection on a grayscale image.
@@ -854,26 +1043,21 @@ void ct_charuco_detector_destroy(struct ct_charuco_detector_t *detector);
 /**
  * Run end-to-end ChArUco detection on a grayscale image.
  *
- * `out_corners_len` and `out_markers_len` are required and always receive the
- * required array lengths. Passing a `NULL` output array with capacity `0`
- * queries the corresponding required length without copying array data.
+ * `bufs.out_corners_len` and `bufs.out_markers_len` are required and always
+ * receive the required array lengths. Passing a `NULL` output array with
+ * `*_capacity = 0` queries the required length without copying array data.
  *
  * # Safety
  *
- * `detector`, `image`, `out_corners_len`, and `out_markers_len` must be valid
- * non-null pointers. If `out_result` is non-null it must be writable. If
- * `out_corners` or `out_markers` is non-null, each must point to writable
- * storage for at least the matching capacity.
+ * `args` and `bufs` must be valid non-null pointers to populated struct
+ * instances. Inside `args`: `detector` and `image` must be valid non-null
+ * pointers. Inside `bufs`: `out_corners_len` and `out_markers_len` must be
+ * valid non-null writable pointers; `out_result` may be null; each array
+ * buffer may be null when its capacity is `0`, otherwise it must point to
+ * writable storage of at least the declared capacity.
  */
-enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detector_t *detector,
-                                            const struct ct_gray_image_u8_t *image,
-                                            struct ct_charuco_result_t *out_result,
-                                            struct ct_labeled_corner_t *out_corners,
-                                            size_t corners_capacity,
-                                            size_t *out_corners_len,
-                                            struct ct_marker_detection_t *out_markers,
-                                            size_t markers_capacity,
-                                            size_t *out_markers_len);
+enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detect_args_t *args,
+                                            struct ct_charuco_detect_buffers_t *bufs);
 
 /**
  * Create a marker-board detector handle.
@@ -901,29 +1085,22 @@ void ct_marker_board_detector_destroy(struct ct_marker_board_detector_t *detecto
 /**
  * Run end-to-end marker-board detection on a grayscale image.
  *
- * The three `*_len` pointers are required and always receive the required
- * lengths for the corresponding output arrays. Passing a `NULL` output array
- * with capacity `0` queries the required length without copying array data.
+ * The three `*_len` pointers inside `bufs` are required and always receive
+ * the required lengths for the corresponding output arrays. Passing a `NULL`
+ * output array with `*_capacity = 0` queries the required length without
+ * copying array data.
  *
  * # Safety
  *
- * `detector`, `image`, and all three `*_len` pointers must be valid non-null
- * pointers. If `out_result` is non-null it must be writable. If any array
- * pointer is non-null it must point to writable storage for at least the
- * corresponding capacity.
+ * `args` and `bufs` must be valid non-null pointers to populated struct
+ * instances. Inside `args`: `detector` and `image` must be valid non-null
+ * pointers. Inside `bufs`: all three `*_len` pointers must be valid non-null
+ * writable pointers; `out_result` may be null; each array buffer may be null
+ * when its capacity is `0`, otherwise it must point to writable storage of
+ * at least the declared capacity.
  */
-enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_detector_t *detector,
-                                                 const struct ct_gray_image_u8_t *image,
-                                                 struct ct_marker_board_result_t *out_result,
-                                                 struct ct_labeled_corner_t *out_corners,
-                                                 size_t corners_capacity,
-                                                 size_t *out_corners_len,
-                                                 struct ct_circle_candidate_t *out_circle_candidates,
-                                                 size_t circle_candidates_capacity,
-                                                 size_t *out_circle_candidates_len,
-                                                 struct ct_circle_match_t *out_circle_matches,
-                                                 size_t circle_matches_capacity,
-                                                 size_t *out_circle_matches_len);
+enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_detect_args_t *args,
+                                                 struct ct_marker_board_detect_buffers_t *bufs);
 
 /**
  * Create a PuzzleBoard detector handle.
@@ -951,24 +1128,23 @@ void ct_puzzleboard_detector_destroy(struct ct_puzzleboard_detector_t *detector)
 /**
  * Run end-to-end PuzzleBoard detection on a grayscale image.
  *
- * `out_corners_len` is required and always receives the required number of
- * labeled-corner entries. Passing `out_corners = NULL` and
- * `corners_capacity = 0` queries the required length without copying corner
- * data. The returned corner grid coordinates are master-board `(I, J)` labels.
+ * `bufs.out_corners_len` is required and always receives the required number
+ * of labeled-corner entries. Passing `bufs.out_corners = NULL` with
+ * `bufs.corners_capacity = 0` queries the required length without copying
+ * corner data. The returned corner grid coordinates are master-board
+ * `(I, J)` labels.
  *
  * # Safety
  *
- * `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
- * If `out_result` is non-null it must be writable. If `out_corners` is
- * non-null it must point to writable storage for at least `corners_capacity`
- * entries.
+ * `args` and `bufs` must be valid non-null pointers to populated struct
+ * instances. Inside `args`: `detector` and `image` must be valid non-null
+ * pointers. Inside `bufs`: `out_corners_len` must be a valid non-null
+ * writable pointer; `out_result` may be null; `out_corners` may be null
+ * when `corners_capacity = 0`, otherwise it must point to writable storage
+ * of at least `corners_capacity` entries.
  */
-enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_detector_t *detector,
-                                                const struct ct_gray_image_u8_t *image,
-                                                struct ct_puzzleboard_result_t *out_result,
-                                                struct ct_labeled_corner_t *out_corners,
-                                                size_t corners_capacity,
-                                                size_t *out_corners_len);
+enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_detect_args_t *args,
+                                                struct ct_puzzleboard_detect_buffers_t *bufs);
 
 #ifdef __cplusplus
 }  // extern "C"
