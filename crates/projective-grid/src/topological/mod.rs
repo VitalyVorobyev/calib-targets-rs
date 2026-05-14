@@ -1,4 +1,4 @@
-//! Topological grid construction (Shu/Brunton/Fiala 2009, axis-driven variant).
+//! Topological grid construction (axis-driven variant of SBF09; see References below).
 //!
 //! Builds a labelled `(i, j)` grid from a cloud of 2D corners by:
 //!
@@ -9,17 +9,17 @@
 //! 3. Merging triangle pairs whose shared edge is a diagonal into quads
 //!    (one quad per chessboard cell).
 //! 4. Pruning corners with quad-degree > 4 (illegal), then quads with two
-//!    illegal corners (paper §4).
+//!    illegal corners (SBF09 §4).
 //! 5. Pruning quads whose opposing edges differ in length by more than
-//!    `edge_ratio_max` (paper §4 geometric test).
+//!    `edge_ratio_max` (SBF09 §4 geometric test).
 //! 6. Flood-filling integer `(i, j)` labels through the quad mesh
-//!    (paper §5 topological walking).
+//!    (SBF09 §5 topological walking).
 //! 7. Rebasing labels per component so the bounding box starts at `(0, 0)`.
 //!
 //! The pipeline produces one [`TopologicalComponent`] per connected
 //! component of the surviving quad mesh. Component merging is handled by
 //! [`crate::component_merge`] so the same logic is reusable from the
-//! chessboard-v2 seed-and-grow pipeline.
+//! crate's seed-and-grow pipeline.
 //!
 //! Why an axis-driven test rather than the paper's color test:
 //!
@@ -37,6 +37,12 @@
 //! - `axes[k][0]` and `axes[k][1]` follow the workspace convention:
 //!   angles in radians, the two axes orthogonal up to ChESS noise, and
 //!   `sigma = π` indicates "no information" (such corners are skipped).
+//!
+//! ## References
+//!
+//! - **SBF09**: Y. Shu, A. Brunton, M. Fiala — *Chessboard corner finding
+//!   using triangulation and topology*, In Proc. SPIE 7239 (Electronic
+//!   Imaging 2009).
 
 use std::collections::HashMap;
 
@@ -98,12 +104,11 @@ impl AxisHint {
 
 /// Two global grid-axis directions, in `[0, π)` with `theta0 < theta1`.
 ///
-/// Mirrors `calib_targets_chessboard::ClusterCenters` so the chessboard
-/// detector's `cluster_axes` output can flow into the topological
-/// pre-Delaunay gate without `projective-grid` taking a chessboard-side
-/// dependency. The two directions are interpreted modulo π (axes are
-/// undirected). Construct via [`AxisClusterCenters::new`] which orders
-/// the inputs and wraps them into `[0, π)`.
+/// Lets a caller's prior cluster-axis estimate flow into the topological
+/// pre-Delaunay gate without `projective-grid` taking a dependency on a
+/// specific detector's types. The two directions are interpreted modulo
+/// π (axes are undirected). Construct via [`AxisClusterCenters::new`]
+/// which orders the inputs and wraps them into `[0, π)`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AxisClusterCenters {
     pub theta0: f32,
@@ -160,39 +165,34 @@ pub struct TopologicalParams {
     /// Optional global grid-direction centers. When `Some`, every corner
     /// must have at least one axis within
     /// [`Self::cluster_axis_tol_rad`] of either center to enter Delaunay
-    /// (a precision filter borrowed from
-    /// `calib_targets_chessboard::cluster_axes`). When `None`, the gate
-    /// is skipped — preserving the legacy behaviour of this crate as a
-    /// standalone primitive. The chessboard detector's topological
-    /// dispatch path always supplies this from its own clustering.
+    /// (a precision filter; the caller's prior cluster-axis estimate is
+    /// the typical source). When `None`, the gate is skipped, preserving
+    /// the legacy behaviour of this crate as a standalone primitive.
     pub axis_cluster_centers: Option<AxisClusterCenters>,
     /// Per-axis admission tolerance against [`Self::axis_cluster_centers`],
     /// in radians. Only consulted when `axis_cluster_centers.is_some()`.
-    /// Default: `16° = 0.279` — wider than the chessboard-v2
-    /// `cluster_tol_deg` default of `12°` to compensate for the
-    /// topological pipeline's lack of sigma-bonus / booster recovery for
-    /// dropped corners. The right floor empirically sits near 16°: at
-    /// 12° we lose a real corner on `02-topo-grid/GeminiChess2.png`
-    /// and 4 frames on `130x130_puzzle`; tightening below this should
-    /// be paired with a sigma-aware admission rule (Phase D).
+    /// Default: `16° = 0.279` — wider than a typical chessboard
+    /// cluster-admission tolerance of `12°` to compensate for the lack
+    /// of sigma-bonus / booster recovery in this image-free pipeline.
+    /// Empirically the floor sits near 16° on real-world boards;
+    /// tightening below this should be paired with a sigma-aware
+    /// admission rule.
     pub cluster_axis_tol_rad: f32,
     /// Lower bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge shorter than `quad_edge_min_rel * component_median`
     /// are rejected as "below local cell scale". Default: `0.0`
     /// (disabled). Empirically the lower bound rejects too many
-    /// legitimate small quads on heavily-distorted Gemini boards
-    /// without compensating recall on 130x130_puzzle, so we lean on
-    /// the upper bound only.
+    /// legitimate small quads on heavily-distorted boards without
+    /// compensating recall elsewhere, so we lean on the upper bound only.
     pub quad_edge_min_rel: f32,
     /// Upper bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge longer than `quad_edge_max_rel * component_median`
     /// are rejected as "above local cell scale" (typically a quad
     /// formed across a missing corner). Default: `1.8` — chosen above
-    /// the natural perspective stretch on heavily-distorted boards
-    /// like `02-topo-grid/GeminiChess2.png` while still excluding the
-    /// double-cell hops that fragment 130x130_puzzle.
+    /// the natural perspective stretch on heavily-distorted boards while
+    /// still excluding the double-cell hops that fragment dense grids.
     /// Set to `f32::INFINITY` to disable.
     pub quad_edge_max_rel: f32,
 }

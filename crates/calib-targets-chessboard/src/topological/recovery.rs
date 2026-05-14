@@ -389,12 +389,12 @@ pub(super) fn build_topological_detections(
             parity_shift_j: 0,
         };
 
-        // Geometry verification (Phase B). The chessboard-v2 path runs
-        // this gate unconditionally before shipping a detection; the
-        // topological dispatch used to skip it. The check can only drop
-        // labelled corners (line collinearity / local-H residual /
-        // largest cardinal component) — it never adds wrong labels —
-        // and it sets `detection_refused` if too few survive. Skip when
+        // Geometry verification. The chessboard-v2 path runs this gate
+        // unconditionally before shipping a detection; the topological
+        // dispatch used to skip it. The check can only drop labelled
+        // corners (line collinearity / local-H residual / largest
+        // cardinal component) — it never adds wrong labels — and it
+        // sets `detection_refused` if too few survive. Skip when
         // cell_size is degenerate (would divide-by-zero in validate).
         if cell_size > 0.0 {
             let mut blacklist: HashSet<usize> = HashSet::new();

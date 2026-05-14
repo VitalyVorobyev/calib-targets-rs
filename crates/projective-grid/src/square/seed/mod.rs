@@ -74,8 +74,8 @@ pub const SEED_QUAD_GRID: [(i32, i32); 4] = [(0, 0), (1, 0), (0, 1), (1, 1)];
 /// `all_positions` — full-population fallback indices to test against
 ///                    midpoints AND center, regardless of cluster
 ///                    label. Catches 2× / sqrt(2)× / general N× cases
-///                    where the intermediate corner failed Stage-3
-///                    clustering and isn't in the pattern-specific
+///                    where the intermediate corner failed cluster
+///                    admission and isn't in the pattern-specific
 ///                    lists. Pass `&[]` to disable.
 pub fn seed_has_midpoint_violation(
     positions: &[Point2<f32>],

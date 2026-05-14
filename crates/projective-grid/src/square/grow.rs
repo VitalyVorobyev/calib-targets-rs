@@ -109,6 +109,59 @@ pub trait GrowValidator {
     ) -> bool {
         true
     }
+
+    /// Optional widened eligibility used by the fill-pass booster.
+    ///
+    /// Defaults to [`Self::is_eligible`]; patterns whose precision
+    /// core admits only `Clustered` corners but want to admit a few
+    /// near-cluster corners during the booster pass override this to
+    /// expand the admissible set. The fill pass calls this when
+    /// building its KD-tree; the regular grow / boundary-extension
+    /// passes ignore it.
+    fn eligible_for_fill(&self, idx: usize) -> bool {
+        self.is_eligible(idx)
+    }
+
+    /// Optional fill-pass edge check that has access to the full
+    /// labelled set and the position table via [`FillEdgeCtx`].
+    ///
+    /// The default delegates to [`Self::edge_ok`], ignoring the extra
+    /// context. Pattern implementations that need a directional edge
+    /// metric (e.g., a strongly anisotropic component where the
+    /// horizontal pitch is much larger than the vertical pitch and a
+    /// scalar `cell_size` rejects legitimate vertical extrapolations)
+    /// override this to consult the labelled set when computing the
+    /// expected edge length.
+    ///
+    /// Only invoked by [`crate::square::fill::fill_grid_holes`]; the
+    /// regular grow and boundary-extension passes call [`Self::edge_ok`]
+    /// directly.
+    fn fill_edge_ok(&self, ctx: FillEdgeCtx<'_>) -> bool {
+        self.edge_ok(
+            ctx.candidate_idx,
+            ctx.neighbour_idx,
+            ctx.at_candidate,
+            ctx.at_neighbour,
+        )
+    }
+}
+
+/// Context passed to [`GrowValidator::fill_edge_ok`].
+///
+/// Bundles every piece of state the validator needs to make a
+/// labelled-set-aware edge decision: the candidate + cardinal
+/// neighbour indices, their `(i, j)` cells, the full labelled map,
+/// the corner position array, and the scalar fallback cell size.
+#[non_exhaustive]
+#[derive(Clone, Copy)]
+pub struct FillEdgeCtx<'a> {
+    pub candidate_idx: usize,
+    pub neighbour_idx: usize,
+    pub at_candidate: (i32, i32),
+    pub at_neighbour: (i32, i32),
+    pub labelled: &'a HashMap<(i32, i32), usize>,
+    pub positions: &'a [Point2<f32>],
+    pub cell_size: f32,
 }
 
 /// Tolerances for [`bfs_grow`].
@@ -269,19 +322,19 @@ pub fn bfs_grow<V: GrowValidator>(
         if labelled.contains_key(&pos) {
             continue;
         }
-        let (decision, _neighbours) = process_boundary_cell(
-            pos,
+        let ctx = BoundaryCtx {
             positions,
-            &labelled,
-            &by_corner,
-            &tree,
-            &tree_slot_to_corner,
+            labelled: &labelled,
+            by_corner: &by_corner,
+            tree: &tree,
+            tree_slot_to_corner: &tree_slot_to_corner,
             grid_u,
             grid_v,
             cell_size,
             params,
             validator,
-        );
+        };
+        let (decision, _neighbours) = process_boundary_cell(pos, &ctx);
         match decision {
             BoundaryDecision::Hole | BoundaryDecision::EdgeRejected => {
                 holes.insert(pos);
@@ -352,7 +405,7 @@ pub(super) fn enqueue_cardinal_neighbours(
     }
 }
 
-pub(super) fn collect_labelled_neighbours(
+pub(crate) fn collect_labelled_neighbours(
     pos: (i32, i32),
     window_half: i32,
     labelled: &HashMap<(i32, i32), usize>,
@@ -611,6 +664,26 @@ pub(super) enum BoundaryDecision {
     Attach(usize),
 }
 
+/// Shared context for one boundary-cell decision.
+///
+/// Bundles the references that all boundary-cell helpers thread
+/// through — positions / labelled state / KD-tree over eligible
+/// candidates / growth geometry / validator. Carrying them in one
+/// struct keeps [`process_boundary_cell`]'s signature compact and
+/// avoids re-stating the same nine arguments at every call site.
+pub(super) struct BoundaryCtx<'a, V: GrowValidator> {
+    pub positions: &'a [Point2<f32>],
+    pub labelled: &'a HashMap<(i32, i32), usize>,
+    pub by_corner: &'a HashMap<usize, (i32, i32)>,
+    pub tree: &'a KdTree<f32, 2>,
+    pub tree_slot_to_corner: &'a [usize],
+    pub grid_u: Vector2<f32>,
+    pub grid_v: Vector2<f32>,
+    pub cell_size: f32,
+    pub params: &'a GrowParams,
+    pub validator: &'a V,
+}
+
 /// Process one cell from the BFS boundary queue.
 ///
 /// Collects labelled neighbours, predicts the target pixel position,
@@ -619,29 +692,11 @@ pub(super) enum BoundaryDecision {
 /// state. Keeping the decision logic in one place makes `bfs_grow` and
 /// `extend_from_labelled` share the same filter pipeline without
 /// duplicating code.
-///
-/// # Parameters
-/// - `pos`: the cell being processed.
-/// - `positions`: full corner position array.
-/// - `labelled` / `by_corner`: current label state.
-/// - `tree` / `tree_slot_to_corner`: KD-tree over eligible candidates.
-/// - `grid_u`, `grid_v`, `cell_size`, `params`: growth geometry.
-/// - `validator`: pattern-specific filter.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn process_boundary_cell<V: GrowValidator>(
     pos: (i32, i32),
-    positions: &[Point2<f32>],
-    labelled: &HashMap<(i32, i32), usize>,
-    by_corner: &HashMap<usize, (i32, i32)>,
-    tree: &KdTree<f32, 2>,
-    tree_slot_to_corner: &[usize],
-    grid_u: Vector2<f32>,
-    grid_v: Vector2<f32>,
-    cell_size: f32,
-    params: &GrowParams,
-    validator: &V,
+    ctx: &BoundaryCtx<'_, V>,
 ) -> (BoundaryDecision, Vec<LabelledNeighbour>) {
-    let neighbours = collect_labelled_neighbours(pos, 1, labelled, positions);
+    let neighbours = collect_labelled_neighbours(pos, 1, ctx.labelled, ctx.positions);
     if neighbours.is_empty() {
         return (BoundaryDecision::Hole, neighbours);
     }
@@ -649,38 +704,38 @@ pub(super) fn process_boundary_cell<V: GrowValidator>(
     let prediction = predict_from_neighbours(
         pos,
         &neighbours,
-        grid_u,
-        grid_v,
-        cell_size,
-        labelled,
-        positions,
+        ctx.grid_u,
+        ctx.grid_v,
+        ctx.cell_size,
+        ctx.labelled,
+        ctx.positions,
     );
 
-    let search_r = params.attach_search_rel * cell_size;
+    let search_r = ctx.params.attach_search_rel * ctx.cell_size;
     let extrapolating = is_extrapolating(pos, &neighbours);
     let local_search_r = if extrapolating {
-        search_r * params.boundary_search_factor
+        search_r * ctx.params.boundary_search_factor
     } else {
         search_r
     };
 
-    let required_label = validator.required_label_at(pos.0, pos.1);
+    let required_label = ctx.validator.required_label_at(pos.0, pos.1);
     let candidates = collect_candidates(
-        tree,
-        tree_slot_to_corner,
+        ctx.tree,
+        ctx.tree_slot_to_corner,
         prediction,
         local_search_r,
-        validator,
+        ctx.validator,
         required_label,
-        by_corner,
+        ctx.by_corner,
     );
 
     let choice = choose_unambiguous(
         &candidates,
-        params.attach_ambiguity_factor,
+        ctx.params.attach_ambiguity_factor,
         prediction,
-        positions,
-        validator,
+        ctx.positions,
+        ctx.validator,
         pos,
         &neighbours,
     );
@@ -689,7 +744,7 @@ pub(super) fn process_boundary_cell<V: GrowValidator>(
         CandidateChoice::None => BoundaryDecision::Hole,
         CandidateChoice::Ambiguous => BoundaryDecision::Ambiguous,
         CandidateChoice::Unique(c_idx) => {
-            if !any_cardinal_edge_ok(c_idx, pos, labelled, validator) {
+            if !any_cardinal_edge_ok(c_idx, pos, ctx.labelled, ctx.validator) {
                 BoundaryDecision::EdgeRejected
             } else {
                 BoundaryDecision::Attach(c_idx)

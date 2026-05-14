@@ -1,5 +1,6 @@
 //! Topological walking — flood-fill `(i, j)` labels through the quad mesh
-//! (paper §5).
+//! (SBF09 §5; see crate-level `topological` module docs for the full
+//! bibliographic entry).
 //!
 //! Each connected component of the quad mesh is labelled independently
 //! starting from an arbitrary "seed" quad whose four corners get the

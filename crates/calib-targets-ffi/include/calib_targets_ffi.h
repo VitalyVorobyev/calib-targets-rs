@@ -309,6 +309,47 @@ typedef struct ct_labeled_corner_t {
 } ct_labeled_corner_t;
 
 /**
+ * Input arguments for [`ct_chessboard_detector_detect_all`].
+ *
+ * Groups the detector handle and image pointer so the entry point's
+ * signature stays compact even as future fields are added.
+ */
+typedef struct ct_chessboard_detect_all_args_t {
+  /**
+   * Detector handle (from [`ct_chessboard_detector_create`]).
+   */
+  const struct ct_chessboard_detector_t *detector;
+  /**
+   * Grayscale image to scan.
+   */
+  const struct ct_gray_image_u8_t *image;
+} ct_chessboard_detect_all_args_t;
+
+/**
+ * Caller-provided output buffers for [`ct_chessboard_detector_detect_all`].
+ *
+ * Each `*_buf` is the start of a writable output array, `*_capacity`
+ * its allocated entry count, and `*_len_out` a writable destination
+ * that receives the *required* number of entries (even if the buffer
+ * is too small or null). Passing a `NULL` buffer with capacity `0` is
+ * allowed and queries the required length without copying data.
+ */
+typedef struct ct_chessboard_detect_all_buffers_t {
+  /**
+   * Output array of per-component result headers.
+   */
+  struct ct_chessboard_result_t *results_buf;
+  size_t results_capacity;
+  size_t *results_len_out;
+  /**
+   * Output array of all components' labelled corners concatenated.
+   */
+  struct ct_labeled_corner_t *corners_buf;
+  size_t corners_capacity;
+  size_t *corners_len_out;
+} ct_chessboard_detect_all_buffers_t;
+
+/**
  * Fixed dictionary identifier type for built-in marker dictionaries.
  */
 typedef uint32_t ct_dictionary_id_t;
@@ -765,30 +806,27 @@ enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect
  * Run end-to-end multi-component chessboard detection on a grayscale image.
  *
  * Returns every same-board component the detector recovers, up to
- * `DetectorParams::max_components`. The `out_corners` buffer receives all
- * corners from all components concatenated; use `result[i].detection.corners_len`
- * to slice each component's contribution.
+ * `DetectorParams::max_components`. The `corners_buf` buffer receives
+ * all corners from all components concatenated; use
+ * `result[i].detection.corners_len` to slice each component's contribution.
  *
- * Both `out_results_len` and `out_all_corners_len` are required and always
- * receive the required array lengths. Passing `NULL` output arrays with
- * capacity `0` queries the required lengths without copying data.
+ * Both `results_len_out` and `corners_len_out` inside `bufs` are
+ * required and always receive the required array lengths. Passing
+ * `NULL` output buffers with capacity `0` queries the required
+ * lengths without copying data.
  *
  * # Safety
  *
- * `detector`, `image`, `out_results_len`, and `out_all_corners_len` must be
- * valid non-null pointers. If `out_results` is non-null it must point to
- * writable storage for at least `results_capacity` entries. If `out_corners`
- * is non-null it must point to writable storage for at least
- * `all_corners_capacity` entries.
+ * `args` and `bufs` must be valid non-null pointers to populated
+ * struct instances. Inside `args`: `detector` and `image` must be
+ * valid non-null pointers. Inside `bufs`: `results_len_out` and
+ * `corners_len_out` must be valid non-null writable pointers; each
+ * output array buffer is allowed to be null when its capacity is `0`,
+ * otherwise it must point to writable storage of at least the
+ * declared capacity.
  */
-enum ct_status_t ct_chessboard_detector_detect_all(const struct ct_chessboard_detector_t *detector,
-                                                   const struct ct_gray_image_u8_t *image,
-                                                   struct ct_chessboard_result_t *out_results,
-                                                   size_t results_capacity,
-                                                   size_t *out_results_len,
-                                                   struct ct_labeled_corner_t *out_corners,
-                                                   size_t all_corners_capacity,
-                                                   size_t *out_all_corners_len);
+enum ct_status_t ct_chessboard_detector_detect_all(const struct ct_chessboard_detect_all_args_t *args,
+                                                   struct ct_chessboard_detect_all_buffers_t *bufs);
 
 /**
  * Create a ChArUco detector handle.

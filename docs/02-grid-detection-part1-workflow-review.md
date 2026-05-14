@@ -1,4 +1,4 @@
-# Workflow Review For `docs/02-grid-deteciont-part1.md`
+# Workflow Review For `docs/02-grid-detection-part1.md`
 
 This is a workflow-level review of the blog draft against the current
 topological chessboard implementation.

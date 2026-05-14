@@ -4,6 +4,7 @@
 //! |---|---|
 //! | [`alignment`] | D4 rotations / reflections on `(i, j)` |
 //! | [`extension`] | Boundary extension via homography (global + local) |
+//! | [`fill`] | Post-grow interior-hole + line-extrapolation booster pass |
 //! | [`grow`] | Seed-and-grow BFS with adaptive local-step prediction |
 //! | [`grow_extend`] | BFS extension from an existing labelled grid |
 //! | [`index`] | `(i, j)` cell identifier |
@@ -23,6 +24,7 @@
 
 pub mod alignment;
 pub mod extension;
+pub mod fill;
 pub mod grow;
 pub mod grow_extend;
 /// Compatibility alias for [`extension`].
@@ -53,6 +55,7 @@ pub use extension::{
     extend_via_global_homography, ExtensionCommonParams, ExtensionParams, ExtensionStats,
     LocalExtensionParams,
 };
+pub use fill::{fill_grid_holes, FillParams, FillStats};
 pub use grow::{
     bfs_grow, predict_from_neighbours, Admit, GrowParams, GrowResult, GrowValidator,
     LabelledNeighbour, Seed,

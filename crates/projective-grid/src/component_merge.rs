@@ -1,9 +1,9 @@
 //! Local-geometry-only component merge for square grids.
 //!
 //! Both the topological pipeline ([`crate::topological`]) and the
-//! chessboard-v2 seed-and-grow pipeline can leave multiple disconnected
-//! grid components when a board is partially occluded, when a line of
-//! ChESS corners drops below the strength threshold, or when topological
+//! seed-and-grow pipeline can leave multiple disconnected grid
+//! components when a board is partially occluded, when a line of
+//! corners drops below the strength threshold, or when topological
 //! filtering removes a noisy quad in the middle of the board. This
 //! module attempts to reunite components in label space.
 //!

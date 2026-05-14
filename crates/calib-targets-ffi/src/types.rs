@@ -468,39 +468,39 @@ pub struct ct_chessboard_params_t {
     /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
     pub graph_build_algorithm: ct_graph_build_algorithm_t,
 
-    // Stage 1 — pre-filter
+    // Pre-filter
     pub min_corner_strength: f32,
     pub max_fit_rms_ratio: f32,
 
-    // Stages 2–3 — axes clustering
+    // Cluster axes
     pub num_bins: usize,
     pub max_iters_2means: usize,
     pub cluster_tol_deg: f32,
     pub peak_min_separation_deg: f32,
     pub min_peak_weight_fraction: f32,
 
-    // Stage 4 — caller cell-size hint (optional)
+    // Caller cell-size hint (optional)
     pub cell_size_hint: ct_optional_f32_t,
 
-    // Stage 5 — seed
+    // Seed
     pub seed_edge_tol: f32,
     pub seed_axis_tol_deg: f32,
     pub seed_close_tol: f32,
 
-    // Stage 6 — grow
+    // Grow
     pub attach_search_rel: f32,
     pub attach_axis_tol_deg: f32,
     pub attach_ambiguity_factor: f32,
     pub step_tol: f32,
     pub edge_axis_tol_deg: f32,
 
-    // Stage 7 — validate
+    // Validate
     pub line_tol_rel: f32,
     pub line_min_members: usize,
     pub local_h_tol_rel: f32,
     pub max_validation_iters: u32,
 
-    // Stage 8 — recall boosters
+    // Recall boosters
     pub enable_line_extrapolation: u32,
     pub enable_gap_fill: u32,
     pub enable_component_merge: u32,

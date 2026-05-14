@@ -43,10 +43,10 @@ let seed: Seed = /* … */;
 let cell_size: f32 = /* … */;
 let validator: &impl GrowValidator = /* … */;
 
-// 2. Stage 5: BFS-grow with adaptive local-step prediction.
+// 2. BFS-grow with adaptive local-step prediction.
 let mut grow = bfs_grow(&positions, seed, cell_size, &GrowParams::default(), validator);
 
-// 3. Stage 6 (optional): extend the labelled set via a globally-fit
+// 3. Optional: extend the labelled set via a globally-fit
 //    homography. Refuses to extrapolate when the H residuals on the
 //    BFS-validated set indicate the planar / pinhole assumption is
 //    violated (heavy lens distortion, non-planar target).
@@ -58,7 +58,7 @@ let _stats = extend_via_global_homography(
     validator,
 );
 
-// 4. Stage 7: line / local-H residual validation produces a blacklist of
+// 4. Validation: line / local-H residual checks produce a blacklist of
 //    outlier corner indices to drop and re-grow.
 let entries: Vec<LabelledEntry> = /* (corner_idx, pixel, grid) per labelled */;
 let _result = validate(&entries, cell_size, &ValidationParams::default());
@@ -81,10 +81,13 @@ where a single `H` breaks. Configured via `LocalExtensionParams`.
 
 ### Topological grid finder
 
-`projective_grid::build_grid_topological` is the image-free Shu /
-Brunton / Fiala 2009 grid finder: Delaunay triangulation, edge
-classification by per-edge axis match, triangle-pair → quad merge,
-and flood-fill `(i, j)` labelling.
+`projective_grid::build_grid_topological` is an image-free,
+axis-driven variant of the Shu/Brunton/Fiala 2009 topological grid
+finder: Delaunay triangulation, edge classification by per-edge axis
+match, triangle-pair → quad merge, and flood-fill `(i, j)` labelling.
+See the [`topological`] module docs for the bibliographic entry.
+
+[`topological`]: https://docs.rs/projective-grid/latest/projective_grid/topological/index.html
 
 ```rust
 use projective_grid::{build_grid_topological, merge_components_local,
@@ -149,8 +152,8 @@ synthetic grids "just work"; tune only when a specific input fails.
   homography mesh + smoothness, but not seed-and-grow yet.
 - **Heavy radial distortion.** A single global H can't fit fish-eye
   data; the H-residual gate refuses to extrapolate in that case
-  (Stage 6 becomes a no-op). Use [`SquareGridHomographyMesh`] for per-cell
-  rectification.
+  (the boundary extension pass becomes a no-op). Use
+  [`SquareGridHomographyMesh`] for per-cell rectification.
 
 ## Design notes
 
@@ -161,9 +164,10 @@ synthetic grids "just work"; tune only when a specific input fails.
   long as the labelled set has labels on both sides of the target.
 - **Global H at the boundary.** When the target sits one step outside
   the labelled bbox, the local-step model is asymmetric and overshoots.
-  Stage 6 falls back to a globally-fitted homography for boundary
-  cells, gated on a reprojection-residual check on the labelled set so
-  it disables itself under non-planar / fish-eye conditions.
+  The boundary-extension pass falls back to a globally-fitted homography
+  for boundary cells, gated on a reprojection-residual check on the
+  labelled set so it disables itself under non-planar / fish-eye
+  conditions.
 - **Undirected-angle circular means.** Any function averaging axis
   angles accumulates `(cos 2θ, sin 2θ)` and halves the resulting
   `atan2` — naive `(cos θ, sin θ)` averaging breaks at the 0°/180°

@@ -39,6 +39,16 @@ homepage = "https://vitalyvorobyev.github.io/calib-targets-rs/"
 documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api"
 rust-version = "1.88"
 
+[workspace.lints.clippy]
+# Re-introducing `#[allow(clippy::too_many_arguments)]` to silence the
+# lint is banned: if a function hits the threshold, extract a context
+# struct (see `BoundaryCtx`, `DecodeSamples`, `FillCtx` for examples).
+# The two FFI surface sites that historically used the allow were
+# resolved by the `ct_*_args_t` + `ct_*_buffers_t` redesign; clippy
+# auto-skips `extern "C"` functions so the deny applies to the
+# internal helpers only.
+too_many_arguments = "deny"
+
 [workspace.dependencies]
 calib-targets = { version = "0.8", path = "crates/calib-targets" }
 calib-targets-aruco = { version = "0.8", path = "crates/calib-targets-aruco" }

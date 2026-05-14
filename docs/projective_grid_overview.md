@@ -1,5 +1,12 @@
 # From a corner cloud to a labelled grid: inside `projective-grid`
 
+> *Internal scratchpad — investigation notes for the topological grid
+> finder. Labels like "Phase D" or "Q2 of the deep-dive roadmap" are
+> internal milestones from a prior debugging campaign and must NOT
+> appear in source rustdoc, READMEs, or any other public surface.
+> When referring to algorithm stages from code, use the descriptive
+> names defined in `crates/calib-targets-chessboard/src/lib.rs`.*
+
 > *Building a `(i, j)`-labelled lattice over a cloud of detected X-corners is
 > the core combinatorial step in every chessboard / ChArUco / PuzzleBoard
 > detector. This note walks through how the `projective-grid` crate solves

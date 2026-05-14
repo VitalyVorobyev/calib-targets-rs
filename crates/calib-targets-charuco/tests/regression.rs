@@ -274,7 +274,6 @@ struct PublicCase {
 /// Shared helper: run the detector on one public testdata image and
 /// assert basic contracts (kind, minimum markers/corners, unique ids,
 /// zero self-consistency wrong-id).
-#[allow(clippy::too_many_arguments)]
 fn run_public_charuco(case: &PublicCase) {
     let img_name = case.img_name;
     let dict_name = case.dict_name;

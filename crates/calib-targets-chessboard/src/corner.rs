@@ -66,27 +66,38 @@ impl ClusterLabel {
 /// Every `Corner` the detector sees starts at [`CornerStage::Raw`]
 /// and advances as it passes (or fails) pipeline stages. This is the
 /// unit of observability for the debug frame.
+///
+/// Note: a future cleanup (REVIEW.md F7) plans to split this enum into
+/// a pure pipeline cursor (`Raw / Strong / NoCluster / Clustered /
+/// Labeled`) plus an orthogonal `AttachmentOutcome { at, outcome,
+/// reason, local_h_residual_px }`. The current shape is preserved for
+/// now because the split exposed a subtle regression on the
+/// `puzzleboard_reference/example1.png` multi-component test; landing
+/// it safely needs additional investigation of the
+/// `fix_partial_slot_flips_post_stage6` + `detect_all` interaction.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub enum CornerStage {
     /// Newly ingested corner, no checks yet.
     Raw,
-    /// Passed Stage 1 (strength + fit-quality + axes validity).
+    /// Passed `prefilter` (strength + fit-quality + axes validity).
     Strong,
-    /// Stage 3 rejected — at least one axis further than
+    /// `cluster_axes` rejected — at least one axis further than
     /// `cluster_tol_deg` from the matching center. `max_d_deg` is the
     /// worse of the two per-axis distances in the best assignment.
     NoCluster { max_d_deg: f32 },
-    /// Stage 3 accepted with the given label.
+    /// `cluster_axes` accepted with the given label.
     Clustered { label: ClusterLabel },
-    /// Stage 6 attempted to attach this corner at `at` but found
-    /// ≥2 candidates inside `attach_ambiguity_factor × nearest`.
+    /// `extend_boundary` attempted to attach this corner at `at` but
+    /// found ≥2 candidates inside `attach_ambiguity_factor × nearest`.
     AttachmentAmbiguous { at: (i32, i32) },
-    /// Stage 6 attempted to attach this corner at `at` but the
-    /// induced edges failed an invariant. The pipeline leaves the
+    /// `extend_boundary` attempted to attach this corner at `at` but
+    /// the induced edges failed an invariant. The pipeline leaves the
     /// corner un-labelled and continues.
     AttachmentFailedInvariants { at: (i32, i32), reason: String },
-    /// Attached as a labelled corner. Filled in by Stages 5–8.
+    /// Attached as a labelled corner. Filled in by the `grow` /
+    /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters`
+    /// stages.
     Labeled {
         at: (i32, i32),
         local_h_residual_px: Option<f32>,
@@ -118,8 +129,8 @@ pub struct CornerAug {
     pub fit_rms: f32,
     /// Stage cursor — starts at `Raw`.
     pub stage: CornerStage,
-    /// Cluster label assigned in Stage 3 (`None` while `stage` is
-    /// `Raw`, `Strong`, or `NoCluster`).
+    /// Cluster label assigned in `cluster_axes` (`None` while `stage`
+    /// is `Raw`, `Strong`, or `NoCluster`).
     pub label: Option<ClusterLabel>,
 }
 

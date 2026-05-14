@@ -539,22 +539,49 @@ pub unsafe extern "C" fn ct_chessboard_detector_detect(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Input arguments for [`ct_chessboard_detector_detect_all`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_all_args_t {
+    /// Detector handle (from [`ct_chessboard_detector_create`]).
+    pub detector: *const ct_chessboard_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_chessboard_detector_detect_all`].
+///
+/// Each `*_buf` is the start of a writable output array, `*_capacity`
+/// its allocated entry count, and `*_len_out` a writable destination
+/// that receives the *required* number of entries (even if the buffer
+/// is too small or null). Passing a `NULL` buffer with capacity `0` is
+/// allowed and queries the required length without copying data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_all_buffers_t {
+    /// Output array of per-component result headers.
+    pub results_buf: *mut ct_chessboard_result_t,
+    pub results_capacity: usize,
+    pub results_len_out: *mut usize,
+    /// Output array of all components' labelled corners concatenated.
+    pub corners_buf: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    pub corners_len_out: *mut usize,
+}
+
 pub(super) unsafe fn chessboard_detector_detect_all_impl(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_results: *mut ct_chessboard_result_t,
-    results_capacity: usize,
-    out_results_len: *mut usize,
-    out_corners: *mut ct_labeled_corner_t,
-    all_corners_capacity: usize,
-    out_all_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_all_args_t,
+    bufs: *mut ct_chessboard_detect_all_buffers_t,
 ) -> FfiResult<()> {
-    // SAFETY: caller contract (from `ct_chessboard_detector_detect_all`): `detector` is a
-    // valid handle created by `ct_chessboard_detector_create`, not yet destroyed.
-    let detector = unsafe { require_ref(detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(image, "image")? };
+    // SAFETY: caller contract: `args` and `bufs` point to valid struct
+    // instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
 
@@ -574,35 +601,31 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
         .flat_map(|d| d.target.corners.iter().map(labeled_corner_to_ffi))
         .collect();
 
-    // SAFETY: `out_results_len` and `out_all_corners_len` are valid writable pointers per
-    // caller contract from `ct_chessboard_detector_detect_all`.
+    // SAFETY: `bufs.results_len_out` and `bufs.corners_len_out` are valid
+    // writable pointers per caller contract.
     unsafe {
-        write_required_len(out_results_len, results_out.len(), "out_results_len")?;
-        write_required_len(
-            out_all_corners_len,
-            corners_out.len(),
-            "out_all_corners_len",
-        )?;
+        write_required_len(bufs.results_len_out, results_out.len(), "results_len_out")?;
+        write_required_len(bufs.corners_len_out, corners_out.len(), "corners_len_out")?;
     }
     let copy_results = validate_output_buffer(
-        out_results,
-        results_capacity,
+        bufs.results_buf,
+        bufs.results_capacity,
         results_out.len(),
-        "out_results",
+        "results_buf",
     )?;
     let copy_corners = validate_output_buffer(
-        out_corners,
-        all_corners_capacity,
+        bufs.corners_buf,
+        bufs.corners_capacity,
         corners_out.len(),
-        "out_corners",
+        "corners_buf",
     )?;
     if copy_results {
-        // SAFETY: `out_results` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(out_results, &results_out) };
+        // SAFETY: `results_buf` capacity validated by `validate_output_buffer`.
+        unsafe { copy_output_slice(bufs.results_buf, &results_out) };
     }
     if copy_corners {
-        // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(out_corners, &corners_out) };
+        // SAFETY: `corners_buf` capacity validated by `validate_output_buffer`.
+        unsafe { copy_output_slice(bufs.corners_buf, &corners_out) };
     }
     Ok(())
 }
@@ -610,45 +633,30 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
 /// Run end-to-end multi-component chessboard detection on a grayscale image.
 ///
 /// Returns every same-board component the detector recovers, up to
-/// `DetectorParams::max_components`. The `out_corners` buffer receives all
-/// corners from all components concatenated; use `result[i].detection.corners_len`
-/// to slice each component's contribution.
+/// `DetectorParams::max_components`. The `corners_buf` buffer receives
+/// all corners from all components concatenated; use
+/// `result[i].detection.corners_len` to slice each component's contribution.
 ///
-/// Both `out_results_len` and `out_all_corners_len` are required and always
-/// receive the required array lengths. Passing `NULL` output arrays with
-/// capacity `0` queries the required lengths without copying data.
+/// Both `results_len_out` and `corners_len_out` inside `bufs` are
+/// required and always receive the required array lengths. Passing
+/// `NULL` output buffers with capacity `0` queries the required
+/// lengths without copying data.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, `out_results_len`, and `out_all_corners_len` must be
-/// valid non-null pointers. If `out_results` is non-null it must point to
-/// writable storage for at least `results_capacity` entries. If `out_corners`
-/// is non-null it must point to writable storage for at least
-/// `all_corners_capacity` entries.
+/// `args` and `bufs` must be valid non-null pointers to populated
+/// struct instances. Inside `args`: `detector` and `image` must be
+/// valid non-null pointers. Inside `bufs`: `results_len_out` and
+/// `corners_len_out` must be valid non-null writable pointers; each
+/// output array buffer is allowed to be null when its capacity is `0`,
+/// otherwise it must point to writable storage of at least the
+/// declared capacity.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn ct_chessboard_detector_detect_all(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_results: *mut ct_chessboard_result_t,
-    results_capacity: usize,
-    out_results_len: *mut usize,
-    out_corners: *mut ct_labeled_corner_t,
-    all_corners_capacity: usize,
-    out_all_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_all_args_t,
+    bufs: *mut ct_chessboard_detect_all_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        chessboard_detector_detect_all_impl(
-            detector,
-            image,
-            out_results,
-            results_capacity,
-            out_results_len,
-            out_corners,
-            all_corners_capacity,
-            out_all_corners_len,
-        )
-    })
+    ffi_status(|| unsafe { chessboard_detector_detect_all_impl(args, bufs) })
 }
 
 /// Create a ChArUco detector handle.

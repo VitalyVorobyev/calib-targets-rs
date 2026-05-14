@@ -1,12 +1,14 @@
 //! Detector orchestrator: run the precision core end-to-end.
 //!
-//! Stages 5–7 loop with a blacklist until validation converges or
-//! `max_validation_iters` is reached. Stage 8 (recall boosters) extends
-//! the labelled set without compromising invariants. `detect_all` peels
-//! off disconnected components by re-entering the pipeline with already-
-//! labelled inputs marked consumed.
+//! The `find_seed → grow → validate` loop runs with a blacklist until
+//! validation converges or `max_validation_iters` is reached. The
+//! `apply_boosters` stage extends the labelled set without
+//! compromising invariants. `detect_all` peels off disconnected
+//! components by re-entering the pipeline with already-labelled
+//! inputs marked consumed.
 //!
-//! See `book/src/chessboard.md` for the full algorithm description.
+//! Stage names follow the canonical pipeline enumeration in the
+//! crate-level docs (`crate::`).
 
 use crate::boosters::{apply_boosters, BoosterResult};
 use crate::cluster::{
@@ -64,17 +66,18 @@ pub struct DebugFrame {
     pub cell_size: Option<f32>,
     pub seed: Option<[usize; 4]>,
     pub iterations: Vec<IterationTrace>,
-    /// Summary from the Stage-8 recall boosters (`None` when
-    /// boosters didn't run — e.g., empty or Stage-5 failure).
+    /// Summary from the `apply_boosters` stage (`None` when boosters
+    /// didn't run — e.g., empty or seed failure).
     pub boosters: Option<BoosterResult>,
     pub detection: Option<Detection>,
     /// All corners carried through the pipeline (same indexing as
     /// the input slice). `stage` captures where each corner ended
     /// up.
     pub corners: Vec<CornerAug>,
-    /// Stage-3 introspection — smoothed histogram, peak seeds,
-    /// refined centers. Surfaced for offline triage. `None` only when
-    /// Stage 1 produced no Strong corners (clustering wasn't run).
+    /// `cluster_axes` introspection — smoothed histogram, peak
+    /// seeds, refined centers. Surfaced for offline triage. `None`
+    /// only when `prefilter` produced no `Strong` corners (clustering
+    /// wasn't run).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cluster_debug: Option<ClusterDebug>,
 }
@@ -86,38 +89,37 @@ pub struct IterationTrace {
     pub labelled_count: usize,
     pub new_blacklist: Vec<usize>,
     pub converged: bool,
-    /// Stage-6 (boundary extrapolation) summary for this iteration.
-    /// `None` when too few BFS labels were available, or when the
-    /// fitted-H residual gate refused to extrapolate. Records what
-    /// happened so we can compare blacklist scope strategies on real
-    /// data (Q2 of the deep-dive roadmap).
+    /// `extend_boundary` summary for this iteration. `None` when too
+    /// few BFS labels were available, or when the fitted-H residual
+    /// gate refused to extrapolate. Records what happened so we can
+    /// compare blacklist scope strategies on real data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionTrace>,
-    /// Stage-6.5 (NoCluster rescue) summary for this iteration.
-    /// `None` when the rescue pass didn't run (Stage 6.5 disabled, or
-    /// no converged iteration produced a labelled set to rescue
-    /// around). Records the same `attached / rejected_*` breakdown as
-    /// `extension`, so a diagnose dump can tell whether the rescue
-    /// gate is firing or whether the relevant cells are not even
-    /// being enumerated.
+    /// `rescue_no_cluster` summary for this iteration. `None` when the
+    /// rescue pass didn't run (disabled, or no converged iteration
+    /// produced a labelled set to rescue around). Records the same
+    /// `attached / rejected_*` breakdown as `extension`, so a diagnose
+    /// dump can tell whether the rescue gate is firing or whether the
+    /// relevant cells are not even being enumerated.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rescue: Option<ExtensionTrace>,
-    /// Stage-6.75 (post-grow centre refit) summary for this iteration.
-    /// `None` when the refit was disabled, when too few labels were
+    /// `refit_cluster_centers` summary for this iteration. `None`
+    /// when the refit was disabled, when too few labels were
     /// available, or when the refit shift was below the trigger
-    /// threshold (no second Stage-6 / 6.5 pass needed).
+    /// threshold (no second `extend_boundary` / `rescue_no_cluster`
+    /// pass needed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refit: Option<RefitTrace>,
-    /// Stage-6.75 cardinal-neighbour BFS extension after refit, if
+    /// Cardinal-neighbour BFS extension after refit, if
     /// `enable_post_grow_bfs_extend` is set. Records `attached /
     /// rejected_*` from
     /// `projective_grid::square::grow_extend::extend_from_labelled`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bfs_extend: Option<BfsExtendTrace>,
-    /// Stage-6.75 second-pass extension after refit, if it ran.
+    /// Post-refit second-pass `extend_boundary` summary, if it ran.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extension2: Option<ExtensionTrace>,
-    /// Stage-6.75 second-pass rescue after refit, if it ran.
+    /// Post-refit second-pass `rescue_no_cluster` summary, if it ran.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rescue2: Option<ExtensionTrace>,
     /// Final geometry-check summary. The geometry check is a
@@ -128,7 +130,7 @@ pub struct IterationTrace {
 }
 
 /// Diagnose payload for the post-grow cardinal-neighbour BFS
-/// extension (Stage 6.75 — `enable_post_grow_bfs_extend`).
+/// extension (`enable_post_grow_bfs_extend`).
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct BfsExtendTrace {
@@ -139,7 +141,8 @@ pub struct BfsExtendTrace {
     pub attached_indices: Vec<usize>,
 }
 
-/// Diagnose payload for the post-grow centre refit (Stage 6.75).
+/// Diagnose payload for the post-grow centre refit
+/// (`refit_cluster_centers`).
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct RefitTrace {
@@ -152,8 +155,9 @@ pub struct RefitTrace {
     /// Number of `Strong` / `NoCluster` corners promoted to
     /// `Clustered` under the new centres.
     pub promoted: u32,
-    /// Whether the second Stage 6 / 6.5 pass actually ran (i.e. the
-    /// shift was above `refit_min_shift_deg`).
+    /// Whether the second `extend_boundary` / `rescue_no_cluster`
+    /// pass actually ran (i.e. the shift was above
+    /// `refit_min_shift_deg`).
     pub second_pass_ran: bool,
 }
 
@@ -225,18 +229,20 @@ impl From<&ExtensionStats> for ExtensionTrace {
 pub struct StageCounts {
     /// Corners passed into the detector.
     pub input_corners: usize,
-    /// Corners reaching `CornerStage::Strong` (Stage 1 survivors).
+    /// Corners reaching `CornerStage::Strong` (`prefilter` survivors).
     pub after_strength_filter: usize,
-    /// Corners reaching `CornerStage::Clustered` (Stage 3 survivors).
+    /// Corners reaching `CornerStage::Clustered` (`cluster_axes`
+    /// survivors).
     pub after_clustering: usize,
-    /// `true` if a seed was found (Stage 5 succeeded).
+    /// `true` if a seed was found (`find_seed` succeeded).
     pub seed_found: bool,
-    /// Number of validation iterations executed (Stages 5–7 loop).
+    /// Number of validation iterations executed
+    /// (`find_seed → grow → validate` loop).
     pub validation_iterations: u32,
     /// Total corners blacklisted across all validation iterations.
     pub blacklisted_total: usize,
-    /// Final labelled corner count after Stage 8 boosters
-    /// (`0` if no detection was emitted).
+    /// Final labelled corner count after `apply_boosters` (`0` if no
+    /// detection was emitted).
     pub labelled_final: usize,
 }
 
@@ -596,10 +602,10 @@ impl Detector {
                 // labelled set so the H fit isn't pulled by mid-loop
                 // candidates that the validator would later reject.
                 // Same parity / axis-cluster / edge invariants as BFS,
-                // plus a tighter ambiguity gate. Approach (b) blacklist
-                // scope (Q2): we re-validate immediately after Stage 6
-                // and drop any extension attachments the validator
-                // rejects, but DON'T re-run the BFS / re-fit H.
+                // plus a tighter ambiguity gate. Blacklist scope: we
+                // re-validate immediately after Stage 6 and drop any
+                // extension attachments the validator rejects, but
+                // DON'T re-run the BFS / re-fit H.
                 let extension_stats = run_stage6(
                     &augs,
                     &mut grow_res,
@@ -812,16 +818,6 @@ impl Detector {
                             if self.params.enable_post_grow_bfs_extend {
                                 let positions: Vec<Point2<f32>> =
                                     augs.iter().map(|c| c.position).collect();
-                                let mut pg_grow = projective_grid::square::grow::GrowResult {
-                                    labelled: std::mem::take(&mut grow_res.labelled),
-                                    by_corner: std::mem::take(&mut grow_res.by_corner),
-                                    ambiguous: std::mem::take(&mut grow_res.ambiguous),
-                                    holes: std::mem::take(&mut grow_res.holes),
-                                    grid_u: grow_res.grid_u,
-                                    grid_v: grow_res.grid_v,
-                                    parity_shift_i: grow_res.parity_shift_i,
-                                    parity_shift_j: grow_res.parity_shift_j,
-                                };
                                 // Stage 6.75 BFS extend runs in
                                 // post-rebase coords; same parity-shift
                                 // rationale as `run_stage6`.
@@ -843,7 +839,7 @@ impl Detector {
                                 let bfs_stats =
                                     projective_grid::square::grow_extend::extend_from_labelled(
                                         &positions,
-                                        &mut pg_grow,
+                                        &mut grow_res,
                                         cell_size,
                                         &bfs_params,
                                         &bfs_validator,
@@ -855,10 +851,6 @@ impl Detector {
                                         local_h_residual_px: None,
                                     };
                                 }
-                                grow_res.labelled = pg_grow.labelled;
-                                grow_res.by_corner = pg_grow.by_corner;
-                                grow_res.ambiguous = pg_grow.ambiguous;
-                                grow_res.holes = pg_grow.holes;
                                 iteration_bfs_extend = Some(BfsExtendTrace {
                                     attached: bfs_stats.attached,
                                     rejected_no_candidate: bfs_stats.rejected_no_candidate,
@@ -939,7 +931,7 @@ impl Detector {
 
                 let mut grow_mut = grow_res;
 
-                // Phase E recall boosters: interior gap fill + line
+                // Recall boosters: interior gap fill + line
                 // extrapolation. Runs after Stage 6 so it can fill
                 // any holes the global-H pass left behind. Same
                 // attachment invariants as growth.
@@ -1088,50 +1080,27 @@ fn run_stage6(
     params: &DetectorParams,
 ) -> ExtensionStats {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let mut pg_grow = projective_grid::square::grow::GrowResult {
-        labelled: std::mem::take(&mut grow_res.labelled),
-        by_corner: std::mem::take(&mut grow_res.by_corner),
-        ambiguous: std::mem::take(&mut grow_res.ambiguous),
-        holes: std::mem::take(&mut grow_res.holes),
-        grid_u: grow_res.grid_u,
-        grid_v: grow_res.grid_v,
-        parity_shift_i: grow_res.parity_shift_i,
-        parity_shift_j: grow_res.parity_shift_j,
-    };
 
     // Stage 6 runs in post-rebase coords, so the validator's
     // `required_label_at(i, j)` must add the rebase parity shift back
     // to query the chessboard parity that BFS used in pre-rebase
-    // coords. See `pg_grow::GrowResult::parity_shift_i` for the full
-    // discussion.
+    // coords. See `GrowResult::parity_shift_i` for the full discussion.
     let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
     let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params)
         .with_parity_shift(parity_shift);
-    let stats = if params.stage6_local_h {
+    if params.stage6_local_h {
         let mut local_params = LocalExtensionParams::default();
         local_params.k_nearest = params.stage6_local_k_nearest;
-        extend_via_local_homography(
-            &positions,
-            &mut pg_grow,
-            cell_size,
-            &local_params,
-            &validator,
-        )
+        extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
     } else {
         extend_via_global_homography(
             &positions,
-            &mut pg_grow,
+            grow_res,
             cell_size,
             &ExtensionParams::default(),
             &validator,
         )
-    };
-
-    grow_res.labelled = pg_grow.labelled;
-    grow_res.by_corner = pg_grow.by_corner;
-    grow_res.ambiguous = pg_grow.ambiguous;
-    grow_res.holes = pg_grow.holes;
-    stats
+    }
 }
 
 /// Stage 6.5: NoCluster rescue. Reuses
@@ -1150,40 +1119,18 @@ fn run_stage6_5_rescue(
     params: &DetectorParams,
 ) -> ExtensionStats {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let mut pg_grow = projective_grid::square::grow::GrowResult {
-        labelled: std::mem::take(&mut grow_res.labelled),
-        by_corner: std::mem::take(&mut grow_res.by_corner),
-        ambiguous: std::mem::take(&mut grow_res.ambiguous),
-        holes: std::mem::take(&mut grow_res.holes),
-        grid_u: grow_res.grid_u,
-        grid_v: grow_res.grid_v,
-        parity_shift_i: grow_res.parity_shift_i,
-        parity_shift_j: grow_res.parity_shift_j,
-    };
 
     // Stage 6.5 runs in post-rebase coords; the rescue validator's
     // `required_label_at(i, j)` adds the rebase parity shift back to
     // recover the BFS pre-rebase chessboard parity at the post-rebase
-    // cell. See `pg_grow::GrowResult::parity_shift_i`.
+    // cell. See `GrowResult::parity_shift_i`.
     let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
     let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params)
         .with_parity_shift(parity_shift);
     let mut local_params = LocalExtensionParams::default();
     local_params.k_nearest = params.stage6_5_local_k_nearest;
     local_params.common.search_rel = params.rescue_search_rel;
-    let stats = extend_via_local_homography(
-        &positions,
-        &mut pg_grow,
-        cell_size,
-        &local_params,
-        &validator,
-    );
-
-    grow_res.labelled = pg_grow.labelled;
-    grow_res.by_corner = pg_grow.by_corner;
-    grow_res.ambiguous = pg_grow.ambiguous;
-    grow_res.holes = pg_grow.holes;
-    stats
+    extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
 }
 
 /// Mandatory final precision gate. Runs after every other stage and

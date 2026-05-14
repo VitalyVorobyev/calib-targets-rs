@@ -1,4 +1,9 @@
-//! Boundary extension via fitted homography (Stage 6).
+//! Boundary extension of a labelled grid via fitted homography.
+//!
+//! Once an inner block of `(i, j)` labels has been grown, this pass
+//! attempts to extend the labelled set outward by fitting a planar
+//! homography on the existing labels and projecting integer cells
+//! beyond the labelled boundary.
 //!
 //! Two strategies are available:
 //!
@@ -17,8 +22,7 @@
 //!   candidate cell), but materially better recall on extreme-angle
 //!   inputs and frames where a single H doesn't fit.
 //!
-//! Callers pick a strategy based on the expected input. The chessboard
-//! detector uses `DetectorParams::stage6_local_h` to flip between them.
+//! Callers pick a strategy based on the expected input.
 //!
 //! | Submodule | Responsibility |
 //! |---|---|
@@ -28,13 +32,13 @@
 //!
 //! # Precision contract
 //!
-//! Stage 6 attachments must obey the same invariants as BFS attachments
-//! (zero false-positive labels). Three layers of defence:
+//! Boundary-extension attachments must obey the same invariants as BFS
+//! attachments (zero false-positive labels). Three layers of defence:
 //!
 //! 1. **Reprojection-residual gate.** Median and worst-case residual of
 //!    `|H · (i, j) − pos(label)|` are measured on the labelled set; if
-//!    either exceeds the configured thresholds (× `cell_size`), Stage 6
-//!    refuses to extrapolate.
+//!    either exceeds the configured thresholds (× `cell_size`), the
+//!    pass refuses to extrapolate.
 //!
 //! 2. **Same per-corner gates as BFS.** Candidate filtering uses the
 //!    validator's `is_eligible` + `label_of` against `required_label_at`
@@ -53,8 +57,8 @@ pub use local::extend_via_local_homography;
 
 use crate::homography::HomographyQuality;
 
-/// Parameters shared between [`ExtensionParams`] (global-H Stage 6)
-/// and [`LocalExtensionParams`] (local-H Stage 6).
+/// Parameters shared between [`ExtensionParams`] (global-H extension)
+/// and [`LocalExtensionParams`] (local-H extension).
 ///
 /// Factoring these into a single struct ensures that tuning one
 /// strategy's common knobs and then switching strategies doesn't
@@ -154,9 +158,9 @@ impl Default for LocalExtensionParams {
 
 /// Diagnostic counters returned by both extension strategies.
 ///
-/// `attached_indices` lets callers identify Stage-6 attachments distinct
-/// from Stage-5 BFS labels, e.g., for downstream blacklist scoping or
-/// overlay rendering.
+/// `attached_indices` lets callers identify boundary-extension
+/// attachments distinct from BFS-grow labels, e.g., for downstream
+/// blacklist scoping or overlay rendering.
 #[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct ExtensionStats {

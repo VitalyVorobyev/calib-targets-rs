@@ -336,6 +336,17 @@ enforced inside `grow::grow_from_seed`.
 
 **New warnings:** fix them; do not suppress.
 
+**No `#[allow(clippy::…)]` in production code.** If a clippy lint
+fires, fix the underlying issue — extract a param/context struct,
+split the function, or refine the design. The only acceptable file-
+scope allows are: (a) generated code (`include!`-style outputs), and
+(b) `#![allow(non_camel_case_types)]` on FFI crates for C ABI naming.
+Any new `#[allow(...)]` attribute requires explicit review approval.
+Workspace-level clippy lints are enforced via `[workspace.lints]` in
+the root `Cargo.toml` and `[lints] workspace = true` in every crate
+— `too_many_arguments` is `deny` and must not be re-introduced via
+an inline allow.
+
 **Pre-commit gate — always run before `git commit`:**
 
 ```bash

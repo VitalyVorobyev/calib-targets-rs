@@ -1,4 +1,4 @@
-//! Stage 6 — BFS-style growth over the labelled `(i, j)` set.
+//! `grow` stage — BFS-style growth over the labelled `(i, j)` set.
 //!
 //! The pattern-agnostic machinery (BFS queue, KD-tree, prediction,
 //! ambiguity resolution, rebase-to-origin) lives in
@@ -17,49 +17,11 @@ use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
 use crate::seed::Seed;
 use calib_targets_core::AxisEstimate;
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
 use projective_grid::square::grow as pg_grow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-pub use pg_grow::{GrowParams, GrowResult as PgGrowResult};
-
-/// Outcome of a grow pass.
-///
-/// Mirrors [`pg_grow::GrowResult`] but keeps the chessboard-local
-/// field names overlays and boosters already depend on.
-pub struct GrowResult {
-    pub labelled: HashMap<(i32, i32), usize>,
-    pub by_corner: HashMap<usize, (i32, i32)>,
-    pub ambiguous: HashSet<(i32, i32)>,
-    pub holes: HashSet<(i32, i32)>,
-    pub grid_u: Vector2<f32>,
-    pub grid_v: Vector2<f32>,
-    /// Parity shift applied during the post-BFS rebase. See
-    /// [`pg_grow::GrowResult::parity_shift_i`] /
-    /// [`pg_grow::GrowResult::parity_shift_j`] for the full discussion.
-    /// Chessboard-specific `required_label_at(i, j)` consumers must
-    /// adjust by `(i + parity_shift_i + j + parity_shift_j) % 2` to
-    /// recover the pre-rebase parity at the post-rebase cell — i.e.
-    /// when `(parity_shift_i + parity_shift_j) % 2 == 1`, the parity
-    /// is inverted.
-    pub parity_shift_i: i32,
-    pub parity_shift_j: i32,
-}
-
-impl From<pg_grow::GrowResult> for GrowResult {
-    fn from(r: pg_grow::GrowResult) -> Self {
-        Self {
-            labelled: r.labelled,
-            by_corner: r.by_corner,
-            ambiguous: r.ambiguous,
-            holes: r.holes,
-            grid_u: r.grid_u,
-            grid_v: r.grid_v,
-            parity_shift_i: r.parity_shift_i,
-            parity_shift_j: r.parity_shift_j,
-        }
-    }
-}
+pub use pg_grow::{GrowParams, GrowResult};
 
 /// Grow from the seed. Returns accepted `(i, j) → index` labels.
 ///
@@ -103,7 +65,7 @@ pub fn grow_from_seed(
         };
     }
 
-    pg_result.into()
+    pg_result
 }
 
 /// Chessboard's plug-in for [`pg_grow::GrowValidator`].
@@ -122,8 +84,9 @@ pub(crate) struct ChessboardGrowValidator<'a> {
     pub(crate) step_tol: f32,
     /// Parity shift applied by the post-BFS rebase. `0` during BFS
     /// (where coords are pre-rebase), and `(parity_shift_i +
-    /// parity_shift_j) % 2` from `pg_grow::GrowResult` for Stage 6 /
-    /// 6.5 / boosters / geometry-check (where coords are post-rebase).
+    /// parity_shift_j) % 2` from [`GrowResult`] for the
+    /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters` /
+    /// `final_geometry_check` stages (where coords are post-rebase).
     /// When `1`, `required_label_at(i, j)` returns the FLIPPED
     /// chessboard convention to match the BFS-assigned labels.
     pub(crate) parity_shift: i32,
@@ -266,7 +229,7 @@ fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f3
 /// returns the cheaper of canonical/swapped along with its `max_d`,
 /// or `None` only when both axes are at the no-info sentinel. Used by
 /// [`ChessboardRescueValidator`] to infer parity for `NoCluster` /
-/// `Strong` corners at Stage 6.5.
+/// `Strong` corners in the `rescue_no_cluster` stage.
 #[inline]
 fn infer_label_with_max_d(
     axes: &[AxisEstimate; 2],

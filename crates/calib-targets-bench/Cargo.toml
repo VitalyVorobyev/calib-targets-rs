@@ -28,3 +28,6 @@ path = "src/bin/bench.rs"
 [[bin]]
 name = "topo_stage_timing"
 path = "src/bin/topo_stage_timing.rs"
+
+[lints]
+workspace = true

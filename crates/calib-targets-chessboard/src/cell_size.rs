@@ -13,9 +13,8 @@ use kiddo::{KdTree, SquaredEuclidean};
 
 /// Estimate the global cell size from the clustered corner set.
 ///
-/// Only corners in stage `Clustered` or later contribute (per spec
-/// §5.4). Returns `None` when fewer than two positions are
-/// available.
+/// Only corners in stage `Clustered` or later contribute. Returns
+/// `None` when fewer than two positions are available.
 ///
 /// The optional `cell_size_hint` in [`DetectorParams`] is consulted
 /// and, if close enough, returned directly — this lets dataset-

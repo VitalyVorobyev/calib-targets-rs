@@ -1,4 +1,4 @@
-//! Global-homography Stage 6 extension.
+//! Global-homography boundary extension.
 //!
 //! [`extend_via_global_homography`] fits a single `H : (i,j) → pixel`
 //! over the entire labelled set and uses it to predict cells outside

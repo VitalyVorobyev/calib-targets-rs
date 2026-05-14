@@ -1,4 +1,4 @@
-//! Topological + geometric filtering of merged quads (paper §4 + Phase D2).
+//! Topological + geometric filtering of merged quads.
 //!
 //! - **Topological filter**: a corner with quad-mesh degree > 4 is illegal
 //!   (a regular grid has max degree 4). Quads with two or more illegal

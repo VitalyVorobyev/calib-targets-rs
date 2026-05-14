@@ -199,16 +199,16 @@ fn main() {
             } else {
                 snap
             };
-            let (report, diag) = run_one(
-                target_idx,
-                snap_idx,
-                &snap,
-                args.upscale,
-                &chess_cfg,
-                &detector,
-                &spec,
-                args.emit_diag,
-            );
+            let (report, diag) = run_one(&RunCtx {
+                target_index: target_idx,
+                snap_index: snap_idx,
+                snap: &snap,
+                upscale: args.upscale,
+                chess_cfg: &chess_cfg,
+                detector: &detector,
+                board: &spec,
+                emit_diag: args.emit_diag,
+            });
             agg.record(&report);
 
             let json = serde_json::to_string(&report).expect("serialize");
@@ -297,17 +297,26 @@ fn upscale_image(src: &image::GrayImage, factor: u32) -> image::GrayImage {
     )
 }
 
-#[allow(clippy::too_many_arguments)]
-fn run_one(
+struct RunCtx<'a> {
     target_index: u32,
     snap_index: u32,
-    snap: &image::GrayImage,
+    snap: &'a image::GrayImage,
     upscale: u32,
-    chess_cfg: &calib_targets_core::DetectorConfig,
-    detector: &CharucoDetector,
-    board: &CharucoBoardSpec,
+    chess_cfg: &'a calib_targets_core::DetectorConfig,
+    detector: &'a CharucoDetector,
+    board: &'a CharucoBoardSpec,
     emit_diag: bool,
-) -> (CharucoFrameReport, Option<FrameDiag>) {
+}
+
+fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
+    let target_index = ctx.target_index;
+    let snap_index = ctx.snap_index;
+    let snap = ctx.snap;
+    let upscale = ctx.upscale;
+    let chess_cfg = ctx.chess_cfg;
+    let detector = ctx.detector;
+    let board = ctx.board;
+    let emit_diag = ctx.emit_diag;
     let width = snap.width();
     let height = snap.height();
 
