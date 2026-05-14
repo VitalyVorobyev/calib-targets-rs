@@ -5,13 +5,13 @@ The script uses ``calib_targets.trace_chessboard_topological`` so every
 intermediate stage comes from the Rust implementation rather than a parallel
 Python copy of the algorithm.
 
-Output layout:
+Default output layout:
 
-    docs/img/02-topo-grid/<image-stem>/00-input.png
-    docs/img/02-topo-grid/<image-stem>/01-corners-axes.png
+    preview/topo-grid-overlays/<image-stem>/00-input.png
+    preview/topo-grid-overlays/<image-stem>/01-corners-axes.png
     ...
-    docs/img/02-topo-grid/<image-stem>/09-final-grid.png
-    docs/img/02-topo-grid/manifest.json
+    preview/topo-grid-overlays/<image-stem>/09-final-recovered-grid.png
+    preview/topo-grid-overlays/manifest.json
 """
 
 from __future__ import annotations
@@ -42,8 +42,8 @@ STAGES = [
     "05-raw-quads.png",
     "06-topology-filter.png",
     "07-geometry-filter.png",
-    "08-walk-labels.png",
-    "09-final-grid.png",
+    "08-walk-components.png",
+    "09-final-recovered-grid.png",
 ]
 
 EDGE_COLORS = {
@@ -58,6 +58,13 @@ TRI_COLORS = {
     "multi_diagonal": "#3182bd",
     "has_spurious": "#de2d26",
 }
+
+COMPONENT_COLORS = [
+    ("#1b9e77", "#377eb8"),
+    ("#e7298a", "#7570b3"),
+    ("#66a61e", "#e6ab02"),
+    ("#a6761d", "#666666"),
+]
 
 
 def load_gray(path: Path, upscale: float = 1.0) -> np.ndarray:
@@ -171,6 +178,16 @@ def draw_usable(
         ax.scatter([x], [y], s=15, c=color, edgecolors="black", linewidths=0.25, zorder=4)
 
 
+def draw_usable_context(ax: plt.Axes, payload: dict[str, Any]) -> None:
+    """Draw usable corners as neutral context, not as a stage result."""
+    pos = corner_positions(payload)
+    usable_set = usable_indices(payload)
+    xs = [pos[idx][0] for idx in usable_set if idx in pos]
+    ys = [pos[idx][1] for idx in usable_set if idx in pos]
+    if xs:
+        ax.scatter(xs, ys, s=8, c="#bdbdbd", edgecolors="none", alpha=0.45, zorder=2)
+
+
 def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
     seen: dict[tuple[int, int], str] = {}
     for tri in trace["triangles"]:
@@ -222,7 +239,7 @@ def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
         alpha = 0.18 if tri["class"] == "mergeable" else 0.07
         ax.fill(xs, ys, color=color, alpha=alpha)
         ax.plot(xs, ys, color=color, lw=0.45, alpha=0.45)
-    draw_usable(ax, payload, only_usable=True)
+    draw_usable_context(ax, payload)
 
 
 def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
@@ -231,6 +248,7 @@ def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
         draw_usable(ax, payload)
         return
     pos = corner_positions(payload)
+    draw_usable_context(ax, payload)
     for quad in trace["quads"]:
         pts = [pos[v] for v in quad["vertices"] if v in pos]
         if len(pts) != 4:
@@ -250,7 +268,7 @@ def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
                 color = "#de2d26"
             alpha, lw = 0.9, 0.85
         ax.plot(xs, ys, color=color, lw=lw, alpha=alpha)
-    draw_usable(ax, payload, only_usable=True)
+        ax.scatter(xs[:-1], ys[:-1], s=16, c=color, edgecolors="black", linewidths=0.2, zorder=4)
 
 
 def component_labels_from_trace(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -269,6 +287,7 @@ def draw_grid_labels(
     labels: list[dict[str, Any]],
     color_i: str = "#1b9e77",
     color_j: str = "#377eb8",
+    label_prefix: str = "",
 ) -> None:
     pos = corner_positions(payload)
     by_grid = {(int(l["i"]), int(l["j"])): int(l["corner_idx"]) for l in labels}
@@ -290,7 +309,7 @@ def draw_grid_labels(
         ax.text(
             x + 2,
             y - 2,
-            f"{i},{j}",
+            f"{label_prefix}{i},{j}",
             fontsize=4.5,
             color="white",
             bbox=dict(boxstyle="square,pad=0.08", fc="black", ec="none", alpha=0.55),
@@ -302,13 +321,26 @@ def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
     """Stage 8: per-component projective-grid walk labels.
 
     Renders every labelled component produced by `build_grid_topological`
-    directly from the projective-grid trace. Each component carries an
-    independent `(i, j)` origin, so components with overlapping labels
-    can co-exist in the plot without a merge step. Stage 9 below shows
-    what's left after the chessboard adapter's mandatory final geometry
-    gate runs over these.
+    directly from the projective-grid trace. Components are drawn
+    independently because every component carries its own local `(i, j)`
+    origin; labels from one component must never be connected to labels
+    from another.
     """
-    draw_grid_labels(ax, payload, component_labels_from_trace(payload))
+    trace = payload.get("trace")
+    if trace is None:
+        return
+    draw_usable_context(ax, payload)
+    for comp in trace["components"]:
+        index = int(comp["index"])
+        color_i, color_j = COMPONENT_COLORS[index % len(COMPONENT_COLORS)]
+        draw_grid_labels(
+            ax,
+            payload,
+            comp["labels"],
+            color_i=color_i,
+            color_j=color_j,
+            label_prefix=f"c{index}:",
+        )
 
 
 def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
@@ -389,8 +421,20 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         quad_edge_max_rel=args.quad_edge_max_rel,
     )
     trace_params = ct.ChessboardParams(graph_build_algorithm="topological", topological=topo)
-    chess_cfg = ct.ChessConfig(threshold_value=args.chess_threshold)
-    payload = ct.trace_chessboard_topological(image, chess_cfg=chess_cfg, params=trace_params)
+    if args.chess_threshold_kind == "absolute":
+        threshold = ct.Threshold.absolute(args.chess_threshold)
+    else:
+        threshold = ct.Threshold.relative(args.chess_threshold)
+    chess_cfg = ct.ChessConfig(
+        threshold=threshold,
+        orientation_method=args.orientation_method,
+    )
+    payload = ct.trace_chessboard_topological(
+        image,
+        chess_cfg=chess_cfg,
+        params=trace_params,
+        pre_blur_sigma_px=args.pre_blur_sigma,
+    )
     if args.final_algorithm != "topological":
         final_params = ct.ChessboardParams(graph_build_algorithm=args.final_algorithm)
         payload["detections"] = [
@@ -399,12 +443,16 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
                 image,
                 chess_cfg=chess_cfg,
                 params=final_params,
+                pre_blur_sigma_px=args.pre_blur_sigma,
             )
         ]
         payload["final_graph_build_algorithm"] = args.final_algorithm
 
     stem = f"{path.stem}-{args.variant_name}" if args.variant_name else path.stem
     stem_dir = out_dir / stem
+    if stem_dir.exists():
+        for stale in stem_dir.glob("*.png"):
+            stale.unlink()
     save_input(image, stem_dir / STAGES[0])
     save_overlay(
         image,
@@ -443,8 +491,8 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     save_overlay(image, stem_dir / STAGES[5], f"{path.name}: raw merged quads", lambda ax: draw_quads(ax, payload, "raw"))
     save_overlay(image, stem_dir / STAGES[6], f"{path.name}: topological quad filter", lambda ax: draw_quads(ax, payload, "topology"))
     save_overlay(image, stem_dir / STAGES[7], f"{path.name}: geometry quad filter", lambda ax: draw_quads(ax, payload, "geometry"))
-    save_overlay(image, stem_dir / STAGES[8], f"{path.name}: topological walk labels", lambda ax: draw_walk(ax, payload))
-    save_overlay(image, stem_dir / STAGES[9], f"{path.name}: final merged detection", lambda ax: draw_final(ax, payload))
+    save_overlay(image, stem_dir / STAGES[8], f"{path.name}: topological walk components", lambda ax: draw_walk(ax, payload))
+    save_overlay(image, stem_dir / STAGES[9], f"{path.name}: final recovered detection", lambda ax: draw_final(ax, payload))
 
     trace = payload.get("trace")
     diagnostics = trace.get("diagnostics") if trace else {}
@@ -467,12 +515,14 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-dir", type=Path, default=Path("testdata/02-topo-grid"))
-    parser.add_argument("--out-dir", type=Path, default=Path("docs/img/02-topo-grid"))
+    parser.add_argument("--out-dir", type=Path, default=Path("preview/topo-grid-overlays"))
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
     parser.add_argument("--final-algorithm", choices=["topological", "chessboard_v2"], default="topological")
     parser.add_argument("--chess-threshold", type=float, default=100.0)
+    parser.add_argument("--chess-threshold-kind", choices=["absolute", "relative"], default="absolute")
+    parser.add_argument("--orientation-method", choices=["ring_fit", "disk_fit"], default="ring_fit")
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
@@ -502,6 +552,8 @@ def main() -> None:
         "out_dir": str(args.out_dir),
         "params": {
             "chess_threshold": args.chess_threshold,
+            "chess_threshold_kind": args.chess_threshold_kind,
+            "orientation_method": args.orientation_method,
             "pre_blur_sigma": args.pre_blur_sigma,
             "upscale": args.upscale,
             "final_algorithm": args.final_algorithm,

@@ -142,8 +142,10 @@ pub struct TopologicalParams {
     /// and `axis ± π/4` for the edge to be classified as a *diagonal* at
     /// that corner. Default: `15° = 0.262`. With
     /// [`Self::axis_align_tol_rad`] also at 15°, the sum is below π/4
-    /// so a single edge can never satisfy both predicates — the
-    /// classification is unambiguous by construction.
+    /// so a single edge can never satisfy both base predicates. The
+    /// classifier may still promote broad diagonal candidates in a bounded
+    /// second pass because perspective and local scale anisotropy move
+    /// projected cell diagonals away from the fixed 45° assumption.
     pub diagonal_angle_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a corner to participate
     /// in classification. Corners whose both axes have `sigma >=

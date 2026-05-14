@@ -12,11 +12,12 @@
 //!   edge crosses a chessboard cell at this corner);
 //! - otherwise → **Spurious** (background or unaligned noise).
 //!
-//! The whole-edge classification is the conjunction of the per-endpoint
-//! classifications: an edge is `Grid` iff both endpoints see it as
-//! `Grid`, `Diagonal` iff both see it as `Diagonal`, otherwise
-//! `Spurious`. This is the axis-only analogue of the paper's "shared
-//! edge of a same-color triangle pair is the diagonal of a cell".
+//! The base whole-edge classification is the conjunction of the
+//! per-endpoint classifications: an edge is `Grid` iff both endpoints see it
+//! as `Grid`, `Diagonal` iff both see it as `Diagonal`, otherwise
+//! `Spurious`. A bounded second pass then promotes broad diagonal candidates:
+//! a projected cell diagonal is not generally 45° from the projected grid
+//! axes, especially under perspective or optical warp.
 //!
 //! Both endpoints of every edge are guaranteed to have at least one
 //! usable axis: high-`sigma` corners are filtered out at triangulation
@@ -108,6 +109,15 @@ fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalPara
     EdgeAt::Spurious
 }
 
+fn relaxed_diagonal_tol_rad(params: &TopologicalParams) -> f32 {
+    // A projected cell diagonal is not generally 45 degrees from the
+    // projected grid axes: perspective and local scale anisotropy can pull it
+    // much closer to one side of the cell. The base classifier keeps the
+    // precise 15°/15° split; this bounded relaxation catches broad diagonals
+    // while preserving `Grid` as the first, stricter predicate.
+    params.diagonal_angle_tol_rad + 1.5 * params.axis_align_tol_rad
+}
+
 pub(crate) fn classify_edge_metric(
     positions: &[Point2<f32>],
     axes: &[[AxisHint; 2]],
@@ -130,6 +140,19 @@ pub(crate) fn classify_edge_metric(
         grid_margin_rad: Some(params.axis_align_tol_rad - grid_distance_rad),
         diagonal_margin_rad: Some(params.diagonal_angle_tol_rad - diagonal_distance_rad),
     }
+}
+
+fn edge_passes_relaxed_diagonal_gate(
+    positions: &[Point2<f32>],
+    axes: &[[AxisHint; 2]],
+    triangulation: &Triangulation,
+    edge: usize,
+    params: &TopologicalParams,
+) -> bool {
+    let metric = classify_edge_metric(positions, axes, triangulation, edge, params);
+    metric
+        .diagonal_distance_rad
+        .is_some_and(|d| d < relaxed_diagonal_tol_rad(params))
 }
 
 /// Classify every directed half-edge in the triangulation.
@@ -164,6 +187,11 @@ pub(crate) fn classify_all_edges(
             (EdgeAt::Diagonal, EdgeAt::Diagonal) => EdgeKind::Diagonal,
             _ => EdgeKind::Spurious,
         };
+        if *kind == EdgeKind::Spurious
+            && edge_passes_relaxed_diagonal_gate(positions, axes, triangulation, e, params)
+        {
+            *kind = EdgeKind::Diagonal;
+        }
     }
     kinds
 }

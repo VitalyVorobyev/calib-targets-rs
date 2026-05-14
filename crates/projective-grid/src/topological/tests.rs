@@ -22,6 +22,19 @@ fn axes_axis_aligned() -> [AxisHint; 2] {
     ]
 }
 
+fn axes_pair(angle0: f32, angle1: f32) -> [AxisHint; 2] {
+    [
+        AxisHint {
+            angle: angle0,
+            sigma: 0.05,
+        },
+        AxisHint {
+            angle: angle1,
+            sigma: 0.05,
+        },
+    ]
+}
+
 fn axes_no_info() -> [AxisHint; 2] {
     [AxisHint::default(), AxisHint::default()]
 }
@@ -47,8 +60,8 @@ fn default_tolerances_are_regression_values() {
     let params = TopologicalParams::default();
     // 15°/15° — paired with the pre-Delaunay cluster gate. Together the
     // two are below π/4 = 45° so an edge can never satisfy both Grid and
-    // Diagonal simultaneously: classification is unambiguous by
-    // construction, no margin-gate disambiguation is needed.
+    // Diagonal simultaneously in the base per-endpoint classifier. Broad
+    // projected diagonals are handled by a bounded second pass.
     assert!((params.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
     assert!((params.diagonal_angle_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
 
@@ -89,6 +102,30 @@ fn three_corners_of_one_cell_cannot_seed_a_topological_component() {
     assert_eq!(trace.diagnostics.triangles, 1);
     assert_eq!(trace.diagnostics.quads_merged, 0);
     assert_eq!(trace.components.len(), 0);
+}
+
+#[test]
+fn relaxed_diagonal_recovers_foreshortened_cell() {
+    // A projected cell diagonal is not generally 45° from the projected grid
+    // axes. This parallelogram has sides at 0° and 54° with strong local scale
+    // anisotropy, so the Delaunay diagonal is about 26° from the horizontal
+    // axis: outside the standalone 15° diagonal gate, but still a valid
+    // projected cell diagonal.
+    let axis1 = 54.0_f32.to_radians();
+    let side_i = Point2::new(100.0, 0.0);
+    let side_j = Point2::new(45.0 * axis1.cos(), 45.0 * axis1.sin());
+    let pts = vec![
+        Point2::new(0.0, 0.0),
+        side_i,
+        side_j,
+        Point2::new(side_i.x + side_j.x, side_i.y + side_j.y),
+    ];
+    let axs = vec![axes_pair(0.0, axis1); pts.len()];
+
+    let trace = build_grid_topological_trace(&pts, &axs, &TopologicalParams::default()).unwrap();
+    assert_eq!(trace.diagnostics.quads_merged, 1);
+    assert_eq!(trace.components.len(), 1);
+    assert_eq!(trace.components[0].labels.len(), 4);
 }
 
 #[test]

@@ -69,6 +69,32 @@ pub fn apply_boosters(
     blacklist: &HashSet<usize>,
     params: &DetectorParams,
 ) -> BoosterResult {
+    apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, false)
+}
+
+/// Variant used by the topological path, whose visible components can be
+/// strongly anisotropic before final recovery has filled the boundary.
+pub(crate) fn apply_boosters_with_directional_edge_scale(
+    corners: &mut [CornerAug],
+    grow: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+) -> BoosterResult {
+    apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_boosters_impl(
+    corners: &mut [CornerAug],
+    grow: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+    use_directional_edge_scale: bool,
+) -> BoosterResult {
     let mut result = BoosterResult::default();
     let mut total_added = 0usize;
 
@@ -102,6 +128,7 @@ pub fn apply_boosters(
                 blacklist,
                 &positions,
                 params,
+                use_directional_edge_scale,
             );
             if attached {
                 added_this_iter += 1;
@@ -213,6 +240,7 @@ fn try_attach_at(
     blacklist: &HashSet<usize>,
     positions: &[Point2<f32>],
     params: &DetectorParams,
+    use_directional_edge_scale: bool,
 ) -> bool {
     // Apply the post-rebase parity shift so the chessboard parity at
     // `pos` matches the BFS pre-rebase convention. See
@@ -309,9 +337,12 @@ fn try_attach_at(
         pos,
         &grow.labelled,
         corners,
-        cell_size,
-        step_tol,
-        edge_tol,
+        EdgeCheckConfig {
+            cell_size,
+            step_tol,
+            edge_tol,
+            use_directional_edge_scale,
+        },
     ) {
         return false;
     }
@@ -392,18 +423,22 @@ fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f3
     canon_max.min(swap_max) <= tol
 }
 
+#[derive(Clone, Copy)]
+struct EdgeCheckConfig {
+    cell_size: f32,
+    step_tol: f32,
+    edge_tol: f32,
+    use_directional_edge_scale: bool,
+}
+
 fn any_cardinal_edge_ok(
     c_idx: usize,
     pos: (i32, i32),
     labelled: &std::collections::HashMap<(i32, i32), usize>,
     corners: &[CornerAug],
-    cell_size: f32,
-    step_tol: f32,
-    edge_tol: f32,
+    cfg: EdgeCheckConfig,
 ) -> bool {
     let c = &corners[c_idx];
-    let min_len = (1.0 - step_tol) * cell_size;
-    let max_len = (1.0 + step_tol) * cell_size;
     for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
         let neigh = (pos.0 + di, pos.1 + dj);
         let Some(&n_idx) = labelled.get(&neigh) else {
@@ -412,6 +447,13 @@ fn any_cardinal_edge_ok(
         let n = &corners[n_idx];
         let off = n.position - c.position;
         let dist = off.norm();
+        let expected_len = if cfg.use_directional_edge_scale {
+            expected_cardinal_edge_len(pos, neigh, labelled, corners, cfg.cell_size)
+        } else {
+            cfg.cell_size
+        };
+        let min_len = (1.0 - cfg.step_tol) * expected_len;
+        let max_len = (1.0 + cfg.step_tol) * expected_len;
         if dist < min_len || dist > max_len {
             continue;
         }
@@ -419,13 +461,13 @@ fn any_cardinal_edge_ok(
         let d_c0 = angular_dist_pi(ang, wrap_pi(c.axes[0].angle));
         let d_c1 = angular_dist_pi(ang, wrap_pi(c.axes[1].angle));
         let (slot_c, d_c) = if d_c0 <= d_c1 { (0, d_c0) } else { (1, d_c1) };
-        if d_c > edge_tol {
+        if d_c > cfg.edge_tol {
             continue;
         }
         let d_n0 = angular_dist_pi(ang, wrap_pi(n.axes[0].angle));
         let d_n1 = angular_dist_pi(ang, wrap_pi(n.axes[1].angle));
         let (slot_n, d_n) = if d_n0 <= d_n1 { (0, d_n0) } else { (1, d_n1) };
-        if d_n > edge_tol {
+        if d_n > cfg.edge_tol {
             continue;
         }
         if slot_c != slot_n {
@@ -433,6 +475,52 @@ fn any_cardinal_edge_ok(
         }
     }
     false
+}
+
+fn corner_distance(corners: &[CornerAug], a: usize, b: usize) -> f32 {
+    (corners[b].position - corners[a].position).norm()
+}
+
+fn median_len(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.total_cmp(b));
+    Some(values[values.len() / 2])
+}
+
+fn expected_cardinal_edge_len(
+    pos: (i32, i32),
+    neigh: (i32, i32),
+    labelled: &std::collections::HashMap<(i32, i32), usize>,
+    corners: &[CornerAug],
+    fallback_cell_size: f32,
+) -> f32 {
+    let step = (neigh.0 - pos.0, neigh.1 - pos.1);
+    debug_assert!(matches!(step, (1, 0) | (-1, 0) | (0, 1) | (0, -1)));
+
+    // Best signal: the next already-labelled edge along the same local line.
+    // This handles perspective/optical anisotropy at the boundary: on
+    // GeminiChess2 the right-edge vertical pitch is much shorter than the
+    // component's horizontal pitch, so a scalar cell size rejects true
+    // top/bottom extrapolations.
+    let far = (neigh.0 + step.0, neigh.1 + step.1);
+    if let (Some(&n_idx), Some(&far_idx)) = (labelled.get(&neigh), labelled.get(&far)) {
+        return corner_distance(corners, n_idx, far_idx);
+    }
+
+    // Fallback to the component's directional median, still better than a
+    // single mixed-axis cell-size estimate when the two axes have different
+    // projected scale.
+    let axis = if step.0 != 0 { (1, 0) } else { (0, 1) };
+    let mut lengths = Vec::new();
+    for (&ij, &idx) in labelled {
+        let next = (ij.0 + axis.0, ij.1 + axis.1);
+        if let Some(&next_idx) = labelled.get(&next) {
+            lengths.push(corner_distance(corners, idx, next_idx));
+        }
+    }
+    median_len(&mut lengths).unwrap_or(fallback_cell_size)
 }
 
 #[cfg(test)]
@@ -545,5 +633,79 @@ mod tests {
         let result = apply_boosters(&mut corners, &mut grow, centers, s, &blacklist, &params);
         assert_eq!(grow.labelled.len(), before);
         assert_eq!(result.added, 0);
+    }
+
+    #[test]
+    fn line_extrapolation_uses_directional_edge_scale() {
+        // Topological recovery can start from an anisotropic component: the
+        // horizontal pitch is much larger than the vertical pitch. The booster
+        // edge invariant must compare candidate vertical edges against the
+        // local vertical step, not against the scalar recovery cell size.
+        let axis_u = 0.0_f32;
+        let axis_v = std::f32::consts::FRAC_PI_2;
+        let mut corners = Vec::new();
+        let cols = 2usize;
+        let rows = 5usize;
+        for j in 0..rows {
+            for i in 0..cols {
+                let label = if (i as i32 + j as i32).rem_euclid(2) == 0 {
+                    ClusterLabel::Canonical
+                } else {
+                    ClusterLabel::Swapped
+                };
+                corners.push(make_corner(
+                    j * cols + i,
+                    100.0 + i as f32 * 60.0,
+                    100.0 + j as f32 * 32.0,
+                    axis_u,
+                    axis_v,
+                    label,
+                ));
+            }
+        }
+
+        let params = DetectorParams::default();
+        let centers = cluster_axes(&mut corners, &params).expect("centers");
+        let mut grow = GrowResult {
+            labelled: Default::default(),
+            by_corner: Default::default(),
+            ambiguous: Default::default(),
+            holes: Default::default(),
+            grid_u: nalgebra::Vector2::new(1.0, 0.0),
+            grid_v: nalgebra::Vector2::new(0.0, 1.0),
+            parity_shift_i: 0,
+            parity_shift_j: 0,
+        };
+
+        // Seed only rows 1..=3. Rows 0 and 4 are visible corners just outside
+        // the current bbox and should be recovered by line extrapolation.
+        for j in 1..=3 {
+            for i in 0..cols {
+                let idx = j * cols + i;
+                let at = (i as i32, j as i32);
+                grow.labelled.insert(at, idx);
+                grow.by_corner.insert(idx, at);
+                corners[idx].stage = CornerStage::Labeled {
+                    at,
+                    local_h_residual_px: None,
+                };
+            }
+        }
+
+        let blacklist = HashSet::new();
+        let result = apply_boosters_with_directional_edge_scale(
+            &mut corners,
+            &mut grow,
+            centers,
+            60.0,
+            &blacklist,
+            &params,
+        );
+
+        assert!(result.added >= 4, "expected both extrapolated rows");
+        for i in 0..cols {
+            assert!(grow.labelled.contains_key(&(i as i32, 0)));
+            assert!(grow.labelled.contains_key(&(i as i32, 4)));
+        }
     }
 }

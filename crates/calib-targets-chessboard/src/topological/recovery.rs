@@ -10,7 +10,7 @@ use calib_targets_core::Corner;
 use nalgebra::{Point2, Vector2};
 use projective_grid::{merge_components_local, ComponentInput, GridTransform, GRID_TRANSFORMS_D4};
 
-use crate::boosters::apply_boosters;
+use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};
 use crate::corner::{CornerAug, CornerStage};
 use crate::detector::{build_detection_from_grow, Detection};
@@ -306,7 +306,7 @@ pub(super) fn recover_topological_components(
         if clustered_centers.is_some() && cell_size > 0.0 {
             let recovery_cell_size =
                 estimate_recovery_cell_size_from_labels(&grow.labelled, positions);
-            let _ = apply_boosters(
+            let _ = apply_boosters_with_directional_edge_scale(
                 &mut augs,
                 &mut grow,
                 centers,

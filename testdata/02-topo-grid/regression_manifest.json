@@ -15,13 +15,13 @@
     },
     {
       "path": "testdata/02-topo-grid/GeminiChess2.png",
-      "topological": { "min_labelled": 26, "max_holes": 10 },
+      "topological": { "min_labelled": 29, "max_holes": 7 },
       "chessboard_v2": { "min_labelled": 19, "max_holes": 24 },
       "diagnostic_topological": {
         "min_labeled_corners": 4,
         "axis_align_tol_deg": 15.0,
         "diagonal_angle_tol_deg": 15.0,
-        "min_trace_components": 3,
+        "min_trace_components": 2,
         "min_total_labelled": 22
       }
     },
