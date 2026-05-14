@@ -1,4 +1,12 @@
-# calib-targets-rs
+<h1>
+  <a href="https://vitavision.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="book/src/img/vv-favicon-dark.svg">
+      <img src="book/src/img/vv-favicon-light.svg" alt="vitavision.dev" height="48" align="left">
+    </picture>
+  </a>
+  &nbsp;calib-targets-rs
+</h1>
 
 [![CI](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml)
