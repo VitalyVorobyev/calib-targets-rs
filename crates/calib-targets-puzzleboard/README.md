@@ -111,9 +111,10 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 - **Few visible squares** — `min_window` defaults to 4 (decode needs a
   4×4 square fragment). Lower to 3 only if coverage is guaranteed
   reliable; anything below 4×4 risks ambiguous fragments.
-- **Low contrast / glare on the dots** — drop `chessboard.chess.
-  threshold_value` so more corners survive; edge-bit sampling is gated on
-  the corners, not a separate threshold.
+- **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
+  (e.g. `Threshold::Absolute(8.0)` in place of the workspace default
+  `Threshold::Absolute(15.0)`) so more corners survive; edge-bit sampling
+  is gated on the corners, not a separate threshold.
 - **Motion blur** — use `PuzzleBoardSearchMode::Full` and
   `PuzzleBoardParams::sweep_for_board(&spec)` via
   `detect_puzzleboard_best`; the stronger-contrast config often recovers

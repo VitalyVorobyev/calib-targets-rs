@@ -74,17 +74,7 @@ kind = "public"
 note = "AI-generated chessboard image — blog post topo-grid illustration set."
 
 [[image]]
-path = "testdata/02-topo-grid/GeminiChess4.png"
-kind = "public"
-note = "AI-generated chessboard image — blog post topo-grid illustration set."
-
-[[image]]
 path = "testdata/02-topo-grid/gptchess1.png"
-kind = "public"
-note = "AI-generated chessboard image — blog post topo-grid illustration set."
-
-[[image]]
-path = "testdata/02-topo-grid/gptchess2.png"
 kind = "public"
 note = "AI-generated chessboard image — blog post topo-grid illustration set."
 

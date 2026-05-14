@@ -7,6 +7,72 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## [Unreleased]
+
+Migrates the workspace onto `chess-corners` 0.10 (skipping the
+intermediate 0.9 release in published artifacts), absorbs the
+0.9-era in-tree algorithm work (`OrientationMethod`, `DiskFit`,
+Stage 6.25 / 6.5b, post-Stage-6 axis-slot coherence fix), and
+tightens binding parity around the new tagged-enum detector
+configuration. See
+[`docs/chess-corners-0.10-impact.md`](docs/chess-corners-0.10-impact.md)
+for the full bench matrix and the strict-dominance check that
+keeps the workspace default on `RingFit`.
+
+### Breaking
+
+- **`chess-corners` 0.8 → 0.10.** The upstream
+  `ChessConfig` has been split into a tagged-enum tree:
+  - top-level `DetectorConfig { strategy, threshold, multiscale, upscale, orientation_method, merge_radius }`;
+  - `Threshold::Absolute(f32) | Relative(f32)` replaces the previous
+    `(threshold_mode, threshold_value)` pair;
+  - `MultiscaleConfig::SingleScale | Pyramid { levels, min_size, refinement_radius }`
+    replaces flat `pyramid_levels` / `pyramid_min_size` / `refinement_radius`;
+  - `UpscaleConfig::Disabled | Fixed(u32)` replaces the previous
+    flat upscale fields;
+  - `DescriptorRing::FollowDetector | Canonical | Broad` replaces the
+    boolean `descriptor_use_radius10` hint;
+  - `ChessRefiner::CenterOfMass(_) | Forstner(_) | SaddlePoint(_) | Ml`
+    replaces the discriminator + parallel-tuning-struct shape;
+  - `DetectionStrategy::Chess(ChessConfig) | Radon(RadonConfig)` makes
+    detector dispatch type-checked.
+- **`find_chess_corners_image` is gone.** Replace with
+  `Detector::new(cfg)?.detect(&img)?` (or `detect_u8`). The
+  workspace facade still routes through
+  `calib_targets::detect::detect_corners(&img, &cfg, pre_blur_sigma_px)`,
+  which now constructs the `Detector` internally.
+- **Python `ChessConfig` rewritten end-to-end.** The dataclass
+  ships the tagged-enum tree (`Threshold`, `MultiscaleConfig`,
+  `UpscaleConfig`, `ChessRefiner`, `DetectionStrategy`,
+  `ChessStrategyConfig`) and its `to_dict()` emits the exact JSON
+  shape that `serde_json::to_value(DetectorConfig)` produces on the
+  Rust side. Callers that pre-built dicts with `threshold_value` /
+  `threshold_mode` / `pyramid_levels` get a clear `ValueError`
+  pointing at the migration; legacy keyword construction of the
+  inner `RefinerConfig(kind="forstner")` keeps working via a thin
+  shim that forwards to `ChessRefiner.forstner()`.
+- Markdown documentation refreshed (workspace README, Python
+  README, chessboard / puzzleboard / WASM READMEs, book
+  troubleshooting chapter) for the new threshold and config
+  spellings.
+
+### Added
+
+- `crates/calib-targets-py/python_tests/test_chess_config_rust_roundtrip.py`
+  — end-to-end coverage that the Python `ChessConfig.to_dict()`
+  payload deserializes cleanly through Rust's `serde_json`
+  layer on a real test image. Guards against the silent
+  dict-shape drift that fixtures alone cannot catch.
+
+### Notes
+
+- The 0.9-era algorithm work (`OrientationMethod` plumbing,
+  `DiskFit`, post-Stage-6 axis-slot coherence) was developed
+  in-tree on this branch alongside the 0.10 API migration; the
+  bench matrix is in `docs/chess-corners-0.10-impact.md`. The
+  workspace default stays on `RingFit` (strict-dominance rule
+  did not trigger).
+
 ## 0.8.0
 
 Hardens the chessboard detector with a mandatory final-geometry

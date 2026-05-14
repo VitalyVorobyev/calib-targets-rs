@@ -66,8 +66,13 @@ println!("iterations: {:#?}", frame.iterations);
 1. **No ChESS corners found?** Look for `input_count: 0` in the frame.
    The ChESS detector saw nothing. Check image resolution / contrast;
    override `calib_targets::detect::default_chess_config()` with a
-   custom `ChessConfig` (lower `threshold_value`, change
-   `threshold_mode`) if necessary.
+   custom `DetectorConfig` if necessary — e.g.
+   `DetectorConfig::chess().with_threshold(Threshold::Absolute(8.0))`
+   to drop the noise floor, or
+   `.with_threshold(Threshold::Relative(0.05))` for a fraction of the
+   per-frame peak response. The chess-corners 0.10 release replaced
+   the legacy `(threshold_mode, threshold_value)` pair with the
+   tagged-enum `Threshold` shown above.
 
 2. **Corners found, `grid_directions: None`?** Clustering failed.
    Most common causes:

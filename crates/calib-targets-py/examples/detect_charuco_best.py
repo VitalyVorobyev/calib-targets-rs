@@ -33,51 +33,40 @@ def main() -> None:
         marker_layout=ct.MarkerLayout.OPENCV_CHARUCO,
     )
 
-    # Three configs: base, high-threshold, low-threshold.
+    # Three configs bracketing the workspace ChESS threshold default
+    # (absolute 15.0). The chessboard detector's defaults already cover
+    # the seed/grow/validate invariants on real boards, so we only tune
+    # the threshold and the pre-filter floor.
     base = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.5,
-            min_corners=32,
-            expected_rows=21,
-            expected_cols=21,
-            completeness_threshold=0.05,
-        ),
+        chessboard=ct.ChessboardParams(min_corner_strength=0.5),
         max_hamming=2,
         min_marker_inliers=8,
     )
-    high = ct.CharucoParams(
+    loose = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(
             min_corner_strength=0.5,
-            min_corners=32,
-            expected_rows=21,
-            expected_cols=21,
-            completeness_threshold=0.05,
-            chess=ct.ChessConfig(threshold_value=0.15),
+            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
         ),
         max_hamming=2,
         min_marker_inliers=8,
     )
-    low = ct.CharucoParams(
+    tight = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(
             min_corner_strength=0.5,
-            min_corners=32,
-            expected_rows=21,
-            expected_cols=21,
-            completeness_threshold=0.05,
-            chess=ct.ChessConfig(threshold_value=0.08),
+            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
         ),
         max_hamming=2,
         min_marker_inliers=8,
     )
 
     try:
-        result = ct.detect_charuco_best(image, [base, high, low])
+        result = ct.detect_charuco_best(image, [base, loose, tight])
     except RuntimeError as exc:
         print(f"all configs failed: {exc}")
         return

@@ -23,12 +23,17 @@ def main() -> None:
 
     image = load_gray(sys.argv[1])
 
-    # Three configs with different ChESS thresholds.
+    # Three configs bracketing the workspace ChESS threshold default
+    # (absolute 15.0). Lower floor for blurry inputs, higher for clean.
     base = ct.ChessboardParams()
-    high = ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.15))
-    low = ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.08))
+    loose = ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
+    )
+    tight = ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
+    )
 
-    result = ct.detect_chessboard_best(image, [base, high, low])
+    result = ct.detect_chessboard_best(image, [base, loose, tight])
 
     if result is None:
         print("No chessboard detected with any config")

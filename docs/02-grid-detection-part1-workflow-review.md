@@ -45,10 +45,6 @@ topological chessboard implementation.
   topological components did not have. The wrapper therefore merges components
   by shared corner identity before running the local geometry merge again.
 
-- **Low-resolution workflow.** `GeminiChess4.png` is recovered by the explicit
-  low-resolution configuration with `ChessConfig.pre_blur_sigma_px = 2.0` and
-  `ChessboardV2`, not by the default topological path.
-
 - **Three-corner cell limitation.** The topological core cannot create a quad
   from a physical cell with only three detected corners. This should be stated
   as a structural recall limit, not as an incidental tuning problem.

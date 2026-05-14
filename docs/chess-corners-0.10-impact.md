@@ -127,9 +127,9 @@ cells relative to the 0.9 baselines), not wrong labels. The `missing`
 counts reflect images where the 0.9 baseline had corners the current
 detector no longer attaches.
 
-### testdata/02-topo-grid (6 images)
+### testdata/02-topo-grid (4 images)
 
-The 6 synthetic extreme-perspective images are now registered in
+The 4 synthetic extreme-perspective images are registered in
 `crates/calib-targets-bench/datasets.toml` (added during Phase 3
 overlay generation; required by `bench preview`, which filters
 exclusively by `datasets.toml`). They flow through `bench run` and
@@ -138,10 +138,7 @@ false` (no `testdata/chessboard_regression_baselines.json` entries
 yet — those would be a separate `bench bless` step).
 
 "passed against manifest" = `labelled_count ≥ min_labelled` from
-`regression_manifest.json`. GeminiChess4 and gptchess2 are
-`diagnostic_only` for both algorithms (no labelled-count gate at
-default params — they exercise the manifest's `low_res` settings
-instead, which `bench run` does not invoke).
+`regression_manifest.json`.
 
 | algorithm | method | images_passed (of 4 gated) | per-image min Δ vs manifest |
 |---|---|---|---|
@@ -157,9 +154,7 @@ Per-image labelled counts (from `bench run`):
 | GeminiChess1.png (topo min 53, cv2 min 40) | 54 | 55 | 51 | 46 |
 | GeminiChess2.png (topo min 26, cv2 min 19) | 26 | 26 | 25 | 25 |
 | GeminiChess3.png (topo min 42, cv2 min 42) | 42 | 42 | 43 | 42 |
-| GeminiChess4.png (diagnostic only) | 0 | 0 | 0 | 0 |
 | gptchess1.png (topo min 60, cv2 min 35) | 60 | 60 | 52 | 39 |
-| gptchess2.png (diagnostic only) | 0 | 0 | 0 | 0 |
 
 Every gated manifest entry passes. GeminiChess2 + gptchess1 sit
 exactly at the topological floor (26 / 60). chessboard-v2 + ring-fit

@@ -95,8 +95,8 @@ def _puzzleboard_params() -> ct.PuzzleBoardParams:
     params = ct.PuzzleBoardParams.for_board(
         ct.PuzzleBoardSpec(rows=10, cols=10, cell_size=12.0, origin_row=0, origin_col=0)
     )
-    params.chessboard.chess.threshold_value = 0.15
-    params.chessboard.chess.nms_radius = 3
+    params.chessboard.chess.threshold = ct.Threshold.absolute(15.0)
+    params.chessboard.chess.strategy.chess_config.nms_radius = 3
     return params
 
 

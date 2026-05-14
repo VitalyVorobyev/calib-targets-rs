@@ -65,8 +65,12 @@ image = np.asarray(Image.open(io.BytesIO(bundle.png_bytes)).convert("L"), dtype=
 # 3. Detect — prefer *_best for robustness.
 result = ct.detect_chessboard_best(image, [
     ct.ChessboardParams(),
-    ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.15)),
-    ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.08)),
+    ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
+    ),
+    ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
+    ),
 ])
 
 # 4. Export detection to JSON.

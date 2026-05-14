@@ -77,27 +77,111 @@ def test_dict_inputs_are_rejected() -> None:
     )
     params = calib_targets.CharucoDetectorParams(board=board)
     with pytest.raises(TypeError):
-        calib_targets.detect_charuco(_image(), chess_cfg={"threshold_value": 0.1}, params=params)  # type: ignore[arg-type]
+        calib_targets.detect_charuco(_image(), chess_cfg={"threshold": {"absolute": 15.0}}, params=params)  # type: ignore[arg-type]
 
     puzzle_params = calib_targets.PuzzleBoardParams.for_board(
         calib_targets.PuzzleBoardSpec(rows=10, cols=10, cell_size=1.0)
     )
     with pytest.raises(TypeError):
-        calib_targets.detect_puzzleboard(_image(), params=puzzle_params, chess_cfg={"threshold_value": 0.1})  # type: ignore[arg-type]
+        calib_targets.detect_puzzleboard(_image(), params=puzzle_params, chess_cfg={"threshold": {"absolute": 15.0}})  # type: ignore[arg-type]
 
 
-def test_chess_config_roundtrip() -> None:
+def test_chess_config_default_matches_rust_shape() -> None:
+    # The default ``ChessConfig()`` must produce the exact wire shape
+    # that ``calib_targets::detect::default_chess_config()`` emits via
+    # ``serde_json``. Keep this hardcoded — if the Rust side renames a
+    # field or swaps a tagged variant, this test fails loudly.
+    cfg = calib_targets.ChessConfig()
+    expected = {
+        "strategy": {
+            "chess": {
+                "ring": "canonical",
+                "descriptor_ring": "follow_detector",
+                "nms_radius": 2,
+                "min_cluster_size": 2,
+                "refiner": {"center_of_mass": {"radius": 2}},
+            }
+        },
+        "threshold": {"absolute": 15.0},
+        "multiscale": "single_scale",
+        "upscale": "disabled",
+        "orientation_method": "ring_fit",
+        "merge_radius": 3.0,
+    }
+    assert cfg.to_dict() == expected
+    assert calib_targets.ChessConfig.from_dict(expected).to_dict() == expected
+
+
+def test_chess_config_threshold_constructors() -> None:
+    abs_cfg = calib_targets.ChessConfig(
+        threshold=calib_targets.Threshold.absolute(8.0)
+    )
+    assert abs_cfg.to_dict()["threshold"] == {"absolute": 8.0}
+
+    rel_cfg = calib_targets.ChessConfig(
+        threshold=calib_targets.Threshold.relative(0.15)
+    )
+    assert rel_cfg.to_dict()["threshold"] == {"relative": 0.15}
+
+    # Round-trip via dict preserves both threshold variants.
+    for cfg in (abs_cfg, rel_cfg):
+        restored = calib_targets.ChessConfig.from_dict(cfg.to_dict())
+        assert restored.to_dict() == cfg.to_dict()
+
+
+def test_chess_config_tagged_subtrees() -> None:
     cfg = calib_targets.ChessConfig(
-        threshold_value=0.3,
-        pyramid_levels=2,
-        pyramid_min_size=64,
-        refiner=calib_targets.RefinerConfig(kind="forstner"),
+        threshold=calib_targets.Threshold.absolute(10.0),
+        multiscale=calib_targets.MultiscaleConfig.pyramid(levels=2, min_size=64),
+        upscale=calib_targets.UpscaleConfig.fixed(2),
+        orientation_method=calib_targets.OrientationMethod.DISK_FIT,
     )
     serialized = cfg.to_dict()
-    assert serialized["threshold_value"] == 0.3
-    assert "pre_blur_sigma_px" not in serialized
+    assert serialized["multiscale"] == {
+        "pyramid": {"levels": 2, "min_size": 64, "refinement_radius": 3}
+    }
+    assert serialized["upscale"] == {"fixed": 2}
+    assert serialized["orientation_method"] == "disk_fit"
     restored = calib_targets.ChessConfig.from_dict(serialized)
     assert restored.to_dict() == serialized
+
+
+def test_chess_config_refiner_round_trip() -> None:
+    forstner = calib_targets.ChessConfig(
+        strategy=calib_targets.DetectionStrategy.chess(
+            calib_targets.ChessStrategyConfig(
+                refiner=calib_targets.ChessRefiner.forstner(
+                    calib_targets.ForstnerConfig(radius=3, min_trace=20.0)
+                )
+            )
+        )
+    )
+    serialized = forstner.to_dict()
+    assert serialized["strategy"]["chess"]["refiner"] == {
+        "forstner": {
+            "radius": 3,
+            "min_trace": 20.0,
+            "min_det": 1e-3,
+            "max_condition_number": 50.0,
+            "max_offset": 1.5,
+        }
+    }
+    restored = calib_targets.ChessConfig.from_dict(serialized)
+    assert restored.to_dict() == serialized
+
+
+def test_chess_config_legacy_refiner_shim() -> None:
+    # The deprecated ``RefinerConfig`` shim returns a ``ChessRefiner``;
+    # callers from before chess-corners 0.10 keep working.
+    legacy = calib_targets.RefinerConfig(kind="forstner")
+    assert isinstance(legacy, calib_targets.ChessRefiner)
+    assert legacy.to_dict() == {"forstner": calib_targets.ForstnerConfig().to_dict()}
+
+
+def test_chess_config_rejects_old_flat_shape() -> None:
+    bad = {"threshold_mode": "absolute", "threshold_value": 15.0}
+    with pytest.raises(ValueError, match="pre-0.10 flat shape"):
+        calib_targets.ChessConfig.from_dict(bad)
 
 
 def test_chessboard_params_roundtrip() -> None:
