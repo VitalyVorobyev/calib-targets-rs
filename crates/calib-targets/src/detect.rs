@@ -1,14 +1,14 @@
 use crate::{charuco, chessboard, core, marker, puzzleboard};
-use chess_corners::find_chess_corners_image;
+use chess_corners::Detector as ChessDetector;
 use nalgebra::Point2;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
 pub use core::{
-    CenterOfMassConfig, ChessConfig, DescriptorMode, DetectorMode, ForstnerConfig,
-    RadonDetectorParams, RefinementMethod, RefinerConfig, SaddlePointConfig, ThresholdMode,
-    UpscaleConfig, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy,
+    DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, RadonConfig,
+    RadonDetectorParams, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
 
 /// Errors produced by the high-level facade helpers.
@@ -36,13 +36,13 @@ pub enum DetectError {
 
 /// Reasonable default settings for the `chess-corners` ChESS detector.
 ///
-/// Built on top of [`ChessConfig::single_scale`] but overrides
-/// `threshold_value = 15.0` (paired with `ThresholdMode::Absolute`). Upstream's
-/// paper-faithful default is `Absolute 0.0`, which is correct in principle
-/// (any strictly positive ChESS response is a corner candidate) but produces
-/// hundreds of weak responses on real-world images. Both the seed-and-grow
-/// chessboard detector and the topological grid pipeline are sensitive to
-/// that noise floor: on `testdata/puzzleboard_reference/example3.png`,
+/// Built on top of [`DetectorConfig::chess`] but overrides the acceptance
+/// threshold to [`Threshold::Absolute(15.0)`][Threshold::Absolute]. Upstream's
+/// paper-faithful default is `Threshold::Absolute(0.0)`, which is correct in
+/// principle (any strictly positive ChESS response is a corner candidate) but
+/// produces hundreds of weak responses on real-world images. Both the
+/// seed-and-grow chessboard detector and the topological grid pipeline are
+/// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
 /// threshold `0.0` produces zero labelled corners while `15.0` recovers the
 /// full 30-corner component; on `testdata/small0.png` the labelled count
 /// rises from 78 to 129; and on the `02-topo-grid/` synthetic suite the
@@ -51,12 +51,9 @@ pub enum DetectError {
 /// `crates/calib-targets/examples/threshold_sweep.rs`.
 ///
 /// Callers wanting the raw upstream behaviour can construct
-/// `ChessConfig::single_scale()` directly.
-pub fn default_chess_config() -> ChessConfig {
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = ThresholdMode::Absolute;
-    cfg.threshold_value = 15.0;
-    cfg
+/// [`DetectorConfig::chess`] directly.
+pub fn default_chess_config() -> DetectorConfig {
+    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
 }
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
@@ -80,7 +77,7 @@ pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
 )]
 pub fn detect_corners(
     img: &::image::GrayImage,
-    cfg: &ChessConfig,
+    cfg: &DetectorConfig,
     pre_blur_sigma_px: f32,
 ) -> Vec<core::Corner> {
     let blurred;
@@ -90,7 +87,11 @@ pub fn detect_corners(
     } else {
         img
     };
-    find_chess_corners_image(img, cfg)
+    let Ok(mut detector) = ChessDetector::new(*cfg) else {
+        return Vec::new();
+    };
+    detector
+        .detect(img)
         .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
@@ -455,28 +456,34 @@ mod tests {
     #[test]
     fn default_chess_config_overrides_threshold() {
         // Workspace default deliberately overrides the upstream
-        // paper-contract (`Absolute 0.0`) with a small noise-floor cutoff
-        // tuned on the public testdata regression sweep — see the rustdoc
-        // on `default_chess_config`.
+        // paper-contract (`Threshold::Absolute(0.0)`) with a small
+        // noise-floor cutoff tuned on the public testdata regression sweep
+        // — see the rustdoc on `default_chess_config`.
         let cfg = default_chess_config();
-        assert_eq!(cfg.threshold_mode, ThresholdMode::Absolute);
-        assert!(
-            (cfg.threshold_value - 15.0).abs() < f32::EPSILON,
-            "expected default threshold 15.0, got {}",
-            cfg.threshold_value
-        );
+        assert_eq!(cfg.threshold, Threshold::Absolute(15.0));
 
-        // Every other field should still match the upstream `single_scale`
-        // preset so we don't accidentally drift away from it.
-        let upstream = chess_corners::ChessConfig::single_scale();
-        assert_eq!(cfg.detector_mode, upstream.detector_mode);
-        assert_eq!(cfg.descriptor_mode, upstream.descriptor_mode);
-        assert_eq!(cfg.nms_radius, upstream.nms_radius);
-        assert_eq!(cfg.min_cluster_size, upstream.min_cluster_size);
-        assert_eq!(cfg.pyramid_levels, upstream.pyramid_levels);
-        assert_eq!(cfg.pyramid_min_size, upstream.pyramid_min_size);
-        assert_eq!(cfg.refinement_radius, upstream.refinement_radius);
-        assert_eq!(cfg.merge_radius, upstream.merge_radius);
-        assert_eq!(cfg.upscale, upstream.upscale);
+        // Strategy must still be the ChESS kernel pipeline (not Radon),
+        // and the multiscale / upscale top-level fields must match the
+        // single-scale ChESS preset.
+        assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
+        let baseline = DetectorConfig::chess();
+        assert_eq!(cfg.multiscale, baseline.multiscale);
+        assert_eq!(cfg.upscale, baseline.upscale);
+        assert_eq!(cfg.merge_radius, baseline.merge_radius);
+        assert_eq!(cfg.orientation_method, baseline.orientation_method);
+
+        // The nested ChESS strategy fields stay at upstream defaults so
+        // the override is purely the acceptance threshold.
+        let DetectionStrategy::Chess(chess) = cfg.strategy else {
+            unreachable!("matched above");
+        };
+        let DetectionStrategy::Chess(chess_baseline) = baseline.strategy else {
+            unreachable!("baseline preset is ChESS");
+        };
+        assert_eq!(chess.ring, chess_baseline.ring);
+        assert_eq!(chess.descriptor_ring, chess_baseline.descriptor_ring);
+        assert_eq!(chess.nms_radius, chess_baseline.nms_radius);
+        assert_eq!(chess.min_cluster_size, chess_baseline.min_cluster_size);
+        assert_eq!(chess.refiner, chess_baseline.refiner);
     }
 }

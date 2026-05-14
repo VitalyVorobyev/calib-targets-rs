@@ -7,7 +7,7 @@ use crate::{
 use calib_targets_aruco::{builtins, ArucoScanConfig, Dictionary, MarkerDetection};
 use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::io::{self, IoError};
-use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
+use calib_targets_core::{Corner, DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -103,7 +103,7 @@ pub struct CharucoDetectConfig {
     #[serde(default)]
     pub output_path: Option<String>,
     #[serde(default)]
-    pub chess: ChessConfig,
+    pub chess: DetectorConfig,
     #[serde(default)]
     pub rectified_path: Option<String>,
     #[serde(default)]

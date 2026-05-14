@@ -24,7 +24,7 @@ use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
     PuzzleBoardSpec,
 };
-use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
@@ -76,11 +76,11 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.nms_radius = 3;
-    let descriptors = find_chess_corners_image(&gray, &cfg).expect("ChESS detection");
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_chess(|c| c.nms_radius = 3);
+    let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
+    let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let all_corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
 
     let view = GrayImageView {

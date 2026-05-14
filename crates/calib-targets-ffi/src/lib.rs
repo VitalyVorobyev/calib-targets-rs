@@ -43,7 +43,7 @@ use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiE
 use calib_targets::charuco::CharucoDetector;
 use calib_targets::chessboard::Detector as ChessboardDetector;
 use calib_targets::core::GrayImageView;
-use calib_targets::detect::{self, ChessConfig};
+use calib_targets::detect::{self, DetectorConfig};
 use calib_targets::marker::MarkerBoardDetector;
 use calib_targets::puzzleboard::PuzzleBoardDetector;
 use std::ffi::c_char;
@@ -57,25 +57,25 @@ const VERSION_CSTR: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 /// Opaque chessboard detector handle.
 pub struct ct_chessboard_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: ChessboardDetector,
 }
 
 /// Opaque ChArUco detector handle.
 pub struct ct_charuco_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: CharucoDetector,
 }
 
 /// Opaque marker-board detector handle.
 pub struct ct_marker_board_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: MarkerBoardDetector,
 }
 
 /// Opaque PuzzleBoard detector handle.
 pub struct ct_puzzleboard_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: PuzzleBoardDetector,
 }
 
@@ -170,7 +170,10 @@ impl PreparedGrayImage {
         })
     }
 
-    fn detect_corners(&self, chess: &ChessConfig) -> FfiResult<Vec<calib_targets::core::Corner>> {
+    fn detect_corners(
+        &self,
+        chess: &DetectorConfig,
+    ) -> FfiResult<Vec<calib_targets::core::Corner>> {
         let gray = detect::gray_image_from_slice(self.width, self.height, &self.pixels)
             .map_err(|err| FfiError::internal(format!("failed to build grayscale image: {err}")))?;
         // Pre-blur is not exposed via the C ABI; callers requiring it must

@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use calib_targets::chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
-use calib_targets::detect::{default_chess_config, detect_corners, ThresholdMode};
+use calib_targets::detect::{default_chess_config, detect_corners, Threshold};
 use image::imageops::FilterType;
 
 const IMAGES: &[&str] = &[
@@ -63,9 +63,7 @@ fn main() {
             img
         };
 
-        let mut cfg0 = default_chess_config();
-        cfg0.threshold_mode = ThresholdMode::Absolute;
-        cfg0.threshold_value = 0.0;
+        let cfg0 = default_chess_config().with_threshold(Threshold::Absolute(0.0));
         let raw_at_zero = detect_corners(&img, &cfg0, 0.0).len();
 
         let algo = std::env::var("ALGO").unwrap_or_else(|_| "chessboard_v2".to_string());
@@ -75,9 +73,7 @@ fn main() {
         };
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
-            let mut cfg = default_chess_config();
-            cfg.threshold_mode = ThresholdMode::Absolute;
-            cfg.threshold_value = t;
+            let cfg = default_chess_config().with_threshold(Threshold::Absolute(t));
             let corners = detect_corners(&img, &cfg, 0.0);
             let mut params = DetectorParams::default();
             params.graph_build_algorithm = algorithm;

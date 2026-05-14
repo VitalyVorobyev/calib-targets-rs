@@ -111,6 +111,62 @@ fn default_rescue_search_rel() -> f32 {
     0.8
 }
 
+fn default_enable_post_geometry_rescue() -> bool {
+    // Default ON. The geometry check drops labelled corners that fail
+    // line-collinearity / local-H residual / connectivity tests, freeing
+    // their cells. Without this pass, those cells stay empty in the
+    // final detection even when an orphan (Clustered) corner sits
+    // exactly at the freed cell's predicted position. The pass re-runs
+    // Stage 6.5 rescue on the post-geometry-check labelled set so freed
+    // cells can be re-filled by orphans the rescue couldn't reach
+    // before because the cells were occupied by mis-attached corners.
+    //
+    // Precision-safe by construction: the rescue's per-candidate gates
+    // (position match against local-H, parity match, axis-slot-swap edge
+    // invariant, ambiguity gate) are unchanged. The blacklist persists
+    // so previously-dropped corners cannot re-attach. Only fresh
+    // orphans fill freed cells. The post-geometry geometry check is
+    // NOT re-run (would create an infinite loop).
+    //
+    // Targets the chess-corners 0.9 DiskFit case where BFS mis-attaches
+    // a partial-slot-flip orphan to the wrong cell, blocking the right
+    // orphan from being attached, and only after geometry check drops
+    // the wrong attachment does the right orphan have a chance.
+    true
+}
+
+fn default_enable_partial_slot_flip_fix() -> bool {
+    // Default ON. Runs between Stage 6 and Stage 6.5 to recover
+    // chess-corners 0.9 DiskFit's partial slot-flip cases (clean
+    // chessboard corners where the disk-fit picks the opposite
+    // antipodal dark sector). Precision-safe: every flip is
+    // anchored on a labelled-set local-H prediction within 0.4 cell,
+    // an empty cell, and a 2/3-majority parity match against the
+    // labelled supports. Cannot introduce wrong (i, j) labels — the
+    // BFS labels are not modified.
+    //
+    // Empirically: lifts chessboard-v2 + DiskFit recall on
+    // `large.png` from 349 → 373 (parity with RingFit), with
+    // matching gains across the small[0..5] family. Also lifts
+    // RingFit on `small3.png` (119 → 125) and `small5.png`
+    // (134 → 135 — flips from FAIL to PASS, miss=1 → 0) by
+    // recovering corners whose Stage-3 cluster assignment was
+    // biased toward the wrong slot by marker-internal corner
+    // contributions; the labelled-set parity reference resolves
+    // the ambiguity. These are not wrong labels — they're real
+    // chessboard intersections at lattice cells previously missed.
+    true
+}
+
+fn default_partial_slot_flip_k_nearest() -> usize {
+    // K = 12 mirrors `stage6_local_k_nearest`'s justification: 3×
+    // over-determination on the 9-DOF DLT; wide enough to capture
+    // local perspective without diluting it with far-away labels;
+    // robust to a few outlier supports under the per-support
+    // residual cap.
+    12
+}
+
 fn default_enable_post_grow_refit() -> bool {
     // Default on. After Stage 6.5 / boosters converge, recompute
     // cluster centres from the labelled axes alone (no marker
@@ -393,6 +449,34 @@ pub struct DetectorParams {
     #[serde(default = "default_rescue_search_rel")]
     pub rescue_search_rel: f32,
 
+    // --- Stage 6.25: post-grow partial slot-flip fix ---------------------
+    /// Run a post-Stage-6 pass that detects partial slot-flips
+    /// (orphan `Clustered` corners whose
+    /// `(axes[0], axes[1])` ordering disagrees with the parity
+    /// expected by the surrounding labelled set's local-H prediction)
+    /// and swaps their axis slots so they match. This unblocks
+    /// Stage 6.5 / boosters from attaching them — the BFS / Stage 6
+    /// `edge_ok` rejects them under their original ordering because
+    /// every cardinal edge to a labelled neighbour fails the
+    /// alternating-parity rule.
+    ///
+    /// Targets chess-corners 0.9 `DiskFit`'s antipodal-dark-sector
+    /// pick on a small fraction of clean corners (~1–8% on real
+    /// photos). RingFit produces consistent slot orderings and is a
+    /// no-op under this pass.
+    ///
+    /// Default `true`. Precision-safe by construction (see
+    /// `crate::cluster::fix_partial_slot_flips_post_stage6` for the
+    /// full gate ladder — function is private but the comment chain
+    /// in the source is the canonical reference).
+    #[serde(default = "default_enable_partial_slot_flip_fix")]
+    pub enable_partial_slot_flip_fix: bool,
+    /// `K` parameter for the partial slot-flip fix's local-H. Same
+    /// justification as
+    /// [`stage6_local_k_nearest`](Self::stage6_local_k_nearest).
+    #[serde(default = "default_partial_slot_flip_k_nearest")]
+    pub partial_slot_flip_k_nearest: usize,
+
     // --- Stage 6.75: post-grow centre refit -------------------------------
     /// Recompute Stage-3 cluster centres from the labelled set's axes
     /// after Stage 6.5 / boosters converge, and re-run Stage 6 / 6.5
@@ -456,6 +540,32 @@ pub struct DetectorParams {
     /// [`enable_post_grow_bfs_regrow`]: DetectorParams::enable_post_grow_bfs_regrow
     #[serde(default = "default_enable_post_grow_bfs_extend")]
     pub enable_post_grow_bfs_extend: bool,
+
+    // --- Stage 6.5b: post-geometry-check rescue ---------------------------
+    /// After the mandatory geometry check drops labelled corners (which
+    /// frees cells), re-run Stage 6.5 rescue once on the surviving
+    /// labelled set so the freed cells can be filled by orphans
+    /// (`Clustered` corners not in `blacklist`) the rescue couldn't
+    /// reach before because the cells were already occupied by the
+    /// mis-attached corners that geometry check just removed.
+    ///
+    /// This sequence — `BFS → Stage 6 → Stage 6.5 → boosters → geometry-
+    /// check → Stage 6.5b` — recovers chess-corners 0.9 DiskFit's
+    /// partial-slot-flip orphans on `puzzleboard_reference/example1.png`
+    /// and `example3.png` (~33 corners on example1) without changing
+    /// behavior on RingFit (RingFit's BFS rarely misplaces, so few
+    /// cells get freed by the geometry check, so Stage 6.5b finds
+    /// nothing to rescue).
+    ///
+    /// Precision-safe by construction: the rescue uses the same
+    /// gates as Stage 6.5 (position match against local-H, parity
+    /// match against cluster centers, axis-slot-swap edge invariant,
+    /// ambiguity gate). The geometry-check blacklist is preserved so
+    /// dropped corners cannot re-attach.
+    ///
+    /// Default `true`.
+    #[serde(default = "default_enable_post_geometry_rescue")]
+    pub enable_post_geometry_rescue: bool,
 
     // --- Final mandatory geometry check -----------------------------------
     /// Line-collinearity tolerance (fraction of cell_size) for the
@@ -599,11 +709,15 @@ impl Default for DetectorParams {
             stage6_5_local_k_nearest: default_stage6_local_k_nearest(),
             rescue_search_rel: default_rescue_search_rel(),
 
+            enable_partial_slot_flip_fix: default_enable_partial_slot_flip_fix(),
+            partial_slot_flip_k_nearest: default_partial_slot_flip_k_nearest(),
+
             enable_post_grow_refit: default_enable_post_grow_refit(),
             refit_min_labelled: default_refit_min_labelled(),
             refit_min_shift_deg: default_refit_min_shift_deg(),
             enable_post_grow_bfs_regrow: default_enable_post_grow_bfs_regrow(),
             enable_post_grow_bfs_extend: default_enable_post_grow_bfs_extend(),
+            enable_post_geometry_rescue: default_enable_post_geometry_rescue(),
             geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
             geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
 

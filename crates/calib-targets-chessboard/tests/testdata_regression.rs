@@ -244,3 +244,108 @@ fn every_listed_image_meets_its_gate() {
         );
     }
 }
+
+/// Regression: chess-corners 0.9 `DiskFit`'s **partial** slot-flip
+/// case on `testdata/large.png`. The whole-image slot-flip case
+/// (`mid.png`, see `diskfit_mid_recovers_full_chessboard`) is caught
+/// by `cluster.rs::fix_axis_slot_coherence` via global imbalance
+/// detection. But on real photos with marker / partial-cell corners
+/// the imbalance stays balanced overall, while a small subset of
+/// clean chessboard corners still get the slot-flip — `large.png`
+/// loses 22 of 373 corners that way pre-fix (349 → 373 after fix).
+///
+/// `cluster.rs::fix_partial_slot_flips_post_stage6` runs between
+/// Stage 6 and Stage 6.5 and detects partial slot-flips by checking
+/// each orphan `Clustered` corner against the labelled set's
+/// local-H prediction + 2/3-majority parity vote. Precision-safe
+/// because the labelled set itself is already invariant-correct.
+/// This test pins the recovery: `DiskFit` must produce ≥ 365
+/// labelled corners on `large.png` (allowing ±8 for run-to-run
+/// noise; the post-fix observation is 373).
+#[test]
+fn diskfit_large_recovers_partial_slot_flips() {
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod, Threshold};
+
+    let path = workspace_root().join("testdata/large.png");
+    if !path.exists() {
+        eprintln!("skipping: testdata/large.png not on disk");
+        return;
+    }
+    let img = image::open(&path)
+        .unwrap_or_else(|e| panic!("decode large.png: {e}"))
+        .to_luma8();
+
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Absolute(15.0))
+        .with_orientation_method(OrientationMethod::DiskFit);
+
+    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let detector = Detector::new(DetectorParams::default());
+    let detection = detector.detect(&corners);
+
+    let detection = detection.expect("DiskFit must produce a detection on large.png");
+    let labelled = detection.target.corners.len();
+    assert!(
+        labelled >= 365,
+        "DiskFit + chessboard-v2 must produce at least 365 labelled corners on large.png \
+         (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
+         The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
+         is broken — see fix_partial_slot_flips_post_stage6."
+    );
+
+    // Hard invariants the precision contract requires.
+    assert_no_duplicate_labels(&detection, "large.png + DiskFit");
+    assert_grid_rebased_to_origin(&detection, "large.png + DiskFit");
+    assert_origin_top_left(&detection, "large.png + DiskFit");
+}
+
+/// Regression: chess-corners 0.9 added `OrientationMethod::DiskFit`,
+/// which on a clean chessboard (`testdata/mid.png`) sometimes picks
+/// the wrong antipodal dark sector and reports the same axis-slot
+/// ordering for adjacent chessboard intersections that should
+/// alternate. Pre-fix this collapsed the chessboard-v2 detection
+/// from 77 → 22 labelled corners on `mid.png`.
+///
+/// `cluster.rs::fix_axis_slot_coherence` runs after Stage 3 and
+/// detects + recovers from this regime via spatial 2-colouring.
+/// This test pins the recovery: `DiskFit` must produce ≥ 77
+/// labelled corners on `mid.png`, matching the `RingFit` baseline.
+#[test]
+fn diskfit_mid_recovers_full_chessboard() {
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod, Threshold};
+
+    let mid_path = workspace_root().join("testdata/mid.png");
+    if !mid_path.exists() {
+        eprintln!("skipping: testdata/mid.png not on disk");
+        return;
+    }
+    let img = image::open(&mid_path)
+        .unwrap_or_else(|e| panic!("decode mid.png: {e}"))
+        .to_luma8();
+
+    // Build a DetectorConfig with DiskFit + the workspace's standard
+    // threshold override. Mirrors `default_chess_config()` but flips
+    // the orientation method to disk-sector fit.
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Absolute(15.0))
+        .with_orientation_method(OrientationMethod::DiskFit);
+
+    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let detector = Detector::new(DetectorParams::default());
+    let detection = detector.detect(&corners);
+
+    let detection = detection.expect("DiskFit must produce a detection on mid.png");
+    let labelled = detection.target.corners.len();
+    assert!(
+        labelled >= 77,
+        "DiskFit + chessboard-v2 must produce at least 77 labelled corners on mid.png \
+         (matching the RingFit baseline). Got {labelled}. \
+         The chess-corners 0.9 slot-ordering bug recovery in cluster.rs \
+         is broken — see fix_axis_slot_coherence."
+    );
+
+    // Hard invariants the precision contract requires.
+    assert_no_duplicate_labels(&detection, "mid.png + DiskFit");
+    assert_grid_rebased_to_origin(&detection, "mid.png + DiskFit");
+    assert_origin_top_left(&detection, "mid.png + DiskFit");
+}

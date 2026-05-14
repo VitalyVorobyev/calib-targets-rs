@@ -65,7 +65,7 @@ fn main() {
     let height = img.height();
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&img, &chess_cfg);
+    let corners = detect_corners(&img, &chess_cfg, 0.0);
     let n_input_corners = corners.len();
     let image_tag = image
         .file_stem()

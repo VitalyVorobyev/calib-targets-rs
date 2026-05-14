@@ -8,7 +8,7 @@ use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSp
 use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec,
 };
-use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
@@ -61,11 +61,11 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
     // 2) Detect ChESS corners.
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.nms_radius = 3;
-    let descriptors = find_chess_corners_image(&gray, &cfg).expect("ChESS detection");
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_chess(|c| c.nms_radius = 3);
+    let mut detector = ChessDetector::new(cfg).expect("build ChESS detector");
+    let descriptors = detector.detect(&gray).expect("ChESS detection");
     assert!(
         descriptors.len() >= 60,
         "expected at least 60 ChESS corners, got {}",
@@ -171,11 +171,11 @@ fn fixed_board_agrees_with_full_on_whole_view() {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.nms_radius = 3;
-    let descriptors = find_chess_corners_image(&gray, &cfg).expect("ChESS detection");
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_chess(|c| c.nms_radius = 3);
+    let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
+    let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
 
     let board_spec = PuzzleBoardSpec::with_origin(
@@ -254,11 +254,11 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.nms_radius = 3;
-    let descriptors = find_chess_corners_image(&gray, &cfg).expect("ChESS detection");
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_chess(|c| c.nms_radius = 3);
+    let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
+    let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let all_corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
 
     let view = GrayImageView {
@@ -422,10 +422,10 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         _ => panic!("unsupported rotation {rotation_deg}"),
     };
 
-    let mut cfg = ChessConfig::single_scale();
-    cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.nms_radius = 3;
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_chess(|c| c.nms_radius = 3);
+    let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
 
     let board_spec = PuzzleBoardSpec::with_origin(
         spec.rows,
@@ -440,7 +440,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
     let detector = PuzzleBoardDetector::new(params).expect("detector");
 
     // Detect on the original image.
-    let descriptors_orig = find_chess_corners_image(&gray_orig, &cfg).expect("ChESS detection");
+    let descriptors_orig = chess_detector.detect(&gray_orig).expect("ChESS detection");
     let corners_orig: Vec<TargetCorner> = descriptors_orig.iter().map(adapt).collect();
     let view_orig = GrayImageView {
         width: gray_orig.width() as usize,
@@ -452,7 +452,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         .expect("orig decode");
 
     // Detect on the 90° CW rotated image.
-    let descriptors_rot = find_chess_corners_image(&gray_rot, &cfg).expect("ChESS detection");
+    let descriptors_rot = chess_detector.detect(&gray_rot).expect("ChESS detection");
     let corners_rot: Vec<TargetCorner> = descriptors_rot.iter().map(adapt).collect();
     let view_rot = GrayImageView {
         width: gray_rot.width() as usize,

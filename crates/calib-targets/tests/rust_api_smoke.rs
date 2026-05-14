@@ -35,25 +35,26 @@ image = "0.25"
     write_file(
         &main_path,
         r#"use calib_targets::detect::{
-    self, ChessConfig, DetectorMode, DescriptorMode, RefinementMethod, RefinerConfig,
-    ThresholdMode,
+    self, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
+    MultiscaleConfig, Threshold,
 };
 
 fn main() {
-    // `ChessConfig` is `#[non_exhaustive]` (re-exported from `chess-corners`),
-    // so downstream crates must seed it via a preset and assign the fields
-    // they care about; struct literal syntax is intentionally forbidden.
-    let _named_default: ChessConfig = detect::default_chess_config();
-    let mut cfg = ChessConfig::single_scale();
-    cfg.detector_mode = DetectorMode::Broad;
-    cfg.descriptor_mode = DescriptorMode::Canonical;
-    cfg.threshold_mode = ThresholdMode::Relative;
-    cfg.threshold_value = 0.15;
-    cfg.min_cluster_size = 1;
-    cfg.refiner = RefinerConfig::saddle_point();
-    cfg.pyramid_levels = 2;
-    cfg.pyramid_min_size = 64;
-    assert_eq!(cfg.refiner.kind, RefinementMethod::SaddlePoint);
+    // `DetectorConfig` is `#[non_exhaustive]` (re-exported from
+    // `chess-corners`), so downstream crates must seed it via a preset and
+    // mutate the fields they care about; struct literal syntax is
+    // intentionally forbidden.
+    let _named_default: DetectorConfig = detect::default_chess_config();
+    let cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.15))
+        .with_multiscale(MultiscaleConfig::pyramid(2, 64, 3))
+        .with_chess(|c| {
+            c.ring = ChessRing::Broad;
+            c.descriptor_ring = DescriptorRing::Canonical;
+            c.min_cluster_size = 1;
+            c.refiner = ChessRefiner::saddle_point();
+        });
+    assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
 
     let img = image::GrayImage::new(16, 16);
     let _ = detect::detect_corners(&img, &cfg, 0.0);

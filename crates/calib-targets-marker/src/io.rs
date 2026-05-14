@@ -2,7 +2,7 @@
 
 use crate::{MarkerBoardDetectionResult, MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_core::io::{self, IoError};
-use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
+use calib_targets_core::{Corner, DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -15,7 +15,7 @@ pub struct MarkerBoardDetectConfig {
     #[serde(default)]
     pub output_path: Option<String>,
     #[serde(default)]
-    pub chess: ChessConfig,
+    pub chess: DetectorConfig,
     pub marker: MarkerBoardParams,
 }
 

@@ -136,6 +136,29 @@ pub fn render_diagnose_overlay(
     frame: &DebugFrame,
     out_path: &Path,
 ) -> Result<(), std::io::Error> {
+    render_diagnose_overlay_inner(base, frame, out_path, false)
+}
+
+/// Variant of [`render_diagnose_overlay`] that additionally draws each
+/// corner's two axis directions as short line segments (`axes[0]` in warm
+/// orange, `axes[1]` in cool teal). Use this to debug axis-fit method
+/// disagreements (RingFit vs DiskFit) — labelled corners' axes should
+/// alternate cleanly with their cardinal neighbours, and stuck-at-Clustered
+/// corners show whether their axes look right or have drifted.
+pub fn render_diagnose_overlay_with_axes(
+    base: &GrayImage,
+    frame: &DebugFrame,
+    out_path: &Path,
+) -> Result<(), std::io::Error> {
+    render_diagnose_overlay_inner(base, frame, out_path, true)
+}
+
+fn render_diagnose_overlay_inner(
+    base: &GrayImage,
+    frame: &DebugFrame,
+    out_path: &Path,
+    draw_axes: bool,
+) -> Result<(), std::io::Error> {
     let mut canvas: RgbImage = RgbImage::from_fn(base.width(), base.height(), |x, y| {
         let v = base.get_pixel(x, y).0[0];
         Rgb([v, v, v])
@@ -186,6 +209,30 @@ pub fn render_diagnose_overlay(
                 fill_circle(&mut canvas, pos.x, pos.y, 3, C_CORNER);
             }
             _ => fill_circle(&mut canvas, pos.x, pos.y, 1, Rgb([60, 60, 60])),
+        }
+    }
+
+    if draw_axes {
+        // Axis line length: scale with image so axes are visible but not
+        // overwhelming. ~10 px on a 1 MP image; scaled by sqrt(area).
+        let area = (base.width() as f32) * (base.height() as f32);
+        let axis_len = (area.sqrt() / 100.0).clamp(6.0, 18.0);
+        for aug in &frame.corners {
+            // Skip the noise-floor corners; they pollute the overlay.
+            if matches!(aug.stage, CornerStage::Raw) {
+                continue;
+            }
+            let (x, y) = (aug.position.x, aug.position.y);
+            for (k, color) in [
+                // axes[0] in warm orange, axes[1] in cool teal.
+                (0, Rgb([255, 140, 40])),
+                (1, Rgb([60, 200, 220])),
+            ] {
+                let theta = aug.axes[k].angle;
+                let dx = axis_len * theta.cos();
+                let dy = axis_len * theta.sin();
+                draw_line(&mut canvas, x, y, x + dx, y + dy, color);
+            }
         }
     }
 

@@ -214,7 +214,11 @@ fn try_attach_at(
     positions: &[Point2<f32>],
     params: &DetectorParams,
 ) -> bool {
-    let required_label = required_label_at(pos.0, pos.1);
+    // Apply the post-rebase parity shift so the chessboard parity at
+    // `pos` matches the BFS pre-rebase convention. See
+    // `pg_grow::GrowResult::parity_shift_i` for the full discussion.
+    let parity_shift = (grow.parity_shift_i + grow.parity_shift_j).rem_euclid(2);
+    let required_label = required_label_at(pos.0 + parity_shift, pos.1);
 
     // Collect labelled neighbors in a 3×3 window. For interior
     // gaps this will usually be 4+; for line extensions it will

@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use calib_targets::detect::{default_chess_config, detect_corners, ChessConfig};
+use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig, Threshold};
 use calib_targets_chessboard::{
     trace_topological, Detection, Detector, DetectorParams, GraphBuildAlgorithm,
 };
@@ -120,7 +120,7 @@ fn params_for(algorithm: GraphBuildAlgorithm) -> DetectorParams {
 
 fn run_detector(
     img: &GrayImage,
-    chess_cfg: &ChessConfig,
+    chess_cfg: &DetectorConfig,
     pre_blur_sigma_px: f32,
     algorithm: GraphBuildAlgorithm,
 ) -> Option<Detection> {
@@ -246,9 +246,8 @@ fn topo_grid_manifest_gates_hold() {
             // ChESS-response cutoff (set on top of the workspace default,
             // which is now an absolute floor). Force the mode explicitly
             // so the JSON keeps its original semantics.
-            let mut cfg = default_chess_config();
-            cfg.threshold_mode = calib_targets::detect::ThresholdMode::Relative;
-            cfg.threshold_value = gate.chess.threshold_value;
+            let cfg = default_chess_config()
+                .with_threshold(Threshold::Relative(gate.chess.threshold_value));
             let detection = run_detector(
                 &fed,
                 &cfg,

@@ -10,7 +10,7 @@ use calib_targets_charuco::{
     CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector, CharucoParams,
 };
 use calib_targets_core::{Corner, GrayImageView};
-use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
 
@@ -86,15 +86,15 @@ fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error
 }
 
 fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
-    let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    chess_cfg.threshold_value = 0.2;
-    chess_cfg.nms_radius = 2;
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.2))
+        .with_chess(|c| c.nms_radius = 2);
     debug!(
-        "Running ChESS corner scan with threshold={:.3} ({:?}), nms_radius={}",
-        chess_cfg.threshold_value, chess_cfg.threshold_mode, chess_cfg.nms_radius
+        "Running ChESS corner scan with threshold={:?}",
+        chess_cfg.threshold
     );
-    find_chess_corners_image(img, &chess_cfg).expect("ChESS detection")
+    let mut detector = ChessDetector::new(chess_cfg).expect("build ChESS detector");
+    detector.detect(img).expect("ChESS detection")
 }
 
 fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<Corner> {

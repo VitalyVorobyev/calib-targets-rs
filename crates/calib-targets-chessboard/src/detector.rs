@@ -11,7 +11,8 @@
 use crate::boosters::{apply_boosters, BoosterResult};
 use crate::cluster::{
     angular_dist_pi, assign_corner, cluster_axes_debug, effective_tol_rad,
-    refit_centers_from_labelled, AxisCluster, ClusterCenters, ClusterDebug,
+    fix_partial_slot_flips_post_stage6, refit_centers_from_labelled, AxisCluster, ClusterCenters,
+    ClusterDebug,
 };
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::{grow_from_seed, ChessboardGrowValidator, ChessboardRescueValidator, GrowResult};
@@ -637,6 +638,27 @@ impl Detector {
                     }
                 }
 
+                // Stage 6.25: post-grow partial slot-flip fix.
+                // chess-corners 0.9 DiskFit can pick the opposite
+                // antipodal dark sector for ~1–8% of clean clustered
+                // corners on real photos, leaving them with a
+                // (axes[0], axes[1]) ordering that disagrees with
+                // the rest of the chessboard. Stage 6 BFS rejects
+                // these because every cardinal edge fails the
+                // alternating-parity rule. Detect them now (using
+                // the labelled set as parity ground-truth) and swap
+                // their slots so Stage 6.5 can attach them via the
+                // standard rescue path. RingFit is unaffected — its
+                // slot orderings are consistent by construction.
+                if self.params.enable_partial_slot_flip_fix {
+                    let _flipped = fix_partial_slot_flips_post_stage6(
+                        &mut augs,
+                        &grow_res.labelled,
+                        cell_size,
+                        self.params.partial_slot_flip_k_nearest,
+                    );
+                }
+
                 // Stage 6.5: NoCluster rescue. Re-considers `Strong` /
                 // `NoCluster` corners as candidates using the same
                 // local-H prediction machinery as Stage 6, with a
@@ -797,14 +819,23 @@ impl Detector {
                                     holes: std::mem::take(&mut grow_res.holes),
                                     grid_u: grow_res.grid_u,
                                     grid_v: grow_res.grid_v,
+                                    parity_shift_i: grow_res.parity_shift_i,
+                                    parity_shift_j: grow_res.parity_shift_j,
                                 };
+                                // Stage 6.75 BFS extend runs in
+                                // post-rebase coords; same parity-shift
+                                // rationale as `run_stage6`.
+                                let bfs_parity_shift = (grow_res.parity_shift_i
+                                    + grow_res.parity_shift_j)
+                                    .rem_euclid(2);
                                 let bfs_validator = ChessboardGrowValidator::new(
                                     &augs,
                                     &blacklist,
                                     new_centers,
                                     cell_size,
                                     &self.params,
-                                );
+                                )
+                                .with_parity_shift(bfs_parity_shift);
                                 let bfs_params = projective_grid::square::grow::GrowParams::new(
                                     self.params.attach_search_rel,
                                     self.params.attach_ambiguity_factor,
@@ -857,6 +888,21 @@ impl Detector {
                             }
                             if ext2.h_quality.is_some() || ext2.h_residual_median_px.is_some() {
                                 iteration_extension2 = Some(ExtensionTrace::from(&ext2));
+                            }
+                            // Second-pass slot-flip fix mirrors the
+                            // first pass: detect any orphans whose
+                            // slot ordering disagrees with the
+                            // labelled set's parity (using the
+                            // refined centres + extended labelled
+                            // set), and flip them so the second-pass
+                            // rescue can attach.
+                            if self.params.enable_partial_slot_flip_fix {
+                                let _flipped = fix_partial_slot_flips_post_stage6(
+                                    &mut augs,
+                                    &grow_res.labelled,
+                                    cell_size,
+                                    self.params.partial_slot_flip_k_nearest,
+                                );
                             }
                             if self.params.enable_stage6_5_rescue {
                                 let rescue2 = run_stage6_5_rescue(
@@ -931,6 +977,43 @@ impl Detector {
                     &mut blacklist,
                     &self.params,
                 );
+
+                // Stage 6.5b: post-geometry-check rescue. Re-run the
+                // rescue once on the surviving labelled set so cells
+                // freed by the geometry check (where mis-attached
+                // corners were dropped) can be re-filled by orphans
+                // the rescue couldn't reach before because those cells
+                // were occupied. The rescue's per-candidate gates
+                // (position match, parity match, edge invariant) are
+                // unchanged. The geometry check is NOT re-run after,
+                // to avoid an infinite loop; the rescue's gates by
+                // themselves enforce precision on every addition (same
+                // as Stage 6.5).
+                //
+                // Targets the chess-corners 0.9 DiskFit case where BFS
+                // mis-attaches a partial-slot-flip orphan to the wrong
+                // cell, blocking the right orphan; only after geometry
+                // check drops the wrong attachment does the right
+                // orphan have a chance.
+                if self.params.enable_post_geometry_rescue
+                    && !geometry_check_trace.detection_refused
+                {
+                    let rescue_post = run_stage6_5_rescue(
+                        &augs,
+                        &mut grow_mut,
+                        active_centers,
+                        cell_size,
+                        &blacklist,
+                        &self.params,
+                    );
+                    for (k, &idx) in rescue_post.attached_indices.iter().enumerate() {
+                        let at = rescue_post.attached_cells[k];
+                        augs[idx].stage = CornerStage::Labeled {
+                            at,
+                            local_h_residual_px: None,
+                        };
+                    }
+                }
 
                 frame.iterations.push(IterationTrace {
                     iter: it,
@@ -1012,9 +1095,18 @@ fn run_stage6(
         holes: std::mem::take(&mut grow_res.holes),
         grid_u: grow_res.grid_u,
         grid_v: grow_res.grid_v,
+        parity_shift_i: grow_res.parity_shift_i,
+        parity_shift_j: grow_res.parity_shift_j,
     };
 
-    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
+    // Stage 6 runs in post-rebase coords, so the validator's
+    // `required_label_at(i, j)` must add the rebase parity shift back
+    // to query the chessboard parity that BFS used in pre-rebase
+    // coords. See `pg_grow::GrowResult::parity_shift_i` for the full
+    // discussion.
+    let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
+    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params)
+        .with_parity_shift(parity_shift);
     let stats = if params.stage6_local_h {
         let mut local_params = LocalExtensionParams::default();
         local_params.k_nearest = params.stage6_local_k_nearest;
@@ -1065,9 +1157,17 @@ fn run_stage6_5_rescue(
         holes: std::mem::take(&mut grow_res.holes),
         grid_u: grow_res.grid_u,
         grid_v: grow_res.grid_v,
+        parity_shift_i: grow_res.parity_shift_i,
+        parity_shift_j: grow_res.parity_shift_j,
     };
 
-    let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params);
+    // Stage 6.5 runs in post-rebase coords; the rescue validator's
+    // `required_label_at(i, j)` adds the rebase parity shift back to
+    // recover the BFS pre-rebase chessboard parity at the post-rebase
+    // cell. See `pg_grow::GrowResult::parity_shift_i`.
+    let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
+    let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params)
+        .with_parity_shift(parity_shift);
     let mut local_params = LocalExtensionParams::default();
     local_params.k_nearest = params.stage6_5_local_k_nearest;
     local_params.common.search_rel = params.rescue_search_rel;

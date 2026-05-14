@@ -90,7 +90,7 @@ fn main() {
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap_native = extract_snap(&img, snap_idx);
             let snap = maybe_upscale(&snap_native, upscale);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&snap, &chess_cfg, 0.0);
             corners_per_snap.push(corners.len());
             let detector = Detector::new(detector_params.clone());
             let frame = detector.detect_debug(&corners);

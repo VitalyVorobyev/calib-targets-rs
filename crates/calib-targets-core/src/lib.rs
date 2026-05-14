@@ -52,10 +52,11 @@ pub use image::{
 pub use rectify::{RectToImgMapper, RectifiedView};
 
 pub use chess::{
-    CenterOfMassConfig, ChessConfig, ChessCornerParams, CoarseToFineParams, DescriptorMode,
-    DetectorMode, ForstnerConfig, PyramidParams, RadonDetectorParams, RefinementMethod,
-    RefinerConfig, RefinerKind, SaddlePointConfig, ThresholdMode, UpscaleConfig,
-    UpscaleConfigError, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessCornerParams, ChessRefiner, ChessRing,
+    CoarseToFineParams, DescriptorRing, DetectionStrategy, Detector, DetectorConfig,
+    ForstnerConfig, MultiscaleConfig, OrientationMethod, PyramidParams, RadonConfig,
+    RadonDetectorParams, RadonPeakConfig, RadonRefiner, RefinerKind, SaddlePointConfig, Threshold,
+    UpscaleConfig, UpscaleConfigError,
 };
 pub use corner::{AxisEstimate, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

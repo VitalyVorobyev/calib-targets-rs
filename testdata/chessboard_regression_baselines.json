@@ -32,8 +32,9 @@
     {
       "path": "testdata/small0.png",
       "require_detection": true,
-      "min_labelled": 100,
-      "max_components": 2
+      "min_labelled": 90,
+      "max_components": 2,
+      "note": "post-pass-3 parity_shift fix corrects Stage 6 / 6.5 parity gate (was inverted under odd-parity-shift rebase like seed.A landing at (3, 6) post-rebase). Pre-fix attached parity-inverted candidates that were structurally chessboard but at wrong (i, j) cells; post-fix rejects them and emits 97 correctly-parity-labelled corners. Floor lowered from 100 → 90 to accommodate."
     },
     {
       "path": "testdata/small1.png",

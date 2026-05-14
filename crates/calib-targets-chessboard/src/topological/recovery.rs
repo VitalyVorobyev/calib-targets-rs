@@ -285,6 +285,12 @@ pub(super) fn recover_topological_components(
         }
         mark_labelled(&mut augs, &labelled);
 
+        // Topological recovery's (i, j) frame is independent of BFS:
+        // the parity convention here is set by `align_label_parity`
+        // (called above when `clustered_centers.is_some()`) which
+        // ensures the labelled set's labels match `(i + j) % 2 == 0
+        // → Canonical`. So `parity_shift = 0` for the topological
+        // path's labelled set, regardless of the bbox min.
         let mut grow = GrowResult {
             labelled,
             by_corner: Default::default(),
@@ -292,6 +298,8 @@ pub(super) fn recover_topological_components(
             holes: Default::default(),
             grid_u,
             grid_v,
+            parity_shift_i: 0,
+            parity_shift_j: 0,
         };
         grow.by_corner = grow.labelled.iter().map(|(&k, &v)| (v, k)).collect();
 
@@ -366,6 +374,10 @@ pub(super) fn build_topological_detections(
         let mut augs = base_augs.to_vec();
         mark_labelled(&mut augs, &labelled);
         let cell_size = estimate_cell_size_from_labels(&labelled, positions);
+        // Topological recovery: the labels' parity convention is set
+        // by `align_label_parity` (when applicable); no parity shift
+        // needed here. See the other GrowResult initializer above for
+        // the full reasoning.
         let mut grow = GrowResult {
             by_corner: labelled.iter().map(|(&k, &v)| (v, k)).collect(),
             labelled,
@@ -373,6 +385,8 @@ pub(super) fn build_topological_detections(
             holes: Default::default(),
             grid_u,
             grid_v,
+            parity_shift_i: 0,
+            parity_shift_j: 0,
         };
 
         // Geometry verification (Phase B). The chessboard-v2 path runs

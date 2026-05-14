@@ -46,7 +46,8 @@ use calib_targets::core::{
     TargetDetection, TargetKind,
 };
 use calib_targets::detect::{
-    CenterOfMassConfig, ChessConfig, ForstnerConfig, SaddlePointConfig, UpscaleConfig,
+    CenterOfMassConfig, ChessRefiner, DetectorConfig, ForstnerConfig, MultiscaleConfig,
+    SaddlePointConfig, Threshold, UpscaleConfig,
 };
 use calib_targets::marker::{
     CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
@@ -182,42 +183,78 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
     Ok(cfg)
 }
 
-pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<ChessConfig> {
+pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<DetectorConfig> {
     let params = convert_chess_params(&config.params)?;
     let multiscale_pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
     let merge_radius = require_nonnegative(
         config.multiscale.merge_radius,
         "chess.multiscale.merge_radius",
     )?;
+    let upscale = convert_upscale_config(&config.upscale)?;
 
-    // Reconstruct `ChessConfig` from the low-level `ChessParams`. Upstream
-    // `chess_corners::ChessConfig` is `#[non_exhaustive]`, so we start
-    // from `default()` and assign each field.
-    let mut chess = ChessConfig::default();
-    chess.detector_mode = if params.use_radius10 {
-        calib_targets::detect::DetectorMode::Broad
+    // Map the low-level `ChessParams` onto the new strategy-typed
+    // `DetectorConfig`. The flat C shape (`use_radius10`,
+    // `descriptor_use_radius10`, `nms_radius`, `min_cluster_size`,
+    // `refiner`, `threshold_abs/rel`) is translated into the ChESS
+    // strategy + the top-level `Threshold` enum.
+    let threshold = match params.threshold_abs {
+        Some(value) => Threshold::Absolute(value),
+        None => Threshold::Relative(params.threshold_rel),
+    };
+    let ring = if params.use_radius10 {
+        calib_targets::detect::ChessRing::Broad
     } else {
-        calib_targets::detect::DetectorMode::Canonical
+        calib_targets::detect::ChessRing::Canonical
     };
-    chess.descriptor_mode = match params.descriptor_use_radius10 {
-        None => calib_targets::detect::DescriptorMode::FollowDetector,
-        Some(false) => calib_targets::detect::DescriptorMode::Canonical,
-        Some(true) => calib_targets::detect::DescriptorMode::Broad,
+    let descriptor_ring = match params.descriptor_use_radius10 {
+        None => calib_targets::detect::DescriptorRing::FollowDetector,
+        Some(false) => calib_targets::detect::DescriptorRing::Canonical,
+        Some(true) => calib_targets::detect::DescriptorRing::Broad,
     };
-    chess.threshold_mode = if params.threshold_abs.is_some() {
-        calib_targets::detect::ThresholdMode::Absolute
+    let refiner = refiner_kind_to_chess_refiner(params.refiner);
+    let nms_radius = params.nms_radius;
+    let min_cluster_size = params.min_cluster_size;
+
+    // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
+    // detector skips the pyramid path entirely.
+    let multiscale = if multiscale_pyramid.num_levels <= 1 {
+        MultiscaleConfig::SingleScale
     } else {
-        calib_targets::detect::ThresholdMode::Relative
+        MultiscaleConfig::Pyramid {
+            levels: multiscale_pyramid.num_levels,
+            min_size: multiscale_pyramid.min_size,
+            refinement_radius: config.multiscale.refinement_radius,
+        }
     };
-    chess.threshold_value = params.threshold_abs.unwrap_or(params.threshold_rel);
-    chess.nms_radius = params.nms_radius;
-    chess.min_cluster_size = params.min_cluster_size;
-    chess.pyramid_levels = multiscale_pyramid.num_levels;
-    chess.pyramid_min_size = multiscale_pyramid.min_size;
-    chess.refinement_radius = config.multiscale.refinement_radius;
-    chess.merge_radius = merge_radius;
-    chess.upscale = convert_upscale_config(&config.upscale)?;
-    Ok(chess)
+
+    Ok(DetectorConfig::chess()
+        .with_threshold(threshold)
+        .with_multiscale(multiscale)
+        .with_upscale(upscale)
+        .with_merge_radius(merge_radius)
+        .with_chess(|c| {
+            c.ring = ring;
+            c.descriptor_ring = descriptor_ring;
+            c.nms_radius = nms_radius;
+            c.min_cluster_size = min_cluster_size;
+            c.refiner = refiner;
+        }))
+}
+
+/// Translate a low-level [`RefinerKind`] back into the facade-level
+/// [`ChessRefiner`] enum used by [`DetectorConfig`]. ChESS callers only
+/// surface the three image-patch refiners (the Radon-peak refiner is for
+/// the Radon strategy); fall back to the default `CenterOfMass` for any
+/// future / Radon-specific variant.
+fn refiner_kind_to_chess_refiner(kind: RefinerKind) -> ChessRefiner {
+    match kind {
+        RefinerKind::CenterOfMass(cfg) => ChessRefiner::CenterOfMass(cfg),
+        RefinerKind::Forstner(cfg) => ChessRefiner::Forstner(cfg),
+        RefinerKind::SaddlePoint(cfg) => ChessRefiner::SaddlePoint(cfg),
+        // RefinerKind is `#[non_exhaustive]`; Radon-only / future variants
+        // fall through to the library default for the ChESS strategy.
+        _ => ChessRefiner::default(),
+    }
 }
 
 // ─── Optional wrappers ──────────────────────────────────────────────────────

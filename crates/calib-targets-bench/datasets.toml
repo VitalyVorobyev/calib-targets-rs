@@ -59,6 +59,36 @@ note = "Tilted-lens ChArUco, partial focus."
 # should still build a labelled grid; we use these as a stress test for
 # perspective foreshortening and (in example2) radial distortion.
 [[image]]
+path = "testdata/02-topo-grid/GeminiChess1.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
+path = "testdata/02-topo-grid/GeminiChess2.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
+path = "testdata/02-topo-grid/GeminiChess3.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
+path = "testdata/02-topo-grid/GeminiChess4.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
+path = "testdata/02-topo-grid/gptchess1.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
+path = "testdata/02-topo-grid/gptchess2.png"
+kind = "public"
+note = "AI-generated chessboard image — blog post topo-grid illustration set."
+
+[[image]]
 path = "testdata/puzzleboard_reference/example1.png"
 kind = "public"
 note = "PuzzleBoard at extreme oblique perspective (~45° tilt)."

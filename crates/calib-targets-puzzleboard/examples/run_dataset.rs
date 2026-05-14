@@ -229,7 +229,7 @@ fn main() {
             let snap = maybe_upscale(&native, args.upscale);
 
             let t0 = Instant::now();
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&snap, &chess_cfg, 0.0);
             let t_corners = t0.elapsed();
 
             let t0 = Instant::now();

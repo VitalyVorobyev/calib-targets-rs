@@ -167,6 +167,34 @@ pub struct GrowResult {
     /// Grid vectors carried forward — overlays / boosters use them.
     pub grid_u: Vector2<f32>,
     pub grid_v: Vector2<f32>,
+    /// Parity shift applied during the post-BFS rebase, modulo 2.
+    ///
+    /// BFS walks in pre-rebase coords where the seed's `(0, 0)` cell
+    /// has its caller-defined parity (e.g., `Canonical` for the
+    /// chessboard convention). After BFS finishes, the labelled map
+    /// is rebased so the bounding-box minimum is `(0, 0)`. If the
+    /// rebase shift `(min_i, min_j)` has odd Manhattan parity (i.e.
+    /// `(min_i + min_j) % 2 == 1`), the rebase flips the parity at
+    /// every cell — what was at an even-parity cell is now at an
+    /// odd-parity cell post-rebase.
+    ///
+    /// For chessboard-style consumers that derive a "required label at
+    /// `(i, j)`" from `(i + j) % 2`, this means the post-rebase
+    /// `required_label_at(i, j)` gives the WRONG answer on every
+    /// cell when `parity_shift == 1`. Such consumers must instead
+    /// query `required_label_at(i + parity_shift_i, j + parity_shift_j)`
+    /// to recover the pre-rebase parity at the post-rebase cell.
+    ///
+    /// `parity_shift_i + parity_shift_j` is always equivalent to
+    /// `parity_shift` mod 2; this struct exposes both individual
+    /// shifts so consumers that depend on the absolute (i, j) parity
+    /// (rare) can adjust without re-deriving them.
+    ///
+    /// For non-chessboard consumers (no parity invariant), this field
+    /// can be ignored.
+    pub parity_shift_i: i32,
+    /// See [`Self::parity_shift_i`].
+    pub parity_shift_j: i32,
 }
 
 /// Grow a labelled `(i, j)` grid from a 2×2 seed using BFS over the
@@ -287,6 +315,17 @@ pub fn bfs_grow<V: GrowValidator>(
     let ambiguous: HashSet<(i32, i32)> = ambiguous.into_iter().map(rebase_pos).collect();
     let holes: HashSet<(i32, i32)> = holes.into_iter().map(rebase_pos).collect();
 
+    // Parity shifts: when the rebase shifts a coord by an odd amount,
+    // the post-rebase parity at any cell flips relative to pre-rebase.
+    // Chessboard consumers that derive a "required label at (i, j)"
+    // from `(i + j) % 2` must add these shifts back to recover the
+    // pre-rebase parity. Stored mod 2 for clarity; downstream may
+    // also use the simpler combined `(parity_shift_i + parity_shift_j)
+    // % 2` for chessboard parity since the convention only depends on
+    // `(i + j) % 2`.
+    let parity_shift_i = min_i.rem_euclid(2);
+    let parity_shift_j = min_j.rem_euclid(2);
+
     GrowResult {
         labelled,
         by_corner,
@@ -294,6 +333,8 @@ pub fn bfs_grow<V: GrowValidator>(
         holes,
         grid_u,
         grid_v,
+        parity_shift_i,
+        parity_shift_j,
     }
 }
 

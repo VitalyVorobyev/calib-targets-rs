@@ -303,7 +303,7 @@ fn run_one(
     snap_index: u32,
     snap: &image::GrayImage,
     upscale: u32,
-    chess_cfg: &calib_targets_core::ChessConfig,
+    chess_cfg: &calib_targets_core::DetectorConfig,
     detector: &CharucoDetector,
     board: &CharucoBoardSpec,
     emit_diag: bool,
@@ -313,7 +313,7 @@ fn run_one(
 
     let t_total = Instant::now();
     let t_chess = Instant::now();
-    let corners: Vec<Corner> = detect_corners(snap, chess_cfg);
+    let corners: Vec<Corner> = detect_corners(snap, chess_cfg, 0.0);
     let chess_ms = t_chess.elapsed().as_secs_f32() * 1000.0;
 
     let view = GrayImageView {

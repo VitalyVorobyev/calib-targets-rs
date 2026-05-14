@@ -34,6 +34,16 @@ pub struct GrowResult {
     pub holes: HashSet<(i32, i32)>,
     pub grid_u: Vector2<f32>,
     pub grid_v: Vector2<f32>,
+    /// Parity shift applied during the post-BFS rebase. See
+    /// [`pg_grow::GrowResult::parity_shift_i`] /
+    /// [`pg_grow::GrowResult::parity_shift_j`] for the full discussion.
+    /// Chessboard-specific `required_label_at(i, j)` consumers must
+    /// adjust by `(i + parity_shift_i + j + parity_shift_j) % 2` to
+    /// recover the pre-rebase parity at the post-rebase cell — i.e.
+    /// when `(parity_shift_i + parity_shift_j) % 2 == 1`, the parity
+    /// is inverted.
+    pub parity_shift_i: i32,
+    pub parity_shift_j: i32,
 }
 
 impl From<pg_grow::GrowResult> for GrowResult {
@@ -45,6 +55,8 @@ impl From<pg_grow::GrowResult> for GrowResult {
             holes: r.holes,
             grid_u: r.grid_u,
             grid_v: r.grid_v,
+            parity_shift_i: r.parity_shift_i,
+            parity_shift_j: r.parity_shift_j,
         }
     }
 }
@@ -108,6 +120,13 @@ pub(crate) struct ChessboardGrowValidator<'a> {
     pub(crate) attach_tol_rad: f32,
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
+    /// Parity shift applied by the post-BFS rebase. `0` during BFS
+    /// (where coords are pre-rebase), and `(parity_shift_i +
+    /// parity_shift_j) % 2` from `pg_grow::GrowResult` for Stage 6 /
+    /// 6.5 / boosters / geometry-check (where coords are post-rebase).
+    /// When `1`, `required_label_at(i, j)` returns the FLIPPED
+    /// chessboard convention to match the BFS-assigned labels.
+    pub(crate) parity_shift: i32,
 }
 
 impl<'a> ChessboardGrowValidator<'a> {
@@ -131,7 +150,15 @@ impl<'a> ChessboardGrowValidator<'a> {
             attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
             edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
             step_tol: params.step_tol,
+            parity_shift: 0,
         }
+    }
+
+    /// Set the parity shift introduced by the post-BFS rebase. See
+    /// `parity_shift` field comment for the full discussion.
+    pub(crate) fn with_parity_shift(mut self, parity_shift: i32) -> Self {
+        self.parity_shift = parity_shift.rem_euclid(2);
+        self
     }
 }
 
@@ -144,7 +171,14 @@ impl<'a> pg_grow::GrowValidator for ChessboardGrowValidator<'a> {
     }
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
-        Some(label_to_u8(required_label_at(i, j)))
+        // `required_label_at` derives the chessboard parity from
+        // `(i + j) % 2` under the seed convention seed.A=Canonical at
+        // (0, 0). When the post-BFS rebase has odd Manhattan parity
+        // (`(min_i + min_j) % 2 == 1`), the post-rebase cell coords
+        // have the chessboard parity FLIPPED relative to the
+        // pre-rebase BFS. Adding `parity_shift` to one coord
+        // recovers the pre-rebase parity at the post-rebase cell.
+        Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
 
     fn label_of(&self, idx: usize) -> Option<u8> {
@@ -268,6 +302,8 @@ pub(crate) struct ChessboardRescueValidator<'a> {
     pub(crate) rescue_tol_rad: f32,
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
+    /// Same parity-shift semantics as [`ChessboardGrowValidator::parity_shift`].
+    pub(crate) parity_shift: i32,
 }
 
 impl<'a> ChessboardRescueValidator<'a> {
@@ -286,7 +322,15 @@ impl<'a> ChessboardRescueValidator<'a> {
             rescue_tol_rad: params.rescue_axis_tol_deg.to_radians(),
             edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
             step_tol: params.step_tol,
+            parity_shift: 0,
         }
+    }
+
+    /// Set the parity shift introduced by the post-BFS rebase. See
+    /// [`ChessboardGrowValidator::with_parity_shift`].
+    pub(crate) fn with_parity_shift(mut self, parity_shift: i32) -> Self {
+        self.parity_shift = parity_shift.rem_euclid(2);
+        self
     }
 }
 
@@ -320,7 +364,14 @@ impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
     }
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
-        Some(label_to_u8(required_label_at(i, j)))
+        // `required_label_at` derives the chessboard parity from
+        // `(i + j) % 2` under the seed convention seed.A=Canonical at
+        // (0, 0). When the post-BFS rebase has odd Manhattan parity
+        // (`(min_i + min_j) % 2 == 1`), the post-rebase cell coords
+        // have the chessboard parity FLIPPED relative to the
+        // pre-rebase BFS. Adding `parity_shift` to one coord
+        // recovers the pre-rebase parity at the post-rebase cell.
+        Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
 
     fn label_of(&self, idx: usize) -> Option<u8> {

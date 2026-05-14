@@ -1,4 +1,4 @@
-use ::calib_targets::detect::ChessConfig;
+use ::calib_targets::detect::DetectorConfig;
 use ::calib_targets::{charuco, chessboard, detect, marker, printable, puzzleboard};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
@@ -155,7 +155,7 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
 // Config extraction
 // ---------------------------------------------------------------------------
 
-fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<ChessConfig> {
+fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig> {
     let Some(obj) = obj else {
         return Ok(detect::default_chess_config());
     };
@@ -235,7 +235,7 @@ struct TopologicalCornerPayload {
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chessboard.chess`.
 ///   params: dict with CharucoParams fields (must include `board`).
 ///
@@ -269,7 +269,7 @@ fn detect_charuco(
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chess`.
 ///   params: dict with ChessboardParams fields, or None for defaults.
 ///
@@ -312,7 +312,7 @@ fn detect_chessboard(
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chess`.
 ///   params: dict with ChessboardParams fields, or None for defaults.
 ///
@@ -353,7 +353,7 @@ fn detect_chessboard_all(
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chess`.
 ///   params: dict with ChessboardParams fields, or None for defaults.
 ///
@@ -461,7 +461,7 @@ fn trace_chessboard_topological(
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chessboard.chess`.
 ///   params: dict with MarkerBoardParams fields, or None for defaults.
 ///
@@ -500,7 +500,7 @@ fn detect_marker_board(
 ///
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with ChessConfig fields, or None for defaults.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
 ///     If provided, overrides `params.chessboard.chess`.
 ///   params: dict with PuzzleBoardParams fields (must include `board`).
 ///

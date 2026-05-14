@@ -7,8 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use calib_targets::chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
-use calib_targets::core::ChessConfig;
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::core::DetectorConfig;
+use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use clap::Parser;
 use image::ImageReader;
 use serde::Serialize;
@@ -16,6 +16,30 @@ use tracing::{Id, Subscriber};
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::registry::{LookupSpan, Registry};
 use tracing_subscriber::Layer;
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
+enum OrientationMethodArg {
+    RingFit,
+    DiskFit,
+}
+
+impl OrientationMethodArg {
+    fn slug(self) -> &'static str {
+        match self {
+            OrientationMethodArg::RingFit => "ring_fit",
+            OrientationMethodArg::DiskFit => "disk_fit",
+        }
+    }
+}
+
+impl From<OrientationMethodArg> for OrientationMethod {
+    fn from(v: OrientationMethodArg) -> Self {
+        match v {
+            OrientationMethodArg::RingFit => OrientationMethod::RingFit,
+            OrientationMethodArg::DiskFit => OrientationMethod::DiskFit,
+        }
+    }
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -26,12 +50,10 @@ struct Args {
     /// Directory containing PNG images.
     #[arg(long, default_value = "testdata/02-topo-grid")]
     image_dir: PathBuf,
-    /// Output JSON report path.
-    #[arg(
-        long,
-        default_value = "tools/out/topo-grid-performance/stage-breakdown.json"
-    )]
-    out: PathBuf,
+    /// Output JSON report path. Defaults to a slug-suffixed name so that
+    /// `ring-fit` and `disk-fit` runs do not clobber each other.
+    #[arg(long)]
+    out: Option<PathBuf>,
     /// Timed repeats per image.
     #[arg(long, default_value_t = 30)]
     repeats: usize,
@@ -41,6 +63,11 @@ struct Args {
     /// Optional explicit ChESS pre-blur sigma in pixels.
     #[arg(long, default_value_t = 0.0)]
     blur_sigma: f32,
+    /// Override chess-corners' axis-fit method. Default `ring-fit` matches
+    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
+    /// disk-sector fit added in chess-corners 0.9.
+    #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
+    orientation_method: OrientationMethodArg,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
@@ -281,7 +308,7 @@ fn span_ms(spans: &HashMap<&'static str, f64>, name: &'static str) -> f64 {
 
 fn measure_once(
     img: &image::GrayImage,
-    chess_cfg: &ChessConfig,
+    chess_cfg: &DetectorConfig,
     pre_blur_sigma_px: f32,
     params: &DetectorParams,
     totals: &SpanTotals,
@@ -332,7 +359,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let chess_cfg = default_chess_config();
+    let mut chess_cfg = default_chess_config();
+    chess_cfg.orientation_method = args.orientation_method.into();
     let pre_blur_sigma_px = args.blur_sigma;
 
     let mut params = DetectorParams::default();
@@ -392,10 +420,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         images,
     };
 
-    if let Some(parent) = args.out.parent() {
+    let out_path = args.out.unwrap_or_else(|| {
+        PathBuf::from(format!(
+            "tools/out/topo-grid-performance/stage-breakdown-{}.json",
+            args.orientation_method.slug()
+        ))
+    });
+    if let Some(parent) = out_path.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&args.out, serde_json::to_string_pretty(&report)?)?;
-    println!("wrote {}", args.out.display());
+    fs::write(&out_path, serde_json::to_string_pretty(&report)?)?;
+    println!("wrote {}", out_path.display());
     Ok(())
 }
