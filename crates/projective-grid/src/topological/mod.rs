@@ -3,9 +3,9 @@
 //! Builds a labelled `(i, j)` grid from a cloud of 2D corners by:
 //!
 //! 1. Delaunay-triangulating the points.
-//! 2. Classifying each Delaunay edge as a *grid edge*, *diagonal*, or
-//!    *spurious* using the per-corner ChESS axes — no image color sampling
-//!    is required.
+//! 2. Classifying Delaunay grid edges from the per-corner ChESS axes, then
+//!    inferring diagonals from local triangle topology — no image color
+//!    sampling is required.
 //! 3. Merging triangle pairs whose shared edge is a diagonal into quads
 //!    (one quad per chessboard cell).
 //! 4. Pruning corners with quad-degree > 4 (illegal), then quads with two
@@ -143,14 +143,11 @@ pub struct TopologicalParams {
     /// pre-cluster-gate values were a workaround for the missing global
     /// axis filter; with the gate active they're a precision risk.
     pub axis_align_tol_rad: f32,
-    /// Maximum angular distance, in radians, between an edge's direction
-    /// and `axis ± π/4` for the edge to be classified as a *diagonal* at
-    /// that corner. Default: `15° = 0.262`. With
-    /// [`Self::axis_align_tol_rad`] also at 15°, the sum is below π/4
-    /// so a single edge can never satisfy both base predicates. The
-    /// classifier may still promote broad diagonal candidates in a bounded
-    /// second pass because perspective and local scale anisotropy move
-    /// projected cell diagonals away from the fixed 45° assumption.
+    /// Legacy 45° diagnostic tolerance, in radians, used only when reporting
+    /// `diagonal_margin_rad` in topological traces. Diagonal classification
+    /// itself is local-affine: a triangle with two valid grid sides using
+    /// different axis slots at their shared vertex promotes its remaining
+    /// edge to a diagonal. Default: `15° = 0.262`.
     pub diagonal_angle_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a corner to participate
     /// in classification. Corners whose both axes have `sigma >=
@@ -262,6 +259,31 @@ pub struct TopologicalStats {
 pub struct TopologicalGrid {
     pub components: Vec<TopologicalComponent>,
     pub diagnostics: TopologicalStats,
+}
+
+impl TopologicalGrid {
+    /// Run the generic local-geometry component merge on this topological
+    /// result.
+    ///
+    /// The returned components are still image-frame corner indices into the
+    /// same `positions` slice used to build this grid. This is the final
+    /// projective-grid-only post-stage; chessboard-specific recovery and
+    /// final precision gates live in `calib-targets-chessboard`.
+    pub fn merge_components_local(
+        &self,
+        positions: &[Point2<f32>],
+        params: &crate::component_merge::LocalMergeParams,
+    ) -> crate::component_merge::ComponentMergeResult {
+        let views: Vec<_> = self
+            .components
+            .iter()
+            .map(|component| crate::component_merge::ComponentInput {
+                labelled: &component.labelled,
+                positions,
+            })
+            .collect();
+        crate::component_merge::merge_components_local(&views, params)
+    }
 }
 
 /// Per-triangle edge-composition bucket used by diagnostics and tracing.
@@ -475,4 +497,20 @@ pub fn build_grid_topological(
         components,
         diagnostics: stats,
     })
+}
+
+/// Build a topological grid and run the generic local component merge.
+///
+/// This is the projective-grid-only final recovery path: input points and
+/// image-frame axis hints go in, merged square-grid components come out. It
+/// intentionally does not apply chessboard-specific precision gates or image
+/// sampling; those live in target-specific crates.
+pub fn recover_topological_grid(
+    positions: &[Point2<f32>],
+    axes: &[[AxisHint; 2]],
+    topo_params: &TopologicalParams,
+    merge_params: &crate::component_merge::LocalMergeParams,
+) -> Result<crate::component_merge::ComponentMergeResult, TopologicalError> {
+    let grid = build_grid_topological(positions, axes, topo_params)?;
+    Ok(grid.merge_components_local(positions, merge_params))
 }

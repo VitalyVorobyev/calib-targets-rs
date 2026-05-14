@@ -108,7 +108,7 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
 /// Corner detection uses [`default_chess_config`]; the chessboard detector's
 /// own parameters are [`chessboard::DetectorParams`]. Callers needing
 /// custom ChESS settings should call [`detect_corners`] explicitly and
-/// invoke [`chessboard::Detector`] themselves.
+/// invoke [`detect_chessboard_with_config`].
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -121,7 +121,30 @@ pub fn detect_chessboard(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> Option<chessboard::Detection> {
-    let corners = detect_corners_default(img);
+    detect_chessboard_with_config(img, &default_chess_config(), params, 0.0)
+}
+
+/// Run the chessboard detector end-to-end with explicit ChESS settings.
+///
+/// This keeps the common image → ChESS corners → labelled grid path in one
+/// call while still letting callers tune the corner threshold, orientation
+/// method, and optional pre-blur. Corner positions remain in the input image
+/// frame.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+    pre_blur_sigma_px: f32,
+) -> Option<chessboard::Detection> {
+    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect(&corners)
 }
@@ -140,7 +163,25 @@ pub fn detect_chessboard_all(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> Vec<chessboard::Detection> {
-    let corners = detect_corners_default(img);
+    detect_chessboard_all_with_config(img, &default_chess_config(), params, 0.0)
+}
+
+/// Multi-component variant of [`detect_chessboard_with_config`].
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_all_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+    pre_blur_sigma_px: f32,
+) -> Vec<chessboard::Detection> {
+    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect_all(&corners)
 }
@@ -161,7 +202,25 @@ pub fn detect_chessboard_debug(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> chessboard::DebugFrame {
-    let corners = detect_corners_default(img);
+    detect_chessboard_debug_with_config(img, &default_chess_config(), params, 0.0)
+}
+
+/// Debug variant of [`detect_chessboard_with_config`].
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_debug_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+    pre_blur_sigma_px: f32,
+) -> chessboard::DebugFrame {
+    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect_debug(&corners)
 }

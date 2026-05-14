@@ -212,6 +212,11 @@ def test_chessboard_params_graph_build_algorithm() -> None:
     restored = calib_targets.ChessboardParams.from_dict(topo.to_dict())
     assert restored.graph_build_algorithm == "topological"
 
+    preset = calib_targets.ChessboardParams.for_topological(min_labeled_corners=16)
+    assert preset.graph_build_algorithm == "topological"
+    assert preset.min_labeled_corners == 16
+    assert preset.to_dict()["graph_build_algorithm"] == "topological"
+
 
 def test_topological_trace_wrapper_shape() -> None:
     params = calib_targets.ChessboardParams(graph_build_algorithm="topological")

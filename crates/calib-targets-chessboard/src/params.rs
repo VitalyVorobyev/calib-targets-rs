@@ -742,6 +742,20 @@ impl Default for DetectorParams {
 }
 
 impl DetectorParams {
+    /// Convenience preset for the topological graph builder.
+    ///
+    /// Equivalent to `DetectorParams { graph_build_algorithm:
+    /// GraphBuildAlgorithm::Topological, ..DetectorParams::default() }`.
+    /// Useful for examples and one-off experiments where the caller wants
+    /// the Delaunay/topological path without spelling out the full struct
+    /// update.
+    pub fn topological() -> Self {
+        Self {
+            graph_build_algorithm: GraphBuildAlgorithm::Topological,
+            ..Self::default()
+        }
+    }
+
     /// Three-config sweep preset: default + tighter + looser angular tolerances.
     ///
     /// Intended for `detect_chessboard_best`-style flows that try multiple
@@ -782,5 +796,21 @@ mod tests {
         assert!(loose.cluster_tol_deg > base.cluster_tol_deg);
         assert!(tight.seed_edge_tol < base.seed_edge_tol);
         assert!(loose.seed_edge_tol > base.seed_edge_tol);
+    }
+
+    #[test]
+    fn topological_preset_only_changes_graph_builder() {
+        let topo = DetectorParams::topological();
+        let default = DetectorParams::default();
+        assert_eq!(topo.graph_build_algorithm, GraphBuildAlgorithm::Topological);
+        assert_eq!(
+            default.graph_build_algorithm,
+            GraphBuildAlgorithm::ChessboardV2
+        );
+        assert_eq!(
+            topo.topological.axis_align_tol_rad,
+            default.topological.axis_align_tol_rad
+        );
+        assert_eq!(topo.min_labeled_corners, default.min_labeled_corners);
     }
 }

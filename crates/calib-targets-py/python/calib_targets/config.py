@@ -792,6 +792,8 @@ class TopologicalParams:
     """
 
     axis_align_tol_rad: float = 0.2617993877991494  # 15°
+    # Legacy 45° trace diagnostic only; diagonals are inferred from local
+    # topological triangles in Rust.
     diagonal_angle_tol_rad: float = 0.2617993877991494  # 15°
     max_axis_sigma_rad: float = 0.6
     edge_ratio_max: float = 10.0
@@ -905,6 +907,16 @@ class ChessboardParams:
     # Output gates
     min_labeled_corners: int = 8
     max_components: int = 3
+
+    @classmethod
+    def for_topological(cls, **overrides: Any) -> ChessboardParams:
+        """Return defaults with the topological graph builder selected.
+
+        ``overrides`` are forwarded to ``ChessboardParams(...)`` after setting
+        ``graph_build_algorithm="topological"``.
+        """
+        overrides.setdefault("graph_build_algorithm", "topological")
+        return cls(**overrides)
 
     def to_dict(self) -> dict[str, Any]:
         return {

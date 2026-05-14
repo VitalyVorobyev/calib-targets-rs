@@ -5,9 +5,10 @@ use std::f32::consts::FRAC_PI_2;
 use nalgebra::Point2;
 
 use super::{
-    build_grid_topological, build_grid_topological_trace, AxisClusterCenters, AxisHint,
-    TopologicalParams,
+    build_grid_topological, build_grid_topological_trace, recover_topological_grid,
+    AxisClusterCenters, AxisHint, TopologicalParams,
 };
+use crate::LocalMergeParams;
 
 fn axes_axis_aligned() -> [AxisHint; 2] {
     [
@@ -58,10 +59,9 @@ fn build_axis_aligned_grid(
 #[test]
 fn default_tolerances_are_regression_values() {
     let params = TopologicalParams::default();
-    // 15°/15° — paired with the pre-Delaunay cluster gate. Together the
-    // two are below π/4 = 45° so an edge can never satisfy both Grid and
-    // Diagonal simultaneously in the base per-endpoint classifier. Broad
-    // projected diagonals are handled by a bounded second pass.
+    // 15° grid alignment is paired with the pre-Delaunay cluster gate.
+    // `diagonal_angle_tol_rad` is preserved for legacy 45° trace metrics
+    // and config compatibility, but it no longer gates classification.
     assert!((params.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
     assert!((params.diagonal_angle_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
 
@@ -76,6 +76,24 @@ fn clean_5x5_grid_produces_single_component() {
     let (pts, axs) = build_axis_aligned_grid(5, 5, 10.0);
     let g = build_grid_topological(&pts, &axs, &TopologicalParams::default()).unwrap();
     assert_eq!(g.components.len(), 1, "expected one connected component");
+    let merged = g.merge_components_local(&pts, &LocalMergeParams::default());
+    assert_eq!(
+        merged.components.len(),
+        1,
+        "merge helper preserves one component"
+    );
+    let recovered = recover_topological_grid(
+        &pts,
+        &axs,
+        &TopologicalParams::default(),
+        &LocalMergeParams::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        recovered.components.len(),
+        1,
+        "one-shot recovery preserves one component"
+    );
     let c = &g.components[0];
     assert_eq!(c.labelled.len(), 25, "all 25 corners labelled");
     // Expect 5x5 bounding box starting at (0, 0).
@@ -105,12 +123,13 @@ fn three_corners_of_one_cell_cannot_seed_a_topological_component() {
 }
 
 #[test]
-fn relaxed_diagonal_recovers_foreshortened_cell() {
+fn local_affine_triangle_inference_recovers_foreshortened_cell() {
     // A projected cell diagonal is not generally 45° from the projected grid
-    // axes. This parallelogram has sides at 0° and 54° with strong local scale
-    // anisotropy, so the Delaunay diagonal is about 26° from the horizontal
-    // axis: outside the standalone 15° diagonal gate, but still a valid
-    // projected cell diagonal.
+    // axes. This image-frame parallelogram has sides at 0° and 54° with strong
+    // local scale anisotropy. Its Delaunay diagonal is about 26° from the
+    // horizontal axis: outside both the grid gate and the legacy 45° diagnostic
+    // gate, but still the valid projected cell diagonal induced by the two
+    // local grid-step vectors.
     let axis1 = 54.0_f32.to_radians();
     let side_i = Point2::new(100.0, 0.0);
     let side_j = Point2::new(45.0 * axis1.cos(), 45.0 * axis1.sin());
@@ -123,9 +142,32 @@ fn relaxed_diagonal_recovers_foreshortened_cell() {
     let axs = vec![axes_pair(0.0, axis1); pts.len()];
 
     let trace = build_grid_topological_trace(&pts, &axs, &TopologicalParams::default()).unwrap();
+    assert_eq!(trace.diagnostics.triangles_mergeable, 2);
     assert_eq!(trace.diagnostics.quads_merged, 1);
     assert_eq!(trace.components.len(), 1);
     assert_eq!(trace.components[0].labels.len(), 4);
+}
+
+#[test]
+fn same_axis_grid_sides_do_not_infer_a_diagonal() {
+    // These three image-frame points form one Delaunay triangle. From the
+    // leftmost vertex, two incident edges are within the horizontal grid-axis
+    // tolerance, but both use the same axis slot. They are a local collinear
+    // chain, not the two sides of one projected cell, so the remaining edge
+    // must stay spurious.
+    let pts = vec![
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+        Point2::new(20.0, 4.0),
+    ];
+    let axs = vec![axes_axis_aligned(); pts.len()];
+
+    let trace = build_grid_topological_trace(&pts, &axs, &TopologicalParams::default()).unwrap();
+    assert_eq!(trace.diagnostics.triangles, 1);
+    assert_eq!(trace.diagnostics.triangles_mergeable, 0);
+    assert_eq!(trace.diagnostics.triangles_has_spurious, 1);
+    assert_eq!(trace.diagnostics.diagonal_edges, 0);
+    assert_eq!(trace.diagnostics.quads_merged, 0);
 }
 
 #[test]

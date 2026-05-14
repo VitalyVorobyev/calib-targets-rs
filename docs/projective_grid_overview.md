@@ -360,22 +360,25 @@ per-corner axes. Pipeline:
 3. **Axis-driven edge classification.** For each Delaunay half-edge
    `(a → b)`, compute the edge angle `θ = atan2(p_b − p_a)`. At each
    endpoint, take the minimum angular distance from `θ` to the
-   corner's two axes (modulo π — axes are undirected). Classify:
+   corner's two axes (modulo π — axes are undirected).
 
    - **Grid** if the min-distance is within `axis_align_tol_rad`
      (default 15°) at both endpoints — the edge runs along a cell
      side.
-   - **Diagonal** if the min-distance is within
-     `diagonal_angle_tol_rad` (default 15°) of `π/4` at both
-     endpoints — the edge crosses a cell diagonal.
-   - **Spurious** otherwise — background, noise, or a corner whose
+   - **Spurious** otherwise in the first pass — background, noise, or a corner whose
      local axes don't align with the global grid (e.g. corners
      inside an ArUco marker).
+   - **Diagonal** in a second pass when a Delaunay triangle has
+     exactly two Grid edges meeting at one vertex and those two edges
+     use different local axis slots there. This local-affine rule
+     treats a cell diagonal as the edge induced by the two projected
+     grid-step vectors, not as a fixed 45° image angle.
 
    This replaces Shu's original color test (which sampled triangle
    interior pixels). The axis test naturally rejects background
-   corners and stays valid under any image rotation, but breaks
-   when the per-corner axes locally rotate fast — see Gap 8 below.
+   corners and stays valid under any image rotation. The
+   `diagonal_angle_tol_rad` knob remains only as a legacy trace metric
+   tolerance for reporting distance to the old 45° predicate.
 
 4. **Triangle-pair merging.** A triangle is *mergeable* iff exactly
    one of its three edges is `Diagonal` and the other two are `Grid`.
@@ -644,24 +647,15 @@ corners cluster in the heavily distorted bottom-left strip. The
 `bench diagnose --algorithm topological` triangle-composition
 counters (`triangles_mergeable / triangles_multi_diag /
 triangles_has_spurious / triangles_all_grid`) localise the failure
-to triangle pair-merging: in distorted regions Delaunay produces
-triangles whose two long edges classify as both `Diagonal` (because
-the cell's diagonal is no longer at 45° to its sides), making the
-unique-diagonal merge step refuse the pair.
+to triangle pair-merging. The current classifier removes the old
+fixed-45° diagonal failure by inferring diagonals from triangles with
+two local grid sides. Remaining misses are expected to come from
+`all_grid` triangles, real occlusions, or component gaps rather than
+the legacy 45° diagonal gate.
 
-Loosening `axis_align_tol_rad` and `diagonal_angle_tol_rad` from 15°
-to 30° barely helps (173 → 174 corners): it's not classification
-noise, it's the strict 1-diagonal-2-grid pairing rule itself.
-
-**Fix options, in order of decreasing scope.**
-- *Permissive pairing.* When a triangle has ≥ 2 `Diagonal` edges,
-  pick the longest one as the diagonal (longest edge of a
-  cell-spanning triangle is its diagonal up to extreme
-  foreshortening). Smallest code change; should recover most of the
-  multi-diag triangles.
-- *Spurious salvage.* Treat one `Spurious` edge in a triangle as
-  `Grid` if its length matches the other Grid edge within a ratio.
-  Recovers `triangles_has_spurious` boundary cases.
+**Follow-up options, in order of decreasing scope.**
+- *Parity-assisted classification.* Use checkerboard parity when the
+  caller has it to distinguish true diagonals from same-axis skips.
 - *Hybrid extension.* After the topological pass, run
   `square::grow_extension::extend_via_local_homography` on
   unlabelled corners adjacent to the topological bbox. Combines

@@ -1,23 +1,21 @@
-//! Axis-driven edge classification (replaces the paper's color test).
+//! Axis-driven grid-edge classification plus local triangle diagonal inference
+//! (replaces the paper's color test).
 //!
 //! For a Delaunay half-edge from corner `a` to corner `b`, the edge angle
 //! `θ = atan2(b - a)` is compared to each corner's two axes (modulo π,
-//! since axes are undirected). The minimum angular distance to either
-//! axis at each endpoint determines the edge's classification at that
-//! endpoint:
+//! since axes are undirected). If both endpoints see the edge within
+//! `axis_align_tol_rad` of one usable axis, the edge is a **Grid** edge.
 //!
-//! - within `axis_align_tol_rad` of an axis → **Grid** (the edge runs
-//!   along a chessboard cell side at this corner);
-//! - within `diagonal_angle_tol_rad` of `axis ± π/4` → **Diagonal** (the
-//!   edge crosses a chessboard cell at this corner);
-//! - otherwise → **Spurious** (background or unaligned noise).
+//! Diagonals are not classified by a fixed `axis ± π/4` angle. Under a
+//! projective warp, a projected cell diagonal is induced by the local
+//! projected grid-step vectors, not by the angle bisector in image space.
+//! After the Grid/Spurious pass, each Delaunay triangle is inspected: if
+//! exactly two of its edges are Grid edges and those two edges meet at a
+//! vertex using different local axis slots, the remaining edge is promoted
+//! to **Diagonal** for that triangle.
 //!
-//! The base whole-edge classification is the conjunction of the
-//! per-endpoint classifications: an edge is `Grid` iff both endpoints see it
-//! as `Grid`, `Diagonal` iff both see it as `Diagonal`, otherwise
-//! `Spurious`. A bounded second pass then promotes broad diagonal candidates:
-//! a projected cell diagonal is not generally 45° from the projected grid
-//! axes, especially under perspective or optical warp.
+//! `diagonal_angle_tol_rad` is still reported in trace metrics as a legacy
+//! 45° diagnostic, but it no longer gates classification.
 //!
 //! Both endpoints of every edge are guaranteed to have at least one
 //! usable axis: high-`sigma` corners are filtered out at triangulation
@@ -45,11 +43,16 @@ pub enum EdgeKind {
     Spurious,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct GridAxisMatch {
+    slot: usize,
+    distance_rad: f32,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum EdgeAt {
-    Grid,
-    Diagonal,
-    Spurious,
+struct GridEdgeMatch {
+    start_slot: usize,
+    end_slot: usize,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -80,42 +83,47 @@ fn axis_diff(theta: f32, alpha: f32) -> f32 {
 /// axis at each endpoint has `sigma < max_axis_sigma_rad`. The per-axis
 /// `sigma` check below still skips an individual axis whose uncertainty
 /// is too high while keeping the corner's other (good) axis active.
-fn distances_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> (f32, f32) {
-    let mut min_d = f32::INFINITY;
-    for a in axes.iter() {
-        if a.sigma >= params.max_axis_sigma_rad {
+fn nearest_axis_at_corner(
+    theta: f32,
+    axes: &[AxisHint; 2],
+    params: &TopologicalParams,
+) -> Option<GridAxisMatch> {
+    let mut best: Option<GridAxisMatch> = None;
+    for (slot, a) in axes.iter().enumerate() {
+        if !a.sigma.is_finite() || a.sigma >= params.max_axis_sigma_rad {
             continue;
         }
         let d = axis_diff(theta, a.angle);
-        if d < min_d {
-            min_d = d;
+        if !d.is_finite() {
+            continue;
+        }
+        if best.is_none_or(|m| d < m.distance_rad) {
+            best = Some(GridAxisMatch {
+                slot,
+                distance_rad: d,
+            });
         }
     }
+    best
+}
+
+fn distances_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> (f32, f32) {
+    let best = nearest_axis_at_corner(theta, axes, params);
     debug_assert!(
-        min_d.is_finite(),
+        best.is_some(),
         "topological pre-filter must guarantee at least one usable axis per endpoint"
     );
+    let min_d = best.map_or(f32::INFINITY, |m| m.distance_rad);
     (min_d, (min_d - FRAC_PI_4).abs())
 }
 
-fn classify_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> EdgeAt {
-    let (grid_distance, diagonal_distance) = distances_at_corner(theta, axes, params);
-    if grid_distance < params.axis_align_tol_rad {
-        return EdgeAt::Grid;
-    }
-    if diagonal_distance < params.diagonal_angle_tol_rad {
-        return EdgeAt::Diagonal;
-    }
-    EdgeAt::Spurious
-}
-
-fn relaxed_diagonal_tol_rad(params: &TopologicalParams) -> f32 {
-    // A projected cell diagonal is not generally 45 degrees from the
-    // projected grid axes: perspective and local scale anisotropy can pull it
-    // much closer to one side of the cell. The base classifier keeps the
-    // precise 15°/15° split; this bounded relaxation catches broad diagonals
-    // while preserving `Grid` as the first, stricter predicate.
-    params.diagonal_angle_tol_rad + 1.5 * params.axis_align_tol_rad
+fn grid_match_at_corner(
+    theta: f32,
+    axes: &[AxisHint; 2],
+    params: &TopologicalParams,
+) -> Option<GridAxisMatch> {
+    let best = nearest_axis_at_corner(theta, axes, params)?;
+    (best.distance_rad < params.axis_align_tol_rad).then_some(best)
 }
 
 pub(crate) fn classify_edge_metric(
@@ -142,17 +150,96 @@ pub(crate) fn classify_edge_metric(
     }
 }
 
-fn edge_passes_relaxed_diagonal_gate(
-    positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+fn edge_vertices(triangulation: &Triangulation, edge: usize) -> (usize, usize) {
+    (
+        triangulation.triangles[edge],
+        triangulation.triangles[Triangulation::next_edge(edge)],
+    )
+}
+
+fn grid_axis_slot_at_vertex(
     triangulation: &Triangulation,
+    grid_matches: &[Option<GridEdgeMatch>],
     edge: usize,
-    params: &TopologicalParams,
-) -> bool {
-    let metric = classify_edge_metric(positions, axes, triangulation, edge, params);
-    metric
-        .diagonal_distance_rad
-        .is_some_and(|d| d < relaxed_diagonal_tol_rad(params))
+    vertex: usize,
+) -> Option<usize> {
+    let grid = grid_matches[edge]?;
+    let (start, end) = edge_vertices(triangulation, edge);
+    if vertex == start {
+        Some(grid.start_slot)
+    } else if vertex == end {
+        Some(grid.end_slot)
+    } else {
+        None
+    }
+}
+
+fn shared_vertex_of_edges(
+    triangulation: &Triangulation,
+    edge_a: usize,
+    edge_b: usize,
+) -> Option<usize> {
+    let (a0, a1) = edge_vertices(triangulation, edge_a);
+    let (b0, b1) = edge_vertices(triangulation, edge_b);
+    if a0 == b0 || a0 == b1 {
+        Some(a0)
+    } else if a1 == b0 || a1 == b1 {
+        Some(a1)
+    } else {
+        None
+    }
+}
+
+fn infer_triangle_diagonal(
+    triangulation: &Triangulation,
+    grid_matches: &[Option<GridEdgeMatch>],
+    kinds: &[EdgeKind],
+    triangle: usize,
+) -> Option<usize> {
+    let base = 3 * triangle;
+    let mut grid_edges = [usize::MAX; 2];
+    let mut grid_count = 0usize;
+    let mut non_grid_edge: Option<usize> = None;
+
+    for k in 0..3 {
+        let edge = base + k;
+        match kinds[edge] {
+            EdgeKind::Grid => {
+                if grid_count >= grid_edges.len() {
+                    return None;
+                }
+                grid_edges[grid_count] = edge;
+                grid_count += 1;
+            }
+            EdgeKind::Spurious => {
+                if non_grid_edge.is_some() {
+                    return None;
+                }
+                non_grid_edge = Some(k);
+            }
+            EdgeKind::Diagonal => return None,
+        }
+    }
+    if grid_count != 2 {
+        return None;
+    }
+
+    let shared = shared_vertex_of_edges(triangulation, grid_edges[0], grid_edges[1])?;
+    let slot0 = grid_axis_slot_at_vertex(triangulation, grid_matches, grid_edges[0], shared)?;
+    let slot1 = grid_axis_slot_at_vertex(triangulation, grid_matches, grid_edges[1], shared)?;
+    (slot0 != slot1).then_some(non_grid_edge?)
+}
+
+fn promote_triangle_diagonals_from_grid_edges(
+    triangulation: &Triangulation,
+    grid_matches: &[Option<GridEdgeMatch>],
+    kinds: &mut [EdgeKind],
+) {
+    for triangle in 0..triangulation.num_tri() {
+        if let Some(k) = infer_triangle_diagonal(triangulation, grid_matches, kinds, triangle) {
+            kinds[3 * triangle + k] = EdgeKind::Diagonal;
+        }
+    }
 }
 
 /// Classify every directed half-edge in the triangulation.
@@ -174,25 +261,24 @@ pub(crate) fn classify_all_edges(
 ) -> Vec<EdgeKind> {
     let n = triangulation.triangles.len();
     let mut kinds = vec![EdgeKind::Spurious; n];
+    let mut grid_matches = vec![None; n];
     for (e, kind) in kinds.iter_mut().enumerate().take(n) {
         let a = triangulation.triangles[e];
         let b = triangulation.triangles[Triangulation::next_edge(e)];
         let pa = positions[a];
         let pb = positions[b];
         let theta = (pb.y - pa.y).atan2(pb.x - pa.x);
-        let at_a = classify_at_corner(theta, &axes[a], params);
-        let at_b = classify_at_corner(theta, &axes[b], params);
-        *kind = match (at_a, at_b) {
-            (EdgeAt::Grid, EdgeAt::Grid) => EdgeKind::Grid,
-            (EdgeAt::Diagonal, EdgeAt::Diagonal) => EdgeKind::Diagonal,
-            _ => EdgeKind::Spurious,
-        };
-        if *kind == EdgeKind::Spurious
-            && edge_passes_relaxed_diagonal_gate(positions, axes, triangulation, e, params)
-        {
-            *kind = EdgeKind::Diagonal;
+        let at_a = grid_match_at_corner(theta, &axes[a], params);
+        let at_b = grid_match_at_corner(theta, &axes[b], params);
+        if let (Some(a_match), Some(b_match)) = (at_a, at_b) {
+            grid_matches[e] = Some(GridEdgeMatch {
+                start_slot: a_match.slot,
+                end_slot: b_match.slot,
+            });
+            *kind = EdgeKind::Grid;
         }
     }
+    promote_triangle_diagonals_from_grid_edges(triangulation, &grid_matches, &mut kinds);
     kinds
 }
 
@@ -226,28 +312,30 @@ mod tests {
         let p = TopologicalParams::default();
         let a = axes(0.0, FRAC_PI_2);
         // Edge angle = 0 → aligned with first axis at (almost) zero distance.
-        assert_eq!(classify_at_corner(0.0, &a, &p), EdgeAt::Grid);
+        let horizontal = grid_match_at_corner(0.0, &a, &p).unwrap();
+        assert_eq!(horizontal.slot, 0);
+        assert!(horizontal.distance_rad < 1e-6);
         // Edge angle = π/2 → aligned with second axis.
-        assert_eq!(classify_at_corner(FRAC_PI_2, &a, &p), EdgeAt::Grid);
+        let vertical = grid_match_at_corner(FRAC_PI_2, &a, &p).unwrap();
+        assert_eq!(vertical.slot, 1);
+        assert!(vertical.distance_rad < 1e-6);
     }
 
     #[test]
-    fn diagonal_edge_is_diagonal() {
+    fn legacy_diagonal_metric_is_not_a_grid_match() {
         let p = TopologicalParams::default();
         let a = axes(0.0, FRAC_PI_2);
-        assert_eq!(classify_at_corner(FRAC_PI_4, &a, &p), EdgeAt::Diagonal);
-        assert_eq!(classify_at_corner(-FRAC_PI_4, &a, &p), EdgeAt::Diagonal);
+        assert!(grid_match_at_corner(FRAC_PI_4, &a, &p).is_none());
+        let (grid, diagonal) = distances_at_corner(FRAC_PI_4, &a, &p);
+        assert!((grid - FRAC_PI_4).abs() < 1e-6);
+        assert!(diagonal.abs() < 1e-6);
     }
 
     #[test]
     fn unaligned_edge_is_spurious() {
         let p = TopologicalParams::default();
         let a = axes(0.0, FRAC_PI_2);
-        // 22° from horizontal axis: outside the 15° grid tolerance and
-        // far from the 45° diagonal (|22-45| = 23° > 15° tol).
-        assert_eq!(
-            classify_at_corner(22.0_f32.to_radians(), &a, &p),
-            EdgeAt::Spurious
-        );
+        // 22° from horizontal axis: outside the 15° grid tolerance.
+        assert!(grid_match_at_corner(22.0_f32.to_radians(), &a, &p).is_none());
     }
 }

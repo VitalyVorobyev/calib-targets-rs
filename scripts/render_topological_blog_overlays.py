@@ -526,7 +526,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
-    parser.add_argument("--diagonal-angle-tol-deg", type=float, default=15.0)
+    parser.add_argument(
+        "--diagonal-angle-tol-deg",
+        type=float,
+        default=15.0,
+        help="Legacy 45-degree trace diagnostic tolerance; no longer gates diagonal classification.",
+    )
     parser.add_argument("--max-axis-sigma-deg", type=float, default=math.degrees(0.6))
     parser.add_argument("--edge-ratio-max", type=float, default=10.0)
     parser.add_argument("--min-quads-per-component", type=int, default=1)

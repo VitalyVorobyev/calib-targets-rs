@@ -88,15 +88,18 @@ The stages are:
    as spurious.
 
 3. **Half-edge classification**
-   Each directed Delaunay edge is classified at both endpoints as `Grid`,
-   `Diagonal`, or `Spurious`.
+   Each directed Delaunay edge is first classified at both endpoints as
+   `Grid` or `Spurious` from local axis alignment. A second triangle-local
+   pass promotes the remaining edge of a two-grid-side triangle to
+   `Diagonal` when the two grid sides use different local axis slots at their
+   shared vertex.
 
    Current defaults:
 
-   - `axis_align_tol_rad = 22 deg`
-   - `diagonal_angle_tol_rad = 18 deg`
+   - `axis_align_tol_rad = 15 deg`
+   - `diagonal_angle_tol_rad = 15 deg` (legacy 45-degree trace metric only)
 
-   The edge kind is accepted only when both endpoints agree.
+   Grid edges are accepted only when both endpoints agree.
 
 4. **Triangle diagnostics**
    Each triangle is bucketed as `Mergeable`, `AllGrid`, `MultiDiagonal`, or

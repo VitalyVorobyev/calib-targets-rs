@@ -72,7 +72,9 @@ struct DiagnoseArgs {
     /// in distorted regions at the cost of precision).
     #[arg(long)]
     axis_align_tol_deg: Option<f32>,
-    /// Override the topological pipeline's `diagonal_angle_tol_rad` (in degrees).
+    /// Override the topological pipeline's legacy 45° diagnostic
+    /// `diagonal_angle_tol_rad` (in degrees). This no longer gates diagonal
+    /// classification.
     #[arg(long)]
     diagonal_angle_tol_deg: Option<f32>,
     /// Optional JSON file with a serialised `DetectorParams` to override
@@ -829,7 +831,7 @@ fn diagnose_topological(
         params.diagonal_angle_tol_rad = deg.to_radians();
     }
     println!(
-        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  diagonal_angle_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)",
+        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  diagonal_angle_tol_rad: {:.3} ({}°, legacy trace only)  max_axis_sigma_rad: {:.3} ({}°)",
         args.image,
         corners.len(),
         params.axis_align_tol_rad,

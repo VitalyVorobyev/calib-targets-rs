@@ -90,17 +90,14 @@ See the [`topological`] module docs for the bibliographic entry.
 [`topological`]: https://docs.rs/projective-grid/latest/projective_grid/topological/index.html
 
 ```rust
-use projective_grid::{build_grid_topological, merge_components_local,
-    ComponentInput, LocalMergeParams, TopologicalParams};
+use projective_grid::{recover_topological_grid, LocalMergeParams, TopologicalParams};
 
-let params = TopologicalParams::default();
-let topo = build_grid_topological(&positions, &axes_hints, &params)?;
-
-// merge_components_local reunites partial components (shared by both pipelines).
-let views: Vec<ComponentInput<'_>> = topo.components.iter()
-    .map(|c| ComponentInput { labelled: &c.labelled, positions: &positions })
-    .collect();
-let merged = merge_components_local(&views, &LocalMergeParams::default());
+let merged = recover_topological_grid(
+    &positions,
+    &axes_hints,
+    &TopologicalParams::default(),
+    &LocalMergeParams::default(),
+)?;
 ```
 
 See `docs/TOPOLOGICAL_PIPELINE.md` in the workspace for the per-stage

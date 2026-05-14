@@ -133,16 +133,22 @@ For every Delaunay half-edge `(a -> b)`, compute the edge angle
 `theta = atan2(y_b - y_a, x_b - x_a)`. At each endpoint, compare that angle to
 the two local axes modulo `pi`, because grid axes are undirected.
 
-The edge is classified as:
+The first pass classifies the edge as:
 
 - `Grid` if both endpoints see it as close to one local axis,
-- `Diagonal` if both endpoints see it as close to 45 degrees from the nearest
-  local axis,
 - `Spurious` otherwise.
 
-The current default tolerances are 22 degrees for grid alignment and 18 degrees
-for diagonal alignment. The whole-edge classification is a conjunction. If one
-endpoint does not agree, the edge is spurious.
+Diagonals are inferred in a second pass from local triangle topology. If a
+Delaunay triangle has exactly two `Grid` edges meeting at one vertex and those
+two edges use different local axis slots there, the remaining edge is the
+projected cell diagonal. This is perspective-correct locally: the diagonal
+comes from the two projected grid-step vectors, not from a fixed 45-degree image
+angle.
+
+The current default grid alignment tolerance is 15 degrees. The
+`diagonal_angle_tol_rad` field remains for legacy trace metrics only. The
+whole-edge grid classification is still a conjunction. If one endpoint does not
+agree, the edge is spurious in the first pass.
 
 This is the main practical difference from the paper. It keeps the crate
 standalone and makes the stage independent of image sampling, but it also means
