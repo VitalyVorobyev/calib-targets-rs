@@ -11,8 +11,6 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## 0.9.0
 
-### Breaking
-
 Migrates the workspace onto `chess-corners` 0.10 (skipping the
 intermediate 0.9 release in published artifacts), absorbs the
 0.9-era in-tree algorithm work (`OrientationMethod`, `DiskFit`,
