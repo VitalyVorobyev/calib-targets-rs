@@ -47,6 +47,30 @@ visual top-left canonicalisation, `(j, i)` sort). Use
 boundary-extension strategy and the cleanup toggles, or
 `RegularGridDetector::detect_all` for multi-component clouds.
 
+`detect_regular_grid` returns a `Result<RegularGridDetection,
+RegularGridError>`. The error enum has three distinct variants:
+`TooFewPoints` (fewer than 4 points — the minimum for a 2×2 seed),
+`DegeneratePointCloud` (coincident points or no measurable spread —
+the grid-axis estimator found nothing), and `NoGridFound` (a usable
+axis estimate, but no roughly-square seed quad). Note that a
+collinear-but-uniformly-spaced cloud is *not* reported as
+`DegeneratePointCloud` — it survives axis estimation and instead
+fails later as `NoGridFound`.
+
+### Runnable examples
+
+Three copy-pasteable programs under `crates/projective-grid/examples/`
+synthesize their own point clouds (no image files needed):
+
+```bash
+cargo run -p projective-grid --example regular_grid         # zero-config story
+cargo run -p projective-grid --example regular_grid_tuning  # RegularGridParams knobs
+cargo run -p projective-grid --example multi_component      # detect_all over disjoint grids
+```
+
+The first is walked through step by step in
+[Regular Grid Detection](example_regular_grid.md).
+
 ## Pipelines
 
 ### Square seed-and-grow (advanced / pattern-specific)
@@ -168,7 +192,7 @@ BFS / boundary-extension machinery.
 
 ## Module layout
 
-```
+```text
 projective-grid/src/
 ├── lib.rs
 ├── float_helpers.rs          (private)
@@ -209,6 +233,7 @@ projective-grid/src/
 │   ├── delaunay.rs           triangulation wrapper
 │   ├── quads.rs              triangle-pair → quad merge
 │   ├── topo_filter.rs        topological + geometric filter
+│   ├── trace.rs              per-stage trace structs
 │   └── walk.rs               flood-fill (i, j) labelling
 └── hex/                      6-connected hex-grid (geometry only,
     ├── alignment.rs           no seed-and-grow path yet)

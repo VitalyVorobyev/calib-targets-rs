@@ -1,12 +1,26 @@
 # Examples
 
-Examples live under `crates/*/examples/` and are built per crate. Many examples accept a JSON config file (defaults point to `testdata/` or `tmpdata/`), while the facade examples under `calib-targets` take an image path directly.
+Examples live under `crates/*/examples/` and are built per crate. The
+facade examples under `calib-targets` take an image path directly;
+the lower-level crate examples synthesize their own inputs or accept a
+JSON config file (defaults point to `testdata/` or `tmpdata/`).
 
 To run an example from the workspace root:
 
 ```bash
-cargo run -p calib-targets-chessboard --example chessboard -- testdata/chessboard_config.json
+# Standalone projective-grid — synthesizes its own point cloud:
+cargo run -p projective-grid --example regular_grid
+
+# Image-in / detection-out via the facade crate:
+cargo run -p calib-targets --example detect_chessboard -- testdata/mid.png
 ```
+
+The standalone [`projective-grid`](projective_grid.md) crate ships
+three onboarding examples that need no image files —
+`regular_grid`, `regular_grid_tuning`, and `multi_component`. The
+image-free chessboard detector has its own minimal onboarding
+program, `cargo run -p calib-targets-chessboard --example
+detect_chessboard`.
 
 Python examples live under `crates/calib-targets-py/examples/` and use the `calib_targets` module.
 After `maturin develop`, run them with an image path, for example:

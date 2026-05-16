@@ -47,23 +47,29 @@ positions.
 
 ## Chessboard detector internals
 
-The chessboard detector itself runs eight internal stages. The
+The chessboard detector runs as a sequence of named stages
+(orchestrated by `pipeline::run_pipeline`, with one module per stage
+group under `crates/calib-targets-chessboard/src/pipeline/`). The
 invariant-first framing means every stage emits a more-constrained
 subset of the previous stage's output, with no backtracking that
 would compromise precision:
 
-| Stage | Input | Output | Reference |
+| Stage | Name | Responsibility | Reference |
 |---|---|---|---|
-| 1. Pre-filter | raw `ChessCorner` array | `CornerStage::Strong` corners (strength + fit-quality pass) | `cluster::build_histogram` |
-| 2. Global grid directions | axes histograms | two centers `(Θ₀, Θ₁)` via plateau peaks + double-angle 2-means | [`projective_grid::circular_stats`](projective_grid.md) |
-| 3. Per-corner label | each `Strong` corner's axes vs `(Θ₀, Θ₁)` | `CornerStage::Clustered { label }` with `Canonical`/`Swapped` parity | `cluster::assign_corner` |
-| 4. Cell size | `Clustered` cross-cluster NN distances | `cell_size: f32` estimate | **derived inside Stage 5**; global scalar kept only as a sanity prior |
-| 5. Seed | clustered corners + cluster centers | 2×2 quad + `cell_size` = mean of seed edges | `seed::find_seed` |
-| 6. Grow | seed + candidate pool | labelled `(i, j) → idx` map via BFS + prediction averaging | [`projective_grid::square::grow`](projective_grid.md) |
-| 7. Validate | labelled map | blacklist via line collinearity + local-H residuals | [`projective_grid::square::validate`](projective_grid.md) |
-| 8. Recall boosters | labelled map + remaining clustered corners | additional admits via gap-fill, line extrapolation, component merge | `boosters::apply_boosters` |
+| 1 | `prefilter` | Drop corners failing strength / fit-quality / axes-validity gates. | `pipeline::prefilter` |
+| 2 | `cluster_axes` | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner canonical or swapped. | [`projective_grid::circular_stats`](projective_grid.md) |
+| 3 | `estimate_cell_size` | Cross-cluster nearest-neighbour mode → global cell size `s` (sanity prior only). | `cell_size::estimate_cell_size` |
+| 4 | `find_seed` | Pick a 2×2 quad passing every geometric invariant; refine `s` from the seed edges. | `seed::find_seed` |
+| 5 | `grow` | BFS over the `(i, j)` boundary with the full invariant stack at every attachment. | [`projective_grid::square::grow`](projective_grid.md) |
+| 6 | `extend_boundary` | Homography-based extension (global or per-candidate local-H) outward and into interior holes. | `pipeline::extension` |
+| 7 | `fix_partial_slot_flip` | Re-check axis-slot-swap parity after extension; flip disagreeing entries. | `pipeline::extension` |
+| 8 | `rescue_no_cluster` | Re-admit `Strong` / `NoCluster` corners within the rescue tolerance via local-H prediction. | `pipeline::extension` |
+| 9 | `refit_cluster_centers` | Re-estimate `{Θ₀, Θ₁}` from labelled corners; on a large shift, re-run extension + rescue. | `pipeline::refit` |
+| 10 | `validate` | Line collinearity + local-H residual checks; blacklist outliers and restart from `find_seed`. | [`projective_grid::square::validate`](projective_grid.md) |
+| 11 | `apply_boosters` | Recall boosters: interior gap fill + line extrapolation + component merge. | `boosters::apply_boosters` |
+| 12 | `final_geometry_check` | Mandatory precision gate: per-edge length + axis-slot parity + largest cardinal component. Can only drop corners. | `pipeline::geometry_check` |
 
-Stages 5-7 run inside a blacklist loop — each iteration the validator
+Stages 4–10 run inside a blacklist loop — each iteration the validator
 may reject outliers; the pipeline re-seeds on the remaining set.
 Capped by `DetectorParams::max_validation_iters` (default 3).
 

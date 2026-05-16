@@ -23,6 +23,7 @@
   - [calib-targets-print](printable.md)
   - [calib-targets (facade)](facade.md)
 - [Examples](examples.md)
+  - [Regular Grid Detection](example_regular_grid.md)
   - [Chessboard Detection](example_chessboard.md)
   - [Global Rectification](example_rectify_global.md)
   - [Mesh Rectification](example_rectify_mesh.md)
