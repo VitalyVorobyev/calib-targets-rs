@@ -27,7 +27,7 @@ use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::ChessCorner as Corner;
 
 const SNAP_WIDTH: u32 = 720;
 const SNAP_HEIGHT: u32 = 540;
@@ -90,7 +90,7 @@ fn main() {
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap_native = extract_snap(&img, snap_idx);
             let snap = maybe_upscale(&snap_native, upscale);
-            let corners = detect_corners(&snap, &chess_cfg, 0.0);
+            let corners = detect_corners(&snap, &chess_cfg);
             corners_per_snap.push(corners.len());
             let detector = Detector::new(detector_params.clone());
             let frame = detector.detect_debug(&corners);

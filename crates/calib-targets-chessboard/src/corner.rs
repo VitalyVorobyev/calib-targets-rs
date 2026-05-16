@@ -1,8 +1,50 @@
 //! Per-corner augmented state carried through the pipeline.
 
-use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+/// Canonical 2D corner consumed by the chessboard detector.
+///
+/// Carries the per-corner data the pipeline needs to admit or reject the
+/// corner during clustering, seed selection, grow, and post-grow validation:
+/// pixel position, the two local grid-axis directions with per-axis 1σ
+/// uncertainty, the ChESS detector's response (`strength`), the tanh-fit
+/// `contrast` amplitude, and the tanh-fit residual (`fit_rms`).
+///
+/// Callers constructing corners from `chess_corners::CornerDescriptor` typically
+/// go through the workspace facade's adapter; callers handing the detector a
+/// pre-built corner cloud (tests, custom upstreams) construct `ChessCorner`
+/// directly.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChessCorner {
+    /// Corner position in pixel coordinates.
+    pub position: Point2<f32>,
+    /// Two local grid-axis directions with per-axis 1σ angular uncertainty.
+    /// Default-constructed axes carry `sigma = π` ("no information") and
+    /// cause the corner to be skipped by every axis-aware stage.
+    pub axes: [AxisEstimate; 2],
+    /// Bright/dark amplitude `|A|` (≥ 0, gray levels) from the upstream
+    /// two-axis tanh fit. Independent from [`Self::strength`].
+    pub contrast: f32,
+    /// RMS residual of the two-axis intensity fit (gray levels). Lower is
+    /// a tighter match to an ideal chessboard corner.
+    pub fit_rms: f32,
+    /// Corner detector response (raw ChESS response at the detected peak).
+    /// Positive values are corner candidates.
+    pub strength: f32,
+}
+
+impl ChessCorner {
+    /// Construct a [`ChessCorner`] from a position. All other fields default
+    /// to the no-information sentinel — primarily useful for test fixtures.
+    pub fn from_position(position: Point2<f32>) -> Self {
+        Self {
+            position,
+            ..Self::default()
+        }
+    }
+}
 
 /// Binary axis-slot label derived from the matched cluster centers.
 ///
@@ -109,7 +151,7 @@ pub enum CornerStage {
 
 /// Augmented corner carried through the pipeline.
 ///
-/// Wraps a reference-like snapshot of the input [`Corner`] plus
+/// Wraps a reference-like snapshot of the input [`ChessCorner`] plus
 /// per-stage state: cluster label, current stage, (i, j) label when
 /// attached.
 #[derive(Clone, Debug, Serialize)]
@@ -117,7 +159,7 @@ pub struct CornerAug {
     /// Index in the original input corner slice. Stable across all
     /// pipeline stages, used as the identity key for blacklists.
     pub input_index: usize,
-    /// Pixel position (copied from `Corner.position` at construction).
+    /// Pixel position (copied from `ChessCorner.position` at construction).
     pub position: Point2<f32>,
     /// Both grid axes with per-axis uncertainty.
     pub axes: [AxisEstimate; 2],
@@ -135,8 +177,8 @@ pub struct CornerAug {
 }
 
 impl CornerAug {
-    /// Build a fresh [`CornerAug`] from a Corner input.
-    pub fn from_corner(input_index: usize, c: &Corner) -> Self {
+    /// Build a fresh [`CornerAug`] from a [`ChessCorner`] input.
+    pub fn from_chess_corner(input_index: usize, c: &ChessCorner) -> Self {
         Self {
             input_index,
             position: c.position,

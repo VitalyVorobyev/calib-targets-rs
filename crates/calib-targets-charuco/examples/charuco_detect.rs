@@ -9,7 +9,8 @@ use std::str::FromStr;
 use calib_targets_charuco::{
     CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector, CharucoParams,
 };
-use calib_targets_core::{Corner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as Corner;
+use calib_targets_core::GrayImageView;
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
@@ -112,7 +113,6 @@ fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
 fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
     Corner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {
                 angle: c.axes[0].angle,

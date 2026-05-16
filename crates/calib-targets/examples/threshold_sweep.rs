@@ -64,7 +64,7 @@ fn main() {
         };
 
         let cfg0 = default_chess_config().with_threshold(Threshold::Absolute(0.0));
-        let raw_at_zero = detect_corners(&img, &cfg0, 0.0).len();
+        let raw_at_zero = detect_corners(&img, &cfg0).len();
 
         let algo = std::env::var("ALGO").unwrap_or_else(|_| "chessboard_v2".to_string());
         let algorithm = match algo.as_str() {
@@ -74,7 +74,7 @@ fn main() {
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
             let cfg = default_chess_config().with_threshold(Threshold::Absolute(t));
-            let corners = detect_corners(&img, &cfg, 0.0);
+            let corners = detect_corners(&img, &cfg);
             let mut params = DetectorParams::default();
             params.graph_build_algorithm = algorithm;
             let detector = Detector::new(params);

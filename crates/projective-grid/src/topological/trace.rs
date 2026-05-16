@@ -11,21 +11,23 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     classify, quads, topo_filter, triangle_class, triangulate_usable, update_edge_stats,
-    update_triangle_stats, usable_mask, walk, AxisHint, EdgeKind, TopologicalComponent,
+    update_triangle_stats, usable_mask, walk, AxisEstimate, EdgeKind, TopologicalComponent,
     TopologicalError, TopologicalParams, TopologicalStats, TriangleClass,
 };
 
 /// One corner as seen by the topological pipeline.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalCornerTrace {
     pub index: usize,
     pub position: [f32; 2],
-    pub axes: [AxisHint; 2],
+    pub axes: [AxisEstimate; 2],
     pub usable: bool,
 }
 
 /// Diagnostic angular distances for one classified half-edge.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalEdgeMetricTrace {
     /// Largest endpoint angular distance to a usable grid axis.
     pub grid_distance_rad: Option<f32>,
@@ -43,6 +45,7 @@ pub struct TopologicalEdgeMetricTrace {
 
 /// One Delaunay triangle plus its classified half-edges.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalTriangleTrace {
     pub index: usize,
     pub vertices: [usize; 3],
@@ -55,6 +58,7 @@ pub struct TopologicalTriangleTrace {
 
 /// One merged quad candidate and the decisions made by the two filters.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalQuadTrace {
     pub index: usize,
     /// Quad vertices in TL, TR, BR, BL order in image coordinates.
@@ -76,6 +80,7 @@ pub struct TopologicalLabelTrace {
 
 /// One connected labelled component after topological walking and bbox rebase.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalComponentTrace {
     pub index: usize,
     pub labels: Vec<TopologicalLabelTrace>,
@@ -83,6 +88,7 @@ pub struct TopologicalComponentTrace {
 
 /// Full trace of the topological pipeline.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalTrace {
     pub params: TopologicalParams,
     pub corners: Vec<TopologicalCornerTrace>,
@@ -120,7 +126,7 @@ fn component_trace(components: &[TopologicalComponent]) -> Vec<TopologicalCompon
 )]
 pub fn build_grid_topological_trace(
     positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+    axes: &[[AxisEstimate; 2]],
     params: &TopologicalParams,
 ) -> Result<TopologicalTrace, TopologicalError> {
     if positions.len() != axes.len() {

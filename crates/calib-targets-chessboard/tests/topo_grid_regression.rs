@@ -62,8 +62,6 @@ struct LowResGate {
 
 #[derive(Debug, Deserialize)]
 struct LowResChessConfig {
-    #[serde(default)]
-    pre_blur_sigma_px: f32,
     #[serde(default = "default_threshold")]
     threshold_value: f32,
 }
@@ -121,10 +119,9 @@ fn params_for(algorithm: GraphBuildAlgorithm) -> DetectorParams {
 fn run_detector(
     img: &GrayImage,
     chess_cfg: &DetectorConfig,
-    pre_blur_sigma_px: f32,
     algorithm: GraphBuildAlgorithm,
 ) -> Option<Detection> {
-    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
+    let corners = detect_corners(img, chess_cfg);
     Detector::new(params_for(algorithm)).detect(&corners)
 }
 
@@ -228,7 +225,7 @@ fn topo_grid_manifest_gates_hold() {
         let path = root.join(&case.path);
         let img = load_image(&path);
         let default_cfg = default_chess_config();
-        let default_corners = detect_corners(&img, &default_cfg, 0.0);
+        let default_corners = detect_corners(&img, &default_cfg);
 
         if let Some(gate) = &case.topological {
             let detection = Detector::new(params_for(GraphBuildAlgorithm::Topological))
@@ -248,12 +245,7 @@ fn topo_grid_manifest_gates_hold() {
             // so the JSON keeps its original semantics.
             let cfg = default_chess_config()
                 .with_threshold(Threshold::Relative(gate.chess.threshold_value));
-            let detection = run_detector(
-                &fed,
-                &cfg,
-                gate.chess.pre_blur_sigma_px,
-                algorithm_from_name(&gate.algorithm),
-            );
+            let detection = run_detector(&fed, &cfg, algorithm_from_name(&gate.algorithm));
             let context = format!("{} low_res", case.path);
             let detection =
                 detection.unwrap_or_else(|| panic!("{context}: detector returned None"));

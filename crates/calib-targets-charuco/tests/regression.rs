@@ -1,11 +1,10 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_chessboard::{
     Detector as ChessboardDetector, DetectorParams as ChessboardParams,
 };
-use calib_targets_core::{
-    estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,
-};
+use calib_targets_core::{estimate_homography_rect_to_img, GrayImageView, TargetKind};
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
@@ -31,7 +30,6 @@ fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {
                 angle: c.axes[0].angle,

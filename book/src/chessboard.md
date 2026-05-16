@@ -35,8 +35,8 @@ the algorithm refuses to break.
 ## 1. Corner axes contract
 
 The detector reads only one orientation signal per corner:
-`Corner.axes: [AxisEstimate; 2]`. Convention (enforced workspace-wide and
-documented in `CLAUDE.md`):
+`ChessCorner.axes: [AxisEstimate; 2]`. Convention (enforced workspace-wide
+and documented in `CLAUDE.md`):
 
 - `axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`.
 - `axes[1] − axes[0] ≈ π/2` — the two axes are orthogonal grid directions
@@ -94,7 +94,7 @@ capped at `max_validation_iters`.
 ## 3. Pipeline
 
 ```text
-Corner[]
+ChessCorner[]
  → 1. Pre-filter: strength + fit-quality + axes-validity
  → 2. Global axes Θ₀, Θ₁  (axes-histogram + double-angle 2-means)
  → 3. Per-corner cluster label (canonical / swapped)
@@ -359,10 +359,9 @@ handful of integers.
 ## 8. Quickstart
 
 ```rust,ignore
-use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 
-fn detect(corners: &[Corner]) {
+fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
     let det = Detector::new(params);
     if let Some(d) = det.detect(corners) {
@@ -378,7 +377,7 @@ fn detect(corners: &[Corner]) {
     }
 }
 
-fn detect_multi(corners: &[Corner]) {
+fn detect_multi(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!(

@@ -961,7 +961,8 @@ fn collect_axis_votes(corners: &[CornerAug]) -> Vec<cs::AngleVote> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use crate::corner::ChessCorner;
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -975,9 +976,8 @@ mod tests {
         let a0 = axis0_deg.to_radians();
         let a1 = a0 + std::f32::consts::FRAC_PI_2;
         let sigma = sigma_deg.to_radians();
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(a0),
@@ -992,7 +992,7 @@ mod tests {
             fit_rms: 1.0,
             strength,
         };
-        let mut aug = CornerAug::from_corner(input_index, &c);
+        let mut aug = CornerAug::from_chess_corner(input_index, &c);
         aug.stage = CornerStage::Strong;
         aug
     }
@@ -1131,8 +1131,8 @@ mod plateau_peak_regression {
     //!
     //! See the plateau-aware branch in `pick_two_peaks`.
     use super::*;
-    use crate::corner::CornerAug;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use crate::corner::{ChessCorner, CornerAug};
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     #[test]
@@ -1150,9 +1150,8 @@ mod plateau_peak_regression {
                 } else {
                     (0.0_f32, std::f32::consts::FRAC_PI_2)
                 };
-                let c = Corner {
+                let c = ChessCorner {
                     position: Point2::new(i as f32 * 100.0 + 50.0, j as f32 * 100.0 + 50.0),
-                    orientation_cluster: None,
                     axes: [
                         AxisEstimate {
                             angle: a0,
@@ -1167,7 +1166,7 @@ mod plateau_peak_regression {
                     fit_rms: 4.7,
                     strength: 612.0,
                 };
-                let mut aug = CornerAug::from_corner(augs.len(), &c);
+                let mut aug = CornerAug::from_chess_corner(augs.len(), &c);
                 aug.stage = CornerStage::Strong;
                 augs.push(aug);
             }

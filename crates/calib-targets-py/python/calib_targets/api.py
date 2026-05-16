@@ -38,7 +38,6 @@ def detect_chessboard(
     *,
     chess_cfg: ChessConfig | None = None,
     params: ChessboardParams | None = None,
-    pre_blur_sigma_px: float | None = None,
 ) -> ChessboardDetectionResult | None:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
@@ -49,7 +48,6 @@ def detect_chessboard(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=chessboard_params_to_payload(params),
-        pre_blur_sigma_px=pre_blur_sigma_px,
     )
     if raw is None:
         return None
@@ -61,7 +59,6 @@ def detect_chessboard_all(
     *,
     chess_cfg: ChessConfig | None = None,
     params: ChessboardParams | None = None,
-    pre_blur_sigma_px: float | None = None,
 ) -> list[ChessboardDetectionResult]:
     """Detect all chessboard components in a grayscale image.
 
@@ -79,7 +76,6 @@ def detect_chessboard_all(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=chessboard_params_to_payload(params),
-        pre_blur_sigma_px=pre_blur_sigma_px,
     )
     return [ChessboardDetectionResult.from_dict(item) for item in raw]
 
@@ -89,7 +85,6 @@ def detect_chessboard_debug(
     *,
     chess_cfg: ChessConfig | None = None,
     params: ChessboardParams | None = None,
-    pre_blur_sigma_px: float | None = None,
 ) -> dict[str, Any]:
     """Run the instrumented chessboard detector and return a raw debug
     payload (``ChessboardDebugFrame``) as a plain ``dict``.
@@ -113,7 +108,6 @@ def detect_chessboard_debug(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=chessboard_params_to_payload(params),
-        pre_blur_sigma_px=pre_blur_sigma_px,
     )
 
 
@@ -122,7 +116,6 @@ def trace_chessboard_topological(
     *,
     chess_cfg: ChessConfig | None = None,
     params: ChessboardParams | None = None,
-    pre_blur_sigma_px: float | None = None,
 ) -> dict[str, Any]:
     """Return the Rust-backed topological trace used by blog/debug overlays."""
     if chess_cfg is not None:
@@ -134,7 +127,6 @@ def trace_chessboard_topological(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=chessboard_params_to_payload(params),
-        pre_blur_sigma_px=pre_blur_sigma_px,
     )
 
 

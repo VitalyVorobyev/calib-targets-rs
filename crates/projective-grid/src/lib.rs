@@ -1,18 +1,68 @@
 //! Generic 2D projective grid construction and homography tools.
 //!
-//! This crate provides reusable algorithms for turning a cloud of 2D
-//! points into a labelled grid: seed-and-grow BFS, boundary extension
-//! via fitted homography, and per-cell / global rectification.
+//! This crate turns a cloud of 2D points into a labelled grid.
 //!
-//! Pattern-agnostic at the bottom (KD-tree, circular stats, mean-shift,
-//! DLT homography); pattern-specific at the top via the
-//! [`square::grow::GrowValidator`] trait — chessboard parity, ChArUco
-//! marker rules, etc. plug in there.
+//! # Start here: [`detect_regular_grid`]
+//!
+//! [`detect_regular_grid`] is the zero-config onboarding entry point.
+//! Hand it a `&[Point2<f32>]`; it returns a [`RegularGridDetection`]
+//! with every recovered corner carrying its `(i, j)` label and the
+//! index back into your input slice — **no caller-written validator
+//! scaffolding required**:
+//!
+//! ```rust
+//! use nalgebra::Point2;
+//! use projective_grid::detect_regular_grid;
+//!
+//! let mut points = Vec::new();
+//! for j in 0..4 {
+//!     for i in 0..5 {
+//!         points.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
+//!     }
+//! }
+//! let grid = detect_regular_grid(&points).expect("clean grid detects");
+//! assert_eq!(grid.points.len(), 20);
+//! ```
+//!
+//! For tuning, use [`RegularGridDetector`] + [`RegularGridParams`].
+//! The detector internally estimates the cell size and grid axes from
+//! the point cloud and drives the pipeline with a built-in open
+//! regular-grid policy.
+//!
+//! # Advanced / specialized entry points
+//!
+//! When you need pattern-specific rules (parity, marker slots, colour
+//! splits), reach for the validator-driven path:
+//!
+//! - [`detect_square_grid`] — square-lattice recovery driven by a
+//!   caller-supplied [`SeedQuadValidator`] + [`GrowValidator`] pair.
+//!   This is what the chessboard / ChArUco / puzzleboard detectors
+//!   build on. [`detect_regular_grid`] is a thin wrapper over it with
+//!   a built-in permissive policy.
+//! - [`detect_topological_grid`] — Shu/Brunton/Fiala 2009 topological
+//!   recovery, image-free. Requires per-corner grid axes inline on
+//!   the input via [`TopologicalInputCorner`].
+//!
+//! [`SeedQuadValidator`]: square::seed_finder::SeedQuadValidator
+//! [`GrowValidator`]: square::grow::GrowValidator
+//!
+//! All entry points share a common output shape: a `(i, j) →
+//! corner_idx` map plus per-stage diagnostics. Use
+//! [`merge_components_local`] to attempt to merge multiple
+//! disjoint components into a single grid.
+//!
+//! The crate is pattern-agnostic — it knows nothing about chessboards,
+//! ArUco markers, or images. Lower-level primitives (KD-tree,
+//! circular stats, mean-shift, DLT homography, BFS grow, Delaunay
+//! triangulation) are exposed under their natural modules for callers
+//! who want to compose their own pipeline.
 //!
 //! # Module layout
 //!
 //! | Module | Responsibility |
 //! |---|---|
+//! | [`square::regular`] | Zero-config point-cloud regular-grid detection (onboarding entry point) |
+//! | [`square::cleanup`] | Generic output cleanup: rebase, connectivity prune, top-left canonicalise, sort |
 //! | [`square::grow`] | Seed-and-grow BFS over a square lattice |
 //! | [`square::extension`] | Boundary extension via globally-fit or local homography |
 //! | [`square::seed`] | 2×2 seed primitives (cell size, midpoint violation) |
@@ -55,6 +105,10 @@ pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStep
 
 // --- Square-grid surface re-exported at the crate root --------
 pub use square::alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+pub use square::cleanup::{
+    apply_transform, canonicalize_top_left, prune_to_main_component, rebase_to_origin,
+    sorted_grid_points, top_left_transform,
+};
 pub use square::index::GridCoords;
 pub use square::mesh::SquareGridHomographyMesh;
 pub use square::rectify::SquareGridHomography;
@@ -63,13 +117,26 @@ pub use square::smoothness::{
     square_predict_grid_position,
 };
 
+// --- Square-grid onboarding entry point ----------------------
+pub use square::regular::{
+    detect_regular_grid, DetectedGridPoint, ExtensionMode, RegularGridDetection,
+    RegularGridDetector, RegularGridParams, RegularGridStats,
+};
+
+// --- Square-grid validator-driven (advanced) entry points ----
+pub use square::detect::{
+    detect_square_grid, detect_square_grid_all, ExtensionStrategy, MultiComponentParams,
+    SquareGridDetection, SquareGridParams, SquareGridStats,
+};
+
 // --- Topological-grid surface --------------------------------
 pub use topological::{
-    build_grid_topological, build_grid_topological_trace, recover_topological_grid,
-    AxisClusterCenters, AxisHint, TopologicalComponent, TopologicalComponentTrace,
-    TopologicalCornerTrace, TopologicalEdgeMetricTrace, TopologicalError, TopologicalGrid,
-    TopologicalLabelTrace, TopologicalParams, TopologicalQuadTrace, TopologicalStats,
-    TopologicalTrace, TopologicalTriangleTrace, TriangleClass,
+    build_grid_topological, build_grid_topological_trace, detect_topological_grid,
+    recover_topological_grid, AxisClusterCenters, AxisEstimate, TopologicalComponent,
+    TopologicalComponentTrace, TopologicalCornerTrace, TopologicalEdgeMetricTrace,
+    TopologicalError, TopologicalGrid, TopologicalInputCorner, TopologicalLabelTrace,
+    TopologicalParams, TopologicalQuadTrace, TopologicalStats, TopologicalTrace,
+    TopologicalTriangleTrace, TriangleClass,
 };
 
 // --- Component merge (shared by both pipelines) --------------

@@ -7,10 +7,9 @@ use std::collections::HashMap;
 
 use nalgebra::Point2;
 
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
-use calib_targets_core::{
-    Corner, GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind,
-};
+use calib_targets_core::{GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind};
 
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {
@@ -36,7 +35,10 @@ impl MarkerBoardDetector {
     }
 
     /// Chessboard-only detection (no circle verification).
-    pub fn detect_from_corners(&self, corners: &[Corner]) -> Option<MarkerBoardDetectionResult> {
+    pub fn detect_from_corners(
+        &self,
+        corners: &[ChessCorner],
+    ) -> Option<MarkerBoardDetectionResult> {
         let chess = self.chessboard_detector.detect(corners)?;
         Some(self.result_from_chessboard(chess, Vec::new(), Vec::new(), None, 0))
     }
@@ -48,7 +50,7 @@ impl MarkerBoardDetector {
     pub fn detect_from_image_and_corners(
         &self,
         image: &GrayImageView<'_>,
-        corners: &[Corner],
+        corners: &[ChessCorner],
     ) -> Option<MarkerBoardDetectionResult> {
         let chess = self.chessboard_detector.detect(corners)?;
         let corner_map = build_corner_map(&chess.target);

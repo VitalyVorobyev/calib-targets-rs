@@ -3,7 +3,8 @@
 //! verify every returned `LabeledCorner` is labelled with the expected
 //! master (I, J) coordinates.
 
-use calib_targets_core::{Corner as TargetCorner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
+use calib_targets_core::GrayImageView;
 use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec,
@@ -15,7 +16,6 @@ use nalgebra::Point2;
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {
                 angle: c.axes[0].angle,

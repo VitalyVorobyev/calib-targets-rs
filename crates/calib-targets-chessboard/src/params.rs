@@ -376,8 +376,9 @@ pub struct DetectorParams {
     /// to global cell size for corners with too few labelled
     /// neighbours.
     ///
-    /// Default `true`. Set to `false` to restore the pre-2026-04
-    /// behaviour.
+    /// Default `false` (see `default_validate_step_aware` for the
+    /// rationale — enabling it currently drops a labelled corner on
+    /// one blessed bench image). Set to `true` to opt in per dataset.
     ///
     /// [`line_tol_rel`]: DetectorParams::line_tol_rel
     /// [`local_h_tol_rel`]: DetectorParams::local_h_tol_rel
@@ -390,7 +391,9 @@ pub struct DetectorParams {
     /// median). Combined with a line flag, the corner is
     /// blacklisted.
     ///
-    /// Default `0.5`. Set to `0.0` to disable the deviation flag.
+    /// Default `0.0` (the deviation flag is disabled). Set to e.g.
+    /// `0.5` to flag corners whose local step is more than 50% from
+    /// the labelled-set median.
     ///
     /// [`validate_step_aware`]: DetectorParams::validate_step_aware
     #[serde(default = "default_step_deviation_thresh_rel")]
@@ -513,14 +516,16 @@ pub struct DetectorParams {
     /// that local-H extrapolation (`extend_boundary` /
     /// `rescue_no_cluster`) cannot.
     ///
-    /// Default `false`. Trade-off: a small centre shift can flip
-    /// borderline BFS slot assignments and produce SHIFT-INCONSISTENT
-    /// labelling on heavy-distortion ChArUco-style images
-    /// (`puzzleboard_reference/example2.png` regresses miss=68 with
-    /// this on). Turn on for chessboard-only datasets where the
-    /// distortion is mild and the recall lift outweighs that risk.
+    /// Default `true`. Trade-off: a small centre shift can flip
+    /// borderline BFS slot assignments and drop a few previously-
+    /// labelled corners; those losses are recovered immediately by
+    /// [`enable_post_grow_bfs_extend`] (also default `true`), which
+    /// walks the regrown boundary and re-attaches them via cardinal-
+    /// neighbour prediction. Set to `false` to skip the destructive
+    /// regrow and rely on the non-destructive extend alone.
     ///
     /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
+    /// [`enable_post_grow_bfs_extend`]: DetectorParams::enable_post_grow_bfs_extend
     #[serde(default = "default_enable_post_grow_bfs_regrow")]
     pub enable_post_grow_bfs_regrow: bool,
     /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
@@ -604,9 +609,9 @@ pub struct DetectorParams {
     /// because each iteration shifts the local-H window with the
     /// growing labelled set.
     ///
-    /// Default `false` (single-global-H, baseline today). Flip to
-    /// `true` after A/B confirms parity / superset on every blessed
-    /// image.
+    /// Default `true` (per-candidate local-H — see
+    /// `default_stage6_local_h` for the bench evidence). Set to
+    /// `false` to fall back to single-global-H boundary extension.
     #[serde(default = "default_stage6_local_h")]
     pub stage6_local_h: bool,
     /// `K` parameter for [`stage6_local_h`]: the number of nearest

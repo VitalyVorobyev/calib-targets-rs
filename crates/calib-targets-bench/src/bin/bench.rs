@@ -600,7 +600,7 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
 
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
-    let corners = detect_corners(&upscaled, &chess_cfg, 0.0);
+    let corners = detect_corners(&upscaled, &chess_cfg);
     if args.algorithm == AlgorithmArg::Topological {
         return diagnose_topological(&args, &upscaled, &corners);
     }
@@ -819,9 +819,9 @@ fn diagnose_filename(label: &str) -> String {
 fn diagnose_topological(
     args: &DiagnoseArgs,
     upscaled: &image::GrayImage,
-    corners: &[calib_targets::core::Corner],
+    corners: &[calib_targets::chessboard::ChessCorner],
 ) -> ExitCode {
-    use projective_grid::{build_grid_topological, AxisHint, TopologicalParams};
+    use projective_grid::{build_grid_topological, AxisEstimate, TopologicalParams};
 
     let mut params = TopologicalParams::default();
     if let Some(deg) = args.axis_align_tol_deg {
@@ -874,15 +874,15 @@ fn diagnose_topological(
     );
 
     let positions: Vec<nalgebra::Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisHint; 2]> = corners
+    let axes: Vec<[AxisEstimate; 2]> = corners
         .iter()
         .map(|c| {
             [
-                AxisHint {
+                AxisEstimate {
                     angle: c.axes[0].angle,
                     sigma: c.axes[0].sigma,
                 },
-                AxisHint {
+                AxisEstimate {
                     angle: c.axes[1].angle,
                     sigma: c.axes[1].sigma,
                 },
@@ -1012,7 +1012,7 @@ fn diagnose_topological(
 
 fn render_topological_overlay(
     base: &image::GrayImage,
-    corners: &[calib_targets::core::Corner],
+    corners: &[calib_targets::chessboard::ChessCorner],
     labelled: &std::collections::HashSet<usize>,
     dst: &Path,
 ) -> std::io::Result<()> {

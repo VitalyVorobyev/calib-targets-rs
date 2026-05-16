@@ -389,9 +389,10 @@ fn expected_cardinal_edge_len(
 mod tests {
     use super::*;
     use crate::cluster::cluster_axes;
+    use crate::corner::ChessCorner;
     use crate::grow::grow_from_seed;
     use crate::seed::find_seed;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -406,9 +407,8 @@ mod tests {
             ClusterLabel::Canonical => [axis_u, axis_v],
             ClusterLabel::Swapped => [axis_v, axis_u],
         };
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(axes[0]),
@@ -423,7 +423,7 @@ mod tests {
             fit_rms: 1.0,
             strength: 1.0,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
     }

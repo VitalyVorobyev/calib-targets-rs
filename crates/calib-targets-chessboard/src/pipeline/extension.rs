@@ -1,0 +1,92 @@
+//! Boundary extension + NoCluster rescue stages.
+//!
+//! Both stages extrapolate the labelled set outward via a fitted
+//! homography, reusing the pattern-agnostic extension primitives from
+//! `projective-grid`. The chess-specific logic lives in the validators
+//! they pass through (`ChessboardGrowValidator` /
+//! `ChessboardRescueValidator`): parity, axis-cluster match, and the
+//! axis-slot-swap edge invariant.
+
+use std::collections::HashSet;
+
+use crate::cluster::ClusterCenters;
+use crate::corner::CornerAug;
+use crate::grow::{ChessboardGrowValidator, ChessboardRescueValidator, GrowResult};
+use crate::params::DetectorParams;
+
+use nalgebra::Point2;
+use projective_grid::square::grow_extension::{
+    extend_via_global_homography, extend_via_local_homography, ExtensionParams, ExtensionStats,
+    LocalExtensionParams,
+};
+
+/// Stage 6: boundary extrapolation via globally-fit homography.
+///
+/// Builds a `Point2<f32>` view of the corner positions and a fresh
+/// chessboard validator, then delegates to
+/// [`projective_grid::square::grow_extension::extend_via_global_homography`].
+/// The extension's blacklist tracking is approach (b): rejected
+/// attachments fall through to the regular Stage-7 mechanism on the
+/// next iteration. Stats include `attached_indices` for future
+/// approach-(a) comparison work.
+pub(crate) fn run_stage6(
+    corners: &[CornerAug],
+    grow_res: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+) -> ExtensionStats {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+
+    // Stage 6 runs in post-rebase coords, so the validator's
+    // `required_label_at(i, j)` must add the rebase parity shift back
+    // to query the chessboard parity that BFS used in pre-rebase
+    // coords. See `GrowResult::parity_shift_i` for the full discussion.
+    let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
+    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params)
+        .with_parity_shift(parity_shift);
+    if params.stage6_local_h {
+        let mut local_params = LocalExtensionParams::default();
+        local_params.k_nearest = params.stage6_local_k_nearest;
+        extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
+    } else {
+        extend_via_global_homography(
+            &positions,
+            grow_res,
+            cell_size,
+            &ExtensionParams::default(),
+            &validator,
+        )
+    }
+}
+
+/// Stage 6.5: NoCluster rescue. Reuses
+/// [`projective_grid::square::grow_extension::extend_via_local_homography`]
+/// with [`ChessboardRescueValidator`] (admits `Strong` / `NoCluster`
+/// corners within `rescue_axis_tol_deg` and infers parity from axes).
+/// Same per-cell local-H prediction + position match + ambiguity
+/// gate + edge invariant as Stage 6 — only the eligibility / label
+/// gates are relaxed.
+pub(crate) fn run_stage6_5_rescue(
+    corners: &[CornerAug],
+    grow_res: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+) -> ExtensionStats {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+
+    // Stage 6.5 runs in post-rebase coords; the rescue validator's
+    // `required_label_at(i, j)` adds the rebase parity shift back to
+    // recover the BFS pre-rebase chessboard parity at the post-rebase
+    // cell. See `GrowResult::parity_shift_i`.
+    let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
+    let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params)
+        .with_parity_shift(parity_shift);
+    let mut local_params = LocalExtensionParams::default();
+    local_params.k_nearest = params.stage6_5_local_k_nearest;
+    local_params.common.search_rel = params.rescue_search_rel;
+    extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
+}

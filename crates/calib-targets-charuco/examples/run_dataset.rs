@@ -31,7 +31,8 @@ use calib_targets_charuco::{
     load_board_spec_any, CharucoBoardSpec, CharucoDetectDiagnostics, CharucoDetectError,
     CharucoDetectionResult, CharucoDetector, CharucoParams,
 };
-use calib_targets_core::{Corner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as Corner;
+use calib_targets_core::GrayImageView;
 use image::GenericImageView;
 use serde::Serialize;
 
@@ -322,7 +323,7 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
 
     let t_total = Instant::now();
     let t_chess = Instant::now();
-    let corners: Vec<Corner> = detect_corners(snap, chess_cfg, 0.0);
+    let corners: Vec<Corner> = detect_corners(snap, chess_cfg);
     let chess_ms = t_chess.elapsed().as_secs_f32() * 1000.0;
 
     let view = GrayImageView {

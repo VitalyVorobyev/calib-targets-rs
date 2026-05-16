@@ -58,7 +58,7 @@ fn run_detector(img_path: &Path) -> (Option<Detection>, usize) {
         .unwrap_or_else(|e| panic!("decode {}: {e}", img_path.display()))
         .to_luma8();
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let corners = detect_corners(&img, &chess_cfg);
     let params = DetectorParams::default();
     let detector = Detector::new(params);
     let detection = detector.detect(&corners);
@@ -279,7 +279,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
         .with_threshold(Threshold::Absolute(15.0))
         .with_orientation_method(OrientationMethod::DiskFit);
 
-    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let corners = detect_corners(&img, &chess_cfg);
     let detector = Detector::new(DetectorParams::default());
     let detection = detector.detect(&corners);
 
@@ -330,7 +330,7 @@ fn diskfit_mid_recovers_full_chessboard() {
         .with_threshold(Threshold::Absolute(15.0))
         .with_orientation_method(OrientationMethod::DiskFit);
 
-    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let corners = detect_corners(&img, &chess_cfg);
     let detector = Detector::new(DetectorParams::default());
     let detection = detector.detect(&corners);
 

@@ -68,7 +68,7 @@ pub fn run_entry(
         };
 
         let started = Instant::now();
-        let corners = detect_corners(&upscaled, chess_cfg, 0.0);
+        let corners = detect_corners(&upscaled, chess_cfg);
         let detection = Detector::new(params.clone()).detect(&corners);
         let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
 

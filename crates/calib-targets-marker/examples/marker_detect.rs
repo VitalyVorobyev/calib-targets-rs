@@ -1,6 +1,7 @@
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_core::{Corner as TargetCorner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
+use calib_targets_core::GrayImageView;
 use calib_targets_marker::{MarkerBoardDetectConfig, MarkerBoardDetectReport};
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
@@ -88,7 +89,6 @@ fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
     raw.iter()
         .map(|c| TargetCorner {
             position: Point2::new(c.x, c.y),
-            orientation_cluster: None,
             axes: [
                 calib_targets_core::AxisEstimate {
                     angle: c.axes[0].angle,

@@ -36,7 +36,7 @@ use std::process;
 use calib_targets_chessboard::{CornerStage, DebugFrame, Detector, DetectorParams};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::ChessCorner as Corner;
 
 fn main() {
     env_logger::builder()
@@ -65,7 +65,7 @@ fn main() {
     let height = img.height();
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&img, &chess_cfg, 0.0);
+    let corners = detect_corners(&img, &chess_cfg);
     let n_input_corners = corners.len();
     let image_tag = image
         .file_stem()

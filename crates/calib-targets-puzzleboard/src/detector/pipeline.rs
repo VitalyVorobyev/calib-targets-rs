@@ -2,10 +2,9 @@
 
 use std::cmp::Ordering;
 
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
-use calib_targets_core::{
-    Corner, GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind,
-};
+use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
@@ -91,7 +90,7 @@ impl PuzzleBoardDetector {
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
-        corners: &[Corner],
+        corners: &[ChessCorner],
     ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
         let chess_results = self.chessboard.detect_all(corners);
         if chess_results.is_empty() {

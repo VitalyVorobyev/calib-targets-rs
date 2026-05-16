@@ -610,8 +610,10 @@ class ChessConfig:
     testdata regression set; see
     ``crates/calib-targets/examples/threshold_sweep.rs``).
 
-    Pre-blur preprocessing is not carried on this struct; pass
-    ``pre_blur_sigma_px`` directly to the ``detect_*`` calls.
+    Pre-blur preprocessing is not carried on this struct; apply any
+    Gaussian blur to the input image yourself (e.g. via
+    ``scipy.ndimage.gaussian_filter`` or ``cv2.GaussianBlur``) before
+    calling the ``detect_*`` entry points.
 
     Example:
 

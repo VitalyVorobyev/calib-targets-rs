@@ -12,7 +12,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::Point2;
-use projective_grid::topological::{build_grid_topological, AxisHint, TopologicalParams};
+use projective_grid::topological::{build_grid_topological, AxisEstimate, TopologicalParams};
 
 /// Build a perspective-warped chessboard-cell corner cloud of size
 /// `rows × cols`. Returns positions plus per-corner axes aligned with
@@ -22,7 +22,7 @@ fn perspective_warped_grid(
     rows: i32,
     cols: i32,
     scale: f32,
-) -> (Vec<Point2<f32>>, Vec<[AxisHint; 2]>) {
+) -> (Vec<Point2<f32>>, Vec<[AxisEstimate; 2]>) {
     use nalgebra::Matrix3;
     // Same homography as `benches/grow.rs` so results are comparable.
     let h = Matrix3::new(
@@ -58,11 +58,11 @@ fn perspective_warped_grid(
             let theta_u = (right.y - here.y).atan2(right.x - here.x);
             let theta_v = (down.y - here.y).atan2(down.x - here.x);
             axes.push([
-                AxisHint {
+                AxisEstimate {
                     angle: theta_u,
                     sigma: 0.05,
                 },
-                AxisHint {
+                AxisEstimate {
                     angle: theta_v,
                     sigma: 0.05,
                 },
@@ -78,7 +78,7 @@ fn perspective_warped_grid(
 /// LCG so results are reproducible across runs.
 fn inject_noise(
     positions: &mut Vec<Point2<f32>>,
-    axes: &mut Vec<[AxisHint; 2]>,
+    axes: &mut Vec<[AxisEstimate; 2]>,
     extra: usize,
     seed: u64,
 ) {
@@ -109,11 +109,11 @@ fn inject_noise(
         let theta = next() * std::f32::consts::PI;
         positions.push(Point2::new(x, y));
         axes.push([
-            AxisHint {
+            AxisEstimate {
                 angle: theta,
                 sigma: 0.05,
             },
-            AxisHint {
+            AxisEstimate {
                 angle: theta + FRAC_PI_2,
                 sigma: 0.05,
             },

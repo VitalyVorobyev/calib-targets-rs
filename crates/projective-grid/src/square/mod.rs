@@ -2,7 +2,10 @@
 //!
 //! | Module | Responsibility |
 //! |---|---|
+//! | [`regular`] | Zero-config point-cloud regular-grid detection (onboarding entry point) |
 //! | [`alignment`] | D4 rotations / reflections on `(i, j)` |
+//! | [`cleanup`] | Generic output cleanup: rebase, connectivity prune, top-left canonicalise, sort |
+//! | [`detect`] | Validator-driven end-to-end pipeline (advanced / pattern-specific path) |
 //! | [`extension`] | Boundary extension via homography (global + local) |
 //! | [`fill`] | Post-grow interior-hole + line-extrapolation booster pass |
 //! | [`grow`] | Seed-and-grow BFS with adaptive local-step prediction |
@@ -23,6 +26,8 @@
 //! for consumers that import from the old path directly.
 
 pub mod alignment;
+pub mod cleanup;
+pub mod detect;
 pub mod extension;
 pub mod fill;
 pub mod grow;
@@ -40,6 +45,7 @@ pub mod grow_extension {
 pub mod index;
 pub mod mesh;
 pub mod rectify;
+pub mod regular;
 pub mod seed;
 /// Compatibility alias for [`seed::finder`].
 ///
@@ -51,6 +57,14 @@ pub mod smoothness;
 pub mod validate;
 
 pub use alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+pub use cleanup::{
+    apply_transform, canonicalize_top_left, prune_to_main_component, rebase_to_origin,
+    sorted_grid_points, top_left_transform,
+};
+pub use detect::{
+    detect_square_grid, detect_square_grid_all, ExtensionStrategy, MultiComponentParams,
+    SquareGridDetection, SquareGridParams, SquareGridStats,
+};
 pub use extension::{
     extend_via_global_homography, ExtensionCommonParams, ExtensionParams, ExtensionStats,
     LocalExtensionParams,
@@ -64,6 +78,10 @@ pub use grow_extend::{extend_from_labelled, BfsExtensionStats};
 pub use index::GridCoords;
 pub use mesh::SquareGridHomographyMesh;
 pub use rectify::SquareGridHomography;
+pub use regular::{
+    detect_regular_grid, DetectedGridPoint, ExtensionMode, RegularGridDetection,
+    RegularGridDetector, RegularGridParams, RegularGridStats,
+};
 pub use seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 pub use seed::{
     seed_cell_size, seed_has_midpoint_violation, seed_homography, SeedOutput, SEED_QUAD_GRID,

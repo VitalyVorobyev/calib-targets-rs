@@ -28,7 +28,7 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 use super::delaunay::Triangulation;
-use super::{AxisHint, TopologicalParams};
+use super::{AxisEstimate, TopologicalParams};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -85,7 +85,7 @@ fn axis_diff(theta: f32, alpha: f32) -> f32 {
 /// is too high while keeping the corner's other (good) axis active.
 fn nearest_axis_at_corner(
     theta: f32,
-    axes: &[AxisHint; 2],
+    axes: &[AxisEstimate; 2],
     params: &TopologicalParams,
 ) -> Option<GridAxisMatch> {
     let mut best: Option<GridAxisMatch> = None;
@@ -107,7 +107,11 @@ fn nearest_axis_at_corner(
     best
 }
 
-fn distances_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalParams) -> (f32, f32) {
+fn distances_at_corner(
+    theta: f32,
+    axes: &[AxisEstimate; 2],
+    params: &TopologicalParams,
+) -> (f32, f32) {
     let best = nearest_axis_at_corner(theta, axes, params);
     debug_assert!(
         best.is_some(),
@@ -119,7 +123,7 @@ fn distances_at_corner(theta: f32, axes: &[AxisHint; 2], params: &TopologicalPar
 
 fn grid_match_at_corner(
     theta: f32,
-    axes: &[AxisHint; 2],
+    axes: &[AxisEstimate; 2],
     params: &TopologicalParams,
 ) -> Option<GridAxisMatch> {
     let best = nearest_axis_at_corner(theta, axes, params)?;
@@ -128,7 +132,7 @@ fn grid_match_at_corner(
 
 pub(crate) fn classify_edge_metric(
     positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+    axes: &[[AxisEstimate; 2]],
     triangulation: &Triangulation,
     edge: usize,
     params: &TopologicalParams,
@@ -255,7 +259,7 @@ fn promote_triangle_diagonals_from_grid_edges(
 )]
 pub(crate) fn classify_all_edges(
     positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+    axes: &[[AxisEstimate; 2]],
     triangulation: &Triangulation,
     params: &TopologicalParams,
 ) -> Vec<EdgeKind> {
@@ -286,13 +290,13 @@ pub(crate) fn classify_all_edges(
 mod tests {
     use super::*;
 
-    fn axes(angle0: f32, angle1: f32) -> [AxisHint; 2] {
+    fn axes(angle0: f32, angle1: f32) -> [AxisEstimate; 2] {
         [
-            AxisHint {
+            AxisEstimate {
                 angle: angle0,
                 sigma: 0.05,
             },
-            AxisHint {
+            AxisEstimate {
                 angle: angle1,
                 sigma: 0.05,
             },

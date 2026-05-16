@@ -14,7 +14,8 @@
 
 use std::collections::HashMap;
 
-use calib_targets_core::{Corner as TargetCorner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
+use calib_targets_core::GrayImageView;
 
 type PerViewOrigin = Option<(i32, i32)>;
 type TargetPositionMap = HashMap<(i32, i32), (f32, f32)>;
@@ -31,7 +32,6 @@ use nalgebra::Point2;
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {
                 angle: c.axes[0].angle,

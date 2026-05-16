@@ -27,7 +27,7 @@ The chessboard detector's ChESS corner config is **not** carried inside
 `calib_targets::detect::default_chess_config()` (used automatically by
 the `detect_chessboard*` facade helpers). If you need to override it,
 call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
-directly and pass the resulting `Vec<Corner>` into
+directly and pass the resulting corner cloud into
 `calib_targets::chessboard::Detector::new(params).detect(&corners)`.
 
 For ChArUco, `CharucoParams.chessboard` is a `DetectorParams` (flat

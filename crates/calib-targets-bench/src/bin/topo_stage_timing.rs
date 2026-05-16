@@ -60,9 +60,6 @@ struct Args {
     /// Warmup repeats per image.
     #[arg(long, default_value_t = 5)]
     warmup: usize,
-    /// Optional explicit ChESS pre-blur sigma in pixels.
-    #[arg(long, default_value_t = 0.0)]
-    blur_sigma: f32,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
     /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
     /// disk-sector fit added in chess-corners 0.9.
@@ -136,7 +133,6 @@ struct Metadata {
     profile: &'static str,
     repeats: usize,
     warmup: usize,
-    blur_sigma: f32,
     timing_source: &'static str,
 }
 
@@ -309,14 +305,13 @@ fn span_ms(spans: &HashMap<&'static str, f64>, name: &'static str) -> f64 {
 fn measure_once(
     img: &image::GrayImage,
     chess_cfg: &DetectorConfig,
-    pre_blur_sigma_px: f32,
     params: &DetectorParams,
     totals: &SpanTotals,
 ) -> (TimingSample, usize, usize, usize) {
     totals.clear();
     let full_start = Instant::now();
     let corner_start = Instant::now();
-    let corners = detect_corners(img, chess_cfg, pre_blur_sigma_px);
+    let corners = detect_corners(img, chess_cfg);
     let corner_wall_ms = corner_start.elapsed().as_secs_f64() * 1000.0;
 
     let grid_start = Instant::now();
@@ -361,7 +356,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
-    let pre_blur_sigma_px = args.blur_sigma;
 
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
@@ -370,7 +364,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for path in image_paths(&args.image_dir)? {
         let img = ImageReader::open(&path)?.decode()?.to_luma8();
         for _ in 0..args.warmup {
-            let _ = measure_once(&img, &chess_cfg, pre_blur_sigma_px, &params, &totals);
+            let _ = measure_once(&img, &chess_cfg, &params, &totals);
         }
 
         let mut samples = Vec::with_capacity(args.repeats);
@@ -379,7 +373,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut component_count = 0;
         for _ in 0..args.repeats {
             let (sample, corners, labelled, components) =
-                measure_once(&img, &chess_cfg, pre_blur_sigma_px, &params, &totals);
+                measure_once(&img, &chess_cfg, &params, &totals);
             raw_corners = corners;
             labelled_count = labelled;
             component_count = components;
@@ -414,7 +408,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             repeats: args.repeats,
             warmup: args.warmup,
-            blur_sigma: args.blur_sigma,
             timing_source: "tracing_spans",
         },
         images,

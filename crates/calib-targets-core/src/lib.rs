@@ -7,24 +7,15 @@
 //! ## Quickstart
 //!
 //! ```
-//! use calib_targets_core::{Corner, TargetDetection, TargetKind};
+//! use calib_targets_core::{LabeledCorner, TargetDetection, TargetKind};
 //! use nalgebra::Point2;
-//!
-//! let corner = Corner {
-//!     position: Point2::new(10.0, 20.0),
-//!     contrast: 0.5,
-//!     strength: 1.0,
-//!     // `orientation_cluster` is runtime-assigned by the clustering pass; leave as default.
-//!     // `axes` carries the orientation signal — default means "no info" (sigma = π).
-//!     ..Corner::default()
-//! };
 //!
 //! let detection = TargetDetection {
 //!     kind: TargetKind::Chessboard,
 //!     corners: Vec::new(),
 //! };
 //!
-//! println!("{:?} {}", corner.position, detection.corners.len());
+//! println!("{}", detection.corners.len());
 //! ```
 //!
 //! ## Includes
@@ -58,14 +49,10 @@ pub use chess::{
     RadonDetectorParams, RadonPeakConfig, RadonRefiner, RefinerKind, SaddlePointConfig, Threshold,
     UpscaleConfig, UpscaleConfigError,
 };
-pub use corner::{AxisEstimate, Corner, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+pub use corner::{AxisEstimate, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 #[cfg(feature = "tracing")]
 pub use logger::init_tracing;
 
 pub use logger::init_with_level;
-pub use orientation_clustering::{
-    cluster_orientations, compute_orientation_histogram, estimate_grid_axes_from_orientations,
-    OrientationClusteringParams, OrientationClusteringResult, OrientationHistogram,
-};

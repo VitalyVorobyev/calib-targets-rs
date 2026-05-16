@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chess_cfg = detect::default_chess_config().with_threshold(Threshold::Absolute(100.0));
     let params = DetectorParams::topological();
 
-    let Some(result) = detect::detect_chessboard_with_config(&img, &chess_cfg, &params, 0.0) else {
+    let Some(result) = detect::detect_chessboard_with_config(&img, &chess_cfg, &params) else {
         println!("no board detected");
         return Ok(());
     };

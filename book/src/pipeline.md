@@ -22,9 +22,11 @@ positions.
 1. **Input image** — `image::GrayImage` or a `GrayImageView`. The
    facade helpers in `calib_targets::detect` accept either.
 2. **Corner front-end** — [ChESS X-junction](https://www.cl.cam.ac.uk/research/rainbow/projects/chess/)
-   detector via the `chess-corners` crate. Produces a `Vec<Corner>` —
+   detector via the `chess-corners` crate. Produces a raw corner cloud —
    per-corner position, two axis-angle estimates, strength, and fit
-   residuals. The workspace's default config is
+   residuals — which the facade adapter hands to each target detector as
+   its own input type (e.g. `calib_targets_chessboard::ChessCorner`).
+   The workspace's default config is
    `calib_targets::detect::default_chess_config()`.
 3. **Target-specific detector** — see the dedicated chapters:
    - [Chessboard](chessboard.md) — invariant-first detector
@@ -52,7 +54,7 @@ would compromise precision:
 
 | Stage | Input | Output | Reference |
 |---|---|---|---|
-| 1. Pre-filter | raw `Corner` array | `CornerStage::Strong` corners (strength + fit-quality pass) | `cluster::build_histogram` |
+| 1. Pre-filter | raw `ChessCorner` array | `CornerStage::Strong` corners (strength + fit-quality pass) | `cluster::build_histogram` |
 | 2. Global grid directions | axes histograms | two centers `(Θ₀, Θ₁)` via plateau peaks + double-angle 2-means | [`projective_grid::circular_stats`](projective_grid.md) |
 | 3. Per-corner label | each `Strong` corner's axes vs `(Θ₀, Θ₁)` | `CornerStage::Clustered { label }` with `Canonical`/`Swapped` parity | `cluster::assign_corner` |
 | 4. Cell size | `Clustered` cross-cluster NN distances | `cell_size: f32` estimate | **derived inside Stage 5**; global scalar kept only as a sanity prior |

@@ -6,45 +6,45 @@ use nalgebra::Point2;
 
 use super::{
     build_grid_topological, build_grid_topological_trace, recover_topological_grid,
-    AxisClusterCenters, AxisHint, TopologicalParams,
+    AxisClusterCenters, AxisEstimate, TopologicalParams,
 };
 use crate::LocalMergeParams;
 
-fn axes_axis_aligned() -> [AxisHint; 2] {
+fn axes_axis_aligned() -> [AxisEstimate; 2] {
     [
-        AxisHint {
+        AxisEstimate {
             angle: 0.0,
             sigma: 0.05,
         },
-        AxisHint {
+        AxisEstimate {
             angle: FRAC_PI_2,
             sigma: 0.05,
         },
     ]
 }
 
-fn axes_pair(angle0: f32, angle1: f32) -> [AxisHint; 2] {
+fn axes_pair(angle0: f32, angle1: f32) -> [AxisEstimate; 2] {
     [
-        AxisHint {
+        AxisEstimate {
             angle: angle0,
             sigma: 0.05,
         },
-        AxisHint {
+        AxisEstimate {
             angle: angle1,
             sigma: 0.05,
         },
     ]
 }
 
-fn axes_no_info() -> [AxisHint; 2] {
-    [AxisHint::default(), AxisHint::default()]
+fn axes_no_info() -> [AxisEstimate; 2] {
+    [AxisEstimate::default(), AxisEstimate::default()]
 }
 
 fn build_axis_aligned_grid(
     rows: usize,
     cols: usize,
     step: f32,
-) -> (Vec<Point2<f32>>, Vec<[AxisHint; 2]>) {
+) -> (Vec<Point2<f32>>, Vec<[AxisEstimate; 2]>) {
     let mut pts = Vec::new();
     let mut axs = Vec::new();
     for j in 0..rows {
@@ -176,11 +176,11 @@ fn grid_with_extra_spurious_corner_is_rejected() {
     let (mut pts, mut axs) = build_axis_aligned_grid(4, 4, 10.0);
     pts.push(Point2::new(100.0, 100.0));
     axs.push([
-        AxisHint {
+        AxisEstimate {
             angle: 1.1, // ≈ 63°, not aligned with the grid axes
             sigma: 0.05,
         },
-        AxisHint {
+        AxisEstimate {
             angle: 1.1 + FRAC_PI_2,
             sigma: 0.05,
         },
@@ -243,11 +243,11 @@ fn rotated_grid_still_recovered() {
             let y = j as f32 * 10.0;
             pts.push(Point2::new(cos_t * x - sin_t * y, sin_t * x + cos_t * y));
             axs.push([
-                AxisHint {
+                AxisEstimate {
                     angle: theta,
                     sigma: 0.05,
                 },
-                AxisHint {
+                AxisEstimate {
                     angle: theta + FRAC_PI_2,
                     sigma: 0.05,
                 },
@@ -311,11 +311,11 @@ fn cluster_gate_drops_off_axis_noiser_when_centers_supplied() {
     // 5×5 grid (axes ≈ 0°/90°) plus 4 spurious corners with axes at 30°.
     let (mut pts, mut axs) = build_axis_aligned_grid(5, 5, 10.0);
     let off_axis = [
-        AxisHint {
+        AxisEstimate {
             angle: 30.0_f32.to_radians(),
             sigma: 0.05,
         },
-        AxisHint {
+        AxisEstimate {
             angle: 30.0_f32.to_radians() + FRAC_PI_2,
             sigma: 0.05,
         },
@@ -358,11 +358,11 @@ fn cluster_gate_widens_with_tolerance() {
     let (mut pts, mut axs) = build_axis_aligned_grid(5, 5, 10.0);
     pts.push(Point2::new(60.0, 5.0));
     axs.push([
-        AxisHint {
+        AxisEstimate {
             angle: 30.0_f32.to_radians(),
             sigma: 0.05,
         },
-        AxisHint {
+        AxisEstimate {
             angle: 30.0_f32.to_radians() + FRAC_PI_2,
             sigma: 0.05,
         },

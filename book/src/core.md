@@ -7,13 +7,17 @@
 
 ## Core data types
 
-- `Corner`: raw corner observations from your detector.
-  - `position`: image-space pixel coordinates.
-  - `orientation`: dominant grid orientation in radians, defined modulo `pi`.
-  - `orientation_cluster`: optional cluster index (0 or 1) if clustering is used.
-  - `strength`: detector response.
-- `GridCoords`: integer grid indices `(i, j)` in board space.
-- `LabeledCorner`: a detected corner with optional grid coordinates and logical ID.
+- `AxisEstimate`: one local grid-axis direction — an angle in `[0, π)`
+  plus a 1σ angular uncertainty. A corner carries two of these as
+  `axes: [AxisEstimate; 2]`; there is no single-orientation field
+  (`Corner::orientation` was removed workspace-wide).
+- `GridCoords`: integer grid indices `(i, j)` in board space, with `i`
+  right and `j` down.
+- `LabeledCorner`: a detected corner with optional grid coordinates and
+  logical ID — `position`, `grid`, `id`, `target_position`, `score`.
+- The raw per-corner *input* type is detector-specific and lives in the
+  detector crates (e.g. `calib_targets_chessboard::ChessCorner`), not in
+  `calib-targets-core`.
 - `TargetDetection`: a collection of labeled corners for one board instance.
 - `TargetKind`: enum for `Chessboard`, `Charuco`, or `CheckerboardMarker`.
 

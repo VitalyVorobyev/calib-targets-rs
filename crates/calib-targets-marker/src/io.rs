@@ -1,8 +1,9 @@
 //! JSON configuration and report helpers for marker board detection.
 
 use crate::{MarkerBoardDetectionResult, MarkerBoardDetector, MarkerBoardParams};
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_core::io::{self, IoError};
-use calib_targets_core::{Corner, DetectorConfig, GridAlignment, TargetDetection};
+use calib_targets_core::{DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -56,7 +57,7 @@ pub struct MarkerBoardDetectReport {
     pub image_path: String,
     pub config_path: String,
     pub num_raw_corners: usize,
-    pub raw_corners: Vec<Corner>,
+    pub raw_corners: Vec<ChessCorner>,
     #[serde(default)]
     pub detection: Option<TargetDetection>,
     #[serde(default)]
@@ -70,7 +71,7 @@ impl MarkerBoardDetectReport {
     pub fn new(
         cfg: &MarkerBoardDetectConfig,
         config_path: &Path,
-        raw_corners: Vec<Corner>,
+        raw_corners: Vec<ChessCorner>,
     ) -> Self {
         Self {
             image_path: cfg.image_path.clone(),

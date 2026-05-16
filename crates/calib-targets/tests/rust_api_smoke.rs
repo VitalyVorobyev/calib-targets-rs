@@ -57,7 +57,7 @@ fn main() {
     assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
 
     let img = image::GrayImage::new(16, 16);
-    let _ = detect::detect_corners(&img, &cfg, 0.0);
+    let _ = detect::detect_corners(&img, &cfg);
 }
 "#,
     );

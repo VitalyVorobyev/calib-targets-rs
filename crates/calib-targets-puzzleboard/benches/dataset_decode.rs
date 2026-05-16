@@ -18,8 +18,8 @@
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::Corner;
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;
@@ -80,7 +80,7 @@ fn bench_all(c: &mut Criterion) {
         .iter()
         .filter_map(|(t, s, label)| {
             let snap = load_snap(*t, *s, upscale)?;
-            let corners = detect_corners(&snap, &cfg, 0.0);
+            let corners = detect_corners(&snap, &cfg);
             Some(((*label).to_string(), snap, corners))
         })
         .collect();
@@ -97,7 +97,7 @@ fn bench_all(c: &mut Criterion) {
     for (label, snap, _) in &fixtures {
         corners_group.bench_with_input(BenchmarkId::from_parameter(label), snap, |b, snap| {
             b.iter(|| {
-                let out = detect_corners(snap, &cfg, 0.0);
+                let out = detect_corners(snap, &cfg);
                 criterion::black_box(out)
             });
         });

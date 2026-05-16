@@ -10,10 +10,11 @@ use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{
     Detection as ChessDetection, Detector as ChessDetector, GraphBuildAlgorithm,
 };
-use calib_targets_core::{Corner, GrayImageView};
+use calib_targets_core::GrayImageView;
 use log::{debug, warn};
 
 /// Rich per-frame diagnostics captured by [`CharucoDetector::detect_with_diagnostics`].
@@ -123,7 +124,7 @@ impl CharucoDetector {
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
-        corners: &[Corner],
+        corners: &[ChessCorner],
     ) -> Result<CharucoDetectionResult, CharucoDetectError> {
         self.detect_inner(image, corners).0
     }
@@ -135,7 +136,7 @@ impl CharucoDetector {
     pub fn detect_with_diagnostics(
         &self,
         image: &GrayImageView<'_>,
-        corners: &[Corner],
+        corners: &[ChessCorner],
     ) -> (
         Result<CharucoDetectionResult, CharucoDetectError>,
         CharucoDetectDiagnostics,
@@ -146,7 +147,7 @@ impl CharucoDetector {
     fn detect_inner(
         &self,
         image: &GrayImageView<'_>,
-        corners: &[Corner],
+        corners: &[ChessCorner],
     ) -> (
         Result<CharucoDetectionResult, CharucoDetectError>,
         CharucoDetectDiagnostics,

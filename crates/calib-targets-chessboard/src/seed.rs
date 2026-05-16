@@ -31,7 +31,7 @@ use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
 use nalgebra::Point2;
 use projective_grid::square::seed_finder::{find_quad, SeedQuadParams, SeedQuadValidator};
-use projective_grid::topological::AxisHint;
+use projective_grid::topological::AxisEstimate;
 
 // `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
 // non-chessboard grid-detector pipelines can share the same 2×2 seed
@@ -114,14 +114,14 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
         self.corners[idx].position
     }
 
-    fn axes(&self, idx: usize) -> [AxisHint; 2] {
+    fn axes(&self, idx: usize) -> [AxisEstimate; 2] {
         let c = &self.corners[idx];
         [
-            AxisHint {
+            AxisEstimate {
                 angle: c.axes[0].angle,
                 sigma: c.axes[0].sigma,
             },
-            AxisHint {
+            AxisEstimate {
                 angle: c.axes[1].angle,
                 sigma: c.axes[1].sigma,
             },
@@ -190,7 +190,8 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
 mod tests {
     use super::*;
     use crate::cluster::cluster_axes;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use crate::corner::ChessCorner;
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -206,9 +207,8 @@ mod tests {
             ClusterLabel::Canonical => [axis_u, axis_v],
             ClusterLabel::Swapped => [axis_v, axis_u],
         };
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(axes[0]),
@@ -223,7 +223,7 @@ mod tests {
             fit_rms: 1.0,
             strength,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
     }

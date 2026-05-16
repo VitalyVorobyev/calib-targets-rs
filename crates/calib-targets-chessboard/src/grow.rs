@@ -405,8 +405,9 @@ impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
 mod tests {
     use super::*;
     use crate::cluster::cluster_axes;
+    use crate::corner::ChessCorner;
     use crate::seed::find_seed;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -423,9 +424,8 @@ mod tests {
         } else {
             (0.0, std::f32::consts::FRAC_PI_2)
         };
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: a0,
@@ -440,7 +440,7 @@ mod tests {
             fit_rms: 1.0,
             strength: 1.0,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
     }

@@ -40,16 +40,38 @@
 //!
 //! # Quickstart
 //!
-//! ```rust,ignore
-//! use calib_targets_chessboard::{Detector, DetectorParams};
-//! use calib_targets_core::Corner;
+//! ```rust
+//! use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+//! use calib_targets_core::AxisEstimate;
+//! use nalgebra::Point2;
 //!
-//! fn detect(corners: &[Corner]) {
-//!     let det = Detector::new(DetectorParams::default());
-//!     if let Some(d) = det.detect(corners) {
-//!         println!("labelled {} corners", d.target.corners.len());
+//! // A synthetic 7×7 chessboard corner cloud at 20 px pitch. Adjacent
+//! // corners carry opposite axis-slot orderings (the parity invariant).
+//! let mut corners: Vec<ChessCorner> = Vec::new();
+//! for j in 0..7 {
+//!     for i in 0..7 {
+//!         let swapped = (i + j) % 2 == 1;
+//!         let (a0, a1) = if swapped {
+//!             (std::f32::consts::FRAC_PI_2, 0.0)
+//!         } else {
+//!             (0.0, std::f32::consts::FRAC_PI_2)
+//!         };
+//!         corners.push(ChessCorner {
+//!             position: Point2::new(i as f32 * 20.0 + 50.0, j as f32 * 20.0 + 50.0),
+//!             axes: [
+//!                 AxisEstimate { angle: a0, sigma: 0.01 },
+//!                 AxisEstimate { angle: a1, sigma: 0.01 },
+//!             ],
+//!             contrast: 10.0,
+//!             fit_rms: 1.0,
+//!             strength: 1.0,
+//!         });
 //!     }
 //! }
+//!
+//! let det = Detector::new(DetectorParams::default());
+//! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
+//! assert_eq!(detection.target.corners.len(), 49);
 //! ```
 //!
 //! # Rectification helpers
@@ -68,6 +90,7 @@ pub mod detector;
 pub mod grow;
 pub mod mesh_warp;
 pub mod params;
+pub mod pipeline;
 pub mod rectified_view;
 pub mod seed;
 pub mod topological;
@@ -76,7 +99,7 @@ pub mod validate;
 pub use boosters::{apply_boosters, BoosterResult};
 pub use cell_size::estimate_cell_size;
 pub use cluster::{cluster_axes, cluster_axes_debug, AxisCluster, ClusterCenters, ClusterDebug};
-pub use corner::{ClusterLabel, CornerAug, CornerStage};
+pub use corner::{ChessCorner, ClusterLabel, CornerAug, CornerStage};
 pub use detector::{
     build_detection_from_grow, DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace,
     StageCounts, DEBUG_FRAME_SCHEMA,

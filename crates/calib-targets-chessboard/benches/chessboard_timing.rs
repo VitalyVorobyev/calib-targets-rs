@@ -20,8 +20,8 @@
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::Corner;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::GenericImageView;
 
@@ -57,7 +57,7 @@ fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {
     }
     let snap = img.view(x0, 0, SNAP_WIDTH, SNAP_HEIGHT).to_image();
     let cfg = default_chess_config();
-    Some(detect_corners(&snap, &cfg, 0.0))
+    Some(detect_corners(&snap, &cfg))
 }
 
 fn bench_detection(c: &mut Criterion) {

@@ -33,8 +33,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view, DetectError};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::{DebugFrame, Detector as ChessDetector, DetectorParams};
-use calib_targets_core::Corner;
 use calib_targets_puzzleboard::{
     PuzzleBoardDetectError, PuzzleBoardDetectionResult, PuzzleBoardDetector,
     PuzzleBoardScoringMode, PuzzleBoardSearchMode,
@@ -229,7 +229,7 @@ fn main() {
             let snap = maybe_upscale(&native, args.upscale);
 
             let t0 = Instant::now();
-            let corners = detect_corners(&snap, &chess_cfg, 0.0);
+            let corners = detect_corners(&snap, &chess_cfg);
             let t_corners = t0.elapsed();
 
             let t0 = Instant::now();

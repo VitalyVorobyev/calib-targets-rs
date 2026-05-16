@@ -4,13 +4,13 @@
 //! depending on the facade crate (which pulls in `image` codecs and `rayon`
 //! via the `image` feature).
 
-use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_chessboard::ChessCorner;
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 
-pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> Corner {
-    Corner {
+pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
+    ChessCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             AxisEstimate {
                 angle: c.axes[0].angle,

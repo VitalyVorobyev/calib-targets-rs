@@ -170,13 +170,13 @@ fn multimodal_mode(sorted_dists: &[f32]) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use crate::corner::ChessCorner;
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(idx: usize, x: f32, y: f32, label: ClusterLabel) -> CornerAug {
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: 0.0,
@@ -191,7 +191,7 @@ mod tests {
             fit_rms: 1.0,
             strength: 1.0,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Clustered { label };
         aug.label = Some(label);
         aug

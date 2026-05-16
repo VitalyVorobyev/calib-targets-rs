@@ -8,8 +8,9 @@ mod gray;
 
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::{Corner, DetectorConfig, Threshold};
+use calib_targets_core::{DetectorConfig, Threshold};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
     render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
@@ -60,7 +61,7 @@ fn detect_corners_impl(
     width: u32,
     height: u32,
     cfg: &DetectorConfig,
-) -> Vec<Corner> {
+) -> Vec<ChessCorner> {
     let Ok(mut detector) = ChessCornerDetector::new(*cfg) else {
         return Vec::new();
     };

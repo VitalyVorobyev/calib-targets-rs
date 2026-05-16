@@ -68,11 +68,27 @@ pub use trace::{
 
 /// One local grid-axis direction at a corner with its 1σ angular uncertainty.
 ///
-/// Mirror of `calib_targets_core::AxisEstimate` so that `projective-grid`
-/// remains free of image / detector dependencies. The chessboard crate
-/// converts `Corner.axes` into this type before calling.
+/// Generic workspace primitive for "this corner believes a grid axis points
+/// in direction θ with 1σ uncertainty σ". A corner carries two of these — an
+/// orthogonal pair of grid directions. Used by both the topological pipeline
+/// (per-half-edge classifier input) and the square pipeline (via the caller's
+/// [`GrowValidator`](crate::square::grow::GrowValidator) impl).
+///
+/// `AxisEstimate` is purely geometric: it is a pair of orthogonal directions
+/// with no notion of colour, parity, or which side of the axis is "dark". Any
+/// pattern-specific interpretation (e.g. a chessboard's dark-sector parity
+/// convention) lives in the pattern's detector crate, not here.
+///
+/// Convention:
+/// - `angle` is in radians. For a corner's two axes, axis 0 is canonicalised
+///   to `[0, π)` and axis 1 to `(axes[0].angle, axes[0].angle + π)`, so the
+///   pair is ordered and roughly orthogonal.
+/// - `sigma` is the 1σ angular uncertainty. `sigma >= max_sigma` is treated
+///   as "no information" by downstream consumers and the corner is skipped.
+/// - Default-constructed axes carry `sigma = π` (the no-info sentinel) so
+///   callers that weight by sigma naturally ignore them.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
-pub struct AxisHint {
+pub struct AxisEstimate {
     /// Axis angle in radians.
     pub angle: f32,
     /// 1σ angular uncertainty in radians. `sigma >= max_sigma` is treated
@@ -80,9 +96,10 @@ pub struct AxisHint {
     pub sigma: f32,
 }
 
-impl Default for AxisHint {
+impl Default for AxisEstimate {
     fn default() -> Self {
-        // No-information default — matches `AxisEstimate::default()`.
+        // No-information sentinel. Downstream code that weights by `sigma`
+        // must treat `π` as "this axis is unusable".
         Self {
             angle: 0.0,
             sigma: std::f32::consts::PI,
@@ -90,8 +107,8 @@ impl Default for AxisHint {
     }
 }
 
-impl AxisHint {
-    /// Construct an `AxisHint` from a bare angle, with no uncertainty
+impl AxisEstimate {
+    /// Construct an `AxisEstimate` from a bare angle, with no uncertainty
     /// information (`sigma = 0.0`).  Useful for callers that only have
     /// an angle (e.g. [`SeedQuadValidator::axes`] impls that do not track
     /// per-corner uncertainty).
@@ -99,6 +116,36 @@ impl AxisHint {
     /// [`SeedQuadValidator::axes`]: crate::square::seed_finder::SeedQuadValidator::axes
     pub fn from_angle(angle: f32) -> Self {
         Self { angle, sigma: 0.0 }
+    }
+}
+
+/// A corner consumed by [`detect_topological_grid`].
+///
+/// Bundles the pixel position with the two local grid-axis directions
+/// emitted by an upstream corner detector. The topological pipeline
+/// classifies every Delaunay half-edge by matching its angle against
+/// both endpoints' axes, so axes are part of the input contract.
+///
+/// The square pipeline has no equivalent per-corner input struct: it
+/// takes a bare `&[Point2<f32>]` and obtains per-corner axes through
+/// the caller's [`SeedQuadValidator`](crate::square::seed::finder::SeedQuadValidator)
+/// / [`GrowValidator`](crate::square::grow::GrowValidator) impl (or, on
+/// the zero-config path, through
+/// [`detect_regular_grid`](crate::detect_regular_grid)'s built-in
+/// regular-grid policy).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TopologicalInputCorner {
+    /// Corner position in pixel coordinates.
+    pub position: Point2<f32>,
+    /// Two local grid-axis directions with per-axis 1σ uncertainty.
+    /// Default-constructed axes (`sigma = π`) mark the corner unusable.
+    pub axes: [AxisEstimate; 2],
+}
+
+impl TopologicalInputCorner {
+    /// Construct a [`TopologicalInputCorner`] from a position and axes.
+    pub fn new(position: Point2<f32>, axes: [AxisEstimate; 2]) -> Self {
+        Self { position, axes }
     }
 }
 
@@ -314,7 +361,7 @@ pub enum TopologicalError {
 }
 
 #[inline]
-fn axis_passes_cluster(a: &AxisHint, centers: &AxisClusterCenters, tol: f32) -> bool {
+fn axis_passes_cluster(a: &AxisEstimate, centers: &AxisClusterCenters, tol: f32) -> bool {
     use crate::circular_stats::{angular_dist_pi, wrap_pi};
     if !a.sigma.is_finite() || a.sigma >= std::f32::consts::PI - f32::EPSILON {
         return false;
@@ -331,7 +378,7 @@ fn axis_passes_cluster(a: &AxisHint, centers: &AxisClusterCenters, tol: f32) -> 
         fields(num_corners = axes.len()),
     )
 )]
-fn usable_mask(axes: &[[AxisHint; 2]], params: &TopologicalParams) -> Vec<bool> {
+fn usable_mask(axes: &[[AxisEstimate; 2]], params: &TopologicalParams) -> Vec<bool> {
     let centers = params.axis_cluster_centers.as_ref();
     let tol = params.cluster_axis_tol_rad;
     axes.iter()
@@ -438,7 +485,7 @@ pub(super) fn update_triangle_stats(stats: &mut TopologicalStats, edge_kinds: &[
 )]
 pub fn build_grid_topological(
     positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+    axes: &[[AxisEstimate; 2]],
     params: &TopologicalParams,
 ) -> Result<TopologicalGrid, TopologicalError> {
     if positions.len() != axes.len() {
@@ -499,6 +546,27 @@ pub fn build_grid_topological(
     })
 }
 
+/// User-facing entry point for the topological grid pipeline.
+///
+/// Equivalent to [`build_grid_topological`] but takes a single
+/// [`TopologicalInputCorner`] slice instead of parallel
+/// `positions` / `axes` arrays. Use [`recover_topological_grid`]
+/// for the variant that additionally runs the local component
+/// merge.
+///
+/// # Errors
+///
+/// Returns [`TopologicalError::NotEnoughCorners`] when fewer than
+/// three corners survive the per-axis usability filter.
+pub fn detect_topological_grid(
+    corners: &[TopologicalInputCorner],
+    params: &TopologicalParams,
+) -> Result<TopologicalGrid, TopologicalError> {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let axes: Vec<[AxisEstimate; 2]> = corners.iter().map(|c| c.axes).collect();
+    build_grid_topological(&positions, &axes, params)
+}
+
 /// Build a topological grid and run the generic local component merge.
 ///
 /// This is the projective-grid-only final recovery path: input points and
@@ -507,7 +575,7 @@ pub fn build_grid_topological(
 /// sampling; those live in target-specific crates.
 pub fn recover_topological_grid(
     positions: &[Point2<f32>],
-    axes: &[[AxisHint; 2]],
+    axes: &[[AxisEstimate; 2]],
     topo_params: &TopologicalParams,
     merge_params: &crate::component_merge::LocalMergeParams,
 ) -> Result<crate::component_merge::ComponentMergeResult, TopologicalError> {

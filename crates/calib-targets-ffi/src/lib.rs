@@ -134,12 +134,12 @@ impl PreparedGrayImage {
     fn detect_corners(
         &self,
         chess: &DetectorConfig,
-    ) -> FfiResult<Vec<calib_targets::core::Corner>> {
+    ) -> FfiResult<Vec<calib_targets::chessboard::ChessCorner>> {
         let gray = detect::gray_image_from_slice(self.width, self.height, &self.pixels)
             .map_err(|err| FfiError::internal(format!("failed to build grayscale image: {err}")))?;
         // Pre-blur is not exposed via the C ABI; callers requiring it must
-        // pre-process the image before submitting it. Always pass 0.0.
-        Ok(detect::detect_corners(&gray, chess, 0.0))
+        // pre-process the image before submitting it.
+        Ok(detect::detect_corners(&gray, chess))
     }
 
     fn view(&self) -> GrayImageView<'_> {

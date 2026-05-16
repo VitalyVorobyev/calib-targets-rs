@@ -12,20 +12,19 @@
 //!
 //! Multi-physical-board scenes are explicitly out of scope.
 
-use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use std::collections::HashSet;
 
-fn corner(x: f32, y: f32, parity: usize) -> Corner {
+fn corner(x: f32, y: f32, parity: usize) -> ChessCorner {
     let (a0, a1) = if parity == 0 {
         (0.0_f32, std::f32::consts::FRAC_PI_2)
     } else {
         (std::f32::consts::FRAC_PI_2, 0.0_f32)
     };
-    Corner {
+    ChessCorner {
         position: Point2::new(x, y),
-        orientation_cluster: None,
         axes: [
             AxisEstimate {
                 angle: a0,
@@ -42,7 +41,7 @@ fn corner(x: f32, y: f32, parity: usize) -> Corner {
     }
 }
 
-fn build_3x3(x0: f32, y0: f32, spacing: f32) -> Vec<Corner> {
+fn build_3x3(x0: f32, y0: f32, spacing: f32) -> Vec<ChessCorner> {
     let mut out = Vec::new();
     for j in 0..3 {
         for i in 0..3 {

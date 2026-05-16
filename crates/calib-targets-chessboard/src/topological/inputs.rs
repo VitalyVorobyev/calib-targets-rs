@@ -1,33 +1,33 @@
 //! Input adaptation for the chessboard topological dispatch path.
 
-use calib_targets_core::Corner;
+use crate::corner::ChessCorner;
 use nalgebra::Point2;
-use projective_grid::AxisHint;
+use projective_grid::AxisEstimate;
 
 use crate::params::DetectorParams;
 
 /// Corner data passed from `calib-targets-chessboard` into `projective-grid`.
 pub(super) struct TopologicalInputs {
     pub(super) positions: Vec<Point2<f32>>,
-    pub(super) axes: Vec<[AxisHint; 2]>,
+    pub(super) axes: Vec<[AxisEstimate; 2]>,
     pub(super) usable_count: usize,
 }
 
 #[inline]
-fn axis_hint_from(c: &Corner) -> [AxisHint; 2] {
+fn axes_from(c: &ChessCorner) -> [AxisEstimate; 2] {
     [
-        AxisHint {
+        AxisEstimate {
             angle: c.axes[0].angle,
             sigma: c.axes[0].sigma,
         },
-        AxisHint {
+        AxisEstimate {
             angle: c.axes[1].angle,
             sigma: c.axes[1].sigma,
         },
     ]
 }
 
-fn prefilter(corners: &[Corner], params: &DetectorParams) -> Vec<bool> {
+fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
     corners
         .iter()
         .map(|c| {
@@ -55,17 +55,20 @@ fn prefilter(corners: &[Corner], params: &DetectorParams) -> Vec<bool> {
         fields(num_corners = corners.len()),
     )
 )]
-pub(super) fn topological_inputs(corners: &[Corner], params: &DetectorParams) -> TopologicalInputs {
+pub(super) fn topological_inputs(
+    corners: &[ChessCorner],
+    params: &DetectorParams,
+) -> TopologicalInputs {
     let mask = prefilter(corners, params);
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisHint; 2]> = corners
+    let axes: Vec<[AxisEstimate; 2]> = corners
         .iter()
         .zip(mask.iter())
         .map(|(c, ok)| {
             if *ok {
-                axis_hint_from(c)
+                axes_from(c)
             } else {
-                [AxisHint::default(); 2]
+                [AxisEstimate::default(); 2]
             }
         })
         .collect();

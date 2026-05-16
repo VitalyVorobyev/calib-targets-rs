@@ -22,12 +22,47 @@ nalgebra = "0.34"
 
 `projective-grid` ships two grid-construction pipelines that produce
 the same `(i, j) → corner_idx` map and share the same downstream
-validation, rectification, and component-merge machinery. Pattern-
-specific gates (parity, axis-cluster, marker rules, …) plug into the
-[`square::grow::GrowValidator`] trait; the geometric machinery
-underneath is generic.
+validation, rectification, and component-merge machinery.
 
-### Square seed-and-grow (default)
+### Quick start: point cloud in, labelled grid out
+
+The zero-config entry point is `detect_regular_grid`. Hand it a
+`&[Point2<f32>]`; it returns a `RegularGridDetection` where every
+recovered corner carries its `(i, j)` label and the index back into
+your input slice. No validator scaffolding required:
+
+```rust
+use nalgebra::Point2;
+use projective_grid::detect_regular_grid;
+
+// A clean 5×4 grid at 30 px pitch (clean, rotated, or perspective-
+// warped input all work).
+let mut points = Vec::new();
+for j in 0..4 {
+    for i in 0..5 {
+        points.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
+    }
+}
+
+let grid = detect_regular_grid(&points).expect("clean grid detects");
+assert_eq!(grid.points.len(), 20);
+// Labels rebased so the bbox minimum is (0, 0); +i points right,
+// +j points down (visual top-left origin).
+```
+
+For tuning, use `RegularGridDetector` + `RegularGridParams`
+(boundary-extension strategy, top-left canonicalisation toggle,
+connectivity pruning). `RegularGridDetector::detect_all` returns one
+detection per disjoint component.
+
+### Square seed-and-grow (advanced / pattern-specific)
+
+`detect_regular_grid` is a thin wrapper over the validator-driven
+`detect_square_grid` with a built-in permissive regular-grid policy.
+When you need pattern-specific rules — parity, axis-cluster, marker
+slots — implement the `square::grow::GrowValidator` +
+`square::seed::finder::SeedQuadValidator` traits and call the
+advanced API directly:
 
 ```rust
 use projective_grid::square::{
@@ -69,6 +104,11 @@ implement their pattern-specific `GrowValidator` and call the same
 machinery. Their orchestrators iterate grow + validate with a
 blacklist until the labelled set converges, then run boundary
 extension, then re-validate.
+
+Generic, target-agnostic output cleanup lives in `square::cleanup`
+(`rebase_to_origin`, `prune_to_main_component`, `canonicalize_top_left`,
+`sorted_grid_points`) — `detect_regular_grid` applies these
+internally, and they are exposed for pattern detectors to reuse.
 
 ### Local-homography boundary extension
 

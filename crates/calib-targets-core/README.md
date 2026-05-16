@@ -22,8 +22,8 @@ nalgebra = "0.34"
 
 | Type | Role |
 |---|---|
-| [`Corner`] | Raw ChESS corner: position, axes, contrast, strength, fit RMS. No `(i, j)` label. |
-| [`LabeledCorner`] | `Corner` + grid label: `position`, `grid: Option<(i, j)>`, `id`, `target_position`, `score`. The common detector output. |
+| [`AxisEstimate`] | One local grid-axis direction: an angle in `[0, π)` plus a 1σ uncertainty. Corners carry two. |
+| [`LabeledCorner`] | A detected corner with grid label: `position`, `grid: Option<(i, j)>`, `id`, `target_position`, `score`. The common detector output. |
 | [`TargetDetection`] | `{ kind: TargetKind, corners: Vec<LabeledCorner> }`. Uniform wrapper across all detector types. |
 | [`TargetKind`] | `Chessboard`, `ChArUco`, `PuzzleBoard`, `CheckerboardMarker`. Non-exhaustive. |
 | [`GridCoords`] | Integer `(i, j)` grid index, with `i` right, `j` down. Labels are always rebased so that the bounding-box minimum sits at `(0, 0)`. |
@@ -51,31 +51,37 @@ nalgebra = "0.34"
   `(0, 0)`.
 - **Quad / homography corner order.** `TL, TR, BR, BL` (clockwise). Never
   self-crossing.
-- **Corner orientation.** `Corner::axes` holds two ordered axis angles with
-  `axes[1] − axes[0] ≈ π/2`. The CCW sweep from `axes[0]` to `axes[1]`
-  crosses a dark sector. See the workspace [conventions chapter][conv].
+- **Corner orientation.** A corner's `axes: [AxisEstimate; 2]` holds two
+  ordered axis angles with `axes[1] − axes[0] ≈ π/2`. The CCW sweep from
+  `axes[0]` to `axes[1]` crosses a dark sector. See the workspace
+  [conventions chapter][conv]. (The raw per-corner input type lives in
+  the detector crates — e.g. `calib_targets_chessboard::ChessCorner` —
+  not here; `calib-targets-core` carries only the shared output types.)
 
 ## Quickstart
 
 ```rust
-use calib_targets_core::{Corner, TargetDetection, TargetKind};
+use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
-let corner = Corner {
+let corner = LabeledCorner {
     position: Point2::new(10.0, 20.0),
-    orientation_cluster: None,
-    axes: Default::default(),
-    contrast: 0.0,
-    fit_rms: 0.0,
-    strength: 1.0,
+    grid: Some(GridCoords { i: 0, j: 0 }),
+    id: None,
+    target_position: None,
+    score: 1.0,
 };
 
 let detection = TargetDetection {
     kind: TargetKind::Chessboard,
-    corners: Vec::new(),
+    corners: vec![corner],
 };
 
-println!("{:?} {}", corner.position, detection.corners.len());
+println!(
+    "{:?} {}",
+    detection.corners[0].position,
+    detection.corners.len(),
+);
 ```
 
 ## Links

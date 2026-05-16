@@ -14,10 +14,11 @@
 //! The legacy `find_chess_corners_image` free function is gone — call
 //! [`Detector::new(cfg)?.detect(&img)?`] instead.
 //!
-//! Workspace-only preprocessing (the optional same-size Gaussian pre-blur
-//! that used to live on a `pre_blur_sigma_px` field) is now a sibling
-//! field on each detector's `*Params` struct, applied by the corresponding
-//! detector entry point before constructing a [`Detector`].
+//! Workspace-only preprocessing (the optional same-size Gaussian pre-blur)
+//! is exposed as a standalone helper at the facade level
+//! (`calib_targets::preprocess`); detection entry points operate on the
+//! image as supplied so the library no longer conflates preprocessing
+//! with detection.
 
 /// Low-level per-image ChESS params (single scale).
 pub use chess_corners::ChessParams as ChessCornerParams;

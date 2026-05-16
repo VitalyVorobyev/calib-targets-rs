@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use calib_targets_core::Corner;
+use crate::corner::ChessCorner;
 use nalgebra::{Point2, Vector2};
 use projective_grid::{merge_components_local, ComponentInput, GridTransform, GRID_TRANSFORMS_D4};
 
@@ -124,14 +124,14 @@ fn estimate_grid_steps(
     )
 )]
 pub(super) fn clustered_augs(
-    corners: &[Corner],
+    corners: &[ChessCorner],
     params: &DetectorParams,
 ) -> (Vec<CornerAug>, Option<ClusterCenters>) {
     let mut augs: Vec<CornerAug> = corners
         .iter()
         .enumerate()
         .map(|(i, c)| {
-            let mut aug = CornerAug::from_corner(i, c);
+            let mut aug = CornerAug::from_chess_corner(i, c);
             let strong = c.strength >= params.min_corner_strength;
             let fit_ok = !params.max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0

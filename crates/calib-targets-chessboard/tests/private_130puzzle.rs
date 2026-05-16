@@ -147,7 +147,7 @@ fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
     }
 
     let snap = load_snap(15, 0);
-    let corners = detect_corners(&snap, &default_chess_config(), 0.0);
+    let corners = detect_corners(&snap, &default_chess_config());
     let detector = default_chessboard_v2_detector();
     let detection = detector
         .detect(&corners)
@@ -181,7 +181,7 @@ fn puzzle130_full_chessboard_v2_recall_contract() {
         );
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap = load_snap(target_idx, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg, 0.0);
+            let corners = detect_corners(&snap, &chess_cfg);
             frames += 1;
             let Some(detection) = detector.detect(&corners) else {
                 continue;
@@ -227,7 +227,7 @@ fn puzzle130_full_topological_recall_contract() {
         );
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap = load_snap(target_idx, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg, 0.0);
+            let corners = detect_corners(&snap, &chess_cfg);
             frames += 1;
             let Some(detection) = detector.detect(&corners) else {
                 eprintln!("target_{target_idx} snap {snap_idx}: no detection");

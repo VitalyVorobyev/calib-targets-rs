@@ -15,7 +15,7 @@
 mod inputs;
 mod recovery;
 
-use calib_targets_core::Corner;
+use crate::corner::ChessCorner;
 use projective_grid::{
     build_grid_topological, build_grid_topological_trace, merge_components_local,
     AxisClusterCenters, ComponentInput, TopologicalGrid, TopologicalTrace,
@@ -45,7 +45,7 @@ fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisCl
         fields(num_corners = corners.len()),
     )
 )]
-pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Vec<Detection> {
+pub fn detect_all_topological(corners: &[ChessCorner], params: &DetectorParams) -> Vec<Detection> {
     if corners.is_empty() {
         return Vec::new();
     }
@@ -131,7 +131,7 @@ pub fn detect_all_topological(corners: &[Corner], params: &DetectorParams) -> Ve
     )
 )]
 pub fn trace_topological(
-    corners: &[Corner],
+    corners: &[ChessCorner],
     params: &DetectorParams,
 ) -> Result<TopologicalTrace, projective_grid::TopologicalError> {
     let inputs = topological_inputs(corners, params);

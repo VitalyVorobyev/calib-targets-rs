@@ -15,8 +15,8 @@
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::Corner;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
@@ -75,7 +75,7 @@ fn bench_grid(c: &mut Criterion) {
             );
             continue;
         };
-        let corners: Vec<Corner> = detect_corners(&snap, &cfg, 0.0);
+        let corners: Vec<Corner> = detect_corners(&snap, &cfg);
         loaded_any = true;
         group.bench_with_input(
             BenchmarkId::from_parameter(label),
