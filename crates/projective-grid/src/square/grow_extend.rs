@@ -52,7 +52,7 @@ pub struct BfsExtensionStats {
 /// [`crate::square::grow::bfs_grow`]. Already-labelled corners are
 /// never moved or removed.
 ///
-/// The extension uses `grow.grid_u` and `grow.grid_v` for direction; the
+/// The extension uses `grow.axis_i` and `grow.axis_j` for direction; the
 /// caller must ensure those fields are meaningful (they are set by
 /// `bfs_grow`).
 ///
@@ -110,8 +110,8 @@ pub fn extend_from_labelled<V: GrowValidator>(
         let prediction = predict_from_neighbours(
             pos,
             &neighbours,
-            grow.grid_u,
-            grow.grid_v,
+            grow.axis_i,
+            grow.axis_j,
             cell_size,
             &grow.labelled,
             positions,

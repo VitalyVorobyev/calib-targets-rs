@@ -218,8 +218,8 @@ pub struct GrowResult {
     /// Positions with no accepted candidate.
     pub holes: HashSet<(i32, i32)>,
     /// Grid vectors carried forward — overlays / boosters use them.
-    pub grid_u: Vector2<f32>,
-    pub grid_v: Vector2<f32>,
+    pub axis_i: Vector2<f32>,
+    pub axis_j: Vector2<f32>,
     /// Parity shift applied during the post-BFS rebase, modulo 2.
     ///
     /// BFS walks in pre-rebase coords where the seed's `(0, 0)` cell
@@ -276,12 +276,12 @@ pub fn bfs_grow<V: GrowValidator>(
     validator: &V,
 ) -> GrowResult {
     // Grid unit vectors inferred from the seed corners (pixel space).
-    let grid_u = {
+    let axis_i = {
         let raw = positions[seed.b] - positions[seed.a];
         let n = raw.norm().max(1e-6);
         raw / n
     };
-    let grid_v = {
+    let axis_j = {
         let raw = positions[seed.c] - positions[seed.a];
         let n = raw.norm().max(1e-6);
         raw / n
@@ -328,8 +328,8 @@ pub fn bfs_grow<V: GrowValidator>(
             by_corner: &by_corner,
             tree: &tree,
             tree_slot_to_corner: &tree_slot_to_corner,
-            grid_u,
-            grid_v,
+            axis_i,
+            axis_j,
             cell_size,
             params,
             validator,
@@ -384,8 +384,8 @@ pub fn bfs_grow<V: GrowValidator>(
         by_corner,
         ambiguous,
         holes,
-        grid_u,
-        grid_v,
+        axis_i,
+        axis_j,
         parity_shift_i,
         parity_shift_j,
     }
@@ -677,8 +677,8 @@ pub(super) struct BoundaryCtx<'a, V: GrowValidator> {
     pub by_corner: &'a HashMap<usize, (i32, i32)>,
     pub tree: &'a KdTree<f32, 2>,
     pub tree_slot_to_corner: &'a [usize],
-    pub grid_u: Vector2<f32>,
-    pub grid_v: Vector2<f32>,
+    pub axis_i: Vector2<f32>,
+    pub axis_j: Vector2<f32>,
     pub cell_size: f32,
     pub params: &'a GrowParams,
     pub validator: &'a V,
@@ -704,8 +704,8 @@ pub(super) fn process_boundary_cell<V: GrowValidator>(
     let prediction = predict_from_neighbours(
         pos,
         &neighbours,
-        ctx.grid_u,
-        ctx.grid_v,
+        ctx.axis_i,
+        ctx.axis_j,
         ctx.cell_size,
         ctx.labelled,
         ctx.positions,

@@ -7,6 +7,9 @@
 //! and they are exposed individually so other pipelines can reuse the
 //! exact same canonicalisation.
 //!
+//! These helpers are *not* re-exported at the crate root — reach for
+//! them at their fully-qualified path, `projective_grid::square::cleanup::*`.
+//!
 //! | Helper | Responsibility |
 //! |---|---|
 //! | [`rebase_to_origin`] | Shift labels so the bbox minimum is `(0, 0)`. |

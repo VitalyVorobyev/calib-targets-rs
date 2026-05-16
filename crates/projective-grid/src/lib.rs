@@ -104,11 +104,11 @@ pub use homography::{
 pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStepPointData};
 
 // --- Square-grid surface re-exported at the crate root --------
+//
+// The generic output-cleanup helpers (`rebase_to_origin`,
+// `prune_to_main_component`, `canonicalize_top_left`, …) are *not*
+// re-exported here — reach for them as `square::cleanup::*`.
 pub use square::alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
-pub use square::cleanup::{
-    apply_transform, canonicalize_top_left, prune_to_main_component, rebase_to_origin,
-    sorted_grid_points, top_left_transform,
-};
 pub use square::index::GridCoords;
 pub use square::mesh::SquareGridHomographyMesh;
 pub use square::rectify::SquareGridHomography;
@@ -119,8 +119,8 @@ pub use square::smoothness::{
 
 // --- Square-grid onboarding entry point ----------------------
 pub use square::regular::{
-    detect_regular_grid, DetectedGridPoint, ExtensionMode, RegularGridDetection,
-    RegularGridDetector, RegularGridParams, RegularGridStats,
+    detect_regular_grid, DetectedGridPoint, RegularGridDetection, RegularGridDetector,
+    RegularGridError, RegularGridParams, RegularGridStats,
 };
 
 // --- Square-grid validator-driven (advanced) entry points ----

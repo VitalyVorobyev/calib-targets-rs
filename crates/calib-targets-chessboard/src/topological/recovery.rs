@@ -250,9 +250,9 @@ fn merge_components_with_shared_corners(
 }
 
 /// Synthetic [`ClusterCenters`] derived from labelled grid step directions.
-fn cluster_centers_from_grid(grid_u: Vector2<f32>, grid_v: Vector2<f32>) -> ClusterCenters {
-    let theta0 = grid_u.y.atan2(grid_u.x);
-    let theta1 = grid_v.y.atan2(grid_v.x);
+fn cluster_centers_from_grid(axis_i: Vector2<f32>, axis_j: Vector2<f32>) -> ClusterCenters {
+    let theta0 = axis_i.y.atan2(axis_i.x);
+    let theta1 = axis_j.y.atan2(axis_j.x);
     ClusterCenters { theta0, theta1 }
 }
 
@@ -276,9 +276,9 @@ pub(super) fn recover_topological_components(
         let blacklist = HashSet::new();
         let mut labelled = component_labels.clone();
         let cell_size = estimate_cell_size_from_labels(&labelled, positions);
-        let (grid_u, grid_v) = estimate_grid_steps(&labelled, positions);
+        let (axis_i, axis_j) = estimate_grid_steps(&labelled, positions);
         let centers =
-            clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(grid_u, grid_v));
+            clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(axis_i, axis_j));
         let mut augs = base_augs.to_vec();
         if clustered_centers.is_some() {
             align_label_parity(&mut labelled, &augs);
@@ -296,8 +296,8 @@ pub(super) fn recover_topological_components(
             by_corner: Default::default(),
             ambiguous: Default::default(),
             holes: Default::default(),
-            grid_u,
-            grid_v,
+            axis_i,
+            axis_j,
             parity_shift_i: 0,
             parity_shift_j: 0,
         };
@@ -368,9 +368,9 @@ pub(super) fn build_topological_detections(
         if labelled.len() < params.min_labeled_corners {
             continue;
         }
-        let (grid_u, grid_v) = estimate_grid_steps(&labelled, positions);
+        let (axis_i, axis_j) = estimate_grid_steps(&labelled, positions);
         let centers =
-            clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(grid_u, grid_v));
+            clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(axis_i, axis_j));
         let mut augs = base_augs.to_vec();
         mark_labelled(&mut augs, &labelled);
         let cell_size = estimate_cell_size_from_labels(&labelled, positions);
@@ -383,8 +383,8 @@ pub(super) fn build_topological_detections(
             labelled,
             ambiguous: Default::default(),
             holes: Default::default(),
-            grid_u,
-            grid_v,
+            axis_i,
+            axis_j,
             parity_shift_i: 0,
             parity_shift_j: 0,
         };

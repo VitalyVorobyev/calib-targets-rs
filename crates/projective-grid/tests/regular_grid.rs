@@ -9,7 +9,10 @@
 
 use nalgebra::{Matrix3, Point2};
 
-use projective_grid::{detect_regular_grid, ExtensionMode, RegularGridDetector, RegularGridParams};
+use projective_grid::{
+    detect_regular_grid, ExtensionStrategy, RegularGridDetector, RegularGridError,
+    RegularGridParams,
+};
 
 /// Build a perspective-warped `rows × cols` grid. Same warp family as
 /// the advanced-policy smoke test and `benches/grow.rs`.
@@ -209,9 +212,9 @@ fn top_left_canonicalization_orients_axes() {
     assert!(p10.x > p00.x, "+i must point right after canonicalisation");
     assert!(p01.y > p00.y, "+j must point down after canonicalisation");
 
-    // grid_u / grid_v must agree with the canonicalised labels.
-    assert!(grid.grid_u.x > 0.0, "grid_u should point +x");
-    assert!(grid.grid_v.y > 0.0, "grid_v should point +y");
+    // axis_i / axis_j must agree with the canonicalised labels.
+    assert!(grid.axis_i.x > 0.0, "axis_i should point +x");
+    assert!(grid.axis_j.y > 0.0, "axis_j should point +y");
 }
 
 #[test]
@@ -228,7 +231,7 @@ fn canonicalization_can_be_disabled() {
 #[test]
 fn extension_disabled_still_recovers_clean_grid() {
     let pts = axis_aligned_grid(6, 6, 25.0, 50.0, 50.0);
-    let params = RegularGridParams::default().with_extension_mode(ExtensionMode::Disabled);
+    let params = RegularGridParams::default().with_extension(ExtensionStrategy::Disabled);
     let grid = RegularGridDetector::new(params)
         .detect(&pts)
         .expect("detects");
@@ -237,7 +240,34 @@ fn extension_disabled_still_recovers_clean_grid() {
 }
 
 #[test]
-fn too_few_points_returns_none() {
+fn too_few_points_returns_err() {
     let pts = vec![Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)];
-    assert!(detect_regular_grid(&pts).is_none());
+    assert_eq!(
+        detect_regular_grid(&pts).unwrap_err(),
+        RegularGridError::TooFewPoints { found: 2 }
+    );
+}
+
+#[test]
+fn collinear_cloud_yields_no_grid_found() {
+    // A perfectly collinear cloud still has a recoverable global cell
+    // size (uniform spacing), so it clears axis estimation but offers
+    // no roughly-square parallelogram seed quad.
+    let pts: Vec<Point2<f32>> = (0..8).map(|i| Point2::new(i as f32 * 12.0, 0.0)).collect();
+    assert_eq!(
+        detect_regular_grid(&pts).unwrap_err(),
+        RegularGridError::NoGridFound
+    );
+}
+
+#[test]
+fn coincident_cloud_is_degenerate() {
+    // Four or more coincident points: there is no nearest-neighbour
+    // spacing to measure, so `estimate_grid_axes` cannot infer an axis
+    // pair and the cloud is reported degenerate.
+    let pts = vec![Point2::new(5.0, 5.0); 6];
+    assert_eq!(
+        detect_regular_grid(&pts).unwrap_err(),
+        RegularGridError::DegeneratePointCloud
+    );
 }

@@ -250,8 +250,8 @@ fn try_fill_cell<V: GrowValidator>(
     let pred = predict_from_neighbours(
         cell,
         &neighbours,
-        grow.grid_u,
-        grow.grid_v,
+        grow.axis_i,
+        grow.axis_j,
         cell_size,
         &grow.labelled,
         positions,
@@ -412,8 +412,8 @@ mod tests {
             by_corner,
             ambiguous: Default::default(),
             holes: Default::default(),
-            grid_u: nalgebra::Vector2::new(1.0, 0.0),
-            grid_v: nalgebra::Vector2::new(0.0, 1.0),
+            axis_i: nalgebra::Vector2::new(1.0, 0.0),
+            axis_j: nalgebra::Vector2::new(0.0, 1.0),
             parity_shift_i: 0,
             parity_shift_j: 0,
         };

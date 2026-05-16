@@ -40,45 +40,9 @@ use crate::square::detect::{
     detect_square_grid, detect_square_grid_all, ExtensionStrategy, MultiComponentParams,
     SquareGridParams,
 };
-use crate::square::extension::{ExtensionParams, LocalExtensionParams};
 use crate::square::grow::{Admit, GrowValidator, LabelledNeighbour};
 use crate::square::seed::finder::SeedQuadValidator;
 use crate::topological::AxisEstimate;
-
-/// Boundary-extension strategy used by [`detect_regular_grid`].
-///
-/// Boundary extension extrapolates the labelled set outward past the
-/// BFS-grown bounding box. The two functional variants wrap the
-/// pipeline's two homography-extension strategies; [`Self::Disabled`]
-/// skips the stage entirely.
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug)]
-pub enum ExtensionMode {
-    /// Skip boundary extension. The labelled set returned by BFS-grow
-    /// (plus the hole-fill pass) stands as-is.
-    Disabled,
-    /// Fit one global homography over the whole labelled set and
-    /// extrapolate from it. Cheaper, but refuses to extrapolate under
-    /// heavy radial distortion or multi-region perspective.
-    Global(ExtensionParams),
-    /// Fit a per-candidate local homography from the nearest labelled
-    /// corners. More compute, but materially better recall on
-    /// extreme-angle inputs where a single global homography cannot
-    /// fit. This is the default — see [`RegularGridParams::default`].
-    Local(LocalExtensionParams),
-}
-
-impl Default for ExtensionMode {
-    fn default() -> Self {
-        // Local-H extension exists in `square::extension` and is the
-        // strategy `detect_square_grid` exposes per-cell; it strictly
-        // dominates global-H on recall for perspective-warped input
-        // (see `square::extension` tests `local_h_reaches_further_than_global`).
-        // A point-cloud caller with no distortion prior is best served
-        // by the more tolerant strategy, so `Local` is the default.
-        ExtensionMode::Local(LocalExtensionParams::default())
-    }
-}
 
 /// Tuning knobs for [`RegularGridDetector`].
 ///
@@ -92,12 +56,11 @@ pub struct RegularGridParams {
     /// regular-grid policy fills in the pattern hooks; this struct
     /// carries the geometric knobs only.
     ///
-    /// The `extension` field of this struct is **ignored** — boundary
-    /// extension is driven by [`Self::extension_mode`] instead, so the
-    /// strategy choice and its parameters live in one place.
+    /// The boundary-extension strategy lives on
+    /// [`SquareGridParams::extension`] (an [`ExtensionStrategy`]) — it is
+    /// the single source of truth and is honoured directly. Use
+    /// [`Self::with_extension`] to override it builder-style.
     pub pipeline: SquareGridParams,
-    /// Boundary-extension strategy. See [`ExtensionMode`].
-    pub extension_mode: ExtensionMode,
     /// When `true`, [`detect_regular_grid`] canonicalises the labelled
     /// grid to a visual top-left origin (`+i` → right, `+j` → down in
     /// pixel space) before returning. When `false`, the grid keeps the
@@ -114,7 +77,6 @@ impl Default for RegularGridParams {
     fn default() -> Self {
         Self {
             pipeline: SquareGridParams::default(),
-            extension_mode: ExtensionMode::default(),
             canonicalize_top_left: true,
             prune_disconnected: true,
         }
@@ -122,41 +84,40 @@ impl Default for RegularGridParams {
 }
 
 impl RegularGridParams {
-    /// Construct fully-specified params. The struct is
-    /// `#[non_exhaustive]`, so this is the supported way to build one
-    /// outside the crate.
-    pub fn new(
-        pipeline: SquareGridParams,
-        extension_mode: ExtensionMode,
-        canonicalize_top_left: bool,
-        prune_disconnected: bool,
-    ) -> Self {
+    /// Construct params from a [`SquareGridParams`], defaulting the
+    /// `canonicalize_top_left` and `prune_disconnected` toggles to their
+    /// [`Default`] values (`true` for both).
+    ///
+    /// The struct is `#[non_exhaustive]`, so this named constructor (or
+    /// [`RegularGridParams::default`]) is the supported way to build one
+    /// outside the crate. Layer the `with_*` builders on top to override
+    /// individual fields. The boundary-extension strategy is configured
+    /// via [`SquareGridParams::extension`] inside `pipeline`, or
+    /// builder-style with [`Self::with_extension`].
+    pub fn new(pipeline: SquareGridParams) -> Self {
         Self {
             pipeline,
-            extension_mode,
-            canonicalize_top_left,
-            prune_disconnected,
+            ..Self::default()
         }
     }
 
     /// Override the boundary-extension strategy. Builder-style setter
-    /// for use with [`RegularGridParams::default`] — the struct is
-    /// `#[non_exhaustive]`, so struct-update syntax is not available
-    /// to external crates.
-    pub fn with_extension_mode(mut self, mode: ExtensionMode) -> Self {
-        self.extension_mode = mode;
+    /// that writes [`SquareGridParams::extension`] inside `pipeline` —
+    /// the single source of truth for the extension stage.
+    pub fn with_extension(mut self, extension: ExtensionStrategy) -> Self {
+        self.pipeline.extension = extension;
         self
     }
 
     /// Override the top-left canonicalisation toggle. Builder-style
-    /// setter; see [`Self::with_extension_mode`].
+    /// setter; see [`Self::with_extension`].
     pub fn with_canonicalize_top_left(mut self, on: bool) -> Self {
         self.canonicalize_top_left = on;
         self
     }
 
     /// Override the connectivity-pruning toggle. Builder-style setter;
-    /// see [`Self::with_extension_mode`].
+    /// see [`Self::with_extension`].
     pub fn with_prune_disconnected(mut self, on: bool) -> Self {
         self.prune_disconnected = on;
         self
@@ -212,14 +173,59 @@ pub struct RegularGridDetection {
     /// then left-to-right.
     pub points: Vec<DetectedGridPoint>,
     /// Pixel-space unit vector along the grid's `+i` direction.
-    pub grid_u: Vector2<f32>,
+    pub axis_i: Vector2<f32>,
     /// Pixel-space unit vector along the grid's `+j` direction.
-    pub grid_v: Vector2<f32>,
+    pub axis_j: Vector2<f32>,
     /// Estimated cell size in pixels (mean lattice spacing).
     pub cell_size: f32,
     /// Per-stage diagnostic counters.
     pub stats: RegularGridStats,
 }
+
+/// Failure modes of [`detect_regular_grid`] / [`RegularGridDetector::detect`].
+///
+/// `#[non_exhaustive]`: future failure modes may be added. Each variant
+/// corresponds to a distinct early-exit in the detector.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegularGridError {
+    /// Fewer than four input points were supplied. Four is the minimum
+    /// for a 2×2 seed quad, so no detection is possible.
+    TooFewPoints {
+        /// Number of points actually supplied.
+        found: usize,
+    },
+    /// The point cloud is degenerate: collinear, pure noise, or
+    /// otherwise carries no inferable square lattice. The grid-axis
+    /// estimator could not extract a usable axis pair.
+    DegeneratePointCloud,
+    /// The cloud has four or more points and a usable axis estimate,
+    /// but no roughly-square parallelogram seed quad could be found.
+    NoGridFound,
+}
+
+impl std::fmt::Display for RegularGridError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RegularGridError::TooFewPoints { found } => write!(
+                f,
+                "too few points: {found} supplied, at least 4 required for a 2x2 seed"
+            ),
+            RegularGridError::DegeneratePointCloud => write!(
+                f,
+                "degenerate point cloud: no square lattice could be inferred from the input"
+            ),
+            RegularGridError::NoGridFound => {
+                write!(
+                    f,
+                    "no grid found: no valid 2x2 seed quad in the point cloud"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for RegularGridError {}
 
 impl RegularGridDetection {
     /// Reconstruct the `(i, j) → source_index` map from [`Self::points`].
@@ -234,9 +240,9 @@ impl RegularGridDetection {
 /// Zero-config regular square-grid detection.
 ///
 /// Equivalent to `RegularGridDetector::default().detect(points)`.
-/// Returns `None` when no seed quad can be found (fewer than four
-/// points, collinear cloud, or no roughly-square parallelogram in the
-/// input).
+/// Returns [`RegularGridError`] when detection cannot proceed — see
+/// that enum for the distinct failure modes (too few points,
+/// degenerate cloud, no seed quad).
 ///
 /// # Example
 ///
@@ -257,7 +263,9 @@ impl RegularGridDetection {
 /// // Labels are rebased so the bounding box starts at (0, 0).
 /// assert!(grid.points.iter().any(|p| p.grid == (0, 0)));
 /// ```
-pub fn detect_regular_grid(points: &[Point2<f32>]) -> Option<RegularGridDetection> {
+pub fn detect_regular_grid(
+    points: &[Point2<f32>],
+) -> Result<RegularGridDetection, RegularGridError> {
     RegularGridDetector::default().detect(points)
 }
 
@@ -284,7 +292,9 @@ impl RegularGridDetector {
     /// output cleanup (connectivity pruning, top-left canonicalisation,
     /// `(j, i)` sort), and returns a [`RegularGridDetection`].
     ///
-    /// Returns `None` when no seed quad is found.
+    /// Returns [`RegularGridError`] when detection cannot proceed: too
+    /// few points, a degenerate cloud with no inferable lattice, or no
+    /// valid seed quad.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -293,15 +303,19 @@ impl RegularGridDetector {
             fields(num_points = points.len()),
         )
     )]
-    pub fn detect(&self, points: &[Point2<f32>]) -> Option<RegularGridDetection> {
+    pub fn detect(&self, points: &[Point2<f32>]) -> Result<RegularGridDetection, RegularGridError> {
         if points.len() < 4 {
-            return None;
+            return Err(RegularGridError::TooFewPoints {
+                found: points.len(),
+            });
         }
 
-        let policy = OpenRegularPolicy::new(points)?;
+        let policy =
+            OpenRegularPolicy::new(points).ok_or(RegularGridError::DegeneratePointCloud)?;
         let pipeline = self.pipeline_params();
 
-        let detection = detect_square_grid(points, &policy, &policy, &pipeline)?;
+        let detection = detect_square_grid(points, &policy, &policy, &pipeline)
+            .ok_or(RegularGridError::NoGridFound)?;
 
         let mut stats = RegularGridStats {
             input_points: points.len(),
@@ -329,15 +343,15 @@ impl RegularGridDetector {
         };
 
         // Map the grid basis vectors through the canonicalisation
-        // transform so `grid_u` / `grid_v` stay consistent with the
+        // transform so `axis_i` / `axis_j` stay consistent with the
         // returned labels.
-        let (grid_u, grid_v) = transform_basis(detection.grid_u, detection.grid_v, transform);
+        let (axis_i, axis_j) = transform_basis(detection.axis_i, detection.axis_j, transform);
 
-        Some(build_detection(
+        Ok(build_detection(
             &labelled,
             points,
-            grid_u,
-            grid_v,
+            axis_i,
+            axis_j,
             detection.cell_size,
             stats,
         ))
@@ -349,6 +363,12 @@ impl RegularGridDetector {
     /// component at a time and returns each as its own
     /// [`RegularGridDetection`], in detection order. Each component is
     /// cleaned up independently (pruned, canonicalised, sorted).
+    ///
+    /// Returns an **empty `Vec`** when nothing is detected (too few
+    /// points, a degenerate cloud, or no seed quad). Unlike
+    /// [`Self::detect`], a multi-component sweep has no single failure
+    /// mode to report, so this method does not return a
+    /// [`RegularGridError`].
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -399,13 +419,13 @@ impl RegularGridDetector {
                 } else {
                     (labelled, GridTransform::IDENTITY)
                 };
-                let (grid_u, grid_v) =
-                    transform_basis(detection.grid_u, detection.grid_v, transform);
+                let (axis_i, axis_j) =
+                    transform_basis(detection.axis_i, detection.axis_j, transform);
                 build_detection(
                     &labelled,
                     points,
-                    grid_u,
-                    grid_v,
+                    axis_i,
+                    axis_j,
                     detection.cell_size,
                     stats,
                 )
@@ -413,21 +433,13 @@ impl RegularGridDetector {
             .collect()
     }
 
-    /// Build the [`SquareGridParams`] actually handed to the generic
-    /// pipeline, applying [`RegularGridParams::extension_mode`] onto
-    /// the `extension` field.
+    /// The [`SquareGridParams`] handed to the generic pipeline.
+    ///
+    /// Returns `self.params.pipeline` verbatim: the boundary-extension
+    /// strategy lives on [`SquareGridParams::extension`] and is the
+    /// single source of truth, so no remapping is needed.
     fn pipeline_params(&self) -> SquareGridParams {
-        let mut pipeline = self.params.pipeline.clone();
-        // The extension strategy is driven by `extension_mode`. Each
-        // `ExtensionMode` variant maps onto the matching
-        // `ExtensionStrategy` variant `detect_square_grid` consumes, so
-        // `ExtensionMode::Local` now runs the genuine local-H pass.
-        pipeline.extension = match self.params.extension_mode {
-            ExtensionMode::Disabled => ExtensionStrategy::Disabled,
-            ExtensionMode::Global(p) => ExtensionStrategy::Global(p),
-            ExtensionMode::Local(p) => ExtensionStrategy::Local(p),
-        };
-        pipeline
+        self.params.pipeline.clone()
     }
 }
 
@@ -435,8 +447,8 @@ impl RegularGridDetector {
 fn build_detection(
     labelled: &HashMap<(i32, i32), usize>,
     points: &[Point2<f32>],
-    grid_u: Vector2<f32>,
-    grid_v: Vector2<f32>,
+    axis_i: Vector2<f32>,
+    axis_j: Vector2<f32>,
     cell_size: f32,
     stats: RegularGridStats,
 ) -> RegularGridDetection {
@@ -450,8 +462,8 @@ fn build_detection(
         .collect();
     RegularGridDetection {
         points: detected,
-        grid_u,
-        grid_v,
+        axis_i,
+        axis_j,
         cell_size,
         stats,
     }
@@ -463,8 +475,8 @@ fn build_detection(
 /// pixel-space basis is the same `2×2` integer matrix applied to the
 /// `(u, v)` columns. The result is renormalised.
 fn transform_basis(
-    grid_u: Vector2<f32>,
-    grid_v: Vector2<f32>,
+    axis_i: Vector2<f32>,
+    axis_j: Vector2<f32>,
     transform: GridTransform,
 ) -> (Vector2<f32>, Vector2<f32>) {
     // The new +i grid direction is `inv·(1, 0)` in old grid coords, so
@@ -472,11 +484,11 @@ fn transform_basis(
     let inv = transform.inverse().unwrap_or(GridTransform::IDENTITY);
     let gi = inv.apply(1, 0);
     let gj = inv.apply(0, 1);
-    let new_u = grid_u * gi.i as f32 + grid_v * gi.j as f32;
-    let new_v = grid_u * gj.i as f32 + grid_v * gj.j as f32;
-    let norm_u = new_u.norm().max(1e-6);
-    let norm_v = new_v.norm().max(1e-6);
-    (new_u / norm_u, new_v / norm_v)
+    let new_i = axis_i * gi.i as f32 + axis_j * gi.j as f32;
+    let new_j = axis_i * gj.i as f32 + axis_j * gj.j as f32;
+    let norm_i = new_i.norm().max(1e-6);
+    let norm_j = new_j.norm().max(1e-6);
+    (new_i / norm_i, new_j / norm_j)
 }
 
 // ---------------------------------------------------------------------------
@@ -668,9 +680,9 @@ mod tests {
     }
 
     #[test]
-    fn returns_none_on_collinear_cloud() {
+    fn returns_err_on_collinear_cloud() {
         let pts: Vec<Point2<f32>> = (0..6).map(|i| Point2::new(i as f32 * 10.0, 0.0)).collect();
-        assert!(detect_regular_grid(&pts).is_none());
+        assert!(detect_regular_grid(&pts).is_err());
     }
 
     #[test]

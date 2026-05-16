@@ -57,10 +57,8 @@ pub mod smoothness;
 pub mod validate;
 
 pub use alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
-pub use cleanup::{
-    apply_transform, canonicalize_top_left, prune_to_main_component, rebase_to_origin,
-    sorted_grid_points, top_left_transform,
-};
+// The `cleanup` helpers are intentionally *not* re-exported to the
+// `square::` root — reach for them at their `square::cleanup::*` path.
 pub use detect::{
     detect_square_grid, detect_square_grid_all, ExtensionStrategy, MultiComponentParams,
     SquareGridDetection, SquareGridParams, SquareGridStats,
@@ -79,8 +77,8 @@ pub use index::GridCoords;
 pub use mesh::SquareGridHomographyMesh;
 pub use rectify::SquareGridHomography;
 pub use regular::{
-    detect_regular_grid, DetectedGridPoint, ExtensionMode, RegularGridDetection,
-    RegularGridDetector, RegularGridParams, RegularGridStats,
+    detect_regular_grid, DetectedGridPoint, RegularGridDetection, RegularGridDetector,
+    RegularGridError, RegularGridParams, RegularGridStats,
 };
 pub use seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 pub use seed::{

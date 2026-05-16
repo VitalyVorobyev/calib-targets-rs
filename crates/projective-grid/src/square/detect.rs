@@ -125,9 +125,9 @@ pub struct SquareGridDetection {
     pub by_corner: HashMap<usize, (i32, i32)>,
     /// Pixel-space unit vector along the grid's `i` direction,
     /// inferred from the seed quad. Useful for downstream overlays.
-    pub grid_u: Vector2<f32>,
+    pub axis_i: Vector2<f32>,
     /// Pixel-space unit vector along the grid's `j` direction.
-    pub grid_v: Vector2<f32>,
+    pub axis_j: Vector2<f32>,
     /// Cell size in pixels, taken from the seed quad's mean edge
     /// length. Approximate under non-uniform perspective; downstream
     /// metric work should refit a homography from the labelled set.
@@ -286,8 +286,8 @@ where
     Some(SquareGridDetection {
         labelled: grow_res.labelled,
         by_corner: grow_res.by_corner,
-        grid_u: grow_res.grid_u,
-        grid_v: grow_res.grid_v,
+        axis_i: grow_res.axis_i,
+        axis_j: grow_res.axis_j,
         cell_size,
         stats,
     })
