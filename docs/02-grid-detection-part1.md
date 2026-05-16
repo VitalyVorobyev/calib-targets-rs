@@ -145,10 +145,10 @@ projected cell diagonal. This is perspective-correct locally: the diagonal
 comes from the two projected grid-step vectors, not from a fixed 45-degree image
 angle.
 
-The current default grid alignment tolerance is 15 degrees. The
-`diagonal_angle_tol_rad` field remains for legacy trace metrics only. The
-whole-edge grid classification is still a conjunction. If one endpoint does not
-agree, the edge is spurious in the first pass.
+The current default grid alignment tolerance is 15 degrees. The whole-edge
+grid classification is still a conjunction. If one endpoint does not agree,
+the edge is spurious in the first pass. Diagonal inference has no separate
+angle threshold — it is purely topological.
 
 This is the main practical difference from the paper. It keeps the crate
 standalone and makes the stage independent of image sampling, but it also means

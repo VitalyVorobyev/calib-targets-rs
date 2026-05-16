@@ -31,16 +31,9 @@ pub struct TopologicalCornerTrace {
 pub struct TopologicalEdgeMetricTrace {
     /// Largest endpoint angular distance to a usable grid axis.
     pub grid_distance_rad: Option<f32>,
-    /// Largest endpoint angular distance to the nearest legacy 45° diagonal
-    /// direction. This is diagnostic only; diagonal classification is inferred
-    /// from local triangle topology.
-    pub diagonal_distance_rad: Option<f32>,
     /// `axis_align_tol_rad - grid_distance_rad`; positive means the half-edge
     /// passed the grid-angle gate at both endpoints.
     pub grid_margin_rad: Option<f32>,
-    /// `diagonal_angle_tol_rad - diagonal_distance_rad`; legacy 45° diagnostic
-    /// margin only, not a classification gate.
-    pub diagonal_margin_rad: Option<f32>,
 }
 
 /// One Delaunay triangle plus its classified half-edges.
@@ -211,9 +204,7 @@ pub fn build_grid_topological_trace(
                     );
                     TopologicalEdgeMetricTrace {
                         grid_distance_rad: metric.grid_distance_rad,
-                        diagonal_distance_rad: metric.diagonal_distance_rad,
                         grid_margin_rad: metric.grid_margin_rad,
-                        diagonal_margin_rad: metric.diagonal_margin_rad,
                     }
                 }),
                 class: triangle_class(&edge_kinds, index),

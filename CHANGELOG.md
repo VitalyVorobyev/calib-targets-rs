@@ -11,6 +11,8 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## 0.9.0
 
+### Breaking
+
 Migrates the workspace onto `chess-corners` 0.10 (skipping the
 intermediate 0.9 release in published artifacts), absorbs the
 0.9-era in-tree algorithm work (`OrientationMethod`, `DiskFit`,
@@ -22,6 +24,18 @@ for the full bench matrix and the strict-dominance check that
 keeps the workspace default on `RingFit`.
 
 ### Breaking
+
+- **Removed the obsolete `diagonal_angle_tol_rad` topological knob.**
+  `TopologicalParams::diagonal_angle_tol_rad` and the
+  `diagonal_distance_rad` / `diagonal_margin_rad` fields on
+  `TopologicalEdgeMetricTrace` have been deleted (mirrored in the
+  Python `TopologicalParams` config and the `--diagonal-angle-tol-deg`
+  tooling flags / manifest keys). Those fields had no effect on
+  classification: diagonals are inferred per triangle — exactly two
+  grid edges meeting at a vertex with different local axis slots
+  promote the remaining edge to `Diagonal`. Mental model going
+  forward: tune `axis_align_tol_rad` for grid-edge admission; diagonal
+  inference has no separate angle threshold.
 
 - **C ABI (`calib-targets-ffi` 0.8 → 1.0): all five detect entry points
   redesigned around `args` / `buffers` struct pairs.** Each positional-

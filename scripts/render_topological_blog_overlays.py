@@ -418,7 +418,6 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     image = load_gray(path, args.upscale, args.pre_blur_sigma)
     topo = ct.TopologicalParams(
         axis_align_tol_rad=math.radians(args.axis_align_tol_deg),
-        diagonal_angle_tol_rad=math.radians(args.diagonal_angle_tol_deg),
         max_axis_sigma_rad=math.radians(args.max_axis_sigma_deg),
         edge_ratio_max=args.edge_ratio_max,
         min_quads_per_component=args.min_quads_per_component,
@@ -530,12 +529,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
-    parser.add_argument(
-        "--diagonal-angle-tol-deg",
-        type=float,
-        default=15.0,
-        help="Legacy 45-degree trace diagnostic tolerance; no longer gates diagonal classification.",
-    )
     parser.add_argument("--max-axis-sigma-deg", type=float, default=math.degrees(0.6))
     parser.add_argument("--edge-ratio-max", type=float, default=10.0)
     parser.add_argument("--min-quads-per-component", type=int, default=1)
@@ -567,7 +560,6 @@ def main() -> None:
             "upscale": args.upscale,
             "final_algorithm": args.final_algorithm,
             "axis_align_tol_deg": args.axis_align_tol_deg,
-            "diagonal_angle_tol_deg": args.diagonal_angle_tol_deg,
             "max_axis_sigma_deg": args.max_axis_sigma_deg,
             "edge_ratio_max": args.edge_ratio_max,
             "min_quads_per_component": args.min_quads_per_component,

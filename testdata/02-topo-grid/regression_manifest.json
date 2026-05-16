@@ -20,7 +20,6 @@
       "diagnostic_topological": {
         "min_labeled_corners": 4,
         "axis_align_tol_deg": 15.0,
-        "diagonal_angle_tol_deg": 15.0,
         "min_trace_components": 2,
         "min_total_labelled": 22
       }

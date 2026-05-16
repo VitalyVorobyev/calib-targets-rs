@@ -60,15 +60,11 @@ fn build_axis_aligned_grid(
 fn default_tolerances_are_regression_values() {
     let params = TopologicalParams::default();
     // 15° grid alignment is paired with the pre-Delaunay cluster gate.
-    // `diagonal_angle_tol_rad` is preserved for legacy 45° trace metrics
-    // and config compatibility, but it no longer gates classification.
     assert!((params.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
-    assert!((params.diagonal_angle_tol_rad - 15.0_f32.to_radians()).abs() < 1e-6);
 
     let json = serde_json::to_string(&params).unwrap();
     let restored: TopologicalParams = serde_json::from_str(&json).unwrap();
     assert!((restored.axis_align_tol_rad - params.axis_align_tol_rad).abs() < 1e-6);
-    assert!((restored.diagonal_angle_tol_rad - params.diagonal_angle_tol_rad).abs() < 1e-6);
 }
 
 #[test]
@@ -407,17 +403,11 @@ fn trace_edge_metrics_have_consistent_margins() {
         .triangles
         .iter()
         .flat_map(|t| t.edge_metrics.iter())
-        .find(|m| m.grid_distance_rad.is_some() && m.diagonal_distance_rad.is_some())
+        .find(|m| m.grid_distance_rad.is_some())
         .expect("at least one finite edge metric");
     let grid_distance = metric.grid_distance_rad.unwrap();
-    let diagonal_distance = metric.diagonal_distance_rad.unwrap();
     assert!(
         (metric.grid_margin_rad.unwrap() - (params.axis_align_tol_rad - grid_distance)).abs()
-            < 1e-6
-    );
-    assert!(
-        (metric.diagonal_margin_rad.unwrap() - (params.diagonal_angle_tol_rad - diagonal_distance))
-            .abs()
             < 1e-6
     );
 }

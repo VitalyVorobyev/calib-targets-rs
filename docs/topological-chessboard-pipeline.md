@@ -97,9 +97,9 @@ The stages are:
    Current defaults:
 
    - `axis_align_tol_rad = 15 deg`
-   - `diagonal_angle_tol_rad = 15 deg` (legacy 45-degree trace metric only)
 
-   Grid edges are accepted only when both endpoints agree.
+   Grid edges are accepted only when both endpoints agree. Diagonals are
+   inferred per triangle and have no separate angle threshold.
 
 4. **Triangle diagnostics**
    Each triangle is bucketed as `Mergeable`, `AllGrid`, `MultiDiagonal`, or

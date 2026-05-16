@@ -376,9 +376,8 @@ per-corner axes. Pipeline:
 
    This replaces Shu's original color test (which sampled triangle
    interior pixels). The axis test naturally rejects background
-   corners and stays valid under any image rotation. The
-   `diagonal_angle_tol_rad` knob remains only as a legacy trace metric
-   tolerance for reporting distance to the old 45° predicate.
+   corners and stays valid under any image rotation. Diagonal inference
+   is purely topological and has no separate angle-tolerance knob.
 
 4. **Triangle-pair merging.** A triangle is *mergeable* iff exactly
    one of its three edges is `Diagonal` and the other two are `Grid`.

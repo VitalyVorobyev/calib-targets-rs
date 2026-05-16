@@ -72,11 +72,6 @@ struct DiagnoseArgs {
     /// in distorted regions at the cost of precision).
     #[arg(long)]
     axis_align_tol_deg: Option<f32>,
-    /// Override the topological pipeline's legacy 45° diagnostic
-    /// `diagonal_angle_tol_rad` (in degrees). This no longer gates diagonal
-    /// classification.
-    #[arg(long)]
-    diagonal_angle_tol_deg: Option<f32>,
     /// Optional JSON file with a serialised `DetectorParams` to override
     /// chessboard-v2 defaults. Use for parameter sweeps without
     /// recompilation. Unspecified fields fall back to defaults via the
@@ -827,19 +822,17 @@ fn diagnose_topological(
     if let Some(deg) = args.axis_align_tol_deg {
         params.axis_align_tol_rad = deg.to_radians();
     }
-    if let Some(deg) = args.diagonal_angle_tol_deg {
-        params.diagonal_angle_tol_rad = deg.to_radians();
-    }
     println!(
-        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  diagonal_angle_tol_rad: {:.3} ({}°, legacy trace only)  max_axis_sigma_rad: {:.3} ({}°)",
+        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  quad_edge_max_rel: {:.2}",
         args.image,
         corners.len(),
         params.axis_align_tol_rad,
         (params.axis_align_tol_rad.to_degrees() as i32),
-        params.diagonal_angle_tol_rad,
-        (params.diagonal_angle_tol_rad.to_degrees() as i32),
         params.max_axis_sigma_rad,
         (params.max_axis_sigma_rad.to_degrees() as i32),
+        params.cluster_axis_tol_rad,
+        (params.cluster_axis_tol_rad.to_degrees() as i32),
+        params.quad_edge_max_rel,
     );
 
     // Pre-filter: at least one axis with sigma below threshold AND the

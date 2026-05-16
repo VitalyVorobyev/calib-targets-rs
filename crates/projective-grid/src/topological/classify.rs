@@ -14,15 +14,12 @@
 //! vertex using different local axis slots, the remaining edge is promoted
 //! to **Diagonal** for that triangle.
 //!
-//! `diagonal_angle_tol_rad` is still reported in trace metrics as a legacy
-//! 45° diagnostic, but it no longer gates classification.
-//!
 //! Both endpoints of every edge are guaranteed to have at least one
 //! usable axis: high-`sigma` corners are filtered out at triangulation
 //! time (see [`super::triangulate_usable`]), so `Spurious` here only
 //! flags genuine geometric misalignment, not uncertainty rejection.
 
-use std::f32::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+use std::f32::consts::{FRAC_PI_2, PI};
 
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -58,9 +55,7 @@ struct GridEdgeMatch {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct EdgeMetric {
     pub(crate) grid_distance_rad: Option<f32>,
-    pub(crate) diagonal_distance_rad: Option<f32>,
     pub(crate) grid_margin_rad: Option<f32>,
-    pub(crate) diagonal_margin_rad: Option<f32>,
 }
 
 /// Smallest unsigned angle between two undirected directions, in `[0, π/2]`.
@@ -76,7 +71,7 @@ fn axis_diff(theta: f32, alpha: f32) -> f32 {
     d
 }
 
-/// Smallest axis distance + smallest diagonal distance, in radians.
+/// Nearest usable grid axis to `theta` at this corner.
 ///
 /// Both endpoints of every classified edge are guaranteed usable by the
 /// upstream pre-filter (see [`super::triangulate_usable`]) — at least one
@@ -107,18 +102,18 @@ fn nearest_axis_at_corner(
     best
 }
 
-fn distances_at_corner(
+/// Smallest angular distance from `theta` to a usable grid axis, in radians.
+fn grid_distance_at_corner(
     theta: f32,
     axes: &[AxisEstimate; 2],
     params: &TopologicalParams,
-) -> (f32, f32) {
+) -> f32 {
     let best = nearest_axis_at_corner(theta, axes, params);
     debug_assert!(
         best.is_some(),
         "topological pre-filter must guarantee at least one usable axis per endpoint"
     );
-    let min_d = best.map_or(f32::INFINITY, |m| m.distance_rad);
-    (min_d, (min_d - FRAC_PI_4).abs())
+    best.map_or(f32::INFINITY, |m| m.distance_rad)
 }
 
 fn grid_match_at_corner(
@@ -142,15 +137,12 @@ pub(crate) fn classify_edge_metric(
     let pa = positions[a];
     let pb = positions[b];
     let theta = (pb.y - pa.y).atan2(pb.x - pa.x);
-    let (a_grid, a_diag) = distances_at_corner(theta, &axes[a], params);
-    let (b_grid, b_diag) = distances_at_corner(theta, &axes[b], params);
+    let a_grid = grid_distance_at_corner(theta, &axes[a], params);
+    let b_grid = grid_distance_at_corner(theta, &axes[b], params);
     let grid_distance_rad = a_grid.max(b_grid);
-    let diagonal_distance_rad = a_diag.max(b_diag);
     EdgeMetric {
         grid_distance_rad: Some(grid_distance_rad),
-        diagonal_distance_rad: Some(diagonal_distance_rad),
         grid_margin_rad: Some(params.axis_align_tol_rad - grid_distance_rad),
-        diagonal_margin_rad: Some(params.diagonal_angle_tol_rad - diagonal_distance_rad),
     }
 }
 
@@ -289,6 +281,7 @@ pub(crate) fn classify_all_edges(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::f32::consts::FRAC_PI_4;
 
     fn axes(angle0: f32, angle1: f32) -> [AxisEstimate; 2] {
         [
@@ -326,13 +319,12 @@ mod tests {
     }
 
     #[test]
-    fn legacy_diagonal_metric_is_not_a_grid_match() {
+    fn diagonal_angle_edge_is_not_a_grid_match() {
         let p = TopologicalParams::default();
         let a = axes(0.0, FRAC_PI_2);
+        // An edge at 45° to both axes is outside the grid-angle gate.
         assert!(grid_match_at_corner(FRAC_PI_4, &a, &p).is_none());
-        let (grid, diagonal) = distances_at_corner(FRAC_PI_4, &a, &p);
-        assert!((grid - FRAC_PI_4).abs() < 1e-6);
-        assert!(diagonal.abs() < 1e-6);
+        assert!((grid_distance_at_corner(FRAC_PI_4, &a, &p) - FRAC_PI_4).abs() < 1e-6);
     }
 
     #[test]

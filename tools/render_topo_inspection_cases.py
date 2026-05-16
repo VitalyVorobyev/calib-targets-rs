@@ -40,7 +40,6 @@ RENDER_FIELDS = {
     "pre_blur_sigma",
     "upscale",
     "axis_align_tol_deg",
-    "diagonal_angle_tol_deg",
     "max_axis_sigma_deg",
     "edge_ratio_max",
     "min_quads_per_component",

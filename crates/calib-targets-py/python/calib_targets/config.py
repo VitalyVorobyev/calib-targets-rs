@@ -794,9 +794,6 @@ class TopologicalParams:
     """
 
     axis_align_tol_rad: float = 0.2617993877991494  # 15°
-    # Legacy 45° trace diagnostic only; diagonals are inferred from local
-    # topological triangles in Rust.
-    diagonal_angle_tol_rad: float = 0.2617993877991494  # 15°
     max_axis_sigma_rad: float = 0.6
     edge_ratio_max: float = 10.0
     min_quads_per_component: int = 1
@@ -808,7 +805,6 @@ class TopologicalParams:
     def to_dict(self) -> dict[str, Any]:
         return {
             "axis_align_tol_rad": self.axis_align_tol_rad,
-            "diagonal_angle_tol_rad": self.diagonal_angle_tol_rad,
             "max_axis_sigma_rad": self.max_axis_sigma_rad,
             "edge_ratio_max": self.edge_ratio_max,
             "min_quads_per_component": self.min_quads_per_component,
@@ -828,9 +824,6 @@ class TopologicalParams:
         centers = data.get("axis_cluster_centers", None)
         return cls(
             axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
-            diagonal_angle_tol_rad=data.get(
-                "diagonal_angle_tol_rad", d.diagonal_angle_tol_rad
-            ),
             max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
             edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
             min_quads_per_component=data.get(

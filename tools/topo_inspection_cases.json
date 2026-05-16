@@ -9,7 +9,6 @@
     "upscale": 1.0,
     "final_algorithm": "topological",
     "axis_align_tol_deg": 15.0,
-    "diagonal_angle_tol_deg": 15.0,
     "max_axis_sigma_deg": 34.37746770784939,
     "edge_ratio_max": 10.0,
     "min_quads_per_component": 1,

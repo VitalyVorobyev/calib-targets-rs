@@ -7,8 +7,8 @@ topological chessboard implementation.
 
 - The draft's old 45-degree diagonal classification description is stale.
   Current code uses `axis_align_tol_rad = 15 deg` for grid edges and infers
-  diagonals from local two-grid-side triangles. `diagonal_angle_tol_rad`
-  remains only as a legacy trace metric tolerance.
+  diagonals from local two-grid-side triangles. There is no separate
+  diagonal-angle tolerance knob.
 
 - The performance table is stale. It reports old labelled counts for
   `GeminiChess1`, `GeminiChess2`, and `gptchess1`. Current topological

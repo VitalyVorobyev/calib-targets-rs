@@ -9,7 +9,6 @@ covered by the Rust benches.
 from __future__ import annotations
 
 import argparse
-import itertools
 import json
 import platform
 import statistics
@@ -38,7 +37,6 @@ class Variant:
     min_labeled_corners: int = 4
     upscale: float = 1.0
     axis_align_tol_deg: float | None = None
-    diagonal_angle_tol_deg: float | None = None
 
 
 def parse_float_list(values: list[str] | None) -> list[float | None]:
@@ -107,8 +105,6 @@ def params_for(variant: Variant) -> ct.ChessboardParams:
     topological = ct.TopologicalParams()
     if variant.axis_align_tol_deg is not None:
         topological.axis_align_tol_rad = np.deg2rad(variant.axis_align_tol_deg).item()
-    if variant.diagonal_angle_tol_deg is not None:
-        topological.diagonal_angle_tol_rad = np.deg2rad(variant.diagonal_angle_tol_deg).item()
     return ct.ChessboardParams(
         graph_build_algorithm=variant.algorithm,
         min_labeled_corners=variant.min_labeled_corners,
@@ -210,7 +206,6 @@ def trace_summary(image: np.ndarray, variant: Variant) -> dict[str, Any]:
             chess_cfg=variant.chess_cfg,
             min_labeled_corners=variant.min_labeled_corners,
             axis_align_tol_deg=variant.axis_align_tol_deg,
-            diagonal_angle_tol_deg=variant.diagonal_angle_tol_deg,
         )
     )
     payload = ct.trace_chessboard_topological(image, chess_cfg=variant.chess_cfg, params=trace_params)
@@ -266,24 +261,20 @@ def variants_for_case(
     blur_sigma: float | None,
     threshold: float | None,
     axis_values: list[float | None],
-    diagonal_values: list[float | None],
 ) -> list[Variant]:
     algorithms = ["topological", "chessboard_v2"] if algorithm == "all" else [algorithm]
     variants: list[Variant] = []
     for algo in algorithms:
         if algo == "low_res":
             continue
-        for axis, diagonal in itertools.product(axis_values, diagonal_values):
-            suffix = ""
-            if axis is not None or diagonal is not None:
-                suffix = f"/axis={axis or 'default'}/diag={diagonal or 'default'}"
+        for axis in axis_values:
+            suffix = "" if axis is None else f"/axis={axis}"
             variants.append(
                 Variant(
                     name=f"{algo}{suffix}",
                     algorithm=algo,
                     chess_cfg=default_chess_cfg(blur_sigma, threshold),
                     axis_align_tol_deg=axis,
-                    diagonal_angle_tol_deg=diagonal,
                 )
             )
 
@@ -314,7 +305,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     manifest = load_manifest(args.manifest)
     cases = selected_cases(manifest, set(args.image or []))
     axis_values = parse_float_list(args.axis_align_tol_deg)
-    diagonal_values = parse_float_list(args.diagonal_angle_tol_deg)
 
     runs: list[dict[str, Any]] = []
     for case in cases:
@@ -325,7 +315,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
             args.blur_sigma,
             args.threshold,
             axis_values,
-            diagonal_values,
         ):
             image = load_image(image_path, variant.upscale)
             samples_ms, components = time_variant(image, variant, args.repeats, args.warmup)
@@ -338,7 +327,6 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
                 "chess_config": variant.chess_cfg.to_dict(),
                 "topological_overrides": {
                     "axis_align_tol_deg": variant.axis_align_tol_deg,
-                    "diagonal_angle_tol_deg": variant.diagonal_angle_tol_deg,
                 },
                 **trace_summary(image, variant),
                 **detection_summary(components),
@@ -387,11 +375,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--threshold", type=float)
     parser.add_argument(
         "--axis-align-tol-deg",
-        action="append",
-        help="Topological tolerance sweep value(s), comma-separated or repeated",
-    )
-    parser.add_argument(
-        "--diagonal-angle-tol-deg",
         action="append",
         help="Topological tolerance sweep value(s), comma-separated or repeated",
     )

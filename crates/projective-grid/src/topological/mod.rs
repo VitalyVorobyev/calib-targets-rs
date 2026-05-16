@@ -190,12 +190,6 @@ pub struct TopologicalParams {
     /// pre-cluster-gate values were a workaround for the missing global
     /// axis filter; with the gate active they're a precision risk.
     pub axis_align_tol_rad: f32,
-    /// Legacy 45° diagnostic tolerance, in radians, used only when reporting
-    /// `diagonal_margin_rad` in topological traces. Diagonal classification
-    /// itself is local-affine: a triangle with two valid grid sides using
-    /// different axis slots at their shared vertex promotes its remaining
-    /// edge to a diagonal. Default: `15° = 0.262`.
-    pub diagonal_angle_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a corner to participate
     /// in classification. Corners whose both axes have `sigma >=
     /// max_axis_sigma_rad` are excluded. Default: `0.6` (≈ 34°).
@@ -245,7 +239,6 @@ impl Default for TopologicalParams {
     fn default() -> Self {
         Self {
             axis_align_tol_rad: 15.0_f32.to_radians(),
-            diagonal_angle_tol_rad: 15.0_f32.to_radians(),
             max_axis_sigma_rad: 0.6,
             edge_ratio_max: 10.0,
             min_quads_per_component: 1,

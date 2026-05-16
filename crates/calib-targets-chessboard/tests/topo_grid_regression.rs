@@ -71,8 +71,6 @@ struct DiagnosticGate {
     min_labeled_corners: usize,
     #[serde(default)]
     axis_align_tol_deg: Option<f32>,
-    #[serde(default)]
-    diagonal_angle_tol_deg: Option<f32>,
     min_trace_components: usize,
     min_total_labelled: usize,
 }
@@ -264,9 +262,6 @@ fn topo_grid_manifest_gates_hold() {
             params.min_labeled_corners = gate.min_labeled_corners;
             if let Some(deg) = gate.axis_align_tol_deg {
                 params.topological.axis_align_tol_rad = deg.to_radians();
-            }
-            if let Some(deg) = gate.diagonal_angle_tol_deg {
-                params.topological.diagonal_angle_tol_rad = deg.to_radians();
             }
             let trace = trace_topological(&default_corners, &params)
                 .unwrap_or_else(|e| panic!("{} diagnostic trace: {e}", case.path));
