@@ -19,12 +19,19 @@
 //! breakdown by `PuzzleBoardDetectError` variant, and edges/BER/
 //! confidence statistics.
 //!
+//! `--algorithm` selects the chessboard graph-build algorithm the
+//! puzzle decode runs on (`chessboard-v2`, the default, or
+//! `topological`). PuzzleBoard inherits this choice via its nested
+//! `DetectorParams` — unlike ChArUco, it does not pin ChessboardV2 —
+//! so the flag exercises a genuinely different detection path.
+//!
 //! Usage:
 //! ```text
 //! cargo run --release -p calib-targets-puzzleboard --example run_dataset --features dataset -- \
 //!     --dataset <dir-of-stacked-targets> \
 //!     --out     <run-output-dir> \
-//!     --upscale 2 --rows N --cols N --cell-size-mm F
+//!     --upscale 2 --rows N --cols N --cell-size-mm F \
+//!     [--algorithm chessboard-v2|topological]
 //! ```
 
 use std::env;
@@ -34,7 +41,9 @@ use std::time::{Duration, Instant};
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view, DetectError};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{DebugFrame, Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{
+    DebugFrame, Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm,
+};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetectError, PuzzleBoardDetectionResult, PuzzleBoardDetector,
     PuzzleBoardScoringMode, PuzzleBoardSearchMode,
@@ -59,6 +68,7 @@ struct Args {
     origin_col: u32,
     search_mode: PuzzleBoardSearchMode,
     scoring_mode: PuzzleBoardScoringMode,
+    algorithm: GraphBuildAlgorithm,
 }
 
 fn usage_and_exit() -> ! {
@@ -67,9 +77,21 @@ fn usage_and_exit() -> ! {
          --rows N --cols N --cell-size-mm F \
          [--upscale N] [--origin-row N] [--origin-col N] \
          [--search-mode full|fixed-board] \
-         [--scoring-mode hard|soft]"
+         [--scoring-mode hard|soft] \
+         [--algorithm chessboard-v2|topological]"
     );
     std::process::exit(2);
+}
+
+fn parse_algorithm(s: &str) -> GraphBuildAlgorithm {
+    match s {
+        "chessboard-v2" | "chessboard_v2" | "v2" => GraphBuildAlgorithm::ChessboardV2,
+        "topological" | "topo" => GraphBuildAlgorithm::Topological,
+        other => {
+            eprintln!("--algorithm must be 'chessboard-v2' or 'topological' (got '{other}')");
+            std::process::exit(2);
+        }
+    }
 }
 
 fn parse_search_mode(s: &str) -> PuzzleBoardSearchMode {
@@ -107,6 +129,7 @@ fn parse_args() -> Args {
     let mut origin_col = 0u32;
     let mut search_mode = PuzzleBoardSearchMode::Full;
     let mut scoring_mode = PuzzleBoardScoringMode::default();
+    let mut algorithm = GraphBuildAlgorithm::default();
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -133,6 +156,12 @@ fn parse_args() -> Args {
                 scoring_mode = args
                     .next()
                     .map(|v| parse_scoring_mode(&v))
+                    .unwrap_or_else(|| usage_and_exit());
+            }
+            "--algorithm" => {
+                algorithm = args
+                    .next()
+                    .map(|v| parse_algorithm(&v))
                     .unwrap_or_else(|| usage_and_exit());
             }
             "-h" | "--help" => usage_and_exit(),
@@ -166,6 +195,7 @@ fn parse_args() -> Args {
         origin_col,
         search_mode,
         scoring_mode,
+        algorithm,
     }
 }
 
@@ -190,9 +220,12 @@ fn main() {
     for cfg in configs.iter_mut() {
         cfg.decode.search_mode = args.search_mode;
         cfg.decode.scoring_mode = args.scoring_mode;
+        // PuzzleBoard inherits the caller's graph-build choice via its
+        // nested `DetectorParams` (unlike ChArUco, which pins ChessboardV2).
+        cfg.chessboard.graph_build_algorithm = args.algorithm;
     }
     eprintln!(
-        "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={} search_mode={:?} scoring_mode={:?}",
+        "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={} search_mode={:?} scoring_mode={:?} algorithm={:?}",
         args.rows,
         args.cols,
         args.cell_size_mm,
@@ -201,6 +234,7 @@ fn main() {
         configs.len(),
         args.search_mode,
         args.scoring_mode,
+        args.algorithm,
     );
 
     let targets = collect_targets(&args.dataset);
@@ -217,7 +251,11 @@ fn main() {
     );
 
     let chess_cfg = default_chess_config();
-    let chess_params = DetectorParams::default();
+    // Standalone chessboard re-run for the debug frame; mirror the
+    // caller's algorithm choice so the diagnostic frame matches the
+    // graph the puzzle decode actually ran on.
+    let mut chess_params = DetectorParams::default();
+    chess_params.graph_build_algorithm = args.algorithm;
 
     let mut agg = Aggregate::default();
 
