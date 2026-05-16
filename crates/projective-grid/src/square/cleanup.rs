@@ -207,7 +207,7 @@ pub fn canonicalize_top_left(
 /// this provides it without imposing a result struct.
 pub fn sorted_grid_points(labelled: &HashMap<(i32, i32), usize>) -> Vec<((i32, i32), usize)> {
     let mut out: Vec<((i32, i32), usize)> = labelled.iter().map(|(&k, &v)| (k, v)).collect();
-    out.sort_by(|a, b| (a.0 .1, a.0 .0).cmp(&(b.0 .1, b.0 .0)));
+    out.sort_by_key(|&((i, j), _)| (j, i));
     out
 }
 
