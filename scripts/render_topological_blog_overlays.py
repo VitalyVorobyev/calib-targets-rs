@@ -28,7 +28,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
-from PIL import Image
+from PIL import Image, ImageFilter
 
 import calib_targets as ct
 
@@ -67,7 +67,9 @@ COMPONENT_COLORS = [
 ]
 
 
-def load_gray(path: Path, upscale: float = 1.0) -> np.ndarray:
+def load_gray(
+    path: Path, upscale: float = 1.0, pre_blur_sigma: float = 0.0
+) -> np.ndarray:
     image = Image.open(path).convert("L")
     if upscale != 1.0:
         if upscale <= 0.0:
@@ -77,6 +79,10 @@ def load_gray(path: Path, upscale: float = 1.0) -> np.ndarray:
             (max(1, round(width * upscale)), max(1, round(height * upscale))),
             Image.Resampling.BICUBIC,
         )
+    # Pre-blur is no longer a binding-level knob (removed in the
+    # chess-corners 0.10 migration); apply it to the image directly.
+    if pre_blur_sigma > 0.0:
+        image = image.filter(ImageFilter.GaussianBlur(radius=pre_blur_sigma))
     return np.asarray(image, dtype=np.uint8)
 
 
@@ -409,7 +415,7 @@ def draw_final(ax: plt.Axes, payload: dict[str, Any]) -> None:
 
 
 def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[str, Any]:
-    image = load_gray(path, args.upscale)
+    image = load_gray(path, args.upscale, args.pre_blur_sigma)
     topo = ct.TopologicalParams(
         axis_align_tol_rad=math.radians(args.axis_align_tol_deg),
         diagonal_angle_tol_rad=math.radians(args.diagonal_angle_tol_deg),
@@ -433,7 +439,6 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         image,
         chess_cfg=chess_cfg,
         params=trace_params,
-        pre_blur_sigma_px=args.pre_blur_sigma,
     )
     if args.final_algorithm != "topological":
         final_params = ct.ChessboardParams(graph_build_algorithm=args.final_algorithm)
@@ -443,7 +448,6 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
                 image,
                 chess_cfg=chess_cfg,
                 params=final_params,
-                pre_blur_sigma_px=args.pre_blur_sigma,
             )
         ]
         payload["final_graph_build_algorithm"] = args.final_algorithm
