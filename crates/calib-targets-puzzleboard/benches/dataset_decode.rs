@@ -18,8 +18,8 @@
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::Corner;
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;

@@ -36,7 +36,7 @@ use std::process;
 use calib_targets_chessboard::{CornerStage, DebugFrame, Detector, DetectorParams};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::ChessCorner as Corner;
 
 fn main() {
     env_logger::builder()

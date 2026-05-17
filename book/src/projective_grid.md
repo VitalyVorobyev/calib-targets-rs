@@ -17,13 +17,70 @@ pattern the workspace doesn't yet ship.
 
 ---
 
+## Quick start
+
+The zero-config entry point is `detect_regular_grid`: a bare point
+cloud goes in, a labelled grid comes out — no caller-written validator
+scaffolding.
+
+```rust
+use nalgebra::Point2;
+use projective_grid::detect_regular_grid;
+
+let mut points = Vec::new();
+for j in 0..4 {
+    for i in 0..5 {
+        points.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
+    }
+}
+let grid = detect_regular_grid(&points).expect("clean grid detects");
+assert_eq!(grid.points.len(), 20);
+```
+
+Each `DetectedGridPoint` carries its rebased `(i, j)` label, its pixel
+position, and the index back into the input slice. The detector
+estimates the cell size and grid axes from the cloud itself, drives
+the seed-and-grow pipeline with a built-in permissive regular-grid
+policy, and applies generic output cleanup (connectivity pruning,
+visual top-left canonicalisation, `(j, i)` sort). Use
+`RegularGridDetector` + `RegularGridParams` to tune the
+boundary-extension strategy and the cleanup toggles, or
+`RegularGridDetector::detect_all` for multi-component clouds.
+
+`detect_regular_grid` returns a `Result<RegularGridDetection,
+RegularGridError>`. The error enum has three distinct variants:
+`TooFewPoints` (fewer than 4 points — the minimum for a 2×2 seed),
+`DegeneratePointCloud` (coincident points or no measurable spread —
+the grid-axis estimator found nothing), and `NoGridFound` (a usable
+axis estimate, but no roughly-square seed quad). Note that a
+collinear-but-uniformly-spaced cloud is *not* reported as
+`DegeneratePointCloud` — it survives axis estimation and instead
+fails later as `NoGridFound`.
+
+### Runnable examples
+
+Three copy-pasteable programs under `crates/projective-grid/examples/`
+synthesize their own point clouds (no image files needed):
+
+```bash
+cargo run -p projective-grid --example regular_grid         # zero-config story
+cargo run -p projective-grid --example regular_grid_tuning  # RegularGridParams knobs
+cargo run -p projective-grid --example multi_component      # detect_all over disjoint grids
+```
+
+The first is walked through step by step in
+[Regular Grid Detection](example_regular_grid.md).
+
 ## Pipelines
 
-### Square seed-and-grow (default)
+### Square seed-and-grow (advanced / pattern-specific)
 
-A five-stage pipeline. Pattern-specific gates (parity, axis-cluster,
-marker rules, …) plug in via the `square::grow::GrowValidator` trait;
-the geometric machinery is generic.
+A five-stage pipeline. `detect_regular_grid` (above) wraps it with a
+built-in policy; reach for the validator-driven API directly when you
+need pattern-specific gates (parity, axis-cluster, marker rules) — they
+plug in via the `square::grow::GrowValidator` and
+`square::seed::finder::SeedQuadValidator` traits, while the geometric
+machinery stays generic.
 
 | Stage | Entry points | What it does |
 |---|---|---|
@@ -135,7 +192,7 @@ BFS / boundary-extension machinery.
 
 ## Module layout
 
-```
+```text
 projective-grid/src/
 ├── lib.rs
 ├── float_helpers.rs          (private)
@@ -147,6 +204,9 @@ projective-grid/src/
 ├── affine.rs                 AffineTransform2D (generic 2D)
 ├── component_merge.rs        merge_components_local
 ├── square/                   4-connected square-grid support
+│   ├── regular.rs            detect_regular_grid (zero-config entry point)
+│   ├── cleanup.rs            rebase / prune / canonicalise / sort helpers
+│   ├── detect.rs             detect_square_grid (validator-driven path)
 │   ├── alignment.rs          D4 transforms
 │   ├── grow.rs               GrowValidator, bfs_grow, GrowResult
 │   ├── grow_extend.rs        extend_from_labelled (post-cluster boost)
@@ -168,11 +228,12 @@ projective-grid/src/
 │       ├── local_h.rs        local-H residual
 │       └── step.rs           per-corner step + step-deviation flags
 ├── topological/              Shu/Brunton/Fiala 2009 grid finder
-│   ├── mod.rs                build_grid_topological, AxisHint
+│   ├── mod.rs                build_grid_topological, AxisEstimate
 │   ├── classify.rs           edge classification
 │   ├── delaunay.rs           triangulation wrapper
 │   ├── quads.rs              triangle-pair → quad merge
 │   ├── topo_filter.rs        topological + geometric filter
+│   ├── trace.rs              per-stage trace structs
 │   └── walk.rs               flood-fill (i, j) labelling
 └── hex/                      6-connected hex-grid (geometry only,
     ├── alignment.rs           no seed-and-grow path yet)

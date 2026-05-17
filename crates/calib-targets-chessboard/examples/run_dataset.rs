@@ -27,7 +27,7 @@ use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::ChessCorner as Corner;
 
 const SNAP_WIDTH: u32 = 720;
 const SNAP_HEIGHT: u32 = 540;

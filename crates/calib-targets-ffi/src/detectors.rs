@@ -16,9 +16,8 @@ use super::{
     map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
     map_puzzleboard_detect_error, marker_detection_to_ffi, panic_message, require_mut_ref,
     require_ref, set_last_error_message, validate_output_buffer, write_optional_result,
-    write_required_len, CharucoDetectCall, CharucoDetector, ChessboardDetector, FfiError,
-    FfiResult, MarkerBoardDetectCall, MarkerBoardDetector, PreparedGrayImage,
-    PuzzleBoardDetectCall, PuzzleBoardDetector,
+    write_required_len, CharucoDetector, ChessboardDetector, FfiError, FfiResult,
+    MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
 };
 use crate::convert::puzzleboard_scoring_mode_to_ffi;
 use crate::error::ffi_status;
@@ -99,28 +98,167 @@ pub(super) unsafe fn puzzleboard_detector_create_impl(
     Ok(())
 }
 
+/// Input arguments for [`ct_chessboard_detector_detect`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_args_t {
+    /// Detector handle (from [`ct_chessboard_detector_create`]).
+    pub detector: *const ct_chessboard_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_chessboard_detector_detect`].
+///
+/// `out_corners_len` is required and always receives the required number of
+/// labeled-corner entries. Passing `out_corners = NULL` with
+/// `corners_capacity = 0` queries the required length without copying
+/// corner data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_buffers_t {
+    /// Optional scalar result header. May be null.
+    pub out_result: *mut ct_chessboard_result_t,
+    /// Output array of labelled corners. May be null when `corners_capacity = 0`.
+    pub out_corners: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    /// Required: always receives the number of corners detected.
+    pub out_corners_len: *mut usize,
+}
+
+/// Input arguments for [`ct_charuco_detector_detect`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_charuco_detect_args_t {
+    /// Detector handle (from [`ct_charuco_detector_create`]).
+    pub detector: *const ct_charuco_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_charuco_detector_detect`].
+///
+/// `out_corners_len` and `out_markers_len` are required and always receive
+/// the required array lengths. Passing a `NULL` output array with
+/// `*_capacity = 0` queries the required length without copying array data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_charuco_detect_buffers_t {
+    /// Optional scalar result header. May be null.
+    pub out_result: *mut ct_charuco_result_t,
+    /// Output array of labelled corners. May be null when `corners_capacity = 0`.
+    pub out_corners: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    /// Required: always receives the number of corners detected.
+    pub out_corners_len: *mut usize,
+    /// Output array of decoded marker detections. May be null when `markers_capacity = 0`.
+    pub out_markers: *mut ct_marker_detection_t,
+    pub markers_capacity: usize,
+    /// Required: always receives the number of markers detected.
+    pub out_markers_len: *mut usize,
+}
+
+/// Input arguments for [`ct_marker_board_detector_detect`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_marker_board_detect_args_t {
+    /// Detector handle (from [`ct_marker_board_detector_create`]).
+    pub detector: *const ct_marker_board_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_marker_board_detector_detect`].
+///
+/// The three `*_len` pointers are required and always receive the required
+/// lengths for the corresponding output arrays. Passing a `NULL` output
+/// array with `*_capacity = 0` queries the required length without
+/// copying array data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_marker_board_detect_buffers_t {
+    /// Optional scalar result header. May be null.
+    pub out_result: *mut ct_marker_board_result_t,
+    /// Output array of labelled corners. May be null when `corners_capacity = 0`.
+    pub out_corners: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    /// Required: always receives the number of corners detected.
+    pub out_corners_len: *mut usize,
+    /// Output array of circle candidates. May be null when `circle_candidates_capacity = 0`.
+    pub out_circle_candidates: *mut ct_circle_candidate_t,
+    pub circle_candidates_capacity: usize,
+    /// Required: always receives the number of circle candidates found.
+    pub out_circle_candidates_len: *mut usize,
+    /// Output array of circle matches. May be null when `circle_matches_capacity = 0`.
+    pub out_circle_matches: *mut ct_circle_match_t,
+    pub circle_matches_capacity: usize,
+    /// Required: always receives the number of circle matches found.
+    pub out_circle_matches_len: *mut usize,
+}
+
+/// Input arguments for [`ct_puzzleboard_detector_detect`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_puzzleboard_detect_args_t {
+    /// Detector handle (from [`ct_puzzleboard_detector_create`]).
+    pub detector: *const ct_puzzleboard_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_puzzleboard_detector_detect`].
+///
+/// `out_corners_len` is required and always receives the required number of
+/// labeled-corner entries. Passing `out_corners = NULL` with
+/// `corners_capacity = 0` queries the required length without copying
+/// corner data. The returned corner grid coordinates are master-board
+/// `(I, J)` labels.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_puzzleboard_detect_buffers_t {
+    /// Optional scalar result header. May be null.
+    pub out_result: *mut ct_puzzleboard_result_t,
+    /// Output array of labelled corners. May be null when `corners_capacity = 0`.
+    pub out_corners: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    /// Required: always receives the number of corners detected.
+    pub out_corners_len: *mut usize,
+}
+
 pub(super) unsafe fn chessboard_detector_detect_impl(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_chessboard_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_args_t,
+    bufs: *mut ct_chessboard_detect_buffers_t,
 ) -> FfiResult<()> {
-    // SAFETY: caller contract (from `ct_chessboard_detector_detect`): `detector` is a
-    // valid handle returned by `ct_chessboard_detector_create`, alive for this call.
-    let detector = unsafe { require_ref(detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(image, "image")? };
+    // SAFETY: caller contract (from `ct_chessboard_detector_detect`): `args` and `bufs`
+    // point to valid struct instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    // SAFETY: caller contract: `args.detector` is a valid handle returned by
+    // `ct_chessboard_detector_create`, alive for this call.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
 
     let Some(detection) = detector.detector.detect(&corners) else {
-        // SAFETY: `out_corners_len` and `out_result` are valid writable pointers per
-        // the caller contract; null is handled inside the helpers.
+        // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
+        // pointers per the caller contract; null is handled inside the helpers.
         unsafe {
-            write_required_len(out_corners_len, 0, "out_corners_len")?;
-            write_optional_result(out_result, ct_chessboard_result_t::default());
+            write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
+            write_optional_result(bufs.out_result, ct_chessboard_result_t::default());
         }
         return Err(FfiError::not_found("chessboard not detected"));
     };
@@ -138,31 +276,38 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
         cell_size: detection.cell_size,
     };
 
-    // SAFETY: `out_corners_len` and `out_result` are valid writable pointers per
-    // the caller contract; null is handled inside the helpers.
+    // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
+    // pointers per the caller contract; null is handled inside the helpers.
     unsafe {
-        write_required_len(out_corners_len, corners_out.len(), "out_corners_len")?;
-        write_optional_result(out_result, result);
+        write_required_len(bufs.out_corners_len, corners_out.len(), "out_corners_len")?;
+        write_optional_result(bufs.out_result, result);
     }
     let copy_corners = validate_output_buffer(
-        out_corners,
-        corners_capacity,
+        bufs.out_corners,
+        bufs.corners_capacity,
         corners_out.len(),
         "out_corners",
     )?;
     if copy_corners {
         // SAFETY: `out_corners` has been validated to be non-null with sufficient
         // capacity by `validate_output_buffer` above.
-        unsafe { copy_output_slice(out_corners, &corners_out) };
+        unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
     }
     Ok(())
 }
 
-pub(super) unsafe fn charuco_detector_detect_impl(call: CharucoDetectCall) -> FfiResult<()> {
-    // SAFETY: caller contract: `detector` is a valid `ct_charuco_detector_t` handle.
-    let detector = unsafe { require_ref(call.detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(call.image, "image")? };
+pub(super) unsafe fn charuco_detector_detect_impl(
+    args: *const ct_charuco_detect_args_t,
+    bufs: *mut ct_charuco_detect_buffers_t,
+) -> FfiResult<()> {
+    // SAFETY: caller contract (from `ct_charuco_detector_detect`): `args` and `bufs`
+    // point to valid struct instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    // SAFETY: caller contract: `args.detector` is a valid `ct_charuco_detector_t` handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
@@ -177,9 +322,9 @@ pub(super) unsafe fn charuco_detector_detect_impl(call: CharucoDetectCall) -> Ff
         Err(err) => {
             // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
             unsafe {
-                write_required_len(call.out_corners_len, 0, "out_corners_len")?;
-                write_required_len(call.out_markers_len, 0, "out_markers_len")?;
-                write_optional_result(call.out_result, ct_charuco_result_t::default());
+                write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
+                write_required_len(bufs.out_markers_len, 0, "out_markers_len")?;
+                write_optional_result(bufs.out_result, ct_charuco_result_t::default());
             }
             return Err(err);
         }
@@ -204,42 +349,47 @@ pub(super) unsafe fn charuco_detector_detect_impl(call: CharucoDetectCall) -> Ff
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
     unsafe {
-        write_required_len(call.out_corners_len, corners_out.len(), "out_corners_len")?;
-        write_required_len(call.out_markers_len, markers_out.len(), "out_markers_len")?;
-        write_optional_result(call.out_result, result);
+        write_required_len(bufs.out_corners_len, corners_out.len(), "out_corners_len")?;
+        write_required_len(bufs.out_markers_len, markers_out.len(), "out_markers_len")?;
+        write_optional_result(bufs.out_result, result);
     }
 
     let copy_corners = validate_output_buffer(
-        call.out_corners,
-        call.corners_capacity,
+        bufs.out_corners,
+        bufs.corners_capacity,
         corners_out.len(),
         "out_corners",
     )?;
     let copy_markers = validate_output_buffer(
-        call.out_markers,
-        call.markers_capacity,
+        bufs.out_markers,
+        bufs.markers_capacity,
         markers_out.len(),
         "out_markers",
     )?;
 
     if copy_corners {
         // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_corners, &corners_out) };
+        unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
     }
     if copy_markers {
         // SAFETY: `out_markers` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_markers, &markers_out) };
+        unsafe { copy_output_slice(bufs.out_markers, &markers_out) };
     }
     Ok(())
 }
 
 pub(super) unsafe fn marker_board_detector_detect_impl(
-    call: MarkerBoardDetectCall,
+    args: *const ct_marker_board_detect_args_t,
+    bufs: *mut ct_marker_board_detect_buffers_t,
 ) -> FfiResult<()> {
-    // SAFETY: caller contract: `detector` is a valid `ct_marker_board_detector_t` handle.
-    let detector = unsafe { require_ref(call.detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(call.image, "image")? };
+    // SAFETY: caller contract (from `ct_marker_board_detector_detect`): `args` and `bufs`
+    // point to valid struct instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    // SAFETY: caller contract: `args.detector` is a valid `ct_marker_board_detector_t` handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
@@ -250,14 +400,14 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
     else {
         // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
         unsafe {
-            write_required_len(call.out_corners_len, 0, "out_corners_len")?;
+            write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
             write_required_len(
-                call.out_circle_candidates_len,
+                bufs.out_circle_candidates_len,
                 0,
                 "out_circle_candidates_len",
             )?;
-            write_required_len(call.out_circle_matches_len, 0, "out_circle_matches_len")?;
-            write_optional_result(call.out_result, ct_marker_board_result_t::default());
+            write_required_len(bufs.out_circle_matches_len, 0, "out_circle_matches_len")?;
+            write_optional_result(bufs.out_result, ct_marker_board_result_t::default());
         }
         return Err(FfiError::not_found("marker board not detected"));
     };
@@ -296,61 +446,66 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
     unsafe {
-        write_required_len(call.out_corners_len, corners_out.len(), "out_corners_len")?;
+        write_required_len(bufs.out_corners_len, corners_out.len(), "out_corners_len")?;
         write_required_len(
-            call.out_circle_candidates_len,
+            bufs.out_circle_candidates_len,
             circle_candidates_out.len(),
             "out_circle_candidates_len",
         )?;
         write_required_len(
-            call.out_circle_matches_len,
+            bufs.out_circle_matches_len,
             circle_matches_out.len(),
             "out_circle_matches_len",
         )?;
-        write_optional_result(call.out_result, result);
+        write_optional_result(bufs.out_result, result);
     }
 
     let copy_corners = validate_output_buffer(
-        call.out_corners,
-        call.corners_capacity,
+        bufs.out_corners,
+        bufs.corners_capacity,
         corners_out.len(),
         "out_corners",
     )?;
     let copy_circle_candidates = validate_output_buffer(
-        call.out_circle_candidates,
-        call.circle_candidates_capacity,
+        bufs.out_circle_candidates,
+        bufs.circle_candidates_capacity,
         circle_candidates_out.len(),
         "out_circle_candidates",
     )?;
     let copy_circle_matches = validate_output_buffer(
-        call.out_circle_matches,
-        call.circle_matches_capacity,
+        bufs.out_circle_matches,
+        bufs.circle_matches_capacity,
         circle_matches_out.len(),
         "out_circle_matches",
     )?;
 
     if copy_corners {
         // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_corners, &corners_out) };
+        unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
     }
     if copy_circle_candidates {
         // SAFETY: `out_circle_candidates` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_circle_candidates, &circle_candidates_out) };
+        unsafe { copy_output_slice(bufs.out_circle_candidates, &circle_candidates_out) };
     }
     if copy_circle_matches {
         // SAFETY: `out_circle_matches` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_circle_matches, &circle_matches_out) };
+        unsafe { copy_output_slice(bufs.out_circle_matches, &circle_matches_out) };
     }
     Ok(())
 }
 
 pub(super) unsafe fn puzzleboard_detector_detect_impl(
-    call: PuzzleBoardDetectCall,
+    args: *const ct_puzzleboard_detect_args_t,
+    bufs: *mut ct_puzzleboard_detect_buffers_t,
 ) -> FfiResult<()> {
-    // SAFETY: caller contract: `detector` is a valid `ct_puzzleboard_detector_t` handle.
-    let detector = unsafe { require_ref(call.detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(call.image, "image")? };
+    // SAFETY: caller contract (from `ct_puzzleboard_detector_detect`): `args` and `bufs`
+    // point to valid struct instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    // SAFETY: caller contract: `args.detector` is a valid `ct_puzzleboard_detector_t` handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
@@ -365,8 +520,8 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         Err(err) => {
             // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
             unsafe {
-                write_required_len(call.out_corners_len, 0, "out_corners_len")?;
-                write_optional_result(call.out_result, ct_puzzleboard_result_t::default());
+                write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
+                write_optional_result(bufs.out_result, ct_puzzleboard_result_t::default());
             }
             return Err(err);
         }
@@ -433,18 +588,18 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
     unsafe {
-        write_required_len(call.out_corners_len, corners_out.len(), "out_corners_len")?;
-        write_optional_result(call.out_result, result);
+        write_required_len(bufs.out_corners_len, corners_out.len(), "out_corners_len")?;
+        write_optional_result(bufs.out_result, result);
     }
     let copy_corners = validate_output_buffer(
-        call.out_corners,
-        call.corners_capacity,
+        bufs.out_corners,
+        bufs.corners_capacity,
         corners_out.len(),
         "out_corners",
     )?;
     if copy_corners {
         // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(call.out_corners, &corners_out) };
+        unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
     }
     Ok(())
 }
@@ -507,54 +662,70 @@ pub unsafe extern "C" fn ct_chessboard_detector_destroy(detector: *mut ct_chessb
 
 /// Run end-to-end chessboard detection on a grayscale image.
 ///
-/// `out_corners_len` is required and always receives the required number of
-/// labeled-corner entries. Passing `out_corners = NULL` and
-/// `corners_capacity = 0` queries the required length without copying corner
-/// data.
+/// `bufs.out_corners_len` is required and always receives the required number
+/// of labeled-corner entries. Passing `bufs.out_corners = NULL` and
+/// `bufs.corners_capacity = 0` queries the required length without copying
+/// corner data.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
-/// If `out_result` is non-null it must be writable. If `out_corners` is
-/// non-null it must point to writable storage for at least `corners_capacity`
-/// entries.
+/// `args` and `bufs` must be valid non-null pointers to populated struct
+/// instances. Inside `args`: `detector` and `image` must be valid non-null
+/// pointers. Inside `bufs`: `out_corners_len` must be a valid non-null
+/// writable pointer; `out_result` may be null; `out_corners` may be null
+/// when `corners_capacity = 0`, otherwise it must point to writable storage
+/// of at least `corners_capacity` entries.
 #[no_mangle]
 pub unsafe extern "C" fn ct_chessboard_detector_detect(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_chessboard_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_args_t,
+    bufs: *mut ct_chessboard_detect_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        chessboard_detector_detect_impl(
-            detector,
-            image,
-            out_result,
-            out_corners,
-            corners_capacity,
-            out_corners_len,
-        )
-    })
+    ffi_status(|| unsafe { chessboard_detector_detect_impl(args, bufs) })
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Input arguments for [`ct_chessboard_detector_detect_all`].
+///
+/// Groups the detector handle and image pointer so the entry point's
+/// signature stays compact even as future fields are added.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_all_args_t {
+    /// Detector handle (from [`ct_chessboard_detector_create`]).
+    pub detector: *const ct_chessboard_detector_t,
+    /// Grayscale image to scan.
+    pub image: *const ct_gray_image_u8_t,
+}
+
+/// Caller-provided output buffers for [`ct_chessboard_detector_detect_all`].
+///
+/// Each `*_buf` is the start of a writable output array, `*_capacity`
+/// its allocated entry count, and `*_len_out` a writable destination
+/// that receives the *required* number of entries (even if the buffer
+/// is too small or null). Passing a `NULL` buffer with capacity `0` is
+/// allowed and queries the required length without copying data.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ct_chessboard_detect_all_buffers_t {
+    /// Output array of per-component result headers.
+    pub results_buf: *mut ct_chessboard_result_t,
+    pub results_capacity: usize,
+    pub results_len_out: *mut usize,
+    /// Output array of all components' labelled corners concatenated.
+    pub corners_buf: *mut ct_labeled_corner_t,
+    pub corners_capacity: usize,
+    pub corners_len_out: *mut usize,
+}
+
 pub(super) unsafe fn chessboard_detector_detect_all_impl(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_results: *mut ct_chessboard_result_t,
-    results_capacity: usize,
-    out_results_len: *mut usize,
-    out_corners: *mut ct_labeled_corner_t,
-    all_corners_capacity: usize,
-    out_all_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_all_args_t,
+    bufs: *mut ct_chessboard_detect_all_buffers_t,
 ) -> FfiResult<()> {
-    // SAFETY: caller contract (from `ct_chessboard_detector_detect_all`): `detector` is a
-    // valid handle created by `ct_chessboard_detector_create`, not yet destroyed.
-    let detector = unsafe { require_ref(detector, "detector")? };
-    // SAFETY: caller contract: `image` points to a valid `ct_gray_image_u8_t` struct.
-    let image = unsafe { require_ref(image, "image")? };
+    // SAFETY: caller contract: `args` and `bufs` point to valid struct
+    // instances with valid sub-pointers per the per-field rules.
+    let args = unsafe { require_ref(args, "args")? };
+    let bufs = unsafe { require_mut_ref(bufs, "bufs")? };
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
     let corners = prepared.detect_corners(&detector.chess)?;
 
@@ -574,35 +745,31 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
         .flat_map(|d| d.target.corners.iter().map(labeled_corner_to_ffi))
         .collect();
 
-    // SAFETY: `out_results_len` and `out_all_corners_len` are valid writable pointers per
-    // caller contract from `ct_chessboard_detector_detect_all`.
+    // SAFETY: `bufs.results_len_out` and `bufs.corners_len_out` are valid
+    // writable pointers per caller contract.
     unsafe {
-        write_required_len(out_results_len, results_out.len(), "out_results_len")?;
-        write_required_len(
-            out_all_corners_len,
-            corners_out.len(),
-            "out_all_corners_len",
-        )?;
+        write_required_len(bufs.results_len_out, results_out.len(), "results_len_out")?;
+        write_required_len(bufs.corners_len_out, corners_out.len(), "corners_len_out")?;
     }
     let copy_results = validate_output_buffer(
-        out_results,
-        results_capacity,
+        bufs.results_buf,
+        bufs.results_capacity,
         results_out.len(),
-        "out_results",
+        "results_buf",
     )?;
     let copy_corners = validate_output_buffer(
-        out_corners,
-        all_corners_capacity,
+        bufs.corners_buf,
+        bufs.corners_capacity,
         corners_out.len(),
-        "out_corners",
+        "corners_buf",
     )?;
     if copy_results {
-        // SAFETY: `out_results` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(out_results, &results_out) };
+        // SAFETY: `results_buf` capacity validated by `validate_output_buffer`.
+        unsafe { copy_output_slice(bufs.results_buf, &results_out) };
     }
     if copy_corners {
-        // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(out_corners, &corners_out) };
+        // SAFETY: `corners_buf` capacity validated by `validate_output_buffer`.
+        unsafe { copy_output_slice(bufs.corners_buf, &corners_out) };
     }
     Ok(())
 }
@@ -610,45 +777,30 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
 /// Run end-to-end multi-component chessboard detection on a grayscale image.
 ///
 /// Returns every same-board component the detector recovers, up to
-/// `DetectorParams::max_components`. The `out_corners` buffer receives all
-/// corners from all components concatenated; use `result[i].detection.corners_len`
-/// to slice each component's contribution.
+/// `DetectorParams::max_components`. The `corners_buf` buffer receives
+/// all corners from all components concatenated; use
+/// `result[i].detection.corners_len` to slice each component's contribution.
 ///
-/// Both `out_results_len` and `out_all_corners_len` are required and always
-/// receive the required array lengths. Passing `NULL` output arrays with
-/// capacity `0` queries the required lengths without copying data.
+/// Both `results_len_out` and `corners_len_out` inside `bufs` are
+/// required and always receive the required array lengths. Passing
+/// `NULL` output buffers with capacity `0` queries the required
+/// lengths without copying data.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, `out_results_len`, and `out_all_corners_len` must be
-/// valid non-null pointers. If `out_results` is non-null it must point to
-/// writable storage for at least `results_capacity` entries. If `out_corners`
-/// is non-null it must point to writable storage for at least
-/// `all_corners_capacity` entries.
+/// `args` and `bufs` must be valid non-null pointers to populated
+/// struct instances. Inside `args`: `detector` and `image` must be
+/// valid non-null pointers. Inside `bufs`: `results_len_out` and
+/// `corners_len_out` must be valid non-null writable pointers; each
+/// output array buffer is allowed to be null when its capacity is `0`,
+/// otherwise it must point to writable storage of at least the
+/// declared capacity.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn ct_chessboard_detector_detect_all(
-    detector: *const ct_chessboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_results: *mut ct_chessboard_result_t,
-    results_capacity: usize,
-    out_results_len: *mut usize,
-    out_corners: *mut ct_labeled_corner_t,
-    all_corners_capacity: usize,
-    out_all_corners_len: *mut usize,
+    args: *const ct_chessboard_detect_all_args_t,
+    bufs: *mut ct_chessboard_detect_all_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        chessboard_detector_detect_all_impl(
-            detector,
-            image,
-            out_results,
-            results_capacity,
-            out_results_len,
-            out_corners,
-            all_corners_capacity,
-            out_all_corners_len,
-        )
-    })
+    ffi_status(|| unsafe { chessboard_detector_detect_all_impl(args, bufs) })
 }
 
 /// Create a ChArUco detector handle.
@@ -691,41 +843,24 @@ pub unsafe extern "C" fn ct_charuco_detector_destroy(detector: *mut ct_charuco_d
 
 /// Run end-to-end ChArUco detection on a grayscale image.
 ///
-/// `out_corners_len` and `out_markers_len` are required and always receive the
-/// required array lengths. Passing a `NULL` output array with capacity `0`
-/// queries the corresponding required length without copying array data.
+/// `bufs.out_corners_len` and `bufs.out_markers_len` are required and always
+/// receive the required array lengths. Passing a `NULL` output array with
+/// `*_capacity = 0` queries the required length without copying array data.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, `out_corners_len`, and `out_markers_len` must be valid
-/// non-null pointers. If `out_result` is non-null it must be writable. If
-/// `out_corners` or `out_markers` is non-null, each must point to writable
-/// storage for at least the matching capacity.
+/// `args` and `bufs` must be valid non-null pointers to populated struct
+/// instances. Inside `args`: `detector` and `image` must be valid non-null
+/// pointers. Inside `bufs`: `out_corners_len` and `out_markers_len` must be
+/// valid non-null writable pointers; `out_result` may be null; each array
+/// buffer may be null when its capacity is `0`, otherwise it must point to
+/// writable storage of at least the declared capacity.
 #[no_mangle]
 pub unsafe extern "C" fn ct_charuco_detector_detect(
-    detector: *const ct_charuco_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_charuco_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
-    out_markers: *mut ct_marker_detection_t,
-    markers_capacity: usize,
-    out_markers_len: *mut usize,
+    args: *const ct_charuco_detect_args_t,
+    bufs: *mut ct_charuco_detect_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        charuco_detector_detect_impl(CharucoDetectCall {
-            detector,
-            image,
-            out_result,
-            out_corners,
-            corners_capacity,
-            out_corners_len,
-            out_markers,
-            markers_capacity,
-            out_markers_len,
-        })
-    })
+    ffi_status(|| unsafe { charuco_detector_detect_impl(args, bufs) })
 }
 
 /// Create a marker-board detector handle.
@@ -770,47 +905,25 @@ pub unsafe extern "C" fn ct_marker_board_detector_destroy(
 
 /// Run end-to-end marker-board detection on a grayscale image.
 ///
-/// The three `*_len` pointers are required and always receive the required
-/// lengths for the corresponding output arrays. Passing a `NULL` output array
-/// with capacity `0` queries the required length without copying array data.
+/// The three `*_len` pointers inside `bufs` are required and always receive
+/// the required lengths for the corresponding output arrays. Passing a `NULL`
+/// output array with `*_capacity = 0` queries the required length without
+/// copying array data.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, and all three `*_len` pointers must be valid non-null
-/// pointers. If `out_result` is non-null it must be writable. If any array
-/// pointer is non-null it must point to writable storage for at least the
-/// corresponding capacity.
+/// `args` and `bufs` must be valid non-null pointers to populated struct
+/// instances. Inside `args`: `detector` and `image` must be valid non-null
+/// pointers. Inside `bufs`: all three `*_len` pointers must be valid non-null
+/// writable pointers; `out_result` may be null; each array buffer may be null
+/// when its capacity is `0`, otherwise it must point to writable storage of
+/// at least the declared capacity.
 #[no_mangle]
 pub unsafe extern "C" fn ct_marker_board_detector_detect(
-    detector: *const ct_marker_board_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_marker_board_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
-    out_circle_candidates: *mut ct_circle_candidate_t,
-    circle_candidates_capacity: usize,
-    out_circle_candidates_len: *mut usize,
-    out_circle_matches: *mut ct_circle_match_t,
-    circle_matches_capacity: usize,
-    out_circle_matches_len: *mut usize,
+    args: *const ct_marker_board_detect_args_t,
+    bufs: *mut ct_marker_board_detect_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        marker_board_detector_detect_impl(MarkerBoardDetectCall {
-            detector,
-            image,
-            out_result,
-            out_corners,
-            corners_capacity,
-            out_corners_len,
-            out_circle_candidates,
-            circle_candidates_capacity,
-            out_circle_candidates_len,
-            out_circle_matches,
-            circle_matches_capacity,
-            out_circle_matches_len,
-        })
-    })
+    ffi_status(|| unsafe { marker_board_detector_detect_impl(args, bufs) })
 }
 
 /// Create a PuzzleBoard detector handle.
@@ -853,34 +966,24 @@ pub unsafe extern "C" fn ct_puzzleboard_detector_destroy(detector: *mut ct_puzzl
 
 /// Run end-to-end PuzzleBoard detection on a grayscale image.
 ///
-/// `out_corners_len` is required and always receives the required number of
-/// labeled-corner entries. Passing `out_corners = NULL` and
-/// `corners_capacity = 0` queries the required length without copying corner
-/// data. The returned corner grid coordinates are master-board `(I, J)` labels.
+/// `bufs.out_corners_len` is required and always receives the required number
+/// of labeled-corner entries. Passing `bufs.out_corners = NULL` with
+/// `bufs.corners_capacity = 0` queries the required length without copying
+/// corner data. The returned corner grid coordinates are master-board
+/// `(I, J)` labels.
 ///
 /// # Safety
 ///
-/// `detector`, `image`, and `out_corners_len` must be valid non-null pointers.
-/// If `out_result` is non-null it must be writable. If `out_corners` is
-/// non-null it must point to writable storage for at least `corners_capacity`
-/// entries.
+/// `args` and `bufs` must be valid non-null pointers to populated struct
+/// instances. Inside `args`: `detector` and `image` must be valid non-null
+/// pointers. Inside `bufs`: `out_corners_len` must be a valid non-null
+/// writable pointer; `out_result` may be null; `out_corners` may be null
+/// when `corners_capacity = 0`, otherwise it must point to writable storage
+/// of at least `corners_capacity` entries.
 #[no_mangle]
 pub unsafe extern "C" fn ct_puzzleboard_detector_detect(
-    detector: *const ct_puzzleboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_puzzleboard_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
+    args: *const ct_puzzleboard_detect_args_t,
+    bufs: *mut ct_puzzleboard_detect_buffers_t,
 ) -> ct_status_t {
-    ffi_status(|| unsafe {
-        puzzleboard_detector_detect_impl(PuzzleBoardDetectCall {
-            detector,
-            image,
-            out_result,
-            out_corners,
-            corners_capacity,
-            out_corners_len,
-        })
-    })
+    ffi_status(|| unsafe { puzzleboard_detector_detect_impl(args, bufs) })
 }

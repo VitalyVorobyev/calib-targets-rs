@@ -1,4 +1,12 @@
-# calib-targets-rs
+<h1>
+  <a href="https://vitavision.dev/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="book/src/img/vv-favicon-dark.svg">
+      <img src="book/src/img/vv-favicon-light.svg" alt="vitavision.dev" height="48" align="left">
+    </picture>
+  </a>
+  &nbsp;calib-targets-rs
+</h1>
 
 [![CI](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/ci.yml)
 [![Security audit](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml/badge.svg)](https://github.com/VitalyVorobyev/calib-targets-rs/actions/workflows/audit.yml)
@@ -112,8 +120,12 @@ import calib_targets as ct
 image = np.asarray(Image.open("board.png").convert("L"), dtype=np.uint8)
 result = ct.detect_chessboard_best(image, [
     ct.ChessboardParams(),
-    ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.15)),
-    ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.08)),
+    ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
+    ),
+    ct.ChessboardParams(
+        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
+    ),
 ])
 if result is not None:
     print(f"{len(result.detection.corners)} corners")

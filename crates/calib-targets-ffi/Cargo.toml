@@ -1,6 +1,10 @@
 [package]
 name = "calib-targets-ffi"
-version.workspace = true
+# Version pinned (not inherited) because the C ABI evolves
+# independently of the Rust crate workspace. v1.0.0 marks the
+# args/buffers struct redesign of the `*_detect_all` entry points
+# (breaking change vs the 0.8 surface).
+version = "1.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true
@@ -31,3 +35,6 @@ zip.workspace = true
 
 [dev-dependencies]
 image.workspace = true
+
+[lints]
+workspace = true

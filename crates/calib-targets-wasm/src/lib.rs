@@ -8,18 +8,19 @@ mod gray;
 
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::{ChessConfig, Corner, ThresholdMode};
+use calib_targets_core::{DetectorConfig, Threshold};
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
     render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
     PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec, RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-use chess_corners::find_chess_corners_u8;
+use chess_corners::Detector as ChessCornerDetector;
 use wasm_bindgen::prelude::*;
 
-use convert::{adapt_chess_corner, to_chess_corners_config};
+use convert::adapt_chess_corner;
 use gray::make_view;
 
 // ---------------------------------------------------------------------------
@@ -55,29 +56,37 @@ fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> 
     Ok(())
 }
 
-fn detect_corners_impl(pixels: &[u8], width: u32, height: u32, cfg: &ChessConfig) -> Vec<Corner> {
-    let cc_cfg = to_chess_corners_config(cfg);
-    find_chess_corners_u8(pixels, width, height, &cc_cfg)
+fn detect_corners_impl(
+    pixels: &[u8],
+    width: u32,
+    height: u32,
+    cfg: &DetectorConfig,
+) -> Vec<ChessCorner> {
+    let Ok(mut detector) = ChessCornerDetector::new(*cfg) else {
+        return Vec::new();
+    };
+    detector
+        .detect_u8(pixels, width, height)
         .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
         .collect()
 }
 
-/// Resolve a ChESS detector config, falling back to defaults when JS supplies
-/// `undefined` / `null`. The chessboard detector no longer carries a
-/// nested ChESS config in `DetectorParams`, so callers (or this helper) must
-/// supply one for the corner-detection step.
-fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
+/// Build the workspace-default ChESS detector config. Mirrors the threshold
+/// override applied in `calib_targets::detect::default_chess_config` — see
+/// the rustdoc on that function for the rationale and sweep evidence.
+fn workspace_default_chess_cfg() -> DetectorConfig {
+    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
+}
+
+/// Resolve a ChESS detector config, falling back to the workspace default
+/// when JS supplies `undefined` / `null`.
+fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<DetectorConfig, JsError> {
     if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
         from_js(chess_cfg)
     } else {
-        Ok(ChessConfig {
-            threshold_mode: ThresholdMode::Relative,
-            threshold_value: 0.2,
-            nms_radius: 2,
-            ..ChessConfig::single_scale()
-        })
+        Ok(workspace_default_chess_cfg())
     }
 }
 
@@ -85,16 +94,10 @@ fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<ChessConfig, JsError> {
 // Default configs (exported so the JS side can populate UI with defaults)
 // ---------------------------------------------------------------------------
 
-/// Return the default `ChessConfig` as a JS object.
+/// Return the default `DetectorConfig` as a JS object.
 #[wasm_bindgen]
 pub fn default_chess_config() -> Result<JsValue, JsError> {
-    let cfg = ChessConfig {
-        threshold_mode: ThresholdMode::Relative,
-        threshold_value: 0.2,
-        nms_radius: 2,
-        ..ChessConfig::single_scale()
-    };
-    to_js(&cfg)
+    to_js(&workspace_default_chess_cfg())
 }
 
 /// Return the default `DetectorParams` as a JS object.
@@ -392,7 +395,7 @@ pub fn detect_corners(
     chess_cfg: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cfg: ChessConfig = from_js(chess_cfg)?;
+    let cfg: DetectorConfig = from_js(chess_cfg)?;
     let corners = detect_corners_impl(pixels, width, height, &cfg);
     to_js(&corners)
 }

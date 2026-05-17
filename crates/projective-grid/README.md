@@ -22,12 +22,47 @@ nalgebra = "0.34"
 
 `projective-grid` ships two grid-construction pipelines that produce
 the same `(i, j) → corner_idx` map and share the same downstream
-validation, rectification, and component-merge machinery. Pattern-
-specific gates (parity, axis-cluster, marker rules, …) plug into the
-[`square::grow::GrowValidator`] trait; the geometric machinery
-underneath is generic.
+validation, rectification, and component-merge machinery.
 
-### Square seed-and-grow (default)
+### Quick start: point cloud in, labelled grid out
+
+The zero-config entry point is `detect_regular_grid`. Hand it a
+`&[Point2<f32>]`; it returns a `RegularGridDetection` where every
+recovered corner carries its `(i, j)` label and the index back into
+your input slice. No validator scaffolding required:
+
+```rust
+use nalgebra::Point2;
+use projective_grid::detect_regular_grid;
+
+// A clean 5×4 grid at 30 px pitch (clean, rotated, or perspective-
+// warped input all work).
+let mut points = Vec::new();
+for j in 0..4 {
+    for i in 0..5 {
+        points.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
+    }
+}
+
+let grid = detect_regular_grid(&points).expect("clean grid detects");
+assert_eq!(grid.points.len(), 20);
+// Labels rebased so the bbox minimum is (0, 0); +i points right,
+// +j points down (visual top-left origin).
+```
+
+For tuning, use `RegularGridDetector` + `RegularGridParams`
+(boundary-extension strategy, top-left canonicalisation toggle,
+connectivity pruning). `RegularGridDetector::detect_all` returns one
+detection per disjoint component.
+
+### Square seed-and-grow (advanced / pattern-specific)
+
+`detect_regular_grid` is a thin wrapper over the validator-driven
+`detect_square_grid` with a built-in permissive regular-grid policy.
+When you need pattern-specific rules — parity, axis-cluster, marker
+slots — implement the `square::grow::GrowValidator` +
+`square::seed::finder::SeedQuadValidator` traits and call the
+advanced API directly:
 
 ```rust
 use projective_grid::square::{
@@ -43,10 +78,10 @@ let seed: Seed = /* … */;
 let cell_size: f32 = /* … */;
 let validator: &impl GrowValidator = /* … */;
 
-// 2. Stage 5: BFS-grow with adaptive local-step prediction.
+// 2. BFS-grow with adaptive local-step prediction.
 let mut grow = bfs_grow(&positions, seed, cell_size, &GrowParams::default(), validator);
 
-// 3. Stage 6 (optional): extend the labelled set via a globally-fit
+// 3. Optional: extend the labelled set via a globally-fit
 //    homography. Refuses to extrapolate when the H residuals on the
 //    BFS-validated set indicate the planar / pinhole assumption is
 //    violated (heavy lens distortion, non-planar target).
@@ -58,7 +93,7 @@ let _stats = extend_via_global_homography(
     validator,
 );
 
-// 4. Stage 7: line / local-H residual validation produces a blacklist of
+// 4. Validation: line / local-H residual checks produce a blacklist of
 //    outlier corner indices to drop and re-grow.
 let entries: Vec<LabelledEntry> = /* (corner_idx, pixel, grid) per labelled */;
 let _result = validate(&entries, cell_size, &ValidationParams::default());
@@ -69,6 +104,11 @@ implement their pattern-specific `GrowValidator` and call the same
 machinery. Their orchestrators iterate grow + validate with a
 blacklist until the labelled set converges, then run boundary
 extension, then re-validate.
+
+Generic, target-agnostic output cleanup lives in `square::cleanup`
+(`rebase_to_origin`, `prune_to_main_component`, `canonicalize_top_left`,
+`sorted_grid_points`) — `detect_regular_grid` applies these
+internally, and they are exposed for pattern detectors to reuse.
 
 ### Local-homography boundary extension
 
@@ -81,23 +121,23 @@ where a single `H` breaks. Configured via `LocalExtensionParams`.
 
 ### Topological grid finder
 
-`projective_grid::build_grid_topological` is the image-free Shu /
-Brunton / Fiala 2009 grid finder: Delaunay triangulation, edge
-classification by per-edge axis match, triangle-pair → quad merge,
-and flood-fill `(i, j)` labelling.
+`projective_grid::build_grid_topological` is an image-free,
+axis-driven variant of the Shu/Brunton/Fiala 2009 topological grid
+finder: Delaunay triangulation, edge classification by per-edge axis
+match, triangle-pair → quad merge, and flood-fill `(i, j)` labelling.
+See the [`topological`] module docs for the bibliographic entry.
+
+[`topological`]: https://docs.rs/projective-grid/latest/projective_grid/topological/index.html
 
 ```rust
-use projective_grid::{build_grid_topological, merge_components_local,
-    ComponentInput, LocalMergeParams, TopologicalParams};
+use projective_grid::{recover_topological_grid, LocalMergeParams, TopologicalParams};
 
-let params = TopologicalParams::default();
-let topo = build_grid_topological(&positions, &axes_hints, &params)?;
-
-// merge_components_local reunites partial components (shared by both pipelines).
-let views: Vec<ComponentInput<'_>> = topo.components.iter()
-    .map(|c| ComponentInput { labelled: &c.labelled, positions: &positions })
-    .collect();
-let merged = merge_components_local(&views, &LocalMergeParams::default());
+let merged = recover_topological_grid(
+    &positions,
+    &axes_hints,
+    &TopologicalParams::default(),
+    &LocalMergeParams::default(),
+)?;
 ```
 
 See `docs/TOPOLOGICAL_PIPELINE.md` in the workspace for the per-stage
@@ -149,8 +189,8 @@ synthetic grids "just work"; tune only when a specific input fails.
   homography mesh + smoothness, but not seed-and-grow yet.
 - **Heavy radial distortion.** A single global H can't fit fish-eye
   data; the H-residual gate refuses to extrapolate in that case
-  (Stage 6 becomes a no-op). Use [`SquareGridHomographyMesh`] for per-cell
-  rectification.
+  (the boundary extension pass becomes a no-op). Use
+  [`SquareGridHomographyMesh`] for per-cell rectification.
 
 ## Design notes
 
@@ -161,9 +201,10 @@ synthetic grids "just work"; tune only when a specific input fails.
   long as the labelled set has labels on both sides of the target.
 - **Global H at the boundary.** When the target sits one step outside
   the labelled bbox, the local-step model is asymmetric and overshoots.
-  Stage 6 falls back to a globally-fitted homography for boundary
-  cells, gated on a reprojection-residual check on the labelled set so
-  it disables itself under non-planar / fish-eye conditions.
+  The boundary-extension pass falls back to a globally-fitted homography
+  for boundary cells, gated on a reprojection-residual check on the
+  labelled set so it disables itself under non-planar / fish-eye
+  conditions.
 - **Undirected-angle circular means.** Any function averaging axis
   angles accumulates `(cos 2θ, sin 2θ)` and halves the resulting
   `atan2` — naive `(cos θ, sin θ)` averaging breaks at the 0°/180°

@@ -2,8 +2,12 @@
 //!
 //! | Module | Responsibility |
 //! |---|---|
+//! | [`regular`] | Zero-config point-cloud regular-grid detection (onboarding entry point) |
 //! | [`alignment`] | D4 rotations / reflections on `(i, j)` |
+//! | [`cleanup`] | Generic output cleanup: rebase, connectivity prune, top-left canonicalise, sort |
+//! | [`detect`] | Validator-driven end-to-end pipeline (advanced / pattern-specific path) |
 //! | [`extension`] | Boundary extension via homography (global + local) |
+//! | [`fill`] | Post-grow interior-hole + line-extrapolation booster pass |
 //! | [`grow`] | Seed-and-grow BFS with adaptive local-step prediction |
 //! | [`grow_extend`] | BFS extension from an existing labelled grid |
 //! | [`index`] | `(i, j)` cell identifier |
@@ -22,7 +26,10 @@
 //! for consumers that import from the old path directly.
 
 pub mod alignment;
+pub mod cleanup;
+pub mod detect;
 pub mod extension;
+pub mod fill;
 pub mod grow;
 pub mod grow_extend;
 /// Compatibility alias for [`extension`].
@@ -38,6 +45,7 @@ pub mod grow_extension {
 pub mod index;
 pub mod mesh;
 pub mod rectify;
+pub mod regular;
 pub mod seed;
 /// Compatibility alias for [`seed::finder`].
 ///
@@ -49,10 +57,17 @@ pub mod smoothness;
 pub mod validate;
 
 pub use alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+// The `cleanup` helpers are intentionally *not* re-exported to the
+// `square::` root — reach for them at their `square::cleanup::*` path.
+pub use detect::{
+    detect_square_grid, detect_square_grid_all, ExtensionStrategy, MultiComponentParams,
+    SquareGridDetection, SquareGridParams, SquareGridStats,
+};
 pub use extension::{
     extend_via_global_homography, ExtensionCommonParams, ExtensionParams, ExtensionStats,
     LocalExtensionParams,
 };
+pub use fill::{fill_grid_holes, FillParams, FillStats};
 pub use grow::{
     bfs_grow, predict_from_neighbours, Admit, GrowParams, GrowResult, GrowValidator,
     LabelledNeighbour, Seed,
@@ -61,6 +76,10 @@ pub use grow_extend::{extend_from_labelled, BfsExtensionStats};
 pub use index::GridCoords;
 pub use mesh::SquareGridHomographyMesh;
 pub use rectify::SquareGridHomography;
+pub use regular::{
+    detect_regular_grid, DetectedGridPoint, RegularGridDetection, RegularGridDetector,
+    RegularGridError, RegularGridParams, RegularGridStats,
+};
 pub use seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 pub use seed::{
     seed_cell_size, seed_has_midpoint_violation, seed_homography, SeedOutput, SEED_QUAD_GRID,

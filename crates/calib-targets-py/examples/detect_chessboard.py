@@ -1,4 +1,11 @@
-"""Chessboard detection example with full in-code configuration."""
+"""Chessboard detection example with explicit configuration.
+
+Mirrors the Rust ``calib_targets::detect`` facade: a top-level
+``DetectorConfig`` (here ``ct.ChessConfig`` on the Python side) drives
+ChESS corner detection, and ``ChessboardParams`` drives the grid /
+labelling pipeline. Defaults are sensible for typical inputs; this
+example shows where to override them.
+"""
 
 import sys
 
@@ -20,37 +27,18 @@ def main() -> None:
 
     image = load_gray(sys.argv[1])
 
+    # ChESS-detector configuration (Rust: chess_corners::DetectorConfig).
+    # The default is single-scale ChESS + Threshold::Absolute(15.0). Drop
+    # the threshold for blurry inputs; raise for clean ones.
     chess_cfg = ct.ChessConfig(
-        detector_mode="canonical",
-        threshold_mode="relative",
-        threshold_value=0.2,
-        nms_radius=2,
-        min_cluster_size=2,
-        pyramid_levels=1,
-        pyramid_min_size=128,
-        refinement_radius=3,
-        merge_radius=3.0,
+        threshold=ct.Threshold.absolute(15.0),
     )
 
+    # Chessboard grid / labelling pipeline. Sticks to the workspace
+    # defaults except for a small pre-filter on corner strength.
     params = ct.ChessboardParams(
         min_corner_strength=0.0,
-        min_corners=16,
-        completeness_threshold=0.7,
-        use_orientation_clustering=True,
-        orientation_clustering_params=ct.OrientationClusteringParams(
-            num_bins=90,
-            max_iters=10,
-            peak_min_separation_deg=10.0,
-            outlier_threshold_deg=30.0,
-            min_peak_weight_fraction=0.05,
-            use_weights=True,
-        ),
-        graph=ct.GridGraphParams(
-            min_spacing_pix=5.0,
-            max_spacing_pix=200.0,
-            k_neighbors=8,
-            orientation_tolerance_deg=22.5,
-        ),
+        min_labeled_corners=16,
     )
 
     result = ct.detect_chessboard(image, chess_cfg=chess_cfg, params=params)
@@ -59,9 +47,10 @@ def main() -> None:
         print("No chessboard detected")
         return
 
-    print(f"corners: {len(result.detection.corners)}")
-    print(f"inliers: {len(result.inliers)}")
-    print(result.detection.corners[0])
+    corners = result.detection.corners
+    print(f"corners: {len(corners)}")
+    if corners:
+        print(corners[0])
 
 
 if __name__ == "__main__":

@@ -12,7 +12,8 @@
 //! ```no_run
 //! use calib_targets_aruco::builtins;
 //! use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
-//! use calib_targets_core::{Corner, GrayImageView};
+//! use calib_targets_chessboard::ChessCorner;
+//! use calib_targets_core::GrayImageView;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let board = CharucoBoardSpec {
@@ -33,7 +34,7 @@
 //!     height: 32,
 //!     data: &pixels,
 //! };
-//! let corners: Vec<Corner> = Vec::new();
+//! let corners: Vec<ChessCorner> = Vec::new();
 //!
 //! let _ = detector.detect(&view, &corners)?;
 //! # Ok(())

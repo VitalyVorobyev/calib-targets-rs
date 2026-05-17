@@ -1,4 +1,4 @@
-//! Stage 6 — BFS-style growth over the labelled `(i, j)` set.
+//! `grow` stage — BFS-style growth over the labelled `(i, j)` set.
 //!
 //! The pattern-agnostic machinery (BFS queue, KD-tree, prediction,
 //! ambiguity resolution, rebase-to-origin) lives in
@@ -17,37 +17,11 @@ use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
 use crate::seed::Seed;
 use calib_targets_core::AxisEstimate;
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
 use projective_grid::square::grow as pg_grow;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-pub use pg_grow::{GrowParams, GrowResult as PgGrowResult};
-
-/// Outcome of a grow pass.
-///
-/// Mirrors [`pg_grow::GrowResult`] but keeps the chessboard-local
-/// field names overlays and boosters already depend on.
-pub struct GrowResult {
-    pub labelled: HashMap<(i32, i32), usize>,
-    pub by_corner: HashMap<usize, (i32, i32)>,
-    pub ambiguous: HashSet<(i32, i32)>,
-    pub holes: HashSet<(i32, i32)>,
-    pub grid_u: Vector2<f32>,
-    pub grid_v: Vector2<f32>,
-}
-
-impl From<pg_grow::GrowResult> for GrowResult {
-    fn from(r: pg_grow::GrowResult) -> Self {
-        Self {
-            labelled: r.labelled,
-            by_corner: r.by_corner,
-            ambiguous: r.ambiguous,
-            holes: r.holes,
-            grid_u: r.grid_u,
-            grid_v: r.grid_v,
-        }
-    }
-}
+pub use pg_grow::{GrowParams, GrowResult};
 
 /// Grow from the seed. Returns accepted `(i, j) → index` labels.
 ///
@@ -91,7 +65,7 @@ pub fn grow_from_seed(
         };
     }
 
-    pg_result.into()
+    pg_result
 }
 
 /// Chessboard's plug-in for [`pg_grow::GrowValidator`].
@@ -108,6 +82,14 @@ pub(crate) struct ChessboardGrowValidator<'a> {
     pub(crate) attach_tol_rad: f32,
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
+    /// Parity shift applied by the post-BFS rebase. `0` during BFS
+    /// (where coords are pre-rebase), and `(parity_shift_i +
+    /// parity_shift_j) % 2` from [`GrowResult`] for the
+    /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters` /
+    /// `final_geometry_check` stages (where coords are post-rebase).
+    /// When `1`, `required_label_at(i, j)` returns the FLIPPED
+    /// chessboard convention to match the BFS-assigned labels.
+    pub(crate) parity_shift: i32,
 }
 
 impl<'a> ChessboardGrowValidator<'a> {
@@ -131,7 +113,15 @@ impl<'a> ChessboardGrowValidator<'a> {
             attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
             edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
             step_tol: params.step_tol,
+            parity_shift: 0,
         }
+    }
+
+    /// Set the parity shift introduced by the post-BFS rebase. See
+    /// `parity_shift` field comment for the full discussion.
+    pub(crate) fn with_parity_shift(mut self, parity_shift: i32) -> Self {
+        self.parity_shift = parity_shift.rem_euclid(2);
+        self
     }
 }
 
@@ -144,7 +134,14 @@ impl<'a> pg_grow::GrowValidator for ChessboardGrowValidator<'a> {
     }
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
-        Some(label_to_u8(required_label_at(i, j)))
+        // `required_label_at` derives the chessboard parity from
+        // `(i + j) % 2` under the seed convention seed.A=Canonical at
+        // (0, 0). When the post-BFS rebase has odd Manhattan parity
+        // (`(min_i + min_j) % 2 == 1`), the post-rebase cell coords
+        // have the chessboard parity FLIPPED relative to the
+        // pre-rebase BFS. Adding `parity_shift` to one coord
+        // recovers the pre-rebase parity at the post-rebase cell.
+        Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
 
     fn label_of(&self, idx: usize) -> Option<u8> {
@@ -232,7 +229,7 @@ fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f3
 /// returns the cheaper of canonical/swapped along with its `max_d`,
 /// or `None` only when both axes are at the no-info sentinel. Used by
 /// [`ChessboardRescueValidator`] to infer parity for `NoCluster` /
-/// `Strong` corners at Stage 6.5.
+/// `Strong` corners in the `rescue_no_cluster` stage.
 #[inline]
 fn infer_label_with_max_d(
     axes: &[AxisEstimate; 2],
@@ -268,6 +265,8 @@ pub(crate) struct ChessboardRescueValidator<'a> {
     pub(crate) rescue_tol_rad: f32,
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
+    /// Same parity-shift semantics as [`ChessboardGrowValidator::parity_shift`].
+    pub(crate) parity_shift: i32,
 }
 
 impl<'a> ChessboardRescueValidator<'a> {
@@ -286,7 +285,15 @@ impl<'a> ChessboardRescueValidator<'a> {
             rescue_tol_rad: params.rescue_axis_tol_deg.to_radians(),
             edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
             step_tol: params.step_tol,
+            parity_shift: 0,
         }
+    }
+
+    /// Set the parity shift introduced by the post-BFS rebase. See
+    /// [`ChessboardGrowValidator::with_parity_shift`].
+    pub(crate) fn with_parity_shift(mut self, parity_shift: i32) -> Self {
+        self.parity_shift = parity_shift.rem_euclid(2);
+        self
     }
 }
 
@@ -320,7 +327,14 @@ impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
     }
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
-        Some(label_to_u8(required_label_at(i, j)))
+        // `required_label_at` derives the chessboard parity from
+        // `(i + j) % 2` under the seed convention seed.A=Canonical at
+        // (0, 0). When the post-BFS rebase has odd Manhattan parity
+        // (`(min_i + min_j) % 2 == 1`), the post-rebase cell coords
+        // have the chessboard parity FLIPPED relative to the
+        // pre-rebase BFS. Adding `parity_shift` to one coord
+        // recovers the pre-rebase parity at the post-rebase cell.
+        Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
 
     fn label_of(&self, idx: usize) -> Option<u8> {
@@ -391,8 +405,9 @@ impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
 mod tests {
     use super::*;
     use crate::cluster::cluster_axes;
+    use crate::corner::ChessCorner;
     use crate::seed::find_seed;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -409,9 +424,8 @@ mod tests {
         } else {
             (0.0, std::f32::consts::FRAC_PI_2)
         };
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: a0,
@@ -426,7 +440,7 @@ mod tests {
             fit_rms: 1.0,
             strength: 1.0,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
     }

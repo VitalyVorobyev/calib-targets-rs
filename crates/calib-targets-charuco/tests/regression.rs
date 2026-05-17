@@ -1,12 +1,11 @@
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_chessboard::{
     Detector as ChessboardDetector, DetectorParams as ChessboardParams,
 };
-use calib_targets_core::{
-    estimate_homography_rect_to_img, Corner as TargetCorner, GrayImageView, TargetKind,
-};
-use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
+use calib_targets_core::{estimate_homography_rect_to_img, GrayImageView, TargetKind};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
 use std::collections::HashSet;
@@ -21,17 +20,16 @@ fn load_gray(path: &Path) -> image::GrayImage {
 }
 
 fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
-    let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    chess_cfg.threshold_value = 0.2;
-    chess_cfg.nms_radius = 2;
-    find_chess_corners_image(img, &chess_cfg).expect("ChESS detection")
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.2))
+        .with_chess(|c| c.nms_radius = 2);
+    let mut detector = ChessDetector::new(chess_cfg).expect("build ChESS detector");
+    detector.detect(img).expect("ChESS detection")
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             calib_targets_core::AxisEstimate {
                 angle: c.axes[0].angle,
@@ -274,7 +272,6 @@ struct PublicCase {
 /// Shared helper: run the detector on one public testdata image and
 /// assert basic contracts (kind, minimum markers/corners, unique ids,
 /// zero self-consistency wrong-id).
-#[allow(clippy::too_many_arguments)]
 fn run_public_charuco(case: &PublicCase) {
     let img_name = case.img_name;
     let dict_name = case.dict_name;

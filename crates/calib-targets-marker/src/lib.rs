@@ -9,7 +9,8 @@
 //! ## Quickstart
 //!
 //! ```
-//! use calib_targets_core::{Corner, GrayImageView};
+//! use calib_targets_chessboard::ChessCorner;
+//! use calib_targets_core::GrayImageView;
 //! use calib_targets_marker::{
 //!     CellCoords, CirclePolarity, MarkerBoardDetector, MarkerBoardSpec, MarkerBoardParams,
 //!     MarkerCircleSpec,
@@ -44,7 +45,7 @@
 //!     height: 32,
 //!     data: &pixels,
 //! };
-//! let corners: Vec<Corner> = Vec::new();
+//! let corners: Vec<ChessCorner> = Vec::new();
 //!
 //! let _ = detector.detect_from_image_and_corners(&view, &corners);
 //! ```

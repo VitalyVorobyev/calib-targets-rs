@@ -29,3 +29,6 @@ tracing-subscriber = { workspace = true, optional = true, features = ["env-filte
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[lints]
+workspace = true

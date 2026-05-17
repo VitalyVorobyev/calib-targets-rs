@@ -69,8 +69,12 @@ def main() -> int:
     #    the config that labels the most corners.
     configs = [
         ct.ChessboardParams(),
-        ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.15)),
-        ct.ChessboardParams(chess=ct.ChessConfig(threshold_value=0.08)),
+        ct.ChessboardParams(
+            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
+        ),
+        ct.ChessboardParams(
+            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
+        ),
     ]
     result = ct.detect_chessboard_best(image, configs)
     if result is None:

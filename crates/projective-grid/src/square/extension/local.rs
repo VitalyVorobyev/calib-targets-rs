@@ -1,4 +1,4 @@
-//! Local-homography Stage 6 extension.
+//! Local-homography boundary extension.
 //!
 //! [`extend_via_local_homography`] fits a per-candidate `H` from the K
 //! nearest labelled corners (by grid Manhattan distance) and applies the

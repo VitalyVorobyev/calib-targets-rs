@@ -111,6 +111,25 @@ def detect_chessboard_debug(
     )
 
 
+def trace_chessboard_topological(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: ChessboardParams | None = None,
+) -> dict[str, Any]:
+    """Return the Rust-backed topological trace used by blog/debug overlays."""
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    if params is not None:
+        _check_type("params", params, ChessboardParams)
+
+    return _core.trace_chessboard_topological(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=chessboard_params_to_payload(params),
+    )
+
+
 def detect_charuco(
     image: npt.NDArray[np.uint8],
     *,
@@ -237,6 +256,8 @@ def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:
 __all__ = [
     "detect_chessboard",
     "detect_chessboard_all",
+    "detect_chessboard_debug",
+    "trace_chessboard_topological",
     "detect_charuco",
     "detect_marker_board",
     "detect_puzzleboard",

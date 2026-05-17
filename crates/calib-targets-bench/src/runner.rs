@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::DetectorParams;
-use calib_targets::detect::detect_chessboard;
+use calib_targets::chessboard::{Detector, DetectorParams};
+use calib_targets::detect::{detect_corners, DetectorConfig};
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 
 use crate::baseline::{BaselineCorner, BaselineImage};
@@ -35,10 +35,15 @@ pub struct RunOutcome {
 
 /// Decode an image from disk, apply the entry's stitched/upscale spec,
 /// and return one [`RunOutcome`] per sub-snap.
+///
+/// `chess_cfg` controls the low-level ChESS corner detector (e.g.
+/// `orientation_method`). Pass `&default_chess_config()` for the standard
+/// workspace defaults.
 pub fn run_entry(
     image_path: &Path,
     entry: &DatasetEntry,
     params: &DetectorParams,
+    chess_cfg: &DetectorConfig,
 ) -> Result<Vec<RunOutcome>, std::io::Error> {
     let img = ImageReader::open(image_path)
         .map_err(|e| std::io::Error::other(format!("open {}: {e}", image_path.display())))?
@@ -63,7 +68,8 @@ pub fn run_entry(
         };
 
         let started = Instant::now();
-        let detection = detect_chessboard(&upscaled, params);
+        let corners = detect_corners(&upscaled, chess_cfg);
+        let detection = Detector::new(params.clone()).detect(&corners);
         let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
 
         let baseline_image = detection.as_ref().map(|d| {

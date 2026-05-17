@@ -1,8 +1,9 @@
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_core::{Corner as TargetCorner, GrayImageView};
+use calib_targets_chessboard::ChessCorner as TargetCorner;
+use calib_targets_core::GrayImageView;
 use calib_targets_marker::{MarkerBoardDetectConfig, MarkerBoardDetectReport};
-use chess_corners::{find_chess_corners_image, ChessConfig, CornerDescriptor};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
 
@@ -45,7 +46,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(&cfg.image_path)?.decode()?.to_luma8();
 
     let chess_cfg = make_chess_config();
-    let raw_corners = find_chess_corners_image(&img, &chess_cfg)?;
+    let mut chess_detector = ChessDetector::new(chess_cfg)?;
+    let raw_corners = chess_detector.detect(&img)?;
     info!("raw ChESS corners: {}", raw_corners.len());
 
     let corners = adapt_corners(&raw_corners);
@@ -77,19 +79,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn make_chess_config() -> ChessConfig {
-    let mut chess_cfg = ChessConfig::single_scale();
-    chess_cfg.threshold_mode = chess_corners::ThresholdMode::Relative;
-    chess_cfg.threshold_value = 0.2;
-    chess_cfg.nms_radius = 2;
-    chess_cfg
+fn make_chess_config() -> DetectorConfig {
+    DetectorConfig::chess()
+        .with_threshold(Threshold::Relative(0.2))
+        .with_chess(|c| c.nms_radius = 2)
 }
 
 fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
     raw.iter()
         .map(|c| TargetCorner {
             position: Point2::new(c.x, c.y),
-            orientation_cluster: None,
             axes: [
                 calib_targets_core::AxisEstimate {
                     angle: c.axes[0].angle,

@@ -1,14 +1,14 @@
 use crate::{charuco, chessboard, core, marker, puzzleboard};
-use chess_corners::find_chess_corners_image;
+use chess_corners::Detector as ChessDetector;
 use nalgebra::Point2;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
 pub use core::{
-    CenterOfMassConfig, ChessConfig, DescriptorMode, DetectorMode, ForstnerConfig,
-    RadonDetectorParams, RefinementMethod, RefinerConfig, SaddlePointConfig, ThresholdMode,
-    UpscaleConfig, UpscaleMode,
+    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy,
+    DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, RadonConfig,
+    RadonDetectorParams, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
 };
 
 /// Errors produced by the high-level facade helpers.
@@ -36,15 +36,24 @@ pub enum DetectError {
 
 /// Reasonable default settings for the `chess-corners` ChESS detector.
 ///
-/// This is tuned for the repo examples and is expected to be overridden by callers
-/// for difficult real-world images.
-pub fn default_chess_config() -> ChessConfig {
-    ChessConfig {
-        threshold_mode: ThresholdMode::Relative,
-        threshold_value: 0.2,
-        nms_radius: 2,
-        ..ChessConfig::single_scale()
-    }
+/// Built on top of [`DetectorConfig::chess`] but overrides the acceptance
+/// threshold to [`Threshold::Absolute(15.0)`][Threshold::Absolute]. Upstream's
+/// paper-faithful default is `Threshold::Absolute(0.0)`, which is correct in
+/// principle (any strictly positive ChESS response is a corner candidate) but
+/// produces hundreds of weak responses on real-world images. Both the
+/// seed-and-grow chessboard detector and the topological grid pipeline are
+/// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
+/// threshold `0.0` produces zero labelled corners while `15.0` recovers the
+/// full 30-corner component; on `testdata/small0.png` the labelled count
+/// rises from 78 to 129; and on the `02-topo-grid/` synthetic suite the
+/// topological pipeline only clears every recall gate at `≥ 15.0`. The
+/// cutoff was chosen by sweeping the public testdata regression set; see
+/// `crates/calib-targets/examples/threshold_sweep.rs`.
+///
+/// Callers wanting the raw upstream behaviour can construct
+/// [`DetectorConfig::chess`] directly.
+pub fn default_chess_config() -> DetectorConfig {
+    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
 }
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
@@ -56,24 +65,52 @@ pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
     }
 }
 
-/// Detect ChESS corners and adapt them into `calib-targets-core::Corner`.
+/// Apply a same-size Gaussian blur with the given standard deviation.
+///
+/// Convenience helper for callers who want to denoise an image before
+/// running corner detection. The library used to bury an optional blur
+/// inside every `detect_*` function; that argument has been removed in
+/// favour of this explicit helper so each detection entry point takes
+/// only the (already-prepared) image and detector parameters.
+///
+/// Pass `blur_sigma_px = 0.0` (or any non-finite value) to get back a
+/// copy of the input unchanged. Typical values for ChESS corner
+/// detection sit between `0.5` and `2.0`.
+pub fn preprocess(img: &::image::GrayImage, blur_sigma_px: f32) -> ::image::GrayImage {
+    if blur_sigma_px.is_finite() && blur_sigma_px > 0.0 {
+        ::image::imageops::blur(img, blur_sigma_px)
+    } else {
+        img.clone()
+    }
+}
+
+/// Detect ChESS corners and adapt them into [`calib_targets_chessboard::ChessCorner`].
+///
+/// Operates on the image as supplied — callers should run [`preprocess`]
+/// first if they want a Gaussian pre-blur. Corner positions are returned
+/// in the input image frame.
 #[cfg_attr(
     feature = "tracing",
     instrument(level = "info", skip(img, cfg), fields(width = img.width(), height = img.height()))
 )]
-pub fn detect_corners(img: &::image::GrayImage, cfg: &ChessConfig) -> Vec<core::Corner> {
-    let cfg = to_chess_corners_config(cfg);
-    find_chess_corners_image(img, &cfg)
+pub fn detect_corners(
+    img: &::image::GrayImage,
+    cfg: &DetectorConfig,
+) -> Vec<chessboard::ChessCorner> {
+    let Ok(mut detector) = ChessDetector::new(*cfg) else {
+        return Vec::new();
+    };
+    detector
+        .detect(img)
         .unwrap_or_default()
         .iter()
         .map(adapt_chess_corner)
         .collect()
 }
 
-/// Convenience overload using `default_chess_config()`.
-pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
-    let cfg = default_chess_config();
-    detect_corners(img, &cfg)
+/// Convenience overload using [`default_chess_config`].
+pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::ChessCorner> {
+    detect_corners(img, &default_chess_config())
 }
 
 /// Run the chessboard detector end-to-end: ChESS corners -> chessboard grid.
@@ -81,7 +118,7 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<core::Corner> {
 /// Corner detection uses [`default_chess_config`]; the chessboard detector's
 /// own parameters are [`chessboard::DetectorParams`]. Callers needing
 /// custom ChESS settings should call [`detect_corners`] explicitly and
-/// invoke [`chessboard::Detector`] themselves.
+/// invoke [`detect_chessboard_with_config`].
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -94,7 +131,29 @@ pub fn detect_chessboard(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> Option<chessboard::Detection> {
-    let corners = detect_corners(img, &default_chess_config());
+    detect_chessboard_with_config(img, &default_chess_config(), params)
+}
+
+/// Run the chessboard detector end-to-end with explicit ChESS settings.
+///
+/// This keeps the common image → ChESS corners → labelled grid path in one
+/// call while still letting callers tune the corner threshold, orientation
+/// method, and optional pre-blur. Corner positions remain in the input image
+/// frame.
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+) -> Option<chessboard::Detection> {
+    let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect(&corners)
 }
@@ -113,7 +172,24 @@ pub fn detect_chessboard_all(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> Vec<chessboard::Detection> {
-    let corners = detect_corners(img, &default_chess_config());
+    detect_chessboard_all_with_config(img, &default_chess_config(), params)
+}
+
+/// Multi-component variant of [`detect_chessboard_with_config`].
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_all_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+) -> Vec<chessboard::Detection> {
+    let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect_all(&corners)
 }
@@ -134,7 +210,24 @@ pub fn detect_chessboard_debug(
     img: &::image::GrayImage,
     params: &chessboard::DetectorParams,
 ) -> chessboard::DebugFrame {
-    let corners = detect_corners(img, &default_chess_config());
+    detect_chessboard_debug_with_config(img, &default_chess_config(), params)
+}
+
+/// Debug variant of [`detect_chessboard_with_config`].
+#[cfg_attr(
+    feature = "tracing",
+    instrument(
+        level = "info",
+        skip(img, chess_cfg, params),
+        fields(width = img.width(), height = img.height())
+    )
+)]
+pub fn detect_chessboard_debug_with_config(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    params: &chessboard::DetectorParams,
+) -> chessboard::DebugFrame {
+    let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect_debug(&corners)
 }
@@ -157,7 +250,7 @@ pub fn detect_charuco(
     img: &::image::GrayImage,
     params: &charuco::CharucoParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     let detector = charuco::CharucoDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
@@ -181,7 +274,7 @@ pub fn detect_puzzleboard(
     img: &::image::GrayImage,
     params: &puzzleboard::PuzzleBoardParams,
 ) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
@@ -211,7 +304,7 @@ pub fn detect_marker_board(
     img: &::image::GrayImage,
     params: &marker::MarkerBoardParams,
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     let detector = marker::MarkerBoardDetector::new(params.clone());
     detector.detect_from_image_and_corners(&gray_view(img), &corners)
 }
@@ -225,7 +318,7 @@ pub fn detect_chessboard_best(
     img: &::image::GrayImage,
     configs: &[chessboard::DetectorParams],
 ) -> Option<chessboard::Detection> {
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     configs
         .iter()
         .filter_map(|params| chessboard::Detector::new(params.clone()).detect(&corners))
@@ -241,7 +334,7 @@ pub fn detect_charuco_best(
     let mut best: Option<charuco::CharucoDetectionResult> = None;
     let mut last_err = None;
 
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     for params in configs {
         let detector = match charuco::CharucoDetector::new(params.clone()) {
             Ok(d) => d,
@@ -310,7 +403,7 @@ pub fn detect_marker_board_best(
     img: &::image::GrayImage,
     configs: &[marker::MarkerBoardParams],
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners(img, &default_chess_config());
+    let corners = detect_corners_default(img);
     configs
         .iter()
         .filter_map(|params| {
@@ -402,10 +495,9 @@ pub fn detect_marker_board_from_gray_u8(
     Ok(detect_marker_board(&img, params))
 }
 
-fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> core::Corner {
-    core::Corner {
+fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> chessboard::ChessCorner {
+    chessboard::ChessCorner {
         position: Point2::new(c.x, c.y),
-        orientation_cluster: None,
         axes: [
             core::AxisEstimate {
                 angle: c.axes[0].angle,
@@ -422,181 +514,41 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> core::Corner {
     }
 }
 
-/// Convert workspace [`ChessConfig`] to the upstream `chess_corners::ChessConfig`.
-///
-/// Since all non-divergent types are now re-exported from `chess-corners`,
-/// this is a thin delegation to `ChessConfig::to_chess_corners_config`.
-fn to_chess_corners_config(cfg: &ChessConfig) -> chess_corners::ChessConfig {
-    cfg.to_chess_corners_config()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn assert_refiner_eq(
-        actual: &chess_corners::RefinerConfig,
-        expected: &chess_corners::RefinerConfig,
-    ) {
-        assert_eq!(actual.kind, expected.kind);
-        assert_eq!(actual.center_of_mass, expected.center_of_mass);
-        assert_eq!(actual.forstner, expected.forstner);
-        assert_eq!(actual.saddle_point, expected.saddle_point);
-    }
-
-    fn assert_chess_config_eq(
-        actual: &chess_corners::ChessConfig,
-        expected: &chess_corners::ChessConfig,
-    ) {
-        assert_eq!(actual.detector_mode, expected.detector_mode);
-        assert_eq!(actual.descriptor_mode, expected.descriptor_mode);
-        assert_eq!(actual.threshold_mode, expected.threshold_mode);
-        assert_eq!(actual.threshold_value, expected.threshold_value);
-        assert_eq!(actual.nms_radius, expected.nms_radius);
-        assert_eq!(actual.min_cluster_size, expected.min_cluster_size);
-        assert_refiner_eq(&actual.refiner, &expected.refiner);
-        assert_eq!(actual.pyramid_levels, expected.pyramid_levels);
-        assert_eq!(actual.pyramid_min_size, expected.pyramid_min_size);
-        assert_eq!(actual.refinement_radius, expected.refinement_radius);
-        assert_eq!(actual.merge_radius, expected.merge_radius);
-        assert_eq!(actual.upscale, expected.upscale);
-    }
-
-    /// Parity check excluding threshold fields — the workspace default
-    /// intentionally sets `Relative 0.2` rather than following upstream's
-    /// `Absolute 0.0` paper-contract default (see `ChessConfig::default`
-    /// in calib-targets-core). Threshold fields are asserted separately.
-    fn assert_chess_config_non_threshold_eq(
-        actual: &chess_corners::ChessConfig,
-        expected: &chess_corners::ChessConfig,
-    ) {
-        assert_eq!(actual.detector_mode, expected.detector_mode);
-        assert_eq!(actual.descriptor_mode, expected.descriptor_mode);
-        assert_eq!(actual.nms_radius, expected.nms_radius);
-        assert_eq!(actual.min_cluster_size, expected.min_cluster_size);
-        assert_refiner_eq(&actual.refiner, &expected.refiner);
-        assert_eq!(actual.pyramid_levels, expected.pyramid_levels);
-        assert_eq!(actual.pyramid_min_size, expected.pyramid_min_size);
-        assert_eq!(actual.refinement_radius, expected.refinement_radius);
-        assert_eq!(actual.merge_radius, expected.merge_radius);
-        assert_eq!(actual.upscale, expected.upscale);
-    }
-
     #[test]
-    fn owned_default_matches_upstream_default() {
-        let actual = to_chess_corners_config(&ChessConfig::default());
-        let expected = chess_corners::ChessConfig::default();
-        assert_chess_config_non_threshold_eq(&actual, &expected);
-        // Workspace default threshold policy: Relative 0.2.
-        assert_eq!(
-            actual.threshold_mode,
-            chess_corners::ThresholdMode::Relative
-        );
-        assert_eq!(actual.threshold_value, 0.2);
-    }
+    fn default_chess_config_overrides_threshold() {
+        // Workspace default deliberately overrides the upstream
+        // paper-contract (`Threshold::Absolute(0.0)`) with a small
+        // noise-floor cutoff tuned on the public testdata regression sweep
+        // — see the rustdoc on `default_chess_config`.
+        let cfg = default_chess_config();
+        assert_eq!(cfg.threshold, Threshold::Absolute(15.0));
 
-    #[test]
-    fn owned_multiscale_matches_upstream_multiscale() {
-        let actual = to_chess_corners_config(&ChessConfig::multiscale());
-        let expected = chess_corners::ChessConfig::multiscale();
-        assert_chess_config_non_threshold_eq(&actual, &expected);
-        assert_eq!(
-            actual.threshold_mode,
-            chess_corners::ThresholdMode::Relative
-        );
-        assert_eq!(actual.threshold_value, 0.2);
-    }
+        // Strategy must still be the ChESS kernel pipeline (not Radon),
+        // and the multiscale / upscale top-level fields must match the
+        // single-scale ChESS preset.
+        assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
+        let baseline = DetectorConfig::chess();
+        assert_eq!(cfg.multiscale, baseline.multiscale);
+        assert_eq!(cfg.upscale, baseline.upscale);
+        assert_eq!(cfg.merge_radius, baseline.merge_radius);
+        assert_eq!(cfg.orientation_method, baseline.orientation_method);
 
-    #[test]
-    fn non_default_conversion_preserves_all_fields() {
-        let forstner = ForstnerConfig {
-            radius: 3,
-            min_trace: 9.0,
-            min_det: 2.0,
-            max_condition_number: 123.0,
-            max_offset: 2.5,
+        // The nested ChESS strategy fields stay at upstream defaults so
+        // the override is purely the acceptance threshold.
+        let DetectionStrategy::Chess(chess) = cfg.strategy else {
+            unreachable!("matched above");
         };
-        let mut refiner = RefinerConfig::default();
-        refiner.kind = RefinementMethod::Forstner;
-        refiner.forstner = forstner;
-
-        let cfg = ChessConfig {
-            detector_mode: DetectorMode::Broad,
-            descriptor_mode: DescriptorMode::Canonical,
-            threshold_mode: ThresholdMode::Absolute,
-            threshold_value: 12.5,
-            nms_radius: 5,
-            min_cluster_size: 7,
-            refiner,
-            pyramid_levels: 4,
-            pyramid_min_size: 96,
-            refinement_radius: 6,
-            merge_radius: 4.5,
-            upscale: UpscaleConfig::fixed(3),
-            radon_detector: RadonDetectorParams::default(),
+        let DetectionStrategy::Chess(chess_baseline) = baseline.strategy else {
+            unreachable!("baseline preset is ChESS");
         };
-
-        let converted = to_chess_corners_config(&cfg);
-        let mut expected = chess_corners::ChessConfig::default();
-        expected.detector_mode = chess_corners::DetectorMode::Broad;
-        expected.descriptor_mode = chess_corners::DescriptorMode::Canonical;
-        expected.threshold_mode = chess_corners::ThresholdMode::Absolute;
-        expected.threshold_value = 12.5;
-        expected.nms_radius = 5;
-        expected.min_cluster_size = 7;
-        expected.refiner = chess_corners::RefinerConfig::build(
-            chess_corners::RefinementMethod::Forstner,
-            chess_corners::CenterOfMassConfig::default(),
-            forstner,
-            chess_corners::SaddlePointConfig::default(),
-            chess_corners::RadonPeakConfig::default(),
-        );
-        expected.pyramid_levels = 4;
-        expected.pyramid_min_size = 96;
-        expected.refinement_radius = 6;
-        expected.merge_radius = 4.5;
-        expected.upscale = chess_corners::UpscaleConfig::fixed(3);
-
-        assert_chess_config_eq(&converted, &expected);
-    }
-
-    #[test]
-    fn all_refiner_variants_convert() {
-        // Since RefinerConfig is a direct re-export from chess-corners,
-        // to_chess_corners_config must pass it through unchanged.
-        let mut com = RefinerConfig::default();
-        com.kind = RefinementMethod::CenterOfMass;
-        com.center_of_mass = CenterOfMassConfig { radius: 4 };
-
-        let mut forstner = RefinerConfig::default();
-        forstner.kind = RefinementMethod::Forstner;
-        forstner.forstner = ForstnerConfig {
-            radius: 3,
-            min_trace: 11.0,
-            min_det: 0.75,
-            max_condition_number: 512.0,
-            max_offset: 1.75,
-        };
-
-        let mut saddle = RefinerConfig::default();
-        saddle.kind = RefinementMethod::SaddlePoint;
-        saddle.saddle_point = SaddlePointConfig {
-            radius: 5,
-            det_margin: 0.25,
-            max_offset: 1.25,
-            min_abs_det: 0.125,
-        };
-
-        let refiners = [com, forstner, saddle];
-
-        for refiner in refiners.iter() {
-            let cfg = ChessConfig {
-                refiner: refiner.clone(),
-                ..ChessConfig::default()
-            };
-            let converted = to_chess_corners_config(&cfg);
-            // RefinerConfig is re-exported from chess-corners — the conversion must be identity.
-            assert_refiner_eq(&converted.refiner, refiner);
-        }
+        assert_eq!(chess.ring, chess_baseline.ring);
+        assert_eq!(chess.descriptor_ring, chess_baseline.descriptor_ring);
+        assert_eq!(chess.nms_radius, chess_baseline.nms_radius);
+        assert_eq!(chess.min_cluster_size, chess_baseline.min_cluster_size);
+        assert_eq!(chess.refiner, chess_baseline.refiner);
     }
 }

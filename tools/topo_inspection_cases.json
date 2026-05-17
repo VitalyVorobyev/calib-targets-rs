@@ -1,0 +1,47 @@
+{
+  "schema": 1,
+  "description": "Local visual-inspection fixtures for topological chessboard-grid debugging.",
+  "defaults": {
+    "chess_threshold": 100.0,
+    "chess_threshold_kind": "absolute",
+    "orientation_method": "ring_fit",
+    "pre_blur_sigma": 0.0,
+    "upscale": 1.0,
+    "final_algorithm": "topological",
+    "axis_align_tol_deg": 15.0,
+    "max_axis_sigma_deg": 34.37746770784939,
+    "edge_ratio_max": 10.0,
+    "min_quads_per_component": 1,
+    "cluster_axis_tol_deg": 16.0,
+    "quad_edge_min_rel": 0.0,
+    "quad_edge_max_rel": 1.8
+  },
+  "cases": [
+    {
+      "name": "GeminiChess1",
+      "path": "testdata/02-topo-grid/GeminiChess1.png",
+      "orientation_method": "disk_fit",
+      "note": "Severe distortion; bottom-left true positive corner has bad ring-fit axes, disk-fit is visually correct."
+    },
+    {
+      "name": "GeminiChess2",
+      "path": "testdata/02-topo-grid/GeminiChess2.png",
+      "note": "Occlusion and strong glass-ring clutter; threshold 100 removes most false ChESS responses."
+    },
+    {
+      "name": "GeminiChess3",
+      "path": "testdata/02-topo-grid/GeminiChess3.png",
+      "note": "Additional Gemini chessboard case for the same topological-stage inspection set."
+    },
+    {
+      "name": "gptchess1",
+      "path": "testdata/02-topo-grid/gptchess1.png",
+      "note": "Synthetic perspective case from the regression set; included for cross-checking the same topological stages."
+    },
+    {
+      "name": "puzzleboard_example2",
+      "path": "testdata/puzzleboard_reference/example2.png",
+      "note": "Very strong optical warp; corner extraction is clean, downstream topology/geometry is the inspection target."
+    }
+  ]
+}

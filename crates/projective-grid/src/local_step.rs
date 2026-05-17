@@ -31,7 +31,7 @@
 //! See `docs/grid_plan.md` Phase 2 and the plan file stored under
 //! `.claude/plans/we-need-to-plan-breezy-pixel.md` for the full context.
 
-use crate::topological::AxisHint;
+use crate::topological::AxisEstimate;
 use crate::Float;
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, RealField, Vector2};
@@ -74,13 +74,13 @@ impl<F: Float> Default for LocalStep<F> {
 /// angle to `[0, π)` before sector classification, so perspective-warped
 /// corners whose axes deviate from 90° are handled naturally.
 ///
-/// Use [`AxisHint::from_angle`] when you do not track per-axis uncertainty.
+/// Use [`AxisEstimate::from_angle`] when you do not track per-axis uncertainty.
 #[derive(Clone, Copy, Debug)]
 pub struct LocalStepPointData<F: Float = f32> {
     pub position: Point2<F>,
     /// Two grid-axis hints. The `angle` field is used for sector binning;
     /// `sigma` is carried through but not inspected.
-    pub axes: [AxisHint; 2],
+    pub axes: [AxisEstimate; 2],
 }
 
 /// Tuning knobs for [`estimate_local_steps`].
@@ -352,8 +352,8 @@ mod tests {
         LocalStepPointData {
             position: Point2::new(x, y),
             axes: [
-                AxisHint::from_angle(axis_u),
-                AxisHint::from_angle(axis_u + std::f32::consts::FRAC_PI_2),
+                AxisEstimate::from_angle(axis_u),
+                AxisEstimate::from_angle(axis_u + std::f32::consts::FRAC_PI_2),
             ],
         }
     }
@@ -459,8 +459,8 @@ mod tests {
             pts.push(LocalStepPointData {
                 position: Point2::new(c.x + 3.0, c.y + 3.0),
                 axes: [
-                    AxisHint::from_angle(marker_angle),
-                    AxisHint::from_angle(marker_angle + std::f32::consts::FRAC_PI_2),
+                    AxisEstimate::from_angle(marker_angle),
+                    AxisEstimate::from_angle(marker_angle + std::f32::consts::FRAC_PI_2),
                 ],
             });
         }

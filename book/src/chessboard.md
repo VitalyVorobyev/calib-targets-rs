@@ -35,8 +35,8 @@ the algorithm refuses to break.
 ## 1. Corner axes contract
 
 The detector reads only one orientation signal per corner:
-`Corner.axes: [AxisEstimate; 2]`. Convention (enforced workspace-wide and
-documented in `CLAUDE.md`):
+`ChessCorner.axes: [AxisEstimate; 2]`. Convention (enforced workspace-wide
+and documented in `CLAUDE.md`):
 
 - `axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`.
 - `axes[1] − axes[0] ≈ π/2` — the two axes are orthogonal grid directions
@@ -93,24 +93,39 @@ capped at `max_validation_iters`.
 
 ## 3. Pipeline
 
+The detector runs as a sequence of named stages, orchestrated by
+`pipeline::run_pipeline` with one module per stage group under
+`crates/calib-targets-chessboard/src/pipeline/`. The canonical
+enumeration (also in the crate-level rustdoc):
+
 ```text
-Corner[]
- → 1. Pre-filter: strength + fit-quality + axes-validity
- → 2. Global axes Θ₀, Θ₁  (axes-histogram + double-angle 2-means)
- → 3. Per-corner cluster label (canonical / swapped)
- → 4. Global cell size s   (specialized cross-cluster NN)
- → 5. Seed: 2×2 quad satisfying invariants 1-6 on all 4 edges
- → 6. Grow: BFS attaches one corner per step, enforcing invariants 1-6, 9
- → 7. Validate: invariants 7, 8 across the labelled set; attribution +
-       blacklist; loop back to Stage 5 if blacklist grew
- → 8. Recall boosters: line extrapolation, gap fill, component merge,
-       weak-cluster rescue (each preserves the precision contract)
- → 9. Output: Detection (single component) or None
+ChessCorner[]
+ →  1. prefilter             strength + fit-quality + axes-validity
+ →  2. cluster_axes          global axes Θ₀, Θ₁ + per-corner label
+ →  3. estimate_cell_size    global cell size s (sanity prior)
+ →  4. find_seed             2×2 quad; refine s from the seed edges
+ →  5. grow                  BFS attachment with the full invariant stack
+ →  6. extend_boundary       global / local-H extension outward + into holes
+ →  7. fix_partial_slot_flip re-check axis-slot parity after extension
+ →  8. rescue_no_cluster     re-admit Strong / NoCluster corners via local-H
+ →  9. refit_cluster_centers re-estimate Θ₀, Θ₁; re-extend on a large shift
+ → 10. validate              line + local-H residual checks; blacklist + loop
+ → 11. apply_boosters        gap fill, line extrapolation, component merge
+ → 12. final_geometry_check  mandatory precision gate; can only drop corners
+ → Output: Detection (single component) or None
 ```
 
-Stages 5-7 are the **precision core**: any corner labelled at the end of
-Stage 7 has passed every invariant. Stage 8 only adds corners; it never
-relaxes invariants.
+Stages 4–10 are the **precision core**: any corner labelled at the end
+of validation has passed every invariant. The boosters (Stage 11) only
+add corners and the final geometry check (Stage 12) only drops them —
+neither relaxes an invariant.
+
+> The detailed subsections below predate the finer-grained
+> enumeration and group several named stages together — "Stage 6
+> (Growth)" here covers `grow`; "Stage 7 (Validate)" covers
+> `validate`; "Stage 8 (Recall boosters)" covers `extend_boundary`
+> through `apply_boosters`. The numbered table in the crate-level
+> rustdoc is the authoritative stage list.
 
 ### Stage 1 — Pre-filter
 
@@ -276,15 +291,15 @@ stage from the `DebugFrame` (see §7) and consult this table.
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
-| `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Common on very-bad-light frames (see `docs/120issues.txt` for a canonical example). |
+| `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Most common on very-bad-light frames. |
 | `frame.cell_size.is_none()` | Stage 5 (seed) | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | No 4-corner quad passed the consistency check. |
 | `frame.detection` has very few corners | Stage 6 (grow) | `attach_search_rel`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg` | Seed succeeded but growth couldn't extend. Common on heavily distorted views. |
 | Many `LabeledThenBlacklisted` corners | Stage 7 (validate) | `line_tol_rel`, `local_h_tol_rel` | Invariants found outliers; check the blacklist reasons. |
 | Wrong `(i, j)` labels emitted | **never** | — | If you ever see this, file a bug. The precision contract has been violated. |
 
-The one unrecovered frame in our regression dataset is a very-bad-light
-capture whose Stage-2 clustering never converges. It is flagged as
-excluded in `docs/120issues.txt`.
+The rare unrecovered frame on our internal regression set is
+typically a very-bad-light capture whose Stage-2 clustering never
+converges.
 
 ---
 
@@ -359,10 +374,9 @@ handful of integers.
 ## 8. Quickstart
 
 ```rust,ignore
-use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 
-fn detect(corners: &[Corner]) {
+fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
     let det = Detector::new(params);
     if let Some(d) = det.detect(corners) {
@@ -378,7 +392,7 @@ fn detect(corners: &[Corner]) {
     }
 }
 
-fn detect_multi(corners: &[Corner]) {
+fn detect_multi(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!(
@@ -390,14 +404,21 @@ fn detect_multi(corners: &[Corner]) {
 }
 ```
 
-The full driver — including ChESS corner detection, JSON debug-frame
-output, and a 120-snap dataset sweep — lives in
+For a minimal, dependency-free onboarding program — a synthetic
+corner cloud detected and printed end to end — see
+`crates/calib-targets-chessboard/examples/detect_chessboard.rs`:
+
+```bash
+cargo run -p calib-targets-chessboard --example detect_chessboard
+```
+
+The full dev driver — including ChESS corner detection, JSON
+debug-frame output, and an internal-dataset sweep — lives in
 `crates/calib-targets-chessboard/examples/run_dataset.rs`. A single-
 image variant (`examples/debug_single.rs`) + the driver script
 `scripts/chessboard_regression_overlays.sh` emit per-image overlays for
-the broader `testdata/` regression set and are wired into a
-`#[test]` harness at
-`crates/calib-targets-chessboard/tests/testdata_regression.rs`.
+the `testdata/` regression set and are wired into a `#[test]` harness
+at `crates/calib-targets-chessboard/tests/testdata_regression.rs`.
 
 ---
 

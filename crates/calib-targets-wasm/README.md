@@ -61,9 +61,13 @@ plain JS object you can `JSON.stringify`.
 import { default_chess_config, default_chessboard_params, detect_chessboard_best } from "@vitavision/calib-targets";
 
 const base = default_chessboard_params();
-const configs = [0.20, 0.15, 0.08].map(t => ({
+// chess-corners 0.10 swapped the flat (threshold_mode, threshold_value)
+// pair for a tagged-enum `threshold`. Absolute floors are in raw ChESS
+// response units (R = SR − DR − 16·MR), so bracket the workspace
+// default (~15) with a looser and a tighter floor.
+const configs = [8.0, 15.0, 25.0].map(v => ({
   ...base,
-  chess: { ...base.chess, threshold_value: t },
+  chess: { ...base.chess, threshold: { absolute: v } },
 }));
 const best = detect_chessboard_best(width, height, gray, configs);
 ```
@@ -179,8 +183,10 @@ soft mode the extra decode diagnostics `score_best`, `score_runner_up`,
 
 - Always prefer `detect_*_best` over `detect_*` — the 3-config sweep
   solves most common tuning needs without writing code.
-- For blurry / low-contrast inputs, lower `chess.threshold_value` in one
-  of the sweep configs.
+- For blurry / low-contrast inputs, lower the chess threshold in one
+  of the sweep configs — e.g. `chess.threshold = { absolute: 8.0 }`
+  in raw ChESS response units, or `chess.threshold = { relative: 0.05 }`
+  for a fraction of the per-frame peak response.
 - For small markers (< 12 px across), resize the source canvas up before
   calling `detect_charuco*` — WASM does not upscale for you.
 - Open the [per-detector READMEs][facade] / the [book tuning chapter][tune]

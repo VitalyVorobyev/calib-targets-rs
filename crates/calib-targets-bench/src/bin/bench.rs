@@ -6,11 +6,13 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use calib_targets::chessboard::{CornerStage, DetectorParams, GraphBuildAlgorithm};
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
 use calib_targets_bench::diff::BaselineDiff;
-use calib_targets_bench::overlay::{render_diagnose_overlay, render_overlay_on_gray};
+use calib_targets_bench::overlay::{
+    render_diagnose_overlay, render_diagnose_overlay_with_axes, render_overlay_on_gray,
+};
 use calib_targets_bench::runner::{run_entry, RunOutcome};
 use calib_targets_bench::{workspace_root, SCHEMA_VERSION};
 use image::imageops::FilterType;
@@ -70,15 +72,25 @@ struct DiagnoseArgs {
     /// in distorted regions at the cost of precision).
     #[arg(long)]
     axis_align_tol_deg: Option<f32>,
-    /// Override the topological pipeline's `diagonal_angle_tol_rad` (in degrees).
-    #[arg(long)]
-    diagonal_angle_tol_deg: Option<f32>,
     /// Optional JSON file with a serialised `DetectorParams` to override
     /// chessboard-v2 defaults. Use for parameter sweeps without
     /// recompilation. Unspecified fields fall back to defaults via the
     /// `DetectorParams` `#[serde(default = ...)]` attributes.
     #[arg(long)]
     chessboard_config: Option<String>,
+    /// Draw each non-Raw corner's two axis directions as short line
+    /// segments (`axes[0]` in warm orange, `axes[1]` in cool teal). Useful
+    /// for inspecting RingFit vs DiskFit axis disagreements visually:
+    /// labelled corners' axes should alternate cleanly with cardinal
+    /// neighbours, and stuck-at-Clustered corners reveal whether the
+    /// axis estimate looks off.
+    #[arg(long)]
+    draw_axes: bool,
+    /// Override chess-corners' axis-fit method. Default `ring-fit` matches
+    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
+    /// disk-sector fit added in chess-corners 0.9.
+    #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
+    orientation_method: OrientationMethodArg,
 }
 
 #[derive(Args)]
@@ -97,6 +109,11 @@ struct RunArgs {
     /// subcommand's `--chessboard-config` flag.
     #[arg(long)]
     chessboard_config: Option<String>,
+    /// Override chess-corners' axis-fit method. Default `ring-fit` matches
+    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
+    /// disk-sector fit added in chess-corners 0.9.
+    #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
+    orientation_method: OrientationMethodArg,
 }
 
 #[derive(Args)]
@@ -118,6 +135,11 @@ struct PreviewArgs {
     /// directory.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
     algorithm: AlgorithmArg,
+    /// Override chess-corners' axis-fit method. Default `ring-fit` matches
+    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
+    /// disk-sector fit added in chess-corners 0.9.
+    #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
+    orientation_method: OrientationMethodArg,
 }
 
 #[derive(Args)]
@@ -168,6 +190,30 @@ impl From<AlgorithmArg> for GraphBuildAlgorithm {
         match v {
             AlgorithmArg::Topological => GraphBuildAlgorithm::Topological,
             AlgorithmArg::ChessboardV2 => GraphBuildAlgorithm::ChessboardV2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
+enum OrientationMethodArg {
+    RingFit,
+    DiskFit,
+}
+
+impl OrientationMethodArg {
+    fn slug(self) -> &'static str {
+        match self {
+            OrientationMethodArg::RingFit => "ring_fit",
+            OrientationMethodArg::DiskFit => "disk_fit",
+        }
+    }
+}
+
+impl From<OrientationMethodArg> for OrientationMethod {
+    fn from(v: OrientationMethodArg) -> Self {
+        match v {
+            OrientationMethodArg::RingFit => OrientationMethod::RingFit,
+            OrientationMethodArg::DiskFit => OrientationMethod::DiskFit,
         }
     }
 }
@@ -280,6 +326,8 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
         }
     };
     params.graph_build_algorithm = args.algorithm.into();
+    let mut chess_cfg = default_chess_config();
+    chess_cfg.orientation_method = args.orientation_method.into();
     let mut per_image = Vec::with_capacity(entries.len());
     let mut elapsed: Vec<f64> = Vec::with_capacity(entries.len());
 
@@ -292,7 +340,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
             );
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params) {
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -307,10 +355,15 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     }
 
     let summary = make_summary(&per_image, &elapsed);
+    let config_id = format!(
+        "{}.{}",
+        args.algorithm.slug(),
+        args.orientation_method.slug()
+    );
     let report = RunReport {
         schema: SCHEMA_VERSION,
         detector: "chessboard",
-        config_id: args.algorithm.slug().to_string(),
+        config_id: config_id.clone(),
         summary,
         per_image,
     };
@@ -319,8 +372,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
         eprintln!("print summary: {e}");
     }
 
-    let report_path =
-        bench_results_dir().join(format!("chessboard.{}.json", args.algorithm.slug()));
+    let report_path = bench_results_dir().join(format!("chessboard.{config_id}.json"));
     if let Err(e) = save_report(&report, &report_path) {
         eprintln!("save report: {e}");
     } else {
@@ -359,6 +411,8 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
 
     let out_root = workspace_root().join(&args.out);
     let params = params_with(args.algorithm);
+    let mut chess_cfg = default_chess_config();
+    chess_cfg.orientation_method = args.orientation_method.into();
     let mut wrote = 0usize;
     for entry in &entries {
         let abs = entry.absolute();
@@ -369,7 +423,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
             );
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params) {
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -429,6 +483,7 @@ fn cmd_bless(args: BlessArgs) -> ExitCode {
     let mut public = Baseline::load_or_empty(ImageKind::Public);
     let mut private = Baseline::load_or_empty(ImageKind::Private);
     let params = DetectorParams::default();
+    let chess_cfg = default_chess_config();
     let mut blessed = 0usize;
     for entry in &entries {
         let abs = entry.absolute();
@@ -436,7 +491,7 @@ fn cmd_bless(args: BlessArgs) -> ExitCode {
             eprintln!("skipping {} — file missing", entry.path);
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params) {
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -538,7 +593,8 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
         snap
     };
 
-    let chess_cfg = default_chess_config();
+    let mut chess_cfg = default_chess_config();
+    chess_cfg.orientation_method = args.orientation_method.into();
     let corners = detect_corners(&upscaled, &chess_cfg);
     if args.algorithm == AlgorithmArg::Topological {
         return diagnose_topological(&args, &upscaled, &corners);
@@ -585,7 +641,12 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
         },
         |p| workspace_root().join(p),
     );
-    if let Err(e) = render_diagnose_overlay(&upscaled, &frame, &dst) {
+    let render_result = if args.draw_axes {
+        render_diagnose_overlay_with_axes(&upscaled, &frame, &dst)
+    } else {
+        render_diagnose_overlay(&upscaled, &frame, &dst)
+    };
+    if let Err(e) = render_result {
         eprintln!("render diagnose overlay: {e}");
         return ExitCode::from(2);
     }
@@ -753,27 +814,25 @@ fn diagnose_filename(label: &str) -> String {
 fn diagnose_topological(
     args: &DiagnoseArgs,
     upscaled: &image::GrayImage,
-    corners: &[calib_targets::core::Corner],
+    corners: &[calib_targets::chessboard::ChessCorner],
 ) -> ExitCode {
-    use projective_grid::{build_grid_topological, AxisHint, TopologicalParams};
+    use projective_grid::{build_grid_topological, AxisEstimate, TopologicalParams};
 
     let mut params = TopologicalParams::default();
     if let Some(deg) = args.axis_align_tol_deg {
         params.axis_align_tol_rad = deg.to_radians();
     }
-    if let Some(deg) = args.diagonal_angle_tol_deg {
-        params.diagonal_angle_tol_rad = deg.to_radians();
-    }
     println!(
-        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  diagonal_angle_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)",
+        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  quad_edge_max_rel: {:.2}",
         args.image,
         corners.len(),
         params.axis_align_tol_rad,
         (params.axis_align_tol_rad.to_degrees() as i32),
-        params.diagonal_angle_tol_rad,
-        (params.diagonal_angle_tol_rad.to_degrees() as i32),
         params.max_axis_sigma_rad,
         (params.max_axis_sigma_rad.to_degrees() as i32),
+        params.cluster_axis_tol_rad,
+        (params.cluster_axis_tol_rad.to_degrees() as i32),
+        params.quad_edge_max_rel,
     );
 
     // Pre-filter: at least one axis with sigma below threshold AND the
@@ -808,15 +867,15 @@ fn diagnose_topological(
     );
 
     let positions: Vec<nalgebra::Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisHint; 2]> = corners
+    let axes: Vec<[AxisEstimate; 2]> = corners
         .iter()
         .map(|c| {
             [
-                AxisHint {
+                AxisEstimate {
                     angle: c.axes[0].angle,
                     sigma: c.axes[0].sigma,
                 },
-                AxisHint {
+                AxisEstimate {
                     angle: c.axes[1].angle,
                     sigma: c.axes[1].sigma,
                 },
@@ -946,7 +1005,7 @@ fn diagnose_topological(
 
 fn render_topological_overlay(
     base: &image::GrayImage,
-    corners: &[calib_targets::core::Corner],
+    corners: &[calib_targets::chessboard::ChessCorner],
     labelled: &std::collections::HashSet<usize>,
     dst: &Path,
 ) -> std::io::Result<()> {

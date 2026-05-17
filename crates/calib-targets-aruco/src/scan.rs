@@ -443,12 +443,15 @@ impl<'a> CellDecoder<'a> {
             }
         }
 
+        let grid = DecodeSamples {
+            samples: &self.scratch_bits,
+            thr_samples: &self.scratch_thr,
+            cells: self.grid.cells,
+            bits: self.bits,
+            border: self.border,
+        };
         decode_samples(
-            &self.scratch_bits,
-            &self.scratch_thr,
-            self.grid.cells,
-            self.bits,
-            self.border,
+            &grid,
             self.cfg.min_border_score,
             self.matcher,
             self.cfg.multi_threshold,
@@ -557,16 +560,14 @@ fn decode_rectified_cell(
         }
     }
 
-    decode_samples(
-        &samples,
-        &thr_samples,
+    let grid = DecodeSamples {
+        samples: &samples,
+        thr_samples: &thr_samples,
         cells,
         bits,
         border,
-        cfg.min_border_score,
-        matcher,
-        cfg.multi_threshold,
-    )
+    };
+    decode_samples(&grid, cfg.min_border_score, matcher, cfg.multi_threshold)
 }
 
 /// Binarize `samples` at `thr` for one polarity and return border_score + code.
@@ -624,39 +625,48 @@ fn binarize_and_score(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
-fn decode_samples(
-    samples: &[u8],
-    thr_samples: &[u8],
+/// Rectified-cell samples used by [`decode_samples`].
+///
+/// Bundles the two parallel sample arrays plus the grid layout so
+/// callers don't have to re-thread five positional parameters through
+/// every binarisation pass. `thr_samples` may be empty, in which case
+/// the Otsu threshold is computed directly from `samples`.
+struct DecodeSamples<'a> {
+    samples: &'a [u8],
+    thr_samples: &'a [u8],
     cells: usize,
     bits: usize,
     border: usize,
+}
+
+fn decode_samples(
+    grid: &DecodeSamples<'_>,
     min_border_score: f32,
     matcher: &Matcher,
     multi_threshold: bool,
 ) -> Option<MarkerObservation> {
-    if samples.len() != cells * cells {
+    if grid.samples.len() != grid.cells * grid.cells {
         return None;
     }
 
-    let thr_src = if thr_samples.is_empty() {
-        samples
+    let thr_src = if grid.thr_samples.is_empty() {
+        grid.samples
     } else {
-        thr_samples
+        grid.thr_samples
     };
     let otsu = otsu_threshold_from_samples(thr_src);
 
     if multi_threshold {
-        let candidates = compute_threshold_candidates(otsu, samples, cells, border);
+        let candidates = compute_threshold_candidates(otsu, grid.samples, grid.cells, grid.border);
         let mut best_matched: Option<MarkerObservation> = None;
 
         'outer: for &thr in &candidates {
             for inverted in [false, true] {
                 let Some(obs) = binarize_and_score(
-                    samples,
-                    cells,
-                    bits,
-                    border,
+                    grid.samples,
+                    grid.cells,
+                    grid.bits,
+                    grid.border,
                     thr,
                     inverted,
                     min_border_score,
@@ -689,10 +699,10 @@ fn decode_samples(
     let mut best: Option<MarkerObservation> = None;
     for inverted in [false, true] {
         let Some(obs) = binarize_and_score(
-            samples,
-            cells,
-            bits,
-            border,
+            grid.samples,
+            grid.cells,
+            grid.bits,
+            grid.border,
             otsu,
             inverted,
             min_border_score,

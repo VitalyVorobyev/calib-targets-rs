@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use calib_targets_core::ChessConfig;
+use calib_targets_core::DetectorConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::detector::PuzzleBoardDetectionResult;
@@ -25,7 +25,7 @@ pub struct PuzzleBoardDetectConfig {
     #[serde(default)]
     pub output_path: Option<PathBuf>,
     #[serde(default)]
-    pub chess_config: Option<ChessConfig>,
+    pub chess_config: Option<DetectorConfig>,
     pub detector: PuzzleBoardParams,
 }
 

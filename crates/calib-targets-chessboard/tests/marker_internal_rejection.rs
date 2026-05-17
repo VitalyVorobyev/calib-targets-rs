@@ -17,11 +17,11 @@
 //! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
-use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 
-fn board_corner(x: f32, y: f32, parity: usize) -> Corner {
+fn board_corner(x: f32, y: f32, parity: usize) -> ChessCorner {
     // Parity-0: axes[0] = 0 (horizontal), axes[1] = π/2 (vertical).
     // Parity-1: axes flipped so the dark-sector CCW sweep invariant holds.
     let axes = if parity == 0 {
@@ -47,9 +47,8 @@ fn board_corner(x: f32, y: f32, parity: usize) -> Corner {
             },
         ]
     };
-    Corner {
+    ChessCorner {
         position: Point2::new(x, y),
-        orientation_cluster: None,
         axes,
         contrast: 30.0,
         fit_rms: 3.0,
@@ -57,7 +56,7 @@ fn board_corner(x: f32, y: f32, parity: usize) -> Corner {
     }
 }
 
-fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> Corner {
+fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> ChessCorner {
     let axes = [
         AxisEstimate {
             angle: angle_rad,
@@ -68,9 +67,8 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> Corner {
             sigma: 0.02,
         },
     ];
-    Corner {
+    ChessCorner {
         position: Point2::new(x, y),
-        orientation_cluster: None,
         axes,
         contrast: 20.0,
         fit_rms: 5.0,

@@ -43,7 +43,7 @@ use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiE
 use calib_targets::charuco::CharucoDetector;
 use calib_targets::chessboard::Detector as ChessboardDetector;
 use calib_targets::core::GrayImageView;
-use calib_targets::detect::{self, ChessConfig};
+use calib_targets::detect::{self, DetectorConfig};
 use calib_targets::marker::MarkerBoardDetector;
 use calib_targets::puzzleboard::PuzzleBoardDetector;
 use std::ffi::c_char;
@@ -57,25 +57,25 @@ const VERSION_CSTR: &[u8] = concat!(env!("CARGO_PKG_VERSION"), "\0").as_bytes();
 
 /// Opaque chessboard detector handle.
 pub struct ct_chessboard_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: ChessboardDetector,
 }
 
 /// Opaque ChArUco detector handle.
 pub struct ct_charuco_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: CharucoDetector,
 }
 
 /// Opaque marker-board detector handle.
 pub struct ct_marker_board_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: MarkerBoardDetector,
 }
 
 /// Opaque PuzzleBoard detector handle.
 pub struct ct_puzzleboard_detector_t {
-    chess: ChessConfig,
+    chess: DetectorConfig,
     detector: PuzzleBoardDetector,
 }
 
@@ -87,45 +87,6 @@ struct PreparedGrayImage {
     width_usize: usize,
     height_usize: usize,
     pixels: Vec<u8>,
-}
-
-#[derive(Clone, Copy)]
-struct CharucoDetectCall {
-    detector: *const ct_charuco_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_charuco_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
-    out_markers: *mut ct_marker_detection_t,
-    markers_capacity: usize,
-    out_markers_len: *mut usize,
-}
-
-#[derive(Clone, Copy)]
-struct MarkerBoardDetectCall {
-    detector: *const ct_marker_board_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_marker_board_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
-    out_circle_candidates: *mut ct_circle_candidate_t,
-    circle_candidates_capacity: usize,
-    out_circle_candidates_len: *mut usize,
-    out_circle_matches: *mut ct_circle_match_t,
-    circle_matches_capacity: usize,
-    out_circle_matches_len: *mut usize,
-}
-
-#[derive(Clone, Copy)]
-struct PuzzleBoardDetectCall {
-    detector: *const ct_puzzleboard_detector_t,
-    image: *const ct_gray_image_u8_t,
-    out_result: *mut ct_puzzleboard_result_t,
-    out_corners: *mut ct_labeled_corner_t,
-    corners_capacity: usize,
-    out_corners_len: *mut usize,
 }
 
 impl PreparedGrayImage {
@@ -170,9 +131,14 @@ impl PreparedGrayImage {
         })
     }
 
-    fn detect_corners(&self, chess: &ChessConfig) -> FfiResult<Vec<calib_targets::core::Corner>> {
+    fn detect_corners(
+        &self,
+        chess: &DetectorConfig,
+    ) -> FfiResult<Vec<calib_targets::chessboard::ChessCorner>> {
         let gray = detect::gray_image_from_slice(self.width, self.height, &self.pixels)
             .map_err(|err| FfiError::internal(format!("failed to build grayscale image: {err}")))?;
+        // Pre-blur is not exposed via the C ABI; callers requiring it must
+        // pre-process the image before submitting it.
         Ok(detect::detect_corners(&gray, chess))
     }
 
@@ -354,12 +320,15 @@ mod tests {
     use super::*;
     // Detector functions moved to `detectors` submodule; import them explicitly for tests.
     use crate::detectors::{
-        ct_charuco_detector_create, ct_charuco_detector_destroy, ct_charuco_detector_detect,
-        ct_chessboard_detector_create, ct_chessboard_detector_destroy,
-        ct_chessboard_detector_detect, ct_marker_board_detector_create,
-        ct_marker_board_detector_destroy, ct_marker_board_detector_detect,
-        ct_puzzleboard_detector_create, ct_puzzleboard_detector_destroy,
-        ct_puzzleboard_detector_detect,
+        ct_charuco_detect_args_t, ct_charuco_detect_buffers_t, ct_charuco_detector_create,
+        ct_charuco_detector_destroy, ct_charuco_detector_detect, ct_chessboard_detect_args_t,
+        ct_chessboard_detect_buffers_t, ct_chessboard_detector_create,
+        ct_chessboard_detector_destroy, ct_chessboard_detector_detect,
+        ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
+        ct_marker_board_detector_create, ct_marker_board_detector_destroy,
+        ct_marker_board_detector_detect, ct_puzzleboard_detect_args_t,
+        ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
+        ct_puzzleboard_detector_destroy, ct_puzzleboard_detector_detect,
     };
     use crate::error::ffi_status;
     use image::ImageReader;
@@ -710,45 +679,32 @@ mod tests {
         let descriptor = image_descriptor(&image);
         let mut result = ct_chessboard_result_t::default();
         let mut corners_len = 0usize;
-        let status = unsafe {
-            ct_chessboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                ptr::null_mut(),
-                0,
-                &mut corners_len,
-            )
+        let args = ct_chessboard_detect_args_t {
+            detector,
+            image: &descriptor,
         };
+        let mut bufs = ct_chessboard_detect_buffers_t {
+            out_result: &mut result,
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut corners_len,
+        };
+        let status = unsafe { ct_chessboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert_eq!(result.detection.kind, CT_TARGET_KIND_CHESSBOARD);
         assert_eq!(result.detection.corners_len, 77);
         assert_eq!(corners_len, 77);
 
         let mut short = vec![ct_labeled_corner_t::default(); corners_len - 1];
-        let status = unsafe {
-            ct_chessboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                short.as_mut_ptr(),
-                short.len(),
-                &mut corners_len,
-            )
-        };
+        bufs.out_corners = short.as_mut_ptr();
+        bufs.corners_capacity = short.len();
+        let status = unsafe { ct_chessboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_BUFFER_TOO_SMALL);
 
         let mut corners = vec![ct_labeled_corner_t::default(); corners_len];
-        let status = unsafe {
-            ct_chessboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                corners.as_mut_ptr(),
-                corners.len(),
-                &mut corners_len,
-            )
-        };
+        bufs.out_corners = corners.as_mut_ptr();
+        bufs.corners_capacity = corners.len();
+        let status = unsafe { ct_chessboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert_eq!(corners_len, corners.len());
         assert!(corners.iter().all(|corner| corner.has_grid == CT_TRUE));
@@ -816,19 +772,20 @@ mod tests {
         let mut result = ct_charuco_result_t::default();
         let mut corners_len = 0usize;
         let mut markers_len = 0usize;
-        let status = unsafe {
-            ct_charuco_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                ptr::null_mut(),
-                0,
-                &mut corners_len,
-                ptr::null_mut(),
-                0,
-                &mut markers_len,
-            )
+        let args = ct_charuco_detect_args_t {
+            detector,
+            image: &descriptor,
         };
+        let mut bufs = ct_charuco_detect_buffers_t {
+            out_result: &mut result,
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut corners_len,
+            out_markers: ptr::null_mut(),
+            markers_capacity: 0,
+            out_markers_len: &mut markers_len,
+        };
+        let status = unsafe { ct_charuco_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert_eq!(result.detection.kind, CT_TARGET_KIND_CHARUCO);
         assert!(corners_len >= 60);
@@ -836,35 +793,17 @@ mod tests {
 
         let mut corners = vec![ct_labeled_corner_t::default(); corners_len];
         let mut short_markers = vec![ct_marker_detection_t::default(); markers_len - 1];
-        let status = unsafe {
-            ct_charuco_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                corners.as_mut_ptr(),
-                corners.len(),
-                &mut corners_len,
-                short_markers.as_mut_ptr(),
-                short_markers.len(),
-                &mut markers_len,
-            )
-        };
+        bufs.out_corners = corners.as_mut_ptr();
+        bufs.corners_capacity = corners.len();
+        bufs.out_markers = short_markers.as_mut_ptr();
+        bufs.markers_capacity = short_markers.len();
+        let status = unsafe { ct_charuco_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_BUFFER_TOO_SMALL);
 
         let mut markers = vec![ct_marker_detection_t::default(); markers_len];
-        let status = unsafe {
-            ct_charuco_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                corners.as_mut_ptr(),
-                corners.len(),
-                &mut corners_len,
-                markers.as_mut_ptr(),
-                markers.len(),
-                &mut markers_len,
-            )
-        };
+        bufs.out_markers = markers.as_mut_ptr();
+        bufs.markers_capacity = markers.len();
+        let status = unsafe { ct_charuco_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert!(corners.iter().all(|corner| {
             corner.has_grid == CT_TRUE
@@ -892,22 +831,23 @@ mod tests {
         let mut corners_len = 0usize;
         let mut candidates_len = 0usize;
         let mut matches_len = 0usize;
-        let status = unsafe {
-            ct_marker_board_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                ptr::null_mut(),
-                0,
-                &mut corners_len,
-                ptr::null_mut(),
-                0,
-                &mut candidates_len,
-                ptr::null_mut(),
-                0,
-                &mut matches_len,
-            )
+        let args = ct_marker_board_detect_args_t {
+            detector,
+            image: &descriptor,
         };
+        let mut bufs = ct_marker_board_detect_buffers_t {
+            out_result: &mut result,
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut corners_len,
+            out_circle_candidates: ptr::null_mut(),
+            circle_candidates_capacity: 0,
+            out_circle_candidates_len: &mut candidates_len,
+            out_circle_matches: ptr::null_mut(),
+            circle_matches_capacity: 0,
+            out_circle_matches_len: &mut matches_len,
+        };
+        let status = unsafe { ct_marker_board_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert_eq!(result.detection.kind, CT_TARGET_KIND_CHECKERBOARD_MARKER);
         assert!(corners_len > 0);
@@ -917,22 +857,13 @@ mod tests {
         let mut corners = vec![ct_labeled_corner_t::default(); corners_len];
         let mut candidates = vec![ct_circle_candidate_t::default(); candidates_len];
         let mut matches = vec![ct_circle_match_t::default(); matches_len];
-        let status = unsafe {
-            ct_marker_board_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                corners.as_mut_ptr(),
-                corners.len(),
-                &mut corners_len,
-                candidates.as_mut_ptr(),
-                candidates.len(),
-                &mut candidates_len,
-                matches.as_mut_ptr(),
-                matches.len(),
-                &mut matches_len,
-            )
-        };
+        bufs.out_corners = corners.as_mut_ptr();
+        bufs.corners_capacity = corners.len();
+        bufs.out_circle_candidates = candidates.as_mut_ptr();
+        bufs.circle_candidates_capacity = candidates.len();
+        bufs.out_circle_matches = matches.as_mut_ptr();
+        bufs.circle_matches_capacity = matches.len();
+        let status = unsafe { ct_marker_board_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert!(matches.iter().all(|entry| entry.expected.polarity != 0));
 
@@ -951,16 +882,17 @@ mod tests {
         let descriptor = image_descriptor(&image);
         let mut result = ct_puzzleboard_result_t::default();
         let mut corners_len = 0usize;
-        let status = unsafe {
-            ct_puzzleboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                ptr::null_mut(),
-                0,
-                &mut corners_len,
-            )
+        let args = ct_puzzleboard_detect_args_t {
+            detector,
+            image: &descriptor,
         };
+        let mut bufs = ct_puzzleboard_detect_buffers_t {
+            out_result: &mut result,
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut corners_len,
+        };
+        let status = unsafe { ct_puzzleboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert_eq!(result.detection.kind, CT_TARGET_KIND_PUZZLEBOARD);
         assert!(corners_len > 0);
@@ -974,29 +906,15 @@ mod tests {
         assert_eq!(result.score_margin.has_value, CT_TRUE);
 
         let mut short = vec![ct_labeled_corner_t::default(); corners_len - 1];
-        let status = unsafe {
-            ct_puzzleboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                short.as_mut_ptr(),
-                short.len(),
-                &mut corners_len,
-            )
-        };
+        bufs.out_corners = short.as_mut_ptr();
+        bufs.corners_capacity = short.len();
+        let status = unsafe { ct_puzzleboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_BUFFER_TOO_SMALL);
 
         let mut corners = vec![ct_labeled_corner_t::default(); corners_len];
-        let status = unsafe {
-            ct_puzzleboard_detector_detect(
-                detector,
-                &descriptor,
-                &mut result,
-                corners.as_mut_ptr(),
-                corners.len(),
-                &mut corners_len,
-            )
-        };
+        bufs.out_corners = corners.as_mut_ptr();
+        bufs.corners_capacity = corners.len();
+        let status = unsafe { ct_puzzleboard_detector_detect(&args, &mut bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         assert!(corners.iter().all(|corner| {
             corner.has_grid == CT_TRUE
@@ -1103,16 +1021,17 @@ mod tests {
         let status = unsafe { ct_chessboard_detector_create(&chess_config, &mut chess_detector) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         let mut chess_len = usize::MAX;
-        let status = unsafe {
-            ct_chessboard_detector_detect(
-                chess_detector,
-                &descriptor,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-                &mut chess_len,
-            )
+        let chess_args = ct_chessboard_detect_args_t {
+            detector: chess_detector,
+            image: &descriptor,
         };
+        let mut chess_bufs = ct_chessboard_detect_buffers_t {
+            out_result: ptr::null_mut(),
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut chess_len,
+        };
+        let status = unsafe { ct_chessboard_detector_detect(&chess_args, &mut chess_bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
         assert_eq!(chess_len, 0);
         unsafe { ct_chessboard_detector_destroy(chess_detector) };
@@ -1123,19 +1042,20 @@ mod tests {
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         let mut charuco_corners_len = usize::MAX;
         let mut charuco_markers_len = usize::MAX;
-        let status = unsafe {
-            ct_charuco_detector_detect(
-                charuco_detector,
-                &descriptor,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-                &mut charuco_corners_len,
-                ptr::null_mut(),
-                0,
-                &mut charuco_markers_len,
-            )
+        let charuco_args = ct_charuco_detect_args_t {
+            detector: charuco_detector,
+            image: &descriptor,
         };
+        let mut charuco_bufs = ct_charuco_detect_buffers_t {
+            out_result: ptr::null_mut(),
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut charuco_corners_len,
+            out_markers: ptr::null_mut(),
+            markers_capacity: 0,
+            out_markers_len: &mut charuco_markers_len,
+        };
+        let status = unsafe { ct_charuco_detector_detect(&charuco_args, &mut charuco_bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
         assert_eq!(charuco_corners_len, 0);
         assert_eq!(charuco_markers_len, 0);
@@ -1149,22 +1069,23 @@ mod tests {
         let mut marker_corners_len = usize::MAX;
         let mut candidates_len = usize::MAX;
         let mut matches_len = usize::MAX;
-        let status = unsafe {
-            ct_marker_board_detector_detect(
-                marker_detector,
-                &descriptor,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-                &mut marker_corners_len,
-                ptr::null_mut(),
-                0,
-                &mut candidates_len,
-                ptr::null_mut(),
-                0,
-                &mut matches_len,
-            )
+        let marker_args = ct_marker_board_detect_args_t {
+            detector: marker_detector,
+            image: &descriptor,
         };
+        let mut marker_bufs = ct_marker_board_detect_buffers_t {
+            out_result: ptr::null_mut(),
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut marker_corners_len,
+            out_circle_candidates: ptr::null_mut(),
+            circle_candidates_capacity: 0,
+            out_circle_candidates_len: &mut candidates_len,
+            out_circle_matches: ptr::null_mut(),
+            circle_matches_capacity: 0,
+            out_circle_matches_len: &mut matches_len,
+        };
+        let status = unsafe { ct_marker_board_detector_detect(&marker_args, &mut marker_bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
         assert_eq!(marker_corners_len, 0);
         assert_eq!(candidates_len, 0);
@@ -1177,16 +1098,17 @@ mod tests {
             unsafe { ct_puzzleboard_detector_create(&puzzle_config, &mut puzzle_detector) };
         assert_eq!(status, ct_status_t::CT_STATUS_OK);
         let mut puzzle_corners_len = usize::MAX;
-        let status = unsafe {
-            ct_puzzleboard_detector_detect(
-                puzzle_detector,
-                &descriptor,
-                ptr::null_mut(),
-                ptr::null_mut(),
-                0,
-                &mut puzzle_corners_len,
-            )
+        let puzzle_args = ct_puzzleboard_detect_args_t {
+            detector: puzzle_detector,
+            image: &descriptor,
         };
+        let mut puzzle_bufs = ct_puzzleboard_detect_buffers_t {
+            out_result: ptr::null_mut(),
+            out_corners: ptr::null_mut(),
+            corners_capacity: 0,
+            out_corners_len: &mut puzzle_corners_len,
+        };
+        let status = unsafe { ct_puzzleboard_detector_detect(&puzzle_args, &mut puzzle_bufs) };
         assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
         assert_eq!(puzzle_corners_len, 0);
         unsafe { ct_puzzleboard_detector_destroy(puzzle_detector) };

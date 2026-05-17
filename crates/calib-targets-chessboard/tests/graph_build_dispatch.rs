@@ -13,12 +13,12 @@
 //! noisy real-world images and is iterated separately. This test only
 //! covers the dispatch contract.
 
-use calib_targets_chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
-use calib_targets_core::{AxisEstimate, Corner};
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use std::f32::consts::FRAC_PI_2;
 
-fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<Corner> {
+fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<ChessCorner> {
     let mut out = Vec::with_capacity(rows * cols);
     for j in 0..rows {
         for i in 0..cols {
@@ -31,9 +31,8 @@ fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<Corner> {
             } else {
                 (FRAC_PI_2, 0.0_f32)
             };
-            out.push(Corner {
+            out.push(ChessCorner {
                 position: Point2::new(i as f32 * step, j as f32 * step),
-                orientation_cluster: None,
                 axes: [
                     AxisEstimate {
                         angle: a0,
@@ -55,7 +54,7 @@ fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<Corner> {
 
 fn run_with(
     algorithm: GraphBuildAlgorithm,
-    corners: &[Corner],
+    corners: &[ChessCorner],
 ) -> Vec<calib_targets_chessboard::Detection> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = algorithm;

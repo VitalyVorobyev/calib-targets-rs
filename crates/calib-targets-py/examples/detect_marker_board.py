@@ -1,4 +1,4 @@
-"""Marker board detection example with full in-code configuration."""
+"""Marker board detection example with explicit configuration."""
 
 import sys
 
@@ -21,9 +21,10 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     chess_cfg = ct.ChessConfig(
-        threshold_mode="relative",
-        threshold_value=0.2,
-        nms_radius=2,
+        threshold=ct.Threshold.relative(0.2),
+        strategy=ct.DetectionStrategy.chess(
+            ct.ChessStrategyConfig(nms_radius=2),
+        ),
     )
 
     layout = ct.MarkerBoardLayout(
@@ -39,19 +40,7 @@ def main() -> None:
 
     params = ct.MarkerBoardParams(
         layout=layout,
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.0,
-            min_corners=16,
-            expected_rows=22,
-            expected_cols=22,
-            completeness_threshold=0.05,
-            graph=ct.GridGraphParams(
-                min_spacing_pix=5.0,
-                max_spacing_pix=50.0,
-                k_neighbors=8,
-                orientation_tolerance_deg=22.5,
-            ),
-        ),
+        chessboard=ct.ChessboardParams(min_corner_strength=0.0),
         circle_score=ct.CircleScoreParams(
             patch_size=64,
             diameter_frac=0.5,
@@ -74,7 +63,6 @@ def main() -> None:
         return
 
     print(f"corners: {len(result.detection.corners)}")
-    print(f"inliers: {len(result.inliers)}")
 
 
 if __name__ == "__main__":

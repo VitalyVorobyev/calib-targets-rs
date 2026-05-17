@@ -52,19 +52,24 @@ def run_debug(
     """Build the Rust-side payload dict directly — the typed dataclasses
     lag behind the Rust struct on new fields, and for a spot-check script
     the dict path is simpler and stays in sync with Rust automatically."""
+    # Matches the chess-corners 0.10 tagged-enum DetectorConfig shape;
+    # see crates/calib-targets-py/python/calib_targets/config.py for the
+    # canonical typed wrapper around the same JSON.
     chess_payload = {
-        "detector_mode": "canonical",
-        "descriptor_mode": "follow_detector",
-        "threshold_mode": "relative",
-        "threshold_value": chess_threshold,
-        "nms_radius": 2,
-        "min_cluster_size": 2,
-        "refiner": {"method": "none", "refinement_radius": 1},
-        "pyramid_levels": 1,
-        "pyramid_min_size": 64,
-        "refinement_radius": 1,
+        "strategy": {
+            "chess": {
+                "ring": "canonical",
+                "descriptor_ring": "follow_detector",
+                "nms_radius": 2,
+                "min_cluster_size": 2,
+                "refiner": {"center_of_mass": {"radius": 2}},
+            }
+        },
+        "threshold": {"relative": chess_threshold},
+        "multiscale": "single_scale",
+        "upscale": "disabled",
+        "orientation_method": "ring_fit",
         "merge_radius": 0.0,
-        "upscale": {"mode": "disabled"},
     }
     params_payload = {
         "chess": chess_payload,

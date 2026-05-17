@@ -46,19 +46,3 @@ pub(crate) fn require_fraction(value: f32, field: &str) -> FfiResult<f32> {
     }
     Ok(value)
 }
-
-#[allow(dead_code)]
-pub(crate) fn require_optional_positive_u32(
-    value: Option<u32>,
-    field: &str,
-) -> FfiResult<Option<u32>> {
-    if let Some(value) = value {
-        if value == 0 {
-            return Err(FfiError::config_error(format!(
-                "{field} must be > 0 when present"
-            )));
-        }
-        return Ok(Some(value));
-    }
-    Ok(None)
-}

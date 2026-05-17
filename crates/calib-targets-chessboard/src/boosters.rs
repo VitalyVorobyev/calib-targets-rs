@@ -1,41 +1,34 @@
-//! Phase E — recall boosters (spec §5.8).
+//! Recall boosters that run after the precision core converges.
 //!
 //! Run **after** the precision core (seed + grow + validate) has
 //! converged with no new blacklist entries. Boosters ADD labelled
 //! corners without compromising the precision contract — they reuse
 //! the same attachment invariants as growth.
 //!
-//! This module implements a unified "fill pass":
+//! The structural skeleton (cell enumeration, KD-tree, per-cell
+//! attachment ladder, fixed-point iteration) lives in
+//! [`projective_grid::square::fill::fill_grid_holes`]; this module
+//! wraps it with a chessboard-specific [`GrowValidator`] that adds:
 //!
-//! - **Interior gap fill**: for each `(i, j)` strictly inside the
-//!   labelled bounding box that isn't labelled, predict + attach.
-//! - **Line extrapolation**: for each labelled row / column with
-//!   ≥3 members, try to extend ±1 at each end.
-//!
-//! Both steps share the same attachment machinery. A cell is filled
-//! iff:
-//! 1. A candidate lies within `attach_search_rel × s` of the
-//!    axis-vector prediction (averaged over all labelled neighbors
-//!    in a 3×3 window).
-//! 2. The candidate's cluster matches `(i + j) mod 2` parity.
-//! 3. Both axes match the global centers within `attach_axis_tol`.
-//! 4. The nearest-but-one candidate is farther than
-//!    `ambiguity_factor × nearest distance`.
-//! 5. At least one induced edge to an already-labelled cardinal
-//!    neighbor passes the length + axis-slot-swap check.
-//!
-//! The pass iterates until no new attachments happen in a full
-//! scan, capped at `max_booster_iters`.
+//! - **Weak-cluster rescue**: admit `NoCluster` corners whose
+//!   `max_d_deg` is within `weak_cluster_tol_deg`. These corners
+//!   failed the strict cluster-admission gate by a hair — the booster
+//!   pass re-assigns them a label at attachment time.
+//! - **Directional edge scale (optional)**: replace the scalar
+//!   `cell_size` in the edge-length check with a per-axis median over
+//!   already-labelled cardinal edges. Used by the topological path,
+//!   whose visible component can be strongly anisotropic before final
+//!   recovery has filled the boundary.
 
 use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
-use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
-use projective_grid::square::grow::{predict_from_neighbours as pg_predict, LabelledNeighbour};
-use std::collections::HashSet;
+use projective_grid::square::fill::{fill_grid_holes, FillParams};
+use projective_grid::square::grow::{Admit, FillEdgeCtx, GrowValidator, LabelledNeighbour};
+use std::collections::{HashMap, HashSet};
 
 /// Diagnostic returned by [`apply_boosters`].
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -69,259 +62,204 @@ pub fn apply_boosters(
     blacklist: &HashSet<usize>,
     params: &DetectorParams,
 ) -> BoosterResult {
-    let mut result = BoosterResult::default();
-    let mut total_added = 0usize;
-
-    // Corner positions are immutable across booster iterations — only
-    // `stage` is mutated by `try_attach_at`. Build the slice once and
-    // share it with `pg_predict`, which would otherwise rebuild it for
-    // every candidate cell on every iteration.
-    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-
-    // KD-tree over every non-blacklisted, non-labelled Clustered
-    // corner. We rebuild it each outer iteration since labels
-    // change.
-    for _iter in 0..params.max_booster_iters.max(1) {
-        let (tree, eligible_indices) = build_eligible_tree(corners, grow, blacklist, params);
-
-        let candidates_to_try = enumerate_candidate_positions(grow);
-        let mut added_this_iter = 0usize;
-
-        for pos in candidates_to_try {
-            if grow.labelled.contains_key(&pos) {
-                continue;
-            }
-            let attached = try_attach_at(
-                pos,
-                corners,
-                grow,
-                centers,
-                cell_size,
-                &tree,
-                &eligible_indices,
-                blacklist,
-                &positions,
-                params,
-            );
-            if attached {
-                added_this_iter += 1;
-            }
-        }
-
-        total_added += added_this_iter;
-        if added_this_iter == 0 {
-            break;
-        }
-    }
-
-    result.added = total_added;
-    result
+    apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, false)
 }
 
-/// Build a KD-tree over Clustered-but-not-labelled, non-blacklisted
-/// corners.
-///
-/// When `weak_cluster_rescue` is enabled, also include `NoCluster`
-/// corners whose `max_d_deg` is within `weak_cluster_tol_deg`. These
-/// corners failed the strict Stage-3 gate by a hair — the booster
-/// pass will re-assign them a label at attachment time. This is
-/// spec §5.8d.
-fn build_eligible_tree(
-    corners: &[CornerAug],
-    grow: &GrowResult,
-    blacklist: &HashSet<usize>,
-    params: &DetectorParams,
-) -> (KdTree<f32, 2>, Vec<usize>) {
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    let mut slots: Vec<usize> = Vec::new();
-    let weak_tol = params.weak_cluster_tol_deg;
-    for (idx, c) in corners.iter().enumerate() {
-        if blacklist.contains(&idx) {
-            continue;
-        }
-        if grow.by_corner.contains_key(&idx) {
-            continue;
-        }
-        let eligible = matches!(c.stage, CornerStage::Clustered { .. })
-            || (params.enable_weak_cluster_rescue
-                && matches!(
-                    c.stage,
-                    CornerStage::NoCluster { max_d_deg } if max_d_deg <= weak_tol
-                ));
-        if !eligible {
-            continue;
-        }
-        tree.add(&[c.position.x, c.position.y], slots.len() as u64);
-        slots.push(idx);
-    }
-    (tree, slots)
-}
-
-/// Collect positions to try: interior holes + 1-step-out line
-/// extensions.
-fn enumerate_candidate_positions(grow: &GrowResult) -> Vec<(i32, i32)> {
-    let mut out: HashSet<(i32, i32)> = HashSet::new();
-    if grow.labelled.is_empty() {
-        return Vec::new();
-    }
-    let (mut min_i, mut max_i, mut min_j, mut max_j) = (i32::MAX, i32::MIN, i32::MAX, i32::MIN);
-    for &(i, j) in grow.labelled.keys() {
-        min_i = min_i.min(i);
-        max_i = max_i.max(i);
-        min_j = min_j.min(j);
-        max_j = max_j.max(j);
-    }
-
-    // 8b Interior gap fill: every unlabelled cell inside the bbox.
-    for j in min_j..=max_j {
-        for i in min_i..=max_i {
-            if !grow.labelled.contains_key(&(i, j)) {
-                out.insert((i, j));
-            }
-        }
-    }
-
-    // 8a Line extrapolation: ±1 beyond the bbox ends, at every row
-    // and column that has any labelled member.
-    for j in min_j..=max_j {
-        out.insert((min_i - 1, j));
-        out.insert((max_i + 1, j));
-    }
-    for i in min_i..=max_i {
-        out.insert((i, min_j - 1));
-        out.insert((i, max_j + 1));
-    }
-
-    out.into_iter().collect()
-}
-
-/// Try to attach a single corner at `pos`. Returns `true` if
-/// attached.
-///
-/// `positions` is a precomputed snapshot of `corners[i].position`,
-/// shared across every candidate cell in an `apply_boosters`
-/// iteration to avoid rebuilding an O(num_corners) `Vec` per call.
-#[allow(clippy::too_many_arguments)]
-fn try_attach_at(
-    pos: (i32, i32),
+/// Variant used by the topological path, whose visible components can be
+/// strongly anisotropic before final recovery has filled the boundary.
+pub(crate) fn apply_boosters_with_directional_edge_scale(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,
     centers: ClusterCenters,
     cell_size: f32,
-    tree: &KdTree<f32, 2>,
-    eligible_indices: &[usize],
     blacklist: &HashSet<usize>,
-    positions: &[Point2<f32>],
     params: &DetectorParams,
-) -> bool {
-    let required_label = required_label_at(pos.0, pos.1);
-
-    // Collect labelled neighbors in a 3×3 window. For interior
-    // gaps this will usually be 4+; for line extensions it will
-    // be 1 (the last corner of the line) up to 3 (with diagonals
-    // from adjacent labelled rows).
-    let neighbors = collect_labelled_neighbors(pos, 1, grow, corners);
-    if neighbors.is_empty() {
-        return false;
-    }
-
-    // Adaptive prediction shared with BFS-grow: each labelled neighbour
-    // contributes a finite-difference local-step from its own labelled
-    // peers when available, falling back to the global `(u, v) ×
-    // cell_size` step otherwise. This is materially better than the
-    // booster's previous constant-step predictor under perspective
-    // foreshortening.
-    let pred = pg_predict(
-        pos,
-        &neighbors,
-        grow.grid_u,
-        grow.grid_v,
-        cell_size,
-        &grow.labelled,
-        positions,
-    );
-
-    // Candidate search.
-    let attach_tol = params.attach_axis_tol_deg.to_radians();
-    let edge_tol = params.edge_axis_tol_deg.to_radians();
-    let step_tol = params.step_tol;
-    let search_r = params.attach_search_rel * cell_size;
-
-    let mut hits: Vec<(usize, f32)> = Vec::new();
-    let r2 = search_r * search_r;
-    let weak_attach_tol = params.weak_cluster_tol_deg.to_radians();
-    for nn in tree
-        .within_unsorted::<SquaredEuclidean>(&[pred.x, pred.y], r2)
-        .into_iter()
-    {
-        let slot = nn.item as usize;
-        let idx = eligible_indices[slot];
-        if blacklist.contains(&idx) || grow.by_corner.contains_key(&idx) {
-            continue;
-        }
-        let c = &corners[idx];
-
-        // Determine the candidate's effective cluster label.
-        let (label, effective_tol) = match c.stage {
-            CornerStage::Clustered { label } => (label, attach_tol),
-            CornerStage::NoCluster { .. } => {
-                // Weak-cluster rescue: infer label from axis vs
-                // centers, with the wider rescue tolerance.
-                let Some(l) = infer_label_from_axes(&c.axes, centers, weak_attach_tol) else {
-                    continue;
-                };
-                (l, weak_attach_tol)
-            }
-            _ => continue,
-        };
-        if label != required_label {
-            continue;
-        }
-        if !axes_match_centers(&c.axes, centers, effective_tol) {
-            continue;
-        }
-        let d = nn.distance.sqrt();
-        hits.push((idx, d));
-    }
-    hits.sort_by(|a, b| a.1.total_cmp(&b.1));
-
-    let (c_idx, _d) = match hits.len() {
-        0 => return false,
-        1 => hits[0],
-        _ => {
-            let (first_idx, d) = hits[0];
-            let (_, d2) = hits[1];
-            if d <= f32::EPSILON || d2 / d < params.attach_ambiguity_factor {
-                return false; // ambiguous
-            }
-            (first_idx, d)
-        }
-    };
-
-    // Edge-invariant check: at least one induced edge to a
-    // labelled cardinal neighbor must pass length + slot-swap.
-    if !any_cardinal_edge_ok(
-        c_idx,
-        pos,
-        &grow.labelled,
-        corners,
-        cell_size,
-        step_tol,
-        edge_tol,
-    ) {
-        return false;
-    }
-
-    // Attach.
-    grow.labelled.insert(pos, c_idx);
-    grow.by_corner.insert(c_idx, pos);
-    corners[c_idx].stage = CornerStage::Labeled {
-        at: pos,
-        local_h_residual_px: None,
-    };
-    true
+) -> BoosterResult {
+    apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, true)
 }
 
+fn apply_boosters_impl(
+    corners: &mut [CornerAug],
+    grow: &mut GrowResult,
+    centers: ClusterCenters,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &DetectorParams,
+    use_directional_edge_scale: bool,
+) -> BoosterResult {
+    let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
+    let parity_shift = (grow.parity_shift_i + grow.parity_shift_j).rem_euclid(2);
+    let validator = ChessboardFillValidator {
+        corners,
+        blacklist,
+        centers,
+        cell_size,
+        attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
+        edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
+        weak_attach_tol_rad: params.weak_cluster_tol_deg.to_radians(),
+        weak_cluster_tol_deg: params.weak_cluster_tol_deg,
+        step_tol: params.step_tol,
+        enable_weak_cluster_rescue: params.enable_weak_cluster_rescue,
+        use_directional_edge_scale,
+        parity_shift,
+    };
+
+    let fill_params = FillParams::new(
+        params.attach_search_rel,
+        params.attach_ambiguity_factor,
+        params.max_booster_iters.max(1) as usize,
+    );
+
+    let stats = fill_grid_holes(&positions, grow, cell_size, &fill_params, &validator);
+
+    // Promote each attached corner to `Labeled` so downstream stages
+    // (validate, geometry-check, detection output) see the correct
+    // stage marker. The fill pass cannot do this directly because it
+    // doesn't know about `CornerStage`.
+    for (k, &idx) in stats.attached_indices.iter().enumerate() {
+        let at = stats.attached_cells[k];
+        corners[idx].stage = CornerStage::Labeled {
+            at,
+            local_h_residual_px: None,
+        };
+    }
+
+    BoosterResult {
+        added: stats.added,
+        holes_untouched: 0,
+    }
+}
+
+/// Chessboard's plug-in for the fill pass.
+///
+/// Holds immutable references into the caller's corner array + the
+/// clustering output + per-call tolerances, plus two booster-specific
+/// switches (weak-cluster rescue, directional edge scale).
+struct ChessboardFillValidator<'a> {
+    corners: &'a [CornerAug],
+    blacklist: &'a HashSet<usize>,
+    centers: ClusterCenters,
+    cell_size: f32,
+    attach_tol_rad: f32,
+    edge_tol_rad: f32,
+    weak_attach_tol_rad: f32,
+    weak_cluster_tol_deg: f32,
+    step_tol: f32,
+    enable_weak_cluster_rescue: bool,
+    use_directional_edge_scale: bool,
+    /// `(parity_shift_i + parity_shift_j) % 2` from the BFS rebase.
+    /// See `GrowResult::parity_shift_i` for the full discussion.
+    parity_shift: i32,
+}
+
+impl<'a> GrowValidator for ChessboardFillValidator<'a> {
+    fn is_eligible(&self, idx: usize) -> bool {
+        if self.blacklist.contains(&idx) {
+            return false;
+        }
+        matches!(self.corners[idx].stage, CornerStage::Clustered { .. })
+    }
+
+    /// Widened eligibility for the booster: admit `NoCluster` corners
+    /// within `weak_cluster_tol_deg` when weak-cluster rescue is on.
+    fn eligible_for_fill(&self, idx: usize) -> bool {
+        if self.blacklist.contains(&idx) {
+            return false;
+        }
+        let c = &self.corners[idx];
+        if matches!(c.stage, CornerStage::Clustered { .. }) {
+            return true;
+        }
+        if self.enable_weak_cluster_rescue {
+            if let CornerStage::NoCluster { max_d_deg } = c.stage {
+                return max_d_deg <= self.weak_cluster_tol_deg;
+            }
+        }
+        false
+    }
+
+    fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
+        // Apply the post-rebase parity shift so the chessboard parity
+        // at `(i, j)` matches the BFS pre-rebase convention. See
+        // `GrowResult::parity_shift_i` for the full discussion.
+        Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
+    }
+
+    fn label_of(&self, idx: usize) -> Option<u8> {
+        let c = &self.corners[idx];
+        match c.stage {
+            CornerStage::Clustered { label } => Some(label_to_u8(label)),
+            CornerStage::NoCluster { .. } => {
+                infer_label_from_axes(&c.axes, self.centers, self.weak_attach_tol_rad)
+                    .map(label_to_u8)
+            }
+            _ => None,
+        }
+    }
+
+    fn accept_candidate(
+        &self,
+        idx: usize,
+        _at: (i32, i32),
+        _prediction: Point2<f32>,
+        _neighbours: &[LabelledNeighbour],
+    ) -> Admit {
+        let c = &self.corners[idx];
+        // Use the wider rescue tolerance when accepting NoCluster
+        // corners; otherwise use the standard attach tolerance.
+        let tol = match c.stage {
+            CornerStage::NoCluster { .. } => self.weak_attach_tol_rad,
+            _ => self.attach_tol_rad,
+        };
+        if axes_match_centers(&c.axes, self.centers, tol) {
+            Admit::Accept
+        } else {
+            Admit::Reject
+        }
+    }
+
+    fn edge_ok(
+        &self,
+        candidate_idx: usize,
+        neighbour_idx: usize,
+        _at_candidate: (i32, i32),
+        _at_neighbour: (i32, i32),
+    ) -> bool {
+        edge_ok_with_metric(
+            self.corners,
+            candidate_idx,
+            neighbour_idx,
+            self.cell_size,
+            self.step_tol,
+            self.edge_tol_rad,
+        )
+    }
+
+    fn fill_edge_ok(&self, ctx: FillEdgeCtx<'_>) -> bool {
+        let expected_len = if self.use_directional_edge_scale {
+            expected_cardinal_edge_len(
+                ctx.at_candidate,
+                ctx.at_neighbour,
+                ctx.labelled,
+                ctx.positions,
+                ctx.cell_size,
+            )
+        } else {
+            ctx.cell_size
+        };
+        edge_ok_with_metric(
+            self.corners,
+            ctx.candidate_idx,
+            ctx.neighbour_idx,
+            expected_len,
+            self.step_tol,
+            self.edge_tol_rad,
+        )
+    }
+}
+
+/// Required parity-derived chessboard label at `(i, j)` under the seed
+/// convention (seed `A` at `(0, 0)` is `Canonical`).
 fn required_label_at(i: i32, j: i32) -> ClusterLabel {
     if (i + j).rem_euclid(2) == 0 {
         ClusterLabel::Canonical
@@ -330,29 +268,11 @@ fn required_label_at(i: i32, j: i32) -> ClusterLabel {
     }
 }
 
-fn collect_labelled_neighbors(
-    pos: (i32, i32),
-    window_half: i32,
-    grow: &GrowResult,
-    corners: &[CornerAug],
-) -> Vec<LabelledNeighbour> {
-    let mut out = Vec::new();
-    for dj in -window_half..=window_half {
-        for di in -window_half..=window_half {
-            if di == 0 && dj == 0 {
-                continue;
-            }
-            let neigh = (pos.0 + di, pos.1 + dj);
-            if let Some(&idx) = grow.labelled.get(&neigh) {
-                out.push(LabelledNeighbour {
-                    idx,
-                    at: neigh,
-                    position: corners[idx].position,
-                });
-            }
-        }
+fn label_to_u8(label: ClusterLabel) -> u8 {
+    match label {
+        ClusterLabel::Canonical => 0,
+        ClusterLabel::Swapped => 1,
     }
-    out
 }
 
 /// Infer cluster label for a weakly-clustered corner: pick the
@@ -388,56 +308,91 @@ fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f3
     canon_max.min(swap_max) <= tol
 }
 
-fn any_cardinal_edge_ok(
-    c_idx: usize,
-    pos: (i32, i32),
-    labelled: &std::collections::HashMap<(i32, i32), usize>,
+fn edge_ok_with_metric(
     corners: &[CornerAug],
-    cell_size: f32,
+    c_idx: usize,
+    n_idx: usize,
+    expected_len: f32,
     step_tol: f32,
-    edge_tol: f32,
+    edge_tol_rad: f32,
 ) -> bool {
     let c = &corners[c_idx];
-    let min_len = (1.0 - step_tol) * cell_size;
-    let max_len = (1.0 + step_tol) * cell_size;
-    for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-        let neigh = (pos.0 + di, pos.1 + dj);
-        let Some(&n_idx) = labelled.get(&neigh) else {
-            continue;
-        };
-        let n = &corners[n_idx];
-        let off = n.position - c.position;
-        let dist = off.norm();
-        if dist < min_len || dist > max_len {
-            continue;
-        }
-        let ang = wrap_pi(off.y.atan2(off.x));
-        let d_c0 = angular_dist_pi(ang, wrap_pi(c.axes[0].angle));
-        let d_c1 = angular_dist_pi(ang, wrap_pi(c.axes[1].angle));
-        let (slot_c, d_c) = if d_c0 <= d_c1 { (0, d_c0) } else { (1, d_c1) };
-        if d_c > edge_tol {
-            continue;
-        }
-        let d_n0 = angular_dist_pi(ang, wrap_pi(n.axes[0].angle));
-        let d_n1 = angular_dist_pi(ang, wrap_pi(n.axes[1].angle));
-        let (slot_n, d_n) = if d_n0 <= d_n1 { (0, d_n0) } else { (1, d_n1) };
-        if d_n > edge_tol {
-            continue;
-        }
-        if slot_c != slot_n {
-            return true;
+    let n = &corners[n_idx];
+    let off = n.position - c.position;
+    let dist = off.norm();
+    let min_len = (1.0 - step_tol) * expected_len;
+    let max_len = (1.0 + step_tol) * expected_len;
+    if dist < min_len || dist > max_len {
+        return false;
+    }
+    let ang = wrap_pi(off.y.atan2(off.x));
+    let d_c0 = angular_dist_pi(ang, wrap_pi(c.axes[0].angle));
+    let d_c1 = angular_dist_pi(ang, wrap_pi(c.axes[1].angle));
+    let (slot_c, d_c) = if d_c0 <= d_c1 { (0, d_c0) } else { (1, d_c1) };
+    if d_c > edge_tol_rad {
+        return false;
+    }
+    let d_n0 = angular_dist_pi(ang, wrap_pi(n.axes[0].angle));
+    let d_n1 = angular_dist_pi(ang, wrap_pi(n.axes[1].angle));
+    let (slot_n, d_n) = if d_n0 <= d_n1 { (0, d_n0) } else { (1, d_n1) };
+    if d_n > edge_tol_rad {
+        return false;
+    }
+    slot_c != slot_n
+}
+
+fn corner_distance(positions: &[Point2<f32>], a: usize, b: usize) -> f32 {
+    (positions[b] - positions[a]).norm()
+}
+
+fn median_len(values: &mut [f32]) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.total_cmp(b));
+    Some(values[values.len() / 2])
+}
+
+/// Expected cardinal-edge length between `pos` and `neigh`, used by
+/// the directional-edge-scale variant.
+///
+/// Prefers the next already-labelled edge along the same local line
+/// (handles perspective / optical anisotropy at the boundary). Falls
+/// back to the component's directional median.
+fn expected_cardinal_edge_len(
+    pos: (i32, i32),
+    neigh: (i32, i32),
+    labelled: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
+    fallback_cell_size: f32,
+) -> f32 {
+    let step = (neigh.0 - pos.0, neigh.1 - pos.1);
+    debug_assert!(matches!(step, (1, 0) | (-1, 0) | (0, 1) | (0, -1)));
+
+    let far = (neigh.0 + step.0, neigh.1 + step.1);
+    if let (Some(&n_idx), Some(&far_idx)) = (labelled.get(&neigh), labelled.get(&far)) {
+        return corner_distance(positions, n_idx, far_idx);
+    }
+
+    let axis = if step.0 != 0 { (1, 0) } else { (0, 1) };
+    let mut lengths = Vec::new();
+    for (&ij, &idx) in labelled {
+        let next = (ij.0 + axis.0, ij.1 + axis.1);
+        if let Some(&next_idx) = labelled.get(&next) {
+            lengths.push(corner_distance(positions, idx, next_idx));
         }
     }
-    false
+    median_len(&mut lengths).unwrap_or(fallback_cell_size)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::cluster::cluster_axes;
+    use crate::corner::ChessCorner;
     use crate::grow::grow_from_seed;
     use crate::seed::find_seed;
-    use calib_targets_core::{AxisEstimate, Corner};
+    use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
     fn make_corner(
@@ -452,9 +407,8 @@ mod tests {
             ClusterLabel::Canonical => [axis_u, axis_v],
             ClusterLabel::Swapped => [axis_v, axis_u],
         };
-        let c = Corner {
+        let c = ChessCorner {
             position: Point2::new(x, y),
-            orientation_cluster: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(axes[0]),
@@ -469,7 +423,7 @@ mod tests {
             fit_rms: 1.0,
             strength: 1.0,
         };
-        let mut aug = CornerAug::from_corner(idx, &c);
+        let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
     }
@@ -497,25 +451,18 @@ mod tests {
 
     #[test]
     fn interior_gap_fill_recovers_missing_corner() {
-        // 5×5 grid with one interior corner temporarily made
-        // un-clusterable (simulates the core growth failing to
-        // attach it — boosters should rescue).
         let s = 20.0_f32;
         let mut corners = build_grid(5, 5, s);
         let params = DetectorParams::default();
         let centers = cluster_axes(&mut corners, &params).expect("centers");
         let seed = find_seed(&corners, centers, &params).expect("seed").seed;
         let blacklist = HashSet::new();
-        // Pretend the (2, 2) corner was ambiguous during growth by
-        // running growth with that corner blacklisted; then remove
-        // blacklist for the booster pass.
         let mut protect: HashSet<usize> = HashSet::new();
         let center_idx = 2 * 5 + 2;
         protect.insert(center_idx);
         let mut grow = grow_from_seed(&mut corners, seed, centers, s, &protect, &params);
         let before = grow.labelled.len();
         assert!((20..25).contains(&before), "got {before}");
-        // Booster pass WITHOUT the blacklist → (2, 2) should attach.
         let result = apply_boosters(&mut corners, &mut grow, centers, s, &blacklist, &params);
         assert!(
             grow.labelled.len() > before,
@@ -526,9 +473,6 @@ mod tests {
 
     #[test]
     fn line_extrapolation_extends_beyond_bbox() {
-        // Grow on a 3×5 strip, then make a wider 3×7 strip
-        // available. Boosters should extend ±1 beyond the grown
-        // bbox.
         let s = 20.0_f32;
         let mut corners = build_grid(3, 7, s);
         let params = DetectorParams::default();
@@ -537,9 +481,80 @@ mod tests {
         let blacklist = HashSet::new();
         let mut grow = grow_from_seed(&mut corners, seed, centers, s, &blacklist, &params);
         let before = grow.labelled.len();
-        // Boosters shouldn't add anything: growth labelled everyone.
         let result = apply_boosters(&mut corners, &mut grow, centers, s, &blacklist, &params);
         assert_eq!(grow.labelled.len(), before);
         assert_eq!(result.added, 0);
+    }
+
+    #[test]
+    fn line_extrapolation_uses_directional_edge_scale() {
+        // Topological recovery can start from an anisotropic component: the
+        // horizontal pitch is much larger than the vertical pitch. The booster
+        // edge invariant must compare candidate vertical edges against the
+        // local vertical step, not against the scalar recovery cell size.
+        let axis_u = 0.0_f32;
+        let axis_v = std::f32::consts::FRAC_PI_2;
+        let mut corners = Vec::new();
+        let cols = 2usize;
+        let rows = 5usize;
+        for j in 0..rows {
+            for i in 0..cols {
+                let label = if (i as i32 + j as i32).rem_euclid(2) == 0 {
+                    ClusterLabel::Canonical
+                } else {
+                    ClusterLabel::Swapped
+                };
+                corners.push(make_corner(
+                    j * cols + i,
+                    100.0 + i as f32 * 60.0,
+                    100.0 + j as f32 * 32.0,
+                    axis_u,
+                    axis_v,
+                    label,
+                ));
+            }
+        }
+
+        let params = DetectorParams::default();
+        let centers = cluster_axes(&mut corners, &params).expect("centers");
+        let mut grow = GrowResult {
+            labelled: Default::default(),
+            by_corner: Default::default(),
+            ambiguous: Default::default(),
+            holes: Default::default(),
+            axis_i: nalgebra::Vector2::new(1.0, 0.0),
+            axis_j: nalgebra::Vector2::new(0.0, 1.0),
+            parity_shift_i: 0,
+            parity_shift_j: 0,
+        };
+
+        for j in 1..=3 {
+            for i in 0..cols {
+                let idx = j * cols + i;
+                let at = (i as i32, j as i32);
+                grow.labelled.insert(at, idx);
+                grow.by_corner.insert(idx, at);
+                corners[idx].stage = CornerStage::Labeled {
+                    at,
+                    local_h_residual_px: None,
+                };
+            }
+        }
+
+        let blacklist = HashSet::new();
+        let result = apply_boosters_with_directional_edge_scale(
+            &mut corners,
+            &mut grow,
+            centers,
+            60.0,
+            &blacklist,
+            &params,
+        );
+
+        assert!(result.added >= 4, "expected both extrapolated rows");
+        for i in 0..cols {
+            assert!(grow.labelled.contains_key(&(i as i32, 0)));
+            assert!(grow.labelled.contains_key(&(i as i32, 4)));
+        }
     }
 }

@@ -13,33 +13,65 @@
 //!
 //! # Pipeline
 //!
-//! 1. Pre-filter (strength + fit-quality + axes validity).
-//! 2. Global grid-direction centers `{Θ₀, Θ₁}` via axes-histogram + 2-means.
-//! 3. Per-corner cluster label (canonical vs swapped axis assignment).
-//! 4. Global cell-size `s` (cross-cluster nearest-neighbor mode).
-//! 5. Seed: pick a 2×2 quad passing every geometric invariant; cell size
-//!    comes OUT of the seed.
-//! 6. Grow: BFS over `(i, j)` boundary with the full invariant stack
-//!    enforced at every attachment.
-//! 7. Validate: line collinearity + local-H residual; blacklist outliers;
-//!    restart Stages 5–7 with the blacklist excluded.
-//! 8. Recall boosters: line extrapolation, interior gap fill, component
-//!    merge, weak-cluster rescue.
+//! The pipeline runs as a sequence of named stages. Internal source
+//! comments and diagnostic field names refer to these names; the
+//! numbered shorthand below is the canonical enumeration. Earlier
+//! versions of this crate used fractional sub-stages ("6.25", "6.5",
+//! "6.5b", "6.75") — those have been folded into descriptive names
+//! that capture *what* the pass does rather than where it sits in a
+//! numerical lattice.
 //!
-//! Each stage is its own module; see the submodules.
+//! | Stage | Name                         | Responsibility |
+//! |-------|------------------------------|----------------|
+//! | 1     | `prefilter`                  | Drop corners failing strength / fit-quality / axes-validity gates. |
+//! | 2     | `cluster_axes`               | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner as canonical or swapped. |
+//! | 3     | `estimate_cell_size`         | Cross-cluster nearest-neighbour mode → global cell size `s`. |
+//! | 4     | `find_seed`                  | Pick a 2×2 quad passing every geometric invariant; refine `s` from the seed. |
+//! | 5     | `grow`                       | BFS over `(i, j)` boundary with the full invariant stack enforced at every attachment. |
+//! | 6     | `extend_boundary`            | Homography-based extension (global or per-candidate local-H) of the labelled boundary outward and into interior holes. |
+//! | 7     | `fix_partial_slot_flip`      | Defensive sweep that re-checks the axis-slot-swap parity after boundary extension; flips entries whose induced edges disagree. |
+//! | 8     | `rescue_no_cluster`          | Re-admit `Strong` / `NoCluster` corners within `rescue_axis_tol_deg` via local-H prediction. |
+//! | 9     | `refit_cluster_centers`      | Re-estimate `{Θ₀, Θ₁}` from labelled corners; if the shift exceeds `refit_min_shift_deg`, run a second extension + rescue. |
+//! | 10    | `validate`                   | Line collinearity + local-H residual checks; blacklist outliers; restart `find_seed` through `validate` with the blacklist excluded. |
+//! | 11    | `apply_boosters`             | Recall boosters: interior gap fill + line extrapolation. |
+//! | 12    | `final_geometry_check`       | Mandatory precision gate: per-edge length + axis-slot-swap parity + largest cardinal component. Can only drop corners; never adds. |
+//!
+//! Each stage is its own module or function; see the submodules.
 //!
 //! # Quickstart
 //!
-//! ```rust,ignore
-//! use calib_targets_chessboard::{Detector, DetectorParams};
-//! use calib_targets_core::Corner;
+//! ```rust
+//! use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+//! use calib_targets_core::AxisEstimate;
+//! use nalgebra::Point2;
 //!
-//! fn detect(corners: &[Corner]) {
-//!     let det = Detector::new(DetectorParams::default());
-//!     if let Some(d) = det.detect(corners) {
-//!         println!("labelled {} corners", d.target.corners.len());
+//! // A synthetic 7×7 chessboard corner cloud at 20 px pitch. Adjacent
+//! // corners carry opposite axis-slot orderings (the parity invariant).
+//! let mut corners: Vec<ChessCorner> = Vec::new();
+//! for j in 0..7 {
+//!     for i in 0..7 {
+//!         let swapped = (i + j) % 2 == 1;
+//!         let (a0, a1) = if swapped {
+//!             (std::f32::consts::FRAC_PI_2, 0.0)
+//!         } else {
+//!             (0.0, std::f32::consts::FRAC_PI_2)
+//!         };
+//!         corners.push(ChessCorner {
+//!             position: Point2::new(i as f32 * 20.0 + 50.0, j as f32 * 20.0 + 50.0),
+//!             axes: [
+//!                 AxisEstimate { angle: a0, sigma: 0.01 },
+//!                 AxisEstimate { angle: a1, sigma: 0.01 },
+//!             ],
+//!             contrast: 10.0,
+//!             fit_rms: 1.0,
+//!             strength: 1.0,
+//!         });
 //!     }
 //! }
+//!
+//! let det = Detector::new(DetectorParams::default());
+//! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
+//! assert_eq!(detection.target.corners.len(), 49);
 //! ```
 //!
 //! # Rectification helpers
@@ -58,6 +90,7 @@ pub mod detector;
 pub mod grow;
 pub mod mesh_warp;
 pub mod params;
+pub mod pipeline;
 pub mod rectified_view;
 pub mod seed;
 pub mod topological;
@@ -66,7 +99,7 @@ pub mod validate;
 pub use boosters::{apply_boosters, BoosterResult};
 pub use cell_size::estimate_cell_size;
 pub use cluster::{cluster_axes, cluster_axes_debug, AxisCluster, ClusterCenters, ClusterDebug};
-pub use corner::{ClusterLabel, CornerAug, CornerStage};
+pub use corner::{ChessCorner, ClusterLabel, CornerAug, CornerStage};
 pub use detector::{
     build_detection_from_grow, DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace,
     StageCounts, DEBUG_FRAME_SCHEMA,
@@ -76,5 +109,5 @@ pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{DetectorParams, GraphBuildAlgorithm};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 pub use seed::{find_seed, Seed, SeedOutput};
-pub use topological::detect_all_topological;
+pub use topological::{detect_all_topological, trace_topological};
 pub use validate::{validate, ValidationResult};

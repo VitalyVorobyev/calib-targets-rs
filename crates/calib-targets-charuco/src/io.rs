@@ -5,9 +5,10 @@ use crate::{
     CharucoDetector, CharucoParams, MarkerLayout,
 };
 use calib_targets_aruco::{builtins, ArucoScanConfig, Dictionary, MarkerDetection};
+use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::io::{self, IoError};
-use calib_targets_core::{ChessConfig, Corner, GridAlignment, TargetDetection};
+use calib_targets_core::{DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -103,7 +104,7 @@ pub struct CharucoDetectConfig {
     #[serde(default)]
     pub output_path: Option<String>,
     #[serde(default)]
-    pub chess: ChessConfig,
+    pub chess: DetectorConfig,
     #[serde(default)]
     pub rectified_path: Option<String>,
     #[serde(default)]
@@ -179,7 +180,7 @@ pub struct CharucoDetectReport {
     pub config_path: String,
     pub board: CharucoBoardSpec,
     pub num_raw_corners: usize,
-    pub raw_corners: Vec<Corner>,
+    pub raw_corners: Vec<ChessCorner>,
     #[serde(default)]
     pub detection: Option<TargetDetection>,
     #[serde(default)]
@@ -192,7 +193,11 @@ pub struct CharucoDetectReport {
 
 impl CharucoDetectReport {
     /// Build a base report from the input config and raw corners.
-    pub fn new(cfg: &CharucoDetectConfig, config_path: &Path, raw_corners: Vec<Corner>) -> Self {
+    pub fn new(
+        cfg: &CharucoDetectConfig,
+        config_path: &Path,
+        raw_corners: Vec<ChessCorner>,
+    ) -> Self {
         Self {
             image_path: cfg.image_path.clone(),
             config_path: config_path.to_string_lossy().into_owned(),

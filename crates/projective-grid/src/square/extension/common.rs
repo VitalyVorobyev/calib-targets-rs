@@ -1,4 +1,4 @@
-//! Shared per-cell attachment ladder for Stage 6 homography extension.
+//! Shared per-cell attachment ladder for homography-based boundary extension.
 //!
 //! [`try_attach_at_cell`] runs the filter pipeline common to both the
 //! global-H and local-H passes: parity gate, ambiguity check,
@@ -25,7 +25,7 @@ pub(super) enum TryCellResult {
     Attached(usize),
 }
 
-/// Run the shared per-cell filter ladder for Stage 6.
+/// Run the shared per-cell filter ladder for boundary extension.
 ///
 /// `hits` must already be sorted by distance (ascending), with entries
 /// already filtered for `is_eligible` and not in `by_corner`.

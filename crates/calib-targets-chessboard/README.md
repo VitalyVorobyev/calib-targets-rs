@@ -25,10 +25,9 @@ Algorithm deep-dive: [book chapter][book-chapter].
 ## Quickstart
 
 ```rust,ignore
-use calib_targets_chessboard::{Detector, DetectorParams};
-use calib_targets_core::Corner;
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 
-fn detect_one(corners: &[Corner]) {
+fn detect_one(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     if let Some(d) = det.detect(corners) {
         println!(
@@ -40,7 +39,7 @@ fn detect_one(corners: &[Corner]) {
 }
 
 // Multi-component (e.g. ChArUco markers split the grid into islands):
-fn detect_multi(corners: &[Corner]) {
+fn detect_multi(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!("component {k}: {} corners", comp.target.corners.len());
@@ -50,7 +49,7 @@ fn detect_multi(corners: &[Corner]) {
 
 ## Inputs
 
-- `&[Corner]` — ChESS X-junction corners from `chess-corners`, with
+- `&[ChessCorner]` — ChESS X-junction corners from `chess-corners`, with
   `position`, `axes`, `strength`, `contrast`, `fit_rms` populated.
 - [`DetectorParams`] — flat configuration struct covering the 8-stage
   pipeline. Use `DetectorParams::default()` for a single config or
@@ -79,7 +78,7 @@ specific input fails.
 
 | Group | Main knobs | Effect |
 |---|---|---|
-| ChESS corner detection | `chess: ChessConfig` | Pre-graph feature detection. Drop `threshold_value` to recover blurry boards; raise it to suppress false corners under glare. |
+| ChESS corner detection | `chess: DetectorConfig` | Pre-graph feature detection. Drop `chess.threshold` (e.g. `Threshold::Absolute(8.0)`) to recover blurry boards; raise it (e.g. `Threshold::Absolute(25.0)`) to suppress false corners under glare. |
 | Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
 | Cell size | `cell_size_hint` | Optional hint. Leave `None` so the detector derives cell size from a self-consistent seed (recommended). |
 | Seed | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | 2×2 seed-quad validation. |
@@ -92,18 +91,20 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
 
 ## Tuning difficult cases
 
-- **Small or blurry board** — drop `chess.threshold_value` (e.g. 0.15 →
-  0.08), increase ChESS `pyramid_levels` to 2, then try
-  `DetectorParams::sweep_default()` which interleaves multiple thresholds.
+- **Small or blurry board** — drop `chess.threshold` (e.g.
+  `Threshold::Absolute(15.0)` → `Threshold::Absolute(8.0)`), switch
+  `chess.multiscale` to `MultiscaleConfig::pyramid_default()` for
+  large frames, then try `DetectorParams::sweep_default()` which
+  varies clustering/seed tolerances.
 - **Strong perspective / tilted view** — widen `cluster_tol_deg` and
   `attach_axis_tol_deg` by a few degrees; grow may refuse otherwise-valid
   neighbours at the image edge.
 - **Moderate radial distortion (no fisheye)** — loosen `local_h_tol_rel`
   from the default 0.2 to ~0.35; the per-corner local-H check is the
   strictest invariant under curvature.
-- **Low-contrast / glare** — switch `chess.threshold_mode` from
-  `relative` to `absolute` and set an explicit floor; glare patches
-  collapse the relative threshold.
+- **Low-contrast / glare** — switch `chess.threshold` from
+  `Threshold::Relative(_)` to `Threshold::Absolute(_)` with an
+  explicit floor; glare patches collapse the relative threshold.
 - **Partial occlusion splitting the board into pieces** — use
   `detect_all` rather than `detect`; you get one `Detection` per
   connected component, each with its own rebased `(i, j)` axes.

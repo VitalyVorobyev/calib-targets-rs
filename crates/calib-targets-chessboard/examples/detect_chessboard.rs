@@ -1,0 +1,118 @@
+//! Onboarding example: detect a chessboard from a corner cloud.
+//!
+//! `calib-targets-chessboard` is **image-free** — it takes a slice of
+//! ChESS X-junction [`ChessCorner`]s and returns an integer-labelled
+//! `(i, j)` grid. (The image -> corner step is the `chess-corners`
+//! crate's job; the facade crate `calib-targets` wires the two
+//! together in its own `detect_chessboard` example.)
+//!
+//! To keep this example dependency-free and reproducible, it
+//! synthesizes a clean 9x7 chessboard corner cloud in code. Each
+//! corner carries the two orthogonal axis estimates ChESS would
+//! produce, with the **axis-slot parity** that adjacent chessboard
+//! corners exhibit: neighbours have opposite `axes[0]`/`axes[1]`
+//! orderings.
+//!
+//! Run it with:
+//!
+//! ```text
+//! cargo run -p calib-targets-chessboard --example detect_chessboard
+//! ```
+
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_core::AxisEstimate;
+use nalgebra::Point2;
+use std::f32::consts::FRAC_PI_2;
+
+/// Build a clean `cols x rows` chessboard corner cloud at `pitch` px
+/// spacing. Adjacent corners get opposite axis-slot orderings — the
+/// parity invariant the detector relies on.
+fn synth_chessboard(cols: i32, rows: i32, pitch: f32) -> Vec<ChessCorner> {
+    let mut corners = Vec::new();
+    for j in 0..rows {
+        for i in 0..cols {
+            // Parity: at "swapped" corners axes[0] is the vertical
+            // direction; at "canonical" corners it is the horizontal.
+            let swapped = (i + j) % 2 == 1;
+            let (a0, a1) = if swapped {
+                (FRAC_PI_2, 0.0)
+            } else {
+                (0.0, FRAC_PI_2)
+            };
+            corners.push(ChessCorner {
+                position: Point2::new(i as f32 * pitch + 80.0, j as f32 * pitch + 60.0),
+                axes: [
+                    AxisEstimate {
+                        angle: a0,
+                        sigma: 0.01,
+                    },
+                    AxisEstimate {
+                        angle: a1,
+                        sigma: 0.01,
+                    },
+                ],
+                contrast: 10.0,
+                fit_rms: 1.0,
+                strength: 1.0,
+            });
+        }
+    }
+    corners
+}
+
+fn main() {
+    // ---- 1. Synthesize the corner cloud -------------------------------
+    // A 9-wide, 7-tall inner-corner grid = 63 corners.
+    let (cols, rows) = (9, 7);
+    let corners = synth_chessboard(cols, rows, 24.0);
+    println!(
+        "input: {} ChESS corners ({cols}x{rows} grid)\n",
+        corners.len()
+    );
+
+    // ---- 2. Run the detector ------------------------------------------
+    // `Detector::detect` returns `Option<Detection>` — `None` means no
+    // board passed the precision-by-construction invariant stack.
+    let detector = Detector::new(DetectorParams::default());
+    let Some(detection) = detector.detect(&corners) else {
+        eprintln!("no chessboard detected");
+        return;
+    };
+
+    // ---- 3. Inspect the labelled grid ---------------------------------
+    let labelled = &detection.target.corners;
+    println!("detected a chessboard");
+    println!("  labelled corners : {}", labelled.len());
+    println!("  cell_size        : {:.2} px", detection.cell_size);
+    println!(
+        "  grid_directions  : {:.1}deg, {:.1}deg\n",
+        detection.grid_directions[0].to_degrees(),
+        detection.grid_directions[1].to_degrees(),
+    );
+
+    // Each `LabeledCorner` carries `grid: Option<GridCoords>` and the
+    // pixel `position`. Print the first few `(i, j) -> pixel` rows.
+    println!("first labelled corners ((i, j) -> pixel):");
+    for lc in labelled.iter().take(8) {
+        match lc.grid {
+            Some(g) => println!(
+                "  (i={:>2}, j={:>2})  ->  ({:7.2}, {:7.2})",
+                g.i, g.j, lc.position.x, lc.position.y
+            ),
+            None => println!(
+                "  (unlabelled)  ->  ({:.2}, {:.2})",
+                lc.position.x, lc.position.y
+            ),
+        }
+    }
+    if labelled.len() > 8 {
+        println!("  ... and {} more", labelled.len() - 8);
+    }
+
+    // `strong_indices` maps each labelled corner back to its index in
+    // the input `corners` slice (useful for ChArUco-style alignment).
+    println!(
+        "\nstrong_indices (input-slice back-references): {:?} ...",
+        &detection.strong_indices[..detection.strong_indices.len().min(6)],
+    );
+}

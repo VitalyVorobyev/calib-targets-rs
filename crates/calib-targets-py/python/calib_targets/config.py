@@ -13,7 +13,13 @@ from .enums import CirclePolarity, DictionaryName, MarkerLayout
 
 
 # ---------------------------------------------------------------------------
-# ChESS corner detector config (flat, matching Rust ChessConfig)
+# ChESS corner detector config (tagged-enum, matching Rust DetectorConfig)
+#
+# The Rust side is ``chess_corners::DetectorConfig``, a tagged-enum tree:
+# strategy / threshold / multiscale / upscale / orientation_method /
+# merge_radius. The Python user-facing class is ``ChessConfig`` so the
+# import name from ``calib_targets`` stays stable across the 0.8 → 0.10
+# migration; semantically it carries the full ``DetectorConfig``.
 # ---------------------------------------------------------------------------
 
 
@@ -28,7 +34,7 @@ class CenterOfMassConfig:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CenterOfMassConfig:
-        return cls(radius=data.get("radius", 2))
+        return cls(radius=int(data.get("radius", 2)))
 
 
 @dataclass(slots=True)
@@ -54,11 +60,13 @@ class ForstnerConfig:
     def from_dict(cls, data: dict[str, Any]) -> ForstnerConfig:
         d = cls()
         return cls(
-            radius=data.get("radius", d.radius),
-            min_trace=data.get("min_trace", d.min_trace),
-            min_det=data.get("min_det", d.min_det),
-            max_condition_number=data.get("max_condition_number", d.max_condition_number),
-            max_offset=data.get("max_offset", d.max_offset),
+            radius=int(data.get("radius", d.radius)),
+            min_trace=float(data.get("min_trace", d.min_trace)),
+            min_det=float(data.get("min_det", d.min_det)),
+            max_condition_number=float(
+                data.get("max_condition_number", d.max_condition_number)
+            ),
+            max_offset=float(data.get("max_offset", d.max_offset)),
         )
 
 
@@ -83,90 +91,602 @@ class SaddlePointConfig:
     def from_dict(cls, data: dict[str, Any]) -> SaddlePointConfig:
         d = cls()
         return cls(
-            radius=data.get("radius", d.radius),
-            det_margin=data.get("det_margin", d.det_margin),
-            max_offset=data.get("max_offset", d.max_offset),
-            min_abs_det=data.get("min_abs_det", d.min_abs_det),
+            radius=int(data.get("radius", d.radius)),
+            det_margin=float(data.get("det_margin", d.det_margin)),
+            max_offset=float(data.get("max_offset", d.max_offset)),
+            min_abs_det=float(data.get("min_abs_det", d.min_abs_det)),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tagged-enum helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class Threshold:
+    """Detector acceptance threshold.
+
+    Mirrors ``chess_corners::Threshold`` — a tagged enum with two
+    variants, ``absolute(value)`` and ``relative(frac)``. The active
+    detector (ChESS or Radon) reads the same enum, so the configuration
+    cannot drift out of sync the way the old
+    ``(threshold_mode, threshold_value)`` pair could.
+
+    Construct via the classmethods, not the dataclass literal:
+
+    .. code-block:: python
+
+        cfg = ChessConfig(threshold=Threshold.absolute(15.0))
+        cfg = ChessConfig(threshold=Threshold.relative(0.15))
+    """
+
+    kind: str = "absolute"
+    value: float = 15.0
+
+    @classmethod
+    def absolute(cls, value: float) -> Threshold:
+        """Accept responses ``>= value`` in native detector score units."""
+        return cls(kind="absolute", value=float(value))
+
+    @classmethod
+    def relative(cls, frac: float) -> Threshold:
+        """Accept responses ``>= frac * max(response)`` in the current frame.
+
+        ``frac`` is a fraction in ``[0.0, 1.0]``.
+        """
+        return cls(kind="relative", value=float(frac))
+
+    def to_dict(self) -> dict[str, float]:
+        if self.kind not in ("absolute", "relative"):
+            raise ValueError(f"unknown Threshold kind: {self.kind!r}")
+        return {self.kind: self.value}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Threshold:
+        if "absolute" in data:
+            return cls.absolute(data["absolute"])
+        if "relative" in data:
+            return cls.relative(data["relative"])
+        raise ValueError(
+            f"Threshold dict must carry 'absolute' or 'relative'; got keys {list(data)!r}"
         )
 
 
 @dataclass(slots=True)
-class RefinerConfig:
-    """Subpixel refinement configuration."""
+class MultiscaleConfig:
+    """Coarse-to-fine pyramid configuration.
 
-    kind: str = "center_of_mass"
-    center_of_mass: CenterOfMassConfig = field(default_factory=CenterOfMassConfig)
-    forstner: ForstnerConfig = field(default_factory=ForstnerConfig)
-    saddle_point: SaddlePointConfig = field(default_factory=SaddlePointConfig)
+    Mirrors ``chess_corners::MultiscaleConfig``: either ``SingleScale``
+    (a bare string ``"single_scale"`` on the wire) or ``Pyramid``
+    carrying ``levels / min_size / refinement_radius``.
+    """
+
+    kind: str = "single_scale"
+    levels: int = 3
+    min_size: int = 128
+    refinement_radius: int = 3
+
+    @classmethod
+    def single_scale(cls) -> MultiscaleConfig:
+        """No pyramid; detect once at the input resolution."""
+        return cls(kind="single_scale")
+
+    @classmethod
+    def pyramid(
+        cls,
+        levels: int = 3,
+        min_size: int = 128,
+        refinement_radius: int = 3,
+    ) -> MultiscaleConfig:
+        """Coarse-to-fine pyramid detection with the given parameters."""
+        return cls(
+            kind="pyramid",
+            levels=int(levels),
+            min_size=int(min_size),
+            refinement_radius=int(refinement_radius),
+        )
+
+    def to_dict(self) -> Any:
+        if self.kind == "single_scale":
+            return "single_scale"
+        if self.kind == "pyramid":
+            return {
+                "pyramid": {
+                    "levels": int(self.levels),
+                    "min_size": int(self.min_size),
+                    "refinement_radius": int(self.refinement_radius),
+                }
+            }
+        raise ValueError(f"unknown MultiscaleConfig kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: Any) -> MultiscaleConfig:
+        if isinstance(data, str):
+            if data == "single_scale":
+                return cls.single_scale()
+            raise ValueError(f"unknown MultiscaleConfig variant: {data!r}")
+        if isinstance(data, dict):
+            if "pyramid" in data:
+                payload = data["pyramid"] or {}
+                return cls.pyramid(
+                    levels=payload.get("levels", 3),
+                    min_size=payload.get("min_size", 128),
+                    refinement_radius=payload.get("refinement_radius", 3),
+                )
+            if "single_scale" in data:  # tolerate `{ "single_scale": null }`
+                return cls.single_scale()
+        raise ValueError(f"unsupported MultiscaleConfig payload: {data!r}")
+
+
+@dataclass(slots=True)
+class UpscaleConfig:
+    """Pre-pipeline integer upscaling.
+
+    Mirrors ``chess_corners::UpscaleConfig``: ``Disabled`` (bare string
+    ``"disabled"``) or ``Fixed(factor)`` for factor in ``{2, 3, 4}``.
+    """
+
+    kind: str = "disabled"
+    factor: int = 1
+
+    @classmethod
+    def disabled(cls) -> UpscaleConfig:
+        """No upscaling (the default)."""
+        return cls(kind="disabled", factor=1)
+
+    @classmethod
+    def fixed(cls, factor: int) -> UpscaleConfig:
+        """Upscale by ``factor`` (allowed: 2, 3, 4) before detection."""
+        return cls(kind="fixed", factor=int(factor))
+
+    def to_dict(self) -> Any:
+        if self.kind == "disabled":
+            return "disabled"
+        if self.kind == "fixed":
+            return {"fixed": int(self.factor)}
+        raise ValueError(f"unknown UpscaleConfig kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: Any) -> UpscaleConfig:
+        if isinstance(data, str):
+            if data == "disabled":
+                return cls.disabled()
+            raise ValueError(f"unknown UpscaleConfig variant: {data!r}")
+        if isinstance(data, dict):
+            if "fixed" in data:
+                return cls.fixed(int(data["fixed"]))
+            if "disabled" in data:
+                return cls.disabled()
+        raise ValueError(f"unsupported UpscaleConfig payload: {data!r}")
+
+
+class ChessRefiner:
+    """Subpixel refiner selection for the ChESS detector.
+
+    Mirrors ``chess_corners::ChessRefiner``. Construct via the
+    classmethods so the wire-shape stays consistent with serde:
+
+    .. code-block:: python
+
+        ChessRefiner.center_of_mass()
+        ChessRefiner.forstner(ForstnerConfig(radius=3))
+        ChessRefiner.saddle_point()
+        ChessRefiner.ml()   # only honoured by the Rust crate when the
+                            # ``ml-refiner`` feature is enabled
+
+    Implemented as a hand-rolled class (not a ``@dataclass``) so the
+    variant-constructor classmethods do not collide with the per-variant
+    payload slots.
+    """
+
+    __slots__ = ("kind", "center_of_mass_cfg", "forstner_cfg", "saddle_point_cfg")
+
+    def __init__(
+        self,
+        kind: str = "center_of_mass",
+        center_of_mass_cfg: CenterOfMassConfig | None = None,
+        forstner_cfg: ForstnerConfig | None = None,
+        saddle_point_cfg: SaddlePointConfig | None = None,
+    ) -> None:
+        self.kind = kind
+        self.center_of_mass_cfg: CenterOfMassConfig = (
+            center_of_mass_cfg if center_of_mass_cfg is not None else CenterOfMassConfig()
+        )
+        self.forstner_cfg: ForstnerConfig = (
+            forstner_cfg if forstner_cfg is not None else ForstnerConfig()
+        )
+        self.saddle_point_cfg: SaddlePointConfig = (
+            saddle_point_cfg if saddle_point_cfg is not None else SaddlePointConfig()
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, ChessRefiner):
+            return NotImplemented
+        if self.kind != other.kind:
+            return False
+        if self.kind == "center_of_mass":
+            return self.center_of_mass_cfg == other.center_of_mass_cfg
+        if self.kind == "forstner":
+            return self.forstner_cfg == other.forstner_cfg
+        if self.kind == "saddle_point":
+            return self.saddle_point_cfg == other.saddle_point_cfg
+        return True  # ml
+
+    def __repr__(self) -> str:
+        return f"ChessRefiner(kind={self.kind!r})"
+
+    @classmethod
+    def center_of_mass(
+        cls, cfg: CenterOfMassConfig | None = None
+    ) -> ChessRefiner:
+        return cls(kind="center_of_mass", center_of_mass_cfg=cfg)
+
+    @classmethod
+    def forstner(cls, cfg: ForstnerConfig | None = None) -> ChessRefiner:
+        return cls(kind="forstner", forstner_cfg=cfg)
+
+    @classmethod
+    def saddle_point(
+        cls, cfg: SaddlePointConfig | None = None
+    ) -> ChessRefiner:
+        return cls(kind="saddle_point", saddle_point_cfg=cfg)
+
+    @classmethod
+    def ml(cls) -> ChessRefiner:
+        """ONNX-backed ML refiner (Rust must be built with ``ml-refiner``)."""
+        return cls(kind="ml")
+
+    def to_dict(self) -> Any:
+        if self.kind == "center_of_mass":
+            return {"center_of_mass": self.center_of_mass_cfg.to_dict()}
+        if self.kind == "forstner":
+            return {"forstner": self.forstner_cfg.to_dict()}
+        if self.kind == "saddle_point":
+            return {"saddle_point": self.saddle_point_cfg.to_dict()}
+        if self.kind == "ml":
+            return "ml"
+        raise ValueError(f"unknown ChessRefiner kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: Any) -> ChessRefiner:
+        if isinstance(data, str):
+            if data == "ml":
+                return cls.ml()
+            raise ValueError(f"unknown ChessRefiner variant: {data!r}")
+        if isinstance(data, dict):
+            if "center_of_mass" in data:
+                return cls.center_of_mass(
+                    CenterOfMassConfig.from_dict(data["center_of_mass"] or {})
+                )
+            if "forstner" in data:
+                return cls.forstner(ForstnerConfig.from_dict(data["forstner"] or {}))
+            if "saddle_point" in data:
+                return cls.saddle_point(
+                    SaddlePointConfig.from_dict(data["saddle_point"] or {})
+                )
+            if "ml" in data:
+                return cls.ml()
+        raise ValueError(f"unsupported ChessRefiner payload: {data!r}")
+
+
+# Bare-string enum constants. The Rust side uses ``#[serde(rename_all =
+# "snake_case")]`` so unit variants round-trip as bare strings: callers
+# pass these directly, no wrapper needed.
+class ChessRing:
+    """ChESS sampling ring radius selector (Rust unit-enum)."""
+
+    CANONICAL = "canonical"
+    BROAD = "broad"
+
+
+class DescriptorRing:
+    """Descriptor sampling ring selector (Rust unit-enum)."""
+
+    FOLLOW_DETECTOR = "follow_detector"
+    CANONICAL = "canonical"
+    BROAD = "broad"
+
+
+class OrientationMethod:
+    """Orientation-fit method used when building corner descriptors."""
+
+    RING_FIT = "ring_fit"
+    DISK_FIT = "disk_fit"
+
+
+# ---------------------------------------------------------------------------
+# ChessStrategyConfig (nested under DetectionStrategy.chess)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class ChessStrategyConfig:
+    """ChESS detector strategy payload.
+
+    Mirrors the *narrower* ``chess_corners::ChessConfig`` (the
+    strategy-specific subset). Sits under ``DetectionStrategy.chess`` /
+    the top-level :class:`ChessConfig` ``strategy`` field. The
+    user-facing ``ChessConfig`` Python class corresponds to Rust's
+    ``DetectorConfig`` (this whole tree).
+    """
+
+    ring: str = ChessRing.CANONICAL
+    descriptor_ring: str = DescriptorRing.FOLLOW_DETECTOR
+    nms_radius: int = 2
+    min_cluster_size: int = 2
+    refiner: ChessRefiner = field(
+        default_factory=lambda: ChessRefiner.center_of_mass()
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "kind": self.kind,
-            "center_of_mass": self.center_of_mass.to_dict(),
-            "forstner": self.forstner.to_dict(),
-            "saddle_point": self.saddle_point.to_dict(),
+            "ring": self.ring,
+            "descriptor_ring": self.descriptor_ring,
+            "nms_radius": int(self.nms_radius),
+            "min_cluster_size": int(self.min_cluster_size),
+            "refiner": self.refiner.to_dict(),
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> RefinerConfig:
+    def from_dict(cls, data: dict[str, Any]) -> ChessStrategyConfig:
         d = cls()
         return cls(
-            kind=data.get("kind", d.kind),
-            center_of_mass=CenterOfMassConfig.from_dict(data.get("center_of_mass", {})),
-            forstner=ForstnerConfig.from_dict(data.get("forstner", {})),
-            saddle_point=SaddlePointConfig.from_dict(data.get("saddle_point", {})),
+            ring=data.get("ring", d.ring),
+            descriptor_ring=data.get("descriptor_ring", d.descriptor_ring),
+            nms_radius=int(data.get("nms_radius", d.nms_radius)),
+            min_cluster_size=int(data.get("min_cluster_size", d.min_cluster_size)),
+            refiner=ChessRefiner.from_dict(
+                data.get("refiner", {"center_of_mass": {}})
+            ),
         )
+
+
+class DetectionStrategy:
+    """Top-level detector dispatch — ChESS only on the Python side today.
+
+    The Rust ``chess_corners::DetectionStrategy`` also supports a
+    ``Radon`` variant; PuzzleBoard / ChArUco / chessboard detection
+    funnels everything through the ChESS strategy, so the Python
+    binding exposes only that. Use :meth:`DetectionStrategy.chess` to
+    construct.
+
+    The wire shape matches Rust's externally-tagged enum: ChESS variants
+    serialise to ``{"chess": <ChessStrategyConfig>}``.
+
+    This is intentionally not a ``@dataclass``: the convenience
+    classmethod ``chess(...)`` would collide with a same-named slot
+    under ``slots=True``. The two attributes that matter — ``kind`` and
+    the nested chess strategy (``chess_config``) — are still ergonomic
+    to access.
+    """
+
+    __slots__ = ("kind", "chess_config")
+
+    def __init__(
+        self,
+        kind: str = "chess",
+        chess_config: ChessStrategyConfig | None = None,
+    ) -> None:
+        self.kind = kind
+        self.chess_config: ChessStrategyConfig = (
+            chess_config if chess_config is not None else ChessStrategyConfig()
+        )
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, DetectionStrategy):
+            return NotImplemented
+        return self.kind == other.kind and self.chess_config == other.chess_config
+
+    def __repr__(self) -> str:
+        return (
+            f"DetectionStrategy(kind={self.kind!r}, "
+            f"chess_config={self.chess_config!r})"
+        )
+
+    @classmethod
+    def chess(
+        cls, cfg: ChessStrategyConfig | None = None
+    ) -> DetectionStrategy:
+        return cls(kind="chess", chess_config=cfg)
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind == "chess":
+            return {"chess": self.chess_config.to_dict()}
+        raise ValueError(f"unsupported DetectionStrategy kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DetectionStrategy:
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"DetectionStrategy must be a dict; got {type(data).__name__}"
+            )
+        if "chess" in data:
+            return cls.chess(
+                ChessStrategyConfig.from_dict(data.get("chess") or {})
+            )
+        if "radon" in data:
+            raise ValueError(
+                "DetectionStrategy.radon is not exposed via the Python "
+                "binding; calib-targets always uses the ChESS strategy."
+            )
+        raise ValueError(
+            f"DetectionStrategy dict must carry 'chess'; got keys {list(data)!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible deprecated alias for the old flat ``RefinerConfig``.
+# ---------------------------------------------------------------------------
+
+
+class RefinerConfig:
+    """Deprecated flat refiner config — kept for source compatibility.
+
+    Pre-0.10 code wrote ``RefinerConfig(kind="forstner")`` and let
+    ``ChessConfig`` pick the appropriate sub-config. The Rust side now
+    speaks a tagged-enum :class:`ChessRefiner`; this shim accepts the
+    legacy keyword shape and forwards to :class:`ChessRefiner`. Prefer
+    constructing :class:`ChessRefiner` directly in new code.
+    """
+
+    def __new__(  # type: ignore[misc]
+        cls,
+        kind: str = "center_of_mass",
+        center_of_mass: CenterOfMassConfig | None = None,
+        forstner: ForstnerConfig | None = None,
+        saddle_point: SaddlePointConfig | None = None,
+    ) -> ChessRefiner:
+        if kind == "center_of_mass":
+            return ChessRefiner.center_of_mass(center_of_mass)
+        if kind == "forstner":
+            return ChessRefiner.forstner(forstner)
+        if kind == "saddle_point":
+            return ChessRefiner.saddle_point(saddle_point)
+        if kind == "ml":
+            return ChessRefiner.ml()
+        raise ValueError(f"unknown refiner kind: {kind!r}")
+
+    @staticmethod
+    def from_dict(data: dict[str, Any]) -> ChessRefiner:  # noqa: D401
+        """Accept the legacy flat shape *or* the new tagged shape."""
+        if isinstance(data, dict) and "kind" in data and (
+            "center_of_mass" in data or "forstner" in data or "saddle_point" in data
+        ):
+            kind = data["kind"]
+            if kind == "center_of_mass":
+                payload = data.get("center_of_mass", {}) or {}
+                return ChessRefiner.center_of_mass(
+                    CenterOfMassConfig.from_dict(payload)
+                )
+            if kind == "forstner":
+                payload = data.get("forstner", {}) or {}
+                return ChessRefiner.forstner(ForstnerConfig.from_dict(payload))
+            if kind == "saddle_point":
+                payload = data.get("saddle_point", {}) or {}
+                return ChessRefiner.saddle_point(
+                    SaddlePointConfig.from_dict(payload)
+                )
+            if kind == "ml":
+                return ChessRefiner.ml()
+            raise ValueError(f"unknown refiner kind: {kind!r}")
+        return ChessRefiner.from_dict(data)
+
+
+# ---------------------------------------------------------------------------
+# Top-level ChessConfig — the Python name for Rust ``DetectorConfig``.
+# ---------------------------------------------------------------------------
+
+
+_OLD_FLAT_FIELDS = frozenset(
+    {
+        "detector_mode",
+        "descriptor_mode",
+        "threshold_mode",
+        "threshold_value",
+        "pyramid_levels",
+        "pyramid_min_size",
+        "refinement_radius",
+    }
+)
 
 
 @dataclass(slots=True)
 class ChessConfig:
-    """Flat ChESS corner detector configuration matching the Rust ChessConfig.
+    """High-level ChESS-detector configuration.
 
-    All fields have concrete defaults matching the Rust side.
+    Mirrors ``chess_corners::DetectorConfig`` 1:1 on the wire (serde
+    JSON shape). The Python class keeps the user-facing
+    ``ChessConfig`` name across the chess-corners 0.8 → 0.10 migration
+    so existing imports keep working; the *fields* are different.
+
+    Defaults match
+    ``calib_targets::detect::default_chess_config()`` — a single-scale
+    ChESS strategy with ``Threshold::Absolute(15.0)``, no upscaling,
+    ring-fit orientation, and a 3.0-pixel merge radius. The 15.0
+    absolute threshold is a small noise floor that keeps the
+    seed-and-grow chessboard detector and the topological pipeline
+    from drowning in weak responses (chosen by sweeping the public
+    testdata regression set; see
+    ``crates/calib-targets/examples/threshold_sweep.rs``).
+
+    Pre-blur preprocessing is not carried on this struct; apply any
+    Gaussian blur to the input image yourself (e.g. via
+    ``scipy.ndimage.gaussian_filter`` or ``cv2.GaussianBlur``) before
+    calling the ``detect_*`` entry points.
+
+    Example:
+
+    .. code-block:: python
+
+        # Default (Absolute(15.0)):
+        cfg = ChessConfig()
+
+        # Lower threshold for blurry boards:
+        cfg = ChessConfig(threshold=Threshold.absolute(8.0))
+
+        # Or a relative fraction of the peak response:
+        cfg = ChessConfig(threshold=Threshold.relative(0.15))
+
+        # Coarse-to-fine multiscale for large frames:
+        cfg = ChessConfig(multiscale=MultiscaleConfig.pyramid())
+
+        # Pre-pipeline upscale for tiny markers:
+        cfg = ChessConfig(upscale=UpscaleConfig.fixed(2))
     """
 
-    detector_mode: str = "canonical"
-    descriptor_mode: str = "follow_detector"
-    threshold_mode: str = "relative"
-    threshold_value: float = 0.2
-    nms_radius: int = 2
-    min_cluster_size: int = 2
-    refiner: RefinerConfig = field(default_factory=RefinerConfig)
-    pyramid_levels: int = 1
-    pyramid_min_size: int = 128
-    refinement_radius: int = 3
+    strategy: DetectionStrategy = field(default_factory=DetectionStrategy.chess)
+    threshold: Threshold = field(default_factory=lambda: Threshold.absolute(15.0))
+    multiscale: MultiscaleConfig = field(
+        default_factory=lambda: MultiscaleConfig.single_scale()
+    )
+    upscale: UpscaleConfig = field(default_factory=lambda: UpscaleConfig.disabled())
+    orientation_method: str = OrientationMethod.RING_FIT
     merge_radius: float = 3.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "detector_mode": self.detector_mode,
-            "descriptor_mode": self.descriptor_mode,
-            "threshold_mode": self.threshold_mode,
-            "threshold_value": self.threshold_value,
-            "nms_radius": self.nms_radius,
-            "min_cluster_size": self.min_cluster_size,
-            "refiner": self.refiner.to_dict(),
-            "pyramid_levels": self.pyramid_levels,
-            "pyramid_min_size": self.pyramid_min_size,
-            "refinement_radius": self.refinement_radius,
-            "merge_radius": self.merge_radius,
+            "strategy": self.strategy.to_dict(),
+            "threshold": self.threshold.to_dict(),
+            "multiscale": self.multiscale.to_dict(),
+            "upscale": self.upscale.to_dict(),
+            "orientation_method": self.orientation_method,
+            "merge_radius": float(self.merge_radius),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessConfig:
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"ChessConfig.from_dict expects a dict; got {type(data).__name__}"
+            )
+        # Catch the pre-0.10 flat shape explicitly so the user gets a clear
+        # migration error instead of a baffling "missing 'strategy'".
+        flat_hits = _OLD_FLAT_FIELDS.intersection(data)
+        new_hits = {"strategy", "threshold", "multiscale", "upscale"}.intersection(data)
+        if flat_hits and not new_hits:
+            raise ValueError(
+                "ChessConfig.from_dict received the pre-0.10 flat shape "
+                f"(keys: {sorted(flat_hits)!r}). The chess-corners 0.10 "
+                "migration replaced these with a tagged-enum tree: pass "
+                "`Threshold.absolute(v)` / `Threshold.relative(f)` for the "
+                "threshold, `MultiscaleConfig.pyramid(...)` for pyramid "
+                "settings, `UpscaleConfig.fixed(k)` for pre-pipeline "
+                "upscaling, and `ChessRefiner.forstner(...)` etc. for the "
+                "refiner. See README and CHANGELOG."
+            )
         d = cls()
         return cls(
-            detector_mode=data.get("detector_mode", d.detector_mode),
-            descriptor_mode=data.get("descriptor_mode", d.descriptor_mode),
-            threshold_mode=data.get("threshold_mode", d.threshold_mode),
-            threshold_value=data.get("threshold_value", d.threshold_value),
-            nms_radius=data.get("nms_radius", d.nms_radius),
-            min_cluster_size=data.get("min_cluster_size", d.min_cluster_size),
-            refiner=RefinerConfig.from_dict(data.get("refiner", {})),
-            pyramid_levels=data.get("pyramid_levels", d.pyramid_levels),
-            pyramid_min_size=data.get("pyramid_min_size", d.pyramid_min_size),
-            refinement_radius=data.get("refinement_radius", d.refinement_radius),
-            merge_radius=data.get("merge_radius", d.merge_radius),
+            strategy=DetectionStrategy.from_dict(
+                data.get("strategy", d.strategy.to_dict())
+            ),
+            threshold=Threshold.from_dict(data.get("threshold", d.threshold.to_dict())),
+            multiscale=MultiscaleConfig.from_dict(
+                data.get("multiscale", d.multiscale.to_dict())
+            ),
+            upscale=UpscaleConfig.from_dict(data.get("upscale", d.upscale.to_dict())),
+            orientation_method=data.get("orientation_method", d.orientation_method),
+            merge_radius=float(data.get("merge_radius", d.merge_radius)),
         )
 
 
@@ -240,6 +760,87 @@ class GridGraphParams:
 
 
 @dataclass(slots=True)
+class AxisClusterCenters:
+    """Two global grid-axis directions for the topological pre-Delaunay gate.
+
+    Mirrors ``projective_grid::AxisClusterCenters``. Both fields are in
+    ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
+    you have an unbiased estimate; the chessboard detector's topological
+    dispatch path supplies these from its own ``cluster_axes`` so callers
+    of ``detect_chessboard`` rarely need to set this manually.
+    """
+
+    theta0: float
+    theta1: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"theta0": self.theta0, "theta1": self.theta1}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> AxisClusterCenters:
+        return cls(theta0=data["theta0"], theta1=data["theta1"])
+
+
+@dataclass(slots=True)
+class TopologicalParams:
+    """Tuning knobs for ``projective_grid::build_grid_topological``.
+
+    Defaults match the Rust workspace defaults in
+    ``crates/projective-grid/src/topological/mod.rs`` and have been
+    co-tuned against ``02-topo-grid`` (Gemini chessboards) and
+    ``130x130_puzzle``. See
+    ``crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`` for the
+    stage-by-stage picture.
+    """
+
+    axis_align_tol_rad: float = 0.2617993877991494  # 15°
+    max_axis_sigma_rad: float = 0.6
+    edge_ratio_max: float = 10.0
+    min_quads_per_component: int = 1
+    axis_cluster_centers: "AxisClusterCenters | None" = None
+    cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
+    quad_edge_min_rel: float = 0.0
+    quad_edge_max_rel: float = 1.8
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "axis_align_tol_rad": self.axis_align_tol_rad,
+            "max_axis_sigma_rad": self.max_axis_sigma_rad,
+            "edge_ratio_max": self.edge_ratio_max,
+            "min_quads_per_component": self.min_quads_per_component,
+            "axis_cluster_centers": (
+                self.axis_cluster_centers.to_dict()
+                if self.axis_cluster_centers is not None
+                else None
+            ),
+            "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
+            "quad_edge_min_rel": self.quad_edge_min_rel,
+            "quad_edge_max_rel": self.quad_edge_max_rel,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> TopologicalParams:
+        d = cls()
+        centers = data.get("axis_cluster_centers", None)
+        return cls(
+            axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
+            max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
+            edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
+            min_quads_per_component=data.get(
+                "min_quads_per_component", d.min_quads_per_component
+            ),
+            axis_cluster_centers=(
+                AxisClusterCenters.from_dict(centers) if centers is not None else None
+            ),
+            cluster_axis_tol_rad=data.get(
+                "cluster_axis_tol_rad", d.cluster_axis_tol_rad
+            ),
+            quad_edge_min_rel=data.get("quad_edge_min_rel", d.quad_edge_min_rel),
+            quad_edge_max_rel=data.get("quad_edge_max_rel", d.quad_edge_max_rel),
+        )
+
+
+@dataclass(slots=True)
 class ChessboardParams:
     """Chessboard detection parameters — flat shape.
 
@@ -262,6 +863,7 @@ class ChessboardParams:
     # ChessboardV2 — flip to "topological" when targeting low-view-angle
     # PuzzleBoard captures or other distortion-heavy scenes.
     graph_build_algorithm: str = "chessboard_v2"
+    topological: TopologicalParams = field(default_factory=TopologicalParams)
     # Stage 1 — pre-filter
     min_corner_strength: float = 0.0
     max_fit_rms_ratio: float = 0.5
@@ -301,10 +903,21 @@ class ChessboardParams:
     min_labeled_corners: int = 8
     max_components: int = 3
 
+    @classmethod
+    def for_topological(cls, **overrides: Any) -> ChessboardParams:
+        """Return defaults with the topological graph builder selected.
+
+        ``overrides`` are forwarded to ``ChessboardParams(...)`` after setting
+        ``graph_build_algorithm="topological"``.
+        """
+        overrides.setdefault("graph_build_algorithm", "topological")
+        return cls(**overrides)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
+            "topological": self.topological.to_dict(),
             "min_corner_strength": self.min_corner_strength,
             "max_fit_rms_ratio": self.max_fit_rms_ratio,
             "num_bins": self.num_bins,
@@ -345,6 +958,7 @@ class ChessboardParams:
             graph_build_algorithm=data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
             ),
+            topological=TopologicalParams.from_dict(data.get("topological", {})),
             min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
             max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
             num_bins=data.get("num_bins", d.num_bins),
@@ -896,12 +1510,18 @@ class PuzzleBoardParams:
 
     @classmethod
     def sweep_for_board(cls, board: PuzzleBoardSpec) -> list[PuzzleBoardParams]:
+        # Bracket the workspace ChESS-threshold default (absolute 15.0)
+        # with a looser floor for blurry inputs and a tighter floor
+        # for clean ones. Detector + threshold semantics changed in
+        # chess-corners 0.10 (raw response `R = SR − DR − 16·MR`),
+        # so the bracket lives in raw-response units, not the 0..1
+        # normalised range used pre-0.10.
         base = cls.for_board(board)
-        high = cls.from_dict(base.to_dict())
-        high.chessboard.chess.threshold_value = 0.15
-        low = cls.from_dict(base.to_dict())
-        low.chessboard.chess.threshold_value = 0.08
-        return [base, high, low]
+        loose = cls.from_dict(base.to_dict())
+        loose.chessboard.chess.threshold = Threshold.absolute(8.0)
+        tight = cls.from_dict(base.to_dict())
+        tight.chessboard.chess.threshold = Threshold.absolute(25.0)
+        return [base, loose, tight]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -924,14 +1544,28 @@ class PuzzleBoardParams:
 
 
 __all__ = [
+    # ChESS detector configuration (DetectorConfig tree).
     "CenterOfMassConfig",
     "ForstnerConfig",
     "SaddlePointConfig",
-    "RefinerConfig",
+    "Threshold",
+    "MultiscaleConfig",
+    "UpscaleConfig",
+    "ChessRing",
+    "DescriptorRing",
+    "OrientationMethod",
+    "ChessRefiner",
+    "ChessStrategyConfig",
+    "DetectionStrategy",
+    "RefinerConfig",  # deprecated shim — forwards to ChessRefiner
     "ChessConfig",
+    # Chessboard pipeline.
     "OrientationClusteringParams",
     "GridGraphParams",
     "ChessboardParams",
+    "TopologicalParams",
+    "AxisClusterCenters",
+    # ChArUco / marker / puzzleboard pipelines.
     "ScanDecodeConfig",
     "CharucoBoardSpec",
     "CharucoParams",
