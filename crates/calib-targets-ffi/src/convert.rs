@@ -54,9 +54,10 @@ use calib_targets::puzzleboard::{
 // Advanced ChESS tuning types are imported from `chess-corners` directly —
 // the `calib-targets` facade re-exports only `DetectorConfig` +
 // `OrientationMethod`.
+use chess_corners::low_level::{ChessParams, PyramidParams, RefinerKind};
 use chess_corners::{
-    CenterOfMassConfig, ChessParams, ChessRefiner, ChessRing, DescriptorRing, ForstnerConfig,
-    MultiscaleConfig, PyramidParams, RefinerKind, SaddlePointConfig, Threshold, UpscaleConfig,
+    CenterOfMassConfig, ChessRefiner, ChessRing, DescriptorRing, ForstnerConfig, MultiscaleConfig,
+    SaddlePointConfig, Threshold, UpscaleConfig,
 };
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ pub(crate) fn convert_refiner_kind(
 }
 
 pub(crate) fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    // `ChessParams` (`chess_corners::ChessParams`) is `#[non_exhaustive]`,
+    // `ChessParams` (`chess_corners::low_level::ChessParams`) is `#[non_exhaustive]`,
     // so we must start from `default()` and patch individual fields.
     let mut out = ChessParams::default();
     out.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;

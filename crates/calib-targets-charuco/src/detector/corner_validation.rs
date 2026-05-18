@@ -48,7 +48,7 @@ use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
     estimate_homography_rect_to_img, GrayImageView, LabeledCorner, TargetDetection, TargetKind,
 };
-use chess_corners::{
+use chess_corners::low_level::{
     chess_response_u8_patch, detect_corners_from_response_with_refiner, ChessParams, ImageView,
     Refiner, Roi,
 };

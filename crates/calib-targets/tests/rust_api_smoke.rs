@@ -27,7 +27,7 @@ edition = "2021"
 
 [dependencies]
 calib-targets = {{ path = '{crate_dir}' }}
-chess-corners = "0.10"
+chess-corners = "0.11"
 image = "0.25"
 "#
         ),

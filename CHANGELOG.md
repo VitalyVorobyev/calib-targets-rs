@@ -9,6 +9,17 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## [Unreleased]
 
+### Changed
+
+- Bumped `chess-corners` `0.10 → 0.11`. The 0.11 release is a
+  re-export reorganization with no algorithm or signature change:
+  low-level pipeline stages, parameter structs, and scratch buffers
+  (`ChessParams`, `RefinerKind`, `Refiner`, `Roi`, `ImageView`,
+  `PyramidParams`, `chess_response_u8_patch`,
+  `detect_corners_from_response_with_refiner`) moved from the crate
+  root into the new `chess_corners::low_level` module. Workspace
+  imports were updated accordingly; no behavior change.
+
 ## 0.9.0
 
 Migrates the workspace onto `chess-corners` 0.10 (skipping the

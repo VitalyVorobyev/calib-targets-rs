@@ -1,7 +1,8 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use chess_corners::{ChessParams as ChessCornerParams, RefinerKind, SaddlePointConfig};
+use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -171,11 +172,12 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
     params
 }
 
-/// Convert a `ChessCornerParams` into the upstream `chess_corners::ChessParams`.
+/// Convert a `ChessCornerParams` into the upstream
+/// `chess_corners::low_level::ChessParams`.
 ///
-/// Since `ChessCornerParams` is now a re-export of `chess_corners::ChessParams`,
-/// this is an identity-like operation.
-pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::ChessParams {
+/// Since `ChessCornerParams` is now a re-export of
+/// `chess_corners::low_level::ChessParams`, this is an identity-like operation.
+pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::low_level::ChessParams {
     params.clone()
 }
 
@@ -259,7 +261,7 @@ mod tests {
 
     #[test]
     fn to_chess_params_is_identity() {
-        // Since ChessCornerParams IS chess_corners::ChessParams, to_chess_params
+        // Since ChessCornerParams IS chess_corners::low_level::ChessParams, to_chess_params
         // should round-trip perfectly.
         let mut params = ChessCornerParams::default();
         params.threshold_rel = 0.3;

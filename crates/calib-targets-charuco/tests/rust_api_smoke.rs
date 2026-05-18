@@ -33,7 +33,7 @@ edition = "2021"
 [dependencies]
 calib-targets-aruco = {{ path = '{}' }}
 calib-targets-charuco = {{ path = '{charuco_dir}' }}
-chess-corners = "0.10"
+chess-corners = "0.11"
 "#,
             aruco_dir.display(),
         ),
@@ -45,7 +45,8 @@ chess-corners = "0.10"
 use calib_targets_charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 // Advanced ChESS tuning types come from `chess-corners` directly — the
 // workspace crates re-export only `DetectorConfig` + `OrientationMethod`.
-use chess_corners::{ChessParams, RefinerKind, SaddlePointConfig};
+use chess_corners::low_level::{ChessParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 
 fn main() {
     let board = CharucoBoardSpec {

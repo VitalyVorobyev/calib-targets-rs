@@ -3,7 +3,8 @@
 use crate::board::PuzzleBoardSpec;
 use crate::detector::PuzzleBoardDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use chess_corners::{ChessParams as ChessCornerParams, RefinerKind, SaddlePointConfig};
+use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
