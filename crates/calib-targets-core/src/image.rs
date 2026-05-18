@@ -1,18 +1,34 @@
+/// Borrowed view over an 8-bit grayscale image.
+///
+/// A lightweight, image-crate-free pixel container: the workspace passes
+/// these into detectors so `calib-targets-core` stays decoupled from any
+/// concrete image type.
 #[derive(Clone, Copy, Debug)]
 pub struct GrayImageView<'a> {
+    /// Image width in pixels.
     pub width: usize,
+    /// Image height in pixels.
     pub height: usize,
-    pub data: &'a [u8], // row-major, len = w*h
+    /// Row-major pixel buffer; length must equal `width * height`.
+    pub data: &'a [u8],
 }
 
+/// Owned 8-bit grayscale image.
+///
+/// The owning counterpart of [`GrayImageView`]. Call [`GrayImage::view`]
+/// to borrow it for a detector.
 #[derive(Clone, Debug)]
 pub struct GrayImage {
+    /// Image width in pixels.
     pub width: usize,
+    /// Image height in pixels.
     pub height: usize,
+    /// Row-major pixel buffer; length must equal `width * height`.
     pub data: Vec<u8>,
 }
 
 impl GrayImage {
+    /// Borrow this image as a [`GrayImageView`].
     pub fn view(&self) -> GrayImageView<'_> {
         GrayImageView {
             width: self.width,
@@ -30,6 +46,11 @@ fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
     src.data[y as usize * src.width + x as usize]
 }
 
+/// Bilinearly sample a grayscale image at sub-pixel `(x, y)`.
+///
+/// Coordinates are in pixels; pixel centers sit at integer coordinates.
+/// Samples whose 2×2 footprint falls outside the image treat the missing
+/// pixels as `0` (zero-padding). Returns the interpolated value as `f32`.
 #[inline]
 pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
     let x0 = x.floor() as i32;
@@ -47,6 +68,12 @@ pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
     a + fy * (b - a)
 }
 
+/// Bilinearly sample a grayscale image, skipping bounds checks on the hot
+/// path.
+///
+/// Identical result to [`sample_bilinear`], but when the 2×2 footprint is
+/// fully inside the image it indexes the buffer directly. Out-of-range
+/// footprints fall back to [`sample_bilinear`] (zero-padding semantics).
 #[inline]
 pub fn sample_bilinear_fast(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
     let x0 = x.floor() as i32;
@@ -70,6 +97,10 @@ pub fn sample_bilinear_fast(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
     a + fy * (b - a)
 }
 
+/// Bilinearly sample a grayscale image and round the result to `u8`.
+///
+/// Wraps [`sample_bilinear`], clamping the interpolated value to
+/// `0..=255` before truncation.
 #[inline]
 pub fn sample_bilinear_u8(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
     sample_bilinear(src, x, y).clamp(0.0, 255.0) as u8

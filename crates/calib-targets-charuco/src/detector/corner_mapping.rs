@@ -22,13 +22,12 @@ pub(crate) fn map_charuco_corners(
             continue;
         };
 
-        let candidate = LabeledCorner {
-            position: corner.position,
-            grid: Some(grid),
-            id: Some(id),
-            target_position: board.charuco_object_xy(id),
-            score: corner.score,
-        };
+        let mut candidate = LabeledCorner::new(corner.position, corner.score)
+            .with_grid(grid)
+            .with_id(id);
+        if let Some(target) = board.charuco_object_xy(id) {
+            candidate = candidate.with_target_position(target);
+        }
 
         match by_grid.get(&grid) {
             None => {
@@ -44,10 +43,7 @@ pub(crate) fn map_charuco_corners(
     let mut corners: Vec<LabeledCorner> = by_grid.into_values().collect();
     corners.sort_by_key(|c| c.id.unwrap_or(u32::MAX));
 
-    TargetDetection {
-        kind: TargetKind::Charuco,
-        corners,
-    }
+    TargetDetection::new(TargetKind::Charuco, corners)
 }
 
 fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
@@ -127,25 +123,13 @@ mod tests {
             alignment: GridAlignment::IDENTITY,
             marker_inliers: Vec::new(),
         };
-        let chessboard = TargetDetection {
-            kind: TargetKind::Chessboard,
-            corners: vec![
-                LabeledCorner {
-                    position: Point2::new(1.0, 1.0),
-                    grid: Some(GridCoords { i: 1, j: 1 }),
-                    id: None,
-                    target_position: None,
-                    score: 0.2,
-                },
-                LabeledCorner {
-                    position: Point2::new(2.0, 2.0),
-                    grid: Some(GridCoords { i: 1, j: 1 }),
-                    id: None,
-                    target_position: None,
-                    score: 0.9,
-                },
+        let chessboard = TargetDetection::new(
+            TargetKind::Chessboard,
+            vec![
+                LabeledCorner::new(Point2::new(1.0, 1.0), 0.2).with_grid(GridCoords { i: 1, j: 1 }),
+                LabeledCorner::new(Point2::new(2.0, 2.0), 0.9).with_grid(GridCoords { i: 1, j: 1 }),
             ],
-        };
+        );
 
         let detection = map_charuco_corners(&board, &chessboard, &alignment);
         assert_eq!(detection.corners.len(), 1);

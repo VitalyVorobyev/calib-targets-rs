@@ -24,9 +24,13 @@ use nalgebra::Point2;
 /// [`crate::square::grow::bfs_grow`].
 #[derive(Clone, Copy, Debug)]
 pub struct Seed {
+    /// Corner index at grid cell `(0, 0)`.
     pub a: usize,
+    /// Corner index at grid cell `(1, 0)`.
     pub b: usize,
+    /// Corner index at grid cell `(0, 1)`.
     pub c: usize,
+    /// Corner index at grid cell `(1, 1)`.
     pub d: usize,
 }
 
@@ -34,7 +38,9 @@ pub struct Seed {
 /// directly from the seed's own edge lengths.
 #[derive(Clone, Copy, Debug)]
 pub struct SeedOutput {
+    /// The 2×2 seed quad.
     pub seed: Seed,
+    /// Cell size in pixels, the mean of the seed's own edge lengths.
     pub cell_size: f32,
 }
 

@@ -106,8 +106,6 @@ struct CharucoBuffers {
 
 struct MarkerBoardBuffers {
   std::vector<ct_labeled_corner_t> corners;
-  std::vector<ct_circle_candidate_t> circle_candidates;
-  std::vector<ct_circle_match_t> circle_matches;
 };
 
 struct PuzzleBoardBuffers {
@@ -283,22 +281,14 @@ class MarkerBoardDetector {
     }
 
     std::size_t corners_len = 0;
-    std::size_t candidates_len = 0;
-    std::size_t matches_len = 0;
     ct_marker_board_result_t ignored_result{};
-    auto code = ct_marker_board_detector_detect(
-        handle_.get(),
-        &image,
+    const ct_marker_board_detect_args_t args{handle_.get(), &image};
+    ct_marker_board_detect_buffers_t bufs{
         out_result != nullptr ? out_result : &ignored_result,
         nullptr,
         0,
-        &corners_len,
-        nullptr,
-        0,
-        &candidates_len,
-        nullptr,
-        0,
-        &matches_len);
+        &corners_len};
+    auto code = ct_marker_board_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       return capture_status(code);
     }
@@ -307,30 +297,14 @@ class MarkerBoardDetector {
     }
 
     out_buffers->corners.assign(corners_len, ct_labeled_corner_t{});
-    out_buffers->circle_candidates.assign(candidates_len, ct_circle_candidate_t{});
-    out_buffers->circle_matches.assign(matches_len, ct_circle_match_t{});
-    code = ct_marker_board_detector_detect(
-        handle_.get(),
-        &image,
-        out_result != nullptr ? out_result : &ignored_result,
-        out_buffers->corners.empty() ? nullptr : out_buffers->corners.data(),
-        out_buffers->corners.size(),
-        &corners_len,
-        out_buffers->circle_candidates.empty() ? nullptr : out_buffers->circle_candidates.data(),
-        out_buffers->circle_candidates.size(),
-        &candidates_len,
-        out_buffers->circle_matches.empty() ? nullptr : out_buffers->circle_matches.data(),
-        out_buffers->circle_matches.size(),
-        &matches_len);
+    bufs.out_corners = out_buffers->corners.empty() ? nullptr : out_buffers->corners.data();
+    bufs.corners_capacity = out_buffers->corners.size();
+    code = ct_marker_board_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       out_buffers->corners.clear();
-      out_buffers->circle_candidates.clear();
-      out_buffers->circle_matches.clear();
       return capture_status(code);
     }
     out_buffers->corners.resize(corners_len);
-    out_buffers->circle_candidates.resize(candidates_len);
-    out_buffers->circle_matches.resize(matches_len);
     return {};
   }
 

@@ -112,7 +112,7 @@ ChessCorner[]
  → 10. validate              line + local-H residual checks; blacklist + loop
  → 11. apply_boosters        gap fill, line extrapolation, component merge
  → 12. final_geometry_check  mandatory precision gate; can only drop corners
- → Output: Detection (single component) or None
+ → Output: ChessboardDetection (single component) or None
 ```
 
 Stages 4–10 are the **precision core**: any corner labelled at the end
@@ -305,36 +305,44 @@ converges.
 
 ## 6. Parameters
 
-`DetectorParams` is `#[non_exhaustive]`; build with `Default::default()` and
+`DetectorParams` is `#[non_exhaustive]` and splits into a small **stable
+core** — `graph_build_algorithm`, `min_labeled_corners`, `max_components`
+— plus an advanced `ChessboardTuning` sub-struct (`DetectorParams::tuning`)
+holding the per-stage tuning knobs. Build with `Default::default()` and
 overwrite specific fields, or call `DetectorParams::sweep_default()` for a
 3-config preset (default, tighter, looser) suitable for
 `detect_chessboard_best`-style sweeps.
 
+`ChessboardTuning` is `#[serde(flatten)]`-ed into `DetectorParams`, so a
+serialized config stays flat — every tuning knob is a top-level key. The
+`Field` column below shows the access path: top-level for the three core
+knobs, `tuning.<knob>` for the rest.
+
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
-| `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. |
-| `max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
-| `num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
-| `cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
-| `peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
-| `min_peak_weight_fraction` | 0.05 | 2 | Minimum fraction of total vote weight per peak. |
-| `cell_size_hint` | None | 4 | Optional caller hint; not load-bearing. |
-| `seed_edge_tol` | 0.25 | 5 | Seed-edge length window (fraction of `s`). |
-| `seed_axis_tol_deg` | 15.0 | 5 | Seed-edge axis tolerance. |
-| `seed_close_tol` | 0.25 | 5 | Parallelogram-closure tolerance. |
-| `attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
-| `attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
-| `attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
-| `step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
-| `edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
-| `line_tol_rel` | 0.15 | 7 | Straight-line collinearity tolerance. |
-| `line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
-| `local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
-| `max_validation_iters` | 3 | 7 | Blacklist-retry cap. |
-| `enable_*` (4 flags) | true | 8 | Toggles for the 4 boosters. |
-| `weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
+| `graph_build_algorithm` | `ChessboardV2` | — | Seed-and-grow or topological grid builder. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
-| `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `Detection`. |
+| `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
+| `tuning.min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. |
+| `tuning.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
+| `tuning.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
+| `tuning.cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
+| `tuning.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
+| `tuning.min_peak_weight_fraction` | 0.02 | 2 | Minimum fraction of total vote weight per peak. |
+| `tuning.seed_edge_tol` | 0.25 | 5 | Seed-edge length window (fraction of `s`). |
+| `tuning.seed_axis_tol_deg` | 15.0 | 5 | Seed-edge axis tolerance. |
+| `tuning.seed_close_tol` | 0.25 | 5 | Parallelogram-closure tolerance. |
+| `tuning.attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
+| `tuning.attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
+| `tuning.attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
+| `tuning.step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
+| `tuning.edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
+| `tuning.line_tol_rel` | 0.18 | 7 | Straight-line collinearity tolerance. |
+| `tuning.line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
+| `tuning.local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
+| `tuning.max_validation_iters` | 6 | 7 | Blacklist-retry cap. |
+| `tuning.enable_*` (4 flags) | true | 8 | Toggles for the 4 boosters. |
+| `tuning.weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
 
 All spatial tolerances are **multiplicative** with respect to `s` — the
 pipeline is scale-invariant once `s` is known.
@@ -343,8 +351,8 @@ pipeline is scale-invariant once `s` is known.
 
 ## 7. Debugging via `DebugFrame`
 
-`Detector::detect_debug` and `detect_all_debug` return a `DebugFrame` per
-detection attempt. Key fields:
+`Detector::detect_with_diagnostics` and `detect_all_with_diagnostics` return
+a `DebugFrame` per detection attempt. Key fields:
 
 - `schema: u32` — `DEBUG_FRAME_SCHEMA = 1` today; bumped on shape change.
   Overlay scripts gate on this.
@@ -353,8 +361,9 @@ detection attempt. Key fields:
 - `iterations: Vec<IterationTrace>` — one entry per blacklist-retry pass.
   Each carries `iter`, `labelled_count`, `new_blacklist`, `converged`.
 - `boosters: Option<BoosterResult>` — additions from Stage 8.
-- `detection: Option<Detection>` — final output (`None` if min-corners gate
-  failed or no seed).
+- `detection: Option<ChessboardDetection>` — final output (`None` if
+  min-corners gate failed or no seed). `grid_directions` and `cell_size`
+  remain on the `DebugFrame` itself, not on this result.
 - `corners: Vec<CornerAug>` — every input corner with its terminal stage:
   `Raw`, `Strong`, `NoCluster`, `Clustered`, `AttachmentAmbiguous`,
   `AttachmentFailedInvariants`, `Labeled { at, local_h_residual_px }`,
@@ -364,10 +373,9 @@ Render overlays with
 `crates/calib-targets-py/examples/overlay_chessboard.py`; it warns
 once per observed schema mismatch.
 
-For compact telemetry, prefer
-`Detector::detect_instrumented` returning `(Detection, StageCounts)`
-where `StageCounts` summarises the per-stage corner survivorship in a
-handful of integers.
+For compact telemetry, pass the `DebugFrame` to `StageCounts::from_frame`,
+which summarises the per-stage corner survivorship in a handful of
+integers.
 
 ---
 
@@ -380,14 +388,13 @@ fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
     let det = Detector::new(params);
     if let Some(d) = det.detect(corners) {
-        println!(
-            "labelled {} corners; cell ≈ {:.1} px",
-            d.target.corners.len(),
-            d.cell_size
-        );
-        for lc in &d.target.corners {
-            let g = lc.grid.unwrap();
-            println!("(i, j) = ({}, {}) at ({:.1}, {:.1})", g.i, g.j, lc.position.x, lc.position.y);
+        println!("labelled {} corners", d.corners.len());
+        for c in &d.corners {
+            // `grid` is non-optional; `input_index` points back into `corners`.
+            println!(
+                "(i, j) = ({}, {}) at ({:.1}, {:.1})  [input #{}]",
+                c.grid.i, c.grid.j, c.position.x, c.position.y, c.input_index
+            );
         }
     }
 }
@@ -395,11 +402,7 @@ fn detect(corners: &[ChessCorner]) {
 fn detect_multi(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
-        println!(
-            "component {k}: {} corners (strong_indices: {:?})",
-            comp.target.corners.len(),
-            &comp.strong_indices[..comp.strong_indices.len().min(5)]
-        );
+        println!("component {k}: {} corners", comp.corners.len());
     }
 }
 ```
@@ -436,7 +439,5 @@ Tracked in spec §10:
 - **Multi-seed growth** — current: single seed only, multi-component is a
   post-hoc booster. A first-class multi-seed grower could reduce the
   Stage-8 dependency.
-- **Caller-provided cell-size hint** — current: optional, mostly ignored.
-  When could it tighten Stages 5-6 without compromising precision?
 
 Contributions welcome.

@@ -12,11 +12,14 @@ use calib_targets_core::{DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Error type for ChArUco JSON config / report I/O.
 pub type CharucoIoError = IoError;
 
+/// Error from building a detector config into a validated board / params.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoConfigError {
+    /// The board specification in the config failed validation.
     #[error(transparent)]
     Board(#[from] CharucoBoardError),
 }
@@ -25,12 +28,16 @@ pub enum CharucoConfigError {
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum BoardSpecLoadError {
+    /// The underlying file read failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// The board JSON could not be parsed.
     #[error("parse error: {0}")]
     Parse(#[from] serde_json::Error),
+    /// The board JSON is missing a required field (named by the payload).
     #[error("board JSON is missing required field '{0}'")]
     MissingField(&'static str),
+    /// The named dictionary is not a known built-in dictionary.
     #[error("unknown dictionary '{0}' (tried '{0}' and 'DICT_{0}')")]
     UnknownDictionary(String),
 }
@@ -99,22 +106,33 @@ fn default_px_per_square() -> f32 {
 /// Configuration for the ChArUco detection example.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectConfig {
+    /// Path to the input image to run detection on.
     pub image_path: String,
+    /// The ChArUco board specification to detect.
     pub board: CharucoBoardSpec,
+    /// Optional path for the detection report.
     #[serde(default)]
     pub output_path: Option<String>,
+    /// ChESS corner-detector configuration; consumed by the upstream
+    /// corner-detection step, not the chessboard stage.
     #[serde(default)]
     pub chess: DetectorConfig,
+    /// Optional path to write a global-homography rectified image.
     #[serde(default)]
     pub rectified_path: Option<String>,
+    /// Optional path to write a per-cell-mesh rectified image.
     #[serde(default)]
     pub mesh_rectified_path: Option<String>,
+    /// Rectified-image resolution in pixels per board square.
     #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
+    /// Optional override for the minimum marker-inlier count.
     #[serde(default)]
     pub min_marker_inliers: Option<usize>,
+    /// Optional override for the underlying chessboard detector params.
     #[serde(default)]
     pub chessboard: Option<DetectorParams>,
+    /// Optional ArUco scan-config overrides.
     #[serde(default)]
     pub aruco: Option<ArucoScanConfig>,
 }
@@ -174,19 +192,29 @@ impl CharucoDetectConfig {
     }
 }
 
+/// Detection report for serialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectReport {
+    /// Path of the image detection was run on.
     pub image_path: String,
+    /// Path of the JSON config that produced this report.
     pub config_path: String,
+    /// The board specification detection was run against.
     pub board: CharucoBoardSpec,
+    /// Number of raw ChESS corners detected before board detection.
     pub num_raw_corners: usize,
+    /// The raw ChESS corners detected in the image.
     pub raw_corners: Vec<ChessCorner>,
+    /// The detected ChArUco board, when detection succeeded.
     #[serde(default)]
     pub detection: Option<TargetDetection>,
+    /// The decoded inlier markers, when detection succeeded.
     #[serde(default)]
     pub markers: Option<Vec<MarkerDetection>>,
+    /// Grid alignment to the board, when it could be resolved.
     #[serde(default)]
     pub alignment: Option<GridAlignment>,
+    /// Human-readable error message, when detection failed.
     #[serde(default)]
     pub error: Option<String>,
 }

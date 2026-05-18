@@ -148,8 +148,11 @@ impl ValidationParams {
 /// same scheme maps `blacklist` entries back to their originals.
 #[derive(Clone, Copy, Debug)]
 pub struct LabelledEntry {
+    /// Caller-chosen opaque index, carried back in `ValidationResult::blacklist`.
     pub idx: usize,
+    /// The corner's position in image pixels.
     pub pixel: Point2<f32>,
+    /// The corner's integer `(i, j)` grid coordinate.
     pub grid: (i32, i32),
 }
 

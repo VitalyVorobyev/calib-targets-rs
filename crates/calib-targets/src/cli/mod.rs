@@ -20,13 +20,13 @@ pub use error::CliError;
 #[derive(Parser, Debug)]
 #[command(name = "calib-targets")]
 #[command(about = "CLI for printable calibration target generation")]
-pub struct Cli {
+pub(crate) struct Cli {
     #[command(subcommand)]
-    pub command: Command,
+    pub(crate) command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Command {
+pub(crate) enum Command {
     /// Render a validated printable spec into .json, .svg, and .png outputs.
     Generate {
         /// Path to the input printable spec JSON file.

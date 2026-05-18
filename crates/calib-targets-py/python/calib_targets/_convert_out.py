@@ -3,11 +3,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any, Iterable
 
-from .config import PuzzleBoardScoringMode
 from .enums import CirclePolarity, TargetKind
 from .results import (
     CellOffset,
     CharucoDetectionResult,
+    ChessboardCorner,
     ChessboardDebug,
     ChessboardDetectionResult,
     CircleCandidate,
@@ -408,45 +408,52 @@ def chessboard_debug_from_dict(data: Mapping[str, Any]) -> ChessboardDebug:
     )
 
 
-def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dict[str, Any]:
+def chessboard_corner_to_dict(value: ChessboardCorner) -> dict[str, Any]:
     return {
-        "grid_directions": [
-            float(value.grid_directions[0]),
-            float(value.grid_directions[1]),
-        ],
-        "cell_size": float(value.cell_size),
-        "target": target_detection_to_dict(value.detection),
-        "strong_indices": [int(item) for item in value.strong_indices],
+        "position": _point2_to_list(value.position),
+        "grid": grid_coords_to_dict(value.grid),
+        "input_index": int(value.input_index),
+        "score": float(value.score),
     }
+
+
+def chessboard_corner_from_dict(data: Mapping[str, Any]) -> ChessboardCorner:
+    # Rust shape: `{ position, grid, input_index, score }`. Matches
+    # `serde_json::to_value(ChessboardCorner)` byte-for-byte.
+    obj = _ensure_mapping(data, "ChessboardCorner")
+    _validate_keys(
+        obj,
+        allowed={"position", "grid", "input_index", "score"},
+        required={"position", "grid", "input_index", "score"},
+        ctx="ChessboardCorner",
+    )
+    return ChessboardCorner(
+        position=_to_point2(obj["position"], "ChessboardCorner.position"),
+        grid=grid_coords_from_dict(obj["grid"]),
+        input_index=_to_int(obj["input_index"], "ChessboardCorner.input_index"),
+        score=_to_float(obj["score"], "ChessboardCorner.score"),
+    )
+
+
+def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dict[str, Any]:
+    return {"corners": [chessboard_corner_to_dict(item) for item in value.corners]}
 
 
 def chessboard_detection_result_from_dict(
     data: Mapping[str, Any],
 ) -> ChessboardDetectionResult:
-    # Rust shape: `{ grid_directions, cell_size, target,
-    # strong_indices }`. Matches `serde_json::to_value(Detection)`
-    # byte-for-byte.
+    # Rust shape: `{ corners }`. Matches
+    # `serde_json::to_value(ChessboardDetection)` byte-for-byte.
     obj = _ensure_mapping(data, "ChessboardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"grid_directions", "cell_size", "target", "strong_indices"},
-        required={"grid_directions", "cell_size", "target", "strong_indices"},
+        allowed={"corners"},
+        required={"corners"},
         ctx="ChessboardDetectionResult",
     )
-    gd_seq = _to_sequence(obj["grid_directions"], "ChessboardDetectionResult.grid_directions")
-    if len(gd_seq) != 2:
-        raise ValueError("ChessboardDetectionResult.grid_directions must have 2 floats")
-    grid_directions = (
-        _to_float(gd_seq[0], "ChessboardDetectionResult.grid_directions[0]"),
-        _to_float(gd_seq[1], "ChessboardDetectionResult.grid_directions[1]"),
-    )
+    corners = _to_sequence(obj["corners"], "ChessboardDetectionResult.corners")
     return ChessboardDetectionResult(
-        detection=target_detection_from_dict(obj["target"]),
-        grid_directions=grid_directions,
-        cell_size=_to_float(obj["cell_size"], "ChessboardDetectionResult.cell_size"),
-        strong_indices=_to_int_list(
-            obj["strong_indices"], "ChessboardDetectionResult.strong_indices"
-        ),
+        corners=[chessboard_corner_from_dict(item) for item in corners],
     )
 
 
@@ -608,8 +615,6 @@ def charuco_detection_result_to_dict(value: CharucoDetectionResult) -> dict[str,
         "detection": target_detection_to_dict(value.detection),
         "markers": [marker_detection_to_dict(item) for item in value.markers],
         "alignment": grid_alignment_to_dict(value.alignment),
-        "raw_marker_count": int(value.raw_marker_count),
-        "raw_marker_wrong_id_count": int(value.raw_marker_wrong_id_count),
     }
 
 
@@ -621,8 +626,6 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
             "detection",
             "markers",
             "alignment",
-            "raw_marker_count",
-            "raw_marker_wrong_id_count",
         },
         required={"detection", "markers", "alignment"},
         ctx="CharucoDetectionResult",
@@ -632,8 +635,6 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
         detection=target_detection_from_dict(obj["detection"]),
         markers=[marker_detection_from_dict(item) for item in markers],
         alignment=grid_alignment_from_dict(obj["alignment"]),
-        raw_marker_count=int(obj.get("raw_marker_count", 0)),
-        raw_marker_wrong_id_count=int(obj.get("raw_marker_wrong_id_count", 0)),
     )
 
 
@@ -642,13 +643,9 @@ def marker_board_detection_result_to_dict(
 ) -> dict[str, Any]:
     return {
         "detection": target_detection_to_dict(value.detection),
-        "inliers": [int(item) for item in value.inliers],
-        "circle_candidates": [circle_candidate_to_dict(item) for item in value.circle_candidates],
-        "circle_matches": [circle_match_to_dict(item) for item in value.circle_matches],
         "alignment": grid_alignment_to_dict(value.alignment)
         if value.alignment is not None
         else None,
-        "alignment_inliers": int(value.alignment_inliers),
     }
 
 
@@ -658,40 +655,14 @@ def marker_board_detection_result_from_dict(
     obj = _ensure_mapping(data, "MarkerBoardDetectionResult")
     _validate_keys(
         obj,
-        allowed={
-            "detection",
-            "inliers",
-            "circle_candidates",
-            "circle_matches",
-            "alignment",
-            "alignment_inliers",
-        },
-        required={
-            "detection",
-            "inliers",
-            "circle_candidates",
-            "circle_matches",
-            "alignment",
-            "alignment_inliers",
-        },
+        allowed={"detection", "alignment"},
+        required={"detection", "alignment"},
         ctx="MarkerBoardDetectionResult",
-    )
-    circle_candidates = _to_sequence(
-        obj["circle_candidates"], "MarkerBoardDetectionResult.circle_candidates"
-    )
-    circle_matches = _to_sequence(
-        obj["circle_matches"], "MarkerBoardDetectionResult.circle_matches"
     )
     alignment = obj["alignment"]
     return MarkerBoardDetectionResult(
         detection=target_detection_from_dict(obj["detection"]),
-        inliers=_to_int_list(obj["inliers"], "MarkerBoardDetectionResult.inliers"),
-        circle_candidates=[circle_candidate_from_dict(item) for item in circle_candidates],
-        circle_matches=[circle_match_from_dict(item) for item in circle_matches],
         alignment=grid_alignment_from_dict(alignment) if alignment is not None else None,
-        alignment_inliers=_to_int(
-            obj["alignment_inliers"], "MarkerBoardDetectionResult.alignment_inliers"
-        ),
     )
 
 
@@ -733,7 +704,7 @@ def observed_edge_from_dict(data: Mapping[str, Any]) -> PuzzleBoardObservedEdge:
 
 
 def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, Any]:
-    out = {
+    return {
         "edges_observed": int(value.edges_observed),
         "edges_matched": int(value.edges_matched),
         "mean_confidence": float(value.mean_confidence),
@@ -741,21 +712,6 @@ def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, A
         "master_origin_row": int(value.master_origin_row),
         "master_origin_col": int(value.master_origin_col),
     }
-    if value.score_best is not None:
-        out["score_best"] = float(value.score_best)
-    if value.score_runner_up is not None:
-        out["score_runner_up"] = float(value.score_runner_up)
-    if value.score_margin is not None:
-        out["score_margin"] = float(value.score_margin)
-    if value.runner_up_origin_row is not None:
-        out["runner_up_origin_row"] = int(value.runner_up_origin_row)
-    if value.runner_up_origin_col is not None:
-        out["runner_up_origin_col"] = int(value.runner_up_origin_col)
-    if value.runner_up_transform is not None:
-        out["runner_up_transform"] = grid_transform_to_dict(value.runner_up_transform)
-    if value.scoring_mode is not None:
-        out["scoring_mode"] = value.scoring_mode.to_dict()
-    return out
 
 
 def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDecodeInfo:
@@ -769,13 +725,6 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
             "bit_error_rate",
             "master_origin_row",
             "master_origin_col",
-            "score_best",
-            "score_runner_up",
-            "score_margin",
-            "runner_up_origin_row",
-            "runner_up_origin_col",
-            "runner_up_transform",
-            "scoring_mode",
         },
         required={
             "edges_observed",
@@ -800,54 +749,6 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
         master_origin_col=_to_int(
             obj["master_origin_col"], "PuzzleBoardDecodeInfo.master_origin_col"
         ),
-        score_best=(
-            _to_float(obj["score_best"], "PuzzleBoardDecodeInfo.score_best")
-            if "score_best" in obj
-            else None
-        ),
-        score_runner_up=(
-            _to_float(obj["score_runner_up"], "PuzzleBoardDecodeInfo.score_runner_up")
-            if "score_runner_up" in obj
-            else None
-        ),
-        score_margin=(
-            _to_float(obj["score_margin"], "PuzzleBoardDecodeInfo.score_margin")
-            if "score_margin" in obj
-            else None
-        ),
-        runner_up_origin_row=(
-            _to_int(
-                obj["runner_up_origin_row"],
-                "PuzzleBoardDecodeInfo.runner_up_origin_row",
-            )
-            if "runner_up_origin_row" in obj
-            else None
-        ),
-        runner_up_origin_col=(
-            _to_int(
-                obj["runner_up_origin_col"],
-                "PuzzleBoardDecodeInfo.runner_up_origin_col",
-            )
-            if "runner_up_origin_col" in obj
-            else None
-        ),
-        runner_up_transform=(
-            grid_transform_from_dict(
-                _ensure_mapping(
-                    obj["runner_up_transform"],
-                    "PuzzleBoardDecodeInfo.runner_up_transform",
-                )
-            )
-            if "runner_up_transform" in obj
-            else None
-        ),
-        scoring_mode=(
-            PuzzleBoardScoringMode.from_dict(
-                _ensure_mapping(obj["scoring_mode"], "PuzzleBoardDecodeInfo.scoring_mode")
-            )
-            if "scoring_mode" in obj
-            else None
-        ),
     )
 
 
@@ -858,7 +759,6 @@ def puzzleboard_detection_result_to_dict(
         "detection": target_detection_to_dict(value.detection),
         "alignment": grid_alignment_to_dict(value.alignment),
         "decode": puzzleboard_decode_info_to_dict(value.decode),
-        "observed_edges": [observed_edge_to_dict(item) for item in value.observed_edges],
     }
 
 
@@ -868,18 +768,14 @@ def puzzleboard_detection_result_from_dict(
     obj = _ensure_mapping(data, "PuzzleBoardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"detection", "alignment", "decode", "observed_edges"},
-        required={"detection", "alignment", "decode", "observed_edges"},
+        allowed={"detection", "alignment", "decode"},
+        required={"detection", "alignment", "decode"},
         ctx="PuzzleBoardDetectionResult",
-    )
-    observed_edges = _to_sequence(
-        obj["observed_edges"], "PuzzleBoardDetectionResult.observed_edges"
     )
     return PuzzleBoardDetectionResult(
         detection=target_detection_from_dict(obj["detection"]),
         alignment=grid_alignment_from_dict(obj["alignment"]),
         decode=puzzleboard_decode_info_from_dict(obj["decode"]),
-        observed_edges=[observed_edge_from_dict(item) for item in observed_edges],
     )
 
 

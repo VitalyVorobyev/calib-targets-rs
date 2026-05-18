@@ -36,11 +36,12 @@ def _corner_count(raw: dict | None) -> int:
     """Pull the labelled-corner count out of a chessboard result dict.
 
     The Rust ``serde_json::to_value`` shape for ``ChessboardDetection``
-    nests corners under ``target.corners``, not ``detection.corners``.
+    is a flat ``{"corners": [...]}`` — the labelled corner list is the
+    result.
     """
     if raw is None:
         return 0
-    return len(raw["target"]["corners"])
+    return len(raw["corners"])
 
 
 def test_default_chess_config_accepted_by_rust() -> None:

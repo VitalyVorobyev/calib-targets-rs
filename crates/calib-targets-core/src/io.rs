@@ -9,8 +9,10 @@ use std::path::Path;
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum IoError {
+    /// The underlying file read or write failed.
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    /// JSON serialization or deserialization failed.
     #[error(transparent)]
     Json(#[from] serde_json::Error),
 }

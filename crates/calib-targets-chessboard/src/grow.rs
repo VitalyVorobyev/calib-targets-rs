@@ -21,7 +21,7 @@ use nalgebra::Point2;
 use projective_grid::square::grow as pg_grow;
 use std::collections::HashSet;
 
-pub use pg_grow::{GrowParams, GrowResult};
+pub use pg_grow::GrowResult;
 
 /// Grow from the seed. Returns accepted `(i, j) → index` labels.
 ///
@@ -49,8 +49,10 @@ pub fn grow_from_seed(
         c: seed.c,
         d: seed.d,
     };
-    let pg_params =
-        pg_grow::GrowParams::new(params.attach_search_rel, params.attach_ambiguity_factor);
+    let pg_params = pg_grow::GrowParams::new(
+        params.tuning.attach_search_rel,
+        params.tuning.attach_ambiguity_factor,
+    );
     let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
 
     let pg_result = pg_grow::bfs_grow(&positions, pg_seed, cell_size, &pg_params, &validator);
@@ -95,7 +97,7 @@ pub(crate) struct ChessboardGrowValidator<'a> {
 impl<'a> ChessboardGrowValidator<'a> {
     /// Construct from chessboard `DetectorParams` + the same inputs the
     /// BFS-grow validator uses. Re-used by Stage-6
-    /// `grow_extension::extend_via_global_homography` to keep parity /
+    /// `extension::extend_via_global_homography` to keep parity /
     /// axis-cluster gates identical between BFS and boundary
     /// extrapolation.
     pub(crate) fn new(
@@ -110,9 +112,9 @@ impl<'a> ChessboardGrowValidator<'a> {
             blacklist,
             centers,
             cell_size,
-            attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
-            step_tol: params.step_tol,
+            attach_tol_rad: params.tuning.attach_axis_tol_deg.to_radians(),
+            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: params.tuning.step_tol,
             parity_shift: 0,
         }
     }
@@ -251,7 +253,7 @@ fn infer_label_with_max_d(
 /// corners (in addition to `Clustered`) when their inferred parity
 /// matches the required cell parity AND their axes match the global
 /// cluster centers within `rescue_tol_rad`. Position match is enforced
-/// by [`projective_grid::square::grow_extension::extend_via_local_homography`]'s
+/// by [`projective_grid::square::extension::extend_via_local_homography`]'s
 /// per-cell local-H prediction; this validator only owns the
 /// label-side gates.
 ///
@@ -282,9 +284,9 @@ impl<'a> ChessboardRescueValidator<'a> {
             blacklist,
             centers,
             cell_size,
-            rescue_tol_rad: params.rescue_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
-            step_tol: params.step_tol,
+            rescue_tol_rad: params.tuning.rescue_axis_tol_deg.to_radians(),
+            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: params.tuning.step_tol,
             parity_shift: 0,
         }
     }

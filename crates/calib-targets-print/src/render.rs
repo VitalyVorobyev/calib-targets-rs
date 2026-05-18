@@ -70,13 +70,19 @@ impl Scene {
     }
 }
 
+/// A rendered printable-target bundle: the JSON description plus the
+/// SVG and PNG renderings, all held in memory.
 #[derive(Clone, Debug)]
 pub struct GeneratedTargetBundle {
+    /// The target description serialized as JSON.
     pub json_text: String,
+    /// The target rendered as an SVG document.
     pub svg_text: String,
+    /// The target rendered as PNG image bytes.
     pub png_bytes: Vec<u8>,
 }
 
+/// Render a printable-target document into an in-memory JSON/SVG/PNG bundle.
 pub fn render_target_bundle(
     document: &PrintableTargetDocument,
 ) -> Result<GeneratedTargetBundle, PrintableTargetError> {

@@ -873,8 +873,6 @@ class ChessboardParams:
     cluster_tol_deg: float = 12.0
     peak_min_separation_deg: float = 60.0
     min_peak_weight_fraction: float = 0.02
-    # Stage 4 — cell-size hint
-    cell_size_hint: float | None = None
     # Stage 5 — seed
     seed_edge_tol: float = 0.25
     seed_axis_tol_deg: float = 15.0
@@ -925,7 +923,6 @@ class ChessboardParams:
             "cluster_tol_deg": self.cluster_tol_deg,
             "peak_min_separation_deg": self.peak_min_separation_deg,
             "min_peak_weight_fraction": self.min_peak_weight_fraction,
-            "cell_size_hint": self.cell_size_hint,
             "seed_edge_tol": self.seed_edge_tol,
             "seed_axis_tol_deg": self.seed_axis_tol_deg,
             "seed_close_tol": self.seed_close_tol,
@@ -970,7 +967,6 @@ class ChessboardParams:
             min_peak_weight_fraction=data.get(
                 "min_peak_weight_fraction", d.min_peak_weight_fraction
             ),
-            cell_size_hint=data.get("cell_size_hint"),
             seed_edge_tol=data.get("seed_edge_tol", d.seed_edge_tol),
             seed_axis_tol_deg=data.get("seed_axis_tol_deg", d.seed_axis_tol_deg),
             seed_close_tol=data.get("seed_close_tol", d.seed_close_tol),

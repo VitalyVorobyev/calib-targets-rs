@@ -10,14 +10,14 @@ use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::{DetectorConfig, Threshold};
+use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
     render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
     PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec, RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-use chess_corners::Detector as ChessCornerDetector;
+use chess_corners::{Detector as ChessCornerDetector, Threshold};
 use wasm_bindgen::prelude::*;
 
 use convert::adapt_chess_corner;
@@ -550,25 +550,29 @@ pub fn detect_puzzleboard(
 ///
 /// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found
 /// with any config.
+/// If `chess_cfg` is provided, it is used for corner detection across every
+/// sweep config; otherwise the workspace-default ChESS settings are used.
 #[wasm_bindgen]
 pub fn detect_chessboard_best(
     width: u32,
     height: u32,
     pixels: &[u8],
+    chess_cfg: JsValue,
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let configs: Vec<DetectorParams> = from_js(configs)?;
 
-    // The chessboard detector does not carry a ChESS config; reuse the
-    // default ChESS settings for corner detection across every sweep config.
-    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    // The sweep configs only vary chessboard-detector tuning, not the
+    // ChESS corner detector; resolve one ChESS config and reuse the
+    // detected corners across every sweep config.
+    let chess = resolve_chess_cfg(chess_cfg)?;
     let corners = detect_corners_impl(pixels, width, height, &chess);
 
     let best = configs
         .iter()
         .filter_map(|params| ChessDetector::new(params.clone()).detect(&corners))
-        .max_by_key(|d| d.target.corners.len());
+        .max_by_key(|d| d.corners.len());
     to_js(&best)
 }
 

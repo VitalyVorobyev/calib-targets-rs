@@ -30,11 +30,11 @@ use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 fn detect_one(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     if let Some(d) = det.detect(corners) {
-        println!(
-            "labelled {} corners; cell ≈ {:.1} px",
-            d.target.corners.len(),
-            d.cell_size,
-        );
+        println!("labelled {} corners", d.corners.len());
+        for c in &d.corners {
+            // c.grid: (i, j) — always present; c.input_index: input-slice index.
+            let _ = (c.grid.i, c.grid.j, c.position, c.input_index, c.score);
+        }
     }
 }
 
@@ -42,7 +42,7 @@ fn detect_one(corners: &[ChessCorner]) {
 fn detect_multi(corners: &[ChessCorner]) {
     let det = Detector::new(DetectorParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
-        println!("component {k}: {} corners", comp.target.corners.len());
+        println!("component {k}: {} corners", comp.corners.len());
     }
 }
 ```
@@ -51,63 +51,86 @@ fn detect_multi(corners: &[ChessCorner]) {
 
 - `&[ChessCorner]` — ChESS X-junction corners from `chess-corners`, with
   `position`, `axes`, `strength`, `contrast`, `fit_rms` populated.
-- [`DetectorParams`] — flat configuration struct covering the 8-stage
-  pipeline. Use `DetectorParams::default()` for a single config or
-  `DetectorParams::sweep_default()` for the 3-config sweep preset.
+- [`DetectorParams`] — a small stable core (graph-build algorithm,
+  output gates) plus an advanced [`ChessboardTuning`] sub-struct of
+  per-stage knobs. Use `DetectorParams::default()` for a single config
+  or `DetectorParams::sweep_default()` for the 3-config sweep preset.
 
 ## Outputs
 
-`Detector::detect` returns `Option<Detection>`:
+`Detector::detect` returns `Option<ChessboardDetection>` — a single field,
+`corners: Vec<ChessboardCorner>`, the labelled corner set rebased to a
+non-negative bounding box and sorted by `(j, i)`. Each `ChessboardCorner`:
 
 | Field | Meaning |
 |---|---|
-| `target: TargetDetection` | Labelled corners with `(i, j)` in `grid`, rebased to a non-negative bounding box, monotonic in `i` and `j`. |
-| `grid_directions: [f32; 2]` | The two global grid-axis angles in `[0, π)`. |
-| `cell_size: f32` | Pixel spacing of the detected grid (fitted from consistent seed edges). |
-| `strong_indices: Vec<usize>` | Index mapping from `target.corners` back into the caller's input slice — used by ChArUco / marker-board alignment. |
+| `position: Point2<f32>` | Sub-pixel image position. |
+| `grid: GridCoords` | The `(i, j)` grid label. Non-optional — a chessboard corner is always labelled. |
+| `input_index: usize` | Index back into the caller's input `&[ChessCorner]` slice — used by ChArUco / marker-board alignment. |
+| `score: f32` | Corner score. |
 
-`detect_debug` / `detect_all_debug` return [`DebugFrame`] — full per-stage
-telemetry (corner outcomes, iteration traces, booster results) emitted as
-schema-versioned JSON via the `dataset` feature.
+`detect_with_diagnostics` / `detect_all_with_diagnostics` return
+[`DebugFrame`] — full per-stage telemetry (corner outcomes, iteration
+traces, booster results, the seed grid directions and cell size) emitted
+as schema-versioned JSON. The fitted cell size and grid-axis angles, which
+are not part of the result contract, are reachable there.
 
 ## Configuration
 
-[`DetectorParams`] is flat — 30-plus knobs, grouped by pipeline stage.
-Defaults are chosen to post the precision contract above; tune only when a
-specific input fails.
+[`DetectorParams`] is a small **stable core** of three knobs plus an
+advanced [`ChessboardTuning`] sub-struct ([`DetectorParams::tuning`])
+holding the 40-plus per-stage tuning knobs. Defaults are chosen to post
+the precision contract above; tune only when a specific input fails.
 
-| Group | Main knobs | Effect |
+The stable core — the knobs a calibration consumer has a basis to set:
+
+| Knob | Effect |
+|---|---|
+| `graph_build_algorithm` | Pick the seed-and-grow (`ChessboardV2`, default) or topological grid builder. |
+| `min_labeled_corners` | Reject too-small detections. |
+| `max_components` | Cap the number of disconnected pieces returned by `detect_all`. |
+
+Everything else is a per-stage tuning knob behind `tuning:
+ChessboardTuning` — grouped by pipeline stage, all left at `Default`
+unless an input fails and you have evidence for the change:
+
+| Group | Main knobs (under `tuning`) | Effect |
 |---|---|---|
-| ChESS corner detection | `chess: DetectorConfig` | Pre-graph feature detection. Drop `chess.threshold` (e.g. `Threshold::Absolute(8.0)`) to recover blurry boards; raise it (e.g. `Threshold::Absolute(25.0)`) to suppress false corners under glare. |
 | Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
-| Cell size | `cell_size_hint` | Optional hint. Leave `None` so the detector derives cell size from a self-consistent seed (recommended). |
 | Seed | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | 2×2 seed-quad validation. |
 | Grow | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | BFS attachment invariants. Rarely need tuning. |
 | Validation | `line_tol_rel`, `local_h_tol_rel`, `max_validation_iters` | Line + local-H residuals. Loosen `local_h_tol_rel` under strong lens distortion; keep `line_tol_rel` tight. |
 | Boosters | `enable_line_extrapolation`, `enable_gap_fill`, `enable_component_merge`, `enable_weak_cluster_rescue` | Recall boosters. Each strictly adds corners and never relaxes invariants; disable individually to bisect a recall regression. |
-| Output gates | `min_labeled_corners`, `max_components` | Reject too-small / too-fragmented detections. |
+
+The cell size is **not** a tuning knob — the detector derives it from a
+self-consistent 4-corner seed, so there is nothing to configure.
+
+`ChessboardTuning` is `#[serde(flatten)]`-ed into `DetectorParams`, so a
+serialized config stays flat: every tuning knob is a top-level JSON key.
 
 See the [parameter reference][tuning-chapter] for field-by-field guidance.
 
 ## Tuning difficult cases
 
-- **Small or blurry board** — drop `chess.threshold` (e.g.
-  `Threshold::Absolute(15.0)` → `Threshold::Absolute(8.0)`), switch
-  `chess.multiscale` to `MultiscaleConfig::pyramid_default()` for
-  large frames, then try `DetectorParams::sweep_default()` which
-  varies clustering/seed tolerances.
+- **Small or blurry board** — too few `ChessCorner`s reach the
+  detector. Tune the upstream ChESS corner detector (its
+  `chess-corners` `DetectorConfig` — e.g. lower the corner-response
+  threshold, enable a multiscale pyramid for large frames), then try
+  `DetectorParams::sweep_default()` which varies clustering/seed
+  tolerances on this crate's side.
 - **Strong perspective / tilted view** — widen `cluster_tol_deg` and
   `attach_axis_tol_deg` by a few degrees; grow may refuse otherwise-valid
   neighbours at the image edge.
 - **Moderate radial distortion (no fisheye)** — loosen `local_h_tol_rel`
   from the default 0.2 to ~0.35; the per-corner local-H check is the
   strictest invariant under curvature.
-- **Low-contrast / glare** — switch `chess.threshold` from
-  `Threshold::Relative(_)` to `Threshold::Absolute(_)` with an
-  explicit floor; glare patches collapse the relative threshold.
+- **Low-contrast / glare** — glare patches starve the corner detector;
+  adjust the upstream ChESS `DetectorConfig` thresholding (an absolute
+  floor survives glare better than a relative one) so enough corners
+  reach this crate.
 - **Partial occlusion splitting the board into pieces** — use
-  `detect_all` rather than `detect`; you get one `Detection` per
-  connected component, each with its own rebased `(i, j)` axes.
+  `detect_all` rather than `detect`; you get one `ChessboardDetection`
+  per connected component, each with its own rebased `(i, j)` axes.
 
 ## Limitations
 

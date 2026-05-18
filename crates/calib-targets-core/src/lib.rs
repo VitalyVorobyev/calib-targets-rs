@@ -10,10 +10,8 @@
 //! use calib_targets_core::{LabeledCorner, TargetDetection, TargetKind};
 //! use nalgebra::Point2;
 //!
-//! let detection = TargetDetection {
-//!     kind: TargetKind::Chessboard,
-//!     corners: Vec::new(),
-//! };
+//! let corner = LabeledCorner::new(Point2::new(12.0, 8.0), 0.9);
+//! let detection = TargetDetection::new(TargetKind::Chessboard, vec![corner]);
 //!
 //! println!("{}", detection.corners.len());
 //! ```
@@ -23,6 +21,7 @@
 //! - Homography estimation and warping helpers.
 //! - Lightweight grayscale image views and sampling.
 //! - Grid alignment and target detection types.
+#![deny(missing_docs)]
 
 mod chess;
 mod corner;
@@ -42,13 +41,13 @@ pub use image::{
 };
 pub use rectify::{RectToImgMapper, RectifiedView};
 
-pub use chess::{
-    CenterOfMassConfig, ChessConfig, ChessCornerParams, ChessRefiner, ChessRing,
-    CoarseToFineParams, DescriptorRing, DetectionStrategy, Detector, DetectorConfig,
-    ForstnerConfig, MultiscaleConfig, OrientationMethod, PyramidParams, RadonConfig,
-    RadonDetectorParams, RadonPeakConfig, RadonRefiner, RefinerKind, SaddlePointConfig, Threshold,
-    UpscaleConfig, UpscaleConfigError,
-};
+// Only the two `chess-corners` types the workspace's own public API
+// legitimately exposes are re-exported: `DetectorConfig` is the ChESS config
+// object a consumer constructs, `OrientationMethod` is the documented
+// orientation knob. Advanced ChESS tuning types are imported from the
+// `chess-corners` crate directly, where they belong — re-exporting the whole
+// upstream surface would freeze it into this crate's semver contract.
+pub use chess::{DetectorConfig, OrientationMethod};
 pub use corner::{AxisEstimate, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 

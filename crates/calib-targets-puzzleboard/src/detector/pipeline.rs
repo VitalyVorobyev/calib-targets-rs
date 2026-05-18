@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
+use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
 use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
@@ -22,7 +22,16 @@ use crate::detector::params::{
     PuzzleBoardSearchMode,
 };
 use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetectionResult};
+use crate::diagnostics::{PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics};
 use crate::params::PuzzleBoardParams;
+
+/// One component's decode: the slim public result paired with the
+/// diagnostics captured for it. Used internally to carry both through
+/// best-component selection before the diagnostics are split off.
+struct ComponentDecode {
+    result: PuzzleBoardDetectionResult,
+    diagnostics: PuzzleBoardDiagnostics,
+}
 
 /// Owned PuzzleBoard detector.
 pub struct PuzzleBoardDetector {
@@ -92,87 +101,155 @@ impl PuzzleBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
+        self.detect_inner(image, corners).0
+    }
+
+    /// Detect a PuzzleBoard and additionally return per-call diagnostics
+    /// (the raw pre-alignment edge observations and the winner-vs-runner-up
+    /// scoring evidence for the chosen component).
+    ///
+    /// Diagnostics are returned even when detection fails — best-effort, so
+    /// overlay tools can render the edge observations that *were* sampled.
+    /// See [`crate::diagnostics::PuzzleBoardDiagnostics`] for the shape and
+    /// stability promise. The success/error semantics of the
+    /// [`Result`] component match [`Self::detect`] exactly.
+    pub fn detect_with_diagnostics(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[ChessCorner],
+    ) -> (
+        Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
+        self.detect_inner(image, corners)
+    }
+
+    fn detect_inner(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[ChessCorner],
+    ) -> (
+        Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
         let chess_results = self.chessboard.detect_all(corners);
         if chess_results.is_empty() {
-            return Err(PuzzleBoardDetectError::ChessboardNotDetected);
+            return (
+                Err(PuzzleBoardDetectError::ChessboardNotDetected),
+                PuzzleBoardDiagnostics::default(),
+            );
         }
 
         let mut last_err: Option<PuzzleBoardDetectError> = None;
-        let mut best: Option<PuzzleBoardDetectionResult> = None;
+        let mut last_diagnostics = PuzzleBoardDiagnostics::default();
+        let mut best: Option<ComponentDecode> = None;
         let min_edges = required_edges(self.params.decode.min_window);
 
         for chess in &chess_results {
             match self.decode_component(image, chess) {
-                Ok(result) => {
+                Ok(decoded) => {
                     // When searching all components, check for a master-origin
                     // conflict: two well-supported decodes that disagree on
                     // the absolute position (cyclic modulo 501×501).
                     if self.params.decode.search_all_components {
                         if let Some(ref prev) = best {
-                            let both_well_supported = prev.decode.edges_matched >= min_edges
-                                && result.decode.edges_matched >= min_edges;
+                            let both_well_supported = prev.result.decode.edges_matched >= min_edges
+                                && decoded.result.decode.edges_matched >= min_edges;
                             if both_well_supported
                                 && origins_conflict(
-                                    prev.decode.master_origin_row,
-                                    prev.decode.master_origin_col,
-                                    result.decode.master_origin_row,
-                                    result.decode.master_origin_col,
+                                    prev.result.decode.master_origin_row,
+                                    prev.result.decode.master_origin_col,
+                                    decoded.result.decode.master_origin_row,
+                                    decoded.result.decode.master_origin_col,
                                 )
                             {
-                                return Err(PuzzleBoardDetectError::InconsistentPosition);
+                                return (
+                                    Err(PuzzleBoardDetectError::InconsistentPosition),
+                                    // Best-effort: hand back the edges sampled
+                                    // for the most recently decoded component.
+                                    decoded.diagnostics,
+                                );
                             }
                         }
                     }
 
                     let better = match &best {
                         None => true,
-                        Some(b) => is_better_component_decode(
-                            self.params.decode.scoring_mode,
-                            &result.decode,
-                            &b.decode,
-                        ),
+                        Some(b) => {
+                            is_better_component_decode(self.params.decode.scoring_mode, &decoded, b)
+                        }
                     };
                     if better {
-                        best = Some(result);
+                        best = Some(decoded);
                     }
                     if !self.params.decode.search_all_components {
                         break;
                     }
                 }
-                Err(e) => last_err = Some(e),
+                Err((e, diagnostics)) => {
+                    last_err = Some(e);
+                    last_diagnostics = diagnostics;
+                }
             }
         }
 
-        best.ok_or_else(|| last_err.unwrap_or(PuzzleBoardDetectError::DecodeFailed))
+        match best {
+            Some(ComponentDecode {
+                result,
+                diagnostics,
+            }) => (Ok(result), diagnostics),
+            None => (
+                Err(last_err.unwrap_or(PuzzleBoardDetectError::DecodeFailed)),
+                last_diagnostics,
+            ),
+        }
     }
 
     fn decode_component(
         &self,
         image: &GrayImageView<'_>,
-        chess: &ChessDetection,
-    ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
-        let labeled: &[LabeledCorner] = &chess.target.corners;
-        // detector emits only validated corners in `target.corners` — every entry
-        // is an inlier by construction. The original inliers index list
+        chess: &ChessboardDetection,
+    ) -> Result<ComponentDecode, (PuzzleBoardDetectError, PuzzleBoardDiagnostics)> {
+        // Adapt the typed chessboard result into the generic
+        // `LabeledCorner` slice the edge-sampling stage expects. The
+        // detector emits only validated corners — every entry is an
+        // inlier by construction; the original inliers index list
         // (subset of v1's pre-quality-filtered corners) is no longer
-        // meaningful; we treat every labelled corner as an inlier.
+        // meaningful, so every labelled corner is treated as an inlier.
+        let labeled: Vec<LabeledCorner> = chess
+            .corners
+            .iter()
+            .map(|c| LabeledCorner::new(c.position, c.score).with_grid(c.grid))
+            .collect();
+        let labeled: &[LabeledCorner] = &labeled;
         let inliers: Vec<usize> = (0..labeled.len()).collect();
         let inliers: &[usize] = &inliers;
 
         let observed = self.sample_all_edges(image, labeled, inliers);
+        // Diagnostics carry the raw pre-alignment edge dump even on a failed
+        // decode, so overlay tools can render what *was* sampled. A `decode`
+        // failure adds no score evidence: the decoder returned `None`.
+        let diagnostics_on_fail = |observed: &[PuzzleBoardObservedEdge]| PuzzleBoardDiagnostics {
+            observed_edges: observed.to_vec(),
+            decode: PuzzleBoardDecodeDiagnostics::default(),
+        };
         let min_edges = required_edges(self.params.decode.min_window);
-        ensure_min_edges(observed.len(), min_edges)?;
+        if let Err(e) = ensure_min_edges(observed.len(), min_edges) {
+            return Err((e, diagnostics_on_fail(&observed)));
+        }
 
         let filtered: Vec<PuzzleBoardObservedEdge> = observed
             .iter()
             .copied()
             .filter(|e| e.confidence >= self.params.decode.min_bit_confidence)
             .collect();
-        ensure_min_edges(filtered.len(), min_edges)?;
+        if let Err(e) = ensure_min_edges(filtered.len(), min_edges) {
+            return Err((e, diagnostics_on_fail(&observed)));
+        }
 
         let max_err = self.params.decode.max_bit_error_rate;
         let soft_cfg = soft_cfg_from(&self.params.decode);
-        let decoded = match (
+        let Some(decoded) = (match (
             self.params.decode.search_mode,
             self.params.decode.scoring_mode,
         ) {
@@ -203,8 +280,12 @@ impl PuzzleBoardDetector {
                     max_err,
                 )
             }
-        }
-        .ok_or(PuzzleBoardDetectError::DecodeFailed)?;
+        }) else {
+            return Err((
+                PuzzleBoardDetectError::DecodeFailed,
+                diagnostics_on_fail(&observed),
+            ));
+        };
 
         let mut out_corners: Vec<LabeledCorner> = Vec::with_capacity(labeled.len());
         for (idx, lc) in labeled.iter().enumerate() {
@@ -225,23 +306,20 @@ impl PuzzleBoardDetector {
             let (master_i, master_j) = wrap_master(raw_i, raw_j);
             let id = master_ij_to_id(master_i, master_j);
             let target = master_target_position(master_i, master_j, self.params.board.cell_size);
-            out_corners.push(LabeledCorner {
-                position: lc.position,
-                grid: Some(GridCoords {
-                    i: master_i,
-                    j: master_j,
-                }),
-                id: Some(id),
-                target_position: Some(target),
-                score: lc.score,
-            });
+            out_corners.push(
+                LabeledCorner::new(lc.position, lc.score)
+                    .with_grid(GridCoords {
+                        i: master_i,
+                        j: master_j,
+                    })
+                    .with_id(id)
+                    .with_target_position(target),
+            );
         }
 
-        let detection = TargetDetection {
-            kind: TargetKind::PuzzleBoard,
-            corners: out_corners,
-        };
+        let detection = TargetDetection::new(TargetKind::PuzzleBoard, out_corners);
         let scoring_mode = self.params.decode.scoring_mode;
+        // Soft-only score fields are `None` under hard-weighted scoring.
         let (score_best, score_margin) = match scoring_mode {
             PuzzleBoardScoringMode::SoftLogLikelihood => {
                 (Some(decoded.score_best), Some(decoded.score_margin))
@@ -255,6 +333,8 @@ impl PuzzleBoardDetector {
             bit_error_rate: decoded.bit_error_rate,
             master_origin_row: decoded.master_origin_row,
             master_origin_col: decoded.master_origin_col,
+        };
+        let decode_diagnostics = PuzzleBoardDecodeDiagnostics {
             score_best,
             score_runner_up: decoded.score_runner_up,
             score_margin,
@@ -264,11 +344,12 @@ impl PuzzleBoardDetector {
             scoring_mode: Some(scoring_mode),
         };
 
-        Ok(PuzzleBoardDetectionResult {
-            detection,
-            alignment: decoded.alignment,
-            decode: decode_info,
-            observed_edges: observed,
+        Ok(ComponentDecode {
+            result: PuzzleBoardDetectionResult::new(detection, decoded.alignment, decode_info),
+            diagnostics: PuzzleBoardDiagnostics {
+                observed_edges: observed,
+                decode: decode_diagnostics,
+            },
         })
     }
 
@@ -422,27 +503,51 @@ fn cmp_lower(candidate: f32, current: f32) -> Option<bool> {
     }
 }
 
-fn normalized_soft_component_score(decode: &PuzzleBoardDecodeInfo) -> f32 {
-    let edges = decode.edges_observed.max(1) as f32;
-    decode.score_best.unwrap_or(f32::NEG_INFINITY) / edges
+/// Normalized soft score for one component: the winning hypothesis'
+/// `score_best` (diagnostics) divided by `edges_observed` (result summary).
+fn normalized_soft_component_score(component: &ComponentDecode) -> f32 {
+    let edges = component.result.decode.edges_observed.max(1) as f32;
+    component
+        .diagnostics
+        .decode
+        .score_best
+        .unwrap_or(f32::NEG_INFINITY)
+        / edges
 }
 
+/// Rank two component decodes. Support-first in both scoring modes:
+/// higher `edges_matched`, then lower `bit_error_rate` (both from the
+/// result summary); soft mode then prefers higher `score_margin` /
+/// normalized soft score (from diagnostics), hard mode higher
+/// `mean_confidence`. The score evidence the comparison consumes now
+/// lives in [`PuzzleBoardDiagnostics`] — only its storage location moved,
+/// the ranking is unchanged.
 fn is_better_component_decode(
     scoring_mode: PuzzleBoardScoringMode,
-    candidate: &PuzzleBoardDecodeInfo,
-    current: &PuzzleBoardDecodeInfo,
+    candidate: &ComponentDecode,
+    current: &ComponentDecode,
 ) -> bool {
-    if candidate.edges_matched != current.edges_matched {
-        return candidate.edges_matched > current.edges_matched;
+    let cand_decode = &candidate.result.decode;
+    let curr_decode = &current.result.decode;
+    if cand_decode.edges_matched != curr_decode.edges_matched {
+        return cand_decode.edges_matched > curr_decode.edges_matched;
     }
-    if let Some(wins) = cmp_lower(candidate.bit_error_rate, current.bit_error_rate) {
+    if let Some(wins) = cmp_lower(cand_decode.bit_error_rate, curr_decode.bit_error_rate) {
         return wins;
     }
     match scoring_mode {
         PuzzleBoardScoringMode::SoftLogLikelihood => {
             if let Some(wins) = cmp_higher(
-                candidate.score_margin.unwrap_or(f32::NEG_INFINITY),
-                current.score_margin.unwrap_or(f32::NEG_INFINITY),
+                candidate
+                    .diagnostics
+                    .decode
+                    .score_margin
+                    .unwrap_or(f32::NEG_INFINITY),
+                current
+                    .diagnostics
+                    .decode
+                    .score_margin
+                    .unwrap_or(f32::NEG_INFINITY),
             ) {
                 return wins;
             }
@@ -452,10 +557,10 @@ fn is_better_component_decode(
             ) {
                 return wins;
             }
-            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+            cmp_higher(cand_decode.mean_confidence, curr_decode.mean_confidence).unwrap_or(false)
         }
         PuzzleBoardScoringMode::HardWeighted => {
-            cmp_higher(candidate.mean_confidence, current.mean_confidence).unwrap_or(false)
+            cmp_higher(cand_decode.mean_confidence, curr_decode.mean_confidence).unwrap_or(false)
         }
     }
 }
@@ -473,6 +578,27 @@ fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use calib_targets_core::GridAlignment;
+
+    /// Build a `ComponentDecode` whose result summary and diagnostics carry
+    /// the values `is_better_component_decode` reads. `detection`/`alignment`
+    /// are placeholders — the ranking never inspects them.
+    fn component_decode(
+        decode: PuzzleBoardDecodeInfo,
+        diagnostics_decode: PuzzleBoardDecodeDiagnostics,
+    ) -> ComponentDecode {
+        ComponentDecode {
+            result: PuzzleBoardDetectionResult::new(
+                TargetDetection::new(TargetKind::PuzzleBoard, Vec::new()),
+                GridAlignment::IDENTITY,
+                decode,
+            ),
+            diagnostics: PuzzleBoardDiagnostics {
+                observed_edges: Vec::new(),
+                decode: diagnostics_decode,
+            },
+        }
+    }
 
     fn soft_decode_info(
         edges_observed: usize,
@@ -481,22 +607,26 @@ mod tests {
         mean_confidence: f32,
         score_best: f32,
         score_margin: f32,
-    ) -> PuzzleBoardDecodeInfo {
-        PuzzleBoardDecodeInfo {
-            edges_observed,
-            edges_matched,
-            mean_confidence,
-            bit_error_rate,
-            master_origin_row: 0,
-            master_origin_col: 0,
-            score_best: Some(score_best),
-            score_runner_up: Some(score_best - score_margin * edges_observed.max(1) as f32),
-            score_margin: Some(score_margin),
-            runner_up_origin_row: Some(1),
-            runner_up_origin_col: Some(1),
-            runner_up_transform: None,
-            scoring_mode: Some(PuzzleBoardScoringMode::SoftLogLikelihood),
-        }
+    ) -> ComponentDecode {
+        component_decode(
+            PuzzleBoardDecodeInfo {
+                edges_observed,
+                edges_matched,
+                mean_confidence,
+                bit_error_rate,
+                master_origin_row: 0,
+                master_origin_col: 0,
+            },
+            PuzzleBoardDecodeDiagnostics {
+                score_best: Some(score_best),
+                score_runner_up: Some(score_best - score_margin * edges_observed.max(1) as f32),
+                score_margin: Some(score_margin),
+                runner_up_origin_row: Some(1),
+                runner_up_origin_col: Some(1),
+                runner_up_transform: None,
+                scoring_mode: Some(PuzzleBoardScoringMode::SoftLogLikelihood),
+            },
+        )
     }
 
     fn hard_decode_info(
@@ -504,22 +634,26 @@ mod tests {
         edges_matched: usize,
         bit_error_rate: f32,
         mean_confidence: f32,
-    ) -> PuzzleBoardDecodeInfo {
-        PuzzleBoardDecodeInfo {
-            edges_observed,
-            edges_matched,
-            mean_confidence,
-            bit_error_rate,
-            master_origin_row: 0,
-            master_origin_col: 0,
-            score_best: None,
-            score_runner_up: None,
-            score_margin: None,
-            runner_up_origin_row: None,
-            runner_up_origin_col: None,
-            runner_up_transform: None,
-            scoring_mode: Some(PuzzleBoardScoringMode::HardWeighted),
-        }
+    ) -> ComponentDecode {
+        component_decode(
+            PuzzleBoardDecodeInfo {
+                edges_observed,
+                edges_matched,
+                mean_confidence,
+                bit_error_rate,
+                master_origin_row: 0,
+                master_origin_col: 0,
+            },
+            PuzzleBoardDecodeDiagnostics {
+                score_best: None,
+                score_runner_up: None,
+                score_margin: None,
+                runner_up_origin_row: None,
+                runner_up_origin_col: None,
+                runner_up_transform: None,
+                scoring_mode: Some(PuzzleBoardScoringMode::HardWeighted),
+            },
+        )
     }
 
     // --- C1 regression: wrap_master / id / target_position consistency -----------

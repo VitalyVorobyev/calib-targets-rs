@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use calib_targets::chessboard::{CornerStage, DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{diagnostics::CornerStage, DetectorParams, GraphBuildAlgorithm};
 use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
@@ -607,7 +607,7 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
         }
     };
     let detector = calib_targets::chessboard::Detector::new(detector_params.clone());
-    let frame = detector.detect_debug(&corners);
+    let frame = detector.detect_with_diagnostics(&corners);
 
     print_stage_summary(&args.image, &frame);
 
@@ -615,15 +615,11 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // ChArUco split produces several disjoint chessboard subgraphs that the
     // single-best `detect()` call hides.
     let detector_for_all = calib_targets::chessboard::Detector::new(detector_params);
-    let all_frames = detector_for_all.detect_all_debug(&corners);
+    let all_frames = detector_for_all.detect_all_with_diagnostics(&corners);
     if all_frames.len() > 1 {
-        println!("\n  --- detect_all_debug ---");
+        println!("\n  --- detect_all_with_diagnostics ---");
         for (k, f) in all_frames.iter().enumerate() {
-            let labelled = f
-                .detection
-                .as_ref()
-                .map(|d| d.target.corners.len())
-                .unwrap_or(0);
+            let labelled = f.detection.as_ref().map(|d| d.corners.len()).unwrap_or(0);
             println!("  component {k}: labelled={labelled}");
         }
     }
@@ -686,7 +682,7 @@ fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::DebugFrame) {
+fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnostics::DebugFrame) {
     let mut counts: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();
     for aug in &frame.corners {
@@ -774,21 +770,19 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::DebugFram
     if let Some(d) = &frame.detection {
         println!(
             "  detection: {} labelled corners, cell_size = {:.2} px",
-            d.target.corners.len(),
-            d.cell_size
+            d.corners.len(),
+            frame.cell_size.unwrap_or(0.0)
         );
         // Print bbox of labelled set.
         let mut min_i = i32::MAX;
         let mut max_i = i32::MIN;
         let mut min_j = i32::MAX;
         let mut max_j = i32::MIN;
-        for lc in &d.target.corners {
-            if let Some(g) = lc.grid {
-                min_i = min_i.min(g.i);
-                max_i = max_i.max(g.i);
-                min_j = min_j.min(g.j);
-                max_j = max_j.max(g.j);
-            }
+        for lc in &d.corners {
+            min_i = min_i.min(lc.grid.i);
+            max_i = max_i.max(lc.grid.i);
+            min_j = min_j.min(lc.grid.j);
+            max_j = max_j.max(lc.grid.j);
         }
         if min_i != i32::MAX {
             println!(
@@ -842,10 +836,10 @@ fn diagnose_topological(
     let mut survives_fit = 0usize;
     let mut survives_axis = 0usize;
     for c in corners {
-        let strong = c.strength >= chess_params.min_corner_strength;
-        let fit_ok = !chess_params.max_fit_rms_ratio.is_finite()
+        let strong = c.strength >= chess_params.tuning.min_corner_strength;
+        let fit_ok = !chess_params.tuning.max_fit_rms_ratio.is_finite()
             || c.contrast <= 0.0
-            || c.fit_rms <= chess_params.max_fit_rms_ratio * c.contrast;
+            || c.fit_rms <= chess_params.tuning.max_fit_rms_ratio * c.contrast;
         let axis_ok = c.axes[0].sigma < params.max_axis_sigma_rad
             || c.axes[1].sigma < params.max_axis_sigma_rad;
         if strong {

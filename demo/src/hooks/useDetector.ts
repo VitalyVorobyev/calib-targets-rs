@@ -143,6 +143,7 @@ export function useDetector(): UseDetectorReturn {
                     args.gray,
                     args.width,
                     args.height,
+                    args.chessCfg,
                     args.sweep,
                   )
                 : detectChessboard(

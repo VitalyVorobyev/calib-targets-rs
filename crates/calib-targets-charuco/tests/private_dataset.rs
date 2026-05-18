@@ -91,9 +91,8 @@ fn smoke_flagship_snap_0_detects() {
         height: snap.height() as usize,
         data: snap.as_raw(),
     };
-    let result = detector
-        .detect(&view, &corners)
-        .expect("snap 0 of target 0 must detect");
+    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let result = result.expect("snap 0 of target 0 must detect");
 
     assert!(
         result.markers.len() >= 8,
@@ -101,7 +100,7 @@ fn smoke_flagship_snap_0_detects() {
         result.markers.len()
     );
     assert_eq!(
-        result.raw_marker_wrong_id_count, 0,
+        diagnostics.raw_marker_wrong_id_count, 0,
         "flagship snap 0 must not produce any raw wrong-id decodings"
     );
     assert!(
@@ -148,9 +147,10 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
                 height: snap.height() as usize,
                 data: snap.as_raw(),
             };
-            if let Ok(result) = detector.detect(&view, &corners) {
+            let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+            if result.is_ok() {
                 detected += 1;
-                wrong_id_total += result.raw_marker_wrong_id_count;
+                wrong_id_total += diagnostics.raw_marker_wrong_id_count;
             }
         }
     }
@@ -242,9 +242,8 @@ fn smoke_apriltag_image_does_not_panic() {
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;
     let detector = CharucoDetector::new(params).expect("detector");
-    let result = detector
-        .detect(&view, &corners)
-        .expect("board-level matcher must detect target_0 snap 0");
+    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let result = result.expect("board-level matcher must detect target_0 snap 0");
     assert!(
         result.markers.len() >= 10,
         "board-level matcher should decode ≥ 10 markers, got {}",
@@ -256,7 +255,7 @@ fn smoke_apriltag_image_does_not_panic() {
         result.detection.corners.len()
     );
     assert_eq!(
-        result.raw_marker_wrong_id_count, 0,
+        diagnostics.raw_marker_wrong_id_count, 0,
         "board-level matcher is self-consistent by construction"
     );
 }

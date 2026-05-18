@@ -31,10 +31,10 @@ fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
     corners
         .iter()
         .map(|c| {
-            let strong = c.strength >= params.min_corner_strength;
-            let fit_ok = !params.max_fit_rms_ratio.is_finite()
+            let strong = c.strength >= params.tuning.min_corner_strength;
+            let fit_ok = !params.tuning.max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0
-                || c.fit_rms <= params.max_fit_rms_ratio * c.contrast;
+                || c.fit_rms <= params.tuning.max_fit_rms_ratio * c.contrast;
             strong && fit_ok
         })
         .collect()

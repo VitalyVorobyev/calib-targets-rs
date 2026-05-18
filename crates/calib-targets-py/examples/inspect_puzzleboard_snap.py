@@ -6,23 +6,25 @@ JSON report, and opens an interactive matplotlib figure showing:
 
 - the (upscaled) snap image
 - every detected chessboard corner (black dots with master (i,j) labels)
-- every observed edge-bit as a coloured circle at the edge midpoint:
+- the decode quality summary (matched / observed edge counts, BER) in the
+  title
 
-    * **blue** circle for bit = 0 (expected dark dot)
-    * **red** circle for bit = 1 (expected bright dot)
-    * radius ∝ confidence (bigger = more confident)
-    * faint grey circle for edges dropped by `min_bit_confidence`
+Hover over any corner to see its metadata in the toolbar. The matplotlib
+pan/zoom buttons let you drill into noisy regions.
 
-Hover over any corner or edge to see its metadata in the toolbar. The
-matplotlib pan/zoom buttons let you drill into noisy regions.
+Note: the per-edge bit-ring overlay was dropped in 0.9.0. The raw
+observed-edge dump moved off `PuzzleBoardDetectionResult` onto the Rust
+`PuzzleBoardDiagnostics` channel, which neither the `run_dataset.rs` JSON
+report nor the Python `puzzleboard` binding exposes — so the edge circles
+can no longer be fed. The corner overlay and decode summary remain.
 
 Usage:
 
     uv run python crates/calib-targets-py/examples/inspect_puzzleboard_snap.py \\
-        --target privatedata/130x130_puzzle/target_3.png \\
+        --target path/to/target.png \\
         --snap 0 \\
-        --json tmpdata/softll_130/t3s0.json \\
-        [--upscale 2] [--min-conf 0.15]
+        --json path/to/run_dataset_report.json \\
+        [--upscale 2]
 
 The JSON is optional: if omitted the script runs detection itself using
 the Rust/PyO3 bindings with default parameters for the declared board
@@ -39,13 +41,11 @@ from typing import Any, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle
 from PIL import Image
 
 SNAP_WIDTH = 720
 SNAP_HEIGHT = 540
 SNAPS_PER_IMAGE = 6
-MASTER_SIZE = 501
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -74,13 +74,6 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument(
         "--upscale", type=int, default=2,
         help="Upscaling factor applied before detection (default 2).",
-    )
-    ap.add_argument(
-        "--min-conf", type=float, default=0.15,
-        help=(
-            "Confidence threshold used to highlight dropped edges. Must "
-            "match the detector's `min_bit_confidence` to be meaningful."
-        ),
     )
     ap.add_argument(
         "--rows", type=int, default=130,
@@ -166,59 +159,15 @@ def detection_from_live_run(
         params=params.to_dict(),
     )
     # The raw dict is exactly PuzzleBoardDetectionResult as serialised by serde.
+    # `observed_edges` is no longer part of the result (moved to the Rust
+    # `PuzzleBoardDiagnostics` channel in 0.9.0), so the overlay shows
+    # corners and the decode summary only.
     return {
         "kind": "ok",
         "detection": raw["detection"],
         "alignment": raw["alignment"],
         "decode": raw["decode"],
-        "observed_edges": raw["observed_edges"],
     }
-
-
-# ---------------------------------------------------------------------------
-# Local-grid → pixel-midpoint reconstruction
-# ---------------------------------------------------------------------------
-
-
-def build_master_to_pixel(detection: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
-    """Map master `(i, j)` → pixel `(x, y)` for every labelled corner."""
-    m2p: dict[tuple[int, int], tuple[float, float]] = {}
-    for c in detection.get("corners", []):
-        grid = c.get("grid")
-        pos = c.get("position")
-        if grid is None or pos is None:
-            continue
-        m2p[(int(grid["i"]), int(grid["j"]))] = (float(pos[0]), float(pos[1]))
-    return m2p
-
-
-def local_to_master(
-    local_i: int, local_j: int, alignment: dict[str, Any]
-) -> tuple[int, int]:
-    """Apply the alignment (D4 + translation), wrap into [0, 501)."""
-    t = alignment["transform"]
-    tx, ty = alignment["translation"]
-    a, b = int(t["a"]), int(t["b"])
-    c, d = int(t["c"]), int(t["d"])
-    raw_i = a * local_i + b * local_j + int(tx)
-    raw_j = c * local_i + d * local_j + int(ty)
-    return (raw_i % MASTER_SIZE, raw_j % MASTER_SIZE)
-
-
-def edge_endpoints(edge: dict[str, Any]) -> tuple[tuple[int, int], tuple[int, int]]:
-    """Return the two chess-local `(col, row)` corner coordinates an edge spans."""
-    local_row = int(edge["row"])
-    local_col = int(edge["col"])
-    orient_kind = edge["orientation"]["kind"] if isinstance(edge["orientation"], dict) else edge["orientation"]
-    orient_kind = orient_kind.lower()
-    a = (local_col, local_row)
-    if orient_kind == "horizontal":
-        b = (local_col + 1, local_row)
-    elif orient_kind == "vertical":
-        b = (local_col, local_row + 1)
-    else:
-        raise SystemExit(f"unknown edge orientation: {edge['orientation']!r}")
-    return a, b
 
 
 # ---------------------------------------------------------------------------
@@ -230,10 +179,7 @@ def render_overlay(
     ax: plt.Axes,
     image: np.ndarray,
     detection: dict[str, Any],
-    alignment: dict[str, Any],
     decode: dict[str, Any],
-    observed_edges: list[dict[str, Any]],
-    min_conf: float,
 ) -> None:
     ax.imshow(image, cmap="gray", origin="upper", interpolation="nearest")
 
@@ -243,66 +189,15 @@ def render_overlay(
         ys = [float(c["position"][1]) for c in corners]
         ax.scatter(xs, ys, s=8, marker=".", color="#00cc66", alpha=0.9, label="labelled corner")
 
-    m2p = build_master_to_pixel(detection)
-
-    edges_drawn = 0
-    edges_missing = 0
-    radius_scale = 6.0
-    for edge in observed_edges:
-        (ca, cb) = edge_endpoints(edge)
-        ma = local_to_master(*ca, alignment)
-        mb = local_to_master(*cb, alignment)
-        pa = m2p.get(ma)
-        pb = m2p.get(mb)
-        if pa is None or pb is None:
-            edges_missing += 1
-            continue
-        mid = ((pa[0] + pb[0]) * 0.5, (pa[1] + pb[1]) * 0.5)
-        conf = float(edge["confidence"])
-        bit = int(edge["bit"])
-        color = "#e63946" if bit == 1 else "#1d4ed8"
-        face = color if conf >= min_conf else "#bbbbbb"
-        alpha = 0.85 if conf >= min_conf else 0.4
-        radius = max(1.5, radius_scale * conf)
-        circ = Circle(
-            mid,
-            radius=radius,
-            facecolor=face,
-            edgecolor="black",
-            linewidth=0.4,
-            alpha=alpha,
-        )
-        ax.add_patch(circ)
-        edges_drawn += 1
-
     title_bits = [
         f"n_corners={len(corners)}",
-        f"n_edges={len(observed_edges)} (plotted {edges_drawn}, missing-endpoint {edges_missing})",
         f"matched={decode.get('edges_matched')}/{decode.get('edges_observed')}",
         f"BER={decode.get('bit_error_rate'):.3f}",
         f"conf={decode.get('mean_confidence'):.3f}",
     ]
-    scoring_mode = decode.get("scoring_mode")
-    if isinstance(scoring_mode, dict):
-        scoring_mode = scoring_mode.get("kind")
-    if scoring_mode:
-        title_bits.append(f"mode={scoring_mode}")
-    if decode.get("score_margin") is not None:
-        title_bits.append(f"margin={decode['score_margin']:.3f}")
     ax.set_title("  ".join(title_bits), fontsize=10)
 
-    legend_handles = [
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#1d4ed8",
-                   markersize=10, markeredgecolor="black", label="bit=0 (dark)"),
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#e63946",
-                   markersize=10, markeredgecolor="black", label="bit=1 (bright)"),
-        plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#bbbbbb",
-                   markersize=8, markeredgecolor="black",
-                   label=f"conf<{min_conf} (dropped)"),
-        plt.Line2D([0], [0], marker=".", color="#00cc66", markersize=10,
-                   linestyle="", label="labelled corner"),
-    ]
-    ax.legend(handles=legend_handles, loc="upper right", fontsize=8, framealpha=0.9)
+    ax.legend(loc="upper right", fontsize=8, framealpha=0.9)
     ax.set_xlabel("pixel x")
     ax.set_ylabel("pixel y")
     ax.set_aspect("equal")
@@ -358,12 +253,8 @@ def attach_hover(
     fig: plt.Figure,
     ax: plt.Axes,
     detection: dict[str, Any],
-    alignment: dict[str, Any],
-    observed_edges: list[dict[str, Any]],
-    min_conf: float,
 ) -> HoverAnnotator:
     hover = HoverAnnotator(fig, ax)
-    m2p = build_master_to_pixel(detection)
 
     for c in detection.get("corners", []):
         pos = c["position"]
@@ -386,36 +277,6 @@ def attach_hover(
         )
         hover.register(circ, txt)
 
-    for e in observed_edges:
-        (ca, cb) = edge_endpoints(e)
-        ma = local_to_master(*ca, alignment)
-        mb = local_to_master(*cb, alignment)
-        pa = m2p.get(ma)
-        pb = m2p.get(mb)
-        if pa is None or pb is None:
-            continue
-        mid = ((pa[0] + pb[0]) * 0.5, (pa[1] + pb[1]) * 0.5)
-        conf = float(e["confidence"])
-        radius = max(1.5, 6.0 * conf)
-        (circ,) = ax.plot(
-            mid[0], mid[1], "o",
-            markersize=radius,
-            color="none",
-            markeredgecolor="none",
-            picker=max(radius, 3.0),
-            alpha=0.0,
-        )
-        orient = e["orientation"]
-        if isinstance(orient, dict):
-            orient = orient.get("kind")
-        dropped = "  (DROPPED)" if conf < min_conf else ""
-        txt = (
-            f"edge local=(r={e['row']},c={e['col']}) {orient}\n"
-            f"bit={e['bit']}  conf={conf:.3f}{dropped}\n"
-            f"master_endpoints={ma} → {mb}"
-        )
-        hover.register(circ, txt)
-
     return hover
 
 
@@ -434,17 +295,15 @@ def main() -> int:
         outcome = detection_from_live_run(image, args.rows, args.cols, args.cell_size_mm)
 
     detection = outcome["detection"]
-    alignment = outcome["alignment"]
     decode = outcome["decode"]
-    observed_edges = outcome.get("observed_edges") or []
 
     fig, ax = plt.subplots(figsize=(14, 10))
-    render_overlay(ax, image, detection, alignment, decode, observed_edges, args.min_conf)
+    render_overlay(ax, image, detection, decode)
     fig.suptitle(
         f"{args.target.name}  snap={args.snap}  upscale={args.upscale}×",
         fontsize=11,
     )
-    attach_hover(fig, ax, detection, alignment, observed_edges, args.min_conf)
+    attach_hover(fig, ax, detection)
     fig.tight_layout()
 
     if args.save is not None:

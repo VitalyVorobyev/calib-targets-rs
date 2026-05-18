@@ -3,12 +3,12 @@
 //! Builds two disconnected 3×3 chessboard pieces (same physical board,
 //! same cell size, separated by a gap larger than the attach-search
 //! window) and asserts that `Detector::detect_all` returns both
-//! components as independent `Detection`s.
+//! components as independent `ChessboardDetection`s.
 //!
 //! This exercises the ChArUco use case where markers break the chessboard
-//! into disconnected pieces — the per-component `Detection` carries its
-//! own locally-rebased `(i, j)` labels; ChArUco's marker decoding is
-//! responsible for aligning them to a global frame.
+//! into disconnected pieces — the per-component `ChessboardDetection`
+//! carries its own locally-rebased `(i, j)` labels; ChArUco's marker
+//! decoding is responsible for aligning them to a global frame.
 //!
 //! Multi-physical-board scenes are explicitly out of scope.
 
@@ -76,22 +76,17 @@ fn detects_two_components_of_the_same_board() {
     let mut seen: HashSet<usize> = HashSet::new();
     for (k, det) in detections.iter().enumerate() {
         assert_eq!(
-            det.target.corners.len(),
+            det.corners.len(),
             9,
             "component {k}: expected 9 corners, got {}",
-            det.target.corners.len()
-        );
-        assert_eq!(
-            det.strong_indices.len(),
-            9,
-            "component {k}: expected 9 strong_indices, got {}",
-            det.strong_indices.len()
+            det.corners.len()
         );
         // Each component's corners must be disjoint from the other.
-        for &idx in &det.strong_indices {
+        for corner in &det.corners {
             assert!(
-                seen.insert(idx),
-                "component {k}: input index {idx} appears in multiple components"
+                seen.insert(corner.input_index),
+                "component {k}: input index {} appears in multiple components",
+                corner.input_index
             );
         }
     }
@@ -100,7 +95,7 @@ fn detects_two_components_of_the_same_board() {
     // input indices < left_count and the other contains the rest.
     let sets: Vec<HashSet<usize>> = detections
         .iter()
-        .map(|d| d.strong_indices.iter().copied().collect())
+        .map(|d| d.corners.iter().map(|c| c.input_index).collect())
         .collect();
     let left_piece: HashSet<usize> = (0..left_count).collect();
     let right_piece: HashSet<usize> = (left_count..corners.len()).collect();
@@ -119,6 +114,5 @@ fn single_component_scene_still_returns_one() {
     let detector = Detector::new(DetectorParams::default());
     let detections = detector.detect_all(&corners);
     assert_eq!(detections.len(), 1);
-    assert_eq!(detections[0].target.corners.len(), 9);
-    assert_eq!(detections[0].strong_indices.len(), 9);
+    assert_eq!(detections[0].corners.len(), 9);
 }

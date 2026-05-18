@@ -21,7 +21,7 @@ use std::collections::{HashSet, VecDeque};
 /// Counters returned by [`extend_from_labelled`].
 ///
 /// Mirrors the fields of
-/// [`crate::square::grow_extension::ExtensionStats`], but covers the
+/// [`crate::square::extension::ExtensionStats`], but covers the
 /// simpler cardinal-BFS path (no homography, no local-H, just
 /// `process_boundary_cell`).
 #[non_exhaustive]

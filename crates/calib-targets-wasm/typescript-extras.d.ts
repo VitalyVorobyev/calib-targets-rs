@@ -79,13 +79,22 @@ export interface TargetDetection {
 // Detector-specific result types
 // ---------------------------------------------------------------------------
 
+/** A single labelled chessboard corner (Rust `ChessboardCorner`). */
+export interface ChessboardCorner {
+  /** Sub-pixel image position. */
+  position: Point2;
+  /** Grid label `(i, j)` — always present for a chessboard corner. */
+  grid: GridCoords;
+  /** Index into the input `corners` slice that produced this corner. */
+  input_index: number;
+  /** Corner score (higher is better). */
+  score: number;
+}
+
+/** Result of chessboard detection (Rust `ChessboardDetection`). */
 export interface ChessboardDetectionResult {
-  /** Two orthogonal grid-axis angles in radians, `axes[1] − axes[0] ≈ π/2`. */
-  grid_directions: [number, number];
-  cell_size: number;
-  target: TargetDetection;
-  /** Indices into the input `corners` slice, in the same order as `target.corners`. */
-  strong_indices: number[];
+  /** The labelled corners. */
+  corners: ChessboardCorner[];
 }
 
 export interface MarkerDetection {
@@ -103,63 +112,42 @@ export interface MarkerDetection {
 
 export interface CharucoDetectionResult {
   detection: TargetDetection;
+  /** Markers consistent with `alignment` (inliers of the chosen hypothesis). */
   markers: MarkerDetection[];
   alignment: GridAlignment;
-  raw_marker_count: number;
-  raw_marker_wrong_id_count: number;
-}
-
-export interface CircleCandidate {
-  center: Point2;
-  score: number;
-  polarity: "white" | "black";
-}
-
-export interface CircleMatch {
-  cell: GridCoords;
-  candidate_index: number;
-  polarity: "white" | "black";
 }
 
 export interface MarkerBoardDetectionResult {
   detection: TargetDetection;
-  inliers: number[];
-  circle_candidates: CircleCandidate[];
-  circle_matches: CircleMatch[];
   alignment: GridAlignment | null;
-  alignment_inliers: number;
 }
 
-export interface PuzzleBoardObservedEdge {
-  row: number;
-  col: number;
-  orientation: "horizontal" | "vertical";
-  bit: 0 | 1;
-  confidence: number;
-}
-
+/**
+ * Compact decode quality summary (Rust `PuzzleBoardDecodeInfo`).
+ *
+ * Winner-vs-runner-up scoring evidence and the raw per-edge observations
+ * live in the Rust `PuzzleBoardDiagnostics` struct, which is reachable only
+ * via `detect_with_diagnostics` and does not cross the WASM boundary.
+ */
 export interface PuzzleBoardDecodeInfo {
+  /** Total observed edges that contributed to the decode. */
   edges_observed: number;
+  /** Observed edges whose bit matched the master after alignment. */
   edges_matched: number;
+  /** Mean confidence across contributing edges. */
   mean_confidence: number;
+  /** Hamming error rate across all observed bits after alignment. */
   bit_error_rate: number;
+  /** Absolute master-board origin of local `(0, 0)`. */
   master_origin_row: number;
+  /** Absolute master-board origin of local `(0, 0)`. */
   master_origin_col: number;
-  /** Winning hypothesis score (soft-mode log-likelihood, hard-mode confidence sum). */
-  score_best?: number;
-  score_runner_up?: number;
-  score_margin?: number;
-  runner_up_origin_row?: number;
-  runner_up_origin_col?: number;
-  runner_up_transform?: GridTransform;
-  scoring_mode?: PuzzleBoardScoringMode;
 }
 
 export interface PuzzleBoardDetectionResult {
   detection: TargetDetection;
   alignment: GridAlignment;
   decode: PuzzleBoardDecodeInfo;
-  observed_edges: PuzzleBoardObservedEdge[];
 }
 
 // ---------------------------------------------------------------------------
@@ -209,18 +197,66 @@ export interface ChessConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Parameters: chessboard detector (flat 30-ish field shape).
+// Parameters: chessboard detector
+//
+// The Rust `DetectorParams` carries a small stable core plus a
+// `ChessboardTuning` advanced sub-struct. `ChessboardTuning` is
+// `#[serde(flatten)]`-ed, so the serialized JSON wire format is FLAT —
+// every tuning knob is a top-level key, no `tuning` object appears.
 // ---------------------------------------------------------------------------
 
+/** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
+export type GraphBuildAlgorithm = "topological" | "chessboard_v2";
+
+/** Global grid-direction centers for the topological pre-Delaunay gate. */
+export interface AxisClusterCenters {
+  /** First grid-axis direction (radians, `[0, π)`, `theta0 < theta1`). */
+  theta0: number;
+  /** Second grid-axis direction (radians, `[0, π)`, `theta0 < theta1`). */
+  theta1: number;
+}
+
+/** Tuning knobs for the topological grid-build path (Rust `TopologicalParams`). */
+export interface TopologicalParams {
+  axis_align_tol_rad: number;
+  max_axis_sigma_rad: number;
+  edge_ratio_max: number;
+  min_quads_per_component: number;
+  axis_cluster_centers: AxisClusterCenters | null;
+  cluster_axis_tol_rad: number;
+  quad_edge_min_rel: number;
+  quad_edge_max_rel: number;
+}
+
+/** Tuning knobs for the shared local-geometry component merger (Rust `LocalMergeParams`). */
+export interface LocalMergeParams {
+  position_tol_rel: number;
+  cell_size_ratio_tol: number;
+  min_overlap: number;
+  max_components: number;
+}
+
+/**
+ * Chessboard detector parameters — the flat serialized shape of the Rust
+ * `DetectorParams`. The first three keys are the stable core; the remainder
+ * are the `#[serde(flatten)]`-ed `ChessboardTuning` knobs.
+ */
 export interface ChessboardParams {
+  // --- stable core ---
+  graph_build_algorithm: GraphBuildAlgorithm;
+  min_labeled_corners: number;
+  max_components: number;
+  // --- flattened ChessboardTuning ---
+  topological: TopologicalParams;
+  component_merge: LocalMergeParams;
   min_corner_strength: number;
   max_fit_rms_ratio: number;
   num_bins: number;
   max_iters_2means: number;
   cluster_tol_deg: number;
+  cluster_sigma_k: number;
   peak_min_separation_deg: number;
   min_peak_weight_fraction: number;
-  cell_size_hint?: number;
   seed_edge_tol: number;
   seed_axis_tol_deg: number;
   seed_close_tol: number;
@@ -230,10 +266,27 @@ export interface ChessboardParams {
   step_tol: number;
   edge_axis_tol_deg: number;
   line_tol_rel: number;
-  projective_line_tol_rel: number;
   line_min_members: number;
   local_h_tol_rel: number;
+  validate_step_aware: boolean;
+  validate_step_deviation_thresh_rel: number;
   max_validation_iters: number;
+  enable_stage6_5_rescue: boolean;
+  rescue_axis_tol_deg: number;
+  stage6_5_local_k_nearest: number;
+  rescue_search_rel: number;
+  enable_partial_slot_flip_fix: boolean;
+  partial_slot_flip_k_nearest: number;
+  enable_post_grow_refit: boolean;
+  refit_min_labelled: number;
+  refit_min_shift_deg: number;
+  enable_post_grow_bfs_regrow: boolean;
+  enable_post_grow_bfs_extend: boolean;
+  enable_post_geometry_rescue: boolean;
+  geometry_check_line_tol_rel: number;
+  geometry_check_local_h_tol_rel: number;
+  stage6_local_h: boolean;
+  stage6_local_k_nearest: number;
   enable_line_extrapolation: boolean;
   enable_gap_fill: boolean;
   enable_component_merge: boolean;
@@ -241,8 +294,6 @@ export interface ChessboardParams {
   weak_cluster_tol_deg: number;
   component_merge_min_boundary_pairs: number;
   max_booster_iters: number;
-  min_labeled_corners: number;
-  max_components: number;
 }
 
 // ---------------------------------------------------------------------------

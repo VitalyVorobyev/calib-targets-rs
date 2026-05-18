@@ -11,20 +11,20 @@
 use crate::error::{FfiError, FfiResult};
 use crate::types::{
     ct_charuco_board_spec_t, ct_charuco_detector_params_t, ct_chess_config_t, ct_chess_params_t,
-    ct_chessboard_params_t, ct_circle_candidate_t, ct_circle_match_params_t, ct_circle_match_t,
-    ct_circle_polarity_t, ct_circle_score_params_t, ct_dictionary_id_t, ct_grid_alignment_t,
-    ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t, ct_marker_board_layout_t,
-    ct_marker_board_params_t, ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t,
-    ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t, ct_puzzleboard_decode_config_t,
-    ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t,
-    ct_puzzleboard_spec_t, ct_scan_decode_config_t, ct_target_detection_t, ct_target_kind_t,
-    ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
-    CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
-    CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
-    CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
-    CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50,
-    CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250,
-    CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
+    ct_chessboard_corner_t, ct_chessboard_params_t, ct_circle_match_params_t, ct_circle_polarity_t,
+    ct_circle_score_params_t, ct_dictionary_id_t, ct_grid_alignment_t, ct_grid_coords_t,
+    ct_grid_transform_t, ct_labeled_corner_t, ct_marker_board_layout_t, ct_marker_board_params_t,
+    ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t,
+    ct_optional_u32_t, ct_point2f_t, ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t,
+    ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t,
+    ct_scan_decode_config_t, ct_target_detection_t, ct_target_kind_t, ct_upscale_config_t,
+    CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100,
+    CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50,
+    CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250,
+    CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000,
+    CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100,
+    CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50,
+    CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
     CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
     CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
     CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
@@ -40,24 +40,24 @@ use crate::validate::{
 use calib_targets::aruco::ScanDecodeConfig;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
-use calib_targets::chessboard::DetectorParams as ChessboardDetectorParams;
-use calib_targets::core::{
-    ChessCornerParams as ChessParams, GridAlignment, GridCoords, LabeledCorner, PyramidParams,
-    TargetDetection, TargetKind,
-};
-use calib_targets::detect::{
-    CenterOfMassConfig, ChessRefiner, DetectorConfig, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, Threshold, UpscaleConfig,
-};
+use calib_targets::chessboard::{ChessboardCorner, DetectorParams as ChessboardDetectorParams};
+use calib_targets::core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
-    CellCoords, CircleCandidate, CircleMatch, CircleMatchParams, CirclePolarity, CircleScoreParams,
-    MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
+    CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardParams,
+    MarkerBoardSpec, MarkerCircleSpec,
 };
 use calib_targets::puzzleboard::{
     PuzzleBoardDecodeConfig, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
     PuzzleBoardSpec, PuzzleBoardSpecError,
 };
-use chess_corners::RefinerKind;
+// Advanced ChESS tuning types are imported from `chess-corners` directly —
+// the `calib-targets` facade re-exports only `DetectorConfig` +
+// `OrientationMethod`.
+use chess_corners::{
+    CenterOfMassConfig, ChessParams, ChessRefiner, ChessRing, DescriptorRing, ForstnerConfig,
+    MultiscaleConfig, PyramidParams, RefinerKind, SaddlePointConfig, Threshold, UpscaleConfig,
+};
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
 
@@ -202,14 +202,14 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         None => Threshold::Relative(params.threshold_rel),
     };
     let ring = if params.use_radius10 {
-        calib_targets::detect::ChessRing::Broad
+        ChessRing::Broad
     } else {
-        calib_targets::detect::ChessRing::Canonical
+        ChessRing::Canonical
     };
     let descriptor_ring = match params.descriptor_use_radius10 {
-        None => calib_targets::detect::DescriptorRing::FollowDetector,
-        Some(false) => calib_targets::detect::DescriptorRing::Canonical,
-        Some(true) => calib_targets::detect::DescriptorRing::Broad,
+        None => DescriptorRing::FollowDetector,
+        Some(false) => DescriptorRing::Canonical,
+        Some(true) => DescriptorRing::Broad,
     };
     let refiner = refiner_kind_to_chess_refiner(params.refiner);
     let nms_radius = params.nms_radius;
@@ -328,63 +328,64 @@ pub(crate) fn convert_chessboard_params(
             )));
         }
     };
-    out.min_corner_strength =
+    out.tuning.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
-    out.max_fit_rms_ratio =
+    out.tuning.max_fit_rms_ratio =
         require_finite(params.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
-    out.num_bins = params.num_bins;
-    out.max_iters_2means = params.max_iters_2means;
-    out.cluster_tol_deg =
+    out.tuning.num_bins = params.num_bins;
+    out.tuning.max_iters_2means = params.max_iters_2means;
+    out.tuning.cluster_tol_deg =
         require_nonnegative(params.cluster_tol_deg, "chessboard.cluster_tol_deg")?;
-    out.peak_min_separation_deg = require_nonnegative(
+    out.tuning.peak_min_separation_deg = require_nonnegative(
         params.peak_min_separation_deg,
         "chessboard.peak_min_separation_deg",
     )?;
-    out.min_peak_weight_fraction = require_fraction(
+    out.tuning.min_peak_weight_fraction = require_fraction(
         params.min_peak_weight_fraction,
         "chessboard.min_peak_weight_fraction",
     )?;
-    out.cell_size_hint =
-        optional_f32_to_option(&params.cell_size_hint, "chessboard.cell_size_hint")?;
-    out.seed_edge_tol = require_nonnegative(params.seed_edge_tol, "chessboard.seed_edge_tol")?;
-    out.seed_axis_tol_deg =
+    out.tuning.seed_edge_tol =
+        require_nonnegative(params.seed_edge_tol, "chessboard.seed_edge_tol")?;
+    out.tuning.seed_axis_tol_deg =
         require_nonnegative(params.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
-    out.seed_close_tol = require_nonnegative(params.seed_close_tol, "chessboard.seed_close_tol")?;
-    out.attach_search_rel =
+    out.tuning.seed_close_tol =
+        require_nonnegative(params.seed_close_tol, "chessboard.seed_close_tol")?;
+    out.tuning.attach_search_rel =
         require_positive(params.attach_search_rel, "chessboard.attach_search_rel")?;
-    out.attach_axis_tol_deg =
+    out.tuning.attach_axis_tol_deg =
         require_nonnegative(params.attach_axis_tol_deg, "chessboard.attach_axis_tol_deg")?;
-    out.attach_ambiguity_factor = require_positive(
+    out.tuning.attach_ambiguity_factor = require_positive(
         params.attach_ambiguity_factor,
         "chessboard.attach_ambiguity_factor",
     )?;
-    out.step_tol = require_nonnegative(params.step_tol, "chessboard.step_tol")?;
-    out.edge_axis_tol_deg =
+    out.tuning.step_tol = require_nonnegative(params.step_tol, "chessboard.step_tol")?;
+    out.tuning.edge_axis_tol_deg =
         require_nonnegative(params.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
-    out.line_tol_rel = require_nonnegative(params.line_tol_rel, "chessboard.line_tol_rel")?;
-    out.line_min_members = params.line_min_members;
-    out.local_h_tol_rel =
+    out.tuning.line_tol_rel = require_nonnegative(params.line_tol_rel, "chessboard.line_tol_rel")?;
+    out.tuning.line_min_members = params.line_min_members;
+    out.tuning.local_h_tol_rel =
         require_nonnegative(params.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
-    out.max_validation_iters = params.max_validation_iters;
-    out.enable_line_extrapolation = flag_to_bool(
+    out.tuning.max_validation_iters = params.max_validation_iters;
+    out.tuning.enable_line_extrapolation = flag_to_bool(
         params.enable_line_extrapolation,
         "chessboard.enable_line_extrapolation",
     )?;
-    out.enable_gap_fill = flag_to_bool(params.enable_gap_fill, "chessboard.enable_gap_fill")?;
-    out.enable_component_merge = flag_to_bool(
+    out.tuning.enable_gap_fill =
+        flag_to_bool(params.enable_gap_fill, "chessboard.enable_gap_fill")?;
+    out.tuning.enable_component_merge = flag_to_bool(
         params.enable_component_merge,
         "chessboard.enable_component_merge",
     )?;
-    out.enable_weak_cluster_rescue = flag_to_bool(
+    out.tuning.enable_weak_cluster_rescue = flag_to_bool(
         params.enable_weak_cluster_rescue,
         "chessboard.enable_weak_cluster_rescue",
     )?;
-    out.weak_cluster_tol_deg = require_nonnegative(
+    out.tuning.weak_cluster_tol_deg = require_nonnegative(
         params.weak_cluster_tol_deg,
         "chessboard.weak_cluster_tol_deg",
     )?;
-    out.component_merge_min_boundary_pairs = params.component_merge_min_boundary_pairs;
-    out.max_booster_iters = params.max_booster_iters;
+    out.tuning.component_merge_min_boundary_pairs = params.component_merge_min_boundary_pairs;
+    out.tuning.max_booster_iters = params.max_booster_iters;
     out.min_labeled_corners = params.min_labeled_corners;
     out.max_components = params.max_components;
     Ok(out)
@@ -406,48 +407,48 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
             // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
             _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2,
         },
-        min_corner_strength: d.min_corner_strength,
-        max_fit_rms_ratio: d.max_fit_rms_ratio,
-        num_bins: d.num_bins,
-        max_iters_2means: d.max_iters_2means,
-        cluster_tol_deg: d.cluster_tol_deg,
-        peak_min_separation_deg: d.peak_min_separation_deg,
-        min_peak_weight_fraction: d.min_peak_weight_fraction,
-        cell_size_hint: match d.cell_size_hint {
-            Some(v) => ct_optional_f32_t::some(v),
-            None => ct_optional_f32_t::none(),
-        },
-        seed_edge_tol: d.seed_edge_tol,
-        seed_axis_tol_deg: d.seed_axis_tol_deg,
-        seed_close_tol: d.seed_close_tol,
-        attach_search_rel: d.attach_search_rel,
-        attach_axis_tol_deg: d.attach_axis_tol_deg,
-        attach_ambiguity_factor: d.attach_ambiguity_factor,
-        step_tol: d.step_tol,
-        edge_axis_tol_deg: d.edge_axis_tol_deg,
-        line_tol_rel: d.line_tol_rel,
-        line_min_members: d.line_min_members,
-        local_h_tol_rel: d.local_h_tol_rel,
-        max_validation_iters: d.max_validation_iters,
-        enable_line_extrapolation: if d.enable_line_extrapolation {
+        min_corner_strength: d.tuning.min_corner_strength,
+        max_fit_rms_ratio: d.tuning.max_fit_rms_ratio,
+        num_bins: d.tuning.num_bins,
+        max_iters_2means: d.tuning.max_iters_2means,
+        cluster_tol_deg: d.tuning.cluster_tol_deg,
+        peak_min_separation_deg: d.tuning.peak_min_separation_deg,
+        min_peak_weight_fraction: d.tuning.min_peak_weight_fraction,
+        seed_edge_tol: d.tuning.seed_edge_tol,
+        seed_axis_tol_deg: d.tuning.seed_axis_tol_deg,
+        seed_close_tol: d.tuning.seed_close_tol,
+        attach_search_rel: d.tuning.attach_search_rel,
+        attach_axis_tol_deg: d.tuning.attach_axis_tol_deg,
+        attach_ambiguity_factor: d.tuning.attach_ambiguity_factor,
+        step_tol: d.tuning.step_tol,
+        edge_axis_tol_deg: d.tuning.edge_axis_tol_deg,
+        line_tol_rel: d.tuning.line_tol_rel,
+        line_min_members: d.tuning.line_min_members,
+        local_h_tol_rel: d.tuning.local_h_tol_rel,
+        max_validation_iters: d.tuning.max_validation_iters,
+        enable_line_extrapolation: if d.tuning.enable_line_extrapolation {
             CT_TRUE
         } else {
             CT_FALSE
         },
-        enable_gap_fill: if d.enable_gap_fill { CT_TRUE } else { CT_FALSE },
-        enable_component_merge: if d.enable_component_merge {
+        enable_gap_fill: if d.tuning.enable_gap_fill {
             CT_TRUE
         } else {
             CT_FALSE
         },
-        enable_weak_cluster_rescue: if d.enable_weak_cluster_rescue {
+        enable_component_merge: if d.tuning.enable_component_merge {
             CT_TRUE
         } else {
             CT_FALSE
         },
-        weak_cluster_tol_deg: d.weak_cluster_tol_deg,
-        component_merge_min_boundary_pairs: d.component_merge_min_boundary_pairs,
-        max_booster_iters: d.max_booster_iters,
+        enable_weak_cluster_rescue: if d.tuning.enable_weak_cluster_rescue {
+            CT_TRUE
+        } else {
+            CT_FALSE
+        },
+        weak_cluster_tol_deg: d.tuning.weak_cluster_tol_deg,
+        component_merge_min_boundary_pairs: d.tuning.component_merge_min_boundary_pairs,
+        max_booster_iters: d.tuning.max_booster_iters,
         min_labeled_corners: d.min_labeled_corners,
         max_components: d.max_components,
     }
@@ -573,14 +574,6 @@ pub(crate) fn convert_charuco_detector_params(
 }
 
 // ─── Marker-board params ────────────────────────────────────────────────────
-
-pub(crate) fn circle_polarity_to_ffi(polarity: CirclePolarity) -> ct_circle_polarity_t {
-    match polarity {
-        CirclePolarity::White => CT_CIRCLE_POLARITY_WHITE,
-        CirclePolarity::Black => CT_CIRCLE_POLARITY_BLACK,
-        _ => CT_CIRCLE_POLARITY_WHITE, // fallback for future variants
-    }
-}
 
 pub(crate) fn convert_circle_polarity(
     value: ct_circle_polarity_t,
@@ -861,18 +854,6 @@ pub(crate) fn convert_puzzleboard_scoring_mode(
     }
 }
 
-pub(crate) fn puzzleboard_scoring_mode_to_ffi(
-    value: PuzzleBoardScoringMode,
-) -> ct_puzzleboard_scoring_mode_t {
-    match value {
-        PuzzleBoardScoringMode::HardWeighted => CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
-        PuzzleBoardScoringMode::SoftLogLikelihood => {
-            CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD
-        }
-        _ => CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
-    }
-}
-
 // ─── Output builders (Rust → ct_*_t) ────────────────────────────────────────
 
 pub(crate) fn target_kind_to_ffi(kind: TargetKind) -> ct_target_kind_t {
@@ -937,6 +918,15 @@ pub(crate) fn labeled_corner_to_ffi(corner: &LabeledCorner) -> ct_labeled_corner
     }
 }
 
+pub(crate) fn chessboard_corner_to_ffi(corner: &ChessboardCorner) -> ct_chessboard_corner_t {
+    ct_chessboard_corner_t {
+        position: point_to_ffi_xy(corner.position.x, corner.position.y),
+        grid: grid_coords_to_ffi(corner.grid),
+        input_index: corner.input_index,
+        score: corner.score,
+    }
+}
+
 pub(crate) fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_detection_t {
     let corners_img = marker
         .corners_img
@@ -965,55 +955,5 @@ pub(crate) fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_det
             CT_FALSE
         },
         corners_img,
-    }
-}
-
-pub(crate) fn circle_candidate_to_ffi(candidate: &CircleCandidate) -> ct_circle_candidate_t {
-    ct_circle_candidate_t {
-        center_img: point_to_ffi_xy(candidate.center_img.x, candidate.center_img.y),
-        cell: ct_grid_coords_t {
-            i: candidate.cell.i,
-            j: candidate.cell.j,
-        },
-        polarity: circle_polarity_to_ffi(candidate.polarity),
-        score: candidate.score,
-        contrast: candidate.contrast,
-    }
-}
-
-pub(crate) fn circle_match_to_ffi(circle_match: &CircleMatch) -> ct_circle_match_t {
-    let (has_matched_index, matched_index) = match circle_match.matched_index {
-        Some(index) => (CT_TRUE, index),
-        None => (CT_FALSE, 0),
-    };
-    let (has_distance_cells, distance_cells) = match circle_match.distance_cells {
-        Some(value) => (CT_TRUE, value),
-        None => (CT_FALSE, 0.0),
-    };
-    let (has_offset_cells, offset_cells) = match circle_match.offset_cells {
-        Some(offset) => (
-            CT_TRUE,
-            ct_grid_coords_t {
-                i: offset.di,
-                j: offset.dj,
-            },
-        ),
-        None => (CT_FALSE, ct_grid_coords_t::default()),
-    };
-
-    ct_circle_match_t {
-        expected: ct_marker_circle_spec_t {
-            cell: ct_grid_coords_t {
-                i: circle_match.expected.cell.i,
-                j: circle_match.expected.cell.j,
-            },
-            polarity: circle_polarity_to_ffi(circle_match.expected.polarity),
-        },
-        has_matched_index,
-        matched_index,
-        has_distance_cells,
-        distance_cells,
-        has_offset_cells,
-        offset_cells,
     }
 }

@@ -367,7 +367,7 @@ fn detect_chessboard_debug(
 
     let frame = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone()).detect_debug(&corners)
+        chessboard::Detector::new(params.clone()).detect_with_diagnostics(&corners)
     });
     let json =
         serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -526,15 +526,18 @@ fn detect_puzzleboard(
 /// Args:
 ///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
 ///   configs: list of dicts with ChessboardParams fields.
+///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
+///     If provided, overrides `params.chess`.
 ///
 /// Returns:
 ///   dict with detection data, or None if no board is found with any config.
 #[pyfunction]
-#[pyo3(signature = (image, configs))]
+#[pyo3(signature = (image, configs, *, chess_cfg=None))]
 fn detect_chessboard_best(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     configs: &Bound<'_, PyAny>,
+    chess_cfg: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let list = configs
@@ -547,8 +550,9 @@ fn detect_chessboard_best(
             "configs[]",
         )?);
     }
+    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let result = py.detach(move || detect::detect_chessboard_best(&img, &params_vec));
+    let result = py.detach(move || detect::detect_chessboard_best(&img, &chess_cfg, &params_vec));
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)

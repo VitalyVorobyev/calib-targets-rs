@@ -19,9 +19,13 @@ use super::{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalCornerTrace {
+    /// Index of this corner in the input slice.
     pub index: usize,
+    /// Corner position `[x, y]` in image pixels.
     pub position: [f32; 2],
+    /// The corner's two grid-axis estimates.
     pub axes: [AxisEstimate; 2],
+    /// `true` when the corner passed the pre-Delaunay axis/sigma filter.
     pub usable: bool,
 }
 
@@ -40,12 +44,17 @@ pub struct TopologicalEdgeMetricTrace {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalTriangleTrace {
+    /// Index of this triangle within the Delaunay triangulation.
     pub index: usize,
+    /// The triangle's three corner indices (into the input slice).
     pub vertices: [usize; 3],
     /// Half-edge buddy indices. `None` means convex-hull edge.
     pub halfedges: [Option<usize>; 3],
+    /// Classification of each of the three edges against the grid axes.
     pub edge_kinds: [EdgeKind; 3],
+    /// Per-edge angular-distance metrics, parallel to `edge_kinds`.
     pub edge_metrics: [TopologicalEdgeMetricTrace; 3],
+    /// The triangle's edge-composition bucket.
     pub class: TriangleClass,
 }
 
@@ -53,21 +62,32 @@ pub struct TopologicalTriangleTrace {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalQuadTrace {
+    /// Index of this quad among the merged quad candidates.
     pub index: usize,
     /// Quad vertices in TL, TR, BR, BL order in image coordinates.
     pub vertices: [usize; 4],
+    /// Vertices that failed the topology check (shared with another quad
+    /// in an inconsistent way).
     pub illegal_vertices: Vec<usize>,
+    /// `true` when the quad passed the topological-consistency filter.
     pub topology_pass: bool,
+    /// `true` when the quad passed the geometric filter.
     pub geometry_pass: bool,
+    /// Largest ratio between the two opposing edge lengths — the metric
+    /// the geometry filter gates on.
     pub max_opposing_edge_ratio: f32,
+    /// `true` when the quad survived both filters into the walk.
     pub kept: bool,
 }
 
 /// One final `(i, j) -> corner_idx` label.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct TopologicalLabelTrace {
+    /// Grid column index of the labelled corner.
     pub i: i32,
+    /// Grid row index of the labelled corner.
     pub j: i32,
+    /// Index of the labelled corner in the input slice.
     pub corner_idx: usize,
 }
 
@@ -75,7 +95,9 @@ pub struct TopologicalLabelTrace {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalComponentTrace {
+    /// Index of this component within the result.
     pub index: usize,
+    /// The component's `(i, j) → corner_idx` labels, sorted by `(j, i)`.
     pub labels: Vec<TopologicalLabelTrace>,
 }
 
@@ -83,11 +105,17 @@ pub struct TopologicalComponentTrace {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalTrace {
+    /// The parameters the pipeline was run with.
     pub params: TopologicalParams,
+    /// Every input corner with its usable flag.
     pub corners: Vec<TopologicalCornerTrace>,
+    /// Every Delaunay triangle with its classified edges.
     pub triangles: Vec<TopologicalTriangleTrace>,
+    /// Every merged quad candidate with the two filters' decisions.
     pub quads: Vec<TopologicalQuadTrace>,
+    /// Every walked, labelled component.
     pub components: Vec<TopologicalComponentTrace>,
+    /// The per-stage summary counters.
     pub diagnostics: TopologicalStats,
 }
 

@@ -37,14 +37,23 @@ pub struct PuzzleBoardSpec {
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum PuzzleBoardSpecError {
+    /// `rows` or `cols` is below the 4×4 minimum needed for a unique decode.
     #[error("rows and cols must be >= 4")]
     TooSmall,
+    /// The board dimensions do not fit inside the 501×501 master pattern.
     #[error("rows * cols exceeds the master 501×501 pattern")]
     TooLarge,
+    /// The board, placed at its requested origin, runs off the master pattern.
     #[error(
         "origin (rows={origin_row}, cols={origin_col}) plus board size exceeds master pattern"
     )]
-    OriginOutOfRange { origin_row: u32, origin_col: u32 },
+    OriginOutOfRange {
+        /// Requested row origin into the master pattern.
+        origin_row: u32,
+        /// Requested column origin into the master pattern.
+        origin_col: u32,
+    },
+    /// `cell_size` is not a finite, strictly-positive value.
     #[error("cell_size must be finite and > 0")]
     InvalidCellSize,
 }

@@ -76,6 +76,7 @@ impl Default for LocalMergeParams {
 pub struct ComponentInput<'a> {
     /// `(i, j) → corner_idx` (indices into `positions`).
     pub labelled: &'a HashMap<(i32, i32), usize>,
+    /// Corner positions in image pixels, indexed by the values of `labelled`.
     pub positions: &'a [Point2<f32>],
 }
 
@@ -86,6 +87,7 @@ pub struct ComponentMergeResult {
     /// at `(0, 0)`. Corners in the input may appear in multiple
     /// components if alignment was ambiguous.
     pub components: Vec<HashMap<(i32, i32), usize>>,
+    /// Counters describing how many components were merged.
     pub diagnostics: ComponentMergeStats,
 }
 
@@ -93,8 +95,11 @@ pub struct ComponentMergeResult {
 #[derive(Clone, Copy, Debug, Default)]
 #[non_exhaustive]
 pub struct ComponentMergeStats {
+    /// Number of components supplied to the merge.
     pub components_in: usize,
+    /// Number of components remaining after merging.
     pub components_out: usize,
+    /// Number of pairwise merges that passed the geometry gate.
     pub merges_accepted: usize,
 }
 

@@ -19,14 +19,18 @@ pub enum LinkCheckMode {
 /// One reported marker-corner link.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MarkerCornerLink {
+    /// ID of the marker.
     pub marker_id: u32,
+    /// ID of a ChArUco corner reported as linked to that marker.
     pub corner_id: u32,
 }
 
 /// Collection of reported marker-corner links plus validation mode.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CharucoMarkerCornerLinks {
+    /// The reported marker-to-corner links to validate.
     pub links: Vec<MarkerCornerLink>,
+    /// How strictly to validate the links.
     #[serde(default)]
     pub mode: LinkCheckMode,
 }
@@ -36,19 +40,31 @@ pub struct CharucoMarkerCornerLinks {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkViolationKind {
+    /// A linked marker ID does not exist on the board.
     UnknownMarker,
+    /// A board marker has fewer than its four neighbouring corners.
     MarkerHasNoFourCorners,
+    /// A reported corner is not in the marker's expected 4-corner set.
     CornerNotInNeighborhood,
+    /// The same corner was reported twice for one marker.
     DuplicateCorner,
-    MissingCorners { missing: Vec<u32> },
+    /// `MustMatchAll4` mode: expected corners that were not reported.
+    MissingCorners {
+        /// IDs of the expected corners that were missing.
+        missing: Vec<u32>,
+    },
 }
 
 /// One validation error with context.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkViolation {
+    /// ID of the marker the violation concerns.
     pub marker_id: u32,
+    /// The reported corner ID involved, when the violation names one.
     pub reported_corner_id: Option<u32>,
+    /// The four corner IDs expected for the marker, when known.
     pub expected: Option<[u32; 4]>,
+    /// The specific kind of violation.
     pub kind: LinkViolationKind,
 }
 

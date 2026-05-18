@@ -35,8 +35,8 @@
 //! Images that fail to decode (our detector returns Err) are reported but not
 //! failed — the reference images vary widely in scale and quality.
 
-use calib_targets::detect;
-use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::detect::{self, default_chess_config, detect_corners, gray_view};
+use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_core::GRID_TRANSFORMS_D4;
 use calib_targets_puzzleboard::code_maps::{
     horizontal_edge_bit, vertical_edge_bit, EdgeOrientation,
@@ -306,10 +306,21 @@ fn diag_example0_edge_bits() {
     let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("spec");
     let sweep = PuzzleBoardParams::sweep_for_board(&board);
 
-    let r = match detect::detect_puzzleboard_best(&img, &sweep) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("detect failed: {e}");
+    // The raw per-edge observations this diagnostic needs live on the
+    // detector's opt-in diagnostics channel, not the result struct — so
+    // run the detector directly rather than through `detect_puzzleboard_best`.
+    // Take the first sweep config that decodes.
+    let corners = detect_corners(&img, &default_chess_config());
+    let view = gray_view(&img);
+    let decoded = sweep.into_iter().find_map(|params| {
+        let detector = PuzzleBoardDetector::new(params).ok()?;
+        let (result, diag) = detector.detect_with_diagnostics(&view, &corners);
+        result.ok().map(|r| (r, diag))
+    });
+    let (r, diag) = match decoded {
+        Some(pair) => pair,
+        None => {
+            println!("detect failed for every sweep config");
             return;
         }
     };
@@ -330,7 +341,7 @@ fn diag_example0_edge_bits() {
         r.alignment.transform.d
     );
 
-    let edges = &r.observed_edges;
+    let edges = &diag.observed_edges;
 
     // Compute BER at the reference oracle origin (94, 470) = identity transform
     let (true_row, true_col) = (94i32, 470i32);

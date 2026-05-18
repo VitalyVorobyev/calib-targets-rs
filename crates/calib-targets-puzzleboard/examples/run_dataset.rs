@@ -40,10 +40,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view, DetectError};
+use calib_targets_chessboard::diagnostics::DebugFrame;
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{
-    DebugFrame, Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm,
-};
+use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetectError, PuzzleBoardDetectionResult, PuzzleBoardDetector,
     PuzzleBoardScoringMode, PuzzleBoardSearchMode,
@@ -272,7 +271,7 @@ fn main() {
 
             let t0 = Instant::now();
             let chess_detector = ChessDetector::new(chess_params.clone());
-            let chessboard_frame = chess_detector.detect_debug(&corners);
+            let chessboard_frame = chess_detector.detect_with_diagnostics(&corners);
             let t_chessboard = t0.elapsed();
 
             let (puzzle_outcome, t_puzzle, best_config_idx) =

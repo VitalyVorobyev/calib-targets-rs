@@ -22,7 +22,8 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use calib_targets_chessboard::{DebugFrame, Detector, DetectorParams};
+use calib_targets_chessboard::diagnostics::DebugFrame;
+use calib_targets_chessboard::{Detector, DetectorParams};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
@@ -93,11 +94,11 @@ fn main() {
             let corners = detect_corners(&snap, &chess_cfg);
             corners_per_snap.push(corners.len());
             let detector = Detector::new(detector_params.clone());
-            let frame = detector.detect_debug(&corners);
+            let frame = detector.detect_with_diagnostics(&corners);
             n_frames += 1;
             if let Some(d) = &frame.detection {
                 n_detected += 1;
-                sum_labelled += d.target.corners.len();
+                sum_labelled += d.corners.len();
             }
             let compact = CompactFrame::from_frame(
                 target_idx,

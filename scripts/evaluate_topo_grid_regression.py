@@ -121,11 +121,7 @@ def detection_components(image: np.ndarray, variant: Variant) -> list[ct.Chessbo
 
 
 def labels_for(result: ct.ChessboardDetectionResult) -> list[tuple[int, int]]:
-    return [
-        (corner.grid.i, corner.grid.j)
-        for corner in result.detection.corners
-        if corner.grid is not None
-    ]
+    return [(corner.grid.i, corner.grid.j) for corner in result.corners]
 
 
 def hole_count(labels: list[tuple[int, int]]) -> int:
@@ -153,7 +149,7 @@ def invariant_report(result: ct.ChessboardDetectionResult | None) -> dict[str, b
             "visual_top_left_orientation": True,
         }
     labels = labels_for(result)
-    corners = result.detection.corners
+    corners = result.corners
     finite_positions = all(
         np.isfinite(corner.position[0]) and np.isfinite(corner.position[1]) for corner in corners
     )
@@ -163,11 +159,7 @@ def invariant_report(result: ct.ChessboardDetectionResult | None) -> dict[str, b
     else:
         origin_rebased = True
 
-    by_label = {
-        (corner.grid.i, corner.grid.j): corner.position
-        for corner in corners
-        if corner.grid is not None
-    }
+    by_label = {(corner.grid.i, corner.grid.j): corner.position for corner in corners}
     dx: list[float] = []
     dy: list[float] = []
     for (i, j), (x, y) in by_label.items():
@@ -185,8 +177,8 @@ def invariant_report(result: ct.ChessboardDetectionResult | None) -> dict[str, b
 
 
 def detection_summary(components: list[ct.ChessboardDetectionResult]) -> dict[str, Any]:
-    component_counts = [len(component.detection.corners) for component in components]
-    best = max(components, key=lambda item: len(item.detection.corners), default=None)
+    component_counts = [len(component.corners) for component in components]
+    best = max(components, key=lambda item: len(item.corners), default=None)
     best_labels = labels_for(best) if best else []
     return {
         "components": len(components),

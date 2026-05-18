@@ -55,19 +55,18 @@ fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<ChessCorner> {
 fn run_with(
     algorithm: GraphBuildAlgorithm,
     corners: &[ChessCorner],
-) -> Vec<calib_targets_chessboard::Detection> {
+) -> Vec<calib_targets_chessboard::ChessboardDetection> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = algorithm;
     let det = Detector::new(params);
     det.detect_all(corners)
 }
 
-fn assert_labels_non_negative(detections: &[calib_targets_chessboard::Detection]) {
+fn assert_labels_non_negative(detections: &[calib_targets_chessboard::ChessboardDetection]) {
     for d in detections {
-        for c in &d.target.corners {
-            let g = c.grid.expect("topological + v2 always emit grid labels");
-            assert!(g.i >= 0, "grid.i < 0 violates workspace invariant");
-            assert!(g.j >= 0, "grid.j < 0 violates workspace invariant");
+        for c in &d.corners {
+            assert!(c.grid.i >= 0, "grid.i < 0 violates workspace invariant");
+            assert!(c.grid.j >= 0, "grid.j < 0 violates workspace invariant");
         }
     }
 }
@@ -80,7 +79,7 @@ fn dispatch_routes_to_topological_pipeline() {
         !detections.is_empty(),
         "topological dispatch returned no detection on a clean 6x6 grid"
     );
-    let total: usize = detections.iter().map(|d| d.target.corners.len()).sum();
+    let total: usize = detections.iter().map(|d| d.corners.len()).sum();
     assert!(
         total >= 16,
         "topological dispatch labelled too few corners ({total} < 16)",
@@ -96,7 +95,7 @@ fn dispatch_routes_to_chessboard_v2_pipeline() {
         !detections.is_empty(),
         "chessboard-v2 dispatch returned no detection on a clean 6x6 grid"
     );
-    let total: usize = detections.iter().map(|d| d.target.corners.len()).sum();
+    let total: usize = detections.iter().map(|d| d.corners.len()).sum();
     assert!(
         total >= 30,
         "chessboard-v2 should label most corners on a clean grid (got {total})",

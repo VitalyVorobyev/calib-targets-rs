@@ -164,20 +164,30 @@ impl Default for LocalExtensionParams {
 #[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct ExtensionStats {
+    /// Number of extension iterations actually run (≤ the configured cap).
     pub iterations: usize,
     /// `None` when the H wasn't fit (too few labels or solver failure).
     pub h_quality: Option<HomographyQuality<f32>>,
     /// `None` when the H wasn't fit. Pixel units.
     pub h_residual_median_px: Option<f32>,
+    /// Maximum reprojection residual on the labelled set, in pixels.
+    /// `None` when the H wasn't fit.
     pub h_residual_max_px: Option<f32>,
     /// `false` when the residual gate refused to extrapolate — the
     /// function is a no-op and `attached == 0`.
     pub h_trusted: bool,
+    /// Number of corners successfully attached across all iterations.
     pub attached: usize,
+    /// Candidate cells skipped because no corner sat near the predicted spot.
     pub rejected_no_candidate: usize,
+    /// Candidate cells skipped because two corners were equally plausible.
     pub rejected_ambiguous: usize,
+    /// Candidate cells skipped because the target `(i, j)` was already labelled.
     pub rejected_label: usize,
+    /// Candidate corners rejected by the caller-supplied
+    /// [`GrowValidator`](crate::square::grow::GrowValidator).
     pub rejected_validator: usize,
+    /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
     /// Indices of the corners attached in this pass.
     pub attached_indices: Vec<usize>,

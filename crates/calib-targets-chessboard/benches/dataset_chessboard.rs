@@ -3,7 +3,7 @@
 //!
 //! Phase-2 companion to `dataset_corners.rs`. Amortizes ChESS corner
 //! detection into setup and measures only
-//! `Detector::detect_debug(&corners)` on a spread of snaps. Skips
+//! `Detector::detect_with_diagnostics(&corners)` on a spread of snaps. Skips
 //! silently when the private dataset is absent; override the default
 //! path with `CALIB_PUZZLE_PRIVATE_DATASET`.
 //!
@@ -83,7 +83,7 @@ fn bench_grid(c: &mut Criterion) {
             |b, corners| {
                 let detector = Detector::new(params.clone());
                 b.iter(|| {
-                    let frame = detector.detect_debug(corners);
+                    let frame = detector.detect_with_diagnostics(corners);
                     criterion::black_box(frame)
                 });
             },

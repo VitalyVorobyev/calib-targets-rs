@@ -48,7 +48,7 @@ fn build_match_options(
 }
 
 /// Match expected circles to detected candidates, enforcing polarity.
-pub fn match_expected_circles(
+pub(crate) fn match_expected_circles(
     expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],
     params: &CircleMatchParams,
@@ -120,30 +120,11 @@ pub fn match_expected_circles(
         .collect()
 }
 
-/// Estimate the grid offset from matched circles.
-pub fn estimate_grid_offset(
-    matches: &[CircleMatch],
-    min_inliers: usize,
-) -> Option<(CellOffset, usize)> {
-    let mut counts: HashMap<CellOffset, usize> = HashMap::new();
-    for m in matches {
-        if let Some(offset) = m.offset_cells {
-            *counts.entry(offset).or_insert(0) += 1;
-        }
-    }
-
-    let (best_offset, best_count) = counts.into_iter().max_by_key(|(_, count)| *count)?;
-    if best_count < min_inliers {
-        return None;
-    }
-    Some((best_offset, best_count))
-}
-
 /// Estimate a dihedral alignment from detected cell coordinates to board cell coordinates.
 ///
 /// The returned alignment maps `(cell_i, cell_j)` from the detected grid coordinate system into
 /// the board-anchored coordinate system: `dst = transform(src) + translation`.
-pub fn estimate_grid_alignment(
+pub(crate) fn estimate_grid_alignment(
     matches: &[CircleMatch],
     candidates: &[CircleCandidate],
     min_inliers: usize,
@@ -275,43 +256,6 @@ mod tests {
         let matches = match_expected_circles(&expected, &candidates, &params);
         let matched: Vec<Option<usize>> = matches.iter().map(|m| m.matched_index).collect();
         assert_eq!(matched, vec![Some(0), Some(1), Some(2)]);
-    }
-
-    #[test]
-    fn estimate_grid_offset_uses_majority_vote() {
-        let matches = vec![
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords { i: 10, j: 10 },
-                    polarity: CirclePolarity::White,
-                },
-                matched_index: Some(0),
-                distance_cells: Some(0.0),
-                offset_cells: Some(CellOffset { di: 3, dj: 4 }),
-            },
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords { i: 11, j: 10 },
-                    polarity: CirclePolarity::Black,
-                },
-                matched_index: Some(1),
-                distance_cells: Some(0.0),
-                offset_cells: Some(CellOffset { di: 3, dj: 4 }),
-            },
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords { i: 11, j: 11 },
-                    polarity: CirclePolarity::White,
-                },
-                matched_index: Some(2),
-                distance_cells: Some(0.0),
-                offset_cells: Some(CellOffset { di: 2, dj: 4 }),
-            },
-        ];
-
-        let (offset, count) = estimate_grid_offset(&matches, 2).expect("offset");
-        assert_eq!(offset, CellOffset { di: 3, dj: 4 });
-        assert_eq!(count, 2);
     }
 
     fn candidate_with_contrast(

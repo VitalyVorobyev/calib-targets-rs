@@ -4,9 +4,10 @@ use std::f32::consts::FRAC_PI_2;
 
 use nalgebra::Point2;
 
+use super::trace::build_grid_topological_trace;
 use super::{
-    build_grid_topological, build_grid_topological_trace, recover_topological_grid,
-    AxisClusterCenters, AxisEstimate, TopologicalParams,
+    build_grid_topological, recover_topological_grid, AxisClusterCenters, AxisEstimate,
+    TopologicalParams,
 };
 use crate::LocalMergeParams;
 

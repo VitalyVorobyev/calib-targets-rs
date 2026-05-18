@@ -106,7 +106,7 @@ pub fn run_pipeline(
     // The detector loops with a blacklist; each iteration re-
     // runs the seed + growth pair.
     let mut blacklist: HashSet<usize> = HashSet::new();
-    let max_iters = params.max_validation_iters.max(1);
+    let max_iters = params.tuning.max_validation_iters.max(1);
 
     for it in 0..max_iters {
         // Reset any Labeled stage on corners not in blacklist —
@@ -253,7 +253,7 @@ struct ConvergedCtx<'a> {
 /// detection (when one was emitted).
 struct ConvergedOutput {
     trace: IterationTrace,
-    detection: Option<super::types::Detection>,
+    detection: Option<super::types::ChessboardDetection>,
 }
 
 /// Run every post-grow stage on the converged + validated labelled set.
@@ -342,12 +342,12 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // and swap their slots so Stage 6.5 can attach them via the
     // standard rescue path. RingFit is unaffected — its slot orderings
     // are consistent by construction.
-    if params.enable_partial_slot_flip_fix {
+    if params.tuning.enable_partial_slot_flip_fix {
         let _flipped = fix_partial_slot_flips_post_stage6(
             augs,
             &grow_res.labelled,
             cell_size,
-            params.partial_slot_flip_k_nearest,
+            params.tuning.partial_slot_flip_k_nearest,
         );
     }
 
@@ -357,7 +357,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // (`rescue_axis_tol_deg`) and inferred parity. Position match +
     // parity match + axis-slot-swap edge invariant keep precision.
     let mut iteration_rescue: Option<ExtensionTrace> = None;
-    if params.enable_stage6_5_rescue {
+    if params.tuning.enable_stage6_5_rescue {
         let rescue_stats = run_stage6_5_rescue(
             augs,
             &mut grow_res,
@@ -463,7 +463,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // mis-attaches a partial-slot-flip orphan to the wrong cell,
     // blocking the right orphan; only after geometry check drops the
     // wrong attachment does the right orphan have a chance.
-    if params.enable_post_geometry_rescue && !geometry_check_trace.detection_refused {
+    if params.tuning.enable_post_geometry_rescue && !geometry_check_trace.detection_refused {
         let rescue_post = run_stage6_5_rescue(
             augs,
             &mut grow_mut,
@@ -497,7 +497,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     let final_count = grow_mut.labelled.len();
     let detection =
         if !geometry_check_trace.detection_refused && final_count >= params.min_labeled_corners {
-            Some(build_detection(augs, &grow_mut, active_centers, cell_size))
+            Some(build_detection(augs, &grow_mut))
         } else {
             None
         };

@@ -17,6 +17,7 @@
 //! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
+use calib_targets_chessboard::diagnostics::CornerStage;
 use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
@@ -110,7 +111,7 @@ fn marker_internal_corners_never_labelled() {
     let marker_indices: Vec<usize> = (board_count..corners.len()).collect();
 
     let detector = Detector::new(DetectorParams::default());
-    let frame = detector.detect_debug(&corners);
+    let frame = detector.detect_with_diagnostics(&corners);
     let detection = frame
         .detection
         .as_ref()
@@ -123,7 +124,7 @@ fn marker_internal_corners_never_labelled() {
     let mut labelled_markers = Vec::new();
     for aug in &frame.corners {
         if marker_set.contains(&aug.input_index) {
-            if let calib_targets_chessboard::CornerStage::Labeled { at, .. } = aug.stage {
+            if let CornerStage::Labeled { at, .. } = aug.stage {
                 labelled_markers.push((aug.input_index, at));
             }
         }
@@ -138,14 +139,14 @@ fn marker_internal_corners_never_labelled() {
     // never exceed 36
     // or land a corner at a non-board position.
     assert!(
-        detection.target.corners.len() <= board_count,
+        detection.corners.len() <= board_count,
         "detection labelled {} corners but board only has {}",
-        detection.target.corners.len(),
+        detection.corners.len(),
         board_count
     );
     assert!(
-        detection.target.corners.len() >= 16,
+        detection.corners.len() >= 16,
         "expected ≥16 board corners labelled, got {}",
-        detection.target.corners.len()
+        detection.corners.len()
     );
 }

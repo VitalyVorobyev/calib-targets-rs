@@ -79,15 +79,19 @@ pub enum AxisCluster {
     Unclustered { max_d_rad: f32 },
 }
 
-/// Stage-3 introspection captured during a single [`cluster_axes_debug`]
+/// Stage-3 introspection captured during a single `cluster_axes_debug`
 /// run. Surfaced through `DebugFrame` so an offline tool can plot the
 /// histogram and check whether 2-means refinement walked off the
 /// visible peaks. Local-only: never serialized into a public report.
 #[derive(Clone, Debug, Serialize)]
 pub struct ClusterDebug {
+    /// Number of histogram bins spanning the `[0, π)` axis-angle range.
     pub num_bins: usize,
+    /// Raw per-bin weighted vote counts before smoothing.
     pub histogram: Vec<f32>,
+    /// The histogram after circular smoothing — the curve peak-picking runs on.
     pub smoothed: Vec<f32>,
+    /// Sum of all bin weights — the normalizer for the peak-weight floor.
     pub total_weight: f32,
     /// Peak seeds picked from the smoothed histogram, in radians (`[0, π)`),
     /// before 2-means refinement. `None` when peak picking failed.
@@ -123,7 +127,7 @@ pub fn cluster_axes_debug(
     params: &DetectorParams,
 ) -> (Option<ClusterCenters>, ClusterDebug) {
     let mut debug = ClusterDebug {
-        num_bins: params.num_bins,
+        num_bins: params.tuning.num_bins,
         histogram: Vec::new(),
         smoothed: Vec::new(),
         total_weight: 0.0,
@@ -131,7 +135,7 @@ pub fn cluster_axes_debug(
         refined_centers_rad: None,
     };
 
-    if corners.is_empty() || params.num_bins < 4 {
+    if corners.is_empty() || params.tuning.num_bins < 4 {
         return (None, debug);
     }
 
@@ -146,8 +150,8 @@ pub fn cluster_axes_debug(
     debug.smoothed = smoothed.clone();
 
     let peak_opts = cs::PeakPickOptions::new(
-        params.min_peak_weight_fraction,
-        params.peak_min_separation_deg.to_radians(),
+        params.tuning.min_peak_weight_fraction,
+        params.tuning.peak_min_separation_deg.to_radians(),
     );
     let Some((theta0_seed, theta1_seed)) =
         cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)
@@ -157,8 +161,11 @@ pub fn cluster_axes_debug(
     debug.peak_seeds_rad = Some([theta0_seed, theta1_seed]);
 
     let votes = collect_axis_votes(corners);
-    let (theta0, theta1) =
-        cs::refine_2means_double_angle(&votes, [theta0_seed, theta1_seed], params.max_iters_2means);
+    let (theta0, theta1) = cs::refine_2means_double_angle(
+        &votes,
+        [theta0_seed, theta1_seed],
+        params.tuning.max_iters_2means,
+    );
     debug.refined_centers_rad = Some([theta0, theta1]);
 
     let (a, b) = if theta0 <= theta1 {
@@ -173,9 +180,9 @@ pub fn cluster_axes_debug(
 
     // Assign per-corner label. The effective per-corner tolerance is
     // `cluster_tol_rad + cluster_sigma_k * max(σ_a0, σ_a1)` so noisy
-    // axes get proportional slack — see `DetectorParams::cluster_sigma_k`.
-    let base_tol_rad = params.cluster_tol_deg.to_radians();
-    let sigma_k = params.cluster_sigma_k;
+    // axes get proportional slack — see `ChessboardTuning::cluster_sigma_k`.
+    let base_tol_rad = params.tuning.cluster_tol_deg.to_radians();
+    let sigma_k = params.tuning.cluster_sigma_k;
     for corner in corners.iter_mut() {
         if !matches!(corner.stage, CornerStage::Strong) {
             continue;
@@ -897,7 +904,7 @@ struct Histogram {
 }
 
 fn build_histogram(corners: &[CornerAug], params: &DetectorParams) -> Histogram {
-    let n = params.num_bins;
+    let n = params.tuning.num_bins;
     let mut bins = vec![0.0_f32; n];
     let mut total = 0.0_f32;
     for corner in corners {

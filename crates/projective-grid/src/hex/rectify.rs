@@ -15,13 +15,20 @@ fn sqrt3_half<F: Float>() -> F {
     lit::<F>(3.0).sqrt() / lit::<F>(2.0)
 }
 
+/// Reason a [`HexGridHomography`] could not be built.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
-pub enum HexRectifyError {
+pub enum HexGridRectifyError {
+    /// Fewer than the 4 corners a homography needs were supplied.
     #[error("not enough grid corners with positions (need >= 4, got {got})")]
-    NotEnoughPoints { got: usize },
+    NotEnoughPoints {
+        /// Number of corners actually supplied.
+        got: usize,
+    },
+    /// The DLT homography estimator failed (degenerate correspondences).
     #[error("homography estimation failed")]
     HomographyFailed,
+    /// The estimated homography could not be inverted.
     #[error("homography not invertible")]
     NonInvertible,
 }
@@ -39,15 +46,19 @@ pub struct HexGridHomography<F: Float = f32> {
     pub h_img_from_rect: Homography<F>,
     /// Maps image coordinates to rectified coordinates.
     pub h_rect_from_img: Homography<F>,
-    /// Axial bounding box (with margin).
+    /// Minimum axial `q` of the bounding box (with margin).
     pub min_q: i32,
+    /// Minimum axial `r` of the bounding box (with margin).
     pub min_r: i32,
+    /// Maximum axial `q` of the bounding box (with margin).
     pub max_q: i32,
+    /// Maximum axial `r` of the bounding box (with margin).
     pub max_r: i32,
     /// Rectified pixels per grid cell edge.
     pub px_per_cell: F,
-    /// Rectified image dimensions.
+    /// Rectified image width in pixels.
     pub rect_width: usize,
+    /// Rectified image height in pixels.
     pub rect_height: usize,
 
     /// Pixel-space origin offset subtracted during construction.
@@ -67,9 +78,9 @@ impl<F: Float> HexGridHomography<F> {
         corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
         margin_cells: F,
-    ) -> Result<Self, HexRectifyError> {
+    ) -> Result<Self, HexGridRectifyError> {
         if corners.len() < 4 {
-            return Err(HexRectifyError::NotEnoughPoints { got: corners.len() });
+            return Err(HexGridRectifyError::NotEnoughPoints { got: corners.len() });
         }
 
         // Find axial bounding box
@@ -125,12 +136,12 @@ impl<F: Float> HexGridHomography<F> {
             img_pts.push(pos);
         }
 
-        let h_img_from_rect =
-            estimate_homography(&rect_pts, &img_pts).ok_or(HexRectifyError::HomographyFailed)?;
+        let h_img_from_rect = estimate_homography(&rect_pts, &img_pts)
+            .ok_or(HexGridRectifyError::HomographyFailed)?;
 
         let h_rect_from_img = h_img_from_rect
             .inverse()
-            .ok_or(HexRectifyError::NonInvertible)?;
+            .ok_or(HexGridRectifyError::NonInvertible)?;
 
         // Apply margin to axial bounds
         let margin_ceil =

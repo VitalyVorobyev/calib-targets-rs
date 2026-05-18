@@ -17,9 +17,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
     let params = DetectorParams::default();
 
-    let result = detect::detect_chessboard(&img, &params);
+    let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
     match result {
-        Some(found) => println!("detected {} corners", found.target.corners.len()),
+        Some(found) => println!("detected {} corners", found.corners.len()),
         None => println!("no board detected"),
     }
 

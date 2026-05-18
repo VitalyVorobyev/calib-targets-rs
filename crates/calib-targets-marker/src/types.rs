@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use calib_targets_chessboard::DetectorParams;
 use calib_targets_core::{GridAlignment, TargetDetection};
 
-use crate::circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
+use crate::circle_score::{CirclePolarity, CircleScoreParams};
 use crate::coords::{CellCoords, CellOffset};
 
 /// One expected marker circle on the board.
@@ -11,14 +11,16 @@ use crate::coords::{CellCoords, CellOffset};
 pub struct MarkerCircleSpec {
     /// Expected cell coordinate (top-left corner indices).
     pub cell: CellCoords,
+    /// Expected polarity of the disk in that cell.
     pub polarity: CirclePolarity,
 }
 
 /// Fixed marker board layout: chessboard size plus 3 circle markers.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardSpec {
-    /// Full checkerboard dimensions (inner corners).
+    /// Number of inner-corner rows of the checkerboard.
     pub rows: u32,
+    /// Number of inner-corner columns of the checkerboard.
     pub cols: u32,
     /// Optional square size (in your chosen world units, e.g. millimeters).
     ///
@@ -77,11 +79,15 @@ impl Default for CircleMatchParams {
 /// Parameters for marker-board detection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardParams {
+    /// The fixed marker-board layout to detect.
     pub layout: MarkerBoardSpec,
+    /// Chessboard-detector parameters for the underlying corner-grid step.
     #[serde(default = "default_marker_chessboard_params")]
     pub chessboard: DetectorParams,
+    /// Per-cell circular-marker scoring parameters.
     #[serde(default)]
     pub circle_score: CircleScoreParams,
+    /// Circle-to-layout matching parameters.
     #[serde(default)]
     pub match_params: CircleMatchParams,
     /// Optional ROI in cell coords to restrict circle search: [i0, j0, i1, j1].
@@ -90,6 +96,7 @@ pub struct MarkerBoardParams {
 }
 
 impl MarkerBoardParams {
+    /// Construct parameters for the given layout with all tuning at defaults.
     pub fn new(layout: MarkerBoardSpec) -> Self {
         // chessboard detector is scale-invariant — `expected_rows/cols`
         // and `completeness_threshold` from v1 no longer apply. The marker
@@ -117,24 +124,49 @@ fn default_marker_chessboard_params() -> DetectorParams {
 /// Result of matching expected circles to detected candidates.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircleMatch {
+    /// The expected circle this entry describes.
     pub expected: MarkerCircleSpec,
+    /// Index into the detected-candidate list of the matched circle;
+    /// `None` when no candidate matched.
     pub matched_index: Option<usize>,
+    /// Distance, in cell units, between expected and matched cell;
+    /// `None` when unmatched.
     pub distance_cells: Option<f32>,
+    /// Detected-to-board cell offset implied by this match; `None` when
+    /// unmatched.
     pub offset_cells: Option<CellOffset>,
 }
 
 /// Marker-board detection result.
+///
+/// Carries only the facts a consumer needs to *use* a marker-board
+/// detection: the labelled corners and the optional grid alignment. The
+/// evidence about *how* the board was found — scored circle hypotheses,
+/// expected-to-detected circle pairings, per-corner provenance, and the
+/// alignment-inlier count — lives in
+/// [`crate::diagnostics::MarkerBoardDiagnostics`], obtained via the
+/// detector's `*_with_diagnostics` entry points.
+///
+/// `#[non_exhaustive]`: construct with [`MarkerBoardDetectionResult::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardDetectionResult {
+    /// The labelled corner detection.
     pub detection: TargetDetection,
-    pub inliers: Vec<usize>,
-    pub circle_candidates: Vec<CircleCandidate>,
-    pub circle_matches: Vec<CircleMatch>,
+    /// Grid alignment to the known board layout; `None` when alignment
+    /// could not be resolved.
     pub alignment: Option<GridAlignment>,
-    pub alignment_inliers: usize,
 }
 
 impl MarkerBoardDetectionResult {
+    /// Create a result from its detection and optional grid alignment.
+    pub fn new(detection: TargetDetection, alignment: Option<GridAlignment>) -> Self {
+        Self {
+            detection,
+            alignment,
+        }
+    }
+
     /// Return the board-aligned corner detection if alignment is available.
     pub fn aligned_detection(&self) -> Option<TargetDetection> {
         self.alignment.map(|_| self.detection.clone())

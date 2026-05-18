@@ -40,6 +40,7 @@
 //! # Ok(())
 //! # }
 //! ```
+#![deny(missing_docs)]
 
 mod alignment;
 mod board;
@@ -47,13 +48,11 @@ mod detector;
 mod io;
 mod validation;
 
+pub mod diagnostics;
+
 pub use alignment::CharucoAlignment;
 pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
-pub use detector::{
-    BoardMatchDiagnostics, CellBestMatch, CellDiag, CharucoDetectDiagnostics, CharucoDetectError,
-    CharucoDetectionResult, CharucoDetector, CharucoParams, ComponentDiagnostics, ComponentOutcome,
-    DiagHypothesis, MatcherDiagKind, RejectReason,
-};
+pub use detector::{CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams};
 pub use io::{
     load_board_spec_any, resolve_dictionary, BoardSpecLoadError, CharucoConfigError,
     CharucoDetectConfig, CharucoDetectReport, CharucoIoError,

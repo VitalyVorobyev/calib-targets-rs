@@ -48,18 +48,29 @@ impl Default for ScanDecodeConfig {
 /// Optional overrides for marker scanning and matching.
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ArucoScanConfig {
+    /// Override the matcher's maximum allowed Hamming distance. `None`
+    /// keeps the matcher's configured value.
     #[serde(default)]
     pub max_hamming: Option<u8>,
+    /// Override `ScanDecodeConfig::border_bits` — marker border width in cells.
     #[serde(default)]
     pub border_bits: Option<usize>,
+    /// Override `ScanDecodeConfig::inset_frac` — edge fraction ignored per cell.
     #[serde(default)]
     pub inset_frac: Option<f32>,
+    /// Override `ScanDecodeConfig::marker_size_rel` — marker side relative
+    /// to the square cell.
     #[serde(default)]
     pub marker_size_rel: Option<f32>,
+    /// Override `ScanDecodeConfig::min_border_score` — minimum border-black ratio.
     #[serde(default)]
     pub min_border_score: Option<f32>,
+    /// Override `ScanDecodeConfig::dedup_by_id` — keep only the best
+    /// detection per marker id.
     #[serde(default)]
     pub dedup_by_id: Option<bool>,
+    /// Override `ScanDecodeConfig::multi_threshold` — try multiple
+    /// binarization thresholds per cell.
     #[serde(default)]
     pub multi_threshold: Option<bool>,
 }
@@ -91,12 +102,21 @@ impl ArucoScanConfig {
 /// One decoded marker detection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerDetection {
+    /// Dictionary ID of the decoded marker.
     pub id: u32,
     /// Square cell coordinates in grid coords.
     pub gc: GridCoords,
+    /// Rotation of the matched code, in 90° steps (`0..=3`), needed to
+    /// align the observed bits with the dictionary entry.
     pub rotation: u8,
+    /// Hamming distance between the observed code and the matched
+    /// dictionary entry.
     pub hamming: u8,
+    /// Decode score (higher is better); combines bit margin and border
+    /// quality.
     pub score: f32,
+    /// Fraction of border cells that read as black — the border-pattern
+    /// confidence.
     pub border_score: f32,
     /// Observed inner bits (row-major, black=1).
     pub code: u64,

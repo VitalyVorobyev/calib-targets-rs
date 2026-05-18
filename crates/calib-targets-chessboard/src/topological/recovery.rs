@@ -13,7 +13,7 @@ use projective_grid::{merge_components_local, ComponentInput, GridTransform, GRI
 use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};
 use crate::corner::{CornerAug, CornerStage};
-use crate::detector::{build_detection_from_grow, Detection};
+use crate::detector::{build_detection_from_grow, ChessboardDetection};
 use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 
@@ -132,10 +132,10 @@ pub(super) fn clustered_augs(
         .enumerate()
         .map(|(i, c)| {
             let mut aug = CornerAug::from_chess_corner(i, c);
-            let strong = c.strength >= params.min_corner_strength;
-            let fit_ok = !params.max_fit_rms_ratio.is_finite()
+            let strong = c.strength >= params.tuning.min_corner_strength;
+            let fit_ok = !params.tuning.max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0
-                || c.fit_rms <= params.max_fit_rms_ratio * c.contrast;
+                || c.fit_rms <= params.tuning.max_fit_rms_ratio * c.contrast;
             if strong && fit_ok {
                 aug.stage = CornerStage::Strong;
             }
@@ -323,7 +323,7 @@ pub(super) fn recover_topological_components(
 
     let boosted_components = merge_components_with_shared_corners(
         boosted_components,
-        params.component_merge.min_overlap.max(2),
+        params.tuning.component_merge.min_overlap.max(2),
     );
     if boosted_components.is_empty() {
         return Vec::new();
@@ -344,7 +344,7 @@ pub(super) fn recover_topological_components(
     )
     .entered();
 
-    merge_components_local(&boosted_views, &params.component_merge).components
+    merge_components_local(&boosted_views, &params.tuning.component_merge).components
 }
 
 #[cfg_attr(
@@ -362,8 +362,8 @@ pub(super) fn build_topological_detections(
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
     params: &DetectorParams,
-) -> Vec<Detection> {
-    let mut out: Vec<Detection> = Vec::new();
+) -> Vec<ChessboardDetection> {
+    let mut out: Vec<ChessboardDetection> = Vec::new();
     for labelled in final_components {
         if labelled.len() < params.min_labeled_corners {
             continue;
@@ -414,10 +414,10 @@ pub(super) fn build_topological_detections(
             continue;
         }
 
-        out.push(build_detection_from_grow(&augs, &grow, centers, cell_size));
+        out.push(build_detection_from_grow(&augs, &grow));
     }
 
-    out.sort_by_key(|d| std::cmp::Reverse(d.target.corners.len()));
+    out.sort_by_key(|d| std::cmp::Reverse(d.corners.len()));
     out.truncate(params.max_components.max(1) as usize);
     out
 }

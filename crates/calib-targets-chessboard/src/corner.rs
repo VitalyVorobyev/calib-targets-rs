@@ -60,7 +60,9 @@ impl ChessCorner {
 /// invariant that drives the edge-axis-slot-swap check.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum ClusterLabel {
+    /// `axes[0] ≈ Θ₀` and `axes[1] ≈ Θ₁` — the unswapped slot assignment.
     Canonical,
+    /// `axes[0] ≈ Θ₁` and `axes[1] ≈ Θ₀` — the slots are swapped.
     Swapped,
 }
 
@@ -127,26 +129,49 @@ pub enum CornerStage {
     /// `cluster_axes` rejected — at least one axis further than
     /// `cluster_tol_deg` from the matching center. `max_d_deg` is the
     /// worse of the two per-axis distances in the best assignment.
-    NoCluster { max_d_deg: f32 },
+    NoCluster {
+        /// Worse of the two per-axis distances (degrees) in the best
+        /// assignment that still failed `cluster_tol_deg`.
+        max_d_deg: f32,
+    },
     /// `cluster_axes` accepted with the given label.
-    Clustered { label: ClusterLabel },
+    Clustered {
+        /// The axis-slot label assigned by clustering.
+        label: ClusterLabel,
+    },
     /// `extend_boundary` attempted to attach this corner at `at` but
     /// found ≥2 candidates inside `attach_ambiguity_factor × nearest`.
-    AttachmentAmbiguous { at: (i32, i32) },
+    AttachmentAmbiguous {
+        /// The `(i, j)` cell the corner was being attached at.
+        at: (i32, i32),
+    },
     /// `extend_boundary` attempted to attach this corner at `at` but
     /// the induced edges failed an invariant. The pipeline leaves the
     /// corner un-labelled and continues.
-    AttachmentFailedInvariants { at: (i32, i32), reason: String },
+    AttachmentFailedInvariants {
+        /// The `(i, j)` cell the corner was being attached at.
+        at: (i32, i32),
+        /// Human-readable description of the invariant that failed.
+        reason: String,
+    },
     /// Attached as a labelled corner. Filled in by the `grow` /
     /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters`
     /// stages.
     Labeled {
+        /// The corner's final `(i, j)` grid label.
         at: (i32, i32),
+        /// Local-homography reprojection residual in pixels, when the
+        /// corner was attached via a local-H stage; `None` otherwise.
         local_h_residual_px: Option<f32>,
     },
     /// Previously labelled at `at`, then blacklisted during
     /// post-validation. `reason` is human-readable for overlays.
-    LabeledThenBlacklisted { at: (i32, i32), reason: String },
+    LabeledThenBlacklisted {
+        /// The `(i, j)` cell the corner had been labelled at.
+        at: (i32, i32),
+        /// Human-readable reason the corner was blacklisted.
+        reason: String,
+    },
 }
 
 /// Augmented corner carried through the pipeline.

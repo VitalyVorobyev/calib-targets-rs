@@ -42,62 +42,110 @@ impl Default for BoardMatchConfig {
 /// per-frame by the sweep runner for Python overlays.
 #[derive(Clone, Debug, Serialize, Default)]
 pub struct BoardMatchDiagnostics {
+    /// Per-cell diagnostic record for every cell the matcher considered.
     pub cells: Vec<CellDiag>,
+    /// The board-placement hypothesis the matcher chose; `None` when the
+    /// match was rejected.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chosen: Option<DiagHypothesis>,
+    /// The second-best hypothesis, for margin inspection; `None` when
+    /// fewer than two hypotheses were scored.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runner_up: Option<DiagHypothesis>,
+    /// Score margin between the chosen and runner-up hypotheses.
     pub margin: f32,
+    /// Total number of board-placement hypotheses scored.
     pub total_hypotheses: usize,
+    /// Reason the match was rejected; `None` when the match succeeded.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rejection: Option<RejectReason>,
+    /// Board width in squares.
     pub board_cols: u32,
+    /// Board height in squares.
     pub board_rows: u32,
+    /// Number of marker bits per side (the marker's grid resolution).
     pub bits_per_side: usize,
 }
 
+/// Per-cell diagnostic record produced by the board matcher.
 #[derive(Clone, Debug, Serialize)]
 pub struct CellDiag {
+    /// The cell's `(i, j)` grid coordinate.
     pub gc: GridCoords,
+    /// The cell's four corners `[TL, TR, BR, BL]` in image pixels.
     pub corners_img: [[f32; 2]; 4],
+    /// `true` when the cell was sampled (it had all four corners).
     pub sampled: bool,
+    /// Otsu binarization threshold computed for this cell.
     pub otsu: u8,
+    /// Fraction of the cell border that read as black.
     pub border_black: f32,
+    /// Weight this cell contributed to hypothesis scoring.
     pub weight: f32,
+    /// The board-cell `[col, row]` this cell mapped to under the chosen
+    /// hypothesis; `None` when unmapped.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapped_bc: Option<[i32; 2]>,
+    /// The marker ID expected at the mapped board cell; `None` when the
+    /// cell carries no marker.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expected_id: Option<u32>,
+    /// Score of the observed bits against the expected marker.
     pub expected_score: f32,
+    /// The best-matching marker for this cell over all IDs and rotations;
+    /// `None` when no marker scored.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub best: Option<CellBestMatch>,
+    /// Per-bit log-likelihoods of the observed bits under the expected
+    /// marker; empty when not computed.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub expected_bit_ll: Vec<f32>,
+    /// Mean interior-bit intensities sampled from the cell.
     pub interior_means: Vec<u8>,
 }
 
+/// The best marker match found for a single cell.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct CellBestMatch {
+    /// Dictionary ID of the best-matching marker.
     pub marker_id: u32,
+    /// Rotation, in 90° steps, that produced the best match.
     pub rotation: u8,
+    /// Match score (higher is better).
     pub score: f32,
 }
 
+/// One scored board-placement hypothesis.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct DiagHypothesis {
+    /// Board rotation, in 90° steps.
     pub rotation: u8,
+    /// Board `[Δcol, Δrow]` translation on the grid.
     pub translation: [i32; 2],
+    /// Aggregate score of this hypothesis across contributing cells.
     pub score: f32,
+    /// Number of cells that contributed evidence to this hypothesis.
     pub contributing_cells: usize,
 }
 
+/// Reason the board matcher rejected a frame.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RejectReason {
+    /// No grid cells were available to sample.
     NoCells,
+    /// The board specification has zero squares.
     EmptyBoard,
+    /// No valid board translation could be enumerated.
     TranslationWindowEmpty,
-    MarginBelowGate { margin: f32, required: f32 },
+    /// The chosen-vs-runner-up margin fell below the acceptance gate.
+    MarginBelowGate {
+        /// The observed score margin.
+        margin: f32,
+        /// The minimum margin required to accept.
+        required: f32,
+    },
+    /// The match produced no markers to emit.
     NoEmittedMarkers,
 }
 

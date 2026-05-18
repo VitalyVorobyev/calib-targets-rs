@@ -15,7 +15,9 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{Detection, Detector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets_chessboard::{
+    ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
+};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
@@ -112,18 +114,16 @@ fn default_topological_detector() -> Detector {
     Detector::new(params)
 }
 
-fn assert_detection_invariants(detection: &Detection, context: &str) {
+fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {
     let mut seen = HashSet::<(i32, i32)>::new();
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
-    for corner in &detection.target.corners {
+    for corner in &detection.corners {
         assert!(
             corner.position.x.is_finite() && corner.position.y.is_finite(),
             "{context}: non-finite labelled corner position"
         );
-        let grid = corner
-            .grid
-            .expect("chessboard detections carry grid coordinates");
+        let grid = corner.grid;
         assert!(
             seen.insert((grid.i, grid.j)),
             "{context}: duplicate grid label ({}, {})",
@@ -153,9 +153,9 @@ fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
         .detect(&corners)
         .expect("target_15 snap 0 must produce a chessboard detection");
     assert!(
-        detection.target.corners.len() >= 500,
+        detection.corners.len() >= 500,
         "target_15 snap 0 labelled {} corners, expected at least 500",
-        detection.target.corners.len()
+        detection.corners.len()
     );
     assert_detection_invariants(&detection, "target_15 snap 0");
 }
@@ -234,7 +234,7 @@ fn puzzle130_full_topological_recall_contract() {
                 continue;
             };
             any_detection += 1;
-            let labelled = detection.target.corners.len();
+            let labelled = detection.corners.len();
             total_labelled += labelled;
             let context = format!("target_{target_idx} snap {snap_idx}");
             assert_detection_invariants(&detection, &context);

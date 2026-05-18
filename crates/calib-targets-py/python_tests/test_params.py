@@ -293,23 +293,16 @@ def test_puzzleboard_printing_roundtrip() -> None:
 
 def _sample_chessboard_result() -> dict:
     # Schema matches `serde_json::to_value(
-    # calib_targets_chessboard::Detection)` byte-for-byte.
+    # calib_targets_chessboard::ChessboardDetection)` byte-for-byte.
     return {
-        "grid_directions": [0.1, 1.6],
-        "cell_size": 25.0,
-        "target": {
-            "kind": "chessboard",
-            "corners": [
-                {
-                    "position": [10.0, 20.0],
-                    "grid": {"i": 0, "j": 1},
-                    "id": None,
-                    "target_position": None,
-                    "score": 0.9,
-                }
-            ],
-        },
-        "strong_indices": [0],
+        "corners": [
+            {
+                "position": [10.0, 20.0],
+                "grid": {"i": 0, "j": 1},
+                "input_index": 0,
+                "score": 0.9,
+            }
+        ],
     }
 
 
@@ -345,8 +338,6 @@ def _sample_charuco_result() -> dict:
             "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
             "translation": [0, 0],
         },
-        "raw_marker_count": 1,
-        "raw_marker_wrong_id_count": 0,
     }
 
 
@@ -364,29 +355,10 @@ def _sample_marker_board_result() -> dict:
                 }
             ],
         },
-        "inliers": [0],
-        "circle_candidates": [
-            {
-                "center_img": [11.0, 21.0],
-                "cell": {"i": 2, "j": 3},
-                "polarity": "white",
-                "score": 4.0,
-                "contrast": 12.0,
-            }
-        ],
-        "circle_matches": [
-            {
-                "expected": {"cell": {"i": 2, "j": 3}, "polarity": "white"},
-                "matched_index": 0,
-                "distance_cells": 0.1,
-                "offset_cells": {"di": 0, "dj": 1},
-            }
-        ],
         "alignment": {
             "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
             "translation": [1, 2],
         },
-        "alignment_inliers": 1,
     }
 
 
@@ -415,23 +387,7 @@ def _sample_puzzleboard_result() -> dict:
             "bit_error_rate": 0.0,
             "master_origin_row": 5,
             "master_origin_col": 4,
-            "score_best": 1.8,
-            "score_runner_up": 1.2,
-            "score_margin": 0.25,
-            "runner_up_origin_row": 8,
-            "runner_up_origin_col": 7,
-            "runner_up_transform": {"a": -1, "b": 0, "c": 0, "d": -1},
-            "scoring_mode": {"kind": "soft_log_likelihood"},
         },
-        "observed_edges": [
-            {
-                "row": 1,
-                "col": 2,
-                "orientation": "horizontal",
-                "bit": 1,
-                "confidence": 0.8,
-            }
-        ],
     }
 
 

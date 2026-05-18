@@ -59,8 +59,5 @@ Known gaps against the v0.6.0 release.
 - **Multi-seed growth** — current: single seed, multi-component via
   post-hoc booster. A first-class multi-seed grower could reduce the
   Stage-8 dependency.
-- **Caller-provided cell-size hint** — current: optional, mostly
-  ignored. When could it tighten Stages 5–6 without compromising
-  precision?
 
 Contributions welcome.

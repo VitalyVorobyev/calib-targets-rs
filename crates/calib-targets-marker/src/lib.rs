@@ -49,21 +49,24 @@
 //!
 //! let _ = detector.detect_from_image_and_corners(&view, &corners);
 //! ```
+#![deny(missing_docs)]
 
-pub mod circle_score;
-pub mod coords;
-pub mod detect;
-pub mod io;
-pub mod match_circles;
-pub mod types;
+mod circle_score;
+mod coords;
+mod detect;
+mod io;
+mod match_circles;
+mod types;
 
 mod detector;
+
+pub mod diagnostics;
 
 pub use circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 pub use coords::{CellCoords, CellOffset};
 pub use detector::MarkerBoardDetector;
+pub use diagnostics::MarkerBoardDiagnostics;
 pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
-pub use match_circles::{estimate_grid_alignment, estimate_grid_offset, match_expected_circles};
 pub use types::{
     CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardParams, MarkerBoardSpec,
     MarkerCircleSpec,

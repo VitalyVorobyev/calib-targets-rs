@@ -109,7 +109,7 @@ fn bench_all(c: &mut Criterion) {
         chess_group.bench_with_input(BenchmarkId::from_parameter(label), corners, |b, corners| {
             let detector = ChessDetector::new(chess_params.clone());
             b.iter(|| {
-                let frame = detector.detect_debug(corners);
+                let frame = detector.detect_with_diagnostics(corners);
                 criterion::black_box(frame)
             });
         });

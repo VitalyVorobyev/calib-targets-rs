@@ -53,18 +53,13 @@ mod classify;
 mod delaunay;
 mod quads;
 mod topo_filter;
-mod trace;
+pub mod trace;
 mod walk;
 
 #[cfg(test)]
 mod tests;
 
 pub use classify::EdgeKind;
-pub use trace::{
-    build_grid_topological_trace, TopologicalComponentTrace, TopologicalCornerTrace,
-    TopologicalEdgeMetricTrace, TopologicalLabelTrace, TopologicalQuadTrace, TopologicalTrace,
-    TopologicalTriangleTrace,
-};
 
 /// One local grid-axis direction at a corner with its 1σ angular uncertainty.
 ///
@@ -113,7 +108,7 @@ impl AxisEstimate {
     /// an angle (e.g. [`SeedQuadValidator::axes`] impls that do not track
     /// per-corner uncertainty).
     ///
-    /// [`SeedQuadValidator::axes`]: crate::square::seed_finder::SeedQuadValidator::axes
+    /// [`SeedQuadValidator::axes`]: crate::square::seed::finder::SeedQuadValidator::axes
     pub fn from_angle(angle: f32) -> Self {
         Self { angle, sigma: 0.0 }
     }
@@ -158,7 +153,9 @@ impl TopologicalInputCorner {
 /// which orders the inputs and wraps them into `[0, π)`.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AxisClusterCenters {
+    /// First grid-axis direction in radians, in `[0, π)`, with `theta0 < theta1`.
     pub theta0: f32,
+    /// Second grid-axis direction in radians, in `[0, π)`, with `theta0 < theta1`.
     pub theta1: f32,
 }
 
@@ -297,7 +294,11 @@ pub struct TopologicalStats {
 /// Top-level result.
 #[derive(Clone, Debug, Default)]
 pub struct TopologicalGrid {
+    /// The recovered grid components — each a connected `(i, j)`-labelled
+    /// quad mesh. Multiple entries mean the corner cloud split into
+    /// disjoint regions.
     pub components: Vec<TopologicalComponent>,
+    /// Per-stage counters describing how the pipeline reached this result.
     pub diagnostics: TopologicalStats,
 }
 
@@ -346,11 +347,19 @@ pub enum TriangleClass {
 pub enum TopologicalError {
     /// The position and axes slices have mismatched length.
     #[error("positions and axes must be the same length (got {positions} and {axes})")]
-    LengthMismatch { positions: usize, axes: usize },
+    LengthMismatch {
+        /// Length of the positions slice.
+        positions: usize,
+        /// Length of the axes slice.
+        axes: usize,
+    },
     /// Fewer than three usable corners survived the pre-filter, which is
     /// the minimum for Delaunay triangulation.
     #[error("not enough usable corners ({usable}) for Delaunay triangulation")]
-    NotEnoughCorners { usable: usize },
+    NotEnoughCorners {
+        /// Number of corners that survived the pre-filter.
+        usable: usize,
+    },
 }
 
 #[inline]

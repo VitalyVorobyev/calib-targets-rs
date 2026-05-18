@@ -71,43 +71,39 @@
 //!
 //! let det = Detector::new(DetectorParams::default());
 //! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
-//! assert_eq!(detection.target.corners.len(), 49);
+//! assert_eq!(detection.corners.len(), 49);
 //! ```
 //!
 //! # Rectification helpers
 //!
-//! Two pattern-agnostic rectifiers are exposed under [`mesh_warp`] and
-//! [`rectified_view`]: they take a `&[LabeledCorner]` plus an inlier index
-//! list (typically `Detection::strong_indices`) and produce a rectified
-//! view. They are independent of the detector pipeline and can be used
-//! with any consistent `(i, j)` labelling.
+//! Two rectifiers are exposed: [`rectify_from_chessboard_result`]
+//! ([`RectifiedBoardView`]) and [`rectify_mesh_from_grid`]
+//! ([`RectifiedMeshView`]). The former takes a [`ChessboardDetection`]
+//! directly; the latter is pattern-agnostic and takes a
+//! `&[LabeledCorner]` plus an inlier index list. Both produce a
+//! rectified view and can be used with any consistent `(i, j)`
+//! labelling.
+#![deny(missing_docs)]
 
-pub mod boosters;
-pub mod cell_size;
-pub mod cluster;
-pub mod corner;
-pub mod detector;
-pub mod grow;
-pub mod mesh_warp;
-pub mod params;
-pub mod pipeline;
-pub mod rectified_view;
-pub mod seed;
-pub mod topological;
-pub mod validate;
+mod boosters;
+mod cluster;
+mod corner;
+mod detector;
+mod grow;
+mod mesh_warp;
+mod params;
+mod pipeline;
+mod rectified_view;
+mod seed;
+mod topological;
+mod validate;
 
-pub use boosters::{apply_boosters, BoosterResult};
-pub use cell_size::estimate_cell_size;
-pub use cluster::{cluster_axes, cluster_axes_debug, AxisCluster, ClusterCenters, ClusterDebug};
-pub use corner::{ChessCorner, ClusterLabel, CornerAug, CornerStage};
-pub use detector::{
-    build_detection_from_grow, DebugFrame, Detection, Detector, InstrumentedResult, IterationTrace,
-    StageCounts, DEBUG_FRAME_SCHEMA,
-};
-pub use grow::{grow_from_seed, GrowResult};
+pub mod diagnostics;
+
+// --- Public contract ---------------------------------------------------
+pub use corner::ChessCorner;
+pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{DetectorParams, GraphBuildAlgorithm};
+pub use params::{ChessboardTuning, DetectorParams, GraphBuildAlgorithm};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
-pub use seed::{find_seed, Seed, SeedOutput};
 pub use topological::{detect_all_topological, trace_topological};
-pub use validate::{validate, ValidationResult};

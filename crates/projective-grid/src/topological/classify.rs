@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use super::delaunay::Triangulation;
 use super::{AxisEstimate, TopologicalParams};
 
+/// Classification of a Delaunay edge against the recovered grid directions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]

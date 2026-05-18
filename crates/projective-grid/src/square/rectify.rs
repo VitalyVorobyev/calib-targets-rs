@@ -11,13 +11,20 @@ use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
+/// Reason a [`SquareGridHomography`] could not be built.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum GridRectifyError {
+    /// Fewer than the 4 corners a homography needs were supplied.
     #[error("not enough grid corners with positions (need >= 4, got {got})")]
-    NotEnoughPoints { got: usize },
+    NotEnoughPoints {
+        /// Number of corners actually supplied.
+        got: usize,
+    },
+    /// The DLT homography estimator failed (degenerate correspondences).
     #[error("homography estimation failed")]
     HomographyFailed,
+    /// The estimated homography could not be inverted.
     #[error("homography not invertible")]
     NonInvertible,
 }
@@ -29,15 +36,19 @@ pub struct SquareGridHomography<F: Float = f32> {
     pub h_img_from_rect: Homography<F>,
     /// Maps image coordinates to rectified coordinates.
     pub h_rect_from_img: Homography<F>,
-    /// Grid bounding box (with margin) in corner index space.
+    /// Minimum grid `i` of the bounding box (with margin), corner-index space.
     pub min_i: i32,
+    /// Minimum grid `j` of the bounding box (with margin), corner-index space.
     pub min_j: i32,
+    /// Maximum grid `i` of the bounding box (with margin), corner-index space.
     pub max_i: i32,
+    /// Maximum grid `j` of the bounding box (with margin), corner-index space.
     pub max_j: i32,
     /// Rectified pixels per grid cell.
     pub px_per_cell: F,
-    /// Rectified image dimensions.
+    /// Rectified image width in pixels.
     pub rect_width: usize,
+    /// Rectified image height in pixels.
     pub rect_height: usize,
 }
 

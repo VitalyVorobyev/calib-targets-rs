@@ -190,14 +190,22 @@ def detect_puzzleboard(
 def detect_chessboard_best(
     image: npt.NDArray[np.uint8],
     configs: list[ChessboardParams],
+    *,
+    chess_cfg: ChessConfig | None = None,
 ) -> ChessboardDetectionResult | None:
     """Try multiple chessboard configs, return the best result (most corners)."""
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
     payloads = []
     for i, cfg in enumerate(configs):
         _check_type(f"configs[{i}]", cfg, ChessboardParams)
         payloads.append(cfg.to_dict())
 
-    raw = _core.detect_chessboard_best(image, payloads)
+    raw = _core.detect_chessboard_best(
+        image,
+        payloads,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+    )
     if raw is None:
         return None
     return ChessboardDetectionResult.from_dict(raw)

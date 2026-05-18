@@ -28,6 +28,7 @@
 //! let markers = scan_decode_markers(&view, 4, 4, 4.0, &scan_cfg, &matcher);
 //! println!("markers: {}", markers.len());
 //! ```
+#![deny(missing_docs)]
 
 pub mod builtins;
 mod dictionary;

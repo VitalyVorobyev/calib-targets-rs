@@ -7,16 +7,23 @@ use calib_targets_core::{DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Error type for marker-board JSON config / report I/O.
 pub type MarkerBoardIoError = IoError;
 
 /// Configuration for marker board detection, loadable from JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkerBoardDetectConfig {
+    /// Path to the input image to run detection on.
     pub image_path: String,
+    /// Optional path for the detection report; defaults applied by
+    /// [`MarkerBoardDetectConfig::output_path`] when unset.
     #[serde(default)]
     pub output_path: Option<String>,
+    /// ChESS corner-detector configuration. Consumed by the upstream
+    /// corner-detection step, not by the chessboard stage itself.
     #[serde(default)]
     pub chess: DetectorConfig,
+    /// Marker-board detector parameters (layout + tuning).
     pub marker: MarkerBoardParams,
 }
 
@@ -54,14 +61,21 @@ impl MarkerBoardDetectConfig {
 /// Detection report for serialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkerBoardDetectReport {
+    /// Path of the image detection was run on.
     pub image_path: String,
+    /// Path of the JSON config that produced this report.
     pub config_path: String,
+    /// Number of raw ChESS corners detected before board detection.
     pub num_raw_corners: usize,
+    /// The raw ChESS corners detected in the image.
     pub raw_corners: Vec<ChessCorner>,
+    /// The detected board, when detection succeeded.
     #[serde(default)]
     pub detection: Option<TargetDetection>,
+    /// Grid alignment to the known board layout, when it could be resolved.
     #[serde(default)]
     pub alignment: Option<GridAlignment>,
+    /// Human-readable error message, when detection failed.
     #[serde(default)]
     pub error: Option<String>,
 }

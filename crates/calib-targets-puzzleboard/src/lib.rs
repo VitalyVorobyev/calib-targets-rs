@@ -32,8 +32,10 @@
 //! // See `examples/detect_puzzleboard.rs` for a working end-to-end example.
 //! # Ok(()) }
 //! ```
+#![deny(missing_docs)]
 
 pub mod code_maps;
+pub mod diagnostics;
 
 mod board;
 mod detector;
@@ -41,12 +43,13 @@ mod io;
 mod params;
 
 pub use board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
-pub use code_maps::{
-    PuzzleBoardObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
-};
+pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS};
 pub use detector::{
     PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError,
     PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
+};
+pub use diagnostics::{
+    PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics, PuzzleBoardObservedEdge,
 };
 pub use io::{PuzzleBoardDetectConfig, PuzzleBoardDetectReport, PuzzleBoardIoError};
 pub use params::PuzzleBoardParams;

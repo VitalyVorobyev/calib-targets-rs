@@ -18,7 +18,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{Detection, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
 use serde::Deserialize;
 
 fn workspace_root() -> PathBuf {
@@ -53,7 +53,7 @@ fn load_baselines() -> Baselines {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
-fn run_detector(img_path: &Path) -> (Option<Detection>, usize) {
+fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
     let img = image::open(img_path)
         .unwrap_or_else(|e| panic!("decode {}: {e}", img_path.display()))
         .to_luma8();
@@ -66,28 +66,24 @@ fn run_detector(img_path: &Path) -> (Option<Detection>, usize) {
     (detection, components)
 }
 
-fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
+fn assert_no_duplicate_labels(detection: &ChessboardDetection, context: &str) {
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
-    for lc in &detection.target.corners {
-        let g = lc
-            .grid
-            .expect("chessboard detector emits grid coords on every labelled corner");
+    for lc in &detection.corners {
         assert!(
-            seen.insert((g.i, g.j)),
+            seen.insert((lc.grid.i, lc.grid.j)),
             "{context}: duplicate (i, j) = ({}, {}) — precision contract violated",
-            g.i,
-            g.j
+            lc.grid.i,
+            lc.grid.j
         );
     }
 }
 
-fn assert_grid_rebased_to_origin(detection: &Detection, context: &str) {
+fn assert_grid_rebased_to_origin(detection: &ChessboardDetection, context: &str) {
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
-    for lc in &detection.target.corners {
-        let g = lc.grid.expect("grid coords present");
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
+    for lc in &detection.corners {
+        min_i = min_i.min(lc.grid.i);
+        min_j = min_j.min(lc.grid.j);
     }
     assert_eq!(
         (min_i, min_j),
@@ -96,20 +92,16 @@ fn assert_grid_rebased_to_origin(detection: &Detection, context: &str) {
     );
 }
 
-fn assert_origin_top_left(detection: &Detection, context: &str) {
+fn assert_origin_top_left(detection: &ChessboardDetection, context: &str) {
     // `(0, 0)` must sit visually at the top-left: among labelled
     // corners the +i step must move `+x` and the +j step must move
     // `+y`. Uses mean adjacent-neighbour deltas — robust to
     // perspective and partial detections.
     use std::collections::HashMap;
     let labelled: HashMap<(i32, i32), (f32, f32)> = detection
-        .target
         .corners
         .iter()
-        .filter_map(|lc| {
-            let g = lc.grid?;
-            Some(((g.i, g.j), (lc.position.x, lc.position.y)))
-        })
+        .map(|lc| ((lc.grid.i, lc.grid.j), (lc.position.x, lc.position.y)))
         .collect();
     if labelled.len() < 4 {
         // Too sparse for a direction test; the rebase check alone is
@@ -198,7 +190,7 @@ fn every_listed_image_meets_its_gate() {
             assert_no_duplicate_labels(d, &ctx);
             assert_grid_rebased_to_origin(d, &ctx);
             assert_origin_top_left(d, &ctx);
-            let labelled = d.target.corners.len();
+            let labelled = d.corners.len();
             if labelled < gate.min_labelled {
                 failures.push(format!(
                     "{ctx}: labelled={labelled} < min_labelled={}",
@@ -264,7 +256,8 @@ fn every_listed_image_meets_its_gate() {
 /// noise; the post-fix observation is 373).
 #[test]
 fn diskfit_large_recovers_partial_slot_flips() {
-    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod, Threshold};
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
+    use chess_corners::Threshold;
 
     let path = workspace_root().join("testdata/large.png");
     if !path.exists() {
@@ -284,7 +277,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on large.png");
-    let labelled = detection.target.corners.len();
+    let labelled = detection.corners.len();
     assert!(
         labelled >= 365,
         "DiskFit + chessboard-v2 must produce at least 365 labelled corners on large.png \
@@ -312,7 +305,8 @@ fn diskfit_large_recovers_partial_slot_flips() {
 /// labelled corners on `mid.png`, matching the `RingFit` baseline.
 #[test]
 fn diskfit_mid_recovers_full_chessboard() {
-    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod, Threshold};
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
+    use chess_corners::Threshold;
 
     let mid_path = workspace_root().join("testdata/mid.png");
     if !mid_path.exists() {
@@ -335,7 +329,7 @@ fn diskfit_mid_recovers_full_chessboard() {
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on mid.png");
-    let labelled = detection.target.corners.len();
+    let labelled = detection.corners.len();
     assert!(
         labelled >= 77,
         "DiskFit + chessboard-v2 must produce at least 77 labelled corners on mid.png \

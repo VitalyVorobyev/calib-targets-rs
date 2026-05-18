@@ -14,13 +14,20 @@ pub(super) fn default_border_bits() -> usize {
 /// Printable ChArUco target.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoTargetSpec {
+    /// Number of board squares vertically.
     pub rows: u32,
+    /// Number of board squares horizontally.
     pub cols: u32,
+    /// Side length of one square in millimeters.
     pub square_size_mm: f64,
+    /// Marker side length as a fraction of the square side, in `(0, 1]`.
     pub marker_size_rel: f64,
+    /// The ArUco dictionary the markers are drawn from.
     pub dictionary: Dictionary,
+    /// How markers are placed and numbered on the board.
     #[serde(default)]
     pub marker_layout: MarkerLayout,
+    /// Marker border width in cells.
     #[serde(default = "default_border_bits")]
     pub border_bits: usize,
 }

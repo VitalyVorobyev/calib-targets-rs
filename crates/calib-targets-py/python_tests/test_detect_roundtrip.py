@@ -110,7 +110,7 @@ def test_detect_chessboard_roundtrip() -> None:
     result = ct.detect_chessboard(image)
     if result is None:
         pytest.skip("no chessboard detected on testdata/mid.png")
-    assert len(result.detection.corners) > 0
+    assert len(result.corners) > 0
     _assert_roundtrip(result)
 
 
@@ -339,6 +339,9 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
 
     assert isinstance(raw, dict)
     assert raw["detection"]["kind"] == "puzzle_board"
+    # The decode dict is now the compact quality summary. Winner/runner-up
+    # score evidence and the raw observed-edge dump moved to the Rust
+    # `PuzzleBoardDiagnostics` channel, which has no Python binding.
     assert set(raw["decode"].keys()) == {
         "edges_observed",
         "edges_matched",
@@ -346,16 +349,8 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
         "bit_error_rate",
         "master_origin_row",
         "master_origin_col",
-        "score_best",
-        "score_runner_up",
-        "score_margin",
-        "runner_up_origin_row",
-        "runner_up_origin_col",
-        "runner_up_transform",
-        "scoring_mode",
     }
-    for edge in raw["observed_edges"]:
-        assert set(edge.keys()) == {"row", "col", "orientation", "bit", "confidence"}
+    assert "observed_edges" not in raw
 
     for corner in raw["detection"]["corners"]:
         grid = corner["grid"]

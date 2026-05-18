@@ -328,10 +328,7 @@ pub(crate) fn validate_and_fix_corners(
         }
     }
 
-    TargetDetection {
-        kind: TargetKind::Charuco,
-        corners: out_corners,
-    }
+    TargetDetection::new(TargetKind::Charuco, out_corners)
 }
 
 // ---------------------------------------------------------------------------

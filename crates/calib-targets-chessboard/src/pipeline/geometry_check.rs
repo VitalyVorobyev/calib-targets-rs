@@ -59,11 +59,11 @@ pub fn run_geometry_check(
         )
         .collect();
     let mut geom_params = projective_grid::square::validate::ValidationParams::new(
-        params.geometry_check_line_tol_rel,
-        params.line_min_members,
-        params.geometry_check_local_h_tol_rel,
+        params.tuning.geometry_check_line_tol_rel,
+        params.tuning.line_min_members,
+        params.tuning.geometry_check_local_h_tol_rel,
     );
-    if params.validate_step_aware {
+    if params.tuning.validate_step_aware {
         // Geometry check stays step-aware so heavily distorted boards
         // get the same scale-relative thresholds as BFS validation.
         // Step-deviation gate is BFS-only — set to 0 (disabled).

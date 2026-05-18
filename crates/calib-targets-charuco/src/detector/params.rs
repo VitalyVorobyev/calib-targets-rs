@@ -1,7 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
+use chess_corners::{ChessParams as ChessCornerParams, RefinerKind, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -188,7 +188,7 @@ impl CharucoParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
                 Self {
                     chessboard,
                     ..base.clone()
@@ -206,7 +206,7 @@ impl CharucoParams {
     /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.min_corner_strength = 0.5;
+        chessboard.tuning.min_corner_strength = 0.5;
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.marker_size_rel,

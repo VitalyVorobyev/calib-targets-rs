@@ -81,11 +81,12 @@ returns the same `CharucoDetectionResult`.
 | `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` (rebased to `(0, 0)`), `id` (ChArUco logical corner ID), `target_position` (mm in board space). |
 | `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `grid_coords`, `rotation`, `hamming`, and rectified/image corners. |
 | `alignment: GridAlignment` | D4 rotation + translation mapping chessboard `(i, j)` to the board's canonical ID space. |
-| `raw_marker_count`, `raw_marker_wrong_id_count` | Pre-alignment counters used by the precision contract. |
 
 Use `detector.detect_with_diagnostics(...)` for per-component rejection
-reasons, per-cell sample scores, hypothesis margins, and expected-vs-found
-marker IDs — rendered by the `overlay_charuco.py` tool.
+reasons, per-cell sample scores, hypothesis margins, expected-vs-found
+marker IDs, and the pre-alignment `raw_marker_count` /
+`raw_marker_wrong_id_count` totals — rendered by the `overlay_charuco.py`
+tool.
 
 ## Choosing a dictionary
 

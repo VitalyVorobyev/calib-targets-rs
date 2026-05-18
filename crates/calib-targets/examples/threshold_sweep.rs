@@ -10,7 +10,8 @@
 use std::path::Path;
 
 use calib_targets::chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
-use calib_targets::detect::{default_chess_config, detect_corners, Threshold};
+use calib_targets::detect::{default_chess_config, detect_corners};
+use chess_corners::Threshold;
 use image::imageops::FilterType;
 
 const IMAGES: &[&str] = &[
@@ -86,14 +87,12 @@ fn main() {
                     let mut min_j = i32::MAX;
                     let mut max_j = i32::MIN;
                     let mut coords = std::collections::HashSet::new();
-                    for c in &d.target.corners {
-                        if let Some(g) = c.grid {
-                            min_i = min_i.min(g.i);
-                            max_i = max_i.max(g.i);
-                            min_j = min_j.min(g.j);
-                            max_j = max_j.max(g.j);
-                            coords.insert((g.i, g.j));
-                        }
+                    for c in &d.corners {
+                        min_i = min_i.min(c.grid.i);
+                        max_i = max_i.max(c.grid.i);
+                        min_j = min_j.min(c.grid.j);
+                        max_j = max_j.max(c.grid.j);
+                        coords.insert((c.grid.i, c.grid.j));
                     }
                     let mut h = 0usize;
                     if !coords.is_empty() {
@@ -105,7 +104,7 @@ fn main() {
                             }
                         }
                     }
-                    (d.target.corners.len(), h)
+                    (d.corners.len(), h)
                 }
                 None => (0, 0),
             };

@@ -63,6 +63,13 @@ pub fn init_with_level(level: LevelFilter) -> Result<(), log::SetLoggerError> {
     Ok(())
 }
 
+/// Install a global `tracing` subscriber (available with the `tracing` feature).
+///
+/// The level filter is read from the `RUST_LOG` environment variable,
+/// defaulting to `info`. When `json` is `true` events are emitted as flattened
+/// JSON; otherwise they are formatted for humans with an uptime timer. Span
+/// close events are recorded so per-span timings are visible. Calling this more
+/// than once is a no-op after the first successful install.
 #[cfg(feature = "tracing")]
 pub fn init_tracing(json: bool) {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));

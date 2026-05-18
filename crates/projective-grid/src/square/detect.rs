@@ -34,8 +34,8 @@ use crate::square::fill::{fill_grid_holes, FillParams, FillStats};
 use crate::square::grow::{
     bfs_grow, Admit, FillEdgeCtx, GrowParams, GrowResult, GrowValidator, LabelledNeighbour,
 };
+use crate::square::seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 use crate::square::seed::{Seed, SeedOutput};
-use crate::square::seed_finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 use crate::square::validate::{validate, LabelledEntry, ValidationParams, ValidationResult};
 use crate::topological::AxisEstimate;
 

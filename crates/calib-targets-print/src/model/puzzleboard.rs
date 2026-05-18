@@ -21,13 +21,19 @@ pub(super) fn default_puzzleboard_dot_diameter_rel() -> f64 {
 /// `(origin_row, origin_col)`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PuzzleBoardTargetSpec {
+    /// Number of board squares vertically.
     pub rows: u32,
+    /// Number of board squares horizontally.
     pub cols: u32,
+    /// Side length of one square in millimeters.
     pub square_size_mm: f64,
+    /// Row offset into the 501×501 master pattern the board is cut from.
     #[serde(default)]
     pub origin_row: u32,
+    /// Column offset into the 501×501 master pattern the board is cut from.
     #[serde(default)]
     pub origin_col: u32,
+    /// Edge-dot diameter as a fraction of the square side.
     #[serde(default = "default_puzzleboard_dot_diameter_rel")]
     pub dot_diameter_rel: f64,
 }

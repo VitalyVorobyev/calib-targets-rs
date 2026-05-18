@@ -81,6 +81,7 @@ from .enums import (
 from .results import (
     CellOffset,
     CharucoDetectionResult,
+    ChessboardCorner,
     ChessboardDebug,
     ChessboardDetectionResult,
     CircleCandidate,
@@ -189,6 +190,7 @@ __all__ = [
     "GridGraphNode",
     "GridGraphDebug",
     "ChessboardDebug",
+    "ChessboardCorner",
     "ChessboardDetectionResult",
     "MarkerDetection",
     "CircleCandidate",

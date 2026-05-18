@@ -158,11 +158,11 @@ fn log_detector_params(params: &CharucoParams) {
     );
     debug!(
         "Chessboard params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, seed_edge_tol={:.2}, attach_search_rel={:.2}, max_components={}",
-        params.chessboard.min_corner_strength,
-        params.chessboard.max_fit_rms_ratio,
-        params.chessboard.cluster_tol_deg,
-        params.chessboard.seed_edge_tol,
-        params.chessboard.attach_search_rel,
+        params.chessboard.tuning.min_corner_strength,
+        params.chessboard.tuning.max_fit_rms_ratio,
+        params.chessboard.tuning.cluster_tol_deg,
+        params.chessboard.tuning.seed_edge_tol,
+        params.chessboard.tuning.attach_search_rel,
         params.chessboard.max_components,
     );
     debug!(

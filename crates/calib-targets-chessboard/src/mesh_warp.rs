@@ -6,33 +6,47 @@ use std::collections::HashMap;
 
 use nalgebra::Point2;
 
+/// Reason [`rectify_mesh_from_grid`] could not build a [`RectifiedMeshView`].
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum MeshWarpError {
+    /// Fewer than the minimum labelled corners (need at least a 2×2 block).
     #[error("not enough labeled corners with grid coords")]
     NotEnoughLabeledCorners,
+    /// No grid cell had all 4 corners present, so no cell homography
+    /// could be fitted.
     #[error("no valid grid cells found (need 2x2 corners at least)")]
     NoValidCells,
+    /// The homography estimator failed for at least one cell.
     #[error("homography estimation failed for at least one cell")]
     HomographyFailed,
 }
 
 // ---- Mesh warp rectification ----
+/// A fronto-parallel mesh rectification of a labelled chessboard grid.
+///
+/// Holds one homography per grid cell, so the rectification tolerates
+/// lens distortion that a single global homography could not absorb.
 #[derive(Clone, Debug)]
 pub struct RectifiedMeshView {
+    /// The rectified grayscale image.
     pub rect: GrayImage,
 
-    // Rectified grid cell layout (cell indices, not corner indices):
-    // cell (ci, cj) corresponds to corner indices:
-    // (min_i + ci, min_j + cj) .. (min_i + ci + 1, min_j + cj + 1)
+    /// Minimum corner `i` index — the rectified grid's origin column.
+    /// Cell `(ci, cj)` spans corner indices `(min_i + ci, min_j + cj)`
+    /// to `(min_i + ci + 1, min_j + cj + 1)`.
     pub min_i: i32,
+    /// Minimum corner `j` index — the rectified grid's origin row.
     pub min_j: i32,
+    /// Number of cells spanned horizontally.
     pub cells_x: usize,
+    /// Number of cells spanned vertically.
     pub cells_y: usize,
 
+    /// Side length of one cell in rectified pixels.
     pub px_per_square: f32,
 
-    // How many cells were valid (had all 4 corners)
+    /// Number of cells that had all 4 corners and got a valid homography.
     pub valid_cells: usize,
 
     // Per-cell homographies (cell-local rect -> image), in row-major (cj * cells_x + ci).

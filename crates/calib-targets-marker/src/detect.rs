@@ -14,7 +14,7 @@ use tracing::instrument;
     feature = "tracing",
     instrument(level = "info", skip(img, map, score_params, roi), fields(width = img.width, height = img.height))
 )]
-pub fn detect_circles_via_square_warp(
+pub(crate) fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,
     map: &HashMap<GridCoords, Point2<f32>>, // (i,j)->pixel corner
     score_params: &CircleScoreParams,
@@ -87,7 +87,7 @@ pub fn detect_circles_via_square_warp(
 }
 
 /// Utility to keep top K candidates per polarity (simple, stable).
-pub fn top_k_by_polarity(
+pub(crate) fn top_k_by_polarity(
     mut v: Vec<CircleCandidate>,
     k_white: usize,
     k_black: usize,

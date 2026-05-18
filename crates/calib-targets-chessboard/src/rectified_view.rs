@@ -1,50 +1,67 @@
+use crate::ChessboardDetection;
 use calib_targets_core::{
     estimate_homography_rect_to_img, warp_perspective_gray, GrayImage, GrayImageView, Homography,
-    LabeledCorner,
 };
 use nalgebra::Point2;
 
+/// Error returned by [`rectify_from_chessboard_result`].
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum RectifyError {
-    #[error("not enough labeled inlier corners with grid coords (need >=4)")]
+    /// Fewer than four labelled corners — a homography needs at least four.
+    #[error("not enough labelled corners (need >=4)")]
     NotEnoughPoints,
+    /// The rect-to-image homography fit failed.
     #[error("homography estimation failed")]
     HomographyFailed,
+    /// The fitted homography could not be inverted.
     #[error("homography not invertible")]
     NonInvertible,
 }
 
+/// A rectified, fronto-parallel view of a detected chessboard.
 #[derive(Clone, Debug)]
 pub struct RectifiedBoardView {
+    /// Rectified grayscale image.
     pub rect: GrayImage,
+    /// Homography mapping rectified pixels back to the source image.
     pub h_img_from_rect: Homography,
+    /// Homography mapping source-image pixels into the rectified frame.
     pub h_rect_from_img: Homography,
+    /// Minimum grid `i` index covered by the rectified image (with margin).
     pub min_i: i32,
+    /// Minimum grid `j` index covered by the rectified image (with margin).
     pub min_j: i32,
+    /// Maximum grid `i` index covered by the rectified image (with margin).
     pub max_i: i32,
+    /// Maximum grid `j` index covered by the rectified image (with margin).
     pub max_j: i32,
+    /// Rectified pixels per chessboard square.
     pub px_per_square: f32,
 }
 
+/// Rectify a chessboard from a [`ChessboardDetection`].
+///
+/// Fits a single global rect-to-image homography from the detection's
+/// labelled corners and warps `src` into a fronto-parallel view. Every
+/// corner in [`ChessboardDetection::corners`] is a validated labelled
+/// grid point, so all of them are used as correspondences.
+///
+/// `margin_squares` (e.g. `0.5..1.0`) pads the rectified image with a
+/// border so downstream marker decoding has room outside the corner grid.
 pub fn rectify_from_chessboard_result(
     src: &GrayImageView<'_>,
-    det_corners: &[LabeledCorner],
-    inliers: &[usize],
+    detection: &ChessboardDetection,
     px_per_square: f32,
     margin_squares: f32, // e.g. 0.5..1.0
 ) -> Result<RectifiedBoardView, RectifyError> {
     // 1) collect correspondences (rect_pt -> img_pt)
-    let mut img_pts = Vec::<Point2<f32>>::new();
-    let mut grid = Vec::<(i32, i32)>::new();
+    let mut img_pts = Vec::<Point2<f32>>::with_capacity(detection.corners.len());
+    let mut grid = Vec::<(i32, i32)>::with_capacity(detection.corners.len());
 
-    for &idx in inliers {
-        if let Some(c) = det_corners.get(idx) {
-            if let Some(g) = c.grid {
-                img_pts.push(Point2::new(c.position.x, c.position.y));
-                grid.push((g.i, g.j));
-            }
-        }
+    for c in &detection.corners {
+        img_pts.push(Point2::new(c.position.x, c.position.y));
+        grid.push((c.grid.i, c.grid.j));
     }
     if img_pts.len() < 4 {
         return Err(RectifyError::NotEnoughPoints);
