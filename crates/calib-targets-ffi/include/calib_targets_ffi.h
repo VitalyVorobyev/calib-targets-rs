@@ -1004,7 +1004,7 @@ enum ct_status_t ct_chessboard_detector_detect_diagnostics_json(const struct ct_
  * Returns every same-board component the detector recovers, up to
  * `DetectorParams::max_components`. The `corners_buf` buffer receives
  * all corners from all components concatenated; use
- * `result[i].detection.corners_len` to slice each component's contribution.
+ * `result[i].corners_len` to slice each component's contribution.
  *
  * Both `results_len_out` and `corners_len_out` inside `bufs` are
  * required and always receive the required array lengths. Passing
