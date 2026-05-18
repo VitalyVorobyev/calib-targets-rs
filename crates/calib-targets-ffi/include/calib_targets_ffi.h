@@ -99,12 +99,8 @@ typedef struct ct_chessboard_params_t {
   size_t line_min_members;
   float local_h_tol_rel;
   uint32_t max_validation_iters;
-  uint32_t enable_line_extrapolation;
-  uint32_t enable_gap_fill;
-  uint32_t enable_component_merge;
   uint32_t enable_weak_cluster_rescue;
   float weak_cluster_tol_deg;
-  size_t component_merge_min_boundary_pairs;
   uint32_t max_booster_iters;
   size_t min_labeled_corners;
   uint32_t max_components;
@@ -977,6 +973,32 @@ enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect
                                                struct ct_chessboard_detect_buffers_t *bufs);
 
 /**
+ * Run chessboard detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
+ * diagnostics struct (every input corner's terminal stage, per-iteration
+ * pipeline traces, cluster histograms, geometry-check outcomes). Its
+ * schema carries a looser stability promise than the typed result API and
+ * may evolve between minor versions.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_chessboard_detector_detect_diagnostics_json(const struct ct_chessboard_detect_args_t *args,
+                                                                char *out_utf8,
+                                                                size_t out_capacity,
+                                                                size_t *out_len);
+
+/**
  * Run end-to-end multi-component chessboard detection on a grayscale image.
  *
  * Returns every same-board component the detector recovers, up to
@@ -1045,6 +1067,33 @@ enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detect_args_
                                             struct ct_charuco_detect_buffers_t *bufs);
 
 /**
+ * Run ChArUco detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `CharucoDetectDiagnostics` struct (per-component matcher decisions,
+ * per-cell scores, chosen/runner-up hypotheses, rejection reasons).
+ * Diagnostics are produced even when detection fails, so this entry point
+ * returns `CT_STATUS_OK` with a well-formed payload on failed frames; its
+ * schema carries a looser stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_charuco_detector_detect_diagnostics_json(const struct ct_charuco_detect_args_t *args,
+                                                             char *out_utf8,
+                                                             size_t out_capacity,
+                                                             size_t *out_len);
+
+/**
  * Create a marker-board detector handle.
  *
  * # Safety
@@ -1086,6 +1135,34 @@ void ct_marker_board_detector_destroy(struct ct_marker_board_detector_t *detecto
  */
 enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_detect_args_t *args,
                                                  struct ct_marker_board_detect_buffers_t *bufs);
+
+/**
+ * Run marker-board detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
+ * expected-to-detected circle matches, per-corner provenance, and the
+ * alignment-inlier count). The marker-board diagnostics channel only
+ * yields evidence on a successful detection, so a failed detection is
+ * reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
+ * stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_marker_board_detector_detect_diagnostics_json(const struct ct_marker_board_detect_args_t *args,
+                                                                  char *out_utf8,
+                                                                  size_t out_capacity,
+                                                                  size_t *out_len);
 
 /**
  * Create a PuzzleBoard detector handle.
@@ -1130,6 +1207,33 @@ void ct_puzzleboard_detector_destroy(struct ct_puzzleboard_detector_t *detector)
  */
 enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_detect_args_t *args,
                                                 struct ct_puzzleboard_detect_buffers_t *bufs);
+
+/**
+ * Run PuzzleBoard detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `PuzzleBoardDiagnostics` struct (the raw pre-alignment per-edge bit
+ * observations and the winner-vs-runner-up scoring evidence). Diagnostics
+ * are produced even when detection fails, so this entry point returns
+ * `CT_STATUS_OK` with a well-formed payload on failed frames; its schema
+ * carries a looser stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_puzzleboard_detector_detect_diagnostics_json(const struct ct_puzzleboard_detect_args_t *args,
+                                                                 char *out_utf8,
+                                                                 size_t out_capacity,
+                                                                 size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

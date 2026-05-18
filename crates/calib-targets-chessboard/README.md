@@ -100,7 +100,7 @@ unless an input fails and you have evidence for the change:
 | Seed | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | 2×2 seed-quad validation. |
 | Grow | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | BFS attachment invariants. Rarely need tuning. |
 | Validation | `line_tol_rel`, `local_h_tol_rel`, `max_validation_iters` | Line + local-H residuals. Loosen `local_h_tol_rel` under strong lens distortion; keep `line_tol_rel` tight. |
-| Boosters | `enable_line_extrapolation`, `enable_gap_fill`, `enable_component_merge`, `enable_weak_cluster_rescue` | Recall boosters. Each strictly adds corners and never relaxes invariants; disable individually to bisect a recall regression. |
+| Boosters | `enable_weak_cluster_rescue` | Toggle for the weak-cluster rescue booster. Line extrapolation, gap fill, and component merge run unconditionally. |
 
 The cell size is **not** a tuning knob — the detector derives it from a
 self-consistent 4-corner seed, so there is nothing to configure.

@@ -890,12 +890,8 @@ class ChessboardParams:
     local_h_tol_rel: float = 0.20
     max_validation_iters: int = 6
     # Stage 8 — recall boosters
-    enable_line_extrapolation: bool = True
-    enable_gap_fill: bool = True
-    enable_component_merge: bool = True
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
-    component_merge_min_boundary_pairs: int = 2
     max_booster_iters: int = 5
     # Output gates
     min_labeled_corners: int = 8
@@ -936,12 +932,8 @@ class ChessboardParams:
             "line_min_members": self.line_min_members,
             "local_h_tol_rel": self.local_h_tol_rel,
             "max_validation_iters": self.max_validation_iters,
-            "enable_line_extrapolation": self.enable_line_extrapolation,
-            "enable_gap_fill": self.enable_gap_fill,
-            "enable_component_merge": self.enable_component_merge,
             "enable_weak_cluster_rescue": self.enable_weak_cluster_rescue,
             "weak_cluster_tol_deg": self.weak_cluster_tol_deg,
-            "component_merge_min_boundary_pairs": self.component_merge_min_boundary_pairs,
             "max_booster_iters": self.max_booster_iters,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
@@ -988,22 +980,11 @@ class ChessboardParams:
             max_validation_iters=data.get(
                 "max_validation_iters", d.max_validation_iters
             ),
-            enable_line_extrapolation=data.get(
-                "enable_line_extrapolation", d.enable_line_extrapolation
-            ),
-            enable_gap_fill=data.get("enable_gap_fill", d.enable_gap_fill),
-            enable_component_merge=data.get(
-                "enable_component_merge", d.enable_component_merge
-            ),
             enable_weak_cluster_rescue=data.get(
                 "enable_weak_cluster_rescue", d.enable_weak_cluster_rescue
             ),
             weak_cluster_tol_deg=data.get(
                 "weak_cluster_tol_deg", d.weak_cluster_tol_deg
-            ),
-            component_merge_min_boundary_pairs=data.get(
-                "component_merge_min_boundary_pairs",
-                d.component_merge_min_boundary_pairs,
             ),
             max_booster_iters=data.get("max_booster_iters", d.max_booster_iters),
             min_labeled_corners=data.get(

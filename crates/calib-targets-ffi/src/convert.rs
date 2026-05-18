@@ -366,16 +366,6 @@ pub(crate) fn convert_chessboard_params(
     out.tuning.local_h_tol_rel =
         require_nonnegative(params.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
     out.tuning.max_validation_iters = params.max_validation_iters;
-    out.tuning.enable_line_extrapolation = flag_to_bool(
-        params.enable_line_extrapolation,
-        "chessboard.enable_line_extrapolation",
-    )?;
-    out.tuning.enable_gap_fill =
-        flag_to_bool(params.enable_gap_fill, "chessboard.enable_gap_fill")?;
-    out.tuning.enable_component_merge = flag_to_bool(
-        params.enable_component_merge,
-        "chessboard.enable_component_merge",
-    )?;
     out.tuning.enable_weak_cluster_rescue = flag_to_bool(
         params.enable_weak_cluster_rescue,
         "chessboard.enable_weak_cluster_rescue",
@@ -384,7 +374,6 @@ pub(crate) fn convert_chessboard_params(
         params.weak_cluster_tol_deg,
         "chessboard.weak_cluster_tol_deg",
     )?;
-    out.tuning.component_merge_min_boundary_pairs = params.component_merge_min_boundary_pairs;
     out.tuning.max_booster_iters = params.max_booster_iters;
     out.min_labeled_corners = params.min_labeled_corners;
     out.max_components = params.max_components;
@@ -426,28 +415,12 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
         line_min_members: d.tuning.line_min_members,
         local_h_tol_rel: d.tuning.local_h_tol_rel,
         max_validation_iters: d.tuning.max_validation_iters,
-        enable_line_extrapolation: if d.tuning.enable_line_extrapolation {
-            CT_TRUE
-        } else {
-            CT_FALSE
-        },
-        enable_gap_fill: if d.tuning.enable_gap_fill {
-            CT_TRUE
-        } else {
-            CT_FALSE
-        },
-        enable_component_merge: if d.tuning.enable_component_merge {
-            CT_TRUE
-        } else {
-            CT_FALSE
-        },
         enable_weak_cluster_rescue: if d.tuning.enable_weak_cluster_rescue {
             CT_TRUE
         } else {
             CT_FALSE
         },
         weak_cluster_tol_deg: d.tuning.weak_cluster_tol_deg,
-        component_merge_min_boundary_pairs: d.tuning.component_merge_min_boundary_pairs,
         max_booster_iters: d.tuning.max_booster_iters,
         min_labeled_corners: d.min_labeled_corners,
         max_components: d.max_components,

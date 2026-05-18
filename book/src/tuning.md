@@ -143,10 +143,10 @@ the full invariant-to-parameter mapping and
 
 ### Stage 8 — recall boosters
 
-Per-stage toggles: `enable_line_extrapolation`, `enable_gap_fill`,
-`enable_component_merge`, `enable_weak_cluster_rescue` (all default
-`true`). Leave them on unless a specific booster is producing false
-positives for you.
+Per-stage toggle: `enable_weak_cluster_rescue` (default `true`). Leave
+it on unless the weak-cluster booster is producing false positives for
+you. Line extrapolation, gap fill, and component merge run
+unconditionally and are no longer configurable.
 
 ### Output gates
 

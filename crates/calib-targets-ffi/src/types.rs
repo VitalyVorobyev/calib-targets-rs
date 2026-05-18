@@ -490,12 +490,8 @@ pub struct ct_chessboard_params_t {
     pub max_validation_iters: u32,
 
     // Recall boosters
-    pub enable_line_extrapolation: u32,
-    pub enable_gap_fill: u32,
-    pub enable_component_merge: u32,
     pub enable_weak_cluster_rescue: u32,
     pub weak_cluster_tol_deg: f32,
-    pub component_merge_min_boundary_pairs: usize,
     pub max_booster_iters: u32,
 
     // Output gates

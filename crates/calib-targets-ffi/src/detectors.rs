@@ -15,9 +15,9 @@ use super::{
     ct_puzzleboard_detector_t, labeled_corner_to_ffi, map_charuco_create_error,
     map_charuco_detect_error, map_puzzleboard_create_error, map_puzzleboard_detect_error,
     marker_detection_to_ffi, panic_message, require_mut_ref, require_ref, set_last_error_message,
-    validate_output_buffer, write_optional_result, write_required_len, CharucoDetector,
-    ChessboardDetector, FfiError, FfiResult, MarkerBoardDetector, PreparedGrayImage,
-    PuzzleBoardDetector,
+    validate_output_buffer, write_json_string, write_optional_result, write_required_len,
+    CharucoDetector, ChessboardDetector, FfiError, FfiResult, MarkerBoardDetector,
+    PreparedGrayImage, PuzzleBoardDetector,
 };
 use crate::error::ffi_status;
 use crate::types::{
@@ -27,6 +27,7 @@ use crate::types::{
     ct_marker_board_result_t, ct_marker_detection_t, ct_puzzleboard_detector_config_t,
     ct_puzzleboard_result_t, ct_status_t, CT_FALSE, CT_TRUE,
 };
+use std::ffi::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 // ─── Detector create/destroy/detect impls ────────────────────────────────────
@@ -500,6 +501,119 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
     Ok(())
 }
 
+// ─── Diagnostics JSON-string accessors ───────────────────────────────────────
+//
+// The detector diagnostics types are deeply nested `Vec`-of-struct trees with
+// an explicitly looser stability promise than the typed result API. Rather
+// than freeze them into flat C structs, each `*_detect_diagnostics_json` entry
+// point runs detection and renders `serde_json::to_string` of the diagnostics
+// struct into a caller-owned UTF-8 buffer, reusing the `ct_last_error_message`
+// query/fill discipline (NULL + capacity 0 queries the required length).
+
+fn diagnostics_json<T: serde::Serialize>(value: &T) -> FfiResult<String> {
+    serde_json::to_string(value)
+        .map_err(|err| FfiError::internal(format!("failed to serialize diagnostics: {err}")))
+}
+
+pub(super) unsafe fn chessboard_detector_detect_diagnostics_impl(
+    args: *const ct_chessboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid chessboard handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+
+    let frame = detector.detector.detect_with_diagnostics(&corners);
+    let json = diagnostics_json(&frame)?;
+    // SAFETY: `out_utf8` / `out_len` validity is the caller's contract; the
+    // helper rejects the null/capacity-mismatch cases internally.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn charuco_detector_detect_diagnostics_impl(
+    args: *const ct_charuco_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid ChArUco handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // `detect_with_diagnostics` returns diagnostics even when detection fails,
+    // so a failed detection still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn marker_board_detector_detect_diagnostics_impl(
+    args: *const ct_marker_board_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid marker-board handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // The marker-board diagnostics channel only yields evidence on a successful
+    // detection; a failed detection is reported as `CT_STATUS_NOT_FOUND`.
+    let Some((_result, diagnostics)) = detector
+        .detector
+        .detect_from_image_and_corners_with_diagnostics(&view, &corners)
+    else {
+        return Err(FfiError::not_found("marker board not detected"));
+    };
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn puzzleboard_detector_detect_diagnostics_impl(
+    args: *const ct_puzzleboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid PuzzleBoard handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // `detect_with_diagnostics` returns diagnostics even when detection fails,
+    // so a failed decode still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
 // ─── Public exported functions ───────────────────────────────────────────────
 
 /// Return a `ct_chessboard_params_t` populated from
@@ -577,6 +691,37 @@ pub unsafe extern "C" fn ct_chessboard_detector_detect(
     bufs: *mut ct_chessboard_detect_buffers_t,
 ) -> ct_status_t {
     ffi_status(|| unsafe { chessboard_detector_detect_impl(args, bufs) })
+}
+
+/// Run chessboard detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
+/// diagnostics struct (every input corner's terminal stage, per-iteration
+/// pipeline traces, cluster histograms, geometry-check outcomes). Its
+/// schema carries a looser stability promise than the typed result API and
+/// may evolve between minor versions.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_chessboard_detector_detect_diagnostics_json(
+    args: *const ct_chessboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        chessboard_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
 }
 
 /// Input arguments for [`ct_chessboard_detector_detect_all`].
@@ -756,6 +901,38 @@ pub unsafe extern "C" fn ct_charuco_detector_detect(
     ffi_status(|| unsafe { charuco_detector_detect_impl(args, bufs) })
 }
 
+/// Run ChArUco detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `CharucoDetectDiagnostics` struct (per-component matcher decisions,
+/// per-cell scores, chosen/runner-up hypotheses, rejection reasons).
+/// Diagnostics are produced even when detection fails, so this entry point
+/// returns `CT_STATUS_OK` with a well-formed payload on failed frames; its
+/// schema carries a looser stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_charuco_detector_detect_diagnostics_json(
+    args: *const ct_charuco_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        charuco_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
+}
+
 /// Create a marker-board detector handle.
 ///
 /// # Safety
@@ -819,6 +996,39 @@ pub unsafe extern "C" fn ct_marker_board_detector_detect(
     ffi_status(|| unsafe { marker_board_detector_detect_impl(args, bufs) })
 }
 
+/// Run marker-board detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
+/// expected-to-detected circle matches, per-corner provenance, and the
+/// alignment-inlier count). The marker-board diagnostics channel only
+/// yields evidence on a successful detection, so a failed detection is
+/// reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
+/// stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_marker_board_detector_detect_diagnostics_json(
+    args: *const ct_marker_board_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        marker_board_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
+}
+
 /// Create a PuzzleBoard detector handle.
 ///
 /// # Safety
@@ -879,4 +1089,36 @@ pub unsafe extern "C" fn ct_puzzleboard_detector_detect(
     bufs: *mut ct_puzzleboard_detect_buffers_t,
 ) -> ct_status_t {
     ffi_status(|| unsafe { puzzleboard_detector_detect_impl(args, bufs) })
+}
+
+/// Run PuzzleBoard detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `PuzzleBoardDiagnostics` struct (the raw pre-alignment per-edge bit
+/// observations and the winner-vs-runner-up scoring evidence). Diagnostics
+/// are produced even when detection fails, so this entry point returns
+/// `CT_STATUS_OK` with a well-formed payload on failed frames; its schema
+/// carries a looser stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_puzzleboard_detector_detect_diagnostics_json(
+    args: *const ct_puzzleboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        puzzleboard_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
 }

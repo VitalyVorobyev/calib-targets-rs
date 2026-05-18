@@ -339,9 +339,10 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
 
     assert isinstance(raw, dict)
     assert raw["detection"]["kind"] == "puzzle_board"
-    # The decode dict is now the compact quality summary. Winner/runner-up
-    # score evidence and the raw observed-edge dump moved to the Rust
-    # `PuzzleBoardDiagnostics` channel, which has no Python binding.
+    # The decode dict is the compact quality summary. Winner/runner-up score
+    # evidence and the raw observed-edge dump live in the Rust
+    # `PuzzleBoardDiagnostics` channel, reachable via
+    # `detect_puzzleboard_with_diagnostics`.
     assert set(raw["decode"].keys()) == {
         "edges_observed",
         "edges_matched",
@@ -356,3 +357,68 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
         grid = corner["grid"]
         if grid is not None:
             assert set(grid.keys()) == {"i", "j"}
+
+
+# ---------------------------------------------------------------------------
+# diagnostics channel (detect_*_with_diagnostics)
+# ---------------------------------------------------------------------------
+
+
+def _assert_diagnostics_wrapper(payload: Any) -> dict[str, Any]:
+    """Structural check for a `{"result": ..., "diagnostics": ...}` dict."""
+    assert isinstance(payload, dict)
+    assert set(payload.keys()) == {"result", "diagnostics"}
+    return payload
+
+
+def test_detect_charuco_with_diagnostics_shape() -> None:
+    image = _load_gray("small2.png")
+    params = _charuco_params_small2()
+    payload = _assert_diagnostics_wrapper(
+        ct.detect_charuco_with_diagnostics(image, params=params)
+    )
+    # ChArUco diagnostics are produced even on a failed frame.
+    diag = payload["diagnostics"]
+    assert isinstance(diag, dict)
+    assert {"components", "raw_marker_count", "raw_marker_wrong_id_count"}.issubset(
+        diag.keys()
+    )
+    assert isinstance(diag["components"], list)
+
+
+def test_detect_marker_board_with_diagnostics_shape() -> None:
+    image = _load_gray("markerboard_crop.png")
+    params = _marker_board_params()
+    payload = _assert_diagnostics_wrapper(
+        ct.detect_marker_board_with_diagnostics(image, params=params)
+    )
+    diag = payload["diagnostics"]
+    if diag is None:
+        # The marker-board diagnostics channel yields evidence only on a
+        # successful detection; both keys are then None.
+        assert payload["result"] is None
+        return
+    assert {
+        "inliers",
+        "circle_candidates",
+        "circle_matches",
+        "alignment_inliers",
+    }.issubset(diag.keys())
+    assert payload["result"] is not None
+    # `result` deserializes through the typed wrapper.
+    ct.MarkerBoardDetectionResult.from_dict(payload["result"])
+
+
+def test_detect_puzzleboard_with_diagnostics_shape() -> None:
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    payload = _assert_diagnostics_wrapper(
+        ct.detect_puzzleboard_with_diagnostics(image, params=params)
+    )
+    # PuzzleBoard diagnostics are produced even on a failed decode.
+    diag = payload["diagnostics"]
+    assert isinstance(diag, dict)
+    assert {"observed_edges", "decode"}.issubset(diag.keys())
+    assert isinstance(diag["observed_edges"], list)
+    if payload["result"] is not None:
+        ct.PuzzleBoardDetectionResult.from_dict(payload["result"])

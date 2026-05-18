@@ -643,23 +643,12 @@ pub struct ChessboardTuning {
     pub stage6_local_k_nearest: usize,
 
     // --- `apply_boosters` stage ---------------------------------------------
-    /// Enable the line-extrapolation booster: extend a labelled grid line
-    /// past its current end when a corner sits on the predicted ray.
-    pub enable_line_extrapolation: bool,
-    /// Enable the interior gap-fill booster: attach corners that sit in
-    /// holes fully surrounded by labelled neighbours.
-    pub enable_gap_fill: bool,
-    /// Enable the local-geometry component merge: fuse separately-grown
-    /// grid components that agree on overlap.
-    pub enable_component_merge: bool,
     /// Enable the weak-cluster rescue booster: re-admit corners that
     /// clustered only within the looser `weak_cluster_tol_deg`.
     pub enable_weak_cluster_rescue: bool,
     /// Cluster tolerance for "weakly clustered" corners eligible as recall-
     /// booster candidates. Must be ≥ `cluster_tol_deg`.
     pub weak_cluster_tol_deg: f32,
-    /// Minimum boundary-pair count required to attempt a component merge.
-    pub component_merge_min_boundary_pairs: usize,
     /// Cap on the outer booster loop.
     pub max_booster_iters: u32,
 }
@@ -740,12 +729,8 @@ impl Default for ChessboardTuning {
             geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
             geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
 
-            enable_line_extrapolation: true,
-            enable_gap_fill: true,
-            enable_component_merge: true,
             enable_weak_cluster_rescue: true,
             weak_cluster_tol_deg: 18.0,
-            component_merge_min_boundary_pairs: 2,
             max_booster_iters: 5,
         }
     }

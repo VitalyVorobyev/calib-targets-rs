@@ -23,6 +23,15 @@ keeps the workspace default on `RingFit`.
 
 ### Breaking
 
+- **Removed four dead `ChessboardTuning` knobs** that were serialized
+  and FFI-round-tripped but never read by any detector logic:
+  `enable_line_extrapolation`, `enable_gap_fill`, `enable_component_merge`,
+  and `component_merge_min_boundary_pairs`. Component merge now runs
+  unconditionally via `DetectorParams::component_merge: LocalMergeParams`.
+  Old JSON containing these keys still deserializes without error (serde
+  ignores unknown fields); C ABI callers must remove the four fields from
+  `ct_chessboard_params_t` and regenerate against the updated FFI header.
+
 - **Removed the obsolete `diagonal_angle_tol_rad` topological knob.**
   `TopologicalParams::diagonal_angle_tol_rad` and the
   `diagonal_distance_rad` / `diagonal_margin_rad` fields on
@@ -293,6 +302,36 @@ WASM bindings track the revised surface:
   `detect_chessboard_best` gained a `chess_cfg` argument so the
   caller can choose the ChESS config used for corner detection
   across the sweep.
+
+**Binding diagnostics access restored.** The API revision moved each
+detector's diagnostics into a Rust `diagnostics` / `trace` module and
+`*_with_diagnostics` methods, but left the three binding crates
+without programmatic access to that evidence. The bindings now expose
+the diagnostics channel for every detector:
+
+- *FFI* — additive JSON-string accessors
+  `ct_chessboard_detector_detect_diagnostics_json`,
+  `ct_charuco_detector_detect_diagnostics_json`,
+  `ct_marker_board_detector_detect_diagnostics_json`, and
+  `ct_puzzleboard_detector_detect_diagnostics_json`. Each runs
+  detection and writes a NUL-terminated UTF-8 JSON string of the
+  diagnostics struct into a caller-owned buffer, reusing the
+  `ct_last_error_message` query/fill discipline (NULL + capacity 0
+  queries the required length). The deeply-nested diagnostics trees
+  carry a looser stability promise than the typed result API, so a
+  JSON string is the right encoding rather than frozen C structs.
+  The typed `*_detect` entry points are unchanged.
+- *Python* — new `detect_charuco_with_diagnostics`,
+  `detect_marker_board_with_diagnostics`, and
+  `detect_puzzleboard_with_diagnostics` return a
+  `{"result": ..., "diagnostics": ...}` dict (chessboard diagnostics
+  remain reachable via the existing `detect_chessboard_debug`).
+- *WASM* — new `detect_chessboard_with_diagnostics`,
+  `detect_charuco_with_diagnostics`,
+  `detect_marker_board_with_diagnostics`, and
+  `detect_puzzleboard_with_diagnostics` return a
+  `{ result, diagnostics }` object; the diagnostics object shapes are
+  declared in `typescript-extras.d.ts`.
 
 ### Added
 

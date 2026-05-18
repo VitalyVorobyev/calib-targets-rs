@@ -287,12 +287,8 @@ export interface ChessboardParams {
   geometry_check_local_h_tol_rel: number;
   stage6_local_h: boolean;
   stage6_local_k_nearest: number;
-  enable_line_extrapolation: boolean;
-  enable_gap_fill: boolean;
-  enable_component_merge: boolean;
   enable_weak_cluster_rescue: boolean;
   weak_cluster_tol_deg: number;
-  component_merge_min_boundary_pairs: number;
   max_booster_iters: number;
 }
 
@@ -415,4 +411,317 @@ export interface PuzzleBoardParams {
   chessboard: ChessboardParams;
   board: PuzzleBoardSpec;
   decode: PuzzleBoardDecodeConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Diagnostics channel
+//
+// Returned by the `detect_*_with_diagnostics` functions as a
+// `{ result, diagnostics }` object. The `diagnostics` payloads mirror the
+// Rust diagnostics structs' `serde_json` shape and carry a LOOSER stability
+// promise than the result types above — fields may be added or restructured
+// between minor releases.
+// ---------------------------------------------------------------------------
+
+/** `{ result, diagnostics }` wrapper returned by `detect_*_with_diagnostics`. */
+export interface DetectionWithDiagnostics<TResult, TDiagnostics> {
+  /** The typed detection result, or `null` when detection failed. */
+  result: TResult | null;
+  /**
+   * The diagnostics payload. `null` only for marker boards on a failed
+   * detection (that channel yields evidence only on success).
+   */
+  diagnostics: TDiagnostics | null;
+}
+
+// --- Chessboard diagnostics (Rust `DebugFrame` and per-stage traces) -------
+
+/** Cluster axis-slot label (Rust `ClusterLabel`). */
+export type ClusterLabel = "Canonical" | "Swapped";
+
+/**
+ * Terminal pipeline stage of one input corner (Rust `CornerStage`,
+ * externally tagged: unit variants serialise as strings, struct variants
+ * as a single-key object). `#[non_exhaustive]` — default any `switch`.
+ */
+export type CornerStage =
+  | "Raw"
+  | "Strong"
+  | { NoCluster: { max_d_deg: number } }
+  | { Clustered: { label: ClusterLabel } }
+  | { AttachmentAmbiguous: { at: [number, number] } }
+  | {
+      AttachmentFailedInvariants: { at: [number, number]; reason: string };
+    }
+  | {
+      Labeled: { at: [number, number]; local_h_residual_px: number | null };
+    }
+  | { LabeledThenBlacklisted: { at: [number, number]; reason: string } };
+
+/** Augmented per-corner pipeline record (Rust `CornerAug`). */
+export interface CornerAug {
+  input_index: number;
+  position: Point2;
+  axes: [AxisEstimate, AxisEstimate];
+  strength: number;
+  contrast: number;
+  fit_rms: number;
+  stage: CornerStage;
+  label: ClusterLabel | null;
+}
+
+/** Stage-3 clustering introspection (Rust `ClusterDebug`). */
+export interface ClusterDebug {
+  num_bins: number;
+  histogram: number[];
+  smoothed: number[];
+  total_weight: number;
+  peak_seeds_rad: [number, number] | null;
+  refined_centers_rad: [number, number] | null;
+}
+
+/** One homography-based boundary-extension pass (Rust `ExtensionTrace`). */
+export interface ExtensionTrace {
+  h_trusted: boolean;
+  h_residual_median_px: number | null;
+  h_residual_max_px: number | null;
+  iterations: number;
+  attached: number;
+  rejected_no_candidate: number;
+  rejected_ambiguous: number;
+  rejected_label: number;
+  rejected_validator: number;
+  rejected_edge: number;
+  attached_indices: number[];
+}
+
+/** Post-grow cardinal-neighbour BFS extension trace (Rust `BfsExtendTrace`). */
+export interface BfsExtendTrace {
+  attached: number;
+  rejected_no_candidate: number;
+  rejected_ambiguous: number;
+  rejected_edge: number;
+  attached_indices: number[];
+}
+
+/** Post-grow centre-refit trace (Rust `RefitTrace`). */
+export interface RefitTrace {
+  shift_deg: number;
+  new_centers_deg: [number, number];
+  labelled_used: number;
+  promoted: number;
+  second_pass_ran: boolean;
+}
+
+/** Mandatory final geometry-check trace (Rust `GeometryCheckTrace`). */
+export interface GeometryCheckTrace {
+  dropped: number;
+  dropped_line_collinearity: number;
+  dropped_local_h_residual: number;
+  dropped_edge_invariant: number;
+  dropped_disconnected: number;
+  components_seen: number;
+  detection_refused: boolean;
+}
+
+/** Per-iteration trace of the seed→grow→validate loop (Rust `IterationTrace`). */
+export interface IterationTrace {
+  iter: number;
+  labelled_count: number;
+  new_blacklist: number[];
+  converged: boolean;
+  extension?: ExtensionTrace;
+  rescue?: ExtensionTrace;
+  refit?: RefitTrace;
+  bfs_extend?: BfsExtendTrace;
+  extension2?: ExtensionTrace;
+  rescue2?: ExtensionTrace;
+  geometry_check?: GeometryCheckTrace;
+}
+
+/** Summary from the `apply_boosters` stage (Rust `BoosterResult`). */
+export interface BoosterResult {
+  added: number;
+  holes_untouched: number;
+}
+
+/** Chessboard detector diagnostics payload (Rust `DebugFrame`). */
+export interface ChessboardDebugFrame {
+  schema: number;
+  input_count: number;
+  grid_directions: [number, number] | null;
+  cell_size: number | null;
+  seed: [number, number, number, number] | null;
+  iterations: IterationTrace[];
+  boosters: BoosterResult | null;
+  /** The final detection (also surfaced as the wrapper's `result`). */
+  detection: ChessboardDetectionResult | null;
+  corners: CornerAug[];
+  cluster_debug?: ClusterDebug;
+}
+
+// --- ChArUco diagnostics (Rust `CharucoDetectDiagnostics`) -----------------
+
+/** Best marker match found for a single cell (Rust `CellBestMatch`). */
+export interface CellBestMatch {
+  marker_id: number;
+  rotation: number;
+  score: number;
+}
+
+/** One scored board-placement hypothesis (Rust `DiagHypothesis`). */
+export interface DiagHypothesis {
+  rotation: number;
+  /** `[Δcol, Δrow]` translation on the grid. */
+  translation: [number, number];
+  score: number;
+  contributing_cells: number;
+}
+
+/** Reason the board matcher rejected a frame (Rust `RejectReason`). */
+export type RejectReason =
+  | { kind: "no_cells" }
+  | { kind: "empty_board" }
+  | { kind: "translation_window_empty" }
+  | { kind: "margin_below_gate"; margin: number; required: number }
+  | { kind: "no_emitted_markers" };
+
+/** Per-cell diagnostic record from the board matcher (Rust `CellDiag`). */
+export interface CellDiag {
+  gc: GridCoords;
+  /** Four corners `[TL, TR, BR, BL]` in image pixels. */
+  corners_img: [Point2, Point2, Point2, Point2];
+  sampled: boolean;
+  otsu: number;
+  border_black: number;
+  weight: number;
+  mapped_bc?: [number, number];
+  expected_id?: number;
+  expected_score: number;
+  best?: CellBestMatch;
+  expected_bit_ll?: number[];
+  interior_means: number[];
+}
+
+/** Board-level matcher diagnostics (Rust `BoardMatchDiagnostics`). */
+export interface BoardMatchDiagnostics {
+  cells: CellDiag[];
+  chosen?: DiagHypothesis;
+  runner_up?: DiagHypothesis;
+  margin: number;
+  total_hypotheses: number;
+  rejection?: RejectReason;
+  board_cols: number;
+  board_rows: number;
+  bits_per_side: number;
+}
+
+/** Which marker-matching branch produced a component (Rust `MatcherDiagKind`). */
+export type MatcherDiagKind = "legacy" | "board_level";
+
+/** Final outcome of detecting one chessboard component (Rust `ComponentOutcome`). */
+export type ComponentOutcome =
+  | {
+      status: "ok";
+      markers: number;
+      charuco_corners: number;
+      raw_marker_count: number;
+      raw_marker_wrong_id_count: number;
+    }
+  | { status: "failed"; reason: string };
+
+/** Per-component ChArUco diagnostics (Rust `ComponentDiagnostics`). */
+export interface ComponentDiagnostics {
+  index: number;
+  chess_corner_count: number;
+  candidate_cell_count: number;
+  matcher: MatcherDiagKind;
+  board?: BoardMatchDiagnostics;
+  outcome: ComponentOutcome;
+}
+
+/** ChArUco detector diagnostics payload (Rust `CharucoDetectDiagnostics`). */
+export interface CharucoDetectDiagnostics {
+  components: ComponentDiagnostics[];
+  raw_marker_count: number;
+  raw_marker_wrong_id_count: number;
+}
+
+// --- Marker-board diagnostics (Rust `MarkerBoardDiagnostics`) --------------
+
+/** Integer cell coordinate, top-left corner indices (Rust `CellCoords`). */
+export interface CellCoords {
+  i: number;
+  j: number;
+}
+
+/** Integer detected-to-board cell translation (Rust `CellOffset`). */
+export interface CellOffset {
+  di: number;
+  dj: number;
+}
+
+/** A scored circle hypothesis (Rust `CircleCandidate`). */
+export interface CircleCandidate {
+  /** Circle center in image pixel coordinates. */
+  center_img: Point2;
+  cell: CellCoords;
+  polarity: CirclePolarity;
+  score: number;
+  contrast: number;
+}
+
+/** An expected-to-detected circle pairing (Rust `CircleMatch`). */
+export interface CircleMatch {
+  expected: MarkerCircleSpec;
+  matched_index: number | null;
+  distance_cells: number | null;
+  offset_cells: CellOffset | null;
+}
+
+/** Marker-board detector diagnostics payload (Rust `MarkerBoardDiagnostics`). */
+export interface MarkerBoardDiagnostics {
+  /** Per-corner provenance back into the input ChESS-corner slice. */
+  inliers: number[];
+  /** Empty on the corners-only detection path. */
+  circle_candidates: CircleCandidate[];
+  /** Empty on the corners-only detection path. */
+  circle_matches: CircleMatch[];
+  alignment_inliers: number;
+}
+
+// --- PuzzleBoard diagnostics (Rust `PuzzleBoardDiagnostics`) ---------------
+
+/** Edge orientation in the local board frame (Rust `EdgeOrientation`). */
+export type EdgeOrientation = "horizontal" | "vertical";
+
+/** A raw per-edge bit observation sampled before alignment (Rust `PuzzleBoardObservedEdge`). */
+export interface PuzzleBoardObservedEdge {
+  /** Board row coordinate of the edge. */
+  row: number;
+  /** Board column coordinate of the edge. */
+  col: number;
+  orientation: EdgeOrientation;
+  /** Observed bit (`0` / `1`). */
+  bit: number;
+  /** Per-bit confidence in `[0, 1]`. */
+  confidence: number;
+}
+
+/** Winner-vs-runner-up decode scoring evidence (Rust `PuzzleBoardDecodeDiagnostics`). */
+export interface PuzzleBoardDecodeDiagnostics {
+  score_best?: number;
+  score_runner_up?: number;
+  score_margin?: number;
+  runner_up_origin_row?: number;
+  runner_up_origin_col?: number;
+  runner_up_transform?: GridTransform;
+  scoring_mode?: PuzzleBoardScoringMode;
+}
+
+/** PuzzleBoard detector diagnostics payload (Rust `PuzzleBoardDiagnostics`). */
+export interface PuzzleBoardDiagnostics {
+  /** Unfiltered raw per-edge bit observations sampled before alignment. */
+  observed_edges: PuzzleBoardObservedEdge[];
+  decode: PuzzleBoardDecodeDiagnostics;
 }

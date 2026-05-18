@@ -467,6 +467,8 @@ dependencies = [
  "chess-corners",
  "flate2",
  "image",
+ "serde",
+ "serde_json",
  "tar",
  "zip",
 ]

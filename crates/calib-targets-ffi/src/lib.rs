@@ -234,6 +234,59 @@ unsafe fn write_optional_result<T: Copy>(out: *mut T, value: T) {
     }
 }
 
+/// Write a UTF-8 JSON string into a caller-owned buffer using the same
+/// query/fill semantics as [`ct_last_error_message`].
+///
+/// `json` is the already-rendered diagnostics payload. `out_len` always
+/// receives the message length **excluding** the trailing NUL terminator.
+/// Passing `out_utf8 = NULL` with `out_capacity = 0` queries the required
+/// length without copying. The detectors' diagnostics JSON accessors share
+/// this helper so the C ABI exposes exactly one owned-string discipline.
+///
+/// # Safety
+///
+/// If `out_utf8` is non-null it must point to writable memory of at least
+/// `out_capacity` bytes. `out_len` must always be a valid writable pointer.
+unsafe fn write_json_string(
+    json: &str,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    if out_len.is_null() {
+        return Err(FfiError::invalid_argument("out_len must not be null"));
+    }
+    if out_utf8.is_null() && out_capacity != 0 {
+        return Err(FfiError::invalid_argument(
+            "out_utf8 is null but out_capacity is non-zero",
+        ));
+    }
+
+    let message_len = json.len();
+    let with_nul = message_len + 1;
+    unsafe {
+        // SAFETY: null is rejected above.
+        *out_len = message_len;
+    }
+
+    if out_utf8.is_null() {
+        return Ok(());
+    }
+    if out_capacity < with_nul {
+        return Err(FfiError::buffer_too_small(format!(
+            "out_utf8 needs {with_nul} bytes including the trailing NUL terminator"
+        )));
+    }
+
+    unsafe {
+        // SAFETY: `out_utf8` is non-null, the capacity check above guarantees
+        // room for `message_len` bytes plus the NUL, and `json` outlives the copy.
+        ptr::copy_nonoverlapping(json.as_ptr(), out_utf8.cast::<u8>(), message_len);
+        *out_utf8.add(message_len) = 0;
+    }
+    Ok(())
+}
+
 // ─── Public exported functions ───────────────────────────────────────────────
 
 /// Return the shared library version string.
@@ -320,14 +373,17 @@ mod tests {
     // Detector functions moved to `detectors` submodule; import them explicitly for tests.
     use crate::detectors::{
         ct_charuco_detect_args_t, ct_charuco_detect_buffers_t, ct_charuco_detector_create,
-        ct_charuco_detector_destroy, ct_charuco_detector_detect, ct_chessboard_detect_args_t,
+        ct_charuco_detector_destroy, ct_charuco_detector_detect,
+        ct_charuco_detector_detect_diagnostics_json, ct_chessboard_detect_args_t,
         ct_chessboard_detect_buffers_t, ct_chessboard_detector_create,
         ct_chessboard_detector_destroy, ct_chessboard_detector_detect,
-        ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
-        ct_marker_board_detector_create, ct_marker_board_detector_destroy,
-        ct_marker_board_detector_detect, ct_puzzleboard_detect_args_t,
+        ct_chessboard_detector_detect_diagnostics_json, ct_marker_board_detect_args_t,
+        ct_marker_board_detect_buffers_t, ct_marker_board_detector_create,
+        ct_marker_board_detector_destroy, ct_marker_board_detector_detect,
+        ct_marker_board_detector_detect_diagnostics_json, ct_puzzleboard_detect_args_t,
         ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
         ct_puzzleboard_detector_destroy, ct_puzzleboard_detector_detect,
+        ct_puzzleboard_detector_detect_diagnostics_json,
     };
     use crate::error::ffi_status;
     use image::ImageReader;
@@ -1085,5 +1141,127 @@ mod tests {
         assert_eq!(status, ct_status_t::CT_STATUS_NOT_FOUND);
         assert_eq!(puzzle_corners_len, 0);
         unsafe { ct_puzzleboard_detector_destroy(puzzle_detector) };
+    }
+
+    /// Query-then-copy a diagnostics JSON accessor and return the decoded
+    /// string. `accessor` runs the underlying detector; the helper exercises
+    /// the NULL-query → too-small → copy contract shared with
+    /// [`ct_last_error_message`].
+    ///
+    /// Detection is not bit-for-bit deterministic across runs (HashSet
+    /// iteration order shifts which corners get labelled), so the helper
+    /// allocates a generous buffer rather than asserting an exact required
+    /// length, and treats a zero-capacity copy as the buffer-too-small case.
+    fn diagnostics_json_via(
+        accessor: impl Fn(*mut i8, usize, *mut usize) -> ct_status_t,
+    ) -> String {
+        let mut len = usize::MAX;
+        let status = accessor(ptr::null_mut(), 0, &mut len);
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        assert!(len > 0, "diagnostics JSON length must be non-zero");
+
+        // A 1-byte buffer cannot hold any non-empty JSON plus its NUL.
+        let mut tiny = [0_i8; 1];
+        let status = accessor(tiny.as_mut_ptr(), tiny.len(), &mut len);
+        assert_eq!(status, ct_status_t::CT_STATUS_BUFFER_TOO_SMALL);
+
+        // Generous headroom absorbs any per-run length jitter.
+        let mut buf = vec![0_i8; len * 2 + 64];
+        let status = accessor(buf.as_mut_ptr(), buf.len(), &mut len);
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+        unsafe { CStr::from_ptr(buf.as_ptr()) }
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    #[test]
+    fn chessboard_diagnostics_json_is_well_formed() {
+        let config = chessboard_config_mid_png();
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_chessboard_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+
+        let image = load_gray("mid.png");
+        let descriptor = image_descriptor(&image);
+        let args = ct_chessboard_detect_args_t {
+            detector,
+            image: &descriptor,
+        };
+        let json = diagnostics_json_via(|out, cap, len| unsafe {
+            ct_chessboard_detector_detect_diagnostics_json(&args, out, cap, len)
+        });
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert!(parsed.get("schema").is_some());
+        assert!(parsed.get("corners").is_some());
+
+        unsafe { ct_chessboard_detector_destroy(detector) };
+    }
+
+    #[test]
+    fn charuco_diagnostics_json_is_well_formed() {
+        let config = charuco_config_small_png();
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_charuco_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+
+        let image = load_gray("small.png");
+        let descriptor = image_descriptor(&image);
+        let args = ct_charuco_detect_args_t {
+            detector,
+            image: &descriptor,
+        };
+        let json = diagnostics_json_via(|out, cap, len| unsafe {
+            ct_charuco_detector_detect_diagnostics_json(&args, out, cap, len)
+        });
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert!(parsed.is_object());
+
+        unsafe { ct_charuco_detector_destroy(detector) };
+    }
+
+    #[test]
+    fn marker_board_diagnostics_json_is_well_formed() {
+        let config = marker_board_config_crop_png();
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_marker_board_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+
+        let image = load_gray("markerboard_crop.png");
+        let descriptor = image_descriptor(&image);
+        let args = ct_marker_board_detect_args_t {
+            detector,
+            image: &descriptor,
+        };
+        let json = diagnostics_json_via(|out, cap, len| unsafe {
+            ct_marker_board_detector_detect_diagnostics_json(&args, out, cap, len)
+        });
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert!(parsed.get("inliers").is_some());
+
+        unsafe { ct_marker_board_detector_destroy(detector) };
+    }
+
+    #[test]
+    fn puzzleboard_diagnostics_json_is_well_formed() {
+        let config = puzzleboard_config_small_png();
+        let mut detector = ptr::null_mut();
+        let status = unsafe { ct_puzzleboard_detector_create(&config, &mut detector) };
+        assert_eq!(status, ct_status_t::CT_STATUS_OK);
+
+        let image = load_gray("puzzleboard_small.png");
+        let descriptor = image_descriptor(&image);
+        let args = ct_puzzleboard_detect_args_t {
+            detector,
+            image: &descriptor,
+        };
+        let json = diagnostics_json_via(|out, cap, len| unsafe {
+            ct_puzzleboard_detector_detect_diagnostics_json(&args, out, cap, len)
+        });
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
+        assert!(parsed.get("observed_edges").is_some());
+        assert!(parsed.get("decode").is_some());
+
+        unsafe { ct_puzzleboard_detector_destroy(detector) };
     }
 }

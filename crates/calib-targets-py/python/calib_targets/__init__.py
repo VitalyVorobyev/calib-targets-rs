@@ -3,6 +3,7 @@ from __future__ import annotations
 from .api import (
     detect_charuco,
     detect_charuco_best,
+    detect_charuco_with_diagnostics,
     detect_chessboard,
     detect_chessboard_all,
     detect_chessboard_best,
@@ -11,8 +12,10 @@ from .api import (
     default_puzzleboard_params,
     detect_marker_board,
     detect_marker_board_best,
+    detect_marker_board_with_diagnostics,
     detect_puzzleboard,
     detect_puzzleboard_best,
+    detect_puzzleboard_with_diagnostics,
 )
 from .config import (
     AxisClusterCenters,
@@ -109,6 +112,7 @@ from .results import (
 __all__ = [
     "detect_charuco",
     "detect_charuco_best",
+    "detect_charuco_with_diagnostics",
     "detect_chessboard",
     "detect_chessboard_all",
     "detect_chessboard_best",
@@ -117,8 +121,10 @@ __all__ = [
     "default_puzzleboard_params",
     "detect_marker_board",
     "detect_marker_board_best",
+    "detect_marker_board_with_diagnostics",
     "detect_puzzleboard",
     "detect_puzzleboard_best",
+    "detect_puzzleboard_with_diagnostics",
     "DICTIONARY_NAMES",
     "DictionaryName",
     "TargetKind",
