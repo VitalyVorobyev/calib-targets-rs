@@ -46,7 +46,7 @@ const result = detect_chessboard(
   default_chessboard_params(),
 );
 if (result) {
-  console.log(`labelled ${result.detection.corners.length} corners`);
+  console.log(`labelled ${result.corners.length} corners`);
 }
 ```
 
@@ -60,16 +60,16 @@ plain JS object you can `JSON.stringify`.
 ```typescript
 import { default_chess_config, default_chessboard_params, detect_chessboard_best } from "@vitavision/calib-targets";
 
+const chessCfg = default_chess_config();
+chessCfg.threshold = { absolute: 15.0 };
+
 const base = default_chessboard_params();
-// chess-corners 0.10 swapped the flat (threshold_mode, threshold_value)
-// pair for a tagged-enum `threshold`. Absolute floors are in raw ChESS
-// response units (R = SR − DR − 16·MR), so bracket the workspace
-// default (~15) with a looser and a tighter floor.
-const configs = [8.0, 15.0, 25.0].map(v => ({
-  ...base,
-  chess: { ...base.chess, threshold: { absolute: v } },
-}));
-const best = detect_chessboard_best(width, height, gray, configs);
+const configs = [
+  base,
+  { ...base, min_labeled_corners: 12 },
+  { ...base, max_components: 1 },
+];
+const best = detect_chessboard_best(width, height, gray, chessCfg, configs);
 ```
 
 ### ChArUco
@@ -93,7 +93,7 @@ const params = {
   min_marker_inliers: 4,
 };
 const result = detect_charuco(width, height, gray, default_chess_config(), params);
-// result.detection.corners[].id is the ChArUco logical corner ID.
+// result.corners[].id is the ChArUco logical corner ID.
 ```
 
 ### PuzzleBoard
@@ -109,8 +109,8 @@ const params = default_puzzleboard_params(10, 10);
 params.decode.search_mode = { kind: "fixed_board" };
 params.decode.scoring_mode = { kind: "soft_log_likelihood" };
 const result = detect_puzzleboard(width, height, gray, default_chess_config(), params);
-// Every corner has an absolute master ID: result.detection.corners[0].id
-// Soft mode also reports result.decode.score_margin and the runner-up hypothesis.
+// Every corner has an absolute master ID: result.corners[0].id
+// Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().
 ```
 
 ### Marker board
@@ -146,9 +146,9 @@ All result types deserialise to plain JS objects matching the Rust
 `serde_json` schema — `JSON.stringify(result)` gives you a canonical,
 cross-language payload.
 
-For PuzzleBoard this includes the selected `decode.scoring_mode`, and in
-soft mode the extra decode diagnostics `score_best`, `score_runner_up`,
-`score_margin`, and runner-up origin / transform.
+PuzzleBoard results include a compact `decode` summary. Raw observed
+edges and soft-mode runner-up scoring evidence are returned by
+`detect_puzzleboard_with_diagnostics`.
 
 **`LabeledCorner`** (shared across grid detectors):
 
@@ -168,7 +168,7 @@ soft mode the extra decode diagnostics `score_best`, `score_runner_up`,
 |---|---|
 | `detect_corners(w, h, px, cfg)` | `Corner[]` |
 | `detect_chessboard(w, h, px, cfg, params)` | `ChessboardDetectionResult \| null` |
-| `detect_chessboard_best(w, h, px, configs)` | `ChessboardDetectionResult \| null` |
+| `detect_chessboard_best(w, h, px, cfg, configs)` | `ChessboardDetectionResult \| null` |
 | `detect_charuco(w, h, px, cfg, params)` | `CharucoDetectionResult` (throws on error) |
 | `detect_charuco_best(w, h, px, configs)` | `CharucoDetectionResult` (throws on all-fail) |
 | `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetectionResult` (throws on error) |

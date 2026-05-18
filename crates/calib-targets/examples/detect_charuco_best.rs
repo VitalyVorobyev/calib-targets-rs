@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = detect::detect_charuco_best(&img, &configs)?;
     println!(
         "detected {} corners, {} markers",
-        result.detection.corners.len(),
+        result.corners.len(),
         result.markers.len(),
     );
 

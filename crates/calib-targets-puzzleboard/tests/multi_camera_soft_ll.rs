@@ -152,17 +152,16 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
                     res.decode.master_origin_col,
                 )));
                 let mut m = HashMap::new();
-                for lc in &res.detection.corners {
-                    if let Some(tp) = lc.target_position {
-                        // Quantise pixel position to a stable key so two
-                        // views observing the same subpixel corner still
-                        // collide.
-                        let key = (
-                            (lc.position.x * 0.5).round() as i32,
-                            (lc.position.y * 0.5).round() as i32,
-                        );
-                        m.insert(key, (tp.x, tp.y));
-                    }
+                for lc in &res.corners {
+                    let tp = lc.target_position;
+                    // Quantise pixel position to a stable key so two
+                    // views observing the same subpixel corner still
+                    // collide.
+                    let key = (
+                        (lc.position.x * 0.5).round() as i32,
+                        (lc.position.y * 0.5).round() as i32,
+                    );
+                    m.insert(key, (tp.x, tp.y));
                 }
                 per_view_positions.push(m);
             }

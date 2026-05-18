@@ -8,10 +8,10 @@
 // Handle types (ct_*_detector_t) are defined in the parent lib.rs and accessed
 // via `super::`. Config, result, and data types come from the types module.
 use super::{
-    alignment_to_ffi, build_detection_header, chessboard_corner_to_ffi,
-    chessboard_params_default_values, convert_charuco_detector_params, convert_chess_config,
-    convert_chessboard_params, convert_marker_board_params, convert_puzzleboard_params,
-    copy_output_slice, ct_charuco_detector_t, ct_chessboard_detector_t, ct_marker_board_detector_t,
+    alignment_to_ffi, chessboard_corner_to_ffi, chessboard_params_default_values,
+    convert_charuco_detector_params, convert_chess_config, convert_chessboard_params,
+    convert_marker_board_params, convert_puzzleboard_params, copy_output_slice,
+    ct_charuco_detector_t, ct_chessboard_detector_t, ct_marker_board_detector_t,
     ct_puzzleboard_detector_t, labeled_corner_to_ffi, map_charuco_create_error,
     map_charuco_detect_error, map_puzzleboard_create_error, map_puzzleboard_detect_error,
     marker_detection_to_ffi, panic_message, require_mut_ref, require_ref, set_last_error_message,
@@ -25,7 +25,8 @@ use crate::types::{
     ct_chessboard_detector_config_t, ct_chessboard_params_t, ct_chessboard_result_t,
     ct_gray_image_u8_t, ct_labeled_corner_t, ct_marker_board_detector_config_t,
     ct_marker_board_result_t, ct_marker_detection_t, ct_puzzleboard_detector_config_t,
-    ct_puzzleboard_result_t, ct_status_t, CT_FALSE, CT_TRUE,
+    ct_puzzleboard_result_t, ct_status_t, ct_target_detection_t, CT_FALSE, CT_TARGET_KIND_CHARUCO,
+    CT_TARGET_KIND_CHECKERBOARD_MARKER, CT_TARGET_KIND_PUZZLEBOARD, CT_TRUE,
 };
 use std::ffi::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -319,10 +320,9 @@ pub(super) unsafe fn charuco_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let markers_out: Vec<ct_marker_detection_t> = detection
         .markers
@@ -330,7 +330,10 @@ pub(super) unsafe fn charuco_detector_detect_impl(
         .map(marker_detection_to_ffi)
         .collect();
     let result = ct_charuco_result_t {
-        detection: build_detection_header(&detection.detection),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_CHARUCO,
+            corners_len: corners_out.len(),
+        },
         markers_len: markers_out.len(),
         alignment: alignment_to_ffi(detection.alignment),
     };
@@ -395,13 +398,15 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let result = ct_marker_board_result_t {
-        detection: build_detection_header(&detection.detection),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_CHECKERBOARD_MARKER,
+            corners_len: corners_out.len(),
+        },
         has_alignment: if detection.alignment.is_some() {
             CT_TRUE
         } else {
@@ -467,13 +472,15 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let result = ct_puzzleboard_result_t {
-        detection: build_detection_header(&detection.detection),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_PUZZLEBOARD,
+            corners_len: corners_out.len(),
+        },
         alignment: alignment_to_ffi(detection.alignment),
         edges_observed: detection.decode.edges_observed,
         edges_matched: detection.decode.edges_matched,
@@ -817,7 +824,7 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
 /// Returns every same-board component the detector recovers, up to
 /// `DetectorParams::max_components`. The `corners_buf` buffer receives
 /// all corners from all components concatenated; use
-/// `result[i].detection.corners_len` to slice each component's contribution.
+/// `result[i].corners_len` to slice each component's contribution.
 ///
 /// Both `results_len_out` and `corners_len_out` inside `bufs` are
 /// required and always receive the required array lengths. Passing

@@ -370,8 +370,8 @@ pub fn detect_puzzleboard_best(
                 let better = match &best {
                     None => true,
                     Some(b) => {
-                        let key_new = (r.detection.corners.len(), r.decode.mean_confidence);
-                        let key_old = (b.detection.corners.len(), b.decode.mean_confidence);
+                        let key_new = (r.corners.len(), r.decode.mean_confidence);
+                        let key_old = (b.corners.len(), b.decode.mean_confidence);
                         key_new.0 > key_old.0 || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
                     }
                 };
@@ -401,12 +401,12 @@ pub fn detect_marker_board_best(
             let detector = marker::MarkerBoardDetector::new(params.clone());
             detector.detect_from_image_and_corners(&gray_view(img), &corners)
         })
-        .max_by_key(|r| r.detection.corners.len())
+        .max_by_key(|r| r.corners.len())
 }
 
 /// Scoring key for ChArUco results: (marker count, corner count).
 fn charuco_score(r: &charuco::CharucoDetectionResult) -> (usize, usize) {
-    (r.markers.len(), r.detection.corners.len())
+    (r.markers.len(), r.corners.len())
 }
 
 /// Build an `image::GrayImage` from a raw grayscale buffer.

@@ -141,9 +141,11 @@ implementation detail left the public surface:
   `square::seed_finder` compatibility-alias modules were removed;
   import from `square::extension` and `square::seed::finder`
   instead. `square::cleanup` is now a private `mod`.
-- `calib-targets-aruco` — the generated `DICT_*_CODES: &[u64]`
-  statics (raw backing storage for `Dictionary.codes`) are now
-  `pub(crate)`.
+- `calib-targets-aruco` — `Dictionary` fields and the generated
+  `DICT_*_CODES: &[u64]` statics are no longer public raw storage.
+  Use `Dictionary::from_static_codes(...)` for custom dictionaries and
+  the `name()`, `marker_size()`, `max_correction_bits()`, and `codes()`
+  accessors for reads.
 - `calib-targets` — the `cli` module is now `#[doc(hidden)]`; it
   was never intended as library API.
 
@@ -215,24 +217,30 @@ reached via `detect_with_diagnostics`:
   `target` / `TargetDetection` wrapper, and the parallel
   `strong_indices` vec (now per-corner `input_index`).
   `rectify_from_chessboard_result` now takes `&ChessboardDetection`.
-- *charuco* — `raw_marker_count` and `raw_marker_wrong_id_count`
-  moved off `CharucoDetectionResult` into `CharucoDetectDiagnostics`;
-  reach them via `CharucoDetector::detect_with_diagnostics`.
-- *puzzleboard* — `observed_edges` moved off
-  `PuzzleBoardDetectionResult`, and the decode `score_best` /
-  `score_runner_up` / `score_margin` / `runner_up_*` /
-  `scoring_mode` fields moved off `PuzzleBoardDecodeInfo`, into
-  `PuzzleBoardDiagnostics`. `PuzzleBoardDecodeInfo` keeps a compact
-  quality summary (`edges_observed` / `edges_matched`,
-  `mean_confidence`, `bit_error_rate`, `master_origin_*`).
-- *marker* — `inliers`, `circle_candidates`, `circle_matches`, and
-  `alignment_inliers` moved off `MarkerBoardDetectionResult` into
-  `MarkerBoardDiagnostics`. The result keeps `detection` and
-  `alignment`.
+- *charuco* — `CharucoDetectionResult` now exposes
+  `corners: Vec<CharucoCorner>` directly instead of wrapping the
+  corners in a generic `TargetDetection`; `target_detection()` remains
+  available when callers need the shared carrier. `raw_marker_count`
+  and `raw_marker_wrong_id_count` moved into
+  `CharucoDetectDiagnostics`; reach them via
+  `CharucoDetector::detect_with_diagnostics`.
+- *puzzleboard* — `PuzzleBoardDetectionResult` now exposes
+  `corners: Vec<PuzzleBoardCorner>` directly. `observed_edges` moved
+  off the result, and the decode `score_best` / `score_runner_up` /
+  `score_margin` / `runner_up_*` / `scoring_mode` fields moved off
+  `PuzzleBoardDecodeInfo`, into `PuzzleBoardDiagnostics`.
+  `PuzzleBoardDecodeInfo` keeps a compact quality summary
+  (`edges_observed` / `edges_matched`, `mean_confidence`,
+  `bit_error_rate`, `master_origin_*`).
+- *marker* — `MarkerBoardDetectionResult` now exposes
+  `corners: Vec<MarkerBoardCorner>` directly plus `alignment`.
+  `inliers`, `circle_candidates`, `circle_matches`, and
+  `alignment_inliers` moved into `MarkerBoardDiagnostics`.
 
 **`#[non_exhaustive]` + constructors on result / data carriers.**
 `TargetDetection`, `LabeledCorner`, `CharucoDetectionResult`,
-`PuzzleBoardDetectionResult`, `MarkerBoardDetectionResult`,
+`CharucoCorner`, `PuzzleBoardDetectionResult`, `PuzzleBoardCorner`,
+`MarkerBoardDetectionResult`, `MarkerBoardCorner`,
 `ChessboardDetection`, and `ChessboardCorner` are now
 `#[non_exhaustive]`. External code can no longer build them with a
 struct literal; use the new `new(...)` constructors (and, for
@@ -308,8 +316,10 @@ WASM bindings track the revised surface:
   header in
   `crates/calib-targets-ffi/include/calib_targets_ffi.h`.
 - *Python* — the result dataclasses were slimmed to match the new
-  Rust result dicts (diagnostic fields removed).
-- *WASM* — the serialized result shapes were slimmed, and
+  Rust result dicts: target-specific results expose `corners`
+  directly, and diagnostic fields were removed from typed results.
+- *WASM* — the serialized result shapes were slimmed: target-specific
+  results expose `corners` directly, diagnostic fields moved out, and
   `detect_chessboard_best` gained a `chess_cfg` argument so the
   caller can choose the ChESS config used for corner detection
   across the sweep.

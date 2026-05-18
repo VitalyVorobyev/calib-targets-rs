@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "best of {} configs: {} corners, mean-confidence={:.3}",
         configs.len(),
-        result.detection.corners.len(),
+        result.corners.len(),
         result.decode.mean_confidence,
     );
 

@@ -84,11 +84,11 @@ fn round_trip_first_20_markers_4x4_100() {
     let dict = builtins::builtin_dictionary("DICT_4X4_100").expect("DICT_4X4_100 builtin");
     let matcher = Matcher::new(dict, 0);
     let cfg = default_cfg();
-    let n = dict.codes.len().min(20);
+    let n = dict.codes().len().min(20);
 
     for id in 0..n {
-        let code = dict.codes[id];
-        let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+        let code = dict.codes()[id];
+        let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
         let s = img.width as f32;
         let view = GrayImageView {
             width: img.width,
@@ -112,11 +112,11 @@ fn round_trip_rectified_first_20_markers_4x4_100() {
     let dict = builtins::builtin_dictionary("DICT_4X4_100").expect("DICT_4X4_100 builtin");
     let matcher = Matcher::new(dict, 0);
     let cfg = default_cfg();
-    let n = dict.codes.len().min(20);
+    let n = dict.codes().len().min(20);
 
     for id in 0..n {
-        let code = dict.codes[id];
-        let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+        let code = dict.codes()[id];
+        let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
         let s = img.width as f32;
         let view = GrayImageView {
             width: img.width,
@@ -152,9 +152,9 @@ fn polarity_inversion_never_returns_wrong_id() {
     let matcher = Matcher::new(dict, 0);
     let cfg = default_cfg();
 
-    for id in 0..dict.codes.len().min(20) {
-        let code = dict.codes[id];
-        let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+    for id in 0..dict.codes().len().min(20) {
+        let code = dict.codes()[id];
+        let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
 
         // Invert all pixel values.
         let inverted_data: Vec<u8> = img.data.iter().map(|&p| 255 - p).collect();
@@ -193,9 +193,9 @@ fn polarity_inversion_single_threshold_never_wrong_id() {
     let mut cfg = default_cfg();
     cfg.multi_threshold = false;
 
-    for id in 0..dict.codes.len().min(10) {
-        let code = dict.codes[id];
-        let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+    for id in 0..dict.codes().len().min(10) {
+        let code = dict.codes()[id];
+        let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
         let inverted_data: Vec<u8> = img.data.iter().map(|&p| 255 - p).collect();
         let s = img.width as f32;
         let view = GrayImageView {
@@ -227,8 +227,8 @@ fn border_bits_zero_no_panic_no_wrong_id() {
 
     let mut cfg = default_cfg();
     cfg.border_bits = 1; // image was generated with border=1
-    let code = dict.codes[0];
-    let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+    let code = dict.codes()[0];
+    let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
     let s = img.width as f32;
     let view = GrayImageView {
         width: img.width,
@@ -249,7 +249,7 @@ fn border_bits_zero_no_panic_no_wrong_id() {
     // assert it's a valid ID index — not an out-of-range garbage value.
     if let Some(det) = decode_marker_in_cell(&view, &cell, s, &cfg0, &matcher) {
         assert!(
-            (det.id as usize) < dict.codes.len(),
+            (det.id as usize) < dict.codes().len(),
             "border_bits=0 returned out-of-range id {}",
             det.id
         );
@@ -264,8 +264,8 @@ fn border_bits_two_no_panic_no_wrong_id() {
     let matcher = Matcher::new(dict, 0);
     let mut cfg = default_cfg(); // image generated with border_bits=1
     cfg.border_bits = 1;
-    let code = dict.codes[0];
-    let img = make_marker_image(code, dict.marker_size, cfg.border_bits, 12);
+    let code = dict.codes()[0];
+    let img = make_marker_image(code, dict.marker_size(), cfg.border_bits, 12);
     let s = img.width as f32;
     let view = GrayImageView {
         width: img.width,
@@ -280,7 +280,7 @@ fn border_bits_two_no_panic_no_wrong_id() {
     let cell = identity_cell(s);
     if let Some(det) = decode_marker_in_cell(&view, &cell, s, &cfg2, &matcher) {
         assert!(
-            (det.id as usize) < dict.codes.len(),
+            (det.id as usize) < dict.codes().len(),
             "border_bits=2 returned out-of-range id {}",
             det.id
         );

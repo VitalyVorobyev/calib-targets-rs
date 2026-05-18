@@ -41,6 +41,7 @@ impl Default for BoardMatchConfig {
 /// Structured diagnostics produced by the board-level matcher. Serialised
 /// per-frame by the sweep runner for Python overlays.
 #[derive(Clone, Debug, Serialize, Default)]
+#[non_exhaustive]
 pub struct BoardMatchDiagnostics {
     /// Per-cell diagnostic record for every cell the matcher considered.
     pub cells: Vec<CellDiag>,
@@ -69,6 +70,7 @@ pub struct BoardMatchDiagnostics {
 
 /// Per-cell diagnostic record produced by the board matcher.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct CellDiag {
     /// The cell's `(i, j)` grid coordinate.
     pub gc: GridCoords,
@@ -106,6 +108,7 @@ pub struct CellDiag {
 
 /// The best marker match found for a single cell.
 #[derive(Clone, Copy, Debug, Serialize)]
+#[non_exhaustive]
 pub struct CellBestMatch {
     /// Dictionary ID of the best-matching marker.
     pub marker_id: u32,
@@ -117,6 +120,7 @@ pub struct CellBestMatch {
 
 /// One scored board-placement hypothesis.
 #[derive(Clone, Copy, Debug, Serialize)]
+#[non_exhaustive]
 pub struct DiagHypothesis {
     /// Board rotation, in 90° steps.
     pub rotation: u8,
@@ -131,6 +135,7 @@ pub struct DiagHypothesis {
 /// Reason the board matcher rejected a frame.
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RejectReason {
     /// No grid cells were available to sample.
     NoCells,
@@ -180,7 +185,7 @@ pub(crate) fn match_board_diag(
     BoardMatchDiagnostics,
 ) {
     let spec = board.spec();
-    let bits = spec.dictionary.marker_size;
+    let bits = spec.dictionary.marker_size();
 
     let mut diag = BoardMatchDiagnostics {
         board_cols: spec.cols,
@@ -408,7 +413,7 @@ fn fill_expected_from_board(
         cell.expected_id = Some(id);
         cell.expected_score = matrix.score(ci, id, rot);
         if cell.sampled && !cell.interior_means.is_empty() {
-            let base = dict.codes[id as usize];
+            let base = dict.codes()[id as usize];
             let code = rotate_code_u64(base, bits, rot);
             cell.expected_bit_ll = per_bit_log_likelihood(cell, code, bits);
         }
@@ -477,7 +482,7 @@ fn build_score_matrix(
     cfg: &BoardMatchConfig,
 ) -> Option<ScoreMatrix> {
     let dict = board.spec().dictionary;
-    let bits = dict.marker_size;
+    let bits = dict.marker_size();
     let num_markers = board.marker_count();
     if num_markers == 0 {
         return None;
@@ -486,7 +491,7 @@ fn build_score_matrix(
 
     let mut rotated_codes: Vec<[u64; 4]> = Vec::with_capacity(num_markers);
     for (id, _) in board.iter_marker_positions() {
-        let base = dict.codes[id as usize];
+        let base = dict.codes()[id as usize];
         rotated_codes.push([
             base,
             rotate_code_u64(base, bits, 1),
@@ -639,8 +644,8 @@ fn emit_markers(
             continue;
         };
         let dict = board.spec().dictionary;
-        let bits = dict.marker_size;
-        let base = dict.codes[expected_id as usize];
+        let bits = dict.marker_size();
+        let base = dict.codes()[expected_id as usize];
         let observed_code = rotate_code_u64(base, bits, rot);
         let gc = rotate_gc_top_left(cell.gc, rot);
 

@@ -482,7 +482,7 @@ mod tests {
         assert_eq!(spec.cols, board.cols);
         assert_eq!(spec.square_size_mm, 20.0);
         assert_eq!(spec.marker_size_rel, 0.75);
-        assert_eq!(spec.dictionary.name, board.dictionary.name);
+        assert_eq!(spec.dictionary.name(), board.dictionary.name());
         assert_eq!(spec.marker_layout, board.marker_layout);
         assert_eq!(spec.border_bits, 1);
     }

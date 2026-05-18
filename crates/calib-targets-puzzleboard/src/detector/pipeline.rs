@@ -345,7 +345,11 @@ impl PuzzleBoardDetector {
         };
 
         Ok(ComponentDecode {
-            result: PuzzleBoardDetectionResult::new(detection, decoded.alignment, decode_info),
+            result: PuzzleBoardDetectionResult::from_target_detection(
+                detection,
+                decoded.alignment,
+                decode_info,
+            ),
             diagnostics: PuzzleBoardDiagnostics {
                 observed_edges: observed,
                 decode: decode_diagnostics,
@@ -588,11 +592,7 @@ mod tests {
         diagnostics_decode: PuzzleBoardDecodeDiagnostics,
     ) -> ComponentDecode {
         ComponentDecode {
-            result: PuzzleBoardDetectionResult::new(
-                TargetDetection::new(TargetKind::PuzzleBoard, Vec::new()),
-                GridAlignment::IDENTITY,
-                decode,
-            ),
+            result: PuzzleBoardDetectionResult::new(Vec::new(), GridAlignment::IDENTITY, decode),
             diagnostics: PuzzleBoardDiagnostics {
                 observed_edges: Vec::new(),
                 decode: diagnostics_decode,

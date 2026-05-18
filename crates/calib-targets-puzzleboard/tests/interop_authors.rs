@@ -130,7 +130,7 @@ fn run_one_image(index: usize, dir: &Path) {
         }
     };
 
-    let our_corners = &result.detection.corners;
+    let our_corners = &result.corners;
     let ber = result.decode.bit_error_rate;
 
     // Criterion (a): internal consistency check.
@@ -165,9 +165,7 @@ fn run_one_image(index: usize, dir: &Path) {
     let mut pairs: Vec<(i32, i32, i32, i32)> = Vec::new();
 
     for lc in our_corners {
-        let Some(grid) = lc.grid else {
-            continue;
-        };
+        let grid = lc.grid;
         let px = lc.position.x;
         let py = lc.position.y;
 
@@ -490,16 +488,11 @@ fn diag_example0_edge_bits() {
 
     // Print all detected corners with their local grid coords and pixel positions
     println!("\nDetected corners (local i,j → master col,row → pixel x,y):");
-    let sorted_corners: Vec<_> = r
-        .detection
-        .corners
-        .iter()
-        .filter(|c| c.grid.is_some())
-        .collect();
+    let sorted_corners: Vec<_> = r.corners.iter().collect();
     // Need local grid coords from the observed edges...
     // Print master coords and pixel positions:
     for c in sorted_corners.iter().take(20) {
-        let g = c.grid.unwrap();
+        let g = c.grid;
         println!(
             "  master=({},{}) px=({:.1},{:.1})",
             g.j, g.i, c.position.x, c.position.y

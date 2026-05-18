@@ -4,7 +4,7 @@
 //! - Detect a chessboard grid from ChESS corners (partial boards are allowed).
 //! - Score circular markers per-cell in image space.
 //! - Match circle candidates to the known layout and estimate the grid offset.
-//! - Return a `TargetDetection` with `TargetKind::CheckerboardMarker`.
+//! - Return typed marker-board corners with optional board alignment.
 //!
 //! ## Quickstart
 //!
@@ -68,6 +68,6 @@ pub use detector::MarkerBoardDetector;
 pub use diagnostics::MarkerBoardDiagnostics;
 pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
 pub use types::{
-    CircleMatch, CircleMatchParams, MarkerBoardDetectionResult, MarkerBoardParams, MarkerBoardSpec,
-    MarkerCircleSpec,
+    CircleMatch, CircleMatchParams, MarkerBoardCorner, MarkerBoardDetectionResult,
+    MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };

@@ -94,7 +94,7 @@ def main() -> int:
         print(f"detection failed: {exc}", file=sys.stderr)
         return 1
     print(
-        f"detected {len(result.detection.corners)} labelled corners, "
+        f"detected {len(result.corners)} labelled corners, "
         f"{len(result.markers)} markers"
     )
 

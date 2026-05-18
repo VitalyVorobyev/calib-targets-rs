@@ -28,14 +28,11 @@ use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+    let chess_cfg = detect::default_chess_config();
     let params = DetectorParams::default();
 
-    if let Some(det) = detect::detect_chessboard(&img, &params) {
-        println!(
-            "labelled {} corners, cell size = {:.1} px",
-            det.target.corners.len(),
-            det.cell_size
-        );
+    if let Some(det) = detect::detect_chessboard(&img, &chess_cfg, &params) {
+        println!("labelled {} corners", det.corners.len());
     }
     Ok(())
 }
@@ -52,17 +49,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Outputs
 
-Every detector emits a `TargetDetection` (returned directly by
-chessboard; wrapped inside `CharucoDetectionResult`,
-`PuzzleBoardDetectionResult`, `MarkerBoardDetectionResult` for the
-others). Each `LabeledCorner` carries:
+Every detector emits a typed result object with a `corners` vector.
+Chessboard returns `ChessboardCorner`; ChArUco, PuzzleBoard, and marker
+boards return target-specific corner structs that can be converted to
+the shared `TargetDetection` carrier when needed. Each corner carries:
 
 | Field | Meaning |
 |---|---|
 | `position: Point2<f32>` | Sub-pixel image location. |
-| `grid: Option<GridCoords>` | `(i, j)` integer grid index, `i` right, `j` down, rebased so bounding-box min is `(0, 0)`. |
-| `id: Option<u32>` | Logical corner ID on the target (ChArUco marker-referenced, PuzzleBoard master ID). |
-| `target_position: Option<Point2<f32>>` | Physical location on the printed board (mm / board units), when cell size and alignment are known. |
+| `grid` | `(i, j)` integer grid index, `i` right, `j` down, rebased so bounding-box min is `(0, 0)` where applicable. |
+| `id` | Logical corner ID on targets that provide one (ChArUco marker-referenced, PuzzleBoard master ID). |
+| `target_position` | Physical location on the printed board (mm / board units), when cell size and alignment are known. |
 | `score: f32` | Detector-specific quality score. |
 
 Chessboard enforces two hard invariants on its output: **no duplicate
@@ -73,7 +70,7 @@ detected grid.
 
 | Target | Facade helpers | Dedicated crate |
 |---|---|---|
-| **Chessboard** | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_best`, `detect_chessboard_debug` | [`calib-targets-chessboard`] |
+| **Chessboard** | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_best`, `detect_chessboard_with_diagnostics` | [`calib-targets-chessboard`] |
 | **ChArUco** | `detect_charuco`, `detect_charuco_best` | [`calib-targets-charuco`] |
 | **PuzzleBoard** | `detect_puzzleboard`, `detect_puzzleboard_best` | [`calib-targets-puzzleboard`] |
 | **Marker board** | `detect_marker_board`, `detect_marker_board_best` | [`calib-targets-marker`] |

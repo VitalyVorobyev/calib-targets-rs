@@ -57,7 +57,7 @@ def main() -> None:
         print(f"detect_charuco failed: {exc}")
         return
 
-    print(f"corners: {len(result.detection.corners)}")
+    print(f"corners: {len(result.corners)}")
     print(f"markers: {len(result.markers)}")
 
 

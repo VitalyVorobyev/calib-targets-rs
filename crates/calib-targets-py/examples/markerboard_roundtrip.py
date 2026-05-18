@@ -96,7 +96,7 @@ def main() -> int:
         return 1
     aligned = "yes" if result.alignment is not None else "no"
     print(
-        f"detected {len(result.detection.corners)} labelled corners, "
+        f"detected {len(result.corners)} labelled corners, "
         f"aligned={aligned}"
     )
 

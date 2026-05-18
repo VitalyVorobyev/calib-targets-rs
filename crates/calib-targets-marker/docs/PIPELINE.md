@@ -14,7 +14,7 @@ known frame.
 | 2 | expected-circle matching | candidates + board spec | `Vec<CircleMatch>` (expected → candidate index, offset in cells) | for each of the 3 expected marker circles, find the nearest candidate within `max_distance_cells` (optional); match by polarity | candidates outside the distance threshold; wrong-polarity match | `match_params.max_distance_cells`, `match_params.max_candidates_per_polarity` |
 | 3 | grid alignment estimation | matched circles + candidates | `GridAlignment` (rotation + translation in `(i, j)`-space) + inlier count | RANSAC-like: fit `estimate_grid_alignment` on the matched 3-circle layout; require `≥ min_offset_inliers` consistent matches (typically 1, with 3 circles it's a pose-from-3-points) | fewer than 3 matches; circles on board boundary → unreliable alignment | `match_params.min_offset_inliers` (default `1`) |
 | 4 | per-corner offset mapping | matches + alignment | offset `(di, dj)` per circle | apply `alignment.transform` to each candidate cell coord; compute delta from expected | — | — |
-| 5 | emit detection | chessboard + circles + alignment | `MarkerBoardDetectionResult { detection, alignment }` + `MarkerBoardDiagnostics { inliers, circle_candidates, circle_matches, alignment_inliers }` | wrap chessboard detection with the optional grid alignment; circle evidence is returned through the diagnostics channel | — | — |
+| 5 | emit detection | chessboard + circles + alignment | `MarkerBoardDetectionResult { corners, alignment }` + `MarkerBoardDiagnostics { inliers, circle_candidates, circle_matches, alignment_inliers }` | emit typed marker-board corners with optional IDs / target positions; circle evidence is returned through the diagnostics channel | — | — |
 
 ## What the marker board inherits from chessboard-v2
 
@@ -29,7 +29,7 @@ This detector uses `detect` (single best component) rather than
 
 ## Diagnose dump
 
-`MarkerBoardDetectionResult { detection: TargetDetection, alignment:
+`MarkerBoardDetectionResult { corners, alignment:
 Option<GridAlignment> }` carries the facts a consumer needs to use a
 detection. The circle evidence — every scored `CircleCandidate`, the
 per-expected-circle `CircleMatch` list, the per-corner `inliers`

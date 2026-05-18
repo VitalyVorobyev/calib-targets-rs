@@ -68,12 +68,12 @@ def draw_overlay(ax, image, result) -> None:
     ax.imshow(image, cmap="gray", interpolation="nearest")
 
     corners_by_grid = {
-        (c.grid.i, c.grid.j): c for c in result.detection.corners if c.grid is not None
+        (c.grid.i, c.grid.j): c for c in result.corners if c.grid is not None
     }
 
     # Grid edges (between adjacent labelled corners) — thin translucent mesh.
     grid_segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for c in result.detection.corners:
+    for c in result.corners:
         if c.grid is None:
             continue
         right = corners_by_grid.get((c.grid.i + 1, c.grid.j))
@@ -92,10 +92,10 @@ def draw_overlay(ax, image, result) -> None:
     # which the Python binding does not expose.
 
     # Corner dots + master-id labels.
-    xs = [c.position[0] for c in result.detection.corners]
-    ys = [c.position[1] for c in result.detection.corners]
+    xs = [c.position[0] for c in result.corners]
+    ys = [c.position[1] for c in result.corners]
     ax.scatter(xs, ys, s=14, c="#ef4444", edgecolor="white", linewidths=0.5, zorder=5)
-    for c in result.detection.corners:
+    for c in result.corners:
         if c.id is None:
             continue
         ax.annotate(
@@ -136,7 +136,7 @@ def main() -> int:
     print(
         f"rendered {args.rows}x{args.cols} @ {args.dpi} DPI -> "
         f"image {image.shape[1]}x{image.shape[0]} px, "
-        f"{len(result.detection.corners)} labelled corners, "
+        f"{len(result.corners)} labelled corners, "
         f"BER={result.decode.bit_error_rate:.3f}"
     )
 

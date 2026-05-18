@@ -6,6 +6,7 @@ from typing import Any, Iterable
 from .enums import CirclePolarity, TargetKind
 from .results import (
     CellOffset,
+    CharucoCorner,
     CharucoDetectionResult,
     ChessboardCorner,
     ChessboardDebug,
@@ -19,12 +20,14 @@ from .results import (
     GridGraphNode,
     GridTransform,
     LabeledCorner,
+    MarkerBoardCorner,
     MarkerBoardDetectionResult,
     MarkerCircleExpectation,
     MarkerDetection,
     OrientationHistogram,
     PuzzleBoardObservedEdge,
     Point2,
+    PuzzleBoardCorner,
     PuzzleBoardDecodeInfo,
     PuzzleBoardDetectionResult,
     TargetDetection,
@@ -610,9 +613,36 @@ def circle_match_from_dict(data: Mapping[str, Any]) -> CircleMatch:
     )
 
 
+def charuco_corner_to_dict(value: CharucoCorner) -> dict[str, Any]:
+    return {
+        "position": _point2_to_list(value.position),
+        "grid": grid_coords_to_dict(value.grid),
+        "id": int(value.id),
+        "target_position": _point2_to_list(value.target_position),
+        "score": float(value.score),
+    }
+
+
+def charuco_corner_from_dict(data: Mapping[str, Any]) -> CharucoCorner:
+    obj = _ensure_mapping(data, "CharucoCorner")
+    _validate_keys(
+        obj,
+        allowed={"position", "grid", "id", "target_position", "score"},
+        required={"position", "grid", "id", "target_position", "score"},
+        ctx="CharucoCorner",
+    )
+    return CharucoCorner(
+        position=_to_point2(obj["position"], "CharucoCorner.position"),
+        grid=grid_coords_from_dict(obj["grid"]),
+        id=_to_int(obj["id"], "CharucoCorner.id"),
+        target_position=_to_point2(obj["target_position"], "CharucoCorner.target_position"),
+        score=_to_float(obj["score"], "CharucoCorner.score"),
+    )
+
+
 def charuco_detection_result_to_dict(value: CharucoDetectionResult) -> dict[str, Any]:
     return {
-        "detection": target_detection_to_dict(value.detection),
+        "corners": [charuco_corner_to_dict(item) for item in value.corners],
         "markers": [marker_detection_to_dict(item) for item in value.markers],
         "alignment": grid_alignment_to_dict(value.alignment),
     }
@@ -623,18 +653,52 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
     _validate_keys(
         obj,
         allowed={
-            "detection",
+            "corners",
             "markers",
             "alignment",
         },
-        required={"detection", "markers", "alignment"},
+        required={"corners", "markers", "alignment"},
         ctx="CharucoDetectionResult",
     )
+    corners = _to_sequence(obj["corners"], "CharucoDetectionResult.corners")
     markers = _to_sequence(obj["markers"], "CharucoDetectionResult.markers")
     return CharucoDetectionResult(
-        detection=target_detection_from_dict(obj["detection"]),
+        corners=[charuco_corner_from_dict(item) for item in corners],
         markers=[marker_detection_from_dict(item) for item in markers],
         alignment=grid_alignment_from_dict(obj["alignment"]),
+    )
+
+
+def marker_board_corner_to_dict(value: MarkerBoardCorner) -> dict[str, Any]:
+    return {
+        "position": _point2_to_list(value.position),
+        "grid": grid_coords_to_dict(value.grid),
+        "id": int(value.id) if value.id is not None else None,
+        "target_position": _point2_to_list(value.target_position)
+        if value.target_position is not None
+        else None,
+        "score": float(value.score),
+    }
+
+
+def marker_board_corner_from_dict(data: Mapping[str, Any]) -> MarkerBoardCorner:
+    obj = _ensure_mapping(data, "MarkerBoardCorner")
+    _validate_keys(
+        obj,
+        allowed={"position", "grid", "id", "target_position", "score"},
+        required={"position", "grid", "id", "target_position", "score"},
+        ctx="MarkerBoardCorner",
+    )
+    id_value = obj["id"]
+    target_position = obj["target_position"]
+    return MarkerBoardCorner(
+        position=_to_point2(obj["position"], "MarkerBoardCorner.position"),
+        grid=grid_coords_from_dict(obj["grid"]),
+        id=_to_int(id_value, "MarkerBoardCorner.id") if id_value is not None else None,
+        target_position=_to_point2(target_position, "MarkerBoardCorner.target_position")
+        if target_position is not None
+        else None,
+        score=_to_float(obj["score"], "MarkerBoardCorner.score"),
     )
 
 
@@ -642,7 +706,7 @@ def marker_board_detection_result_to_dict(
     value: MarkerBoardDetectionResult,
 ) -> dict[str, Any]:
     return {
-        "detection": target_detection_to_dict(value.detection),
+        "corners": [marker_board_corner_to_dict(item) for item in value.corners],
         "alignment": grid_alignment_to_dict(value.alignment)
         if value.alignment is not None
         else None,
@@ -655,13 +719,14 @@ def marker_board_detection_result_from_dict(
     obj = _ensure_mapping(data, "MarkerBoardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"detection", "alignment"},
-        required={"detection", "alignment"},
+        allowed={"corners", "alignment"},
+        required={"corners", "alignment"},
         ctx="MarkerBoardDetectionResult",
     )
+    corners = _to_sequence(obj["corners"], "MarkerBoardDetectionResult.corners")
     alignment = obj["alignment"]
     return MarkerBoardDetectionResult(
-        detection=target_detection_from_dict(obj["detection"]),
+        corners=[marker_board_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(alignment) if alignment is not None else None,
     )
 
@@ -752,11 +817,38 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
     )
 
 
+def puzzleboard_corner_to_dict(value: PuzzleBoardCorner) -> dict[str, Any]:
+    return {
+        "position": _point2_to_list(value.position),
+        "grid": grid_coords_to_dict(value.grid),
+        "id": int(value.id),
+        "target_position": _point2_to_list(value.target_position),
+        "score": float(value.score),
+    }
+
+
+def puzzleboard_corner_from_dict(data: Mapping[str, Any]) -> PuzzleBoardCorner:
+    obj = _ensure_mapping(data, "PuzzleBoardCorner")
+    _validate_keys(
+        obj,
+        allowed={"position", "grid", "id", "target_position", "score"},
+        required={"position", "grid", "id", "target_position", "score"},
+        ctx="PuzzleBoardCorner",
+    )
+    return PuzzleBoardCorner(
+        position=_to_point2(obj["position"], "PuzzleBoardCorner.position"),
+        grid=grid_coords_from_dict(obj["grid"]),
+        id=_to_int(obj["id"], "PuzzleBoardCorner.id"),
+        target_position=_to_point2(obj["target_position"], "PuzzleBoardCorner.target_position"),
+        score=_to_float(obj["score"], "PuzzleBoardCorner.score"),
+    )
+
+
 def puzzleboard_detection_result_to_dict(
     value: PuzzleBoardDetectionResult,
 ) -> dict[str, Any]:
     return {
-        "detection": target_detection_to_dict(value.detection),
+        "corners": [puzzleboard_corner_to_dict(item) for item in value.corners],
         "alignment": grid_alignment_to_dict(value.alignment),
         "decode": puzzleboard_decode_info_to_dict(value.decode),
     }
@@ -768,12 +860,13 @@ def puzzleboard_detection_result_from_dict(
     obj = _ensure_mapping(data, "PuzzleBoardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"detection", "alignment", "decode"},
-        required={"detection", "alignment", "decode"},
+        allowed={"corners", "alignment", "decode"},
+        required={"corners", "alignment", "decode"},
         ctx="PuzzleBoardDetectionResult",
     )
+    corners = _to_sequence(obj["corners"], "PuzzleBoardDetectionResult.corners")
     return PuzzleBoardDetectionResult(
-        detection=target_detection_from_dict(obj["detection"]),
+        corners=[puzzleboard_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(obj["alignment"]),
         decode=puzzleboard_decode_info_from_dict(obj["decode"]),
     )
@@ -812,12 +905,18 @@ __all__ = [
     "marker_circle_expectation_from_dict",
     "circle_match_to_dict",
     "circle_match_from_dict",
+    "charuco_corner_to_dict",
+    "charuco_corner_from_dict",
     "charuco_detection_result_to_dict",
     "charuco_detection_result_from_dict",
+    "marker_board_corner_to_dict",
+    "marker_board_corner_from_dict",
     "marker_board_detection_result_to_dict",
     "marker_board_detection_result_from_dict",
     "observed_edge_to_dict",
     "observed_edge_from_dict",
+    "puzzleboard_corner_to_dict",
+    "puzzleboard_corner_from_dict",
     "puzzleboard_decode_info_to_dict",
     "puzzleboard_decode_info_from_dict",
     "puzzleboard_detection_result_to_dict",

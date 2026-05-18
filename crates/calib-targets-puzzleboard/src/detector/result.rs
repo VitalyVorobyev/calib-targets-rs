@@ -1,7 +1,61 @@
 //! Detector output types.
 
-use calib_targets_core::{GridAlignment, TargetDetection};
+use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use nalgebra::Point2;
 use serde::Serialize;
+
+/// A decoded PuzzleBoard corner in master-board coordinates.
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct PuzzleBoardCorner {
+    /// Sub-pixel image position.
+    pub position: Point2<f32>,
+    /// Absolute master-board corner coordinate.
+    pub grid: GridCoords,
+    /// Absolute master-board corner ID.
+    pub id: u32,
+    /// Physical master-board position in millimetres.
+    pub target_position: Point2<f32>,
+    /// Detector-specific corner score; higher is better.
+    pub score: f32,
+}
+
+impl PuzzleBoardCorner {
+    /// Create a PuzzleBoard corner from its required fields.
+    pub fn new(
+        position: Point2<f32>,
+        grid: GridCoords,
+        id: u32,
+        target_position: Point2<f32>,
+        score: f32,
+    ) -> Self {
+        Self {
+            position,
+            grid,
+            id,
+            target_position,
+            score,
+        }
+    }
+
+    pub(crate) fn from_labeled(corner: LabeledCorner) -> Option<Self> {
+        Some(Self {
+            position: corner.position,
+            grid: corner.grid?,
+            id: corner.id?,
+            target_position: corner.target_position?,
+            score: corner.score,
+        })
+    }
+
+    /// Convert this typed corner to the shared carrier used by diagnostics and bindings.
+    pub fn to_labeled(&self) -> LabeledCorner {
+        LabeledCorner::new(self.position, self.score)
+            .with_grid(self.grid)
+            .with_id(self.id)
+            .with_target_position(self.target_position)
+    }
+}
 
 /// Compact decode quality summary.
 ///
@@ -34,8 +88,8 @@ pub struct PuzzleBoardDecodeInfo {
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct PuzzleBoardDetectionResult {
-    /// Labelled corners — `LabeledCorner::id` is set from master coordinates.
-    pub detection: TargetDetection,
+    /// Labelled corners in absolute master-board coordinates.
+    pub corners: Vec<PuzzleBoardCorner>,
     /// Alignment from the detected local grid into master-board coordinates.
     pub alignment: GridAlignment,
     /// Compact decode quality summary.
@@ -43,16 +97,43 @@ pub struct PuzzleBoardDetectionResult {
 }
 
 impl PuzzleBoardDetectionResult {
-    /// Create a result from its detection, alignment, and decode summary.
+    /// Create a result from its typed corners, alignment, and decode summary.
     pub fn new(
-        detection: TargetDetection,
+        corners: Vec<PuzzleBoardCorner>,
         alignment: GridAlignment,
         decode: PuzzleBoardDecodeInfo,
     ) -> Self {
         Self {
-            detection,
+            corners,
             alignment,
             decode,
         }
+    }
+
+    pub(crate) fn from_target_detection(
+        detection: TargetDetection,
+        alignment: GridAlignment,
+        decode: PuzzleBoardDecodeInfo,
+    ) -> Self {
+        debug_assert_eq!(detection.kind, TargetKind::PuzzleBoard);
+        let input_len = detection.corners.len();
+        let corners: Vec<PuzzleBoardCorner> = detection
+            .corners
+            .into_iter()
+            .filter_map(PuzzleBoardCorner::from_labeled)
+            .collect();
+        debug_assert_eq!(corners.len(), input_len);
+        Self::new(corners, alignment, decode)
+    }
+
+    /// Convert typed corners into the shared `TargetDetection` carrier.
+    pub fn target_detection(&self) -> TargetDetection {
+        TargetDetection::new(
+            TargetKind::PuzzleBoard,
+            self.corners
+                .iter()
+                .map(PuzzleBoardCorner::to_labeled)
+                .collect(),
+        )
     }
 }

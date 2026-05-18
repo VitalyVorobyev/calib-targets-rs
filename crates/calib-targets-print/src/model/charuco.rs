@@ -38,7 +38,7 @@ impl PartialEq for CharucoTargetSpec {
             && self.cols == other.cols
             && self.square_size_mm == other.square_size_mm
             && self.marker_size_rel == other.marker_size_rel
-            && self.dictionary.name == other.dictionary.name
+            && self.dictionary.name() == other.dictionary.name()
             && self.marker_layout == other.marker_layout
             && self.border_bits == other.border_bits
     }
@@ -89,7 +89,7 @@ pub(crate) fn validate_charuco_spec(spec: &CharucoTargetSpec) -> Result<(), Prin
     let board = spec.to_board_spec();
     let board = CharucoBoard::new(board)?;
     let needed = board.marker_count();
-    let available = spec.dictionary.codes.len();
+    let available = spec.dictionary.codes().len();
     if available < needed {
         return Err(PrintableTargetError::NotEnoughDictionaryCodes { needed, available });
     }

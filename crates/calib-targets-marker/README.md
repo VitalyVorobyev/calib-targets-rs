@@ -72,8 +72,8 @@ let _ = detector.detect_from_image_and_corners(&view, &corners);
 
 | Field | Meaning |
 |---|---|
-| `detection: TargetDetection` | Labelled inner corners, `(i, j)` grid, optional `target_position` in mm. `kind = CheckerboardMarker`. |
-| `alignment: Option<GridAlignment>` | D4 rotation + offset aligning chessboard `(i, j)` to the layout's canonical frame. `None` if the three circles could not be placed. |
+| `corners: Vec<MarkerBoardCorner>` | Labelled inner corners, `(i, j)` grid, optional `id`, optional `target_position` in mm, and `score`. |
+| `alignment: Option<GridAlignment>` | D4 rotation + offset aligning chessboard `(i, j)` to the layout's canonical frame. Full image+corner detection returns `None` if the three circles cannot be placed. |
 
 The detection *evidence* — every scored `circle_candidates` hypothesis,
 the `circle_matches` pairing each expected circle to a detected one, the

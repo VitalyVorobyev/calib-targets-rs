@@ -172,7 +172,7 @@ def draw_overlay(image: np.ndarray, frame: dict[str, Any], title: str, out_path:
 
     # Labelled corner grid indices (only the winning detection).
     if result is not None:
-        for lc in result["detection"]["corners"]:
+        for lc in result["corners"]:
             grid = lc["grid"]
             if grid is None:
                 continue

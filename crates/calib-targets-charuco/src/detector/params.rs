@@ -6,6 +6,7 @@ use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoParams {
     /// Pixels per board square in the canonical sampling space.
@@ -220,7 +221,7 @@ impl CharucoParams {
             ..ScanDecodeConfig::default()
         };
 
-        let max_hamming = board.dictionary.max_correction_bits.min(2);
+        let max_hamming = board.dictionary.max_correction_bits().min(2);
 
         Self {
             px_per_square: 60.0,

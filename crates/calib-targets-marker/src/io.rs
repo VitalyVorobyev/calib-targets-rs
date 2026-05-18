@@ -100,7 +100,7 @@ impl MarkerBoardDetectReport {
 
     /// Populate report fields from a successful detection.
     pub fn set_detection(&mut self, res: MarkerBoardDetectionResult) {
-        self.detection = Some(res.detection);
+        self.detection = Some(res.target_detection());
         self.alignment = res.alignment;
         self.error = None;
     }

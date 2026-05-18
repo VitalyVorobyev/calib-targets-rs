@@ -239,15 +239,6 @@ export function ConfigPanel({
             step={1}
             onChange={(v) => updateCb({ max_components: v })}
           />
-          <NumberInput
-            label="Cell Size Hint (px)"
-            value={chessboardParams.cell_size_hint}
-            min={1}
-            max={500}
-            onChange={(v) =>
-              updateCb({ cell_size_hint: v ?? undefined })
-            }
-          />
         </>
       )}
 

@@ -73,6 +73,7 @@ pub const DEBUG_FRAME_SCHEMA: u32 = 1;
 /// Flat and serde-friendly so the Python overlay script can render
 /// every decision stage.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct DebugFrame {
     /// Schema version — see [`DEBUG_FRAME_SCHEMA`].
     pub schema: u32,
@@ -226,6 +227,7 @@ pub struct GeometryCheckTrace {
 /// (`extend_boundary` / `rescue_no_cluster`). Mirrors
 /// [`ExtensionStats`](projective_grid::square::extension::ExtensionStats).
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct ExtensionTrace {
     /// `false` when the residual gate refused to extrapolate (no-op pass).
     pub h_trusted: bool,
@@ -278,6 +280,7 @@ impl From<&ExtensionStats> for ExtensionTrace {
 /// [`Detector::detect_with_diagnostics`](crate::Detector::detect_with_diagnostics)
 /// and pass it to [`StageCounts::from_frame`].
 #[derive(Clone, Copy, Debug, Default, Serialize)]
+#[non_exhaustive]
 pub struct StageCounts {
     /// Corners passed into the detector.
     pub input_corners: usize,

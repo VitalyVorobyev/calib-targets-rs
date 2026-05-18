@@ -22,12 +22,13 @@ pub(crate) fn map_charuco_corners(
             continue;
         };
 
-        let mut candidate = LabeledCorner::new(corner.position, corner.score)
+        let Some(target) = board.charuco_object_xy(id) else {
+            continue;
+        };
+        let candidate = LabeledCorner::new(corner.position, corner.score)
             .with_grid(grid)
-            .with_id(id);
-        if let Some(target) = board.charuco_object_xy(id) {
-            candidate = candidate.with_target_position(target);
-        }
+            .with_id(id)
+            .with_target_position(target);
 
         match by_grid.get(&grid) {
             None => {

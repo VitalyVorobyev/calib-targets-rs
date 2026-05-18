@@ -140,7 +140,7 @@ fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
         "Board summary: {} cols x {} rows squares, dictionary={}, marker_layout={:?}, marker_size_rel={:.3}",
         cfg.board.cols,
         cfg.board.rows,
-        cfg.board.dictionary.name,
+        cfg.board.dictionary.name(),
         cfg.board.marker_layout,
         cfg.board.marker_size_rel
     );
@@ -232,7 +232,7 @@ fn log_corner_stats(corners: &[Corner], _params: &CharucoParams) {
 fn log_detection_success(res: &calib_targets_charuco::CharucoDetectionResult) {
     info!(
         "Detection succeeded: {} ChArUco corners, {} markers, alignment {:?} + {:?}",
-        res.detection.corners.len(),
+        res.corners.len(),
         res.markers.len(),
         res.alignment.transform,
         res.alignment.translation

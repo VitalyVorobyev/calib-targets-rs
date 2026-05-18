@@ -90,7 +90,7 @@ impl CharucoBoard {
         {
             return Err(CharucoBoardError::InvalidMarkerSizeRel);
         }
-        if spec.dictionary.codes.is_empty() {
+        if spec.dictionary.codes().is_empty() {
             return Err(CharucoBoardError::EmptyDictionary);
         }
 
@@ -99,7 +99,7 @@ impl CharucoBoard {
         };
 
         let needed = marker_positions.len();
-        let available = spec.dictionary.codes.len();
+        let available = spec.dictionary.codes().len();
         if available < needed {
             return Err(CharucoBoardError::NotEnoughDictionaryCodes { needed, available });
         }

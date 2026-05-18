@@ -272,7 +272,7 @@ def test_detect_puzzleboard_roundtrip() -> None:
     params = _puzzleboard_params()
     result = ct.detect_puzzleboard(image, params=params)
     assert isinstance(result, ct.PuzzleBoardDetectionResult)
-    assert len(result.detection.corners) > 0
+    assert len(result.corners) > 0
     assert result.decode.edges_observed > 0
     _assert_roundtrip(result)
 
@@ -317,7 +317,7 @@ def test_raw_charuco_dict_keys_match_python_schema() -> None:
             f"MarkerDetection.gc has unexpected keys: {set(m['gc'].keys())}"
         )
 
-    corners = raw["detection"]["corners"]
+    corners = raw["corners"]
     for c in corners:
         grid = c["grid"]
         if grid is not None:
@@ -338,7 +338,6 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
     )
 
     assert isinstance(raw, dict)
-    assert raw["detection"]["kind"] == "puzzle_board"
     # The decode dict is the compact quality summary. Winner/runner-up score
     # evidence and the raw observed-edge dump live in the Rust
     # `PuzzleBoardDiagnostics` channel, reachable via
@@ -353,10 +352,8 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
     }
     assert "observed_edges" not in raw
 
-    for corner in raw["detection"]["corners"]:
-        grid = corner["grid"]
-        if grid is not None:
-            assert set(grid.keys()) == {"i", "j"}
+    for corner in raw["corners"]:
+        assert set(corner["grid"].keys()) == {"i", "j"}
 
 
 # ---------------------------------------------------------------------------

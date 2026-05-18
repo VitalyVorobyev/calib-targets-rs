@@ -117,23 +117,28 @@ impl MarkerBoardDetector {
         .map(|(alignment, inliers)| (Some(alignment), inliers))
         .unwrap_or((None, 0));
 
-        if let Some(alignment) = alignment {
-            for m in &mut matches {
-                let Some(idx) = m.matched_index else {
-                    continue;
-                };
-                let Some(cand) = candidates.get(idx) else {
-                    continue;
-                };
-                let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
-                m.offset_cells = Some(crate::coords::CellOffset {
-                    di: m.expected.cell.i - r.i,
-                    dj: m.expected.cell.j - r.j,
-                });
-            }
+        let alignment = alignment?;
+        for m in &mut matches {
+            let Some(idx) = m.matched_index else {
+                continue;
+            };
+            let Some(cand) = candidates.get(idx) else {
+                continue;
+            };
+            let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
+            m.offset_cells = Some(crate::coords::CellOffset {
+                di: m.expected.cell.i - r.i,
+                dj: m.expected.cell.j - r.j,
+            });
         }
 
-        Some(self.result_from_chessboard(chess, candidates, matches, alignment, alignment_inliers))
+        Some(self.result_from_chessboard(
+            chess,
+            candidates,
+            matches,
+            Some(alignment),
+            alignment_inliers,
+        ))
     }
 
     fn result_from_chessboard(
@@ -187,7 +192,7 @@ impl MarkerBoardDetector {
             }
         }
         (
-            MarkerBoardDetectionResult::new(detection, alignment),
+            MarkerBoardDetectionResult::from_target_detection(detection, alignment),
             MarkerBoardDiagnostics {
                 inliers,
                 circle_candidates,

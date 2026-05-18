@@ -343,8 +343,8 @@ fn run_puzzle_sweep(
                 let better = match &best {
                     None => true,
                     Some(b) => {
-                        let new_key = (r.detection.corners.len(), r.decode.mean_confidence);
-                        let old_key = (b.detection.corners.len(), b.decode.mean_confidence);
+                        let new_key = (r.corners.len(), r.decode.mean_confidence);
+                        let old_key = (b.corners.len(), b.decode.mean_confidence);
                         new_key.0 > old_key.0 || (new_key.0 == old_key.0 && new_key.1 > old_key.1)
                     }
                 };
@@ -535,7 +535,7 @@ impl Aggregate {
         match &r.outcome {
             PuzzleboardOutcome::Ok(result) => {
                 self.n_detected += 1;
-                self.labelled_corners.push(result.detection.corners.len());
+                self.labelled_corners.push(result.corners.len());
                 self.edges_observed.push(result.decode.edges_observed);
                 self.edges_matched.push(result.decode.edges_matched);
                 self.bit_error_rate.push(result.decode.bit_error_rate);

@@ -333,10 +333,40 @@ class CircleMatch:
 
 
 @dataclass(slots=True)
+class CharucoCorner:
+    position: Point2
+    grid: GridCoords
+    id: int
+    target_position: Point2
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import charuco_corner_to_dict
+
+        return charuco_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CharucoCorner:
+        from ._convert_out import charuco_corner_from_dict
+
+        return charuco_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class CharucoDetectionResult:
-    detection: TargetDetection
+    corners: list[CharucoCorner]
     markers: list[MarkerDetection]
     alignment: GridAlignment
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.CHARUCO,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import charuco_detection_result_to_dict
@@ -351,6 +381,26 @@ class CharucoDetectionResult:
 
 
 @dataclass(slots=True)
+class MarkerBoardCorner:
+    position: Point2
+    grid: GridCoords
+    id: int | None
+    target_position: Point2 | None
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import marker_board_corner_to_dict
+
+        return marker_board_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardCorner:
+        from ._convert_out import marker_board_corner_from_dict
+
+        return marker_board_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class MarkerBoardDetectionResult:
     """Marker-board detection result.
 
@@ -362,8 +412,18 @@ class MarkerBoardDetectionResult:
     0.9.0.
     """
 
-    detection: TargetDetection
+    corners: list[MarkerBoardCorner]
     alignment: GridAlignment | None
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.CHECKERBOARD_MARKER,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import marker_board_detection_result_to_dict
@@ -431,10 +491,40 @@ class PuzzleBoardDecodeInfo:
 
 
 @dataclass(slots=True)
+class PuzzleBoardCorner:
+    position: Point2
+    grid: GridCoords
+    id: int
+    target_position: Point2
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzleboard_corner_to_dict
+
+        return puzzleboard_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardCorner:
+        from ._convert_out import puzzleboard_corner_from_dict
+
+        return puzzleboard_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class PuzzleBoardDetectionResult:
-    detection: TargetDetection
+    corners: list[PuzzleBoardCorner]
     alignment: GridAlignment
     decode: PuzzleBoardDecodeInfo
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.PUZZLE_BOARD,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzleboard_detection_result_to_dict
@@ -469,10 +559,13 @@ __all__ = [
     "CircleCandidate",
     "MarkerCircleExpectation",
     "CircleMatch",
+    "CharucoCorner",
     "CharucoDetectionResult",
+    "MarkerBoardCorner",
     "MarkerBoardDetectionResult",
     "PuzzleBoardObservedEdge",
     "ObservedEdge",  # backward-compatible alias
+    "PuzzleBoardCorner",
     "PuzzleBoardDecodeInfo",
     "PuzzleBoardDetectionResult",
 ]

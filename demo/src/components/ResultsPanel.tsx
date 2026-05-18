@@ -10,13 +10,13 @@ interface Props {
 function cornerCount(result: DetectionResult): number {
   if (result.mode === "corners") return result.corners.length;
   if (result.mode === "chessboard")
-    return result.result?.target.corners.length ?? 0;
+    return result.result?.corners.length ?? 0;
   if (result.mode === "charuco")
-    return result.result.detection.corners.length;
+    return result.result.corners.length;
   if (result.mode === "marker_board")
-    return result.result?.detection.corners.length ?? 0;
+    return result.result?.corners.length ?? 0;
   if (result.mode === "puzzleboard")
-    return result.result.detection.corners.length;
+    return result.result.corners.length;
   return 0;
 }
 
@@ -25,13 +25,13 @@ function gridDims(
 ): { rows: number; cols: number } | null {
   let corners;
   if (result.mode === "chessboard" && result.result) {
-    corners = result.result.target.corners;
+    corners = result.result.corners;
   } else if (result.mode === "charuco") {
-    corners = result.result.detection.corners;
+    corners = result.result.corners;
   } else if (result.mode === "marker_board" && result.result) {
-    corners = result.result.detection.corners;
+    corners = result.result.corners;
   } else if (result.mode === "puzzleboard") {
-    corners = result.result.detection.corners;
+    corners = result.result.corners;
   } else {
     return null;
   }

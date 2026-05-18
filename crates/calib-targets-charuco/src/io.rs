@@ -241,7 +241,7 @@ impl CharucoDetectReport {
 
     /// Populate report fields from a successful detection.
     pub fn set_detection(&mut self, res: CharucoDetectionResult) {
-        self.detection = Some(res.detection);
+        self.detection = Some(res.target_detection());
         self.markers = Some(res.markers);
         self.alignment = Some(res.alignment);
         self.error = None;

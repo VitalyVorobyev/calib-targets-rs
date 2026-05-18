@@ -10,7 +10,7 @@ Known gaps against the v0.6.0 release.
   rate, zero wrong labels). Types renamed: `ChessboardDetector` / `ChessboardParams` /
   `ChessboardDetectionResult` → `Detector` / `DetectorParams` /
   `Detection`.
-- **Grid origin contract.** `Detection.target.corners` is rebased to
+- **Grid origin contract.** `ChessboardDetection.corners` is rebased to
   non-negative `(i, j)` with `(0, 0)` at the visual top-left (`+i`
   right, `+j` down in image pixels).
 - **`projective-grid` standalone surface.** The line / local-H

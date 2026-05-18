@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{GridAlignment, TargetDetection};
+use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use nalgebra::Point2;
 
 use crate::circle_score::{CirclePolarity, CircleScoreParams};
 use crate::coords::{CellCoords, CellOffset};
@@ -56,6 +57,7 @@ impl Default for MarkerBoardSpec {
 }
 
 /// Circle matching settings.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircleMatchParams {
     /// Keep only the top-N candidates per polarity before matching.
@@ -77,6 +79,7 @@ impl Default for CircleMatchParams {
 }
 
 /// Parameters for marker-board detection.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardParams {
     /// The fixed marker-board layout to detect.
@@ -151,24 +154,113 @@ pub struct CircleMatch {
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardDetectionResult {
-    /// The labelled corner detection.
-    pub detection: TargetDetection,
+    /// Labelled checkerboard corners.
+    pub corners: Vec<MarkerBoardCorner>,
     /// Grid alignment to the known board layout; `None` when alignment
     /// could not be resolved.
     pub alignment: Option<GridAlignment>,
 }
 
 impl MarkerBoardDetectionResult {
-    /// Create a result from its detection and optional grid alignment.
-    pub fn new(detection: TargetDetection, alignment: Option<GridAlignment>) -> Self {
-        Self {
-            detection,
-            alignment,
-        }
+    /// Create a result from its typed corners and optional grid alignment.
+    pub fn new(corners: Vec<MarkerBoardCorner>, alignment: Option<GridAlignment>) -> Self {
+        Self { corners, alignment }
+    }
+
+    pub(crate) fn from_target_detection(
+        detection: TargetDetection,
+        alignment: Option<GridAlignment>,
+    ) -> Self {
+        debug_assert_eq!(detection.kind, TargetKind::CheckerboardMarker);
+        let input_len = detection.corners.len();
+        let corners: Vec<MarkerBoardCorner> = detection
+            .corners
+            .into_iter()
+            .filter_map(MarkerBoardCorner::from_labeled)
+            .collect();
+        debug_assert_eq!(corners.len(), input_len);
+        Self::new(corners, alignment)
+    }
+
+    /// Convert typed corners into the shared `TargetDetection` carrier.
+    pub fn target_detection(&self) -> TargetDetection {
+        TargetDetection::new(
+            TargetKind::CheckerboardMarker,
+            self.corners
+                .iter()
+                .map(MarkerBoardCorner::to_labeled)
+                .collect(),
+        )
     }
 
     /// Return the board-aligned corner detection if alignment is available.
     pub fn aligned_detection(&self) -> Option<TargetDetection> {
-        self.alignment.map(|_| self.detection.clone())
+        self.alignment.map(|_| self.target_detection())
+    }
+}
+
+/// A detected marker-board checkerboard corner.
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MarkerBoardCorner {
+    /// Sub-pixel image position.
+    pub position: Point2<f32>,
+    /// Corner coordinate in the returned grid frame.
+    pub grid: GridCoords,
+    /// Board-canonical corner ID, available when circle alignment succeeded.
+    pub id: Option<u32>,
+    /// Physical board-space position, available when alignment and cell size are known.
+    #[serde(default)]
+    pub target_position: Option<Point2<f32>>,
+    /// Detector-specific corner score; higher is better.
+    pub score: f32,
+}
+
+impl MarkerBoardCorner {
+    /// Create a marker-board corner from its required fields.
+    pub fn new(position: Point2<f32>, grid: GridCoords, score: f32) -> Self {
+        Self {
+            position,
+            grid,
+            id: None,
+            target_position: None,
+            score,
+        }
+    }
+
+    pub(crate) fn from_labeled(corner: LabeledCorner) -> Option<Self> {
+        Some(Self {
+            position: corner.position,
+            grid: corner.grid?,
+            id: corner.id,
+            target_position: corner.target_position,
+            score: corner.score,
+        })
+    }
+
+    /// Attach a board-canonical corner ID.
+    #[must_use]
+    pub fn with_id(mut self, id: u32) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Attach a physical board-space position.
+    #[must_use]
+    pub fn with_target_position(mut self, target_position: Point2<f32>) -> Self {
+        self.target_position = Some(target_position);
+        self
+    }
+
+    /// Convert this typed corner to the shared carrier used by diagnostics and bindings.
+    pub fn to_labeled(&self) -> LabeledCorner {
+        let mut corner = LabeledCorner::new(self.position, self.score).with_grid(self.grid);
+        if let Some(id) = self.id {
+            corner = corner.with_id(id);
+        }
+        if let Some(target_position) = self.target_position {
+            corner = corner.with_target_position(target_position);
+        }
+        corner
     }
 }

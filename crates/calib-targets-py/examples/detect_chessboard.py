@@ -47,7 +47,7 @@ def main() -> None:
         print("No chessboard detected")
         return
 
-    corners = result.detection.corners
+    corners = result.corners
     print(f"corners: {len(corners)}")
     if corners:
         print(corners[0])

@@ -107,15 +107,14 @@ fn main() {
              ({n}×{n} bits, {} entries).\n",
             codes.len(),
         ));
-        out.push_str(&format!("pub static {ident}: Dictionary = Dictionary {{\n"));
-        out.push_str(&format!("    name: \"{name}\",\n"));
-        out.push_str(&format!("    marker_size: {n},\n"));
         out.push_str(&format!(
-            "    max_correction_bits: {},\n",
-            parsed.max_correction_bits
+            "pub static {ident}: Dictionary = Dictionary::from_static_codes_unchecked(\n"
         ));
-        out.push_str(&format!("    codes: {codes_ident},\n"));
-        out.push_str("};\n\n");
+        out.push_str(&format!("    \"{name}\",\n"));
+        out.push_str(&format!("    {n},\n"));
+        out.push_str(&format!("    {},\n", parsed.max_correction_bits));
+        out.push_str(&format!("    {codes_ident},\n"));
+        out.push_str(");\n\n");
     }
 
     // Lookup by name.

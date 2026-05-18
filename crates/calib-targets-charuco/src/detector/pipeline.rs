@@ -35,6 +35,7 @@ fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetectio
 /// One entry per chessboard connected component the detector tried to
 /// match; fail-early stages (no chessboard) produce an empty list.
 #[derive(Clone, Debug, Default, serde::Serialize)]
+#[non_exhaustive]
 pub struct CharucoDetectDiagnostics {
     /// One entry per chessboard connected component the detector tried
     /// to match.
@@ -56,6 +57,7 @@ pub struct CharucoDetectDiagnostics {
 
 /// Per-component diagnostics for one chessboard connected component.
 #[derive(Clone, Debug, serde::Serialize)]
+#[non_exhaustive]
 pub struct ComponentDiagnostics {
     /// Zero-based index of this component.
     pub index: usize,
@@ -78,6 +80,7 @@ pub struct ComponentDiagnostics {
 /// Which marker-matching branch produced a component's result.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MatcherDiagKind {
     /// The legacy per-marker alignment matcher.
     Legacy,
@@ -88,6 +91,7 @@ pub enum MatcherDiagKind {
 /// Final outcome of detecting one chessboard component.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ComponentOutcome {
     /// The component yielded a detection.
     Ok {
@@ -143,10 +147,10 @@ impl CharucoDetector {
         // OpenCV metadata even though their minimum inter-code Hamming distance
         // is large (e.g. 10 for 36h10), so we skip capping in that case and let
         // the user control error tolerance directly.
-        let max_hamming = if board_cfg.dictionary.max_correction_bits > 0 {
+        let max_hamming = if board_cfg.dictionary.max_correction_bits() > 0 {
             params
                 .max_hamming
-                .min(board_cfg.dictionary.max_correction_bits)
+                .min(board_cfg.dictionary.max_correction_bits())
         } else {
             params.max_hamming
         };
@@ -269,7 +273,7 @@ impl CharucoDetector {
                 Ok((result, raw_counts)) => {
                     debug!(
                         "component {i}: {} corners, {} markers",
-                        result.detection.corners.len(),
+                        result.corners.len(),
                         result.markers.len()
                     );
                     results.push((result, raw_counts));
@@ -487,7 +491,11 @@ impl CharucoDetector {
 
         (
             Ok((
-                CharucoDetectionResult::new(detection, markers, alignment.alignment),
+                CharucoDetectionResult::from_target_detection(
+                    detection,
+                    markers,
+                    alignment.alignment,
+                ),
                 RawMarkerCounts {
                     raw_marker_count,
                     raw_marker_wrong_id_count,

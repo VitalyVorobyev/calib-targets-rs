@@ -4,7 +4,7 @@ use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_chessboard::{
     Detector as ChessboardDetector, DetectorParams as ChessboardParams,
 };
-use calib_targets_core::{estimate_homography_rect_to_img, GrayImageView, TargetKind};
+use calib_targets_core::{estimate_homography_rect_to_img, GrayImageView};
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::ImageReader;
 use nalgebra::Point2;
@@ -47,12 +47,12 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
 }
 
 fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetectionResult, max_id: u32) {
-    let mut ids: Vec<u32> = res.detection.corners.iter().filter_map(|c| c.id).collect();
+    let mut ids: Vec<u32> = res.corners.iter().map(|c| c.id).collect();
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(
         ids.len(),
-        res.detection.corners.len(),
+        res.corners.len(),
         "expected every detected ChArUco corner to have a unique id"
     );
     assert!(
@@ -191,22 +191,16 @@ fn detects_charuco_on_large_png() {
     };
 
     let res = detector.detect(&src_view, &corners).expect("detect");
-    assert_eq!(res.detection.kind, TargetKind::Charuco);
     assert!(res.markers.len() >= 100);
-    assert!(res.detection.corners.len() >= 200);
-    assert!(res
-        .detection
-        .corners
-        .iter()
-        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
+    assert!(res.corners.len() >= 200);
     assert_unique_ids(&res, 22 * 22);
 
-    let mut ids = Vec::with_capacity(res.detection.corners.len());
-    let mut target_pts = Vec::with_capacity(res.detection.corners.len());
-    let mut image_pts = Vec::with_capacity(res.detection.corners.len());
-    for corner in &res.detection.corners {
-        let id = corner.id.expect("id");
-        let target = corner.target_position.expect("target_position");
+    let mut ids = Vec::with_capacity(res.corners.len());
+    let mut target_pts = Vec::with_capacity(res.corners.len());
+    let mut image_pts = Vec::with_capacity(res.corners.len());
+    for corner in &res.corners {
+        let id = corner.id;
+        let target = corner.target_position;
         ids.push(id);
         target_pts.push(target);
         image_pts.push(corner.position);
@@ -326,7 +320,6 @@ fn run_public_charuco(case: &PublicCase) {
             }
         )
     });
-    assert_eq!(res.detection.kind, TargetKind::Charuco);
     assert!(
         res.markers.len() >= min_markers,
         "{img_name} ({}): markers {} < {}",
@@ -339,21 +332,16 @@ fn run_public_charuco(case: &PublicCase) {
         min_markers,
     );
     assert!(
-        res.detection.corners.len() >= min_corners,
+        res.corners.len() >= min_corners,
         "{img_name} ({}): corners {} < {}",
         if use_board_level {
             "board-level"
         } else {
             "legacy"
         },
-        res.detection.corners.len(),
+        res.corners.len(),
         min_corners,
     );
-    assert!(res
-        .detection
-        .corners
-        .iter()
-        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
     assert_unique_ids(&res, rows * cols);
     assert_eq!(
         diagnostics.raw_marker_wrong_id_count,
@@ -445,14 +433,8 @@ fn detects_charuco_on_small_png() {
     };
 
     let res = detector.detect(&src_view, &corners).expect("detect");
-    assert_eq!(res.detection.kind, TargetKind::Charuco);
     assert!(res.markers.len() >= 20);
-    assert!(res.detection.corners.len() >= 60);
-    assert!(res
-        .detection
-        .corners
-        .iter()
-        .all(|c| c.id.is_some() && c.grid.is_some() && c.target_position.is_some()));
+    assert!(res.corners.len() >= 60);
     assert_unique_ids(&res, 22 * 22);
 }
 

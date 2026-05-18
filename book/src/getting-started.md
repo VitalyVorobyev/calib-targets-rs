@@ -159,7 +159,7 @@ except RuntimeError as exc:
     print(f"Detection failed: {exc}")
     raise SystemExit(1)
 
-corners = result.detection.corners
+corners = result.corners
 print(f"Detected {len(corners)} corners, {len(result.markers)} markers")
 
 # Collect point pairs for solvePnP / calibrateCamera
@@ -181,7 +181,7 @@ result = ct.detect_chessboard(image)
 if result is None:
     raise SystemExit("No chessboard detected")
 
-corners = result.detection.corners
+corners = result.corners
 print(f"Detected {len(corners)} corners")
 # target_position is None for chessboard — assign object points by grid index
 for c in corners:
@@ -224,12 +224,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let result = detect::detect_charuco(&img, &params)?;
     println!(
         "corners: {}, markers: {}",
-        result.detection.corners.len(),
+        result.corners.len(),
         result.markers.len()
     );
 
     // Collect point pairs
-    for c in &result.detection.corners {
+    for c in &result.corners {
         if let Some(tp) = c.target_position {
             let obj = [tp[0], tp[1], 0.0_f32];
             let img = c.position;

@@ -62,7 +62,7 @@ def main() -> None:
         print("No marker board detected")
         return
 
-    print(f"corners: {len(result.detection.corners)}")
+    print(f"corners: {len(result.corners)}")
 
 
 if __name__ == "__main__":

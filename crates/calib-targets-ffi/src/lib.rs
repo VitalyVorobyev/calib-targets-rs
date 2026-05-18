@@ -31,11 +31,11 @@ mod validate;
 pub use types::*;
 
 use crate::convert::{
-    alignment_to_ffi, build_detection_header, chessboard_corner_to_ffi,
-    chessboard_params_default_values, convert_charuco_detector_params, convert_chess_config,
-    convert_chessboard_params, convert_marker_board_params, convert_puzzleboard_params,
-    labeled_corner_to_ffi, map_charuco_create_error, map_charuco_detect_error,
-    map_puzzleboard_create_error, map_puzzleboard_detect_error, marker_detection_to_ffi,
+    alignment_to_ffi, chessboard_corner_to_ffi, chessboard_params_default_values,
+    convert_charuco_detector_params, convert_chess_config, convert_chessboard_params,
+    convert_marker_board_params, convert_puzzleboard_params, labeled_corner_to_ffi,
+    map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
+    map_puzzleboard_detect_error, marker_detection_to_ffi,
 };
 use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiError, FfiResult};
 

@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
     let params = PuzzleBoardParams::for_board(&spec);
     let result = detect::detect_puzzleboard(&img, &params)?;
-    println!("{} corners with absolute IDs", result.detection.corners.len());
+    println!("{} corners with absolute IDs", result.corners.len());
     Ok(())
 }
 ```
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Field | Meaning |
 |---|---|
-| `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space). |
+| `corners: Vec<PuzzleBoardCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space), and `score`. |
 | `alignment: GridAlignment` | D4 transform + translation mapping the local grid into master-board coordinates. |
 | `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, and `master_origin_row` / `master_origin_col`. |
 

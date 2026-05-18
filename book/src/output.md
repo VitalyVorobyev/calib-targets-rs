@@ -1,11 +1,12 @@
 # Understanding Detection Results
 
-This chapter describes every field of `TargetDetection` and `LabeledCorner`, explains
-when optional fields are populated, and gives guidance on interpreting `score` values.
+This chapter describes the shared corner vocabulary used by the result
+types, explains when optional fields are populated, and gives guidance on
+interpreting `score` values.
 
 ---
 
-## `TargetDetection`
+## Shared `TargetDetection`
 
 ```rust,no_run
 pub struct TargetDetection {
@@ -14,16 +15,22 @@ pub struct TargetDetection {
 }
 ```
 
+`TargetDetection` is the shared carrier used by serialization, FFI, and
+adapter methods such as `target_detection()`. The primary Rust, Python,
+and WASM APIs return typed result objects with a top-level `corners`
+field.
+
 `kind` identifies the target type:
 
 | Variant | Produced by |
 |---|---|
-| `TargetKind::Chessboard` | `detect_chessboard` |
-| `TargetKind::Charuco` | `detect_charuco` (embedded in `CharucoDetectionResult`) |
-| `TargetKind::PuzzleBoard` | `detect_puzzleboard` (embedded in `PuzzleBoardDetectionResult`) |
-| `TargetKind::CheckerboardMarker` | `detect_marker_board` (embedded in `MarkerBoardDetectionResult`) |
+| `TargetKind::Chessboard` | `ChessboardDetection::target_detection()` |
+| `TargetKind::Charuco` | `CharucoDetectionResult::target_detection()` |
+| `TargetKind::PuzzleBoard` | `PuzzleBoardDetectionResult::target_detection()` |
+| `TargetKind::CheckerboardMarker` | `MarkerBoardDetectionResult::target_detection()` |
 
-`corners` is a `Vec<LabeledCorner>` ordered differently per target type:
+In the shared carrier, `corners` is a `Vec<LabeledCorner>` ordered
+differently per target type:
 - **Chessboard:** row-major order (left-to-right, top-to-bottom by grid coordinates).
 - **ChArUco:** ordered by ascending `id`.
 - **PuzzleBoard:** ordered by detected grid traversal, with absolute master-grid
@@ -110,15 +117,15 @@ scores below that threshold will not appear in the output.
 
 ---
 
-## ChArUco-specific: `CharucoDetectionResult`
+## ChArUco-Specific: `CharucoDetectionResult`
 
 `detect_charuco` returns `CharucoDetectionResult` rather than a bare `TargetDetection`:
 
 ```rust,no_run
 pub struct CharucoDetectionResult {
-    pub detection: TargetDetection,
+    pub corners:   Vec<CharucoCorner>,
     pub markers:   Vec<MarkerDetection>,
-    pub alignment: Option<GridAlignment>,
+    pub alignment: GridAlignment,
 }
 ```
 

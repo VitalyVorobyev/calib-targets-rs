@@ -104,18 +104,16 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     // 4) At least half the inner corners should be labelled consistently.
     let inner_corners = (spec.rows as usize - 1) * (spec.cols as usize - 1);
     assert!(
-        result.detection.corners.len() >= inner_corners / 2,
+        result.corners.len() >= inner_corners / 2,
         "too few labelled corners: {} / {}",
-        result.detection.corners.len(),
+        result.corners.len(),
         inner_corners
     );
 
     // 5) Every labelled corner should have an id, a master (I, J) grid coord,
     //    and a target position in mm consistent with the master layout.
-    for lc in &result.detection.corners {
-        assert!(lc.id.is_some(), "missing id");
-        assert!(lc.grid.is_some(), "missing grid");
-        let grid = lc.grid.unwrap();
+    for lc in &result.corners {
+        let grid = lc.grid;
         // Master coords must lie within the board.
         assert!(grid.i >= 0 && grid.i < 501);
         assert!(grid.j >= 0 && grid.j < 501);
@@ -126,10 +124,9 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     //    two corners, the master-delta equals the local-delta under the
     //    alignment's linear part.
     let labelled: Vec<_> = result
-        .detection
         .corners
         .iter()
-        .filter_map(|c| c.grid.map(|g| (g.i, g.j)))
+        .map(|c| (c.grid.i, c.grid.j))
         .collect();
     assert!(labelled.len() >= 4, "need at least 4 corners for check");
     // All labelled corners share the same alignment so their pairwise master
@@ -217,13 +214,8 @@ fn fixed_board_agrees_with_full_on_whole_view() {
     assert_eq!(full.decode.edges_matched, fixed.decode.edges_matched);
     assert!((full.decode.bit_error_rate - fixed.decode.bit_error_rate).abs() < 1e-5);
 
-    assert_eq!(full.detection.corners.len(), fixed.detection.corners.len(),);
-    for (f, g) in full
-        .detection
-        .corners
-        .iter()
-        .zip(fixed.detection.corners.iter())
-    {
+    assert_eq!(full.corners.len(), fixed.corners.len(),);
+    for (f, g) in full.corners.iter().zip(fixed.corners.iter()) {
         assert_eq!(f.id, g.id, "corner id mismatch");
         assert_eq!(f.grid, g.grid, "corner grid mismatch");
         assert_eq!(f.target_position, g.target_position);
@@ -324,12 +316,12 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
             .detect(&view, subset)
             .unwrap_or_else(|e| panic!("view {i} decode failed: {e}"));
         let mut m = std::collections::HashMap::new();
-        for lc in &res.detection.corners {
+        for lc in &res.corners {
             let key = (
                 (lc.position.x * 0.5).round() as i32,
                 (lc.position.y * 0.5).round() as i32,
             );
-            m.insert(key, lc.id.expect("labelled corner without id"));
+            m.insert(key, lc.id);
         }
         per_view.push(m);
     }
@@ -471,22 +463,19 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
     let h_orig = gray_orig.height() as f32;
     let mut orig_map: std::collections::HashMap<(i32, i32), Point2<f32>> =
         std::collections::HashMap::new();
-    for lc in &res_orig.detection.corners {
+    for lc in &res_orig.corners {
         // Quantise by 0.5× to tolerate subpixel jitter but still uniquely
         // key each physical corner.
         let key = (
             (lc.position.x * 0.5).round() as i32,
             (lc.position.y * 0.5).round() as i32,
         );
-        orig_map.insert(
-            key,
-            lc.target_position.expect("target_position missing on orig"),
-        );
+        orig_map.insert(key, lc.target_position);
     }
 
     let mut checks = 0usize;
     let mut mismatches: Vec<(Point2<f32>, Point2<f32>, Point2<f32>)> = Vec::new();
-    for lc in &res_rot.detection.corners {
+    for lc in &res_rot.corners {
         let xr = lc.position.x;
         let yr = lc.position.y;
         let (x_in_orig, y_in_orig) = match rotation_deg {
@@ -500,7 +489,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
             (y_in_orig * 0.5).round() as i32,
         );
         if let Some(target_orig) = orig_map.get(&key) {
-            let target_rot = lc.target_position.expect("target_position missing on rot");
+            let target_rot = lc.target_position;
             checks += 1;
             if (target_rot.x - target_orig.x).abs() > 1e-3
                 || (target_rot.y - target_orig.y).abs() > 1e-3

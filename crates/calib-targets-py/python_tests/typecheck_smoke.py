@@ -32,7 +32,7 @@ except RuntimeError:
 
 marker = ct.detect_marker_board(img)
 if marker is not None:
-    _marker_corners: list[ct.LabeledCorner] = marker.detection.corners
+    _marker_corners: list[ct.MarkerBoardCorner] = marker.corners
 
 print_doc = ct.PrintableTargetDocument(
     target=ct.ChessboardTargetSpec(inner_rows=6, inner_cols=8, square_size_mm=20.0)

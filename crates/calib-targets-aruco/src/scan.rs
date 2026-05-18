@@ -153,7 +153,7 @@ pub fn scan_decode_markers(
     matcher: &Matcher,
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
-    let bits = matcher.dictionary().marker_size;
+    let bits = matcher.dictionary().marker_size();
 
     for sy in 0..(cells_y as i32) {
         for sx in 0..(cells_x as i32) {
@@ -190,7 +190,7 @@ pub fn scan_decode_markers_in_cells(
     let mut out = Vec::new();
     let Some(mut decoder) = CellDecoder::new(
         cfg,
-        matcher.dictionary().marker_size,
+        matcher.dictionary().marker_size(),
         px_per_square,
         matcher,
     ) else {
@@ -242,7 +242,7 @@ pub fn scan_decode_markers_in_cells(
 pub struct CellSamples {
     /// Number of cells per side in the sampled grid: `bits + 2 * border_bits`.
     pub cells_per_side: usize,
-    /// Number of inner bits per side (`Matcher::dictionary().marker_size`).
+    /// Number of inner bits per side (`Matcher::dictionary().marker_size()`).
     pub bits_per_side: usize,
     /// Border ring width, in cells (matches [`ScanDecodeConfig::border_bits`]).
     pub border_bits: usize,
@@ -336,7 +336,7 @@ pub fn decode_marker_in_cell(
 ) -> Option<MarkerDetection> {
     let mut decoder = CellDecoder::new(
         cfg,
-        matcher.dictionary().marker_size,
+        matcher.dictionary().marker_size(),
         px_per_square,
         matcher,
     )?;
@@ -875,8 +875,8 @@ mod tests {
             multi_threshold: true,
         };
 
-        let code = dict.codes[0];
-        let img = build_marker_image(code, dict.marker_size, cfg.border_bits, 10);
+        let code = dict.codes()[0];
+        let img = build_marker_image(code, dict.marker_size(), cfg.border_bits, 10);
 
         let view = GrayImageView {
             width: img.width,
@@ -914,8 +914,8 @@ mod tests {
             multi_threshold: true,
         };
 
-        let code = dict.codes[0];
-        let img = build_marker_image(code, dict.marker_size, cfg.border_bits, 10);
+        let code = dict.codes()[0];
+        let img = build_marker_image(code, dict.marker_size(), cfg.border_bits, 10);
         let view = GrayImageView {
             width: img.width,
             height: img.height,

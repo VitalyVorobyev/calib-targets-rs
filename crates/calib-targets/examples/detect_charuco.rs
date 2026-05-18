@@ -28,10 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let params = calib_targets::charuco::CharucoParams::for_board(&board);
     let result = detect::detect_charuco(&img, &params)?;
-    println!(
-        "detected {} charuco corners",
-        result.detection.corners.len()
-    );
+    println!("detected {} charuco corners", result.corners.len());
 
     Ok(())
 }

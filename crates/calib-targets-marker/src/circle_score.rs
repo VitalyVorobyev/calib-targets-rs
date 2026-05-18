@@ -23,6 +23,7 @@ pub enum CirclePolarity {
 }
 
 /// Tuning knobs for per-cell circular-marker scoring.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleScoreParams {
     /// Canonical patch size (square), e.g. 64

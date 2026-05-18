@@ -517,9 +517,9 @@ pub fn detect_marker_board(
 /// Returns a `PuzzleBoardDetectionResult` JS object. Throws on error.
 /// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
 ///
-/// The returned `decode` block mirrors the Rust `serde_json` shape,
-/// including soft-mode diagnostics such as `score_margin` and the
-/// runner-up hypothesis when available.
+/// The returned `decode` block carries the compact decode summary.
+/// Soft-mode runner-up scoring evidence is available from
+/// `detect_puzzleboard_with_diagnostics`.
 #[wasm_bindgen]
 pub fn detect_puzzleboard(
     width: u32,
@@ -735,8 +735,8 @@ pub fn detect_charuco_best(
         match detector.detect(&view, &corners) {
             Ok(result) => {
                 let dominated = best.as_ref().is_some_and(|b| {
-                    (b.markers.len(), b.detection.corners.len())
-                        >= (result.markers.len(), result.detection.corners.len())
+                    (b.markers.len(), b.corners.len())
+                        >= (result.markers.len(), result.corners.len())
                 });
                 if !dominated {
                     best = Some(result);
@@ -779,7 +779,7 @@ pub fn detect_marker_board_best(
             let view = make_view(pixels, width, height);
             detector.detect_from_image_and_corners(&view, &corners)
         })
-        .max_by_key(|r| r.detection.corners.len());
+        .max_by_key(|r| r.corners.len());
     to_js(&best)
 }
 
@@ -814,11 +814,8 @@ pub fn detect_puzzleboard_best(
         match detector.detect(&view, &corners) {
             Ok(result) => {
                 let dominated = best.as_ref().is_some_and(|b| {
-                    let new_key = (
-                        result.detection.corners.len(),
-                        result.decode.mean_confidence,
-                    );
-                    let old_key = (b.detection.corners.len(), b.decode.mean_confidence);
+                    let new_key = (result.corners.len(), result.decode.mean_confidence);
+                    let old_key = (b.corners.len(), b.decode.mean_confidence);
                     old_key.0 > new_key.0 || (old_key.0 == new_key.0 && old_key.1 >= new_key.1)
                 });
                 if !dominated {

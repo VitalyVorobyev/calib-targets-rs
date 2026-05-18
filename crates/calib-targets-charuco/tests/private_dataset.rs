@@ -104,9 +104,9 @@ fn smoke_flagship_snap_0_detects() {
         "flagship snap 0 must not produce any raw wrong-id decodings"
     );
     assert!(
-        result.detection.corners.len() >= 30,
+        result.corners.len() >= 30,
         "flagship snap 0 should have ≥ 30 ChArUco corners, got {}",
-        result.detection.corners.len()
+        result.corners.len()
     );
 }
 
@@ -250,9 +250,9 @@ fn smoke_apriltag_image_does_not_panic() {
         result.markers.len()
     );
     assert!(
-        result.detection.corners.len() >= 60,
+        result.corners.len() >= 60,
         "board-level matcher should land ≥ 60 ChArUco corners, got {}",
-        result.detection.corners.len()
+        result.corners.len()
     );
     assert_eq!(
         diagnostics.raw_marker_wrong_id_count, 0,

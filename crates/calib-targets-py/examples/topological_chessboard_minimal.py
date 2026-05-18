@@ -32,11 +32,11 @@ def main() -> int:
         return 1
 
     print(
-        f"detected {len(result.detection.corners)} labelled corners; "
+        f"detected {len(result.corners)} labelled corners; "
         f"cell size {result.cell_size:.2f}px"
     )
     print("i\tj\tx\ty")
-    for corner in result.detection.corners:
+    for corner in result.corners:
         if corner.grid is None:
             continue
         x, y = corner.position

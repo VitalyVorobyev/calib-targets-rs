@@ -59,7 +59,7 @@ fn run_image(
 
     println!(
         "detected {} labelled corners (mean confidence = {:.3}, bit-error rate = {:.3})",
-        result.detection.corners.len(),
+        result.corners.len(),
         result.decode.mean_confidence,
         result.decode.bit_error_rate,
     );

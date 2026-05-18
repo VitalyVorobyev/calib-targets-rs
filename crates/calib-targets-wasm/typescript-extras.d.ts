@@ -110,15 +110,31 @@ export interface MarkerDetection {
   corners_img: [Point2, Point2, Point2, Point2] | null;
 }
 
+export interface CharucoCorner {
+  position: Point2;
+  grid: GridCoords;
+  id: number;
+  target_position: Point2;
+  score: number;
+}
+
 export interface CharucoDetectionResult {
-  detection: TargetDetection;
+  corners: CharucoCorner[];
   /** Markers consistent with `alignment` (inliers of the chosen hypothesis). */
   markers: MarkerDetection[];
   alignment: GridAlignment;
 }
 
+export interface MarkerBoardCorner {
+  position: Point2;
+  grid: GridCoords;
+  id: number | null;
+  target_position: Point2 | null;
+  score: number;
+}
+
 export interface MarkerBoardDetectionResult {
-  detection: TargetDetection;
+  corners: MarkerBoardCorner[];
   alignment: GridAlignment | null;
 }
 
@@ -126,8 +142,8 @@ export interface MarkerBoardDetectionResult {
  * Compact decode quality summary (Rust `PuzzleBoardDecodeInfo`).
  *
  * Winner-vs-runner-up scoring evidence and the raw per-edge observations
- * live in the Rust `PuzzleBoardDiagnostics` struct, which is reachable only
- * via `detect_with_diagnostics` and does not cross the WASM boundary.
+ * live in the `PuzzleBoardDiagnostics` payload returned by
+ * `detect_puzzleboard_with_diagnostics`.
  */
 export interface PuzzleBoardDecodeInfo {
   /** Total observed edges that contributed to the decode. */
@@ -144,8 +160,16 @@ export interface PuzzleBoardDecodeInfo {
   master_origin_col: number;
 }
 
+export interface PuzzleBoardCorner {
+  position: Point2;
+  grid: GridCoords;
+  id: number;
+  target_position: Point2;
+  score: number;
+}
+
 export interface PuzzleBoardDetectionResult {
-  detection: TargetDetection;
+  corners: PuzzleBoardCorner[];
   alignment: GridAlignment;
   decode: PuzzleBoardDecodeInfo;
 }

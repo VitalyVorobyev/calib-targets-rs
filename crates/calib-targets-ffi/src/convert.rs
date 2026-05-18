@@ -17,22 +17,20 @@ use crate::types::{
     ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t,
     ct_optional_u32_t, ct_point2f_t, ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t,
     ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t,
-    ct_scan_decode_config_t, ct_target_detection_t, ct_target_kind_t, ct_upscale_config_t,
-    CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100,
-    CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50,
-    CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250,
-    CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000,
-    CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100,
-    CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50,
-    CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
-    CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
-    CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
-    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
-    CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
-    CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER,
-    CT_REFINER_KIND_SADDLE_POINT, CT_TARGET_KIND_CHARUCO, CT_TARGET_KIND_CHECKERBOARD_MARKER,
-    CT_TARGET_KIND_CHESSBOARD, CT_TARGET_KIND_PUZZLEBOARD, CT_TRUE, CT_UPSCALE_MODE_DISABLED,
-    CT_UPSCALE_MODE_FIXED,
+    ct_scan_decode_config_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
+    CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000,
+    CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100,
+    CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50,
+    CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250,
+    CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000,
+    CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5,
+    CT_DICTIONARY_DICT_APRILTAG_25H9, CT_DICTIONARY_DICT_APRILTAG_36H10,
+    CT_DICTIONARY_DICT_APRILTAG_36H11, CT_DICTIONARY_DICT_ARUCO_MIP_36H12,
+    CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE, CT_MARKER_LAYOUT_OPENCV_CHARUCO,
+    CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED, CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
+    CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD, CT_PUZZLEBOARD_SEARCH_MODE_FULL,
+    CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT,
+    CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -41,7 +39,7 @@ use calib_targets::aruco::ScanDecodeConfig;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{ChessboardCorner, DetectorParams as ChessboardDetectorParams};
-use calib_targets::core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets::core::{GridAlignment, GridCoords, LabeledCorner};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
     CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardParams,
@@ -616,57 +614,59 @@ pub(crate) fn convert_circle_score_params(
             "marker.circle_score.center_search_px must be >= 0",
         ));
     }
-    Ok(CircleScoreParams {
-        patch_size: params.patch_size,
-        diameter_frac: require_positive(params.diameter_frac, "marker.circle_score.diameter_frac")?,
-        ring_thickness_frac: require_positive(
-            params.ring_thickness_frac,
-            "marker.circle_score.ring_thickness_frac",
-        )?,
-        ring_radius_mul: require_positive(
-            params.ring_radius_mul,
-            "marker.circle_score.ring_radius_mul",
-        )?,
-        min_contrast: require_nonnegative(params.min_contrast, "marker.circle_score.min_contrast")?,
-        samples: params.samples,
-        center_search_px: params.center_search_px,
-    })
+    let mut out = CircleScoreParams::default();
+    out.patch_size = params.patch_size;
+    out.diameter_frac =
+        require_positive(params.diameter_frac, "marker.circle_score.diameter_frac")?;
+    out.ring_thickness_frac = require_positive(
+        params.ring_thickness_frac,
+        "marker.circle_score.ring_thickness_frac",
+    )?;
+    out.ring_radius_mul = require_positive(
+        params.ring_radius_mul,
+        "marker.circle_score.ring_radius_mul",
+    )?;
+    out.min_contrast =
+        require_nonnegative(params.min_contrast, "marker.circle_score.min_contrast")?;
+    out.samples = params.samples;
+    out.center_search_px = params.center_search_px;
+    Ok(out)
 }
 
 pub(crate) fn convert_circle_match_params(
     params: &ct_circle_match_params_t,
 ) -> FfiResult<CircleMatchParams> {
-    Ok(CircleMatchParams {
-        max_candidates_per_polarity: params.max_candidates_per_polarity,
-        max_distance_cells: match optional_f32_to_option(
-            &params.max_distance_cells,
+    let mut out = CircleMatchParams::default();
+    out.max_candidates_per_polarity = params.max_candidates_per_polarity;
+    out.max_distance_cells = match optional_f32_to_option(
+        &params.max_distance_cells,
+        "marker.match_params.max_distance_cells",
+    )? {
+        Some(value) => Some(require_positive(
+            value,
             "marker.match_params.max_distance_cells",
-        )? {
-            Some(value) => Some(require_positive(
-                value,
-                "marker.match_params.max_distance_cells",
-            )?),
-            None => None,
-        },
-        min_offset_inliers: params.min_offset_inliers,
-    })
+        )?),
+        None => None,
+    };
+    out.min_offset_inliers = params.min_offset_inliers;
+    Ok(out)
 }
 
 pub(crate) fn convert_marker_board_params(
     params: &ct_marker_board_params_t,
 ) -> FfiResult<MarkerBoardParams> {
     let has_roi_cells = flag_to_bool(params.has_roi_cells, "marker.has_roi_cells")?;
-    Ok(MarkerBoardParams {
-        layout: convert_marker_board_layout(&params.layout)?,
-        chessboard: convert_chessboard_params(&params.chessboard)?,
-        circle_score: convert_circle_score_params(&params.circle_score)?,
-        match_params: convert_circle_match_params(&params.match_params)?,
-        roi_cells: if has_roi_cells {
-            Some(params.roi_cells)
-        } else {
-            None
-        },
-    })
+    let layout = convert_marker_board_layout(&params.layout)?;
+    let mut out = MarkerBoardParams::new(layout);
+    out.chessboard = convert_chessboard_params(&params.chessboard)?;
+    out.circle_score = convert_circle_score_params(&params.circle_score)?;
+    out.match_params = convert_circle_match_params(&params.match_params)?;
+    out.roi_cells = if has_roi_cells {
+        Some(params.roi_cells)
+    } else {
+        None
+    };
+    Ok(out)
 }
 
 // ─── PuzzleBoard params ─────────────────────────────────────────────────────
@@ -830,16 +830,6 @@ pub(crate) fn convert_puzzleboard_scoring_mode(
 
 // ─── Output builders (Rust → ct_*_t) ────────────────────────────────────────
 
-pub(crate) fn target_kind_to_ffi(kind: TargetKind) -> ct_target_kind_t {
-    match kind {
-        TargetKind::Chessboard => CT_TARGET_KIND_CHESSBOARD,
-        TargetKind::Charuco => CT_TARGET_KIND_CHARUCO,
-        TargetKind::CheckerboardMarker => CT_TARGET_KIND_CHECKERBOARD_MARKER,
-        TargetKind::PuzzleBoard => CT_TARGET_KIND_PUZZLEBOARD,
-        _ => CT_TARGET_KIND_CHESSBOARD, // fallback for future variants
-    }
-}
-
 pub(crate) fn point_to_ffi_xy(x: f32, y: f32) -> ct_point2f_t {
     ct_point2f_t { x, y }
 }
@@ -861,13 +851,6 @@ pub(crate) fn alignment_to_ffi(alignment: GridAlignment) -> ct_grid_alignment_t 
         },
         translation_i: alignment.translation[0],
         translation_j: alignment.translation[1],
-    }
-}
-
-pub(crate) fn build_detection_header(detection: &TargetDetection) -> ct_target_detection_t {
-    ct_target_detection_t {
-        kind: target_kind_to_ffi(detection.kind),
-        corners_len: detection.corners.len(),
     }
 }
 

@@ -83,6 +83,7 @@ from .enums import (
 )
 from .results import (
     CellOffset,
+    CharucoCorner,
     CharucoDetectionResult,
     ChessboardCorner,
     ChessboardDebug,
@@ -97,6 +98,7 @@ from .results import (
     GridGraphNode,
     GridTransform,
     LabeledCorner,
+    MarkerBoardCorner,
     MarkerBoardDetectionResult,
     MarkerCircleExpectation,
     MarkerDetection,
@@ -104,6 +106,7 @@ from .results import (
     ObservedEdge,
     OrientationHistogram,
     Point2,
+    PuzzleBoardCorner,
     PuzzleBoardDecodeInfo,
     PuzzleBoardDetectionResult,
     TargetDetection,
@@ -202,10 +205,13 @@ __all__ = [
     "CircleCandidate",
     "MarkerCircleExpectation",
     "CircleMatch",
+    "CharucoCorner",
     "CharucoDetectionResult",
+    "MarkerBoardCorner",
     "MarkerBoardDetectionResult",
     "PuzzleBoardObservedEdge",
     "ObservedEdge",
+    "PuzzleBoardCorner",
     "PuzzleBoardDecodeInfo",
     "PuzzleBoardDetectionResult",
 ]
