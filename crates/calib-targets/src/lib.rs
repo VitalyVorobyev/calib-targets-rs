@@ -16,7 +16,7 @@
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 //! let params = DetectorParams::default();
 //!
-//! let result = detect::detect_chessboard(&img, &params);
+//! let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
 //! println!("detected: {}", result.is_some());
 //! # Ok(())
 //! # }
@@ -46,6 +46,7 @@
 //!
 //! Benchmarks are coming. The goal is to be the fastest detector in this class
 //! while maintaining high sensitivity and accuracy.
+#![deny(missing_docs)]
 
 pub use calib_targets_aruco as aruco;
 pub use calib_targets_charuco as charuco;
@@ -64,4 +65,5 @@ pub mod detect;
 pub mod generate;
 
 #[cfg(feature = "cli")]
+#[doc(hidden)]
 pub mod cli;

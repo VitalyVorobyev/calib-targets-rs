@@ -1,32 +1,64 @@
 //! Output and per-stage diagnostic types for the detector pipeline.
 //!
-//! These are pure data carriers: the [`Detection`] result, the
-//! serde-friendly [`DebugFrame`] introspection payload, and the
-//! per-stage trace structs that the `bench diagnose` tooling renders.
-//! No pipeline logic lives here — see [`super::run`] for the
-//! orchestrator and the sibling stage modules for the stage bodies.
+//! These are pure data carriers: the [`ChessboardDetection`] result and
+//! its [`ChessboardCorner`] entries, the serde-friendly [`DebugFrame`]
+//! introspection payload, and the per-stage trace structs that the
+//! `bench diagnose` tooling renders. No pipeline logic lives here — see
+//! [`super::run`] for the orchestrator and the sibling stage modules for
+//! the stage bodies.
 
 use crate::boosters::BoosterResult;
 use crate::cluster::ClusterDebug;
 use crate::corner::{CornerAug, CornerStage};
-use calib_targets_core::TargetDetection;
+use calib_targets_core::GridCoords;
 
-use projective_grid::square::grow_extension::ExtensionStats;
+use nalgebra::Point2;
+use projective_grid::square::extension::ExtensionStats;
 use serde::Serialize;
 
-/// Final detection output.
+/// A single labelled chessboard corner.
+///
+/// `#[non_exhaustive]`: construct with [`ChessboardCorner::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
-pub struct Detection {
-    pub grid_directions: [f32; 2],
-    pub cell_size: f32,
-    pub target: TargetDetection,
-    /// Indices into the input `corners` slice for the labelled corners,
-    /// in the same order as `target.corners`.
-    ///
-    /// Consumers that need to map labelled grid points back to raw ChESS
-    /// inputs (e.g., ChArUco marker alignment) should read this vector
-    /// rather than reconstructing the mapping from positions.
-    pub strong_indices: Vec<usize>,
+pub struct ChessboardCorner {
+    /// Sub-pixel image position.
+    pub position: Point2<f32>,
+    /// Grid label (i, j). A chessboard corner is always labelled — non-optional.
+    pub grid: GridCoords,
+    /// Index into the detector's input `&[ChessCorner]` slice that produced this corner.
+    pub input_index: usize,
+    /// Corner score.
+    pub score: f32,
+}
+
+impl ChessboardCorner {
+    /// Create a corner from its position, grid label, input provenance, and score.
+    pub fn new(position: Point2<f32>, grid: GridCoords, input_index: usize, score: f32) -> Self {
+        Self {
+            position,
+            grid,
+            input_index,
+            score,
+        }
+    }
+}
+
+/// Result of chessboard detection: the labelled corner set.
+///
+/// `#[non_exhaustive]`: construct with [`ChessboardDetection::new`].
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct ChessboardDetection {
+    /// The labelled corners.
+    pub corners: Vec<ChessboardCorner>,
+}
+
+impl ChessboardDetection {
+    /// Create a detection from its labelled corner set.
+    pub fn new(corners: Vec<ChessboardCorner>) -> Self {
+        Self { corners }
+    }
 }
 
 /// Current [`DebugFrame`] schema version.
@@ -41,18 +73,27 @@ pub const DEBUG_FRAME_SCHEMA: u32 = 1;
 /// Flat and serde-friendly so the Python overlay script can render
 /// every decision stage.
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct DebugFrame {
     /// Schema version — see [`DEBUG_FRAME_SCHEMA`].
     pub schema: u32,
+    /// Number of corners passed into the detector.
     pub input_count: usize,
+    /// The two recovered grid-direction angles `[θ₀, θ₁]` in radians;
+    /// `None` when clustering did not run.
     pub grid_directions: Option<[f32; 2]>,
+    /// Seed-derived cell size in pixels; `None` when no seed was found.
     pub cell_size: Option<f32>,
+    /// The four input-corner indices of the chosen 2×2 seed quad;
+    /// `None` when `find_seed` failed.
     pub seed: Option<[usize; 4]>,
+    /// One trace per `find_seed → grow → validate` iteration.
     pub iterations: Vec<IterationTrace>,
     /// Summary from the `apply_boosters` stage (`None` when boosters
     /// didn't run — e.g., empty or seed failure).
     pub boosters: Option<BoosterResult>,
-    pub detection: Option<Detection>,
+    /// The final detection; `None` when the pipeline emitted no detection.
+    pub detection: Option<ChessboardDetection>,
     /// All corners carried through the pipeline (same indexing as
     /// the input slice). `stage` captures where each corner ended
     /// up.
@@ -65,12 +106,17 @@ pub struct DebugFrame {
     pub cluster_debug: Option<ClusterDebug>,
 }
 
+/// Per-iteration trace of the `find_seed → grow → validate` loop.
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct IterationTrace {
+    /// Zero-based index of this iteration.
     pub iter: u32,
+    /// Number of labelled corners at the end of this iteration.
     pub labelled_count: usize,
+    /// Input-corner indices newly blacklisted by this iteration's validation.
     pub new_blacklist: Vec<usize>,
+    /// `true` when validation produced no new blacklist (the loop stops).
     pub converged: bool,
     /// `extend_boundary` summary for this iteration. `None` when too
     /// few BFS labels were available, or when the fitted-H residual
@@ -117,10 +163,15 @@ pub struct IterationTrace {
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct BfsExtendTrace {
+    /// Number of corners attached by the BFS extension.
     pub attached: usize,
+    /// Candidate cells skipped because no corner sat near the prediction.
     pub rejected_no_candidate: usize,
+    /// Candidate cells skipped because two corners were equally plausible.
     pub rejected_ambiguous: usize,
+    /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
+    /// Input-corner indices of the corners attached in this pass.
     pub attached_indices: Vec<usize>,
 }
 
@@ -151,9 +202,11 @@ pub struct GeometryCheckTrace {
     /// Number of labelled corners that failed the geometry check
     /// and were dropped from the final detection.
     pub dropped: u32,
-    /// Reason summary: count of drops attributed to each predicate.
+    /// Drops attributed to the line-collinearity predicate.
     pub dropped_line_collinearity: u32,
+    /// Drops attributed to the local-homography residual predicate.
     pub dropped_local_h_residual: u32,
+    /// Drops attributed to the per-edge length / axis-slot-swap predicate.
     pub dropped_edge_invariant: u32,
     /// Number of labelled corners dropped because they were not in
     /// the largest cardinally-connected component. Catches isolated
@@ -170,18 +223,35 @@ pub struct GeometryCheckTrace {
     pub detection_refused: bool,
 }
 
+/// Diagnose payload for one homography-based boundary-extension pass
+/// (`extend_boundary` / `rescue_no_cluster`). Mirrors
+/// [`ExtensionStats`](projective_grid::square::extension::ExtensionStats).
 #[derive(Clone, Debug, Serialize)]
+#[non_exhaustive]
 pub struct ExtensionTrace {
+    /// `false` when the residual gate refused to extrapolate (no-op pass).
     pub h_trusted: bool,
+    /// Median reprojection residual on the labelled set in pixels;
+    /// `None` when the H wasn't fit.
     pub h_residual_median_px: Option<f32>,
+    /// Maximum reprojection residual on the labelled set in pixels;
+    /// `None` when the H wasn't fit.
     pub h_residual_max_px: Option<f32>,
+    /// Number of extension iterations actually run.
     pub iterations: usize,
+    /// Number of corners attached across all iterations.
     pub attached: usize,
+    /// Candidate cells skipped because no corner sat near the prediction.
     pub rejected_no_candidate: usize,
+    /// Candidate cells skipped because two corners were equally plausible.
     pub rejected_ambiguous: usize,
+    /// Candidate cells skipped because the target `(i, j)` was already labelled.
     pub rejected_label: usize,
+    /// Candidate corners rejected by the grow validator.
     pub rejected_validator: usize,
+    /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
+    /// Input-corner indices of the corners attached in this pass.
     pub attached_indices: Vec<usize>,
 }
 
@@ -206,10 +276,11 @@ impl From<&ExtensionStats> for ExtensionTrace {
 /// Compact per-stage counters derived from a [`DebugFrame`].
 ///
 /// Cheaper to log / dashboard than the full [`DebugFrame`]: each field is a
-/// single integer (or boolean). Use
-/// [`Detector::detect_instrumented`](crate::Detector::detect_instrumented)
-/// to get these alongside the detection.
+/// single integer (or boolean). Obtain a [`DebugFrame`] from
+/// [`Detector::detect_with_diagnostics`](crate::Detector::detect_with_diagnostics)
+/// and pass it to [`StageCounts::from_frame`].
 #[derive(Clone, Copy, Debug, Default, Serialize)]
+#[non_exhaustive]
 pub struct StageCounts {
     /// Corners passed into the detector.
     pub input_corners: usize,
@@ -266,18 +337,8 @@ impl StageCounts {
         counts.seed_found = frame.seed.is_some();
         counts.validation_iterations = frame.iterations.len() as u32;
         if let Some(d) = &frame.detection {
-            counts.labelled_final = d.target.corners.len();
+            counts.labelled_final = d.corners.len();
         }
         counts
     }
-}
-
-/// A [`Detection`] (when produced) paired with derived [`StageCounts`].
-///
-/// `detection` may be `None` even when counts are populated — the pipeline
-/// always runs to whichever stage failed first.
-#[derive(Clone, Debug, Serialize)]
-pub struct InstrumentedResult {
-    pub detection: Option<Detection>,
-    pub counts: StageCounts,
 }

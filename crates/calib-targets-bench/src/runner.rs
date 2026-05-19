@@ -69,30 +69,30 @@ pub fn run_entry(
 
         let started = Instant::now();
         let corners = detect_corners(&upscaled, chess_cfg);
-        let detection = Detector::new(params.clone()).detect(&corners);
+        // Use the diagnostics entry point so the baseline can still
+        // record `cell_size` — the typed `ChessboardDetection` no longer
+        // carries it, but the `DebugFrame` diagnostics channel does.
+        let frame = Detector::new(params.clone()).detect_with_diagnostics(&corners);
         let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
 
-        let baseline_image = detection.as_ref().map(|d| {
+        let cell_size_px = frame.cell_size.unwrap_or(0.0);
+        let baseline_image = frame.detection.as_ref().map(|d| {
             let mut corners: Vec<BaselineCorner> = d
-                .target
                 .corners
                 .iter()
-                .filter_map(|lc| {
-                    let g = lc.grid?;
-                    Some(BaselineCorner {
-                        i: g.i,
-                        j: g.j,
-                        x: lc.position.x,
-                        y: lc.position.y,
-                        id: lc.id,
-                        score: lc.score,
-                    })
+                .map(|lc| BaselineCorner {
+                    i: lc.grid.i,
+                    j: lc.grid.j,
+                    x: lc.position.x,
+                    y: lc.position.y,
+                    id: None,
+                    score: lc.score,
                 })
                 .collect();
             corners.sort_by_key(|c| (c.j, c.i));
             BaselineImage {
                 labelled_count: corners.len(),
-                cell_size_px: d.cell_size,
+                cell_size_px,
                 corners,
             }
         });

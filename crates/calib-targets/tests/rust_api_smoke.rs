@@ -27,6 +27,7 @@ edition = "2021"
 
 [dependencies]
 calib-targets = {{ path = '{crate_dir}' }}
+chess-corners = "0.11"
 image = "0.25"
 "#
         ),
@@ -34,9 +35,11 @@ image = "0.25"
 
     write_file(
         &main_path,
-        r#"use calib_targets::detect::{
-    self, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, DetectorConfig,
-    MultiscaleConfig, Threshold,
+        r#"use calib_targets::detect::{self, DetectorConfig};
+// Advanced ChESS tuning types come from `chess-corners` directly — the
+// `calib-targets` facade re-exports only `DetectorConfig` + `OrientationMethod`.
+use chess_corners::{
+    ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, MultiscaleConfig, Threshold,
 };
 
 fn main() {

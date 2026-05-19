@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
     let params = PuzzleBoardParams::for_board(&spec);
     let result = detect::detect_puzzleboard(&img, &params)?;
-    println!("{} corners with absolute IDs", result.detection.corners.len());
+    println!("{} corners with absolute IDs", result.corners.len());
     Ok(())
 }
 ```
@@ -57,13 +57,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Field | Meaning |
 |---|---|
-| `detection: TargetDetection` | Labelled inner corners. Each `LabeledCorner` has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space). |
-| `decode: PuzzleBoardDecodeInfo` | Per-frame decoding diagnostics: `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, `scoring_mode`, and in soft mode `score_best`, `score_runner_up`, `score_margin`, plus the runner-up origin / D4 transform. |
-| `observed_edges` | Per-edge bit samples with confidence. Consumable by overlay tools. |
+| `corners: Vec<PuzzleBoardCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space), and `score`. |
+| `alignment: GridAlignment` | D4 transform + translation mapping the local grid into master-board coordinates. |
+| `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, and `master_origin_row` / `master_origin_col`. |
 
 Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.
 Fragments printed from different regions share the master ID space, so
 multi-camera detections stitch naturally.
+
+### Diagnostics
+
+`PuzzleBoardDetector::detect_with_diagnostics` returns the result above
+plus a [`diagnostics::PuzzleBoardDiagnostics`] — the raw per-edge bit
+observations (`observed_edges`) and the winner-vs-runner-up scoring
+evidence (`score_best`, `score_runner_up`, `score_margin`, the runner-up
+origin / D4 transform, and the scoring mode used). These exist to
+*understand* or debug a decode; the result struct carries everything
+needed to *use* one. The diagnostics surface has a looser stability
+promise than the result API.
 
 ## Configuration
 
@@ -123,8 +134,9 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   decodes to the same master coordinates, so downstream calibration gets
   directly-comparable observations. If you're validating consistency on a
   known printed board, `FixedBoard + SoftLogLikelihood` is the most
-  informative mode: it preserves partial-view correctness and surfaces
-  `score_margin` when a frame's winner is weak.
+  informative mode: it preserves partial-view correctness, and
+  `detect_with_diagnostics` surfaces `score_margin` (in
+  [`diagnostics::PuzzleBoardDiagnostics`]) when a frame's winner is weak.
 
 ## Limitations
 

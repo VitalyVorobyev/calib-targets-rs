@@ -94,9 +94,8 @@ def main() -> int:
         print(f"detection failed: {exc}", file=sys.stderr)
         return 1
     print(
-        f"detected {len(result.detection.corners)} labelled corners, "
-        f"{len(result.markers)} markers "
-        f"(raw_marker_count={result.raw_marker_count})"
+        f"detected {len(result.corners)} labelled corners, "
+        f"{len(result.markers)} markers"
     )
 
     # 4. Export detection (corners + markers + alignment) to JSON.

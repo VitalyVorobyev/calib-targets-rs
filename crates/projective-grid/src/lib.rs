@@ -43,7 +43,7 @@
 //!   recovery, image-free. Requires per-corner grid axes inline on
 //!   the input via [`TopologicalInputCorner`].
 //!
-//! [`SeedQuadValidator`]: square::seed_finder::SeedQuadValidator
+//! [`SeedQuadValidator`]: square::seed::finder::SeedQuadValidator
 //! [`GrowValidator`]: square::grow::GrowValidator
 //!
 //! All entry points share a common output shape: a `(i, j) →
@@ -62,7 +62,7 @@
 //! | Module | Responsibility |
 //! |---|---|
 //! | [`square::regular`] | Zero-config point-cloud regular-grid detection (onboarding entry point) |
-//! | [`square::cleanup`] | Generic output cleanup: rebase, connectivity prune, top-left canonicalise, sort |
+//! | `square::cleanup` | Generic output cleanup (private; used internally) |
 //! | [`square::grow`] | Seed-and-grow BFS over a square lattice |
 //! | [`square::extension`] | Boundary extension via globally-fit or local homography |
 //! | [`square::seed`] | 2×2 seed primitives (cell size, midpoint violation) |
@@ -70,10 +70,11 @@
 //! | [`square::mesh`] / [`square::rectify`] | Per-cell mesh / global homography rectification |
 //! | [`square::smoothness`] | Midpoint prediction + step-aware outlier detection |
 //! | [`square::alignment`] | D4 transforms on integer grid coordinates |
-//! | [`hex`] | Hex grid: index, mesh, rectify, smoothness, alignment (no grow path yet) |
+//! | [`hex`] | Hex grid: alignment, mesh, rectify, smoothness (no grow path yet) |
 //! | [`circular_stats`] | Undirected-angle helpers (smoothing, plateau peak picking, double-angle 2-means) |
 //! | [`global_step`] / [`local_step`] | Cell-size estimation primitives |
 //! | [`homography`] | 4-point + DLT homography with reprojection-quality diagnostics |
+#![deny(missing_docs)]
 
 mod float_helpers;
 
@@ -104,10 +105,6 @@ pub use homography::{
 pub use local_step::{estimate_local_steps, LocalStep, LocalStepParams, LocalStepPointData};
 
 // --- Square-grid surface re-exported at the crate root --------
-//
-// The generic output-cleanup helpers (`rebase_to_origin`,
-// `prune_to_main_component`, `canonicalize_top_left`, …) are *not*
-// re-exported here — reach for them as `square::cleanup::*`.
 pub use square::alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 pub use square::index::GridCoords;
 pub use square::mesh::SquareGridHomographyMesh;
@@ -131,12 +128,9 @@ pub use square::detect::{
 
 // --- Topological-grid surface --------------------------------
 pub use topological::{
-    build_grid_topological, build_grid_topological_trace, detect_topological_grid,
-    recover_topological_grid, AxisClusterCenters, AxisEstimate, TopologicalComponent,
-    TopologicalComponentTrace, TopologicalCornerTrace, TopologicalEdgeMetricTrace,
-    TopologicalError, TopologicalGrid, TopologicalInputCorner, TopologicalLabelTrace,
-    TopologicalParams, TopologicalQuadTrace, TopologicalStats, TopologicalTrace,
-    TopologicalTriangleTrace, TriangleClass,
+    build_grid_topological, detect_topological_grid, recover_topological_grid, AxisClusterCenters,
+    AxisEstimate, TopologicalComponent, TopologicalError, TopologicalGrid, TopologicalInputCorner,
+    TopologicalParams, TopologicalStats, TriangleClass,
 };
 
 // --- Component merge (shared by both pipelines) --------------

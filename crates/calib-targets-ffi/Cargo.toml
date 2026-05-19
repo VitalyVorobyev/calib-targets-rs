@@ -30,6 +30,8 @@ calib-targets = { workspace = true, features = ["image"] }
 cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
 flate2.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tar.workspace = true
 zip.workspace = true
 

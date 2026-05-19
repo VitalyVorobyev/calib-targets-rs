@@ -15,7 +15,7 @@ use crate::grow::{ChessboardGrowValidator, ChessboardRescueValidator, GrowResult
 use crate::params::DetectorParams;
 
 use nalgebra::Point2;
-use projective_grid::square::grow_extension::{
+use projective_grid::square::extension::{
     extend_via_global_homography, extend_via_local_homography, ExtensionParams, ExtensionStats,
     LocalExtensionParams,
 };
@@ -24,7 +24,7 @@ use projective_grid::square::grow_extension::{
 ///
 /// Builds a `Point2<f32>` view of the corner positions and a fresh
 /// chessboard validator, then delegates to
-/// [`projective_grid::square::grow_extension::extend_via_global_homography`].
+/// [`projective_grid::square::extension::extend_via_global_homography`].
 /// The extension's blacklist tracking is approach (b): rejected
 /// attachments fall through to the regular Stage-7 mechanism on the
 /// next iteration. Stats include `attached_indices` for future
@@ -46,9 +46,9 @@ pub(crate) fn run_stage6(
     let parity_shift = (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
     let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params)
         .with_parity_shift(parity_shift);
-    if params.stage6_local_h {
+    if params.tuning.stage6_local_h {
         let mut local_params = LocalExtensionParams::default();
-        local_params.k_nearest = params.stage6_local_k_nearest;
+        local_params.k_nearest = params.tuning.stage6_local_k_nearest;
         extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
     } else {
         extend_via_global_homography(
@@ -62,7 +62,7 @@ pub(crate) fn run_stage6(
 }
 
 /// Stage 6.5: NoCluster rescue. Reuses
-/// [`projective_grid::square::grow_extension::extend_via_local_homography`]
+/// [`projective_grid::square::extension::extend_via_local_homography`]
 /// with [`ChessboardRescueValidator`] (admits `Strong` / `NoCluster`
 /// corners within `rescue_axis_tol_deg` and infers parity from axes).
 /// Same per-cell local-H prediction + position match + ambiguity
@@ -86,7 +86,7 @@ pub(crate) fn run_stage6_5_rescue(
     let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params)
         .with_parity_shift(parity_shift);
     let mut local_params = LocalExtensionParams::default();
-    local_params.k_nearest = params.stage6_5_local_k_nearest;
-    local_params.common.search_rel = params.rescue_search_rel;
+    local_params.k_nearest = params.tuning.stage6_5_local_k_nearest;
+    local_params.common.search_rel = params.tuning.rescue_search_rel;
     extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
 }

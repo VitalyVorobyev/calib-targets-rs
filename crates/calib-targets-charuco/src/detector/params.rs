@@ -1,10 +1,12 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
+use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoParams {
     /// Pixels per board square in the canonical sampling space.
@@ -171,11 +173,12 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
     params
 }
 
-/// Convert a `ChessCornerParams` into the upstream `chess_corners::ChessParams`.
+/// Convert a `ChessCornerParams` into the upstream
+/// `chess_corners::low_level::ChessParams`.
 ///
-/// Since `ChessCornerParams` is now a re-export of `chess_corners::ChessParams`,
-/// this is an identity-like operation.
-pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::ChessParams {
+/// Since `ChessCornerParams` is now a re-export of
+/// `chess_corners::low_level::ChessParams`, this is an identity-like operation.
+pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::low_level::ChessParams {
     params.clone()
 }
 
@@ -188,7 +191,7 @@ impl CharucoParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
                 Self {
                     chessboard,
                     ..base.clone()
@@ -206,7 +209,7 @@ impl CharucoParams {
     /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.min_corner_strength = 0.5;
+        chessboard.tuning.min_corner_strength = 0.5;
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.marker_size_rel,
@@ -218,7 +221,7 @@ impl CharucoParams {
             ..ScanDecodeConfig::default()
         };
 
-        let max_hamming = board.dictionary.max_correction_bits.min(2);
+        let max_hamming = board.dictionary.max_correction_bits().min(2);
 
         Self {
             px_per_square: 60.0,
@@ -259,7 +262,7 @@ mod tests {
 
     #[test]
     fn to_chess_params_is_identity() {
-        // Since ChessCornerParams IS chess_corners::ChessParams, to_chess_params
+        // Since ChessCornerParams IS chess_corners::low_level::ChessParams, to_chess_params
         // should round-trip perfectly.
         let mut params = ChessCornerParams::default();
         params.threshold_rel = 0.3;

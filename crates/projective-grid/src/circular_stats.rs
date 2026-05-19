@@ -10,6 +10,8 @@
 //!
 //! * [`wrap_pi`] / [`angular_dist_pi`] — angle helpers over the
 //!   undirected mod-π circle.
+//! * [`angle_to_bin`] / [`bin_to_angle`] — convert between an angle in
+//!   `[0, π)` and an equal-width circular-histogram bin index.
 //! * [`smooth_circular_5`] — a 1-pass `[1, 4, 6, 4, 1] / 16` circular
 //!   convolution.
 //! * [`pick_two_peaks`] — plateau-aware local-maxima detection on a
@@ -114,6 +116,8 @@ pub struct PeakPickOptions {
 }
 
 impl PeakPickOptions {
+    /// Construct options from the minimum peak weight fraction and the
+    /// minimum angular separation (radians, mod-π circle).
     pub fn new(min_peak_weight_fraction: f32, min_separation: f32) -> Self {
         Self {
             min_peak_weight_fraction,
@@ -198,7 +202,9 @@ pub fn pick_two_peaks(
 /// A single weighted vote over the mod-π circle.
 #[derive(Clone, Copy, Debug)]
 pub struct AngleVote {
+    /// Vote direction in radians, interpreted on the mod-π circle.
     pub angle: f32,
+    /// Non-negative weight this vote contributes to its histogram bin.
     pub weight: f32,
 }
 

@@ -21,7 +21,7 @@
 //!
 //! The pattern-agnostic geometry — KD-tree neighbour search, axis
 //! classification of B vs C, parallelogram completion, edge-ratio
-//! match — lives in `projective_grid::square::seed_finder`. This
+//! match — lives in `projective_grid::square::seed::finder`. This
 //! module supplies the chessboard-specific `SeedQuadValidator` impl:
 //! parity-aware A/BC partition, the axis-slot-swap edge gate, and
 //! the chessboard's midpoint-violation test.
@@ -30,7 +30,7 @@ use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
 use nalgebra::Point2;
-use projective_grid::square::seed_finder::{find_quad, SeedQuadParams, SeedQuadValidator};
+use projective_grid::square::seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
 use projective_grid::topological::AxisEstimate;
 
 // `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
@@ -70,15 +70,15 @@ fn find_with_slack<V: SeedQuadValidator>(
     slack: f32,
 ) -> Option<SeedOutput> {
     let pg_params = SeedQuadParams::new(
-        params.seed_axis_tol_deg.to_radians() * slack,
-        params.seed_edge_tol * slack,
-        params.seed_close_tol * slack,
+        params.tuning.seed_axis_tol_deg.to_radians() * slack,
+        params.tuning.seed_edge_tol * slack,
+        params.tuning.seed_close_tol * slack,
     );
     find_quad(v, &pg_params)
 }
 
 /// Chessboard plug-in for the generic
-/// [`SeedQuadValidator`](projective_grid::square::seed_finder::SeedQuadValidator).
+/// [`SeedQuadValidator`](projective_grid::square::seed::finder::SeedQuadValidator).
 struct ChessboardSeedValidator<'a> {
     corners: &'a [CornerAug],
     /// Canonical-cluster indices, sorted by descending strength so the

@@ -1,6 +1,6 @@
-use super::CharucoDetectionResult;
+use super::pipeline::RawMarkerCounts;
+use super::{CharucoCorner, CharucoDetectionResult};
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_core::{LabeledCorner, TargetDetection, TargetKind};
 use log::debug;
 use std::collections::HashMap;
 
@@ -10,9 +10,13 @@ use std::collections::HashMap;
 /// The group with the most total markers wins. Within the winning group,
 /// corners and markers are unioned in board-coordinate space, deduplicating
 /// by ID (highest score wins).
+///
+/// Each component's [`RawMarkerCounts`] is threaded in alongside its
+/// result; the returned counts are the sum over the winning group, so the
+/// caller can record them on [`super::CharucoDetectDiagnostics`].
 pub(crate) fn merge_charuco_results(
-    results: Vec<CharucoDetectionResult>,
-) -> CharucoDetectionResult {
+    results: Vec<(CharucoDetectionResult, RawMarkerCounts)>,
+) -> (CharucoDetectionResult, RawMarkerCounts) {
     debug_assert!(!results.is_empty());
     if results.len() == 1 {
         // INVARIANT: results is non-empty (guaranteed by debug_assert! above), so next() is Some.
@@ -20,9 +24,10 @@ pub(crate) fn merge_charuco_results(
     }
 
     // Group by D4 transform.
-    let mut groups: HashMap<[i32; 4], Vec<&CharucoDetectionResult>> = HashMap::new();
+    let mut groups: HashMap<[i32; 4], Vec<&(CharucoDetectionResult, RawMarkerCounts)>> =
+        HashMap::new();
     for r in &results {
-        let t = &r.alignment.transform;
+        let t = &r.0.alignment.transform;
         let key = [t.a, t.b, t.c, t.d];
         groups.entry(key).or_default().push(r);
     }
@@ -31,7 +36,7 @@ pub(crate) fn merge_charuco_results(
     // INVARIANT: groups is non-empty because results is non-empty (each result contributes to a group).
     let best_group = groups
         .into_values()
-        .max_by_key(|group| group.iter().map(|r| r.markers.len()).sum::<usize>())
+        .max_by_key(|group| group.iter().map(|r| r.0.markers.len()).sum::<usize>())
         .unwrap();
 
     debug!(
@@ -41,16 +46,15 @@ pub(crate) fn merge_charuco_results(
     );
 
     // Merge corners by charuco ID, keep highest score.
-    let mut corners_by_id: HashMap<u32, LabeledCorner> = HashMap::new();
+    let mut corners_by_id: HashMap<u32, CharucoCorner> = HashMap::new();
     for r in &best_group {
-        for c in &r.detection.corners {
-            let Some(id) = c.id else { continue };
-            match corners_by_id.get(&id) {
+        for c in &r.0.corners {
+            match corners_by_id.get(&c.id) {
                 None => {
-                    corners_by_id.insert(id, c.clone());
+                    corners_by_id.insert(c.id, c.clone());
                 }
                 Some(prev) if c.score > prev.score => {
-                    corners_by_id.insert(id, c.clone());
+                    corners_by_id.insert(c.id, c.clone());
                 }
                 _ => {}
             }
@@ -60,7 +64,7 @@ pub(crate) fn merge_charuco_results(
     // Merge markers by marker ID, keep highest score.
     let mut markers_by_id: HashMap<u32, MarkerDetection> = HashMap::new();
     for r in &best_group {
-        for m in &r.markers {
+        for m in &r.0.markers {
             match markers_by_id.get(&m.id) {
                 None => {
                     markers_by_id.insert(m.id, m.clone());
@@ -77,18 +81,24 @@ pub(crate) fn merge_charuco_results(
     // INVARIANT: best_group is non-empty — it was selected from a non-empty groups map above.
     let best_alignment = best_group
         .iter()
-        .max_by_key(|r| r.markers.len())
+        .max_by_key(|r| r.0.markers.len())
         .unwrap()
+        .0
         .alignment;
 
-    let mut corners: Vec<LabeledCorner> = corners_by_id.into_values().collect();
-    corners.sort_by_key(|c| c.id.unwrap_or(u32::MAX));
+    let mut corners: Vec<CharucoCorner> = corners_by_id.into_values().collect();
+    corners.sort_by_key(|c| c.id);
 
     let mut markers: Vec<MarkerDetection> = markers_by_id.into_values().collect();
     markers.sort_by_key(|m| m.id);
 
-    let raw_marker_count = best_group.iter().map(|r| r.raw_marker_count).sum();
-    let raw_marker_wrong_id_count = best_group.iter().map(|r| r.raw_marker_wrong_id_count).sum();
+    let raw_counts = RawMarkerCounts {
+        raw_marker_count: best_group.iter().map(|r| r.1.raw_marker_count).sum(),
+        raw_marker_wrong_id_count: best_group
+            .iter()
+            .map(|r| r.1.raw_marker_wrong_id_count)
+            .sum(),
+    };
 
     debug!(
         "merged result: {} corners, {} markers",
@@ -96,16 +106,10 @@ pub(crate) fn merge_charuco_results(
         markers.len()
     );
 
-    CharucoDetectionResult {
-        detection: TargetDetection {
-            kind: TargetKind::Charuco,
-            corners,
-        },
-        markers,
-        alignment: best_alignment,
-        raw_marker_count,
-        raw_marker_wrong_id_count,
-    }
+    (
+        CharucoDetectionResult::new(corners, markers, best_alignment),
+        raw_counts,
+    )
 }
 
 #[cfg(test)]
@@ -114,14 +118,14 @@ mod tests {
     use calib_targets_core::{GridAlignment, GridCoords, GridTransform};
     use nalgebra::Point2;
 
-    fn corner(id: u32, x: f32, y: f32, score: f32) -> LabeledCorner {
-        LabeledCorner {
-            position: Point2::new(x, y),
-            grid: Some(GridCoords { i: id as i32, j: 0 }),
-            id: Some(id),
-            target_position: None,
+    fn corner(id: u32, x: f32, y: f32, score: f32) -> CharucoCorner {
+        CharucoCorner::new(
+            Point2::new(x, y),
+            GridCoords { i: id as i32, j: 0 },
+            id,
+            Point2::new(id as f32, 0.0),
             score,
-        }
+        )
     }
 
     fn marker(id: u32, score: f32) -> MarkerDetection {
@@ -147,29 +151,27 @@ mod tests {
     }
 
     fn result(
-        corners: Vec<LabeledCorner>,
+        corners: Vec<CharucoCorner>,
         markers: Vec<MarkerDetection>,
-    ) -> CharucoDetectionResult {
+    ) -> (CharucoDetectionResult, RawMarkerCounts) {
         let raw = markers.len();
-        CharucoDetectionResult {
-            detection: TargetDetection {
-                kind: TargetKind::Charuco,
-                corners,
+        (
+            CharucoDetectionResult::new(corners, markers, identity_alignment()),
+            RawMarkerCounts {
+                raw_marker_count: raw,
+                raw_marker_wrong_id_count: 0,
             },
-            markers,
-            alignment: identity_alignment(),
-            raw_marker_count: raw,
-            raw_marker_wrong_id_count: 0,
-        }
+        )
     }
 
     #[test]
     fn merge_non_overlapping() {
         let r1 = result(vec![corner(0, 1.0, 1.0, 0.9)], vec![marker(10, 0.8)]);
         let r2 = result(vec![corner(5, 5.0, 5.0, 0.7)], vec![marker(20, 0.6)]);
-        let merged = merge_charuco_results(vec![r1, r2]);
-        assert_eq!(merged.detection.corners.len(), 2);
+        let (merged, raw) = merge_charuco_results(vec![r1, r2]);
+        assert_eq!(merged.corners.len(), 2);
         assert_eq!(merged.markers.len(), 2);
+        assert_eq!(raw.raw_marker_count, 2);
     }
 
     #[test]
@@ -182,15 +184,10 @@ mod tests {
             vec![corner(0, 1.1, 1.1, 0.3), corner(2, 3.0, 3.0, 0.7)],
             vec![marker(10, 0.9), marker(20, 0.6)],
         );
-        let merged = merge_charuco_results(vec![r1, r2]);
-        assert_eq!(merged.detection.corners.len(), 3);
+        let (merged, _raw) = merge_charuco_results(vec![r1, r2]);
+        assert_eq!(merged.corners.len(), 3);
         // Corner 0 should have the higher score (0.9 from r1)
-        let c0 = merged
-            .detection
-            .corners
-            .iter()
-            .find(|c| c.id == Some(0))
-            .unwrap();
+        let c0 = merged.corners.iter().find(|c| c.id == 0).unwrap();
         assert_eq!(c0.score, 0.9);
         // Marker 10 should have the higher score (0.9 from r2)
         let m10 = merged.markers.iter().find(|m| m.id == 10).unwrap();
@@ -200,8 +197,9 @@ mod tests {
     #[test]
     fn single_result_passthrough() {
         let r = result(vec![corner(0, 1.0, 1.0, 0.9)], vec![marker(10, 0.8)]);
-        let merged = merge_charuco_results(vec![r]);
-        assert_eq!(merged.detection.corners.len(), 1);
+        let (merged, raw) = merge_charuco_results(vec![r]);
+        assert_eq!(merged.corners.len(), 1);
         assert_eq!(merged.markers.len(), 1);
+        assert_eq!(raw.raw_marker_count, 1);
     }
 }

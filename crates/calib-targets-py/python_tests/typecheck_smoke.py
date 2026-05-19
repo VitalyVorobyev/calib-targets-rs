@@ -11,8 +11,9 @@ chess = ct.detect_chessboard(
     img, params=ct.ChessboardParams(min_corner_strength=0.1)
 )
 if chess is not None:
-    _kind: ct.TargetKind = chess.detection.kind
-    _corners: list[ct.LabeledCorner] = chess.detection.corners
+    _corners: list[ct.ChessboardCorner] = chess.corners
+    if _corners:
+        _grid: ct.GridCoords = _corners[0].grid
 
 board = ct.CharucoBoardSpec(
     rows=3,
@@ -31,7 +32,7 @@ except RuntimeError:
 
 marker = ct.detect_marker_board(img)
 if marker is not None:
-    _matches: list[ct.CircleMatch] = marker.circle_matches
+    _marker_corners: list[ct.MarkerBoardCorner] = marker.corners
 
 print_doc = ct.PrintableTargetDocument(
     target=ct.ChessboardTargetSpec(inner_rows=6, inner_cols=8, square_size_mm=20.0)

@@ -873,8 +873,6 @@ class ChessboardParams:
     cluster_tol_deg: float = 12.0
     peak_min_separation_deg: float = 60.0
     min_peak_weight_fraction: float = 0.02
-    # Stage 4 — cell-size hint
-    cell_size_hint: float | None = None
     # Stage 5 — seed
     seed_edge_tol: float = 0.25
     seed_axis_tol_deg: float = 15.0
@@ -892,12 +890,8 @@ class ChessboardParams:
     local_h_tol_rel: float = 0.20
     max_validation_iters: int = 6
     # Stage 8 — recall boosters
-    enable_line_extrapolation: bool = True
-    enable_gap_fill: bool = True
-    enable_component_merge: bool = True
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
-    component_merge_min_boundary_pairs: int = 2
     max_booster_iters: int = 5
     # Output gates
     min_labeled_corners: int = 8
@@ -925,7 +919,6 @@ class ChessboardParams:
             "cluster_tol_deg": self.cluster_tol_deg,
             "peak_min_separation_deg": self.peak_min_separation_deg,
             "min_peak_weight_fraction": self.min_peak_weight_fraction,
-            "cell_size_hint": self.cell_size_hint,
             "seed_edge_tol": self.seed_edge_tol,
             "seed_axis_tol_deg": self.seed_axis_tol_deg,
             "seed_close_tol": self.seed_close_tol,
@@ -939,12 +932,8 @@ class ChessboardParams:
             "line_min_members": self.line_min_members,
             "local_h_tol_rel": self.local_h_tol_rel,
             "max_validation_iters": self.max_validation_iters,
-            "enable_line_extrapolation": self.enable_line_extrapolation,
-            "enable_gap_fill": self.enable_gap_fill,
-            "enable_component_merge": self.enable_component_merge,
             "enable_weak_cluster_rescue": self.enable_weak_cluster_rescue,
             "weak_cluster_tol_deg": self.weak_cluster_tol_deg,
-            "component_merge_min_boundary_pairs": self.component_merge_min_boundary_pairs,
             "max_booster_iters": self.max_booster_iters,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
@@ -970,7 +959,6 @@ class ChessboardParams:
             min_peak_weight_fraction=data.get(
                 "min_peak_weight_fraction", d.min_peak_weight_fraction
             ),
-            cell_size_hint=data.get("cell_size_hint"),
             seed_edge_tol=data.get("seed_edge_tol", d.seed_edge_tol),
             seed_axis_tol_deg=data.get("seed_axis_tol_deg", d.seed_axis_tol_deg),
             seed_close_tol=data.get("seed_close_tol", d.seed_close_tol),
@@ -992,22 +980,11 @@ class ChessboardParams:
             max_validation_iters=data.get(
                 "max_validation_iters", d.max_validation_iters
             ),
-            enable_line_extrapolation=data.get(
-                "enable_line_extrapolation", d.enable_line_extrapolation
-            ),
-            enable_gap_fill=data.get("enable_gap_fill", d.enable_gap_fill),
-            enable_component_merge=data.get(
-                "enable_component_merge", d.enable_component_merge
-            ),
             enable_weak_cluster_rescue=data.get(
                 "enable_weak_cluster_rescue", d.enable_weak_cluster_rescue
             ),
             weak_cluster_tol_deg=data.get(
                 "weak_cluster_tol_deg", d.weak_cluster_tol_deg
-            ),
-            component_merge_min_boundary_pairs=data.get(
-                "component_merge_min_boundary_pairs",
-                d.component_merge_min_boundary_pairs,
             ),
             max_booster_iters=data.get("max_booster_iters", d.max_booster_iters),
             min_labeled_corners=data.get(

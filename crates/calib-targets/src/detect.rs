@@ -1,35 +1,60 @@
+//! End-to-end detection helpers.
+//!
+//! Each `detect_*` helper runs the `chess-corners` ChESS corner detector over
+//! an image (or raw grayscale buffer) and then runs the matching target
+//! detector, returning the detector's own result type. The `detect_*_best`
+//! variants additionally sweep multiple parameter presets and keep the richest
+//! detection. This module is gated on the `image` feature.
+
 use crate::{charuco, chessboard, core, marker, puzzleboard};
-use chess_corners::Detector as ChessDetector;
+use chess_corners::{Detector as ChessDetector, Threshold};
 use nalgebra::Point2;
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-pub use core::{
-    CenterOfMassConfig, ChessConfig, ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy,
-    DetectorConfig, ForstnerConfig, MultiscaleConfig, OrientationMethod, RadonConfig,
-    RadonDetectorParams, RadonRefiner, SaddlePointConfig, Threshold, UpscaleConfig,
-};
+// Only the two `chess-corners` types the workspace's own public API
+// legitimately exposes are re-exported. Advanced ChESS tuning types
+// (`ChessConfig`, `RadonConfig`, `Threshold`, `RefinerKind`, …) come from the
+// `chess-corners` crate directly — re-exporting the whole upstream surface
+// would freeze it into this crate's semver contract.
+pub use core::{DetectorConfig, OrientationMethod};
 
 /// Errors produced by the high-level facade helpers.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum DetectError {
+    /// A raw grayscale buffer's length does not match `width * height`.
     #[error("invalid grayscale image buffer length (expected {expected} bytes, got {got})")]
-    InvalidGrayBuffer { expected: usize, got: usize },
+    InvalidGrayBuffer {
+        /// Buffer length required by the declared dimensions, in bytes.
+        expected: usize,
+        /// Actual length of the supplied buffer, in bytes.
+        got: usize,
+    },
 
+    /// The supplied grayscale image dimensions are invalid (e.g. zero-sized).
     #[error("invalid grayscale image dimensions (width={width}, height={height})")]
-    InvalidGrayDimensions { width: u32, height: u32 },
+    InvalidGrayDimensions {
+        /// Declared image width in pixels.
+        width: u32,
+        /// Declared image height in pixels.
+        height: u32,
+    },
 
+    /// Construction of the ChArUco board layout failed.
     #[error(transparent)]
     CharucoBoard(#[from] charuco::CharucoBoardError),
 
+    /// ChArUco detection failed.
     #[error(transparent)]
     CharucoDetect(#[from] charuco::CharucoDetectError),
 
+    /// Construction of the PuzzleBoard specification failed.
     #[error(transparent)]
     PuzzleBoardSpec(#[from] puzzleboard::PuzzleBoardSpecError),
 
+    /// PuzzleBoard detection failed.
     #[error(transparent)]
     PuzzleBoardDetect(#[from] puzzleboard::PuzzleBoardDetectError),
 }
@@ -115,31 +140,23 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::Chess
 
 /// Run the chessboard detector end-to-end: ChESS corners -> chessboard grid.
 ///
-/// Corner detection uses [`default_chess_config`]; the chessboard detector's
-/// own parameters are [`chessboard::DetectorParams`]. Callers needing
-/// custom ChESS settings should call [`detect_corners`] explicitly and
-/// invoke [`detect_chessboard_with_config`].
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, params),
-        fields(width = img.width(), height = img.height())
-    )
-)]
-pub fn detect_chessboard(
-    img: &::image::GrayImage,
-    params: &chessboard::DetectorParams,
-) -> Option<chessboard::Detection> {
-    detect_chessboard_with_config(img, &default_chess_config(), params)
-}
-
-/// Run the chessboard detector end-to-end with explicit ChESS settings.
+/// This is the primary chessboard entry point. It runs ChESS corner
+/// detection with the supplied [`DetectorConfig`] and then runs the
+/// chessboard detector with the supplied [`chessboard::DetectorParams`];
+/// corner positions are returned in the input image frame. Callers that
+/// do not need to tune the ChESS detector pass [`default_chess_config`]
+/// by reference (`&default_chess_config()`).
 ///
-/// This keeps the common image → ChESS corners → labelled grid path in one
-/// call while still letting callers tune the corner threshold, orientation
-/// method, and optional pre-blur. Corner positions remain in the input image
-/// frame.
+/// Named variants of this entry point:
+/// - [`detect_chessboard_all`] — returns every same-board component, not
+///   just the first.
+/// - [`detect_chessboard_best`] — runs a multi-config sweep and keeps the
+///   richest result.
+/// - [`detect_chessboard_from_gray_u8`] — takes a raw grayscale byte
+///   buffer instead of an [`::image::GrayImage`].
+/// - [`detect_chessboard_with_diagnostics`] — returns the diagnostics
+///   channel ([`chessboard::diagnostics::DebugFrame`]) instead of the
+///   plain detection.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -148,11 +165,11 @@ pub fn detect_chessboard(
         fields(width = img.width(), height = img.height())
     )
 )]
-pub fn detect_chessboard_with_config(
+pub fn detect_chessboard(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
     params: &chessboard::DetectorParams,
-) -> Option<chessboard::Detection> {
+) -> Option<chessboard::ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect(&corners)
@@ -164,56 +181,25 @@ pub fn detect_chessboard_with_config(
     feature = "tracing",
     instrument(
         level = "info",
-        skip(img, params),
+        skip(img, chess_cfg, params),
         fields(width = img.width(), height = img.height())
     )
 )]
 pub fn detect_chessboard_all(
     img: &::image::GrayImage,
-    params: &chessboard::DetectorParams,
-) -> Vec<chessboard::Detection> {
-    detect_chessboard_all_with_config(img, &default_chess_config(), params)
-}
-
-/// Multi-component variant of [`detect_chessboard_with_config`].
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, chess_cfg, params),
-        fields(width = img.width(), height = img.height())
-    )
-)]
-pub fn detect_chessboard_all_with_config(
-    img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
     params: &chessboard::DetectorParams,
-) -> Vec<chessboard::Detection> {
+) -> Vec<chessboard::ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
     detector.detect_all(&corners)
 }
 
-/// Run the chessboard detector and return a [`chessboard::DebugFrame`] with
-/// every input corner's terminal stage, per-iteration traces, and the
-/// labelled detection (when one was produced). Always returns a frame —
-/// never panics — so the caller can see *why* detection failed.
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, params),
-        fields(width = img.width(), height = img.height())
-    )
-)]
-pub fn detect_chessboard_debug(
-    img: &::image::GrayImage,
-    params: &chessboard::DetectorParams,
-) -> chessboard::DebugFrame {
-    detect_chessboard_debug_with_config(img, &default_chess_config(), params)
-}
-
-/// Debug variant of [`detect_chessboard_with_config`].
+/// Diagnostics-channel variant of [`detect_chessboard`]: returns a
+/// [`chessboard::diagnostics::DebugFrame`] with every input corner's terminal
+/// stage, per-iteration traces, and the labelled detection (when one was
+/// produced). Always returns a frame — never panics — so the caller can see
+/// *why* detection failed.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -222,14 +208,14 @@ pub fn detect_chessboard_debug(
         fields(width = img.width(), height = img.height())
     )
 )]
-pub fn detect_chessboard_debug_with_config(
+pub fn detect_chessboard_with_diagnostics(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
     params: &chessboard::DetectorParams,
-) -> chessboard::DebugFrame {
+) -> chessboard::diagnostics::DebugFrame {
     let corners = detect_corners(img, chess_cfg);
     let detector = chessboard::Detector::new(params.clone());
-    detector.detect_debug(&corners)
+    detector.detect_with_diagnostics(&corners)
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
@@ -313,16 +299,21 @@ pub fn detect_marker_board(
 // Multi-config sweep helpers
 // ---------------------------------------------------------------------------
 
-/// Try multiple chessboard parameter configs, return the best result (most corners).
+/// Multi-config-sweep variant of [`detect_chessboard`]: tries every chessboard
+/// parameter config and returns the best result (most corners).
+///
+/// ChESS corner detection runs once with the supplied [`DetectorConfig`] and
+/// the corners are reused across every config in the sweep.
 pub fn detect_chessboard_best(
     img: &::image::GrayImage,
-    configs: &[chessboard::DetectorParams],
-) -> Option<chessboard::Detection> {
-    let corners = detect_corners_default(img);
-    configs
+    chess_cfg: &DetectorConfig,
+    param_configs: &[chessboard::DetectorParams],
+) -> Option<chessboard::ChessboardDetection> {
+    let corners = detect_corners(img, chess_cfg);
+    param_configs
         .iter()
         .filter_map(|params| chessboard::Detector::new(params.clone()).detect(&corners))
-        .max_by_key(|d| d.target.corners.len())
+        .max_by_key(|d| d.corners.len())
 }
 
 /// Try multiple ChArUco parameter configs, return the best result
@@ -379,8 +370,8 @@ pub fn detect_puzzleboard_best(
                 let better = match &best {
                     None => true,
                     Some(b) => {
-                        let key_new = (r.detection.corners.len(), r.decode.mean_confidence);
-                        let key_old = (b.detection.corners.len(), b.decode.mean_confidence);
+                        let key_new = (r.corners.len(), r.decode.mean_confidence);
+                        let key_old = (b.corners.len(), b.decode.mean_confidence);
                         key_new.0 > key_old.0 || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
                     }
                 };
@@ -410,12 +401,12 @@ pub fn detect_marker_board_best(
             let detector = marker::MarkerBoardDetector::new(params.clone());
             detector.detect_from_image_and_corners(&gray_view(img), &corners)
         })
-        .max_by_key(|r| r.detection.corners.len())
+        .max_by_key(|r| r.corners.len())
 }
 
 /// Scoring key for ChArUco results: (marker count, corner count).
 fn charuco_score(r: &charuco::CharucoDetectionResult) -> (usize, usize) {
-    (r.markers.len(), r.detection.corners.len())
+    (r.markers.len(), r.corners.len())
 }
 
 /// Build an `image::GrayImage` from a raw grayscale buffer.
@@ -442,7 +433,8 @@ pub fn gray_image_from_slice(
         .ok_or(DetectError::InvalidGrayDimensions { width, height })
 }
 
-/// Run the chessboard detector from a raw grayscale byte buffer.
+/// Raw-buffer variant of [`detect_chessboard`]: runs the chessboard detector
+/// from a raw grayscale byte buffer.
 ///
 /// `pixels` must have length `width * height`. Returns `Ok(None)` when no board is found,
 /// or `Err` when the buffer dimensions are invalid.
@@ -450,10 +442,11 @@ pub fn detect_chessboard_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
+    chess_cfg: &DetectorConfig,
     params: &chessboard::DetectorParams,
-) -> Result<Option<chessboard::Detection>, DetectError> {
+) -> Result<Option<chessboard::ChessboardDetection>, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_chessboard(&img, params))
+    Ok(detect_chessboard(&img, chess_cfg, params))
 }
 
 /// Run the ChArUco detector from a raw grayscale byte buffer.
@@ -517,6 +510,7 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> chessboard::ChessC
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chess_corners::DetectionStrategy;
 
     #[test]
     fn default_chess_config_overrides_threshold() {

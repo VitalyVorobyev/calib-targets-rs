@@ -10,8 +10,11 @@ use super::error::PrintableTargetError;
 /// intersections* (not squares).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChessboardTargetSpec {
+    /// Number of inner corner-intersection rows.
     pub inner_rows: u32,
+    /// Number of inner corner-intersection columns.
     pub inner_cols: u32,
+    /// Side length of one square in millimeters.
     pub square_size_mm: f64,
 }
 

@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = PuzzleBoardSpec::new(10, 10, 12.0)?;
     let params = PuzzleBoardParams::for_board(&spec);
     let result = detect::detect_puzzleboard(&img, &params)?;
-    println!("{} corners", result.detection.corners.len());
+    println!("{} corners", result.corners.len());
     Ok(())
 }
 ```

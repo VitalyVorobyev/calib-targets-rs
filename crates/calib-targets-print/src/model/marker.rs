@@ -13,8 +13,11 @@ pub(super) fn default_circle_diameter_rel() -> f64 {
 /// One circle in the printable marker board layout.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MarkerCircleSpec {
+    /// Cell column index of the circle.
     pub i: u32,
+    /// Cell row index of the circle.
     pub j: u32,
+    /// Whether the circle is a white or black disk.
     pub polarity: CirclePolarity,
 }
 
@@ -34,10 +37,15 @@ impl MarkerCircleSpec {
 /// Printable marker-board (checkerboard + coloured circle overlay) target.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MarkerBoardTargetSpec {
+    /// Number of inner corner-intersection rows.
     pub inner_rows: u32,
+    /// Number of inner corner-intersection columns.
     pub inner_cols: u32,
+    /// Side length of one square in millimeters.
     pub square_size_mm: f64,
+    /// The three marker circles overlaid on the board.
     pub circles: [MarkerCircleSpec; 3],
+    /// Circle diameter as a fraction of the square side.
     #[serde(default = "default_circle_diameter_rel")]
     pub circle_diameter_rel: f64,
 }

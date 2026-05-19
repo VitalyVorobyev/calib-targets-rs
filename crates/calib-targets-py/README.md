@@ -31,7 +31,7 @@ import calib_targets as ct
 image = np.asarray(Image.open("board.png").convert("L"), dtype=np.uint8)
 result = ct.detect_chessboard_best(image, [ct.ChessboardParams()])
 if result is not None:
-    print(f"labelled {len(result.detection.corners)} corners")
+    print(f"labelled {len(result.corners)} corners")
 ```
 
 ## End-to-end round-trip per target type
@@ -63,15 +63,13 @@ bundle = ct.render_target_bundle(doc)
 image = np.asarray(Image.open(io.BytesIO(bundle.png_bytes)).convert("L"), dtype=np.uint8)
 
 # 3. Detect — prefer *_best for robustness.
-result = ct.detect_chessboard_best(image, [
+chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+configs = [
     ct.ChessboardParams(),
-    ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
-    ),
-    ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
-    ),
-])
+    ct.ChessboardParams(min_labeled_corners=12),
+    ct.ChessboardParams(max_components=1),
+]
+result = ct.detect_chessboard_best(image, configs, chess_cfg=chess_cfg)
 
 # 4. Export detection to JSON.
 print(json.dumps(result.to_dict(), indent=2)[:200])
@@ -94,7 +92,7 @@ params = ct.CharucoParams(
     max_hamming=2, min_marker_inliers=4,
 )
 result = ct.detect_charuco(image, params=params)   # raises on failure
-print(len(result.detection.corners), "corners,", len(result.markers), "markers")
+print(len(result.corners), "corners,", len(result.markers), "markers")
 ```
 
 Runnable: [`examples/charuco_roundtrip.py`](examples/charuco_roundtrip.py).
@@ -121,8 +119,8 @@ params = ct.default_puzzleboard_params(rows=10, cols=10)
 params.decode.search_mode = ct.PuzzleBoardSearchMode.fixed_board()
 params.decode.scoring_mode = ct.PuzzleBoardScoringMode.soft_log_likelihood()
 result = ct.detect_puzzleboard(image, params=params)
-# Every corner has an absolute master ID: result.detection.corners[0].id
-# Soft mode also exposes result.decode.score_margin and the runner-up hypothesis.
+# Every corner has an absolute master ID: result.corners[0].id
+# Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().
 ```
 
 Runnable: [`examples/puzzleboard_roundtrip.py`](examples/puzzleboard_roundtrip.py).
@@ -220,7 +218,7 @@ json.load(open(path)))`-compatible.
 |---|---|
 | `detect_chessboard(img, params={"min_corner_strength": 0.5})` | `detect_chessboard(img, params=ChessboardParams(min_corner_strength=0.5))` |
 | `detect_charuco(..., params={"board": {...}})` | `detect_charuco(..., params=CharucoParams(board=CharucoBoardSpec(...)))` |
-| `result["detection"]["corners"]` | `result.detection.corners` |
+| `result["corners"]` | `result.corners` |
 | `json.dumps(result_dict)` | `json.dumps(result.to_dict())` |
 
 Dict-based configuration is rejected in the new API; use the typed

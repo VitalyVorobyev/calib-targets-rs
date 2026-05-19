@@ -1,28 +1,111 @@
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_core::{GridAlignment, TargetDetection};
+use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use nalgebra::Point2;
 use serde::Serialize;
 
+/// A labelled ChArUco inner corner.
+#[non_exhaustive]
+#[derive(Clone, Debug, Serialize)]
+pub struct CharucoCorner {
+    /// Sub-pixel image position.
+    pub position: Point2<f32>,
+    /// ChArUco board corner coordinate.
+    pub grid: GridCoords,
+    /// ChArUco logical corner ID.
+    pub id: u32,
+    /// Physical board-space position in millimetres.
+    pub target_position: Point2<f32>,
+    /// Detector-specific corner score; higher is better.
+    pub score: f32,
+}
+
+impl CharucoCorner {
+    /// Create a ChArUco corner from its required fields.
+    pub fn new(
+        position: Point2<f32>,
+        grid: GridCoords,
+        id: u32,
+        target_position: Point2<f32>,
+        score: f32,
+    ) -> Self {
+        Self {
+            position,
+            grid,
+            id,
+            target_position,
+            score,
+        }
+    }
+
+    pub(crate) fn from_labeled(corner: LabeledCorner) -> Option<Self> {
+        Some(Self {
+            position: corner.position,
+            grid: corner.grid?,
+            id: corner.id?,
+            target_position: corner.target_position?,
+            score: corner.score,
+        })
+    }
+
+    /// Convert this typed corner to the shared carrier used by diagnostics and bindings.
+    pub fn to_labeled(&self) -> LabeledCorner {
+        LabeledCorner::new(self.position, self.score)
+            .with_grid(self.grid)
+            .with_id(self.id)
+            .with_target_position(self.target_position)
+    }
+}
+
 /// Output of a ChArUco detection run.
+///
+/// `#[non_exhaustive]`: construct with [`CharucoDetectionResult::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct CharucoDetectionResult {
-    pub detection: TargetDetection,
+    /// Labelled ChArUco inner corners.
+    pub corners: Vec<CharucoCorner>,
     /// Marker detections that are consistent with [`Self::alignment`] (inliers
     /// of the chosen hypothesis).
     pub markers: Vec<MarkerDetection>,
     /// Alignment from the rectified grid coordinate system into board coordinates.
     pub alignment: GridAlignment,
-    /// Total number of markers decoded out of candidate cells, **before**
-    /// alignment-based inlier filtering.
-    ///
-    /// `raw_marker_count - markers.len()` is the number of raw marker
-    /// decodings rejected by the alignment stage.
-    #[serde(default)]
-    pub raw_marker_count: usize,
-    /// Raw decodings whose id mapped to a valid board position that
-    /// **disagreed** with the chosen [`Self::alignment`]. This is the
-    /// self-consistency wrong-id count used by the internal charuco
-    /// benchmark: it excludes pure dictionary-noise decodings whose id did
-    /// not correspond to any marker on this board.
-    #[serde(default)]
-    pub raw_marker_wrong_id_count: usize,
+}
+
+impl CharucoDetectionResult {
+    /// Create a result from its typed corners, inlier markers, and alignment.
+    pub fn new(
+        corners: Vec<CharucoCorner>,
+        markers: Vec<MarkerDetection>,
+        alignment: GridAlignment,
+    ) -> Self {
+        Self {
+            corners,
+            markers,
+            alignment,
+        }
+    }
+
+    pub(crate) fn from_target_detection(
+        detection: TargetDetection,
+        markers: Vec<MarkerDetection>,
+        alignment: GridAlignment,
+    ) -> Self {
+        debug_assert_eq!(detection.kind, TargetKind::Charuco);
+        let input_len = detection.corners.len();
+        let corners: Vec<CharucoCorner> = detection
+            .corners
+            .into_iter()
+            .filter_map(CharucoCorner::from_labeled)
+            .collect();
+        debug_assert_eq!(corners.len(), input_len);
+        Self::new(corners, markers, alignment)
+    }
+
+    /// Convert typed corners into the shared `TargetDetection` carrier.
+    pub fn target_detection(&self) -> TargetDetection {
+        TargetDetection::new(
+            TargetKind::Charuco,
+            self.corners.iter().map(CharucoCorner::to_labeled).collect(),
+        )
+    }
 }

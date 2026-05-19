@@ -94,10 +94,10 @@ def main() -> int:
     if result is None:
         print("no marker board detected", file=sys.stderr)
         return 1
+    aligned = "yes" if result.alignment is not None else "no"
     print(
-        f"detected {len(result.detection.corners)} labelled corners, "
-        f"{len(result.circle_matches)} marker-circle matches, "
-        f"alignment_inliers={result.alignment_inliers}"
+        f"detected {len(result.corners)} labelled corners, "
+        f"aligned={aligned}"
     )
 
     # 4. Export detection to JSON.

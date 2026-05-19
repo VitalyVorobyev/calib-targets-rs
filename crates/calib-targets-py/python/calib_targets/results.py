@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .config import PuzzleBoardScoringMode
 from .enums import CirclePolarity, TargetKind
 
 Point2 = tuple[float, float]
@@ -203,20 +202,42 @@ class ChessboardDebug:
 
 
 @dataclass(slots=True)
+class ChessboardCorner:
+    """A single labelled chessboard corner.
+
+    `position` is the sub-pixel image position. `grid` is the `(i, j)`
+    grid label — a chessboard corner is always labelled, so this is
+    non-optional. `input_index` maps the corner back to its index in the
+    caller's raw `Corner` array (useful for ChArUco alignment and similar
+    post-processing). `score` is the corner score.
+    """
+
+    position: Point2
+    grid: GridCoords
+    input_index: int
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import chessboard_corner_to_dict
+
+        return chessboard_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ChessboardCorner:
+        from ._convert_out import chessboard_corner_from_dict
+
+        return chessboard_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class ChessboardDetectionResult:
     """Chessboard detection result.
 
-    `detection` wraps the labelled corners. `grid_directions` are the
-    two global grid-axis angles in `[0, π)`. `cell_size` is the pixel
-    spacing of the detected grid. `strong_indices` maps each labelled
-    corner back to its index in the caller's raw `Corner` array (useful
-    for ChArUco alignment and similar post-processing).
+    `corners` is the labelled corner set. Each `ChessboardCorner` carries
+    its own grid label and input-slice provenance index.
     """
 
-    detection: TargetDetection
-    grid_directions: tuple[float, float]
-    cell_size: float
-    strong_indices: list[int]
+    corners: list[ChessboardCorner]
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import chessboard_detection_result_to_dict
@@ -312,12 +333,40 @@ class CircleMatch:
 
 
 @dataclass(slots=True)
+class CharucoCorner:
+    position: Point2
+    grid: GridCoords
+    id: int
+    target_position: Point2
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import charuco_corner_to_dict
+
+        return charuco_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> CharucoCorner:
+        from ._convert_out import charuco_corner_from_dict
+
+        return charuco_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class CharucoDetectionResult:
-    detection: TargetDetection
+    corners: list[CharucoCorner]
     markers: list[MarkerDetection]
     alignment: GridAlignment
-    raw_marker_count: int = 0
-    raw_marker_wrong_id_count: int = 0
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.CHARUCO,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import charuco_detection_result_to_dict
@@ -332,13 +381,49 @@ class CharucoDetectionResult:
 
 
 @dataclass(slots=True)
+class MarkerBoardCorner:
+    position: Point2
+    grid: GridCoords
+    id: int | None
+    target_position: Point2 | None
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import marker_board_corner_to_dict
+
+        return marker_board_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardCorner:
+        from ._convert_out import marker_board_corner_from_dict
+
+        return marker_board_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class MarkerBoardDetectionResult:
-    detection: TargetDetection
-    inliers: list[int]
-    circle_candidates: list[CircleCandidate]
-    circle_matches: list[CircleMatch]
+    """Marker-board detection result.
+
+    Carries only the facts a consumer needs to *use* a marker-board
+    detection: the labelled corners and the optional grid alignment. The
+    Rust crate's ``MarkerBoardDiagnostics`` channel (scored circle
+    hypotheses, circle matches, per-corner provenance, alignment-inlier
+    count) is not exposed through the Python ``marker`` binding as of
+    0.9.0.
+    """
+
+    corners: list[MarkerBoardCorner]
     alignment: GridAlignment | None
-    alignment_inliers: int
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.CHECKERBOARD_MARKER,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import marker_board_detection_result_to_dict
@@ -378,19 +463,20 @@ ObservedEdge = PuzzleBoardObservedEdge
 
 @dataclass(slots=True)
 class PuzzleBoardDecodeInfo:
+    """Compact decode quality summary.
+
+    Winner-vs-runner-up scoring evidence and the raw per-edge observation
+    dump live on the Rust ``PuzzleBoardDiagnostics`` channel. The Python
+    ``puzzleboard`` binding does not expose that channel, so those fields
+    are not reachable from Python as of 0.9.0.
+    """
+
     edges_observed: int
     edges_matched: int
     mean_confidence: float
     bit_error_rate: float
     master_origin_row: int
     master_origin_col: int
-    score_best: float | None = None
-    score_runner_up: float | None = None
-    score_margin: float | None = None
-    runner_up_origin_row: int | None = None
-    runner_up_origin_col: int | None = None
-    runner_up_transform: GridTransform | None = None
-    scoring_mode: PuzzleBoardScoringMode | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzleboard_decode_info_to_dict
@@ -405,11 +491,40 @@ class PuzzleBoardDecodeInfo:
 
 
 @dataclass(slots=True)
+class PuzzleBoardCorner:
+    position: Point2
+    grid: GridCoords
+    id: int
+    target_position: Point2
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzleboard_corner_to_dict
+
+        return puzzleboard_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardCorner:
+        from ._convert_out import puzzleboard_corner_from_dict
+
+        return puzzleboard_corner_from_dict(data)
+
+
+@dataclass(slots=True)
 class PuzzleBoardDetectionResult:
-    detection: TargetDetection
+    corners: list[PuzzleBoardCorner]
     alignment: GridAlignment
     decode: PuzzleBoardDecodeInfo
-    observed_edges: list[PuzzleBoardObservedEdge]
+
+    @property
+    def detection(self) -> TargetDetection:
+        return TargetDetection(
+            TargetKind.PUZZLE_BOARD,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                for c in self.corners
+            ],
+        )
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzleboard_detection_result_to_dict
@@ -438,15 +553,19 @@ __all__ = [
     "GridGraphNode",
     "GridGraphDebug",
     "ChessboardDebug",
+    "ChessboardCorner",
     "ChessboardDetectionResult",
     "MarkerDetection",
     "CircleCandidate",
     "MarkerCircleExpectation",
     "CircleMatch",
+    "CharucoCorner",
     "CharucoDetectionResult",
+    "MarkerBoardCorner",
     "MarkerBoardDetectionResult",
     "PuzzleBoardObservedEdge",
     "ObservedEdge",  # backward-compatible alias
+    "PuzzleBoardCorner",
     "PuzzleBoardDecodeInfo",
     "PuzzleBoardDetectionResult",
 ]

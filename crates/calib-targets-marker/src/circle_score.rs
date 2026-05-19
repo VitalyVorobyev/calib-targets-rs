@@ -16,10 +16,14 @@ use crate::coords::CellCoords;
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CirclePolarity {
+    /// A white (bright) disk on a dark cell.
     White,
+    /// A black (dark) disk on a light cell.
     Black,
 }
 
+/// Tuning knobs for per-cell circular-marker scoring.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleScoreParams {
     /// Canonical patch size (square), e.g. 64
@@ -52,13 +56,18 @@ impl Default for CircleScoreParams {
     }
 }
 
+/// One scored circular-marker candidate found in a chessboard cell.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleCandidate {
+    /// Circle center in image pixel coordinates.
     pub center_img: Point2<f32>,
     /// Detected cell coordinates (top-left corner indices).
     pub cell: CellCoords,
+    /// Whether the candidate reads as a white or black disk.
     pub polarity: CirclePolarity,
+    /// Match score (higher is better) — disk-vs-ring contrast confidence.
     pub score: f32,
+    /// Absolute disk-to-ring intensity contrast on the `0..255` scale.
     pub contrast: f32,
 }
 
@@ -72,7 +81,7 @@ impl CircleCandidate {
 /// Score a circle in one chess square given its 4 image corners.
 ///
 /// Input corners must be TL,TR,BR,BL in image space.
-pub fn score_circle_in_square(
+pub(crate) fn score_circle_in_square(
     img: &GrayImageView<'_>,
     square_corners_img: &[Point2<f32>; 4], // TL,TR,BR,BL
     cell: CellCoords,                      // top-left corner indices (i,j) for this square

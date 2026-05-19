@@ -66,14 +66,6 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 typedef uint32_t ct_graph_build_algorithm_t;
 
 /**
- * Optional `float` convention used by fixed ABI structs.
- */
-typedef struct ct_optional_f32_t {
-  uint32_t has_value;
-  float value;
-} ct_optional_f32_t;
-
-/**
  * Chessboard detector parameters.
  *
  * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
@@ -95,7 +87,6 @@ typedef struct ct_chessboard_params_t {
   float cluster_tol_deg;
   float peak_min_separation_deg;
   float min_peak_weight_fraction;
-  struct ct_optional_f32_t cell_size_hint;
   float seed_edge_tol;
   float seed_axis_tol_deg;
   float seed_close_tol;
@@ -108,12 +99,8 @@ typedef struct ct_chessboard_params_t {
   size_t line_min_members;
   float local_h_tol_rel;
   uint32_t max_validation_iters;
-  uint32_t enable_line_extrapolation;
-  uint32_t enable_gap_fill;
-  uint32_t enable_component_merge;
   uint32_t enable_weak_cluster_rescue;
   float weak_cluster_tol_deg;
-  size_t component_merge_min_boundary_pairs;
   uint32_t max_booster_iters;
   size_t min_labeled_corners;
   uint32_t max_components;
@@ -126,6 +113,14 @@ typedef struct ct_optional_bool_t {
   uint32_t has_value;
   uint32_t value;
 } ct_optional_bool_t;
+
+/**
+ * Optional `float` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_f32_t {
+  uint32_t has_value;
+  float value;
+} ct_optional_f32_t;
 
 /**
  * Fixed refiner identifier type for ChESS subpixel refinement.
@@ -261,31 +256,16 @@ typedef struct ct_chessboard_detect_args_t {
 } ct_chessboard_detect_args_t;
 
 /**
- * Fixed target kind identifier type.
- */
-typedef uint32_t ct_target_kind_t;
-
-/**
- * Shared target-detection header.
- */
-typedef struct ct_target_detection_t {
-  ct_target_kind_t kind;
-  size_t corners_len;
-} ct_target_detection_t;
-
-/**
  * Chessboard detection header.
  *
- * The detector always populates `grid_direction_0_rad` and
- * `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
- * discovered by the chessboard detector's clustering stage) plus
- * `cell_size` in pixels.
+ * Carries only the labelled-corner count; the corners themselves are
+ * copied into the caller-provided `ct_chessboard_corner_t` array.
  */
 typedef struct ct_chessboard_result_t {
-  struct ct_target_detection_t detection;
-  float grid_direction_0_rad;
-  float grid_direction_1_rad;
-  float cell_size;
+  /**
+   * Number of labelled corners in the detection.
+   */
+  size_t corners_len;
 } ct_chessboard_result_t;
 
 /**
@@ -305,31 +285,36 @@ typedef struct ct_grid_coords_t {
 } ct_grid_coords_t;
 
 /**
- * Optional `uint32_t` convention used by fixed ABI structs.
+ * One detected chessboard corner.
+ *
+ * A chessboard corner is always labelled, so `grid` is unconditional —
+ * there is no `has_grid` flag. `input_index` is the index of the source
+ * ChESS corner in the detector's input slice.
  */
-typedef struct ct_optional_u32_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_u32_t;
-
-/**
- * One detected labeled corner.
- */
-typedef struct ct_labeled_corner_t {
+typedef struct ct_chessboard_corner_t {
+  /**
+   * Sub-pixel image position.
+   */
   struct ct_point2f_t position;
-  uint32_t has_grid;
+  /**
+   * Grid label (i, j).
+   */
   struct ct_grid_coords_t grid;
-  struct ct_optional_u32_t id;
-  uint32_t has_target_position;
-  struct ct_point2f_t target_position;
+  /**
+   * Index into the detector's input ChESS-corner slice.
+   */
+  size_t input_index;
+  /**
+   * Corner score.
+   */
   float score;
-} ct_labeled_corner_t;
+} ct_chessboard_corner_t;
 
 /**
  * Caller-provided output buffers for [`ct_chessboard_detector_detect`].
  *
  * `out_corners_len` is required and always receives the required number of
- * labeled-corner entries. Passing `out_corners = NULL` with
+ * labelled-corner entries. Passing `out_corners = NULL` with
  * `corners_capacity = 0` queries the required length without copying
  * corner data.
  */
@@ -339,9 +324,9 @@ typedef struct ct_chessboard_detect_buffers_t {
    */
   struct ct_chessboard_result_t *out_result;
   /**
-   * Output array of labelled corners. May be null when `corners_capacity = 0`.
+   * Output array of labelled chessboard corners. May be null when `corners_capacity = 0`.
    */
-  struct ct_labeled_corner_t *out_corners;
+  struct ct_chessboard_corner_t *out_corners;
   size_t corners_capacity;
   /**
    * Required: always receives the number of corners detected.
@@ -383,9 +368,9 @@ typedef struct ct_chessboard_detect_all_buffers_t {
   size_t results_capacity;
   size_t *results_len_out;
   /**
-   * Output array of all components' labelled corners concatenated.
+   * Output array of all components' labelled chessboard corners concatenated.
    */
-  struct ct_labeled_corner_t *corners_buf;
+  struct ct_chessboard_corner_t *corners_buf;
   size_t corners_capacity;
   size_t *corners_len_out;
 } ct_chessboard_detect_all_buffers_t;
@@ -468,6 +453,19 @@ typedef struct ct_charuco_detect_args_t {
 } ct_charuco_detect_args_t;
 
 /**
+ * Fixed target kind identifier type.
+ */
+typedef uint32_t ct_target_kind_t;
+
+/**
+ * Shared target-detection header.
+ */
+typedef struct ct_target_detection_t {
+  ct_target_kind_t kind;
+  size_t corners_len;
+} ct_target_detection_t;
+
+/**
  * Fixed integer grid transform output.
  */
 typedef struct ct_grid_transform_t {
@@ -494,6 +492,27 @@ typedef struct ct_charuco_result_t {
   size_t markers_len;
   struct ct_grid_alignment_t alignment;
 } ct_charuco_result_t;
+
+/**
+ * Optional `uint32_t` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_u32_t {
+  uint32_t has_value;
+  uint32_t value;
+} ct_optional_u32_t;
+
+/**
+ * One detected labeled corner.
+ */
+typedef struct ct_labeled_corner_t {
+  struct ct_point2f_t position;
+  uint32_t has_grid;
+  struct ct_grid_coords_t grid;
+  struct ct_optional_u32_t id;
+  uint32_t has_target_position;
+  struct ct_point2f_t target_position;
+  float score;
+} ct_labeled_corner_t;
 
 /**
  * One decoded marker detection.
@@ -629,47 +648,29 @@ typedef struct ct_marker_board_detect_args_t {
 
 /**
  * Marker-board detection header.
+ *
+ * Carries the facts a consumer needs to *use* a marker-board detection:
+ * the labelled-corner header and the optional grid alignment. Detection
+ * evidence (every scored circle hypothesis, the expected-to-detected
+ * circle pairings, the per-corner provenance, the alignment-inlier count)
+ * is intentionally not surfaced over the C ABI — it is the Rust
+ * `MarkerBoardDiagnostics` channel, which has no FFI binding.
  */
 typedef struct ct_marker_board_result_t {
   struct ct_target_detection_t detection;
-  size_t circle_candidates_len;
-  size_t circle_matches_len;
   uint32_t has_alignment;
   struct ct_grid_alignment_t alignment;
-  size_t alignment_inliers;
 } ct_marker_board_result_t;
-
-/**
- * One circle candidate from marker-board detection.
- */
-typedef struct ct_circle_candidate_t {
-  struct ct_point2f_t center_img;
-  struct ct_grid_coords_t cell;
-  ct_circle_polarity_t polarity;
-  float score;
-  float contrast;
-} ct_circle_candidate_t;
-
-/**
- * One expected-to-detected circle match result.
- */
-typedef struct ct_circle_match_t {
-  struct ct_marker_circle_spec_t expected;
-  uint32_t has_matched_index;
-  size_t matched_index;
-  uint32_t has_distance_cells;
-  float distance_cells;
-  uint32_t has_offset_cells;
-  struct ct_grid_coords_t offset_cells;
-} ct_circle_match_t;
 
 /**
  * Caller-provided output buffers for [`ct_marker_board_detector_detect`].
  *
- * The three `*_len` pointers are required and always receive the required
- * lengths for the corresponding output arrays. Passing a `NULL` output
- * array with `*_capacity = 0` queries the required length without
- * copying array data.
+ * `out_corners_len` is required and always receives the required number of
+ * labelled-corner entries. Passing `out_corners = NULL` with
+ * `corners_capacity = 0` queries the required length without copying
+ * corner data. Detection evidence (scored circle hypotheses, circle
+ * matches) is not surfaced over the C ABI — see
+ * [`ct_marker_board_result_t`].
  */
 typedef struct ct_marker_board_detect_buffers_t {
   /**
@@ -685,24 +686,6 @@ typedef struct ct_marker_board_detect_buffers_t {
    * Required: always receives the number of corners detected.
    */
   size_t *out_corners_len;
-  /**
-   * Output array of circle candidates. May be null when `circle_candidates_capacity = 0`.
-   */
-  struct ct_circle_candidate_t *out_circle_candidates;
-  size_t circle_candidates_capacity;
-  /**
-   * Required: always receives the number of circle candidates found.
-   */
-  size_t *out_circle_candidates_len;
-  /**
-   * Output array of circle matches. May be null when `circle_matches_capacity = 0`.
-   */
-  struct ct_circle_match_t *out_circle_matches;
-  size_t circle_matches_capacity;
-  /**
-   * Required: always receives the number of circle matches found.
-   */
-  size_t *out_circle_matches_len;
 } ct_marker_board_detect_buffers_t;
 
 /**
@@ -779,7 +762,12 @@ typedef struct ct_puzzleboard_detect_args_t {
 } ct_puzzleboard_detect_args_t;
 
 /**
- * PuzzleBoard detection header and decode diagnostics.
+ * PuzzleBoard detection header and compact decode quality summary.
+ *
+ * Carries the facts a consumer needs to *use* a PuzzleBoard detection.
+ * Decode-internal evidence (winner/runner-up scores, the raw per-edge
+ * observation dump) is intentionally not surfaced over the C ABI — it is
+ * the Rust `PuzzleBoardDiagnostics` channel, which has no FFI binding.
  */
 typedef struct ct_puzzleboard_result_t {
   struct ct_target_detection_t detection;
@@ -790,13 +778,6 @@ typedef struct ct_puzzleboard_result_t {
   float bit_error_rate;
   int32_t master_origin_row;
   int32_t master_origin_col;
-  struct ct_optional_f32_t score_best;
-  struct ct_optional_f32_t score_runner_up;
-  struct ct_optional_f32_t score_margin;
-  ct_puzzleboard_scoring_mode_t scoring_mode;
-  uint32_t has_runner_up_alignment;
-  struct ct_grid_alignment_t runner_up_alignment;
-  size_t observed_edges_len;
 } ct_puzzleboard_result_t;
 
 /**
@@ -975,7 +956,7 @@ void ct_chessboard_detector_destroy(struct ct_chessboard_detector_t *detector);
  * Run end-to-end chessboard detection on a grayscale image.
  *
  * `bufs.out_corners_len` is required and always receives the required number
- * of labeled-corner entries. Passing `bufs.out_corners = NULL` and
+ * of `ct_chessboard_corner_t` entries. Passing `bufs.out_corners = NULL` and
  * `bufs.corners_capacity = 0` queries the required length without copying
  * corner data.
  *
@@ -992,12 +973,38 @@ enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect
                                                struct ct_chessboard_detect_buffers_t *bufs);
 
 /**
+ * Run chessboard detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
+ * diagnostics struct (every input corner's terminal stage, per-iteration
+ * pipeline traces, cluster histograms, geometry-check outcomes). Its
+ * schema carries a looser stability promise than the typed result API and
+ * may evolve between minor versions.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_chessboard_detector_detect_diagnostics_json(const struct ct_chessboard_detect_args_t *args,
+                                                                char *out_utf8,
+                                                                size_t out_capacity,
+                                                                size_t *out_len);
+
+/**
  * Run end-to-end multi-component chessboard detection on a grayscale image.
  *
  * Returns every same-board component the detector recovers, up to
  * `DetectorParams::max_components`. The `corners_buf` buffer receives
  * all corners from all components concatenated; use
- * `result[i].detection.corners_len` to slice each component's contribution.
+ * `result[i].corners_len` to slice each component's contribution.
  *
  * Both `results_len_out` and `corners_len_out` inside `bufs` are
  * required and always receive the required array lengths. Passing
@@ -1060,6 +1067,33 @@ enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detect_args_
                                             struct ct_charuco_detect_buffers_t *bufs);
 
 /**
+ * Run ChArUco detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `CharucoDetectDiagnostics` struct (per-component matcher decisions,
+ * per-cell scores, chosen/runner-up hypotheses, rejection reasons).
+ * Diagnostics are produced even when detection fails, so this entry point
+ * returns `CT_STATUS_OK` with a well-formed payload on failed frames; its
+ * schema carries a looser stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_charuco_detector_detect_diagnostics_json(const struct ct_charuco_detect_args_t *args,
+                                                             char *out_utf8,
+                                                             size_t out_capacity,
+                                                             size_t *out_len);
+
+/**
  * Create a marker-board detector handle.
  *
  * # Safety
@@ -1101,6 +1135,34 @@ void ct_marker_board_detector_destroy(struct ct_marker_board_detector_t *detecto
  */
 enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_detect_args_t *args,
                                                  struct ct_marker_board_detect_buffers_t *bufs);
+
+/**
+ * Run marker-board detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
+ * expected-to-detected circle matches, per-corner provenance, and the
+ * alignment-inlier count). The marker-board diagnostics channel only
+ * yields evidence on a successful detection, so a failed detection is
+ * reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
+ * stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_marker_board_detector_detect_diagnostics_json(const struct ct_marker_board_detect_args_t *args,
+                                                                  char *out_utf8,
+                                                                  size_t out_capacity,
+                                                                  size_t *out_len);
 
 /**
  * Create a PuzzleBoard detector handle.
@@ -1145,6 +1207,33 @@ void ct_puzzleboard_detector_destroy(struct ct_puzzleboard_detector_t *detector)
  */
 enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_detect_args_t *args,
                                                 struct ct_puzzleboard_detect_buffers_t *bufs);
+
+/**
+ * Run PuzzleBoard detection and write the diagnostics channel as a
+ * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+ *
+ * The JSON payload is `serde_json::to_string` of the Rust
+ * `PuzzleBoardDiagnostics` struct (the raw pre-alignment per-edge bit
+ * observations and the winner-vs-runner-up scoring evidence). Diagnostics
+ * are produced even when detection fails, so this entry point returns
+ * `CT_STATUS_OK` with a well-formed payload on failed frames; its schema
+ * carries a looser stability promise than the typed result API.
+ *
+ * `out_len` is required and always receives the JSON length excluding the
+ * trailing NUL terminator. Query the required size by passing
+ * `out_utf8 = NULL` and `out_capacity = 0`.
+ *
+ * # Safety
+ *
+ * `args` must be a valid non-null pointer whose `detector` and `image`
+ * fields are valid non-null pointers. If `out_utf8` is non-null it must
+ * point to writable memory of at least `out_capacity` bytes. `out_len`
+ * must always be a valid writable pointer.
+ */
+enum ct_status_t ct_puzzleboard_detector_detect_diagnostics_json(const struct ct_puzzleboard_detect_args_t *args,
+                                                                 char *out_utf8,
+                                                                 size_t out_capacity,
+                                                                 size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -280,17 +280,6 @@ pub struct ct_marker_detection_t {
     pub corners_img: [ct_point2f_t; 4],
 }
 
-/// One circle candidate from marker-board detection.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ct_circle_candidate_t {
-    pub center_img: ct_point2f_t,
-    pub cell: ct_grid_coords_t,
-    pub polarity: ct_circle_polarity_t,
-    pub score: f32,
-    pub contrast: f32,
-}
-
 /// One expected marker circle on the board.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -299,32 +288,33 @@ pub struct ct_marker_circle_spec_t {
     pub polarity: ct_circle_polarity_t,
 }
 
-/// One expected-to-detected circle match result.
+/// One detected chessboard corner.
+///
+/// A chessboard corner is always labelled, so `grid` is unconditional —
+/// there is no `has_grid` flag. `input_index` is the index of the source
+/// ChESS corner in the detector's input slice.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ct_circle_match_t {
-    pub expected: ct_marker_circle_spec_t,
-    pub has_matched_index: u32,
-    pub matched_index: usize,
-    pub has_distance_cells: u32,
-    pub distance_cells: f32,
-    pub has_offset_cells: u32,
-    pub offset_cells: ct_grid_coords_t,
+pub struct ct_chessboard_corner_t {
+    /// Sub-pixel image position.
+    pub position: ct_point2f_t,
+    /// Grid label (i, j).
+    pub grid: ct_grid_coords_t,
+    /// Index into the detector's input ChESS-corner slice.
+    pub input_index: usize,
+    /// Corner score.
+    pub score: f32,
 }
 
 /// Chessboard detection header.
 ///
-/// The detector always populates `grid_direction_0_rad` and
-/// `grid_direction_1_rad` (the two global grid-axis angles in `[0, π)`
-/// discovered by the chessboard detector's clustering stage) plus
-/// `cell_size` in pixels.
+/// Carries only the labelled-corner count; the corners themselves are
+/// copied into the caller-provided `ct_chessboard_corner_t` array.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_result_t {
-    pub detection: ct_target_detection_t,
-    pub grid_direction_0_rad: f32,
-    pub grid_direction_1_rad: f32,
-    pub cell_size: f32,
+    /// Number of labelled corners in the detection.
+    pub corners_len: usize,
 }
 
 /// ChArUco detection header.
@@ -337,18 +327,27 @@ pub struct ct_charuco_result_t {
 }
 
 /// Marker-board detection header.
+///
+/// Carries the facts a consumer needs to *use* a marker-board detection:
+/// the labelled-corner header and the optional grid alignment. Detection
+/// evidence (every scored circle hypothesis, the expected-to-detected
+/// circle pairings, the per-corner provenance, the alignment-inlier count)
+/// is intentionally not surfaced over the C ABI — it is the Rust
+/// `MarkerBoardDiagnostics` channel, which has no FFI binding.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_marker_board_result_t {
     pub detection: ct_target_detection_t,
-    pub circle_candidates_len: usize,
-    pub circle_matches_len: usize,
     pub has_alignment: u32,
     pub alignment: ct_grid_alignment_t,
-    pub alignment_inliers: usize,
 }
 
-/// PuzzleBoard detection header and decode diagnostics.
+/// PuzzleBoard detection header and compact decode quality summary.
+///
+/// Carries the facts a consumer needs to *use* a PuzzleBoard detection.
+/// Decode-internal evidence (winner/runner-up scores, the raw per-edge
+/// observation dump) is intentionally not surfaced over the C ABI — it is
+/// the Rust `PuzzleBoardDiagnostics` channel, which has no FFI binding.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_puzzleboard_result_t {
@@ -360,13 +359,6 @@ pub struct ct_puzzleboard_result_t {
     pub bit_error_rate: f32,
     pub master_origin_row: i32,
     pub master_origin_col: i32,
-    pub score_best: ct_optional_f32_t,
-    pub score_runner_up: ct_optional_f32_t,
-    pub score_margin: ct_optional_f32_t,
-    pub scoring_mode: ct_puzzleboard_scoring_mode_t,
-    pub has_runner_up_alignment: u32,
-    pub runner_up_alignment: ct_grid_alignment_t,
-    pub observed_edges_len: usize,
 }
 
 /// Center-of-mass refiner configuration.
@@ -479,9 +471,6 @@ pub struct ct_chessboard_params_t {
     pub peak_min_separation_deg: f32,
     pub min_peak_weight_fraction: f32,
 
-    // Caller cell-size hint (optional)
-    pub cell_size_hint: ct_optional_f32_t,
-
     // Seed
     pub seed_edge_tol: f32,
     pub seed_axis_tol_deg: f32,
@@ -501,12 +490,8 @@ pub struct ct_chessboard_params_t {
     pub max_validation_iters: u32,
 
     // Recall boosters
-    pub enable_line_extrapolation: u32,
-    pub enable_gap_fill: u32,
-    pub enable_component_merge: u32,
     pub enable_weak_cluster_rescue: u32,
     pub weak_cluster_tol_deg: f32,
-    pub component_merge_min_boundary_pairs: usize,
     pub max_booster_iters: u32,
 
     // Output gates

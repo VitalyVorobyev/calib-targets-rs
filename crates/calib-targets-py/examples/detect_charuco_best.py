@@ -33,10 +33,8 @@ def main() -> None:
         marker_layout=ct.MarkerLayout.OPENCV_CHARUCO,
     )
 
-    # Three configs bracketing the workspace ChESS threshold default
-    # (absolute 15.0). The chessboard detector's defaults already cover
-    # the seed/grow/validate invariants on real boards, so we only tune
-    # the threshold and the pre-filter floor.
+    # ChESS corner detection runs once in detect_charuco_best; the sweep
+    # varies only ChArUco / chessboard-grid detector parameters.
     base = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
@@ -47,21 +45,15 @@ def main() -> None:
     loose = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.5,
-            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
-        ),
+        chessboard=ct.ChessboardParams(min_corner_strength=0.0),
         max_hamming=2,
-        min_marker_inliers=8,
+        min_marker_inliers=4,
     )
     tight = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(
-            min_corner_strength=0.5,
-            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
-        ),
-        max_hamming=2,
+        chessboard=ct.ChessboardParams(min_corner_strength=1.0),
+        max_hamming=1,
         min_marker_inliers=8,
     )
 
@@ -71,7 +63,7 @@ def main() -> None:
         print(f"all configs failed: {exc}")
         return
 
-    print(f"corners: {len(result.detection.corners)}")
+    print(f"corners: {len(result.corners)}")
     print(f"markers: {len(result.markers)}")
 
 

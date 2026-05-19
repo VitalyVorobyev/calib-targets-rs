@@ -74,27 +74,9 @@ mod tests {
     #[test]
     fn build_corner_map_filters_inliers() {
         let corners = vec![
-            LabeledCorner {
-                position: Point2::new(1.0, 2.0),
-                grid: Some(GridCoords { i: 0, j: 0 }),
-                id: None,
-                target_position: None,
-                score: 0.5,
-            },
-            LabeledCorner {
-                position: Point2::new(3.0, 4.0),
-                grid: None,
-                id: None,
-                target_position: None,
-                score: 0.5,
-            },
-            LabeledCorner {
-                position: Point2::new(5.0, 6.0),
-                grid: Some(GridCoords { i: 1, j: 0 }),
-                id: None,
-                target_position: None,
-                score: 0.5,
-            },
+            LabeledCorner::new(Point2::new(1.0, 2.0), 0.5).with_grid(GridCoords { i: 0, j: 0 }),
+            LabeledCorner::new(Point2::new(3.0, 4.0), 0.5),
+            LabeledCorner::new(Point2::new(5.0, 6.0), 0.5).with_grid(GridCoords { i: 1, j: 0 }),
         ];
 
         let map = build_corner_map(&corners, &[0, 2]);

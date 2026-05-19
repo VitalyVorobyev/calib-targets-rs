@@ -31,17 +31,17 @@ impl Matcher {
         assert!(
             bits <= 64,
             "marker_size {} implies {} bits > 64 (unsupported)",
-            dict.marker_size,
+            dict.marker_size(),
             bits
         );
 
-        let mut rotated = Vec::with_capacity(dict.codes.len());
-        for &base in dict.codes {
+        let mut rotated = Vec::with_capacity(dict.codes().len());
+        for &base in dict.codes() {
             rotated.push([
-                rotate_code_u64(base, dict.marker_size, 0),
-                rotate_code_u64(base, dict.marker_size, 1),
-                rotate_code_u64(base, dict.marker_size, 2),
-                rotate_code_u64(base, dict.marker_size, 3),
+                rotate_code_u64(base, dict.marker_size(), 0),
+                rotate_code_u64(base, dict.marker_size(), 1),
+                rotate_code_u64(base, dict.marker_size(), 2),
+                rotate_code_u64(base, dict.marker_size(), 3),
             ]);
         }
 
@@ -147,8 +147,8 @@ mod tests {
         let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("builtin dict");
         let matcher = Matcher::new(dict, 0);
 
-        let base = dict.codes[0];
-        let observed = rotate_code_u64(base, dict.marker_size, 1);
+        let base = dict.codes()[0];
+        let observed = rotate_code_u64(base, dict.marker_size(), 1);
         let m = matcher.match_code(observed).expect("match");
         assert_eq!(m.id, 0);
         assert_eq!(m.rotation, 1);

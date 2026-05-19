@@ -3,11 +3,13 @@
 The overlay marks:
 
 - The interior grid edges (thin translucent green).
-- Every decoded edge-bit midpoint as a ring — sky-blue for ``bit=1`` (white
-  puzzle dot), orange for ``bit=0`` (black puzzle dot). Opacity scales with
-  the per-bit confidence so weak decodes fade out. This matches the WASM
-  demo overlay convention in ``demo/src/components/ImageCanvas.tsx``.
 - Every labelled corner as a small filled dot tagged with its master id.
+
+Note: as of 0.9.0 the raw per-edge bit observations moved off
+``PuzzleBoardDetectionResult`` onto the Rust ``PuzzleBoardDiagnostics``
+channel, which the Python ``puzzleboard`` binding does not expose. The
+edge-bit ring overlay this example used to draw therefore cannot be fed
+from Python and has been dropped.
 
 The generated PNG is intended for the puzzleboard crate README and the
 book's PuzzleBoard chapter. Run:
@@ -27,16 +29,11 @@ import numpy as np
 from PIL import Image
 
 import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection, PatchCollection
-from matplotlib.patches import Circle
+from matplotlib.collections import LineCollection
 
 import calib_targets as ct
 
 
-# Matches demo/src/components/ImageCanvas.tsx, but saturated so the overlay
-# survives downscaling to thumbnail sizes (repo README gallery, etc.).
-WHITE_BIT_STROKE = "#22d3ee"  # cyan-400 — for bit=1 (white puzzle dot)
-BLACK_BIT_STROKE = "#f43f5e"  # rose-500 — for bit=0 (black puzzle dot)
 GRID_STROKE = (0.34, 0.91, 0.47, 0.75)  # brighter green mesh
 
 
@@ -67,47 +64,16 @@ def synthesise(rows: int, cols: int, dpi: int) -> tuple[np.ndarray, ct.PuzzleBoa
     return img, spec
 
 
-def endpoints_for_edge(edge, corners_by_grid, alignment):
-    """Map a local (row, col, orientation) edge to the two master-space
-    labelled corners it connects. Mirrors the logic in the WASM demo overlay.
-    """
-    a, b, c, d = (
-        alignment.transform.a,
-        alignment.transform.b,
-        alignment.transform.c,
-        alignment.transform.d,
-    )
-    tx, ty = alignment.translation
-
-    def to_master(i: int, j: int) -> tuple[int, int]:
-        return (
-            (a * i + b * j + tx) % 501,
-            (c * i + d * j + ty) % 501,
-        )
-
-    start = to_master(edge.col, edge.row)
-    if edge.orientation == "horizontal":
-        end = to_master(edge.col + 1, edge.row)
-    else:
-        end = to_master(edge.col, edge.row + 1)
-
-    p = corners_by_grid.get(start)
-    q = corners_by_grid.get(end)
-    if p is None or q is None:
-        return None
-    return p.position, q.position
-
-
 def draw_overlay(ax, image, result) -> None:
     ax.imshow(image, cmap="gray", interpolation="nearest")
 
     corners_by_grid = {
-        (c.grid.i, c.grid.j): c for c in result.detection.corners if c.grid is not None
+        (c.grid.i, c.grid.j): c for c in result.corners if c.grid is not None
     }
 
     # Grid edges (between adjacent labelled corners) — thin translucent mesh.
     grid_segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for c in result.detection.corners:
+    for c in result.corners:
         if c.grid is None:
             continue
         right = corners_by_grid.get((c.grid.i + 1, c.grid.j))
@@ -121,53 +87,15 @@ def draw_overlay(ax, image, result) -> None:
             LineCollection(grid_segments, colors=[GRID_STROKE], linewidths=1.4)
         )
 
-    # Edge-bit rings. Radius is 25% of edge length to roughly match the
-    # physical puzzle bump. Bright saturated colours so the overlay is
-    # readable when the image is downscaled for a README thumbnail.
-    white_patches: list[Circle] = []
-    black_patches: list[Circle] = []
-    white_alpha: list[float] = []
-    black_alpha: list[float] = []
-    for edge in result.observed_edges:
-        endpoints = endpoints_for_edge(edge, corners_by_grid, result.alignment)
-        if endpoints is None:
-            continue
-        (x0, y0), (x1, y1) = endpoints
-        mid = (0.5 * (x0 + x1), 0.5 * (y0 + y1))
-        edge_len = float(np.hypot(x1 - x0, y1 - y0))
-        radius = max(3.0, 0.25 * edge_len)
-        alpha = 0.70 + 0.30 * max(0.0, min(1.0, float(edge.confidence)))
-        linewidth = max(2.5, radius * 0.28)
-        color = WHITE_BIT_STROKE if edge.bit == 1 else BLACK_BIT_STROKE
-        circ = Circle(
-            mid,
-            radius=radius,
-            fill=False,
-            linewidth=linewidth,
-            edgecolor=color,
-            facecolor="none",
-        )
-        if edge.bit == 1:
-            white_patches.append(circ)
-            white_alpha.append(alpha)
-        else:
-            black_patches.append(circ)
-            black_alpha.append(alpha)
-
-    if white_patches:
-        pc = PatchCollection(white_patches, match_original=True, zorder=4)
-        pc.set_alpha(np.asarray(white_alpha))
-        ax.add_collection(pc)
-    if black_patches:
-        pc = PatchCollection(black_patches, match_original=True, zorder=4)
-        pc.set_alpha(np.asarray(black_alpha))
-        ax.add_collection(pc)
+    # NOTE: the per-edge bit-ring overlay was dropped in 0.9.0 — the raw
+    # observed-edge dump moved to the Rust `PuzzleBoardDiagnostics` channel,
+    # which the Python binding does not expose.
 
     # Corner dots + master-id labels.
-    xs = [c.position[0] for c in result.detection.corners]
-    ys = [c.position[1] for c in result.detection.corners]
+    xs = [c.position[0] for c in result.corners]
+    ys = [c.position[1] for c in result.corners]
     ax.scatter(xs, ys, s=14, c="#ef4444", edgecolor="white", linewidths=0.5, zorder=5)
-    for c in result.detection.corners:
+    for c in result.corners:
         if c.id is None:
             continue
         ax.annotate(
@@ -208,7 +136,7 @@ def main() -> int:
     print(
         f"rendered {args.rows}x{args.cols} @ {args.dpi} DPI -> "
         f"image {image.shape[1]}x{image.shape[0]} px, "
-        f"{len(result.detection.corners)} labelled corners, "
+        f"{len(result.corners)} labelled corners, "
         f"BER={result.decode.bit_error_rate:.3f}"
     )
 

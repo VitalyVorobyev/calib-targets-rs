@@ -143,10 +143,8 @@ fn fixed_board_keeps_target_positions_in_board() {
             result.decode.bit_error_rate,
         );
 
-        for lc in &result.detection.corners {
-            let Some(tp) = lc.target_position else {
-                continue;
-            };
+        for lc in &result.corners {
+            let tp = lc.target_position;
             assert!(
                 (0.0..=max_x_mm).contains(&tp.x),
                 "{label}: target_position.x = {:.3} mm out of [0, {max_x_mm:.3}] \

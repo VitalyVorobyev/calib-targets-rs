@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{Detection, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
 use image::GenericImageView;
 
 const SNAP_WIDTH: u32 = 720;
@@ -53,13 +53,10 @@ fn extract_snap(image: &image::GrayImage, snap_idx: u32) -> image::GrayImage {
     image.view(x0, 0, SNAP_WIDTH, SNAP_HEIGHT).to_image()
 }
 
-fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
+fn assert_no_duplicate_labels(detection: &ChessboardDetection, context: &str) {
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
-    for lc in &detection.target.corners {
-        let g = lc
-            .grid
-            .expect("chessboard detector emits grid coords on every labelled corner");
-        let (i, j) = (g.i, g.j);
+    for lc in &detection.corners {
+        let (i, j) = (lc.grid.i, lc.grid.j);
         assert!(
             seen.insert((i, j)),
             "{context}: duplicate (i, j) = ({i}, {j}) — precision contract violated"
@@ -67,13 +64,12 @@ fn assert_no_duplicate_labels(detection: &Detection, context: &str) {
     }
 }
 
-fn assert_grid_rebased_to_origin(detection: &Detection, context: &str) {
+fn assert_grid_rebased_to_origin(detection: &ChessboardDetection, context: &str) {
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
-    for lc in &detection.target.corners {
-        let g = lc.grid.expect("grid coords present");
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
+    for lc in &detection.corners {
+        min_i = min_i.min(lc.grid.i);
+        min_j = min_j.min(lc.grid.j);
     }
     assert_eq!(
         (min_i, min_j),
@@ -106,9 +102,9 @@ fn smoke_first_subframe_detects() {
         .expect("target_0 snap 0 must produce a detection");
 
     assert!(
-        detection.target.corners.len() >= 10,
+        detection.corners.len() >= 10,
         "expected at least 10 labelled corners on a clean snap, got {}",
-        detection.target.corners.len()
+        detection.corners.len()
     );
     assert_no_duplicate_labels(&detection, "smoke target_0 snap_0");
     assert_grid_rebased_to_origin(&detection, "smoke target_0 snap_0");

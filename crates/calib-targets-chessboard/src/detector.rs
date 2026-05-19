@@ -5,8 +5,8 @@
 //! [`DetectorParams::graph_build_algorithm`] and, for the
 //! seed-and-grow path, defers to [`pipeline::run_pipeline`]. The
 //! `find_seed → grow → validate` loop, the post-grow stage sequence,
-//! and the [`Detection`] / [`DebugFrame`] payloads all live under
-//! [`crate::pipeline`].
+//! and the [`ChessboardDetection`] / [`DebugFrame`] payloads all live
+//! under [`crate::pipeline`].
 //!
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
@@ -18,21 +18,21 @@ use crate::topological::detect_all_topological;
 use crate::corner::ChessCorner;
 use std::collections::HashSet;
 
-// Re-export the pipeline's public output / diagnostic surface so
-// `crate::detector::*` paths (and the crate prelude) keep working
-// after the orchestrator moved into `crate::pipeline`.
+// Re-export from the pipeline: stable result types used in method signatures
+// and the diagnostic items used in method bodies.
 pub use pipeline::{
-    build_detection_from_grow, run_geometry_check, BfsExtendTrace, DebugFrame, Detection,
-    ExtensionTrace, GeometryCheckTrace, InstrumentedResult, IterationTrace, RefitTrace,
-    StageCounts, DEBUG_FRAME_SCHEMA,
+    build_detection_from_grow, run_geometry_check, ChessboardCorner, ChessboardDetection,
+    DebugFrame,
 };
 
 /// Top-level detector.
 pub struct Detector {
+    /// The parameters every `detect*` call on this detector runs with.
     pub params: DetectorParams,
 }
 
 impl Detector {
+    /// Construct a detector with the given parameters.
     pub fn new(params: DetectorParams) -> Self {
         Self { params }
     }
@@ -46,14 +46,19 @@ impl Detector {
             fields(num_corners = corners.len())
         )
     )]
-    pub fn detect(&self, corners: &[ChessCorner]) -> Option<Detection> {
+    pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
-            GraphBuildAlgorithm::ChessboardV2 => self.detect_debug(corners).detection,
+            GraphBuildAlgorithm::ChessboardV2 => self.detect_with_diagnostics(corners).detection,
         }
     }
 
-    /// Full-debug entry point for a single best detection.
+    /// Diagnostics entry point for a single best detection.
+    ///
+    /// Runs the pipeline and returns the full [`DebugFrame`] — the
+    /// detection plus every per-stage trace. Use [`Self::detect`] when only
+    /// the detection is needed; this is the channel for inspecting *how* it
+    /// was reached.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -62,7 +67,7 @@ impl Detector {
             fields(num_corners = corners.len())
         )
     )]
-    pub fn detect_debug(&self, corners: &[ChessCorner]) -> DebugFrame {
+    pub fn detect_with_diagnostics(&self, corners: &[ChessCorner]) -> DebugFrame {
         run_pipeline(&self.params, corners, &HashSet::new())
     }
 
@@ -70,9 +75,9 @@ impl Detector {
     ///
     /// Useful for ChArUco and similar setups where a single physical board
     /// can be split into multiple disconnected chessboard pieces by
-    /// markers or occlusions. Each returned [`Detection`] carries its own
-    /// locally-rebased `(i, j)` labels; alignment to a global frame is the
-    /// caller's responsibility (ChArUco's marker decoding does this).
+    /// markers or occlusions. Each returned [`ChessboardDetection`] carries
+    /// its own locally-rebased `(i, j)` labels; alignment to a global frame
+    /// is the caller's responsibility (ChArUco's marker decoding does this).
     ///
     /// Capped by [`DetectorParams::max_components`].
     ///
@@ -86,18 +91,23 @@ impl Detector {
             fields(num_corners = corners.len())
         )
     )]
-    pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<Detection> {
+    pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
             GraphBuildAlgorithm::ChessboardV2 => self
-                .detect_all_debug(corners)
+                .detect_all_with_diagnostics(corners)
                 .into_iter()
                 .filter_map(|f| f.detection)
                 .collect(),
         }
     }
 
-    /// Single-detection entry with derived per-stage counts.
+    /// Diagnostics multi-component entry point. See [`Self::detect_all`].
+    ///
+    /// Returns one [`DebugFrame`] per recovered grid component — the
+    /// per-component detection plus every per-stage trace. Use
+    /// [`Self::detect_all`] when only the detections are needed; this is the
+    /// channel for inspecting *how* each component was reached.
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -106,47 +116,7 @@ impl Detector {
             fields(num_corners = corners.len())
         )
     )]
-    pub fn detect_instrumented(&self, corners: &[ChessCorner]) -> InstrumentedResult {
-        let frame = self.detect_debug(corners);
-        let counts = StageCounts::from_frame(&frame);
-        InstrumentedResult {
-            detection: frame.detection,
-            counts,
-        }
-    }
-
-    /// Multi-component entry with per-component derived counts.
-    #[cfg_attr(
-        feature = "tracing",
-        tracing::instrument(
-            level = "info",
-            skip(self, corners),
-            fields(num_corners = corners.len())
-        )
-    )]
-    pub fn detect_all_instrumented(&self, corners: &[ChessCorner]) -> Vec<InstrumentedResult> {
-        self.detect_all_debug(corners)
-            .into_iter()
-            .map(|frame| {
-                let counts = StageCounts::from_frame(&frame);
-                InstrumentedResult {
-                    detection: frame.detection,
-                    counts,
-                }
-            })
-            .collect()
-    }
-
-    /// Full-debug multi-component entry point. See [`Self::detect_all`].
-    #[cfg_attr(
-        feature = "tracing",
-        tracing::instrument(
-            level = "info",
-            skip(self, corners),
-            fields(num_corners = corners.len())
-        )
-    )]
-    pub fn detect_all_debug(&self, corners: &[ChessCorner]) -> Vec<DebugFrame> {
+    pub fn detect_all_with_diagnostics(&self, corners: &[ChessCorner]) -> Vec<DebugFrame> {
         let cap = self.params.max_components.max(1) as usize;
         let mut consumed: HashSet<usize> = HashSet::new();
         let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
@@ -161,8 +131,8 @@ impl Detector {
                 }
                 break;
             };
-            for &idx in &detection.strong_indices {
-                consumed.insert(idx);
+            for corner in &detection.corners {
+                consumed.insert(corner.input_index);
             }
             frames.push(frame);
         }
@@ -175,6 +145,7 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::corner::ChessCorner;
+    use crate::pipeline::StageCounts;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
@@ -219,7 +190,7 @@ mod tests {
         }
         let det = Detector::new(DetectorParams::default());
         let d = det.detect(&corners).expect("detection");
-        assert_eq!(d.target.corners.len(), 49);
+        assert_eq!(d.corners.len(), 49);
     }
 
     #[test]
@@ -250,13 +221,9 @@ mod tests {
         let d = det.detect(&corners).expect("detection");
         // Locate (0, 0) and the two neighbors.
         let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
-            .target
             .corners
             .iter()
-            .filter_map(|c| {
-                let g = c.grid?;
-                Some(((g.i, g.j), (c.position.x, c.position.y)))
-            })
+            .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
             .collect();
         let p00 = by_ij.get(&(0, 0)).copied().expect("(0,0) labelled");
         let p10 = by_ij.get(&(1, 0)).copied().expect("(1,0) labelled");
@@ -290,14 +257,15 @@ mod tests {
             }
         }
         let det = Detector::new(DetectorParams::default());
-        let res = det.detect_instrumented(&corners);
-        assert!(res.detection.is_some(), "expected detection on 7x7 grid");
-        assert_eq!(res.counts.input_corners, 49);
-        assert_eq!(res.counts.after_strength_filter, 49);
-        assert_eq!(res.counts.after_clustering, 49);
-        assert!(res.counts.seed_found);
-        assert_eq!(res.counts.labelled_final, 49);
-        assert_eq!(res.counts.blacklisted_total, 0);
-        assert!(res.counts.validation_iterations >= 1);
+        let frame = det.detect_with_diagnostics(&corners);
+        let counts = StageCounts::from_frame(&frame);
+        assert!(frame.detection.is_some(), "expected detection on 7x7 grid");
+        assert_eq!(counts.input_corners, 49);
+        assert_eq!(counts.after_strength_filter, 49);
+        assert_eq!(counts.after_clustering, 49);
+        assert!(counts.seed_found);
+        assert_eq!(counts.labelled_final, 49);
+        assert_eq!(counts.blacklisted_total, 0);
+        assert!(counts.validation_iterations >= 1);
     }
 }

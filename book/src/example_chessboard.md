@@ -82,12 +82,7 @@ let params = DetectorParams::default();
 let detector = Detector::new(params);
 
 if let Some(detection) = detector.detect(&corners) {
-    println!(
-        "{} corners, cell = {:.1} px, grid directions = {:?}",
-        detection.target.corners.len(),
-        detection.cell_size,
-        detection.grid_directions,
-    );
+    println!("{} labelled corners", detection.corners.len());
 }
 ```
 

@@ -1,17 +1,24 @@
 #include <cstring>
 #include <iostream>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include "calib_targets_ffi.hpp"
 #include "native_smoke_common.h"
 
+// Expected labelled-corner count for testdata/mid.pgm under the default
+// chessboard detector config (min_corner_strength raised to 0.5).
+namespace {
+constexpr std::size_t kExpectedCorners = 77;
+}  // namespace
+
 int main(int argc, char **argv) {
   ct_native_gray_image_buffer_t image{};
   auto config = ct_native_default_chessboard_detector_config();
   calib_targets::ffi::ChessboardDetector detector;
   ct_chessboard_result_t result{};
-  std::vector<ct_labeled_corner_t> corners;
+  std::vector<ct_chessboard_corner_t> corners;
 
   if (argc != 2) {
     std::cerr << "usage: " << argv[0] << " <mid.pgm>\n";
@@ -36,9 +43,20 @@ int main(int argc, char **argv) {
     ct_native_gray_image_buffer_reset(&image);
     return 1;
   }
-  if (result.detection.kind != CT_TARGET_KIND_CHESSBOARD || corners.size() != 77 || corners.front().has_grid != CT_TRUE) {
-    std::cerr << "unexpected wrapper result: kind=" << result.detection.kind
+  if (result.corners_len != kExpectedCorners || corners.size() != kExpectedCorners) {
+    std::cerr << "unexpected wrapper result: result.corners_len=" << result.corners_len
               << " corners=" << corners.size() << "\n";
+    ct_native_gray_image_buffer_reset(&image);
+    return 1;
+  }
+
+  // The diagnostics-JSON accessor follows the caller-owned-buffer
+  // query/fill discipline; a successful detection yields a non-empty
+  // JSON payload.
+  std::string diagnostics;
+  status = detector.detect_diagnostics_json(image.descriptor, &diagnostics);
+  if (!status.ok() || diagnostics.empty()) {
+    std::cerr << "wrapper diagnostics failed: " << status.message << "\n";
     ct_native_gray_image_buffer_reset(&image);
     return 1;
   }

@@ -265,12 +265,14 @@ export function detectChessboardBest(
   gray: Uint8Array,
   width: number,
   height: number,
+  chessCfg: ChessConfig,
   configs: ChessboardParams[],
 ): ChessboardDetectionResult | null {
   return _detect_chessboard_best(
     width,
     height,
     gray,
+    chessCfg,
     configs,
   ) as ChessboardDetectionResult | null;
 }

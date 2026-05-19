@@ -22,7 +22,7 @@ use nalgebra::{Matrix3, Point2};
 
 use projective_grid::component_merge::{merge_components_local, ComponentInput, LocalMergeParams};
 use projective_grid::square::grow::{Admit, GrowValidator, LabelledNeighbour};
-use projective_grid::square::seed_finder::SeedQuadValidator;
+use projective_grid::square::seed::finder::SeedQuadValidator;
 use projective_grid::{
     detect_square_grid, detect_square_grid_all, AxisEstimate, ExtensionStrategy,
     MultiComponentParams, SquareGridParams,

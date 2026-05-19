@@ -1,8 +1,27 @@
 //! Chessboard detector parameters.
 //!
-//! All spatial tolerances are **multiplicative with respect to `s`**
-//! (the global cell size) — the pipeline is scale-invariant once `s`
-//! is known. All angular tolerances are absolute degrees.
+//! The configuration is split into two surfaces:
+//!
+//! - [`DetectorParams`] — the **stable core**. Three knobs a calibration
+//!   consumer has a basis to set: the graph-build algorithm, the minimum
+//!   labelled-corner count for a detection to be emitted, and the maximum
+//!   number of disconnected components returned by
+//!   [`crate::Detector::detect_all`].
+//! - [`ChessboardTuning`] — the **advanced sub-struct** behind
+//!   [`DetectorParams::tuning`]. ~40-plus stage-tuning knobs named after
+//!   the internal pipeline stages, accreted over algorithm-debugging
+//!   sessions. The defaults are chosen to hold the detector's
+//!   precision-by-construction contract; tune only when a specific input
+//!   fails and you have evidence for the change.
+//!
+//! `ChessboardTuning` is `#[serde(flatten)]`-ed into `DetectorParams`, so
+//! the serialized JSON / config wire format stays flat — every knob still
+//! deserializes from a top-level key, exactly as before the split.
+//!
+//! All spatial tolerances in [`ChessboardTuning`] are **multiplicative
+//! with respect to `s`** (the global cell size) — the pipeline is
+//! scale-invariant once `s` is known. All angular tolerances are absolute
+//! degrees.
 
 use projective_grid::{LocalMergeParams, TopologicalParams};
 use serde::{Deserialize, Serialize};
@@ -30,6 +49,9 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum GraphBuildAlgorithm {
+    /// Delaunay-triangulation + axis-driven cell-test grid builder.
+    /// Opt-in; lower setup cost and no global cell-size dependency, but
+    /// recall on the regression set still trails [`Self::ChessboardV2`].
     Topological,
     /// Conservative default while topological recall catches up to
     /// ChessboardV2 on the public testdata regression set.
@@ -80,7 +102,7 @@ fn default_cluster_sigma_k() -> f32 {
     // include all positions) does not reject it. The seed selector
     // needs cell-size consistency or trial-grow scoring before this
     // gate can open. Setting `cluster_sigma_k` > 0 in a custom
-    // `DetectorParams` is fine for experiments.
+    // `ChessboardTuning` is fine for experiments.
     0.0
 }
 
@@ -261,19 +283,23 @@ fn default_stage6_local_k_nearest() -> usize {
     12
 }
 
-/// Top-level detector configuration.
+/// Advanced per-stage tuning knobs for the chessboard detector.
+///
+/// Behind [`DetectorParams::tuning`]. ~40-plus knobs named after the
+/// internal pipeline stages, accreted over algorithm-debugging sessions.
+/// The defaults are chosen to hold the detector's precision-by-
+/// construction contract — a calibration consumer has no basis to set any
+/// of them and should leave the whole struct at [`Default`]. Tune a knob
+/// only when a specific input fails and you have evidence for the change.
+///
+/// `#[serde(flatten)]`-ed into [`DetectorParams`], so every knob still
+/// deserializes from a top-level JSON key — the wire format is flat.
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DetectorParams {
-    // --- Pipeline dispatch ---------------------------------------------------
-    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
-    /// Default: [`GraphBuildAlgorithm::ChessboardV2`].
-    #[serde(default = "default_graph_build_algorithm")]
-    pub graph_build_algorithm: GraphBuildAlgorithm,
-
+pub struct ChessboardTuning {
     /// Tuning knobs for the [`GraphBuildAlgorithm::Topological`] path.
-    /// Ignored when [`graph_build_algorithm`](Self::graph_build_algorithm)
-    /// is [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2).
+    /// Ignored when [`DetectorParams::graph_build_algorithm`] is
+    /// [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2).
     #[serde(default = "default_topological_params")]
     pub topological: TopologicalParams,
 
@@ -299,7 +325,7 @@ pub struct DetectorParams {
     /// `cluster_tol_deg + cluster_sigma_k * max(σ_a0, σ_a1)`, so noisier
     /// axis estimates get proportional slack — see [`cluster_sigma_k`].
     ///
-    /// [`cluster_sigma_k`]: DetectorParams::cluster_sigma_k
+    /// [`cluster_sigma_k`]: ChessboardTuning::cluster_sigma_k
     pub cluster_tol_deg: f32,
     /// Multiplier on the per-corner axis sigma added to [`cluster_tol_deg`]
     /// when admitting a corner. Default `2.0`: clean corners
@@ -314,7 +340,7 @@ pub struct DetectorParams {
     /// but whose estimate fell outside under noise. `k = 2` corresponds
     /// to a ≈ 95% one-sided confidence band.
     ///
-    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
+    /// [`cluster_tol_deg`]: ChessboardTuning::cluster_tol_deg
     #[serde(default = "default_cluster_sigma_k")]
     pub cluster_sigma_k: f32,
     /// Minimal angular separation (degrees) between the two peaks. Guards
@@ -323,12 +349,6 @@ pub struct DetectorParams {
     /// Minimal fraction of total axis-vote weight required for a peak to be
     /// considered.
     pub min_peak_weight_fraction: f32,
-
-    // --- `estimate_cell_size` stage -----------------------------------------
-    /// Optional caller hint. When provided and close to the estimate,
-    /// the hint may tighten the `find_seed` / `grow` search windows.
-    /// See `cell_size.rs`.
-    pub cell_size_hint: Option<f32>,
 
     // --- `find_seed` stage --------------------------------------------------
     /// Seed edge length window: `[1 - t, 1 + t] × s`.
@@ -356,7 +376,7 @@ pub struct DetectorParams {
     /// Straight-line-fit collinearity tolerance (fraction of the
     /// per-corner scale — see [`validate_step_aware`]).
     ///
-    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
+    /// [`validate_step_aware`]: ChessboardTuning::validate_step_aware
     pub line_tol_rel: f32,
     /// Minimum members required to fit a line / column for collinearity
     /// checks.
@@ -364,7 +384,7 @@ pub struct DetectorParams {
     /// Local-H prediction tolerance (fraction of the per-corner scale
     /// — see [`validate_step_aware`]).
     ///
-    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
+    /// [`validate_step_aware`]: ChessboardTuning::validate_step_aware
     pub local_h_tol_rel: f32,
     /// When `true`, [`line_tol_rel`] / [`local_h_tol_rel`] are
     /// multiplied by a per-corner local step (computed from labelled
@@ -380,8 +400,8 @@ pub struct DetectorParams {
     /// rationale — enabling it currently drops a labelled corner on
     /// one blessed bench image). Set to `true` to opt in per dataset.
     ///
-    /// [`line_tol_rel`]: DetectorParams::line_tol_rel
-    /// [`local_h_tol_rel`]: DetectorParams::local_h_tol_rel
+    /// [`line_tol_rel`]: ChessboardTuning::line_tol_rel
+    /// [`local_h_tol_rel`]: ChessboardTuning::local_h_tol_rel
     #[serde(default = "default_validate_step_aware")]
     pub validate_step_aware: bool,
     /// When `> 0` and [`validate_step_aware`] is set, an extra flag
@@ -395,7 +415,7 @@ pub struct DetectorParams {
     /// `0.5` to flag corners whose local step is more than 50% from
     /// the labelled-set median.
     ///
-    /// [`validate_step_aware`]: DetectorParams::validate_step_aware
+    /// [`validate_step_aware`]: ChessboardTuning::validate_step_aware
     #[serde(default = "default_step_deviation_thresh_rel")]
     pub validate_step_deviation_thresh_rel: f32,
     /// Blacklist-retry cap.
@@ -420,7 +440,7 @@ pub struct DetectorParams {
     pub enable_stage6_5_rescue: bool,
     /// Per-axis absolute tolerance (degrees) for `rescue_no_cluster`
     /// admission (see
-    /// [`enable_stage6_5_rescue`](DetectorParams::enable_stage6_5_rescue)).
+    /// [`enable_stage6_5_rescue`](ChessboardTuning::enable_stage6_5_rescue)).
     /// Wider than [`cluster_tol_deg`] (typically 12°) and the booster's
     /// [`weak_cluster_tol_deg`] (typically 18°) because the rescue
     /// pass is precision-anchored on local-H position match — a wide
@@ -431,14 +451,14 @@ pub struct DetectorParams {
     /// this value covers them without admitting structurally-
     /// misoriented corners.
     ///
-    /// [`cluster_tol_deg`]: DetectorParams::cluster_tol_deg
-    /// [`weak_cluster_tol_deg`]: DetectorParams::weak_cluster_tol_deg
+    /// [`cluster_tol_deg`]: ChessboardTuning::cluster_tol_deg
+    /// [`weak_cluster_tol_deg`]: ChessboardTuning::weak_cluster_tol_deg
     #[serde(default = "default_rescue_axis_tol_deg")]
     pub rescue_axis_tol_deg: f32,
     /// `K` parameter for `rescue_no_cluster` local-H fitting (same
     /// semantics as [`stage6_local_k_nearest`]).
     ///
-    /// [`stage6_local_k_nearest`]: DetectorParams::stage6_local_k_nearest
+    /// [`stage6_local_k_nearest`]: ChessboardTuning::stage6_local_k_nearest
     #[serde(default = "default_stage6_local_k_nearest")]
     pub stage6_5_local_k_nearest: usize,
     /// Position-search radius for `rescue_no_cluster` candidate
@@ -524,8 +544,8 @@ pub struct DetectorParams {
     /// neighbour prediction. Set to `false` to skip the destructive
     /// regrow and rely on the non-destructive extend alone.
     ///
-    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
-    /// [`enable_post_grow_bfs_extend`]: DetectorParams::enable_post_grow_bfs_extend
+    /// [`enable_post_grow_refit`]: ChessboardTuning::enable_post_grow_refit
+    /// [`enable_post_grow_bfs_extend`]: ChessboardTuning::enable_post_grow_bfs_extend
     #[serde(default = "default_enable_post_grow_bfs_regrow")]
     pub enable_post_grow_bfs_regrow: bool,
     /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
@@ -544,8 +564,8 @@ pub struct DetectorParams {
     /// heavy-distortion puzzleboard images. Both can run together,
     /// in the order extend → regrow.
     ///
-    /// [`enable_post_grow_refit`]: DetectorParams::enable_post_grow_refit
-    /// [`enable_post_grow_bfs_regrow`]: DetectorParams::enable_post_grow_bfs_regrow
+    /// [`enable_post_grow_refit`]: ChessboardTuning::enable_post_grow_refit
+    /// [`enable_post_grow_bfs_regrow`]: ChessboardTuning::enable_post_grow_bfs_regrow
     #[serde(default = "default_enable_post_grow_bfs_extend")]
     pub enable_post_grow_bfs_extend: bool,
 
@@ -587,7 +607,7 @@ pub struct DetectorParams {
     ///
     /// Default `0.45` of cell_size.
     ///
-    /// [`line_tol_rel`]: DetectorParams::line_tol_rel
+    /// [`line_tol_rel`]: ChessboardTuning::line_tol_rel
     #[serde(default = "default_geometry_check_line_tol_rel")]
     pub geometry_check_line_tol_rel: f32,
     /// Local-H residual tolerance (fraction of cell_size) for the
@@ -602,7 +622,7 @@ pub struct DetectorParams {
 
     // --- `extend_boundary` stage --------------------------------------------
     /// Use the per-candidate local-homography boundary extension
-    /// (`projective_grid::square::grow_extension::extend_via_local_homography`)
+    /// (`projective_grid::square::extension::extend_via_local_homography`)
     /// instead of the single-global-H one. The local-H variant fits an
     /// H per candidate cell from the K nearest labelled corners, gets
     /// per-candidate trust gates, and reaches further past the bbox
@@ -618,44 +638,24 @@ pub struct DetectorParams {
     /// labelled corners (by grid Manhattan distance) used to fit each
     /// candidate cell's local H.
     ///
-    /// [`stage6_local_h`]: DetectorParams::stage6_local_h
+    /// [`stage6_local_h`]: ChessboardTuning::stage6_local_h
     #[serde(default = "default_stage6_local_k_nearest")]
     pub stage6_local_k_nearest: usize,
 
     // --- `apply_boosters` stage ---------------------------------------------
-    pub enable_line_extrapolation: bool,
-    pub enable_gap_fill: bool,
-    pub enable_component_merge: bool,
+    /// Enable the weak-cluster rescue booster: re-admit corners that
+    /// clustered only within the looser `weak_cluster_tol_deg`.
     pub enable_weak_cluster_rescue: bool,
     /// Cluster tolerance for "weakly clustered" corners eligible as recall-
     /// booster candidates. Must be ≥ `cluster_tol_deg`.
     pub weak_cluster_tol_deg: f32,
-    /// Minimum boundary-pair count required to attempt a component merge.
-    pub component_merge_min_boundary_pairs: usize,
     /// Cap on the outer booster loop.
     pub max_booster_iters: u32,
-
-    // --- Output gates --------------------------------------------------------
-    /// Minimum labelled corners for a Detection to be emitted.
-    pub min_labeled_corners: usize,
-
-    // --- Multi-component (same-board, disconnected pieces) ------------------
-    /// Maximum number of components returned by [`crate::Detector::detect_all`].
-    ///
-    /// A chessboard can split into multiple disconnected pieces on ChArUco
-    /// scenes where markers break contiguity. Each iteration peels off one
-    /// grown grid from the unconsumed corners and re-runs seed → grow →
-    /// validate. Default `3`.
-    ///
-    /// Does NOT claim to support scenes with two separate physical boards —
-    /// one target per frame is the contract.
-    pub max_components: u32,
 }
 
-impl Default for DetectorParams {
+impl Default for ChessboardTuning {
     fn default() -> Self {
         Self {
-            graph_build_algorithm: GraphBuildAlgorithm::default(),
             topological: TopologicalParams::default(),
             component_merge: LocalMergeParams::default(),
 
@@ -676,8 +676,6 @@ impl Default for DetectorParams {
             // concentrates tightly; 0.02 is still comfortably above
             // pure-noise bins.
             min_peak_weight_fraction: 0.02,
-
-            cell_size_hint: None,
 
             seed_edge_tol: 0.25,
             seed_axis_tol_deg: 15.0,
@@ -731,17 +729,61 @@ impl Default for DetectorParams {
             geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
             geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
 
-            enable_line_extrapolation: true,
-            enable_gap_fill: true,
-            enable_component_merge: true,
             enable_weak_cluster_rescue: true,
             weak_cluster_tol_deg: 18.0,
-            component_merge_min_boundary_pairs: 2,
             max_booster_iters: 5,
+        }
+    }
+}
 
+/// Top-level detector configuration.
+///
+/// A small **stable core** of three knobs a calibration consumer has a
+/// basis to set, plus an advanced [`ChessboardTuning`] sub-struct
+/// ([`tuning`](Self::tuning)) holding the ~40-plus per-stage tuning knobs.
+///
+/// `tuning` is `#[serde(flatten)]`-ed, so the serialized JSON / config
+/// wire format is **flat** — every tuning knob deserializes from a
+/// top-level key. Existing JSON configs and the binding config
+/// representations are unaffected by the core / `tuning` split.
+#[non_exhaustive]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DetectorParams {
+    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
+    /// Default: [`GraphBuildAlgorithm::ChessboardV2`].
+    #[serde(default = "default_graph_build_algorithm")]
+    pub graph_build_algorithm: GraphBuildAlgorithm,
+
+    /// Minimum labelled corners for a
+    /// [`ChessboardDetection`](crate::ChessboardDetection) to be emitted.
+    pub min_labeled_corners: usize,
+
+    /// Maximum number of components returned by [`crate::Detector::detect_all`].
+    ///
+    /// A chessboard can split into multiple disconnected pieces on ChArUco
+    /// scenes where markers break contiguity. Each iteration peels off one
+    /// grown grid from the unconsumed corners and re-runs seed → grow →
+    /// validate. Default `3`.
+    ///
+    /// Does NOT claim to support scenes with two separate physical boards —
+    /// one target per frame is the contract.
+    pub max_components: u32,
+
+    /// Advanced per-stage tuning knobs. Leave at [`Default`] unless a
+    /// specific input fails and you have evidence for the change. See
+    /// [`ChessboardTuning`]. `#[serde(flatten)]` keeps every knob a
+    /// top-level key in the serialized form.
+    #[serde(flatten)]
+    pub tuning: ChessboardTuning,
+}
+
+impl Default for DetectorParams {
+    fn default() -> Self {
+        Self {
+            graph_build_algorithm: GraphBuildAlgorithm::default(),
             min_labeled_corners: 8,
-
             max_components: 3,
+            tuning: ChessboardTuning::default(),
         }
     }
 }
@@ -771,15 +813,21 @@ impl DetectorParams {
     pub fn sweep_default() -> Vec<Self> {
         let base = Self::default();
         let tight = Self {
-            cluster_tol_deg: 9.0,
-            seed_edge_tol: 0.18,
-            attach_axis_tol_deg: 12.0,
+            tuning: ChessboardTuning {
+                cluster_tol_deg: 9.0,
+                seed_edge_tol: 0.18,
+                attach_axis_tol_deg: 12.0,
+                ..base.tuning.clone()
+            },
             ..base.clone()
         };
         let loose = Self {
-            cluster_tol_deg: 16.0,
-            seed_edge_tol: 0.32,
-            attach_axis_tol_deg: 18.0,
+            tuning: ChessboardTuning {
+                cluster_tol_deg: 16.0,
+                seed_edge_tol: 0.32,
+                attach_axis_tol_deg: 18.0,
+                ..base.tuning.clone()
+            },
             ..base.clone()
         };
         vec![base, tight, loose]
@@ -797,10 +845,10 @@ mod tests {
         let base = &configs[0];
         let tight = &configs[1];
         let loose = &configs[2];
-        assert!(tight.cluster_tol_deg < base.cluster_tol_deg);
-        assert!(loose.cluster_tol_deg > base.cluster_tol_deg);
-        assert!(tight.seed_edge_tol < base.seed_edge_tol);
-        assert!(loose.seed_edge_tol > base.seed_edge_tol);
+        assert!(tight.tuning.cluster_tol_deg < base.tuning.cluster_tol_deg);
+        assert!(loose.tuning.cluster_tol_deg > base.tuning.cluster_tol_deg);
+        assert!(tight.tuning.seed_edge_tol < base.tuning.seed_edge_tol);
+        assert!(loose.tuning.seed_edge_tol > base.tuning.seed_edge_tol);
     }
 
     #[test]
@@ -813,8 +861,8 @@ mod tests {
             GraphBuildAlgorithm::ChessboardV2
         );
         assert_eq!(
-            topo.topological.axis_align_tol_rad,
-            default.topological.axis_align_tol_rad
+            topo.tuning.topological.axis_align_tol_rad,
+            default.tuning.topological.axis_align_tol_rad
         );
         assert_eq!(topo.min_labeled_corners, default.min_labeled_corners);
     }

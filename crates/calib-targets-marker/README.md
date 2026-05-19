@@ -72,11 +72,15 @@ let _ = detector.detect_from_image_and_corners(&view, &corners);
 
 | Field | Meaning |
 |---|---|
-| `detection: TargetDetection` | Labelled inner corners, `(i, j)` grid, optional `target_position` in mm. `kind = CheckerboardMarker`. |
-| `circle_candidates: Vec<CircleCandidate>` | All circle hypotheses scored in image space. |
-| `circle_matches: Vec<CircleMatch>` | One per expected circle; `matched_index`, `distance_cells`, `offset_cells`. |
-| `alignment: Option<GridAlignment>` | D4 rotation + offset aligning chessboard `(i, j)` to the layout's canonical frame. `None` if the three circles could not be placed. |
-| `alignment_inliers: usize` | Number of circles consistent with the chosen alignment. |
+| `corners: Vec<MarkerBoardCorner>` | Labelled inner corners, `(i, j)` grid, optional `id`, optional `target_position` in mm, and `score`. |
+| `alignment: Option<GridAlignment>` | D4 rotation + offset aligning chessboard `(i, j)` to the layout's canonical frame. Full image+corner detection returns `None` if the three circles cannot be placed. |
+
+The detection *evidence* — every scored `circle_candidates` hypothesis,
+the `circle_matches` pairing each expected circle to a detected one, the
+per-corner `inliers` provenance, and the `alignment_inliers` count —
+lives in `MarkerBoardDiagnostics`. Use the `*_with_diagnostics` entry
+points (`detect_from_corners_with_diagnostics`,
+`detect_from_image_and_corners_with_diagnostics`) to obtain it.
 
 ## Circle layout
 
@@ -101,7 +105,8 @@ are a known-good starting point.
 - **Circles not found** — check that the three layout cells actually
   contain discs in the printed target; `detector.detect` fails silently
   (returns `None`) if fewer than two circles are matched. Visualise
-  `circle_candidates` to see what the scorer saw.
+  `MarkerBoardDiagnostics::circle_candidates` (from a `*_with_diagnostics`
+  call) to see what the scorer saw.
 - **Two chessboards fighting for the grid** — out of scope. Crop the
   image so only one board is visible.
 - **Glare on the circles** — enable `multi_threshold`-style imaging

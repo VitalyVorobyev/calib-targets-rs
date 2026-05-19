@@ -7,6 +7,7 @@
 
 export type {
   AxisEstimate,
+  CharucoCorner,
   CharucoBoardSpec,
   CharucoParams,
   ChessConfig,
@@ -25,6 +26,7 @@ export type {
   GridCoords,
   GridTransform,
   LabeledCorner,
+  MarkerBoardCorner,
   MarkerBoardDetectionResult,
   MarkerBoardLayout,
   MarkerBoardParams,
@@ -32,6 +34,7 @@ export type {
   MarkerDetection,
   MarkerLayout,
   Point2,
+  PuzzleBoardCorner,
   PuzzleBoardDecodeConfig,
   PuzzleBoardDecodeInfo,
   PuzzleBoardDetectionResult,

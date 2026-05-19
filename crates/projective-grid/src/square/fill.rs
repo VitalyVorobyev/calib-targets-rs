@@ -76,6 +76,8 @@ impl Default for FillParams {
 }
 
 impl FillParams {
+    /// Construct fill parameters from the search radius (relative to
+    /// `cell_size`), the ambiguity factor, and the maximum scan count.
     pub fn new(attach_search_rel: f32, attach_ambiguity_factor: f32, max_iters: usize) -> Self {
         Self {
             attach_search_rel,

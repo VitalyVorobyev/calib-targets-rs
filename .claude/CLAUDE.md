@@ -362,10 +362,42 @@ CI to catch them.
 
 **`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
 
-**Public struct conventions:**
-- **Param structs** (detector configuration, e.g. `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`): add `#[non_exhaustive]`. These tend to grow new tuning knobs over time, and non-exhaustive prevents semver breaks from new fields. Provide a named constructor (`new` or `for_board`) so external crates can still build fully-specified instances without struct literal syntax.
-- **Diagnostic structs** (per-call output, e.g. `PuzzleBoardDecodeInfo`): add `#[non_exhaustive]`. These grow new diagnostic fields routinely.
-- **Data-carrier structs** (results and geometric types consumed in match/field-access patterns, e.g. `PuzzleBoardDetectionResult`, `LabeledCorner`, `CharucoDetectionResult`): leave `#[non_exhaustive]` off. Callers typically read fields, not construct them, and tight construction is legitimate for test fixtures.
+**Public struct conventions:** every public struct in a published crate
+gets `#[non_exhaustive]` plus a named constructor. The three categories
+below — param structs, diagnostic structs, and data-carrier / result
+structs — follow the *same* rule; they differ only in which constructor
+shape reads best.
+
+- `#[non_exhaustive]` on the struct. New fields are then a non-breaking
+  change for every external consumer — they can neither build the struct
+  with literal syntax nor match it exhaustively, so adding a field cannot
+  break them. This applies even to result and data-carrier structs that
+  callers mostly *read*: a result struct accretes fields over its life
+  (this workspace's result structs have done so repeatedly), and without
+  `#[non_exhaustive]` each addition is a semver break.
+- A named constructor so the struct stays buildable from other crates
+  (test fixtures, bindings, downstream consumers) despite the literal-
+  construction block. Pick the shape that reads best:
+  - **Param structs** (detector configuration, e.g. `PuzzleBoardParams`,
+    `PuzzleBoardDecodeConfig`, `DetectorParams`): a `new` / `for_board`
+    that takes the required fields; `Default` covers the tuning knobs.
+  - **Diagnostic structs** (per-call evidence, e.g. `PuzzleBoardDecodeInfo`,
+    `*Diagnostics`): a `new` taking all fields, or `Default` + setters
+    when most fields are optional.
+  - **Data-carrier / result structs** (e.g. `TargetDetection`,
+    `LabeledCorner`, `ChessboardDetection`/`ChessboardCorner`,
+    `CharucoDetectionResult`, `PuzzleBoardDetectionResult`,
+    `MarkerBoardDetectionResult`): a `new` taking the required fields.
+    When several fields are optional, a minimal `new` plus `with_*`
+    setters reads better than a wide positional `new` — `LabeledCorner`
+    uses `new(position, score)` + `with_grid`/`with_id`/
+    `with_target_position`.
+- Same-crate code is unaffected by `#[non_exhaustive]`, so detectors may
+  still build their own result structs with literal syntax internally;
+  the constructor exists for *cross-crate* construction. When migrating an
+  existing struct, grep the whole workspace and route every cross-crate
+  literal through the constructor and add `..` to any cross-crate
+  exhaustive pattern.
 - This policy applies to every new detector crate going forward.
 
 **MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.

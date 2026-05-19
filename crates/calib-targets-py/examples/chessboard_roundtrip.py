@@ -67,22 +67,19 @@ def main() -> int:
 
     # 3. Detect with a small multi-config sweep. detect_chessboard_best picks
     #    the config that labels the most corners.
+    chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
     configs = [
         ct.ChessboardParams(),
-        ct.ChessboardParams(
-            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
-        ),
-        ct.ChessboardParams(
-            chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
-        ),
+        ct.ChessboardParams(min_labeled_corners=12),
+        ct.ChessboardParams(max_components=1),
     ]
-    result = ct.detect_chessboard_best(image, configs)
+    result = ct.detect_chessboard_best(image, configs, chess_cfg=chess_cfg)
     if result is None:
         print("no chessboard detected", file=sys.stderr)
         return 1
     expected = args.inner_rows * args.inner_cols
     print(
-        f"detected {len(result.detection.corners)} labelled corners "
+        f"detected {len(result.corners)} labelled corners "
         f"(expected {expected}; cell size {result.cell_size:.1f}px)"
     )
 

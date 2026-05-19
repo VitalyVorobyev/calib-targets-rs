@@ -119,8 +119,8 @@ def run_detector(
 def labels_to_xy(labels: list[dict]) -> dict[tuple[int, int], tuple[float, float]]:
     by_grid: dict[tuple[int, int], tuple[float, float]] = {}
     for entry in labels:
-        # ChessboardDetectionResult.target.corners is a list of LabeledCorner
-        # dicts; each has "grid": {"i": int, "j": int} and "position": [x, y].
+        # ChessboardDetection.corners is a list of ChessboardCorner dicts;
+        # each has "grid": {"i": int, "j": int} and "position": [x, y].
         grid = entry.get("grid")
         if grid is None:
             continue
@@ -150,8 +150,7 @@ def draw_overlay(ax, image: np.ndarray, detection: dict | None, title: str) -> i
             bbox=dict(boxstyle="round,pad=0.3", fc="black", alpha=0.6),
         )
         return 0
-    target = detection.get("target") or {}
-    corners = target.get("corners") or []
+    corners = detection.get("corners") or []
     by_grid = labels_to_xy(corners)
     if not by_grid:
         return 0

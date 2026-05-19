@@ -364,7 +364,7 @@ def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tupl
     if not detections:
         return {}
     by_grid: dict[tuple[int, int], tuple[float, float]] = {}
-    for corner in detections[0]["target"]["corners"]:
+    for corner in detections[0]["corners"]:
         grid = corner.get("grid")
         pos = corner.get("position")
         if grid is None or pos is None:
@@ -509,7 +509,7 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         "width": int(image.shape[1]),
         "height": int(image.shape[0]),
         "corner_count": len(payload["corners"]),
-        "labelled_count": len(detections[0]["target"]["corners"]) if detections else 0,
+        "labelled_count": len(detections[0]["corners"]) if detections else 0,
         "error": payload.get("error"),
         "diagnostics": diagnostics,
     }

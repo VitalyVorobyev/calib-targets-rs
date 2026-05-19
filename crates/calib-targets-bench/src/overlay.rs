@@ -6,7 +6,7 @@
 //! - Yellow ring at the origin `(0, 0)` corner, green ring at
 //!   `(max_i, max_j)` so the grid axes are unambiguous.
 
-use calib_targets::chessboard::{CornerStage, DebugFrame};
+use calib_targets::chessboard::diagnostics::{CornerStage, DebugFrame};
 use image::{GrayImage, Rgb, RgbImage};
 use std::collections::HashMap;
 use std::path::Path;
@@ -167,10 +167,8 @@ fn render_diagnose_overlay_inner(
     // Edges, drawn from the labelled set.
     if let Some(detection) = frame.detection.as_ref() {
         let mut by_grid: HashMap<(i32, i32), (f32, f32)> = HashMap::new();
-        for lc in &detection.target.corners {
-            if let Some(g) = lc.grid {
-                by_grid.insert((g.i, g.j), (lc.position.x, lc.position.y));
-            }
+        for lc in &detection.corners {
+            by_grid.insert((lc.grid.i, lc.grid.j), (lc.position.x, lc.position.y));
         }
         for ((i, j), (x0, y0)) in &by_grid {
             for (di, dj) in [(1, 0), (0, 1)] {

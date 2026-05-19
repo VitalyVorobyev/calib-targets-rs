@@ -17,7 +17,7 @@ adds marker decoding and corner ID assignment on top.
 | 4 | alignment validation | markers + board spec | filtered marker inliers | inlier count `≥ min_marker_inliers` (primary component) or `≥ min_secondary_marker_inliers` (subsequent components) | weak camera pose / occlusion → too few inliers; component refused | `min_marker_inliers` (default `8`), `min_secondary_marker_inliers` (default `2`) |
 | 5 | ChArUco corner mapping | chessboard corners + alignment + board | `Detection { corners: LabeledCorner[] }` with global IDs | map each board-spec marker corner position through the alignment transform; only inner-cell intersections (not marker corners themselves) are emitted | marker pattern asymmetry can produce false corners; weak alignment drifts inner corners | — |
 | 6 | corner validation | mapped corners + markers + image | validated corners (drop false positives) | each detected corner's position is checked against the marker-predicted seed; deviation `> corner_validation_threshold_rel × px_per_square` triggers a marker-constrained redetection or drop | marker-constrained redetection misses true corners in low-contrast regions | `corner_validation_threshold_rel` (default `0.08`) |
-| 7 | emit detection | validated corners + alignment | `CharucoDetectionResult { detection, markers, alignment, ... }` | sort by `(j, i)`; refuse if surviving count below caller's threshold | — | — |
+| 7 | emit detection | validated corners + alignment | `CharucoDetectionResult { corners, markers, alignment }` | sort typed ChArUco corners by ID; refuse if surviving count below caller's threshold | — | — |
 
 ## What ChArUco inherits from chessboard-v2
 

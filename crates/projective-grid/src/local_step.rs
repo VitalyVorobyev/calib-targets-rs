@@ -77,6 +77,7 @@ impl<F: Float> Default for LocalStep<F> {
 /// Use [`AxisEstimate::from_angle`] when you do not track per-axis uncertainty.
 #[derive(Clone, Copy, Debug)]
 pub struct LocalStepPointData<F: Float = f32> {
+    /// The point's location in image pixels.
     pub position: Point2<F>,
     /// Two grid-axis hints. The `angle` field is used for sector binning;
     /// `sigma` is carried through but not inspected.

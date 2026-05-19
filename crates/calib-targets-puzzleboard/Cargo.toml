@@ -19,6 +19,7 @@ tracing = ["calib-targets-core/tracing", "dep:tracing"]
 [dependencies]
 calib-targets-core.workspace = true
 calib-targets-chessboard.workspace = true
+chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 projective-grid.workspace = true
 nalgebra.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -30,7 +31,6 @@ tracing = { workspace = true, optional = true }
 calib-targets = { path = "../calib-targets" }
 calib-targets-core.workspace = true
 calib-targets-print = { path = "../calib-targets-print" }
-chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true

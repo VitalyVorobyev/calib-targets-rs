@@ -1,5 +1,6 @@
 use crate::circle_score::CircleCandidate;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
+use crate::diagnostics::MarkerBoardDiagnostics;
 use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
 use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
 
@@ -8,8 +9,10 @@ use std::collections::HashMap;
 use nalgebra::Point2;
 
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{Detection as ChessDetection, Detector as ChessDetector};
-use calib_targets_core::{GrayImageView, GridAlignment, GridCoords, TargetDetection, TargetKind};
+use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
+use calib_targets_core::{
+    GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind,
+};
 
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {
@@ -18,6 +21,7 @@ pub struct MarkerBoardDetector {
 }
 
 impl MarkerBoardDetector {
+    /// Construct a marker-board detector from its parameters.
     pub fn new(params: MarkerBoardParams) -> Self {
         // chessboard detector is scale-invariant — it does not need
         // expected_rows/cols hints. The marker circles supply the geometry
@@ -30,6 +34,7 @@ impl MarkerBoardDetector {
         }
     }
 
+    /// Borrow the parameters this detector was constructed with.
     pub fn params(&self) -> &MarkerBoardParams {
         &self.params
     }
@@ -39,21 +44,52 @@ impl MarkerBoardDetector {
         &self,
         corners: &[ChessCorner],
     ) -> Option<MarkerBoardDetectionResult> {
+        self.detect_from_corners_with_diagnostics(corners)
+            .map(|(result, _)| result)
+    }
+
+    /// Chessboard-only detection (no circle verification), additionally
+    /// returning per-call diagnostics.
+    ///
+    /// This path has no image to score circles against, so the returned
+    /// [`MarkerBoardDiagnostics`] carries empty `circle_candidates` /
+    /// `circle_matches` and `alignment_inliers = 0`; only `inliers` (the
+    /// per-corner provenance from the chessboard stage) is populated. See
+    /// [`crate::diagnostics::MarkerBoardDiagnostics`] for the stability
+    /// promise.
+    pub fn detect_from_corners_with_diagnostics(
+        &self,
+        corners: &[ChessCorner],
+    ) -> Option<(MarkerBoardDetectionResult, MarkerBoardDiagnostics)> {
         let chess = self.chessboard_detector.detect(corners)?;
         Some(self.result_from_chessboard(chess, Vec::new(), Vec::new(), None, 0))
     }
 
     /// Full detection using image-space circle scoring.
-    ///
-    /// Returns circle candidates, matched circles, and an optional grid offset
-    /// that maps detected grid coordinates to board coordinates.
     pub fn detect_from_image_and_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Option<MarkerBoardDetectionResult> {
+        self.detect_from_image_and_corners_with_diagnostics(image, corners)
+            .map(|(result, _)| result)
+    }
+
+    /// Full detection using image-space circle scoring, additionally
+    /// returning per-call diagnostics.
+    ///
+    /// The returned [`MarkerBoardDiagnostics`] carries every scored circle
+    /// candidate, the expected-to-detected circle matches, the per-corner
+    /// provenance, and the alignment-inlier count. See
+    /// [`crate::diagnostics::MarkerBoardDiagnostics`] for the shape and
+    /// stability promise.
+    pub fn detect_from_image_and_corners_with_diagnostics(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[ChessCorner],
+    ) -> Option<(MarkerBoardDetectionResult, MarkerBoardDiagnostics)> {
         let chess = self.chessboard_detector.detect(corners)?;
-        let corner_map = build_corner_map(&chess.target);
+        let corner_map = build_corner_map(&chess);
         let roi = self
             .params
             .roi_cells
@@ -81,34 +117,40 @@ impl MarkerBoardDetector {
         .map(|(alignment, inliers)| (Some(alignment), inliers))
         .unwrap_or((None, 0));
 
-        if let Some(alignment) = alignment {
-            for m in &mut matches {
-                let Some(idx) = m.matched_index else {
-                    continue;
-                };
-                let Some(cand) = candidates.get(idx) else {
-                    continue;
-                };
-                let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
-                m.offset_cells = Some(crate::coords::CellOffset {
-                    di: m.expected.cell.i - r.i,
-                    dj: m.expected.cell.j - r.j,
-                });
-            }
+        let alignment = alignment?;
+        for m in &mut matches {
+            let Some(idx) = m.matched_index else {
+                continue;
+            };
+            let Some(cand) = candidates.get(idx) else {
+                continue;
+            };
+            let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
+            m.offset_cells = Some(crate::coords::CellOffset {
+                di: m.expected.cell.i - r.i,
+                dj: m.expected.cell.j - r.j,
+            });
         }
 
-        Some(self.result_from_chessboard(chess, candidates, matches, alignment, alignment_inliers))
+        Some(self.result_from_chessboard(
+            chess,
+            candidates,
+            matches,
+            Some(alignment),
+            alignment_inliers,
+        ))
     }
 
     fn result_from_chessboard(
         &self,
-        chess: ChessDetection,
+        chess: ChessboardDetection,
         circle_candidates: Vec<CircleCandidate>,
         circle_matches: Vec<CircleMatch>,
         alignment: Option<GridAlignment>,
         alignment_inliers: usize,
-    ) -> MarkerBoardDetectionResult {
-        let mut detection = relabel_as_marker(chess.target);
+    ) -> (MarkerBoardDetectionResult, MarkerBoardDiagnostics) {
+        let (target, inliers) = chessboard_detection_to_target(&chess);
+        let mut detection = relabel_as_marker(target);
         if let Some(alignment) = alignment {
             for corner in &mut detection.corners {
                 if let Some(grid) = &mut corner.grid {
@@ -149,15 +191,32 @@ impl MarkerBoardDetector {
                 });
             }
         }
-        MarkerBoardDetectionResult {
-            detection,
-            inliers: chess.strong_indices,
-            circle_candidates,
-            circle_matches,
-            alignment,
-            alignment_inliers,
-        }
+        (
+            MarkerBoardDetectionResult::from_target_detection(detection, alignment),
+            MarkerBoardDiagnostics {
+                inliers,
+                circle_candidates,
+                circle_matches,
+                alignment_inliers,
+            },
+        )
     }
+}
+
+/// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
+/// the marker pipeline operates on, plus the parallel input-index list
+/// the marker diagnostics expose as `inliers`.
+fn chessboard_detection_to_target(chess: &ChessboardDetection) -> (TargetDetection, Vec<usize>) {
+    let mut corners = Vec::with_capacity(chess.corners.len());
+    let mut inliers = Vec::with_capacity(chess.corners.len());
+    for c in &chess.corners {
+        corners.push(LabeledCorner::new(c.position, c.score).with_grid(c.grid));
+        inliers.push(c.input_index);
+    }
+    (
+        TargetDetection::new(TargetKind::Chessboard, corners),
+        inliers,
+    )
 }
 
 fn relabel_as_marker(mut detection: TargetDetection) -> TargetDetection {
@@ -165,9 +224,6 @@ fn relabel_as_marker(mut detection: TargetDetection) -> TargetDetection {
     detection
 }
 
-fn build_corner_map(det: &TargetDetection) -> HashMap<GridCoords, Point2<f32>> {
-    det.corners
-        .iter()
-        .filter_map(|c| Some((c.grid?, c.position)))
-        .collect()
+fn build_corner_map(det: &ChessboardDetection) -> HashMap<GridCoords, Point2<f32>> {
+    det.corners.iter().map(|c| (c.grid, c.position)).collect()
 }

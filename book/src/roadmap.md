@@ -10,7 +10,7 @@ Known gaps against the v0.6.0 release.
   rate, zero wrong labels). Types renamed: `ChessboardDetector` / `ChessboardParams` /
   `ChessboardDetectionResult` → `Detector` / `DetectorParams` /
   `Detection`.
-- **Grid origin contract.** `Detection.target.corners` is rebased to
+- **Grid origin contract.** `ChessboardDetection.corners` is rebased to
   non-negative `(i, j)` with `(0, 0)` at the visual top-left (`+i`
   right, `+j` down in image pixels).
 - **`projective-grid` standalone surface.** The line / local-H
@@ -59,8 +59,5 @@ Known gaps against the v0.6.0 release.
 - **Multi-seed growth** — current: single seed, multi-component via
   post-hoc booster. A first-class multi-seed grower could reduce the
   Stage-8 dependency.
-- **Caller-provided cell-size hint** — current: optional, mostly
-  ignored. When could it tighten Stages 5–6 without compromising
-  precision?
 
 Contributions welcome.

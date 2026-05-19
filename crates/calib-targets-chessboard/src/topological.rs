@@ -5,7 +5,8 @@
 //! - `projective-grid`, which is image-free and labels connected quad-mesh
 //!   components from positions plus per-corner axis hints;
 //! - `calib-targets-chessboard`, which owns ChESS corner filtering, recall
-//!   boosters, final canonicalisation, and the public [`Detection`] type.
+//!   boosters, final canonicalisation, and the public
+//!   [`ChessboardDetection`](crate::ChessboardDetection) type.
 //!
 //! The production path intentionally remains one path. Blog overlays use
 //! [`trace_topological`] for intermediate `projective-grid` stages; benchmark
@@ -16,13 +17,14 @@ mod inputs;
 mod recovery;
 
 use crate::corner::ChessCorner;
+use projective_grid::topological::trace::{build_grid_topological_trace, TopologicalTrace};
 use projective_grid::{
-    build_grid_topological, build_grid_topological_trace, merge_components_local,
-    AxisClusterCenters, ComponentInput, TopologicalGrid, TopologicalTrace,
+    build_grid_topological, merge_components_local, AxisClusterCenters, ComponentInput,
+    TopologicalGrid,
 };
 
 use crate::cluster::ClusterCenters;
-use crate::detector::Detection;
+use crate::detector::ChessboardDetection;
 use crate::params::DetectorParams;
 
 use self::inputs::topological_inputs;
@@ -35,8 +37,8 @@ fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisCl
     centers.map(|c| AxisClusterCenters::new(c.theta0, c.theta1))
 }
 
-/// Run the topological pipeline and return one [`Detection`] per surviving
-/// labelled component.
+/// Run the topological pipeline and return one [`ChessboardDetection`] per
+/// surviving labelled component.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
@@ -45,7 +47,10 @@ fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisCl
         fields(num_corners = corners.len()),
     )
 )]
-pub fn detect_all_topological(corners: &[ChessCorner], params: &DetectorParams) -> Vec<Detection> {
+pub fn detect_all_topological(
+    corners: &[ChessCorner],
+    params: &DetectorParams,
+) -> Vec<ChessboardDetection> {
     if corners.is_empty() {
         return Vec::new();
     }
@@ -62,10 +67,10 @@ pub fn detect_all_topological(corners: &[ChessCorner], params: &DetectorParams) 
         return Vec::new();
     }
 
-    let mut topo_params = params.topological;
+    let mut topo_params = params.tuning.topological;
     topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
     // Keep `topo_params.cluster_axis_tol_rad` from `TopologicalParams::default`
-    // (16°). Don't reuse `params.cluster_tol_deg` (12°) — chessboard-v2's
+    // (16°). Don't reuse `params.tuning.cluster_tol_deg` (12°) — chessboard-v2's
     // cluster gate has a sigma bonus and a booster fallback that
     // topological lacks; matching the 12° literally regresses Gemini2.
 
@@ -94,10 +99,10 @@ pub fn detect_all_topological(corners: &[ChessCorner], params: &DetectorParams) 
             num_components = component_views.len()
         )
         .entered();
-        merge_components_local(&component_views, &params.component_merge)
+        merge_components_local(&component_views, &params.tuning.component_merge)
     };
     #[cfg(not(feature = "tracing"))]
-    let merged = merge_components_local(&component_views, &params.component_merge);
+    let merged = merge_components_local(&component_views, &params.tuning.component_merge);
 
     let final_components = recover_topological_components(
         &merged.components,
@@ -136,7 +141,7 @@ pub fn trace_topological(
 ) -> Result<TopologicalTrace, projective_grid::TopologicalError> {
     let inputs = topological_inputs(corners, params);
     let (_augs, clustered_centers) = clustered_augs(corners, params);
-    let mut topo_params = params.topological;
+    let mut topo_params = params.tuning.topological;
     topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
     build_grid_topological_trace(&inputs.positions, &inputs.axes, &topo_params)
 }

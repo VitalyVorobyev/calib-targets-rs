@@ -14,15 +14,25 @@ use crate::GridCoords;
 use nalgebra::Point2;
 use std::collections::HashMap;
 
+/// Reason a [`SquareGridHomographyMesh`] could not be built.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum GridMeshError {
+    /// Fewer than the 2×2 corners a mesh needs were supplied.
     #[error("not enough grid corners (need at least 2×2)")]
     NotEnoughCorners,
+    /// No grid cell had all 4 corners present, so no cell homography
+    /// could be fitted.
     #[error("no valid grid cells found (each cell needs all 4 corners)")]
     NoValidCells,
+    /// The homography estimator failed for one cell (degenerate corners).
     #[error("homography estimation failed for cell ({ci}, {cj})")]
-    HomographyFailed { ci: usize, cj: usize },
+    HomographyFailed {
+        /// Cell column index in mesh-local coordinates.
+        ci: usize,
+        /// Cell row index in mesh-local coordinates.
+        cj: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -3,7 +3,7 @@
 //! The 12 symmetries of a regular hexagon: 6 rotations and 6 reflections.
 //! All transforms are expressed as 2x2 integer matrices acting on axial `(q, r)`.
 //!
-//! Reuses [`GridTransform`] — same struct, different values.
+//! Reuses [`GridTransform`](crate::GridTransform) — same struct, different values.
 
 use crate::GridTransform;
 

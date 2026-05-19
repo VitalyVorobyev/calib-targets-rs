@@ -3,7 +3,8 @@
 use crate::board::PuzzleBoardSpec;
 use crate::detector::PuzzleBoardDecodeConfig;
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
+use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
@@ -53,7 +54,7 @@ impl PuzzleBoardParams {
     /// is the geometry gate.
     pub fn for_board(board: &PuzzleBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.min_corner_strength = 0.1;
+        chessboard.tuning.min_corner_strength = 0.1;
         Self {
             px_per_square: 60.0,
             chessboard,
@@ -70,7 +71,7 @@ impl PuzzleBoardParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
                 Self {
                     chessboard,
                     ..base.clone()

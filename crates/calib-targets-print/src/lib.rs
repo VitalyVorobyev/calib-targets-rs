@@ -1,4 +1,5 @@
 //! Printable calibration target generation.
+#![deny(missing_docs)]
 
 mod model;
 mod render;
@@ -15,13 +16,21 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Paths of the three files written by [`write_target_bundle`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WrittenTargetBundle {
+    /// Path of the written JSON description.
     pub json_path: PathBuf,
+    /// Path of the written SVG rendering.
     pub svg_path: PathBuf,
+    /// Path of the written PNG rendering.
     pub png_path: PathBuf,
 }
 
+/// Render a printable target and write the JSON, SVG, and PNG files to
+/// disk, deriving their paths from `output_stem`.
+///
+/// Parent directories are created as needed.
 pub fn write_target_bundle(
     document: &PrintableTargetDocument,
     output_stem: impl AsRef<Path>,

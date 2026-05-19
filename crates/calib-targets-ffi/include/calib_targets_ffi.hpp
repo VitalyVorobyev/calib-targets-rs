@@ -49,6 +49,54 @@ inline Status local_status(ct_status_t code, std::string message) {
   return status;
 }
 
+// Caller-owned-buffer query/fill helper shared by every diagnostics-JSON
+// accessor. `QueryFn` must follow the C ABI convention: a `NULL` buffer with
+// `0` capacity writes the required length (excluding the NUL terminator) into
+// `*out_len`; a call with a buffer of at least `*out_len + 1` bytes fills it.
+//
+// Each diagnostics-JSON call re-runs detection, and the serialized payload
+// length is not guaranteed identical between the query call and the fill
+// call (per-run timing instrumentation produces minor length jitter). The
+// helper therefore retries with a freshly queried, generously padded size if
+// a fill call still reports `CT_STATUS_BUFFER_TOO_SMALL`.
+template <typename QueryFn>
+inline Status fill_owned_string(QueryFn &&query, std::string *out_json) {
+  std::size_t len = 0;
+  auto code = query(nullptr, 0, &len);
+  if (code != CT_STATUS_OK) {
+    return capture_status(code);
+  }
+  if (out_json == nullptr) {
+    return {};
+  }
+
+  // Retry-bounded fill: `query` re-runs detection so the payload may grow
+  // between calls. Each attempt pads beyond the last reported length, and a
+  // still-too-small result re-queries before growing again. The bound keeps
+  // a pathological length oscillation from looping forever.
+  for (int attempt = 0; attempt < 8; ++attempt) {
+    // Headroom absorbs per-run length jitter; `+ 1` covers the NUL the ABI
+    // always writes.
+    std::string json(len * 2 + 64, '\0');
+    code = query(json.data(), json.size(), &len);
+    if (code == CT_STATUS_OK) {
+      json.resize(len);
+      *out_json = std::move(json);
+      return {};
+    }
+    if (code != CT_STATUS_BUFFER_TOO_SMALL) {
+      out_json->clear();
+      return capture_status(code);
+    }
+    // `len` now holds the freshly required length from the failed fill call.
+  }
+
+  out_json->clear();
+  return local_status(
+      CT_STATUS_BUFFER_TOO_SMALL,
+      "diagnostics JSON length kept growing across retries");
+}
+
 template <typename HandleT, void (*DestroyFn)(HandleT *)>
 class UniqueHandle {
  public:
@@ -99,6 +147,10 @@ class UniqueHandle {
   HandleT *handle_ = nullptr;
 };
 
+struct ChessboardBuffers {
+  std::vector<ct_chessboard_corner_t> corners;
+};
+
 struct CharucoBuffers {
   std::vector<ct_labeled_corner_t> corners;
   std::vector<ct_marker_detection_t> markers;
@@ -106,8 +158,6 @@ struct CharucoBuffers {
 
 struct MarkerBoardBuffers {
   std::vector<ct_labeled_corner_t> corners;
-  std::vector<ct_circle_candidate_t> circle_candidates;
-  std::vector<ct_circle_match_t> circle_matches;
 };
 
 struct PuzzleBoardBuffers {
@@ -135,20 +185,20 @@ class ChessboardDetector {
   [[nodiscard]] Status detect(
       const ct_gray_image_u8_t &image,
       ct_chessboard_result_t *out_result,
-      std::vector<ct_labeled_corner_t> *out_corners) const {
+      std::vector<ct_chessboard_corner_t> *out_corners) const {
     if (!handle_.has_value()) {
       return local_status(CT_STATUS_INVALID_ARGUMENT, "chessboard detector is not initialized");
     }
 
     std::size_t corners_len = 0;
     ct_chessboard_result_t ignored_result{};
-    auto code = ct_chessboard_detector_detect(
-        handle_.get(),
-        &image,
+    const ct_chessboard_detect_args_t args{handle_.get(), &image};
+    ct_chessboard_detect_buffers_t bufs{
         out_result != nullptr ? out_result : &ignored_result,
         nullptr,
         0,
-        &corners_len);
+        &corners_len};
+    auto code = ct_chessboard_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       return capture_status(code);
     }
@@ -156,20 +206,33 @@ class ChessboardDetector {
       return {};
     }
 
-    out_corners->assign(corners_len, ct_labeled_corner_t{});
-    code = ct_chessboard_detector_detect(
-        handle_.get(),
-        &image,
-        out_result != nullptr ? out_result : &ignored_result,
-        out_corners->empty() ? nullptr : out_corners->data(),
-        out_corners->size(),
-        &corners_len);
+    out_corners->assign(corners_len, ct_chessboard_corner_t{});
+    bufs.out_corners = out_corners->empty() ? nullptr : out_corners->data();
+    bufs.corners_capacity = out_corners->size();
+    code = ct_chessboard_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       out_corners->clear();
       return capture_status(code);
     }
     out_corners->resize(corners_len);
     return {};
+  }
+
+  // Run detection and capture the diagnostics channel as a JSON string.
+  // The JSON schema carries a looser stability promise than the typed
+  // result API and may evolve between minor versions.
+  [[nodiscard]] Status detect_diagnostics_json(
+      const ct_gray_image_u8_t &image,
+      std::string *out_json) const {
+    if (!handle_.has_value()) {
+      return local_status(CT_STATUS_INVALID_ARGUMENT, "chessboard detector is not initialized");
+    }
+    const ct_chessboard_detect_args_t args{handle_.get(), &image};
+    return fill_owned_string(
+        [&args](char *buf, std::size_t cap, std::size_t *len) {
+          return ct_chessboard_detector_detect_diagnostics_json(&args, buf, cap, len);
+        },
+        out_json);
   }
 
   [[nodiscard]] bool initialized() const noexcept {
@@ -209,16 +272,16 @@ class CharucoDetector {
     std::size_t corners_len = 0;
     std::size_t markers_len = 0;
     ct_charuco_result_t ignored_result{};
-    auto code = ct_charuco_detector_detect(
-        handle_.get(),
-        &image,
+    const ct_charuco_detect_args_t args{handle_.get(), &image};
+    ct_charuco_detect_buffers_t bufs{
         out_result != nullptr ? out_result : &ignored_result,
         nullptr,
         0,
         &corners_len,
         nullptr,
         0,
-        &markers_len);
+        &markers_len};
+    auto code = ct_charuco_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       return capture_status(code);
     }
@@ -228,16 +291,11 @@ class CharucoDetector {
 
     out_buffers->corners.assign(corners_len, ct_labeled_corner_t{});
     out_buffers->markers.assign(markers_len, ct_marker_detection_t{});
-    code = ct_charuco_detector_detect(
-        handle_.get(),
-        &image,
-        out_result != nullptr ? out_result : &ignored_result,
-        out_buffers->corners.empty() ? nullptr : out_buffers->corners.data(),
-        out_buffers->corners.size(),
-        &corners_len,
-        out_buffers->markers.empty() ? nullptr : out_buffers->markers.data(),
-        out_buffers->markers.size(),
-        &markers_len);
+    bufs.out_corners = out_buffers->corners.empty() ? nullptr : out_buffers->corners.data();
+    bufs.corners_capacity = out_buffers->corners.size();
+    bufs.out_markers = out_buffers->markers.empty() ? nullptr : out_buffers->markers.data();
+    bufs.markers_capacity = out_buffers->markers.size();
+    code = ct_charuco_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       out_buffers->corners.clear();
       out_buffers->markers.clear();
@@ -246,6 +304,22 @@ class CharucoDetector {
     out_buffers->corners.resize(corners_len);
     out_buffers->markers.resize(markers_len);
     return {};
+  }
+
+  // Run detection and capture the diagnostics channel as a JSON string.
+  // ChArUco diagnostics are produced even on a failed frame.
+  [[nodiscard]] Status detect_diagnostics_json(
+      const ct_gray_image_u8_t &image,
+      std::string *out_json) const {
+    if (!handle_.has_value()) {
+      return local_status(CT_STATUS_INVALID_ARGUMENT, "charuco detector is not initialized");
+    }
+    const ct_charuco_detect_args_t args{handle_.get(), &image};
+    return fill_owned_string(
+        [&args](char *buf, std::size_t cap, std::size_t *len) {
+          return ct_charuco_detector_detect_diagnostics_json(&args, buf, cap, len);
+        },
+        out_json);
   }
 
   [[nodiscard]] bool initialized() const noexcept {
@@ -283,22 +357,14 @@ class MarkerBoardDetector {
     }
 
     std::size_t corners_len = 0;
-    std::size_t candidates_len = 0;
-    std::size_t matches_len = 0;
     ct_marker_board_result_t ignored_result{};
-    auto code = ct_marker_board_detector_detect(
-        handle_.get(),
-        &image,
+    const ct_marker_board_detect_args_t args{handle_.get(), &image};
+    ct_marker_board_detect_buffers_t bufs{
         out_result != nullptr ? out_result : &ignored_result,
         nullptr,
         0,
-        &corners_len,
-        nullptr,
-        0,
-        &candidates_len,
-        nullptr,
-        0,
-        &matches_len);
+        &corners_len};
+    auto code = ct_marker_board_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       return capture_status(code);
     }
@@ -307,31 +373,33 @@ class MarkerBoardDetector {
     }
 
     out_buffers->corners.assign(corners_len, ct_labeled_corner_t{});
-    out_buffers->circle_candidates.assign(candidates_len, ct_circle_candidate_t{});
-    out_buffers->circle_matches.assign(matches_len, ct_circle_match_t{});
-    code = ct_marker_board_detector_detect(
-        handle_.get(),
-        &image,
-        out_result != nullptr ? out_result : &ignored_result,
-        out_buffers->corners.empty() ? nullptr : out_buffers->corners.data(),
-        out_buffers->corners.size(),
-        &corners_len,
-        out_buffers->circle_candidates.empty() ? nullptr : out_buffers->circle_candidates.data(),
-        out_buffers->circle_candidates.size(),
-        &candidates_len,
-        out_buffers->circle_matches.empty() ? nullptr : out_buffers->circle_matches.data(),
-        out_buffers->circle_matches.size(),
-        &matches_len);
+    bufs.out_corners = out_buffers->corners.empty() ? nullptr : out_buffers->corners.data();
+    bufs.corners_capacity = out_buffers->corners.size();
+    code = ct_marker_board_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       out_buffers->corners.clear();
-      out_buffers->circle_candidates.clear();
-      out_buffers->circle_matches.clear();
       return capture_status(code);
     }
     out_buffers->corners.resize(corners_len);
-    out_buffers->circle_candidates.resize(candidates_len);
-    out_buffers->circle_matches.resize(matches_len);
     return {};
+  }
+
+  // Run detection and capture the diagnostics channel as a JSON string.
+  // The marker-board diagnostics channel only yields evidence on a
+  // successful detection; a failed frame is reported as
+  // `CT_STATUS_NOT_FOUND`.
+  [[nodiscard]] Status detect_diagnostics_json(
+      const ct_gray_image_u8_t &image,
+      std::string *out_json) const {
+    if (!handle_.has_value()) {
+      return local_status(CT_STATUS_INVALID_ARGUMENT, "marker-board detector is not initialized");
+    }
+    const ct_marker_board_detect_args_t args{handle_.get(), &image};
+    return fill_owned_string(
+        [&args](char *buf, std::size_t cap, std::size_t *len) {
+          return ct_marker_board_detector_detect_diagnostics_json(&args, buf, cap, len);
+        },
+        out_json);
   }
 
   [[nodiscard]] bool initialized() const noexcept {
@@ -370,13 +438,13 @@ class PuzzleBoardDetector {
 
     std::size_t corners_len = 0;
     ct_puzzleboard_result_t ignored_result{};
-    auto code = ct_puzzleboard_detector_detect(
-        handle_.get(),
-        &image,
+    const ct_puzzleboard_detect_args_t args{handle_.get(), &image};
+    ct_puzzleboard_detect_buffers_t bufs{
         out_result != nullptr ? out_result : &ignored_result,
         nullptr,
         0,
-        &corners_len);
+        &corners_len};
+    auto code = ct_puzzleboard_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       return capture_status(code);
     }
@@ -385,19 +453,31 @@ class PuzzleBoardDetector {
     }
 
     out_buffers->corners.assign(corners_len, ct_labeled_corner_t{});
-    code = ct_puzzleboard_detector_detect(
-        handle_.get(),
-        &image,
-        out_result != nullptr ? out_result : &ignored_result,
-        out_buffers->corners.empty() ? nullptr : out_buffers->corners.data(),
-        out_buffers->corners.size(),
-        &corners_len);
+    bufs.out_corners = out_buffers->corners.empty() ? nullptr : out_buffers->corners.data();
+    bufs.corners_capacity = out_buffers->corners.size();
+    code = ct_puzzleboard_detector_detect(&args, &bufs);
     if (code != CT_STATUS_OK) {
       out_buffers->corners.clear();
       return capture_status(code);
     }
     out_buffers->corners.resize(corners_len);
     return {};
+  }
+
+  // Run detection and capture the diagnostics channel as a JSON string.
+  // PuzzleBoard diagnostics are produced even on a failed frame.
+  [[nodiscard]] Status detect_diagnostics_json(
+      const ct_gray_image_u8_t &image,
+      std::string *out_json) const {
+    if (!handle_.has_value()) {
+      return local_status(CT_STATUS_INVALID_ARGUMENT, "puzzleboard detector is not initialized");
+    }
+    const ct_puzzleboard_detect_args_t args{handle_.get(), &image};
+    return fill_owned_string(
+        [&args](char *buf, std::size_t cap, std::size_t *len) {
+          return ct_puzzleboard_detector_detect_diagnostics_json(&args, buf, cap, len);
+        },
+        out_json);
   }
 
   [[nodiscard]] bool initialized() const noexcept {

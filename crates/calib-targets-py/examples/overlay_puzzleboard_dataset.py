@@ -116,7 +116,7 @@ def draw_success(
     frame: dict[str, Any],
     puzzle_result: dict[str, Any],
 ) -> dict[str, Any]:
-    corners = puzzle_result["detection"]["corners"]
+    corners = puzzle_result["corners"]
     labelled: list[dict[str, Any]] = []
     for c in corners:
         grid = c.get("grid")

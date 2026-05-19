@@ -22,7 +22,7 @@ def main() -> int:
     params = ct.default_puzzleboard_params(10, 10)
     result = ct.detect_puzzleboard(image, params=params)
     print(
-        f"detected {len(result.detection.corners)} corners, "
+        f"detected {len(result.corners)} corners, "
         f"mean_confidence={result.decode.mean_confidence:.3f}"
     )
     return 0

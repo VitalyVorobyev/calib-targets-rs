@@ -28,8 +28,8 @@ use std::time::Instant;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_charuco::{
-    load_board_spec_any, CharucoBoardSpec, CharucoDetectDiagnostics, CharucoDetectError,
-    CharucoDetectionResult, CharucoDetector, CharucoParams,
+    diagnostics::CharucoDetectDiagnostics, load_board_spec_any, CharucoBoardSpec,
+    CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams,
 };
 use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_core::GrayImageView;
@@ -143,7 +143,11 @@ fn main() {
     let spec = load_board_spec_any(&args.board).expect("load board spec");
     eprintln!(
         "board: {}x{} cells={:.3} mm dict={} marker_scale={:.3}",
-        spec.cols, spec.rows, spec.cell_size, spec.dictionary.name, spec.marker_size_rel
+        spec.cols,
+        spec.rows,
+        spec.cell_size,
+        spec.dictionary.name(),
+        spec.marker_size_rel
     );
 
     let targets = collect_targets(&args.dataset);
@@ -350,10 +354,10 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
     let metrics = match &outcome {
         Ok(res) => FrameMetrics {
             chessboard_corners: corners.len(),
-            markers_decoded: res.raw_marker_count,
+            markers_decoded: detect_diag.raw_marker_count,
             markers_inlier: res.markers.len(),
-            markers_wrong_id: res.raw_marker_wrong_id_count,
-            charuco_corners: res.detection.corners.len(),
+            markers_wrong_id: detect_diag.raw_marker_wrong_id_count,
+            charuco_corners: res.corners.len(),
             alignment_margin,
         },
         Err(_) => FrameMetrics {
@@ -372,7 +376,7 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
     let detection_report = outcome
         .as_ref()
         .ok()
-        .map(|res| detection_report_from_result(*board, res));
+        .map(|res| detection_report_from_result(*board, res, &detect_diag));
     let error = outcome.as_ref().err().map(error_to_string);
 
     let report = CharucoFrameReport {
@@ -460,14 +464,13 @@ struct MarkerSummary {
 impl DetectionSummary {
     fn from_result(res: &CharucoDetectionResult) -> Self {
         let corners = res
-            .detection
             .corners
             .iter()
             .map(|c| CornerSummary {
-                id: c.id,
-                grid: c.grid.map(|g| [g.i, g.j]),
+                id: Some(c.id),
+                grid: Some([c.grid.i, c.grid.j]),
                 position: [c.position.x, c.position.y],
-                target_position: c.target_position.map(|p| [p.x, p.y]),
+                target_position: Some([c.target_position.x, c.target_position.y]),
                 score: c.score,
             })
             .collect();
@@ -506,13 +509,14 @@ impl DetectionSummary {
 fn detection_report_from_result(
     board: CharucoBoardSpec,
     res: &CharucoDetectionResult,
+    diagnostics: &CharucoDetectDiagnostics,
 ) -> CompactDetection {
     CompactDetection {
         board,
-        corners: res.detection.corners.len(),
+        corners: res.corners.len(),
         markers: res.markers.len(),
-        raw_marker_count: res.raw_marker_count,
-        raw_marker_wrong_id_count: res.raw_marker_wrong_id_count,
+        raw_marker_count: diagnostics.raw_marker_count,
+        raw_marker_wrong_id_count: diagnostics.raw_marker_wrong_id_count,
         alignment_transform: [
             res.alignment.transform.a,
             res.alignment.transform.b,

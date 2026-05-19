@@ -71,8 +71,8 @@ fn main() {
     );
 
     // ---- 2. Run the detector ------------------------------------------
-    // `Detector::detect` returns `Option<Detection>` — `None` means no
-    // board passed the precision-by-construction invariant stack.
+    // `Detector::detect` returns `Option<ChessboardDetection>` — `None`
+    // means no board passed the precision-by-construction invariant stack.
     let detector = Detector::new(DetectorParams::default());
     let Some(detection) = detector.detect(&corners) else {
         eprintln!("no chessboard detected");
@@ -80,39 +80,22 @@ fn main() {
     };
 
     // ---- 3. Inspect the labelled grid ---------------------------------
-    let labelled = &detection.target.corners;
+    let labelled = &detection.corners;
     println!("detected a chessboard");
     println!("  labelled corners : {}", labelled.len());
-    println!("  cell_size        : {:.2} px", detection.cell_size);
-    println!(
-        "  grid_directions  : {:.1}deg, {:.1}deg\n",
-        detection.grid_directions[0].to_degrees(),
-        detection.grid_directions[1].to_degrees(),
-    );
 
-    // Each `LabeledCorner` carries `grid: Option<GridCoords>` and the
-    // pixel `position`. Print the first few `(i, j) -> pixel` rows.
-    println!("first labelled corners ((i, j) -> pixel):");
+    // Each `ChessboardCorner` carries a non-optional `grid: GridCoords`,
+    // the pixel `position`, an `input_index` back-reference into the
+    // input `corners` slice, and a `score`. Print the first few
+    // `(i, j) -> pixel` rows.
+    println!("\nfirst labelled corners ((i, j) -> pixel  [input_index]):");
     for lc in labelled.iter().take(8) {
-        match lc.grid {
-            Some(g) => println!(
-                "  (i={:>2}, j={:>2})  ->  ({:7.2}, {:7.2})",
-                g.i, g.j, lc.position.x, lc.position.y
-            ),
-            None => println!(
-                "  (unlabelled)  ->  ({:.2}, {:.2})",
-                lc.position.x, lc.position.y
-            ),
-        }
+        println!(
+            "  (i={:>2}, j={:>2})  ->  ({:7.2}, {:7.2})  [{}]",
+            lc.grid.i, lc.grid.j, lc.position.x, lc.position.y, lc.input_index
+        );
     }
     if labelled.len() > 8 {
         println!("  ... and {} more", labelled.len() - 8);
     }
-
-    // `strong_indices` maps each labelled corner back to its index in
-    // the input `corners` slice (useful for ChArUco-style alignment).
-    println!(
-        "\nstrong_indices (input-slice back-references): {:?} ...",
-        &detection.strong_indices[..detection.strong_indices.len().min(6)],
-    );
 }

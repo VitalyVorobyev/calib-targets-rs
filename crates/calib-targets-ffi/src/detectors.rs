@@ -8,26 +8,27 @@
 // Handle types (ct_*_detector_t) are defined in the parent lib.rs and accessed
 // via `super::`. Config, result, and data types come from the types module.
 use super::{
-    alignment_to_ffi, build_detection_header, chessboard_params_default_values,
-    circle_candidate_to_ffi, circle_match_to_ffi, convert_charuco_detector_params,
-    convert_chess_config, convert_chessboard_params, convert_marker_board_params,
-    convert_puzzleboard_params, copy_output_slice, ct_charuco_detector_t, ct_chessboard_detector_t,
-    ct_marker_board_detector_t, ct_puzzleboard_detector_t, labeled_corner_to_ffi,
-    map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
-    map_puzzleboard_detect_error, marker_detection_to_ffi, panic_message, require_mut_ref,
-    require_ref, set_last_error_message, validate_output_buffer, write_optional_result,
-    write_required_len, CharucoDetector, ChessboardDetector, FfiError, FfiResult,
-    MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
+    alignment_to_ffi, chessboard_corner_to_ffi, chessboard_params_default_values,
+    convert_charuco_detector_params, convert_chess_config, convert_chessboard_params,
+    convert_marker_board_params, convert_puzzleboard_params, copy_output_slice,
+    ct_charuco_detector_t, ct_chessboard_detector_t, ct_marker_board_detector_t,
+    ct_puzzleboard_detector_t, labeled_corner_to_ffi, map_charuco_create_error,
+    map_charuco_detect_error, map_puzzleboard_create_error, map_puzzleboard_detect_error,
+    marker_detection_to_ffi, panic_message, require_mut_ref, require_ref, set_last_error_message,
+    validate_output_buffer, write_json_string, write_optional_result, write_required_len,
+    CharucoDetector, ChessboardDetector, FfiError, FfiResult, MarkerBoardDetector,
+    PreparedGrayImage, PuzzleBoardDetector,
 };
-use crate::convert::puzzleboard_scoring_mode_to_ffi;
 use crate::error::ffi_status;
 use crate::types::{
-    ct_charuco_detector_config_t, ct_charuco_result_t, ct_chessboard_detector_config_t,
-    ct_chessboard_params_t, ct_chessboard_result_t, ct_circle_candidate_t, ct_circle_match_t,
+    ct_charuco_detector_config_t, ct_charuco_result_t, ct_chessboard_corner_t,
+    ct_chessboard_detector_config_t, ct_chessboard_params_t, ct_chessboard_result_t,
     ct_gray_image_u8_t, ct_labeled_corner_t, ct_marker_board_detector_config_t,
     ct_marker_board_result_t, ct_marker_detection_t, ct_puzzleboard_detector_config_t,
-    ct_puzzleboard_result_t, ct_status_t, CT_FALSE, CT_TRUE,
+    ct_puzzleboard_result_t, ct_status_t, ct_target_detection_t, CT_FALSE, CT_TARGET_KIND_CHARUCO,
+    CT_TARGET_KIND_CHECKERBOARD_MARKER, CT_TARGET_KIND_PUZZLEBOARD, CT_TRUE,
 };
+use std::ffi::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 // ─── Detector create/destroy/detect impls ────────────────────────────────────
@@ -114,7 +115,7 @@ pub struct ct_chessboard_detect_args_t {
 /// Caller-provided output buffers for [`ct_chessboard_detector_detect`].
 ///
 /// `out_corners_len` is required and always receives the required number of
-/// labeled-corner entries. Passing `out_corners = NULL` with
+/// labelled-corner entries. Passing `out_corners = NULL` with
 /// `corners_capacity = 0` queries the required length without copying
 /// corner data.
 #[repr(C)]
@@ -122,8 +123,8 @@ pub struct ct_chessboard_detect_args_t {
 pub struct ct_chessboard_detect_buffers_t {
     /// Optional scalar result header. May be null.
     pub out_result: *mut ct_chessboard_result_t,
-    /// Output array of labelled corners. May be null when `corners_capacity = 0`.
-    pub out_corners: *mut ct_labeled_corner_t,
+    /// Output array of labelled chessboard corners. May be null when `corners_capacity = 0`.
+    pub out_corners: *mut ct_chessboard_corner_t,
     pub corners_capacity: usize,
     /// Required: always receives the number of corners detected.
     pub out_corners_len: *mut usize,
@@ -179,10 +180,12 @@ pub struct ct_marker_board_detect_args_t {
 
 /// Caller-provided output buffers for [`ct_marker_board_detector_detect`].
 ///
-/// The three `*_len` pointers are required and always receive the required
-/// lengths for the corresponding output arrays. Passing a `NULL` output
-/// array with `*_capacity = 0` queries the required length without
-/// copying array data.
+/// `out_corners_len` is required and always receives the required number of
+/// labelled-corner entries. Passing `out_corners = NULL` with
+/// `corners_capacity = 0` queries the required length without copying
+/// corner data. Detection evidence (scored circle hypotheses, circle
+/// matches) is not surfaced over the C ABI — see
+/// [`ct_marker_board_result_t`].
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct ct_marker_board_detect_buffers_t {
@@ -193,16 +196,6 @@ pub struct ct_marker_board_detect_buffers_t {
     pub corners_capacity: usize,
     /// Required: always receives the number of corners detected.
     pub out_corners_len: *mut usize,
-    /// Output array of circle candidates. May be null when `circle_candidates_capacity = 0`.
-    pub out_circle_candidates: *mut ct_circle_candidate_t,
-    pub circle_candidates_capacity: usize,
-    /// Required: always receives the number of circle candidates found.
-    pub out_circle_candidates_len: *mut usize,
-    /// Output array of circle matches. May be null when `circle_matches_capacity = 0`.
-    pub out_circle_matches: *mut ct_circle_match_t,
-    pub circle_matches_capacity: usize,
-    /// Required: always receives the number of circle matches found.
-    pub out_circle_matches_len: *mut usize,
 }
 
 /// Input arguments for [`ct_puzzleboard_detector_detect`].
@@ -263,17 +256,13 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
         return Err(FfiError::not_found("chessboard not detected"));
     };
 
-    let corners_out: Vec<ct_labeled_corner_t> = detection
-        .target
+    let corners_out: Vec<ct_chessboard_corner_t> = detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(chessboard_corner_to_ffi)
         .collect();
     let result = ct_chessboard_result_t {
-        detection: build_detection_header(&detection.target),
-        grid_direction_0_rad: detection.grid_directions[0],
-        grid_direction_1_rad: detection.grid_directions[1],
-        cell_size: detection.cell_size,
+        corners_len: corners_out.len(),
     };
 
     // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
@@ -331,10 +320,9 @@ pub(super) unsafe fn charuco_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let markers_out: Vec<ct_marker_detection_t> = detection
         .markers
@@ -342,7 +330,10 @@ pub(super) unsafe fn charuco_detector_detect_impl(
         .map(marker_detection_to_ffi)
         .collect();
     let result = ct_charuco_result_t {
-        detection: build_detection_header(&detection.detection),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_CHARUCO,
+            corners_len: corners_out.len(),
+        },
         markers_len: markers_out.len(),
         alignment: alignment_to_ffi(detection.alignment),
     };
@@ -401,37 +392,21 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
         // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
         unsafe {
             write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
-            write_required_len(
-                bufs.out_circle_candidates_len,
-                0,
-                "out_circle_candidates_len",
-            )?;
-            write_required_len(bufs.out_circle_matches_len, 0, "out_circle_matches_len")?;
             write_optional_result(bufs.out_result, ct_marker_board_result_t::default());
         }
         return Err(FfiError::not_found("marker board not detected"));
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
-        .collect();
-    let circle_candidates_out: Vec<ct_circle_candidate_t> = detection
-        .circle_candidates
-        .iter()
-        .map(circle_candidate_to_ffi)
-        .collect();
-    let circle_matches_out: Vec<ct_circle_match_t> = detection
-        .circle_matches
-        .iter()
-        .map(circle_match_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let result = ct_marker_board_result_t {
-        detection: build_detection_header(&detection.detection),
-        circle_candidates_len: circle_candidates_out.len(),
-        circle_matches_len: circle_matches_out.len(),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_CHECKERBOARD_MARKER,
+            corners_len: corners_out.len(),
+        },
         has_alignment: if detection.alignment.is_some() {
             CT_TRUE
         } else {
@@ -441,22 +416,11 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
             .alignment
             .map(alignment_to_ffi)
             .unwrap_or_default(),
-        alignment_inliers: detection.alignment_inliers,
     };
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
     unsafe {
         write_required_len(bufs.out_corners_len, corners_out.len(), "out_corners_len")?;
-        write_required_len(
-            bufs.out_circle_candidates_len,
-            circle_candidates_out.len(),
-            "out_circle_candidates_len",
-        )?;
-        write_required_len(
-            bufs.out_circle_matches_len,
-            circle_matches_out.len(),
-            "out_circle_matches_len",
-        )?;
         write_optional_result(bufs.out_result, result);
     }
 
@@ -466,30 +430,10 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
         corners_out.len(),
         "out_corners",
     )?;
-    let copy_circle_candidates = validate_output_buffer(
-        bufs.out_circle_candidates,
-        bufs.circle_candidates_capacity,
-        circle_candidates_out.len(),
-        "out_circle_candidates",
-    )?;
-    let copy_circle_matches = validate_output_buffer(
-        bufs.out_circle_matches,
-        bufs.circle_matches_capacity,
-        circle_matches_out.len(),
-        "out_circle_matches",
-    )?;
 
     if copy_corners {
         // SAFETY: `out_corners` capacity validated by `validate_output_buffer` above.
         unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
-    }
-    if copy_circle_candidates {
-        // SAFETY: `out_circle_candidates` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(bufs.out_circle_candidates, &circle_candidates_out) };
-    }
-    if copy_circle_matches {
-        // SAFETY: `out_circle_matches` capacity validated by `validate_output_buffer` above.
-        unsafe { copy_output_slice(bufs.out_circle_matches, &circle_matches_out) };
     }
     Ok(())
 }
@@ -528,13 +472,15 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
-        .detection
         .corners
         .iter()
-        .map(labeled_corner_to_ffi)
+        .map(|corner| labeled_corner_to_ffi(&corner.to_labeled()))
         .collect();
     let result = ct_puzzleboard_result_t {
-        detection: build_detection_header(&detection.detection),
+        detection: ct_target_detection_t {
+            kind: CT_TARGET_KIND_PUZZLEBOARD,
+            corners_len: corners_out.len(),
+        },
         alignment: alignment_to_ffi(detection.alignment),
         edges_observed: detection.decode.edges_observed,
         edges_matched: detection.decode.edges_matched,
@@ -542,48 +488,6 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         bit_error_rate: detection.decode.bit_error_rate,
         master_origin_row: detection.decode.master_origin_row,
         master_origin_col: detection.decode.master_origin_col,
-        score_best: detection
-            .decode
-            .score_best
-            .map(crate::types::ct_optional_f32_t::some)
-            .unwrap_or_default(),
-        score_runner_up: detection
-            .decode
-            .score_runner_up
-            .map(crate::types::ct_optional_f32_t::some)
-            .unwrap_or_default(),
-        score_margin: detection
-            .decode
-            .score_margin
-            .map(crate::types::ct_optional_f32_t::some)
-            .unwrap_or_default(),
-        scoring_mode: detection
-            .decode
-            .scoring_mode
-            .map(puzzleboard_scoring_mode_to_ffi)
-            .unwrap_or_default(),
-        has_runner_up_alignment: if detection.decode.runner_up_origin_row.is_some()
-            && detection.decode.runner_up_origin_col.is_some()
-            && detection.decode.runner_up_transform.is_some()
-        {
-            CT_TRUE
-        } else {
-            CT_FALSE
-        },
-        runner_up_alignment: match (
-            detection.decode.runner_up_transform,
-            detection.decode.runner_up_origin_col,
-            detection.decode.runner_up_origin_row,
-        ) {
-            (Some(transform), Some(origin_col), Some(origin_row)) => {
-                alignment_to_ffi(calib_targets::core::GridAlignment {
-                    transform,
-                    translation: [origin_col, origin_row],
-                })
-            }
-            _ => Default::default(),
-        },
-        observed_edges_len: detection.observed_edges.len(),
     };
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
@@ -602,6 +506,119 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         unsafe { copy_output_slice(bufs.out_corners, &corners_out) };
     }
     Ok(())
+}
+
+// ─── Diagnostics JSON-string accessors ───────────────────────────────────────
+//
+// The detector diagnostics types are deeply nested `Vec`-of-struct trees with
+// an explicitly looser stability promise than the typed result API. Rather
+// than freeze them into flat C structs, each `*_detect_diagnostics_json` entry
+// point runs detection and renders `serde_json::to_string` of the diagnostics
+// struct into a caller-owned UTF-8 buffer, reusing the `ct_last_error_message`
+// query/fill discipline (NULL + capacity 0 queries the required length).
+
+fn diagnostics_json<T: serde::Serialize>(value: &T) -> FfiResult<String> {
+    serde_json::to_string(value)
+        .map_err(|err| FfiError::internal(format!("failed to serialize diagnostics: {err}")))
+}
+
+pub(super) unsafe fn chessboard_detector_detect_diagnostics_impl(
+    args: *const ct_chessboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid chessboard handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+
+    let frame = detector.detector.detect_with_diagnostics(&corners);
+    let json = diagnostics_json(&frame)?;
+    // SAFETY: `out_utf8` / `out_len` validity is the caller's contract; the
+    // helper rejects the null/capacity-mismatch cases internally.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn charuco_detector_detect_diagnostics_impl(
+    args: *const ct_charuco_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid ChArUco handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // `detect_with_diagnostics` returns diagnostics even when detection fails,
+    // so a failed detection still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn marker_board_detector_detect_diagnostics_impl(
+    args: *const ct_marker_board_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid marker-board handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // The marker-board diagnostics channel only yields evidence on a successful
+    // detection; a failed detection is reported as `CT_STATUS_NOT_FOUND`.
+    let Some((_result, diagnostics)) = detector
+        .detector
+        .detect_from_image_and_corners_with_diagnostics(&view, &corners)
+    else {
+        return Err(FfiError::not_found("marker board not detected"));
+    };
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
+}
+
+pub(super) unsafe fn puzzleboard_detector_detect_diagnostics_impl(
+    args: *const ct_puzzleboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> FfiResult<()> {
+    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
+    let args = unsafe { require_ref(args, "args")? };
+    // SAFETY: caller contract: `args.detector` is a valid PuzzleBoard handle.
+    let detector = unsafe { require_ref(args.detector, "args.detector")? };
+    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
+    let image = unsafe { require_ref(args.image, "args.image")? };
+    let prepared = PreparedGrayImage::from_descriptor(image)?;
+    let corners = prepared.detect_corners(&detector.chess)?;
+    let view = prepared.view();
+
+    // `detect_with_diagnostics` returns diagnostics even when detection fails,
+    // so a failed decode still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    let json = diagnostics_json(&diagnostics)?;
+    // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
+    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
 }
 
 // ─── Public exported functions ───────────────────────────────────────────────
@@ -663,7 +680,7 @@ pub unsafe extern "C" fn ct_chessboard_detector_destroy(detector: *mut ct_chessb
 /// Run end-to-end chessboard detection on a grayscale image.
 ///
 /// `bufs.out_corners_len` is required and always receives the required number
-/// of labeled-corner entries. Passing `bufs.out_corners = NULL` and
+/// of `ct_chessboard_corner_t` entries. Passing `bufs.out_corners = NULL` and
 /// `bufs.corners_capacity = 0` queries the required length without copying
 /// corner data.
 ///
@@ -681,6 +698,37 @@ pub unsafe extern "C" fn ct_chessboard_detector_detect(
     bufs: *mut ct_chessboard_detect_buffers_t,
 ) -> ct_status_t {
     ffi_status(|| unsafe { chessboard_detector_detect_impl(args, bufs) })
+}
+
+/// Run chessboard detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
+/// diagnostics struct (every input corner's terminal stage, per-iteration
+/// pipeline traces, cluster histograms, geometry-check outcomes). Its
+/// schema carries a looser stability promise than the typed result API and
+/// may evolve between minor versions.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_chessboard_detector_detect_diagnostics_json(
+    args: *const ct_chessboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        chessboard_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
 }
 
 /// Input arguments for [`ct_chessboard_detector_detect_all`].
@@ -710,8 +758,8 @@ pub struct ct_chessboard_detect_all_buffers_t {
     pub results_buf: *mut ct_chessboard_result_t,
     pub results_capacity: usize,
     pub results_len_out: *mut usize,
-    /// Output array of all components' labelled corners concatenated.
-    pub corners_buf: *mut ct_labeled_corner_t,
+    /// Output array of all components' labelled chessboard corners concatenated.
+    pub corners_buf: *mut ct_chessboard_corner_t,
     pub corners_capacity: usize,
     pub corners_len_out: *mut usize,
 }
@@ -734,15 +782,12 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
     let results_out: Vec<ct_chessboard_result_t> = detections
         .iter()
         .map(|d| ct_chessboard_result_t {
-            detection: build_detection_header(&d.target),
-            grid_direction_0_rad: d.grid_directions[0],
-            grid_direction_1_rad: d.grid_directions[1],
-            cell_size: d.cell_size,
+            corners_len: d.corners.len(),
         })
         .collect();
-    let corners_out: Vec<ct_labeled_corner_t> = detections
+    let corners_out: Vec<ct_chessboard_corner_t> = detections
         .iter()
-        .flat_map(|d| d.target.corners.iter().map(labeled_corner_to_ffi))
+        .flat_map(|d| d.corners.iter().map(chessboard_corner_to_ffi))
         .collect();
 
     // SAFETY: `bufs.results_len_out` and `bufs.corners_len_out` are valid
@@ -779,7 +824,7 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
 /// Returns every same-board component the detector recovers, up to
 /// `DetectorParams::max_components`. The `corners_buf` buffer receives
 /// all corners from all components concatenated; use
-/// `result[i].detection.corners_len` to slice each component's contribution.
+/// `result[i].corners_len` to slice each component's contribution.
 ///
 /// Both `results_len_out` and `corners_len_out` inside `bufs` are
 /// required and always receive the required array lengths. Passing
@@ -863,6 +908,38 @@ pub unsafe extern "C" fn ct_charuco_detector_detect(
     ffi_status(|| unsafe { charuco_detector_detect_impl(args, bufs) })
 }
 
+/// Run ChArUco detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `CharucoDetectDiagnostics` struct (per-component matcher decisions,
+/// per-cell scores, chosen/runner-up hypotheses, rejection reasons).
+/// Diagnostics are produced even when detection fails, so this entry point
+/// returns `CT_STATUS_OK` with a well-formed payload on failed frames; its
+/// schema carries a looser stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_charuco_detector_detect_diagnostics_json(
+    args: *const ct_charuco_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        charuco_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
+}
+
 /// Create a marker-board detector handle.
 ///
 /// # Safety
@@ -926,6 +1003,39 @@ pub unsafe extern "C" fn ct_marker_board_detector_detect(
     ffi_status(|| unsafe { marker_board_detector_detect_impl(args, bufs) })
 }
 
+/// Run marker-board detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
+/// expected-to-detected circle matches, per-corner provenance, and the
+/// alignment-inlier count). The marker-board diagnostics channel only
+/// yields evidence on a successful detection, so a failed detection is
+/// reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
+/// stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_marker_board_detector_detect_diagnostics_json(
+    args: *const ct_marker_board_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        marker_board_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
+}
+
 /// Create a PuzzleBoard detector handle.
 ///
 /// # Safety
@@ -986,4 +1096,36 @@ pub unsafe extern "C" fn ct_puzzleboard_detector_detect(
     bufs: *mut ct_puzzleboard_detect_buffers_t,
 ) -> ct_status_t {
     ffi_status(|| unsafe { puzzleboard_detector_detect_impl(args, bufs) })
+}
+
+/// Run PuzzleBoard detection and write the diagnostics channel as a
+/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
+///
+/// The JSON payload is `serde_json::to_string` of the Rust
+/// `PuzzleBoardDiagnostics` struct (the raw pre-alignment per-edge bit
+/// observations and the winner-vs-runner-up scoring evidence). Diagnostics
+/// are produced even when detection fails, so this entry point returns
+/// `CT_STATUS_OK` with a well-formed payload on failed frames; its schema
+/// carries a looser stability promise than the typed result API.
+///
+/// `out_len` is required and always receives the JSON length excluding the
+/// trailing NUL terminator. Query the required size by passing
+/// `out_utf8 = NULL` and `out_capacity = 0`.
+///
+/// # Safety
+///
+/// `args` must be a valid non-null pointer whose `detector` and `image`
+/// fields are valid non-null pointers. If `out_utf8` is non-null it must
+/// point to writable memory of at least `out_capacity` bytes. `out_len`
+/// must always be a valid writable pointer.
+#[no_mangle]
+pub unsafe extern "C" fn ct_puzzleboard_detector_detect_diagnostics_json(
+    args: *const ct_puzzleboard_detect_args_t,
+    out_utf8: *mut c_char,
+    out_capacity: usize,
+    out_len: *mut usize,
+) -> ct_status_t {
+    ffi_status(|| unsafe {
+        puzzleboard_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
+    })
 }

@@ -24,4 +24,4 @@ pub use pipeline::{
     CharucoDetectDiagnostics, CharucoDetector, ComponentDiagnostics, ComponentOutcome,
     MatcherDiagKind,
 };
-pub use result::CharucoDetectionResult;
+pub use result::{CharucoCorner, CharucoDetectionResult};

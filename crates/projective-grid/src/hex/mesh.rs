@@ -17,11 +17,15 @@ fn sqrt3_half<F: Float>() -> F {
     lit::<F>(3.0).sqrt() / lit::<F>(2.0)
 }
 
+/// Reason a [`HexGridHomographyMesh`] could not be built.
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
-pub enum HexMeshError {
+pub enum HexGridMeshError {
+    /// Fewer than 3 grid corners were supplied — no triangle can be formed.
     #[error("not enough grid corners (need at least 3)")]
     NotEnoughCorners,
+    /// No parallelogram cell had all corners present, so no triangle
+    /// transform could be fitted.
     #[error("no valid triangles found")]
     NoValidTriangles,
 }
@@ -40,7 +44,9 @@ struct TriangleCell<F: Float> {
 /// - **Upper**: `(q+1,r)`, `(q,r+1)`, `(q+1,r+1)` — when `frac_q + frac_r > 1`
 #[derive(Clone, Debug)]
 pub struct HexGridHomographyMesh<F: Float = f32> {
+    /// Minimum axial `q` of the corner set — the mesh's grid origin.
     pub min_q: i32,
+    /// Minimum axial `r` of the corner set — the mesh's grid origin.
     pub min_r: i32,
     /// Number of parallelogram cells along q.
     pub cells_q: usize,
@@ -50,8 +56,9 @@ pub struct HexGridHomographyMesh<F: Float = f32> {
     pub px_per_cell: F,
     /// Number of valid triangle cells.
     pub valid_triangles: usize,
-    /// Rectified image dimensions.
+    /// Rectified image width in pixels.
     pub rect_width: usize,
+    /// Rectified image height in pixels.
     pub rect_height: usize,
 
     cells: Vec<Option<TriangleCell<F>>>,
@@ -68,9 +75,9 @@ impl<F: Float> HexGridHomographyMesh<F> {
     pub fn from_corners(
         corners: &HashMap<GridCoords, Point2<F>>,
         px_per_cell: F,
-    ) -> Result<Self, HexMeshError> {
+    ) -> Result<Self, HexGridMeshError> {
         if corners.len() < 3 {
-            return Err(HexMeshError::NotEnoughCorners);
+            return Err(HexGridMeshError::NotEnoughCorners);
         }
 
         let (mut min_q, mut min_r) = (i32::MAX, i32::MAX);
@@ -83,7 +90,7 @@ impl<F: Float> HexGridHomographyMesh<F> {
         }
 
         if max_q - min_q < 1 || max_r - min_r < 1 {
-            return Err(HexMeshError::NoValidTriangles);
+            return Err(HexGridMeshError::NoValidTriangles);
         }
 
         let cells_q = (max_q - min_q) as usize;
@@ -212,7 +219,7 @@ impl<F: Float> HexGridHomographyMesh<F> {
         }
 
         if valid_triangles == 0 {
-            return Err(HexMeshError::NoValidTriangles);
+            return Err(HexGridMeshError::NoValidTriangles);
         }
 
         Ok(Self {

@@ -20,9 +20,11 @@
 - `MarkerBoardParams`: layout + chessboard/grid graph params + circle score + match settings.
 - `MarkerBoardDetectionResult`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
+  - `alignment`: optional `GridAlignment` from detected grid coords to board coords.
+- `MarkerBoardDiagnostics` (opt-in, from the `*_with_diagnostics` entry points):
   - `circle_candidates`: scored circles per cell.
   - `circle_matches`: matched circles (with offsets).
-  - `alignment`: optional `GridAlignment` from detected grid coords to board coords.
+  - `inliers`: per-corner provenance back into the input ChESS-corner slice.
   - `alignment_inliers`: number of circle matches used for the alignment.
 
 ## Parameters

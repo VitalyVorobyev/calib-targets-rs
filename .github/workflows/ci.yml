@@ -103,6 +103,12 @@ jobs:
           bunx tsc --noEmit
           bunx vite build
 
+      - name: Type-check hand-written WASM TypeScript declarations
+        working-directory: demo
+        run: >
+          bunx tsc --noEmit --strict --skipLibCheck
+          ../crates/calib-targets-wasm/typescript-extras.d.ts
+
   python-bindings:
     runs-on: ubuntu-latest
 

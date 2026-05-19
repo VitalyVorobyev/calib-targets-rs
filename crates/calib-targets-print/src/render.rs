@@ -70,13 +70,19 @@ impl Scene {
     }
 }
 
+/// A rendered printable-target bundle: the JSON description plus the
+/// SVG and PNG renderings, all held in memory.
 #[derive(Clone, Debug)]
 pub struct GeneratedTargetBundle {
+    /// The target description serialized as JSON.
     pub json_text: String,
+    /// The target rendered as an SVG document.
     pub svg_text: String,
+    /// The target rendered as PNG image bytes.
     pub png_bytes: Vec<u8>,
 }
 
+/// Render a printable-target document into an in-memory JSON/SVG/PNG bundle.
 pub fn render_target_bundle(
     document: &PrintableTargetDocument,
 ) -> Result<GeneratedTargetBundle, PrintableTargetError> {
@@ -166,7 +172,7 @@ fn build_charuco(
     let board = CharucoBoard::new(spec.to_board_spec())?;
     let marker_side_mm = spec.square_size_mm * spec.marker_size_rel;
     let marker_offset_mm = 0.5 * (spec.square_size_mm - marker_side_mm);
-    let bits = spec.dictionary.marker_size;
+    let bits = spec.dictionary.marker_size();
     let total_cells = bits + 2 * spec.border_bits;
     let bit_cell_mm = marker_side_mm / total_cells as f64;
 
@@ -178,7 +184,7 @@ fn build_charuco(
             layout.board_origin_mm[0] + cell.i as f64 * spec.square_size_mm + marker_offset_mm;
         let origin_y =
             layout.board_origin_mm[1] + cell.j as f64 * spec.square_size_mm + marker_offset_mm;
-        let code = spec.dictionary.codes[marker_id];
+        let code = spec.dictionary.codes()[marker_id];
         for cy in 0..total_cells {
             for cx in 0..total_cells {
                 let is_black = if cx < spec.border_bits

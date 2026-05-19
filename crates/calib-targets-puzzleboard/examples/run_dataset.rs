@@ -40,10 +40,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view, DetectError};
+use calib_targets_chessboard::diagnostics::DebugFrame;
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{
-    DebugFrame, Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm,
-};
+use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetectError, PuzzleBoardDetectionResult, PuzzleBoardDetector,
     PuzzleBoardScoringMode, PuzzleBoardSearchMode,
@@ -272,7 +271,7 @@ fn main() {
 
             let t0 = Instant::now();
             let chess_detector = ChessDetector::new(chess_params.clone());
-            let chessboard_frame = chess_detector.detect_debug(&corners);
+            let chessboard_frame = chess_detector.detect_with_diagnostics(&corners);
             let t_chessboard = t0.elapsed();
 
             let (puzzle_outcome, t_puzzle, best_config_idx) =
@@ -344,8 +343,8 @@ fn run_puzzle_sweep(
                 let better = match &best {
                     None => true,
                     Some(b) => {
-                        let new_key = (r.detection.corners.len(), r.decode.mean_confidence);
-                        let old_key = (b.detection.corners.len(), b.decode.mean_confidence);
+                        let new_key = (r.corners.len(), r.decode.mean_confidence);
+                        let old_key = (b.corners.len(), b.decode.mean_confidence);
                         new_key.0 > old_key.0 || (new_key.0 == old_key.0 && new_key.1 > old_key.1)
                     }
                 };
@@ -536,7 +535,7 @@ impl Aggregate {
         match &r.outcome {
             PuzzleboardOutcome::Ok(result) => {
                 self.n_detected += 1;
-                self.labelled_corners.push(result.detection.corners.len());
+                self.labelled_corners.push(result.corners.len());
                 self.edges_observed.push(result.decode.edges_observed);
                 self.edges_matched.push(result.decode.edges_matched);
                 self.bit_error_rate.push(result.decode.bit_error_rate);

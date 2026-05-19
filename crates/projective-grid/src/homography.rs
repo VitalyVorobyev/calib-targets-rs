@@ -1,3 +1,9 @@
+//! Projective homography type and estimators.
+//!
+//! Provides the [`Homography`] matrix wrapper, a 4-point direct solver
+//! and an N-point Hartley-normalised DLT estimator, plus
+//! [`HomographyQuality`] for gating degenerate fits.
+
 use crate::float_helpers::lit;
 use crate::Float;
 use nalgebra::{Matrix3, Point2, SMatrix, SVector, Vector3};
@@ -7,6 +13,8 @@ use nalgebra::{Matrix3, Point2, SMatrix, SVector, Vector3};
 /// Maps 2D points between two projective planes: `p_dst ~ H * p_src`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Homography<F: Float = f32> {
+    /// The raw 3×3 matrix. Defined up to an overall scale; estimators in
+    /// this module normalise it so the bottom-right entry is `1`.
     pub h: Matrix3<F>,
 }
 
@@ -76,10 +84,13 @@ impl<F: Float> HomographyQuality<F> {
 }
 
 impl<F: Float> Homography<F> {
+    /// Wrap an existing 3×3 matrix as a homography. The matrix is taken
+    /// as-is; no normalisation is applied.
     pub fn new(h: Matrix3<F>) -> Self {
         Self { h }
     }
 
+    /// Build a homography from a row-major `[[row0], [row1], [row2]]` array.
     pub fn from_array(rows: [[F; 3]; 3]) -> Self {
         Self::new(Matrix3::from_row_slice(&[
             rows[0][0], rows[0][1], rows[0][2], rows[1][0], rows[1][1], rows[1][2], rows[2][0],
@@ -87,6 +98,7 @@ impl<F: Float> Homography<F> {
         ]))
     }
 
+    /// Return the matrix as a row-major `[[row0], [row1], [row2]]` array.
     pub fn to_array(&self) -> [[F; 3]; 3] {
         [
             [self.h[(0, 0)], self.h[(0, 1)], self.h[(0, 2)]],
@@ -95,6 +107,8 @@ impl<F: Float> Homography<F> {
         ]
     }
 
+    /// A homography backed by the all-zeros matrix. Not invertible — used
+    /// only as a placeholder before a real estimate is available.
     pub fn zero() -> Self {
         Self {
             h: Matrix3::zeros(),

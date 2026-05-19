@@ -28,6 +28,7 @@
 //! let markers = scan_decode_markers(&view, 4, 4, 4.0, &scan_cfg, &matcher);
 //! println!("markers: {}", markers.len());
 //! ```
+#![deny(missing_docs)]
 
 pub mod builtins;
 mod dictionary;
@@ -35,7 +36,7 @@ mod matcher;
 mod scan;
 mod threshold;
 
-pub use dictionary::Dictionary;
+pub use dictionary::{Dictionary, DictionaryError};
 pub use matcher::{rotate_code_u64, Match, Matcher};
 pub use scan::{
     decode_marker_in_cell, sample_cell, scan_decode_markers, scan_decode_markers_in_cells,

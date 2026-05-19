@@ -16,8 +16,8 @@
 **Calibration-target detection in Rust.** Detects chessboards, ChArUco,
 PuzzleBoard, and checkerboard marker boards from grayscale images.
 Ships as Rust crates, Python bindings, WebAssembly bindings, and a
-stable C ABI. One grid-first algorithmic core; a single
-`TargetDetection` output type across every detector.
+stable C ABI. One grid-first algorithmic core; typed result objects
+per target, with a shared corner vocabulary.
 
 ![Target gallery — chessboard, ChArUco, PuzzleBoard, marker board](docs/img/target_gallery.png)
 
@@ -28,7 +28,7 @@ stable C ABI. One grid-first algorithmic core; a single
 |---|---|
 | **Chessboard** | Plain checkerboard. Detector returns labelled corner positions with `(0, 0)` rebased to the visual top-left. No markers; corners are not individually identified. |
 | **ChArUco** | Chessboard with ArUco markers in white squares. Each labelled corner gets a globally-unique ID derived from the surrounding markers; partial views decode. |
-| **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood scoring with `score_margin` / runner-up diagnostics for downstream consistency checks. |
+| **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
@@ -43,7 +43,7 @@ Full documentation: [book][book] · [API reference][api] · [getting-started tut
   then decode anchors / dots / circles in rectified cells". The heavy
   lifting lives in [`calib-targets-chessboard`] and
   [`projective-grid`][projective-grid-readme].
-- **Two grid pipelines, one output type.** The default ChessboardV2
+- **Two grid pipelines, typed outputs.** The default ChessboardV2
   pipeline is invariant-first seed-and-grow with adaptive local-step
   prediction, battle-tested across all four target families. The
   opt-in topological pipeline (Shu / Brunton / Fiala 2009) is image-
@@ -64,8 +64,8 @@ Full documentation: [book][book] · [API reference][api] · [getting-started tut
   visible and the facade `detect_*_all` helpers return every connected
   component.
 - **Consistency diagnostics built in.** PuzzleBoard surfaces the
-  chosen search / scoring mode and soft-decoder confidence diagnostics
-  (`score_margin`, runner-up origin / transform). The chessboard
+  chosen search / scoring mode, observed edge evidence, and
+  soft-decoder margins through its diagnostics channel. The chessboard
   detector ends in a Stage 9 final-geometry check that drops gross
   mislabels and isolated false positives before emitting any
   `Detection`.
@@ -91,9 +91,11 @@ use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let result = detect::detect_chessboard_best(&img, &DetectorParams::sweep_default());
+    let chess_cfg = detect::default_chess_config();
+    let configs = DetectorParams::sweep_default();
+    let result = detect::detect_chessboard_best(&img, &chess_cfg, &configs);
     match result {
-        Some(det) => println!("{} corners", det.target.corners.len()),
+        Some(det) => println!("{} corners", det.corners.len()),
         None => println!("no board detected"),
     }
     Ok(())
@@ -118,17 +120,15 @@ from PIL import Image
 import calib_targets as ct
 
 image = np.asarray(Image.open("board.png").convert("L"), dtype=np.uint8)
-result = ct.detect_chessboard_best(image, [
+chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+configs = [
     ct.ChessboardParams(),
-    ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
-    ),
-    ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
-    ),
-])
+    ct.ChessboardParams(min_labeled_corners=12),
+    ct.ChessboardParams(max_components=1),
+]
+result = ct.detect_chessboard_best(image, configs, chess_cfg=chess_cfg)
 if result is not None:
-    print(f"{len(result.detection.corners)} corners")
+    print(f"{len(result.corners)} corners")
 ```
 
 End-to-end round-trip examples per target type (generate → detect →

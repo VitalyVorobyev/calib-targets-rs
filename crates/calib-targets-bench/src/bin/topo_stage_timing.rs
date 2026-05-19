@@ -322,7 +322,7 @@ fn measure_once(
 
     let labelled_count = detections
         .iter()
-        .map(|d| d.target.corners.len())
+        .map(|d| d.corners.len())
         .max()
         .unwrap_or(0);
     let sample = TimingSample {

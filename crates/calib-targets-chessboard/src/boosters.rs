@@ -30,7 +30,7 @@ use projective_grid::square::fill::{fill_grid_holes, FillParams};
 use projective_grid::square::grow::{Admit, FillEdgeCtx, GrowValidator, LabelledNeighbour};
 use std::collections::{HashMap, HashSet};
 
-/// Diagnostic returned by [`apply_boosters`].
+/// Diagnostic returned by the `apply_boosters` stage.
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct BoosterResult {
     /// Corners added to the labelled set across all booster passes.
@@ -94,20 +94,20 @@ fn apply_boosters_impl(
         blacklist,
         centers,
         cell_size,
-        attach_tol_rad: params.attach_axis_tol_deg.to_radians(),
-        edge_tol_rad: params.edge_axis_tol_deg.to_radians(),
-        weak_attach_tol_rad: params.weak_cluster_tol_deg.to_radians(),
-        weak_cluster_tol_deg: params.weak_cluster_tol_deg,
-        step_tol: params.step_tol,
-        enable_weak_cluster_rescue: params.enable_weak_cluster_rescue,
+        attach_tol_rad: params.tuning.attach_axis_tol_deg.to_radians(),
+        edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
+        weak_attach_tol_rad: params.tuning.weak_cluster_tol_deg.to_radians(),
+        weak_cluster_tol_deg: params.tuning.weak_cluster_tol_deg,
+        step_tol: params.tuning.step_tol,
+        enable_weak_cluster_rescue: params.tuning.enable_weak_cluster_rescue,
         use_directional_edge_scale,
         parity_shift,
     };
 
     let fill_params = FillParams::new(
-        params.attach_search_rel,
-        params.attach_ambiguity_factor,
-        params.max_booster_iters.max(1) as usize,
+        params.tuning.attach_search_rel,
+        params.tuning.attach_ambiguity_factor,
+        params.tuning.max_booster_iters.max(1) as usize,
     );
 
     let stats = fill_grid_holes(&positions, grow, cell_size, &fill_params, &validator);

@@ -35,8 +35,8 @@
 //! Images that fail to decode (our detector returns Err) are reported but not
 //! failed — the reference images vary widely in scale and quality.
 
-use calib_targets::detect;
-use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::detect::{self, default_chess_config, detect_corners, gray_view};
+use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_core::GRID_TRANSFORMS_D4;
 use calib_targets_puzzleboard::code_maps::{
     horizontal_edge_bit, vertical_edge_bit, EdgeOrientation,
@@ -130,7 +130,7 @@ fn run_one_image(index: usize, dir: &Path) {
         }
     };
 
-    let our_corners = &result.detection.corners;
+    let our_corners = &result.corners;
     let ber = result.decode.bit_error_rate;
 
     // Criterion (a): internal consistency check.
@@ -165,9 +165,7 @@ fn run_one_image(index: usize, dir: &Path) {
     let mut pairs: Vec<(i32, i32, i32, i32)> = Vec::new();
 
     for lc in our_corners {
-        let Some(grid) = lc.grid else {
-            continue;
-        };
+        let grid = lc.grid;
         let px = lc.position.x;
         let py = lc.position.y;
 
@@ -306,10 +304,21 @@ fn diag_example0_edge_bits() {
     let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("spec");
     let sweep = PuzzleBoardParams::sweep_for_board(&board);
 
-    let r = match detect::detect_puzzleboard_best(&img, &sweep) {
-        Ok(r) => r,
-        Err(e) => {
-            println!("detect failed: {e}");
+    // The raw per-edge observations this diagnostic needs live on the
+    // detector's opt-in diagnostics channel, not the result struct — so
+    // run the detector directly rather than through `detect_puzzleboard_best`.
+    // Take the first sweep config that decodes.
+    let corners = detect_corners(&img, &default_chess_config());
+    let view = gray_view(&img);
+    let decoded = sweep.into_iter().find_map(|params| {
+        let detector = PuzzleBoardDetector::new(params).ok()?;
+        let (result, diag) = detector.detect_with_diagnostics(&view, &corners);
+        result.ok().map(|r| (r, diag))
+    });
+    let (r, diag) = match decoded {
+        Some(pair) => pair,
+        None => {
+            println!("detect failed for every sweep config");
             return;
         }
     };
@@ -330,7 +339,7 @@ fn diag_example0_edge_bits() {
         r.alignment.transform.d
     );
 
-    let edges = &r.observed_edges;
+    let edges = &diag.observed_edges;
 
     // Compute BER at the reference oracle origin (94, 470) = identity transform
     let (true_row, true_col) = (94i32, 470i32);
@@ -479,16 +488,11 @@ fn diag_example0_edge_bits() {
 
     // Print all detected corners with their local grid coords and pixel positions
     println!("\nDetected corners (local i,j → master col,row → pixel x,y):");
-    let sorted_corners: Vec<_> = r
-        .detection
-        .corners
-        .iter()
-        .filter(|c| c.grid.is_some())
-        .collect();
+    let sorted_corners: Vec<_> = r.corners.iter().collect();
     // Need local grid coords from the observed edges...
     // Print master coords and pixel positions:
     for c in sorted_corners.iter().take(20) {
-        let g = c.grid.unwrap();
+        let g = c.grid;
         println!(
             "  master=({},{}) px=({:.1},{:.1})",
             g.j, g.i, c.position.x, c.position.y

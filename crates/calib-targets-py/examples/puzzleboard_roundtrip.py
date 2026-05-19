@@ -73,7 +73,7 @@ def main() -> int:
     params = ct.default_puzzleboard_params(args.rows, args.cols)
     result = ct.detect_puzzleboard(image, params=params)
     print(
-        f"detected {len(result.detection.corners)} labelled corners "
+        f"detected {len(result.corners)} labelled corners "
         f"(mean confidence = {result.decode.mean_confidence:.3f}, "
         f"BER = {result.decode.bit_error_rate:.3f})"
     )
@@ -84,13 +84,13 @@ def main() -> int:
 
     # 4. Verify
     inner = (args.rows - 1) * (args.cols - 1)
-    coverage = len(result.detection.corners) / inner
+    coverage = len(result.corners) / inner
     print(
-        f"coverage: {len(result.detection.corners)}/{inner} inner corners "
+        f"coverage: {len(result.corners)}/{inner} inner corners "
         f"labelled ({coverage * 100:.1f}%)"
     )
     seen: set[tuple[int, int]] = set()
-    for corner in result.detection.corners:
+    for corner in result.corners:
         if corner.id is None:
             raise AssertionError("missing id")
         if corner.grid is None:

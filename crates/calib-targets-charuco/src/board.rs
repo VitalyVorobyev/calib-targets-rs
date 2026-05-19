@@ -23,11 +23,17 @@ pub enum MarkerLayout {
 /// `rows`/`cols` are **square counts** (not inner corner counts).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CharucoBoardSpec {
+    /// Number of board squares vertically.
     pub rows: u32,
+    /// Number of board squares horizontally.
     pub cols: u32,
+    /// Side length of one square, in the caller's world units (e.g. mm).
     pub cell_size: f32,
+    /// Marker side length as a fraction of the square side, in `(0, 1]`.
     pub marker_size_rel: f32,
+    /// The ArUco dictionary the board's markers are drawn from.
     pub dictionary: Dictionary,
+    /// How markers are placed and numbered on the board.
     #[serde(default)]
     pub marker_layout: MarkerLayout,
 }
@@ -36,16 +42,26 @@ pub struct CharucoBoardSpec {
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum CharucoBoardError {
+    /// `rows` or `cols` is below the 2-square minimum.
     #[error("rows and cols must be >= 2")]
     InvalidSize,
+    /// `cell_size` is not strictly positive.
     #[error("cell_size must be > 0")]
     InvalidCellSize,
+    /// `marker_size_rel` is outside the valid `(0, 1]` range.
     #[error("marker_size_rel must be in (0, 1]")]
     InvalidMarkerSizeRel,
+    /// The supplied dictionary contains no marker codes.
     #[error("dictionary has no codes")]
     EmptyDictionary,
+    /// The dictionary has fewer codes than the board has marker squares.
     #[error("board needs {needed} markers, dictionary has {available}")]
-    NotEnoughDictionaryCodes { needed: usize, available: usize },
+    NotEnoughDictionaryCodes {
+        /// Number of marker squares on the board.
+        needed: usize,
+        /// Number of codes available in the dictionary.
+        available: usize,
+    },
 }
 
 /// Precomputed board mapping helpers.
@@ -74,7 +90,7 @@ impl CharucoBoard {
         {
             return Err(CharucoBoardError::InvalidMarkerSizeRel);
         }
-        if spec.dictionary.codes.is_empty() {
+        if spec.dictionary.codes().is_empty() {
             return Err(CharucoBoardError::EmptyDictionary);
         }
 
@@ -83,7 +99,7 @@ impl CharucoBoard {
         };
 
         let needed = marker_positions.len();
-        let available = spec.dictionary.codes.len();
+        let available = spec.dictionary.codes().len();
         if available < needed {
             return Err(CharucoBoardError::NotEnoughDictionaryCodes { needed, available });
         }

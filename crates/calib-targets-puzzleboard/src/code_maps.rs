@@ -53,10 +53,12 @@ pub struct BitMap {
 }
 
 impl BitMap {
+    /// Number of rows in the map.
     #[inline]
     pub fn rows(&self) -> usize {
         self.rows
     }
+    /// Number of columns in the map.
     #[inline]
     pub fn cols(&self) -> usize {
         self.cols
@@ -197,19 +199,29 @@ pub fn verify_cyclic_window_unique(map: BitMap, wr: usize, wc: usize) -> Result<
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum WindowError {
+    /// Two distinct window positions decode to the same code — the map
+    /// is not a perfect map for this window size.
     #[error("duplicate window at {first:?} and {second:?} (code = {code:#x})")]
     Duplicate {
+        /// `(row, col)` of the first occurrence.
         first: (usize, usize),
+        /// `(row, col)` of the colliding second occurrence.
         second: (usize, usize),
+        /// The code value shared by both windows.
         code: u64,
     },
+    /// The requested window size is zero or larger than the map.
     #[error(
         "invalid window size ({wr}×{wc}): must be non-zero and fit within map ({max_rows}×{max_cols})"
     )]
     InvalidWindow {
+        /// Requested window row count.
         wr: usize,
+        /// Requested window column count.
         wc: usize,
+        /// Number of rows available in the map.
         max_rows: usize,
+        /// Number of columns available in the map.
         max_cols: usize,
     },
 }

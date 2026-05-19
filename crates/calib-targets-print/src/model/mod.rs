@@ -55,9 +55,13 @@ fn default_render_options() -> RenderOptions {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TargetSpec {
+    /// A plain chessboard target.
     Chessboard(ChessboardTargetSpec),
+    /// A ChArUco board target.
     Charuco(CharucoTargetSpec),
+    /// A checkerboard marker board target.
     MarkerBoard(MarkerBoardTargetSpec),
+    /// A PuzzleBoard self-identifying target.
     PuzzleBoard(PuzzleBoardTargetSpec),
 }
 
@@ -210,11 +214,15 @@ impl TargetSpec {
 /// Top-level printable target document (the JSON file on disk).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrintableTargetDocument {
+    /// JSON schema version of this document.
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
+    /// The target geometry to render.
     pub target: TargetSpec,
+    /// Page size and orientation the target is placed on.
     #[serde(default = "default_page_spec")]
     pub page: PageSpec,
+    /// Rendering options (margins, labels, etc.).
     #[serde(default = "default_render_options")]
     pub render: RenderOptions,
 }
@@ -319,9 +327,12 @@ impl PrintableTargetDocument {
 /// A single output point in board-space coordinates.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedTargetPoint {
+    /// Point position `[x, y]` in board-space millimeters.
     pub position_mm: [f64; 2],
+    /// Integer `(i, j)` grid label of the point, when it has one.
     #[serde(default)]
     pub grid: Option<GridCoords>,
+    /// Logical ID of the point (e.g. ChArUco corner ID), when it has one.
     #[serde(default)]
     pub id: Option<u32>,
 }
@@ -329,11 +340,17 @@ pub struct ResolvedTargetPoint {
 /// Full resolved layout for a single printable target document.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedTargetLayout {
+    /// Page width in millimeters.
     pub page_width_mm: f64,
+    /// Page height in millimeters.
     pub page_height_mm: f64,
+    /// Board top-left origin `[x, y]` on the page, in millimeters.
     pub board_origin_mm: [f64; 2],
+    /// Board width in millimeters.
     pub board_width_mm: f64,
+    /// Board height in millimeters.
     pub board_height_mm: f64,
+    /// Every resolved board point in board-space coordinates.
     pub points: Vec<ResolvedTargetPoint>,
 }
 
@@ -465,7 +482,7 @@ mod tests {
         assert_eq!(spec.cols, board.cols);
         assert_eq!(spec.square_size_mm, 20.0);
         assert_eq!(spec.marker_size_rel, 0.75);
-        assert_eq!(spec.dictionary.name, board.dictionary.name);
+        assert_eq!(spec.dictionary.name(), board.dictionary.name());
         assert_eq!(spec.marker_layout, board.marker_layout);
         assert_eq!(spec.border_bits, 1);
     }

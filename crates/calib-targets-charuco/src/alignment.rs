@@ -12,7 +12,10 @@ use tracing::instrument;
 /// Alignment result between detected markers and a board specification.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoAlignment {
+    /// Grid alignment mapping detected `(i, j)` corners to board coordinates.
     pub alignment: GridAlignment,
+    /// Indices of the marker detections that agreed with the chosen
+    /// alignment (the inlier set).
     pub marker_inliers: Vec<usize>,
 }
 

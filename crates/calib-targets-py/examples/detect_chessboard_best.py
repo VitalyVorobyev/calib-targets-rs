@@ -23,23 +23,22 @@ def main() -> None:
 
     image = load_gray(sys.argv[1])
 
-    # Three configs bracketing the workspace ChESS threshold default
-    # (absolute 15.0). Lower floor for blurry inputs, higher for clean.
+    # ChESS corner detection runs once; the sweep varies only the
+    # chessboard-grid detector parameters.
+    chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
     base = ct.ChessboardParams()
-    loose = ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(8.0)),
-    )
-    tight = ct.ChessboardParams(
-        chess=ct.ChessConfig(threshold=ct.Threshold.absolute(25.0)),
-    )
+    permissive = ct.ChessboardParams(min_labeled_corners=12)
+    single = ct.ChessboardParams(max_components=1)
 
-    result = ct.detect_chessboard_best(image, [base, loose, tight])
+    result = ct.detect_chessboard_best(
+        image, [base, permissive, single], chess_cfg=chess_cfg
+    )
 
     if result is None:
         print("No chessboard detected with any config")
         return
 
-    print(f"corners: {len(result.detection.corners)}")
+    print(f"corners: {len(result.corners)}")
 
 
 if __name__ == "__main__":

@@ -56,8 +56,11 @@ pub enum Admit {
 /// validator during candidate evaluation.
 #[derive(Clone, Copy, Debug)]
 pub struct LabelledNeighbour {
+    /// Index of the neighbour corner in the caller's position array.
     pub idx: usize,
+    /// The neighbour's `(i, j)` grid cell.
     pub at: (i32, i32),
+    /// The neighbour's position in image pixels.
     pub position: Point2<f32>,
 }
 
@@ -155,12 +158,19 @@ pub trait GrowValidator {
 #[non_exhaustive]
 #[derive(Clone, Copy)]
 pub struct FillEdgeCtx<'a> {
+    /// Index of the candidate corner being evaluated.
     pub candidate_idx: usize,
+    /// Index of the already-labelled cardinal neighbour.
     pub neighbour_idx: usize,
+    /// The candidate's prospective `(i, j)` cell.
     pub at_candidate: (i32, i32),
+    /// The cardinal neighbour's `(i, j)` cell.
     pub at_neighbour: (i32, i32),
+    /// The full `(i, j) → corner_idx` labelled map at this point in the grow.
     pub labelled: &'a HashMap<(i32, i32), usize>,
+    /// Corner positions in image pixels, indexed by the values of `labelled`.
     pub positions: &'a [Point2<f32>],
+    /// Scalar fallback cell size in pixels, used when no local estimate exists.
     pub cell_size: f32,
 }
 
@@ -196,6 +206,8 @@ impl Default for GrowParams {
 }
 
 impl GrowParams {
+    /// Construct grow parameters from the interpolation search radius and
+    /// ambiguity factor; `boundary_search_factor` keeps its default.
     pub fn new(attach_search_rel: f32, attach_ambiguity_factor: f32) -> Self {
         Self {
             attach_search_rel,
@@ -217,8 +229,11 @@ pub struct GrowResult {
     pub ambiguous: HashSet<(i32, i32)>,
     /// Positions with no accepted candidate.
     pub holes: HashSet<(i32, i32)>,
-    /// Grid vectors carried forward — overlays / boosters use them.
+    /// Grid `i`-axis vector (pixels per cell) carried forward — overlays
+    /// and boosters use it.
     pub axis_i: Vector2<f32>,
+    /// Grid `j`-axis vector (pixels per cell) carried forward — overlays
+    /// and boosters use it.
     pub axis_j: Vector2<f32>,
     /// Parity shift applied during the post-BFS rebase, modulo 2.
     ///

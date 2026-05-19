@@ -11,7 +11,7 @@ fn write_file(path: &Path, contents: &str) {
 }
 
 #[test]
-fn downstream_can_name_and_modify_corner_redetect_params_with_workspace_types() {
+fn downstream_can_name_and_modify_corner_redetect_params() {
     let dir = tempdir().expect("tempdir");
     let manifest_path = dir.path().join("Cargo.toml");
     let main_path = dir.path().join("src/main.rs");
@@ -21,7 +21,6 @@ fn downstream_can_name_and_modify_corner_redetect_params_with_workspace_types() 
         .and_then(Path::parent)
         .expect("workspace root");
     let aruco_dir = workspace_root.join("crates/calib-targets-aruco");
-    let core_dir = workspace_root.join("crates/calib-targets-core");
 
     write_file(
         &manifest_path,
@@ -34,10 +33,9 @@ edition = "2021"
 [dependencies]
 calib-targets-aruco = {{ path = '{}' }}
 calib-targets-charuco = {{ path = '{charuco_dir}' }}
-calib-targets-core = {{ path = '{}' }}
+chess-corners = "0.11"
 "#,
             aruco_dir.display(),
-            core_dir.display()
         ),
     );
 
@@ -45,7 +43,10 @@ calib-targets-core = {{ path = '{}' }}
         &main_path,
         r#"use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
-use calib_targets_core::{ChessCornerParams, RefinerKind, SaddlePointConfig};
+// Advanced ChESS tuning types come from `chess-corners` directly — the
+// workspace crates re-export only `DetectorConfig` + `OrientationMethod`.
+use chess_corners::low_level::{ChessParams, RefinerKind};
+use chess_corners::SaddlePointConfig;
 
 fn main() {
     let board = CharucoBoardSpec {
@@ -58,7 +59,7 @@ fn main() {
     };
 
     let mut params = CharucoParams::for_board(&board);
-    let mut named = ChessCornerParams::default();
+    let mut named = ChessParams::default();
     named.threshold_rel = 0.05;
     named.min_cluster_size = 1;
     named.refiner = RefinerKind::SaddlePoint(SaddlePointConfig {

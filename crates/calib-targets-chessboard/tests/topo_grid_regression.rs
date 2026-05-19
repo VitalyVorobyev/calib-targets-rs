@@ -3,10 +3,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig, Threshold};
+use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig};
 use calib_targets_chessboard::{
-    trace_topological, Detection, Detector, DetectorParams, GraphBuildAlgorithm,
+    trace_topological, ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
 };
+use chess_corners::Threshold;
 use image::imageops::FilterType;
 use image::{GrayImage, ImageReader};
 use serde::Deserialize;
@@ -118,21 +119,19 @@ fn run_detector(
     img: &GrayImage,
     chess_cfg: &DetectorConfig,
     algorithm: GraphBuildAlgorithm,
-) -> Option<Detection> {
+) -> Option<ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
     Detector::new(params_for(algorithm)).detect(&corners)
 }
 
-fn label_stats(detection: &Detection, context: &str) -> (usize, usize) {
+fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize) {
     let mut labelled: HashMap<(i32, i32), (f32, f32)> = HashMap::new();
-    for corner in &detection.target.corners {
+    for corner in &detection.corners {
         assert!(
             corner.position.x.is_finite() && corner.position.y.is_finite(),
             "{context}: non-finite corner position"
         );
-        let grid = corner
-            .grid
-            .expect("chessboard detections carry grid coords");
+        let grid = corner.grid;
         assert!(
             labelled
                 .insert((grid.i, grid.j), (corner.position.x, corner.position.y))
@@ -188,7 +187,7 @@ fn label_stats(detection: &Detection, context: &str) -> (usize, usize) {
     (labelled.len(), holes)
 }
 
-fn assert_gate(case: &ImageCase, name: &str, gate: &Gate, detection: Option<Detection>) {
+fn assert_gate(case: &ImageCase, name: &str, gate: &Gate, detection: Option<ChessboardDetection>) {
     if gate.diagnostic_only {
         return;
     }
@@ -261,7 +260,7 @@ fn topo_grid_manifest_gates_hold() {
             let mut params = params_for(GraphBuildAlgorithm::Topological);
             params.min_labeled_corners = gate.min_labeled_corners;
             if let Some(deg) = gate.axis_align_tol_deg {
-                params.topological.axis_align_tol_rad = deg.to_radians();
+                params.tuning.topological.axis_align_tol_rad = deg.to_radians();
             }
             let trace = trace_topological(&default_corners, &params)
                 .unwrap_or_else(|e| panic!("{} diagnostic trace: {e}", case.path));

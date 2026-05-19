@@ -12,52 +12,115 @@ use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{
-    Detection as ChessDetection, Detector as ChessDetector, GraphBuildAlgorithm,
+    ChessboardDetection, Detector as ChessDetector, GraphBuildAlgorithm,
 };
-use calib_targets_core::GrayImageView;
+use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use log::{debug, warn};
+
+/// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
+/// the ChArUco corner-mapping / marker-sampling stages consume. Every
+/// corner the chessboard detector emits is a validated labelled grid
+/// point, so all of them carry a non-optional `grid`.
+fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetection {
+    let corners = chess
+        .corners
+        .iter()
+        .map(|c| LabeledCorner::new(c.position, c.score).with_grid(c.grid))
+        .collect();
+    TargetDetection::new(TargetKind::Chessboard, corners)
+}
 
 /// Rich per-frame diagnostics captured by [`CharucoDetector::detect_with_diagnostics`].
 ///
 /// One entry per chessboard connected component the detector tried to
 /// match; fail-early stages (no chessboard) produce an empty list.
 #[derive(Clone, Debug, Default, serde::Serialize)]
+#[non_exhaustive]
 pub struct CharucoDetectDiagnostics {
+    /// One entry per chessboard connected component the detector tried
+    /// to match.
     pub components: Vec<ComponentDiagnostics>,
+    /// Total number of markers decoded out of candidate cells, **before**
+    /// alignment-based inlier filtering, summed across the components that
+    /// contributed to the returned [`CharucoDetectionResult`].
+    ///
+    /// `raw_marker_count - result.markers.len()` is the number of raw
+    /// marker decodings rejected by the alignment stage.
+    pub raw_marker_count: usize,
+    /// Raw decodings whose id mapped to a valid board position that
+    /// **disagreed** with the chosen alignment. This is the
+    /// self-consistency wrong-id count used by the internal charuco
+    /// benchmark: it excludes pure dictionary-noise decodings whose id did
+    /// not correspond to any marker on this board.
+    pub raw_marker_wrong_id_count: usize,
 }
 
+/// Per-component diagnostics for one chessboard connected component.
 #[derive(Clone, Debug, serde::Serialize)]
+#[non_exhaustive]
 pub struct ComponentDiagnostics {
+    /// Zero-based index of this component.
     pub index: usize,
+    /// Number of chessboard corners in this component.
     pub chess_corner_count: usize,
+    /// Number of candidate marker cells extracted from this component.
     pub candidate_cell_count: usize,
     /// Which matcher branch produced this component. Callers get the
     /// board-level diagnostics only when
     /// [`CharucoParams::use_board_level_matcher`] is `true`.
     pub matcher: MatcherDiagKind,
+    /// Board-level matcher diagnostics; populated only when the
+    /// board-level matcher ran (see `matcher`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board: Option<BoardMatchDiagnostics>,
     /// Final detection outcome for this component.
     pub outcome: ComponentOutcome,
 }
 
+/// Which marker-matching branch produced a component's result.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum MatcherDiagKind {
+    /// The legacy per-marker alignment matcher.
     Legacy,
+    /// The board-level coherent-hypothesis matcher.
     BoardLevel,
 }
 
+/// Final outcome of detecting one chessboard component.
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum ComponentOutcome {
+    /// The component yielded a detection.
     Ok {
+        /// Number of markers in the component's detection.
         markers: usize,
+        /// Number of ChArUco corners in the component's detection.
         charuco_corners: usize,
+        /// Raw markers decoded for this component before alignment-based
+        /// inlier filtering.
+        raw_marker_count: usize,
+        /// Raw decodings for this component whose id disagreed with the
+        /// chosen alignment.
+        raw_marker_wrong_id_count: usize,
     },
+    /// The component produced no detection.
     Failed {
+        /// Human-readable reason the component failed.
         reason: String,
     },
+}
+
+/// Per-component raw marker counts captured before alignment-based inlier
+/// filtering. Threaded alongside each component's [`CharucoDetectionResult`]
+/// so [`merge_charuco_results`] can sum the winning group into
+/// [`CharucoDetectDiagnostics`].
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct RawMarkerCounts {
+    pub raw_marker_count: usize,
+    pub raw_marker_wrong_id_count: usize,
 }
 
 #[cfg(feature = "tracing")]
@@ -84,10 +147,10 @@ impl CharucoDetector {
         // OpenCV metadata even though their minimum inter-code Hamming distance
         // is large (e.g. 10 for 36h10), so we skip capping in that case and let
         // the user control error tolerance directly.
-        let max_hamming = if board_cfg.dictionary.max_correction_bits > 0 {
+        let max_hamming = if board_cfg.dictionary.max_correction_bits() > 0 {
             params
                 .max_hamming
-                .min(board_cfg.dictionary.max_correction_bits)
+                .min(board_cfg.dictionary.max_correction_bits())
         } else {
             params.max_hamming
         };
@@ -181,8 +244,8 @@ impl CharucoDetector {
             warn!(
                 "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, cluster_tol={:.1} deg, max_components={}",
                 corners.len(),
-                self.params.chessboard.min_corner_strength,
-                self.params.chessboard.cluster_tol_deg,
+                self.params.chessboard.tuning.min_corner_strength,
+                self.params.chessboard.tuning.cluster_tol_deg,
                 self.params.chessboard.max_components,
             );
             return (Err(CharucoDetectError::ChessboardNotDetected), diagnostics);
@@ -193,11 +256,11 @@ impl CharucoDetector {
             components.len(),
             components
                 .iter()
-                .map(|c| c.target.corners.len())
+                .map(|c| c.corners.len())
                 .collect::<Vec<_>>()
         );
 
-        let mut results: Vec<CharucoDetectionResult> = Vec::new();
+        let mut results: Vec<(CharucoDetectionResult, RawMarkerCounts)> = Vec::new();
         for (i, chessboard) in components.iter().enumerate() {
             let min_inliers = if i == 0 {
                 self.params.min_marker_inliers
@@ -207,13 +270,13 @@ impl CharucoDetector {
 
             let (result, comp_diag) = self.detect_component(image, chessboard, min_inliers, i);
             match result {
-                Ok(result) => {
+                Ok((result, raw_counts)) => {
                     debug!(
                         "component {i}: {} corners, {} markers",
-                        result.detection.corners.len(),
+                        result.corners.len(),
                         result.markers.len()
                     );
-                    results.push(result);
+                    results.push((result, raw_counts));
                 }
                 Err(e) => {
                     debug!("component {i} failed: {e}");
@@ -226,27 +289,41 @@ impl CharucoDetector {
             return (Err(CharucoDetectError::NoMarkers), diagnostics);
         }
 
-        let merged = if results.len() == 1 {
-            results.into_iter().next().unwrap()
+        // Single-component and merged paths agree: the raw counts carried
+        // into `diagnostics` are exactly those of the components that
+        // contributed to the returned result.
+        let (merged, raw_counts) = if results.len() == 1 {
+            let (result, raw_counts) = results.into_iter().next().unwrap();
+            (result, raw_counts)
         } else {
             merge_charuco_results(results)
         };
+        diagnostics.raw_marker_count = raw_counts.raw_marker_count;
+        diagnostics.raw_marker_wrong_id_count = raw_counts.raw_marker_wrong_id_count;
         (Ok(merged), diagnostics)
     }
 
     /// Run the full charuco pipeline on a single chessboard component.
+    ///
+    /// On success returns the component's [`CharucoDetectionResult`] paired
+    /// with its [`RawMarkerCounts`] (raw pre-inlier-filter totals); the
+    /// counts are merged into [`CharucoDetectDiagnostics`] by the caller.
     fn detect_component(
         &self,
         image: &GrayImageView<'_>,
-        chessboard: &ChessDetection,
+        chessboard: &ChessboardDetection,
         min_marker_inliers: usize,
         component_index: usize,
     ) -> (
-        Result<CharucoDetectionResult, CharucoDetectError>,
+        Result<(CharucoDetectionResult, RawMarkerCounts), CharucoDetectError>,
         ComponentDiagnostics,
     ) {
-        let inliers: Vec<usize> = (0..chessboard.target.corners.len()).collect();
-        let mut corner_map = build_corner_map(&chessboard.target.corners, &inliers);
+        // Adapt the typed chessboard result into the generic
+        // `TargetDetection` the corner-mapping / marker-sampling stages
+        // expect. Every labelled corner is an inlier by construction.
+        let chessboard = chessboard_detection_to_target(chessboard);
+        let inliers: Vec<usize> = (0..chessboard.corners.len()).collect();
+        let mut corner_map = build_corner_map(&chessboard.corners, &inliers);
         let corner_redetect_params = to_chess_params(&self.params.corner_redetect_params);
         smooth_grid_corners(
             &mut corner_map,
@@ -262,7 +339,7 @@ impl CharucoDetector {
             cells.len()
         );
 
-        let chess_corner_count = chessboard.target.corners.len();
+        let chess_corner_count = chessboard.corners.len();
         let candidate_cell_count = cells.len();
         let scan_cfg = self.params.scan.clone();
 
@@ -379,7 +456,7 @@ impl CharucoDetector {
             return (Err(err), comp_diag);
         }
 
-        let detection = map_charuco_corners(&self.board, &chessboard.target, &alignment);
+        let detection = map_charuco_corners(&self.board, &chessboard, &alignment);
         debug!(
             "mapped {} ChArUco corners before validation",
             detection.corners.len()
@@ -406,18 +483,24 @@ impl CharucoDetector {
             ComponentOutcome::Ok {
                 markers: markers.len(),
                 charuco_corners: detection.corners.len(),
+                raw_marker_count,
+                raw_marker_wrong_id_count,
             },
             board_diag,
         );
 
         (
-            Ok(CharucoDetectionResult {
-                detection,
-                markers,
-                alignment: alignment.alignment,
-                raw_marker_count,
-                raw_marker_wrong_id_count,
-            }),
+            Ok((
+                CharucoDetectionResult::from_target_detection(
+                    detection,
+                    markers,
+                    alignment.alignment,
+                ),
+                RawMarkerCounts {
+                    raw_marker_count,
+                    raw_marker_wrong_id_count,
+                },
+            )),
             comp_diag,
         )
     }

@@ -10,14 +10,14 @@ use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
-use calib_targets_core::{DetectorConfig, Threshold};
+use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
     render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
     PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec, RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-use chess_corners::Detector as ChessCornerDetector;
+use chess_corners::{Detector as ChessCornerDetector, Threshold};
 use wasm_bindgen::prelude::*;
 
 use convert::adapt_chess_corner;
@@ -517,9 +517,9 @@ pub fn detect_marker_board(
 /// Returns a `PuzzleBoardDetectionResult` JS object. Throws on error.
 /// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
 ///
-/// The returned `decode` block mirrors the Rust `serde_json` shape,
-/// including soft-mode diagnostics such as `score_margin` and the
-/// runner-up hypothesis when available.
+/// The returned `decode` block carries the compact decode summary.
+/// Soft-mode runner-up scoring evidence is available from
+/// `detect_puzzleboard_with_diagnostics`.
 #[wasm_bindgen]
 pub fn detect_puzzleboard(
     width: u32,
@@ -543,6 +543,136 @@ pub fn detect_puzzleboard(
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostics-channel detection
+//
+// Each `detect_*_with_diagnostics` runs the detector's `*_with_diagnostics`
+// Rust path and returns a `{ result, diagnostics }` JS object. `result` is
+// the same payload the corresponding `detect_*` function returns; on a
+// failed detection it is `null`. `diagnostics` mirrors the Rust diagnostics
+// struct's `serde_json` shape and carries a looser stability promise than
+// the result API. See `typescript-extras.d.ts` for the object shapes.
+// ---------------------------------------------------------------------------
+
+/// Detect a chessboard grid and additionally return the diagnostics channel.
+///
+/// Returns a `{ result, diagnostics }` object. `result` is a
+/// `ChessboardDetectionResult` (or `null` when no board is found);
+/// `diagnostics` is the `ChessboardDebugFrame` introspection payload, which
+/// also embeds the detection under its own `detection` field.
+#[wasm_bindgen]
+pub fn detect_chessboard_with_diagnostics(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let cb_params: DetectorParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
+
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector = ChessDetector::new(cb_params);
+    let frame = detector.detect_with_diagnostics(&corners);
+    to_js(&serde_json::json!({
+        "result": frame.detection,
+        "diagnostics": frame,
+    }))
+}
+
+/// Detect a ChArUco board and additionally return the diagnostics channel.
+///
+/// Returns a `{ result, diagnostics }` object. `result` is a
+/// `CharucoDetectionResult` (or `null` when detection fails);
+/// `diagnostics` is the `CharucoDetectDiagnostics` payload — produced even
+/// on a failed frame so callers can render the failure mode.
+#[wasm_bindgen]
+pub fn detect_charuco_with_diagnostics(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
+
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector =
+        CharucoDetector::new(charuco_params).map_err(|e| JsError::new(&e.to_string()))?;
+    let view = make_view(pixels, width, height);
+    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    to_js(&serde_json::json!({
+        "result": result.ok(),
+        "diagnostics": diagnostics,
+    }))
+}
+
+/// Detect a marker board and additionally return the diagnostics channel.
+///
+/// Returns a `{ result, diagnostics }` object. `result` is a
+/// `MarkerBoardDetectionResult` (or `null` when no board is found).
+/// `diagnostics` is the `MarkerBoardDiagnostics` payload, or `null` when
+/// detection fails — the marker-board diagnostics channel only yields
+/// evidence on a successful detection.
+#[wasm_bindgen]
+pub fn detect_marker_board_with_diagnostics(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let mb_params: MarkerBoardParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
+
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector = MarkerBoardDetector::new(mb_params);
+    let view = make_view(pixels, width, height);
+    match detector.detect_from_image_and_corners_with_diagnostics(&view, &corners) {
+        Some((result, diagnostics)) => to_js(&serde_json::json!({
+            "result": result,
+            "diagnostics": diagnostics,
+        })),
+        None => to_js(&serde_json::json!({
+            "result": serde_json::Value::Null,
+            "diagnostics": serde_json::Value::Null,
+        })),
+    }
+}
+
+/// Detect a PuzzleBoard and additionally return the diagnostics channel.
+///
+/// Returns a `{ result, diagnostics }` object. `result` is a
+/// `PuzzleBoardDetectionResult` (or `null` when detection fails);
+/// `diagnostics` is the `PuzzleBoardDiagnostics` payload — produced even on
+/// a failed decode so callers can render the sampled edge observations.
+#[wasm_bindgen]
+pub fn detect_puzzleboard_with_diagnostics(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    chess_cfg: JsValue,
+    params: JsValue,
+) -> Result<JsValue, JsError> {
+    validate_gray(pixels, width, height)?;
+    let puzzle_params: PuzzleBoardParams = from_js(params)?;
+    let chess = resolve_chess_cfg(chess_cfg)?;
+
+    let corners = detect_corners_impl(pixels, width, height, &chess);
+    let detector =
+        PuzzleBoardDetector::new(puzzle_params).map_err(|e| JsError::new(&e.to_string()))?;
+    let view = make_view(pixels, width, height);
+    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    to_js(&serde_json::json!({
+        "result": result.ok(),
+        "diagnostics": diagnostics,
+    }))
+}
+
+// ---------------------------------------------------------------------------
 // Multi-config sweep detection
 // ---------------------------------------------------------------------------
 
@@ -550,25 +680,29 @@ pub fn detect_puzzleboard(
 ///
 /// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found
 /// with any config.
+/// If `chess_cfg` is provided, it is used for corner detection across every
+/// sweep config; otherwise the workspace-default ChESS settings are used.
 #[wasm_bindgen]
 pub fn detect_chessboard_best(
     width: u32,
     height: u32,
     pixels: &[u8],
+    chess_cfg: JsValue,
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let configs: Vec<DetectorParams> = from_js(configs)?;
 
-    // The chessboard detector does not carry a ChESS config; reuse the
-    // default ChESS settings for corner detection across every sweep config.
-    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
+    // The sweep configs only vary chessboard-detector tuning, not the
+    // ChESS corner detector; resolve one ChESS config and reuse the
+    // detected corners across every sweep config.
+    let chess = resolve_chess_cfg(chess_cfg)?;
     let corners = detect_corners_impl(pixels, width, height, &chess);
 
     let best = configs
         .iter()
         .filter_map(|params| ChessDetector::new(params.clone()).detect(&corners))
-        .max_by_key(|d| d.target.corners.len());
+        .max_by_key(|d| d.corners.len());
     to_js(&best)
 }
 
@@ -601,8 +735,8 @@ pub fn detect_charuco_best(
         match detector.detect(&view, &corners) {
             Ok(result) => {
                 let dominated = best.as_ref().is_some_and(|b| {
-                    (b.markers.len(), b.detection.corners.len())
-                        >= (result.markers.len(), result.detection.corners.len())
+                    (b.markers.len(), b.corners.len())
+                        >= (result.markers.len(), result.corners.len())
                 });
                 if !dominated {
                     best = Some(result);
@@ -645,7 +779,7 @@ pub fn detect_marker_board_best(
             let view = make_view(pixels, width, height);
             detector.detect_from_image_and_corners(&view, &corners)
         })
-        .max_by_key(|r| r.detection.corners.len());
+        .max_by_key(|r| r.corners.len());
     to_js(&best)
 }
 
@@ -680,11 +814,8 @@ pub fn detect_puzzleboard_best(
         match detector.detect(&view, &corners) {
             Ok(result) => {
                 let dominated = best.as_ref().is_some_and(|b| {
-                    let new_key = (
-                        result.detection.corners.len(),
-                        result.decode.mean_confidence,
-                    );
-                    let old_key = (b.detection.corners.len(), b.decode.mean_confidence);
+                    let new_key = (result.corners.len(), result.decode.mean_confidence);
+                    let old_key = (b.corners.len(), b.decode.mean_confidence);
                     old_key.0 > new_key.0 || (old_key.0 == new_key.0 && old_key.1 >= new_key.1)
                 });
                 if !dominated {

@@ -10,13 +10,18 @@ use serde::{Deserialize, Serialize};
 /// (rotations/reflections on the square grid). Those are provided in [`GRID_TRANSFORMS_D4`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GridTransform {
+    /// Row-0, column-0 entry — the `i`-contribution to the new `i`.
     pub a: i32,
+    /// Row-0, column-1 entry — the `j`-contribution to the new `i`.
     pub b: i32,
+    /// Row-1, column-0 entry — the `i`-contribution to the new `j`.
     pub c: i32,
+    /// Row-1, column-1 entry — the `j`-contribution to the new `j`.
     pub d: i32,
 }
 
 impl GridTransform {
+    /// The identity transform — leaves `(i, j)` unchanged.
     pub const IDENTITY: GridTransform = GridTransform {
         a: 1,
         b: 0,
@@ -51,11 +56,14 @@ impl GridTransform {
 /// A grid alignment: `dst = transform(src) + translation`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GridAlignment {
+    /// Linear part — applied to the source coordinates before translation.
     pub transform: GridTransform,
+    /// Integer `[Δi, Δj]` offset added after `transform`.
     pub translation: [i32; 2],
 }
 
 impl GridAlignment {
+    /// The identity alignment — identity transform with zero translation.
     pub const IDENTITY: GridAlignment = GridAlignment {
         transform: GridTransform::IDENTITY,
         translation: [0, 0],
@@ -71,6 +79,7 @@ impl GridAlignment {
         }
     }
 
+    /// Invert the alignment if its linear part is unimodular (det = ±1).
     pub fn inverse(&self) -> Option<GridAlignment> {
         let inv = self.transform.inverse()?;
         let [tx, ty] = self.translation;
