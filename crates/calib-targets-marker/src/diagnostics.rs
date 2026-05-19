@@ -11,7 +11,7 @@
 //! ([`crate::MarkerBoardDetectionResult`]).
 //!
 //! A consumer that only needs to *use* a marker-board detection wants the
-//! labelled corners ([`crate::MarkerBoardDetectionResult::detection`]) and the
+//! labelled corners ([`crate::MarkerBoardDetectionResult::corners`]) and the
 //! grid alignment ([`crate::MarkerBoardDetectionResult::alignment`]) — never
 //! the contents of this module. The fields here exist only to *understand* or
 //! debug a detection.
@@ -38,7 +38,7 @@ use crate::types::CircleMatch;
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MarkerBoardDiagnostics {
     /// Per-corner provenance: for labelled corner `k` in
-    /// [`crate::MarkerBoardDetectionResult::detection`], `inliers[k]` is the
+    /// [`crate::MarkerBoardDetectionResult::corners`], `inliers[k]` is the
     /// index of the source ChESS corner in the detector's input slice.
     pub inliers: Vec<usize>,
     /// Every circle hypothesis scored in image space, before matching.
