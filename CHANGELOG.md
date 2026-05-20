@@ -7,19 +7,6 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## [Unreleased]
-
-### Changed
-
-- Bumped `chess-corners` `0.10 → 0.11`. The 0.11 release is a
-  re-export reorganization with no algorithm or signature change:
-  low-level pipeline stages, parameter structs, and scratch buffers
-  (`ChessParams`, `RefinerKind`, `Refiner`, `Roi`, `ImageView`,
-  `PyramidParams`, `chess_response_u8_patch`,
-  `detect_corners_from_response_with_refiner`) moved from the crate
-  root into the new `chess_corners::low_level` module. Workspace
-  imports were updated accordingly; no behavior change.
-
 ## 0.9.0
 
 Migrates the workspace onto `chess-corners` 0.10 (skipping the
@@ -354,6 +341,18 @@ the diagnostics channel for every detector:
   `{ result, diagnostics }` object; the diagnostics object shapes are
   declared in `typescript-extras.d.ts`.
 
+- **Printable-target bundle API restructured around `StemPaths` to add a
+  fourth (DXF) output.** `calib_targets_print::stem_paths()` now returns
+  a `StemPaths` struct (`#[non_exhaustive]` + `StemPaths::from_stem`
+  constructor) carrying `json` / `svg` / `png` / `dxf` paths, replacing
+  the previous `(json, svg, png)` tuple. `GeneratedTargetBundle` and
+  `WrittenTargetBundle` switch to `#[non_exhaustive]` with named
+  constructors and gain `dxf_text: String` / `dxf_path: PathBuf` fields
+  respectively. The Python `GeneratedTargetBundle` and
+  `WrittenTargetBundle` dataclasses mirror the new fields, and both the
+  Rust and Python CLIs now print the fourth (DXF) path alongside the
+  existing three.
+
 ### Added
 
 - `crates/calib-targets-py/python_tests/test_chess_config_rust_roundtrip.py`
@@ -361,6 +360,44 @@ the diagnostics channel for every detector:
   payload deserializes cleanly through Rust's `serde_json`
   layer on a real test image. Guards against the silent
   dict-shape drift that fixtures alone cannot catch.
+
+- **DXF as a fourth printable-target output, scoped to chrome-on-glass
+  photolithography handoff.** Producers' CAM stacks need a vector DXF
+  with exact mm geometry, which neither the rasterized PNG nor the
+  SVG satisfies. The writer
+  (`crates/calib-targets-print/src/render_dxf.rs`) is AutoCAD R2000
+  (AC1015) ASCII, hand-rolled (no external `dxf` dependency),
+  `$INSUNITS = 4` (mm), 6-decimal coordinates (1 nm precision), Y-up
+  cartesian with origin at the page bottom-left (matches LibreCAD /
+  FreeCAD / CAM350; SVG's Y-down would mirror the board), single
+  `PATTERN` layer carrying only `Fill::Black` regions (the chrome
+  side; debug annotations never reach the DXF even when
+  `render.debug_annotations` is on, since the DXF is rendered from
+  the pre-debug scene snapshot), closed `LWPOLYLINE` for rectangles
+  and native `CIRCLE` for circles (no polygonal approximation).
+  Covered by a checked-in golden snapshot
+  (`crates/calib-targets-print/tests/golden/charuco_3x3_dict4x4_50.dxf`)
+  plus unit tests for Y-flip, polarity filter, header, and entity
+  counts, and by Rust + Python CLI integration tests that assert the
+  `.dxf` is written with `AC1015` + mm units. FFI and WASM are
+  intentionally untouched (neither exposes printable-target
+  generation today).
+
+- `crates/calib-targets-py/examples/generate_charuco_26x26_4x4_1000.py`
+  — sample script that emits a 26×26 `DICT_4X4_1000` ChArUco at
+  1.5 mm cell size, the kind of fine-pitch board that photolith is
+  the right process for.
+
+### Changed
+
+- Bumped `chess-corners` `0.10 → 0.11`. The 0.11 release is a
+  re-export reorganization with no algorithm or signature change:
+  low-level pipeline stages, parameter structs, and scratch buffers
+  (`ChessParams`, `RefinerKind`, `Refiner`, `Roi`, `ImageView`,
+  `PyramidParams`, `chess_response_u8_patch`,
+  `detect_corners_from_response_with_refiner`) moved from the crate
+  root into the new `chess_corners::low_level` module. Workspace
+  imports were updated accordingly; no user-facing behaviour change.
 
 ### Notes
 
