@@ -99,11 +99,21 @@ const result = detect_charuco(width, height, gray, default_chess_config(), param
 ### PuzzleBoard
 
 ```typescript
-import { default_puzzleboard_params, detect_puzzleboard, render_puzzleboard_png } from "@vitavision/calib-targets";
+import {
+  default_puzzleboard_params,
+  detect_puzzleboard,
+  render_puzzleboard_bundle,
+  render_puzzleboard_png,
+} from "@vitavision/calib-targets";
 
-// Generate a PuzzleBoard PNG in the browser (only PuzzleBoard is supported
-// in-browser — see Limitations below).
+// Generate a PuzzleBoard PNG in the browser (PNG-only fast path).
 const pngBytes = render_puzzleboard_png(10, 10, /*square_mm=*/20.0, /*dpi=*/150);
+
+// Full JSON / SVG / PNG / DXF bundle — the DXF is the photolith-handoff
+// flavor (AC1015 ASCII, $INSUNITS = 4 mm, Y-up cartesian).
+const bundle = render_puzzleboard_bundle(10, 10, 20.0, 150);
+// bundle.json_text  / bundle.svg_text  / bundle.dxf_text  → string
+// bundle.png_bytes                                         → Uint8Array
 
 const params = default_puzzleboard_params(10, 10);
 params.decode.search_mode = { kind: "fixed_board" };
@@ -112,6 +122,10 @@ const result = detect_puzzleboard(width, height, gray, default_chess_config(), p
 // Every corner has an absolute master ID: result.corners[0].id
 // Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().
 ```
+
+The same `render_*_bundle` and `render_*_png` pairs exist for the other
+three target families (`render_chessboard_*`, `render_charuco_*`,
+`render_marker_board_*`); see the Functions table below.
 
 ### Marker board
 
@@ -176,7 +190,14 @@ edges and soft-mode runner-up scoring evidence are returned by
 | `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetectionResult \| null` |
 | `detect_marker_board_best(w, h, px, configs)` | `MarkerBoardDetectionResult \| null` |
 | `rgba_to_gray(rgba, w, h)` | `Uint8Array` (BT.601) |
-| `render_puzzleboard_png(rows, cols, square_mm, dpi)` | `Uint8Array` — encoded PNG |
+| `render_chessboard_png(inner_rows, inner_cols, square_mm, dpi)` | `Uint8Array` — encoded PNG |
+| `render_charuco_png(rows, cols, square_mm, marker_size_rel, dict_name, dpi)` | `Uint8Array` |
+| `render_marker_board_png(inner_rows, inner_cols, square_mm, dpi)` | `Uint8Array` |
+| `render_puzzleboard_png(rows, cols, square_mm, dpi)` | `Uint8Array` |
+| `render_chessboard_bundle(inner_rows, inner_cols, square_mm, dpi)` | `GeneratedTargetBundle` — `{ json_text, svg_text, png_bytes, dxf_text }` |
+| `render_charuco_bundle(rows, cols, square_mm, marker_size_rel, dict_name, dpi)` | `GeneratedTargetBundle` |
+| `render_marker_board_bundle(inner_rows, inner_cols, square_mm, dpi)` | `GeneratedTargetBundle` |
+| `render_puzzleboard_bundle(rows, cols, square_mm, dpi)` | `GeneratedTargetBundle` |
 | `default_chess_config()`, `default_chessboard_params()`, `default_puzzleboard_params(rows, cols)`, `default_marker_board_params()` | baseline configs |
 
 ## Tuning difficult cases
@@ -198,11 +219,6 @@ edges and soft-mode runner-up scoring evidence are returned by
 
 ## Limitations
 
-- **Target PNG generation is only supported for PuzzleBoard**
-  (`render_puzzleboard_png`). Chessboard, ChArUco, and marker-board PNG /
-  SVG generation is not yet exposed in the WASM surface — generate them
-  server-side via the Rust facade, the [Python bindings][py], or the
-  [workspace CLI][cli], and serve the images to the browser.
 - **One target per image.** Same as the Rust facade; multiple boards in
   one frame are not disambiguated.
 - **No fisheye support.** Moderate distortion is handled; severe wide-angle
@@ -212,9 +228,6 @@ edges and soft-mode runner-up scoring evidence are returned by
 - **No threads.** The WASM build is single-threaded; heavy detection on
   4K images may exceed 100 ms per call. Consider Web Workers.
 - **No `detect_chessboard_debug`.** The debug-frame helper is Rust-only.
-
-[py]: https://pypi.org/project/calib-targets/
-[cli]: https://crates.io/crates/calib-targets
 
 ## Build from source
 

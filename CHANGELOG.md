@@ -351,7 +351,10 @@ the diagnostics channel for every detector:
   respectively. The Python `GeneratedTargetBundle` and
   `WrittenTargetBundle` dataclasses mirror the new fields, and both the
   Rust and Python CLIs now print the fourth (DXF) path alongside the
-  existing three.
+  existing three. The WASM bindings gain a new
+  `GeneratedTargetBundle` JS object shape (declared in
+  `typescript-extras.d.ts`) returned by the new `render_*_bundle`
+  functions — see the Added entry below.
 
 ### Added
 
@@ -379,9 +382,23 @@ the diagnostics channel for every detector:
   (`crates/calib-targets-print/tests/golden/charuco_3x3_dict4x4_50.dxf`)
   plus unit tests for Y-flip, polarity filter, header, and entity
   counts, and by Rust + Python CLI integration tests that assert the
-  `.dxf` is written with `AC1015` + mm units. FFI and WASM are
-  intentionally untouched (neither exposes printable-target
-  generation today).
+  `.dxf` is written with `AC1015` + mm units. FFI does not expose
+  printable-target generation today, so its surface is untouched.
+
+- **WASM gains full printable-target parity: `render_chessboard_bundle`,
+  `render_charuco_bundle`, `render_marker_board_bundle`, and
+  `render_puzzleboard_bundle`.** Each returns a `GeneratedTargetBundle`
+  JS object — `{ json_text, svg_text, png_bytes, dxf_text }` — where
+  `png_bytes` is a `Uint8Array` (single-buffer copy across the WASM
+  boundary, browser-friendly) and the other three are strings. The
+  existing `render_chessboard_png` / `render_charuco_png` /
+  `render_marker_board_png` / `render_puzzleboard_png` PNG-only
+  helpers remain as convenience wrappers around the same pipeline.
+  The stale "only PuzzleBoard supports PNG generation" Limitation has
+  been removed from the WASM README, and the new
+  `GeneratedTargetBundle` shape is documented in
+  `crates/calib-targets-wasm/typescript-extras.d.ts`. Closes the
+  WASM-vs-Rust DXF parity gap surfaced during pre-release review.
 
 - `crates/calib-targets-py/examples/generate_charuco_26x26_4x4_1000.py`
   — sample script that emits a 26×26 `DICT_4X4_1000` ChArUco at

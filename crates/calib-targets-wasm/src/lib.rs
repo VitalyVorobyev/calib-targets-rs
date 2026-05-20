@@ -13,8 +13,9 @@ use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
 use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
-    render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PageSize,
-    PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec, RenderOptions, TargetSpec,
+    render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, GeneratedTargetBundle,
+    MarkerBoardTargetSpec, PageSize, PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec,
+    RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::{Detector as ChessCornerDetector, Threshold};
@@ -235,18 +236,56 @@ fn fitted_document(
     doc
 }
 
-/// Synthesise a chessboard target PNG in memory.
+/// Build a target spec + fitted document and render the full
+/// JSON/SVG/PNG/DXF bundle, returning a JS object with
+/// `json_text` / `svg_text` / `png_bytes` (as a `Uint8Array`) / `dxf_text`.
 ///
-/// `inner_rows` / `inner_cols` are the **inner-corner** counts (each ≥ 2). The
-/// printed board has `(inner_cols + 1) × (inner_rows + 1)` squares of side
-/// `square_size_mm`. Returns raw PNG bytes for a tightly-cropped page.
-#[wasm_bindgen]
-pub fn render_chessboard_png(
+/// `png_bytes` is materialised as a `Uint8Array` rather than a plain JS
+/// array so binary data crosses the boundary as a typed array
+/// (single-buffer copy, browser-friendly).
+fn render_bundle_to_js(
+    target: TargetSpec,
+    width_mm: f64,
+    height_mm: f64,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let bundle = render_target_bundle(&fitted_document(target, width_mm, height_mm, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    bundle_to_js(&bundle)
+}
+
+fn bundle_to_js(bundle: &GeneratedTargetBundle) -> Result<JsValue, JsError> {
+    let obj = js_sys::Object::new();
+    let png = js_sys::Uint8Array::new_with_length(bundle.png_bytes.len() as u32);
+    png.copy_from(&bundle.png_bytes);
+    js_sys::Reflect::set(
+        &obj,
+        &JsValue::from_str("json_text"),
+        &bundle.json_text.as_str().into(),
+    )
+    .map_err(|_| JsError::new("failed to set json_text on bundle object"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &JsValue::from_str("svg_text"),
+        &bundle.svg_text.as_str().into(),
+    )
+    .map_err(|_| JsError::new("failed to set svg_text on bundle object"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("png_bytes"), &png.into())
+        .map_err(|_| JsError::new("failed to set png_bytes on bundle object"))?;
+    js_sys::Reflect::set(
+        &obj,
+        &JsValue::from_str("dxf_text"),
+        &bundle.dxf_text.as_str().into(),
+    )
+    .map_err(|_| JsError::new("failed to set dxf_text on bundle object"))?;
+    Ok(obj.into())
+}
+
+fn chessboard_target_and_extent(
     inner_rows: u32,
     inner_cols: u32,
     square_size_mm: f64,
-    dpi: u32,
-) -> Result<Vec<u8>, JsError> {
+) -> (TargetSpec, f64, f64) {
     let target = TargetSpec::Chessboard(ChessboardTargetSpec {
         inner_rows,
         inner_cols,
@@ -254,25 +293,16 @@ pub fn render_chessboard_png(
     });
     let w = f64::from(inner_cols + 1) * square_size_mm;
     let h = f64::from(inner_rows + 1) * square_size_mm;
-    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    Ok(bundle.png_bytes)
+    (target, w, h)
 }
 
-/// Synthesise a ChArUco target PNG in memory.
-///
-/// `rows` / `cols` are **square counts** (≥ 2 each). `marker_size_rel` ∈ (0, 1]
-/// sets the marker side length relative to the square; `dictionary_name` is
-/// one of [`list_aruco_dictionaries`] (e.g. `"DICT_4X4_50"`).
-#[wasm_bindgen]
-pub fn render_charuco_png(
+fn charuco_target_and_extent(
     rows: u32,
     cols: u32,
     square_size_mm: f64,
     marker_size_rel: f64,
     dictionary_name: &str,
-    dpi: u32,
-) -> Result<Vec<u8>, JsError> {
+) -> Result<(TargetSpec, f64, f64), JsError> {
     let dictionary = builtin_dictionary(dictionary_name).ok_or_else(|| {
         JsError::new(&format!(
             "unknown dictionary {:?}; call list_aruco_dictionaries() for valid names",
@@ -290,23 +320,14 @@ pub fn render_charuco_png(
     });
     let w = f64::from(cols) * square_size_mm;
     let h = f64::from(rows) * square_size_mm;
-    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    Ok(bundle.png_bytes)
+    Ok((target, w, h))
 }
 
-/// Synthesise a marker-board target PNG in memory.
-///
-/// `inner_rows` / `inner_cols` are the **inner-corner** counts. The default
-/// 3-circle layout from `MarkerBoardTargetSpec::default_circles` is used; for
-/// custom circle placement, call the Rust facade directly.
-#[wasm_bindgen]
-pub fn render_marker_board_png(
+fn marker_board_target_and_extent(
     inner_rows: u32,
     inner_cols: u32,
     square_size_mm: f64,
-    dpi: u32,
-) -> Result<Vec<u8>, JsError> {
+) -> (TargetSpec, f64, f64) {
     let target = TargetSpec::MarkerBoard(MarkerBoardTargetSpec {
         inner_rows,
         inner_cols,
@@ -316,24 +337,14 @@ pub fn render_marker_board_png(
     });
     let w = f64::from(inner_cols + 1) * square_size_mm;
     let h = f64::from(inner_rows + 1) * square_size_mm;
-    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    Ok(bundle.png_bytes)
+    (target, w, h)
 }
 
-/// Synthesise a PuzzleBoard target PNG in memory.
-///
-/// Returns the raw PNG bytes for a `rows × cols` board at the given DPI.
-/// The caller typically hands these to an `<img>` or `createImageBitmap`
-/// for display, then rasterises to a canvas to obtain an RGBA buffer that
-/// can be fed back into [`detect_puzzleboard`] for a round-trip demo.
-#[wasm_bindgen]
-pub fn render_puzzleboard_png(
+fn puzzleboard_target_and_extent(
     rows: u32,
     cols: u32,
     square_size_mm: f64,
-    dpi: u32,
-) -> Result<Vec<u8>, JsError> {
+) -> (TargetSpec, f64, f64) {
     let target = TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec {
         rows,
         cols,
@@ -344,6 +355,154 @@ pub fn render_puzzleboard_png(
     });
     let w = f64::from(cols) * square_size_mm;
     let h = f64::from(rows) * square_size_mm;
+    (target, w, h)
+}
+
+/// Synthesise a chessboard target as a full JSON / SVG / PNG / DXF bundle.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts (each ≥ 2). The
+/// printed board has `(inner_cols + 1) × (inner_rows + 1)` squares of side
+/// `square_size_mm`. Returns a `GeneratedTargetBundle` JS object — see the
+/// TypeScript type declaration in `typescript-extras.d.ts`.
+#[wasm_bindgen]
+pub fn render_chessboard_bundle(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let (target, w, h) = chessboard_target_and_extent(inner_rows, inner_cols, square_size_mm);
+    render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Synthesise a ChArUco target as a full JSON / SVG / PNG / DXF bundle.
+///
+/// `rows` / `cols` are **square counts** (≥ 2 each). `marker_size_rel` ∈ (0, 1]
+/// sets the marker side length relative to the square; `dictionary_name` is
+/// one of [`list_aruco_dictionaries`] (e.g. `"DICT_4X4_50"`). Returns a
+/// `GeneratedTargetBundle` JS object.
+#[wasm_bindgen]
+pub fn render_charuco_bundle(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let (target, w, h) =
+        charuco_target_and_extent(rows, cols, square_size_mm, marker_size_rel, dictionary_name)?;
+    render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Synthesise a marker-board target as a full JSON / SVG / PNG / DXF bundle.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts. The default
+/// 3-circle layout from `MarkerBoardTargetSpec::default_circles` is used; for
+/// custom circle placement, call the Rust facade directly. Returns a
+/// `GeneratedTargetBundle` JS object.
+#[wasm_bindgen]
+pub fn render_marker_board_bundle(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let (target, w, h) = marker_board_target_and_extent(inner_rows, inner_cols, square_size_mm);
+    render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Synthesise a PuzzleBoard target as a full JSON / SVG / PNG / DXF bundle.
+///
+/// Returns a `GeneratedTargetBundle` JS object for a `rows × cols` board at
+/// the given DPI. Callers that only need the PNG can use
+/// [`render_puzzleboard_png`] instead.
+#[wasm_bindgen]
+pub fn render_puzzleboard_bundle(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let (target, w, h) = puzzleboard_target_and_extent(rows, cols, square_size_mm);
+    render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Synthesise a chessboard target PNG in memory.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts (each ≥ 2). The
+/// printed board has `(inner_cols + 1) × (inner_rows + 1)` squares of side
+/// `square_size_mm`. Returns raw PNG bytes for a tightly-cropped page. Use
+/// [`render_chessboard_bundle`] for the full JSON / SVG / PNG / DXF output.
+#[wasm_bindgen]
+pub fn render_chessboard_png(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (target, w, h) = chessboard_target_and_extent(inner_rows, inner_cols, square_size_mm);
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Synthesise a ChArUco target PNG in memory.
+///
+/// `rows` / `cols` are **square counts** (≥ 2 each). `marker_size_rel` ∈ (0, 1]
+/// sets the marker side length relative to the square; `dictionary_name` is
+/// one of [`list_aruco_dictionaries`] (e.g. `"DICT_4X4_50"`). Use
+/// [`render_charuco_bundle`] for the full JSON / SVG / PNG / DXF output.
+#[wasm_bindgen]
+pub fn render_charuco_png(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    marker_size_rel: f64,
+    dictionary_name: &str,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (target, w, h) =
+        charuco_target_and_extent(rows, cols, square_size_mm, marker_size_rel, dictionary_name)?;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Synthesise a marker-board target PNG in memory.
+///
+/// `inner_rows` / `inner_cols` are the **inner-corner** counts. The default
+/// 3-circle layout from `MarkerBoardTargetSpec::default_circles` is used; for
+/// custom circle placement, call the Rust facade directly. Use
+/// [`render_marker_board_bundle`] for the full JSON / SVG / PNG / DXF output.
+#[wasm_bindgen]
+pub fn render_marker_board_png(
+    inner_rows: u32,
+    inner_cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (target, w, h) = marker_board_target_and_extent(inner_rows, inner_cols, square_size_mm);
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Synthesise a PuzzleBoard target PNG in memory.
+///
+/// Returns the raw PNG bytes for a `rows × cols` board at the given DPI.
+/// The caller typically hands these to an `<img>` or `createImageBitmap`
+/// for display, then rasterises to a canvas to obtain an RGBA buffer that
+/// can be fed back into [`detect_puzzleboard`] for a round-trip demo. Use
+/// [`render_puzzleboard_bundle`] for the full JSON / SVG / PNG / DXF output.
+#[wasm_bindgen]
+pub fn render_puzzleboard_png(
+    rows: u32,
+    cols: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (target, w, h) = puzzleboard_target_and_extent(rows, cols, square_size_mm);
     let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
         .map_err(|e| JsError::new(&e.to_string()))?;
     Ok(bundle.png_bytes)
