@@ -121,6 +121,7 @@ def _emit_bundle(doc: PrintableTargetDocument, out_stem: Path) -> None:
     print(written.json_path)
     print(written.svg_path)
     print(written.png_path)
+    print(written.dxf_path)
 
 
 def _cmd_generate(args: argparse.Namespace) -> int:

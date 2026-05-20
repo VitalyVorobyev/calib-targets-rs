@@ -31,6 +31,11 @@ def _assert_bundle(stem: Path) -> None:
     assert stem.with_suffix(".json").is_file()
     assert stem.with_suffix(".svg").is_file()
     assert stem.with_suffix(".png").is_file()
+    dxf_path = stem.with_suffix(".dxf")
+    assert dxf_path.is_file()
+    dxf = dxf_path.read_text()
+    assert "AC1015" in dxf
+    assert "$INSUNITS\n 70\n4\n" in dxf
 
 
 def test_helper_roundtrip_chessboard() -> None:

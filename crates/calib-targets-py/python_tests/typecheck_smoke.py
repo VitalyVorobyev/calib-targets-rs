@@ -39,5 +39,7 @@ print_doc = ct.PrintableTargetDocument(
 )
 bundle = ct.render_target_bundle(print_doc)
 _json_text: str = bundle.json_text
+_dxf_text: str = bundle.dxf_text
 written = ct.write_target_bundle(print_doc, "tmpdata/typecheck_printable")
 _png_path: str = written.png_path
+_dxf_path: str = written.dxf_path

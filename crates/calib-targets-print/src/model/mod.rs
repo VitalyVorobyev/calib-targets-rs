@@ -354,14 +354,56 @@ pub struct ResolvedTargetLayout {
     pub points: Vec<ResolvedTargetPoint>,
 }
 
-/// Compute the JSON, SVG, and PNG output paths from a stem.
-pub fn stem_paths(output_stem: impl AsRef<Path>) -> (PathBuf, PathBuf, PathBuf) {
-    let stem = output_stem.as_ref();
-    (
-        stem.with_extension("json"),
-        stem.with_extension("svg"),
-        stem.with_extension("png"),
-    )
+/// Output file paths derived from a single stem.
+///
+/// Returned by [`StemPaths::from_stem`] (and the legacy [`stem_paths`]
+/// shim). `#[non_exhaustive]` so that adding new bundled formats — DXF
+/// today, potentially PDF or Gerber tomorrow — is not a breaking
+/// change for cross-crate consumers, who must construct instances
+/// through the named constructor.
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StemPaths {
+    /// `<stem>.json` — printable target description.
+    pub json: PathBuf,
+    /// `<stem>.svg` — vector rendering.
+    pub svg: PathBuf,
+    /// `<stem>.png` — raster rendering.
+    pub png: PathBuf,
+    /// `<stem>.dxf` — chrome-on-glass photolithography handoff (pattern only).
+    pub dxf: PathBuf,
+}
+
+impl StemPaths {
+    /// Compute the four output paths from a single filename stem by
+    /// appending the format-specific extensions.
+    pub fn from_stem(output_stem: impl AsRef<Path>) -> Self {
+        let stem = output_stem.as_ref();
+        Self {
+            json: stem.with_extension("json"),
+            svg: stem.with_extension("svg"),
+            png: stem.with_extension("png"),
+            dxf: stem.with_extension("dxf"),
+        }
+    }
+}
+
+/// Free-function alias for [`StemPaths::from_stem`].
+///
+/// Returns the four output paths derived from a single stem
+/// (`<stem>.json`, `.svg`, `.png`, `.dxf`) as a [`StemPaths`] struct.
+///
+/// **0.9.0 breaking change:** prior versions of this function
+/// returned a `(PathBuf, PathBuf, PathBuf)` tuple covering only the
+/// JSON / SVG / PNG outputs. With the addition of DXF as a fourth
+/// printable-target output, the return type is now the
+/// `#[non_exhaustive]` [`StemPaths`] struct so future formats can be
+/// added without further breaking changes. Callers that destructured
+/// the tuple should switch to named-field access on the returned
+/// struct (`let paths = stem_paths(...); paths.json` / `.svg` /
+/// `.png` / `.dxf`).
+pub fn stem_paths(output_stem: impl AsRef<Path>) -> StemPaths {
+    StemPaths::from_stem(output_stem)
 }
 
 #[cfg(test)]

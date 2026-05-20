@@ -10,6 +10,37 @@
 // to a `_:` arm.
 
 // ---------------------------------------------------------------------------
+// Printable-target generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Full output of `render_*_bundle` — mirrors Rust
+ * `calib_targets_print::GeneratedTargetBundle`.
+ *
+ * `png_bytes` is materialised as a `Uint8Array` so binary data crosses
+ * the WASM boundary as a typed array (single-buffer copy) rather than as
+ * a generic JS array of integers.
+ *
+ * The Rust struct is `#[non_exhaustive]`; consumers should default any
+ * future-format `switch` and avoid exhaustive destructuring.
+ */
+export interface GeneratedTargetBundle {
+  /** The target description serialized as JSON. */
+  json_text: string;
+  /** The target rendered as an SVG document. */
+  svg_text: string;
+  /** The target rendered as PNG image bytes. */
+  png_bytes: Uint8Array;
+  /**
+   * The target rendered as a DXF document — chrome-on-glass
+   * photolithography handoff (`AC1015` ASCII, `$INSUNITS = 4` mm,
+   * Y-up cartesian, single `PATTERN` layer carrying `Fill::Black`
+   * regions only).
+   */
+  dxf_text: string;
+}
+
+// ---------------------------------------------------------------------------
 // Geometry primitives
 // ---------------------------------------------------------------------------
 

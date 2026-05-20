@@ -27,12 +27,13 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub(crate) enum Command {
-    /// Render a validated printable spec into .json, .svg, and .png outputs.
+    /// Render a validated printable spec into .json, .svg, .png, and .dxf outputs.
     Generate {
         /// Path to the input printable spec JSON file.
         #[arg(long)]
         spec: PathBuf,
-        /// Output path stem; the CLI writes `stem.json`, `stem.svg`, and `stem.png`.
+        /// Output path stem; the CLI writes `stem.json`, `stem.svg`,
+        /// `stem.png`, and `stem.dxf` (chrome-on-glass photolith handoff).
         #[arg(long)]
         out_stem: PathBuf,
     },

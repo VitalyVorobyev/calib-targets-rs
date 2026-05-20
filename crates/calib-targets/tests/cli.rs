@@ -15,6 +15,15 @@ fn assert_bundle_written(stem: &std::path::Path) {
     assert!(stem.with_extension("json").is_file());
     assert!(stem.with_extension("svg").is_file());
     assert!(stem.with_extension("png").is_file());
+    let dxf_path = stem.with_extension("dxf");
+    assert!(dxf_path.is_file(), "expected DXF output at {dxf_path:?}");
+    // DXF must carry the photolith-handoff fingerprint: AC1015 and mm units.
+    let dxf = fs::read_to_string(&dxf_path).expect("read dxf");
+    assert!(dxf.contains("AC1015"), "DXF should declare AC1015 ACADVER");
+    assert!(
+        dxf.contains("$INSUNITS\n 70\n4\n"),
+        "DXF should declare $INSUNITS = 4 (mm)"
+    );
 }
 
 #[test]

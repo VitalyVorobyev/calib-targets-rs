@@ -29,6 +29,11 @@ def test_render_target_bundle() -> None:
     assert bundle.json_text
     assert bundle.svg_text.startswith("<?xml")
     assert bundle.png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    # DXF is the chrome-on-glass photolith handoff format: R2000 ASCII,
+    # mm units, single PATTERN layer.
+    assert "AC1015" in bundle.dxf_text
+    assert "$INSUNITS\n 70\n4\n" in bundle.dxf_text
+    assert bundle.dxf_text.rstrip().endswith("EOF")
 
 
 def test_write_target_bundle(tmp_path: Path) -> None:
@@ -37,5 +42,10 @@ def test_write_target_bundle(tmp_path: Path) -> None:
     assert json_path.is_file()
     assert Path(written.svg_path).is_file()
     assert Path(written.png_path).is_file()
+    dxf_path = Path(written.dxf_path)
+    assert dxf_path.is_file()
+    dxf = dxf_path.read_text()
+    assert "AC1015" in dxf
+    assert "$INSUNITS\n 70\n4\n" in dxf
     doc = json.loads(json_path.read_text())
     assert doc["target"]["kind"] == "marker_board"

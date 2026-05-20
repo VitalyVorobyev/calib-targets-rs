@@ -3,11 +3,13 @@
 
 mod model;
 mod render;
+mod render_dxf;
 
 pub use model::{
     stem_paths, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
     PageOrientation, PageSize, PageSpec, PrintableTargetDocument, PrintableTargetError,
-    PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, ResolvedTargetPoint, TargetSpec,
+    PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, ResolvedTargetPoint, StemPaths,
+    TargetSpec,
 };
 pub use render::{render_target_bundle, GeneratedTargetBundle};
 
@@ -16,7 +18,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/// Paths of the three files written by [`write_target_bundle`].
+/// Paths of the files written by [`write_target_bundle`].
+///
+/// Marked `#[non_exhaustive]` (mirroring [`StemPaths`] and
+/// [`GeneratedTargetBundle`]) so that future formats can be added
+/// without breaking cross-crate consumers.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WrittenTargetBundle {
     /// Path of the written JSON description.
@@ -25,10 +32,29 @@ pub struct WrittenTargetBundle {
     pub svg_path: PathBuf,
     /// Path of the written PNG rendering.
     pub png_path: PathBuf,
+    /// Path of the written DXF rendering (photolithography handoff).
+    pub dxf_path: PathBuf,
 }
 
-/// Render a printable target and write the JSON, SVG, and PNG files to
-/// disk, deriving their paths from `output_stem`.
+impl WrittenTargetBundle {
+    /// Construct a `WrittenTargetBundle` from explicit per-format paths.
+    pub fn new(
+        json_path: PathBuf,
+        svg_path: PathBuf,
+        png_path: PathBuf,
+        dxf_path: PathBuf,
+    ) -> Self {
+        Self {
+            json_path,
+            svg_path,
+            png_path,
+            dxf_path,
+        }
+    }
+}
+
+/// Render a printable target and write the JSON, SVG, PNG, and DXF
+/// files to disk, deriving their paths from `output_stem`.
 ///
 /// Parent directories are created as needed.
 pub fn write_target_bundle(
@@ -36,20 +62,19 @@ pub fn write_target_bundle(
     output_stem: impl AsRef<Path>,
 ) -> Result<WrittenTargetBundle, PrintableTargetError> {
     let bundle = render_target_bundle(document)?;
-    let (json_path, svg_path, png_path) = stem_paths(output_stem);
-    for path in [&json_path, &svg_path, &png_path] {
+    let paths = StemPaths::from_stem(output_stem);
+    for path in [&paths.json, &paths.svg, &paths.png, &paths.dxf] {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
     }
-    fs::write(&json_path, bundle.json_text)?;
-    fs::write(&svg_path, bundle.svg_text)?;
-    fs::write(&png_path, bundle.png_bytes)?;
-    Ok(WrittenTargetBundle {
-        json_path,
-        svg_path,
-        png_path,
-    })
+    fs::write(&paths.json, bundle.json_text)?;
+    fs::write(&paths.svg, bundle.svg_text)?;
+    fs::write(&paths.png, bundle.png_bytes)?;
+    fs::write(&paths.dxf, bundle.dxf_text)?;
+    Ok(WrittenTargetBundle::new(
+        paths.json, paths.svg, paths.png, paths.dxf,
+    ))
 }
 
 #[cfg(test)]
@@ -69,5 +94,6 @@ mod tests {
         assert!(paths.json_path.is_file());
         assert!(paths.svg_path.is_file());
         assert!(paths.png_path.is_file());
+        assert!(paths.dxf_path.is_file());
     }
 }
