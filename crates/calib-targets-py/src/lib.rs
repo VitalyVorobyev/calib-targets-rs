@@ -820,6 +820,7 @@ fn render_target_bundle(py: Python<'_>, document: &Bound<'_, PyAny>) -> PyResult
     out.set_item("json_text", bundle.json_text)?;
     out.set_item("svg_text", bundle.svg_text)?;
     out.set_item("png_bytes", PyBytes::new(py, &bundle.png_bytes))?;
+    out.set_item("dxf_text", bundle.dxf_text)?;
     Ok(out.into_any().unbind())
 }
 
@@ -840,6 +841,7 @@ fn write_target_bundle(
     out.set_item("json_path", written.json_path.to_string_lossy().as_ref())?;
     out.set_item("svg_path", written.svg_path.to_string_lossy().as_ref())?;
     out.set_item("png_path", written.png_path.to_string_lossy().as_ref())?;
+    out.set_item("dxf_path", written.dxf_path.to_string_lossy().as_ref())?;
     Ok(out.into_any().unbind())
 }
 

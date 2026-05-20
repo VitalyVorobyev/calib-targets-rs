@@ -27,7 +27,8 @@ pub enum GenCommand {
 
 #[derive(Args, Debug)]
 pub struct ChessboardGenArgs {
-    /// Output path stem; the CLI writes `stem.json`, `stem.svg`, and `stem.png`.
+    /// Output path stem; the CLI writes `stem.json`, `stem.svg`,
+    /// `stem.png`, and `stem.dxf` (chrome-on-glass photolith handoff).
     #[arg(long)]
     pub out_stem: PathBuf,
     #[arg(long)]
@@ -184,5 +185,6 @@ fn emit_bundle(doc: &PrintableTargetDocument, out_stem: PathBuf) -> Result<(), C
     println!("{}", written.json_path.display());
     println!("{}", written.svg_path.display());
     println!("{}", written.png_path.display());
+    println!("{}", written.dxf_path.display());
     Ok(())
 }

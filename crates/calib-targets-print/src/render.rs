@@ -8,8 +8,8 @@ use calib_targets_marker::CirclePolarity;
 use calib_targets_puzzleboard::code_maps;
 use png::{BitDepth, ColorType, Encoder, PixelDimensions, Unit};
 
-#[derive(Clone, Copy, Debug)]
-enum Fill {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Fill {
     White,
     Black,
     Accent,
@@ -37,7 +37,7 @@ impl Fill {
 }
 
 #[derive(Clone, Debug)]
-enum Primitive {
+pub(crate) enum Primitive {
     Rect {
         x_mm: f64,
         y_mm: f64,
@@ -54,14 +54,14 @@ enum Primitive {
 }
 
 #[derive(Clone, Debug)]
-struct Scene {
-    width_mm: f64,
-    height_mm: f64,
-    primitives: Vec<Primitive>,
+pub(crate) struct Scene {
+    pub(crate) width_mm: f64,
+    pub(crate) height_mm: f64,
+    pub(crate) primitives: Vec<Primitive>,
 }
 
 impl Scene {
-    fn new(width_mm: f64, height_mm: f64) -> Self {
+    pub(crate) fn new(width_mm: f64, height_mm: f64) -> Self {
         Self {
             width_mm,
             height_mm,
@@ -71,7 +71,13 @@ impl Scene {
 }
 
 /// A rendered printable-target bundle: the JSON description plus the
-/// SVG and PNG renderings, all held in memory.
+/// SVG, PNG, and DXF renderings, all held in memory.
+///
+/// Marked `#[non_exhaustive]` because the rendered-formats list is
+/// expected to keep growing (e.g. PDF, Gerber); new fields are
+/// therefore not a breaking change for downstream consumers, who must
+/// construct instances via [`GeneratedTargetBundle::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct GeneratedTargetBundle {
     /// The target description serialized as JSON.
@@ -80,9 +86,26 @@ pub struct GeneratedTargetBundle {
     pub svg_text: String,
     /// The target rendered as PNG image bytes.
     pub png_bytes: Vec<u8>,
+    /// The target rendered as a DXF document — chrome-on-glass
+    /// photolithography handoff. Carries the `Fill::Black` regions
+    /// only (single layer `PATTERN`), Y-flipped into DXF cartesian.
+    pub dxf_text: String,
 }
 
-/// Render a printable-target document into an in-memory JSON/SVG/PNG bundle.
+impl GeneratedTargetBundle {
+    /// Construct a bundle from its rendered formats.
+    pub fn new(json_text: String, svg_text: String, png_bytes: Vec<u8>, dxf_text: String) -> Self {
+        Self {
+            json_text,
+            svg_text,
+            png_bytes,
+            dxf_text,
+        }
+    }
+}
+
+/// Render a printable-target document into an in-memory JSON / SVG /
+/// PNG / DXF bundle.
 pub fn render_target_bundle(
     document: &PrintableTargetDocument,
 ) -> Result<GeneratedTargetBundle, PrintableTargetError> {
@@ -96,14 +119,19 @@ pub fn render_target_bundle(
         fill: Fill::White,
     });
     build_board_scene(&mut scene, document, &layout)?;
+    // DXF must never carry debug annotations — render it from the
+    // pre-debug scene snapshot so a hardware handoff file is always
+    // pattern-only, even when the SVG/PNG render is annotated.
+    let dxf_text = crate::render_dxf::render_dxf(&scene);
     if document.render.debug_annotations {
         add_debug_primitives(&mut scene, document, &layout);
     }
-    Ok(GeneratedTargetBundle {
-        json_text: document.to_json_pretty()?,
-        svg_text: render_svg(&scene),
-        png_bytes: render_png(&scene, &document.render)?,
-    })
+    Ok(GeneratedTargetBundle::new(
+        document.to_json_pretty()?,
+        render_svg(&scene),
+        render_png(&scene, &document.render)?,
+        dxf_text,
+    ))
 }
 
 fn build_board_scene(

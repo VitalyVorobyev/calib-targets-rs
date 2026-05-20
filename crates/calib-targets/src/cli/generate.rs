@@ -11,5 +11,6 @@ pub fn run(spec: PathBuf, out_stem: PathBuf) -> Result<(), CliError> {
     println!("{}", written.json_path.display());
     println!("{}", written.svg_path.display());
     println!("{}", written.png_path.display());
+    println!("{}", written.dxf_path.display());
     Ok(())
 }

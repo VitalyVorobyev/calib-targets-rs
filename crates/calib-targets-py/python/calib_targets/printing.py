@@ -321,6 +321,7 @@ class GeneratedTargetBundle:
     json_text: str
     svg_text: str
     png_bytes: bytes
+    dxf_text: str
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GeneratedTargetBundle:
@@ -331,6 +332,7 @@ class GeneratedTargetBundle:
             json_text=str(data["json_text"]),
             svg_text=str(data["svg_text"]),
             png_bytes=bytes(png_bytes),
+            dxf_text=str(data["dxf_text"]),
         )
 
 
@@ -339,6 +341,7 @@ class WrittenTargetBundle:
     json_path: str
     svg_path: str
     png_path: str
+    dxf_path: str
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> WrittenTargetBundle:
@@ -346,6 +349,7 @@ class WrittenTargetBundle:
             json_path=str(data["json_path"]),
             svg_path=str(data["svg_path"]),
             png_path=str(data["png_path"]),
+            dxf_path=str(data["dxf_path"]),
         )
 
 

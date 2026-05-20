@@ -125,13 +125,44 @@ Ready-to-use JSON templates live under
   dimensions match `square_size_mm`. Scale-to-fit in a print dialog will
   silently break calibration.
 
+## Hardware handoff (DXF)
+
+Every bundle additionally writes a `<stem>.dxf` alongside the JSON /
+SVG / PNG. The DXF is tuned for chrome-on-glass photolithography
+producers:
+
+- AutoCAD R2000 ASCII (`AC1015`), `$INSUNITS = 4` (mm), 6-decimal
+  coordinates (1 nm precision).
+- Y-up cartesian, origin at the bottom-left of the page — what
+  LibreCAD, KLayout, FreeCAD, and CAM350 read by default.
+- Single layer `PATTERN` (color 7) carrying only the
+  `Fill::Black` regions of the scene — these are the chrome features
+  for a typical chrome-on-glass workflow. Debug annotations never
+  reach the DXF, even when `render.debug_annotations = true`.
+- Rectangles emit as closed `LWPOLYLINE`s with 4 vertices; circles
+  emit as native `CIRCLE` entities (no polygonal approximation).
+- Polarity inversion, board outline, fiducials, and traceability
+  text are intentionally absent — confirm with the producer whether
+  they need the chrome or clear side and add downstream.
+
+The hand-rolled writer lives in [`render_dxf.rs`][writer-src] and is
+covered by a checked-in golden snapshot
+([`tests/golden/charuco_3x3_dict4x4_50.dxf`][golden]) plus unit tests
+for the Y-flip, polarity filter, and entity counts.
+
+[writer-src]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/calib-targets-print/src/render_dxf.rs
+[golden]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/calib-targets-print/tests/golden/charuco_3x3_dict4x4_50.dxf
+
 ## Limitations
 
-- **SVG / PNG only.** No direct PDF; convert from SVG if needed.
+- **No PDF.** Convert from SVG if needed.
 - **Single target per document.** No tiling of multiple boards on one
   page.
 - **Deterministic render.** No randomisation seed; identical input
   produces identical output.
+- **DXF carries pattern only.** No board outline, registration
+  fiducials, or traceability text — add downstream or open a ticket
+  if your producer needs them in-file.
 
 ## Facade vs this crate
 

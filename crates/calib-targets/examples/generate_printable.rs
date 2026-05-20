@@ -16,5 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", written.json_path.display());
     println!("{}", written.svg_path.display());
     println!("{}", written.png_path.display());
+    println!("{}", written.dxf_path.display());
     Ok(())
 }
