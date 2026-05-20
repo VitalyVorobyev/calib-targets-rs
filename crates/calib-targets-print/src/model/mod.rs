@@ -388,11 +388,20 @@ impl StemPaths {
     }
 }
 
-/// Convenience constructor that returns the four output paths derived
-/// from a single stem (`<stem>.json`, `.svg`, `.png`, `.dxf`).
+/// Free-function alias for [`StemPaths::from_stem`].
 ///
-/// Thin wrapper around [`StemPaths::from_stem`] for callers that
-/// previously consumed the (json, svg, png) tuple shape.
+/// Returns the four output paths derived from a single stem
+/// (`<stem>.json`, `.svg`, `.png`, `.dxf`) as a [`StemPaths`] struct.
+///
+/// **0.9.0 breaking change:** prior versions of this function
+/// returned a `(PathBuf, PathBuf, PathBuf)` tuple covering only the
+/// JSON / SVG / PNG outputs. With the addition of DXF as a fourth
+/// printable-target output, the return type is now the
+/// `#[non_exhaustive]` [`StemPaths`] struct so future formats can be
+/// added without further breaking changes. Callers that destructured
+/// the tuple should switch to named-field access on the returned
+/// struct (`let paths = stem_paths(...); paths.json` / `.svg` /
+/// `.png` / `.dxf`).
 pub fn stem_paths(output_stem: impl AsRef<Path>) -> StemPaths {
     StemPaths::from_stem(output_stem)
 }

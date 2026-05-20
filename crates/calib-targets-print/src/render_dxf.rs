@@ -17,6 +17,15 @@
 //!   polarity downstream.
 //! - All `Fill::White / Accent / Guide` primitives are dropped so debug
 //!   annotations cannot leak into a hardware-handoff file.
+//! - **R2000 entity records carry handles (`5`) and a `*Model_Space`
+//!   owner reference (`330 1F`).** A `BLOCK_RECORD` table declares the
+//!   `*Model_Space` (handle `1F`) and `*Paper_Space` (handle `1E`)
+//!   block records, and matching `BLOCK`/`ENDBLK` records appear in the
+//!   `BLOCKS` section. Permissive viewers (LibreCAD/FreeCAD/AutoCAD)
+//!   load files without these tags, but strict CAM importers
+//!   (CAM350-class tools used in chrome-on-glass producers) can reject
+//!   or partially drop geometry without them — costly for a hardware
+//!   handoff.
 //!
 //! This writer is intentionally hand-rolled (no external `dxf` crate):
 //! the entity set is tiny and the format is plain ASCII, so a direct
@@ -29,14 +38,53 @@
 
 use crate::render::{Fill, Primitive, Scene};
 
+// AutoCAD-conventional fixed handles for the symbol-table records that
+// own ENTITIES-section geometry. Keeping these as named constants lets
+// us reuse them as the `330 owner` payload on every entity without
+// stringly-typed duplication.
+const MODEL_SPACE_RECORD_HANDLE: &str = "1F";
+const PAPER_SPACE_RECORD_HANDLE: &str = "1E";
+const MODEL_SPACE_BLOCK_HANDLE: &str = "20";
+const MODEL_SPACE_ENDBLK_HANDLE: &str = "21";
+const PAPER_SPACE_BLOCK_HANDLE: &str = "22";
+const PAPER_SPACE_ENDBLK_HANDLE: &str = "23";
+
+// First handle assigned to a user-emitted entity. Sits above the fixed
+// symbol-table handles (`10`..`23`) used in this writer, so allocations
+// can never collide.
+const FIRST_ENTITY_HANDLE: u32 = 0x100;
+
+/// Sequential handle allocator that hands out unique hex strings to
+/// every emitted entity. R2000 requires each entity record to carry a
+/// unique `5 <handle>` tag; strict CAM importers (CAM350-class)
+/// reject entities without one.
+struct HandleAlloc {
+    next: u32,
+}
+
+impl HandleAlloc {
+    fn new() -> Self {
+        Self {
+            next: FIRST_ENTITY_HANDLE,
+        }
+    }
+
+    fn next_handle(&mut self) -> String {
+        let h = self.next;
+        self.next += 1;
+        format!("{h:X}")
+    }
+}
+
 /// Render a scene to a DXF document, emitting only the `Fill::Black`
 /// primitives flipped into a Y-up coordinate system.
 pub(crate) fn render_dxf(scene: &Scene) -> String {
-    let mut out = String::with_capacity(2048 + scene.primitives.len() * 64);
+    let mut out = String::with_capacity(2048 + scene.primitives.len() * 96);
+    let mut handles = HandleAlloc::new();
     write_header(&mut out, scene);
     write_tables(&mut out);
     write_blocks(&mut out);
-    write_entities(&mut out, scene);
+    write_entities(&mut out, scene, &mut handles);
     push_pair(&mut out, 0, "EOF");
     out
 }
@@ -151,17 +199,94 @@ fn write_tables(out: &mut String) {
 
     push_pair(out, 0, "ENDTAB");
 
+    // BLOCK_RECORD table — declares the symbol-table records that own
+    // entities. AutoCAD-convention fixed handles: 1F=*Model_Space,
+    // 1E=*Paper_Space. Strict CAM importers (CAM350-class) require the
+    // owner handle on each entity (group code 330) to reference a
+    // BLOCK_RECORD declared here; without this table they reject the
+    // file as malformed.
+    push_pair(out, 0, "TABLE");
+    push_pair(out, 2, "BLOCK_RECORD");
+    push_int(out, 70, 2);
+
+    push_pair(out, 0, "BLOCK_RECORD");
+    push_pair(out, 5, MODEL_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbSymbolTableRecord");
+    push_pair(out, 100, "AcDbBlockTableRecord");
+    push_pair(out, 2, "*Model_Space");
+
+    push_pair(out, 0, "BLOCK_RECORD");
+    push_pair(out, 5, PAPER_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbSymbolTableRecord");
+    push_pair(out, 100, "AcDbBlockTableRecord");
+    push_pair(out, 2, "*Paper_Space");
+
+    push_pair(out, 0, "ENDTAB");
+
     push_pair(out, 0, "ENDSEC");
 }
 
 fn write_blocks(out: &mut String) {
-    // R2000 readers expect a BLOCKS section to exist, even if empty.
+    // R2000 expects the BLOCKS section to declare *Model_Space and
+    // *Paper_Space blocks. Strict importers cross-check the entity
+    // 330 owner-handle against a BLOCK with a matching ownership chain,
+    // so each block carries an explicit handle (5) and owner reference
+    // (330) pointing back at its BLOCK_RECORD in the TABLES section.
     push_pair(out, 0, "SECTION");
     push_pair(out, 2, "BLOCKS");
+
+    // *Model_Space block. ENTITIES-section geometry lives here even
+    // though it is written directly in the ENTITIES section rather
+    // than inlined in this block — the ownership chain is what matters.
+    push_pair(out, 0, "BLOCK");
+    push_pair(out, 5, MODEL_SPACE_BLOCK_HANDLE);
+    push_pair(out, 330, MODEL_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbEntity");
+    push_pair(out, 8, "0");
+    push_pair(out, 100, "AcDbBlockBegin");
+    push_pair(out, 2, "*Model_Space");
+    push_int(out, 70, 0);
+    push_real(out, 10, 0.0);
+    push_real(out, 20, 0.0);
+    push_real(out, 30, 0.0);
+    push_pair(out, 3, "*Model_Space");
+    push_pair(out, 1, "");
+
+    push_pair(out, 0, "ENDBLK");
+    push_pair(out, 5, MODEL_SPACE_ENDBLK_HANDLE);
+    push_pair(out, 330, MODEL_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbEntity");
+    push_pair(out, 8, "0");
+    push_pair(out, 100, "AcDbBlockEnd");
+
+    // *Paper_Space block.
+    push_pair(out, 0, "BLOCK");
+    push_pair(out, 5, PAPER_SPACE_BLOCK_HANDLE);
+    push_pair(out, 330, PAPER_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbEntity");
+    push_int(out, 67, 1);
+    push_pair(out, 8, "0");
+    push_pair(out, 100, "AcDbBlockBegin");
+    push_pair(out, 2, "*Paper_Space");
+    push_int(out, 70, 0);
+    push_real(out, 10, 0.0);
+    push_real(out, 20, 0.0);
+    push_real(out, 30, 0.0);
+    push_pair(out, 3, "*Paper_Space");
+    push_pair(out, 1, "");
+
+    push_pair(out, 0, "ENDBLK");
+    push_pair(out, 5, PAPER_SPACE_ENDBLK_HANDLE);
+    push_pair(out, 330, PAPER_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbEntity");
+    push_int(out, 67, 1);
+    push_pair(out, 8, "0");
+    push_pair(out, 100, "AcDbBlockEnd");
+
     push_pair(out, 0, "ENDSEC");
 }
 
-fn write_entities(out: &mut String, scene: &Scene) {
+fn write_entities(out: &mut String, scene: &Scene, handles: &mut HandleAlloc) {
     push_pair(out, 0, "SECTION");
     push_pair(out, 2, "ENTITIES");
 
@@ -177,7 +302,15 @@ fn write_entities(out: &mut String, scene: &Scene) {
                 if !is_black(*fill) {
                     continue;
                 }
-                write_rect(out, *x_mm, *y_mm, *width_mm, *height_mm, scene.height_mm);
+                write_rect(
+                    out,
+                    *x_mm,
+                    *y_mm,
+                    *width_mm,
+                    *height_mm,
+                    scene.height_mm,
+                    handles,
+                );
             }
             Primitive::Circle {
                 cx_mm,
@@ -188,7 +321,7 @@ fn write_entities(out: &mut String, scene: &Scene) {
                 if !is_black(*fill) {
                     continue;
                 }
-                write_circle(out, *cx_mm, *cy_mm, *radius_mm, scene.height_mm);
+                write_circle(out, *cx_mm, *cy_mm, *radius_mm, scene.height_mm, handles);
             }
         }
     }
@@ -200,6 +333,17 @@ fn is_black(fill: Fill) -> bool {
     matches!(fill, Fill::Black)
 }
 
+/// Common preamble shared by every ENTITIES-section record: type tag,
+/// unique handle (`5`), owner reference (`330` → `*Model_Space` block
+/// record), `AcDbEntity` subclass marker, layer assignment.
+fn push_entity_header(out: &mut String, entity_kind: &str, handles: &mut HandleAlloc, layer: &str) {
+    push_pair(out, 0, entity_kind);
+    push_pair(out, 5, &handles.next_handle());
+    push_pair(out, 330, MODEL_SPACE_RECORD_HANDLE);
+    push_pair(out, 100, "AcDbEntity");
+    push_pair(out, 8, layer);
+}
+
 // Entity writers ------------------------------------------------------------
 
 /// Emit a closed 4-vertex `LWPOLYLINE` for an SVG-frame rectangle,
@@ -208,15 +352,21 @@ fn is_black(fill: Fill) -> bool {
 /// The SVG rect's top-left is `(x_mm, y_mm)` with the Y axis pointing
 /// down; in DXF the same physical rectangle has its bottom-left at
 /// `(x_mm, page_height_mm - y_mm - height_mm)`.
-fn write_rect(out: &mut String, x_mm: f64, y_mm: f64, w_mm: f64, h_mm: f64, page_h_mm: f64) {
+fn write_rect(
+    out: &mut String,
+    x_mm: f64,
+    y_mm: f64,
+    w_mm: f64,
+    h_mm: f64,
+    page_h_mm: f64,
+    handles: &mut HandleAlloc,
+) {
     let x0 = x_mm;
     let x1 = x_mm + w_mm;
     let y_bottom = page_h_mm - y_mm - h_mm;
     let y_top = page_h_mm - y_mm;
 
-    push_pair(out, 0, "LWPOLYLINE");
-    push_pair(out, 8, "PATTERN");
-    push_pair(out, 100, "AcDbEntity");
+    push_entity_header(out, "LWPOLYLINE", handles, "PATTERN");
     push_pair(out, 100, "AcDbPolyline");
     push_int(out, 90, 4); // vertex count
     push_int(out, 70, 1); // closed flag
@@ -233,10 +383,15 @@ fn write_rect(out: &mut String, x_mm: f64, y_mm: f64, w_mm: f64, h_mm: f64, page
 }
 
 /// Emit a native DXF `CIRCLE`, Y-flipped into DXF cartesian.
-fn write_circle(out: &mut String, cx_mm: f64, cy_mm: f64, r_mm: f64, page_h_mm: f64) {
-    push_pair(out, 0, "CIRCLE");
-    push_pair(out, 8, "PATTERN");
-    push_pair(out, 100, "AcDbEntity");
+fn write_circle(
+    out: &mut String,
+    cx_mm: f64,
+    cy_mm: f64,
+    r_mm: f64,
+    page_h_mm: f64,
+    handles: &mut HandleAlloc,
+) {
+    push_entity_header(out, "CIRCLE", handles, "PATTERN");
     push_pair(out, 100, "AcDbCircle");
     push_real(out, 10, cx_mm);
     push_real(out, 20, page_h_mm - cy_mm);
@@ -401,6 +556,106 @@ mod tests {
             let dxf = render_dxf(&scene);
             assert_eq!(count_entities(&dxf, "CIRCLE"), expect_count);
         }
+    }
+
+    #[test]
+    fn entities_carry_unique_handles_and_model_space_owner() {
+        // R2000 / AC1015 requires every ENTITIES-section record to
+        // carry a unique handle (group 5) and an owner-block-record
+        // reference (group 330). Strict CAM importers (CAM350-class)
+        // reject files missing either. This test guards both:
+        //   - every entity has both tags,
+        //   - the handles are unique within the file,
+        //   - the owner reference points at the conventional
+        //     *Model_Space block-record handle declared in
+        //     TABLES → BLOCK_RECORD.
+        let mut scene = Scene::new(60.0, 40.0);
+        // Build a mixed-entity scene so both LWPOLYLINE and CIRCLE
+        // entity paths are exercised. Three rects + two circles = 5
+        // ENTITIES-section records.
+        for i in 0..3 {
+            scene.primitives.push(Primitive::Rect {
+                x_mm: f64::from(i) * 5.0,
+                y_mm: 5.0,
+                width_mm: 4.0,
+                height_mm: 4.0,
+                fill: Fill::Black,
+            });
+        }
+        for i in 0..2 {
+            scene.primitives.push(Primitive::Circle {
+                cx_mm: 30.0 + f64::from(i) * 5.0,
+                cy_mm: 20.0,
+                radius_mm: 1.5,
+                fill: Fill::Black,
+            });
+        }
+        let dxf = render_dxf(&scene);
+
+        // BLOCK_RECORD table must declare *Model_Space with handle 1F
+        // and *Paper_Space with handle 1E (the owner reference target).
+        assert!(
+            dxf.contains("  0\nTABLE\n  2\nBLOCK_RECORD\n"),
+            "BLOCK_RECORD table is required for R2000 conformance"
+        );
+        assert!(dxf.contains("BLOCK_RECORD\n  5\n1F\n"));
+        assert!(dxf.contains("BLOCK_RECORD\n  5\n1E\n"));
+
+        // BLOCKS section must declare both spaces.
+        assert!(dxf.contains("\n  2\n*Model_Space\n"));
+        assert!(dxf.contains("\n  2\n*Paper_Space\n"));
+
+        // Extract the ENTITIES section and walk each record. Each
+        // record block starts with a `  0\n<type>\n` header followed
+        // immediately by `  5\n<handle>\n` and `330\n<owner>\n`.
+        // Prepend a synthetic `\n  0\n` boundary so the very first
+        // entity (which starts the section without a preceding
+        // newline + `0` line) is treated symmetrically with the rest.
+        let entities_body = dxf
+            .split("\n  0\nSECTION\n  2\nENTITIES\n")
+            .nth(1)
+            .expect("ENTITIES section")
+            .split("\n  0\nENDSEC\n")
+            .next()
+            .expect("ENDSEC for ENTITIES");
+        let entities = format!("\n{entities_body}");
+
+        let mut seen_handles = std::collections::HashSet::new();
+        let mut entity_count = 0usize;
+        for chunk in entities.split("\n  0\n").skip(1) {
+            // chunk = "<TYPE>\n  5\n<handle>\n330\n<owner>\n…"
+            let mut lines = chunk.lines();
+            let entity_kind = lines.next().expect("entity kind");
+            // Must be one of our two emitted types.
+            assert!(
+                entity_kind == "LWPOLYLINE" || entity_kind == "CIRCLE",
+                "unexpected entity kind {entity_kind:?}",
+            );
+            // Next pair must be the handle.
+            let handle_code = lines.next().expect("handle code line");
+            let handle = lines.next().expect("handle value line");
+            assert_eq!(
+                handle_code, "  5",
+                "entity {entity_kind} missing handle (group code 5)",
+            );
+            assert!(
+                seen_handles.insert(handle.to_string()),
+                "handle {handle} is not unique within the file",
+            );
+            // Next pair must be the owner reference.
+            let owner_code = lines.next().expect("owner code line");
+            let owner = lines.next().expect("owner value line");
+            assert_eq!(
+                owner_code, "330",
+                "entity {entity_kind} missing owner reference (group code 330)",
+            );
+            assert_eq!(
+                owner, MODEL_SPACE_RECORD_HANDLE,
+                "entity owner must reference *Model_Space (handle {MODEL_SPACE_RECORD_HANDLE})",
+            );
+            entity_count += 1;
+        }
+        assert_eq!(entity_count, 5, "expected 3 rects + 2 circles in the scene");
     }
 
     #[test]

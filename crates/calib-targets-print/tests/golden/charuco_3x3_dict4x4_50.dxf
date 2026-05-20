@@ -113,11 +113,119 @@ CONTINUOUS
   0
 ENDTAB
   0
+TABLE
+  2
+BLOCK_RECORD
+ 70
+2
+  0
+BLOCK_RECORD
+  5
+1F
+100
+AcDbSymbolTableRecord
+100
+AcDbBlockTableRecord
+  2
+*Model_Space
+  0
+BLOCK_RECORD
+  5
+1E
+100
+AcDbSymbolTableRecord
+100
+AcDbBlockTableRecord
+  2
+*Paper_Space
+  0
+ENDTAB
+  0
 ENDSEC
   0
 SECTION
   2
 BLOCKS
+  0
+BLOCK
+  5
+20
+330
+1F
+100
+AcDbEntity
+  8
+0
+100
+AcDbBlockBegin
+  2
+*Model_Space
+ 70
+0
+ 10
+0.000000
+ 20
+0.000000
+ 30
+0.000000
+  3
+*Model_Space
+  1
+
+  0
+ENDBLK
+  5
+21
+330
+1F
+100
+AcDbEntity
+  8
+0
+100
+AcDbBlockEnd
+  0
+BLOCK
+  5
+22
+330
+1E
+100
+AcDbEntity
+ 67
+1
+  8
+0
+100
+AcDbBlockBegin
+  2
+*Paper_Space
+ 70
+0
+ 10
+0.000000
+ 20
+0.000000
+ 30
+0.000000
+  3
+*Paper_Space
+  1
+
+  0
+ENDBLK
+  5
+23
+330
+1E
+100
+AcDbEntity
+ 67
+1
+  8
+0
+100
+AcDbBlockEnd
   0
 ENDSEC
   0
@@ -126,10 +234,14 @@ SECTION
 ENTITIES
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+100
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -154,10 +266,14 @@ AcDbPolyline
 166.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+101
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -182,10 +298,14 @@ AcDbPolyline
 166.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+102
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -210,10 +330,14 @@ AcDbPolyline
 154.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+103
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -238,10 +362,14 @@ AcDbPolyline
 142.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+104
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -266,10 +394,14 @@ AcDbPolyline
 142.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+105
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -294,10 +426,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+106
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -322,10 +458,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+107
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -350,10 +490,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+108
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -378,10 +522,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+109
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -406,10 +554,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -434,10 +586,14 @@ AcDbPolyline
 164.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -462,10 +618,14 @@ AcDbPolyline
 163.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -490,10 +650,14 @@ AcDbPolyline
 163.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -518,10 +682,14 @@ AcDbPolyline
 163.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -546,10 +714,14 @@ AcDbPolyline
 161.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+10F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -574,10 +746,14 @@ AcDbPolyline
 161.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+110
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -602,10 +778,14 @@ AcDbPolyline
 161.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+111
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -630,10 +810,14 @@ AcDbPolyline
 161.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+112
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -658,10 +842,14 @@ AcDbPolyline
 160.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+113
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -686,10 +874,14 @@ AcDbPolyline
 160.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+114
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -714,10 +906,14 @@ AcDbPolyline
 160.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+115
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -742,10 +938,14 @@ AcDbPolyline
 160.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+116
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -770,10 +970,14 @@ AcDbPolyline
 159.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+117
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -798,10 +1002,14 @@ AcDbPolyline
 159.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+118
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -826,10 +1034,14 @@ AcDbPolyline
 159.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+119
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -854,10 +1066,14 @@ AcDbPolyline
 159.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -882,10 +1098,14 @@ AcDbPolyline
 159.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -910,10 +1130,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -938,10 +1162,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -966,10 +1194,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -994,10 +1226,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+11F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1022,10 +1258,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+120
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1050,10 +1290,14 @@ AcDbPolyline
 157.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+121
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1078,10 +1322,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+122
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1106,10 +1354,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+123
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1134,10 +1386,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+124
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1162,10 +1418,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+125
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1190,10 +1450,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+126
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1218,10 +1482,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+127
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1246,10 +1514,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+128
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1274,10 +1546,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+129
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1302,10 +1578,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1330,10 +1610,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1358,10 +1642,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1386,10 +1674,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1414,10 +1706,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1442,10 +1738,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+12F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1470,10 +1770,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+130
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1498,10 +1802,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+131
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1526,10 +1834,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+132
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1554,10 +1866,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+133
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1582,10 +1898,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+134
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1610,10 +1930,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+135
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1638,10 +1962,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+136
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1666,10 +1994,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+137
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1694,10 +2026,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+138
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1722,10 +2058,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+139
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1750,10 +2090,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1778,10 +2122,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1806,10 +2154,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1834,10 +2186,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1862,10 +2218,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1890,10 +2250,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+13F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1918,10 +2282,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+140
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1946,10 +2314,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+141
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -1974,10 +2346,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+142
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2002,10 +2378,14 @@ AcDbPolyline
 152.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+143
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2030,10 +2410,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+144
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2058,10 +2442,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+145
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2086,10 +2474,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+146
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2114,10 +2506,14 @@ AcDbPolyline
 151.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+147
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2142,10 +2538,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+148
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2170,10 +2570,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+149
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2198,10 +2602,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2226,10 +2634,14 @@ AcDbPolyline
 149.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2254,10 +2666,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2282,10 +2698,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2310,10 +2730,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2338,10 +2762,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+14F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2366,10 +2794,14 @@ AcDbPolyline
 148.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+150
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2394,10 +2826,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+151
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2422,10 +2858,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+152
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2450,10 +2890,14 @@ AcDbPolyline
 147.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+153
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2478,10 +2922,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+154
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2506,10 +2954,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+155
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2534,10 +2986,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+156
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2562,10 +3018,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+157
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2590,10 +3050,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+158
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2618,10 +3082,14 @@ AcDbPolyline
 145.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+159
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2646,10 +3114,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2674,10 +3146,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2702,10 +3178,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2730,10 +3210,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2758,10 +3242,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2786,10 +3274,14 @@ AcDbPolyline
 140.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+15F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2814,10 +3306,14 @@ AcDbPolyline
 139.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+160
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2842,10 +3338,14 @@ AcDbPolyline
 139.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+161
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2870,10 +3370,14 @@ AcDbPolyline
 139.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+162
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2898,10 +3402,14 @@ AcDbPolyline
 139.300000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+163
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2926,10 +3434,14 @@ AcDbPolyline
 137.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+164
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2954,10 +3466,14 @@ AcDbPolyline
 137.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+165
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -2982,10 +3498,14 @@ AcDbPolyline
 137.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+166
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3010,10 +3530,14 @@ AcDbPolyline
 137.900000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+167
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3038,10 +3562,14 @@ AcDbPolyline
 136.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+168
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3066,10 +3594,14 @@ AcDbPolyline
 136.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+169
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3094,10 +3626,14 @@ AcDbPolyline
 136.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16A
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3122,10 +3658,14 @@ AcDbPolyline
 136.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16B
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3150,10 +3690,14 @@ AcDbPolyline
 136.500000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16C
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3178,10 +3722,14 @@ AcDbPolyline
 135.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16D
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3206,10 +3754,14 @@ AcDbPolyline
 135.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16E
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3234,10 +3786,14 @@ AcDbPolyline
 135.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+16F
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3262,10 +3818,14 @@ AcDbPolyline
 135.100000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+170
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3290,10 +3850,14 @@ AcDbPolyline
 133.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+171
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3318,10 +3882,14 @@ AcDbPolyline
 133.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+172
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3346,10 +3914,14 @@ AcDbPolyline
 133.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+173
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3374,10 +3946,14 @@ AcDbPolyline
 133.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+174
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90
@@ -3402,10 +3978,14 @@ AcDbPolyline
 133.700000
   0
 LWPOLYLINE
-  8
-PATTERN
+  5
+175
+330
+1F
 100
 AcDbEntity
+  8
+PATTERN
 100
 AcDbPolyline
  90

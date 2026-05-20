@@ -377,12 +377,22 @@ the diagnostics channel for every detector:
   side; debug annotations never reach the DXF even when
   `render.debug_annotations` is on, since the DXF is rendered from
   the pre-debug scene snapshot), closed `LWPOLYLINE` for rectangles
-  and native `CIRCLE` for circles (no polygonal approximation).
-  Covered by a checked-in golden snapshot
+  and native `CIRCLE` for circles (no polygonal approximation). The
+  file is fully R2000-conformant for strict CAM importers: a
+  `BLOCK_RECORD` table declares `*Model_Space` (handle `1F`) and
+  `*Paper_Space` (handle `1E`); the `BLOCKS` section carries matching
+  `BLOCK`/`ENDBLK` records; and every ENTITIES-section entity emits a
+  unique handle (`5 <hex>`) and an owner reference (`330 1F`)
+  pointing back at `*Model_Space`. Permissive viewers
+  (LibreCAD/FreeCAD/AutoCAD) load files without these tags, but
+  CAM350-class strict importers reject or partially drop geometry
+  without them — costly for a hardware handoff. Covered by a
+  checked-in golden snapshot
   (`crates/calib-targets-print/tests/golden/charuco_3x3_dict4x4_50.dxf`)
-  plus unit tests for Y-flip, polarity filter, header, and entity
-  counts, and by Rust + Python CLI integration tests that assert the
-  `.dxf` is written with `AC1015` + mm units. FFI does not expose
+  plus unit tests for Y-flip, polarity filter, header, entity counts,
+  and per-entity handle uniqueness + owner-reference correctness, and
+  by Rust + Python CLI integration tests that assert the `.dxf` is
+  written with `AC1015` + mm units. FFI does not expose
   printable-target generation today, so its surface is untouched.
 
 - **WASM gains full printable-target parity: `render_chessboard_bundle`,
