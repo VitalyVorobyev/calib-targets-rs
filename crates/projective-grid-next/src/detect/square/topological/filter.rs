@@ -9,11 +9,13 @@
 //! - **Per-component cell-size filter**: after topology + parallelogram,
 //!   compute connected quad-mesh components and their per-component
 //!   median edge length; reject quads whose perimeter edges fall outside
-//!   `[1.0 / edge_length_ratio_max, edge_length_ratio_max] ×
-//!   component_median`. This catches quads formed across missing corners
-//!   (long edges) or across spurious within-cell features (short edges)
-//!   — failure modes that the parallelogram test admits when both
-//!   opposing pairs scale together.
+//!   `[edge_length_min_rel, edge_length_max_rel] × component_median`.
+//!   This catches quads formed across missing corners (long edges) or
+//!   across spurious within-cell features (short edges) — failure modes
+//!   that the parallelogram test admits when both opposing pairs scale
+//!   together. The asymmetric band lets callers express the legacy
+//!   `quad_edge_min_rel = 0.0` (upper-only) semantics by passing
+//!   `min_rel = 0.0`.
 
 use std::collections::HashMap;
 
@@ -100,7 +102,8 @@ pub(super) fn filter_quads<F: Float>(
     quads: Vec<Quad>,
     positions: &[Point2<F>],
     opposing_edge_ratio_max: F,
-    edge_length_ratio_max: F,
+    edge_length_min_rel: F,
+    edge_length_max_rel: F,
 ) -> Vec<Quad> {
     let degree = quad_degrees(&quads);
 
@@ -121,25 +124,36 @@ pub(super) fn filter_quads<F: Float>(
         })
         .collect();
 
-    apply_per_component_cell_size_filter(prefiltered, positions, edge_length_ratio_max)
+    apply_per_component_cell_size_filter(
+        prefiltered,
+        positions,
+        edge_length_min_rel,
+        edge_length_max_rel,
+    )
 }
 
 /// Reject quads whose perimeter edges fall outside
-/// `[1.0 / edge_length_ratio_max, edge_length_ratio_max] *
-/// component_median_edge_length`. Component is the connected
-/// quad-mesh component the quad lives in (per-component, not global,
-/// so a frame with two boards at different scales doesn't reject one).
+/// `[edge_length_min_rel, edge_length_max_rel] * component_median_edge_length`.
+/// Component is the connected quad-mesh component the quad lives in
+/// (per-component, not global, so a frame with two boards at different
+/// scales doesn't reject one).
 ///
-/// Disabled when `edge_length_ratio_max` is non-finite (`+inf`).
+/// `edge_length_min_rel = 0.0` disables the lower bound; the entire
+/// filter is skipped when both bounds are effectively inactive
+/// (`min_rel <= 0.0` AND `max_rel` is non-finite).
 fn apply_per_component_cell_size_filter<F: Float>(
     quads: Vec<Quad>,
     positions: &[Point2<F>],
-    edge_length_ratio_max: F,
+    edge_length_min_rel: F,
+    edge_length_max_rel: F,
 ) -> Vec<Quad> {
     if quads.is_empty() {
         return quads;
     }
-    if !edge_length_ratio_max.is_finite() {
+    // Skip the entire filter when both bounds are disabled.
+    let lower_active = edge_length_min_rel > F::zero();
+    let upper_active = edge_length_max_rel.is_finite();
+    if !lower_active && !upper_active {
         return quads;
     }
     let edge_index = build_edge_index(&quads);
@@ -160,8 +174,6 @@ fn apply_per_component_cell_size_filter<F: Float>(
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         comp_median.push(Some(v[v.len() / 2]));
     }
-    let lo_rel = F::one() / edge_length_ratio_max;
-    let hi_rel = edge_length_ratio_max;
     quads
         .into_iter()
         .enumerate()
@@ -171,13 +183,13 @@ fn apply_per_component_cell_size_filter<F: Float>(
                 return Some(q);
             }
             let (lo_e, hi_e) = quad_min_max_edge(&q, positions);
-            let lo_band = lo_rel * median;
-            let hi_band = hi_rel * median;
-            if lo_e < lo_band || hi_e > hi_band {
-                None
-            } else {
-                Some(q)
+            if lower_active && lo_e < edge_length_min_rel * median {
+                return None;
             }
+            if upper_active && hi_e > edge_length_max_rel * median {
+                return None;
+            }
+            Some(q)
         })
         .collect()
 }
@@ -217,7 +229,13 @@ mod tests {
         let q = Quad {
             vertices: [0, 1, 2, 3],
         };
-        let kept = filter_quads(vec![q], &positions, lit::<F>(1.5_f32), lit::<F>(2.5_f32));
+        let kept = filter_quads(
+            vec![q],
+            &positions,
+            lit::<F>(1.5_f32),
+            lit::<F>(0.4_f32),
+            lit::<F>(2.5_f32),
+        );
         assert_eq!(kept.len(), 1);
     }
 

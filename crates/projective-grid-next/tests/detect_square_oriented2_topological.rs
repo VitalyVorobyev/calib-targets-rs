@@ -219,9 +219,8 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
 
     let topo = projective_grid_next::TopologicalParams::<f32>::default()
         // Loosen the per-cell length-ratio gate so the foreshortened
-        // far end of the perspective doesn't trip the
-        // edge_length_ratio_max filter.
-        .with_edge_length_ratio_max(3.5);
+        // far end of the perspective doesn't trip the upper bound.
+        .with_edge_length_max_rel(3.5);
     let params = DetectionParams::<f32>::default()
         .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)

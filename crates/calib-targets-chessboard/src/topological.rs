@@ -76,16 +76,13 @@ fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisCl
 ///   and `cluster_axis_tol_rad` map field-for-field.
 /// * `edge_ratio_max` (legacy opposing-edge parallelogram cap) maps to
 ///   `opposing_edge_ratio_max`.
-/// * `quad_edge_max_rel` (legacy per-component upper edge-length band)
-///   maps to `edge_length_ratio_max`. The legacy lower band
-///   `quad_edge_min_rel` is unconditionally `0.0` in the chessboard
-///   defaults; the new pipeline applies a symmetric band
-///   `[1 / edge_length_ratio_max, edge_length_ratio_max]`. With the
-///   default `quad_edge_max_rel = 1.8` this introduces an implicit
-///   `lower = 1 / 1.8 ≈ 0.556 * component_median` floor. On the
-///   regression set this is below the smallest legitimate quad seen so
-///   far; the assumption is verified by the topo_grid + testdata
-///   regression gates.
+/// * `quad_edge_min_rel` / `quad_edge_max_rel` (legacy asymmetric
+///   per-component edge-length band) map to the new
+///   `edge_length_min_rel` / `edge_length_max_rel` fields directly.
+///   The legacy default has `quad_edge_min_rel = 0.0` (lower bound
+///   disabled) and `quad_edge_max_rel = 1.8` (upper-only band); this
+///   is now expressible without the `+inf` workaround that Phase E.1a
+///   used when only a symmetric band was available.
 /// * `axis_cluster_centers`: the per-frame two-cluster centers are
 ///   forwarded as a `[theta0, theta1]` pair.
 ///
@@ -103,27 +100,15 @@ fn detection_params_for_topological(
     topo.axis_align_tol_rad = legacy.axis_align_tol_rad;
     topo.max_axis_sigma_rad = legacy.max_axis_sigma_rad;
     topo.opposing_edge_ratio_max = legacy.edge_ratio_max;
-    // Per-component cell-size filter:
-    //   * Legacy uses `[quad_edge_min_rel, quad_edge_max_rel] * median`
-    //     with `quad_edge_min_rel = 0.0` (lower band disabled) and
-    //     `quad_edge_max_rel = 1.8` (upper-only band).
-    //   * The new pipeline only exposes a *symmetric* band
-    //     `[1 / edge_length_ratio_max, edge_length_ratio_max] * median`,
-    //     so passing `quad_edge_max_rel` directly would also enforce a
-    //     lower band of `1 / 1.8 ≈ 0.556 * median` that the legacy did
-    //     NOT enforce. Empirically this regresses the GeminiChess2
-    //     regression gate by ~3 corners (drops short quads on
-    //     perspective-stretched boards that legacy admitted).
-    //
-    // We therefore disable the new per-component cell-size filter
-    // entirely (`+inf` is the documented "disable" sentinel). The
-    // chessboard's downstream `run_geometry_check` (line collinearity +
-    // local-H + axis parity) catches the double-cell-hop quads the
-    // legacy upper band was guarding against. Restoring the legacy
-    // upper-only semantics in the new pipeline requires an asymmetric
-    // band knob on `projective_grid_next::TopologicalParams`; that's a
-    // follow-up to Phase E.1a, not a migration prerequisite.
-    topo.edge_length_ratio_max = f32::INFINITY;
+    // Per-component cell-size filter: pass through the legacy asymmetric
+    // band directly. The legacy default has `quad_edge_min_rel = 0.0`
+    // (lower bound disabled) and `quad_edge_max_rel = 1.8` (upper-only
+    // band). The new `edge_length_min_rel = 0.0` path disables the lower
+    // bound — exactly matching the legacy behaviour without the `+inf`
+    // workaround that Phase E.1a required when only a symmetric band
+    // was available on `NextTopologicalParams`.
+    topo.edge_length_min_rel = legacy.quad_edge_min_rel;
+    topo.edge_length_max_rel = legacy.quad_edge_max_rel;
     topo.min_quads_per_component = legacy.min_quads_per_component;
     // `min_corners_for_component`: new field with no legacy equivalent;
     // 4 corners = 1 quad matches the legacy "keep all quad-mesh

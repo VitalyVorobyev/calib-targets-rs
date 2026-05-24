@@ -102,11 +102,23 @@ pub struct TopologicalParams<F: Float> {
     /// Reject quads whose opposing edges differ in length by more than
     /// this factor (paper's parallelogram test). Default: `1.5`.
     pub opposing_edge_ratio_max: F,
-    /// Reject quads whose perimeter edges fall outside
-    /// `[1.0 / edge_length_ratio_max, edge_length_ratio_max] *
-    /// component_median_edge_length`. Default: `2.5`. Set to `+inf`
-    /// to disable.
-    pub edge_length_ratio_max: F,
+    /// Lower bound on a quad's perimeter edge length, expressed as a
+    /// fraction of the per-component median quad edge length. Quads
+    /// with any edge shorter than `edge_length_min_rel * component_median`
+    /// are rejected as "below local cell scale". Default: `0.4` (≈ `1/2.5`,
+    /// the symmetric lower bound implied by the legacy default
+    /// `edge_length_max_rel = 2.5`). Set to `0.0` to disable the lower
+    /// bound entirely — this recovers the legacy
+    /// `projective_grid::TopologicalParams::quad_edge_min_rel = 0.0`
+    /// (upper-only band) behaviour.
+    pub edge_length_min_rel: F,
+    /// Upper bound on a quad's perimeter edge length, expressed as a
+    /// fraction of the per-component median quad edge length. Quads
+    /// with any edge longer than `edge_length_max_rel * component_median`
+    /// are rejected as "above local cell scale" (typically a quad formed
+    /// across a missing corner). Default: `2.5`. Set to `+inf` to
+    /// disable the upper bound entirely.
+    pub edge_length_max_rel: F,
     /// Discard labelled components with fewer than this many corners.
     /// Default: `4` (one quad of four corners).
     pub min_corners_for_component: usize,
@@ -144,7 +156,8 @@ impl<F: Float> Default for TopologicalParams<F> {
             axis_align_tol_rad: lit::<F>(15.0_f32.to_radians()),
             max_axis_sigma_rad: lit::<F>(0.6_f32),
             opposing_edge_ratio_max: lit::<F>(1.5_f32),
-            edge_length_ratio_max: lit::<F>(2.5_f32),
+            edge_length_min_rel: lit::<F>(0.4_f32),
+            edge_length_max_rel: lit::<F>(2.5_f32),
             min_corners_for_component: 4,
             min_quads_per_component: 1,
             axis_cluster_centers: None,
@@ -182,9 +195,27 @@ impl<F: Float> TopologicalParams<F> {
         self
     }
 
-    /// Builder-style override for [`Self::edge_length_ratio_max`].
-    pub fn with_edge_length_ratio_max(mut self, value: F) -> Self {
-        self.edge_length_ratio_max = value;
+    /// Builder-style override for [`Self::edge_length_min_rel`].
+    pub fn with_edge_length_min_rel(mut self, value: F) -> Self {
+        self.edge_length_min_rel = value;
+        self
+    }
+
+    /// Builder-style override for [`Self::edge_length_max_rel`].
+    pub fn with_edge_length_max_rel(mut self, value: F) -> Self {
+        self.edge_length_max_rel = value;
+        self
+    }
+
+    /// Set both edge-length bounds in one call. Equivalent to
+    /// `.with_edge_length_min_rel(min_rel).with_edge_length_max_rel(max_rel)`.
+    ///
+    /// Pass `min_rel = 0.0` to disable the lower bound (recovering the
+    /// legacy `quad_edge_min_rel = 0.0` behaviour); pass
+    /// `max_rel = F::infinity()` to disable the upper bound.
+    pub fn with_edge_length_band(mut self, min_rel: F, max_rel: F) -> Self {
+        self.edge_length_min_rel = min_rel;
+        self.edge_length_max_rel = max_rel;
         self
     }
 
@@ -273,7 +304,8 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
         raw_quads,
         &positions,
         topo.opposing_edge_ratio_max,
-        topo.edge_length_ratio_max,
+        topo.edge_length_min_rel,
+        topo.edge_length_max_rel,
     );
     let components = walk::label_components(
         &kept_quads,
@@ -708,7 +740,8 @@ mod tests {
         assert!((p.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-5);
         assert!((p.max_axis_sigma_rad - 0.6).abs() < 1e-5);
         assert!((p.opposing_edge_ratio_max - 1.5).abs() < 1e-5);
-        assert!((p.edge_length_ratio_max - 2.5).abs() < 1e-5);
+        assert!((p.edge_length_min_rel - 0.4).abs() < 1e-5);
+        assert!((p.edge_length_max_rel - 2.5).abs() < 1e-5);
         assert_eq!(p.min_corners_for_component, 4);
         assert_eq!(p.min_quads_per_component, 1);
         assert!(p.axis_cluster_centers.is_none());

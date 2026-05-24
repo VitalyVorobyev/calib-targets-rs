@@ -38,7 +38,7 @@ use std::collections::{BTreeSet, HashSet};
 
 use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use nalgebra::Point2;
+use nalgebra::{Matrix3, Point2, Projective2, Vector3};
 use projective_grid::{
     build_grid_topological, AxisClusterCenters, TopologicalParams as LegacyTopo,
 };
@@ -526,4 +526,162 @@ fn charuco_pin_to_seed_and_grow() {
         "ChArUco-pin seed-and-grow parity broken"
     );
     assert_eq!(chess_set.len(), 25, "expected all 25 corners labelled");
+}
+
+// ---------------------------------------------------------------------------
+// Case 7: production-knob parity on a perspective-warped grid
+// ---------------------------------------------------------------------------
+
+/// Build a perspective-warped `ChessCorner` grid: a 5×5 (or 6×6) flat grid
+/// transformed by a mild projective warp so cell sizes vary across the board
+/// (exercising the asymmetric edge-length band). Axis angles are derived from
+/// the warped grid directions so they are realistic, not axis-aligned.
+fn build_warped_chess_grid(
+    rows: i32,
+    cols: i32,
+    s: f32,
+    h: &Projective2<f32>,
+) -> (Vec<ChessCorner>, Vec<Point2<f32>>, Vec<[AxisEstimate; 2]>) {
+    let origin = 50.0_f32;
+    let mut corners = Vec::with_capacity((rows * cols) as usize);
+    let mut positions = Vec::with_capacity((rows * cols) as usize);
+    let mut axes_out = Vec::with_capacity((rows * cols) as usize);
+
+    for j in 0..rows {
+        for i in 0..cols {
+            let model = Point2::new(i as f32 * s + origin, j as f32 * s + origin);
+            // Map model point through the projective warp.
+            let v = h.matrix() * Vector3::new(model.x, model.y, 1.0_f32);
+            let image = Point2::new(v.x / v.z, v.y / v.z);
+
+            // Grid-axis directions in image space: direction of warped +u and +v steps.
+            let next_u = Point2::new(model.x + 1.0, model.y);
+            let next_v = Point2::new(model.x, model.y + 1.0);
+            let vu = h.matrix() * Vector3::new(next_u.x, next_u.y, 1.0_f32);
+            let vv = h.matrix() * Vector3::new(next_v.x, next_v.y, 1.0_f32);
+            let pu = Point2::new(vu.x / vu.z, vu.y / vu.z);
+            let pv = Point2::new(vv.x / vv.z, vv.y / vv.z);
+
+            let theta_u = (pu.y - image.y).atan2(pu.x - image.x);
+            let theta_v = (pv.y - image.y).atan2(pv.x - image.x);
+
+            let axes = [
+                AxisEstimate {
+                    angle: theta_u,
+                    sigma: 0.02,
+                },
+                AxisEstimate {
+                    angle: theta_v,
+                    sigma: 0.02,
+                },
+            ];
+            corners.push(ChessCorner {
+                position: image,
+                axes,
+                contrast: 30.0,
+                fit_rms: 1.0,
+                strength: 1.0,
+            });
+            positions.push(image);
+            axes_out.push(axes);
+        }
+    }
+    (corners, positions, axes_out)
+}
+
+/// Production-knob parity test on a perspective-warped 6×6 grid.
+///
+/// This test exercises the asymmetric edge-length band introduced in Phase
+/// E.1a follow-up: `edge_length_min_rel = 0.0` (lower bound disabled) with
+/// `edge_length_max_rel = 1.8` (upper-only band matching the chessboard
+/// production default). The perspective warp produces non-uniform cell sizes
+/// so the filter is non-trivially active.
+///
+/// Both pipelines use the same production-knob values:
+/// - `axis_align_tol_rad = 15° = 0.262 rad`
+/// - `max_axis_sigma_rad = 0.6`
+/// - `opposing_edge_ratio_max = 1.5`
+/// - `edge_length_min_rel = 0.0` / `quad_edge_min_rel = 0.0`
+/// - `edge_length_max_rel = 1.8` / `quad_edge_max_rel = 1.8`
+/// - `axis_cluster_centers = Some([0°, π/2°])`
+/// - `cluster_axis_tol_rad = 16°`
+///
+/// The assertion is: same labelled count and same `(source_index)` set,
+/// modulo per-component rebase (the coord assignment may differ). This test
+/// would have caught the GeminiChess2 regression that occurred during Phase
+/// E.1a when the adapter naively mapped `1.8 → edge_length_ratio_max`
+/// (symmetric band), which introduced an implicit lower bound of
+/// `1/1.8 ≈ 0.556 * median` that the legacy `quad_edge_min_rel = 0.0` did
+/// NOT enforce.
+#[test]
+fn topological_production_knobs_matches_legacy() {
+    let s = 20.0_f32;
+    // Mild perspective warp: shear + perspective component to produce
+    // non-uniform cell sizes across the board while keeping axes close
+    // to [0, π/2] so the cluster gate admits all corners.
+    let h_matrix = Matrix3::new(
+        1.0_f32, 0.05, 0.0, //
+        0.0, 1.0, 0.0, //
+        0.001, 0.0, 1.0, // perspective row
+    );
+    let h = Projective2::from_matrix_unchecked(h_matrix);
+
+    let (corners, positions, axes) = build_warped_chess_grid(6, 6, s, &h);
+    let features = to_next_features(&corners);
+
+    let centers = AxisClusterCenters::new(0.0, std::f32::consts::FRAC_PI_2);
+
+    // --- Legacy pipeline ---
+    let mut legacy_params = LegacyTopo::default();
+    legacy_params.axis_align_tol_rad = 15.0_f32.to_radians();
+    legacy_params.max_axis_sigma_rad = 0.6;
+    legacy_params.edge_ratio_max = 1.5;
+    legacy_params.quad_edge_min_rel = 0.0;
+    legacy_params.quad_edge_max_rel = 1.8;
+    legacy_params.axis_cluster_centers = Some(centers);
+    legacy_params.cluster_axis_tol_rad = 16.0_f32.to_radians();
+
+    let legacy_grid = build_grid_topological(&positions, &axes, &legacy_params)
+        .expect("legacy topological on perspective-warped 6×6");
+    let legacy_sets = legacy_topo_component_sets(&legacy_grid);
+
+    // --- New pipeline ---
+    let next_topo = NextTopo::<f32>::new(15.0_f32.to_radians(), 0.6)
+        .with_opposing_edge_ratio_max(1.5)
+        .with_edge_length_band(0.0, 1.8)
+        .with_axis_cluster_centers([0.0, std::f32::consts::FRAC_PI_2])
+        .with_cluster_axis_tol_rad(16.0_f32.to_radians());
+
+    let next_params = DetectionParams::<f32>::default()
+        .with_algorithm(SquareAlgorithm::Topological)
+        .with_topological(next_topo);
+
+    let request = DetectionRequest::new(
+        LatticeKind::Square,
+        Evidence::Oriented2(&features),
+        None,
+        next_params,
+    );
+    let report = detect_grid_all(request)
+        .expect("next topological on perspective-warped 6×6 (production knobs)");
+    let next_sets = next_component_sets(&report.solutions);
+
+    assert_eq!(
+        next_sets.len(),
+        legacy_sets.len(),
+        "component count: legacy {}, next {}",
+        legacy_sets.len(),
+        next_sets.len()
+    );
+    assert_eq!(
+        next_sets, legacy_sets,
+        "per-component source index sets differ (production-knob parity)"
+    );
+
+    // Sanity: a clean 6×6 with a mild warp should still label all 36 corners.
+    let total_labelled: usize = next_sets.iter().map(|s| s.len()).sum();
+    assert_eq!(
+        total_labelled, 36,
+        "expected all 36 corners labelled on mildly-warped grid, got {total_labelled}"
+    );
 }
