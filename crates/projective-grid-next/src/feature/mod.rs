@@ -1,9 +1,9 @@
 //! Generic feature evidence consumed by grid tasks.
 //!
 //! These types deliberately avoid target-specific identifiers. A caller that
-//! decodes marker IDs, ring IDs, chessboard parity, or any other target
-//! metadata should convert that information into coordinate hypotheses or
-//! caller-side filtering before using this crate.
+//! decodes marker IDs, ring IDs, or any other target metadata should convert
+//! that information into coordinate hypotheses or caller-side filtering before
+//! using this crate.
 
 use nalgebra::Point2;
 

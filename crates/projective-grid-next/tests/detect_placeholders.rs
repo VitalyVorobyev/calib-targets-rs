@@ -10,8 +10,6 @@ fn point(idx: usize) -> PointFeature<f32> {
 
 fn assert_unsupported(request: DetectionRequest<'_, f32>, evidence: EvidenceKind) {
     // Capture `lattice` before the request is consumed by `detect_grid`.
-    // `DetectionRequest` is no longer `Copy` (Phase E.1b prereq added a
-    // `Vec<u8>` knob to `SeedParams::candidate_pool_split`).
     let lattice = request.lattice;
     let err = detect_grid(request).unwrap_err();
     assert_eq!(

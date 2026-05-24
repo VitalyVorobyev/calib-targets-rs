@@ -1,9 +1,7 @@
 //! Sealed [`Float`] trait alias used throughout the crate.
 //!
 //! Every algorithm in this crate is generic over `F: Float`, where `Float`
-//! is `nalgebra::RealField + Copy + From<f32> + 'static`. This single bound
-//! replaces the inconsistent `f32`-hardcoded / `Float`-generic split of the
-//! legacy `projective-grid` crate and closes Gap 2 from `docs/algorithmic_gaps.md`.
+//! is `nalgebra::RealField + Copy + From<f32> + 'static`.
 //!
 //! ## Sealed
 //!

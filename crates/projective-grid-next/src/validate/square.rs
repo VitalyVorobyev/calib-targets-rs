@@ -4,7 +4,6 @@ use std::collections::{HashMap, HashSet};
 
 use nalgebra::{ComplexField, Point2, RealField};
 
-use crate::feature::OrientedFeature;
 use crate::float::{lit, Float};
 use crate::geometry::{apply_projective, estimate_projective};
 use crate::lattice::{Coord, SQUARE_CARDINAL_OFFSETS};
@@ -24,16 +23,6 @@ pub struct ValidateParams<F: Float> {
     /// Per-edge length band. Edges with `len / median` outside
     /// `[1 / (1 + band), 1 + band]` are flagged.
     pub edge_length_band_rel: F,
-    /// Toggle the axis-slot-swap parity check.
-    ///
-    /// **Default `false`.** The check assumes adjacent corners' `axes[0]` /
-    /// `axes[1]` *swap* assignment (the chessboard parity convention in
-    /// CLAUDE.md "Corner orientation contract"). Synthetic grids where every
-    /// feature carries the same axis ordering will trigger false positives.
-    /// Callers that produce chessboard-style axes (slot 0 = horizontal at
-    /// parity-0, slot 0 = vertical at parity-1) can opt in by flipping this
-    /// flag.
-    pub enable_edge_parity_check: bool,
 }
 
 impl<F: Float> Default for ValidateParams<F> {
@@ -43,14 +32,13 @@ impl<F: Float> Default for ValidateParams<F> {
             line_min_members: 3,
             local_h_tol_rel: lit::<F>(0.20_f32),
             edge_length_band_rel: lit::<F>(0.35_f32),
-            enable_edge_parity_check: false,
         }
     }
 }
 
 impl<F: Float> ValidateParams<F> {
     /// Construct validate params from the line + local-H tolerances. The
-    /// edge-band and parity-check knobs take their defaults.
+    /// edge-band knob takes its default.
     pub fn new(line_tol_rel: F, line_min_members: usize, local_h_tol_rel: F) -> Self {
         Self {
             line_tol_rel,
@@ -89,8 +77,7 @@ impl<F: Float> LabelledEntry<F> {
 #[derive(Debug, Clone, Default)]
 #[non_exhaustive]
 pub struct ValidationResult {
-    /// Indices to blacklist. Attribution rules + edge-band + axis-slot
-    /// parity have all been applied.
+    /// Indices to blacklist after attribution and edge-band gates.
     pub blacklist: HashSet<usize>,
 }
 
@@ -105,14 +92,8 @@ impl ValidationResult {
 
 /// Run every validation check on the labelled set and return the union of
 /// blacklisted indices.
-///
-/// `features` carries the per-corner axes used by the axis-slot-swap parity
-/// check; pass the same slice the seed and grow stages consumed. The
-/// `idx` field of each [`LabelledEntry`] must be a valid index into that
-/// slice.
 pub fn validate<F: Float>(
     entries: &[LabelledEntry<F>],
-    features: &[OrientedFeature<F, 2>],
     cell_size: F,
     params: &ValidateParams<F>,
 ) -> ValidationResult {
@@ -129,11 +110,6 @@ pub fn validate<F: Float>(
         compute_local_h_flags(entries, &by_idx, &by_grid, params, cell_size);
 
     let length_flags = edge_length_flags(entries, &by_idx, &by_grid, params);
-    let parity_flags = if params.enable_edge_parity_check {
-        axis_slot_parity_flags(entries, &by_grid, features)
-    } else {
-        HashSet::new()
-    };
 
     let mut blacklist: HashSet<usize> = HashSet::new();
 
@@ -177,7 +153,6 @@ pub fn validate<F: Float>(
 
     // Unconditional blacklist for the edge gates.
     blacklist.extend(length_flags);
-    blacklist.extend(parity_flags);
 
     let _ = residuals; // computed for completeness; consumers don't need the
                        // values in Phase C, only the blacklist.
@@ -491,145 +466,9 @@ fn pick_endpoint_to_blame(c_idx: usize, c_bad: u32, n_idx: usize, n_bad: u32) ->
     }
 }
 
-// ----------------------- axis-slot-swap parity --------------------------
-
-fn axis_slot_parity_flags<F: Float>(
-    entries: &[LabelledEntry<F>],
-    by_grid: &HashMap<Coord, usize>,
-    features: &[OrientedFeature<F, 2>],
-) -> HashSet<usize> {
-    let mut flags: HashSet<usize> = HashSet::new();
-
-    for entry in entries {
-        let c_idx = entry.idx;
-        if c_idx >= features.len() {
-            continue;
-        }
-        let c_feature = &features[c_idx];
-        if !is_informative(c_feature) {
-            continue;
-        }
-        for offset in &SQUARE_CARDINAL_OFFSETS {
-            let neigh = Coord::new(entry.coord.u + offset.u, entry.coord.v + offset.v);
-            let Some(&n_idx) = by_grid.get(&neigh) else {
-                continue;
-            };
-            if n_idx <= c_idx {
-                continue;
-            }
-            if n_idx >= features.len() {
-                continue;
-            }
-            let n_feature = &features[n_idx];
-            if !is_informative(n_feature) {
-                continue;
-            }
-            let Some(n_entry) = entries.iter().find(|e| e.idx == n_idx) else {
-                continue;
-            };
-            let n_pos = n_entry.position;
-            let dx = n_pos.x - entry.position.x;
-            let dy = n_pos.y - entry.position.y;
-            if ComplexField::abs(dx) <= F::default_epsilon()
-                && ComplexField::abs(dy) <= F::default_epsilon()
-            {
-                continue;
-            }
-            let theta_edge = wrap_undirected::<F>(dy.atan2(dx));
-
-            let slot_c = closer_axis_slot(
-                theta_edge,
-                c_feature.axes[0].angle_rad,
-                c_feature.axes[1].angle_rad,
-            );
-            let slot_n = closer_axis_slot(
-                theta_edge,
-                n_feature.axes[0].angle_rad,
-                n_feature.axes[1].angle_rad,
-            );
-
-            if slot_c == slot_n {
-                // Same slot for the same edge ⇒ parity violation.
-                let blame_idx = c_idx.max(n_idx);
-                flags.insert(blame_idx);
-            }
-        }
-    }
-
-    flags
-}
-
-#[inline]
-fn is_informative<F: Float>(feature: &OrientedFeature<F, 2>) -> bool {
-    let pi = F::pi();
-    let eps = F::default_epsilon();
-    let threshold = pi - eps;
-    // `sigma_rad == None` is "no information"; treat it as below-threshold so
-    // the parity check skips it.
-    let sigma0_ok = feature.axes[0]
-        .sigma_rad
-        .map(|s| s < threshold)
-        .unwrap_or(false);
-    let sigma1_ok = feature.axes[1]
-        .sigma_rad
-        .map(|s| s < threshold)
-        .unwrap_or(false);
-    // For the axes-only undirected parity check we can run even when sigma is
-    // unknown — the consumer's axis angles are the ground truth here. Treat
-    // `None` as informative.
-    let no_sigma = feature.axes[0].sigma_rad.is_none() && feature.axes[1].sigma_rad.is_none();
-    sigma0_ok && sigma1_ok || no_sigma
-}
-
-#[inline]
-fn wrap_undirected<F: Float>(angle: F) -> F {
-    let pi = F::pi();
-    let mut a = angle;
-    while a <= -pi {
-        a += pi + pi;
-    }
-    while a > pi {
-        a -= pi + pi;
-    }
-    if a < F::zero() {
-        a += pi;
-    }
-    if a >= pi {
-        a -= pi;
-    }
-    a
-}
-
-#[inline]
-fn closer_axis_slot<F: Float>(theta: F, alpha0: F, alpha1: F) -> u8 {
-    let d0 = undirected_angle_distance::<F>(theta, alpha0);
-    let d1 = undirected_angle_distance::<F>(theta, alpha1);
-    if d0 <= d1 {
-        0
-    } else {
-        1
-    }
-}
-
-#[inline]
-fn undirected_angle_distance<F: Float>(alpha: F, beta: F) -> F {
-    let pi = F::pi();
-    let two = lit::<F>(2.0_f32);
-    let pi_over_two = pi / two;
-    let mut diff = ComplexField::abs(alpha - beta);
-    while diff >= pi {
-        diff -= pi;
-    }
-    if diff > pi_over_two {
-        diff = pi - diff;
-    }
-    RealField::max(diff, F::zero())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::feature::{LocalAxis, PointFeature};
 
     fn entry<F: Float>(idx: usize, x: F, y: F, u: i32, v: i32) -> LabelledEntry<F> {
         LabelledEntry::new(idx, Point2::new(x, y), Coord::new(u, v))
@@ -654,31 +493,16 @@ mod tests {
         out
     }
 
-    fn axis_aligned_features<F: Float>(n: usize) -> Vec<OrientedFeature<F, 2>> {
-        (0..n)
-            .map(|idx| {
-                let point = PointFeature::new(idx, Point2::new(F::zero(), F::zero()));
-                let axes = [
-                    LocalAxis::new(F::zero(), None),
-                    LocalAxis::new(F::frac_pi_2(), None),
-                ];
-                OrientedFeature::new(point, axes)
-            })
-            .collect()
-    }
-
     fn assert_clean_grid_passes<F: Float>() {
         let s = lit::<F>(20.0_f32);
         let entries = clean_grid::<F>(7, 7, s);
-        let features = axis_aligned_features::<F>(entries.len());
-        let result = validate(&entries, &features, s, &ValidateParams::<F>::default());
+        let result = validate(&entries, s, &ValidateParams::<F>::default());
         assert!(result.blacklist.is_empty(), "{:?}", result.blacklist);
     }
 
     fn assert_displaced_interior_dropped<F: Float>() {
         let s = lit::<F>(20.0_f32);
         let mut entries = clean_grid::<F>(7, 7, s);
-        let features = axis_aligned_features::<F>(entries.len());
         let target = entries
             .iter_mut()
             .find(|e| e.coord == Coord::new(3, 3))
@@ -687,7 +511,7 @@ mod tests {
         target.position.y += lit::<F>(6.0_f32);
         let target_idx = target.idx;
 
-        let result = validate(&entries, &features, s, &ValidateParams::<F>::default());
+        let result = validate(&entries, s, &ValidateParams::<F>::default());
         assert!(
             result.blacklist.contains(&target_idx),
             "{:?}",

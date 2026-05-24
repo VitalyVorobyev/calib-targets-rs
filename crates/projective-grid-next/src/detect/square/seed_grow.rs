@@ -32,15 +32,6 @@ where
     if features.len() < 4 {
         return Err(GridError::InsufficientEvidence);
     }
-    if let Some(tags) = params.seed.candidate_pool_split.as_deref() {
-        if tags.len() != features.len() {
-            return Err(GridError::InconsistentInput(format!(
-                "candidate_pool_split length {} != features length {}",
-                tags.len(),
-                features.len()
-            )));
-        }
-    }
 
     let seed = find_quad(features, &params.seed).ok_or(GridError::DegenerateGeometry)?;
 
@@ -55,12 +46,7 @@ where
         .map(|(coord, &idx)| LabelledEntry::new(idx, features[idx].point.position, *coord))
         .collect();
 
-    let validation = run_validate(
-        &labelled_entries,
-        features,
-        grown.cell_size,
-        &params.validate,
-    );
+    let validation = run_validate(&labelled_entries, grown.cell_size, &params.validate);
     if !validation.blacklist.is_empty() {
         labelled_entries.retain(|e| !validation.blacklist.contains(&e.idx));
     }

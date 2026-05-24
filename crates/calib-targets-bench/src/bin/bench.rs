@@ -1,11 +1,13 @@
 //! `cargo bench-{run,check,bless,preview}` — see top-level docs in the
 //! library crate for the schema and workflow.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use calib_targets::chessboard::{diagnostics::CornerStage, DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{
+    diagnostics::CornerStage, Detector, DetectorParams, GraphBuildAlgorithm,
+};
 use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
@@ -62,9 +64,8 @@ struct DiagnoseArgs {
     #[arg(long)]
     dump_frame: Option<String>,
     /// Which graph-build algorithm to diagnose. `chessboard-v2` produces a
-    /// full `DebugFrame`; `topological` reports the
-    /// [`TopologicalStats`](projective_grid::TopologicalStats) counters and
-    /// renders an overlay of which corners ended up labelled.
+    /// full `DebugFrame`; `topological` runs the production topological
+    /// detector and renders an overlay of which corners ended up labelled.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
     algorithm: AlgorithmArg,
     /// Override the topological pipeline's `axis_align_tol_rad` (in degrees).
@@ -801,21 +802,27 @@ fn diagnose_filename(label: &str) -> String {
     format!("{safe}.diagnose.png")
 }
 
-/// Topological-pipeline diagnostics: print
-/// [`projective_grid::TopologicalStats`] and per-component sizes, render
-/// an overlay showing labelled vs unlabelled corners, and report which
-/// pre-filter or classification step dropped the unlabelled ones.
+/// Topological-pipeline diagnostics: run the production detector path,
+/// print per-component sizes, render an overlay showing labelled vs
+/// unlabelled corners, and report which pre-filter step dropped the
+/// unlabelled ones.
 fn diagnose_topological(
     args: &DiagnoseArgs,
     upscaled: &image::GrayImage,
     corners: &[calib_targets::chessboard::ChessCorner],
 ) -> ExitCode {
-    use projective_grid::{build_grid_topological, AxisEstimate, TopologicalParams};
-
-    let mut params = TopologicalParams::default();
+    let mut detector_params = match load_chessboard_config(args.chessboard_config.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("load --chessboard-config: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    detector_params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     if let Some(deg) = args.axis_align_tol_deg {
-        params.axis_align_tol_rad = deg.to_radians();
+        detector_params.tuning.topological.axis_align_tol_rad = deg.to_radians();
     }
+    let params = &detector_params.tuning.topological;
     println!(
         "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  quad_edge_max_rel: {:.2}",
         args.image,
@@ -831,15 +838,14 @@ fn diagnose_topological(
 
     // Pre-filter: at least one axis with sigma below threshold AND the
     // standard chessboard strength + fit-quality gates.
-    let chess_params = DetectorParams::default();
     let mut survives_strength = 0usize;
     let mut survives_fit = 0usize;
     let mut survives_axis = 0usize;
     for c in corners {
-        let strong = c.strength >= chess_params.tuning.min_corner_strength;
-        let fit_ok = !chess_params.tuning.max_fit_rms_ratio.is_finite()
+        let strong = c.strength >= detector_params.tuning.min_corner_strength;
+        let fit_ok = !detector_params.tuning.max_fit_rms_ratio.is_finite()
             || c.contrast <= 0.0
-            || c.fit_rms <= chess_params.tuning.max_fit_rms_ratio * c.contrast;
+            || c.fit_rms <= detector_params.tuning.max_fit_rms_ratio * c.contrast;
         let axis_ok = c.axes[0].sigma < params.max_axis_sigma_rad
             || c.axes[1].sigma < params.max_axis_sigma_rad;
         if strong {
@@ -860,64 +866,47 @@ fn diagnose_topological(
         survives_fit - survives_axis,
     );
 
-    let positions: Vec<nalgebra::Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisEstimate; 2]> = corners
+    let detections = Detector::new(detector_params).detect_all(corners);
+    let labelled_corner_set: HashSet<usize> = detections
         .iter()
-        .map(|c| {
-            [
-                AxisEstimate {
-                    angle: c.axes[0].angle,
-                    sigma: c.axes[0].sigma,
-                },
-                AxisEstimate {
-                    angle: c.axes[1].angle,
-                    sigma: c.axes[1].sigma,
-                },
-            ]
-        })
-        .collect();
-
-    let grid = match build_grid_topological(&positions, &axes, &params) {
-        Ok(g) => g,
-        Err(e) => {
-            println!("  build_grid_topological failed: {e}");
-            return ExitCode::from(2);
-        }
-    };
-    let s = &grid.diagnostics;
-    println!(
-        "  triangles: {}  edges classified: grid={}  diagonal={}  spurious={}",
-        s.triangles, s.grid_edges, s.diagonal_edges, s.spurious_edges,
-    );
-    println!(
-        "  triangle composition: mergeable(1d,2g)={}  all-grid(0d,3g)={}  multi-diag(>=2d)={}  has-spurious={}",
-        s.triangles_mergeable,
-        s.triangles_all_grid,
-        s.triangles_multi_diag,
-        s.triangles_has_spurious,
-    );
-    println!(
-        "  quads merged: {}  quads kept: {}  components: {}",
-        s.quads_merged, s.quads_kept, s.components,
-    );
-    let labelled_corner_set: std::collections::HashSet<usize> = grid
-        .components
-        .iter()
-        .flat_map(|c| c.labelled.values().copied())
+        .flat_map(|d| d.corners.iter().map(|c| c.input_index))
         .collect();
     println!(
-        "  labelled corners (unique across components): {} / {} usable",
+        "  production components: {}  labelled corners (unique across components): {} / {} input",
+        detections.len(),
         labelled_corner_set.len(),
-        s.corners_used,
+        corners.len(),
     );
-    for (k, c) in grid.components.iter().enumerate() {
-        let max_i = c.labelled.keys().map(|(i, _)| *i).max().unwrap_or(0);
-        let max_j = c.labelled.keys().map(|(_, j)| *j).max().unwrap_or(0);
+    for (k, detection) in detections.iter().enumerate() {
+        let min_i = detection
+            .corners
+            .iter()
+            .map(|c| c.grid.i)
+            .min()
+            .unwrap_or(0);
+        let max_i = detection
+            .corners
+            .iter()
+            .map(|c| c.grid.i)
+            .max()
+            .unwrap_or(0);
+        let min_j = detection
+            .corners
+            .iter()
+            .map(|c| c.grid.j)
+            .min()
+            .unwrap_or(0);
+        let max_j = detection
+            .corners
+            .iter()
+            .map(|c| c.grid.j)
+            .max()
+            .unwrap_or(0);
         println!(
-            "  component {k}: labelled={} bbox=({}+1)x({}+1)",
-            c.labelled.len(),
-            max_i,
-            max_j,
+            "  component {k}: labelled={} bbox=i[{min_i},{max_i}] j[{min_j},{max_j}] ({}×{})",
+            detection.corners.len(),
+            max_i - min_i + 1,
+            max_j - min_j + 1,
         );
     }
 

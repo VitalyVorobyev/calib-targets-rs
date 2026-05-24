@@ -67,7 +67,7 @@ fn point_to_f64<F: Float>(p: Point2<F>) -> delaunator::Point {
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
-        name = "topological_delaunay",
+        name = "delaunay_triangulate",
         level = "debug",
         skip_all,
         fields(num_points = positions.len()),

@@ -9,47 +9,21 @@
 //! 3. Classify every Delaunay half-edge as `Grid`, `Diagonal`, or
 //!    `Spurious` via the per-corner axes (no image-color sampling).
 //! 4. Merge triangle pairs sharing a `Diagonal` edge into quads (one
-//!    quad per chessboard cell).
+//!    quad per lattice cell).
 //! 5. Drop quads with two illegal corners (quad-mesh degree > 4),
 //!    extreme parallelograms, or out-of-band edge lengths against the
 //!    per-component median.
 //! 6. Flood-fill integer `(u, v)` labels through the surviving quad
 //!    mesh and rebase each connected component to `(0, 0)`.
 //! 7. Reuse the shared [`crate::validate::square`] post-stage to drop
-//!    labelled corners flagged by the line-collinearity, local-H,
-//!    edge-length, and (opt-in) axis-slot-swap parity checks.
+//!    labelled corners flagged by line-collinearity, local-H, and edge-length
+//!    checks.
 //! 8. Fit a projective transform on the surviving labels and report
 //!    per-corner residuals.
 //!
-//! ## Algorithmic origin
-//!
-//! Ported near-verbatim from the legacy `projective_grid::topological`
-//! module, with the following deltas:
-//!
-//! * The `TopologicalContext<F>` trait (eligibility / policy / axis
-//!   overrides) is gone. The Phase C `(Square, Oriented2)` seed-grow
-//!   path dropped its analogous `SquareGrowContext` trait without
-//!   losing functionality; this module does the same.
-//! * The legacy crate's optional `cluster_centers` axis-prior gate is
-//!   restored in Phase E.0 as
-//!   [`TopologicalParams::axis_cluster_centers`] +
-//!   [`TopologicalParams::cluster_axis_tol_rad`]. The chessboard
-//!   topological adapter passes its per-frame cluster centers in
-//!   through this field; with `None` the gate is skipped, preserving
-//!   the standalone-primitive behaviour Phase D had.
-//! * Diagnostic event emission (`DiagnosticSink<F>`, `EdgeClass`/
-//!   `QuadRejectReason` events) is dropped. Phase E may reintroduce
-//!   counter collection through the same trait the seed-grow path
-//!   uses if a consumer needs it.
-//! * `Coord` is the new struct, not a tuple — all `(i, j)` arithmetic
-//!   goes through `Coord::new` / `.u` / `.v`.
-//! * Multi-component output: instead of collapsing to the largest
-//!   component and emitting the rest as a `SecondaryComponent`
-//!   rejection variant, the orchestrator returns one
-//!   [`GridSolution`] per qualifying component (ordered by size,
-//!   descending). The single-component wrapper
-//!   [`detect_square_oriented2_topological`] keeps the previous shape
-//!   by returning the first solution.
+//! Multi-component output is represented directly: the orchestrator returns
+//! one [`GridSolution`] per qualifying component, ordered by labelled count
+//! descending.
 
 mod axis;
 mod classify;
@@ -80,11 +54,10 @@ const MIN_USABLE_FOR_DELAUNAY: usize = 3;
 
 /// Tuning knobs for the axis-driven topological pipeline.
 ///
-/// Defaults are the regression-pinned values from the legacy
-/// `projective_grid::topological::TopologicalParams`. Adding new fields
-/// is non-breaking via `#[non_exhaustive]`; literal-construction from
-/// outside the crate goes through [`Self::default`] + struct-update
-/// syntax or [`Self::new`].
+/// Defaults are conservative values pinned by the crate's regression tests.
+/// Adding new fields is non-breaking via `#[non_exhaustive]`;
+/// literal-construction from outside the crate goes through [`Self::default`]
+/// + struct-update syntax or [`Self::new`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct TopologicalParams<F: Float> {
@@ -96,8 +69,7 @@ pub struct TopologicalParams<F: Float> {
     /// considered informative. Features whose both axes have
     /// `sigma_rad ≥ max_axis_sigma_rad` are excluded from Delaunay;
     /// classification skips individual axes above the threshold.
-    /// Default: `0.6 ≈ 34°` (matches the legacy regression-pinned
-    /// value). `sigma_rad = None` is treated as informative.
+    /// Default: `0.6 ≈ 34°`. `sigma_rad = None` is treated as informative.
     pub max_axis_sigma_rad: F,
     /// Reject quads whose opposing edges differ in length by more than
     /// this factor (paper's parallelogram test). Default: `1.5`.
@@ -105,12 +77,8 @@ pub struct TopologicalParams<F: Float> {
     /// Lower bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge shorter than `edge_length_min_rel * component_median`
-    /// are rejected as "below local cell scale". Default: `0.4` (≈ `1/2.5`,
-    /// the symmetric lower bound implied by the legacy default
-    /// `edge_length_max_rel = 2.5`). Set to `0.0` to disable the lower
-    /// bound entirely — this recovers the legacy
-    /// `projective_grid::TopologicalParams::quad_edge_min_rel = 0.0`
-    /// (upper-only band) behaviour.
+    /// are rejected as "below local cell scale". Default: `0.4`.
+    /// Set to `0.0` to disable the lower bound entirely.
     pub edge_length_min_rel: F,
     /// Upper bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
@@ -129,24 +97,11 @@ pub struct TopologicalParams<F: Float> {
     /// modulo π. When `Some([θ₀, θ₁])`, a feature is admitted to
     /// Delaunay only if at least one of its informative axes is within
     /// [`Self::cluster_axis_tol_rad`] of one of the centers. When
-    /// `None`, the gate is skipped — the standalone-primitive
-    /// behaviour Phase D had.
-    ///
-    /// The chessboard adapter feeds in its per-frame 2-means cluster
-    /// centers here; the gate is the precision filter that lets the
-    /// classifier reject marker-internal corners and other off-axis
-    /// noise before they reach Delaunay.
+    /// `None`, the gate is skipped.
     pub axis_cluster_centers: Option<[F; 2]>,
     /// Per-axis admission tolerance against
     /// [`Self::axis_cluster_centers`], in radians. Only consulted when
-    /// `axis_cluster_centers.is_some()`. Default: `16° = 0.279` —
-    /// matches the legacy
-    /// `projective_grid::topological::TopologicalParams::default`. The
-    /// default is wider than a typical chessboard cluster-admission
-    /// tolerance of `12°` because this image-free pipeline lacks the
-    /// sigma-bonus / booster-recovery the chessboard's seed-grow path
-    /// has; tightening below 16° should be paired with a sigma-aware
-    /// admission rule.
+    /// `axis_cluster_centers.is_some()`. Default: `16° = 0.279`.
     pub cluster_axis_tol_rad: F,
 }
 
@@ -210,8 +165,7 @@ impl<F: Float> TopologicalParams<F> {
     /// Set both edge-length bounds in one call. Equivalent to
     /// `.with_edge_length_min_rel(min_rel).with_edge_length_max_rel(max_rel)`.
     ///
-    /// Pass `min_rel = 0.0` to disable the lower bound (recovering the
-    /// legacy `quad_edge_min_rel = 0.0` behaviour); pass
+    /// Pass `min_rel = 0.0` to disable the lower bound; pass
     /// `max_rel = F::infinity()` to disable the upper bound.
     pub fn with_edge_length_band(mut self, min_rel: F, max_rel: F) -> Self {
         self.edge_length_min_rel = min_rel;
@@ -278,11 +232,13 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
     // Apply the optional axis-cluster gate (Phase E.0). When no
     // centers are supplied the predicate is the identity and `usable`
     // matches the Phase D behaviour exactly.
-    let usable: Vec<bool> = features
-        .iter()
-        .zip(axes.iter())
-        .map(|(f, cache)| cache.any_informative() && axes_pass_cluster_gate(&f.axes, cache, topo))
-        .collect();
+    #[cfg(feature = "tracing")]
+    let usable: Vec<bool> = {
+        let _span = tracing::debug_span!("usable_mask", num_features = features.len()).entered();
+        build_usable_mask(features, &axes, topo)
+    };
+    #[cfg(not(feature = "tracing"))]
+    let usable: Vec<bool> = build_usable_mask(features, &axes, topo);
     let n_usable = usable.iter().filter(|&&b| b).count();
     if n_usable < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
@@ -347,8 +303,8 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
 
     // Build the global "unlabelled" set: every feature that no
     // component admitted (neither kept nor validation-dropped). The
-    // legacy single-component path put these on `rejected` of the
-    // single solution; the multi-component path attributes them to the
+    // Single-component callers read these on `solutions[0].rejected`; the
+    // multi-component path attributes them to the
     // largest (first) component so callers that read solely
     // `solutions[0].rejected` see the same shape.
     let mut globally_kept: HashSet<usize> = HashSet::new();
@@ -397,8 +353,8 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
         } = out;
         if idx == 0 {
             // Append the global unlabelled set to the largest
-            // component's rejection list — the consumer surface a
-            // single-component caller historically expected.
+            // component's rejection list so `detect_grid` callers see the
+            // same shape as the single-solution path.
             rejected.extend(global_unlabelled.iter().copied());
         }
         let grid = LabelledGrid::new(LatticeKind::Square, entries, dimensions);
@@ -414,6 +370,18 @@ struct ComponentOutput<F: Float> {
     kept_source_indices: HashSet<usize>,
     validation_drop_source_indices: HashSet<usize>,
     min_source_index: usize,
+}
+
+fn build_usable_mask<F: Float>(
+    features: &[OrientedFeature<F, 2>],
+    axes: &[AxisCache<F>],
+    topo: &TopologicalParams<F>,
+) -> Vec<bool> {
+    features
+        .iter()
+        .zip(axes.iter())
+        .map(|(f, cache)| cache.any_informative() && axes_pass_cluster_gate(&f.axes, cache, topo))
+        .collect()
 }
 
 fn build_component_solution<F: Float>(
@@ -439,8 +407,7 @@ fn build_component_solution<F: Float>(
         .map(|e| crate::validate::LabelledEntry::new(e.idx, e.position, e.coord))
         .collect();
     let cell_size = estimate_cell_size(&labelled_entries);
-    let validation =
-        crate::validate::validate(&validate_entries, features, cell_size, &params.validate);
+    let validation = crate::validate::validate(&validate_entries, cell_size, &params.validate);
     if !validation.blacklist.is_empty() {
         labelled_entries.retain(|e| !validation.blacklist.contains(&e.idx));
     }
@@ -490,11 +457,10 @@ fn build_component_solution<F: Float>(
         .map(|&idx| features[idx].point.source_index)
         .collect();
 
-    // Per-component rejected: validation drops scoped to this
-    // component, plus over-threshold post-fit residuals scoped to
-    // this component. Globally-unlabelled features are attributed by
-    // the orchestrator to the largest component so callers reading
-    // only `solutions[0].rejected` keep the legacy shape.
+    // Per-component rejected: validation drops scoped to this component,
+    // plus over-threshold post-fit residuals scoped to this component.
+    // Globally-unlabelled features are attributed by the orchestrator to
+    // the largest component so the primary solution remains complete.
     let mut rejected: Vec<RejectedFeature<F>> = Vec::new();
     for &src in &validation_drop_source_indices {
         rejected.push(RejectedFeature::new(
@@ -554,9 +520,7 @@ fn axes_pass_cluster_gate<F: Float>(
 }
 
 /// Smallest angular distance on the circle with period π. Result in
-/// `[0, π/2]`. Mirrors the legacy
-/// `projective_grid::circular_stats::angular_dist_pi` for `F`-generic
-/// inputs — the topological cluster gate is the only consumer in this
+/// `[0, π/2]`. The topological cluster gate is the only consumer in this
 /// crate, so the helper is local.
 #[inline]
 fn angular_dist_pi<F: Float>(a: F, b: F) -> F {

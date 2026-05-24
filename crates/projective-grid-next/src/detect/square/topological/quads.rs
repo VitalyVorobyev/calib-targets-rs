@@ -2,11 +2,11 @@
 //! half-edges.
 //!
 //! For each Delaunay triangle, find its unique "diagonal" half-edge (the
-//! edge that crosses a chessboard cell). The buddy of that half-edge in
+//! edge that crosses a lattice cell). The buddy of that half-edge in
 //! the neighbour triangle is the same diagonal seen from the other side.
 //! Merging the two triangles by removing the shared diagonal yields a
 //! quadrilateral whose four perimeter edges are all *grid* edges — i.e.
-//! one chessboard cell.
+//! one lattice cell.
 //!
 //! Triangles that have zero or more than one diagonal edge are skipped:
 //! they cannot be paired unambiguously. This is consistent with the

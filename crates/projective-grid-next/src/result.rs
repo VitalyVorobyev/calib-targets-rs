@@ -126,7 +126,7 @@ pub enum RejectionReason {
     Unlabelled,
     /// Feature was labelled by the seed-and-grow pass but dropped by the
     /// post-grow validation stage (line collinearity, local-H residual,
-    /// edge-length band, or axis-slot-swap parity).
+    /// or edge-length band).
     ValidationDropped,
 }
 

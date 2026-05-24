@@ -31,7 +31,7 @@ use crate::float::{lit, Float};
 pub(super) enum EdgeClass {
     /// Both endpoints see the edge as aligned with one of their axes.
     Grid,
-    /// The edge crosses a chessboard cell from one corner to the
+    /// The edge crosses a lattice cell from one corner to the
     /// opposite corner — promoted by the per-triangle inference pass.
     Diagonal,
     /// Neither endpoint accepts the edge as a grid-axis match.

@@ -1,10 +1,8 @@
 //! Square BFS seed-and-grow engine.
 //!
-//! Phase-C scope: position prediction + ambiguity-gated attachment +
-//! per-edge axis-alignment and length gates. No parity, no
-//! consumer-supplied policy, no diagnostics sink. Returns a labelled
-//! `Coord -> feature_index` map rebased so the bounding-box minimum is
-//! `(0, 0)`.
+//! Position prediction, ambiguity-gated attachment, per-edge axis-alignment,
+//! and length gates. Returns a labelled `Coord -> feature_index` map rebased
+//! so the bounding-box minimum is `(0, 0)`.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -44,28 +42,23 @@ pub struct GrowParams<F: Float> {
     /// Edges outside the band no longer auto-reject the candidate; the
     /// gate now passes when at least this many edges land in-band.
     /// Default `u8::MAX` (i.e. every labelled cardinal neighbour must
-    /// agree, preserving the historical "any out-of-band edge rejects"
-    /// behaviour). Set to `1` to match the legacy
-    /// `projective_grid::square::grow::any_cardinal_edge_ok` "at least
-    /// one must pass" semantics that the chessboard adapter relies on.
+    /// agree. Set to `1` to admit a candidate when any labelled cardinal
+    /// neighbour has an in-band edge length.
     pub cardinal_edge_quorum: u8,
     /// Multiplier on `attach_search_rel * cell_size` for cells *outside*
     /// the current labelled bounding box (predicted from labelled
     /// neighbours). When the BFS extrapolates past the labelled bbox edge
     /// the prediction is less reliable, so widening the search radius
     /// trades a bit of ambiguity-gate exposure for recall on warped
-    /// boards. Default `1.0` (preserves current behaviour). The chessboard
-    /// adapter sets this to `2.0` to match legacy
-    /// `projective_grid::square::grow::GrowParams::boundary_search_factor`.
+    /// boards. Default `1.0`.
     pub boundary_search_factor: F,
     /// Optional global grow-axis override (radians, modulo π, matching
     /// [`crate::feature::LocalAxis::angle_rad`]). When `Some([u, v])`,
     /// `bfs_grow` uses these angles for the global u/v directions instead
     /// of deriving them from the seed quad's `B-A` / `C-A` chords. Useful
-    /// when a higher-level cluster step has already estimated reliable
-    /// grid axes (e.g. the chessboard cluster centres) and the seed-
-    /// derived axes would drift on perspective-warped boards. Default
-    /// `None` (preserves current seed-derived behaviour).
+    /// when a higher-level stage has already estimated reliable grid axes
+    /// and the seed-derived axes would drift on perspective-warped boards.
+    /// Default `None`.
     pub global_axis_u_v: Option<[F; 2]>,
 }
 
@@ -270,8 +263,7 @@ where
     let prediction = predict_from_neighbours(coord, &neighbours, attempt)?;
 
     // Extrapolation widens the candidate search radius when the target
-    // sits outside the labelled bbox along at least one axis. Mirrors the
-    // legacy `is_extrapolating` + `boundary_search_factor` logic.
+    // sits outside the labelled bbox along at least one axis.
     let radius = if is_extrapolating(coord, &neighbours) {
         attempt.search_radius * attempt.params.boundary_search_factor
     } else {
@@ -305,7 +297,6 @@ where
 /// extrapolated outward from the labelled set rather than interpolated
 /// between two opposing sides.
 ///
-/// Mirrors the legacy `projective_grid::square::grow::is_extrapolating`.
 /// Extrapolation accumulates foreshortening error linearly, so the
 /// caller widens its search radius via
 /// [`GrowParams::boundary_search_factor`] when this fires.
@@ -564,15 +555,13 @@ where
     }
     if found == 0 {
         // No labelled cardinal neighbour means the candidate was reached
-        // through diagonals only; defer (the safety net mirrors the legacy
-        // engine).
+        // through diagonals only; defer until a cardinal neighbour exists.
         return true;
     }
     // `cardinal_edge_quorum` is the minimum number of labelled cardinal
     // neighbours whose edge length must agree with `cell_size`. A quorum
     // of `u8::MAX` (the default) collapses to "every labelled cardinal
-    // neighbour must agree" because `found <= 4 < u8::MAX`. A quorum of
-    // `1` matches the legacy "any cardinal edge ok" semantics.
+    // neighbour must agree" because `found <= 4 < u8::MAX`.
     let required = u32::from(attempt.params.cardinal_edge_quorum).min(found);
     in_band >= required
 }

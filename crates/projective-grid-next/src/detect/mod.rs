@@ -217,15 +217,13 @@ impl<'a, F: Float> DetectionRequest<'a, F> {
 /// `(Square, Positions)`, `(Square, Oriented1)`, `(Square, Oriented3)`,
 /// `(Square, CoordinateHypotheses)`, and every `(Hex, *)` variant stay
 /// `UnsupportedCombination` — no working algorithm exists in the
-/// legacy crate or on-disk salvage to migrate for those slots.
+/// current implementation for those slots.
 ///
 /// **Multi-component results.** For algorithms that may produce more
 /// than one connected component (the topological path can; seed-and-
 /// grow returns exactly one), this entry point returns the largest
 /// component only. Use [`detect_grid_all`] when secondary components
-/// must be preserved with their own `(i, j)` labels — e.g. ChArUco
-/// fusion, multi-piece chessboard regions, or puzzleboard component
-/// ranking.
+/// must be preserved with their own `(u, v)` labels.
 pub fn detect_grid<F>(request: DetectionRequest<'_, F>) -> Result<GridSolution<F>>
 where
     F: Float + kiddo::float::kdtree::Axis,

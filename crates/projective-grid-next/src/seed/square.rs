@@ -6,9 +6,8 @@
 //! [`SeedParams::edge_ratio_tol`]) and whose chord directions align with
 //! the corner axes (within [`SeedParams::axis_tol_rad`]).
 //!
-//! Cell size is derived from the seed's own four edges — never passed in
-//! ahead of time. This matches the CLAUDE.md "Cell-size estimation gotcha"
-//! discipline.
+//! Cell size is derived from the seed's own four edges rather than supplied
+//! out of band.
 //!
 //! The seed finder is `(Square, Oriented2)`-specific: it consults each
 //! feature's two local axes to classify chord directions as "+u" vs "+v",
@@ -75,20 +74,11 @@ pub struct SeedParams<F: Float> {
     /// Search radius for the `D` corner around the parallelogram prediction,
     /// expressed as a fraction of the seed's mean `(|AB| + |AC|) / 2`.
     pub close_tol_rel: F,
-    /// `K` in the KD-tree query for B/C neighbours of each A candidate.
+    /// `K` in each KD-tree query for candidate neighbours of a seed anchor.
     pub k_neighbours: usize,
     /// Per-axis cap on enumerated B / C candidates when running the inner
     /// pair search.
     pub top_per_axis: usize,
-    /// Optional per-feature parity tag (length must equal `features.len()`).
-    /// Tag values: `0` for the "A/D" pool (typically the canonical-cluster
-    /// corners of a chessboard) and `1` for the "B/C" pool (typically the
-    /// swapped-cluster corners). When set, the seed finder enforces the
-    /// canonical 2×2 chess pattern: `A.tag == 0`, `B.tag == 1`,
-    /// `C.tag == 1`, `D.tag == 0`. This blocks seed quads at 2×-spacing
-    /// or with marker-internal corners that have the wrong parity. When
-    /// `None`, no parity-pattern constraint is enforced (default).
-    pub candidate_pool_split: Option<Vec<u8>>,
 }
 
 impl<F: Float> Default for SeedParams<F> {
@@ -100,7 +90,6 @@ impl<F: Float> Default for SeedParams<F> {
             close_tol_rel: lit::<F>(0.30_f32),
             k_neighbours: 32,
             top_per_axis: 6,
-            candidate_pool_split: None,
         }
     }
 }
@@ -116,26 +105,12 @@ impl<F: Float> SeedParams<F> {
             ..Self::default()
         }
     }
-
-    /// Builder-style override: supply the per-feature parity tags.
-    /// See [`Self::candidate_pool_split`].
-    pub fn with_candidate_pool_split(mut self, tags: Vec<u8>) -> Self {
-        self.candidate_pool_split = Some(tags);
-        self
-    }
 }
 
 /// Search a slice of [`OrientedFeature`]s for the first seed quad whose
 /// edges and axes are self-consistent under [`SeedParams`].
 ///
 /// Returns `None` when no quad satisfies every gate.
-///
-/// When [`SeedParams::candidate_pool_split`] is `Some`, the tags slice
-/// must have the same length as `features`. The
-/// [`crate::detect::detect_grid_all`] entry point validates this and
-/// returns `GridError::InconsistentInput` on a length mismatch. Calling
-/// `find_quad` directly with a length-mismatched tags vector falls back
-/// to the no-parity behaviour (the gate is silently disabled).
 pub fn find_quad<F>(
     features: &[OrientedFeature<F, 2>],
     params: &SeedParams<F>,
@@ -150,41 +125,14 @@ where
     let positions: Vec<Point2<F>> = features.iter().map(|f| f.point.position).collect();
     let tree = build_tree(&positions);
     let ratio_floor = ratio_floor(params.edge_ratio_tol);
-    let tags = params
-        .candidate_pool_split
-        .as_deref()
-        .filter(|t| t.len() == features.len());
 
     for a_idx in 0..features.len() {
-        if !tag_matches(tags, a_idx, 0) {
-            continue;
-        }
-        if let Some(out) = try_from_anchor(
-            a_idx,
-            features,
-            &positions,
-            &tree,
-            params,
-            ratio_floor,
-            tags,
-        ) {
+        if let Some(out) = try_from_anchor(a_idx, features, &positions, &tree, params, ratio_floor)
+        {
             return Some(out);
         }
     }
     None
-}
-
-/// Return `true` when either no parity tags are supplied or `tags[idx]
-/// == expected`. The caller (`find_quad`) only passes `Some(tags)` after
-/// confirming `tags.len() == features.len()`, so the bounds check is
-/// guaranteed safe; a guarded `get` keeps the helper itself panic-free
-/// if it is ever reused from a less defensive caller.
-#[inline]
-fn tag_matches(tags: Option<&[u8]>, idx: usize, expected: u8) -> bool {
-    match tags {
-        None => true,
-        Some(t) => t.get(idx) == Some(&expected),
-    }
 }
 
 // ----------------------------- internals -----------------------------------
@@ -216,7 +164,6 @@ fn try_from_anchor<F>(
     tree: &KdTree<F, 2>,
     params: &SeedParams<F>,
     ratio_floor: F,
-    tags: Option<&[u8]>,
 ) -> Option<SeedSearchOutput<F>>
 where
     F: Float + kiddo::float::kdtree::Axis,
@@ -238,14 +185,8 @@ where
     }
 
     for (b_idx, b_dist, b_off) in b_cands.iter().take(params.top_per_axis) {
-        if !tag_matches(tags, *b_idx, 1) {
-            continue;
-        }
         for (c_idx, c_dist, c_off) in c_cands.iter().take(params.top_per_axis) {
             if b_idx == c_idx {
-                continue;
-            }
-            if !tag_matches(tags, *c_idx, 1) {
                 continue;
             }
             if let Some(out) = try_complete_quad(QuadCompleteArgs {
@@ -261,7 +202,6 @@ where
                 tree,
                 params,
                 ratio_floor,
-                tags,
             }) {
                 return Some(out);
             }
@@ -339,10 +279,6 @@ where
     tree: &'a KdTree<F, 2>,
     params: &'a SeedParams<F>,
     ratio_floor: F,
-    /// Optional per-feature parity tags. When `Some`, the D candidate
-    /// must additionally satisfy `tags[d] == 0` (matching the canonical
-    /// chess pattern A/D in pool 0, B/C in pool 1).
-    tags: Option<&'a [u8]>,
 }
 
 fn try_complete_quad<F>(args: QuadCompleteArgs<'_, F>) -> Option<SeedSearchOutput<F>>
@@ -365,10 +301,7 @@ where
     let close_px_sq = close_px * close_px;
 
     let d_idx = find_nearest(args.tree, pred, close_px_sq, |idx| {
-        idx == args.a_idx
-            || idx == args.b_idx
-            || idx == args.c_idx
-            || !tag_matches(args.tags, idx, 0)
+        idx == args.a_idx || idx == args.b_idx || idx == args.c_idx
     })?;
     let d_pos = args.positions[d_idx];
 

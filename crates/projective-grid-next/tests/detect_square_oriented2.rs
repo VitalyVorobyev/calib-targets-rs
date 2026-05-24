@@ -8,9 +8,10 @@
 use std::collections::HashSet;
 
 use nalgebra::Point2;
+use projective_grid_next::detect::GrowParams;
 use projective_grid_next::{
-    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, GridError, GrowParams,
-    LatticeKind, LocalAxis, OrientedFeature, PointFeature, RejectionReason, SeedParams,
+    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
+    OrientedFeature, PointFeature, RejectionReason,
 };
 
 fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<f32, 2>> {
@@ -268,9 +269,9 @@ fn fewer_than_four_features_returns_insufficient_evidence() {
 }
 
 // ---------------------------------------------------------------------------
-// New knobs (Phase E.1b prereq): cardinal_edge_quorum, boundary_search_factor,
-// global_axis_u_v, candidate_pool_split. Each test verifies the default
-// behaviour AND the legacy-equivalent override.
+// Algorithm knobs: cardinal_edge_quorum, boundary_search_factor,
+// global_axis_u_v. Each test verifies the default behaviour and the
+// corresponding explicit override.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -394,7 +395,7 @@ fn global_axis_u_v_overrides_seed_derived_axes() {
     // quad) is rotated 14° around its anchor `A = (0, 0)`. Rotation
     // preserves the parallelogram, the four seed edges, and the per-
     // corner axes (the seed-finder consults the *features' own* axes
-    // for B/C classification, not the chord directions, so the seed
+    // for axis classification, not the chord directions, so the seed
     // still parses). The downstream features stay axis-aligned, so the
     // seed-derived `B-A` chord sits 14° off the true `[0, π/2]` global
     // axes.
@@ -456,69 +457,5 @@ fn global_axis_u_v_overrides_seed_derived_axes() {
          (got {} vs {})",
         overridden.grid.entries.len(),
         seed_axes.grid.entries.len()
-    );
-}
-
-#[test]
-fn candidate_pool_split_wrong_parity_blocks_seed() {
-    // 5×5 grid where every feature is tagged with its `(i + j) % 2` parity.
-    // The canonical chess seed (A in pool 0, B/C in pool 1, D in pool 0)
-    // is satisfied so the detector finds a seed. With every tag forced to
-    // 0, B and C candidates (pool 1) become invalid and the seed finder
-    // reports `DegenerateGeometry` (the post-`find_quad` `ok_or` in
-    // `detect_square_oriented2_seed_grow`).
-    let s = 20.0_f32;
-    let cols = 5_i32;
-    let features = axis_aligned_features(cols, cols, s);
-
-    let parity_tags: Vec<u8> = (0..(cols * cols) as usize)
-        .map(|idx| {
-            let i = idx as i32 % cols;
-            let j = idx as i32 / cols;
-            ((i + j).rem_euclid(2)) as u8
-        })
-        .collect();
-    let seed_parity = SeedParams::<f32>::default().with_candidate_pool_split(parity_tags);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default().with_seed(seed_parity),
-    );
-    let solution = detect_grid(request).expect("parity-valid tags should still solve");
-    assert!(
-        solution.grid.entries.len() >= 24,
-        "parity-tagged 5×5 should recover near-full grid (got {})",
-        solution.grid.entries.len()
-    );
-
-    let bad_tags: Vec<u8> = vec![0; (cols * cols) as usize];
-    let seed_bad = SeedParams::<f32>::default().with_candidate_pool_split(bad_tags);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default().with_seed(seed_bad),
-    );
-    let err = detect_grid(request).unwrap_err();
-    assert_eq!(err, GridError::DegenerateGeometry);
-}
-
-#[test]
-fn candidate_pool_split_wrong_length_is_inconsistent_input() {
-    // Length-mismatch contract: `detect_grid_all` validates the tag slice
-    // length against `features.len()` before reaching `find_quad`.
-    let features = axis_aligned_features(3, 3, 20.0);
-    let seed_short = SeedParams::<f32>::default().with_candidate_pool_split(vec![0_u8, 1, 0, 1]);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default().with_seed(seed_short),
-    );
-    let err = detect_grid(request).unwrap_err();
-    assert!(
-        matches!(err, GridError::InconsistentInput(_)),
-        "expected InconsistentInput, got {err:?}"
     );
 }

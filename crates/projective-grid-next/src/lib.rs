@@ -2,9 +2,9 @@
 //!
 //! This crate is intentionally small at the public boundary. It models two
 //! lattice families, two tasks, and explicit evidence shapes. Target-specific
-//! concepts such as chessboard parity, marker IDs, ring IDs, and detector
-//! cluster labels belong in caller crates and should be converted into generic
-//! point features or coordinate hypotheses before entering this crate.
+//! identifiers and detector classes belong in caller crates and should be
+//! converted into generic point features or coordinate hypotheses before
+//! entering this crate.
 
 #![warn(missing_docs)]
 
@@ -23,7 +23,7 @@ mod validate;
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
 pub use crate::detect::{
     detect_grid, detect_grid_all, DetectionParams, DetectionReport, DetectionRequest, Evidence,
-    GrowParams, SeedParams, SquareAlgorithm, TopologicalParams, ValidateParams,
+    SquareAlgorithm, TopologicalParams,
 };
 pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};

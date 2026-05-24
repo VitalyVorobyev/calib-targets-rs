@@ -44,10 +44,11 @@ use projective_grid::{
     merge_components_local, AxisClusterCenters, ComponentInput,
     TopologicalParams as LegacyTopologicalParams,
 };
+use projective_grid_next::detect::ValidateParams as NextValidateParams;
 use projective_grid_next::{
     detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
     LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
-    TopologicalParams as NextTopologicalParams, ValidateParams as NextValidateParams,
+    TopologicalParams as NextTopologicalParams,
 };
 use std::collections::HashMap;
 
@@ -88,7 +89,7 @@ fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisCl
 ///
 /// The new pipeline also runs a post-grow validation + fit-residual
 /// drop. Both are disabled here (tolerances pushed to `+inf`,
-/// edge-parity check off, `max_residual_px = +inf`) because the
+/// `max_residual_px = +inf`) because the
 /// chessboard owns its own geometry check downstream — the migration
 /// must produce the same labelled components the legacy
 /// `build_grid_topological` produced.
@@ -126,7 +127,6 @@ fn detection_params_for_topological(
     validate.line_tol_rel = f32::INFINITY;
     validate.local_h_tol_rel = f32::INFINITY;
     validate.edge_length_band_rel = f32::INFINITY;
-    validate.enable_edge_parity_check = false;
 
     NextDetectionParams::<f32>::default()
         .with_algorithm(SquareAlgorithm::Topological)

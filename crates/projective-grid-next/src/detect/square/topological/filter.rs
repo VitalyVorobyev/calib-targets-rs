@@ -13,9 +13,8 @@
 //!   This catches quads formed across missing corners (long edges) or
 //!   across spurious within-cell features (short edges) — failure modes
 //!   that the parallelogram test admits when both opposing pairs scale
-//!   together. The asymmetric band lets callers express the legacy
-//!   `quad_edge_min_rel = 0.0` (upper-only) semantics by passing
-//!   `min_rel = 0.0`.
+//!   together. Passing `min_rel = 0.0` expresses an upper-only edge-length
+//!   band.
 
 use std::collections::HashMap;
 
@@ -90,14 +89,6 @@ fn quad_min_max_edge<F: Float>(quad: &Quad, positions: &[Point2<F>]) -> (F, F) {
 
 /// Apply topology + parallelogram + per-component cell-size filters and
 /// return the surviving quads in input order.
-#[cfg_attr(
-    feature = "tracing",
-    tracing::instrument(
-        level = "debug",
-        skip_all,
-        fields(num_quads_in = quads.len()),
-    )
-)]
 pub(super) fn filter_quads<F: Float>(
     quads: Vec<Quad>,
     positions: &[Point2<F>],
@@ -107,8 +98,53 @@ pub(super) fn filter_quads<F: Float>(
 ) -> Vec<Quad> {
     let degree = quad_degrees(&quads);
 
-    // Topology + parallelogram pass.
-    let prefiltered: Vec<Quad> = quads
+    #[cfg(feature = "tracing")]
+    let topology_filtered = {
+        let _span =
+            tracing::debug_span!("topological_quad_filter", num_quads_in = quads.len()).entered();
+        apply_topological_quad_filter(quads, &degree)
+    };
+    #[cfg(not(feature = "tracing"))]
+    let topology_filtered = apply_topological_quad_filter(quads, &degree);
+
+    #[cfg(feature = "tracing")]
+    let geometry_filtered = {
+        let _span = tracing::debug_span!(
+            "geometry_quad_filter",
+            num_quads_in = topology_filtered.len()
+        )
+        .entered();
+        apply_geometry_quad_filter(topology_filtered, positions, opposing_edge_ratio_max)
+    };
+    #[cfg(not(feature = "tracing"))]
+    let geometry_filtered =
+        apply_geometry_quad_filter(topology_filtered, positions, opposing_edge_ratio_max);
+
+    #[cfg(feature = "tracing")]
+    {
+        let _span = tracing::debug_span!(
+            "cell_size_quad_filter",
+            num_quads_in = geometry_filtered.len()
+        )
+        .entered();
+        apply_per_component_cell_size_filter(
+            geometry_filtered,
+            positions,
+            edge_length_min_rel,
+            edge_length_max_rel,
+        )
+    }
+    #[cfg(not(feature = "tracing"))]
+    apply_per_component_cell_size_filter(
+        geometry_filtered,
+        positions,
+        edge_length_min_rel,
+        edge_length_max_rel,
+    )
+}
+
+fn apply_topological_quad_filter(quads: Vec<Quad>, degree: &HashMap<usize, u32>) -> Vec<Quad> {
+    quads
         .into_iter()
         .filter(|q| {
             let illegal_count = q
@@ -117,19 +153,20 @@ pub(super) fn filter_quads<F: Float>(
                 .copied()
                 .filter(|v| degree.get(v).copied().unwrap_or(0) > 8)
                 .count();
-            if illegal_count >= 2 {
-                return false;
-            }
-            max_opposing_edge_ratio(q, positions) <= opposing_edge_ratio_max
+            illegal_count < 2
         })
-        .collect();
+        .collect()
+}
 
-    apply_per_component_cell_size_filter(
-        prefiltered,
-        positions,
-        edge_length_min_rel,
-        edge_length_max_rel,
-    )
+fn apply_geometry_quad_filter<F: Float>(
+    quads: Vec<Quad>,
+    positions: &[Point2<F>],
+    opposing_edge_ratio_max: F,
+) -> Vec<Quad> {
+    quads
+        .into_iter()
+        .filter(|q| max_opposing_edge_ratio(q, positions) <= opposing_edge_ratio_max)
+        .collect()
 }
 
 /// Reject quads whose perimeter edges fall outside
