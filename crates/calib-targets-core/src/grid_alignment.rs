@@ -19,15 +19,18 @@
 //! `-next`); this module is the single edit site for that flip.
 
 use projective_grid_next::lattice::LatticeKind;
+use projective_grid_next::Coord as NextCoord;
 use projective_grid_next::GridTransform as NextGridTransform;
 
 pub use projective_grid::{GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4};
 
 // ---- Conversions to / from projective-grid-next ----
 //
-// `projective_grid_next::Coord` is a struct in the reset API. Add explicit
-// coordinate bridges here when downstream code starts crossing labelled-grid
-// data into the next crate; current callers only bridge transforms.
+// The legacy `GridCoords { i, j }` carries the square-lattice convention
+// `i` right / `j` down; the new crate's `Coord { u, v }` is the lattice-
+// agnostic (`u`, `v`) pair. For square lattices the mapping is direct:
+// `i → u`, `j → v`. The hex case never crosses this bridge because legacy
+// `GridCoords` has no hex variant.
 //
 // The 2×2 + offset conversion for `GridTransform` / `GridAlignment` IS new
 // (the legacy crate had no awareness of the new crate). The legacy
@@ -92,6 +95,23 @@ pub fn grid_alignment_from_next(t: NextGridTransform) -> GridAlignment {
     }
 }
 
+/// Convert the legacy [`GridCoords`] into the lattice-agnostic
+/// [`projective_grid_next::Coord`]. The mapping is `i → u`, `j → v`.
+///
+/// Implemented as a free function (not an `impl From`) because both types
+/// live in foreign crates from this module's POV.
+#[inline]
+pub fn grid_coords_to_next(c: GridCoords) -> NextCoord {
+    NextCoord::new(c.i, c.j)
+}
+
+/// Project a [`projective_grid_next::Coord`] back into the legacy
+/// [`GridCoords`] shape (`u → i`, `v → j`).
+#[inline]
+pub fn grid_coords_from_next(c: NextCoord) -> GridCoords {
+    GridCoords { i: c.u, j: c.v }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -126,5 +146,24 @@ mod tests {
         };
         let next = grid_alignment_to_next(align);
         assert_eq!(grid_alignment_from_next(next), align);
+    }
+
+    #[test]
+    fn grid_coords_bridges_pin_field_mapping() {
+        // The mapping is load-bearing for every consumer that converts
+        // labelled-grid data into the next crate: legacy `i` is square's
+        // first axis ("right"), which is `Coord::u`; legacy `j` is the
+        // second axis ("down"), which is `Coord::v`.
+        let legacy = GridCoords { i: 3, j: -5 };
+        let next = grid_coords_to_next(legacy);
+        assert_eq!(next.u, 3);
+        assert_eq!(next.v, -5);
+        assert_eq!(grid_coords_from_next(next), legacy);
+
+        // Asymmetric values catch any future i/j swap.
+        for (i, j) in [(0, 0), (1, 0), (0, 1), (-7, 11), (i32::MAX, i32::MIN)] {
+            let g = GridCoords { i, j };
+            assert_eq!(grid_coords_from_next(grid_coords_to_next(g)), g);
+        }
     }
 }
