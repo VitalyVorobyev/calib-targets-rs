@@ -14,8 +14,7 @@ Full API reference: see the [`projective-grid` book chapter][book-chapter].
 
 ```toml
 [dependencies]
-projective-grid = "0.8"
-nalgebra = "0.34"
+projective-grid = "0.9"
 ```
 
 ## Pipeline at a glance

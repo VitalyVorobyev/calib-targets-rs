@@ -36,7 +36,7 @@ runs as a shared post-stage (the same one chessboard-v2 uses) — image-
 free, local-geometry-only, distortion-tolerant. See the
 `projective_grid::component_merge` module docs for the merge predicate.
 
-Documented gap (see `docs/projective_grid_overview.md`): merge requires
+Documented gap (see `docs/algorithmic_gaps.md`, Gap 9): merge requires
 overlapping `(i, j)` labels after a candidate alignment; spatially-
 disjoint components separated by a missing row never reach the overlap
 test and stay split.
@@ -79,6 +79,10 @@ investigations.
   grow alternative + the chessboard-specific axis-slot-swap edge
   invariant.
 - `CLAUDE.md` "Graph-build algorithm selection" — when to use which.
-- `docs/projective_grid_overview.md` — original integrated reference;
-  this stage map supersedes the overview's prose for the topological
-  pipeline.
+- `docs/algorithmic_gaps.md` — workspace-wide open algorithmic gaps
+  (Gap 8: topological recall in heavy-distortion regions; Gap 9:
+  component-merge boundary-prediction extension; Gap 10:
+  topological-default flip gate).
+- `crates/calib-targets-chessboard/docs/PIPELINE.md` — the
+  chessboard-side topological pipeline (input adapter + recovery
+  layer) that wraps this core.

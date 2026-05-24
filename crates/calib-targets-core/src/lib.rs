@@ -34,7 +34,8 @@ mod orientation_clustering;
 mod rectify;
 
 pub use homography::{
-    estimate_homography_rect_to_img, homography_from_4pt, warp_perspective_gray, Homography,
+    estimate_homography_rect_to_img, homography_from_4pt, homography_from_next, homography_to_next,
+    warp_perspective_gray, Homography,
 };
 pub use image::{
     sample_bilinear, sample_bilinear_fast, sample_bilinear_u8, GrayImage, GrayImageView,
@@ -48,8 +49,14 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 // `chess-corners` crate directly, where they belong — re-exporting the whole
 // upstream surface would freeze it into this crate's semver contract.
 pub use chess::{DetectorConfig, OrientationMethod};
-pub use corner::{AxisEstimate, GridCoords, LabeledCorner, TargetDetection, TargetKind};
-pub use grid_alignment::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+pub use corner::{
+    axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, GridCoords, LabeledCorner,
+    TargetDetection, TargetKind,
+};
+pub use grid_alignment::{
+    grid_alignment_from_next, grid_alignment_to_next, grid_transform_from_next,
+    grid_transform_to_next, GridAlignment, GridTransform, GRID_TRANSFORMS_D4,
+};
 
 #[cfg(feature = "tracing")]
 pub use logger::init_tracing;

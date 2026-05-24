@@ -1,7 +1,32 @@
 use nalgebra::Point2;
+use projective_grid_next::AxisEstimate as NextAxisEstimate;
 use serde::{Deserialize, Serialize};
 
-pub use projective_grid::{AxisEstimate, GridCoords};
+pub use projective_grid::AxisEstimate;
+
+pub use crate::grid_alignment::GridCoords;
+
+// ---- Conversions to / from projective-grid-next ----
+
+/// Promote the legacy `f32`-only [`AxisEstimate`] into the
+/// [`projective_grid_next`] crate's `Float`-generic
+/// [`NextAxisEstimate<f32>`].
+///
+/// Implemented as a free function because both types live in foreign
+/// crates from this module's POV (the orphan rules forbid an `impl From`).
+#[inline]
+pub fn axis_estimate_to_next(a: AxisEstimate) -> NextAxisEstimate<f32> {
+    NextAxisEstimate::new(a.angle, a.sigma)
+}
+
+/// Project a [`NextAxisEstimate<f32>`] back into the legacy shape.
+#[inline]
+pub fn axis_estimate_from_next(a: NextAxisEstimate<f32>) -> AxisEstimate {
+    AxisEstimate {
+        angle: a.angle,
+        sigma: a.sigma,
+    }
+}
 
 /// The kind of target that a detection corresponds to.
 #[non_exhaustive]

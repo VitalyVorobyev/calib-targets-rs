@@ -1,8 +1,36 @@
+//! Homography compatibility shim.
+//!
+//! Re-exports the legacy `projective_grid::Homography` (default `F = f32`)
+//! and its estimators so downstream code that writes bare `Homography`
+//! (and freely crosses values to the legacy crate's other free functions)
+//! keeps the type-identity invariant during the
+//! `projective-grid → projective-grid-next` migration window.
+//!
+//! Bridges to [`projective_grid_next::Homography<f32>`] are provided as
+//! free functions for callers that want to interoperate with the new
+//! crate's surface — but the canonical `Homography` re-export stays on
+//! the legacy type until Phase 8 collapses the two crates.
+
 use crate::{sample_bilinear_u8, GrayImage, GrayImageView};
 use nalgebra::Point2;
 
 pub use projective_grid::estimate_homography as estimate_homography_rect_to_img;
 pub use projective_grid::{homography_from_4pt, Homography};
+
+/// Convert the legacy [`Homography`] into the [`projective_grid_next`]
+/// crate's `Homography<f32>`. The underlying 3×3 matrix is copied byte-for
+/// -byte.
+#[inline]
+pub fn homography_to_next(h: Homography) -> projective_grid_next::Homography<f32> {
+    projective_grid_next::Homography::new(h.h)
+}
+
+/// Project a [`projective_grid_next::Homography<f32>`] back into the legacy
+/// shape.
+#[inline]
+pub fn homography_from_next(h: projective_grid_next::Homography<f32>) -> Homography {
+    Homography::new(h.h)
+}
 
 /// Warp into rectified image: for each dst pixel, map to src via H_img_from_rect and sample.
 pub fn warp_perspective_gray(

@@ -1,6 +1,5 @@
-use crate::GrayImage;
+use crate::{GrayImage, Homography};
 use nalgebra::Point2;
-use projective_grid::Homography;
 
 /// A rectified (fronto-parallel) view of a detected board, plus the
 /// mapping back to the original image.
