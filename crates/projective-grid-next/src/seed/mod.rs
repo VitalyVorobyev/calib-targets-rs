@@ -1,10 +1,7 @@
-//! Seed-quad finders. Pattern hooks via `SeedQuadContext<F>`; the seed
-//! pipeline emits typed events through [`DiagnosticSink`](crate::DiagnosticSink).
+//! Seed-quad finders for the detection pipeline.
+//!
+//! Phase C ships the square seed-quad finder only. Hex remains unimplemented.
 
-pub mod hex;
-pub mod square;
+mod square;
 
-pub use square::{
-    find_quad, seed_has_midpoint_violation, MidpointCtx, Seed, SeedOutput, SeedQuad,
-    SeedQuadContext, SeedQuadParams, SEED_QUAD_GRID,
-};
+pub use square::{find_quad, Seed, SeedParams, SeedQuad, SeedSearchOutput};

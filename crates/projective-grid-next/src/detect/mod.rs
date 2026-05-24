@@ -1,14 +1,22 @@
 //! Detection task facade.
 //!
-//! Detection is intentionally a typed placeholder in this corrective reset.
-//! Algorithms will be ported only after the evidence and result contracts are
-//! stable.
+//! Phase C ships a working implementation for
+//! [`(LatticeKind::Square, Evidence::Oriented2)`](Evidence::Oriented2): a
+//! seed-and-grow pipeline (seed → BFS grow → validate → fit). All other
+//! `(lattice, evidence)` combinations remain typed
+//! [`GridError::UnsupportedCombination`] placeholders.
+
+mod square;
 
 use crate::error::{EvidenceKind, GridError, GridTask, Result};
 use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
 use crate::float::{lit, Float};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::GridSolution;
+use crate::seed::SeedParams;
+use crate::validate::ValidateParams;
+
+pub use crate::grow::GrowParams;
 
 /// Evidence supplied to a detection task.
 #[derive(Clone, Copy, Debug)]
@@ -44,18 +52,42 @@ impl<F: Float> Evidence<'_, F> {
     }
 }
 
-/// Parameters for future detection algorithms.
+/// Detection parameters.
+///
+/// The single `max_residual_px` knob from the Phase-A shell now sits alongside
+/// the three structured sub-configs consumed by the seed-and-grow pipeline.
+/// Combinations that don't run that pipeline ignore the sub-configs.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DetectionParams<F: Float> {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
     pub max_residual_px: F,
+    /// Seed-quad finder tuning.
+    pub seed: SeedParams<F>,
+    /// BFS grow engine tuning.
+    pub grow: GrowParams<F>,
+    /// Post-grow validation tuning.
+    pub validate: ValidateParams<F>,
 }
 
 impl<F: Float> Default for DetectionParams<F> {
     fn default() -> Self {
         Self {
             max_residual_px: lit::<F>(2.0),
+            seed: SeedParams::default(),
+            grow: GrowParams::default(),
+            validate: ValidateParams::default(),
+        }
+    }
+}
+
+impl<F: Float> DetectionParams<F> {
+    /// Construct detection parameters from just the residual threshold; the
+    /// sub-configs take their defaults.
+    pub fn new(max_residual_px: F) -> Self {
+        Self {
+            max_residual_px,
+            ..Self::default()
         }
     }
 }
@@ -93,13 +125,23 @@ impl<'a, F: Float> DetectionRequest<'a, F> {
 
 /// Detect a grid from feature evidence.
 ///
-/// All combinations currently return [`GridError::UnsupportedCombination`].
-/// This keeps the public matrix explicit while the old square-specific
-/// implementation remains quarantined from the facade.
-pub fn detect_grid<F: Float>(request: DetectionRequest<'_, F>) -> Result<GridSolution<F>> {
-    Err(GridError::UnsupportedCombination {
-        task: GridTask::Detection,
-        lattice: request.lattice,
-        evidence: request.evidence.kind(),
-    })
+/// Phase-C support matrix:
+///
+/// * `(Square, Oriented2)` — seed-and-grow port; returns a labelled
+///   [`GridSolution`] with a fitted projective transform.
+/// * Every other combination — typed [`GridError::UnsupportedCombination`].
+pub fn detect_grid<F>(request: DetectionRequest<'_, F>) -> Result<GridSolution<F>>
+where
+    F: Float + kiddo::float::kdtree::Axis,
+{
+    match (request.lattice, request.evidence) {
+        (LatticeKind::Square, Evidence::Oriented2(features)) => {
+            square::detect_square_oriented2(features, request.dimensions, &request.params)
+        }
+        _ => Err(GridError::UnsupportedCombination {
+            task: GridTask::Detection,
+            lattice: request.lattice,
+            evidence: request.evidence.kind(),
+        }),
+    }
 }

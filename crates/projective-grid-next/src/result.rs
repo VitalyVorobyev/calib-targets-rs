@@ -121,6 +121,13 @@ impl<F: Float> LatticeFit<F> {
 pub enum RejectionReason {
     /// Reprojection residual exceeded the configured threshold.
     ResidualTooHigh,
+    /// Feature was never labelled by the detection pipeline (e.g. noise
+    /// outside the recovered lattice support).
+    Unlabelled,
+    /// Feature was labelled by the seed-and-grow pass but dropped by the
+    /// post-grow validation stage (line collinearity, local-H residual,
+    /// edge-length band, or axis-slot-swap parity).
+    ValidationDropped,
 }
 
 /// Rejected feature record.
