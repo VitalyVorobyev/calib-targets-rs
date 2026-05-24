@@ -38,6 +38,35 @@ pub struct GrowParams<F: Float> {
     /// Whether to consume per-neighbour local-step estimates when available.
     /// Default `true`.
     pub local_step_fallback: bool,
+    /// Minimum number of labelled cardinal neighbours whose edge length
+    /// to the candidate must fall within `[1 - edge_length_tol, 1 +
+    /// edge_length_tol] * cell_size` for the candidate to be admitted.
+    /// Edges outside the band no longer auto-reject the candidate; the
+    /// gate now passes when at least this many edges land in-band.
+    /// Default `u8::MAX` (i.e. every labelled cardinal neighbour must
+    /// agree, preserving the historical "any out-of-band edge rejects"
+    /// behaviour). Set to `1` to match the legacy
+    /// `projective_grid::square::grow::any_cardinal_edge_ok` "at least
+    /// one must pass" semantics that the chessboard adapter relies on.
+    pub cardinal_edge_quorum: u8,
+    /// Multiplier on `attach_search_rel * cell_size` for cells *outside*
+    /// the current labelled bounding box (predicted from labelled
+    /// neighbours). When the BFS extrapolates past the labelled bbox edge
+    /// the prediction is less reliable, so widening the search radius
+    /// trades a bit of ambiguity-gate exposure for recall on warped
+    /// boards. Default `1.0` (preserves current behaviour). The chessboard
+    /// adapter sets this to `2.0` to match legacy
+    /// `projective_grid::square::grow::GrowParams::boundary_search_factor`.
+    pub boundary_search_factor: F,
+    /// Optional global grow-axis override (radians, modulo π, matching
+    /// [`crate::feature::LocalAxis::angle_rad`]). When `Some([u, v])`,
+    /// `bfs_grow` uses these angles for the global u/v directions instead
+    /// of deriving them from the seed quad's `B-A` / `C-A` chords. Useful
+    /// when a higher-level cluster step has already estimated reliable
+    /// grid axes (e.g. the chessboard cluster centres) and the seed-
+    /// derived axes would drift on perspective-warped boards. Default
+    /// `None` (preserves current seed-derived behaviour).
+    pub global_axis_u_v: Option<[F; 2]>,
 }
 
 impl<F: Float> Default for GrowParams<F> {
@@ -48,6 +77,9 @@ impl<F: Float> Default for GrowParams<F> {
             edge_length_tol: lit::<F>(0.35_f32),
             axis_align_tol_rad: lit::<F>(25.0_f32) * F::pi() / lit::<F>(180.0_f32),
             local_step_fallback: true,
+            cardinal_edge_quorum: u8::MAX,
+            boundary_search_factor: F::one(),
+            global_axis_u_v: None,
         }
     }
 }
@@ -61,6 +93,29 @@ impl<F: Float> GrowParams<F> {
             attach_ambiguity_factor,
             ..Self::default()
         }
+    }
+
+    /// Builder-style override: supply a global grow-axis pair `[u_angle,
+    /// v_angle]` (radians, modulo π) instead of deriving from the seed.
+    /// See [`Self::global_axis_u_v`].
+    pub fn with_global_axis_u_v(mut self, axes: [F; 2]) -> Self {
+        self.global_axis_u_v = Some(axes);
+        self
+    }
+
+    /// Builder-style override: minimum labelled cardinal neighbours whose
+    /// edge length to the candidate must be within band. See
+    /// [`Self::cardinal_edge_quorum`].
+    pub fn with_cardinal_edge_quorum(mut self, quorum: u8) -> Self {
+        self.cardinal_edge_quorum = quorum;
+        self
+    }
+
+    /// Builder-style override: search-radius multiplier when extrapolating
+    /// past the labelled bounding box. See [`Self::boundary_search_factor`].
+    pub fn with_boundary_search_factor(mut self, factor: F) -> Self {
+        self.boundary_search_factor = factor;
+        self
     }
 }
 
@@ -89,7 +144,10 @@ where
 {
     let positions: Vec<Point2<F>> = features.iter().map(|f| f.point.position).collect();
     let cell_size = seed.cell_size;
-    let (axis_u, axis_v) = derive_seed_axes(seed, &positions);
+    let (axis_u, axis_v) = match params.global_axis_u_v {
+        Some([u_ang, v_ang]) => (angle_to_unit_vector(u_ang), angle_to_unit_vector(v_ang)),
+        None => derive_seed_axes(seed, &positions),
+    };
 
     let tree = build_tree(&positions);
 
@@ -211,9 +269,18 @@ where
 
     let prediction = predict_from_neighbours(coord, &neighbours, attempt)?;
 
+    // Extrapolation widens the candidate search radius when the target
+    // sits outside the labelled bbox along at least one axis. Mirrors the
+    // legacy `is_extrapolating` + `boundary_search_factor` logic.
+    let radius = if is_extrapolating(coord, &neighbours) {
+        attempt.search_radius * attempt.params.boundary_search_factor
+    } else {
+        attempt.search_radius
+    };
+
     let candidates = collect_candidates(
         prediction,
-        attempt.search_radius,
+        radius,
         attempt.tree,
         &state.by_feature,
         attempt.positions,
@@ -231,6 +298,37 @@ where
     }
 
     Some(candidate.idx)
+}
+
+/// True when every labelled neighbour sits on the same side of `target`
+/// along at least one of the two grid axes — i.e. the target is being
+/// extrapolated outward from the labelled set rather than interpolated
+/// between two opposing sides.
+///
+/// Mirrors the legacy `projective_grid::square::grow::is_extrapolating`.
+/// Extrapolation accumulates foreshortening error linearly, so the
+/// caller widens its search radius via
+/// [`GrowParams::boundary_search_factor`] when this fires.
+fn is_extrapolating<F: Float>(target: Coord, neighbours: &[LabelledNeighbour<F>]) -> bool {
+    let mut has_neg_du = false;
+    let mut has_pos_du = false;
+    let mut has_neg_dv = false;
+    let mut has_pos_dv = false;
+    for n in neighbours {
+        let du = target.u - n.coord.u;
+        let dv = target.v - n.coord.v;
+        if du > 0 {
+            has_neg_du = true;
+        } else if du < 0 {
+            has_pos_du = true;
+        }
+        if dv > 0 {
+            has_neg_dv = true;
+        } else if dv < 0 {
+            has_pos_dv = true;
+        }
+    }
+    !(has_neg_du && has_pos_du && has_neg_dv && has_pos_dv)
 }
 
 fn predict_from_neighbours<F>(
@@ -448,28 +546,35 @@ where
     let one = F::one();
     let low = one - attempt.params.edge_length_tol;
     let high = one + attempt.params.edge_length_tol;
-    let mut found_any = false;
-    let mut at_least_one_ok = false;
+    let mut found = 0_u32;
+    let mut in_band = 0_u32;
     for offset in &SQUARE_CARDINAL_OFFSETS {
         let neighbour = Coord::new(coord.u + offset.u, coord.v + offset.v);
         if let Some(&n_idx) = state.labelled.get(&neighbour) {
-            found_any = true;
+            found += 1;
             let from_pos = attempt.positions[n_idx];
             let dx = to_pos.x - from_pos.x;
             let dy = to_pos.y - from_pos.y;
             let length = (dx * dx + dy * dy).sqrt();
             let ratio = length / attempt.cell_size;
             if ratio >= low && ratio <= high {
-                at_least_one_ok = true;
-            } else {
-                // A single out-of-band cardinal edge is enough to reject.
-                return false;
+                in_band += 1;
             }
         }
     }
-    // If we found at least one labelled cardinal neighbour, at least one
-    // edge must have passed; otherwise the candidate is unreachable.
-    !found_any || at_least_one_ok
+    if found == 0 {
+        // No labelled cardinal neighbour means the candidate was reached
+        // through diagonals only; defer (the safety net mirrors the legacy
+        // engine).
+        return true;
+    }
+    // `cardinal_edge_quorum` is the minimum number of labelled cardinal
+    // neighbours whose edge length must agree with `cell_size`. A quorum
+    // of `u8::MAX` (the default) collapses to "every labelled cardinal
+    // neighbour must agree" because `found <= 4 < u8::MAX`. A quorum of
+    // `1` matches the legacy "any cardinal edge ok" semantics.
+    let required = u32::from(attempt.params.cardinal_edge_quorum).min(found);
+    in_band >= required
 }
 
 fn derive_seed_axes<F: Float>(
@@ -485,6 +590,14 @@ fn derive_seed_axes<F: Float>(
     let nu = raw_u.norm().max(eps);
     let nv = raw_v.norm().max(eps);
     (raw_u / nu, raw_v / nv)
+}
+
+/// Convert an undirected axis angle (radians, modulo π) into a unit
+/// direction vector. Mirrors how `derive_seed_axes` normalises a chord —
+/// the global-axis override path uses caller-supplied angles instead of
+/// the seed-derived chords but otherwise feeds the same downstream code.
+fn angle_to_unit_vector<F: Float>(angle_rad: F) -> Vector2<F> {
+    Vector2::new(angle_rad.cos(), angle_rad.sin())
 }
 
 fn build_tree<F>(positions: &[Point2<F>]) -> KdTree<F, 2>

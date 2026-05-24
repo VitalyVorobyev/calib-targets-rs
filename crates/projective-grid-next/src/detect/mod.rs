@@ -84,7 +84,7 @@ impl<F: Float> Evidence<'_, F> {
 /// [`algorithm`](Self::algorithm) selector decides which of the
 /// `(Square, Oriented2)` paths consumes which sub-config; combinations
 /// not run by the chosen algorithm leave their sub-configs untouched.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct DetectionParams<F: Float> {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
@@ -169,7 +169,7 @@ impl<F: Float> DetectionParams<F> {
 }
 
 /// Detection request.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct DetectionRequest<'a, F: Float> {
     /// Lattice family to recover.

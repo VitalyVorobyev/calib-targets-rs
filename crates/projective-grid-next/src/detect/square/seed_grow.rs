@@ -32,6 +32,15 @@ where
     if features.len() < 4 {
         return Err(GridError::InsufficientEvidence);
     }
+    if let Some(tags) = params.seed.candidate_pool_split.as_deref() {
+        if tags.len() != features.len() {
+            return Err(GridError::InconsistentInput(format!(
+                "candidate_pool_split length {} != features length {}",
+                tags.len(),
+                features.len()
+            )));
+        }
+    }
 
     let seed = find_quad(features, &params.seed).ok_or(GridError::DegenerateGeometry)?;
 
