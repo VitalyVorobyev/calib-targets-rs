@@ -28,6 +28,7 @@ thiserror.workspace = true
 [dev-dependencies]
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
+projective-grid-next.workspace = true
 
 [package.metadata.docs.rs]
 all-features = true
