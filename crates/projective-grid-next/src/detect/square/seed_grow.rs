@@ -17,11 +17,11 @@ use crate::result::{
 use crate::seed::find_quad;
 use crate::validate::{validate as run_validate, LabelledEntry};
 
-use super::DetectionParams;
+use crate::detect::DetectionParams;
 
 /// Seed → grow → validate → fit pipeline for square lattices with
 /// two-axis-per-feature evidence.
-pub(super) fn detect_square_oriented2<F>(
+pub(in crate::detect) fn detect_square_oriented2_seed_grow<F>(
     features: &[OrientedFeature<F, 2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams<F>,

@@ -21,7 +21,10 @@ pub mod seed;
 pub mod validate;
 
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
-pub use crate::detect::{detect_grid, DetectionParams, DetectionRequest, Evidence, GrowParams};
+pub use crate::detect::{
+    detect_grid, DetectionParams, DetectionRequest, Evidence, GrowParams, SquareAlgorithm,
+    TopologicalParams,
+};
 pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};
 pub use crate::float::Float;
