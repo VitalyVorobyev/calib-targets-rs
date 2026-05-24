@@ -1,5 +1,5 @@
 use nalgebra::Point2;
-use projective_grid_next::AxisEstimate as NextAxisEstimate;
+use projective_grid_next::LocalAxis as NextLocalAxis;
 use serde::{Deserialize, Serialize};
 
 pub use projective_grid::AxisEstimate;
@@ -9,22 +9,21 @@ pub use crate::grid_alignment::GridCoords;
 // ---- Conversions to / from projective-grid-next ----
 
 /// Promote the legacy `f32`-only [`AxisEstimate`] into the
-/// [`projective_grid_next`] crate's `Float`-generic
-/// [`NextAxisEstimate<f32>`].
+/// [`projective_grid_next`] crate's generic local-axis shape.
 ///
 /// Implemented as a free function because both types live in foreign
 /// crates from this module's POV (the orphan rules forbid an `impl From`).
 #[inline]
-pub fn axis_estimate_to_next(a: AxisEstimate) -> NextAxisEstimate<f32> {
-    NextAxisEstimate::new(a.angle, a.sigma)
+pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis<f32> {
+    NextLocalAxis::new(a.angle, Some(a.sigma))
 }
 
-/// Project a [`NextAxisEstimate<f32>`] back into the legacy shape.
+/// Project a [`NextLocalAxis<f32>`] back into the legacy shape.
 #[inline]
-pub fn axis_estimate_from_next(a: NextAxisEstimate<f32>) -> AxisEstimate {
+pub fn axis_estimate_from_next(a: NextLocalAxis<f32>) -> AxisEstimate {
     AxisEstimate {
-        angle: a.angle,
-        sigma: a.sigma,
+        angle: a.angle_rad,
+        sigma: a.sigma_rad.unwrap_or(std::f32::consts::PI),
     }
 }
 

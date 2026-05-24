@@ -25,10 +25,9 @@ pub use projective_grid::{GridAlignment, GridCoords, GridTransform, GRID_TRANSFO
 
 // ---- Conversions to / from projective-grid-next ----
 //
-// `projective_grid_next::Coord` is `(i32, i32)` (a type alias), so
-// `GridCoords` already converts to / from it via the legacy crate's
-// `From<(i32, i32)> for GridCoords` / `From<GridCoords> for (i32, i32)`
-// impls — no shim impls needed there.
+// `projective_grid_next::Coord` is a struct in the reset API. Add explicit
+// coordinate bridges here when downstream code starts crossing labelled-grid
+// data into the next crate; current callers only bridge transforms.
 //
 // The 2×2 + offset conversion for `GridTransform` / `GridAlignment` IS new
 // (the legacy crate had no awareness of the new crate). The legacy

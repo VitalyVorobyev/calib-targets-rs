@@ -53,19 +53,3 @@ impl<T> Float for T where T: nalgebra::RealField + Copy + From<f32> + 'static {}
 pub(crate) fn lit<F: Float>(value: f32) -> F {
     <F as From<f32>>::from(value)
 }
-
-/// Absolute value disambiguator. `RealField::abs` and
-/// `num_traits::FloatCore::abs` collide on `f32` / `f64` whenever both
-/// traits are in scope (the `kiddo::float::kdtree::Axis` bound brings the
-/// latter in transitively, so any test with that bound triggers the
-/// collision even though production code on `F: Float` alone is fine).
-/// `abs::<F>(x)` resolves to the `nalgebra::ComplexField::abs` impl
-/// unambiguously.
-///
-/// Test-only — production code uses method-call `value.abs()` directly,
-/// which is unambiguous when `F: Float` is the only bound in scope.
-#[cfg(test)]
-#[inline]
-pub(crate) fn abs<F: Float>(value: F) -> F {
-    nalgebra::ComplexField::abs(value)
-}

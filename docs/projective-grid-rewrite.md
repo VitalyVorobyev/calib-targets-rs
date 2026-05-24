@@ -1,5 +1,57 @@
 # `projective-grid` Clean Structure Plan
 
+## Implementation status (2026-05-24)
+
+The crate `projective-grid-next` has landed the API shell described
+below. Concretely:
+
+- **Done.** `feature::{PointFeature, LocalAxis, OrientedFeature<N>,
+  CoordinateHypothesis}`, `lattice::{Coord, GridDimensions,
+  LatticeKind, GridTransform, D4_TRANSFORMS, D6_TRANSFORMS}`,
+  `geometry::{estimate_projective, apply_projective}` (returning
+  `nalgebra::Projective2<F>`), `result::{GridSolution, LabelledGrid,
+  GridEntry, LatticeFit, ResidualSummary, RejectedFeature,
+  RejectionReason, ConsistencyReport}`, `error::{GridError, GridTask,
+  EvidenceKind}`. Generic over `F: nalgebra::RealField + Copy +
+  From<f32> + 'static` throughout.
+- **Done.** `check_consistency` for both `LatticeKind::Square` and
+  `LatticeKind::Hex`. Takes positions + caller-supplied coordinate
+  hypotheses, fits a `Projective2<F>`, returns per-feature residuals
+  and a pass/fail verdict.
+- **Intentionally `UnsupportedCombination` for now.** Every variant of
+  `detect_grid`. The original square seed-and-grow and topological
+  algorithms still sit on disk under `src/{seed, grow, topological,
+  refine, merge, validate, policy, diagnostics, stats}/` and
+  `src/refine_task.rs` as salvage material, but are not declared in
+  `lib.rs` and therefore not compiled. They will be ported back behind
+  the new evidence-typed `detect_grid` surface one combination at a
+  time, after at least one consumer is using the new contract via
+  `check_consistency`.
+- **Bridges in `calib-targets-core`.** `axis_estimate_to_next` /
+  `from_next`, `homography_to_next` / `from_next` (now bridges to
+  `nalgebra::Projective2<f32>`, not a custom `Homography` type),
+  `grid_transform_to_next` / `from_next`,
+  `grid_alignment_to_next` / `from_next`. The legacy
+  `projective-grid` types stay re-exported from `core` so the four
+  target-specific detectors keep compiling unchanged.
+
+The next concrete steps are:
+
+1. Wire one consumer (smallest: probably puzzleboard or marker) through
+   `check_consistency` as a post-validation pass. This is the
+   contract dry-run — if the conversion to `PointFeature` +
+   `CoordinateHypothesis` is awkward, the contract is wrong, and
+   we'd rather know now than after porting algorithms.
+2. Implement `detect_grid` for `Square + Oriented2` (port seed-and-
+   grow). Decide where parity lives: a caller-supplied trait socket,
+   a higher-arity evidence variant, or post-fit residual gating only.
+3. Implement `detect_grid` for `Square + Positions` (port
+   topological).
+4. Migrate the four consumers' grid-build step to `detect_grid`.
+5. Drop the legacy `projective-grid` crate, delete the quarantined
+   salvage modules, rename `projective-grid-next` →
+   `projective-grid`.
+
 ## Summary
 
 Restructure the crate around four orthogonal concepts:
