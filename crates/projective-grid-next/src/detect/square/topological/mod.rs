@@ -253,14 +253,12 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
     }
 
     let lattice = LatticeKind::Square;
-    let mut fit_outcome = fit_and_residuals(&labelled_entries, lattice, params)?;
+    let mut fit_outcome = fit_and_residuals(&labelled_entries, features, lattice, params)?;
 
     if !fit_outcome.over_threshold.is_empty() {
-        // Match seed-grow's contract: `RejectedFeature.source_index`
-        // here carries the slice-position index of the feature inside
-        // `features`, not the caller-owned `point.source_index`.
-        // Phase E will clean this up across both algorithms; for now
-        // both paths must use the same key to filter correctly.
+        // The drop set is keyed by the caller's `source_index` (matching
+        // the wire shape consumers see), so the slice-position filter has
+        // to translate through `features[e.idx].point.source_index`.
         let drop: HashSet<usize> = fit_outcome
             .over_threshold
             .iter()
@@ -269,12 +267,12 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
         let entries_kept: Vec<LabelledEntryRaw<F>> = labelled_entries
             .iter()
             .copied()
-            .filter(|e| !drop.contains(&e.idx))
+            .filter(|e| !drop.contains(&features[e.idx].point.source_index))
             .collect();
         if entries_kept.len() < 4 {
             return Err(GridError::DegenerateGeometry);
         }
-        let refit = fit_and_residuals(&entries_kept, lattice, params)?;
+        let refit = fit_and_residuals(&entries_kept, features, lattice, params)?;
         labelled_entries = entries_kept;
         fit_outcome = FitOutcome {
             entries: refit.entries,
@@ -345,6 +343,7 @@ struct FitOutcome<F: Float> {
 
 fn fit_and_residuals<F: Float>(
     entries: &[LabelledEntryRaw<F>],
+    features: &[OrientedFeature<F, 2>],
     lattice: LatticeKind,
     params: &DetectionParams<F>,
 ) -> Result<FitOutcome<F>> {
@@ -374,9 +373,10 @@ fn fit_and_residuals<F: Float>(
         if residual > residual_max {
             residual_max = residual;
         }
+        let source_index = features[entry.idx].point.source_index;
         if residual > params.max_residual_px {
             over_threshold.push(RejectedFeature::new(
-                entry.idx,
+                source_index,
                 Some(entry.coord),
                 Some(residual),
                 RejectionReason::ResidualTooHigh,
@@ -384,7 +384,7 @@ fn fit_and_residuals<F: Float>(
         }
         entries_out.push(GridEntry::new(
             entry.coord,
-            entry.idx,
+            source_index,
             entry.position,
             Some(residual),
         ));

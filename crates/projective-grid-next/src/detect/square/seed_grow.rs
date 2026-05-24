@@ -61,10 +61,12 @@ where
     }
 
     let lattice = LatticeKind::Square;
-    let mut fit_outcome = fit_and_residuals(&labelled_entries, lattice, params)?;
+    let mut fit_outcome = fit_and_residuals(&labelled_entries, features, lattice, params)?;
 
     // If any kept entry exceeded the post-fit residual threshold, drop it
-    // and refit on the remaining set.
+    // and refit on the remaining set. The drop set is keyed by the caller's
+    // `source_index` (matching the wire shape consumers see), so the slice-
+    // position filter has to translate through `features[e.idx].point.source_index`.
     if !fit_outcome.over_threshold.is_empty() {
         let drop: HashSet<usize> = fit_outcome
             .over_threshold
@@ -74,12 +76,12 @@ where
         let entries_kept: Vec<LabelledEntry<F>> = labelled_entries
             .iter()
             .copied()
-            .filter(|e| !drop.contains(&e.idx))
+            .filter(|e| !drop.contains(&features[e.idx].point.source_index))
             .collect();
         if entries_kept.len() < 4 {
             return Err(GridError::DegenerateGeometry);
         }
-        let refit = fit_and_residuals(&entries_kept, lattice, params)?;
+        let refit = fit_and_residuals(&entries_kept, features, lattice, params)?;
         labelled_entries = entries_kept;
         fit_outcome = FitOutcome {
             entries: refit.entries,
@@ -139,6 +141,7 @@ struct FitOutcome<F: Float> {
 
 fn fit_and_residuals<F>(
     entries: &[LabelledEntry<F>],
+    features: &[OrientedFeature<F, 2>],
     lattice: LatticeKind,
     params: &DetectionParams<F>,
 ) -> Result<FitOutcome<F>>
@@ -171,9 +174,10 @@ where
         if residual > residual_max {
             residual_max = residual;
         }
+        let source_index = features[entry.idx].point.source_index;
         if residual > params.max_residual_px {
             over_threshold.push(RejectedFeature::new(
-                entry.idx,
+                source_index,
                 Some(entry.coord),
                 Some(residual),
                 RejectionReason::ResidualTooHigh,
@@ -181,7 +185,7 @@ where
         }
         entries_out.push(GridEntry::new(
             entry.coord,
-            entry.idx,
+            source_index,
             entry.position,
             Some(residual),
         ));
