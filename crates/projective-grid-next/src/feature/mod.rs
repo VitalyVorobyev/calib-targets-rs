@@ -89,6 +89,11 @@ impl<F: Float> CoordinateHypothesis<F> {
             confidence,
         }
     }
+
+    /// Construct an unweighted coordinate hypothesis with no caller confidence.
+    pub fn unweighted(source_index: usize, coord: Coord) -> Self {
+        Self::new(source_index, coord, None)
+    }
 }
 
 #[cfg(test)]
@@ -125,5 +130,13 @@ mod tests {
         assert_eq!(h.source_index, 3);
         assert_eq!(h.coord, Coord::new(4, -2));
         assert_eq!(h.confidence, Some(0.9));
+    }
+
+    #[test]
+    fn coordinate_hypothesis_unweighted_has_no_confidence() {
+        let h = CoordinateHypothesis::<f32>::unweighted(7, Coord::new(1, 2));
+        assert_eq!(h.source_index, 7);
+        assert_eq!(h.coord, Coord::new(1, 2));
+        assert_eq!(h.confidence, None);
     }
 }

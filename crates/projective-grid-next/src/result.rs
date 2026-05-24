@@ -65,6 +65,11 @@ impl<F: Float> LabelledGrid<F> {
             dimensions,
         }
     }
+
+    /// Linear-scan lookup of the labelled entry with the given source index.
+    pub fn find(&self, source_index: usize) -> Option<&GridEntry<F>> {
+        self.entries.iter().find(|e| e.source_index == source_index)
+    }
 }
 
 /// Residual summary in image pixels.
@@ -174,6 +179,13 @@ impl<F: Float> GridSolution<F> {
             rejected,
         }
     }
+
+    /// Linear-scan lookup of the rejection record for the given source index, if any.
+    pub fn rejected_for(&self, source_index: usize) -> Option<&RejectedFeature<F>> {
+        self.rejected
+            .iter()
+            .find(|r| r.source_index == source_index)
+    }
 }
 
 /// Report returned by coordinate-hypothesis consistency checks.
@@ -191,6 +203,12 @@ impl<F: Float> ConsistencyReport<F> {
     pub fn new(passed: bool, solution: GridSolution<F>) -> Self {
         Self { passed, solution }
     }
+
+    /// Convenience accessor for the maximum residual in pixels from the fitted lattice,
+    /// when one was computed.
+    pub fn max_residual_px(&self) -> Option<F> {
+        Some(self.solution.fit.as_ref()?.residuals.max_px)
+    }
 }
 
 fn bbox_for_entries<F: Float>(entries: &[GridEntry<F>]) -> Option<(Coord, Coord)> {
@@ -204,4 +222,53 @@ fn bbox_for_entries<F: Float>(entries: &[GridEntry<F>]) -> Option<(Coord, Coord)
         max.v = max.v.max(entry.coord.v);
     }
     Some((min, max))
+}
+
+#[cfg(test)]
+mod tests {
+    use nalgebra::{Point2, Projective2};
+
+    use super::*;
+
+    fn make_identity_fit<F: Float>() -> LatticeFit<F> {
+        LatticeFit::new(
+            Projective2::identity(),
+            ResidualSummary::new(1, F::from(0.5_f32), F::from(1.0_f32)),
+        )
+    }
+
+    #[test]
+    fn max_residual_px_none_when_fit_absent() {
+        let grid = LabelledGrid::<f32>::new(LatticeKind::Square, vec![], None);
+        let solution = GridSolution::new(grid, None, vec![]);
+        let report = ConsistencyReport::new(true, solution);
+        assert_eq!(report.max_residual_px(), None);
+    }
+
+    #[test]
+    fn max_residual_px_some_when_fit_present() {
+        let grid = LabelledGrid::<f64>::new(LatticeKind::Square, vec![], None);
+        let fit = make_identity_fit::<f64>();
+        let solution = GridSolution::new(grid, Some(fit), vec![]);
+        let report = ConsistencyReport::new(true, solution);
+        assert_eq!(report.max_residual_px(), Some(1.0_f64));
+    }
+
+    #[test]
+    fn labelled_grid_find_present_and_absent() {
+        let entry = GridEntry::new(Coord::new(0, 0), 42, Point2::new(1.0_f32, 2.0), None);
+        let grid = LabelledGrid::new(LatticeKind::Square, vec![entry], None);
+        assert!(grid.find(42).is_some());
+        assert!(grid.find(99).is_none());
+    }
+
+    #[test]
+    fn grid_solution_rejected_for_present_and_absent() {
+        let rejected =
+            RejectedFeature::new(5, None, Some(3.0_f32), RejectionReason::ResidualTooHigh);
+        let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
+        let solution = GridSolution::new(grid, None, vec![rejected]);
+        assert!(solution.rejected_for(5).is_some());
+        assert!(solution.rejected_for(0).is_none());
+    }
 }
