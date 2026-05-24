@@ -128,12 +128,6 @@ pub enum RejectionReason {
     /// post-grow validation stage (line collinearity, local-H residual,
     /// edge-length band, or axis-slot-swap parity).
     ValidationDropped,
-    /// Feature was labelled in a secondary connected component when the
-    /// topological algorithm picked the largest component as the
-    /// primary grid. Reported so callers can see the dropped islands
-    /// without losing the single-component invariant of the returned
-    /// [`LabelledGrid`].
-    SecondaryComponent,
 }
 
 /// Rejected feature record.

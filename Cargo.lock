@@ -437,6 +437,7 @@ dependencies = [
  "log",
  "nalgebra",
  "projective-grid",
+ "projective-grid-next",
  "serde",
  "serde_json",
  "thiserror",

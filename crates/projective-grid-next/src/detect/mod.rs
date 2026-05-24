@@ -15,11 +15,11 @@ use crate::error::{EvidenceKind, GridError, GridTask, Result};
 use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
 use crate::float::{lit, Float};
 use crate::lattice::{GridDimensions, LatticeKind};
-use crate::result::GridSolution;
-use crate::seed::SeedParams;
-use crate::validate::ValidateParams;
+use crate::result::{GridSolution, RejectedFeature};
 
 pub use crate::grow::GrowParams;
+pub use crate::seed::SeedParams;
+pub use crate::validate::ValidateParams;
 pub use square::TopologicalParams;
 
 /// Algorithm selector for `(LatticeKind::Square, Evidence::Oriented2)`.
@@ -218,27 +218,101 @@ impl<'a, F: Float> DetectionRequest<'a, F> {
 /// `(Square, CoordinateHypotheses)`, and every `(Hex, *)` variant stay
 /// `UnsupportedCombination` — no working algorithm exists in the
 /// legacy crate or on-disk salvage to migrate for those slots.
+///
+/// **Multi-component results.** For algorithms that may produce more
+/// than one connected component (the topological path can; seed-and-
+/// grow returns exactly one), this entry point returns the largest
+/// component only. Use [`detect_grid_all`] when secondary components
+/// must be preserved with their own `(i, j)` labels — e.g. ChArUco
+/// fusion, multi-piece chessboard regions, or puzzleboard component
+/// ranking.
 pub fn detect_grid<F>(request: DetectionRequest<'_, F>) -> Result<GridSolution<F>>
 where
     F: Float + kiddo::float::kdtree::Axis,
 {
-    match (request.lattice, request.evidence) {
+    let mut report = detect_grid_all(request)?;
+    if report.solutions.is_empty() {
+        Err(GridError::InsufficientEvidence)
+    } else {
+        Ok(report.solutions.remove(0))
+    }
+}
+
+/// Multi-component variant of [`detect_grid`].
+///
+/// Returns a [`DetectionReport`] with one [`GridSolution`] per
+/// qualifying connected component, ordered by labelled-count
+/// descending (ties broken by smallest labelled `source_index`). The
+/// seed-and-grow algorithm always returns at most one solution; the
+/// topological algorithm may return several.
+///
+/// Features that no component admitted are surfaced in the *first*
+/// solution's `rejected` vector (the same shape callers of
+/// [`detect_grid`] saw historically). Per-component validation drops
+/// and over-residual entries stay attached to their owning component's
+/// `rejected` vector.
+///
+/// The same `UnsupportedCombination` matrix applies as for
+/// [`detect_grid`].
+pub fn detect_grid_all<F>(request: DetectionRequest<'_, F>) -> Result<DetectionReport<F>>
+where
+    F: Float + kiddo::float::kdtree::Axis,
+{
+    let solutions = match (request.lattice, request.evidence) {
         (LatticeKind::Square, Evidence::Oriented2(features)) => match request.params.algorithm {
-            SquareAlgorithm::SeedAndGrow => square::detect_square_oriented2_seed_grow(
+            SquareAlgorithm::SeedAndGrow => {
+                let solution = square::detect_square_oriented2_seed_grow(
+                    features,
+                    request.dimensions,
+                    &request.params,
+                )?;
+                vec![solution]
+            }
+            SquareAlgorithm::Topological => square::detect_square_oriented2_topological_all(
                 features,
                 request.dimensions,
                 &request.params,
-            ),
-            SquareAlgorithm::Topological => square::detect_square_oriented2_topological(
-                features,
-                request.dimensions,
-                &request.params,
-            ),
+            )?,
         },
-        _ => Err(GridError::UnsupportedCombination {
-            task: GridTask::Detection,
-            lattice: request.lattice,
-            evidence: request.evidence.kind(),
-        }),
+        _ => {
+            return Err(GridError::UnsupportedCombination {
+                task: GridTask::Detection,
+                lattice: request.lattice,
+                evidence: request.evidence.kind(),
+            })
+        }
+    };
+    Ok(DetectionReport::new(solutions, Vec::new()))
+}
+
+/// Multi-component detection result returned by [`detect_grid_all`].
+///
+/// `solutions` is ordered by labelled-count descending; the first
+/// entry is the same `GridSolution` a single-component
+/// [`detect_grid`] caller historically received. `rejected` is a
+/// crate-level slot reserved for features that no component admitted
+/// when the orchestrator (rather than a particular component) is the
+/// authoritative source of that information. Phase E.0 leaves this
+/// slot empty for the two algorithms currently implemented — the
+/// per-component rejected vectors already cover the wire shape.
+#[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
+pub struct DetectionReport<F: Float> {
+    /// Per-component labelled solutions, ordered by component size
+    /// descending.
+    pub solutions: Vec<GridSolution<F>>,
+    /// Features that no component admitted, scoped to the orchestrator
+    /// (not a particular component). Currently empty for both
+    /// `SquareAlgorithm` variants — see the struct-level docs.
+    pub rejected: Vec<RejectedFeature<F>>,
+}
+
+impl<F: Float> DetectionReport<F> {
+    /// Construct a detection report.
+    pub fn new(solutions: Vec<GridSolution<F>>, rejected: Vec<RejectedFeature<F>>) -> Self {
+        Self {
+            solutions,
+            rejected,
+        }
     }
 }

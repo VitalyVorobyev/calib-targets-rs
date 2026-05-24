@@ -18,4 +18,4 @@
 
 mod square;
 
-pub use square::{bfs_grow, GrowParams, GrowResult};
+pub use square::{bfs_grow, GrowParams};

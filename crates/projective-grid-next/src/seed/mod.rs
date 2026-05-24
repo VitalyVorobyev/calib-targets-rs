@@ -4,4 +4,7 @@
 
 mod square;
 
-pub use square::{find_quad, Seed, SeedParams, SeedQuad, SeedSearchOutput};
+pub use square::{find_quad, SeedParams, SeedSearchOutput};
+
+#[cfg(test)]
+pub use square::Seed;

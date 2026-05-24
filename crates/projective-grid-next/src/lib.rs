@@ -14,16 +14,16 @@ pub mod error;
 pub mod feature;
 pub mod float;
 pub mod geometry;
-pub mod grow;
+mod grow;
 pub mod lattice;
 pub mod result;
-pub mod seed;
-pub mod validate;
+mod seed;
+mod validate;
 
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
 pub use crate::detect::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, GrowParams, SquareAlgorithm,
-    TopologicalParams,
+    detect_grid, detect_grid_all, DetectionParams, DetectionReport, DetectionRequest, Evidence,
+    GrowParams, SeedParams, SquareAlgorithm, TopologicalParams, ValidateParams,
 };
 pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};
@@ -36,5 +36,3 @@ pub use crate::result::{
     ConsistencyReport, GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature,
     RejectionReason, ResidualSummary,
 };
-pub use crate::seed::SeedParams;
-pub use crate::validate::ValidateParams;

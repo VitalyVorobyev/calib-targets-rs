@@ -9,7 +9,9 @@ use crate::float::{lit, Float};
 use crate::geometry::{apply_projective, estimate_projective};
 use crate::lattice::{Coord, SQUARE_CARDINAL_OFFSETS};
 
-/// Tunables for [`validate`].
+/// Tunables for the post-grow validation engine that runs on the
+/// labelled grid produced by either `(Square, Oriented2)` algorithm
+/// path before fit + residual reporting.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct ValidateParams<F: Float> {

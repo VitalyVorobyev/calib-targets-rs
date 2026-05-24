@@ -16,7 +16,8 @@ use crate::float::{lit, Float};
 use crate::lattice::{Coord, SQUARE_CARDINAL_OFFSETS};
 use crate::seed::SeedSearchOutput;
 
-/// Tunable knobs for [`bfs_grow`].
+/// Tunable knobs for the BFS seed-and-grow engine that backs the
+/// `(LatticeKind::Square, Evidence::Oriented2)` seed-and-grow algorithm.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct GrowParams<F: Float> {
@@ -72,20 +73,6 @@ pub struct GrowResult<F: Float> {
     pub labelled: HashMap<Coord, usize>,
     /// Mean cell size in pixels used by the engine; copied from the seed.
     pub cell_size: F,
-    /// Inclusive bounding box `(min, max)`, with `min = (0, 0)` after
-    /// rebasing.
-    pub bbox: (Coord, Coord),
-}
-
-impl<F: Float> GrowResult<F> {
-    /// Construct a grow result.
-    pub fn new(labelled: HashMap<Coord, usize>, cell_size: F, bbox: (Coord, Coord)) -> Self {
-        Self {
-            labelled,
-            cell_size,
-            bbox,
-        }
-    }
 }
 
 /// Grow a labelled `Coord -> feature_index` map from a 2×2 seed via
@@ -128,11 +115,10 @@ where
         }
     }
 
-    let (rebased, bbox) = rebase(state.labelled);
+    let (rebased, _bbox) = rebase(state.labelled);
     GrowResult {
         labelled: rebased,
         cell_size,
-        bbox,
     }
 }
 
@@ -605,10 +591,16 @@ mod tests {
         let seed = seed_first_2x2(&features, cols);
         let result = bfs_grow(&features, &seed, &GrowParams::<F>::default());
         assert_eq!(result.labelled.len(), (rows * cols) as usize);
-        assert_eq!(
-            result.bbox,
-            (Coord::new(0, 0), Coord::new(cols - 1, rows - 1))
-        );
+        let bbox_min = result
+            .labelled
+            .keys()
+            .fold((i32::MAX, i32::MAX), |(u, v), c| (u.min(c.u), v.min(c.v)));
+        let bbox_max = result
+            .labelled
+            .keys()
+            .fold((i32::MIN, i32::MIN), |(u, v), c| (u.max(c.u), v.max(c.v)));
+        assert_eq!(bbox_min, (0, 0));
+        assert_eq!(bbox_max, (cols - 1, rows - 1));
         let (mi, mj) = result
             .labelled
             .keys()

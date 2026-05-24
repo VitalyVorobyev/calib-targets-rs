@@ -10,5 +10,5 @@ mod seed_grow;
 mod topological;
 
 pub(super) use seed_grow::detect_square_oriented2_seed_grow;
-pub(super) use topological::detect_square_oriented2_topological;
+pub(super) use topological::detect_square_oriented2_topological_all;
 pub use topological::TopologicalParams;

@@ -31,17 +31,25 @@
 //!   path dropped its analogous `SquareGrowContext` trait without
 //!   losing functionality; this module does the same.
 //! * The legacy crate's optional `cluster_centers` axis-prior gate is
-//!   dropped. Per-edge axis alignment already filters off-axis noise
-//!   (the salvage's "no_gate" path passes the same 5×5 + noiser
-//!   integration test that the gated path does). No caller currently
-//!   supplies a prior, and adding the knob back is a non-breaking
-//!   change.
+//!   restored in Phase E.0 as
+//!   [`TopologicalParams::axis_cluster_centers`] +
+//!   [`TopologicalParams::cluster_axis_tol_rad`]. The chessboard
+//!   topological adapter passes its per-frame cluster centers in
+//!   through this field; with `None` the gate is skipped, preserving
+//!   the standalone-primitive behaviour Phase D had.
 //! * Diagnostic event emission (`DiagnosticSink<F>`, `EdgeClass`/
 //!   `QuadRejectReason` events) is dropped. Phase E may reintroduce
 //!   counter collection through the same trait the seed-grow path
 //!   uses if a consumer needs it.
 //! * `Coord` is the new struct, not a tuple — all `(i, j)` arithmetic
 //!   goes through `Coord::new` / `.u` / `.v`.
+//! * Multi-component output: instead of collapsing to the largest
+//!   component and emitting the rest as a `SecondaryComponent`
+//!   rejection variant, the orchestrator returns one
+//!   [`GridSolution`] per qualifying component (ordered by size,
+//!   descending). The single-component wrapper
+//!   [`detect_square_oriented2_topological`] keeps the previous shape
+//!   by returning the first solution.
 
 mod axis;
 mod classify;
@@ -105,6 +113,29 @@ pub struct TopologicalParams<F: Float> {
     /// Discard connected quad-mesh components below this size. Default:
     /// `1` (keep all). Set higher to reject isolated noise quads.
     pub min_quads_per_component: usize,
+    /// Optional global grid-direction centers, in radians, interpreted
+    /// modulo π. When `Some([θ₀, θ₁])`, a feature is admitted to
+    /// Delaunay only if at least one of its informative axes is within
+    /// [`Self::cluster_axis_tol_rad`] of one of the centers. When
+    /// `None`, the gate is skipped — the standalone-primitive
+    /// behaviour Phase D had.
+    ///
+    /// The chessboard adapter feeds in its per-frame 2-means cluster
+    /// centers here; the gate is the precision filter that lets the
+    /// classifier reject marker-internal corners and other off-axis
+    /// noise before they reach Delaunay.
+    pub axis_cluster_centers: Option<[F; 2]>,
+    /// Per-axis admission tolerance against
+    /// [`Self::axis_cluster_centers`], in radians. Only consulted when
+    /// `axis_cluster_centers.is_some()`. Default: `16° = 0.279` —
+    /// matches the legacy
+    /// `projective_grid::topological::TopologicalParams::default`. The
+    /// default is wider than a typical chessboard cluster-admission
+    /// tolerance of `12°` because this image-free pipeline lacks the
+    /// sigma-bonus / booster-recovery the chessboard's seed-grow path
+    /// has; tightening below 16° should be paired with a sigma-aware
+    /// admission rule.
+    pub cluster_axis_tol_rad: F,
 }
 
 impl<F: Float> Default for TopologicalParams<F> {
@@ -116,6 +147,8 @@ impl<F: Float> Default for TopologicalParams<F> {
             edge_length_ratio_max: lit::<F>(2.5_f32),
             min_corners_for_component: 4,
             min_quads_per_component: 1,
+            axis_cluster_centers: None,
+            cluster_axis_tol_rad: lit::<F>(16.0_f32.to_radians()),
         }
     }
 }
@@ -166,24 +199,59 @@ impl<F: Float> TopologicalParams<F> {
         self.min_quads_per_component = value;
         self
     }
+
+    /// Builder-style override for [`Self::axis_cluster_centers`]. The
+    /// two centers are stored as supplied; the caller is responsible
+    /// for wrapping them into `[0, π)` if their source might emit
+    /// signed angles. The internal alignment check works modulo π so
+    /// either convention is accepted.
+    pub fn with_axis_cluster_centers(mut self, centers: [F; 2]) -> Self {
+        self.axis_cluster_centers = Some(centers);
+        self
+    }
+
+    /// Builder-style override for [`Self::cluster_axis_tol_rad`].
+    pub fn with_cluster_axis_tol_rad(mut self, tol_rad: F) -> Self {
+        self.cluster_axis_tol_rad = tol_rad;
+        self
+    }
 }
 
-/// Axis-driven topological grid detector for `(Square, Oriented2)`.
+/// Multi-component axis-driven topological grid detector for
+/// `(Square, Oriented2)`.
 ///
-/// Returns the same [`GridSolution<F>`] shape as the seed-and-grow
-/// variant so consumers can treat both selectors uniformly.
-pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
+/// Returns one [`GridSolution`] per qualifying connected quad-mesh
+/// component, ordered by component size descending. Features that no
+/// component admitted (uninformative axes, gated by the cluster prior,
+/// not picked up by Delaunay, etc.) appear in the **first** solution's
+/// `rejected` vector tagged [`RejectionReason::Unlabelled`]; features
+/// dropped by the per-component validation stage appear in that
+/// component's own `rejected` vector tagged
+/// [`RejectionReason::ValidationDropped`].
+///
+/// The empty-result case maps to `Vec::new()`, *not* an error; the
+/// caller-facing `detect_grid_all` wrapper turns an empty solutions
+/// vector into [`GridError::InsufficientEvidence`] when the request
+/// reached the orchestrator with enough features.
+pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
     features: &[OrientedFeature<F, 2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams<F>,
-) -> Result<GridSolution<F>> {
+) -> Result<Vec<GridSolution<F>>> {
     if features.len() < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
     }
 
     let topo = &params.topological;
     let axes = build_axis_caches(features, topo.max_axis_sigma_rad);
-    let usable: Vec<bool> = axes.iter().map(AxisCache::any_informative).collect();
+    // Apply the optional axis-cluster gate (Phase E.0). When no
+    // centers are supplied the predicate is the identity and `usable`
+    // matches the Phase D behaviour exactly.
+    let usable: Vec<bool> = features
+        .iter()
+        .zip(axes.iter())
+        .map(|(f, cache)| cache.any_informative() && axes_pass_cluster_gate(&f.axes, cache, topo))
+        .collect();
     let n_usable = usable.iter().filter(|&&b| b).count();
     if n_usable < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
@@ -213,20 +281,116 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
         topo.min_corners_for_component,
     );
 
-    // Pick the largest component as the primary grid. Other components
-    // become `RejectionReason::SecondaryComponent` rejections so
-    // callers can see them without losing the integer-coord guarantee.
-    let Some((primary_index, primary)) = components.iter().enumerate().max_by_key(|(_, c)| c.len())
-    else {
-        return Err(GridError::DegenerateGeometry);
-    };
-
-    if primary.len() < 4 {
+    if components.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }
 
-    // Stage entries for validate + fit.
-    let mut labelled_entries: Vec<LabelledEntryRaw<F>> = primary
+    // Process each component independently; preserve the labelled
+    // source-indices of every component that yielded a valid solution
+    // so the orchestrator can build the global "unlabelled" set
+    // afterwards.
+    let mut component_outputs: Vec<ComponentOutput<F>> = Vec::new();
+    for component in &components {
+        if component.len() < 4 {
+            continue;
+        }
+        match build_component_solution(component, features, dimensions, params) {
+            Some(out) => component_outputs.push(out),
+            None => continue,
+        }
+    }
+
+    if component_outputs.is_empty() {
+        return Err(GridError::DegenerateGeometry);
+    }
+
+    // Sort components by labelled count descending; ties broken by the
+    // smallest source_index seen so the order is deterministic.
+    component_outputs.sort_by(|a, b| {
+        b.kept_source_indices
+            .len()
+            .cmp(&a.kept_source_indices.len())
+            .then_with(|| a.min_source_index.cmp(&b.min_source_index))
+    });
+
+    // Build the global "unlabelled" set: every feature that no
+    // component admitted (neither kept nor validation-dropped). The
+    // legacy single-component path put these on `rejected` of the
+    // single solution; the multi-component path attributes them to the
+    // largest (first) component so callers that read solely
+    // `solutions[0].rejected` see the same shape.
+    let mut globally_kept: HashSet<usize> = HashSet::new();
+    let mut globally_validation_dropped: HashSet<usize> = HashSet::new();
+    for out in &component_outputs {
+        for &src in &out.kept_source_indices {
+            globally_kept.insert(src);
+        }
+        for &src in &out.validation_drop_source_indices {
+            globally_validation_dropped.insert(src);
+        }
+    }
+    let mut global_unlabelled: Vec<RejectedFeature<F>> = Vec::new();
+    for feature in features {
+        let src = feature.point.source_index;
+        if globally_kept.contains(&src) {
+            continue;
+        }
+        if globally_validation_dropped.contains(&src) {
+            // A feature might be validation-dropped in one component
+            // and never seen in any other; surface that as a
+            // validation drop on the largest solution.
+            global_unlabelled.push(RejectedFeature::new(
+                src,
+                None,
+                None,
+                RejectionReason::ValidationDropped,
+            ));
+            continue;
+        }
+        global_unlabelled.push(RejectedFeature::new(
+            src,
+            None,
+            None,
+            RejectionReason::Unlabelled,
+        ));
+    }
+
+    let mut solutions: Vec<GridSolution<F>> = Vec::with_capacity(component_outputs.len());
+    for (idx, out) in component_outputs.into_iter().enumerate() {
+        let ComponentOutput {
+            entries,
+            fit,
+            mut rejected,
+            ..
+        } = out;
+        if idx == 0 {
+            // Append the global unlabelled set to the largest
+            // component's rejection list — the consumer surface a
+            // single-component caller historically expected.
+            rejected.extend(global_unlabelled.iter().copied());
+        }
+        let grid = LabelledGrid::new(LatticeKind::Square, entries, dimensions);
+        solutions.push(GridSolution::new(grid, Some(fit), rejected));
+    }
+    Ok(solutions)
+}
+
+struct ComponentOutput<F: Float> {
+    entries: Vec<GridEntry<F>>,
+    fit: LatticeFit<F>,
+    rejected: Vec<RejectedFeature<F>>,
+    kept_source_indices: HashSet<usize>,
+    validation_drop_source_indices: HashSet<usize>,
+    min_source_index: usize,
+}
+
+fn build_component_solution<F: Float>(
+    component: &walk::TopologicalComponent,
+    features: &[OrientedFeature<F, 2>],
+    _dimensions: Option<GridDimensions>,
+    params: &DetectionParams<F>,
+) -> Option<ComponentOutput<F>> {
+    let mut labelled_entries: Vec<LabelledEntryRaw<F>> = component
         .labelled
         .iter()
         .map(|(coord, &idx)| LabelledEntryRaw {
@@ -249,16 +413,13 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
         labelled_entries.retain(|e| !validation.blacklist.contains(&e.idx));
     }
     if labelled_entries.len() < 4 {
-        return Err(GridError::DegenerateGeometry);
+        return None;
     }
 
     let lattice = LatticeKind::Square;
-    let mut fit_outcome = fit_and_residuals(&labelled_entries, features, lattice, params)?;
+    let mut fit_outcome = fit_and_residuals(&labelled_entries, features, lattice, params).ok()?;
 
     if !fit_outcome.over_threshold.is_empty() {
-        // The drop set is keyed by the caller's `source_index` (matching
-        // the wire shape consumers see), so the slice-position filter has
-        // to translate through `features[e.idx].point.source_index`.
         let drop: HashSet<usize> = fit_outcome
             .over_threshold
             .iter()
@@ -270,9 +431,9 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
             .filter(|e| !drop.contains(&features[e.idx].point.source_index))
             .collect();
         if entries_kept.len() < 4 {
-            return Err(GridError::DegenerateGeometry);
+            return None;
         }
-        let refit = fit_and_residuals(&entries_kept, features, lattice, params)?;
+        let refit = fit_and_residuals(&entries_kept, features, lattice, params).ok()?;
         labelled_entries = entries_kept;
         fit_outcome = FitOutcome {
             entries: refit.entries,
@@ -291,41 +452,94 @@ pub(in crate::detect) fn detect_square_oriented2_topological<F: Float>(
         .iter()
         .map(|e| features[e.idx].point.source_index)
         .collect();
-    let validation_drop_indices: HashSet<usize> = validation
+    let validation_drop_source_indices: HashSet<usize> = validation
         .blacklist
         .iter()
         .map(|&idx| features[idx].point.source_index)
         .collect();
-    let secondary_source_indices: HashSet<usize> = components
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != primary_index)
-        .flat_map(|(_, c)| c.labelled.values().copied())
-        .map(|idx| features[idx].point.source_index)
-        .collect();
 
+    // Per-component rejected: validation drops scoped to this
+    // component, plus over-threshold post-fit residuals scoped to
+    // this component. Globally-unlabelled features are attributed by
+    // the orchestrator to the largest component so callers reading
+    // only `solutions[0].rejected` keep the legacy shape.
     let mut rejected: Vec<RejectedFeature<F>> = Vec::new();
-    for feature in features {
-        let src = feature.point.source_index;
-        if kept_source_indices.contains(&src) {
-            continue;
-        }
-        let reason = if validation_drop_indices.contains(&src) {
-            RejectionReason::ValidationDropped
-        } else if secondary_source_indices.contains(&src) {
-            RejectionReason::SecondaryComponent
-        } else {
-            RejectionReason::Unlabelled
-        };
-        rejected.push(RejectedFeature::new(src, None, None, reason));
+    for &src in &validation_drop_source_indices {
+        rejected.push(RejectedFeature::new(
+            src,
+            None,
+            None,
+            RejectionReason::ValidationDropped,
+        ));
     }
     for r in over_threshold {
         rejected.push(r);
     }
 
+    let min_source_index = kept_source_indices
+        .iter()
+        .copied()
+        .min()
+        .unwrap_or(usize::MAX);
     let entries_out_sorted = sorted_entries(entries_out);
-    let grid = LabelledGrid::new(lattice, entries_out_sorted, dimensions);
-    Ok(GridSolution::new(grid, Some(fit), rejected))
+
+    Some(ComponentOutput {
+        entries: entries_out_sorted,
+        fit,
+        rejected,
+        kept_source_indices,
+        validation_drop_source_indices,
+        min_source_index,
+    })
+}
+
+/// Per-feature alignment check against the optional axis-cluster
+/// centers in [`TopologicalParams`]. Returns `true` when the gate is
+/// disabled (`axis_cluster_centers.is_none()`) or when at least one
+/// informative axis is within `cluster_axis_tol_rad` of one of the
+/// centers under undirected (mod π) distance.
+fn axes_pass_cluster_gate<F: Float>(
+    axes: &[crate::feature::LocalAxis<F>; 2],
+    cache: &AxisCache<F>,
+    params: &TopologicalParams<F>,
+) -> bool {
+    let Some(centers) = params.axis_cluster_centers else {
+        return true;
+    };
+    let tol = params.cluster_axis_tol_rad;
+    for (axis, &informative) in axes.iter().zip(cache.informative.iter()) {
+        if !informative {
+            continue;
+        }
+        let angle = axis.angle_rad;
+        let d0 = angular_dist_pi(angle, centers[0]);
+        let d1 = angular_dist_pi(angle, centers[1]);
+        if d0 < tol || d1 < tol {
+            return true;
+        }
+    }
+    false
+}
+
+/// Smallest angular distance on the circle with period π. Result in
+/// `[0, π/2]`. Mirrors the legacy
+/// `projective_grid::circular_stats::angular_dist_pi` for `F`-generic
+/// inputs — the topological cluster gate is the only consumer in this
+/// crate, so the helper is local.
+#[inline]
+fn angular_dist_pi<F: Float>(a: F, b: F) -> F {
+    let pi = F::pi();
+    // `(diff % π + π) % π` keeps the result in `[0, π)` for any sign
+    // of `diff`. Bare `%` in Rust is the truncated remainder, so the
+    // double `+ π) % π` is necessary.
+    let diff_raw = (a - b) % pi;
+    let positive = (diff_raw + pi) % pi;
+    let complement = pi - positive;
+    if positive < complement {
+        positive
+    } else {
+        complement
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -497,13 +711,18 @@ mod tests {
         assert!((p.edge_length_ratio_max - 2.5).abs() < 1e-5);
         assert_eq!(p.min_corners_for_component, 4);
         assert_eq!(p.min_quads_per_component, 1);
+        assert!(p.axis_cluster_centers.is_none());
+        assert!((p.cluster_axis_tol_rad - 16.0_f32.to_radians()).abs() < 1e-5);
     }
 
     #[test]
     fn clean_5x5_grid_is_fully_labelled() {
         let features = axis_aligned_features(5, 5, 20.0);
         let params = DetectionParams::<f32>::default();
-        let solution = detect_square_oriented2_topological(&features, None, &params).unwrap();
+        let mut solutions =
+            detect_square_oriented2_topological_all(&features, None, &params).unwrap();
+        assert_eq!(solutions.len(), 1);
+        let solution = solutions.remove(0);
         assert_eq!(solution.grid.entries.len(), 25);
         let fit = solution.fit.unwrap();
         assert!(fit.residuals.max_px < 0.01, "{}", fit.residuals.max_px);
@@ -513,7 +732,106 @@ mod tests {
     fn fewer_than_three_features_errors() {
         let features = axis_aligned_features(1, 2, 20.0);
         let params = DetectionParams::<f32>::default();
-        let err = detect_square_oriented2_topological(&features, None, &params).unwrap_err();
+        let err = detect_square_oriented2_topological_all(&features, None, &params).unwrap_err();
         assert_eq!(err, GridError::InsufficientEvidence);
+    }
+
+    #[test]
+    fn cluster_gate_drops_off_axis_features() {
+        // 5×5 axis-aligned grid (axes at 0°, 90°) + 4 noise features
+        // whose axes both sit near 45°. With the cluster gate centered
+        // at [0, π/2] and a 16° tolerance, the noise features must be
+        // dropped pre-Delaunay; with the gate disabled they survive
+        // (and may or may not get labelled — but the gate-OFF run keeps
+        // 29 informative features through the cache step).
+        let mut features = axis_aligned_features(5, 5, 20.0);
+        let extra: [(f32, f32); 4] = [(40.0, 40.0), (180.0, 40.0), (40.0, 180.0), (180.0, 180.0)];
+        let next = features.len();
+        for (i, &(x, y)) in extra.iter().enumerate() {
+            let point = PointFeature::new(next + i, Point2::new(x, y));
+            let off_axis = std::f32::consts::FRAC_PI_4;
+            let axes = [
+                LocalAxis::new(off_axis, Some(0.05)),
+                LocalAxis::new(off_axis + std::f32::consts::FRAC_PI_2, Some(0.05)),
+            ];
+            features.push(OrientedFeature::new(point, axes));
+        }
+
+        // Gate ON: noise features fail the cluster gate.
+        let params_on = DetectionParams::<f32>::default().with_topological(
+            TopologicalParams::<f32>::default()
+                .with_axis_cluster_centers([0.0, std::f32::consts::FRAC_PI_2]),
+        );
+        let mut sol_on =
+            detect_square_oriented2_topological_all(&features, None, &params_on).unwrap();
+        assert_eq!(sol_on.len(), 1);
+        let primary = sol_on.remove(0);
+        assert_eq!(primary.grid.entries.len(), 25, "gate must keep the 5×5");
+
+        // Gate OFF: same grid still labelled, but the noise features
+        // are NOT pre-filtered (they pass the per-axis-cache filter and
+        // enter Delaunay). They may still end up unlabelled by walk,
+        // but the rejection-reason distribution differs from the gated
+        // run.
+        let params_off = DetectionParams::<f32>::default();
+        let mut sol_off =
+            detect_square_oriented2_topological_all(&features, None, &params_off).unwrap();
+        assert_eq!(sol_off.len(), 1);
+        let primary_off = sol_off.remove(0);
+        assert_eq!(primary_off.grid.entries.len(), 25);
+        // The noise features make it into the orchestrator's rejected
+        // bucket in both cases (the grid labels them either way), but
+        // the gate path scrubs them at the pre-filter stage rather
+        // than after Delaunay. Both runs surface them as `Unlabelled`.
+        let noise_ids: std::collections::HashSet<usize> = (next..next + 4).collect();
+        for r in &primary.rejected {
+            if noise_ids.contains(&r.source_index) {
+                assert_eq!(r.reason, RejectionReason::Unlabelled);
+            }
+        }
+    }
+
+    #[test]
+    fn axes_pass_cluster_gate_with_no_centers_is_identity() {
+        // Sanity for the helper: gate disabled accepts everything; gate
+        // enabled rejects an axis 45° from both centers.
+        let cache = AxisCache {
+            angle_rad: [std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4],
+            informative: [true, true],
+        };
+        let axes = [
+            LocalAxis::new(std::f32::consts::FRAC_PI_4, Some(0.05_f32)),
+            LocalAxis::new(std::f32::consts::FRAC_PI_4, Some(0.05_f32)),
+        ];
+        let params_off = TopologicalParams::<f32>::default();
+        assert!(axes_pass_cluster_gate(&axes, &cache, &params_off));
+        let params_on = TopologicalParams::<f32>::default()
+            .with_axis_cluster_centers([0.0_f32, std::f32::consts::FRAC_PI_2]);
+        assert!(!axes_pass_cluster_gate(&axes, &cache, &params_on));
+    }
+
+    #[test]
+    fn angular_dist_pi_is_undirected() {
+        // 0 vs π should be 0 (same undirected axis); 0 vs π/2 is π/2.
+        let pi = std::f32::consts::PI;
+        let d_zero = angular_dist_pi::<f32>(0.0, pi);
+        assert!(d_zero < 1e-5, "{d_zero}");
+        let d_perp = angular_dist_pi::<f32>(0.0, std::f32::consts::FRAC_PI_2);
+        assert!((d_perp - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+        // Sign / wrapping: `-0.1` and `π + 0.1` represent the same
+        // direction on the mod-π circle only up to 0.2 rad apart
+        // (each is 0.1 rad either side of the 0-seam).
+        let d_signed = angular_dist_pi::<f64>(-0.1, std::f64::consts::PI + 0.1);
+        assert!((d_signed - 0.2).abs() < 1e-9, "{d_signed}");
+        // The seam itself: `π - 0.05` and `0.05` are 0.1 apart.
+        let d_seam = angular_dist_pi::<f32>(std::f32::consts::PI - 0.05, 0.05);
+        assert!((d_seam - 0.1).abs() < 1e-5, "{d_seam}");
+    }
+
+    #[test]
+    fn cluster_gate_default_f64_matches_f32() {
+        let p32 = TopologicalParams::<f32>::default();
+        let p64 = TopologicalParams::<f64>::default();
+        assert!((f64::from(p32.cluster_axis_tol_rad) - p64.cluster_axis_tol_rad).abs() < 1e-6);
     }
 }

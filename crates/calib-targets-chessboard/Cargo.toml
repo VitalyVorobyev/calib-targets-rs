@@ -35,6 +35,7 @@ chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true
+projective-grid-next.workspace = true
 serde_json.workspace = true
 
 [[example]]

@@ -32,4 +32,4 @@
 
 mod square;
 
-pub use square::{validate, LabelledEntry, ValidateParams, ValidationResult};
+pub use square::{validate, LabelledEntry, ValidateParams};

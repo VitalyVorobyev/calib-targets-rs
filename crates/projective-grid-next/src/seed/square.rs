@@ -42,11 +42,6 @@ impl Seed {
     pub const fn new(a: usize, b: usize, c: usize, d: usize) -> Self {
         Self { a, b, c, d }
     }
-
-    /// Return the four indices in canonical layout order.
-    pub const fn as_array(&self) -> [usize; 4] {
-        [self.a, self.b, self.c, self.d]
-    }
 }
 
 /// A seed quad bundled with the cell size derived from its own four edges.
@@ -63,34 +58,6 @@ impl<F: Float> SeedSearchOutput<F> {
     /// Construct a seed-output bundle.
     pub const fn new(seed: Seed, cell_size: F) -> Self {
         Self { seed, cell_size }
-    }
-}
-
-/// Per-seed evidence (positions + cell size).
-///
-/// Returned alongside [`SeedSearchOutput`] only when the caller asks for the
-/// candidate quad's positions (currently no public consumer; reserved for
-/// detector-internal diagnostics).
-#[derive(Clone, Copy, Debug)]
-#[non_exhaustive]
-pub struct SeedQuad<F: Float> {
-    /// Indices of the four corners in canonical
-    /// `(0, 0), (1, 0), (0, 1), (1, 1)` order.
-    pub corners: [usize; 4],
-    /// Positions of the four corners in image-frame pixels.
-    pub positions: [Point2<F>; 4],
-    /// Mean of the four seed-edge lengths in pixels.
-    pub cell_size: F,
-}
-
-impl<F: Float> SeedQuad<F> {
-    /// Construct a quad bundle.
-    pub fn new(corners: [usize; 4], positions: [Point2<F>; 4], cell_size: F) -> Self {
-        Self {
-            corners,
-            positions,
-            cell_size,
-        }
     }
 }
 
