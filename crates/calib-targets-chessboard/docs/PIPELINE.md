@@ -24,7 +24,7 @@ to which ran:
   via homography). Battle-tested across every target family. Pipeline A
   below.
 - **`GraphBuildAlgorithm::Topological` (opt-in)** — Shu/Brunton/Fiala
-  2009 grid finder (`projective_grid::topological::build_grid_topological`)
+  2009 grid finder (`projective_grid_next::detect_grid_all`)
   wrapped by a chessboard-specific input adapter and recovery layer.
   Image-free below ChESS; faster + denser on clean PuzzleBoards;
   currently regresses recall on ChArUco-style images because corners
@@ -78,7 +78,7 @@ connected components and merging them.
 plus per-corner stage records. Each iteration trace carries:
 
 - `extension`: Stage-6 stats (attached / rejected_no_candidate /
-  rejected_label / rejected_validator / rejected_edge / h-residual
+  rejected_label / rejected_policy / rejected_edge / h-residual
   median + max).
 - `rescue`: Stage-6.5 stats, same shape.
 - `refit`: Stage-6.75 (`shift_deg`, `new_centers_deg`, `promoted`,
@@ -120,19 +120,19 @@ The chessboard topological pipeline is a three-layer composition:
 1. **Chessboard-side input adapter** (this crate) — converts
    `Corner` → image-free `(positions, axes)` pair.
 2. **Projective-grid topological core**
-   (`projective_grid::topological::build_grid_topological`) — image-
+   (`projective_grid_next::detect_grid_all`) — image-
    free `(i, j)` labelling via Delaunay triangulation + axis-driven
    edge classification + triangle-pair merge + topological walk.
 3. **Chessboard-side recovery layer** (this crate) — orientation
    clustering + parity alignment + recall boosters + component merge,
-   converting raw projective-grid components into `Detection`s.
+   converting raw projective-grid-next components into `Detection`s.
 
 ### Layer 1 — chessboard input adapter
 
 Owner: `crates/calib-targets-chessboard/src/topological/inputs.rs`.
 
 Converts `calib_targets_core::Corner` into the image-free
-`projective-grid` input format `(positions: Vec<Point2<f32>>,
+`projective-grid-next` input format `(positions: Vec<Point2<f32>>,
 axes: Vec<[AxisEstimate; 2]>)`. Applies the same strength + fit-RMS
 prefilter as ChessboardV2's Stage 1. Corners that fail the prefilter
 keep their original position but get their axes replaced with
@@ -146,11 +146,10 @@ also run here; its output is passed to the topological core as
 disagree with the global grid directions (the projective-grid
 "Stage 0b" filter).
 
-### Layer 2 — projective-grid topological core
+### Layer 2 — projective-grid-next topological core
 
-The 8-stage core is documented in
-[`crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`](../../projective-grid/docs/TOPOLOGICAL_PIPELINE.md)
-and not duplicated here. In one paragraph:
+The 8-stage core is implemented in
+`crates/projective-grid-next/src/detect/square/topological/`. In one paragraph:
 
 > A corner is **usable** if at least one of its axes has
 > `σ < max_axis_sigma_rad` (default `0.6 rad`). Usable corners are
@@ -167,14 +166,14 @@ and not duplicated here. In one paragraph:
 > `(0, 0), (1, 0), (1, 1), (0, 1)` CW seeds and rebases each
 > connected component.
 
-Public entry points: `build_grid_topological`,
-`build_grid_topological_trace`.
+Public entry points: `projective_grid_next::detect_grid_all`,
+`projective_grid_next::detect::advanced::square::topological_trace::build_grid_topological_trace`.
 
 ### Layer 3 — chessboard-specific recovery
 
 Owner: `crates/calib-targets-chessboard/src/topological/recovery.rs`.
 
-The projective-grid core stops at one or more labelled components.
+The projective-grid-next core stops at one or more labelled components.
 Recovery then layers chessboard-specific logic on top:
 
 1. **First `merge_components_local` pass** on the raw topological
@@ -185,7 +184,7 @@ Recovery then layers chessboard-specific logic on top:
    same Stages 2/3 used by ChessboardV2 — over the labelled set, then
 3. **Parity-align** topological labels against cluster slot labels
    when clustering is available. This is the chessboard-specific
-   parity that projective-grid alone does not enforce.
+   parity that projective-grid-next alone does not enforce.
 4. Mark the current labelled component and run `apply_boosters`
    (interior gap fill + line extrapolation) under the same axis /
    parity / edge invariants as ChessboardV2's BFS.
@@ -203,7 +202,7 @@ Recovery then layers chessboard-specific logic on top:
 This recovery layer is chessboard-specific because it depends on
 parity, orientation clusters, `CornerAug`, `GrowResult`, and the
 chessboard booster stack. It is intentionally not promoted into
-`projective-grid`.
+`projective-grid-next`.
 
 ### Tracing and performance
 
@@ -260,26 +259,24 @@ when investigating topological recall holes.
 
 ---
 
-## What lives in `projective-grid` vs `calib-targets-chessboard`
+## What lives in `projective-grid-next` vs `calib-targets-chessboard`
 
-- `projective-grid` (image-free, no internal workspace deps):
-  `square::seed`, `square::grow`, `square::extension`,
-  `square::validate`, `square::alignment`, `component_merge`,
-  `topological`, `homography`, `circular_stats`. Provides the
-  `GrowValidator` trait as the seam where caller-specific invariants
+- `projective-grid-next` (image-free, no internal workspace deps):
+  `detect::advanced::square::{seed,grow,fill,grow_extend,extension,validate,component_merge,homography}`
+  plus `detect::square::topological`. Provides the
+  `SquareAttachPolicy` trait as the seam where caller-specific invariants
   enter.
 - `calib-targets-chessboard` (chessboard-specific): orientation
   histogram + 2-means (`cluster.rs`), seed validator (parity gate),
-  `ChessboardGrowValidator` + `ChessboardRescueValidator` (axis-slot-
+  `ChessboardSquareAttachPolicy` + `ChessboardRescueValidator` (axis-slot-
   swap edge invariants), recall boosters with parity, post-grow refit,
   mandatory geometry check, multi-component dispatch, and the
   topological input adapter + recovery layer above.
 
 ## Cross-references
 
-- [`crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`](../../projective-grid/docs/TOPOLOGICAL_PIPELINE.md)
-  — the projective-grid topological core (8-stage table), independent
-  of chessboard semantics.
+- `crates/projective-grid-next/src/detect/square/topological/` — the
+  projective-grid-next topological core, independent of chessboard semantics.
 - CLAUDE.md "Evidence-driven detector debugging" — methodology that
   every detector failure must be analysed against measurable numbers
   from this dump, not story-told.

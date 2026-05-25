@@ -47,6 +47,30 @@ impl<F: Float> ValidateParams<F> {
             ..Self::default()
         }
     }
+
+    /// Builder-style override for [`Self::line_tol_rel`].
+    pub fn with_line_tol_rel(mut self, value: F) -> Self {
+        self.line_tol_rel = value;
+        self
+    }
+
+    /// Builder-style override for [`Self::line_min_members`].
+    pub fn with_line_min_members(mut self, value: usize) -> Self {
+        self.line_min_members = value;
+        self
+    }
+
+    /// Builder-style override for [`Self::local_h_tol_rel`].
+    pub fn with_local_h_tol_rel(mut self, value: F) -> Self {
+        self.local_h_tol_rel = value;
+        self
+    }
+
+    /// Builder-style override for [`Self::edge_length_band_rel`].
+    pub fn with_edge_length_band_rel(mut self, value: F) -> Self {
+        self.edge_length_band_rel = value;
+        self
+    }
 }
 
 /// A single labelled corner fed into [`validate`].

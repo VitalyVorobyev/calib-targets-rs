@@ -14,7 +14,7 @@ use crate::cluster::{
     refit_centers_from_labelled, AxisCluster, ClusterCenters,
 };
 use crate::corner::{CornerAug, CornerStage};
-use crate::grow::{grow_from_seed, ChessboardGrowValidator, GrowResult};
+use crate::grow::{grow_from_seed, ChessboardSquareAttachPolicy, GrowResult};
 use crate::params::DetectorParams;
 use crate::seed::Seed;
 
@@ -150,22 +150,22 @@ pub(crate) fn run_refit(
             let positions: Vec<Point2<f32>> = augs.iter().map(|c| c.position).collect();
             // Stage 6.75 BFS extend runs in post-rebase coords; same
             // parity-shift rationale as `run_stage6`.
-            let bfs_parity_shift =
-                (grow_res.parity_shift_i + grow_res.parity_shift_j).rem_euclid(2);
+            let bfs_parity_shift = (grow_res.rebase_i_mod2 + grow_res.rebase_j_mod2).rem_euclid(2);
             let bfs_validator =
-                ChessboardGrowValidator::new(augs, blacklist, new_centers, cell_size, params)
+                ChessboardSquareAttachPolicy::new(augs, blacklist, new_centers, cell_size, params)
                     .with_parity_shift(bfs_parity_shift);
-            let bfs_params = projective_grid::square::grow::GrowParams::new(
+            let bfs_params = projective_grid_next::detect::advanced::square::grow::GrowParams::new(
                 params.tuning.attach_search_rel,
                 params.tuning.attach_ambiguity_factor,
             );
-            let bfs_stats = projective_grid::square::grow_extend::extend_from_labelled(
-                &positions,
-                grow_res,
-                cell_size,
-                &bfs_params,
-                &bfs_validator,
-            );
+            let bfs_stats =
+                projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled(
+                    &positions,
+                    grow_res,
+                    cell_size,
+                    &bfs_params,
+                    &bfs_validator,
+                );
             for (k, &idx) in bfs_stats.attached_indices.iter().enumerate() {
                 let at = bfs_stats.attached_cells[k];
                 augs[idx].stage = CornerStage::Labeled {

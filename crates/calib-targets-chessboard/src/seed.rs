@@ -21,30 +21,33 @@
 //!
 //! The pattern-agnostic geometry — KD-tree neighbour search, axis
 //! classification of B vs C, parallelogram completion, edge-ratio
-//! match — lives in `projective_grid::square::seed::finder`. This
-//! module supplies the chessboard-specific `SeedQuadValidator` impl:
+//! match — lives in `projective_grid_next::detect::advanced::square::seed::finder`. This
+//! module supplies the chessboard-specific `SquareSeedPolicy` impl:
 //! parity-aware A/BC partition, the axis-slot-swap edge gate, and
 //! the chessboard's midpoint-violation test.
 
 use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
-use crate::legacy_projective_grid::axes_to_legacy;
 use crate::params::DetectorParams;
+use calib_targets_core::axis_estimate_to_next;
 use nalgebra::Point2;
-use projective_grid::square::seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
+use projective_grid_next::detect::advanced::square::seed::finder::{
+    find_quad, SeedQuadParams, SquareSeedPolicy,
+};
+use projective_grid_next::LocalAxis;
 
-// `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
+// `Seed` and `SeedOutput` live in `projective_grid_next::detect::advanced::square::seed` so
 // non-chessboard grid-detector pipelines can share the same 2×2 seed
 // data carrier + `(seed, cell_size)` bundle. Chessboard re-exports
 // them here under their historical names.
 //
 // The positional convention (A at (0, 0) / B at (1, 0) / C at (0, 1)
-// / D at (1, 1)) matches [`projective_grid::square::grow::bfs_grow`]
+// / D at (1, 1)) matches [`projective_grid_next::detect::advanced::square::grow::bfs_grow`]
 // exactly — the seed comes out of this module and goes directly into
 // grow with no index permutation. For chessboards, A and D are
 // `Canonical`-cluster corners and B, C are `Swapped` under the seed's
 // parity-fixing convention.
-pub use projective_grid::square::seed::{Seed, SeedOutput};
+pub use projective_grid_next::detect::advanced::square::seed::{Seed, SeedOutput};
 
 /// Find a valid seed. Cell size comes OUT of the seed (no cell-size input).
 ///
@@ -64,7 +67,7 @@ pub fn find_seed(
     find_with_slack(&validator, params, 1.0).or_else(|| find_with_slack(&validator, params, 1.5))
 }
 
-fn find_with_slack<V: SeedQuadValidator>(
+fn find_with_slack<V: SquareSeedPolicy>(
     v: &V,
     params: &DetectorParams,
     slack: f32,
@@ -78,7 +81,7 @@ fn find_with_slack<V: SeedQuadValidator>(
 }
 
 /// Chessboard plug-in for the generic
-/// [`SeedQuadValidator`](projective_grid::square::seed::finder::SeedQuadValidator).
+/// [`SquareSeedPolicy`](projective_grid_next::detect::advanced::square::seed::finder::SquareSeedPolicy).
 struct ChessboardSeedValidator<'a> {
     corners: &'a [CornerAug],
     /// Canonical-cluster indices, sorted by descending strength so the
@@ -109,20 +112,23 @@ impl<'a> ChessboardSeedValidator<'a> {
     }
 }
 
-impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
+impl<'a> SquareSeedPolicy for ChessboardSeedValidator<'a> {
     fn position(&self, idx: usize) -> Point2<f32> {
         self.corners[idx].position
     }
 
-    fn axes(&self, idx: usize) -> [projective_grid::AxisEstimate; 2] {
-        axes_to_legacy(self.corners[idx].axes)
+    fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2] {
+        [
+            axis_estimate_to_next(self.corners[idx].axes[0]),
+            axis_estimate_to_next(self.corners[idx].axes[1]),
+        ]
     }
 
-    fn a_candidates(&self) -> Vec<usize> {
+    fn primary_candidates(&self) -> Vec<usize> {
         self.canonical.clone()
     }
 
-    fn bc_candidates(&self) -> Vec<usize> {
+    fn secondary_candidates(&self) -> Vec<usize> {
         self.swapped.clone()
     }
 
@@ -159,12 +165,12 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
     /// isn't in `self.swapped` / `self.canonical`.
     fn has_midpoint_violation(
         &self,
-        seed: projective_grid::square::seed::Seed,
+        seed: projective_grid_next::detect::advanced::square::seed::Seed,
         cell_size: f32,
     ) -> bool {
         let positions: Vec<Point2<f32>> = self.corners.iter().map(|c| c.position).collect();
         let all_idx: Vec<usize> = (0..self.corners.len()).collect();
-        projective_grid::square::seed::seed_has_midpoint_violation(
+        projective_grid_next::detect::advanced::square::seed::seed_has_midpoint_violation(
             &positions,
             [seed.a, seed.b, seed.c, seed.d],
             cell_size,

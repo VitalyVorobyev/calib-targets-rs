@@ -13,7 +13,7 @@ use crate::corner::{CornerAug, CornerStage};
 use calib_targets_core::GridCoords;
 
 use nalgebra::Point2;
-use projective_grid::square::extension::ExtensionStats;
+use projective_grid_next::detect::advanced::square::extension::ExtensionStats;
 use serde::Serialize;
 
 /// A single labelled chessboard corner.
@@ -142,7 +142,7 @@ pub struct IterationTrace {
     /// Cardinal-neighbour BFS extension after refit, if
     /// `enable_post_grow_bfs_extend` is set. Records `attached /
     /// rejected_*` from
-    /// `projective_grid::square::grow_extend::extend_from_labelled`.
+    /// `projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bfs_extend: Option<BfsExtendTrace>,
     /// Post-refit second-pass `extend_boundary` summary, if it ran.
@@ -225,7 +225,7 @@ pub struct GeometryCheckTrace {
 
 /// Diagnose payload for one homography-based boundary-extension pass
 /// (`extend_boundary` / `rescue_no_cluster`). Mirrors
-/// [`ExtensionStats`](projective_grid::square::extension::ExtensionStats).
+/// [`ExtensionStats`](projective_grid_next::detect::advanced::square::extension::ExtensionStats).
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct ExtensionTrace {
@@ -247,8 +247,8 @@ pub struct ExtensionTrace {
     pub rejected_ambiguous: usize,
     /// Candidate cells skipped because the target `(i, j)` was already labelled.
     pub rejected_label: usize,
-    /// Candidate corners rejected by the grow validator.
-    pub rejected_validator: usize,
+    /// Candidate corners rejected by the square-grid attach policy.
+    pub rejected_policy: usize,
     /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
     /// Input-corner indices of the corners attached in this pass.
@@ -266,7 +266,7 @@ impl From<&ExtensionStats> for ExtensionTrace {
             rejected_no_candidate: s.rejected_no_candidate,
             rejected_ambiguous: s.rejected_ambiguous,
             rejected_label: s.rejected_label,
-            rejected_validator: s.rejected_validator,
+            rejected_policy: s.rejected_policy,
             rejected_edge: s.rejected_edge,
             attached_indices: s.attached_indices.clone(),
         }

@@ -44,17 +44,17 @@
 //!    Require the LARGER distance in the winning assignment to be
 //!    within `cluster_tol_deg`; otherwise the corner is unclustered.
 
+use crate::circular_stats as cs;
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
 use kiddo::{KdTree, SquaredEuclidean};
-use projective_grid::circular_stats as cs;
 use serde::Serialize;
 use std::f32::consts::PI;
 
 // Re-export the hoisted angle helpers under their old local names so
 // sibling modules (`seed`, `grow`, `boosters`) keep their existing
 // `use crate::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
-pub(crate) use projective_grid::circular_stats::{angular_dist_pi, wrap_pi};
+pub(crate) use crate::circular_stats::{angular_dist_pi, wrap_pi};
 
 /// Result of clustering: two grid-direction centers in `[0, π)`
 /// with `theta0 < theta1`.
@@ -249,7 +249,7 @@ pub fn cluster_axes_debug(
 /// The slot swap propagates through every downstream consumer that
 /// reads `axes[0]` vs `axes[1]` — `edge_ok` (BFS, rescue, seed,
 /// geometry check), `assign_corner`'s canonical / swapped cost, and
-/// the parity-aware `label_of` in `pg_grow::GrowValidator`.
+/// the parity-aware `label_of` in `pg_grow::SquareAttachPolicy`.
 ///
 /// On RingFit (where axis-slot ordering is consistent) Stage 1
 /// always passes (~50/50 split) and Stage 2 never runs. On DiskFit
@@ -478,7 +478,7 @@ fn fix_axis_slot_coherence(corners: &mut [CornerAug]) {
 /// producing a per-corner `(axes[0], axes[1])` ordering that's the
 /// reverse of what the rest of the chessboard expects. Such corners
 /// have the right physical line directions but the wrong slot label,
-/// so [`crate::grow::ChessboardGrowValidator::edge_ok`]'s alternating-
+/// so [`crate::grow::ChessboardSquareAttachPolicy::edge_ok`]'s alternating-
 /// parity rule (`slot_c != slot_n`) rejects every edge from the
 /// flipped corner to a labelled neighbour, and the corner can't be
 /// attached to the grid.
@@ -557,7 +557,7 @@ pub(crate) fn fix_partial_slot_flips_post_stage6(
     cell_size: f32,
     k_nearest: usize,
 ) -> u32 {
-    use projective_grid::homography::estimate_homography;
+    use projective_grid_next::detect::advanced::square::homography::estimate_homography;
 
     if labelled.len() < 4 || cell_size <= 0.0 || k_nearest < 4 {
         return 0;

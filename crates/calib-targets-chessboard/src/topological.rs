@@ -9,40 +9,37 @@
 //!   boosters, final canonicalisation, and the public
 //!   [`ChessboardDetection`](crate::ChessboardDetection) type.
 //!
-//! The production path intentionally remains one path. Blog overlays use
-//! [`trace_topological`] for intermediate `projective-grid` stages; benchmark
-//! reports use the optional `tracing` feature to time the same functions rather
-//! than a second timed implementation.
-//!
-//! ## Phase E.1a — grid-build call migrated to `projective-grid-next`
+//! The production path intentionally remains one path. Diagnostics use
+//! [`trace_topological`] for the same `projective-grid-next` topological
+//! detector path; benchmark reports use the optional `tracing` feature to time
+//! the same functions rather than a second timed implementation.
 //!
 //! Production [`detect_all_topological`] now calls
 //! [`projective_grid_next::detect_grid_all`] with
 //! [`SquareAlgorithm::Topological`](projective_grid_next::SquareAlgorithm::Topological).
-//! The output is bridged back to legacy
-//! [`projective_grid::ComponentInput`] views so the existing recovery
+//! The output is bridged into the advanced
+//! [`projective-grid-next`](projective_grid_next) component-merge view so the existing recovery
 //! pipeline ([`recovery::merge`](self::recovery), boosters, geometry
-//! check) is byte-identical with the pre-migration version. Validation
+//! check) stays byte-identical with the pre-migration version. Validation
 //! and over-residual drops in the new pipeline are disabled (tolerances
 //! pushed to `+inf`) because the chessboard owns its own validation
 //! downstream; the new path is asked solely to produce labelled
 //! `(coord -> source_index)` components.
 //!
-//! [`trace_topological`] keeps using the legacy
-//! [`projective_grid::topological`] crate — it is a debug-only diagnostic
-//! surface and the legacy trace types remain richer than what
-//! `projective-grid-next` exposes today. Migration of the trace path is
-//! deferred to a later phase.
+//! [`trace_topological`] uses the same `projective-grid-next` production
+//! detector path and returns a compact serializable trace of the final
+//! labelled components.
 
 mod inputs;
 mod recovery;
 
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use projective_grid::topological::trace::{build_grid_topological_trace, TopologicalTrace};
-use projective_grid::{
-    merge_components_local, AxisClusterCenters, ComponentInput,
-    TopologicalParams as LegacyTopologicalParams,
+use projective_grid_next::detect::advanced::square::component_merge::{
+    merge_components_local, ComponentInput,
+};
+use projective_grid_next::detect::advanced::square::topological_trace::{
+    build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
 use projective_grid_next::detect::ValidateParams as NextValidateParams;
 use projective_grid_next::{
@@ -61,61 +58,20 @@ use self::recovery::{
     build_topological_detections, clustered_augs, recover_topological_components,
 };
 
-#[inline]
-fn axis_centers_to_topological(centers: Option<ClusterCenters>) -> Option<AxisClusterCenters> {
-    centers.map(|c| AxisClusterCenters::new(c.theta0, c.theta1))
-}
-
-/// Build a `projective-grid-next` [`NextDetectionParams`] that mirrors the
-/// chessboard adapter's intent for the topological grid finder.
-///
-/// The mapping from the legacy
-/// [`projective_grid::TopologicalParams`](LegacyTopologicalParams) to the
-/// new [`NextTopologicalParams`]:
-///
-/// * `axis_align_tol_rad`, `max_axis_sigma_rad`, `min_quads_per_component`,
-///   and `cluster_axis_tol_rad` map field-for-field.
-/// * `edge_ratio_max` (legacy opposing-edge parallelogram cap) maps to
-///   `opposing_edge_ratio_max`.
-/// * `quad_edge_min_rel` / `quad_edge_max_rel` (legacy asymmetric
-///   per-component edge-length band) map to the new
-///   `edge_length_min_rel` / `edge_length_max_rel` fields directly.
-///   The legacy default has `quad_edge_min_rel = 0.0` (lower bound
-///   disabled) and `quad_edge_max_rel = 1.8` (upper-only band); this
-///   is now expressible without the `+inf` workaround that Phase E.1a
-///   used when only a symmetric band was available.
-/// * `axis_cluster_centers`: the per-frame two-cluster centers are
-///   forwarded as a `[theta0, theta1]` pair.
+/// Build a `projective-grid-next` [`NextDetectionParams`] for the
+/// chessboard adapter's topological grid finder.
 ///
 /// The new pipeline also runs a post-grow validation + fit-residual
 /// drop. Both are disabled here (tolerances pushed to `+inf`,
 /// `max_residual_px = +inf`) because the
 /// chessboard owns its own geometry check downstream — the migration
-/// must produce the same labelled components the legacy
-/// `build_grid_topological` produced.
+/// must preserve the labelled components produced by the topological
+/// graph builder.
 fn detection_params_for_topological(
-    legacy: &LegacyTopologicalParams,
+    topological: &NextTopologicalParams<f32>,
     clustered_centers: Option<ClusterCenters>,
 ) -> NextDetectionParams<f32> {
-    let mut topo = NextTopologicalParams::<f32>::default();
-    topo.axis_align_tol_rad = legacy.axis_align_tol_rad;
-    topo.max_axis_sigma_rad = legacy.max_axis_sigma_rad;
-    topo.opposing_edge_ratio_max = legacy.edge_ratio_max;
-    // Per-component cell-size filter: pass through the legacy asymmetric
-    // band directly. The legacy default has `quad_edge_min_rel = 0.0`
-    // (lower bound disabled) and `quad_edge_max_rel = 1.8` (upper-only
-    // band). The new `edge_length_min_rel = 0.0` path disables the lower
-    // bound — exactly matching the legacy behaviour without the `+inf`
-    // workaround that Phase E.1a required when only a symmetric band
-    // was available on `NextTopologicalParams`.
-    topo.edge_length_min_rel = legacy.quad_edge_min_rel;
-    topo.edge_length_max_rel = legacy.quad_edge_max_rel;
-    topo.min_quads_per_component = legacy.min_quads_per_component;
-    // `min_corners_for_component`: new field with no legacy equivalent;
-    // 4 corners = 1 quad matches the legacy "keep all quad-mesh
-    // components" intent. (Legacy had only `min_quads_per_component`.)
-    topo.min_corners_for_component = 4;
-    topo.cluster_axis_tol_rad = legacy.cluster_axis_tol_rad;
+    let mut topo = *topological;
     topo.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
 
     // Disable the post-grow validation: the chessboard runs its own
@@ -123,10 +79,10 @@ fn detection_params_for_topological(
     // and its own per-component boosters first. Disabling here means a
     // corner the new pipeline would have flagged still gets a chance to
     // survive the chessboard's downstream stages.
-    let mut validate = NextValidateParams::<f32>::default();
-    validate.line_tol_rel = f32::INFINITY;
-    validate.local_h_tol_rel = f32::INFINITY;
-    validate.edge_length_band_rel = f32::INFINITY;
+    let validate = NextValidateParams::<f32>::default()
+        .with_line_tol_rel(f32::INFINITY)
+        .with_local_h_tol_rel(f32::INFINITY)
+        .with_edge_length_band_rel(f32::INFINITY);
 
     NextDetectionParams::<f32>::default()
         .with_algorithm(SquareAlgorithm::Topological)
@@ -141,7 +97,7 @@ fn detection_params_for_topological(
 /// Build the new-crate oriented-feature slice from the chessboard's
 /// `(positions, axes)` shape. `source_index` is the slice index, so the
 /// returned `GridEntry.source_index` is directly usable as a
-/// `positions[]` index by the downstream legacy recovery stages.
+/// `positions[]` index by the downstream recovery stages.
 fn build_oriented_features(
     positions: &[nalgebra::Point2<f32>],
     axes: &[[AxisEstimate; 2]],
@@ -194,7 +150,7 @@ pub fn detect_all_topological(
     }
 
     // Build the new-crate input shape. `params.tuning.topological` carries
-    // the legacy field names; `detection_params_for_topological` translates
+    // the chessboard tuning field names; `detection_params_for_topological` translates
     // them into `projective-grid-next`'s sub-config layout.
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
@@ -215,14 +171,14 @@ pub fn detect_all_topological(
         Ok(r) => r,
         // `InsufficientEvidence` / `DegenerateGeometry` /
         // `UnsupportedCombination` all collapse to "no components". The
-        // legacy path mapped its `TopologicalError` variants the same way.
+        // The topological path maps these cases to "no components".
         Err(_) => return Vec::new(),
     };
     if report.solutions.is_empty() {
         return Vec::new();
     }
 
-    // Bridge the new-crate output back to the legacy
+    // Bridge the new-crate output into the advanced component-merge
     // `ComponentInput<'_>` shape so the existing recovery pipeline is
     // byte-identical with the pre-migration version.
     //
@@ -279,10 +235,10 @@ pub fn detect_all_topological(
 }
 
 /// Run the same topological input adaptation as [`detect_all_topological`],
-/// but return the full projective-grid trace instead of detections.
+/// but return a compact topological trace instead of detections.
 ///
 /// Corners that fail the chessboard strength / fit pre-filter are passed to
-/// `projective-grid` with no-information axes, matching the production
+/// `projective-grid-next` with no-information axes, matching the production
 /// topological dispatch path.
 #[cfg_attr(
     feature = "tracing",
@@ -295,15 +251,11 @@ pub fn detect_all_topological(
 pub fn trace_topological(
     corners: &[ChessCorner],
     params: &DetectorParams,
-) -> Result<TopologicalTrace, projective_grid::TopologicalError> {
+) -> Result<TopologicalTrace, TopologicalTraceError> {
     let inputs = topological_inputs(corners, params);
     let (_augs, clustered_centers) = clustered_augs(corners, params);
     let mut topo_params = params.tuning.topological;
-    topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
-    let legacy_axes: Vec<[projective_grid::AxisEstimate; 2]> = inputs
-        .axes
-        .iter()
-        .map(|&axes| crate::legacy_projective_grid::axes_to_legacy(axes))
-        .collect();
-    build_grid_topological_trace(&inputs.positions, &legacy_axes, &topo_params)
+    topo_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
+    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
+    build_grid_topological_trace(&next_features, topo_params)
 }

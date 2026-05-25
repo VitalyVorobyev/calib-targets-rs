@@ -1,6 +1,6 @@
 //! Chessboard-specific recovery after the image-free topological walk.
 //!
-//! `projective-grid` stops at connected labelled components. This module
+//! `projective-grid-next` stops at connected labelled components. This module
 //! adapts those components back into the chessboard detector's existing
 //! booster and canonicalisation machinery.
 
@@ -9,7 +9,9 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::{merge_components_local, ComponentInput};
+use projective_grid_next::detect::advanced::square::component_merge::{
+    merge_components_local, ComponentInput,
+};
 
 use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};
@@ -299,8 +301,8 @@ pub(super) fn recover_topological_components(
             holes: Default::default(),
             axis_i,
             axis_j,
-            parity_shift_i: 0,
-            parity_shift_j: 0,
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
         };
         grow.by_corner = grow.labelled.iter().map(|(&k, &v)| (v, k)).collect();
 
@@ -386,8 +388,8 @@ pub(super) fn build_topological_detections(
             holes: Default::default(),
             axis_i,
             axis_j,
-            parity_shift_i: 0,
-            parity_shift_j: 0,
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
         };
 
         // Geometry verification. The chessboard-v2 path runs this gate

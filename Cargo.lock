@@ -358,7 +358,6 @@ dependencies = [
  "log",
  "nalgebra",
  "predicates",
- "projective-grid",
  "serde",
  "serde_json",
  "tempfile",
@@ -2141,7 +2140,6 @@ dependencies = [
 name = "projective-grid"
 version = "0.9.0"
 dependencies = [
- "criterion",
  "delaunator",
  "kiddo",
  "nalgebra",

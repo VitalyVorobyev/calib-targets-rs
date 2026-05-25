@@ -3,23 +3,19 @@
 //! Stage 13 — `(i, j) → corner_idx` map to a typed
 //! [`ChessboardDetection`] of [`ChessboardCorner`] entries.
 //!
-//! # NOTE — bespoke cleanup vs. `projective_grid::square::cleanup`
+//! # NOTE — bespoke cleanup
 //!
-//! Phase 1 added generic output-cleanup helpers (`rebase_to_origin`,
-//! `canonicalize_top_left`, `sorted_grid_points`). This module keeps
-//! its own `build_detection` / `canonicalize_orientation` pair rather
-//! than swapping to those helpers, because the chessboard variant
-//! differs in a behaviour-relevant way: it operates on an in-place
+//! This module keeps its own `build_detection` /
+//! `canonicalize_orientation` pair because the chessboard variant
+//! operates on an in-place
 //! `Vec<((i32, i32), usize)>` and interleaves the rebase, swap, and
 //! sign-flip steps so the result of `canonicalize_orientation` feeds
-//! directly into the stable `(j, i)` sort below — the generic helpers
-//! take/return a `HashMap` and would force two extra round-trips.
+//! directly into the stable `(j, i)` sort below.
 //!
 //! The rebase here is the same `min (i, j) → (0, 0)` shift as
-//! `rebase_to_origin` (in `projective_grid::square::cleanup`, private);
-//! swapping just that one step would not reduce the surface, so the
-//! whole pair is kept local to preserve byte-for-byte behaviour and the
-//! non-negative-label invariant from `grow::grow_from_seed`.
+//! the square-grid grow path. Keeping the whole pair local preserves
+//! byte-for-byte behaviour and the non-negative-label invariant from
+//! `grow::grow_from_seed`.
 
 use crate::corner::CornerAug;
 use crate::grow::GrowResult;

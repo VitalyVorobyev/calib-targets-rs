@@ -275,12 +275,12 @@ export interface AxisClusterCenters {
 export interface TopologicalParams {
   axis_align_tol_rad: number;
   max_axis_sigma_rad: number;
-  edge_ratio_max: number;
+  opposing_edge_ratio_max: number;
   min_quads_per_component: number;
   axis_cluster_centers: AxisClusterCenters | null;
   cluster_axis_tol_rad: number;
-  quad_edge_min_rel: number;
-  quad_edge_max_rel: number;
+  edge_length_min_rel: number;
+  edge_length_max_rel: number;
 }
 
 /** Tuning knobs for the shared local-geometry component merger (Rust `LocalMergeParams`). */
@@ -545,7 +545,7 @@ export interface ExtensionTrace {
   rejected_no_candidate: number;
   rejected_ambiguous: number;
   rejected_label: number;
-  rejected_validator: number;
+  rejected_policy: number;
   rejected_edge: number;
   attached_indices: number[];
 }

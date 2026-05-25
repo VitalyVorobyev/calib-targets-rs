@@ -1,6 +1,6 @@
 //! Criterion bench for [`merge_components_local`].
 //!
-//! Run with `cargo bench -p projective-grid --bench merge`.
+//! Run with `cargo bench -p projective-grid-next --bench merge`.
 //!
 //! Splits a synthetic perspective-warped grid into two or three
 //! components by deleting strips of corners and re-labelling each
@@ -11,7 +11,9 @@ use std::collections::HashMap;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::Point2;
-use projective_grid::component_merge::{merge_components_local, ComponentInput, LocalMergeParams};
+use projective_grid_next::detect::advanced::square::component_merge::{
+    merge_components_local, ComponentInput, LocalMergeParams,
+};
 
 type Labels = HashMap<(i32, i32), usize>;
 type Fixture = (Vec<Point2<f32>>, Vec<Labels>);

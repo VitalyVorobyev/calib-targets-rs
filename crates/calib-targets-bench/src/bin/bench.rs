@@ -726,7 +726,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .unwrap_or_else(|| "—".to_string());
                 println!(
                     "    stage6: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
-                     rej(no_cand={} ambig={} label={} validator={} edge={})",
+                     rej(no_cand={} ambig={} label={} policy={} edge={})",
                     ext.h_trusted,
                     med,
                     max,
@@ -735,7 +735,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     ext.rejected_no_candidate,
                     ext.rejected_ambiguous,
                     ext.rejected_label,
-                    ext.rejected_validator,
+                    ext.rejected_policy,
                     ext.rejected_edge,
                 );
             }
@@ -750,7 +750,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .unwrap_or_else(|| "—".to_string());
                 println!(
                     "    stage6.5: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
-                     rej(no_cand={} ambig={} label={} validator={} edge={})",
+                     rej(no_cand={} ambig={} label={} policy={} edge={})",
                     rescue.h_trusted,
                     med,
                     max,
@@ -759,7 +759,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     rescue.rejected_no_candidate,
                     rescue.rejected_ambiguous,
                     rescue.rejected_label,
-                    rescue.rejected_validator,
+                    rescue.rejected_policy,
                     rescue.rejected_edge,
                 );
             }
@@ -824,7 +824,7 @@ fn diagnose_topological(
     }
     let params = &detector_params.tuning.topological;
     println!(
-        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  quad_edge_max_rel: {:.2}",
+        "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  edge_length_max_rel: {:.2}",
         args.image,
         corners.len(),
         params.axis_align_tol_rad,
@@ -833,7 +833,7 @@ fn diagnose_topological(
         (params.max_axis_sigma_rad.to_degrees() as i32),
         params.cluster_axis_tol_rad,
         (params.cluster_axis_tol_rad.to_degrees() as i32),
-        params.quad_edge_max_rel,
+        params.edge_length_max_rel,
     );
 
     // Pre-filter: at least one axis with sigma below threshold AND the

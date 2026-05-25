@@ -1,14 +1,15 @@
 //! Detection task facade.
 //!
-//! Phase C ships the first working implementation for
+//! The first working implementation targets
 //! [`(LatticeKind::Square, Evidence::Oriented2)`](Evidence::Oriented2): a
-//! seed-and-grow pipeline (seed → BFS grow → validate → fit). Phase D
-//! adds the axis-driven topological grid finder as a second algorithm
-//! choice for the same evidence slot — both produce the same
-//! [`GridSolution`] shape, the caller picks via [`SquareAlgorithm`].
+//! seed-and-grow pipeline (seed → BFS grow → validate → fit). The same
+//! evidence slot also supports an axis-driven topological grid finder.
+//! Both produce the same [`GridSolution`] shape; callers select the
+//! algorithm via [`SquareAlgorithm`].
 //! All other `(lattice, evidence)` combinations remain typed
 //! [`GridError::UnsupportedCombination`] placeholders.
 
+pub mod advanced;
 mod square;
 
 use crate::error::{EvidenceKind, GridError, GridTask, Result};
@@ -28,18 +29,18 @@ pub use square::TopologicalParams;
 /// produce the same [`GridSolution`] output; they differ in how they
 /// build the grid graph.
 ///
-/// * [`SeedAndGrow`](Self::SeedAndGrow) is the default — battle-tested
-///   on all four calibration target families.
+/// * [`SeedAndGrow`](Self::SeedAndGrow) is the default mature square
+///   assembly path.
 /// * [`Topological`](Self::Topological) is the Shu/Brunton/Fiala 2009
 ///   axis-driven grid finder. Image-free; tends to recover denser grids
 ///   on clean inputs but is more sensitive to per-corner axis quality.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum SquareAlgorithm {
-    /// Phase C seed-quad finder + BFS grow + shared validate + fit.
+    /// Seed-quad finder + BFS grow + shared validate + fit.
     #[default]
     SeedAndGrow,
-    /// Phase D axis-driven topological grid finder + shared validate + fit.
+    /// Axis-driven topological grid finder + shared validate + fit.
     Topological,
 }
 
@@ -91,7 +92,7 @@ pub struct DetectionParams<F: Float> {
     pub max_residual_px: F,
     /// Algorithm picker for `(Square, Oriented2)`. Defaults to
     /// [`SquareAlgorithm::SeedAndGrow`] so Phase C consumers compile
-    /// and pass without code changes.
+    /// without requiring an explicit algorithm choice.
     pub algorithm: SquareAlgorithm,
     /// Seed-quad finder tuning — consumed iff `algorithm ==
     /// SquareAlgorithm::SeedAndGrow`.

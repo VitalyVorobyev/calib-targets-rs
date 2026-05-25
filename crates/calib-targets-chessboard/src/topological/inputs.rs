@@ -6,7 +6,7 @@ use nalgebra::Point2;
 
 use crate::params::DetectorParams;
 
-/// Corner data passed from `calib-targets-chessboard` into `projective-grid`.
+/// Corner data passed from `calib-targets-chessboard` into `projective-grid-next`.
 pub(super) struct TopologicalInputs {
     pub(super) positions: Vec<Point2<f32>>,
     pub(super) axes: Vec<[AxisEstimate; 2]>,
@@ -41,7 +41,7 @@ fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
 }
 
 /// Convert ChESS corners into the image-free input format expected by
-/// `projective-grid`.
+/// `projective-grid-next`.
 ///
 /// Corners that fail the same strength / fit-quality gate used by
 /// chessboard-v2 are retained as positions but given no-information axes.

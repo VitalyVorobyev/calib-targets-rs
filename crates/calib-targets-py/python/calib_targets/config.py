@@ -763,7 +763,8 @@ class GridGraphParams:
 class AxisClusterCenters:
     """Two global grid-axis directions for the topological pre-Delaunay gate.
 
-    Mirrors ``projective_grid::AxisClusterCenters``. Both fields are in
+    Mirrors ``projective_grid_next::TopologicalParams.axis_cluster_centers``.
+    Both fields are in
     ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
     you have an unbiased estimate; the chessboard detector's topological
     dispatch path supplies these from its own ``cluster_axes`` so callers
@@ -783,30 +784,28 @@ class AxisClusterCenters:
 
 @dataclass(slots=True)
 class TopologicalParams:
-    """Tuning knobs for ``projective_grid::build_grid_topological``.
+    """Tuning knobs for ``projective_grid_next::detect_grid_all``.
 
     Defaults match the Rust workspace defaults in
-    ``crates/projective-grid/src/topological/mod.rs`` and have been
+    ``crates/projective-grid-next/src/detect/square/topological/mod.rs`` and have been
     co-tuned against ``02-topo-grid`` (Gemini chessboards) and
-    ``130x130_puzzle``. See
-    ``crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`` for the
-    stage-by-stage picture.
+    ``130x130_puzzle``.
     """
 
     axis_align_tol_rad: float = 0.2617993877991494  # 15°
     max_axis_sigma_rad: float = 0.6
-    edge_ratio_max: float = 10.0
+    opposing_edge_ratio_max: float = 10.0
     min_quads_per_component: int = 1
     axis_cluster_centers: "AxisClusterCenters | None" = None
     cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
-    quad_edge_min_rel: float = 0.0
-    quad_edge_max_rel: float = 1.8
+    edge_length_min_rel: float = 0.0
+    edge_length_max_rel: float = 1.8
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "axis_align_tol_rad": self.axis_align_tol_rad,
             "max_axis_sigma_rad": self.max_axis_sigma_rad,
-            "edge_ratio_max": self.edge_ratio_max,
+            "opposing_edge_ratio_max": self.opposing_edge_ratio_max,
             "min_quads_per_component": self.min_quads_per_component,
             "axis_cluster_centers": (
                 self.axis_cluster_centers.to_dict()
@@ -814,8 +813,8 @@ class TopologicalParams:
                 else None
             ),
             "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
-            "quad_edge_min_rel": self.quad_edge_min_rel,
-            "quad_edge_max_rel": self.quad_edge_max_rel,
+            "edge_length_min_rel": self.edge_length_min_rel,
+            "edge_length_max_rel": self.edge_length_max_rel,
         }
 
     @classmethod
@@ -825,7 +824,10 @@ class TopologicalParams:
         return cls(
             axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
             max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
-            edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
+            opposing_edge_ratio_max=data.get(
+                "opposing_edge_ratio_max",
+                data.get("edge_ratio_max", d.opposing_edge_ratio_max),
+            ),
             min_quads_per_component=data.get(
                 "min_quads_per_component", d.min_quads_per_component
             ),
@@ -835,8 +837,14 @@ class TopologicalParams:
             cluster_axis_tol_rad=data.get(
                 "cluster_axis_tol_rad", d.cluster_axis_tol_rad
             ),
-            quad_edge_min_rel=data.get("quad_edge_min_rel", d.quad_edge_min_rel),
-            quad_edge_max_rel=data.get("quad_edge_max_rel", d.quad_edge_max_rel),
+            edge_length_min_rel=data.get(
+                "edge_length_min_rel",
+                data.get("quad_edge_min_rel", d.edge_length_min_rel),
+            ),
+            edge_length_max_rel=data.get(
+                "edge_length_max_rel",
+                data.get("quad_edge_max_rel", d.edge_length_max_rel),
+            ),
         )
 
 

@@ -1,10 +1,10 @@
 //! Criterion benches for homography estimation.
 //!
-//! Run with `cargo bench -p projective-grid --bench homography`.
+//! Run with `cargo bench -p projective-grid-next --bench homography`.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nalgebra::{Matrix3, Point2};
-use projective_grid::homography::{
+use projective_grid_next::detect::advanced::square::homography::{
     estimate_homography, estimate_homography_with_quality, homography_from_4pt,
     homography_from_4pt_with_quality, Homography,
 };

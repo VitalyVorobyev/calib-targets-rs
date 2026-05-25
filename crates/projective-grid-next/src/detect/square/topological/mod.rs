@@ -58,7 +58,7 @@ const MIN_USABLE_FOR_DELAUNAY: usize = 3;
 /// Adding new fields is non-breaking via `#[non_exhaustive]`;
 /// literal-construction from outside the crate goes through [`Self::default`]
 /// + struct-update syntax or [`Self::new`].
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct TopologicalParams<F: Float> {
     /// Maximum angular distance, in radians, between an edge's

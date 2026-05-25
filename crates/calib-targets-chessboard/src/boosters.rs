@@ -7,8 +7,8 @@
 //!
 //! The structural skeleton (cell enumeration, KD-tree, per-cell
 //! attachment ladder, fixed-point iteration) lives in
-//! [`projective_grid::square::fill::fill_grid_holes`]; this module
-//! wraps it with a chessboard-specific [`GrowValidator`] that adds:
+//! [`projective_grid_next::detect::advanced::square::fill::fill_grid_holes`]; this module
+//! wraps it with a chessboard-specific [`SquareAttachPolicy`] that adds:
 //!
 //! - **Weak-cluster rescue**: admit `NoCluster` corners whose
 //!   `max_d_deg` is within `weak_cluster_tol_deg`. These corners
@@ -26,8 +26,10 @@ use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::square::fill::{fill_grid_holes, FillParams};
-use projective_grid::square::grow::{Admit, FillEdgeCtx, GrowValidator, LabelledNeighbour};
+use projective_grid_next::detect::advanced::square::fill::{fill_grid_holes, FillParams};
+use projective_grid_next::detect::advanced::square::grow::{
+    Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy,
+};
 use std::collections::{HashMap, HashSet};
 
 /// Diagnostic returned by the `apply_boosters` stage.
@@ -88,7 +90,7 @@ fn apply_boosters_impl(
     use_directional_edge_scale: bool,
 ) -> BoosterResult {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let parity_shift = (grow.parity_shift_i + grow.parity_shift_j).rem_euclid(2);
+    let parity_shift = (grow.rebase_i_mod2 + grow.rebase_j_mod2).rem_euclid(2);
     let validator = ChessboardFillValidator {
         corners,
         blacklist,
@@ -147,12 +149,12 @@ struct ChessboardFillValidator<'a> {
     step_tol: f32,
     enable_weak_cluster_rescue: bool,
     use_directional_edge_scale: bool,
-    /// `(parity_shift_i + parity_shift_j) % 2` from the BFS rebase.
-    /// See `GrowResult::parity_shift_i` for the full discussion.
+    /// `(rebase_i_mod2 + rebase_j_mod2) % 2` from the BFS rebase.
+    /// See `GrowResult::rebase_i_mod2` for the full discussion.
     parity_shift: i32,
 }
 
-impl<'a> GrowValidator for ChessboardFillValidator<'a> {
+impl<'a> SquareAttachPolicy for ChessboardFillValidator<'a> {
     fn is_eligible(&self, idx: usize) -> bool {
         if self.blacklist.contains(&idx) {
             return false;
@@ -181,7 +183,7 @@ impl<'a> GrowValidator for ChessboardFillValidator<'a> {
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
         // Apply the post-rebase parity shift so the chessboard parity
         // at `(i, j)` matches the BFS pre-rebase convention. See
-        // `GrowResult::parity_shift_i` for the full discussion.
+        // `GrowResult::rebase_i_mod2` for the full discussion.
         Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
 
@@ -524,8 +526,8 @@ mod tests {
             holes: Default::default(),
             axis_i: nalgebra::Vector2::new(1.0, 0.0),
             axis_j: nalgebra::Vector2::new(0.0, 1.0),
-            parity_shift_i: 0,
-            parity_shift_j: 0,
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
         };
 
         for j in 1..=3 {
