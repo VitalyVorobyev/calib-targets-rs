@@ -2,17 +2,42 @@ use nalgebra::Point2;
 use projective_grid_next::LocalAxis as NextLocalAxis;
 use serde::{Deserialize, Serialize};
 
-pub use projective_grid::AxisEstimate;
-
 pub use crate::grid_alignment::GridCoords;
+
+/// Local estimate of one undirected grid axis at a detected corner.
+///
+/// `angle` is in radians. `sigma` is the 1σ angular uncertainty in radians.
+/// Default-constructed axes carry `sigma = π`, the workspace's no-information
+/// sentinel for axis-aware grid builders.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AxisEstimate {
+    /// Axis angle in radians.
+    pub angle: f32,
+    /// 1σ angular uncertainty in radians.
+    pub sigma: f32,
+}
+
+impl Default for AxisEstimate {
+    fn default() -> Self {
+        Self {
+            angle: 0.0,
+            sigma: std::f32::consts::PI,
+        }
+    }
+}
+
+impl AxisEstimate {
+    /// Construct an axis estimate from a bare angle with no uncertainty
+    /// penalty (`sigma = 0.0`).
+    pub fn from_angle(angle: f32) -> Self {
+        Self { angle, sigma: 0.0 }
+    }
+}
 
 // ---- Conversions to / from projective-grid-next ----
 
-/// Promote the legacy `f32`-only [`AxisEstimate`] into the
-/// [`projective_grid_next`] crate's generic local-axis shape.
-///
-/// Implemented as a free function because both types live in foreign
-/// crates from this module's POV (the orphan rules forbid an `impl From`).
+/// Promote [`AxisEstimate`] into the [`projective_grid_next`] crate's generic
+/// local-axis shape.
 #[inline]
 pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis<f32> {
     NextLocalAxis::new(a.angle, Some(a.sigma))
@@ -24,6 +49,43 @@ pub fn axis_estimate_from_next(a: NextLocalAxis<f32>) -> AxisEstimate {
     AxisEstimate {
         angle: a.angle_rad,
         sigma: a.sigma_rad.unwrap_or(std::f32::consts::PI),
+    }
+}
+
+#[cfg(test)]
+mod axis_tests {
+    use super::*;
+
+    #[test]
+    fn default_axis_is_no_information_sentinel() {
+        let axis = AxisEstimate::default();
+        assert_eq!(axis.angle, 0.0);
+        assert_eq!(axis.sigma, std::f32::consts::PI);
+    }
+
+    #[test]
+    fn from_angle_sets_zero_sigma() {
+        let axis = AxisEstimate::from_angle(1.25);
+        assert_eq!(axis.angle, 1.25);
+        assert_eq!(axis.sigma, 0.0);
+    }
+
+    #[test]
+    fn axis_round_trips_through_next() {
+        let axis = AxisEstimate {
+            angle: 0.75,
+            sigma: 0.02,
+        };
+        assert_eq!(axis_estimate_from_next(axis_estimate_to_next(axis)), axis);
+
+        let no_sigma = NextLocalAxis::new(0.5, None);
+        assert_eq!(
+            axis_estimate_from_next(no_sigma),
+            AxisEstimate {
+                angle: 0.5,
+                sigma: std::f32::consts::PI
+            }
+        );
     }
 }
 

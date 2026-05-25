@@ -10,11 +10,10 @@
 
 use super::corner_validation::redetect_corner_in_roi;
 use super::marker_sampling::CornerMap;
-use calib_targets_core::{GrayImageView, GridCoords};
+use calib_targets_core::{square_predict_grid_position, GrayImageView, GridCoords};
 use chess_corners::low_level::ChessParams;
 use log::debug;
 use nalgebra::Point2;
-use projective_grid::square_predict_grid_position;
 
 /// Check grid corners for smoothness and fix or remove outliers.
 ///

@@ -26,6 +26,7 @@
 mod chess;
 mod corner;
 mod grid_alignment;
+mod grid_smoothness;
 mod homography;
 mod image;
 pub mod io;
@@ -33,9 +34,11 @@ mod logger;
 mod orientation_clustering;
 mod rectify;
 
+pub use grid_smoothness::square_predict_grid_position;
 pub use homography::{
-    estimate_homography_rect_to_img, homography_from_4pt, homography_from_next, homography_to_next,
-    warp_perspective_gray, Homography,
+    estimate_homography_rect_to_img, estimate_homography_with_quality, homography_from_4pt,
+    homography_from_4pt_with_quality, homography_from_next, homography_to_next,
+    warp_perspective_gray, Homography, HomographyQuality,
 };
 pub use image::{
     sample_bilinear, sample_bilinear_fast, sample_bilinear_u8, GrayImage, GrayImageView,

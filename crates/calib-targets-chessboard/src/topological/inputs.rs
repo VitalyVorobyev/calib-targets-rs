@@ -1,8 +1,8 @@
 //! Input adaptation for the chessboard topological dispatch path.
 
 use crate::corner::ChessCorner;
+use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::AxisEstimate;
 
 use crate::params::DetectorParams;
 

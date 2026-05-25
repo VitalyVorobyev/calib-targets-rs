@@ -90,6 +90,7 @@ mod cluster;
 mod corner;
 mod detector;
 mod grow;
+mod legacy_projective_grid;
 mod mesh_warp;
 mod params;
 mod pipeline;

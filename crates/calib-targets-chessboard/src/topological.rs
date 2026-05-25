@@ -38,7 +38,7 @@ mod inputs;
 mod recovery;
 
 use crate::corner::ChessCorner;
-use calib_targets_core::axis_estimate_to_next;
+use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
 use projective_grid::topological::trace::{build_grid_topological_trace, TopologicalTrace};
 use projective_grid::{
     merge_components_local, AxisClusterCenters, ComponentInput,
@@ -144,7 +144,7 @@ fn detection_params_for_topological(
 /// `positions[]` index by the downstream legacy recovery stages.
 fn build_oriented_features(
     positions: &[nalgebra::Point2<f32>],
-    axes: &[[projective_grid::AxisEstimate; 2]],
+    axes: &[[AxisEstimate; 2]],
 ) -> Vec<OrientedFeature<f32, 2>> {
     debug_assert_eq!(positions.len(), axes.len());
     positions
@@ -300,5 +300,10 @@ pub fn trace_topological(
     let (_augs, clustered_centers) = clustered_augs(corners, params);
     let mut topo_params = params.tuning.topological;
     topo_params.axis_cluster_centers = axis_centers_to_topological(clustered_centers);
-    build_grid_topological_trace(&inputs.positions, &inputs.axes, &topo_params)
+    let legacy_axes: Vec<[projective_grid::AxisEstimate; 2]> = inputs
+        .axes
+        .iter()
+        .map(|&axes| crate::legacy_projective_grid::axes_to_legacy(axes))
+        .collect();
+    build_grid_topological_trace(&inputs.positions, &legacy_axes, &topo_params)
 }

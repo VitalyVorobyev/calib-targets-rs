@@ -115,9 +115,21 @@ fn to_next_features(corners: &[ChessCorner]) -> Vec<OrientedFeature<f32, 2>> {
 /// `projective_grid::build_grid_topological` input shape (positions +
 /// per-corner axes). Position-slice indices line up with the new-crate
 /// `source_index`.
-fn to_legacy_topo_inputs(corners: &[ChessCorner]) -> (Vec<Point2<f32>>, Vec<[AxisEstimate; 2]>) {
+fn axis_to_legacy(axis: AxisEstimate) -> projective_grid::AxisEstimate {
+    projective_grid::AxisEstimate {
+        angle: axis.angle,
+        sigma: axis.sigma,
+    }
+}
+
+fn to_legacy_topo_inputs(
+    corners: &[ChessCorner],
+) -> (Vec<Point2<f32>>, Vec<[projective_grid::AxisEstimate; 2]>) {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
-    let axes: Vec<[AxisEstimate; 2]> = corners.iter().map(|c| c.axes).collect();
+    let axes: Vec<[projective_grid::AxisEstimate; 2]> = corners
+        .iter()
+        .map(|c| [axis_to_legacy(c.axes[0]), axis_to_legacy(c.axes[1])])
+        .collect();
     (positions, axes)
 }
 
@@ -541,7 +553,11 @@ fn build_warped_chess_grid(
     cols: i32,
     s: f32,
     h: &Projective2<f32>,
-) -> (Vec<ChessCorner>, Vec<Point2<f32>>, Vec<[AxisEstimate; 2]>) {
+) -> (
+    Vec<ChessCorner>,
+    Vec<Point2<f32>>,
+    Vec<[projective_grid::AxisEstimate; 2]>,
+) {
     let origin = 50.0_f32;
     let mut corners = Vec::with_capacity((rows * cols) as usize);
     let mut positions = Vec::with_capacity((rows * cols) as usize);
@@ -583,7 +599,7 @@ fn build_warped_chess_grid(
                 strength: 1.0,
             });
             positions.push(image);
-            axes_out.push(axes);
+            axes_out.push([axis_to_legacy(axes[0]), axis_to_legacy(axes[1])]);
         }
     }
     (corners, positions, axes_out)

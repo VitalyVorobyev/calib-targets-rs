@@ -1,49 +1,186 @@
-//! Grid-alignment compatibility shim.
+//! Integer grid coordinates and square-lattice alignment helpers.
 //!
-//! Downstream crates (chessboard, charuco, puzzleboard, marker, …) construct
-//! [`GridCoords`], [`GridTransform`], and [`GridAlignment`] with struct-literal
-//! syntax, index [`GRID_TRANSFORMS_D4`] by position (`[1]` is the legacy
-//! "(j, −i)" rotation, NOT the new crate's 90° CCW entry), and freely cross
-//! these values between this crate and the legacy `projective-grid` crate's
-//! free functions (e.g. `square_predict_grid_position`).
-//!
-//! To keep that contract during the `projective-grid → projective-grid-next`
-//! migration window (Phase 6a–6e), this module re-exports the legacy types
-//! directly so type identity is preserved across crate boundaries. It also
-//! adds conversion impls between the legacy types and the new crate's
-//! [`projective_grid_next::Coord`] / [`projective_grid_next::GridTransform`]
-//! so internal bridges that have already migrated can interoperate.
-//!
-//! Phase 8 deletes the legacy `projective-grid` crate and the re-exports
-//! switch to point at the renamed-back `projective-grid` (formerly
-//! `-next`); this module is the single edit site for that flip.
+//! This crate owns the shared `(i, j)` vocabulary used by target detectors.
+//! Legacy `projective-grid` algorithms are still used by the chessboard
+//! implementation during the migration, but crossing that boundary must happen
+//! through explicit private adapters in the consuming crate.
 
 use projective_grid_next::lattice::LatticeKind;
 use projective_grid_next::Coord as NextCoord;
 use projective_grid_next::GridTransform as NextGridTransform;
+use serde::{Deserialize, Serialize};
 
-pub use projective_grid::{GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4};
+/// Integer grid coordinates `(i, j)` identifying a corner intersection in a
+/// 2D square grid.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct GridCoords {
+    /// Column index — increases along the grid's first axis (`i` right).
+    pub i: i32,
+    /// Row index — increases along the grid's second axis (`j` down).
+    pub j: i32,
+}
 
-// ---- Conversions to / from projective-grid-next ----
-//
-// The legacy `GridCoords { i, j }` carries the square-lattice convention
-// `i` right / `j` down; the new crate's `Coord { u, v }` is the lattice-
-// agnostic (`u`, `v`) pair. For square lattices the mapping is direct:
-// `i → u`, `j → v`. The hex case never crosses this bridge because legacy
-// `GridCoords` has no hex variant.
-//
-// The 2×2 + offset conversion for `GridTransform` / `GridAlignment` IS new
-// (the legacy crate had no awareness of the new crate). The legacy
-// `GridTransform { a, b, c, d }` maps to a square-lattice matrix with zero
-// offset; `GridAlignment` carries the offset on its `translation` slot.
+impl From<(i32, i32)> for GridCoords {
+    #[inline]
+    fn from((i, j): (i32, i32)) -> Self {
+        Self { i, j }
+    }
+}
+
+impl From<GridCoords> for (i32, i32) {
+    #[inline]
+    fn from(g: GridCoords) -> Self {
+        (g.i, g.j)
+    }
+}
+
+/// Integer 2D grid transform (a 2×2 matrix) for aligning detected grids to a
+/// board model.
+///
+/// Represents a linear transform on integer coordinates:
+/// `(i', j') = (a*i + b*j, c*i + d*j)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GridTransform {
+    /// Row-0, column-0 entry — the `i`-contribution to the new `i`.
+    pub a: i32,
+    /// Row-0, column-1 entry — the `j`-contribution to the new `i`.
+    pub b: i32,
+    /// Row-1, column-0 entry — the `i`-contribution to the new `j`.
+    pub c: i32,
+    /// Row-1, column-1 entry — the `j`-contribution to the new `j`.
+    pub d: i32,
+}
+
+impl GridTransform {
+    /// The identity transform — leaves `(i, j)` unchanged.
+    pub const IDENTITY: GridTransform = GridTransform {
+        a: 1,
+        b: 0,
+        c: 0,
+        d: 1,
+    };
+
+    /// Apply the transform to `(i, j)`, returning the result as
+    /// [`GridCoords`].
+    #[inline]
+    pub fn apply(&self, i: i32, j: i32) -> GridCoords {
+        GridCoords {
+            i: self.a * i + self.b * j,
+            j: self.c * i + self.d * j,
+        }
+    }
+
+    /// Invert the transform if it is unimodular (det = ±1).
+    pub fn inverse(&self) -> Option<GridTransform> {
+        let det = self.a * self.d - self.b * self.c;
+        if det != 1 && det != -1 {
+            return None;
+        }
+        Some(GridTransform {
+            a: self.d / det,
+            b: -self.b / det,
+            c: -self.c / det,
+            d: self.a / det,
+        })
+    }
+}
+
+/// A grid alignment: `dst = transform(src) + translation`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GridAlignment {
+    /// Linear part — applied to the source coordinates before translation.
+    pub transform: GridTransform,
+    /// Integer `[Δi, Δj]` offset added after `transform`.
+    pub translation: [i32; 2],
+}
+
+impl GridAlignment {
+    /// The identity alignment — identity transform with zero translation.
+    pub const IDENTITY: GridAlignment = GridAlignment {
+        transform: GridTransform::IDENTITY,
+        translation: [0, 0],
+    };
+
+    /// Map grid coordinates `(i, j)` using this alignment, returning
+    /// [`GridCoords`].
+    #[inline]
+    pub fn map(&self, i: i32, j: i32) -> GridCoords {
+        let g = self.transform.apply(i, j);
+        GridCoords {
+            i: g.i + self.translation[0],
+            j: g.j + self.translation[1],
+        }
+    }
+
+    /// Invert the alignment if its linear part is unimodular (det = ±1).
+    pub fn inverse(&self) -> Option<GridAlignment> {
+        let inv = self.transform.inverse()?;
+        let [tx, ty] = self.translation;
+        let g = inv.apply(-tx, -ty);
+        Some(GridAlignment {
+            transform: inv,
+            translation: [g.i, g.j],
+        })
+    }
+}
+
+/// The 8 dihedral transforms `D4` on the integer grid.
+///
+/// The order intentionally matches the legacy `projective-grid` table:
+/// index `1` is `(i, j) -> (j, -i)`.
+pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
+    GridTransform {
+        a: 1,
+        b: 0,
+        c: 0,
+        d: 1,
+    },
+    GridTransform {
+        a: 0,
+        b: 1,
+        c: -1,
+        d: 0,
+    },
+    GridTransform {
+        a: -1,
+        b: 0,
+        c: 0,
+        d: -1,
+    },
+    GridTransform {
+        a: 0,
+        b: -1,
+        c: 1,
+        d: 0,
+    },
+    GridTransform {
+        a: -1,
+        b: 0,
+        c: 0,
+        d: 1,
+    },
+    GridTransform {
+        a: 1,
+        b: 0,
+        c: 0,
+        d: -1,
+    },
+    GridTransform {
+        a: 0,
+        b: 1,
+        c: 1,
+        d: 0,
+    },
+    GridTransform {
+        a: 0,
+        b: -1,
+        c: -1,
+        d: 0,
+    },
+];
 
 /// Convert the legacy `GridTransform` into a tagged square-lattice transform
 /// for [`projective_grid_next`] consumers.
-///
-/// Implemented as a free function (not an `impl From`) because both
-/// [`GridTransform`] and [`NextGridTransform`] live in foreign crates from
-/// this module's POV — the orphan rules forbid `impl From<Foreign> for
-/// Foreign`.
 #[inline]
 pub fn grid_transform_to_next(t: GridTransform) -> NextGridTransform {
     NextGridTransform::new(LatticeKind::Square, [[t.a, t.b], [t.c, t.d]], [0, 0])
@@ -65,8 +202,8 @@ pub fn grid_transform_from_next(t: NextGridTransform) -> GridTransform {
     }
 }
 
-/// Convert the legacy `GridAlignment` into a single tagged square-lattice
-/// transform (the new crate folds linear + translation into one struct).
+/// Convert a [`GridAlignment`] into a single tagged square-lattice transform
+/// (the new crate folds linear + translation into one struct).
 #[inline]
 pub fn grid_alignment_to_next(a: GridAlignment) -> NextGridTransform {
     NextGridTransform::new(
@@ -95,18 +232,15 @@ pub fn grid_alignment_from_next(t: NextGridTransform) -> GridAlignment {
     }
 }
 
-/// Convert the legacy [`GridCoords`] into the lattice-agnostic
+/// Convert [`GridCoords`] into the lattice-agnostic
 /// [`projective_grid_next::Coord`]. The mapping is `i → u`, `j → v`.
-///
-/// Implemented as a free function (not an `impl From`) because both types
-/// live in foreign crates from this module's POV.
 #[inline]
 pub fn grid_coords_to_next(c: GridCoords) -> NextCoord {
     NextCoord::new(c.i, c.j)
 }
 
-/// Project a [`projective_grid_next::Coord`] back into the legacy
-/// [`GridCoords`] shape (`u → i`, `v → j`).
+/// Project a [`projective_grid_next::Coord`] back into [`GridCoords`]
+/// (`u → i`, `v → j`).
 #[inline]
 pub fn grid_coords_from_next(c: NextCoord) -> GridCoords {
     GridCoords { i: c.u, j: c.v }
@@ -117,19 +251,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn legacy_d4_index_1_is_j_negative_i() {
-        // Sanity check: the legacy D4 table indexes the (j, −i) rotation at
-        // [1]. The new crate's `D4_TRANSFORMS[1]` puts (−j, i) there
-        // instead, so re-exporting from the legacy crate is essential for
-        // downstream consumers (decoder, charuco, marker) that index by
-        // integer constant.
+    fn d4_index_1_is_j_negative_i() {
         let t = GRID_TRANSFORMS_D4[1];
         assert_eq!(t.apply(1, 0), GridCoords { i: 0, j: -1 });
         assert_eq!(t.apply(0, 1), GridCoords { i: 1, j: 0 });
     }
 
     #[test]
-    fn legacy_transform_round_trips_through_next() {
+    fn transform_identity_mapping_and_inverse() {
+        let identity = GridTransform::IDENTITY;
+        assert_eq!(identity.apply(7, -3), GridCoords { i: 7, j: -3 });
+        assert_eq!(identity.inverse(), Some(identity));
+
+        for t in GRID_TRANSFORMS_D4 {
+            let inv = t.inverse().expect("D4 transform is unimodular");
+            let p = GridCoords { i: 4, j: -9 };
+            let q = t.apply(p.i, p.j);
+            assert_eq!(inv.apply(q.i, q.j), p);
+        }
+    }
+
+    #[test]
+    fn alignment_mapping_and_inverse() {
+        let align = GridAlignment {
+            transform: GRID_TRANSFORMS_D4[1],
+            translation: [3, -4],
+        };
+        let p = GridCoords { i: 2, j: 5 };
+        let q = align.map(p.i, p.j);
+        assert_eq!(q, GridCoords { i: 8, j: -6 });
+        let inv = align.inverse().expect("D4 alignment is invertible");
+        assert_eq!(inv.map(q.i, q.j), p);
+    }
+
+    #[test]
+    fn transform_round_trips_through_next() {
         for (idx, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
             let next = grid_transform_to_next(*t);
             assert_eq!(next.source_kind, LatticeKind::Square);

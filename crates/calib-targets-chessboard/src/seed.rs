@@ -28,10 +28,10 @@
 
 use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
+use crate::legacy_projective_grid::axes_to_legacy;
 use crate::params::DetectorParams;
 use nalgebra::Point2;
 use projective_grid::square::seed::finder::{find_quad, SeedQuadParams, SeedQuadValidator};
-use projective_grid::topological::AxisEstimate;
 
 // `Seed` and `SeedOutput` live in `projective_grid::square::seed` so
 // non-chessboard grid-detector pipelines can share the same 2×2 seed
@@ -114,18 +114,8 @@ impl<'a> SeedQuadValidator for ChessboardSeedValidator<'a> {
         self.corners[idx].position
     }
 
-    fn axes(&self, idx: usize) -> [AxisEstimate; 2] {
-        let c = &self.corners[idx];
-        [
-            AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ]
+    fn axes(&self, idx: usize) -> [projective_grid::AxisEstimate; 2] {
+        axes_to_legacy(self.corners[idx].axes)
     }
 
     fn a_candidates(&self) -> Vec<usize> {

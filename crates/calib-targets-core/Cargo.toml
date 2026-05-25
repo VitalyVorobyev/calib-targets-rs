@@ -16,20 +16,11 @@ categories = ["computer-vision", "science"]
 tracing = [
     "dep:tracing",
     "dep:tracing-subscriber",
-    "projective-grid/tracing",
     "projective-grid-next/tracing",
 ]
 
 [dependencies]
 chess-corners = { workspace = true }
-# Transitional Phase 6a: depend on BOTH the legacy `projective-grid` (for
-# `GridCoords`/`GridTransform`/`GridAlignment`/`AxisEstimate`/`Homography`
-# re-exports that must preserve type identity for downstream callers that
-# still cross over to the legacy crate's free functions during Phase 6b–6e)
-# and the new `projective-grid-next` (for the new `Coord`/`GridTransform`
-# vocabulary used by future migrations and for the new homography surface).
-# Phase 8 drops the legacy entry after `projective-grid-next` is renamed.
-projective-grid = { workspace = true }
 projective-grid-next = { workspace = true }
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 serde = { workspace = true, features = ["derive"] }
