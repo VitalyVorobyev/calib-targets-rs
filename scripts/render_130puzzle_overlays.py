@@ -133,7 +133,15 @@ def labels_to_xy(labels: list[dict]) -> dict[tuple[int, int], tuple[float, float
     return by_grid
 
 
-def draw_overlay(ax, image: np.ndarray, detection: dict | None, title: str) -> int:
+def draw_overlay(
+    ax,
+    image: np.ndarray,
+    detection: dict | None,
+    title: str,
+    *,
+    label_grid: bool,
+    label_image_xy: bool,
+) -> int:
     ax.imshow(image, cmap="gray", origin="upper")
     ax.set_title(title, fontsize=10)
     ax.axis("off")
@@ -164,6 +172,22 @@ def draw_overlay(ax, image: np.ndarray, detection: dict | None, title: str) -> i
     xs = [p[0] for p in by_grid.values()]
     ys = [p[1] for p in by_grid.values()]
     ax.scatter(xs, ys, s=2.5, c="#fdd835", edgecolors="black", linewidths=0.15, zorder=4)
+    if label_grid or label_image_xy:
+        for (i, j), (x, y) in by_grid.items():
+            parts: list[str] = []
+            if label_grid:
+                parts.append(f"{i},{j}")
+            if label_image_xy:
+                parts.append(f"{x:.0f},{y:.0f}")
+            ax.text(
+                x + 2.0,
+                y - 2.0,
+                "\\n".join(parts),
+                fontsize=3.6 if label_grid and label_image_xy else 4.2,
+                color="white",
+                bbox=dict(boxstyle="square,pad=0.05", fc="black", ec="none", alpha=0.55),
+                zorder=5,
+            )
     ax.text(
         0.02,
         0.98,
@@ -185,6 +209,8 @@ def render_frame(
     min_corner_strength: float,
     dataset_label: str,
     side_by_side_only: bool,
+    label_grid: bool,
+    label_image_xy: bool,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
     if not side_by_side_only:
@@ -205,7 +231,14 @@ def render_frame(
         else:
             fig, ax = plt.subplots(figsize=(6, 5), dpi=180)
             title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
-            n = draw_overlay(ax, image, det, title)
+            n = draw_overlay(
+                ax,
+                image,
+                det,
+                title,
+                label_grid=label_grid,
+                label_image_xy=label_image_xy,
+            )
             counts[label] = n
             fig.tight_layout()
             fig.savefig(out_dir / filename, bbox_inches="tight", pad_inches=0.05)
@@ -214,7 +247,14 @@ def render_frame(
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=180)
     for ax, (label, _, _) in zip(axes, methods):
         title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
-        draw_overlay(ax, image, detections[label], title)
+        draw_overlay(
+            ax,
+            image,
+            detections[label],
+            title,
+            label_grid=label_grid,
+            label_image_xy=label_image_xy,
+        )
     fig.suptitle(
         f"{dataset_label} target_{frame.target_idx} snap {frame.snap_idx} — chessboard detection",
         fontsize=11,
@@ -275,6 +315,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Write only the combined ChessboardV2/Topological overlay for each frame.",
     )
+    parser.add_argument(
+        "--label-grid",
+        action="store_true",
+        help="Draw each labelled corner's grid coordinate next to the point.",
+    )
+    parser.add_argument(
+        "--label-image-xy",
+        action="store_true",
+        help="Draw each labelled corner's image x,y coordinate next to the point.",
+    )
     return parser.parse_args()
 
 
@@ -311,6 +361,8 @@ def main() -> None:
             args.min_corner_strength,
             dataset_label,
             args.side_by_side_only,
+            args.label_grid,
+            args.label_image_xy,
         )
         print(
             f"target_{frame.target_idx} snap {frame.snap_idx}: "
@@ -325,6 +377,8 @@ def main() -> None:
         "min_corner_strength": args.min_corner_strength,
         "dataset_label": dataset_label,
         "side_by_side_only": args.side_by_side_only,
+        "label_grid": args.label_grid,
+        "label_image_xy": args.label_image_xy,
         "frames": rows,
     }
     (args.out_dir / "manifest.json").write_text(
