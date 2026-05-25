@@ -1,4 +1,4 @@
-//! Contract check for adapting marker-board outputs into `projective-grid-next`.
+//! Contract check for adapting marker-board outputs into `projective-grid`.
 //!
 //! The marker-board crate owns board-specific circle IDs and optional
 //! board-canonical corner IDs. The generic grid crate should only receive
@@ -7,7 +7,7 @@
 use calib_targets_core::{grid_coords_to_next, GridCoords};
 use calib_targets_marker::{MarkerBoardCorner, MarkerBoardDetectionResult};
 use nalgebra::Point2;
-use projective_grid_next::{
+use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
     PointFeature,
 };

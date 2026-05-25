@@ -1,4 +1,4 @@
-//! Phase B contract dry-run for `projective-grid-next`.
+//! Phase B contract dry-run for `projective-grid`.
 //!
 //! Detects a synthetic PuzzleBoard with the existing pipeline, converts its
 //! `(position, grid)` corner output into the new crate's evidence shape
@@ -15,7 +15,7 @@ use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBo
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
 use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
-use projective_grid_next::{
+use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
     PointFeature,
 };

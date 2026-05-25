@@ -6,18 +6,16 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 rust-version.workspace = true
-readme = "README.md"
 documentation.workspace = true
-description = "Generic 2D projective grid graph construction, traversal, and homography tools"
+description = "Target-agnostic projective square and hex grid recovery primitives"
 keywords = ["computer-vision", "geometry", "homography", "grid", "calibration"]
 categories = ["computer-vision", "science", "algorithms"]
 
 [features]
 default = []
 # Optional `tracing` feature. Off by default. When enabled, hot-path functions
-# (`bfs_grow`, `build_grid_topological` and its substages,
-# `merge_components_local`, `estimate_homography_with_quality`) emit spans so
-# callers can collect per-stage timings without adding parallel timed APIs.
+# emit spans so callers can collect per-stage timings without adding parallel
+# timed APIs.
 tracing = ["dep:tracing"]
 
 [dependencies]
@@ -28,9 +26,29 @@ serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tracing = { workspace = true, optional = true }
 
-
 [dev-dependencies]
+criterion = { workspace = true }
 serde_json = { workspace = true }
+
+[[bench]]
+name = "grow"
+harness = false
+
+[[bench]]
+name = "homography"
+harness = false
+
+[[bench]]
+name = "topological"
+harness = false
+
+[[bench]]
+name = "merge"
+harness = false
+
+[[bench]]
+name = "validate"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true

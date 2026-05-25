@@ -19,9 +19,9 @@ use super::types::GeometryCheckTrace;
 /// relabel.
 ///
 /// Drops any labelled corner that fails:
-/// - the shared [`validate`](projective_grid_next::detect::advanced::square::validate::validate)
+/// - the shared [`validate`](projective_grid::detect::advanced::square::validate::validate)
 ///   pass (line collinearity + local-H residual, attribution rules from
-///   [`mod@projective_grid_next::detect::advanced::square::validate`]); **or**
+///   [`mod@projective_grid::detect::advanced::square::validate`]); **or**
 /// - the per-cardinal-edge axis-slot-swap parity check from
 ///   `ChessboardSquareAttachPolicy::edge_ok` — every edge between two
 ///   cardinal-labelled corners must satisfy the same edge invariant
@@ -47,12 +47,12 @@ pub fn run_geometry_check(
     // the BFS-validation loop already accepted borderline perspective
     // drift; the geometry check's job is to catch gross mislabels
     // (full-cell or diagonal shifts) only.
-    let geom_entries: Vec<projective_grid_next::detect::advanced::square::validate::LabelledEntry> =
+    let geom_entries: Vec<projective_grid::detect::advanced::square::validate::LabelledEntry> =
         grow_res
             .labelled
             .iter()
             .map(|(&grid, &idx)| {
-                projective_grid_next::detect::advanced::square::validate::LabelledEntry {
+                projective_grid::detect::advanced::square::validate::LabelledEntry {
                     idx,
                     pixel: augs[idx].position,
                     grid,
@@ -60,7 +60,7 @@ pub fn run_geometry_check(
             })
             .collect();
     let mut geom_params =
-        projective_grid_next::detect::advanced::square::validate::ValidationParams::new(
+        projective_grid::detect::advanced::square::validate::ValidationParams::new(
             params.tuning.geometry_check_line_tol_rel,
             params.tuning.line_min_members,
             params.tuning.geometry_check_local_h_tol_rel,
@@ -71,7 +71,7 @@ pub fn run_geometry_check(
         // Step-deviation gate is BFS-only — set to 0 (disabled).
         geom_params = geom_params.with_step_aware(0.0);
     }
-    let v = projective_grid_next::detect::advanced::square::validate::validate(
+    let v = projective_grid::detect::advanced::square::validate::validate(
         &geom_entries,
         cell_size,
         &geom_params,

@@ -412,7 +412,7 @@ dependencies = [
  "image",
  "log",
  "nalgebra",
- "projective-grid-next",
+ "projective-grid",
  "serde",
  "serde_json",
  "tempfile",
@@ -435,7 +435,6 @@ dependencies = [
  "log",
  "nalgebra",
  "projective-grid",
- "projective-grid-next",
  "serde",
  "serde_json",
  "thiserror",
@@ -449,7 +448,7 @@ dependencies = [
  "chess-corners",
  "log",
  "nalgebra",
- "projective-grid-next",
+ "projective-grid",
  "serde",
  "serde_json",
  "thiserror",
@@ -482,7 +481,7 @@ dependencies = [
  "image",
  "log",
  "nalgebra",
- "projective-grid-next",
+ "projective-grid",
  "serde",
  "serde_json",
  "thiserror",
@@ -519,7 +518,7 @@ dependencies = [
  "image",
  "log",
  "nalgebra",
- "projective-grid-next",
+ "projective-grid",
  "serde",
  "serde_json",
  "tempfile",
@@ -2138,19 +2137,6 @@ dependencies = [
 
 [[package]]
 name = "projective-grid"
-version = "0.9.0"
-dependencies = [
- "delaunator",
- "kiddo",
- "nalgebra",
- "serde",
- "serde_json",
- "thiserror",
- "tracing",
-]
-
-[[package]]
-name = "projective-grid-next"
 version = "0.9.0"
 dependencies = [
  "criterion",

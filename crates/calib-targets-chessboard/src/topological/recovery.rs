@@ -1,6 +1,6 @@
 //! Chessboard-specific recovery after the image-free topological walk.
 //!
-//! `projective-grid-next` stops at connected labelled components. This module
+//! `projective-grid` stops at connected labelled components. This module
 //! adapts those components back into the chessboard detector's existing
 //! booster and canonicalisation machinery.
 
@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid_next::detect::advanced::square::component_merge::{
+use projective_grid::detect::advanced::square::component_merge::{
     merge_components_local, ComponentInput,
 };
 

@@ -196,7 +196,7 @@ def draw_usable_context(ax: plt.Axes, payload: dict[str, Any]) -> None:
 
 def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
     seen: dict[tuple[int, int], str] = {}
-    for tri in trace["triangles"]:
+    for tri in trace.get("triangles", []):
         vertices = tri["vertices"]
         for k, kind in enumerate(tri["edge_kinds"]):
             a = vertices[k]
@@ -206,10 +206,29 @@ def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
     return [(a, b, kind) for (a, b), kind in seen.items()]
 
 
+def annotate_compact_trace(ax: plt.Axes, text: str) -> None:
+    ax.text(
+        0.5,
+        0.5,
+        text,
+        transform=ax.transAxes,
+        ha="center",
+        va="center",
+        color="white",
+        fontsize=9,
+        bbox=dict(boxstyle="round,pad=0.35", fc="black", ec="none", alpha=0.65),
+        zorder=10,
+    )
+
+
 def draw_delaunay(ax: plt.Axes, payload: dict[str, Any]) -> None:
     trace = payload.get("trace")
     if trace is None:
         draw_usable(ax, payload)
+        return
+    if "triangles" not in trace:
+        draw_usable(ax, payload, only_usable=True)
+        annotate_compact_trace(ax, "compact trace: Delaunay edges not exported")
         return
     pos = corner_positions(payload)
     usable_set = usable_indices(payload)
@@ -232,6 +251,10 @@ def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
     if trace is None:
         draw_usable(ax, payload)
         return
+    if "triangles" not in trace:
+        draw_usable_context(ax, payload)
+        annotate_compact_trace(ax, "compact trace: triangle classes not exported")
+        return
     pos = corner_positions(payload)
     usable_set = usable_indices(payload)
     for tri in trace["triangles"]:
@@ -252,6 +275,10 @@ def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
     trace = payload.get("trace")
     if trace is None:
         draw_usable(ax, payload)
+        return
+    if "quads" not in trace:
+        draw_usable_context(ax, payload)
+        annotate_compact_trace(ax, "compact trace: quad candidates not exported")
         return
     pos = corner_positions(payload)
     draw_usable_context(ax, payload)
@@ -296,7 +323,12 @@ def draw_grid_labels(
     label_prefix: str = "",
 ) -> None:
     pos = corner_positions(payload)
-    by_grid = {(int(l["i"]), int(l["j"])): int(l["corner_idx"]) for l in labels}
+    by_grid = {}
+    for entry in labels:
+        i = int(entry.get("i", entry.get("u")))
+        j = int(entry.get("j", entry.get("v")))
+        idx = int(entry.get("corner_idx", entry.get("source_index")))
+        by_grid[(i, j)] = idx
     for (i, j), idx in by_grid.items():
         if idx not in pos:
             continue
@@ -391,10 +423,12 @@ def draw_final(ax: plt.Axes, payload: dict[str, Any]) -> None:
         labels = component_labels_from_trace(payload)
         pos = corner_positions(payload)
         for entry in labels:
-            idx = int(entry["corner_idx"])
+            idx = int(entry.get("corner_idx", entry.get("source_index")))
             if idx not in pos:
                 continue
-            by_grid[(int(entry["i"]), int(entry["j"]))] = pos[idx]
+            i = int(entry.get("i", entry.get("u")))
+            j = int(entry.get("j", entry.get("v")))
+            by_grid[(i, j)] = pos[idx]
     for (i, j), (x, y) in by_grid.items():
         for nb, color in [((i + 1, j), "#1b9e77"), ((i, j + 1), "#377eb8")]:
             p = by_grid.get(nb)
@@ -419,11 +453,11 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     topo = ct.TopologicalParams(
         axis_align_tol_rad=math.radians(args.axis_align_tol_deg),
         max_axis_sigma_rad=math.radians(args.max_axis_sigma_deg),
-        edge_ratio_max=args.edge_ratio_max,
+        opposing_edge_ratio_max=args.opposing_edge_ratio_max,
         min_quads_per_component=args.min_quads_per_component,
         cluster_axis_tol_rad=math.radians(args.cluster_axis_tol_deg),
-        quad_edge_min_rel=args.quad_edge_min_rel,
-        quad_edge_max_rel=args.quad_edge_max_rel,
+        edge_length_min_rel=args.edge_length_min_rel,
+        edge_length_max_rel=args.edge_length_max_rel,
     )
     trace_params = ct.ChessboardParams(graph_build_algorithm="topological", topological=topo)
     if args.chess_threshold_kind == "absolute":
@@ -530,11 +564,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upscale", type=float, default=1.0)
     parser.add_argument("--axis-align-tol-deg", type=float, default=15.0)
     parser.add_argument("--max-axis-sigma-deg", type=float, default=math.degrees(0.6))
-    parser.add_argument("--edge-ratio-max", type=float, default=10.0)
+    parser.add_argument("--opposing-edge-ratio-max", type=float, default=10.0)
     parser.add_argument("--min-quads-per-component", type=int, default=1)
     parser.add_argument("--cluster-axis-tol-deg", type=float, default=16.0)
-    parser.add_argument("--quad-edge-min-rel", type=float, default=0.0)
-    parser.add_argument("--quad-edge-max-rel", type=float, default=1.8)
+    parser.add_argument("--edge-length-min-rel", type=float, default=0.0)
+    parser.add_argument("--edge-length-max-rel", type=float, default=1.8)
     return parser.parse_args()
 
 
@@ -561,11 +595,11 @@ def main() -> None:
             "final_algorithm": args.final_algorithm,
             "axis_align_tol_deg": args.axis_align_tol_deg,
             "max_axis_sigma_deg": args.max_axis_sigma_deg,
-            "edge_ratio_max": args.edge_ratio_max,
+            "opposing_edge_ratio_max": args.opposing_edge_ratio_max,
             "min_quads_per_component": args.min_quads_per_component,
             "cluster_axis_tol_deg": args.cluster_axis_tol_deg,
-            "quad_edge_min_rel": args.quad_edge_min_rel,
-            "quad_edge_max_rel": args.quad_edge_max_rel,
+            "edge_length_min_rel": args.edge_length_min_rel,
+            "edge_length_max_rel": args.edge_length_max_rel,
         },
         "images": rows,
     }

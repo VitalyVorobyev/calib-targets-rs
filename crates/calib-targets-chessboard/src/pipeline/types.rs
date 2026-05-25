@@ -13,7 +13,7 @@ use crate::corner::{CornerAug, CornerStage};
 use calib_targets_core::GridCoords;
 
 use nalgebra::Point2;
-use projective_grid_next::detect::advanced::square::extension::ExtensionStats;
+use projective_grid::detect::advanced::square::extension::ExtensionStats;
 use serde::Serialize;
 
 /// A single labelled chessboard corner.
@@ -142,7 +142,7 @@ pub struct IterationTrace {
     /// Cardinal-neighbour BFS extension after refit, if
     /// `enable_post_grow_bfs_extend` is set. Records `attached /
     /// rejected_*` from
-    /// `projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled`.
+    /// `projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bfs_extend: Option<BfsExtendTrace>,
     /// Post-refit second-pass `extend_boundary` summary, if it ran.
@@ -225,7 +225,7 @@ pub struct GeometryCheckTrace {
 
 /// Diagnose payload for one homography-based boundary-extension pass
 /// (`extend_boundary` / `rescue_no_cluster`). Mirrors
-/// [`ExtensionStats`](projective_grid_next::detect::advanced::square::extension::ExtensionStats).
+/// [`ExtensionStats`](projective_grid::detect::advanced::square::extension::ExtensionStats).
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct ExtensionTrace {

@@ -15,11 +15,11 @@ categories = ["computer-vision", "science"]
 [features]
 default = []
 dataset = ["dep:serde_json"]
-tracing = ["calib-targets-core/tracing", "projective-grid-next/tracing", "dep:tracing"]
+tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 
 [dependencies]
 calib-targets-core.workspace = true
-projective-grid-next.workspace = true
+projective-grid.workspace = true
 nalgebra.workspace = true
 log.workspace = true
 kiddo.workspace = true
@@ -35,7 +35,6 @@ chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true
-projective-grid.workspace = true
 serde_json.workspace = true
 
 [[example]]

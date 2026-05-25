@@ -1,4 +1,4 @@
-//! Contract check for adapting ChArUco outputs into `projective-grid-next`.
+//! Contract check for adapting ChArUco outputs into `projective-grid`.
 //!
 //! ChArUco owns marker IDs, corner IDs, and board-space target positions.
 //! The generic grid crate receives only image positions plus square-lattice
@@ -7,7 +7,7 @@
 use calib_targets_charuco::{CharucoCorner, CharucoDetectionResult};
 use calib_targets_core::{grid_coords_to_next, GridAlignment, GridCoords, GRID_TRANSFORMS_D4};
 use nalgebra::Point2;
-use projective_grid_next::{
+use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
     PointFeature,
 };

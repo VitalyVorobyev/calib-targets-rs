@@ -183,9 +183,12 @@ def render_frame(
     frame: FrameSpec,
     out_dir: Path,
     min_corner_strength: float,
+    dataset_label: str,
+    side_by_side_only: bool,
 ) -> dict[str, object]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(image).save(out_dir / "00-input.png")
+    if not side_by_side_only:
+        Image.fromarray(image).save(out_dir / "00-input.png")
 
     methods = [
         ("ChessboardV2", "chessboard_v2", "01-chessboard-v2.png"),
@@ -196,20 +199,24 @@ def render_frame(
     for label, algorithm, filename in methods:
         det = run_detector(image, algorithm, min_corner_strength)
         detections[label] = det
-        fig, ax = plt.subplots(figsize=(6, 5), dpi=180)
-        title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
-        n = draw_overlay(ax, image, det, title)
-        counts[label] = n
-        fig.tight_layout()
-        fig.savefig(out_dir / filename, bbox_inches="tight", pad_inches=0.05)
-        plt.close(fig)
+        if side_by_side_only:
+            corners = det.get("corners") if det is not None else []
+            counts[label] = len(corners or [])
+        else:
+            fig, ax = plt.subplots(figsize=(6, 5), dpi=180)
+            title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
+            n = draw_overlay(ax, image, det, title)
+            counts[label] = n
+            fig.tight_layout()
+            fig.savefig(out_dir / filename, bbox_inches="tight", pad_inches=0.05)
+            plt.close(fig)
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=180)
     for ax, (label, _, _) in zip(axes, methods):
         title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
         draw_overlay(ax, image, detections[label], title)
     fig.suptitle(
-        f"130x130_puzzle target_{frame.target_idx} snap {frame.snap_idx} — chessboard detection",
+        f"{dataset_label} target_{frame.target_idx} snap {frame.snap_idx} — chessboard detection",
         fontsize=11,
     )
     fig.tight_layout()
@@ -258,6 +265,16 @@ def parse_args() -> argparse.Namespace:
             "contracts run with the workspace default, not this override."
         ),
     )
+    parser.add_argument(
+        "--dataset-label",
+        default=None,
+        help="Human-readable dataset name used in overlay titles. Defaults to --dataset-dir name.",
+    )
+    parser.add_argument(
+        "--side-by-side-only",
+        action="store_true",
+        help="Write only the combined ChessboardV2/Topological overlay for each frame.",
+    )
     return parser.parse_args()
 
 
@@ -278,6 +295,7 @@ def main() -> None:
         )
         return
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    dataset_label = args.dataset_label or args.dataset_dir.name
     rows: list[dict[str, object]] = []
     for frame in iter_frames(args):
         path = args.dataset_dir / f"target_{frame.target_idx}.png"
@@ -286,7 +304,14 @@ def main() -> None:
             continue
         image = load_snap(path, frame.snap_idx, args.upscale)
         out_dir = args.out_dir / frame.stem
-        row = render_frame(image, frame, out_dir, args.min_corner_strength)
+        row = render_frame(
+            image,
+            frame,
+            out_dir,
+            args.min_corner_strength,
+            dataset_label,
+            args.side_by_side_only,
+        )
         print(
             f"target_{frame.target_idx} snap {frame.snap_idx}: "
             f"v2={row['labelled']['ChessboardV2']} topo={row['labelled']['Topological']}"
@@ -298,6 +323,8 @@ def main() -> None:
         "out_dir": str(args.out_dir),
         "upscale": args.upscale,
         "min_corner_strength": args.min_corner_strength,
+        "dataset_label": dataset_label,
+        "side_by_side_only": args.side_by_side_only,
         "frames": rows,
     }
     (args.out_dir / "manifest.json").write_text(

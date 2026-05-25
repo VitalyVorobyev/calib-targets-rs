@@ -154,12 +154,12 @@ pub(crate) fn run_refit(
             let bfs_validator =
                 ChessboardSquareAttachPolicy::new(augs, blacklist, new_centers, cell_size, params)
                     .with_parity_shift(bfs_parity_shift);
-            let bfs_params = projective_grid_next::detect::advanced::square::grow::GrowParams::new(
+            let bfs_params = projective_grid::detect::advanced::square::grow::GrowParams::new(
                 params.tuning.attach_search_rel,
                 params.tuning.attach_ambiguity_factor,
             );
             let bfs_stats =
-                projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled(
+                projective_grid::detect::advanced::square::grow_extend::extend_from_labelled(
                     &positions,
                     grow_res,
                     cell_size,

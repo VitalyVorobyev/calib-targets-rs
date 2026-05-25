@@ -2,7 +2,7 @@
 //!
 //! Both stages extrapolate the labelled set outward via a fitted
 //! homography, reusing the pattern-agnostic extension primitives from
-//! `projective-grid-next`. The chess-specific logic lives in the policies
+//! `projective-grid`. The chess-specific logic lives in the policies
 //! they pass through (`ChessboardSquareAttachPolicy` /
 //! `ChessboardRescueValidator`): parity, axis-cluster match, and the
 //! axis-slot-swap edge invariant.
@@ -15,7 +15,7 @@ use crate::grow::{ChessboardRescueValidator, ChessboardSquareAttachPolicy, GrowR
 use crate::params::DetectorParams;
 
 use nalgebra::Point2;
-use projective_grid_next::detect::advanced::square::extension::{
+use projective_grid::detect::advanced::square::extension::{
     extend_via_global_homography, extend_via_local_homography, ExtensionParams, ExtensionStats,
     LocalExtensionParams,
 };
@@ -24,7 +24,7 @@ use projective_grid_next::detect::advanced::square::extension::{
 ///
 /// Builds a `Point2<f32>` view of the corner positions and a fresh
 /// chessboard validator, then delegates to
-/// [`projective_grid_next::detect::advanced::square::extension::extend_via_global_homography`].
+/// [`projective_grid::detect::advanced::square::extension::extend_via_global_homography`].
 /// The extension's blacklist tracking is approach (b): rejected
 /// attachments fall through to the regular Stage-7 mechanism on the
 /// next iteration. Stats include `attached_indices` for future
@@ -63,7 +63,7 @@ pub(crate) fn run_stage6(
 }
 
 /// Stage 6.5: NoCluster rescue. Reuses
-/// [`projective_grid_next::detect::advanced::square::extension::extend_via_local_homography`]
+/// [`projective_grid::detect::advanced::square::extension::extend_via_local_homography`]
 /// with [`ChessboardRescueValidator`] (admits `Strong` / `NoCluster`
 /// corners within `rescue_axis_tol_deg` and infers parity from axes).
 /// Same per-cell local-H prediction + position match + ambiguity

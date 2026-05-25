@@ -5,9 +5,9 @@
 //! implementation during the migration, but crossing that boundary must happen
 //! through explicit private adapters in the consuming crate.
 
-use projective_grid_next::lattice::LatticeKind;
-use projective_grid_next::Coord as NextCoord;
-use projective_grid_next::GridTransform as NextGridTransform;
+use projective_grid::lattice::LatticeKind;
+use projective_grid::Coord as NextCoord;
+use projective_grid::GridTransform as NextGridTransform;
 use serde::{Deserialize, Serialize};
 
 /// Integer grid coordinates `(i, j)` identifying a corner intersection in a
@@ -126,7 +126,7 @@ impl GridAlignment {
 
 /// The 8 dihedral transforms `D4` on the integer grid.
 ///
-/// The order intentionally matches the legacy `projective-grid` table:
+/// The order intentionally matches the historical `projective-grid` table:
 /// index `1` is `(i, j) -> (j, -i)`.
 pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
     GridTransform {
@@ -180,7 +180,7 @@ pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
 ];
 
 /// Convert the legacy `GridTransform` into a tagged square-lattice transform
-/// for [`projective_grid_next`] consumers.
+/// for [`projective_grid`] consumers.
 #[inline]
 pub fn grid_transform_to_next(t: GridTransform) -> NextGridTransform {
     NextGridTransform::new(LatticeKind::Square, [[t.a, t.b], [t.c, t.d]], [0, 0])
@@ -233,13 +233,13 @@ pub fn grid_alignment_from_next(t: NextGridTransform) -> GridAlignment {
 }
 
 /// Convert [`GridCoords`] into the lattice-agnostic
-/// [`projective_grid_next::Coord`]. The mapping is `i → u`, `j → v`.
+/// [`projective_grid::Coord`]. The mapping is `i → u`, `j → v`.
 #[inline]
 pub fn grid_coords_to_next(c: GridCoords) -> NextCoord {
     NextCoord::new(c.i, c.j)
 }
 
-/// Project a [`projective_grid_next::Coord`] back into [`GridCoords`]
+/// Project a [`projective_grid::Coord`] back into [`GridCoords`]
 /// (`u → i`, `v → j`).
 #[inline]
 pub fn grid_coords_from_next(c: NextCoord) -> GridCoords {

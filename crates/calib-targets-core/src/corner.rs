@@ -1,5 +1,5 @@
 use nalgebra::Point2;
-use projective_grid_next::LocalAxis as NextLocalAxis;
+use projective_grid::LocalAxis as NextLocalAxis;
 use serde::{Deserialize, Serialize};
 
 pub use crate::grid_alignment::GridCoords;
@@ -34,9 +34,9 @@ impl AxisEstimate {
     }
 }
 
-// ---- Conversions to / from projective-grid-next ----
+// ---- Conversions to / from projective-grid ----
 
-/// Promote [`AxisEstimate`] into the [`projective_grid_next`] crate's generic
+/// Promote [`AxisEstimate`] into the [`projective_grid`] crate's generic
 /// local-axis shape.
 #[inline]
 pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis<f32> {

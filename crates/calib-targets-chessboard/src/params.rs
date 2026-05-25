@@ -23,8 +23,8 @@
 //! scale-invariant once `s` is known. All angular tolerances are absolute
 //! degrees.
 
-use projective_grid_next::detect::advanced::square::component_merge::LocalMergeParams;
-use projective_grid_next::TopologicalParams;
+use projective_grid::detect::advanced::square::component_merge::LocalMergeParams;
+use projective_grid::TopologicalParams;
 use serde::{Deserialize, Serialize};
 
 /// Which graph-build algorithm to run.
@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 ///   cells defeat the topological cell test.
 /// - [`Topological`](GraphBuildAlgorithm::Topological) — Delaunay
 ///   triangulation + axis-driven cell test (see the SBF09 reference
-///   in [`projective_grid_next::TopologicalParams`]'s docs, here with
+///   in [`projective_grid::TopologicalParams`]'s docs, here with
 ///   image-free classification). Lower setup cost, no global cell-size
 ///   dependency. **Currently opt-in only.** Designed to handle severe
 ///   radial distortion and low view angles that the seed-and-grow
@@ -230,7 +230,7 @@ fn default_enable_post_grow_bfs_regrow() -> bool {
 fn default_enable_post_grow_bfs_extend() -> bool {
     // Default ON. After refit produces refined centres, walk the
     // existing labelled set's boundary with a non-destructive BFS
-    // (`projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled`),
+    // (`projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`),
     // attaching newly-Clustered corners via cardinal-neighbour
     // propagation. Reaches interior-hole / left-strip corners that
     // local-H extrapolation (`extend_boundary` /
@@ -553,7 +553,7 @@ pub struct ChessboardTuning {
     pub enable_post_grow_bfs_regrow: bool,
     /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
     /// run a non-destructive cardinal-neighbour BFS extension
-    /// (`projective_grid_next::detect::advanced::square::grow_extend::extend_from_labelled`) over
+    /// (`projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`) over
     /// the existing labelled set with the refined centres. Walks the
     /// labelled bbox boundary one cell at a time, predicts each cell
     /// from cardinal labelled neighbours only (K=1 — much more
@@ -625,7 +625,7 @@ pub struct ChessboardTuning {
 
     // --- `extend_boundary` stage --------------------------------------------
     /// Use the per-candidate local-homography boundary extension
-    /// (`projective_grid_next::detect::advanced::square::extension::extend_via_local_homography`)
+    /// (`projective_grid::detect::advanced::square::extension::extend_via_local_homography`)
     /// instead of the single-global-H one. The local-H variant fits an
     /// H per candidate cell from the K nearest labelled corners, gets
     /// per-candidate trust gates, and reaches further past the bbox

@@ -7,7 +7,7 @@
 //!
 //! The structural skeleton (cell enumeration, KD-tree, per-cell
 //! attachment ladder, fixed-point iteration) lives in
-//! [`projective_grid_next::detect::advanced::square::fill::fill_grid_holes`]; this module
+//! [`projective_grid::detect::advanced::square::fill::fill_grid_holes`]; this module
 //! wraps it with a chessboard-specific [`SquareAttachPolicy`] that adds:
 //!
 //! - **Weak-cluster rescue**: admit `NoCluster` corners whose
@@ -26,8 +26,8 @@ use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid_next::detect::advanced::square::fill::{fill_grid_holes, FillParams};
-use projective_grid_next::detect::advanced::square::grow::{
+use projective_grid::detect::advanced::square::fill::{fill_grid_holes, FillParams};
+use projective_grid::detect::advanced::square::grow::{
     Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy,
 };
 use std::collections::{HashMap, HashSet};

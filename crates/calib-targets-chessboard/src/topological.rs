@@ -2,23 +2,23 @@
 //!
 //! This module is the adapter between two layers:
 //!
-//! - `projective-grid-next`, which is image-free and labels connected
+//! - `projective-grid`, which is image-free and labels connected
 //!   quad-mesh components from oriented features (positions + per-corner
-//!   axis hints) via [`detect_grid_all`](projective_grid_next::detect_grid_all);
+//!   axis hints) via [`detect_grid_all`](projective_grid::detect_grid_all);
 //! - `calib-targets-chessboard`, which owns ChESS corner filtering, recall
 //!   boosters, final canonicalisation, and the public
 //!   [`ChessboardDetection`](crate::ChessboardDetection) type.
 //!
 //! The production path intentionally remains one path. Diagnostics use
-//! [`trace_topological`] for the same `projective-grid-next` topological
+//! [`trace_topological`] for the same `projective-grid` topological
 //! detector path; benchmark reports use the optional `tracing` feature to time
 //! the same functions rather than a second timed implementation.
 //!
 //! Production [`detect_all_topological`] now calls
-//! [`projective_grid_next::detect_grid_all`] with
-//! [`SquareAlgorithm::Topological`](projective_grid_next::SquareAlgorithm::Topological).
+//! [`projective_grid::detect_grid_all`] with
+//! [`SquareAlgorithm::Topological`](projective_grid::SquareAlgorithm::Topological).
 //! The output is bridged into the advanced
-//! [`projective-grid-next`](projective_grid_next) component-merge view so the existing recovery
+//! [`projective-grid`](projective_grid) component-merge view so the existing recovery
 //! pipeline ([`recovery::merge`](self::recovery), boosters, geometry
 //! check) stays byte-identical with the pre-migration version. Validation
 //! and over-residual drops in the new pipeline are disabled (tolerances
@@ -26,7 +26,7 @@
 //! downstream; the new path is asked solely to produce labelled
 //! `(coord -> source_index)` components.
 //!
-//! [`trace_topological`] uses the same `projective-grid-next` production
+//! [`trace_topological`] uses the same `projective-grid` production
 //! detector path and returns a compact serializable trace of the final
 //! labelled components.
 
@@ -35,14 +35,14 @@ mod recovery;
 
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use projective_grid_next::detect::advanced::square::component_merge::{
+use projective_grid::detect::advanced::square::component_merge::{
     merge_components_local, ComponentInput,
 };
-use projective_grid_next::detect::advanced::square::topological_trace::{
+use projective_grid::detect::advanced::square::topological_trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
-use projective_grid_next::detect::ValidateParams as NextValidateParams;
-use projective_grid_next::{
+use projective_grid::detect::ValidateParams as NextValidateParams;
+use projective_grid::{
     detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
     LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
     TopologicalParams as NextTopologicalParams,
@@ -58,7 +58,7 @@ use self::recovery::{
     build_topological_detections, clustered_augs, recover_topological_components,
 };
 
-/// Build a `projective-grid-next` [`NextDetectionParams`] for the
+/// Build a `projective-grid` [`NextDetectionParams`] for the
 /// chessboard adapter's topological grid finder.
 ///
 /// The new pipeline also runs a post-grow validation + fit-residual
@@ -151,7 +151,7 @@ pub fn detect_all_topological(
 
     // Build the new-crate input shape. `params.tuning.topological` carries
     // the chessboard tuning field names; `detection_params_for_topological` translates
-    // them into `projective-grid-next`'s sub-config layout.
+    // them into `projective-grid`'s sub-config layout.
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
     // `NextTopologicalParams::default`. Do not reuse
@@ -238,7 +238,7 @@ pub fn detect_all_topological(
 /// but return a compact topological trace instead of detections.
 ///
 /// Corners that fail the chessboard strength / fit pre-filter are passed to
-/// `projective-grid-next` with no-information axes, matching the production
+/// `projective-grid` with no-information axes, matching the production
 /// topological dispatch path.
 #[cfg_attr(
     feature = "tracing",

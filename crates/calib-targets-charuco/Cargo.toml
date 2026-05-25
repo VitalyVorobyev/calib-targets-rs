@@ -34,7 +34,7 @@ env_logger = { workspace = true, optional = true }
 image.workspace = true
 tempfile.workspace = true
 calib-targets = { path = "../calib-targets" }
-projective-grid-next.workspace = true
+projective-grid.workspace = true
 
 [[example]]
 name = "run_dataset"

@@ -379,7 +379,7 @@ fn detect_chessboard_debug(
 /// This is an offline diagnostics / visualization entry point. It always
 /// forces `DetectorParams.graph_build_algorithm = "topological"` before
 /// running final detections, then returns the raw corners, the
-/// `projective-grid-next` topological trace when at least three usable corners are
+/// `projective-grid` topological trace when at least three usable corners are
 /// available, and the final merged detections produced by the chessboard
 /// detector.
 #[pyfunction]

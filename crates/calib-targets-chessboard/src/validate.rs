@@ -1,10 +1,10 @@
 //! Stage 7 — post-growth validation.
 //!
 //! Pattern-agnostic logic lives in the
-//! [`projective_grid_next::detect::advanced::square::validate`](mod@projective_grid_next::detect::advanced::square::validate)
+//! [`projective_grid::detect::advanced::square::validate`](mod@projective_grid::detect::advanced::square::validate)
 //! module; this adapter maps the chessboard detector's internal
 //! `CornerAug` + labelled-map representation to
-//! [`projective_grid_next::detect::advanced::square::validate::LabelledEntry`] and
+//! [`projective_grid::detect::advanced::square::validate::LabelledEntry`] and
 //! forwards the call.
 //!
 //! See the hoisted module for the algorithm description (line
@@ -12,7 +12,7 @@
 
 use crate::corner::CornerAug;
 use crate::params::DetectorParams;
-use projective_grid_next::detect::advanced::square::validate as pg_validate;
+use projective_grid::detect::advanced::square::validate as pg_validate;
 use std::collections::HashMap;
 
 pub use pg_validate::ValidationResult;

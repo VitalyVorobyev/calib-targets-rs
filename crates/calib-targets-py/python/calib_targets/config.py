@@ -763,7 +763,7 @@ class GridGraphParams:
 class AxisClusterCenters:
     """Two global grid-axis directions for the topological pre-Delaunay gate.
 
-    Mirrors ``projective_grid_next::TopologicalParams.axis_cluster_centers``.
+    Mirrors ``projective_grid::TopologicalParams.axis_cluster_centers``.
     Both fields are in
     ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
     you have an unbiased estimate; the chessboard detector's topological
@@ -784,10 +784,10 @@ class AxisClusterCenters:
 
 @dataclass(slots=True)
 class TopologicalParams:
-    """Tuning knobs for ``projective_grid_next::detect_grid_all``.
+    """Tuning knobs for ``projective_grid::detect_grid_all``.
 
     Defaults match the Rust workspace defaults in
-    ``crates/projective-grid-next/src/detect/square/topological/mod.rs`` and have been
+    ``crates/projective-grid/src/detect/square/topological/mod.rs`` and have been
     co-tuned against ``02-topo-grid`` (Gemini chessboards) and
     ``130x130_puzzle``.
     """
@@ -800,6 +800,7 @@ class TopologicalParams:
     cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
     edge_length_min_rel: float = 0.0
     edge_length_max_rel: float = 1.8
+    min_corners_for_component: int = 4
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -815,6 +816,7 @@ class TopologicalParams:
             "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
             "edge_length_min_rel": self.edge_length_min_rel,
             "edge_length_max_rel": self.edge_length_max_rel,
+            "min_corners_for_component": self.min_corners_for_component,
         }
 
     @classmethod
@@ -844,6 +846,9 @@ class TopologicalParams:
             edge_length_max_rel=data.get(
                 "edge_length_max_rel",
                 data.get("quad_edge_max_rel", d.edge_length_max_rel),
+            ),
+            min_corners_for_component=data.get(
+                "min_corners_for_component", d.min_corners_for_component
             ),
         )
 

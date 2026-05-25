@@ -21,9 +21,10 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use calib_targets_chessboard::diagnostics::DebugFrame;
-use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
@@ -43,15 +44,22 @@ fn main() {
     let mut dataset: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
     let mut upscale: u32 = 1;
+    let mut algorithm = GraphBuildAlgorithm::ChessboardV2;
+    let mut timing_only = false;
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
             "--dataset" => dataset = args.next().map(PathBuf::from),
             "--out" => out = args.next().map(PathBuf::from),
+            "--algorithm" => {
+                let raw = args.next().expect("--algorithm needs a value");
+                algorithm = parse_algorithm(&raw);
+            }
             "--upscale" => {
                 let raw = args.next().expect("--upscale needs N");
                 upscale = raw.parse().expect("--upscale value must be u32");
             }
+            "--timing-only" => timing_only = true,
             other => {
                 eprintln!("unknown arg: {other}");
                 std::process::exit(2);
@@ -72,18 +80,20 @@ fn main() {
         std::process::exit(1);
     }
     eprintln!(
-        "dataset={dataset:?} targets={} out={out:?} upscale={upscale}",
+        "dataset={dataset:?} targets={} out={out:?} upscale={upscale} algorithm={algorithm:?} timing_only={timing_only}",
         targets.len()
     );
 
     let chess_cfg = default_chess_config();
-    let detector_params = DetectorParams::default();
+    let mut detector_params = DetectorParams::default();
+    detector_params.graph_build_algorithm = algorithm;
 
     let mut n_frames = 0usize;
     let mut n_detected = 0usize;
     let mut sum_labelled = 0usize;
     let mut corners_per_snap: Vec<usize> =
         Vec::with_capacity(targets.len() * SNAPS_PER_IMAGE as usize);
+    let mut elapsed_ms: Vec<f64> = Vec::with_capacity(targets.len() * SNAPS_PER_IMAGE as usize);
 
     for path in &targets {
         let target_idx = parse_target_index(path).expect("target index");
@@ -91,27 +101,60 @@ fn main() {
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap_native = extract_snap(&img, snap_idx);
             let snap = maybe_upscale(&snap_native, upscale);
+            let started = Instant::now();
             let corners = detect_corners(&snap, &chess_cfg);
             corners_per_snap.push(corners.len());
             let detector = Detector::new(detector_params.clone());
-            let frame = detector.detect_with_diagnostics(&corners);
+            let (labelled, frame) = match algorithm {
+                GraphBuildAlgorithm::ChessboardV2 => {
+                    let frame = detector.detect_with_diagnostics(&corners);
+                    let labelled = frame
+                        .detection
+                        .as_ref()
+                        .map(|d| d.corners.len())
+                        .unwrap_or(0);
+                    (labelled, Some(frame))
+                }
+                GraphBuildAlgorithm::Topological => {
+                    let labelled = detector
+                        .detect(&corners)
+                        .map(|d| d.corners.len())
+                        .unwrap_or(0);
+                    (labelled, None)
+                }
+                _ => {
+                    eprintln!("unsupported graph-build algorithm");
+                    std::process::exit(2);
+                }
+            };
+            let elapsed = started.elapsed().as_secs_f64() * 1e3;
+            elapsed_ms.push(elapsed);
             n_frames += 1;
-            if let Some(d) = &frame.detection {
+            if labelled > 0 {
                 n_detected += 1;
-                sum_labelled += d.corners.len();
+                sum_labelled += labelled;
             }
-            let compact = CompactFrame::from_frame(
-                target_idx,
-                snap_idx,
-                upscale,
-                snap.width(),
-                snap.height(),
-                &corners,
-                &frame,
-            );
-            let json = serde_json::to_string(&compact).expect("serialize");
-            let out_path = out.join(format!("t{target_idx}s{snap_idx}.json"));
-            fs::write(&out_path, json).expect("write");
+            if !timing_only {
+                let Some(frame) = frame else {
+                    eprintln!(
+                        "topological --algorithm only supports JSON output with --timing-only"
+                    );
+                    std::process::exit(2);
+                };
+                let compact = CompactFrame::from_frame(
+                    target_idx,
+                    snap_idx,
+                    upscale,
+                    snap.width(),
+                    snap.height(),
+                    &corners,
+                    &frame,
+                    elapsed,
+                );
+                let json = serde_json::to_string(&compact).expect("serialize");
+                let out_path = out.join(format!("t{target_idx}s{snap_idx}.json"));
+                fs::write(&out_path, json).expect("write");
+            }
         }
     }
 
@@ -130,6 +173,18 @@ fn main() {
     );
 
     print_corner_histogram(&corners_per_snap);
+    print_timing_summary(&elapsed_ms);
+}
+
+fn parse_algorithm(raw: &str) -> GraphBuildAlgorithm {
+    match raw {
+        "chessboard-v2" | "chessboard_v2" => GraphBuildAlgorithm::ChessboardV2,
+        "topological" => GraphBuildAlgorithm::Topological,
+        other => {
+            eprintln!("unknown --algorithm {other:?}; expected chessboard-v2 or topological");
+            std::process::exit(2);
+        }
+    }
 }
 
 fn maybe_upscale(img: &GrayImage, upscale: u32) -> GrayImage {
@@ -172,6 +227,28 @@ fn print_corner_histogram(counts: &[usize]) {
         100.0 * n_lt_200 as f64 / n as f64,
         n_ge_500,
         100.0 * n_ge_500 as f64 / n as f64
+    );
+}
+
+fn print_timing_summary(values: &[f64]) {
+    if values.is_empty() {
+        return;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len();
+    let sum: f64 = sorted.iter().sum();
+    let pct = |p: f64| -> f64 {
+        let idx = ((p / 100.0) * (n - 1) as f64).round() as usize;
+        sorted[idx.min(n - 1)]
+    };
+    println!(
+        "elapsed_ms/snap: n={n} mean={:.2} p50={:.2} p90={:.2} p95={:.2} max={:.2}",
+        sum / n as f64,
+        pct(50.0),
+        pct(90.0),
+        pct(95.0),
+        *sorted.last().unwrap()
     );
 }
 
@@ -224,6 +301,7 @@ struct CompactFrame {
     height: u32,
     input_corners: Vec<CompactInput>,
     frame: DebugFrame,
+    elapsed_ms: f64,
 }
 
 impl CompactFrame {
@@ -235,6 +313,7 @@ impl CompactFrame {
         height: u32,
         corners: &[Corner],
         frame: &DebugFrame,
+        elapsed_ms: f64,
     ) -> Self {
         Self {
             target_index,
@@ -253,6 +332,7 @@ impl CompactFrame {
                 })
                 .collect(),
             frame: frame.clone(),
+            elapsed_ms,
         }
     }
 }
