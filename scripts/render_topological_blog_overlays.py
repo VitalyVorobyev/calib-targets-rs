@@ -26,6 +26,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.tri as mtri
 import numpy as np
 from matplotlib.lines import Line2D
 from PIL import Image, ImageFilter
@@ -192,6 +193,167 @@ def draw_usable_context(ax: plt.Axes, payload: dict[str, Any]) -> None:
     ys = [pos[idx][1] for idx in usable_set if idx in pos]
     if xs:
         ax.scatter(xs, ys, s=8, c="#bdbdbd", edgecolors="none", alpha=0.45, zorder=2)
+
+
+def angular_dist_pi(a: float, b: float) -> float:
+    """Undirected angular distance on [0, pi)."""
+    d = abs((a - b) % math.pi)
+    return min(d, math.pi - d)
+
+
+def classify_python_edge(
+    payload: dict[str, Any],
+    a: int,
+    b: int,
+    pos: dict[int, tuple[float, float]],
+) -> str:
+    """Illustrative edge classifier for Python-side blog overlays.
+
+    The production labels still come from Rust. This classifier reconstructs
+    enough stage structure for figures when the Rust trace intentionally
+    exports only compact component labels.
+    """
+    trace = payload.get("trace") or {}
+    params = trace.get("params") or {}
+    tol = float(params.get("axis_align_tol_rad", math.radians(15.0)))
+    max_sigma = float(params.get("max_axis_sigma_rad", 0.6))
+    x0, y0 = pos[a]
+    x1, y1 = pos[b]
+    theta = math.atan2(y1 - y0, x1 - x0) % math.pi
+    corners = {int(c["index"]): c for c in payload.get("corners", [])}
+
+    def endpoint_axis_ok(idx: int) -> bool:
+        corner = corners.get(idx)
+        if corner is None:
+            return False
+        for axis in corner.get("axes", []):
+            sigma = float(axis.get("sigma", math.pi))
+            if sigma <= max_sigma and angular_dist_pi(theta, float(axis["angle"])) <= tol:
+                return True
+        return False
+
+    if endpoint_axis_ok(a) and endpoint_axis_ok(b):
+        return "grid"
+
+    centers = params.get("axis_cluster_centers") or []
+    if len(centers) >= 2:
+        c0, c1 = sorted(float(c) % math.pi for c in centers[:2])
+        diagonal0 = ((c0 + c1) * 0.5) % math.pi
+        diagonal1 = (diagonal0 + math.pi * 0.5) % math.pi
+        if min(angular_dist_pi(theta, diagonal0), angular_dist_pi(theta, diagonal1)) <= tol:
+            return "diagonal"
+    return "spurious"
+
+
+def triangle_class(edge_kinds: list[str]) -> str:
+    grid = edge_kinds.count("grid")
+    diagonal = edge_kinds.count("diagonal")
+    if "spurious" in edge_kinds:
+        return "has_spurious"
+    if grid == 2 and diagonal == 1:
+        return "mergeable"
+    if grid == 3:
+        return "all_grid"
+    return "multi_diagonal"
+
+
+def order_quad_vertices(vertices: list[int], pos: dict[int, tuple[float, float]]) -> list[int]:
+    cx = sum(pos[v][0] for v in vertices) / len(vertices)
+    cy = sum(pos[v][1] for v in vertices) / len(vertices)
+    return sorted(vertices, key=lambda v: math.atan2(pos[v][1] - cy, pos[v][0] - cx))
+
+
+def max_opposing_edge_ratio(vertices: list[int], pos: dict[int, tuple[float, float]]) -> float:
+    lengths = []
+    for a, b in zip(vertices, vertices[1:] + vertices[:1]):
+        x0, y0 = pos[a]
+        x1, y1 = pos[b]
+        lengths.append(math.hypot(x1 - x0, y1 - y0))
+    ratios = []
+    for k in (0, 1):
+        lo = min(lengths[k], lengths[k + 2])
+        hi = max(lengths[k], lengths[k + 2])
+        ratios.append(float("inf") if lo <= 1e-6 else hi / lo)
+    return max(ratios)
+
+
+def augment_trace_with_python_graph(payload: dict[str, Any]) -> None:
+    """Add Python-side Delaunay/quad scaffolding when Rust exports compact trace.
+
+    This is for figures only. The final recovered grid remains the Rust
+    topological/chessboard adapter output stored in `payload["detections"]`.
+    """
+    trace = payload.get("trace")
+    if trace is None or "triangles" in trace:
+        return
+    pos = corner_positions(payload)
+    usable = sorted(idx for idx in usable_indices(payload) if idx in pos)
+    if len(usable) < 3:
+        trace["triangles"] = []
+        trace["quads"] = []
+        return
+
+    xs = [pos[idx][0] for idx in usable]
+    ys = [pos[idx][1] for idx in usable]
+    triangulation = mtri.Triangulation(xs, ys)
+    triangles: list[dict[str, Any]] = []
+    for tri in triangulation.triangles:
+        vertices = [usable[int(k)] for k in tri]
+        edge_kinds = [
+            classify_python_edge(payload, vertices[k], vertices[(k + 1) % 3], pos)
+            for k in range(3)
+        ]
+        triangles.append(
+            {
+                "vertices": vertices,
+                "edge_kinds": edge_kinds,
+                "class": triangle_class(edge_kinds),
+            }
+        )
+
+    edge_to_triangles: dict[tuple[int, int], list[int]] = {}
+    for ti, tri in enumerate(triangles):
+        vertices = tri["vertices"]
+        for k, kind in enumerate(tri["edge_kinds"]):
+            if kind != "diagonal":
+                continue
+            a = vertices[k]
+            b = vertices[(k + 1) % 3]
+            key = (a, b) if a < b else (b, a)
+            edge_to_triangles.setdefault(key, []).append(ti)
+
+    params = trace.get("params") or {}
+    max_ratio = float(params.get("opposing_edge_ratio_max", 10.0))
+    quads: list[dict[str, Any]] = []
+    seen_quads: set[tuple[int, ...]] = set()
+    for triangle_ids in edge_to_triangles.values():
+        if len(triangle_ids) != 2:
+            continue
+        a, b = (triangles[triangle_ids[0]], triangles[triangle_ids[1]])
+        if a["class"] != "mergeable" or b["class"] != "mergeable":
+            continue
+        vertices = sorted(set(a["vertices"]) | set(b["vertices"]))
+        if len(vertices) != 4:
+            continue
+        key = tuple(vertices)
+        if key in seen_quads:
+            continue
+        seen_quads.add(key)
+        ordered = order_quad_vertices(vertices, pos)
+        ratio = max_opposing_edge_ratio(ordered, pos)
+        geometry_pass = ratio <= max_ratio
+        quads.append(
+            {
+                "vertices": ordered,
+                "topology_pass": True,
+                "kept": geometry_pass,
+                "python_reconstructed": True,
+            }
+        )
+
+    trace["triangles"] = triangles
+    trace["quads"] = quads
+    trace["python_reconstructed_graph"] = True
 
 
 def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
@@ -473,6 +635,7 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         chess_cfg=chess_cfg,
         params=trace_params,
     )
+    augment_trace_with_python_graph(payload)
     if args.final_algorithm != "topological":
         final_params = ct.ChessboardParams(graph_build_algorithm=args.final_algorithm)
         payload["detections"] = [
