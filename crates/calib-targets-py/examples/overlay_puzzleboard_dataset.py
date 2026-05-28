@@ -176,7 +176,9 @@ def draw_failure(
     detection = frame["chessboard_frame"].get("detection")
     labelled: list[dict[str, Any]] = []
     if detection is not None:
-        for c in detection["target"]["corners"]:
+        # Current DebugFrame emits detection.corners directly; older frames
+        # nested them under `target`.
+        for c in (detection.get("target") or detection)["corners"]:
             grid = c.get("grid")
             if grid is None:
                 continue
@@ -232,7 +234,10 @@ def draw_overlay(
         # we used `#[serde(tag = "kind")]` on a tuple-struct variant — the
         # wrapped object fields are hoisted into the enum body. Handle both
         # shapes just in case.
-        result = outcome if "detection" in outcome else outcome.get("content", {})
+        # Current serde shape hoists the PuzzleBoardDetectionResult fields
+        # (corners / alignment / decode) directly into the `{ "kind": "ok", ... }`
+        # body; older shapes nested them under `content`. Handle both.
+        result = outcome.get("content", outcome)
         stats = draw_success(ax, frame, result)
         decode = result.get("decode", {})
         matched = decode.get("edges_matched", 0)
