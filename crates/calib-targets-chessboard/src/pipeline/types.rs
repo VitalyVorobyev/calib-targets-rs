@@ -206,7 +206,9 @@ pub struct GeometryCheckTrace {
     pub dropped_line_collinearity: u32,
     /// Drops attributed to the local-homography residual predicate.
     pub dropped_local_h_residual: u32,
-    /// Drops attributed to the per-edge length / axis-slot-swap predicate.
+    /// Drops attributed to the final local edge-shape predicate
+    /// (cardinal support, adjacent-edge continuation, and complete-cell
+    /// opposite-side consistency).
     pub dropped_edge_invariant: u32,
     /// Number of labelled corners dropped because they were not in
     /// the largest cardinally-connected component. Catches isolated

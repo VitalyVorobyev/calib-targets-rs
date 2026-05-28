@@ -10,9 +10,11 @@ use std::collections::HashSet;
 use crate::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::GrowResult;
-use crate::params::DetectorParams;
+use crate::params::{DetectorParams, GraphBuildAlgorithm};
 
 use super::types::GeometryCheckTrace;
+
+const MIN_EDGE_SHAPE_LABELS: usize = 40;
 
 /// Mandatory final precision gate. Runs after every other stage and
 /// can only remove corners or refuse the detection — never add or
@@ -20,7 +22,8 @@ use super::types::GeometryCheckTrace;
 ///
 /// Drops any labelled corner that fails:
 /// - the shared [`validate`](projective_grid::detect::advanced::square::validate::validate)
-///   pass (line collinearity + local-H residual, attribution rules from
+///   pass (line collinearity + local-H residual + final edge-shape gate,
+///   attribution rules from
 ///   [`mod@projective_grid::detect::advanced::square::validate`]); **or**
 /// - the per-cardinal-edge axis-slot-swap parity check from
 ///   `ChessboardSquareAttachPolicy::edge_ok` — every edge between two
@@ -41,42 +44,47 @@ pub fn run_geometry_check(
     blacklist: &mut HashSet<usize>,
     params: &DetectorParams,
 ) -> GeometryCheckTrace {
+    use projective_grid::detect::advanced::square::validate as pg_validate;
     use std::collections::HashSet as Set;
+
     // Test 1: line collinearity + local-H residual via shared
     // validator, but with the LOOSER `geometry_check_*` tolerances —
     // the BFS-validation loop already accepted borderline perspective
     // drift; the geometry check's job is to catch gross mislabels
-    // (full-cell or diagonal shifts) only.
-    let geom_entries: Vec<projective_grid::detect::advanced::square::validate::LabelledEntry> =
-        grow_res
-            .labelled
-            .iter()
-            .map(|(&grid, &idx)| {
-                projective_grid::detect::advanced::square::validate::LabelledEntry {
-                    idx,
-                    pixel: augs[idx].position,
-                    grid,
-                }
-            })
-            .collect();
-    let mut geom_params =
-        projective_grid::detect::advanced::square::validate::ValidationParams::new(
-            params.tuning.geometry_check_line_tol_rel,
-            params.tuning.line_min_members,
-            params.tuning.geometry_check_local_h_tol_rel,
-        );
+    // (full-cell or diagonal shifts) only. The edge-shape gate adds
+    // local degree / continuation / cell-opposite-side checks that are
+    // useful only at this final precision stage.
+    let geom_entries: Vec<pg_validate::LabelledEntry> = grow_res
+        .labelled
+        .iter()
+        .map(|(&grid, &idx)| pg_validate::LabelledEntry {
+            idx,
+            pixel: augs[idx].position,
+            grid,
+        })
+        .collect();
+    let mut geom_params = pg_validate::ValidationParams::new(
+        params.tuning.geometry_check_line_tol_rel,
+        params.tuning.line_min_members,
+        params.tuning.geometry_check_local_h_tol_rel,
+    );
+    if matches!(
+        params.graph_build_algorithm,
+        GraphBuildAlgorithm::ChessboardV2
+    ) && params.tuning.enable_final_edge_shape_check
+        && geom_entries.len() >= MIN_EDGE_SHAPE_LABELS
+    {
+        geom_params = geom_params.with_edge_shape_gate(pg_validate::EdgeShapeParams::default());
+    }
     if params.tuning.validate_step_aware {
         // Geometry check stays step-aware so heavily distorted boards
         // get the same scale-relative thresholds as BFS validation.
         // Step-deviation gate is BFS-only — set to 0 (disabled).
         geom_params = geom_params.with_step_aware(0.0);
     }
-    let v = projective_grid::detect::advanced::square::validate::validate(
-        &geom_entries,
-        cell_size,
-        &geom_params,
-    );
+    let v = pg_validate::validate(&geom_entries, cell_size, &geom_params);
     let validate_drop: Set<usize> = v.blacklist.iter().copied().collect();
+    let edge_shape_drop: Set<usize> = v.edge_shape_reasons.keys().copied().collect();
 
     // Per-edge axis-slot-swap was tried as an additional check but
     // was too rigid for heavily distorted boards (every cell with a
@@ -155,8 +163,8 @@ pub fn run_geometry_check(
     }
     all_drop.extend(disconnect_drop.iter().copied());
 
-    let dropped_validate = validate_drop.len() as u32;
-    let dropped_edge_only = 0u32;
+    let dropped_validate = validate_drop.difference(&edge_shape_drop).count() as u32;
+    let dropped_edge_only = edge_shape_drop.len() as u32;
     let dropped_disconnected = disconnect_drop.len() as u32;
 
     for &idx in &all_drop {

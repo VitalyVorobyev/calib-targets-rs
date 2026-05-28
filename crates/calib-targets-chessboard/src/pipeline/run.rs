@@ -436,11 +436,10 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     }
 
     // Mandatory final geometry check. Drops any labelled corner that
-    // fails the line-collinearity / local-H residual test from the
-    // shared validator OR the chessboard per-edge axis-slot-swap
-    // parity test. Refuses the detection entirely if the surviving
-    // labelled count drops below `min_labeled_corners`.
-    let geometry_check_trace = run_geometry_check(
+    // fails the shared square-grid validation, including the final
+    // local edge-shape gate. Refuses the detection entirely if the
+    // surviving labelled count drops below `min_labeled_corners`.
+    let mut geometry_check_trace = run_geometry_check(
         augs,
         &mut grow_mut,
         active_centers,
@@ -455,9 +454,8 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // by orphans the rescue couldn't reach before because those cells
     // were occupied. The rescue's per-candidate gates (position match,
     // parity match, edge invariant) are unchanged. The geometry check
-    // is NOT re-run after, to avoid an infinite loop; the rescue's
-    // gates by themselves enforce precision on every addition (same as
-    // Stage 6.5).
+    // is re-run once after rescue; otherwise a post-geometry attachment
+    // can bypass the mandatory final precision gate.
     //
     // Targets the chess-corners 0.9 DiskFit case where BFS
     // mis-attaches a partial-slot-flip orphan to the wrong cell,
@@ -479,6 +477,23 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
                 local_h_residual_px: None,
             };
         }
+        let rescue_geometry_trace = run_geometry_check(
+            augs,
+            &mut grow_mut,
+            active_centers,
+            cell_size,
+            blacklist,
+            params,
+        );
+        geometry_check_trace.dropped += rescue_geometry_trace.dropped;
+        geometry_check_trace.dropped_line_collinearity +=
+            rescue_geometry_trace.dropped_line_collinearity;
+        geometry_check_trace.dropped_local_h_residual +=
+            rescue_geometry_trace.dropped_local_h_residual;
+        geometry_check_trace.dropped_edge_invariant += rescue_geometry_trace.dropped_edge_invariant;
+        geometry_check_trace.dropped_disconnected += rescue_geometry_trace.dropped_disconnected;
+        geometry_check_trace.components_seen = rescue_geometry_trace.components_seen;
+        geometry_check_trace.detection_refused = rescue_geometry_trace.detection_refused;
     }
 
     let trace = IterationTrace {

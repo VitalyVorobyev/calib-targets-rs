@@ -1,6 +1,6 @@
 //! Post-growth validation for a labelled square grid.
 //!
-//! Two independent checks run over the labelled set:
+//! Two independent checks run over the labelled set by default:
 //!
 //! 1. **Line collinearity.** For every row (`j = const`) and column
 //!    (`i = const`) with `≥ line_min_members` labelled members, fit
@@ -41,6 +41,13 @@
 //! The caller is expected to re-run the seed/grow/validate loop after
 //! updating its blacklist.
 //!
+//! An optional **edge-shape gate** is available for final validation
+//! of a completed labelled grid. It rejects labels with too little
+//! cardinal support, bad adjacent-edge continuation, or no valid
+//! adjacent square cell under local opposite-side consistency. This
+//! gate is opt-in so the historical grow-time validator remains
+//! conservative.
+//!
 //! # Pattern-agnostic
 //!
 //! This module has no dependency on target-specific vocabulary such as
@@ -49,6 +56,7 @@
 //! Consumers that carry per-stage metadata should pre-filter to the
 //! "labelled" subset before calling.
 
+mod edge_shape;
 mod lines;
 mod local_h;
 mod step;
@@ -97,6 +105,12 @@ pub struct ValidationParams {
     ///
     /// [`use_step_aware`]: ValidationParams::use_step_aware
     pub step_deviation_thresh_rel: f32,
+    /// Optional final-gate checks for local square-grid edge shape.
+    ///
+    /// Disabled by default to preserve the conservative grow-time
+    /// validator. Enable this only for final precision gates that may
+    /// remove labels or refuse the whole detection.
+    pub edge_shape: Option<EdgeShapeParams>,
 }
 
 impl Default for ValidationParams {
@@ -109,6 +123,7 @@ impl Default for ValidationParams {
             local_h_tol_rel: 0.20,
             use_step_aware: false,
             step_deviation_thresh_rel: 0.0,
+            edge_shape: None,
         }
     }
 }
@@ -125,6 +140,7 @@ impl ValidationParams {
             local_h_tol_rel,
             use_step_aware: false,
             step_deviation_thresh_rel: 0.0,
+            edge_shape: None,
         }
     }
 
@@ -136,6 +152,70 @@ impl ValidationParams {
         self.step_deviation_thresh_rel = deviation_thresh_rel;
         self
     }
+
+    /// Enable local edge-shape validation for final labelled-grid
+    /// precision gates.
+    pub fn with_edge_shape_gate(mut self, edge_shape: EdgeShapeParams) -> Self {
+        self.edge_shape = Some(edge_shape);
+        self
+    }
+}
+
+/// Tolerances for local square-grid edge-shape validation.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug)]
+pub struct EdgeShapeParams {
+    /// Minimum number of cardinally adjacent labelled neighbours
+    /// required for a label to survive.
+    pub min_cardinal_degree: u8,
+    /// Maximum angle change, in degrees, allowed between two adjacent
+    /// edges that continue through a shared vertex.
+    pub continuation_angle_tol_deg: f32,
+    /// Maximum edge-length ratio allowed between two adjacent edges
+    /// that continue through a weakly supported shared vertex.
+    /// Well-supported interior vertices are checked by direction and
+    /// cell shape instead, because perspective can legitimately make
+    /// adjacent samples along one projected line differ in length.
+    pub continuation_length_ratio_max: f32,
+    /// Maximum angle difference, in degrees, allowed between opposite
+    /// sides of a complete local cell.
+    pub cell_opposite_angle_tol_deg: f32,
+    /// Maximum length ratio allowed between opposite sides of a
+    /// complete local cell.
+    pub cell_opposite_length_ratio_max: f32,
+}
+
+impl Default for EdgeShapeParams {
+    fn default() -> Self {
+        Self {
+            min_cardinal_degree: 2,
+            continuation_angle_tol_deg: 8.0,
+            continuation_length_ratio_max: 1.18,
+            cell_opposite_angle_tol_deg: 8.0,
+            cell_opposite_length_ratio_max: 1.10,
+        }
+    }
+}
+
+/// Per-label diagnostics from local edge-shape validation.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct EdgeShapeDiagnostic {
+    /// Number of cardinally adjacent labelled neighbours.
+    pub cardinal_degree: u8,
+    /// Whether the coordinate lies on the labelled-set bounding box.
+    pub is_bbox_boundary: bool,
+    /// Maximum angle change across supported line continuations, in degrees.
+    pub max_continuation_angle_deg: Option<f32>,
+    /// Maximum length ratio across supported line continuations.
+    pub max_continuation_length_ratio: Option<f32>,
+    /// Number of complete adjacent square cells.
+    pub adjacent_cell_count: u8,
+    /// Number of adjacent square cells that satisfy opposite-side checks.
+    pub valid_adjacent_cell_count: u8,
+    /// Maximum opposite-side angle difference across adjacent cells, in degrees.
+    pub max_cell_opposite_angle_deg: Option<f32>,
+    /// Maximum opposite-side length ratio across adjacent cells.
+    pub max_cell_opposite_length_ratio: Option<f32>,
 }
 
 /// A single labelled corner fed into [`validate`]: its caller-chosen
@@ -164,6 +244,12 @@ pub struct ValidationResult {
     /// (`None` when fewer than 4 non-collinear neighbors were
     /// available).
     pub local_h_residuals: HashMap<usize, f32>,
+    /// Edge-shape diagnostics keyed by caller-chosen label index.
+    /// Empty when the edge-shape gate is disabled.
+    pub edge_shape_diagnostics: HashMap<usize, EdgeShapeDiagnostic>,
+    /// Edge-shape rejection reason keyed by caller-chosen label index.
+    /// Empty when the edge-shape gate is disabled.
+    pub edge_shape_reasons: HashMap<usize, &'static str>,
 }
 
 /// Run both validation passes and produce a blacklist.
@@ -286,9 +372,22 @@ pub fn validate(
         }
     }
 
+    // --- 7e. Final edge-shape gate (optional) --------------------------
+    let (edge_shape_diagnostics, edge_shape_reasons) =
+        if let Some(edge_shape_params) = params.edge_shape {
+            let (diagnostics, reasons) =
+                edge_shape::evaluate_edge_shape(&by_idx, &by_grid, edge_shape_params);
+            blacklist.extend(reasons.keys().copied());
+            (diagnostics, reasons)
+        } else {
+            (HashMap::new(), HashMap::new())
+        };
+
     ValidationResult {
         blacklist,
         local_h_residuals: residuals,
+        edge_shape_diagnostics,
+        edge_shape_reasons,
     }
 }
 
@@ -310,6 +409,47 @@ mod tests {
         for j in 0..rows {
             for i in 0..cols {
                 out.push(entry(idx, i as f32 * s + 50.0, j as f32 * s + 50.0, i, j));
+                idx += 1;
+            }
+        }
+        out
+    }
+
+    fn edge_gate_params() -> ValidationParams {
+        ValidationParams::new(999.0, 99, 999.0).with_edge_shape_gate(EdgeShapeParams::default())
+    }
+
+    fn mild_perspective_grid(rows: i32, cols: i32, s: f32) -> Vec<LabelledEntry> {
+        let mut out = Vec::new();
+        let mut idx = 0;
+        for j in 0..rows {
+            for i in 0..cols {
+                let u = i as f32;
+                let v = j as f32;
+                let denom = 1.0 + 0.01 * u + 0.006 * v;
+                let x = 50.0 + (s * (u + 0.08 * v)) / denom;
+                let y = 50.0 + (s * (v + 0.04 * u)) / denom;
+                out.push(entry(idx, x, y, i, j));
+                idx += 1;
+            }
+        }
+        out
+    }
+
+    fn mild_radial_grid(rows: i32, cols: i32, s: f32) -> Vec<LabelledEntry> {
+        let mut out = Vec::new();
+        let mut idx = 0;
+        let cx = (cols - 1) as f32 * 0.5;
+        let cy = (rows - 1) as f32 * 0.5;
+        for j in 0..rows {
+            for i in 0..cols {
+                let u = i as f32 - cx;
+                let v = j as f32 - cy;
+                let r2 = u * u + v * v;
+                let k = 1.0 + 0.006 * r2;
+                let x = 150.0 + s * u * k;
+                let y = 150.0 + s * v * k;
+                out.push(entry(idx, x, y, i, j));
                 idx += 1;
             }
         }
@@ -348,6 +488,120 @@ mod tests {
         let entries = vec![entry(0, 0.0, 0.0, 0, 0), entry(1, 20.0, 0.0, 1, 0)];
         let res = validate(&entries, 20.0, &ValidationParams::default());
         assert!(res.blacklist.is_empty());
+    }
+
+    #[test]
+    fn edge_shape_clean_grid_passes() {
+        let entries = clean_grid(7, 7, 20.0);
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(res.blacklist.is_empty(), "{:?}", res.blacklist);
+    }
+
+    #[test]
+    fn edge_shape_mild_perspective_grid_passes() {
+        let entries = mild_perspective_grid(7, 7, 20.0);
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(res.blacklist.is_empty(), "{:?}", res.blacklist);
+    }
+
+    #[test]
+    fn edge_shape_mild_radial_grid_passes() {
+        let entries = mild_radial_grid(7, 7, 20.0);
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(res.blacklist.is_empty(), "{:?}", res.blacklist);
+    }
+
+    #[test]
+    fn edge_shape_rejects_isolated_point() {
+        let mut entries = clean_grid(2, 2, 20.0);
+        let isolated_idx = entries.len();
+        entries.push(entry(isolated_idx, 150.0, 150.0, 5, 5));
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(
+            res.blacklist.contains(&isolated_idx),
+            "blacklist={:?}",
+            res.blacklist
+        );
+        assert_eq!(
+            res.edge_shape_reasons.get(&isolated_idx).copied(),
+            Some("low-cardinal-degree")
+        );
+    }
+
+    #[test]
+    fn edge_shape_rejects_degree_one_dangling_point() {
+        let mut entries = clean_grid(2, 2, 20.0);
+        let dangling_idx = entries.len();
+        entries.push(entry(dangling_idx, 90.0, 50.0, 2, 0));
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(
+            res.blacklist.contains(&dangling_idx),
+            "blacklist={:?}",
+            res.blacklist
+        );
+        assert_eq!(res.edge_shape_diagnostics[&dangling_idx].cardinal_degree, 1);
+    }
+
+    #[test]
+    fn edge_shape_rejects_bad_continuation_across_vertex() {
+        let mut entries = clean_grid(3, 3, 20.0);
+        let target = entries
+            .iter_mut()
+            .find(|e| e.grid == (1, 1))
+            .expect("(1,1) present");
+        target.pixel.x += 8.0;
+        let target_idx = target.idx;
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(
+            res.blacklist.contains(&target_idx),
+            "blacklist={:?} diagnostics={:?}",
+            res.blacklist,
+            res.edge_shape_diagnostics.get(&target_idx)
+        );
+        assert_eq!(
+            res.edge_shape_reasons.get(&target_idx).copied(),
+            Some("bad-continuation")
+        );
+    }
+
+    #[test]
+    fn edge_shape_rejects_corner_with_no_valid_adjacent_cell() {
+        let mut entries = clean_grid(2, 2, 20.0);
+        let target = entries
+            .iter_mut()
+            .find(|e| e.grid == (1, 1))
+            .expect("(1,1) present");
+        target.pixel.x += 8.0;
+        let target_idx = target.idx;
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(
+            res.blacklist.contains(&target_idx),
+            "blacklist={:?} diagnostics={:?}",
+            res.blacklist,
+            res.edge_shape_diagnostics.get(&target_idx)
+        );
+        assert_eq!(
+            res.edge_shape_diagnostics[&target_idx].adjacent_cell_count,
+            1
+        );
+        assert_eq!(
+            res.edge_shape_reasons.get(&target_idx).copied(),
+            Some("no-valid-adjacent-cell")
+        );
+    }
+
+    #[test]
+    fn edge_shape_complete_two_by_two_cell_keeps_degree_two_corners() {
+        let entries = clean_grid(2, 2, 20.0);
+        let res = validate(&entries, 20.0, &edge_gate_params());
+        assert!(res.blacklist.is_empty(), "{:?}", res.blacklist);
+        for entry in &entries {
+            assert_eq!(res.edge_shape_diagnostics[&entry.idx].cardinal_degree, 2);
+            assert_eq!(
+                res.edge_shape_diagnostics[&entry.idx].valid_adjacent_cell_count,
+                1
+            );
+        }
     }
 
     #[test]

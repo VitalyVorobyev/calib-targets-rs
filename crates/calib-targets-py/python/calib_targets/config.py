@@ -901,6 +901,7 @@ class ChessboardParams:
     projective_line_tol_rel: float = 0.25
     line_min_members: int = 3
     local_h_tol_rel: float = 0.20
+    enable_final_edge_shape_check: bool = True
     max_validation_iters: int = 6
     # Stage 8 — recall boosters
     enable_weak_cluster_rescue: bool = True
@@ -944,6 +945,7 @@ class ChessboardParams:
             "projective_line_tol_rel": self.projective_line_tol_rel,
             "line_min_members": self.line_min_members,
             "local_h_tol_rel": self.local_h_tol_rel,
+            "enable_final_edge_shape_check": self.enable_final_edge_shape_check,
             "max_validation_iters": self.max_validation_iters,
             "enable_weak_cluster_rescue": self.enable_weak_cluster_rescue,
             "weak_cluster_tol_deg": self.weak_cluster_tol_deg,
@@ -990,6 +992,9 @@ class ChessboardParams:
             ),
             line_min_members=data.get("line_min_members", d.line_min_members),
             local_h_tol_rel=data.get("local_h_tol_rel", d.local_h_tol_rel),
+            enable_final_edge_shape_check=data.get(
+                "enable_final_edge_shape_check", d.enable_final_edge_shape_check
+            ),
             max_validation_iters=data.get(
                 "max_validation_iters", d.max_validation_iters
             ),
@@ -1071,6 +1076,11 @@ class CharucoBoardSpec:
             marker_layout=MarkerLayout(data.get("marker_layout", "opencv_charuco")),
         )
 
+def _charuco_chessboard_default() -> ChessboardParams:
+    params = ChessboardParams()
+    params.enable_final_edge_shape_check = False
+    return params
+
 
 @dataclass(slots=True)
 class CharucoParams:
@@ -1078,7 +1088,7 @@ class CharucoParams:
 
     board: CharucoBoardSpec
     px_per_square: float = 60.0
-    chessboard: ChessboardParams = field(default_factory=ChessboardParams)
+    chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
     max_hamming: int = 0
     min_marker_inliers: int = 3
@@ -1113,7 +1123,11 @@ class CharucoParams:
         return cls(
             board=CharucoBoardSpec.from_dict(board_data),
             px_per_square=data.get("px_per_square", d_px),
-            chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
+            chessboard=(
+                ChessboardParams.from_dict(data["chessboard"])
+                if "chessboard" in data
+                else _charuco_chessboard_default()
+            ),
             scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
             max_hamming=data.get("max_hamming", 0),
             min_marker_inliers=data.get("min_marker_inliers", 3),

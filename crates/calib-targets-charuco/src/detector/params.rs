@@ -192,6 +192,8 @@ impl CharucoParams {
             .into_iter()
             .map(|mut chessboard| {
                 chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
+                chessboard.tuning.enable_final_edge_shape_check =
+                    base.chessboard.tuning.enable_final_edge_shape_check;
                 Self {
                     chessboard,
                     ..base.clone()
@@ -210,6 +212,11 @@ impl CharucoParams {
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
         chessboard.tuning.min_corner_strength = 0.5;
+        // ChArUco has marker-ID and board-alignment validation after
+        // chessboard grid recovery. Keep the chessboard component
+        // recall-oriented here; the standalone chessboard detector
+        // still enables the stricter final edge-shape gate by default.
+        chessboard.tuning.enable_final_edge_shape_check = false;
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.marker_size_rel,

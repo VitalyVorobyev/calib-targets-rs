@@ -261,6 +261,10 @@ fn default_geometry_check_local_h_tol_rel() -> f32 {
     0.6
 }
 
+fn default_enable_final_edge_shape_check() -> bool {
+    true
+}
+
 fn default_stage6_local_h() -> bool {
     // Local-H `extend_boundary` is the production default: per-
     // candidate homography from the K nearest labelled corners +
@@ -622,6 +626,16 @@ pub struct ChessboardTuning {
     /// Default `0.6` of cell_size.
     #[serde(default = "default_geometry_check_local_h_tol_rel")]
     pub geometry_check_local_h_tol_rel: f32,
+    /// Enable the final local edge-shape gate for standalone
+    /// chessboard-v2 detections. The gate checks cardinal support,
+    /// adjacent-edge continuation, and complete-cell opposite-side
+    /// consistency after the labelled grid has been assembled.
+    ///
+    /// Default `true` for direct chessboard detection. Downstream
+    /// target-specific detectors with their own geometry/ID alignment
+    /// gates may disable it to preserve recall.
+    #[serde(default = "default_enable_final_edge_shape_check")]
+    pub enable_final_edge_shape_check: bool,
 
     // --- `extend_boundary` stage --------------------------------------------
     /// Use the per-candidate local-homography boundary extension
@@ -731,6 +745,7 @@ impl Default for ChessboardTuning {
             enable_post_geometry_rescue: default_enable_post_geometry_rescue(),
             geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
             geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
+            enable_final_edge_shape_check: default_enable_final_edge_shape_check(),
 
             enable_weak_cluster_rescue: true,
             weak_cluster_tol_deg: 18.0,

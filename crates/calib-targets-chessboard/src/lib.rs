@@ -34,7 +34,7 @@
 //! | 9     | `refit_cluster_centers`      | Re-estimate `{Θ₀, Θ₁}` from labelled corners; if the shift exceeds `refit_min_shift_deg`, run a second extension + rescue. |
 //! | 10    | `validate`                   | Line collinearity + local-H residual checks; blacklist outliers; restart `find_seed` through `validate` with the blacklist excluded. |
 //! | 11    | `apply_boosters`             | Recall boosters: interior gap fill + line extrapolation. |
-//! | 12    | `final_geometry_check`       | Mandatory precision gate: per-edge length + axis-slot-swap parity + largest cardinal component. Can only drop corners; never adds. |
+//! | 12    | `final_geometry_check`       | Mandatory precision gate: shared square-grid validation + local edge-shape checks + largest cardinal component. Can only drop corners; never adds. |
 //!
 //! Each stage is its own module or function; see the submodules.
 //!
