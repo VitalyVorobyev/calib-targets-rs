@@ -16,6 +16,14 @@ use super::types::GeometryCheckTrace;
 
 const MIN_EDGE_SHAPE_LABELS: usize = 40;
 
+/// A labelled corner is peeled by the weak-leaf rule only when its ChESS
+/// strength falls below this fraction of the labelled-set median. The
+/// genuine failure mode (weak corners in defocused / low-contrast regions
+/// on marker-bearing boards) sits at 0.16–0.48× the median; a legitimate
+/// distorted board's frontier sits at ≈1× (median 1.06× on the canonical
+/// heavy-distortion regression image), so this isolates the former.
+const WEAK_LEAF_SCORE_FRAC: f32 = 0.55;
+
 /// Mandatory final precision gate. Runs after every other stage and
 /// can only remove corners or refuse the detection — never add or
 /// relabel.
@@ -68,12 +76,12 @@ pub fn run_geometry_check(
         params.tuning.line_min_members,
         params.tuning.geometry_check_local_h_tol_rel,
     );
-    if matches!(
+    let edge_shape_active = matches!(
         params.graph_build_algorithm,
         GraphBuildAlgorithm::ChessboardV2
     ) && params.tuning.enable_final_edge_shape_check
-        && geom_entries.len() >= MIN_EDGE_SHAPE_LABELS
-    {
+        && geom_entries.len() >= MIN_EDGE_SHAPE_LABELS;
+    if edge_shape_active {
         geom_params = geom_params.with_edge_shape_gate(pg_validate::EdgeShapeParams::default());
     }
     if params.tuning.validate_step_aware {
@@ -97,6 +105,58 @@ pub fn run_geometry_check(
     // touching legitimate perspective-distorted corners.
     let mut all_drop: Set<usize> = Set::new();
     all_drop.extend(validate_drop.iter().copied());
+
+    // Test 2: weak-leaf peel. Iteratively drop a corner that is BOTH a
+    // graph leaf (cardinal degree <= 1 among surviving labels) AND weak
+    // in ChESS response relative to the frame (strength below
+    // WEAK_LEAF_SCORE_FRAC x the labelled-set median). Removing a leaf
+    // can NEVER disconnect the remaining graph, so unlike a blanket
+    // low-support / zero-cell prune this cannot fragment a legitimately
+    // sparse distorted detection and feed the largest-component filter
+    // below (which would otherwise amplify the loss). It peels weak
+    // appendage chains from their free end (the defocused dangling rows /
+    // leaves seen on marker-bearing boards) while leaving weak *bridges*
+    // intact — a bridge between two strong regions never becomes a leaf,
+    // so it is never peeled. The score gate spares the normal-strength
+    // frontier of a genuine distorted board. Gated to the same dense-grid
+    // regime as the edge-shape gate so sparse / marginal detections are
+    // untouched.
+    let mut weak_leaf_drop: Set<usize> = Set::new();
+    if edge_shape_active {
+        let mut strengths: Vec<f32> = grow_res
+            .labelled
+            .values()
+            .map(|&idx| augs[idx].strength)
+            .collect();
+        strengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median = strengths.get(strengths.len() / 2).copied().unwrap_or(0.0);
+        let weak_threshold = WEAK_LEAF_SCORE_FRAC * median;
+        loop {
+            let live: std::collections::HashMap<(i32, i32), usize> = grow_res
+                .labelled
+                .iter()
+                .filter(|(_, idx)| !all_drop.contains(idx))
+                .map(|(&k, &v)| (k, v))
+                .collect();
+            let mut progressed = false;
+            for (&(i, j), &idx) in &live {
+                if augs[idx].strength >= weak_threshold {
+                    continue;
+                }
+                let degree = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+                    .into_iter()
+                    .filter(|&(di, dj)| live.contains_key(&(i + di, j + dj)))
+                    .count();
+                if degree <= 1 && all_drop.insert(idx) {
+                    weak_leaf_drop.insert(idx);
+                    progressed = true;
+                }
+            }
+            if !progressed {
+                break;
+            }
+        }
+    }
 
     // Test 3: cardinally-connected components. A chessboard detection
     // is by construction one (i, j)-labelled connected planar graph;
@@ -164,7 +224,7 @@ pub fn run_geometry_check(
     all_drop.extend(disconnect_drop.iter().copied());
 
     let dropped_validate = validate_drop.difference(&edge_shape_drop).count() as u32;
-    let dropped_edge_only = edge_shape_drop.len() as u32;
+    let dropped_edge_only = (edge_shape_drop.len() + weak_leaf_drop.len()) as u32;
     let dropped_disconnected = disconnect_drop.len() as u32;
 
     for &idx in &all_drop {
