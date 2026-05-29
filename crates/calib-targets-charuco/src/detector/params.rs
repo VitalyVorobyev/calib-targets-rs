@@ -127,11 +127,13 @@ fn default_px_per_square() -> f32 {
 }
 
 fn default_min_marker_inliers() -> usize {
-    8
+    // Board-appropriate floor (the board-level matcher is the default; see
+    // `default_use_board_level_matcher`). The legacy vote matcher wants 8.
+    1
 }
 
 fn default_min_secondary_marker_inliers() -> usize {
-    2
+    1
 }
 
 fn default_bit_likelihood_slope() -> f32 {
@@ -157,7 +159,7 @@ fn default_cell_weight_border_threshold() -> f32 {
 }
 
 fn default_use_board_level_matcher() -> bool {
-    false
+    true
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -251,12 +253,24 @@ impl CharucoParams {
             board: *board,
             scan,
             max_hamming,
-            min_marker_inliers: 8,
-            min_secondary_marker_inliers: 2,
+            // Board-level soft-LL matcher is the default (see
+            // `use_board_level_matcher` below): it is robust on partial /
+            // blurry views where the legacy rotation+translation vote needs
+            // many markers, so it takes board-appropriate low inlier floors
+            // (1 primary / 1 secondary, gated by `alignment_min_margin`).
+            // The legacy fallback wants the higher 8 / 2 floors; callers
+            // opting into it should raise these.
+            min_marker_inliers: 1,
+            min_secondary_marker_inliers: 1,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
-            use_board_level_matcher: false,
+            // Default to the board-level soft-LL matcher: on the internal
+            // 22×22 regression set it is 120/120 with zero self-consistency
+            // wrong-ids, vs the legacy vote matcher's lower recall and
+            // higher wrong-id noise. The legacy matcher stays a documented
+            // opt-in (`use_board_level_matcher = false`).
+            use_board_level_matcher: true,
             bit_likelihood_slope: default_bit_likelihood_slope(),
             per_bit_floor: default_per_bit_floor(),
             alignment_min_margin: default_alignment_min_margin(),

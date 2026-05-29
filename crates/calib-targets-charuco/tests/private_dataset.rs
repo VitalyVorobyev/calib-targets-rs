@@ -125,6 +125,11 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
     if use_board_matcher {
         params.min_marker_inliers = 1;
         params.min_secondary_marker_inliers = 1;
+    } else {
+        // `for_board` now defaults to the board matcher's low inlier floors;
+        // restore the legacy vote matcher's higher floors for this path.
+        params.min_marker_inliers = 8;
+        params.min_secondary_marker_inliers = 2;
     }
     let detector = CharucoDetector::new(params).expect("detector");
 
@@ -231,8 +236,12 @@ fn smoke_apriltag_image_does_not_panic() {
     // Legacy matcher path: the target_0 AprilTag board has 1.69 mm cells
     // and even at 3× upscale the per-cell hard-threshold decode returns
     // zero markers. Assert the detector errors out cleanly rather than
-    // panicking.
+    // panicking. `for_board` now defaults to the board matcher, so opt the
+    // legacy vote matcher in explicitly (with its higher inlier floors).
     let mut params = CharucoParams::for_board(&spec);
+    params.use_board_level_matcher = false;
+    params.min_marker_inliers = 8;
+    params.min_secondary_marker_inliers = 2;
     let detector = CharucoDetector::new(params.clone()).expect("detector");
     let view = GrayImageView {
         width: snap.width() as usize,
