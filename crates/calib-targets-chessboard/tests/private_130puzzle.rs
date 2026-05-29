@@ -65,6 +65,18 @@ const MIN_FULL_SWEEP_TOPOLOGICAL_DETECTIONS: usize = 119;
 /// hard contract.
 const MIN_TOPOLOGICAL_LABELLED_PER_SNAP: usize = 250;
 
+/// Dataset-wide ceiling on independent wrong-label-edge audit hits across
+/// the topological sweep. The topological wrong-label check
+/// (`geometry_check::topological_wrong_label_drops`) brought the
+/// grossly-overlong cardinal-edge count from 78 (gate disabled) down to a
+/// single sparse-frontier edge that sits below the check's local-sample
+/// floor. This audit is deliberately *independent* of the detector's own
+/// predicate (it uses the per-frame global median edge length, not the
+/// local same-direction reference the check uses), so it is a real
+/// regression tripwire. Bumping it higher is a precision regression —
+/// fix the check, not the gate.
+const MAX_TOPOLOGICAL_OVERLONG_EDGES: usize = 2;
+
 fn dataset_dir() -> PathBuf {
     if let Ok(custom) = std::env::var("CALIB_PUZZLE_PRIVATE_DATASET") {
         return PathBuf::from(custom);
@@ -140,6 +152,51 @@ fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {
     );
 }
 
+/// Independent wrong-label-edge audit — deliberately NOT reusing the
+/// detector's own predicate. Returns `(overlong, collapsed)`:
+/// - `overlong`: cardinal edges longer than 1.6× the per-frame **global**
+///   median cardinal-edge length (a skipped-corner / diagonal boundary).
+/// - `collapsed`: pairs of distinct `(i, j)` labels closer than 0.2× that
+///   median in pixels (the duplicate-pixel fold the topological grid can
+///   produce in defocused bands).
+///
+/// Both are wrong-label signatures the topological geometry gate must
+/// remove. Using the global median (rather than the local same-direction
+/// reference the check itself uses) keeps this an independent verifier.
+fn audit_wrong_label_edges(detection: &ChessboardDetection) -> (usize, usize) {
+    let by_grid: std::collections::HashMap<(i32, i32), (f32, f32)> = detection
+        .corners
+        .iter()
+        .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
+        .collect();
+    let mut lens: Vec<f32> = Vec::new();
+    for (&(i, j), &(x, y)) in &by_grid {
+        for (di, dj) in [(1, 0), (0, 1)] {
+            if let Some(&(nx, ny)) = by_grid.get(&(i + di, j + dj)) {
+                lens.push(((nx - x).powi(2) + (ny - y).powi(2)).sqrt());
+            }
+        }
+    }
+    if lens.is_empty() {
+        return (0, 0);
+    }
+    lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let l_med = lens[lens.len() / 2];
+    let overlong = lens.iter().filter(|&&l| l > 1.6 * l_med).count();
+
+    let pts: Vec<(f32, f32)> = by_grid.values().copied().collect();
+    let eps2 = (0.2 * l_med).powi(2);
+    let mut collapsed = 0usize;
+    for (a, &(ax, ay)) in pts.iter().enumerate() {
+        for &(bx, by) in &pts[a + 1..] {
+            if (ax - bx).powi(2) + (ay - by).powi(2) < eps2 {
+                collapsed += 1;
+            }
+        }
+    }
+    (overlong, collapsed)
+}
+
 #[test]
 fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
     if !dataset_present_or_skip("puzzle130_smoke_target15_snap0_keeps_large_grid") {
@@ -158,6 +215,41 @@ fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
         detection.corners.len()
     );
     assert_detection_invariants(&detection, "target_15 snap 0");
+}
+
+/// Fast topological-path gate. The default `cargo test` smoke above
+/// exercises `ChessboardV2`; this one exercises the topological builder —
+/// the puzzle default — on a frame (`target_13` snap 0) that, with the
+/// wrong-label check disabled, carries a duplicate-pixel label fold and
+/// interior skipped-corner edges. The check must remove them while
+/// keeping the dense grid, so this locks the structural-check contract
+/// into the default test pass (not just the `#[ignore]` sweep).
+#[test]
+fn puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels() {
+    if !dataset_present_or_skip("puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels") {
+        return;
+    }
+
+    let snap = load_snap(13, 0);
+    let corners = detect_corners(&snap, &default_chess_config());
+    let detection = default_topological_detector()
+        .detect(&corners)
+        .expect("target_13 snap 0 must produce a topological detection");
+    assert!(
+        detection.corners.len() >= MIN_TOPOLOGICAL_LABELLED_PER_SNAP,
+        "target_13 snap 0 labelled {} corners, expected >= {MIN_TOPOLOGICAL_LABELLED_PER_SNAP}",
+        detection.corners.len()
+    );
+    assert_detection_invariants(&detection, "target_13 snap 0 topological");
+    let (overlong, collapsed) = audit_wrong_label_edges(&detection);
+    assert_eq!(
+        collapsed, 0,
+        "target_13 snap 0: {collapsed} duplicate-pixel label pair(s) survived the topological wrong-label check"
+    );
+    assert_eq!(
+        overlong, 0,
+        "target_13 snap 0: {overlong} overlong wrong-label edge(s) survived the topological wrong-label check"
+    );
 }
 
 #[test]
@@ -217,6 +309,8 @@ fn puzzle130_full_topological_recall_contract() {
     let mut any_detection = 0usize;
     let mut meaningful = 0usize;
     let mut total_labelled = 0usize;
+    let mut overlong_total = 0usize;
+    let mut collapsed_total = 0usize;
 
     for target_idx in 0..NUM_TARGETS {
         let path = target_path(target_idx);
@@ -238,6 +332,9 @@ fn puzzle130_full_topological_recall_contract() {
             total_labelled += labelled;
             let context = format!("target_{target_idx} snap {snap_idx}");
             assert_detection_invariants(&detection, &context);
+            let (overlong, collapsed) = audit_wrong_label_edges(&detection);
+            overlong_total += overlong;
+            collapsed_total += collapsed;
             let meaningful_marker = if labelled >= MIN_TOPOLOGICAL_LABELLED_PER_SNAP {
                 meaningful += 1;
                 "OK"
@@ -262,5 +359,16 @@ fn puzzle130_full_topological_recall_contract() {
     assert!(
         any_detection >= MIN_FULL_SWEEP_TOPOLOGICAL_DETECTIONS,
         "130x130_puzzle topological recall regression: any-detection {any_detection}/{frames}, expected >= {MIN_FULL_SWEEP_TOPOLOGICAL_DETECTIONS}"
+    );
+    eprintln!(
+        "130x130_puzzle topological wrong-label audit: overlong edges = {overlong_total}, duplicate-pixel pairs = {collapsed_total}"
+    );
+    assert_eq!(
+        collapsed_total, 0,
+        "130x130_puzzle topological produced {collapsed_total} duplicate-pixel label pair(s) (expected 0)"
+    );
+    assert!(
+        overlong_total <= MAX_TOPOLOGICAL_OVERLONG_EDGES,
+        "130x130_puzzle topological wrong-label-edge regression: {overlong_total} overlong edges > {MAX_TOPOLOGICAL_OVERLONG_EDGES}"
     );
 }
