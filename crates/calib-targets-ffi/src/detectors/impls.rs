@@ -23,10 +23,10 @@ use crate::{
     convert_puzzleboard_params, copy_output_slice, ct_charuco_detector_t, ct_chessboard_detector_t,
     ct_marker_board_detector_t, ct_puzzleboard_detector_t, labeled_corner_to_ffi,
     map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
-    map_puzzleboard_detect_error, marker_detection_to_ffi, require_mut_ref, require_ref,
-    validate_output_buffer, write_json_string, write_optional_result, write_required_len,
-    CharucoDetector, ChessboardDetector, FfiError, FfiResult, MarkerBoardDetector,
-    PreparedGrayImage, PuzzleBoardDetector,
+    map_puzzleboard_detect_error, marker_detection_to_ffi, option_f32_to_ffi, require_mut_ref,
+    require_ref, validate_output_buffer, write_json_string, write_optional_result,
+    write_required_len, CharucoDetector, ChessboardDetector, FfiError, FfiResult,
+    MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
 };
 use std::ffi::c_char;
 
@@ -141,6 +141,7 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
         .collect();
     let result = ct_chessboard_result_t {
         corners_len: corners_out.len(),
+        cell_size: option_f32_to_ffi(detection.cell_size),
     };
 
     // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
@@ -405,6 +406,7 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
         .iter()
         .map(|d| ct_chessboard_result_t {
             corners_len: d.corners.len(),
+            cell_size: option_f32_to_ffi(d.cell_size),
         })
         .collect();
     let corners_out: Vec<ct_chessboard_corner_t> = detections

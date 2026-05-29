@@ -308,13 +308,19 @@ pub struct ct_chessboard_corner_t {
 
 /// Chessboard detection header.
 ///
-/// Carries only the labelled-corner count; the corners themselves are
-/// copied into the caller-provided `ct_chessboard_corner_t` array.
+/// Carries the labelled-corner count plus the seed-derived grid pitch;
+/// the corners themselves are copied into the caller-provided
+/// `ct_chessboard_corner_t` array.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_result_t {
     /// Number of labelled corners in the detection.
     pub corners_len: usize,
+    /// Grid pitch in pixels, when known. Mirrors the stable
+    /// `ChessboardDetection::cell_size` (the seed-derived square spacing).
+    /// `has_value == CT_TRUE` carries the pitch; `CT_FALSE` means the
+    /// detector did not record one (e.g. an empty / failed detection).
+    pub cell_size: ct_optional_f32_t,
 }
 
 /// ChArUco detection header.

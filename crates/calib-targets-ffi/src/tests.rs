@@ -379,6 +379,13 @@ fn chessboard_detect_supports_query_and_copy() {
     assert_eq!(status, ct_status_t::CT_STATUS_OK);
     assert_eq!(result.corners_len, 77);
     assert_eq!(corners_len, 77);
+    // A real detection records the seed-derived grid pitch.
+    assert_eq!(result.cell_size.has_value, CT_TRUE);
+    assert!(
+        result.cell_size.value > 0.0,
+        "cell_size {} should be a positive pitch",
+        result.cell_size.value
+    );
 
     let mut short = vec![ct_chessboard_corner_t::default(); corners_len - 1];
     bufs.out_corners = short.as_mut_ptr();

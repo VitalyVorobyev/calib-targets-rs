@@ -917,6 +917,18 @@ pub(crate) fn chessboard_corner_to_ffi(corner: &ChessboardCorner) -> ct_chessboa
     }
 }
 
+/// Map a Rust `Option<f32>` onto the fixed-ABI optional-float wrapper.
+///
+/// `Some(v)` becomes `ct_optional_f32_t::some(v)`; `None` becomes
+/// `ct_optional_f32_t::none()`. Used to carry
+/// `ChessboardDetection::cell_size` across the C ABI.
+pub(crate) fn option_f32_to_ffi(value: Option<f32>) -> ct_optional_f32_t {
+    match value {
+        Some(v) => ct_optional_f32_t::some(v),
+        None => ct_optional_f32_t::none(),
+    }
+}
+
 pub(crate) fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_detection_t {
     let corners_img = marker
         .corners_img

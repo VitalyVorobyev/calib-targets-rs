@@ -297,14 +297,22 @@ typedef struct ct_chessboard_detect_args_t {
 /**
  * Chessboard detection header.
  *
- * Carries only the labelled-corner count; the corners themselves are
- * copied into the caller-provided `ct_chessboard_corner_t` array.
+ * Carries the labelled-corner count plus the seed-derived grid pitch;
+ * the corners themselves are copied into the caller-provided
+ * `ct_chessboard_corner_t` array.
  */
 typedef struct ct_chessboard_result_t {
   /**
    * Number of labelled corners in the detection.
    */
   size_t corners_len;
+  /**
+   * Grid pitch in pixels, when known. Mirrors the stable
+   * `ChessboardDetection::cell_size` (the seed-derived square spacing).
+   * `has_value == CT_TRUE` carries the pitch; `CT_FALSE` means the
+   * detector did not record one (e.g. an empty / failed detection).
+   */
+  struct ct_optional_f32_t cell_size;
 } ct_chessboard_result_t;
 
 /**

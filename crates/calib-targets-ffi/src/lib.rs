@@ -35,7 +35,7 @@ use crate::convert::{
     convert_charuco_detector_params, convert_chess_config, convert_chessboard_params,
     convert_marker_board_params, convert_puzzleboard_params, labeled_corner_to_ffi,
     map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
-    map_puzzleboard_detect_error, marker_detection_to_ffi,
+    map_puzzleboard_detect_error, marker_detection_to_ffi, option_f32_to_ffi,
 };
 use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiError, FfiResult};
 
