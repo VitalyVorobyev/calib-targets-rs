@@ -23,6 +23,7 @@
 //! - Grid alignment and target detection types.
 #![deny(missing_docs)]
 
+mod bit_likelihood;
 mod chess;
 mod corner;
 mod grid_alignment;
@@ -34,6 +35,7 @@ mod logger;
 mod orientation_clustering;
 mod rectify;
 
+pub use bit_likelihood::log_sigmoid;
 pub use grid_smoothness::square_predict_grid_position;
 pub use homography::{
     estimate_homography_rect_to_img, estimate_homography_with_quality, homography_from_4pt,

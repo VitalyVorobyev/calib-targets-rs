@@ -26,7 +26,7 @@ toml = "0.8"
 
 [[bin]]
 name = "bench"
-path = "src/bin/bench.rs"
+path = "src/bin/bench/main.rs"
 
 [[bin]]
 name = "topo_stage_timing"

@@ -123,6 +123,14 @@ see [Older releases](#older-releases) at the bottom for the index.
     knobs into an `"advanced": { ... }` block to carry them forward. The
     nested block is omitted entirely when no advanced tuning is set.
 
+  - **Removed the unused `projective_line_tol_rel` advanced knob from the
+    Python `ChessboardParams`.** The field was serialized into the advanced
+    block but never read by the Rust detector, so it was a no-op; removing it
+    has no effect on detection. It lived in the opt-in, non-semver `advanced`
+    surface. Drop the keyword from any `ChessboardParams(...)` call that set
+    it; serialized configs that still carry the key continue to deserialize
+    (the extra key is ignored).
+
   - **Bindings:** the FFI `ct_chessboard_params_t` keeps the stable fields
     directly and gates the advanced knobs behind a `has_advanced` flag plus a
     nested `ct_chessboard_advanced_t` (regenerate against the updated header).

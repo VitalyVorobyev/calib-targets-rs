@@ -11,7 +11,7 @@ use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::{rotate_code_u64, sample_cell, CellSamples, MarkerCell, MarkerDetection};
 use calib_targets_core::{
-    GrayImageView, GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4,
+    log_sigmoid, GrayImageView, GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4,
 };
 use nalgebra::Point2;
 use serde::Serialize;
@@ -552,14 +552,6 @@ fn cell_weight(s: &CellSamples, cfg: &BoardMatchConfig) -> f32 {
     }
     let ratio = s.border_black_fraction / cfg.cell_weight_border_threshold;
     ratio.clamp(0.0, 1.0)
-}
-
-fn log_sigmoid(x: f32) -> f32 {
-    if x >= 0.0 {
-        -(1.0 + (-x).exp()).ln()
-    } else {
-        x - (1.0 + x.exp()).ln()
-    }
 }
 
 fn translation_window(mapped: &[GridCoords], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {

@@ -876,7 +876,6 @@ _ADVANCED_SCALAR_FIELDS = (
     "step_tol",
     "edge_axis_tol_deg",
     "line_tol_rel",
-    "projective_line_tol_rel",
     "line_min_members",
     "local_h_tol_rel",
     "enable_final_edge_shape_check",
@@ -949,7 +948,6 @@ class ChessboardParams:
     edge_axis_tol_deg: float = 15.0
     # Stage 7 — validate
     line_tol_rel: float = 0.18
-    projective_line_tol_rel: float = 0.25
     line_min_members: int = 3
     local_h_tol_rel: float = 0.20
     enable_final_edge_shape_check: bool = True
