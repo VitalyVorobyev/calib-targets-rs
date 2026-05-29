@@ -32,10 +32,13 @@ per target, with a shared corner vocabulary.
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
+Upgrading from an earlier release? See the [Migration Guide](MIGRATION.md)
+([book chapter][migration]).
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/
 [api]: https://vitalyvorobyev.github.io/calib-targets-rs/api
 [getting-started]: https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html
+[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/migration.html
 
 ## Main ideas
 

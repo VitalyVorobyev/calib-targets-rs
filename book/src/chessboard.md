@@ -359,7 +359,12 @@ pipeline is scale-invariant once `s` is known.
 ## 7. Debugging via `DebugFrame`
 
 `Detector::detect_with_diagnostics` and `detect_all_with_diagnostics` return
-a `DebugFrame` per detection attempt. Key fields:
+a `DebugFrame` per detection attempt. Both entry points — and the whole
+`diagnostics` module (`DebugFrame`, the per-stage traces, `StageCounts`,
+`DEBUG_FRAME_SCHEMA`) — are gated behind the `diagnostics` cargo feature,
+which is **OFF by default**: the hot `detect()` path builds no trace.
+Enable `diagnostics` (or the `dataset` feature, which implies it) to access
+this surface. Key fields:
 
 - `schema: u32` — `DEBUG_FRAME_SCHEMA = 1` today; bumped on shape change.
   Overlay scripts gate on this.
@@ -369,8 +374,10 @@ a `DebugFrame` per detection attempt. Key fields:
   Each carries `iter`, `labelled_count`, `new_blacklist`, `converged`.
 - `boosters: Option<BoosterResult>` — additions from Stage 8.
 - `detection: Option<ChessboardDetection>` — final output (`None` if
-  min-corners gate failed or no seed). `grid_directions` and `cell_size`
-  remain on the `DebugFrame` itself, not on this result.
+  min-corners gate failed or no seed). The stable `cell_size` is also
+  carried on `ChessboardDetection` (the seed-derived grid pitch, populated
+  on the normal `detect()` path); `grid_directions` lives only on the
+  `DebugFrame`.
 - `corners: Vec<CornerAug>` — every input corner with its terminal stage:
   `Raw`, `Strong`, `NoCluster`, `Clustered`, `AttachmentAmbiguous`,
   `AttachmentFailedInvariants`, `Labeled { at, local_h_residual_px }`,
@@ -396,6 +403,11 @@ fn detect(corners: &[ChessCorner]) {
     let det = Detector::new(params);
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());
+        // `cell_size` (the seed-derived grid pitch in px) is populated on the
+        // normal `detect()` path; `Option<f32>`, so `None` on edge cases.
+        if let Some(pitch) = d.cell_size {
+            println!("grid pitch ≈ {pitch:.1} px");
+        }
         for c in &d.corners {
             // `grid` is non-optional; `input_index` points back into `corners`.
             println!(

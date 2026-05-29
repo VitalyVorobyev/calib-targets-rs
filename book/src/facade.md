@@ -58,3 +58,12 @@ let result = detect::detect_puzzleboard_best(&img, &configs);
 
 - `image` (default): enables `calib_targets::detect`.
 - `tracing`: enables tracing output across the subcrates.
+- `diagnostics` (off): forwards to `calib-targets-chessboard/diagnostics`
+  and gates `detect_chessboard_with_diagnostics` (the `DebugFrame`
+  channel). The chessboard detector builds no per-stage trace on the hot
+  `detect_chessboard` path unless this is enabled (the `dataset` feature
+  on `calib-targets-chessboard` implies it). The other detectors'
+  diagnostics (`detect_*_with_diagnostics`) are always available.
+
+See the [Migration Guide](migration.md) for the full breaking-change
+list when upgrading from an earlier release.

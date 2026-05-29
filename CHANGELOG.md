@@ -9,6 +9,17 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+This release finalizes the public API surface ahead of a stable tag. The
+breaking changes group into four themes: (1) public config / spec / result
+types are `#[non_exhaustive]` with named constructors; (2) chessboard
+diagnostics moved behind an opt-in `diagnostics` cargo feature and
+`cell_size` returned to `ChessboardDetection`; (3) chessboard per-stage
+tuning moved behind an opt-in, semver-exempt `advanced` block; and
+(4) language bindings were re-mirrored to match. Detection behaviour and
+the default-config serialized JSON are unchanged. See
+[`MIGRATION.md`](MIGRATION.md) for before/after snippets (Rust, JSON
+config, Python).
+
 ### Breaking
 
 - **Public API-surface hygiene: config / spec / report / result types are now
@@ -78,7 +89,12 @@ see [Older releases](#older-releases) at the bottom for the index.
     path with the seed-derived grid pitch). Construct via
     `ChessboardDetection::new(...)` + `with_cell_size(...)`. The type stays
     `#[non_exhaustive]`, so reading code is unaffected; code constructing it
-    by literal across crates must route through the constructor.
+    by literal across crates must route through the constructor. The field is
+    mirrored across all three bindings: Python (`cell_size: float | None`),
+    WASM (`cell_size: number | null`), and FFI — `ct_chessboard_result_t`
+    gains a `cell_size: ct_optional_f32_t` field (`has_value == CT_TRUE`
+    carries the pitch), an additive ABI change; regenerate against the
+    updated C header.
 
   - **The `calib_targets` facade gains a matching `diagnostics` feature**
     (OFF by default) that forwards to `calib_targets_chessboard/diagnostics`
@@ -87,7 +103,8 @@ see [Older releases](#older-releases) at the bottom for the index.
   - **Behaviour on the `detect()` path is byte-identical**: the same labelled
     `ChessboardDetection` (now also carrying `cell_size`). The language
     bindings (Python, WASM, FFI) enable `diagnostics` unconditionally, so
-    their diagnostic entry points and the generated C header are unchanged.
+    their diagnostic entry points are unchanged; the only generated C-header
+    delta is the additive `cell_size` field noted above.
 
 - **Chessboard tuning is now an opt-in, doc-unstable `advanced` surface.**
   The ~40 per-stage chessboard tuning knobs that previously lived flat on

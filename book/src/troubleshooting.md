@@ -38,16 +38,23 @@ the binary, not in a parent process.
 ## `detect_chessboard` returns `None`
 
 The detector has no single error variant — a `None` return means
-some stage failed to converge. To diagnose, use
-`detect_chessboard_debug` to get a full `DebugFrame` and follow the
-chain:
+some stage failed to converge. To diagnose, enable the `diagnostics`
+cargo feature on `calib-targets` and use
+`detect_chessboard_with_diagnostics` to get a full `DebugFrame`
+(off by default; the hot `detect()` path no longer builds one) and
+follow the chain:
 
-```rust,no_run
-use calib_targets::detect::detect_chessboard_debug;
+```rust,ignore
+// Requires `calib-targets = { ..., features = ["diagnostics"] }`.
+use calib_targets::detect::{default_chess_config, detect_chessboard_with_diagnostics};
 use calib_targets::chessboard::DetectorParams;
 # let img: image::GrayImage = todo!();
 
-let frame = detect_chessboard_debug(&img, &DetectorParams::default());
+let frame = detect_chessboard_with_diagnostics(
+    &img,
+    &default_chess_config(),
+    &DetectorParams::default(),
+);
 println!("stage counts: {:#?}", frame.corners.iter().fold(
     std::collections::HashMap::new(),
     |mut acc, c| {

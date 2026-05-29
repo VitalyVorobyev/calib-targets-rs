@@ -4,7 +4,7 @@
 
 Native-feeling Python API for the `calib-targets` Rust workspace.
 Detects chessboards, ChArUco, PuzzleBoard, and marker boards, and
-generates printable target bundles (JSON + SVG + PNG). Built with
+generates printable target bundles (JSON + SVG + PNG + DXF). Built with
 [PyO3](https://pyo3.rs) + [maturin](https://www.maturin.rs).
 
 Python package name: `calib_targets` (the Rust crate is
@@ -159,7 +159,7 @@ One-liner helpers with sensible defaults (A4 portrait, 10 mm margins, 300 DPI):
 doc = ct.charuco_document(rows=5, cols=7, square_size_mm=20.0,
                           marker_size_rel=0.75, dictionary="DICT_4X4_50")
 written = ct.write_target_bundle(doc, "out/charuco_a4")
-print(written.json_path, written.svg_path, written.png_path)
+print(written.json_path, written.svg_path, written.png_path, written.dxf_path)
 ```
 
 Other helpers: `chessboard_document`, `puzzleboard_document`,
@@ -223,6 +223,14 @@ json.load(open(path)))`-compatible.
 
 Dict-based configuration is rejected in the new API; use the typed
 dataclasses.
+
+`ChessboardParams` keeps the per-stage tuning knobs flat for ergonomics,
+but `to_dict()` now nests everything except the four stable fields
+(`graph_build_algorithm`, `min_labeled_corners`, `max_components`,
+`min_corner_strength`) under an `"advanced"` block — matching the Rust
+wire format. These advanced knobs are not covered by semver. The unused
+`projective_line_tol_rel` knob was removed (it was a no-op); drop it from
+any `ChessboardParams(...)` call that set it.
 
 ## Feature parity vs Rust facade
 

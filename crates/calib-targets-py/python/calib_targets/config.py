@@ -787,9 +787,9 @@ class TopologicalParams:
     """Tuning knobs for ``projective_grid::detect_grid_all``.
 
     Defaults match the Rust workspace defaults in
-    ``crates/projective-grid/src/detect/square/topological/mod.rs`` and have been
-    co-tuned against ``02-topo-grid`` (Gemini chessboards) and
-    ``130x130_puzzle``.
+    ``crates/projective-grid/src/detect/square/topological/mod.rs`` and have
+    been co-tuned against internal regression sets covering both chessboard
+    and PuzzleBoard captures.
     """
 
     axis_align_tol_rad: float = 0.2617993877991494  # 15°

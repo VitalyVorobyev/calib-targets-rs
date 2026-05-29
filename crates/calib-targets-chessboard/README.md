@@ -59,9 +59,11 @@ fn detect_multi(corners: &[ChessCorner]) {
 
 ## Outputs
 
-`Detector::detect` returns `Option<ChessboardDetection>` — a single field,
-`corners: Vec<ChessboardCorner>`, the labelled corner set rebased to a
-non-negative bounding box and sorted by `(j, i)`. Each `ChessboardCorner`:
+`Detector::detect` returns `Option<ChessboardDetection>` — the labelled
+corner set (`corners: Vec<ChessboardCorner>`, rebased to a non-negative
+bounding box and sorted by `(j, i)`) plus a stable
+`cell_size: Option<f32>` carrying the seed-derived grid pitch in pixels
+(populated on the normal `detect()` path). Each `ChessboardCorner`:
 
 | Field | Meaning |
 |---|---|
@@ -73,8 +75,11 @@ non-negative bounding box and sorted by `(j, i)`. Each `ChessboardCorner`:
 `detect_with_diagnostics` / `detect_all_with_diagnostics` return
 [`DebugFrame`] — full per-stage telemetry (corner outcomes, iteration
 traces, booster results, the seed grid directions and cell size) emitted
-as schema-versioned JSON. The fitted cell size and grid-axis angles, which
-are not part of the result contract, are reachable there.
+as schema-versioned JSON. These entry points and the whole `diagnostics`
+module are gated behind the **`diagnostics` cargo feature (off by
+default)** — the hot `detect()` path builds no trace. The grid-axis
+angles, which are not part of the result contract, are reachable there;
+the cell size is also carried on the result (`ChessboardDetection::cell_size`).
 
 ## Configuration
 
@@ -158,7 +163,8 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
 | Feature | Default | Effect |
 |---|---|---|
 | `tracing` | off | Adds `#[tracing::instrument]` to detector entry points. |
-| `dataset` | off | Pulls in `serde_json` for the `run_dataset` and `debug_single` examples. |
+| `diagnostics` | off | Exposes the `diagnostics` module (`DebugFrame`, per-stage traces, `StageCounts`, `DEBUG_FRAME_SCHEMA`) and the `detect*_with_diagnostics` entry points. Without it the hot path builds no trace. |
+| `dataset` | off | Pulls in `serde_json` for the `run_dataset` and `debug_single` examples; implies `diagnostics`. |
 
 ## Examples and benches
 
