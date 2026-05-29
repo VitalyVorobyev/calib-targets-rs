@@ -46,6 +46,7 @@ fn main() {
     let mut upscale: u32 = 1;
     let mut algorithm = GraphBuildAlgorithm::ChessboardV2;
     let mut timing_only = false;
+    let mut min_corner_strength: f32 = 0.0;
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -60,6 +61,10 @@ fn main() {
                 upscale = raw.parse().expect("--upscale value must be u32");
             }
             "--timing-only" => timing_only = true,
+            "--min-corner-strength" => {
+                let raw = args.next().expect("--min-corner-strength needs a value");
+                min_corner_strength = raw.parse().expect("--min-corner-strength must be f32");
+            }
             other => {
                 eprintln!("unknown arg: {other}");
                 std::process::exit(2);
@@ -87,6 +92,8 @@ fn main() {
     let chess_cfg = default_chess_config();
     let mut detector_params = DetectorParams::default();
     detector_params.graph_build_algorithm = algorithm;
+    detector_params.tuning.min_corner_strength = min_corner_strength;
+    eprintln!("min_corner_strength={min_corner_strength}");
 
     let mut n_frames = 0usize;
     let mut n_detected = 0usize;

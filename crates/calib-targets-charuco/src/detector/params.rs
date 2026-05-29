@@ -211,7 +211,22 @@ impl CharucoParams {
     /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.tuning.min_corner_strength = 0.5;
+        // Absolute ChESS-strength floor. In defocused regions the corner
+        // detector fires weakly on ArUco-marker bit saddles that align with
+        // a grid extrapolation; those false corners are grid-consistent
+        // (they pass the homography validation) and so survive into the
+        // ChArUco product as biased corners — geometry alone cannot reject
+        // them (the weak-frontier ceiling). Cutting weak corners *before*
+        // the grid grows keeps the grid out of the blur entirely, which on
+        // the private regression set clears every reviewed marker-bit false
+        // corner (zero product-false), and — because the marker cells are
+        // sampled from that grid — also *improves* marker decode (fewer
+        // spurious cells), recovering frames the looser floor lost. The cost
+        // is the weakest blurred-margin corners (least useful for
+        // calibration). The board alignment is a *location* tool, never a
+        // corner-drop gate, so this floor — not marker presence — is the
+        // precision lever.
+        chessboard.tuning.min_corner_strength = 33.0;
         // ChArUco has marker-ID and board-alignment validation after
         // chessboard grid recovery. Keep the chessboard component
         // recall-oriented here; the standalone chessboard detector

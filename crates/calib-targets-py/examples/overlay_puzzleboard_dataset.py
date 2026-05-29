@@ -45,6 +45,9 @@ NATIVE_SNAP_HEIGHT = 540
 MASTER_ROWS = 501
 MASTER_COLS = 501
 
+# Master (row, col) index-label stride; overridden by --label-stride. 1 = all.
+LABEL_STRIDE = 1
+
 
 def parse_frame_name(name: str) -> tuple[int, int] | None:
     stem = name.split(".")[0]
@@ -157,6 +160,22 @@ def draw_success(
         ys = [c["y"] for c in labelled]
         colors = [master_colour(c["mi"], c["mj"]) for c in labelled]
         ax.scatter(xs, ys, s=18, c=colors, edgecolors="black", linewidths=0.3, zorder=5)
+        # Master (row, col) index labels. Stride thins them on dense boards;
+        # the absolute numbers let a reviewer spot skipped corners (an index
+        # that jumps by 2) and verify the decoded origin.
+        stride = max(1, int(LABEL_STRIDE))
+        for c in labelled:
+            if stride > 1 and (c["mi"] % stride or c["mj"] % stride):
+                continue
+            ax.text(
+                c["x"] + 2,
+                c["y"] - 2,
+                f"{c['mi']},{c['mj']}",
+                fontsize=3.5,
+                color="white",
+                bbox=dict(boxstyle="square,pad=0.05", fc="black", ec="none", alpha=0.5),
+                zorder=6,
+            )
 
     comps = _connected_components(list(range(len(labelled))), adjacency)
     comp_sizes = sorted((len(c) for c in comps), reverse=True)
@@ -301,7 +320,7 @@ def draw_overlay(
     ax.axis("off")
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, bbox_inches="tight")
+    fig.savefig(out_path, bbox_inches="tight", dpi=200)
     plt.close(fig)
 
     stats["status"] = status
@@ -318,7 +337,13 @@ def main() -> None:
                         help="directory of per-snap PuzzleboardFrameReport JSONs")
     parser.add_argument("--out", required=True, type=Path,
                         help="directory to write overlay PNGs")
+    parser.add_argument("--label-stride", type=int, default=1,
+                        help="draw master (row,col) text every Nth corner "
+                             "(1 = all; raise to declutter dense boards)")
     args = parser.parse_args()
+
+    global LABEL_STRIDE
+    LABEL_STRIDE = max(1, args.label_stride)
 
     frame_paths = sorted(
         (p for p in args.frames.iterdir()
