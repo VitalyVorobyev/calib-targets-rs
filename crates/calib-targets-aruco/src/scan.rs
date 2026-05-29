@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use tracing::instrument;
 
 /// Decoder configuration for scanning markers.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ScanDecodeConfig {
@@ -45,7 +46,52 @@ impl Default for ScanDecodeConfig {
     }
 }
 
+impl ScanDecodeConfig {
+    /// Override the marker border width in cells.
+    #[must_use]
+    pub fn with_border_bits(mut self, border_bits: usize) -> Self {
+        self.border_bits = border_bits;
+        self
+    }
+
+    /// Override the per-cell edge inset fraction.
+    #[must_use]
+    pub fn with_inset_frac(mut self, inset_frac: f32) -> Self {
+        self.inset_frac = inset_frac;
+        self
+    }
+
+    /// Override the marker side length relative to the square cell.
+    #[must_use]
+    pub fn with_marker_size_rel(mut self, marker_size_rel: f32) -> Self {
+        self.marker_size_rel = marker_size_rel;
+        self
+    }
+
+    /// Override the minimum border-black ratio required to accept a cell.
+    #[must_use]
+    pub fn with_min_border_score(mut self, min_border_score: f32) -> Self {
+        self.min_border_score = min_border_score;
+        self
+    }
+
+    /// Set whether to keep only the best detection per marker id.
+    #[must_use]
+    pub fn with_dedup_by_id(mut self, dedup_by_id: bool) -> Self {
+        self.dedup_by_id = dedup_by_id;
+        self
+    }
+
+    /// Set whether to try multiple binarization thresholds per cell.
+    #[must_use]
+    pub fn with_multi_threshold(mut self, multi_threshold: bool) -> Self {
+        self.multi_threshold = multi_threshold;
+        self
+    }
+}
+
 /// Optional overrides for marker scanning and matching.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct ArucoScanConfig {
     /// Override the matcher's maximum allowed Hamming distance. `None`

@@ -3,6 +3,7 @@
 use crate::Dictionary;
 
 /// A dictionary match for an observed marker code.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Match {
     /// Marker id in the dictionary.
@@ -11,6 +12,17 @@ pub struct Match {
     pub rotation: u8,
     /// Hamming distance between observed and dictionary code (after rotation).
     pub hamming: u8,
+}
+
+impl Match {
+    /// Build a match from its decoded fields.
+    pub fn new(id: u32, rotation: u8, hamming: u8) -> Self {
+        Self {
+            id,
+            rotation,
+            hamming,
+        }
+    }
 }
 
 /// Matcher for a fixed dictionary.

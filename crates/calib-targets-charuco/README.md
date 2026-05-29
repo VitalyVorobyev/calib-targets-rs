@@ -38,14 +38,8 @@ use calib_targets_charuco::{
 use calib_targets_core::{Corner, GrayImageView};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let board = CharucoBoardSpec {
-        rows: 5,
-        cols: 7,
-        cell_size: 1.0,
-        marker_size_rel: 0.70,
-        dictionary: builtins::DICT_4X4_50,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(5, 7, 1.0, 0.70, builtins::DICT_4X4_50)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
     let detector = CharucoDetector::new(CharucoParams::for_board(&board))?;
 
     let pixels = vec![0u8; 32 * 32];

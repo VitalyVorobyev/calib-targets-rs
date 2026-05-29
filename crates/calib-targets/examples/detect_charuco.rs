@@ -17,14 +17,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
-    let board = CharucoBoardSpec {
-        rows: 22,
-        cols: 22,
-        cell_size: 1.0,
-        marker_size_rel: 0.75,
-        dictionary: builtins::DICT_4X4_1000,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(22, 22, 1.0, 0.75, builtins::DICT_4X4_1000)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let params = calib_targets::charuco::CharucoParams::for_board(&board);
     let result = detect::detect_charuco(&img, &params)?;

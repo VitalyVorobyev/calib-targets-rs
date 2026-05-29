@@ -18,25 +18,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
-    let layout = MarkerBoardSpec {
-        rows: 22,
-        cols: 22,
-        cell_size: Some(1.0),
-        circles: [
-            MarkerCircleSpec {
-                cell: CellCoords { i: 11, j: 11 },
-                polarity: CirclePolarity::White,
-            },
-            MarkerCircleSpec {
-                cell: CellCoords { i: 12, j: 11 },
-                polarity: CirclePolarity::Black,
-            },
-            MarkerCircleSpec {
-                cell: CellCoords { i: 12, j: 12 },
-                polarity: CirclePolarity::White,
-            },
+    let layout = MarkerBoardSpec::new(
+        22,
+        22,
+        [
+            MarkerCircleSpec::new(CellCoords { i: 11, j: 11 }, CirclePolarity::White),
+            MarkerCircleSpec::new(CellCoords { i: 12, j: 11 }, CirclePolarity::Black),
+            MarkerCircleSpec::new(CellCoords { i: 12, j: 12 }, CirclePolarity::White),
         ],
-    };
+    )
+    .with_cell_size(1.0);
 
     let params = MarkerBoardParams::new(layout);
     let result = detect::detect_marker_board(&img, &params);

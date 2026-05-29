@@ -8,6 +8,7 @@ use crate::circle_score::{CirclePolarity, CircleScoreParams};
 use crate::coords::{CellCoords, CellOffset};
 
 /// One expected marker circle on the board.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MarkerCircleSpec {
     /// Expected cell coordinate (top-left corner indices).
@@ -16,7 +17,15 @@ pub struct MarkerCircleSpec {
     pub polarity: CirclePolarity,
 }
 
+impl MarkerCircleSpec {
+    /// Build a marker-circle spec for a cell with the given polarity.
+    pub fn new(cell: CellCoords, polarity: CirclePolarity) -> Self {
+        Self { cell, polarity }
+    }
+}
+
 /// Fixed marker board layout: chessboard size plus 3 circle markers.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardSpec {
     /// Number of inner-corner rows of the checkerboard.
@@ -30,6 +39,28 @@ pub struct MarkerBoardSpec {
     pub cell_size: Option<f32>,
     /// Expected circle markers.
     pub circles: [MarkerCircleSpec; 3],
+}
+
+impl MarkerBoardSpec {
+    /// Build a marker-board layout from its checkerboard size and the three
+    /// expected circle markers. The square size defaults to unset; attach it
+    /// with [`MarkerBoardSpec::with_cell_size`].
+    pub fn new(rows: u32, cols: u32, circles: [MarkerCircleSpec; 3]) -> Self {
+        Self {
+            rows,
+            cols,
+            cell_size: None,
+            circles,
+        }
+    }
+
+    /// Attach a square size (world units, e.g. millimeters), enabling
+    /// `target_position` on detections.
+    #[must_use]
+    pub fn with_cell_size(mut self, cell_size: f32) -> Self {
+        self.cell_size = Some(cell_size);
+        self
+    }
 }
 
 impl Default for MarkerBoardSpec {
@@ -125,6 +156,7 @@ fn default_marker_chessboard_params() -> DetectorParams {
 }
 
 /// Result of matching expected circles to detected candidates.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CircleMatch {
     /// The expected circle this entry describes.
@@ -138,6 +170,33 @@ pub struct CircleMatch {
     /// Detected-to-board cell offset implied by this match; `None` when
     /// unmatched.
     pub offset_cells: Option<CellOffset>,
+}
+
+impl CircleMatch {
+    /// Build an unmatched entry for an expected circle.
+    pub fn unmatched(expected: MarkerCircleSpec) -> Self {
+        Self {
+            expected,
+            matched_index: None,
+            distance_cells: None,
+            offset_cells: None,
+        }
+    }
+
+    /// Record the matched candidate, its cell-space distance, and the implied
+    /// detected-to-board offset.
+    #[must_use]
+    pub fn with_match(
+        mut self,
+        matched_index: usize,
+        distance_cells: f32,
+        offset_cells: CellOffset,
+    ) -> Self {
+        self.matched_index = Some(matched_index);
+        self.distance_cells = Some(distance_cells);
+        self.offset_cells = Some(offset_cells);
+        self
+    }
 }
 
 /// Marker-board detection result.

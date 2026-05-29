@@ -87,29 +87,48 @@ pub struct CharucoParams {
     ///
     /// Default: `false` (legacy rotation + translation vote alignment).
     /// Opt in by setting this to `true` when decoding difficult targets
-    /// such as small-cell AprilTag boards; the ChArUco regression sweep on
-    /// `privatedata/target_0.png` goes from 0/6 to 3/6 detected frames
-    /// with the board-level matcher, and the flagship dataset improves
-    /// wrong-id count from 3 to 0.
+    /// such as small-cell AprilTag boards; on our internal regression set
+    /// the board-level matcher recovers frames the legacy vote drops and
+    /// removes the residual wrong-id labels.
     #[serde(default = "default_use_board_level_matcher")]
     pub use_board_level_matcher: bool,
     /// Logistic slope κ used in the soft-bit log-likelihood when
     /// [`Self::use_board_level_matcher`] is `true`. Larger = more confident
     /// per bit; 8–16 is a reasonable range.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Clip floor applied to each per-bit log-likelihood term before
     /// summing across bits, so a single wildly-wrong bit cannot dominate
     /// a cell score.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
     /// Minimum `(best − runner-up) / |best|` margin required for the
     /// board-level matcher to accept a hypothesis. Below this, detection
     /// is rejected rather than mislabelled.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
     /// Border-black fraction threshold below which a cell's weight is
     /// attenuated linearly toward 0 in the board-level score.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_cell_weight_border_threshold")]
     pub cell_weight_border_threshold: f32,
 }
@@ -249,15 +268,13 @@ impl CharucoParams {
         advanced.enable_final_edge_shape_check = false;
         chessboard = chessboard.with_advanced(advanced);
 
-        let scan = ScanDecodeConfig {
-            marker_size_rel: board.marker_size_rel,
-            inset_frac: 0.06,
+        let scan = ScanDecodeConfig::default()
+            .with_marker_size_rel(board.marker_size_rel)
+            .with_inset_frac(0.06)
             // Lower than the default (0.85) — downstream alignment validation
             // rejects false positives, so a looser bar here improves recall on
             // blurry or unevenly-lit images.
-            min_border_score: 0.75,
-            ..ScanDecodeConfig::default()
-        };
+            .with_min_border_score(0.75);
 
         let max_hamming = board.dictionary.max_correction_bits().min(2);
 

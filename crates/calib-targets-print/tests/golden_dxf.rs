@@ -22,15 +22,17 @@ use calib_targets_print::{
 const GOLDEN_PATH: &str = "tests/golden/charuco_3x3_dict4x4_50.dxf";
 
 fn canonical_doc() -> PrintableTargetDocument {
-    PrintableTargetDocument::new(TargetSpec::Charuco(CharucoTargetSpec {
-        rows: 3,
-        cols: 3,
-        square_size_mm: 12.0,
-        marker_size_rel: 0.7,
-        dictionary: builtin_dictionary("DICT_4X4_50").expect("DICT_4X4_50"),
-        marker_layout: MarkerLayout::OpenCvCharuco,
-        border_bits: 1,
-    }))
+    PrintableTargetDocument::new(TargetSpec::Charuco(
+        CharucoTargetSpec::new(
+            3,
+            3,
+            12.0,
+            0.7,
+            builtin_dictionary("DICT_4X4_50").expect("DICT_4X4_50"),
+        )
+        .with_marker_layout(MarkerLayout::OpenCvCharuco)
+        .with_border_bits(1),
+    ))
 }
 
 #[test]

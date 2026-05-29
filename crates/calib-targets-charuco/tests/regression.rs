@@ -169,14 +169,8 @@ fn detects_charuco_on_large_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let dict = builtins::builtin_dictionary("DICT_4X4_1000").expect("builtin dict");
-    let board = CharucoBoardSpec {
-        rows: 22,
-        cols: 22,
-        cell_size: 1.0,
-        marker_size_rel: 0.75,
-        dictionary: dict,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(22, 22, 1.0, 0.75, dict)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let mut params = CharucoParams::for_board(&board);
     // This regression was tuned for the legacy rotation+translation vote
@@ -289,14 +283,8 @@ fn run_public_charuco(case: &PublicCase) {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let dict = builtins::builtin_dictionary(dict_name).expect("builtin dict");
-    let board = CharucoBoardSpec {
-        rows,
-        cols,
-        cell_size,
-        marker_size_rel: 0.75,
-        dictionary: dict,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(rows, cols, cell_size, 0.75, dict)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let mut params = CharucoParams::for_board(&board);
     params.px_per_square = 60.0;
@@ -418,14 +406,8 @@ fn detects_charuco_on_small_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let dict = builtins::builtin_dictionary("DICT_4X4_250").expect("builtin dict");
-    let board = CharucoBoardSpec {
-        rows: 22,
-        cols: 22,
-        cell_size: 5.2,
-        marker_size_rel: 0.75,
-        dictionary: dict,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(22, 22, 5.2, 0.75, dict)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let mut params = CharucoParams::for_board(&board);
     params.px_per_square = 60.0;

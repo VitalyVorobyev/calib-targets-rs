@@ -7,7 +7,7 @@ mod convert;
 mod gray;
 
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
-use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
 use calib_targets_core::DetectorConfig;
@@ -202,14 +202,13 @@ fn charuco_board_spec(
             dictionary_name
         ))
     })?;
-    Ok(CharucoBoardSpec {
+    Ok(CharucoBoardSpec::new(
         rows,
         cols,
-        cell_size: 1.0,
-        marker_size_rel: marker_size_rel as f32,
+        1.0,
+        marker_size_rel as f32,
         dictionary,
-        marker_layout: MarkerLayout::default(),
-    })
+    ))
 }
 
 /// Wrap a target spec in a `PrintableTargetDocument` sized to fit the board
@@ -220,20 +219,18 @@ fn fitted_document(
     height_mm: f64,
     dpi: u32,
 ) -> PrintableTargetDocument {
-    let mut doc = PrintableTargetDocument::new(target);
-    doc.page = PageSpec {
-        size: PageSize::Custom {
+    let page = PageSpec::default()
+        .with_size(PageSize::Custom {
             width_mm: width_mm + 20.0,
             height_mm: height_mm + 20.0,
-        },
-        margin_mm: 5.0,
-        ..PageSpec::default()
-    };
-    doc.render = RenderOptions {
-        debug_annotations: false,
-        png_dpi: dpi,
-    };
-    doc
+        })
+        .with_margin_mm(5.0);
+    let render = RenderOptions::default()
+        .with_debug_annotations(false)
+        .with_png_dpi(dpi);
+    PrintableTargetDocument::new(target)
+        .with_page(page)
+        .with_render(render)
 }
 
 /// Build a target spec + fitted document and render the full
@@ -286,11 +283,11 @@ fn chessboard_target_and_extent(
     inner_cols: u32,
     square_size_mm: f64,
 ) -> (TargetSpec, f64, f64) {
-    let target = TargetSpec::Chessboard(ChessboardTargetSpec {
+    let target = TargetSpec::Chessboard(ChessboardTargetSpec::new(
         inner_rows,
         inner_cols,
         square_size_mm,
-    });
+    ));
     let w = f64::from(inner_cols + 1) * square_size_mm;
     let h = f64::from(inner_rows + 1) * square_size_mm;
     (target, w, h)
@@ -309,15 +306,13 @@ fn charuco_target_and_extent(
             dictionary_name
         ))
     })?;
-    let target = TargetSpec::Charuco(CharucoTargetSpec {
+    let target = TargetSpec::Charuco(CharucoTargetSpec::new(
         rows,
         cols,
         square_size_mm,
         marker_size_rel,
         dictionary,
-        marker_layout: MarkerLayout::default(),
-        border_bits: 1,
-    });
+    ));
     let w = f64::from(cols) * square_size_mm;
     let h = f64::from(rows) * square_size_mm;
     Ok((target, w, h))
@@ -328,13 +323,12 @@ fn marker_board_target_and_extent(
     inner_cols: u32,
     square_size_mm: f64,
 ) -> (TargetSpec, f64, f64) {
-    let target = TargetSpec::MarkerBoard(MarkerBoardTargetSpec {
+    let target = TargetSpec::MarkerBoard(MarkerBoardTargetSpec::new(
         inner_rows,
         inner_cols,
         square_size_mm,
-        circles: MarkerBoardTargetSpec::default_circles(inner_rows, inner_cols),
-        circle_diameter_rel: 0.5,
-    });
+        MarkerBoardTargetSpec::default_circles(inner_rows, inner_cols),
+    ));
     let w = f64::from(inner_cols + 1) * square_size_mm;
     let h = f64::from(inner_rows + 1) * square_size_mm;
     (target, w, h)
@@ -345,14 +339,7 @@ fn puzzleboard_target_and_extent(
     cols: u32,
     square_size_mm: f64,
 ) -> (TargetSpec, f64, f64) {
-    let target = TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec {
-        rows,
-        cols,
-        square_size_mm,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    });
+    let target = TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec::new(rows, cols, square_size_mm));
     let w = f64::from(cols) * square_size_mm;
     let h = f64::from(rows) * square_size_mm;
     (target, w, h)

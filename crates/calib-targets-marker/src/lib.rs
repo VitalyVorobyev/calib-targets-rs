@@ -16,25 +16,16 @@
 //!     MarkerCircleSpec,
 //! };
 //!
-//! let layout = MarkerBoardSpec {
-//!     rows: 6,
-//!     cols: 8,
-//!     cell_size: Some(1.0),
-//!     circles: [
-//!         MarkerCircleSpec {
-//!             cell: CellCoords { i: 2, j: 2 },
-//!             polarity: CirclePolarity::White,
-//!         },
-//!         MarkerCircleSpec {
-//!             cell: CellCoords { i: 3, j: 2 },
-//!             polarity: CirclePolarity::Black,
-//!         },
-//!         MarkerCircleSpec {
-//!             cell: CellCoords { i: 2, j: 3 },
-//!             polarity: CirclePolarity::White,
-//!         },
+//! let layout = MarkerBoardSpec::new(
+//!     6,
+//!     8,
+//!     [
+//!         MarkerCircleSpec::new(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+//!         MarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+//!         MarkerCircleSpec::new(CellCoords { i: 2, j: 3 }, CirclePolarity::White),
 //!     ],
-//! };
+//! )
+//! .with_cell_size(1.0);
 //!
 //! let params = MarkerBoardParams::new(layout);
 //! let detector = MarkerBoardDetector::new(params);

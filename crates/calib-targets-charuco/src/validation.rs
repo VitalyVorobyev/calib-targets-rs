@@ -17,6 +17,7 @@ pub enum LinkCheckMode {
 }
 
 /// One reported marker-corner link.
+#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MarkerCornerLink {
     /// ID of the marker.
@@ -25,7 +26,18 @@ pub struct MarkerCornerLink {
     pub corner_id: u32,
 }
 
+impl MarkerCornerLink {
+    /// Build a marker-to-corner link.
+    pub fn new(marker_id: u32, corner_id: u32) -> Self {
+        Self {
+            marker_id,
+            corner_id,
+        }
+    }
+}
+
 /// Collection of reported marker-corner links plus validation mode.
+#[non_exhaustive]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CharucoMarkerCornerLinks {
     /// The reported marker-to-corner links to validate.
@@ -33,6 +45,23 @@ pub struct CharucoMarkerCornerLinks {
     /// How strictly to validate the links.
     #[serde(default)]
     pub mode: LinkCheckMode,
+}
+
+impl CharucoMarkerCornerLinks {
+    /// Build a link collection with the default validation mode.
+    pub fn new(links: Vec<MarkerCornerLink>) -> Self {
+        Self {
+            links,
+            mode: LinkCheckMode::default(),
+        }
+    }
+
+    /// Override the validation strictness.
+    #[must_use]
+    pub fn with_mode(mut self, mode: LinkCheckMode) -> Self {
+        self.mode = mode;
+        self
+    }
 }
 
 /// Specific violation encountered while validating marker-corner links.
@@ -56,6 +85,7 @@ pub enum LinkViolationKind {
 }
 
 /// One validation error with context.
+#[non_exhaustive]
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct LinkViolation {
     /// ID of the marker the violation concerns.
@@ -66,6 +96,35 @@ pub struct LinkViolation {
     pub expected: Option<[u32; 4]>,
     /// The specific kind of violation.
     pub kind: LinkViolationKind,
+}
+
+impl LinkViolation {
+    /// Build a violation for a marker and violation kind. The reported corner
+    /// ID and expected-corner set default to unset; attach them with
+    /// [`LinkViolation::with_reported_corner_id`] and
+    /// [`LinkViolation::with_expected`].
+    pub fn new(marker_id: u32, kind: LinkViolationKind) -> Self {
+        Self {
+            marker_id,
+            reported_corner_id: None,
+            expected: None,
+            kind,
+        }
+    }
+
+    /// Attach the reported corner ID the violation concerns.
+    #[must_use]
+    pub fn with_reported_corner_id(mut self, reported_corner_id: u32) -> Self {
+        self.reported_corner_id = Some(reported_corner_id);
+        self
+    }
+
+    /// Attach the four corner IDs expected for the marker.
+    #[must_use]
+    pub fn with_expected(mut self, expected: [u32; 4]) -> Self {
+        self.expected = Some(expected);
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

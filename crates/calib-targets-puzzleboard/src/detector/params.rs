@@ -104,18 +104,33 @@ pub struct PuzzleBoardDecodeConfig {
     /// clean match. Higher values produce sharper soft-match/soft-mismatch
     /// separation. Only used under
     /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    ///
+    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
+    /// and may be retuned, retyped, or removed between minor versions as the
+    /// decoder evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Lower bound applied to each per-bit `log_sigmoid` contribution.
     /// Prevents a single catastrophically wrong bit from dominating the
     /// hypothesis score. Only used under
     /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    ///
+    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
+    /// and may be retuned, retyped, or removed between minor versions as the
+    /// decoder evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
     /// Minimum per-observation score gap between the winning hypothesis and
     /// the runner-up. Detections below this gate are rejected with
     /// [`crate::detector::error::PuzzleBoardDetectError::DecodeFailed`].
     /// Only used under [`PuzzleBoardScoringMode::SoftLogLikelihood`].
+    ///
+    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
+    /// and may be retuned, retyped, or removed between minor versions as the
+    /// decoder evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
 }

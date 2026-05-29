@@ -32,16 +32,16 @@ use calib_targets_marker::{
     MarkerCircleSpec,
 };
 
-let layout = MarkerBoardSpec {
-    rows: 6,
-    cols: 8,
-    cell_size: Some(1.0),
-    circles: [
-        MarkerCircleSpec { cell: CellCoords { i: 2, j: 2 }, polarity: CirclePolarity::White },
-        MarkerCircleSpec { cell: CellCoords { i: 3, j: 2 }, polarity: CirclePolarity::Black },
-        MarkerCircleSpec { cell: CellCoords { i: 2, j: 3 }, polarity: CirclePolarity::White },
+let layout = MarkerBoardSpec::new(
+    6,
+    8,
+    [
+        MarkerCircleSpec::new(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+        MarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+        MarkerCircleSpec::new(CellCoords { i: 2, j: 3 }, CirclePolarity::White),
     ],
-};
+)
+.with_cell_size(1.0);
 
 let params = MarkerBoardParams::new(layout);
 let detector = MarkerBoardDetector::new(params);
@@ -130,24 +130,22 @@ are a known-good starting point.
 
 ```rust,no_run
 use calib_targets::printable::{
-    write_target_bundle, MarkerBoardTargetSpec, PrintableTargetDocument, TargetSpec,
+    write_target_bundle, MarkerBoardTargetSpec, MarkerCircleSpec, PrintableTargetDocument,
+    TargetSpec,
 };
-use calib_targets_marker::{CellCoords, CirclePolarity, MarkerCircleSpec};
+use calib_targets_marker::CirclePolarity;
 
 fn demo() -> Result<(), Box<dyn std::error::Error>> {
-    let doc = PrintableTargetDocument::new(TargetSpec::MarkerBoard(
-        MarkerBoardTargetSpec {
-            inner_rows: 5,
-            inner_cols: 7,
-            square_size_mm: 25.0,
-            circles: [
-                MarkerCircleSpec { cell: CellCoords { i: 3, j: 2 }, polarity: CirclePolarity::White },
-                MarkerCircleSpec { cell: CellCoords { i: 4, j: 2 }, polarity: CirclePolarity::Black },
-                MarkerCircleSpec { cell: CellCoords { i: 4, j: 3 }, polarity: CirclePolarity::White },
-            ],
-            circle_diameter_rel: 0.5,
-        },
-    ));
+    let doc = PrintableTargetDocument::new(TargetSpec::MarkerBoard(MarkerBoardTargetSpec::new(
+        5,
+        7,
+        25.0,
+        [
+            MarkerCircleSpec::new(3, 2, CirclePolarity::White),
+            MarkerCircleSpec::new(4, 2, CirclePolarity::Black),
+            MarkerCircleSpec::new(4, 3, CirclePolarity::White),
+        ],
+    )));
     write_target_bundle(&doc, "tmpdata/printable/marker_a4")?;
     Ok(())
 }

@@ -35,6 +35,7 @@ pub struct TopologicalCornerTrace {
 
 /// One final `(u, v) -> source_index` label.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TopologicalLabelTrace {
     /// First square-grid coordinate.
     pub u: i32,
@@ -42,6 +43,13 @@ pub struct TopologicalLabelTrace {
     pub v: i32,
     /// Source index of the labelled input feature.
     pub source_index: usize,
+}
+
+impl TopologicalLabelTrace {
+    /// Build a label trace entry mapping grid `(u, v)` to a source index.
+    pub fn new(u: i32, v: i32, source_index: usize) -> Self {
+        Self { u, v, source_index }
+    }
 }
 
 /// One connected labelled component.

@@ -8,6 +8,7 @@ use super::error::PrintableTargetError;
 ///
 /// `inner_rows × inner_cols` refers to the number of *inner corner
 /// intersections* (not squares).
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChessboardTargetSpec {
     /// Number of inner corner-intersection rows.
@@ -16,6 +17,18 @@ pub struct ChessboardTargetSpec {
     pub inner_cols: u32,
     /// Side length of one square in millimeters.
     pub square_size_mm: f64,
+}
+
+impl ChessboardTargetSpec {
+    /// Build a printable chessboard target from its inner-corner grid size and
+    /// square size in millimeters.
+    pub fn new(inner_rows: u32, inner_cols: u32, square_size_mm: f64) -> Self {
+        Self {
+            inner_rows,
+            inner_cols,
+            square_size_mm,
+        }
+    }
 }
 
 pub(crate) fn validate_inner_corner_grid(

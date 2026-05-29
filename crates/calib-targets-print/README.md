@@ -42,13 +42,11 @@ use calib_targets_print::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec {
-        inner_rows: 7,
-        inner_cols: 9,
-        square_size_mm: 20.0,
-    }));
-    doc.page = PageSpec { size: PageSize::A4, ..doc.page };
-    doc.render = RenderOptions { png_dpi: 300, ..doc.render };
+    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec::new(
+        7, 9, 20.0,
+    )))
+    .with_page(PageSpec::default().with_size(PageSize::A4))
+    .with_render(RenderOptions::default().with_png_dpi(300));
     write_target_bundle(&doc, "tmpdata/printable/chessboard_a4")?;
     Ok(())
 }

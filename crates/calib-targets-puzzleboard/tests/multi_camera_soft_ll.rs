@@ -57,14 +57,7 @@ fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8
 /// `(per_view_alignment, per_view_target_positions)`. `None` entries mean
 /// the view failed to decode under that mode.
 fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
-    let spec = PuzzleBoardTargetSpec {
-        rows: 20,
-        cols: 20,
-        square_size_mm: 8.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(20, 20, 8.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 220.0,

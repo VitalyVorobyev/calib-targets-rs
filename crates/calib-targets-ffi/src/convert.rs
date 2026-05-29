@@ -459,14 +459,22 @@ pub(crate) fn convert_scan_decode_config(
     if params.border_bits == 0 {
         return Err(FfiError::config_error("scan.border_bits must be > 0"));
     }
-    Ok(ScanDecodeConfig {
-        border_bits: params.border_bits,
-        inset_frac: require_nonnegative(params.inset_frac, "scan.inset_frac")?,
-        marker_size_rel: require_positive(params.marker_size_rel, "scan.marker_size_rel")?,
-        min_border_score: require_fraction(params.min_border_score, "scan.min_border_score")?,
-        dedup_by_id: flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?,
-        multi_threshold: flag_to_bool(params.multi_threshold, "scan.multi_threshold")?,
-    })
+    Ok(ScanDecodeConfig::default()
+        .with_border_bits(params.border_bits)
+        .with_inset_frac(require_nonnegative(params.inset_frac, "scan.inset_frac")?)
+        .with_marker_size_rel(require_positive(
+            params.marker_size_rel,
+            "scan.marker_size_rel",
+        )?)
+        .with_min_border_score(require_fraction(
+            params.min_border_score,
+            "scan.min_border_score",
+        )?)
+        .with_dedup_by_id(flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?)
+        .with_multi_threshold(flag_to_bool(
+            params.multi_threshold,
+            "scan.multi_threshold",
+        )?))
 }
 
 pub(crate) fn convert_dictionary_id(
@@ -517,14 +525,17 @@ pub(crate) fn convert_marker_layout(
 pub(crate) fn convert_charuco_board_spec(
     params: &ct_charuco_board_spec_t,
 ) -> FfiResult<CharucoBoardSpec> {
-    Ok(CharucoBoardSpec {
-        rows: params.rows,
-        cols: params.cols,
-        cell_size: require_positive(params.cell_size, "charuco.cell_size")?,
-        marker_size_rel: require_positive(params.marker_size_rel, "charuco.marker_size_rel")?,
-        dictionary: convert_dictionary_id(params.dictionary, "charuco.dictionary")?,
-        marker_layout: convert_marker_layout(params.marker_layout, "charuco.marker_layout")?,
-    })
+    Ok(CharucoBoardSpec::new(
+        params.rows,
+        params.cols,
+        require_positive(params.cell_size, "charuco.cell_size")?,
+        require_positive(params.marker_size_rel, "charuco.marker_size_rel")?,
+        convert_dictionary_id(params.dictionary, "charuco.dictionary")?,
+    )
+    .with_marker_layout(convert_marker_layout(
+        params.marker_layout,
+        "charuco.marker_layout",
+    )?))
 }
 
 pub(crate) fn convert_charuco_detector_params(
@@ -589,13 +600,13 @@ pub(crate) fn convert_marker_circle_spec(
     spec: &ct_marker_circle_spec_t,
     field: &str,
 ) -> FfiResult<MarkerCircleSpec> {
-    Ok(MarkerCircleSpec {
-        cell: CellCoords {
+    Ok(MarkerCircleSpec::new(
+        CellCoords {
             i: spec.cell.i,
             j: spec.cell.j,
         },
-        polarity: convert_circle_polarity(spec.polarity, &format!("{field}.polarity"))?,
-    })
+        convert_circle_polarity(spec.polarity, &format!("{field}.polarity"))?,
+    ))
 }
 
 pub(crate) fn convert_marker_board_layout(
@@ -606,19 +617,16 @@ pub(crate) fn convert_marker_board_layout(
             "marker.layout.rows and marker.layout.cols must be > 0",
         ));
     }
-    Ok(MarkerBoardSpec {
-        rows: layout.rows,
-        cols: layout.cols,
-        cell_size: match optional_f32_to_option(&layout.cell_size, "marker.layout.cell_size")? {
-            Some(value) => Some(require_positive(value, "marker.layout.cell_size")?),
-            None => None,
-        },
-        circles: [
-            convert_marker_circle_spec(&layout.circles[0], "marker.layout.circles[0]")?,
-            convert_marker_circle_spec(&layout.circles[1], "marker.layout.circles[1]")?,
-            convert_marker_circle_spec(&layout.circles[2], "marker.layout.circles[2]")?,
-        ],
-    })
+    let circles = [
+        convert_marker_circle_spec(&layout.circles[0], "marker.layout.circles[0]")?,
+        convert_marker_circle_spec(&layout.circles[1], "marker.layout.circles[1]")?,
+        convert_marker_circle_spec(&layout.circles[2], "marker.layout.circles[2]")?,
+    ];
+    let mut spec = MarkerBoardSpec::new(layout.rows, layout.cols, circles);
+    if let Some(value) = optional_f32_to_option(&layout.cell_size, "marker.layout.cell_size")? {
+        spec = spec.with_cell_size(require_positive(value, "marker.layout.cell_size")?);
+    }
+    Ok(spec)
 }
 
 pub(crate) fn convert_circle_score_params(

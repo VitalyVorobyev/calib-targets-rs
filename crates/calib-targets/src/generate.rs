@@ -21,7 +21,6 @@
 //! ```
 
 use calib_targets_aruco::Dictionary;
-use calib_targets_charuco::MarkerLayout;
 use calib_targets_print::{
     CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
     PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
@@ -37,11 +36,11 @@ pub fn chessboard_document(
     inner_cols: u32,
     square_size_mm: f64,
 ) -> PrintableTargetDocument {
-    PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec {
+    PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec::new(
         inner_rows,
         inner_cols,
         square_size_mm,
-    }))
+    )))
 }
 
 /// Build a ChArUco printable document with default page and render settings.
@@ -56,15 +55,13 @@ pub fn charuco_document(
     marker_size_rel: f64,
     dictionary: Dictionary,
 ) -> PrintableTargetDocument {
-    PrintableTargetDocument::new(TargetSpec::Charuco(CharucoTargetSpec {
+    PrintableTargetDocument::new(TargetSpec::Charuco(CharucoTargetSpec::new(
         rows,
         cols,
         square_size_mm,
         marker_size_rel,
         dictionary,
-        marker_layout: MarkerLayout::default(),
-        border_bits: 1,
-    }))
+    )))
 }
 
 /// Build a PuzzleBoard printable document with default page and render settings.
@@ -73,14 +70,11 @@ pub fn charuco_document(
 /// dot diameter (1/3 of the square size). Mutate the returned target's fields to move
 /// the origin or tune the dot size.
 pub fn puzzleboard_document(rows: u32, cols: u32, square_size_mm: f64) -> PrintableTargetDocument {
-    PrintableTargetDocument::new(TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec {
+    PrintableTargetDocument::new(TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec::new(
         rows,
         cols,
         square_size_mm,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    }))
+    )))
 }
 
 /// Build a marker-board printable document with default page and render settings.
@@ -108,13 +102,12 @@ pub fn marker_board_document_with_circles(
     square_size_mm: f64,
     circles: [MarkerCircleSpec; 3],
 ) -> PrintableTargetDocument {
-    PrintableTargetDocument::new(TargetSpec::MarkerBoard(MarkerBoardTargetSpec {
+    PrintableTargetDocument::new(TargetSpec::MarkerBoard(MarkerBoardTargetSpec::new(
         inner_rows,
         inner_cols,
         square_size_mm,
         circles,
-        circle_diameter_rel: 0.5,
-    }))
+    )))
 }
 
 #[cfg(test)]

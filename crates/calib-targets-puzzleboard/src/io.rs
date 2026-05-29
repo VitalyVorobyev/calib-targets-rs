@@ -21,6 +21,7 @@ pub enum PuzzleBoardIoError {
 }
 
 /// Top-level detector config read from JSON.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PuzzleBoardDetectConfig {
     /// Path to the input image to run detection on.
@@ -37,6 +38,7 @@ pub struct PuzzleBoardDetectConfig {
 }
 
 /// End-to-end report for one detection run.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct PuzzleBoardDetectReport {
     /// Path of the image detection was run on.
@@ -45,7 +47,28 @@ pub struct PuzzleBoardDetectReport {
     pub result: PuzzleBoardDetectionResult,
 }
 
+impl PuzzleBoardDetectReport {
+    /// Build a report pairing an input image path with its detection result.
+    pub fn new(image_path: impl Into<PathBuf>, result: PuzzleBoardDetectionResult) -> Self {
+        Self {
+            image_path: image_path.into(),
+            result,
+        }
+    }
+}
+
 impl PuzzleBoardDetectConfig {
+    /// Build a config for an input image and detector parameters. The optional
+    /// report path and ChESS detector config default to unset.
+    pub fn new(image_path: impl Into<PathBuf>, detector: PuzzleBoardParams) -> Self {
+        Self {
+            image_path: image_path.into(),
+            output_path: None,
+            chess_config: None,
+            detector,
+        }
+    }
+
     /// Deserialise from a JSON string.
     pub fn from_json_str(s: &str) -> Result<Self, PuzzleBoardIoError> {
         Ok(serde_json::from_str(s)?)

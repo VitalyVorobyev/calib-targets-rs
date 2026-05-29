@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 pub type MarkerBoardIoError = IoError;
 
 /// Configuration for marker board detection, loadable from JSON.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkerBoardDetectConfig {
     /// Path to the input image to run detection on.
@@ -28,6 +29,17 @@ pub struct MarkerBoardDetectConfig {
 }
 
 impl MarkerBoardDetectConfig {
+    /// Build a config for an input image and marker-board parameters. The
+    /// optional report path and ChESS detector config default to unset.
+    pub fn new(image_path: impl Into<String>, marker: MarkerBoardParams) -> Self {
+        Self {
+            image_path: image_path.into(),
+            output_path: None,
+            chess: DetectorConfig::default(),
+            marker,
+        }
+    }
+
     /// Load a JSON config from disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, MarkerBoardIoError> {
         io::load_json(path)
@@ -59,6 +71,7 @@ impl MarkerBoardDetectConfig {
 }
 
 /// Detection report for serialization.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkerBoardDetectReport {
     /// Path of the image detection was run on.

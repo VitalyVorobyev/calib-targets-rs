@@ -52,14 +52,7 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
     // 1) Render a small synthetic puzzleboard. Small dimensions are
     //    enough to exercise the contract; we don't need a large board
     //    to test the conversion + fit shape.
-    let spec = PuzzleBoardTargetSpec {
-        rows: 8,
-        cols: 8,
-        square_size_mm: 12.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(8, 8, 12.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 160.0,

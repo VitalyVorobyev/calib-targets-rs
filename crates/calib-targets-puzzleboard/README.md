@@ -160,11 +160,7 @@ use calib_targets::printable::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(
-        PuzzleBoardTargetSpec {
-            rows: 12, cols: 12, square_size_mm: 20.0,
-            origin_row: 0, origin_col: 0,
-            dot_diameter_rel: 1.0 / 3.0,
-        },
+        PuzzleBoardTargetSpec::new(12, 12, 20.0),
     ));
     write_target_bundle(&doc, "tmpdata/printable/puzzleboard_a4")?;
     Ok(())

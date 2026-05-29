@@ -11,6 +11,53 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ### Breaking
 
+- **Public API-surface hygiene: config / spec / report / result types are now
+  `#[non_exhaustive]` with named constructors, and the soft-scorer / marker
+  tuning knobs are documented-unstable.** This is a pure API-surface change —
+  detection behaviour, tuning defaults, and every serialized JSON shape are
+  unchanged (the public detection benchmark is byte-identical) — but it changes
+  how a few public types are constructed from *other crates*.
+
+  - **Newly `#[non_exhaustive]` (each gains a named constructor; reading code is
+    unaffected, cross-crate literal construction must route through the
+    constructor):**
+    - `calib_targets_aruco`: `ScanDecodeConfig` (`default()` + `with_*`),
+      `ArucoScanConfig` (`default()`), `Match` (`new`).
+    - `calib_targets_marker`: `MarkerCircleSpec` (`new`), `MarkerBoardSpec`
+      (`new` + `with_cell_size`), `MarkerBoardDetectConfig` (`new`),
+      `MarkerBoardDetectReport` (`new`), `CircleMatch`
+      (`unmatched` + `with_match`).
+    - `calib_targets_charuco`: `CharucoBoardSpec` (`new` + `with_marker_layout`),
+      `CharucoDetectConfig` (`new`), `CharucoDetectReport` (`new`),
+      `CharucoAlignment` (`new`), `MarkerCornerLink` (`new`),
+      `CharucoMarkerCornerLinks` (`new` + `with_mode`), `LinkViolation`
+      (`new` + `with_*`).
+    - `calib_targets_puzzleboard`: `PuzzleBoardSpec` (already had
+      `new`/`with_origin`), `PuzzleBoardDetectConfig` (`new`),
+      `PuzzleBoardDetectReport` (`new`).
+    - `calib_targets_print`: `ChessboardTargetSpec` (`new`), `CharucoTargetSpec`
+      (`new` + `with_marker_layout`/`with_border_bits`), `PuzzleBoardTargetSpec`
+      (`new` + `with_origin`/`with_dot_diameter_rel`), `MarkerBoardTargetSpec`
+      (`new` + `with_circle_diameter_rel`), `MarkerCircleSpec` (`new`), `PageSpec`
+      (`default()` + `with_*`), `RenderOptions` (`default()` + `with_*`),
+      `PrintableTargetDocument` (already had `new`; now `with_page`/`with_render`).
+    - `projective_grid`: `TopologicalLabelTrace` (`new`), bringing it in line
+      with its sibling topological-trace diagnostic types.
+
+  - **Documented-unstable tuning knobs (no API move, doc-only):** the
+    soft-log-likelihood / board-level-matcher knobs
+    `bit_likelihood_slope`, `per_bit_floor`, `alignment_min_margin` (on
+    `PuzzleBoardDecodeConfig` and `CharucoParams`), `cell_weight_border_threshold`
+    (on `CharucoParams`), and the whole `calib_targets_marker::CircleScoreParams`
+    struct are now flagged **NOT covered by semver** in rustdoc — consistent with
+    the chessboard `AdvancedTuning` treatment. Leave them at their defaults
+    unless tuning against a specific dataset with evidence.
+
+  - **Language bindings (Python, WASM, FFI) are source-updated to construct the
+    affected types through the new constructors.** Because no fields were added
+    or renamed, the serialized JSON dict keys, the generated C header, and the
+    Python typing stubs are all unchanged.
+
 - **Chessboard diagnostics moved behind an opt-in `diagnostics` feature, and
   the hot `detect()` path no longer builds a `DebugFrame`.** The chessboard
   detector previously assembled the full per-stage `DebugFrame` introspection
