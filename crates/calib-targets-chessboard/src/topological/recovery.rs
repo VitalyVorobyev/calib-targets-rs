@@ -83,15 +83,26 @@ fn estimate_recovery_cell_size_from_labels(
 }
 
 /// Mean step vectors along the labelled `i` and `j` axes.
+///
+/// The cardinal edge vectors are summed in a deterministic `(i, j)`
+/// order. `f32` addition is not associative, so accumulating in
+/// `HashMap` iteration order would make `axis_i`/`axis_j` differ by a
+/// few ULP run to run; those axes feed the topological booster's
+/// cluster centres and per-cell predictions, so a sub-ULP wobble can
+/// flip a borderline boundary attachment. Sorting the keys pins the
+/// summation order without changing the mean for the common case.
 fn estimate_grid_steps(
     labelled: &LabelledComponent,
     positions: &[Point2<f32>],
 ) -> (Vector2<f32>, Vector2<f32>) {
+    let mut keys: Vec<(i32, i32)> = labelled.keys().copied().collect();
+    keys.sort_unstable();
     let mut u_sum = Vector2::zeros();
     let mut u_n = 0u32;
     let mut v_sum = Vector2::zeros();
     let mut v_n = 0u32;
-    for (&(i, j), &idx) in labelled.iter() {
+    for &(i, j) in &keys {
+        let idx = labelled[&(i, j)];
         let p = positions[idx];
         if let Some(&right) = labelled.get(&(i + 1, j)) {
             let q = positions[right];

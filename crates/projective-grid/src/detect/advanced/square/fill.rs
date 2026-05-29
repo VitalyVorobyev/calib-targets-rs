@@ -208,7 +208,18 @@ fn enumerate_fill_cells(grow: &GrowResult) -> Vec<(i32, i32)> {
         out.insert((i, max_j + 1));
     }
 
-    out.into_iter().collect()
+    // Determinism: the fill pass attaches corners greedily in scan
+    // order, and two adjacent candidate cells can compete for the same
+    // boundary corner (whichever cell is visited first claims it). A
+    // `HashSet` iteration order is randomized per process, so returning
+    // the raw set order makes the labelled boundary extent vary run to
+    // run for identical input. Sort by `(i, j)` to pin the scan order;
+    // this is byte-stable across runs and does not change the outcome
+    // for inputs whose attachments are uncontested (the common case for
+    // the seed-and-grow caller, which is already order-invariant).
+    let mut cells: Vec<(i32, i32)> = out.into_iter().collect();
+    cells.sort_unstable();
+    cells
 }
 
 /// Per-iteration context for the fill pass.

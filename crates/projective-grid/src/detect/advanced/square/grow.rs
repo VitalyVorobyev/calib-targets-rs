@@ -426,9 +426,7 @@ pub(crate) fn collect_labelled_neighbours(
 /// Distance-weighted average of per-neighbour axis-vector predictions.
 ///
 /// Use this function for in-the-loop BFS attachment where arbitrary
-/// labelled neighbours are available. For post-grow outlier detection
-/// using cardinal midpoint averaging, see
-/// [`crate::detect::advanced::square::smoothness::square_predict_grid_position`].
+/// labelled neighbours are available.
 ///
 /// For each labelled neighbour `N_k` at `(i_k, j_k)`, the prediction is
 /// `pred_k = pos(N_k) + (Δi · i_step_k) + (Δj · j_step_k)` where

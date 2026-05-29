@@ -202,12 +202,24 @@ pub fn run_geometry_check(
     }
     let components_seen = components.len() as u32;
     // Largest component wins; everything else is a false positive.
+    // Tie-break deterministically: on equal size, prefer the component
+    // whose smallest member coord is lexicographically smallest. The
+    // `components` vector is built from a `HashMap` scan, so its order
+    // is randomized per process; `max_by_key` alone would pick a
+    // different winner run to run on a size tie. An explicit total-order
+    // key pins the choice. (`max_by_key` keeps the *last* maximum, so a
+    // bare key would still depend on the randomized vector order.)
     let mut disconnect_drop: Set<usize> = Set::new();
     if components.len() > 1 {
         let largest_idx = components
             .iter()
             .enumerate()
-            .max_by_key(|(_, c)| c.len())
+            .max_by_key(|(_, c)| {
+                let min_coord = c.iter().copied().min().unwrap_or((i32::MAX, i32::MAX));
+                // Reverse the tiebreak coord so a *smaller* coord wins
+                // under `max_by_key`'s greater-is-better semantics.
+                (c.len(), std::cmp::Reverse(min_coord))
+            })
             .map(|(i, _)| i)
             .unwrap_or(0);
         for (ci, comp) in components.iter().enumerate() {
