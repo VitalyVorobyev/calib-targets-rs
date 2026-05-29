@@ -69,14 +69,14 @@ pub fn run_entry(
 
         let started = Instant::now();
         let corners = detect_corners(&upscaled, chess_cfg);
-        // Use the diagnostics entry point so the baseline can still
-        // record `cell_size` — the typed `ChessboardDetection` no longer
-        // carries it, but the `DebugFrame` diagnostics channel does.
-        let frame = Detector::new(params.clone()).detect_with_diagnostics(&corners);
+        // The stable `ChessboardDetection` now carries `cell_size`, so the
+        // baseline reads it straight off the hot `detect()` path — no
+        // `DebugFrame` needed here (overlays still use one separately).
+        let detection = Detector::new(params.clone()).detect(&corners);
         let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
 
-        let cell_size_px = frame.cell_size.unwrap_or(0.0);
-        let baseline_image = frame.detection.as_ref().map(|d| {
+        let cell_size_px = detection.as_ref().and_then(|d| d.cell_size).unwrap_or(0.0);
+        let baseline_image = detection.as_ref().map(|d| {
             let mut corners: Vec<BaselineCorner> = d
                 .corners
                 .iter()

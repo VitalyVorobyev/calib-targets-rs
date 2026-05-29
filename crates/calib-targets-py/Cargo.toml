@@ -16,7 +16,10 @@ crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-calib-targets = { workspace = true, features = ["image"] }
+# The Python bindings expose the full detector surface, including the
+# chessboard `*_with_diagnostics` entry points, so they enable `diagnostics`
+# unconditionally (the bindings have no Cargo feature of their own).
+calib-targets = { workspace = true, features = ["image", "diagnostics"] }
 chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
 image.workspace = true
 numpy.workspace = true

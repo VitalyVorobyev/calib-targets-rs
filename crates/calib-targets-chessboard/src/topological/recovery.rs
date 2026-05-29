@@ -431,7 +431,7 @@ pub(super) fn build_topological_detections(
             continue;
         }
 
-        out.push(build_detection_from_grow(&augs, &grow));
+        out.push(build_detection_from_grow(&augs, &grow, cell_size));
     }
 
     out.sort_by_key(|d| std::cmp::Reverse(d.corners.len()));

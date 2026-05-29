@@ -8,8 +8,12 @@ publish = false
 description = "Internal regression / performance harness for the chessboard grid builder"
 
 [dependencies]
-calib-targets = { workspace = true, features = ["tracing"] }
-calib-targets-chessboard = { workspace = true, features = ["tracing"] }
+# The bench renders overlays from the chessboard `DebugFrame`, so it enables
+# the `diagnostics` feature. It reads the grid `cell_size` from the stable
+# `ChessboardDetection` (always available); the `DebugFrame` is used only
+# for per-corner overlay staging.
+calib-targets = { workspace = true, features = ["tracing", "diagnostics"] }
+calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 calib-targets-core = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }

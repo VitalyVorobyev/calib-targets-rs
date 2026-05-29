@@ -149,11 +149,13 @@ fn main() {
                     std::process::exit(2);
                 };
                 let compact = CompactFrame::from_frame(
-                    target_idx,
-                    snap_idx,
-                    upscale,
-                    snap.width(),
-                    snap.height(),
+                    SnapMeta {
+                        target_index: target_idx,
+                        snap_index: snap_idx,
+                        upscale,
+                        width: snap.width(),
+                        height: snap.height(),
+                    },
                     &corners,
                     &frame,
                     elapsed,
@@ -311,23 +313,24 @@ struct CompactFrame {
     elapsed_ms: f64,
 }
 
+/// Snap identity + geometry for one [`CompactFrame`] record. Bundled so
+/// [`CompactFrame::from_frame`] stays within the workspace argument limit.
+struct SnapMeta {
+    target_index: u32,
+    snap_index: u32,
+    upscale: u32,
+    width: u32,
+    height: u32,
+}
+
 impl CompactFrame {
-    fn from_frame(
-        target_index: u32,
-        snap_index: u32,
-        upscale: u32,
-        width: u32,
-        height: u32,
-        corners: &[Corner],
-        frame: &DebugFrame,
-        elapsed_ms: f64,
-    ) -> Self {
+    fn from_frame(meta: SnapMeta, corners: &[Corner], frame: &DebugFrame, elapsed_ms: f64) -> Self {
         Self {
-            target_index,
-            snap_index,
-            upscale,
-            width,
-            height,
+            target_index: meta.target_index,
+            snap_index: meta.snap_index,
+            upscale: meta.upscale,
+            width: meta.width,
+            height: meta.height,
             input_corners: corners
                 .iter()
                 .map(|c| CompactInput {

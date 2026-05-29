@@ -99,6 +99,10 @@ mod seed;
 mod topological;
 mod validate;
 
+/// Opt-in detector introspection surface (`DebugFrame`, per-stage traces,
+/// `StageCounts`). Compiled only with the `diagnostics` feature; the hot
+/// [`Detector::detect`] path never assembles these.
+#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 
 // --- Public contract ---------------------------------------------------

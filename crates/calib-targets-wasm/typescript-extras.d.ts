@@ -126,6 +126,8 @@ export interface ChessboardCorner {
 export interface ChessboardDetectionResult {
   /** The labelled corners. */
   corners: ChessboardCorner[];
+  /** Grid pitch in pixels; `null` only on results built without a seed. */
+  cell_size: number | null;
 }
 
 export interface MarkerDetection {

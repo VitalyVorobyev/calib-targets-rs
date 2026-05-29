@@ -439,24 +439,37 @@ def chessboard_corner_from_dict(data: Mapping[str, Any]) -> ChessboardCorner:
 
 
 def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dict[str, Any]:
-    return {"corners": [chessboard_corner_to_dict(item) for item in value.corners]}
+    # Rust `ChessboardDetection` serializes `cell_size: Option<f32>`
+    # unconditionally (no `skip_serializing_if`), so always emit the key.
+    return {
+        "corners": [chessboard_corner_to_dict(item) for item in value.corners],
+        "cell_size": value.cell_size,
+    }
 
 
 def chessboard_detection_result_from_dict(
     data: Mapping[str, Any],
 ) -> ChessboardDetectionResult:
-    # Rust shape: `{ corners }`. Matches
-    # `serde_json::to_value(ChessboardDetection)` byte-for-byte.
+    # Rust shape: `{ corners, cell_size }`. Matches
+    # `serde_json::to_value(ChessboardDetection)` byte-for-byte (`cell_size`
+    # is always present, `null` when no seed was found).
     obj = _ensure_mapping(data, "ChessboardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"corners"},
+        allowed={"corners", "cell_size"},
         required={"corners"},
         ctx="ChessboardDetectionResult",
     )
     corners = _to_sequence(obj["corners"], "ChessboardDetectionResult.corners")
+    raw_cell_size = obj.get("cell_size")
+    cell_size = (
+        None
+        if raw_cell_size is None
+        else _to_float(raw_cell_size, "ChessboardDetectionResult.cell_size")
+    )
     return ChessboardDetectionResult(
         corners=[chessboard_corner_from_dict(item) for item in corners],
+        cell_size=cell_size,
     )
 
 

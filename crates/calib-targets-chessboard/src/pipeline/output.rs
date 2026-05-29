@@ -27,11 +27,22 @@ use super::types::{ChessboardCorner, ChessboardDetection};
 /// canonicalisation + non-negative-rebase logic as the seed-and-grow
 /// pipeline. The two pipelines emit identical [`ChessboardDetection`]
 /// shapes.
-pub fn build_detection_from_grow(corners: &[CornerAug], grow: &GrowResult) -> ChessboardDetection {
-    build_detection(corners, grow)
+///
+/// `cell_size` is the grid pitch in pixels to record on the result (see
+/// [`ChessboardDetection::cell_size`]).
+pub fn build_detection_from_grow(
+    corners: &[CornerAug],
+    grow: &GrowResult,
+    cell_size: f32,
+) -> ChessboardDetection {
+    build_detection(corners, grow, cell_size)
 }
 
-pub(crate) fn build_detection(corners: &[CornerAug], grow: &GrowResult) -> ChessboardDetection {
+pub(crate) fn build_detection(
+    corners: &[CornerAug],
+    grow: &GrowResult,
+    cell_size: f32,
+) -> ChessboardDetection {
     // Grow rebases (i, j) to non-negative already, but late-stage
     // mutations (soft-convergence outlier removal, booster additions
     // that extend the grid past the prior bbox) can leave the set
@@ -76,6 +87,7 @@ pub(crate) fn build_detection(corners: &[CornerAug], grow: &GrowResult) -> Chess
 
     ChessboardDetection {
         corners: chessboard_corners,
+        cell_size: Some(cell_size),
     }
 }
 

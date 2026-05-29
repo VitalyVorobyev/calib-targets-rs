@@ -5,7 +5,7 @@
 //!
 //! | Module | Responsibility |
 //! |---|---|
-//! | [`types`] | [`ChessboardDetection`], [`DebugFrame`], and per-stage trace structs. |
+//! | [`types`] | [`ChessboardDetection`], the lean `PipelineOutcome`, and (behind the `diagnostics` feature) the `DebugFrame` + per-stage trace structs. |
 //! | [`prefilter`] | Stage 1 — strength / fit-quality gates. |
 //! | [`extension`] | Stages 6 / 8 — boundary extension + NoCluster rescue. |
 //! | [`refit`] | Stage 9 — post-grow centre refit + second extension pass. |
@@ -27,8 +27,16 @@ mod types;
 
 pub use geometry_check::run_geometry_check;
 pub use output::build_detection_from_grow;
+pub(crate) use run::run_pipeline_lean;
+pub use types::{ChessboardCorner, ChessboardDetection};
+
+// Diagnostic-only surface: assembled solely by `detect*_with_diagnostics`
+// (behind the `diagnostics` feature). The hot `detect()` path returns a
+// lean `PipelineOutcome` and never builds a [`DebugFrame`].
+#[cfg(feature = "diagnostics")]
 pub use run::run_pipeline;
+#[cfg(feature = "diagnostics")]
 pub use types::{
-    BfsExtendTrace, ChessboardCorner, ChessboardDetection, DebugFrame, ExtensionTrace,
-    GeometryCheckTrace, IterationTrace, RefitTrace, StageCounts, DEBUG_FRAME_SCHEMA,
+    BfsExtendTrace, DebugFrame, ExtensionTrace, GeometryCheckTrace, IterationTrace, RefitTrace,
+    StageCounts, DEBUG_FRAME_SCHEMA,
 };

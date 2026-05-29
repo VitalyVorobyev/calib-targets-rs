@@ -1,21 +1,30 @@
 //! The detector orchestrator.
 //!
-//! [`run_pipeline`] is the thin driver over the named stage modules in
-//! [`super`]: it owns the `find_seed → grow → validate` loop and, on
-//! the converged iteration, calls each post-grow stage in order
-//! (`extend_boundary` → `fix_partial_slot_flip` → `rescue_no_cluster`
-//! → `refit` → `apply_boosters` → `final_geometry_check`). It carries
-//! no stage logic itself — every stage body lives in its own sibling
-//! module.
+//! Two entry points share one control-flow core:
+//!
+//! - [`run_pipeline_lean`] — the hot path. Runs the
+//!   `find_seed → grow → validate` loop and every post-grow stage, then
+//!   returns a lean [`PipelineOutcome`] (detection + cell size). It never
+//!   assembles a [`DebugFrame`], never snapshots the per-corner state, and
+//!   never builds the cluster histogram payload.
+//! - [`run_pipeline`] — the diagnostics path (behind the `diagnostics`
+//!   feature). Drives the *same* loop body via the shared helpers below
+//!   and additionally accumulates a full [`DebugFrame`].
+//!
+//! The seed/grow/validate iteration body and the converged-iteration
+//! post-grow stage sequence live in shared helpers
+//! ([`run_iteration_step`], [`run_converged_iteration`]) so the two entry
+//! points cannot diverge on which corners are admitted or dropped — only
+//! on how much introspection they record.
 
 use std::collections::HashSet;
 
-use crate::boosters::{apply_boosters, BoosterResult};
-use crate::cluster::{cluster_axes_debug, fix_partial_slot_flips_post_stage6};
+use crate::boosters::apply_boosters;
+use crate::cluster::{cluster_axes, fix_partial_slot_flips_post_stage6, ClusterCenters};
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::{grow_from_seed, GrowResult};
 use crate::params::DetectorParams;
-use crate::seed::{find_seed, SeedOutput};
+use crate::seed::{find_seed, Seed, SeedOutput};
 use crate::validate::{validate, ValidationResult};
 
 use super::extension::{run_stage6, run_stage6_5_rescue};
@@ -23,18 +32,253 @@ use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
 use super::prefilter::{passes_fit_quality, passes_strength};
 use super::refit::run_refit;
-use super::types::{DebugFrame, ExtensionTrace, IterationTrace, DEBUG_FRAME_SCHEMA};
+use super::types::{ChessboardDetection, PipelineOutcome};
 
-/// Run the full chessboard pipeline for a single component.
+#[cfg(feature = "diagnostics")]
+use super::types::{
+    BfsExtendTrace, DebugFrame, ExtensionTrace, GeometryCheckTrace, IterationTrace, RefitTrace,
+    DEBUG_FRAME_SCHEMA,
+};
+#[cfg(feature = "diagnostics")]
+use crate::boosters::BoosterResult;
+#[cfg(feature = "diagnostics")]
+use crate::cluster::cluster_axes_debug;
+
+/// Stage 1: pre-filter. Advances every admissible corner `Raw → Strong`.
+///
+/// Corners already consumed by a previous `detect_all` iteration are left
+/// at `Raw` (invisible to clustering, seed, grow, validation). Returns
+/// `true` when at least `min_labeled_corners` corners reached `Strong`.
+fn prefilter(augs: &mut [CornerAug], params: &DetectorParams, consumed: &HashSet<usize>) -> bool {
+    for aug in augs.iter_mut() {
+        if consumed.contains(&aug.input_index) {
+            continue;
+        }
+        if passes_strength(aug, params) && passes_fit_quality(aug, params) {
+            aug.stage = CornerStage::Strong;
+        }
+    }
+    augs.iter()
+        .filter(|a| matches!(a.stage, CornerStage::Strong))
+        .count()
+        >= params.min_labeled_corners
+}
+
+/// State carried across the `find_seed → grow → validate` loop, shared by
+/// both entry points so the iteration logic has a single source of truth.
+struct LoopState {
+    blacklist: HashSet<usize>,
+    /// Seed-derived cell size of the most recent seed. Recorded only for
+    /// the diagnostics frame; the stable result carries its own copy on
+    /// [`ChessboardDetection::cell_size`].
+    #[cfg(feature = "diagnostics")]
+    cell_size: Option<f32>,
+    /// Indices of the most recent seed quad, when one was found. Recorded
+    /// only for the diagnostics frame.
+    #[cfg(feature = "diagnostics")]
+    seed_indices: Option<[usize; 4]>,
+}
+
+/// Outcome of one `find_seed → grow → validate` iteration.
+enum IterStep {
+    /// No seed could be found — stop the loop with no further work.
+    SeedFailed,
+    /// Validation flagged new outliers; the loop re-runs after blacklisting.
+    /// The carried fields feed the diagnostics frame's per-iteration trace
+    /// only; the lean path ignores them.
+    NotConverged {
+        #[cfg(feature = "diagnostics")]
+        new_blacklist: Vec<usize>,
+        #[cfg(feature = "diagnostics")]
+        labelled_count: usize,
+    },
+    /// Converged (or soft-converged): post-grow stages ran, this is final.
+    Converged(Box<ConvergedOutput>),
+}
+
+/// Run a single `find_seed → grow → validate` iteration and, on
+/// convergence, the full post-grow stage sequence.
+///
+/// Mutates `augs` and `state` in place. The returned [`IterStep`] tells
+/// the caller whether to continue the loop, stop, or accept the converged
+/// result. This is the shared body both entry points drive.
+fn run_iteration_step(
+    augs: &mut [CornerAug],
+    state: &mut LoopState,
+    centers: ClusterCenters,
+    it: u32,
+    params: &DetectorParams,
+) -> IterStep {
+    // Reset any Labeled stage on corners not in blacklist — re-run means
+    // re-label from scratch in this iteration.
+    for aug in augs.iter_mut() {
+        if matches!(aug.stage, CornerStage::Labeled { .. })
+            && !state.blacklist.contains(&aug.input_index)
+        {
+            // Stage-3 → Stage-5 invariant: every Labeled corner carries
+            // its cluster label. If it's somehow missing, leave the stage
+            // as-is rather than panicking — the next iteration's checks
+            // will re-handle this corner.
+            if let Some(label) = aug.label {
+                aug.stage = CornerStage::Clustered { label };
+            }
+        }
+    }
+
+    let seed_out: SeedOutput = match find_seed(augs, centers, params) {
+        Some(s) => s,
+        None => return IterStep::SeedFailed,
+    };
+    let seed = seed_out.seed;
+    let cell_size = seed_out.cell_size;
+    #[cfg(feature = "diagnostics")]
+    {
+        state.cell_size = Some(cell_size);
+        state.seed_indices = Some([seed.a, seed.b, seed.c, seed.d]);
+    }
+
+    let mut grow_res: GrowResult =
+        grow_from_seed(augs, seed, centers, cell_size, &state.blacklist, params);
+
+    let labelled_count = grow_res.labelled.len();
+
+    let v: ValidationResult = validate(augs, &grow_res.labelled, cell_size, params);
+    let new_blacklist: Vec<usize> = v
+        .blacklist
+        .iter()
+        .filter(|idx| !state.blacklist.contains(idx))
+        .copied()
+        .collect();
+
+    let converged = new_blacklist.is_empty();
+    // Soft convergence: when the validator keeps flagging a small residual
+    // set (≤ 2 corners) over multiple rounds, the labelled set has
+    // effectively stabilised — we're oscillating on borderline-outlier
+    // corners. Apply the current round's blacklist and accept. Bounded
+    // below by `iter >= 2` so we never emit until we've seen at least two
+    // validation passes confirm the bulk of the labels.
+    let soft_converged = !converged
+        && it + 1 >= 2
+        && new_blacklist.len() <= 2
+        && labelled_count >= params.min_labeled_corners;
+
+    if converged || soft_converged {
+        if soft_converged {
+            // Apply the current round's blacklist before accepting so the
+            // emitted detection excludes the flagged outliers.
+            for &idx in &new_blacklist {
+                if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                    augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                        at,
+                        reason: "soft-convergence outlier".into(),
+                    };
+                }
+                grow_res.labelled.retain(|_, &mut v| v != idx);
+                grow_res.by_corner.remove(&idx);
+                state.blacklist.insert(idx);
+            }
+        }
+
+        let output = run_converged_iteration(ConvergedCtx {
+            params,
+            it,
+            centers,
+            seed,
+            cell_size,
+            labelled_count,
+            new_blacklist,
+            augs,
+            grow_res,
+            blacklist: &mut state.blacklist,
+            local_h_residuals: &v.local_h_residuals,
+        });
+        return IterStep::Converged(Box::new(output));
+    }
+
+    // Non-converged: mark blacklisted corners and retry.
+    for &idx in &new_blacklist {
+        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                at,
+                reason: "post-validation outlier".into(),
+            };
+        }
+        state.blacklist.insert(idx);
+    }
+
+    IterStep::NotConverged {
+        #[cfg(feature = "diagnostics")]
+        new_blacklist,
+        #[cfg(feature = "diagnostics")]
+        labelled_count,
+    }
+}
+
+/// Hot-path entry point: run the full chessboard pipeline for a single
+/// component and return a lean [`PipelineOutcome`] (detection + cell size).
+///
+/// Builds no [`DebugFrame`] and no per-stage traces — this is the path
+/// [`crate::Detector::detect`] / [`crate::Detector::detect_all`] use.
 ///
 /// `consumed` carries the corner indices already claimed by an earlier
 /// `detect_all` component; those corners are left at `Raw` so they are
-/// invisible to every stage. Always returns a [`DebugFrame`] — the
-/// `detection` field is `None` when no component was recovered.
+/// invisible to every stage.
+pub(crate) fn run_pipeline_lean(
+    params: &DetectorParams,
+    corners: &[crate::corner::ChessCorner],
+    consumed: &HashSet<usize>,
+) -> PipelineOutcome {
+    let mut augs: Vec<CornerAug> = corners
+        .iter()
+        .enumerate()
+        .map(|(i, c)| CornerAug::from_chess_corner(i, c))
+        .collect();
+
+    if !prefilter(&mut augs, params, consumed) {
+        return PipelineOutcome { detection: None };
+    }
+
+    // Stage 2 + 3: clustering (lean — no histogram payload).
+    let Some(centers) = cluster_axes(&mut augs, params) else {
+        return PipelineOutcome { detection: None };
+    };
+
+    let mut state = LoopState {
+        blacklist: HashSet::new(),
+        #[cfg(feature = "diagnostics")]
+        cell_size: None,
+        #[cfg(feature = "diagnostics")]
+        seed_indices: None,
+    };
+    let max_iters = params.effective_tuning().max_validation_iters.max(1);
+
+    let mut detection = None;
+    for it in 0..max_iters {
+        match run_iteration_step(&mut augs, &mut state, centers, it, params) {
+            IterStep::SeedFailed => break,
+            IterStep::NotConverged { .. } => continue,
+            IterStep::Converged(output) => {
+                detection = output.detection;
+                break;
+            }
+        }
+    }
+
+    PipelineOutcome { detection }
+}
+
+/// Diagnostics entry point: run the full pipeline for a single component
+/// and return a [`DebugFrame`] — the detection plus every per-stage trace.
 ///
-/// Most callers use [`crate::Detector`] rather than this directly;
-/// it is exposed for tooling that needs to drive a single pipeline
-/// pass with an explicit `consumed` set.
+/// Drives the identical loop body as [`run_pipeline_lean`] (so the emitted
+/// detection is byte-identical) and additionally accumulates the
+/// introspection payload. The `detection` field is `None` when no
+/// component was recovered.
+///
+/// Most callers use [`crate::Detector`] rather than this directly; it is
+/// exposed for tooling that needs to drive a single pipeline pass with an
+/// explicit `consumed` set.
+#[cfg(feature = "diagnostics")]
 pub fn run_pipeline(
     params: &DetectorParams,
     corners: &[crate::corner::ChessCorner],
@@ -60,170 +304,83 @@ pub fn run_pipeline(
         cluster_debug: None,
     };
 
-    // Stage 1: pre-filter.
-    // Corners already consumed by a previous `detect_all` iteration are
-    // left at `Raw` stage, which makes them invisible to clustering,
-    // seed search, grow, and validation.
-    for aug in augs.iter_mut() {
-        if consumed.contains(&aug.input_index) {
-            continue;
-        }
-        if passes_strength(aug, params) && passes_fit_quality(aug, params) {
-            aug.stage = CornerStage::Strong;
-        }
-    }
-    if augs
-        .iter()
-        .filter(|a| matches!(a.stage, CornerStage::Strong))
-        .count()
-        < params.min_labeled_corners
-    {
+    if !prefilter(&mut augs, params, consumed) {
         frame.corners = augs;
         return frame;
     }
 
-    // Stage 2 + 3: clustering.
+    // Stage 2 + 3: clustering (with histogram payload for triage).
     let (centers_opt, cluster_debug) = cluster_axes_debug(&mut augs, params);
     frame.cluster_debug = Some(cluster_debug);
-    let centers = match centers_opt {
-        Some(c) => c,
-        None => {
-            frame.corners = augs;
-            return frame;
-        }
+    let Some(centers) = centers_opt else {
+        frame.corners = augs;
+        return frame;
     };
     frame.grid_directions = Some([centers.theta0, centers.theta1]);
 
-    // Stages 4+5 (fused): the seed finder is now self-consistent
-    // — it finds a 4-corner quad that matches itself in edge
-    // lengths, and reports `cell_size` as the mean seed-edge
-    // length. This avoids the bimodal-histogram failure where
-    // the old global cell-size estimator picked a too-small
-    // mode (typically marker-internal spacing rather than true
-    // board spacing), leaving the downstream edge-window
-    // `[0.75s, 1.25s]` excluding every legitimate neighbor.
-    //
-    // The detector loops with a blacklist; each iteration re-
-    // runs the seed + growth pair.
-    let mut blacklist: HashSet<usize> = HashSet::new();
+    let mut state = LoopState {
+        blacklist: HashSet::new(),
+        cell_size: None,
+        seed_indices: None,
+    };
     let max_iters = params.effective_tuning().max_validation_iters.max(1);
 
     for it in 0..max_iters {
-        // Reset any Labeled stage on corners not in blacklist —
-        // re-run means re-label from scratch in this iteration.
-        for aug in augs.iter_mut() {
-            if matches!(aug.stage, CornerStage::Labeled { .. })
-                && !blacklist.contains(&aug.input_index)
-            {
-                // Stage-3 → Stage-5 invariant: every Labeled corner
-                // carries its cluster label. If it's somehow missing,
-                // leave the stage as-is rather than panicking — the
-                // next iteration's checks will re-handle this corner.
-                if let Some(label) = aug.label {
-                    aug.stage = CornerStage::Clustered { label };
-                }
-            }
-        }
-
-        let seed_out: SeedOutput = match find_seed(&augs, centers, params) {
-            Some(s) => s,
-            None => break,
-        };
-        let seed = seed_out.seed;
-        let cell_size = seed_out.cell_size;
-        frame.cell_size = Some(cell_size);
-        frame.seed = Some([seed.a, seed.b, seed.c, seed.d]);
-
-        let mut grow_res: GrowResult =
-            grow_from_seed(&mut augs, seed, centers, cell_size, &blacklist, params);
-
-        let labelled_count = grow_res.labelled.len();
-
-        let v: ValidationResult = validate(&augs, &grow_res.labelled, cell_size, params);
-        let new_blacklist: Vec<usize> = v
-            .blacklist
-            .iter()
-            .filter(|idx| !blacklist.contains(idx))
-            .copied()
-            .collect();
-
-        let converged = new_blacklist.is_empty();
-        // Soft convergence: when the validator keeps flagging a
-        // small residual set (≤ 2 corners) over multiple rounds,
-        // the labelled set has effectively stabilised — we're
-        // oscillating on borderline-outlier corners. Apply the
-        // current round's blacklist and accept. Bounded below
-        // by `iter >= 2` so we never emit until we've seen
-        // at least two validation passes confirm the bulk of
-        // the labels.
-        let soft_converged = !converged
-            && it + 1 >= 2
-            && new_blacklist.len() <= 2
-            && labelled_count >= params.min_labeled_corners;
-
-        if converged || soft_converged {
-            if soft_converged {
-                // Apply the current round's blacklist before
-                // accepting so the emitted detection excludes
-                // the flagged outliers.
-                for &idx in &new_blacklist {
-                    if let CornerStage::Labeled { at, .. } = augs[idx].stage {
-                        augs[idx].stage = CornerStage::LabeledThenBlacklisted {
-                            at,
-                            reason: "soft-convergence outlier".into(),
-                        };
-                    }
-                    grow_res.labelled.retain(|_, &mut v| v != idx);
-                    grow_res.by_corner.remove(&idx);
-                    blacklist.insert(idx);
-                }
-            }
-
-            let iteration = run_converged_iteration(ConvergedCtx {
-                params,
-                it,
-                centers,
-                seed,
-                cell_size,
-                labelled_count,
+        let step = run_iteration_step(&mut augs, &mut state, centers, it, params);
+        frame.cell_size = state.cell_size;
+        frame.seed = state.seed_indices;
+        match step {
+            IterStep::SeedFailed => break,
+            IterStep::NotConverged {
                 new_blacklist,
-                augs: &mut augs,
-                grow_res,
-                blacklist: &mut blacklist,
-                frame_boosters: &mut frame.boosters,
-                local_h_residuals: &v.local_h_residuals,
-            });
-            frame.iterations.push(iteration.trace);
-            if let Some(detection) = iteration.detection {
-                frame.detection = Some(detection);
+                labelled_count,
+            } => {
+                frame.iterations.push(IterationTrace {
+                    iter: it,
+                    labelled_count,
+                    new_blacklist,
+                    converged: false,
+                    extension: None,
+                    rescue: None,
+                    refit: None,
+                    bfs_extend: None,
+                    extension2: None,
+                    rescue2: None,
+                    geometry_check: None,
+                });
             }
-            break;
-        }
-
-        // Non-converged iteration: record trace without extension.
-        frame.iterations.push(IterationTrace {
-            iter: it,
-            labelled_count,
-            new_blacklist: new_blacklist.clone(),
-            converged: false,
-            extension: None,
-            rescue: None,
-            refit: None,
-            bfs_extend: None,
-            extension2: None,
-            rescue2: None,
-            geometry_check: None,
-        });
-
-        // Mark blacklisted corners and retry.
-        for &idx in &new_blacklist {
-            if let CornerStage::Labeled { at, .. } = augs[idx].stage {
-                augs[idx].stage = CornerStage::LabeledThenBlacklisted {
-                    at,
-                    reason: "post-validation outlier".into(),
-                };
+            IterStep::Converged(output) => {
+                let ConvergedOutput {
+                    detection,
+                    boosters,
+                    iter,
+                    labelled_count,
+                    new_blacklist,
+                    extension,
+                    rescue,
+                    refit,
+                    bfs_extend,
+                    extension2,
+                    rescue2,
+                    geometry_check,
+                } = *output;
+                frame.boosters = Some(boosters);
+                frame.iterations.push(IterationTrace {
+                    iter,
+                    labelled_count,
+                    new_blacklist,
+                    converged: true,
+                    extension,
+                    rescue,
+                    refit,
+                    bfs_extend,
+                    extension2,
+                    rescue2,
+                    geometry_check: Some(geometry_check),
+                });
+                frame.detection = detection;
+                break;
             }
-            blacklist.insert(idx);
         }
     }
 
@@ -237,23 +394,49 @@ pub fn run_pipeline(
 struct ConvergedCtx<'a> {
     params: &'a DetectorParams,
     it: u32,
-    centers: crate::cluster::ClusterCenters,
-    seed: crate::seed::Seed,
+    centers: ClusterCenters,
+    seed: Seed,
     cell_size: f32,
     labelled_count: usize,
     new_blacklist: Vec<usize>,
     augs: &'a mut [CornerAug],
     grow_res: GrowResult,
     blacklist: &'a mut HashSet<usize>,
-    frame_boosters: &'a mut Option<BoosterResult>,
     local_h_residuals: &'a std::collections::HashMap<usize, f32>,
 }
 
-/// Output of [`run_converged_iteration`]: the iteration trace plus the
-/// detection (when one was emitted).
+/// Output of [`run_converged_iteration`].
+///
+/// `detection` is the only field the hot path consumes. The per-stage
+/// trace components (behind the `diagnostics` feature) are built only when
+/// the diagnostics path drove the loop, so the lean path never pays for
+/// them. Keeping a single converged-iteration body guarantees the two
+/// paths cannot diverge on which corners survive — they differ only in
+/// whether the traces are accumulated.
 struct ConvergedOutput {
-    trace: IterationTrace,
-    detection: Option<super::types::ChessboardDetection>,
+    detection: Option<ChessboardDetection>,
+    #[cfg(feature = "diagnostics")]
+    boosters: BoosterResult,
+    #[cfg(feature = "diagnostics")]
+    iter: u32,
+    #[cfg(feature = "diagnostics")]
+    labelled_count: usize,
+    #[cfg(feature = "diagnostics")]
+    new_blacklist: Vec<usize>,
+    #[cfg(feature = "diagnostics")]
+    extension: Option<ExtensionTrace>,
+    #[cfg(feature = "diagnostics")]
+    rescue: Option<ExtensionTrace>,
+    #[cfg(feature = "diagnostics")]
+    refit: Option<RefitTrace>,
+    #[cfg(feature = "diagnostics")]
+    bfs_extend: Option<BfsExtendTrace>,
+    #[cfg(feature = "diagnostics")]
+    extension2: Option<ExtensionTrace>,
+    #[cfg(feature = "diagnostics")]
+    rescue2: Option<ExtensionTrace>,
+    #[cfg(feature = "diagnostics")]
+    geometry_check: GeometryCheckTrace,
 }
 
 /// Run every post-grow stage on the converged + validated labelled set.
@@ -263,7 +446,7 @@ struct ConvergedOutput {
 /// → `refit` → `apply_boosters` → `final_geometry_check` →
 /// post-geometry rescue. Every stage body lives in its own sibling
 /// module; this function only sequences them and folds their
-/// diagnostics into one [`IterationTrace`].
+/// diagnostics into one [`ConvergedOutput`].
 fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     let ConvergedCtx {
         params,
@@ -276,9 +459,14 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
         augs,
         mut grow_res,
         blacklist,
-        frame_boosters,
         local_h_residuals,
     } = ctx;
+
+    // `it` / `labelled_count` / `new_blacklist` are recorded only in the
+    // diagnostics trace; on the lean path they are carried purely so the
+    // converged-iteration body has one signature. Mark them used.
+    #[cfg(not(feature = "diagnostics"))]
+    let _ = (it, labelled_count, &new_blacklist);
 
     // `active_centers` is the cluster pair currently in effect for
     // downstream stages. It starts at the Stage-3 estimate; the
@@ -359,6 +547,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // machinery as Stage 6, with a wider axis-tolerance
     // (`rescue_axis_tol_deg`) and inferred parity. Position match +
     // parity match + axis-slot-swap edge invariant keep precision.
+    #[cfg(feature = "diagnostics")]
     let mut iteration_rescue: Option<ExtensionTrace> = None;
     if tuning.enable_stage6_5_rescue {
         let rescue_stats = run_stage6_5_rescue(
@@ -376,7 +565,10 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
                 local_h_residual_px: None,
             };
         }
-        iteration_rescue = Some(ExtensionTrace::from(&rescue_stats));
+        #[cfg(feature = "diagnostics")]
+        {
+            iteration_rescue = Some(ExtensionTrace::from(&rescue_stats));
+        }
         // No post-rescue revalidation: the rescue's per-candidate
         // gates (position match against local-H, parity match against
         // the cluster centers, axis-slot-swap edge invariant,
@@ -389,6 +581,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // Stage 6 ran if it produced residual stats (either global-H,
     // which sets `h_quality`, or local-H, which sets
     // `h_residual_median_px` per-candidate aggregate).
+    #[cfg(feature = "diagnostics")]
     let iteration_extension =
         if extension_stats.h_quality.is_some() || extension_stats.h_residual_median_px.is_some() {
             Some(ExtensionTrace::from(&extension_stats))
@@ -417,7 +610,10 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
 
     // Recall boosters: interior gap fill + line extrapolation. Runs
     // after Stage 6 so it can fill any holes the global-H pass left
-    // behind. Same attachment invariants as growth.
+    // behind. Same attachment invariants as growth. The call's side
+    // effects (labelled-set mutation) are load-bearing on both paths;
+    // only the returned summary is diagnostic.
+    #[cfg(feature = "diagnostics")]
     let booster: BoosterResult = apply_boosters(
         augs,
         &mut grow_mut,
@@ -426,7 +622,15 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
         blacklist,
         params,
     );
-    *frame_boosters = Some(booster);
+    #[cfg(not(feature = "diagnostics"))]
+    let _ = apply_boosters(
+        augs,
+        &mut grow_mut,
+        active_centers,
+        cell_size,
+        blacklist,
+        params,
+    );
 
     // Write local-H residuals onto labelled corners.
     for (&c_idx, &resid) in local_h_residuals {
@@ -499,26 +703,37 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
         geometry_check_trace.detection_refused = rescue_geometry_trace.detection_refused;
     }
 
-    let trace = IterationTrace {
-        iter: it,
-        labelled_count,
-        new_blacklist,
-        converged: true,
-        extension: iteration_extension,
-        rescue: iteration_rescue,
-        refit: refit_out.refit,
-        bfs_extend: refit_out.bfs_extend,
-        extension2: refit_out.extension2,
-        rescue2: refit_out.rescue2,
-        geometry_check: Some(geometry_check_trace.clone()),
-    };
     let final_count = grow_mut.labelled.len();
     let detection =
         if !geometry_check_trace.detection_refused && final_count >= params.min_labeled_corners {
-            Some(build_detection(augs, &grow_mut))
+            Some(build_detection(augs, &grow_mut, cell_size))
         } else {
             None
         };
 
-    ConvergedOutput { trace, detection }
+    ConvergedOutput {
+        detection,
+        #[cfg(feature = "diagnostics")]
+        boosters: booster,
+        #[cfg(feature = "diagnostics")]
+        iter: it,
+        #[cfg(feature = "diagnostics")]
+        labelled_count,
+        #[cfg(feature = "diagnostics")]
+        new_blacklist,
+        #[cfg(feature = "diagnostics")]
+        extension: iteration_extension,
+        #[cfg(feature = "diagnostics")]
+        rescue: iteration_rescue,
+        #[cfg(feature = "diagnostics")]
+        refit: refit_out.refit,
+        #[cfg(feature = "diagnostics")]
+        bfs_extend: refit_out.bfs_extend,
+        #[cfg(feature = "diagnostics")]
+        extension2: refit_out.extension2,
+        #[cfg(feature = "diagnostics")]
+        rescue2: refit_out.rescue2,
+        #[cfg(feature = "diagnostics")]
+        geometry_check: geometry_check_trace,
+    }
 }

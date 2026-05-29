@@ -154,9 +154,14 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::Chess
 ///   richest result.
 /// - [`detect_chessboard_from_gray_u8`] — takes a raw grayscale byte
 ///   buffer instead of an [`::image::GrayImage`].
-/// - [`detect_chessboard_with_diagnostics`] — returns the diagnostics
-///   channel ([`chessboard::diagnostics::DebugFrame`]) instead of the
-///   plain detection.
+#[cfg_attr(
+    feature = "diagnostics",
+    doc = "- [`detect_chessboard_with_diagnostics`] — returns the diagnostics"
+)]
+#[cfg_attr(
+    feature = "diagnostics",
+    doc = "   channel ([`chessboard::diagnostics::DebugFrame`]) instead of the plain detection."
+)]
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -200,6 +205,9 @@ pub fn detect_chessboard_all(
 /// stage, per-iteration traces, and the labelled detection (when one was
 /// produced). Always returns a frame — never panics — so the caller can see
 /// *why* detection failed.
+///
+/// Available only with the `diagnostics` feature enabled.
+#[cfg(feature = "diagnostics")]
 #[cfg_attr(
     feature = "tracing",
     instrument(

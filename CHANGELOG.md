@@ -11,6 +11,37 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ### Breaking
 
+- **Chessboard diagnostics moved behind an opt-in `diagnostics` feature, and
+  the hot `detect()` path no longer builds a `DebugFrame`.** The chessboard
+  detector previously assembled the full per-stage `DebugFrame` introspection
+  payload on every `detect()` / `detect_all()` call and then discarded it.
+  That work is now skipped on the hot path, and the diagnostics surface is
+  opt-in:
+
+  - **`calib_targets_chessboard` gains a `diagnostics` cargo feature (OFF by
+    default).** It gates the `diagnostics` module (`DebugFrame`,
+    `IterationTrace`, `StageCounts`, the per-stage trace types,
+    `DEBUG_FRAME_SCHEMA`) and the `Detector::detect_with_diagnostics` /
+    `detect_all_with_diagnostics` entry points. Without the feature these
+    names are absent from the public API. Enable `diagnostics` (or the
+    `dataset` feature, which now implies it) to restore the full surface.
+
+  - **`ChessboardDetection` gains a stable `cell_size: Option<f32>` field**
+    (re-added as a permanent result field; populated on the normal `detect()`
+    path with the seed-derived grid pitch). Construct via
+    `ChessboardDetection::new(...)` + `with_cell_size(...)`. The type stays
+    `#[non_exhaustive]`, so reading code is unaffected; code constructing it
+    by literal across crates must route through the constructor.
+
+  - **The `calib_targets` facade gains a matching `diagnostics` feature**
+    (OFF by default) that forwards to `calib_targets_chessboard/diagnostics`
+    and gates `detect_chessboard_with_diagnostics`.
+
+  - **Behaviour on the `detect()` path is byte-identical**: the same labelled
+    `ChessboardDetection` (now also carrying `cell_size`). The language
+    bindings (Python, WASM, FFI) enable `diagnostics` unconditionally, so
+    their diagnostic entry points and the generated C header are unchanged.
+
 - **Chessboard tuning is now an opt-in, doc-unstable `advanced` surface.**
   The ~40 per-stage chessboard tuning knobs that previously lived flat on
   `calib_targets_chessboard::DetectorParams` (via the `ChessboardTuning`
