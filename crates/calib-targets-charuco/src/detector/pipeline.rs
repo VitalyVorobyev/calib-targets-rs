@@ -244,8 +244,8 @@ impl CharucoDetector {
             warn!(
                 "chessboard stage failed: input_corners={}, min_corner_strength={:.3}, cluster_tol={:.1} deg, max_components={}",
                 corners.len(),
-                self.params.chessboard.tuning.min_corner_strength,
-                self.params.chessboard.tuning.cluster_tol_deg,
+                self.params.chessboard.min_corner_strength,
+                self.params.chessboard.effective_tuning().cluster_tol_deg,
                 self.params.chessboard.max_components,
             );
             return (Err(CharucoDetectError::ChessboardNotDetected), diagnostics);

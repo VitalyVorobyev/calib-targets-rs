@@ -149,18 +149,19 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // Build the new-crate input shape. `params.tuning.topological` carries
+    let tuning = params.effective_tuning();
+
+    // Build the new-crate input shape. `tuning.topological` carries
     // the chessboard tuning field names; `detection_params_for_topological` translates
     // them into `projective-grid`'s sub-config layout.
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
     // `NextTopologicalParams::default`. Do not reuse
-    // `params.tuning.cluster_tol_deg` (12°) — chessboard-v2's cluster gate
+    // `tuning.cluster_tol_deg` (12°) — chessboard-v2's cluster gate
     // has a sigma bonus and a booster fallback that topological lacks;
     // matching the 12° literally regresses Gemini2.
     let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
-    let next_params =
-        detection_params_for_topological(&params.tuning.topological, clustered_centers);
+    let next_params = detection_params_for_topological(&tuning.topological, clustered_centers);
     let request = DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(&next_features),
@@ -212,10 +213,10 @@ pub fn detect_all_topological(
             num_components = component_views.len()
         )
         .entered();
-        merge_components_local(&component_views, &params.tuning.component_merge)
+        merge_components_local(&component_views, &tuning.component_merge)
     };
     #[cfg(not(feature = "tracing"))]
-    let merged = merge_components_local(&component_views, &params.tuning.component_merge);
+    let merged = merge_components_local(&component_views, &tuning.component_merge);
 
     let final_components = recover_topological_components(
         &merged.components,
@@ -254,7 +255,7 @@ pub fn trace_topological(
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
     let inputs = topological_inputs(corners, params);
     let (_augs, clustered_centers) = clustered_augs(corners, params);
-    let mut topo_params = params.tuning.topological;
+    let mut topo_params = params.effective_tuning().topological;
     topo_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
     let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
     build_grid_topological_trace(&next_features, topo_params)

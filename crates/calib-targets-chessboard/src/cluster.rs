@@ -126,8 +126,9 @@ pub fn cluster_axes_debug(
     corners: &mut [CornerAug],
     params: &DetectorParams,
 ) -> (Option<ClusterCenters>, ClusterDebug) {
+    let tuning = params.effective_tuning();
     let mut debug = ClusterDebug {
-        num_bins: params.tuning.num_bins,
+        num_bins: tuning.num_bins,
         histogram: Vec::new(),
         smoothed: Vec::new(),
         total_weight: 0.0,
@@ -135,7 +136,7 @@ pub fn cluster_axes_debug(
         refined_centers_rad: None,
     };
 
-    if corners.is_empty() || params.tuning.num_bins < 4 {
+    if corners.is_empty() || tuning.num_bins < 4 {
         return (None, debug);
     }
 
@@ -150,8 +151,8 @@ pub fn cluster_axes_debug(
     debug.smoothed = smoothed.clone();
 
     let peak_opts = cs::PeakPickOptions::new(
-        params.tuning.min_peak_weight_fraction,
-        params.tuning.peak_min_separation_deg.to_radians(),
+        tuning.min_peak_weight_fraction,
+        tuning.peak_min_separation_deg.to_radians(),
     );
     let Some((theta0_seed, theta1_seed)) =
         cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)
@@ -161,11 +162,8 @@ pub fn cluster_axes_debug(
     debug.peak_seeds_rad = Some([theta0_seed, theta1_seed]);
 
     let votes = collect_axis_votes(corners);
-    let (theta0, theta1) = cs::refine_2means_double_angle(
-        &votes,
-        [theta0_seed, theta1_seed],
-        params.tuning.max_iters_2means,
-    );
+    let (theta0, theta1) =
+        cs::refine_2means_double_angle(&votes, [theta0_seed, theta1_seed], tuning.max_iters_2means);
     debug.refined_centers_rad = Some([theta0, theta1]);
 
     let (a, b) = if theta0 <= theta1 {
@@ -180,9 +178,9 @@ pub fn cluster_axes_debug(
 
     // Assign per-corner label. The effective per-corner tolerance is
     // `cluster_tol_rad + cluster_sigma_k * max(σ_a0, σ_a1)` so noisy
-    // axes get proportional slack — see `ChessboardTuning::cluster_sigma_k`.
-    let base_tol_rad = params.tuning.cluster_tol_deg.to_radians();
-    let sigma_k = params.tuning.cluster_sigma_k;
+    // axes get proportional slack — see `AdvancedTuning::cluster_sigma_k`.
+    let base_tol_rad = tuning.cluster_tol_deg.to_radians();
+    let sigma_k = tuning.cluster_sigma_k;
     for corner in corners.iter_mut() {
         if !matches!(corner.stage, CornerStage::Strong) {
             continue;
@@ -904,7 +902,7 @@ struct Histogram {
 }
 
 fn build_histogram(corners: &[CornerAug], params: &DetectorParams) -> Histogram {
-    let n = params.tuning.num_bins;
+    let n = params.effective_tuning().num_bins;
     let mut bins = vec![0.0_f32; n];
     let mut total = 0.0_f32;
     for corner in corners {

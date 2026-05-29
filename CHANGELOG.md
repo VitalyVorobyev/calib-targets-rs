@@ -7,6 +7,52 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Breaking
+
+- **Chessboard tuning is now an opt-in, doc-unstable `advanced` surface.**
+  The ~40 per-stage chessboard tuning knobs that previously lived flat on
+  `calib_targets_chessboard::DetectorParams` (via the `ChessboardTuning`
+  sub-struct, flattened into the wire format) have moved behind an opt-in,
+  semver-exempt `advanced` block. This changes the public Rust API, the JSON
+  wire format, and the language bindings:
+
+  - **`ChessboardTuning` is renamed `AdvancedTuning`** and is re-exported from
+    the chessboard crate root and the `calib_targets::chessboard` facade. It
+    is documented but explicitly marked **unstable**: its fields are NOT
+    covered by semver and may be renamed, retyped, or removed between minor
+    versions. Build it from `AdvancedTuning::default()` and mutate the knobs
+    you need (it is `#[non_exhaustive]`).
+
+  - **`DetectorParams` now carries four stable fields**
+    (`graph_build_algorithm`, `min_labeled_corners`, `max_components`,
+    `min_corner_strength`) plus an opt-in `advanced: Option<Box<AdvancedTuning>>`.
+    Attach advanced overrides with `DetectorParams::with_advanced(...)`; read
+    the effective tuning (configured or default) with
+    `DetectorParams::effective_tuning()`. With `advanced` unset, detection is
+    byte-identical to the previous defaults.
+
+  - **`min_corner_strength` was promoted to a stable top-level field.** Its
+    serialized key stays top-level `"min_corner_strength"`, so that one key is
+    wire-compatible with the previous flat layout. Setting it on a nested
+    `params.chessboard` (ChArUco / PuzzleBoard / marker) keeps working.
+
+  - **JSON / wire-format migration:** every other tuning knob now lives under
+    a nested `"advanced"` object instead of at the top level. Old flat configs
+    that set advanced knobs at the top level will silently fall back to the
+    defaults for those knobs (serde ignores unknown top-level keys). Move the
+    knobs into an `"advanced": { ... }` block to carry them forward. The
+    nested block is omitted entirely when no advanced tuning is set.
+
+  - **Bindings:** the FFI `ct_chessboard_params_t` keeps the stable fields
+    directly and gates the advanced knobs behind a `has_advanced` flag plus a
+    nested `ct_chessboard_advanced_t` (regenerate against the updated header).
+    The Python `ChessboardParams.to_dict()` / `from_dict()` and the WASM /
+    TypeScript types now use the nested `advanced` shape. No new Cargo feature
+    is introduced — the opt-in is purely the API shape plus the unstable-doc
+    marking.
+
 ## 0.9.0
 
 Migrates the workspace onto `chess-corners` 0.10 (skipping the

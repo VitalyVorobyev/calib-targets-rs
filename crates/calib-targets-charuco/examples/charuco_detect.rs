@@ -156,13 +156,14 @@ fn log_detector_params(params: &CharucoParams) {
         "Detector params: px_per_square={:.1}, min_marker_inliers={}, max_hamming={}",
         params.px_per_square, params.min_marker_inliers, params.max_hamming
     );
+    let chessboard_tuning = params.chessboard.effective_tuning();
     debug!(
         "Chessboard params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, seed_edge_tol={:.2}, attach_search_rel={:.2}, max_components={}",
-        params.chessboard.tuning.min_corner_strength,
-        params.chessboard.tuning.max_fit_rms_ratio,
-        params.chessboard.tuning.cluster_tol_deg,
-        params.chessboard.tuning.seed_edge_tol,
-        params.chessboard.tuning.attach_search_rel,
+        params.chessboard.min_corner_strength,
+        chessboard_tuning.max_fit_rms_ratio,
+        chessboard_tuning.cluster_tol_deg,
+        chessboard_tuning.seed_edge_tol,
+        chessboard_tuning.attach_search_rel,
         params.chessboard.max_components,
     );
     debug!(

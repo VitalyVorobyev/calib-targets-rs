@@ -28,13 +28,15 @@ fn axes_from(c: &ChessCorner) -> [AxisEstimate; 2] {
 }
 
 fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
+    let min_corner_strength = params.min_corner_strength;
+    let max_fit_rms_ratio = params.effective_tuning().max_fit_rms_ratio;
     corners
         .iter()
         .map(|c| {
-            let strong = c.strength >= params.tuning.min_corner_strength;
-            let fit_ok = !params.tuning.max_fit_rms_ratio.is_finite()
+            let strong = c.strength >= min_corner_strength;
+            let fit_ok = !max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0
-                || c.fit_rms <= params.tuning.max_fit_rms_ratio * c.contrast;
+                || c.fit_rms <= max_fit_rms_ratio * c.contrast;
             strong && fit_ok
         })
         .collect()

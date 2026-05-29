@@ -47,9 +47,10 @@ pub(crate) fn run_stage6(
     let validator =
         ChessboardSquareAttachPolicy::new(corners, blacklist, centers, cell_size, params)
             .with_parity_shift(parity_shift);
-    if params.tuning.stage6_local_h {
+    let tuning = params.effective_tuning();
+    if tuning.stage6_local_h {
         let mut local_params = LocalExtensionParams::default();
-        local_params.k_nearest = params.tuning.stage6_local_k_nearest;
+        local_params.k_nearest = tuning.stage6_local_k_nearest;
         extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
     } else {
         extend_via_global_homography(
@@ -86,8 +87,9 @@ pub(crate) fn run_stage6_5_rescue(
     let parity_shift = (grow_res.rebase_i_mod2 + grow_res.rebase_j_mod2).rem_euclid(2);
     let validator = ChessboardRescueValidator::new(corners, blacklist, centers, cell_size, params)
         .with_parity_shift(parity_shift);
+    let tuning = params.effective_tuning();
     let mut local_params = LocalExtensionParams::default();
-    local_params.k_nearest = params.tuning.stage6_5_local_k_nearest;
-    local_params.common.search_rel = params.tuning.rescue_search_rel;
+    local_params.k_nearest = tuning.stage6_5_local_k_nearest;
+    local_params.common.search_rel = tuning.rescue_search_rel;
     extend_via_local_homography(&positions, grow_res, cell_size, &local_params, &validator)
 }

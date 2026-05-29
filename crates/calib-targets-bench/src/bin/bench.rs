@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use calib_targets::chessboard::{
-    diagnostics::CornerStage, Detector, DetectorParams, GraphBuildAlgorithm,
+    diagnostics::CornerStage, AdvancedTuning, Detector, DetectorParams, GraphBuildAlgorithm,
 };
 use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use calib_targets_bench::baseline::Baseline;
@@ -820,9 +820,12 @@ fn diagnose_topological(
     };
     detector_params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     if let Some(deg) = args.axis_align_tol_deg {
-        detector_params.tuning.topological.axis_align_tol_rad = deg.to_radians();
+        let mut advanced: AdvancedTuning = detector_params.effective_tuning().into_owned();
+        advanced.topological.axis_align_tol_rad = deg.to_radians();
+        detector_params = detector_params.with_advanced(advanced);
     }
-    let params = &detector_params.tuning.topological;
+    let tuning = detector_params.effective_tuning();
+    let params = &tuning.topological;
     println!(
         "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  edge_length_max_rel: {:.2}",
         args.image,
@@ -842,10 +845,10 @@ fn diagnose_topological(
     let mut survives_fit = 0usize;
     let mut survives_axis = 0usize;
     for c in corners {
-        let strong = c.strength >= detector_params.tuning.min_corner_strength;
-        let fit_ok = !detector_params.tuning.max_fit_rms_ratio.is_finite()
+        let strong = c.strength >= detector_params.min_corner_strength;
+        let fit_ok = !tuning.max_fit_rms_ratio.is_finite()
             || c.contrast <= 0.0
-            || c.fit_rms <= detector_params.tuning.max_fit_rms_ratio * c.contrast;
+            || c.fit_rms <= tuning.max_fit_rms_ratio * c.contrast;
         let axis_ok = c.axes[0].sigma < params.max_axis_sigma_rad
             || c.axes[1].sigma < params.max_axis_sigma_rad;
         if strong {

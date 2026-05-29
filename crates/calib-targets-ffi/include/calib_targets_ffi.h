@@ -66,21 +66,15 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 typedef uint32_t ct_graph_build_algorithm_t;
 
 /**
- * Chessboard detector parameters.
+ * Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
  *
- * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
- * (flat shape — no nested graph / orientation-clustering sub-structs
- * like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
- * to populate a valid default-configured value rather than struct-
- * literal zero-initialisation.
+ * Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
+ * over the C ABI. Only applied when
+ * [`ct_chessboard_params_t::has_advanced`] is `CT_TRUE`. These knobs are NOT
+ * covered by semver and may change between minor versions; treat them as an
+ * escape hatch for a specific failing input, not a stable contract.
  */
-typedef struct ct_chessboard_params_t {
-  /**
-   * Pipeline selector. See [`ct_graph_build_algorithm_t`].
-   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
-   */
-  ct_graph_build_algorithm_t graph_build_algorithm;
-  float min_corner_strength;
+typedef struct ct_chessboard_advanced_t {
   float max_fit_rms_ratio;
   size_t num_bins;
   size_t max_iters_2means;
@@ -102,8 +96,53 @@ typedef struct ct_chessboard_params_t {
   uint32_t enable_weak_cluster_rescue;
   float weak_cluster_tol_deg;
   uint32_t max_booster_iters;
+} ct_chessboard_advanced_t;
+
+/**
+ * Chessboard detector parameters.
+ *
+ * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+ * (flat shape — no nested graph / orientation-clustering sub-structs
+ * like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
+ * to populate a valid default-configured value rather than struct-
+ * literal zero-initialisation.
+ */
+typedef struct ct_chessboard_params_t {
+  /**
+   * Pipeline selector. See [`ct_graph_build_algorithm_t`].
+   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
+   */
+  ct_graph_build_algorithm_t graph_build_algorithm;
+  /**
+   * Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
+   * (the zero-initialised default) disables the filter. Stable field.
+   */
+  float min_corner_strength;
+  /**
+   * Minimum labelled corners for a detection to be emitted. Stable field.
+   */
   size_t min_labeled_corners;
+  /**
+   * Maximum number of returned components. Stable field.
+   */
   uint32_t max_components;
+  /**
+   * When `CT_TRUE`, the [`advanced`](Self::advanced) knobs below are
+   * applied on top of the detector defaults. When `CT_FALSE` (the
+   * zero-initialised default), `advanced` is ignored and the detector
+   * runs on its precision-by-construction default tuning.
+   *
+   * The advanced knobs are NOT covered by semver and may change between
+   * minor versions — see `calib_targets::chessboard::AdvancedTuning`.
+   * Initialise from `ct_chessboard_params_default_values` before flipping
+   * this flag so the advanced fields start from valid defaults.
+   */
+  uint32_t has_advanced;
+  /**
+   * Opt-in, unstable per-stage tuning. Only read when
+   * [`has_advanced`](Self::has_advanced) is `CT_TRUE`.
+   */
+  struct ct_chessboard_advanced_t advanced;
 } ct_chessboard_params_t;
 
 /**

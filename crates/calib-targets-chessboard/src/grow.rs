@@ -49,10 +49,9 @@ pub fn grow_from_seed(
         c: seed.c,
         d: seed.d,
     };
-    let pg_params = pg_grow::GrowParams::new(
-        params.tuning.attach_search_rel,
-        params.tuning.attach_ambiguity_factor,
-    );
+    let tuning = params.effective_tuning();
+    let pg_params =
+        pg_grow::GrowParams::new(tuning.attach_search_rel, tuning.attach_ambiguity_factor);
     let validator =
         ChessboardSquareAttachPolicy::new(corners, blacklist, centers, cell_size, params);
 
@@ -108,14 +107,15 @@ impl<'a> ChessboardSquareAttachPolicy<'a> {
         cell_size: f32,
         params: &DetectorParams,
     ) -> Self {
+        let tuning = params.effective_tuning();
         Self {
             corners,
             blacklist,
             centers,
             cell_size,
-            attach_tol_rad: params.tuning.attach_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
-            step_tol: params.tuning.step_tol,
+            attach_tol_rad: tuning.attach_axis_tol_deg.to_radians(),
+            edge_tol_rad: tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: tuning.step_tol,
             parity_shift: 0,
         }
     }
@@ -280,14 +280,15 @@ impl<'a> ChessboardRescueValidator<'a> {
         cell_size: f32,
         params: &DetectorParams,
     ) -> Self {
+        let tuning = params.effective_tuning();
         Self {
             corners,
             blacklist,
             centers,
             cell_size,
-            rescue_tol_rad: params.tuning.rescue_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
-            step_tol: params.tuning.step_tol,
+            rescue_tol_rad: tuning.rescue_axis_tol_deg.to_radians(),
+            edge_tol_rad: tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: tuning.step_tol,
             parity_shift: 0,
         }
     }

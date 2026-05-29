@@ -54,7 +54,7 @@ impl PuzzleBoardParams {
     /// is the geometry gate.
     pub fn for_board(board: &PuzzleBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.tuning.min_corner_strength = 0.1;
+        chessboard.min_corner_strength = 0.1;
         // PuzzleBoard defaults to the topological grid builder: it is denser
         // and faster on clean self-identifying boards, and (now that the
         // builder is deterministic) its decoded master origin is stable and
@@ -77,7 +77,7 @@ impl PuzzleBoardParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
+                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
                 chessboard.graph_build_algorithm = base.chessboard.graph_build_algorithm;
                 Self {
                     chessboard,

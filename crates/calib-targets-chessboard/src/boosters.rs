@@ -91,25 +91,26 @@ fn apply_boosters_impl(
 ) -> BoosterResult {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
     let parity_shift = (grow.rebase_i_mod2 + grow.rebase_j_mod2).rem_euclid(2);
+    let tuning = params.effective_tuning();
     let validator = ChessboardFillValidator {
         corners,
         blacklist,
         centers,
         cell_size,
-        attach_tol_rad: params.tuning.attach_axis_tol_deg.to_radians(),
-        edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
-        weak_attach_tol_rad: params.tuning.weak_cluster_tol_deg.to_radians(),
-        weak_cluster_tol_deg: params.tuning.weak_cluster_tol_deg,
-        step_tol: params.tuning.step_tol,
-        enable_weak_cluster_rescue: params.tuning.enable_weak_cluster_rescue,
+        attach_tol_rad: tuning.attach_axis_tol_deg.to_radians(),
+        edge_tol_rad: tuning.edge_axis_tol_deg.to_radians(),
+        weak_attach_tol_rad: tuning.weak_cluster_tol_deg.to_radians(),
+        weak_cluster_tol_deg: tuning.weak_cluster_tol_deg,
+        step_tol: tuning.step_tol,
+        enable_weak_cluster_rescue: tuning.enable_weak_cluster_rescue,
         use_directional_edge_scale,
         parity_shift,
     };
 
     let fill_params = FillParams::new(
-        params.tuning.attach_search_rel,
-        params.tuning.attach_ambiguity_factor,
-        params.tuning.max_booster_iters.max(1) as usize,
+        tuning.attach_search_rel,
+        tuning.attach_ambiguity_factor,
+        tuning.max_booster_iters.max(1) as usize,
     );
 
     let stats = fill_grid_holes(&positions, grow, cell_size, &fill_params, &validator);

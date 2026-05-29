@@ -11,26 +11,26 @@
 use crate::error::{FfiError, FfiResult};
 use crate::types::{
     ct_charuco_board_spec_t, ct_charuco_detector_params_t, ct_chess_config_t, ct_chess_params_t,
-    ct_chessboard_corner_t, ct_chessboard_params_t, ct_circle_match_params_t, ct_circle_polarity_t,
-    ct_circle_score_params_t, ct_dictionary_id_t, ct_grid_alignment_t, ct_grid_coords_t,
-    ct_grid_transform_t, ct_labeled_corner_t, ct_marker_board_layout_t, ct_marker_board_params_t,
-    ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t,
-    ct_optional_u32_t, ct_point2f_t, ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t,
-    ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t,
-    ct_scan_decode_config_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
-    CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000,
-    CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100,
-    CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50,
-    CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250,
-    CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000,
-    CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5,
-    CT_DICTIONARY_DICT_APRILTAG_25H9, CT_DICTIONARY_DICT_APRILTAG_36H10,
-    CT_DICTIONARY_DICT_APRILTAG_36H11, CT_DICTIONARY_DICT_ARUCO_MIP_36H12,
-    CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE, CT_MARKER_LAYOUT_OPENCV_CHARUCO,
-    CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED, CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
-    CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD, CT_PUZZLEBOARD_SEARCH_MODE_FULL,
-    CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT,
-    CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
+    ct_chessboard_advanced_t, ct_chessboard_corner_t, ct_chessboard_params_t,
+    ct_circle_match_params_t, ct_circle_polarity_t, ct_circle_score_params_t, ct_dictionary_id_t,
+    ct_grid_alignment_t, ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t,
+    ct_marker_board_layout_t, ct_marker_board_params_t, ct_marker_circle_spec_t,
+    ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t,
+    ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t,
+    ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t, ct_scan_decode_config_t,
+    ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
+    CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
+    CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
+    CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
+    CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50,
+    CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250,
+    CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
+    CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
+    CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
+    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+    CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
+    CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER,
+    CT_REFINER_KIND_SADDLE_POINT, CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -38,7 +38,9 @@ use crate::validate::{
 use calib_targets::aruco::ScanDecodeConfig;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
-use calib_targets::chessboard::{ChessboardCorner, DetectorParams as ChessboardDetectorParams};
+use calib_targets::chessboard::{
+    AdvancedTuning, ChessboardCorner, DetectorParams as ChessboardDetectorParams,
+};
 use calib_targets::core::{GridAlignment, GridCoords, LabeledCorner};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
@@ -286,31 +288,13 @@ fn optional_bool_to_option(
 pub(crate) fn convert_chessboard_params(
     params: &ct_chessboard_params_t,
 ) -> FfiResult<ChessboardDetectorParams> {
-    if params.num_bins < 4 {
-        return Err(FfiError::config_error("chessboard.num_bins must be >= 4"));
-    }
-    if params.max_iters_2means == 0 {
-        return Err(FfiError::config_error(
-            "chessboard.max_iters_2means must be > 0",
-        ));
-    }
-    if params.line_min_members < 2 {
-        return Err(FfiError::config_error(
-            "chessboard.line_min_members must be >= 2",
-        ));
-    }
-    if params.max_validation_iters == 0 {
-        return Err(FfiError::config_error(
-            "chessboard.max_validation_iters must be > 0",
-        ));
-    }
     if params.max_components == 0 {
         return Err(FfiError::config_error(
             "chessboard.max_components must be > 0",
         ));
     }
     // `DetectorParams` is `#[non_exhaustive]`; start from `Default`
-    // and overwrite every field we expose over the ABI. New fields
+    // and overwrite every stable field we expose over the ABI. New fields
     // added in future Rust releases keep their defaults until the
     // C ABI explicitly surfaces them.
     let mut out = ChessboardDetectorParams::default();
@@ -327,56 +311,85 @@ pub(crate) fn convert_chessboard_params(
             )));
         }
     };
-    out.tuning.min_corner_strength =
+    out.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
-    out.tuning.max_fit_rms_ratio =
-        require_finite(params.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
-    out.tuning.num_bins = params.num_bins;
-    out.tuning.max_iters_2means = params.max_iters_2means;
-    out.tuning.cluster_tol_deg =
-        require_nonnegative(params.cluster_tol_deg, "chessboard.cluster_tol_deg")?;
-    out.tuning.peak_min_separation_deg = require_nonnegative(
-        params.peak_min_separation_deg,
-        "chessboard.peak_min_separation_deg",
-    )?;
-    out.tuning.min_peak_weight_fraction = require_fraction(
-        params.min_peak_weight_fraction,
-        "chessboard.min_peak_weight_fraction",
-    )?;
-    out.tuning.seed_edge_tol =
-        require_nonnegative(params.seed_edge_tol, "chessboard.seed_edge_tol")?;
-    out.tuning.seed_axis_tol_deg =
-        require_nonnegative(params.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
-    out.tuning.seed_close_tol =
-        require_nonnegative(params.seed_close_tol, "chessboard.seed_close_tol")?;
-    out.tuning.attach_search_rel =
-        require_positive(params.attach_search_rel, "chessboard.attach_search_rel")?;
-    out.tuning.attach_axis_tol_deg =
-        require_nonnegative(params.attach_axis_tol_deg, "chessboard.attach_axis_tol_deg")?;
-    out.tuning.attach_ambiguity_factor = require_positive(
-        params.attach_ambiguity_factor,
-        "chessboard.attach_ambiguity_factor",
-    )?;
-    out.tuning.step_tol = require_nonnegative(params.step_tol, "chessboard.step_tol")?;
-    out.tuning.edge_axis_tol_deg =
-        require_nonnegative(params.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
-    out.tuning.line_tol_rel = require_nonnegative(params.line_tol_rel, "chessboard.line_tol_rel")?;
-    out.tuning.line_min_members = params.line_min_members;
-    out.tuning.local_h_tol_rel =
-        require_nonnegative(params.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
-    out.tuning.max_validation_iters = params.max_validation_iters;
-    out.tuning.enable_weak_cluster_rescue = flag_to_bool(
-        params.enable_weak_cluster_rescue,
-        "chessboard.enable_weak_cluster_rescue",
-    )?;
-    out.tuning.weak_cluster_tol_deg = require_nonnegative(
-        params.weak_cluster_tol_deg,
-        "chessboard.weak_cluster_tol_deg",
-    )?;
-    out.tuning.max_booster_iters = params.max_booster_iters;
     out.min_labeled_corners = params.min_labeled_corners;
     out.max_components = params.max_components;
+    // The advanced knobs are opt-in: only validate + apply them when the
+    // caller flips `has_advanced`. Leaving the flag clear keeps the detector
+    // on its default tuning regardless of the (possibly zero-initialised)
+    // `advanced` payload.
+    if params.has_advanced == CT_TRUE {
+        out = out.with_advanced(convert_chessboard_advanced(&params.advanced)?);
+    }
     Ok(out)
+}
+
+/// Translate the opt-in advanced C payload into an [`AdvancedTuning`],
+/// validating each knob. Starts from [`AdvancedTuning::default`] so any knob
+/// the C ABI does not surface keeps its default.
+fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<AdvancedTuning> {
+    if adv.num_bins < 4 {
+        return Err(FfiError::config_error("chessboard.num_bins must be >= 4"));
+    }
+    if adv.max_iters_2means == 0 {
+        return Err(FfiError::config_error(
+            "chessboard.max_iters_2means must be > 0",
+        ));
+    }
+    if adv.line_min_members < 2 {
+        return Err(FfiError::config_error(
+            "chessboard.line_min_members must be >= 2",
+        ));
+    }
+    if adv.max_validation_iters == 0 {
+        return Err(FfiError::config_error(
+            "chessboard.max_validation_iters must be > 0",
+        ));
+    }
+    let mut tuning = AdvancedTuning::default();
+    tuning.max_fit_rms_ratio =
+        require_finite(adv.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
+    tuning.num_bins = adv.num_bins;
+    tuning.max_iters_2means = adv.max_iters_2means;
+    tuning.cluster_tol_deg =
+        require_nonnegative(adv.cluster_tol_deg, "chessboard.cluster_tol_deg")?;
+    tuning.peak_min_separation_deg = require_nonnegative(
+        adv.peak_min_separation_deg,
+        "chessboard.peak_min_separation_deg",
+    )?;
+    tuning.min_peak_weight_fraction = require_fraction(
+        adv.min_peak_weight_fraction,
+        "chessboard.min_peak_weight_fraction",
+    )?;
+    tuning.seed_edge_tol = require_nonnegative(adv.seed_edge_tol, "chessboard.seed_edge_tol")?;
+    tuning.seed_axis_tol_deg =
+        require_nonnegative(adv.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
+    tuning.seed_close_tol = require_nonnegative(adv.seed_close_tol, "chessboard.seed_close_tol")?;
+    tuning.attach_search_rel =
+        require_positive(adv.attach_search_rel, "chessboard.attach_search_rel")?;
+    tuning.attach_axis_tol_deg =
+        require_nonnegative(adv.attach_axis_tol_deg, "chessboard.attach_axis_tol_deg")?;
+    tuning.attach_ambiguity_factor = require_positive(
+        adv.attach_ambiguity_factor,
+        "chessboard.attach_ambiguity_factor",
+    )?;
+    tuning.step_tol = require_nonnegative(adv.step_tol, "chessboard.step_tol")?;
+    tuning.edge_axis_tol_deg =
+        require_nonnegative(adv.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
+    tuning.line_tol_rel = require_nonnegative(adv.line_tol_rel, "chessboard.line_tol_rel")?;
+    tuning.line_min_members = adv.line_min_members;
+    tuning.local_h_tol_rel =
+        require_nonnegative(adv.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
+    tuning.max_validation_iters = adv.max_validation_iters;
+    tuning.enable_weak_cluster_rescue = flag_to_bool(
+        adv.enable_weak_cluster_rescue,
+        "chessboard.enable_weak_cluster_rescue",
+    )?;
+    tuning.weak_cluster_tol_deg =
+        require_nonnegative(adv.weak_cluster_tol_deg, "chessboard.weak_cluster_tol_deg")?;
+    tuning.max_booster_iters = adv.max_booster_iters;
+    Ok(tuning)
 }
 
 pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
@@ -395,34 +408,46 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
             // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
             _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2,
         },
-        min_corner_strength: d.tuning.min_corner_strength,
-        max_fit_rms_ratio: d.tuning.max_fit_rms_ratio,
-        num_bins: d.tuning.num_bins,
-        max_iters_2means: d.tuning.max_iters_2means,
-        cluster_tol_deg: d.tuning.cluster_tol_deg,
-        peak_min_separation_deg: d.tuning.peak_min_separation_deg,
-        min_peak_weight_fraction: d.tuning.min_peak_weight_fraction,
-        seed_edge_tol: d.tuning.seed_edge_tol,
-        seed_axis_tol_deg: d.tuning.seed_axis_tol_deg,
-        seed_close_tol: d.tuning.seed_close_tol,
-        attach_search_rel: d.tuning.attach_search_rel,
-        attach_axis_tol_deg: d.tuning.attach_axis_tol_deg,
-        attach_ambiguity_factor: d.tuning.attach_ambiguity_factor,
-        step_tol: d.tuning.step_tol,
-        edge_axis_tol_deg: d.tuning.edge_axis_tol_deg,
-        line_tol_rel: d.tuning.line_tol_rel,
-        line_min_members: d.tuning.line_min_members,
-        local_h_tol_rel: d.tuning.local_h_tol_rel,
-        max_validation_iters: d.tuning.max_validation_iters,
-        enable_weak_cluster_rescue: if d.tuning.enable_weak_cluster_rescue {
+        min_corner_strength: d.min_corner_strength,
+        min_labeled_corners: d.min_labeled_corners,
+        max_components: d.max_components,
+        // `advanced` is opt-in: default to clear so the detector keeps its
+        // default tuning. The nested payload is still populated from
+        // `AdvancedTuning::default()` so callers can flip `has_advanced` and
+        // adjust individual knobs from valid starting values.
+        has_advanced: CT_FALSE,
+        advanced: chessboard_advanced_default_values(),
+    }
+}
+
+fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
+    let t = AdvancedTuning::default();
+    ct_chessboard_advanced_t {
+        max_fit_rms_ratio: t.max_fit_rms_ratio,
+        num_bins: t.num_bins,
+        max_iters_2means: t.max_iters_2means,
+        cluster_tol_deg: t.cluster_tol_deg,
+        peak_min_separation_deg: t.peak_min_separation_deg,
+        min_peak_weight_fraction: t.min_peak_weight_fraction,
+        seed_edge_tol: t.seed_edge_tol,
+        seed_axis_tol_deg: t.seed_axis_tol_deg,
+        seed_close_tol: t.seed_close_tol,
+        attach_search_rel: t.attach_search_rel,
+        attach_axis_tol_deg: t.attach_axis_tol_deg,
+        attach_ambiguity_factor: t.attach_ambiguity_factor,
+        step_tol: t.step_tol,
+        edge_axis_tol_deg: t.edge_axis_tol_deg,
+        line_tol_rel: t.line_tol_rel,
+        line_min_members: t.line_min_members,
+        local_h_tol_rel: t.local_h_tol_rel,
+        max_validation_iters: t.max_validation_iters,
+        enable_weak_cluster_rescue: if t.enable_weak_cluster_rescue {
             CT_TRUE
         } else {
             CT_FALSE
         },
-        weak_cluster_tol_deg: d.tuning.weak_cluster_tol_deg,
-        max_booster_iters: d.tuning.max_booster_iters,
-        min_labeled_corners: d.min_labeled_corners,
-        max_components: d.max_components,
+        weak_cluster_tol_deg: t.weak_cluster_tol_deg,
+        max_booster_iters: t.max_booster_iters,
     }
 }
 

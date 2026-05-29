@@ -127,6 +127,59 @@ def test_detect_chessboard_best_roundtrip() -> None:
 
 
 # ---------------------------------------------------------------------------
+# chessboard config dict shape (stable core + nested advanced)
+# ---------------------------------------------------------------------------
+
+
+def test_chessboard_params_dict_has_stable_core_and_nested_advanced() -> None:
+    """``ChessboardParams.to_dict()`` matches the Rust ``DetectorParams``
+    wire shape: the four stable knobs at the top level, every advanced knob
+    nested under ``"advanced"``."""
+    payload = ct.ChessboardParams(cluster_tol_deg=9.0).to_dict()
+    # Stable core at the top level.
+    for stable in (
+        "graph_build_algorithm",
+        "min_corner_strength",
+        "min_labeled_corners",
+        "max_components",
+    ):
+        assert stable in payload, f"missing stable key {stable!r}"
+    # Advanced knobs are nested, never flattened to the top level.
+    assert isinstance(payload["advanced"], dict)
+    assert "cluster_tol_deg" not in payload
+    assert payload["advanced"]["cluster_tol_deg"] == 9.0
+    assert "topological" in payload["advanced"]
+    assert "topological" not in payload
+
+
+def test_chessboard_advanced_payload_accepted_by_rust() -> None:
+    """A nested-``advanced`` config dict deserialises on the Rust side and
+    drives detection. Guards against drift between the Python ``to_dict``
+    nesting and Rust's ``DetectorParams.advanced`` serde shape — the class of
+    bug a Python-only ``to_dict``→``from_dict`` round-trip cannot catch."""
+    image = _load_gray("mid.png")
+    params = ct.ChessboardParams(min_corner_strength=0.1, max_validation_iters=5)
+    payload = params.to_dict()
+    assert payload["advanced"]["max_validation_iters"] == 5
+    # If the dict shape drifted from Rust's serde encoding, this raises
+    # ValueError instead of returning a (possibly None) raw result dict.
+    via_dict = _core.detect_chessboard(image, params=payload)
+    # A default config (advanced left at defaults) must agree with omitting
+    # params entirely — proving the nested-default block is behaviour-neutral.
+    via_default_dict = _core.detect_chessboard(
+        image, params=ct.ChessboardParams().to_dict()
+    )
+    via_none = _core.detect_chessboard(image, params=None)
+    if via_default_dict is None and via_none is None:
+        pytest.skip("default chessboard params detect nothing on testdata/mid.png")
+    assert via_default_dict is not None and via_none is not None
+    assert len(via_default_dict["corners"]) == len(via_none["corners"])
+    # The custom-advanced run is accepted; it may legitimately differ in
+    # corner count, but it must not error out.
+    assert via_dict is None or len(via_dict["corners"]) >= 0
+
+
+# ---------------------------------------------------------------------------
 # chessboard debug frame (Phase A instrumentation)
 # ---------------------------------------------------------------------------
 

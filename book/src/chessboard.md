@@ -306,43 +306,50 @@ converges.
 ## 6. Parameters
 
 `DetectorParams` is `#[non_exhaustive]` and splits into a small **stable
-core** — `graph_build_algorithm`, `min_labeled_corners`, `max_components`
-— plus an advanced `ChessboardTuning` sub-struct (`DetectorParams::tuning`)
-holding the per-stage tuning knobs. Build with `Default::default()` and
-overwrite specific fields, or call `DetectorParams::sweep_default()` for a
-3-config preset (default, tighter, looser) suitable for
-`detect_chessboard_best`-style sweeps.
+core** — `graph_build_algorithm`, `min_labeled_corners`, `max_components`,
+`min_corner_strength` — plus an opt-in, unstable `AdvancedTuning` sub-struct
+(`DetectorParams::advanced`) holding the per-stage tuning knobs. Build with
+`Default::default()` and overwrite the stable fields, attach advanced
+overrides with `DetectorParams::with_advanced(...)`, or call
+`DetectorParams::sweep_default()` for a 3-config preset (default, tighter,
+looser) suitable for `detect_chessboard_best`-style sweeps.
 
-`ChessboardTuning` is `#[serde(flatten)]`-ed into `DetectorParams`, so a
-serialized config stays flat — every tuning knob is a top-level key. The
-`Field` column below shows the access path: top-level for the three core
-knobs, `tuning.<knob>` for the rest.
+`advanced` is `Option`-wrapped and serialized as a nested `"advanced"`
+object — it is **not** flattened, and is omitted entirely when unset (in
+which case detection runs on the defaults). The four stable knobs stay
+top-level JSON keys. **`AdvancedTuning`'s fields are not covered by
+semver** and may change between minor versions. The `Field` column below
+shows the access path: top-level for the four stable knobs,
+`advanced.<knob>` for the rest.
 
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
 | `graph_build_algorithm` | `ChessboardV2` | — | Seed-and-grow or topological grid builder. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
-| `tuning.min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. |
-| `tuning.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
-| `tuning.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
-| `tuning.cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
-| `tuning.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
-| `tuning.min_peak_weight_fraction` | 0.02 | 2 | Minimum fraction of total vote weight per peak. |
-| `tuning.seed_edge_tol` | 0.25 | 5 | Seed-edge length window (fraction of `s`). |
-| `tuning.seed_axis_tol_deg` | 15.0 | 5 | Seed-edge axis tolerance. |
-| `tuning.seed_close_tol` | 0.25 | 5 | Parallelogram-closure tolerance. |
-| `tuning.attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
-| `tuning.attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
-| `tuning.attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
-| `tuning.step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
-| `tuning.edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
-| `tuning.line_tol_rel` | 0.18 | 7 | Straight-line collinearity tolerance. |
-| `tuning.line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
-| `tuning.local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
-| `tuning.max_validation_iters` | 6 | 7 | Blacklist-retry cap. |
-| `tuning.enable_*` (4 flags) | true | 8 | Toggles for the 4 boosters. |
-| `tuning.weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
+| `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
+| `advanced.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
+| `advanced.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
+| `advanced.cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
+| `advanced.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
+| `advanced.min_peak_weight_fraction` | 0.02 | 2 | Minimum fraction of total vote weight per peak. |
+| `advanced.seed_edge_tol` | 0.25 | 5 | Seed-edge length window (fraction of `s`). |
+| `advanced.seed_axis_tol_deg` | 15.0 | 5 | Seed-edge axis tolerance. |
+| `advanced.seed_close_tol` | 0.25 | 5 | Parallelogram-closure tolerance. |
+| `advanced.attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
+| `advanced.attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
+| `advanced.attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
+| `advanced.step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
+| `advanced.edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
+| `advanced.line_tol_rel` | 0.18 | 7 | Straight-line collinearity tolerance. |
+| `advanced.line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
+| `advanced.local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
+| `advanced.max_validation_iters` | 6 | 7 | Blacklist-retry cap. |
+| `advanced.enable_*` (flags) | true | 8 | Toggles for the recall boosters. |
+| `advanced.weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
+
+The `advanced.` rows above are part of `AdvancedTuning`, which is opt-in
+and **not covered by semver**.
 
 All spatial tolerances are **multiplicative** with respect to `s` — the
 pipeline is scale-invariant once `s` is known.

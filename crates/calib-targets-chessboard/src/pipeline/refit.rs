@@ -67,7 +67,8 @@ pub(crate) fn run_refit(
         rescue2: None,
         active_centers,
     };
-    if !params.tuning.enable_post_grow_refit {
+    let tuning = params.effective_tuning();
+    if !tuning.enable_post_grow_refit {
         return out;
     }
 
@@ -76,14 +77,14 @@ pub(crate) fn run_refit(
         augs,
         &labelled_indices,
         active_centers,
-        params.tuning.refit_min_labelled,
+        tuning.refit_min_labelled,
     ) else {
         return out;
     };
 
     let shift_rad = angular_dist_pi(new_centers.theta0, active_centers.theta0)
         .max(angular_dist_pi(new_centers.theta1, active_centers.theta1));
-    let trigger_rad = params.tuning.refit_min_shift_deg.to_radians();
+    let trigger_rad = tuning.refit_min_shift_deg.to_radians();
     let mut promoted = 0u32;
     let second_pass_ran = shift_rad > trigger_rad;
     if second_pass_ran {
@@ -91,8 +92,8 @@ pub(crate) fn run_refit(
         // Already-Labeled corners keep their `(i, j)`; their `label`
         // slot is preserved from the original assignment (the slot
         // doesn't flip under a small centre shift).
-        let base_tol = params.tuning.cluster_tol_deg.to_radians();
-        let sigma_k = params.tuning.cluster_sigma_k;
+        let base_tol = tuning.cluster_tol_deg.to_radians();
+        let sigma_k = tuning.cluster_sigma_k;
         for aug in augs.iter_mut() {
             if !matches!(
                 aug.stage,
@@ -123,7 +124,7 @@ pub(crate) fn run_refit(
         // grow_from_seed under a small (~3°) centre shift can flip
         // borderline parity slots and lose some existing corners —
         // the cardinal extend below recovers them.
-        if params.tuning.enable_post_grow_bfs_regrow {
+        if tuning.enable_post_grow_bfs_regrow {
             for aug in augs.iter_mut() {
                 if blacklist.contains(&aug.input_index) {
                     continue;
@@ -146,7 +147,7 @@ pub(crate) fn run_refit(
         // regrown bbox boundary. Same tolerances as initial BFS
         // (wider radii produce SHIFT-INCONSISTENT labelling per the
         // small3.png precision verification).
-        if params.tuning.enable_post_grow_bfs_extend {
+        if tuning.enable_post_grow_bfs_extend {
             let positions: Vec<Point2<f32>> = augs.iter().map(|c| c.position).collect();
             // Stage 6.75 BFS extend runs in post-rebase coords; same
             // parity-shift rationale as `run_stage6`.
@@ -155,8 +156,8 @@ pub(crate) fn run_refit(
                 ChessboardSquareAttachPolicy::new(augs, blacklist, new_centers, cell_size, params)
                     .with_parity_shift(bfs_parity_shift);
             let bfs_params = projective_grid::detect::advanced::square::grow::GrowParams::new(
-                params.tuning.attach_search_rel,
-                params.tuning.attach_ambiguity_factor,
+                tuning.attach_search_rel,
+                tuning.attach_ambiguity_factor,
             );
             let bfs_stats =
                 projective_grid::detect::advanced::square::grow_extend::extend_from_labelled(
@@ -199,15 +200,15 @@ pub(crate) fn run_refit(
         // orphans whose slot ordering disagrees with the labelled
         // set's parity (using the refined centres + extended labelled
         // set), and flip them so the second-pass rescue can attach.
-        if params.tuning.enable_partial_slot_flip_fix {
+        if tuning.enable_partial_slot_flip_fix {
             let _flipped = fix_partial_slot_flips_post_stage6(
                 augs,
                 &grow_res.labelled,
                 cell_size,
-                params.tuning.partial_slot_flip_k_nearest,
+                tuning.partial_slot_flip_k_nearest,
             );
         }
-        if params.tuning.enable_stage6_5_rescue {
+        if tuning.enable_stage6_5_rescue {
             let rescue2 =
                 run_stage6_5_rescue(augs, grow_res, new_centers, cell_size, blacklist, params);
             for (k, &idx) in rescue2.attached_indices.iter().enumerate() {

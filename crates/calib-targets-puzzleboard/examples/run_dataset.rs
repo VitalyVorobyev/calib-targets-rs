@@ -231,7 +231,7 @@ fn main() {
         // PuzzleBoard inherits the caller's graph-build choice via its
         // nested `DetectorParams` (unlike ChArUco, which pins ChessboardV2).
         cfg.chessboard.graph_build_algorithm = args.algorithm;
-        cfg.chessboard.tuning.min_corner_strength = args.min_corner_strength;
+        cfg.chessboard.min_corner_strength = args.min_corner_strength;
     }
     eprintln!(
         "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={} search_mode={:?} scoring_mode={:?} algorithm={:?}",

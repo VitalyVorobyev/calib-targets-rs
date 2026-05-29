@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::DetectorParams;
+use calib_targets_chessboard::{AdvancedTuning, DetectorParams};
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
@@ -190,12 +190,22 @@ impl CharucoParams {
     /// chessboard tolerances).
     pub fn sweep_for_board(board: &CharucoBoardSpec) -> Vec<Self> {
         let base = Self::for_board(board);
+        // The ChArUco base sets a strength floor (stable field) and disables
+        // the standalone final edge-shape gate (advanced knob). Re-apply both
+        // to every recall-bracketed sweep config, preserving each config's own
+        // advanced overrides (the tighter / looser tolerances).
+        let base_strength = base.chessboard.min_corner_strength;
+        let base_edge_shape_check = base
+            .chessboard
+            .effective_tuning()
+            .enable_final_edge_shape_check;
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
-                chessboard.tuning.enable_final_edge_shape_check =
-                    base.chessboard.tuning.enable_final_edge_shape_check;
+                chessboard.min_corner_strength = base_strength;
+                let mut advanced = chessboard.effective_tuning().into_owned();
+                advanced.enable_final_edge_shape_check = base_edge_shape_check;
+                chessboard = chessboard.with_advanced(advanced);
                 Self {
                     chessboard,
                     ..base.clone()
@@ -228,12 +238,16 @@ impl CharucoParams {
         // calibration). The board alignment is a *location* tool, never a
         // corner-drop gate, so this floor — not marker presence — is the
         // precision lever.
-        chessboard.tuning.min_corner_strength = 33.0;
+        chessboard.min_corner_strength = 33.0;
         // ChArUco has marker-ID and board-alignment validation after
         // chessboard grid recovery. Keep the chessboard component
         // recall-oriented here; the standalone chessboard detector
         // still enables the stricter final edge-shape gate by default.
-        chessboard.tuning.enable_final_edge_shape_check = false;
+        // `enable_final_edge_shape_check` is an advanced knob, so route it
+        // through an `AdvancedTuning` override.
+        let mut advanced = AdvancedTuning::default();
+        advanced.enable_final_edge_shape_check = false;
+        chessboard = chessboard.with_advanced(advanced);
 
         let scan = ScanDecodeConfig {
             marker_size_rel: board.marker_size_rel,

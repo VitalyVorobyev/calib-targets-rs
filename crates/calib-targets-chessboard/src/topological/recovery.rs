@@ -141,15 +141,17 @@ pub(super) fn clustered_augs(
     corners: &[ChessCorner],
     params: &DetectorParams,
 ) -> (Vec<CornerAug>, Option<ClusterCenters>) {
+    let min_corner_strength = params.min_corner_strength;
+    let max_fit_rms_ratio = params.effective_tuning().max_fit_rms_ratio;
     let mut augs: Vec<CornerAug> = corners
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let mut aug = CornerAug::from_chess_corner(i, c);
-            let strong = c.strength >= params.tuning.min_corner_strength;
-            let fit_ok = !params.tuning.max_fit_rms_ratio.is_finite()
+            let strong = c.strength >= min_corner_strength;
+            let fit_ok = !max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0
-                || c.fit_rms <= params.tuning.max_fit_rms_ratio * c.contrast;
+                || c.fit_rms <= max_fit_rms_ratio * c.contrast;
             if strong && fit_ok {
                 aug.stage = CornerStage::Strong;
             }
@@ -335,9 +337,10 @@ pub(super) fn recover_topological_components(
         }
     }
 
+    let tuning = params.effective_tuning();
     let boosted_components = merge_components_with_shared_corners(
         boosted_components,
-        params.tuning.component_merge.min_overlap.max(2),
+        tuning.component_merge.min_overlap.max(2),
     );
     if boosted_components.is_empty() {
         return Vec::new();
@@ -358,7 +361,7 @@ pub(super) fn recover_topological_components(
     )
     .entered();
 
-    merge_components_local(&boosted_views, &params.tuning.component_merge).components
+    merge_components_local(&boosted_views, &tuning.component_merge).components
 }
 
 #[cfg_attr(

@@ -58,6 +58,8 @@ pub fn run_geometry_check(
     use projective_grid::detect::advanced::square::validate as pg_validate;
     use std::collections::HashSet as Set;
 
+    let tuning = params.effective_tuning();
+
     // Test 1: line collinearity + local-H residual via shared
     // validator, but with the LOOSER `geometry_check_*` tolerances —
     // the BFS-validation loop already accepted borderline perspective
@@ -75,9 +77,9 @@ pub fn run_geometry_check(
         })
         .collect();
     let mut geom_params = pg_validate::ValidationParams::new(
-        params.tuning.geometry_check_line_tol_rel,
-        params.tuning.line_min_members,
-        params.tuning.geometry_check_local_h_tol_rel,
+        tuning.geometry_check_line_tol_rel,
+        tuning.line_min_members,
+        tuning.geometry_check_local_h_tol_rel,
     );
     // The edge-shape gate + weak-leaf peel are `ChessboardV2`-only. Their
     // tolerances are tuned for seed-and-grow grids; diagnosis showed they
@@ -97,12 +99,12 @@ pub fn run_geometry_check(
     );
     let dense_enough = geom_entries.len() >= MIN_EDGE_SHAPE_LABELS;
     let edge_shape_active =
-        params.tuning.enable_final_edge_shape_check && dense_enough && on_chessboard_v2;
+        tuning.enable_final_edge_shape_check && dense_enough && on_chessboard_v2;
     if edge_shape_active {
         geom_params = geom_params.with_edge_shape_gate(EdgeShapeParams::default());
     }
     let weak_leaf_active = edge_shape_active;
-    if params.tuning.validate_step_aware {
+    if tuning.validate_step_aware {
         // Geometry check stays step-aware so heavily distorted boards
         // get the same scale-relative thresholds as BFS validation.
         // Step-deviation gate is BFS-only — set to 0 (disabled).
@@ -185,7 +187,7 @@ pub fn run_geometry_check(
     // skipped corner carried wrong `(i, j)` labels, so dropping it is
     // precision-correct).
     let mut topo_wrong_label_drop: Set<usize> = Set::new();
-    if params.tuning.enable_final_edge_shape_check && dense_enough && !on_chessboard_v2 {
+    if tuning.enable_final_edge_shape_check && dense_enough && !on_chessboard_v2 {
         topo_wrong_label_drop = topological_wrong_label_drops(&grow_res.labelled, augs, cell_size);
         all_drop.extend(topo_wrong_label_drop.iter().copied());
     }

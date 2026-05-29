@@ -72,10 +72,11 @@ fn find_with_slack<V: SquareSeedPolicy>(
     params: &DetectorParams,
     slack: f32,
 ) -> Option<SeedOutput> {
+    let tuning = params.effective_tuning();
     let pg_params = SeedQuadParams::new(
-        params.tuning.seed_axis_tol_deg.to_radians() * slack,
-        params.tuning.seed_edge_tol * slack,
-        params.tuning.seed_close_tol * slack,
+        tuning.seed_axis_tol_deg.to_radians() * slack,
+        tuning.seed_edge_tol * slack,
+        tuning.seed_close_tol * slack,
     );
     find_quad(v, &pg_params)
 }

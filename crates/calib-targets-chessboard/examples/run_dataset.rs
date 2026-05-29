@@ -92,7 +92,7 @@ fn main() {
     let chess_cfg = default_chess_config();
     let mut detector_params = DetectorParams::default();
     detector_params.graph_build_algorithm = algorithm;
-    detector_params.tuning.min_corner_strength = min_corner_strength;
+    detector_params.min_corner_strength = min_corner_strength;
     eprintln!("min_corner_strength={min_corner_strength}");
 
     let mut n_frames = 0usize;

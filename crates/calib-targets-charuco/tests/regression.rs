@@ -453,7 +453,7 @@ fn detects_plain_chessboard_on_mid_png() {
     let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
 
     let mut chessboard = ChessboardParams::default();
-    chessboard.tuning.min_corner_strength = 0.5;
+    chessboard.min_corner_strength = 0.5;
     let detector = ChessboardDetector::new(chessboard);
     let res = detector.detect(&corners).expect("chessboard detect");
 
