@@ -2,9 +2,9 @@
 //!
 //! The pattern-agnostic machinery (BFS queue, KD-tree, prediction,
 //! ambiguity resolution, rebase-to-origin) lives in
-//! [`projective_grid::square::grow`]. This module supplies the
+//! [`projective_grid::detect::advanced::square::grow`]. This module supplies the
 //! chessboard-specific
-//! [`GrowValidator`](projective_grid::square::grow::GrowValidator)
+//! [`SquareAttachPolicy`](projective_grid::detect::advanced::square::grow::SquareAttachPolicy)
 //! implementation — parity rules, axis-cluster matching, axis-slot-
 //! swap edge invariant — and carries the pipeline's per-corner stage
 //! updates.
@@ -18,7 +18,7 @@ use crate::params::DetectorParams;
 use crate::seed::Seed;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::square::grow as pg_grow;
+use projective_grid::detect::advanced::square::grow as pg_grow;
 use std::collections::HashSet;
 
 pub use pg_grow::GrowResult;
@@ -49,11 +49,11 @@ pub fn grow_from_seed(
         c: seed.c,
         d: seed.d,
     };
-    let pg_params = pg_grow::GrowParams::new(
-        params.tuning.attach_search_rel,
-        params.tuning.attach_ambiguity_factor,
-    );
-    let validator = ChessboardGrowValidator::new(corners, blacklist, centers, cell_size, params);
+    let tuning = params.effective_tuning();
+    let pg_params =
+        pg_grow::GrowParams::new(tuning.attach_search_rel, tuning.attach_ambiguity_factor);
+    let validator =
+        ChessboardSquareAttachPolicy::new(corners, blacklist, centers, cell_size, params);
 
     let pg_result = pg_grow::bfs_grow(&positions, pg_seed, cell_size, &pg_params, &validator);
 
@@ -70,13 +70,13 @@ pub fn grow_from_seed(
     pg_result
 }
 
-/// Chessboard's plug-in for [`pg_grow::GrowValidator`].
+/// Chessboard's plug-in for [`pg_grow::SquareAttachPolicy`].
 ///
 /// Holds immutable references into the caller's corner array + the
 /// clustering output + per-call tolerances. The BFS does not mutate
 /// per-corner state via this trait — `grow_from_seed` does that after
 /// the generic walk returns (see above).
-pub(crate) struct ChessboardGrowValidator<'a> {
+pub(crate) struct ChessboardSquareAttachPolicy<'a> {
     pub(crate) corners: &'a [CornerAug],
     pub(crate) blacklist: &'a HashSet<usize>,
     pub(crate) centers: ClusterCenters,
@@ -85,8 +85,8 @@ pub(crate) struct ChessboardGrowValidator<'a> {
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
     /// Parity shift applied by the post-BFS rebase. `0` during BFS
-    /// (where coords are pre-rebase), and `(parity_shift_i +
-    /// parity_shift_j) % 2` from [`GrowResult`] for the
+    /// (where coords are pre-rebase), and `(rebase_i_mod2 +
+    /// rebase_j_mod2) % 2` from [`GrowResult`] for the
     /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters` /
     /// `final_geometry_check` stages (where coords are post-rebase).
     /// When `1`, `required_label_at(i, j)` returns the FLIPPED
@@ -94,7 +94,7 @@ pub(crate) struct ChessboardGrowValidator<'a> {
     pub(crate) parity_shift: i32,
 }
 
-impl<'a> ChessboardGrowValidator<'a> {
+impl<'a> ChessboardSquareAttachPolicy<'a> {
     /// Construct from chessboard `DetectorParams` + the same inputs the
     /// BFS-grow validator uses. Re-used by Stage-6
     /// `extension::extend_via_global_homography` to keep parity /
@@ -107,14 +107,15 @@ impl<'a> ChessboardGrowValidator<'a> {
         cell_size: f32,
         params: &DetectorParams,
     ) -> Self {
+        let tuning = params.effective_tuning();
         Self {
             corners,
             blacklist,
             centers,
             cell_size,
-            attach_tol_rad: params.tuning.attach_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
-            step_tol: params.tuning.step_tol,
+            attach_tol_rad: tuning.attach_axis_tol_deg.to_radians(),
+            edge_tol_rad: tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: tuning.step_tol,
             parity_shift: 0,
         }
     }
@@ -127,7 +128,7 @@ impl<'a> ChessboardGrowValidator<'a> {
     }
 }
 
-impl<'a> pg_grow::GrowValidator for ChessboardGrowValidator<'a> {
+impl<'a> pg_grow::SquareAttachPolicy for ChessboardSquareAttachPolicy<'a> {
     fn is_eligible(&self, idx: usize) -> bool {
         if self.blacklist.contains(&idx) {
             return false;
@@ -249,11 +250,11 @@ fn infer_label_with_max_d(
 }
 
 /// Stage-6.5 rescue: a relaxed-eligibility variant of
-/// [`ChessboardGrowValidator`] that admits `Strong` / `NoCluster`
+/// [`ChessboardSquareAttachPolicy`] that admits `Strong` / `NoCluster`
 /// corners (in addition to `Clustered`) when their inferred parity
 /// matches the required cell parity AND their axes match the global
 /// cluster centers within `rescue_tol_rad`. Position match is enforced
-/// by [`projective_grid::square::extension::extend_via_local_homography`]'s
+/// by [`projective_grid::detect::advanced::square::extension::extend_via_local_homography`]'s
 /// per-cell local-H prediction; this validator only owns the
 /// label-side gates.
 ///
@@ -267,7 +268,7 @@ pub(crate) struct ChessboardRescueValidator<'a> {
     pub(crate) rescue_tol_rad: f32,
     pub(crate) edge_tol_rad: f32,
     pub(crate) step_tol: f32,
-    /// Same parity-shift semantics as [`ChessboardGrowValidator::parity_shift`].
+    /// Same parity-shift semantics as [`ChessboardSquareAttachPolicy::parity_shift`].
     pub(crate) parity_shift: i32,
 }
 
@@ -279,27 +280,28 @@ impl<'a> ChessboardRescueValidator<'a> {
         cell_size: f32,
         params: &DetectorParams,
     ) -> Self {
+        let tuning = params.effective_tuning();
         Self {
             corners,
             blacklist,
             centers,
             cell_size,
-            rescue_tol_rad: params.tuning.rescue_axis_tol_deg.to_radians(),
-            edge_tol_rad: params.tuning.edge_axis_tol_deg.to_radians(),
-            step_tol: params.tuning.step_tol,
+            rescue_tol_rad: tuning.rescue_axis_tol_deg.to_radians(),
+            edge_tol_rad: tuning.edge_axis_tol_deg.to_radians(),
+            step_tol: tuning.step_tol,
             parity_shift: 0,
         }
     }
 
     /// Set the parity shift introduced by the post-BFS rebase. See
-    /// [`ChessboardGrowValidator::with_parity_shift`].
+    /// [`ChessboardSquareAttachPolicy::with_parity_shift`].
     pub(crate) fn with_parity_shift(mut self, parity_shift: i32) -> Self {
         self.parity_shift = parity_shift.rem_euclid(2);
         self
     }
 }
 
-impl<'a> pg_grow::GrowValidator for ChessboardRescueValidator<'a> {
+impl<'a> pg_grow::SquareAttachPolicy for ChessboardRescueValidator<'a> {
     fn is_eligible(&self, idx: usize) -> bool {
         if self.blacklist.contains(&idx) {
             return false;

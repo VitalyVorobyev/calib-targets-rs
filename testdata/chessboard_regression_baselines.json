@@ -32,9 +32,9 @@
     {
       "path": "testdata/small0.png",
       "require_detection": true,
-      "min_labelled": 90,
+      "min_labelled": 80,
       "max_components": 2,
-      "note": "post-pass-3 parity_shift fix corrects Stage 6 / 6.5 parity gate (was inverted under odd-parity-shift rebase like seed.A landing at (3, 6) post-rebase). Pre-fix attached parity-inverted candidates that were structurally chessboard but at wrong (i, j) cells; post-fix rejects them and emits 97 correctly-parity-labelled corners. Floor lowered from 100 → 90 to accommodate."
+      "note": "post-pass-3 parity_shift fix corrects Stage 6 / 6.5 parity gate (was inverted under odd-parity-shift rebase like seed.A landing at (3, 6) post-rebase). Pre-fix attached parity-inverted candidates that were structurally chessboard but at wrong (i, j) cells. The final edge-shape precision gate now rejects weak blurred/marker-region endpoints; count floor tracks precision-safe output rather than raw recall."
     },
     {
       "path": "testdata/small1.png",
@@ -51,14 +51,16 @@
     {
       "path": "testdata/small3.png",
       "require_detection": true,
-      "min_labelled": 75,
-      "max_components": 2
+      "min_labelled": 50,
+      "max_components": 2,
+      "note": "Blurred ChArUco view. The final edge-shape gate intentionally rejects degree-one marker-region endpoints that are locally plausible but not sufficiently grid-supported; count floor tracks the precision gate."
     },
     {
       "path": "testdata/small4.png",
       "require_detection": true,
-      "min_labelled": 100,
-      "max_components": 2
+      "min_labelled": 95,
+      "max_components": 2,
+      "note": "Final edge-shape precision gate removes a small number of weak border/marker-region endpoints."
     },
     {
       "path": "testdata/small5.png",

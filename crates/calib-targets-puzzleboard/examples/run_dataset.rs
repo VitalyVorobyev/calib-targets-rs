@@ -68,6 +68,7 @@ struct Args {
     search_mode: PuzzleBoardSearchMode,
     scoring_mode: PuzzleBoardScoringMode,
     algorithm: GraphBuildAlgorithm,
+    min_corner_strength: f32,
 }
 
 fn usage_and_exit() -> ! {
@@ -129,6 +130,7 @@ fn parse_args() -> Args {
     let mut search_mode = PuzzleBoardSearchMode::Full;
     let mut scoring_mode = PuzzleBoardScoringMode::default();
     let mut algorithm = GraphBuildAlgorithm::default();
+    let mut min_corner_strength: f32 = 0.1;
     let mut args = env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -163,6 +165,12 @@ fn parse_args() -> Args {
                     .map(|v| parse_algorithm(&v))
                     .unwrap_or_else(|| usage_and_exit());
             }
+            "--min-corner-strength" => {
+                min_corner_strength = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| usage_and_exit());
+            }
             "-h" | "--help" => usage_and_exit(),
             other => {
                 eprintln!("unknown arg: {other}");
@@ -195,6 +203,7 @@ fn parse_args() -> Args {
         search_mode,
         scoring_mode,
         algorithm,
+        min_corner_strength,
     }
 }
 
@@ -222,6 +231,7 @@ fn main() {
         // PuzzleBoard inherits the caller's graph-build choice via its
         // nested `DetectorParams` (unlike ChArUco, which pins ChessboardV2).
         cfg.chessboard.graph_build_algorithm = args.algorithm;
+        cfg.chessboard.min_corner_strength = args.min_corner_strength;
     }
     eprintln!(
         "spec: rows={} cols={} cell_size_mm={} origin=({},{}) configs={} search_mode={:?} scoring_mode={:?} algorithm={:?}",

@@ -763,7 +763,8 @@ class GridGraphParams:
 class AxisClusterCenters:
     """Two global grid-axis directions for the topological pre-Delaunay gate.
 
-    Mirrors ``projective_grid::AxisClusterCenters``. Both fields are in
+    Mirrors ``projective_grid::TopologicalParams.axis_cluster_centers``.
+    Both fields are in
     ``[0, π)`` and ordered ``theta0 < theta1``. Construct directly when
     you have an unbiased estimate; the chessboard detector's topological
     dispatch path supplies these from its own ``cluster_axes`` so callers
@@ -783,30 +784,29 @@ class AxisClusterCenters:
 
 @dataclass(slots=True)
 class TopologicalParams:
-    """Tuning knobs for ``projective_grid::build_grid_topological``.
+    """Tuning knobs for ``projective_grid::detect_grid_all``.
 
     Defaults match the Rust workspace defaults in
-    ``crates/projective-grid/src/topological/mod.rs`` and have been
-    co-tuned against ``02-topo-grid`` (Gemini chessboards) and
-    ``130x130_puzzle``. See
-    ``crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`` for the
-    stage-by-stage picture.
+    ``crates/projective-grid/src/detect/square/topological/mod.rs`` and have
+    been co-tuned against internal regression sets covering both chessboard
+    and PuzzleBoard captures.
     """
 
     axis_align_tol_rad: float = 0.2617993877991494  # 15°
     max_axis_sigma_rad: float = 0.6
-    edge_ratio_max: float = 10.0
+    opposing_edge_ratio_max: float = 10.0
     min_quads_per_component: int = 1
     axis_cluster_centers: "AxisClusterCenters | None" = None
     cluster_axis_tol_rad: float = 0.2792526803190927  # 16°
-    quad_edge_min_rel: float = 0.0
-    quad_edge_max_rel: float = 1.8
+    edge_length_min_rel: float = 0.0
+    edge_length_max_rel: float = 1.8
+    min_corners_for_component: int = 4
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "axis_align_tol_rad": self.axis_align_tol_rad,
             "max_axis_sigma_rad": self.max_axis_sigma_rad,
-            "edge_ratio_max": self.edge_ratio_max,
+            "opposing_edge_ratio_max": self.opposing_edge_ratio_max,
             "min_quads_per_component": self.min_quads_per_component,
             "axis_cluster_centers": (
                 self.axis_cluster_centers.to_dict()
@@ -814,8 +814,9 @@ class TopologicalParams:
                 else None
             ),
             "cluster_axis_tol_rad": self.cluster_axis_tol_rad,
-            "quad_edge_min_rel": self.quad_edge_min_rel,
-            "quad_edge_max_rel": self.quad_edge_max_rel,
+            "edge_length_min_rel": self.edge_length_min_rel,
+            "edge_length_max_rel": self.edge_length_max_rel,
+            "min_corners_for_component": self.min_corners_for_component,
         }
 
     @classmethod
@@ -825,7 +826,10 @@ class TopologicalParams:
         return cls(
             axis_align_tol_rad=data.get("axis_align_tol_rad", d.axis_align_tol_rad),
             max_axis_sigma_rad=data.get("max_axis_sigma_rad", d.max_axis_sigma_rad),
-            edge_ratio_max=data.get("edge_ratio_max", d.edge_ratio_max),
+            opposing_edge_ratio_max=data.get(
+                "opposing_edge_ratio_max",
+                data.get("edge_ratio_max", d.opposing_edge_ratio_max),
+            ),
             min_quads_per_component=data.get(
                 "min_quads_per_component", d.min_quads_per_component
             ),
@@ -835,37 +839,96 @@ class TopologicalParams:
             cluster_axis_tol_rad=data.get(
                 "cluster_axis_tol_rad", d.cluster_axis_tol_rad
             ),
-            quad_edge_min_rel=data.get("quad_edge_min_rel", d.quad_edge_min_rel),
-            quad_edge_max_rel=data.get("quad_edge_max_rel", d.quad_edge_max_rel),
+            edge_length_min_rel=data.get(
+                "edge_length_min_rel",
+                data.get("quad_edge_min_rel", d.edge_length_min_rel),
+            ),
+            edge_length_max_rel=data.get(
+                "edge_length_max_rel",
+                data.get("quad_edge_max_rel", d.edge_length_max_rel),
+            ),
+            min_corners_for_component=data.get(
+                "min_corners_for_component", d.min_corners_for_component
+            ),
         )
+
+
+# Names of the advanced (opt-in, unstable) tuning knobs that the Python
+# ``ChessboardParams`` dataclass carries flat for ergonomics but serialises
+# under the nested ``"advanced"`` block (matching Rust's
+# ``DetectorParams.advanced: Option<Box<AdvancedTuning>>``). The four stable
+# fields (``graph_build_algorithm`` / ``min_labeled_corners`` /
+# ``max_components`` / ``min_corner_strength``) and the round-trip-only
+# ``chess`` carrier stay at the top level.
+_ADVANCED_SCALAR_FIELDS = (
+    "max_fit_rms_ratio",
+    "num_bins",
+    "max_iters_2means",
+    "cluster_tol_deg",
+    "peak_min_separation_deg",
+    "min_peak_weight_fraction",
+    "seed_edge_tol",
+    "seed_axis_tol_deg",
+    "seed_close_tol",
+    "attach_search_rel",
+    "attach_axis_tol_deg",
+    "attach_ambiguity_factor",
+    "step_tol",
+    "edge_axis_tol_deg",
+    "line_tol_rel",
+    "line_min_members",
+    "local_h_tol_rel",
+    "enable_final_edge_shape_check",
+    "max_validation_iters",
+    "enable_weak_cluster_rescue",
+    "weak_cluster_tol_deg",
+    "max_booster_iters",
+)
 
 
 @dataclass(slots=True)
 class ChessboardParams:
-    """Chessboard detection parameters — flat shape.
+    """Chessboard detection parameters.
 
-    Mirrors ``calib_targets_chessboard::DetectorParams`` field-for-field.
-    The ChESS corner detector config is *not* embedded here — the Rust
-    facade uses ``default_chess_config()`` for chessboard detection.
-    Pass a ``chess_cfg`` argument separately to ``detect_chessboard`` if
-    you need to override it.
+    Mirrors ``calib_targets_chessboard::DetectorParams``. The fields are kept
+    flat on this dataclass for ergonomics, but on the wire they split into a
+    **stable core** plus an opt-in, unstable ``advanced`` block — matching the
+    Rust struct, where the advanced knobs live behind
+    ``DetectorParams.advanced``.
 
-    The ``chess`` field is preserved as a convenience carrier for
+    Stable core (top-level keys, covered by semver):
+    ``graph_build_algorithm``, ``min_labeled_corners``, ``max_components``,
+    ``min_corner_strength``.
+
+    Everything else (``cluster_tol_deg``, ``seed_edge_tol``,
+    ``enable_final_edge_shape_check``, ``topological``, …) is an **advanced**
+    knob. :meth:`to_dict` nests these under ``"advanced"`` and
+    :meth:`from_dict` reads them back from there. The advanced knobs are NOT
+    covered by semver and may change between minor versions — leave them at
+    their defaults unless a specific input fails.
+
+    The ChESS corner detector config is *not* embedded here — the Rust facade
+    uses ``default_chess_config()`` for chessboard detection. Pass a
+    ``chess_cfg`` argument separately to ``detect_chessboard`` if you need to
+    override it. The ``chess`` field is preserved as a convenience carrier for
     round-tripping: when set, ``to_dict`` nests it under ``"chess"`` so
-    external pipelines (e.g., JSON configs) can keep ChESS + chessboard
-    params together, but the Rust detector itself ignores it.
+    external pipelines can keep ChESS + chessboard params together, but the
+    Rust detector itself ignores it.
     """
 
     chess: ChessConfig = field(default_factory=ChessConfig)
-    # Pipeline dispatch
+    # --- Stable core --------------------------------------------------------
     # See `calib_targets_chessboard::GraphBuildAlgorithm`. Accepted
     # snake_case values: "topological" or "chessboard_v2". Default
     # ChessboardV2 — flip to "topological" when targeting low-view-angle
     # PuzzleBoard captures or other distortion-heavy scenes.
     graph_build_algorithm: str = "chessboard_v2"
+    min_corner_strength: float = 0.0
+    min_labeled_corners: int = 8
+    max_components: int = 3
+    # --- Advanced (opt-in, unstable; serialised under "advanced") ----------
     topological: TopologicalParams = field(default_factory=TopologicalParams)
     # Stage 1 — pre-filter
-    min_corner_strength: float = 0.0
     max_fit_rms_ratio: float = 0.5
     # Stages 2-3 — clustering
     num_bins: int = 90
@@ -885,17 +948,14 @@ class ChessboardParams:
     edge_axis_tol_deg: float = 15.0
     # Stage 7 — validate
     line_tol_rel: float = 0.18
-    projective_line_tol_rel: float = 0.25
     line_min_members: int = 3
     local_h_tol_rel: float = 0.20
+    enable_final_edge_shape_check: bool = True
     max_validation_iters: int = 6
     # Stage 8 — recall boosters
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
     max_booster_iters: int = 5
-    # Output gates
-    min_labeled_corners: int = 8
-    max_components: int = 3
 
     @classmethod
     def for_topological(cls, **overrides: Any) -> ChessboardParams:
@@ -907,91 +967,50 @@ class ChessboardParams:
         overrides.setdefault("graph_build_algorithm", "topological")
         return cls(**overrides)
 
+    def _advanced_to_dict(self) -> dict[str, Any]:
+        advanced: dict[str, Any] = {"topological": self.topological.to_dict()}
+        for name in _ADVANCED_SCALAR_FIELDS:
+            advanced[name] = getattr(self, name)
+        return advanced
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
-            "topological": self.topological.to_dict(),
             "min_corner_strength": self.min_corner_strength,
-            "max_fit_rms_ratio": self.max_fit_rms_ratio,
-            "num_bins": self.num_bins,
-            "max_iters_2means": self.max_iters_2means,
-            "cluster_tol_deg": self.cluster_tol_deg,
-            "peak_min_separation_deg": self.peak_min_separation_deg,
-            "min_peak_weight_fraction": self.min_peak_weight_fraction,
-            "seed_edge_tol": self.seed_edge_tol,
-            "seed_axis_tol_deg": self.seed_axis_tol_deg,
-            "seed_close_tol": self.seed_close_tol,
-            "attach_search_rel": self.attach_search_rel,
-            "attach_axis_tol_deg": self.attach_axis_tol_deg,
-            "attach_ambiguity_factor": self.attach_ambiguity_factor,
-            "step_tol": self.step_tol,
-            "edge_axis_tol_deg": self.edge_axis_tol_deg,
-            "line_tol_rel": self.line_tol_rel,
-            "projective_line_tol_rel": self.projective_line_tol_rel,
-            "line_min_members": self.line_min_members,
-            "local_h_tol_rel": self.local_h_tol_rel,
-            "max_validation_iters": self.max_validation_iters,
-            "enable_weak_cluster_rescue": self.enable_weak_cluster_rescue,
-            "weak_cluster_tol_deg": self.weak_cluster_tol_deg,
-            "max_booster_iters": self.max_booster_iters,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
+            "advanced": self._advanced_to_dict(),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessboardParams:
         d = cls()
-        return cls(
-            chess=ChessConfig.from_dict(data.get("chess", {})),
-            graph_build_algorithm=data.get(
+        # Advanced knobs live under "advanced" (current shape). Tolerate a
+        # flat top-level layout too, so configs written before the
+        # stable/advanced split keep deserialising.
+        advanced = data.get("advanced")
+        if not isinstance(advanced, dict):
+            advanced = data
+        kwargs: dict[str, Any] = {
+            "chess": ChessConfig.from_dict(data.get("chess", {})),
+            "graph_build_algorithm": data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
             ),
-            topological=TopologicalParams.from_dict(data.get("topological", {})),
-            min_corner_strength=data.get("min_corner_strength", d.min_corner_strength),
-            max_fit_rms_ratio=data.get("max_fit_rms_ratio", d.max_fit_rms_ratio),
-            num_bins=data.get("num_bins", d.num_bins),
-            max_iters_2means=data.get("max_iters_2means", d.max_iters_2means),
-            cluster_tol_deg=data.get("cluster_tol_deg", d.cluster_tol_deg),
-            peak_min_separation_deg=data.get(
-                "peak_min_separation_deg", d.peak_min_separation_deg
+            "min_corner_strength": data.get(
+                "min_corner_strength", d.min_corner_strength
             ),
-            min_peak_weight_fraction=data.get(
-                "min_peak_weight_fraction", d.min_peak_weight_fraction
-            ),
-            seed_edge_tol=data.get("seed_edge_tol", d.seed_edge_tol),
-            seed_axis_tol_deg=data.get("seed_axis_tol_deg", d.seed_axis_tol_deg),
-            seed_close_tol=data.get("seed_close_tol", d.seed_close_tol),
-            attach_search_rel=data.get("attach_search_rel", d.attach_search_rel),
-            attach_axis_tol_deg=data.get(
-                "attach_axis_tol_deg", d.attach_axis_tol_deg
-            ),
-            attach_ambiguity_factor=data.get(
-                "attach_ambiguity_factor", d.attach_ambiguity_factor
-            ),
-            step_tol=data.get("step_tol", d.step_tol),
-            edge_axis_tol_deg=data.get("edge_axis_tol_deg", d.edge_axis_tol_deg),
-            line_tol_rel=data.get("line_tol_rel", d.line_tol_rel),
-            projective_line_tol_rel=data.get(
-                "projective_line_tol_rel", d.projective_line_tol_rel
-            ),
-            line_min_members=data.get("line_min_members", d.line_min_members),
-            local_h_tol_rel=data.get("local_h_tol_rel", d.local_h_tol_rel),
-            max_validation_iters=data.get(
-                "max_validation_iters", d.max_validation_iters
-            ),
-            enable_weak_cluster_rescue=data.get(
-                "enable_weak_cluster_rescue", d.enable_weak_cluster_rescue
-            ),
-            weak_cluster_tol_deg=data.get(
-                "weak_cluster_tol_deg", d.weak_cluster_tol_deg
-            ),
-            max_booster_iters=data.get("max_booster_iters", d.max_booster_iters),
-            min_labeled_corners=data.get(
+            "min_labeled_corners": data.get(
                 "min_labeled_corners", d.min_labeled_corners
             ),
-            max_components=data.get("max_components", d.max_components),
-        )
+            "max_components": data.get("max_components", d.max_components),
+            "topological": TopologicalParams.from_dict(
+                advanced.get("topological", {})
+            ),
+        }
+        for name in _ADVANCED_SCALAR_FIELDS:
+            kwargs[name] = advanced.get(name, getattr(d, name))
+        return cls(**kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -1058,6 +1077,11 @@ class CharucoBoardSpec:
             marker_layout=MarkerLayout(data.get("marker_layout", "opencv_charuco")),
         )
 
+def _charuco_chessboard_default() -> ChessboardParams:
+    params = ChessboardParams()
+    params.enable_final_edge_shape_check = False
+    return params
+
 
 @dataclass(slots=True)
 class CharucoParams:
@@ -1065,7 +1089,7 @@ class CharucoParams:
 
     board: CharucoBoardSpec
     px_per_square: float = 60.0
-    chessboard: ChessboardParams = field(default_factory=ChessboardParams)
+    chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
     max_hamming: int = 0
     min_marker_inliers: int = 3
@@ -1100,7 +1124,11 @@ class CharucoParams:
         return cls(
             board=CharucoBoardSpec.from_dict(board_data),
             px_per_square=data.get("px_per_square", d_px),
-            chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
+            chessboard=(
+                ChessboardParams.from_dict(data["chessboard"])
+                if "chessboard" in data
+                else _charuco_chessboard_default()
+            ),
             scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
             max_hamming=data.get("max_hamming", 0),
             min_marker_inliers=data.get("min_marker_inliers", 3),

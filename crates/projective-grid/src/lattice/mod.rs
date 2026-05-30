@@ -1,0 +1,192 @@
+//! Lattice taxonomy, coordinate transforms, and model-plane mapping.
+
+use nalgebra::Point2;
+
+use crate::float::{lit, Float};
+
+/// Integer coordinate on a lattice.
+///
+/// For square grids this is `(u, v) = (i, j)`. For hex grids this is axial
+/// `(u, v) = (q, r)`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[non_exhaustive]
+pub struct Coord {
+    /// First lattice coordinate: square `i`, or hex axial `q`.
+    pub u: i32,
+    /// Second lattice coordinate: square `j`, or hex axial `r`.
+    pub v: i32,
+}
+
+impl Coord {
+    /// Construct a coordinate from two integer components.
+    pub const fn new(u: i32, v: i32) -> Self {
+        Self { u, v }
+    }
+}
+
+/// Optional known grid dimensions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct GridDimensions {
+    /// Number of cells or feature positions along the first lattice axis.
+    pub width: usize,
+    /// Number of cells or feature positions along the second lattice axis.
+    pub height: usize,
+}
+
+impl GridDimensions {
+    /// Construct known grid dimensions.
+    pub const fn new(width: usize, height: usize) -> Self {
+        Self { width, height }
+    }
+}
+
+/// Supported lattice families.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum LatticeKind {
+    /// Orthogonal square lattice.
+    Square,
+    /// Axial-coordinate hexagonal lattice.
+    Hex,
+}
+
+impl LatticeKind {
+    /// Map an integer lattice coordinate into the model plane.
+    ///
+    /// Square coordinates map to `(u, v)`. Hex axial coordinates map to
+    /// `(q + 0.5*r, sqrt(3)/2*r)`, using unit nearest-neighbour spacing in the
+    /// model plane.
+    pub fn model_point<F: Float>(self, coord: Coord) -> Point2<F> {
+        match self {
+            Self::Square => Point2::new(lit::<F>(coord.u as f32), lit::<F>(coord.v as f32)),
+            Self::Hex => {
+                let q = lit::<F>(coord.u as f32);
+                let r = lit::<F>(coord.v as f32);
+                let half = lit::<F>(0.5);
+                let sqrt3_over_2 = lit::<F>(3.0).sqrt() * half;
+                Point2::new(q + half * r, sqrt3_over_2 * r)
+            }
+        }
+    }
+}
+
+/// A lattice-coordinate symmetry transform: `out = matrix * coord + offset`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct GridTransform {
+    /// Lattice family this transform belongs to.
+    pub source_kind: LatticeKind,
+    /// Row-major 2x2 integer linear part.
+    pub matrix: [[i32; 2]; 2],
+    /// Integer offset applied after the linear part.
+    pub offset: [i32; 2],
+}
+
+impl GridTransform {
+    /// Construct a lattice transform from raw components.
+    pub const fn new(source_kind: LatticeKind, matrix: [[i32; 2]; 2], offset: [i32; 2]) -> Self {
+        Self {
+            source_kind,
+            matrix,
+            offset,
+        }
+    }
+
+    /// Apply this transform to a coordinate.
+    pub fn apply(self, coord: Coord) -> Coord {
+        Coord {
+            u: self.matrix[0][0] * coord.u + self.matrix[0][1] * coord.v + self.offset[0],
+            v: self.matrix[1][0] * coord.u + self.matrix[1][1] * coord.v + self.offset[1],
+        }
+    }
+
+    /// Determinant of the linear part.
+    pub const fn determinant(self) -> i32 {
+        self.matrix[0][0] * self.matrix[1][1] - self.matrix[0][1] * self.matrix[1][0]
+    }
+}
+
+/// Four cardinal neighbour offsets on a square grid.
+pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = [
+    Coord::new(1, 0),
+    Coord::new(0, 1),
+    Coord::new(-1, 0),
+    Coord::new(0, -1),
+];
+
+/// Six axial neighbour offsets on a hex grid.
+pub const HEX_AXIAL_OFFSETS: [Coord; 6] = [
+    Coord::new(1, 0),
+    Coord::new(1, -1),
+    Coord::new(0, -1),
+    Coord::new(-1, 0),
+    Coord::new(-1, 1),
+    Coord::new(0, 1),
+];
+
+/// Dihedral group D4 acting on square lattice coordinates.
+pub const D4_TRANSFORMS: [GridTransform; 8] = [
+    GridTransform::new(LatticeKind::Square, [[1, 0], [0, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[0, 1], [-1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[1, 0], [0, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[0, 1], [1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[0, -1], [-1, 0]], [0, 0]),
+];
+
+/// Dihedral group D6 acting on hex axial coordinates.
+pub const D6_TRANSFORMS: [GridTransform; 12] = [
+    GridTransform::new(LatticeKind::Hex, [[1, 0], [0, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[0, -1], [1, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[-1, -1], [1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[-1, 0], [0, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[0, 1], [-1, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[1, 1], [-1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[1, 1], [0, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[1, 0], [-1, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[0, -1], [-1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[-1, -1], [0, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[-1, 0], [1, 1]], [0, 0]),
+    GridTransform::new(LatticeKind::Hex, [[0, 1], [1, 0]], [0, 0]),
+];
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    #[test]
+    fn square_model_mapping_is_cartesian() {
+        let p = LatticeKind::Square.model_point::<f64>(Coord::new(2, -3));
+        assert_eq!(p, Point2::new(2.0, -3.0));
+    }
+
+    #[test]
+    fn hex_model_mapping_is_axial() {
+        let p = LatticeKind::Hex.model_point::<f64>(Coord::new(1, 2));
+        assert!((p.x - 2.0).abs() < 1e-12);
+        assert!((p.y - 3.0_f64.sqrt()).abs() < 1e-12);
+    }
+
+    #[test]
+    fn d4_table_is_complete() {
+        let set: HashSet<_> = D4_TRANSFORMS.iter().map(|t| t.matrix).collect();
+        assert_eq!(set.len(), 8);
+        assert!(D4_TRANSFORMS
+            .iter()
+            .all(|t| t.source_kind == LatticeKind::Square && t.determinant().abs() == 1));
+    }
+
+    #[test]
+    fn d6_table_is_complete() {
+        let set: HashSet<_> = D6_TRANSFORMS.iter().map(|t| t.matrix).collect();
+        assert_eq!(set.len(), 12);
+        assert!(D6_TRANSFORMS
+            .iter()
+            .all(|t| t.source_kind == LatticeKind::Hex && t.determinant().abs() == 1));
+    }
+}

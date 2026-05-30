@@ -209,15 +209,14 @@ use image::ImageReader;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("frame.png")?.decode()?.to_luma8();
 
-    let board = CharucoBoardSpec {
-        rows: 5,
-        cols: 7,
-        cell_size: 20.0,      // mm
-        marker_size_rel: 0.75,
-        dictionary: "DICT_4X4_50".parse()?,
-        marker_layout: MarkerLayout::OpencvCharuco,
-        ..Default::default()
-    };
+    let board = CharucoBoardSpec::new(
+        5,
+        7,
+        20.0, // mm
+        0.75,
+        "DICT_4X4_50".parse()?,
+    )
+    .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let params = CharucoParams::for_board(&board);
 

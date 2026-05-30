@@ -10,8 +10,9 @@ use std::collections::HashMap;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use nalgebra::{Point2, Vector2};
-use projective_grid::square::grow::{
-    bfs_grow, predict_from_neighbours, Admit, GrowParams, GrowValidator, LabelledNeighbour, Seed,
+use projective_grid::detect::advanced::square::grow::{
+    bfs_grow, predict_from_neighbours, Admit, GrowParams, LabelledNeighbour, Seed,
+    SquareAttachPolicy,
 };
 
 /// Generate a synthetic perspective-warped grid:
@@ -59,7 +60,7 @@ fn perspective_warped_grid(rows: i32, cols: i32, scale: f32) -> (Vec<Point2<f32>
 
 struct OpenValidator;
 
-impl GrowValidator for OpenValidator {
+impl SquareAttachPolicy for OpenValidator {
     fn is_eligible(&self, _idx: usize) -> bool {
         true
     }

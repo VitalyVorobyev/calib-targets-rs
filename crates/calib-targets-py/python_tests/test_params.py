@@ -294,6 +294,7 @@ def test_puzzleboard_printing_roundtrip() -> None:
 def _sample_chessboard_result() -> dict:
     # Schema matches `serde_json::to_value(
     # calib_targets_chessboard::ChessboardDetection)` byte-for-byte.
+    # `cell_size` is serialized unconditionally on the Rust side.
     return {
         "corners": [
             {
@@ -303,6 +304,7 @@ def _sample_chessboard_result() -> dict:
                 "score": 0.9,
             }
         ],
+        "cell_size": 41.5,
     }
 
 

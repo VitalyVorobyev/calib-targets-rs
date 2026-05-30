@@ -11,6 +11,7 @@ pub(super) fn default_circle_diameter_rel() -> f64 {
 }
 
 /// One circle in the printable marker board layout.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MarkerCircleSpec {
     /// Cell column index of the circle.
@@ -22,19 +23,26 @@ pub struct MarkerCircleSpec {
 }
 
 impl MarkerCircleSpec {
+    /// Build a printable marker-circle spec at cell `(i, j)` with the given
+    /// polarity.
+    pub fn new(i: u32, j: u32, polarity: CirclePolarity) -> Self {
+        Self { i, j, polarity }
+    }
+
     /// Convert to the detector `MarkerCircleSpec`.
     pub fn to_detector_spec(self) -> calib_targets_marker::MarkerCircleSpec {
-        calib_targets_marker::MarkerCircleSpec {
-            cell: calib_targets_marker::CellCoords {
+        calib_targets_marker::MarkerCircleSpec::new(
+            calib_targets_marker::CellCoords {
                 i: self.i as i32,
                 j: self.j as i32,
             },
-            polarity: self.polarity,
-        }
+            self.polarity,
+        )
     }
 }
 
 /// Printable marker-board (checkerboard + coloured circle overlay) target.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MarkerBoardTargetSpec {
     /// Number of inner corner-intersection rows.
@@ -51,6 +59,32 @@ pub struct MarkerBoardTargetSpec {
 }
 
 impl MarkerBoardTargetSpec {
+    /// Build a printable marker-board target from its inner-corner grid size,
+    /// square size (mm), and the three overlaid circles. The circle diameter
+    /// defaults; override it with
+    /// [`MarkerBoardTargetSpec::with_circle_diameter_rel`].
+    pub fn new(
+        inner_rows: u32,
+        inner_cols: u32,
+        square_size_mm: f64,
+        circles: [MarkerCircleSpec; 3],
+    ) -> Self {
+        Self {
+            inner_rows,
+            inner_cols,
+            square_size_mm,
+            circles,
+            circle_diameter_rel: default_circle_diameter_rel(),
+        }
+    }
+
+    /// Override the circle diameter as a fraction of the square side.
+    #[must_use]
+    pub fn with_circle_diameter_rel(mut self, circle_diameter_rel: f64) -> Self {
+        self.circle_diameter_rel = circle_diameter_rel;
+        self
+    }
+
     /// Compute a centred default 3-circle layout for the given board size.
     pub fn default_circles(inner_rows: u32, inner_cols: u32) -> [MarkerCircleSpec; 3] {
         let squares_x = inner_cols + 1;

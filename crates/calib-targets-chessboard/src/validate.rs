@@ -1,10 +1,10 @@
 //! Stage 7 — post-growth validation.
 //!
 //! Pattern-agnostic logic lives in the
-//! [`projective_grid::square::validate`](mod@projective_grid::square::validate)
+//! [`projective_grid::detect::advanced::square::validate`](mod@projective_grid::detect::advanced::square::validate)
 //! module; this adapter maps the chessboard detector's internal
 //! `CornerAug` + labelled-map representation to
-//! [`projective_grid::square::validate::LabelledEntry`] and
+//! [`projective_grid::detect::advanced::square::validate::LabelledEntry`] and
 //! forwards the call.
 //!
 //! See the hoisted module for the algorithm description (line
@@ -12,7 +12,7 @@
 
 use crate::corner::CornerAug;
 use crate::params::DetectorParams;
-use projective_grid::square::validate as pg_validate;
+use projective_grid::detect::advanced::square::validate as pg_validate;
 use std::collections::HashMap;
 
 pub use pg_validate::ValidationResult;
@@ -40,13 +40,14 @@ pub fn validate(
             grid,
         })
         .collect();
+    let tuning = params.effective_tuning();
     let mut pg_params = pg_validate::ValidationParams::new(
-        params.tuning.line_tol_rel,
-        params.tuning.line_min_members,
-        params.tuning.local_h_tol_rel,
+        tuning.line_tol_rel,
+        tuning.line_min_members,
+        tuning.local_h_tol_rel,
     );
-    if params.tuning.validate_step_aware {
-        pg_params = pg_params.with_step_aware(params.tuning.validate_step_deviation_thresh_rel);
+    if tuning.validate_step_aware {
+        pg_params = pg_params.with_step_aware(tuning.validate_step_deviation_thresh_rel);
     }
     pg_validate::validate(&entries, cell_size, &pg_params)
 }

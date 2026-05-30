@@ -17,6 +17,7 @@ pub const MASTER_COLS: u32 = 501;
 ///
 /// `rows` and `cols` are **square counts** — the inner-corner grid has
 /// `(rows - 1) × (cols - 1)` corners.
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PuzzleBoardSpec {
     /// Number of squares vertically.

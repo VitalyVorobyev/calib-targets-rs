@@ -49,14 +49,8 @@ use chess_corners::low_level::{ChessParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 
 fn main() {
-    let board = CharucoBoardSpec {
-        rows: 5,
-        cols: 7,
-        cell_size: 20.0,
-        marker_size_rel: 0.75,
-        dictionary: builtins::DICT_4X4_50,
-        marker_layout: MarkerLayout::OpenCvCharuco,
-    };
+    let board = CharucoBoardSpec::new(5, 7, 20.0, 0.75, builtins::DICT_4X4_50)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
     let mut params = CharucoParams::for_board(&board);
     let mut named = ChessParams::default();

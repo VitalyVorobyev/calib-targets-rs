@@ -308,13 +308,19 @@ pub struct ct_chessboard_corner_t {
 
 /// Chessboard detection header.
 ///
-/// Carries only the labelled-corner count; the corners themselves are
-/// copied into the caller-provided `ct_chessboard_corner_t` array.
+/// Carries the labelled-corner count plus the seed-derived grid pitch;
+/// the corners themselves are copied into the caller-provided
+/// `ct_chessboard_corner_t` array.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_result_t {
     /// Number of labelled corners in the detection.
     pub corners_len: usize,
+    /// Grid pitch in pixels, when known. Mirrors the stable
+    /// `ChessboardDetection::cell_size` (the seed-derived square spacing).
+    /// `has_value == CT_TRUE` carries the pitch; `CT_FALSE` means the
+    /// detector did not record one (e.g. an empty / failed detection).
+    pub cell_size: ct_optional_f32_t,
 }
 
 /// ChArUco detection header.
@@ -460,8 +466,42 @@ pub struct ct_chessboard_params_t {
     /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
     pub graph_build_algorithm: ct_graph_build_algorithm_t,
 
-    // Pre-filter
+    // --- Stable core --------------------------------------------------------
+    /// Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
+    /// (the zero-initialised default) disables the filter. Stable field.
     pub min_corner_strength: f32,
+    /// Minimum labelled corners for a detection to be emitted. Stable field.
+    pub min_labeled_corners: usize,
+    /// Maximum number of returned components. Stable field.
+    pub max_components: u32,
+
+    // --- Advanced (opt-in, unstable) ---------------------------------------
+    /// When `CT_TRUE`, the [`advanced`](Self::advanced) knobs below are
+    /// applied on top of the detector defaults. When `CT_FALSE` (the
+    /// zero-initialised default), `advanced` is ignored and the detector
+    /// runs on its precision-by-construction default tuning.
+    ///
+    /// The advanced knobs are NOT covered by semver and may change between
+    /// minor versions — see `calib_targets::chessboard::AdvancedTuning`.
+    /// Initialise from `ct_chessboard_params_default_values` before flipping
+    /// this flag so the advanced fields start from valid defaults.
+    pub has_advanced: u32,
+    /// Opt-in, unstable per-stage tuning. Only read when
+    /// [`has_advanced`](Self::has_advanced) is `CT_TRUE`.
+    pub advanced: ct_chessboard_advanced_t,
+}
+
+/// Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
+///
+/// Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
+/// over the C ABI. Only applied when
+/// [`ct_chessboard_params_t::has_advanced`] is `CT_TRUE`. These knobs are NOT
+/// covered by semver and may change between minor versions; treat them as an
+/// escape hatch for a specific failing input, not a stable contract.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_chessboard_advanced_t {
+    // Pre-filter
     pub max_fit_rms_ratio: f32,
 
     // Cluster axes
@@ -493,10 +533,6 @@ pub struct ct_chessboard_params_t {
     pub enable_weak_cluster_rescue: u32,
     pub weak_cluster_tol_deg: f32,
     pub max_booster_iters: u32,
-
-    // Output gates
-    pub min_labeled_corners: usize,
-    pub max_components: u32,
 }
 
 /// Full create-time configuration for the chessboard detector handle.

@@ -81,6 +81,11 @@ impl ClusterLabel {
     ///
     /// * `Canonical` → `0`.
     /// * `Swapped`   → `1`.
+    ///
+    /// Part of the diagnostics-facing vocabulary (consumers interpreting a
+    /// `CornerStage::Clustered { label }` out of a `DebugFrame`); compiled
+    /// only with the `diagnostics` feature (or under `cfg(test)`).
+    #[cfg(any(test, feature = "diagnostics"))]
     #[inline]
     pub fn slot_of_theta0(self) -> usize {
         match self {
@@ -90,6 +95,9 @@ impl ClusterLabel {
     }
 
     /// The slot index whose axis matches `Θ₁` under this label.
+    ///
+    /// See [`ClusterLabel::slot_of_theta0`]; same diagnostics-only gate.
+    #[cfg(any(test, feature = "diagnostics"))]
     #[inline]
     pub fn slot_of_theta1(self) -> usize {
         1 - self.slot_of_theta0()
@@ -141,6 +149,11 @@ pub enum CornerStage {
     },
     /// `extend_boundary` attempted to attach this corner at `at` but
     /// found ≥2 candidates inside `attach_ambiguity_factor × nearest`.
+    ///
+    /// A diagnostics-only stage marker (rendered by overlays); compiled
+    /// only with the `diagnostics` feature. The current pipeline records
+    /// ambiguous extension candidates as plain un-labelled corners.
+    #[cfg(feature = "diagnostics")]
     AttachmentAmbiguous {
         /// The `(i, j)` cell the corner was being attached at.
         at: (i32, i32),
@@ -148,6 +161,10 @@ pub enum CornerStage {
     /// `extend_boundary` attempted to attach this corner at `at` but
     /// the induced edges failed an invariant. The pipeline leaves the
     /// corner un-labelled and continues.
+    ///
+    /// A diagnostics-only stage marker (rendered by overlays); compiled
+    /// only with the `diagnostics` feature.
+    #[cfg(feature = "diagnostics")]
     AttachmentFailedInvariants {
         /// The `(i, j)` cell the corner was being attached at.
         at: (i32, i32),

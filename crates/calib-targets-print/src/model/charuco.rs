@@ -12,6 +12,7 @@ pub(super) fn default_border_bits() -> usize {
 }
 
 /// Printable ChArUco target.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoTargetSpec {
     /// Number of board squares vertically.
@@ -45,6 +46,42 @@ impl PartialEq for CharucoTargetSpec {
 }
 
 impl CharucoTargetSpec {
+    /// Build a printable ChArUco target from its square counts, square size
+    /// (mm), marker scale, and dictionary. The marker layout and border-bit
+    /// count default; override them with [`CharucoTargetSpec::with_marker_layout`]
+    /// and [`CharucoTargetSpec::with_border_bits`].
+    pub fn new(
+        rows: u32,
+        cols: u32,
+        square_size_mm: f64,
+        marker_size_rel: f64,
+        dictionary: Dictionary,
+    ) -> Self {
+        Self {
+            rows,
+            cols,
+            square_size_mm,
+            marker_size_rel,
+            dictionary,
+            marker_layout: MarkerLayout::default(),
+            border_bits: default_border_bits(),
+        }
+    }
+
+    /// Override the marker placement / numbering scheme.
+    #[must_use]
+    pub fn with_marker_layout(mut self, marker_layout: MarkerLayout) -> Self {
+        self.marker_layout = marker_layout;
+        self
+    }
+
+    /// Override the marker border width in cells.
+    #[must_use]
+    pub fn with_border_bits(mut self, border_bits: usize) -> Self {
+        self.border_bits = border_bits;
+        self
+    }
+
     /// Build a printable ChArUco target from a detector board spec whose
     /// `cell_size` is already expressed in millimeters.
     pub fn from_board_spec_mm(board: &CharucoBoardSpec) -> Self {
@@ -61,14 +98,14 @@ impl CharucoTargetSpec {
 
     /// Convert to the detector `CharucoBoardSpec`.
     pub fn to_board_spec(&self) -> CharucoBoardSpec {
-        CharucoBoardSpec {
-            rows: self.rows,
-            cols: self.cols,
-            cell_size: self.square_size_mm as f32,
-            marker_size_rel: self.marker_size_rel as f32,
-            dictionary: self.dictionary,
-            marker_layout: self.marker_layout,
-        }
+        CharucoBoardSpec::new(
+            self.rows,
+            self.cols,
+            self.square_size_mm as f32,
+            self.marker_size_rel as f32,
+            self.dictionary,
+        )
+        .with_marker_layout(self.marker_layout)
     }
 }
 

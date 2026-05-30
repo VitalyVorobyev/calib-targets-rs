@@ -34,7 +34,7 @@
 //! | 9     | `refit_cluster_centers`      | Re-estimate `{Θ₀, Θ₁}` from labelled corners; if the shift exceeds `refit_min_shift_deg`, run a second extension + rescue. |
 //! | 10    | `validate`                   | Line collinearity + local-H residual checks; blacklist outliers; restart `find_seed` through `validate` with the blacklist excluded. |
 //! | 11    | `apply_boosters`             | Recall boosters: interior gap fill + line extrapolation. |
-//! | 12    | `final_geometry_check`       | Mandatory precision gate: per-edge length + axis-slot-swap parity + largest cardinal component. Can only drop corners; never adds. |
+//! | 12    | `final_geometry_check`       | Mandatory precision gate: shared square-grid validation + local edge-shape checks + largest cardinal component. Can only drop corners; never adds. |
 //!
 //! Each stage is its own module or function; see the submodules.
 //!
@@ -86,6 +86,7 @@
 #![deny(missing_docs)]
 
 mod boosters;
+mod circular_stats;
 mod cluster;
 mod corner;
 mod detector;
@@ -98,12 +99,16 @@ mod seed;
 mod topological;
 mod validate;
 
+/// Opt-in detector introspection surface (`DebugFrame`, per-stage traces,
+/// `StageCounts`). Compiled only with the `diagnostics` feature; the hot
+/// [`Detector::detect`] path never assembles these.
+#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 
 // --- Public contract ---------------------------------------------------
 pub use corner::ChessCorner;
 pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{ChessboardTuning, DetectorParams, GraphBuildAlgorithm};
+pub use params::{AdvancedTuning, DetectorParams, GraphBuildAlgorithm};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 pub use topological::{detect_all_topological, trace_topological};

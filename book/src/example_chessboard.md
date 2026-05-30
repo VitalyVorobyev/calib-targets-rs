@@ -35,12 +35,14 @@ cargo run --release -p calib-targets --example detect_chessboard_best -- testdat
 
 ## Instrumentation
 
-`calib_targets::detect::detect_chessboard_debug` returns a
+`calib_targets::detect::detect_chessboard_with_diagnostics` returns a
 `DebugFrame` with the full per-stage trace — every input corner's
 terminal stage, per-validation-iteration labelled counts + blacklist,
 booster deltas, and the final detection. This is the entry point for
 everything the book's overlay tooling and the testdata regression
-harness consume.
+harness consume. It is gated behind the `diagnostics` cargo feature
+(OFF by default, so the hot `detect()` path builds no trace); the
+`dataset` feature used by the example below enables it.
 
 ```bash
 cargo run --release -p calib-targets-chessboard \

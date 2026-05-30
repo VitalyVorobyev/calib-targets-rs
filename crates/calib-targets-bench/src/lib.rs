@@ -3,7 +3,7 @@
 //! The library half: dataset loading, single-image runner, baseline diffing,
 //! report serialization. The CLI lives in `src/bin/bench.rs`.
 //!
-//! Design notes are in `docs/projective_grid_overview.md` (gap-fix sketch).
+//! Design notes are in `docs/algorithmic_gaps.md` (gap-fix sketch).
 //!
 //! # Public-vs-private contract
 //!

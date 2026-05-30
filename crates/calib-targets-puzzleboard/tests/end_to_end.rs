@@ -40,14 +40,7 @@ fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8
 #[test]
 fn render_detect_roundtrip_on_small_puzzleboard() {
     // 1) Build a printable PuzzleBoard spec.
-    let spec = PuzzleBoardTargetSpec {
-        rows: 10,
-        cols: 10,
-        square_size_mm: 12.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(10, 10, 12.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 200.0,
@@ -149,14 +142,7 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
 /// same master origin and byte-for-byte identical labelled corners.
 #[test]
 fn fixed_board_agrees_with_full_on_whole_view() {
-    let spec = PuzzleBoardTargetSpec {
-        rows: 10,
-        cols: 10,
-        square_size_mm: 12.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(10, 10, 12.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 200.0,
@@ -227,14 +213,7 @@ fn fixed_board_agrees_with_full_on_whole_view() {
 /// three cameras decode via `FixedBoard`.
 #[test]
 fn fixed_board_agrees_across_disjoint_partial_views() {
-    let spec = PuzzleBoardTargetSpec {
-        rows: 20,
-        cols: 20,
-        square_size_mm: 8.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(20, 20, 8.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 220.0,
@@ -378,14 +357,7 @@ fn fixed_board_target_position_consistent_under_270_with_upscale() {
 }
 
 fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
-    let spec = PuzzleBoardTargetSpec {
-        rows: 10,
-        cols: 10,
-        square_size_mm: 12.0,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(10, 10, 12.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
         width_mm: 200.0,

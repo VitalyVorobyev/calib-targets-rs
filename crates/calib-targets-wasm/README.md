@@ -227,7 +227,12 @@ edges and soft-mode runner-up scoring evidence are returned by
   calling any detector.
 - **No threads.** The WASM build is single-threaded; heavy detection on
   4K images may exceed 100 ms per call. Consider Web Workers.
-- **No `detect_chessboard_debug`.** The debug-frame helper is Rust-only.
+
+Diagnostics are available: `detect_chessboard_with_diagnostics` (and the
+ChArUco / marker-board / PuzzleBoard variants) return a
+`{ result, diagnostics }` object. The diagnostics payloads carry a looser
+stability promise than the typed results — see
+`typescript-extras.d.ts`.
 
 ## Build from source
 

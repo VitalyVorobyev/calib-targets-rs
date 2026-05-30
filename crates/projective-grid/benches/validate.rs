@@ -12,7 +12,9 @@
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::Point2;
-use projective_grid::square::validate::{validate, LabelledEntry, ValidationParams};
+use projective_grid::detect::advanced::square::validate::{
+    validate, LabelledEntry, ValidationParams,
+};
 
 fn perspective_warped_entries(rows: i32, cols: i32, scale: f32) -> Vec<LabelledEntry> {
     use nalgebra::Matrix3;

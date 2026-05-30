@@ -7,8 +7,11 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::corner::ChessCorner;
+use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::{merge_components_local, ComponentInput, GridTransform, GRID_TRANSFORMS_D4};
+use projective_grid::detect::advanced::square::component_merge::{
+    merge_components_local, ComponentInput,
+};
 
 use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};
@@ -80,15 +83,26 @@ fn estimate_recovery_cell_size_from_labels(
 }
 
 /// Mean step vectors along the labelled `i` and `j` axes.
+///
+/// The cardinal edge vectors are summed in a deterministic `(i, j)`
+/// order. `f32` addition is not associative, so accumulating in
+/// `HashMap` iteration order would make `axis_i`/`axis_j` differ by a
+/// few ULP run to run; those axes feed the topological booster's
+/// cluster centres and per-cell predictions, so a sub-ULP wobble can
+/// flip a borderline boundary attachment. Sorting the keys pins the
+/// summation order without changing the mean for the common case.
 fn estimate_grid_steps(
     labelled: &LabelledComponent,
     positions: &[Point2<f32>],
 ) -> (Vector2<f32>, Vector2<f32>) {
+    let mut keys: Vec<(i32, i32)> = labelled.keys().copied().collect();
+    keys.sort_unstable();
     let mut u_sum = Vector2::zeros();
     let mut u_n = 0u32;
     let mut v_sum = Vector2::zeros();
     let mut v_n = 0u32;
-    for (&(i, j), &idx) in labelled.iter() {
+    for &(i, j) in &keys {
+        let idx = labelled[&(i, j)];
         let p = positions[idx];
         if let Some(&right) = labelled.get(&(i + 1, j)) {
             let q = positions[right];
@@ -127,15 +141,17 @@ pub(super) fn clustered_augs(
     corners: &[ChessCorner],
     params: &DetectorParams,
 ) -> (Vec<CornerAug>, Option<ClusterCenters>) {
+    let min_corner_strength = params.min_corner_strength;
+    let max_fit_rms_ratio = params.effective_tuning().max_fit_rms_ratio;
     let mut augs: Vec<CornerAug> = corners
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let mut aug = CornerAug::from_chess_corner(i, c);
-            let strong = c.strength >= params.tuning.min_corner_strength;
-            let fit_ok = !params.tuning.max_fit_rms_ratio.is_finite()
+            let strong = c.strength >= min_corner_strength;
+            let fit_ok = !max_fit_rms_ratio.is_finite()
                 || c.contrast <= 0.0
-                || c.fit_rms <= params.tuning.max_fit_rms_ratio * c.contrast;
+                || c.fit_rms <= max_fit_rms_ratio * c.contrast;
             if strong && fit_ok {
                 aug.stage = CornerStage::Strong;
             }
@@ -298,8 +314,8 @@ pub(super) fn recover_topological_components(
             holes: Default::default(),
             axis_i,
             axis_j,
-            parity_shift_i: 0,
-            parity_shift_j: 0,
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
         };
         grow.by_corner = grow.labelled.iter().map(|(&k, &v)| (v, k)).collect();
 
@@ -321,9 +337,10 @@ pub(super) fn recover_topological_components(
         }
     }
 
+    let tuning = params.effective_tuning();
     let boosted_components = merge_components_with_shared_corners(
         boosted_components,
-        params.tuning.component_merge.min_overlap.max(2),
+        tuning.component_merge.min_overlap.max(2),
     );
     if boosted_components.is_empty() {
         return Vec::new();
@@ -344,7 +361,7 @@ pub(super) fn recover_topological_components(
     )
     .entered();
 
-    merge_components_local(&boosted_views, &params.tuning.component_merge).components
+    merge_components_local(&boosted_views, &tuning.component_merge).components
 }
 
 #[cfg_attr(
@@ -385,8 +402,8 @@ pub(super) fn build_topological_detections(
             holes: Default::default(),
             axis_i,
             axis_j,
-            parity_shift_i: 0,
-            parity_shift_j: 0,
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
         };
 
         // Geometry verification. The chessboard-v2 path runs this gate
@@ -414,7 +431,7 @@ pub(super) fn build_topological_detections(
             continue;
         }
 
-        out.push(build_detection_from_grow(&augs, &grow));
+        out.push(build_detection_from_grow(&augs, &grow, cell_size));
     }
 
     out.sort_by_key(|d| std::cmp::Reverse(d.corners.len()));

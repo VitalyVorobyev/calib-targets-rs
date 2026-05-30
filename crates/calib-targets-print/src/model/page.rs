@@ -69,6 +69,7 @@ impl PageSize {
 }
 
 /// Combined page-size + orientation + margin specification.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PageSpec {
     /// Physical page size (A4, Letter, or a custom millimeter size).
@@ -93,6 +94,27 @@ impl Default for PageSpec {
 }
 
 impl PageSpec {
+    /// Set the physical page size.
+    #[must_use]
+    pub fn with_size(mut self, size: PageSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    /// Set the page orientation.
+    #[must_use]
+    pub fn with_orientation(mut self, orientation: PageOrientation) -> Self {
+        self.orientation = orientation;
+        self
+    }
+
+    /// Set the uniform page margin in millimeters.
+    #[must_use]
+    pub fn with_margin_mm(mut self, margin_mm: f64) -> Self {
+        self.margin_mm = margin_mm;
+        self
+    }
+
     /// Returns `(width_mm, height_mm)` after applying orientation.
     pub fn dimensions_mm(&self) -> Result<(f64, f64), PrintableTargetError> {
         if !self.margin_mm.is_finite() || self.margin_mm < 0.0 {
@@ -118,6 +140,7 @@ impl PageSpec {
 }
 
 /// Rasterization / annotation options.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RenderOptions {
     /// When `true`, overlay diagnostic annotations (coordinate labels, guides)
@@ -135,5 +158,21 @@ impl Default for RenderOptions {
             debug_annotations: false,
             png_dpi: default_png_dpi(),
         }
+    }
+}
+
+impl RenderOptions {
+    /// Enable or disable diagnostic annotation overlays.
+    #[must_use]
+    pub fn with_debug_annotations(mut self, debug_annotations: bool) -> Self {
+        self.debug_annotations = debug_annotations;
+        self
+    }
+
+    /// Set the PNG rasterization resolution in dots per inch.
+    #[must_use]
+    pub fn with_png_dpi(mut self, png_dpi: u32) -> Self {
+        self.png_dpi = png_dpi;
+        self
     }
 }

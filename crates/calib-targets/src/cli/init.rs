@@ -142,16 +142,13 @@ pub fn run(cmd: InitCommand) -> Result<(), CliError> {
 }
 
 fn run_chessboard(args: ChessboardInitArgs) -> Result<(), CliError> {
-    let doc = PrintableTargetDocument {
-        schema_version: 1,
-        target: TargetSpec::Chessboard(ChessboardTargetSpec {
-            inner_rows: args.inner_rows,
-            inner_cols: args.inner_cols,
-            square_size_mm: args.square_size_mm,
-        }),
-        page: build_page_spec(&args.page)?,
-        render: build_render_options(&args.render),
-    };
+    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec::new(
+        args.inner_rows,
+        args.inner_cols,
+        args.square_size_mm,
+    )))
+    .with_page(build_page_spec(&args.page)?)
+    .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)
 }
 
@@ -161,37 +158,28 @@ fn run_charuco(args: CharucoInitArgs) -> Result<(), CliError> {
     let marker_layout = match args.marker_layout {
         MarkerLayoutArg::OpencvCharuco => calib_targets_charuco::MarkerLayout::OpenCvCharuco,
     };
-    let doc = PrintableTargetDocument {
-        schema_version: 1,
-        target: TargetSpec::Charuco(CharucoTargetSpec {
-            rows: args.rows,
-            cols: args.cols,
-            square_size_mm: args.square_size_mm,
-            marker_size_rel: args.marker_size_rel,
-            dictionary,
-            marker_layout,
-            border_bits: args.border_bits,
-        }),
-        page: build_page_spec(&args.page)?,
-        render: build_render_options(&args.render),
-    };
+    let target = CharucoTargetSpec::new(
+        args.rows,
+        args.cols,
+        args.square_size_mm,
+        args.marker_size_rel,
+        dictionary,
+    )
+    .with_marker_layout(marker_layout)
+    .with_border_bits(args.border_bits);
+    let doc = PrintableTargetDocument::new(TargetSpec::Charuco(target))
+        .with_page(build_page_spec(&args.page)?)
+        .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)
 }
 
 fn run_puzzleboard(args: PuzzleboardInitArgs) -> Result<(), CliError> {
-    let doc = PrintableTargetDocument {
-        schema_version: 1,
-        target: TargetSpec::PuzzleBoard(PuzzleBoardTargetSpec {
-            rows: args.rows,
-            cols: args.cols,
-            square_size_mm: args.square_size_mm,
-            origin_row: args.origin_row,
-            origin_col: args.origin_col,
-            dot_diameter_rel: args.dot_diameter_rel.unwrap_or(1.0 / 3.0),
-        }),
-        page: build_page_spec(&args.page)?,
-        render: build_render_options(&args.render),
-    };
+    let target = PuzzleBoardTargetSpec::new(args.rows, args.cols, args.square_size_mm)
+        .with_origin(args.origin_row, args.origin_col)
+        .with_dot_diameter_rel(args.dot_diameter_rel.unwrap_or(1.0 / 3.0));
+    let doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(target))
+        .with_page(build_page_spec(&args.page)?)
+        .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)
 }
 
@@ -201,18 +189,16 @@ fn run_marker_board(args: MarkerBoardInitArgs) -> Result<(), CliError> {
     } else {
         parse_circles(&args.circles)?
     };
-    let doc = PrintableTargetDocument {
-        schema_version: 1,
-        target: TargetSpec::MarkerBoard(MarkerBoardTargetSpec {
-            inner_rows: args.inner_rows,
-            inner_cols: args.inner_cols,
-            square_size_mm: args.square_size_mm,
-            circles,
-            circle_diameter_rel: args.circle_diameter_rel,
-        }),
-        page: build_page_spec(&args.page)?,
-        render: build_render_options(&args.render),
-    };
+    let target = MarkerBoardTargetSpec::new(
+        args.inner_rows,
+        args.inner_cols,
+        args.square_size_mm,
+        circles,
+    )
+    .with_circle_diameter_rel(args.circle_diameter_rel);
+    let doc = PrintableTargetDocument::new(TargetSpec::MarkerBoard(target))
+        .with_page(build_page_spec(&args.page)?)
+        .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)
 }
 

@@ -39,10 +39,7 @@ fn run_config(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let _ = cfg.chess_config;
     let result = run_image(&cfg.image_path, &params)?;
     if let Some(output_path) = cfg.output_path {
-        let report = PuzzleBoardDetectReport {
-            image_path: cfg.image_path,
-            result,
-        };
+        let report = PuzzleBoardDetectReport::new(cfg.image_path, result);
         let file = std::fs::File::create(output_path)?;
         serde_json::to_writer_pretty(file, &report)?;
     }

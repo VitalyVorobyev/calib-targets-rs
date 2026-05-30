@@ -19,6 +19,7 @@ pub(super) fn default_puzzleboard_dot_diameter_rel() -> f64 {
 /// shipped in `calib-targets-puzzleboard`. The printable board is a
 /// contiguous sub-rectangle of the 501×501 master pattern anchored at
 /// `(origin_row, origin_col)`.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PuzzleBoardTargetSpec {
     /// Number of board squares vertically.
@@ -36,6 +37,38 @@ pub struct PuzzleBoardTargetSpec {
     /// Edge-dot diameter as a fraction of the square side.
     #[serde(default = "default_puzzleboard_dot_diameter_rel")]
     pub dot_diameter_rel: f64,
+}
+
+impl PuzzleBoardTargetSpec {
+    /// Build a printable PuzzleBoard target from its square counts and square
+    /// size (mm), anchored at master-pattern origin `(0, 0)`. Override the
+    /// origin with [`PuzzleBoardTargetSpec::with_origin`] and the dot diameter
+    /// with [`PuzzleBoardTargetSpec::with_dot_diameter_rel`].
+    pub fn new(rows: u32, cols: u32, square_size_mm: f64) -> Self {
+        Self {
+            rows,
+            cols,
+            square_size_mm,
+            origin_row: 0,
+            origin_col: 0,
+            dot_diameter_rel: default_puzzleboard_dot_diameter_rel(),
+        }
+    }
+
+    /// Set the `(origin_row, origin_col)` offset into the master pattern.
+    #[must_use]
+    pub fn with_origin(mut self, origin_row: u32, origin_col: u32) -> Self {
+        self.origin_row = origin_row;
+        self.origin_col = origin_col;
+        self
+    }
+
+    /// Override the edge-dot diameter as a fraction of the square side.
+    #[must_use]
+    pub fn with_dot_diameter_rel(mut self, dot_diameter_rel: f64) -> Self {
+        self.dot_diameter_rel = dot_diameter_rel;
+        self
+    }
 }
 
 pub(crate) fn validate_puzzleboard_spec(

@@ -7,14 +7,31 @@
 //! [`super::run`] for the orchestrator and the sibling stage modules for
 //! the stage bodies.
 
+#[cfg(feature = "diagnostics")]
 use crate::boosters::BoosterResult;
+#[cfg(feature = "diagnostics")]
 use crate::cluster::ClusterDebug;
+#[cfg(feature = "diagnostics")]
 use crate::corner::{CornerAug, CornerStage};
 use calib_targets_core::GridCoords;
 
 use nalgebra::Point2;
-use projective_grid::square::extension::ExtensionStats;
+use projective_grid::detect::advanced::square::extension::ExtensionStats;
 use serde::Serialize;
+
+/// Lean pipeline outcome for the hot `detect()` / `detect_all()` path.
+///
+/// Carries only the detection, *without* assembling a [`DebugFrame`]. The
+/// pipeline returns this on the non-diagnostic path so the heavy
+/// per-corner / per-iteration trace accumulation is never paid for. The
+/// seed-derived grid cell size travels on the detection itself
+/// ([`ChessboardDetection::cell_size`]); [`DebugFrame`] (built only by
+/// `detect_with_diagnostics`, behind the `diagnostics` feature) carries
+/// the same `detection` plus the full introspection payload.
+pub(crate) struct PipelineOutcome {
+    /// The final detection; `None` when the pipeline emitted no detection.
+    pub detection: Option<ChessboardDetection>,
+}
 
 /// A single labelled chessboard corner.
 ///
@@ -52,12 +69,32 @@ impl ChessboardCorner {
 pub struct ChessboardDetection {
     /// The labelled corners.
     pub corners: Vec<ChessboardCorner>,
+    /// Grid cell size in pixels, derived from the self-consistent 2×2
+    /// seed quad's mean edge length and refined through grow. `None`
+    /// when no seed was found (no detection is emitted in that case, so
+    /// this is `Some` for every returned detection). Exposed on the
+    /// stable result so consumers can scale geometry checks and overlays
+    /// without opting into the [`crate::diagnostics`] surface.
+    pub cell_size: Option<f32>,
 }
 
 impl ChessboardDetection {
     /// Create a detection from its labelled corner set.
+    ///
+    /// `cell_size` defaults to `None`; populate it with
+    /// [`ChessboardDetection::with_cell_size`].
     pub fn new(corners: Vec<ChessboardCorner>) -> Self {
-        Self { corners }
+        Self {
+            corners,
+            cell_size: None,
+        }
+    }
+
+    /// Set the grid [`cell_size`](Self::cell_size) (builder style).
+    #[must_use]
+    pub fn with_cell_size(mut self, cell_size: f32) -> Self {
+        self.cell_size = Some(cell_size);
+        self
     }
 }
 
@@ -66,12 +103,14 @@ impl ChessboardDetection {
 /// Bumped when fields are removed, renamed, or their semantics change.
 /// Adding new optional fields does NOT bump the schema. Downstream
 /// tooling (Python overlay script, etc.) should warn on mismatch.
+#[cfg(feature = "diagnostics")]
 pub const DEBUG_FRAME_SCHEMA: u32 = 1;
 
 /// Compact debug payload — one per detection call.
 ///
 /// Flat and serde-friendly so the Python overlay script can render
 /// every decision stage.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct DebugFrame {
@@ -107,6 +146,7 @@ pub struct DebugFrame {
 }
 
 /// Per-iteration trace of the `find_seed → grow → validate` loop.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct IterationTrace {
@@ -142,7 +182,7 @@ pub struct IterationTrace {
     /// Cardinal-neighbour BFS extension after refit, if
     /// `enable_post_grow_bfs_extend` is set. Records `attached /
     /// rejected_*` from
-    /// `projective_grid::square::grow_extend::extend_from_labelled`.
+    /// `projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bfs_extend: Option<BfsExtendTrace>,
     /// Post-refit second-pass `extend_boundary` summary, if it ran.
@@ -206,7 +246,9 @@ pub struct GeometryCheckTrace {
     pub dropped_line_collinearity: u32,
     /// Drops attributed to the local-homography residual predicate.
     pub dropped_local_h_residual: u32,
-    /// Drops attributed to the per-edge length / axis-slot-swap predicate.
+    /// Drops attributed to the final local edge-shape predicate
+    /// (cardinal support, adjacent-edge continuation, and complete-cell
+    /// opposite-side consistency).
     pub dropped_edge_invariant: u32,
     /// Number of labelled corners dropped because they were not in
     /// the largest cardinally-connected component. Catches isolated
@@ -225,7 +267,7 @@ pub struct GeometryCheckTrace {
 
 /// Diagnose payload for one homography-based boundary-extension pass
 /// (`extend_boundary` / `rescue_no_cluster`). Mirrors
-/// [`ExtensionStats`](projective_grid::square::extension::ExtensionStats).
+/// [`ExtensionStats`](projective_grid::detect::advanced::square::extension::ExtensionStats).
 #[derive(Clone, Debug, Serialize)]
 #[non_exhaustive]
 pub struct ExtensionTrace {
@@ -247,8 +289,8 @@ pub struct ExtensionTrace {
     pub rejected_ambiguous: usize,
     /// Candidate cells skipped because the target `(i, j)` was already labelled.
     pub rejected_label: usize,
-    /// Candidate corners rejected by the grow validator.
-    pub rejected_validator: usize,
+    /// Candidate corners rejected by the square-grid attach policy.
+    pub rejected_policy: usize,
     /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
     /// Input-corner indices of the corners attached in this pass.
@@ -266,7 +308,7 @@ impl From<&ExtensionStats> for ExtensionTrace {
             rejected_no_candidate: s.rejected_no_candidate,
             rejected_ambiguous: s.rejected_ambiguous,
             rejected_label: s.rejected_label,
-            rejected_validator: s.rejected_validator,
+            rejected_policy: s.rejected_policy,
             rejected_edge: s.rejected_edge,
             attached_indices: s.attached_indices.clone(),
         }
@@ -279,6 +321,7 @@ impl From<&ExtensionStats> for ExtensionTrace {
 /// single integer (or boolean). Obtain a [`DebugFrame`] from
 /// [`Detector::detect_with_diagnostics`](crate::Detector::detect_with_diagnostics)
 /// and pass it to [`StageCounts::from_frame`].
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 #[non_exhaustive]
 pub struct StageCounts {
@@ -301,6 +344,7 @@ pub struct StageCounts {
     pub labelled_final: usize,
 }
 
+#[cfg(feature = "diagnostics")]
 impl StageCounts {
     /// Derive counts from a [`DebugFrame`].
     pub fn from_frame(frame: &DebugFrame) -> Self {

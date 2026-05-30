@@ -14,7 +14,12 @@ categories = ["computer-vision", "science"]
 
 [features]
 default = []
-dataset = ["dep:serde_json"]
+# Opt-in introspection surface: `DebugFrame`, per-stage traces, the
+# `diagnostics` module, and `Detector::detect*_with_diagnostics`. OFF by
+# default — the hot `detect()` / `detect_all()` path never assembles a
+# `DebugFrame`. Enable for offline triage, benchmarking, and overlays.
+diagnostics = []
+dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 
 [dependencies]

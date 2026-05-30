@@ -234,10 +234,13 @@ class ChessboardDetectionResult:
     """Chessboard detection result.
 
     `corners` is the labelled corner set. Each `ChessboardCorner` carries
-    its own grid label and input-slice provenance index.
+    its own grid label and input-slice provenance index. `cell_size` is the
+    grid pitch in pixels (``None`` only on hand-built results; every result
+    returned by detection carries it).
     """
 
     corners: list[ChessboardCorner]
+    cell_size: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import chessboard_detection_result_to_dict

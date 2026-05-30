@@ -73,21 +73,20 @@ pub fn build_page_spec(args: &PageArgs) -> Result<PageSpec, CliError> {
             "--page-width-mm/--page-height-mm require --page-size custom".to_string(),
         ));
     }
-    Ok(PageSpec {
-        size,
-        orientation: match args.orientation {
-            OrientationArg::Portrait => PageOrientation::Portrait,
-            OrientationArg::Landscape => PageOrientation::Landscape,
-        },
-        margin_mm: args.margin_mm,
-    })
+    let orientation = match args.orientation {
+        OrientationArg::Portrait => PageOrientation::Portrait,
+        OrientationArg::Landscape => PageOrientation::Landscape,
+    };
+    Ok(PageSpec::default()
+        .with_size(size)
+        .with_orientation(orientation)
+        .with_margin_mm(args.margin_mm))
 }
 
 pub fn build_render_options(args: &RenderArgs) -> RenderOptions {
-    RenderOptions {
-        debug_annotations: args.debug_annotations,
-        png_dpi: args.png_dpi,
-    }
+    RenderOptions::default()
+        .with_debug_annotations(args.debug_annotations)
+        .with_png_dpi(args.png_dpi)
 }
 
 pub fn parse_circles(values: &[String]) -> Result<[MarkerCircleSpec; 3], CliError> {
@@ -115,5 +114,5 @@ fn parse_circle(value: &str) -> Result<MarkerCircleSpec, CliError> {
         "black" => calib_targets_marker::CirclePolarity::Black,
         _ => return Err(CliError::InvalidCircle(value.to_string())),
     };
-    Ok(MarkerCircleSpec { i, j, polarity })
+    Ok(MarkerCircleSpec::new(i, j, polarity))
 }

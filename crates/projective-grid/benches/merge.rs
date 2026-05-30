@@ -11,7 +11,9 @@ use std::collections::HashMap;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::Point2;
-use projective_grid::component_merge::{merge_components_local, ComponentInput, LocalMergeParams};
+use projective_grid::detect::advanced::square::component_merge::{
+    merge_components_local, ComponentInput, LocalMergeParams,
+};
 
 type Labels = HashMap<(i32, i32), usize>;
 type Fixture = (Vec<Point2<f32>>, Vec<Labels>);

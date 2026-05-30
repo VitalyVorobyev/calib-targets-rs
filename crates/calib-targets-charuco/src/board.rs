@@ -21,6 +21,7 @@ pub enum MarkerLayout {
 /// Static ChArUco board specification.
 ///
 /// `rows`/`cols` are **square counts** (not inner corner counts).
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CharucoBoardSpec {
     /// Number of board squares vertically.
@@ -36,6 +37,35 @@ pub struct CharucoBoardSpec {
     /// How markers are placed and numbered on the board.
     #[serde(default)]
     pub marker_layout: MarkerLayout,
+}
+
+impl CharucoBoardSpec {
+    /// Build a board spec from its square counts, square size, marker scale,
+    /// and dictionary. The marker layout defaults to [`MarkerLayout`]'s default
+    /// (OpenCV ChArUco); override it with [`CharucoBoardSpec::with_marker_layout`].
+    pub fn new(
+        rows: u32,
+        cols: u32,
+        cell_size: f32,
+        marker_size_rel: f32,
+        dictionary: Dictionary,
+    ) -> Self {
+        Self {
+            rows,
+            cols,
+            cell_size,
+            marker_size_rel,
+            dictionary,
+            marker_layout: MarkerLayout::default(),
+        }
+    }
+
+    /// Override the marker placement / numbering scheme.
+    #[must_use]
+    pub fn with_marker_layout(mut self, marker_layout: MarkerLayout) -> Self {
+        self.marker_layout = marker_layout;
+        self
+    }
 }
 
 /// Board specification validation errors.

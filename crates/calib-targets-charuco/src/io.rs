@@ -104,6 +104,7 @@ fn default_px_per_square() -> f32 {
 }
 
 /// Configuration for the ChArUco detection example.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectConfig {
     /// Path to the input image to run detection on.
@@ -138,6 +139,23 @@ pub struct CharucoDetectConfig {
 }
 
 impl CharucoDetectConfig {
+    /// Build a config for an input image and board spec; all paths, overrides,
+    /// and tuning knobs default to unset / their default values.
+    pub fn new(image_path: impl Into<String>, board: CharucoBoardSpec) -> Self {
+        Self {
+            image_path: image_path.into(),
+            board,
+            output_path: None,
+            chess: DetectorConfig::default(),
+            rectified_path: None,
+            mesh_rectified_path: None,
+            px_per_square: default_px_per_square(),
+            min_marker_inliers: None,
+            chessboard: None,
+            aruco: None,
+        }
+    }
+
     /// Load a JSON config from disk.
     pub fn load_json(path: impl AsRef<Path>) -> Result<Self, CharucoIoError> {
         io::load_json(path)
@@ -193,6 +211,7 @@ impl CharucoDetectConfig {
 }
 
 /// Detection report for serialization.
+#[non_exhaustive]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CharucoDetectReport {
     /// Path of the image detection was run on.

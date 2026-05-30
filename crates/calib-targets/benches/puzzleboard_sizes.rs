@@ -37,14 +37,7 @@ fn render_puzzleboard_gray(rows: u32, cols: u32, px_per_cell: u32) -> GrayImage 
     // px_per_cell / square_size_mm = dpi / 25.4 → dpi = px_per_cell * 25.4 / square_size_mm.
     let png_dpi = ((px_per_cell as f64) * 25.4 / square_size_mm).round() as u32;
 
-    let spec = PuzzleBoardTargetSpec {
-        rows,
-        cols,
-        square_size_mm,
-        origin_row: 0,
-        origin_col: 0,
-        dot_diameter_rel: 1.0 / 3.0,
-    };
+    let spec = PuzzleBoardTargetSpec::new(rows, cols, square_size_mm);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec));
     doc.page.size = PageSize::Custom {
         width_mm,

@@ -30,8 +30,9 @@ call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
 directly and pass the resulting corner cloud into
 `calib_targets::chessboard::Detector::new(params).detect(&corners)`.
 
-For ChArUco, `CharucoParams.chessboard` is a `DetectorParams` (flat
-shape — no nested sub-structs). Board sampling scale is controlled separately by
+For ChArUco, `CharucoParams.chessboard` is a `DetectorParams`: a stable
+core of four fields plus an opt-in `advanced` block (see the per-parameter
+reference below). Board sampling scale is controlled separately by
 `CharucoParams::for_board`, which starts with `px_per_square = 60`.
 If marker decoding is the problem and the board appears at a very
 different pixel scale, adjust `px_per_square` before touching other
@@ -76,6 +77,11 @@ contiguity — each disconnected piece comes back as its own
 
 ## Symptom → parameter table
 
+`min_corner_strength`, `min_labeled_corners`, and `max_components` are
+stable top-level fields; every other chessboard knob below is an
+`advanced` knob set via `DetectorParams::with_advanced(...)`. ChArUco /
+PuzzleBoard `decode.*` knobs sit on their own config structs.
+
 | Symptom | Parameter to adjust |
 |---|---|
 | `detect_chessboard` returns `None` | `min_corner_strength` ↓, `cluster_tol_deg` ↑, `min_peak_weight_fraction` ↓, or try `detect_chessboard_best` |
@@ -92,13 +98,41 @@ contiguity — each disconnected piece comes back as its own
 
 ## Per-parameter reference: `chessboard::DetectorParams`
 
-`DetectorParams` is a flat `#[non_exhaustive]` struct with ~30 fields
-covering every stage of the pipeline. The fields below are the ones
-users typically touch; see the [chessboard chapter](chessboard.md) for
+`DetectorParams` is a `#[non_exhaustive]` struct split into two surfaces:
+
+- a **stable core** of four fields covered by semver —
+  `graph_build_algorithm`, `min_labeled_corners`, `max_components`, and
+  `min_corner_strength` (see [Output gates](#output-gates) and Stage 1
+  below);
+- an opt-in **`advanced`** sub-struct (`Option<Box<AdvancedTuning>>`)
+  holding the ~40 per-stage knobs. `AdvancedTuning` is **NOT covered by
+  semver** — leave it unset unless a specific input fails and you have
+  evidence for the change.
+
+Attach overrides with `DetectorParams::with_advanced(tuning)` and read the
+effective tuning with `effective_tuning()`. `AdvancedTuning` is
+`#[non_exhaustive]`, so build it from `AdvancedTuning::default()` and
+mutate the knobs you need:
+
+```rust,no_run
+use calib_targets::chessboard::{AdvancedTuning, DetectorParams};
+
+let mut advanced = AdvancedTuning::default();
+advanced.cluster_tol_deg = 16.0;
+advanced.attach_search_rel = 0.5;
+let params = DetectorParams::default().with_advanced(advanced);
+```
+
+All knobs in the Stage 2-8 tables below are **advanced** knobs set on the
+`advanced` block; `min_corner_strength` (Stage 1) and the output gates are
+stable top-level fields. See the [chessboard chapter](chessboard.md) for
 the full invariant-to-parameter mapping and
-`crates/calib-targets-chessboard/src/params.rs` for defaults.
+`crates/calib-targets-chessboard/src/params/` for defaults.
 
 ### Stage 1 — pre-filter
+
+`min_corner_strength` is a **stable** top-level field;
+`max_fit_rms_ratio` is an `advanced` knob.
 
 | Field | Default | Guidance |
 |---|---|---|
@@ -143,12 +177,14 @@ the full invariant-to-parameter mapping and
 
 ### Stage 8 — recall boosters
 
-Per-stage toggle: `enable_weak_cluster_rescue` (default `true`). Leave
-it on unless the weak-cluster booster is producing false positives for
-you. Line extrapolation, gap fill, and component merge run
-unconditionally and are no longer configurable.
+Per-stage toggle (an `advanced` knob): `enable_weak_cluster_rescue`
+(default `true`). Leave it on unless the weak-cluster booster is producing
+false positives for you. Line extrapolation, gap fill, and component merge
+run unconditionally and are no longer configurable.
 
 ### Output gates
+
+`min_labeled_corners` and `max_components` are **stable** top-level fields.
 
 | Field | Default | Guidance |
 |---|---|---|
@@ -203,11 +239,13 @@ Verify against the printed board or the JSON spec used to generate it.
 2. If **no corners** are found: loosen `min_corner_strength`, check
    image resolution and contrast.
 3. If **corners found but no grid** (`detect_chessboard` returns
-   `None`): inspect the `DebugFrame` via `detect_chessboard_debug` —
+   `None`): build with the `diagnostics` feature and inspect the
+   `DebugFrame` via `detect_chessboard_with_diagnostics` —
    the `grid_directions: None` case means clustering failed (try
-   lowering `min_peak_weight_fraction`), `seed: None` means seeding
-   failed (try `detect_chessboard_best`), and an iteration trace that
-   never converges means `max_validation_iters` was hit (raise it).
+   lowering the advanced `min_peak_weight_fraction`), `seed: None` means
+   seeding failed (try `detect_chessboard_best`), and an iteration trace
+   that never converges means the advanced `max_validation_iters` was hit
+   (raise it).
 4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
    lower `min_border_score`.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,

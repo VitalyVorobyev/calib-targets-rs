@@ -173,17 +173,22 @@ Canonical guide: [printable-target book chapter][printable-book].
 - `image` (default) — enables the `calib_targets::detect` helpers that
   take `image::GrayImage` inputs and run `chess-corners` internally.
 - `tracing` — gates tracing spans across the workspace crates.
+- `diagnostics` (off) — forwards to
+  `calib-targets-chessboard/diagnostics` and gates
+  `detect_chessboard_with_diagnostics` (the `DebugFrame` channel). The
+  hot `detect_chessboard` path builds no trace when this is off.
 
-## Chessboard API — 0.7 migration note
+## Migrating to the current release
 
-In 0.7 the chessboard detector's top-level types were renamed from
-`ChessboardDetector` / `ChessboardParams` / `ChessboardDetectionResult`
-to `Detector` / `DetectorParams` / `Detection`. `DetectorParams` is
-flat — the old nested `graph` / `gap_fill` / `local_homography`
-sub-structs are gone. Import paths move from
-`calib_targets::chessboard::ChessboardParams` to
-`calib_targets::chessboard::DetectorParams`; `detect_chessboard*` now
-takes `&DetectorParams`.
+The chessboard detector's `DetectorParams` is split into a stable core of
+four fields plus an opt-in, unstable `advanced` block (`AdvancedTuning`);
+diagnostics moved behind a cargo feature; `cell_size` is back on
+`ChessboardDetection`; and the public config / result types are
+`#[non_exhaustive]` with named constructors. See the
+[Migration Guide][migration] (also at `MIGRATION.md`) for before/after
+snippets covering Rust, the JSON config wire format, and Python.
+
+[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/migration.html
 
 ## Examples
 

@@ -3,27 +3,32 @@
 //! [`Detector`] is a thin facade over the staged pipeline in
 //! [`crate::pipeline`]: each `detect*` method dispatches on
 //! [`DetectorParams::graph_build_algorithm`] and, for the
-//! seed-and-grow path, defers to [`pipeline::run_pipeline`]. The
+//! seed-and-grow path, defers to [`pipeline::run_pipeline_lean`]. The
 //! `find_seed → grow → validate` loop, the post-grow stage sequence,
-//! and the [`ChessboardDetection`] / [`DebugFrame`] payloads all live
-//! under [`crate::pipeline`].
+//! and the [`ChessboardDetection`] payload all live under
+//! [`crate::pipeline`]. The opt-in `DebugFrame` introspection payload
+//! (behind the `diagnostics` feature) is assembled by
+//! [`pipeline::run_pipeline`].
 //!
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
 
 use crate::params::{DetectorParams, GraphBuildAlgorithm};
-use crate::pipeline::{self, run_pipeline};
+use crate::pipeline::{self, run_pipeline_lean};
 use crate::topological::detect_all_topological;
 
 use crate::corner::ChessCorner;
 use std::collections::HashSet;
 
 // Re-export from the pipeline: stable result types used in method signatures
-// and the diagnostic items used in method bodies.
+// and the internal helpers reused by the topological dispatch path.
 pub use pipeline::{
     build_detection_from_grow, run_geometry_check, ChessboardCorner, ChessboardDetection,
-    DebugFrame,
 };
+
+// Diagnostic payload: only on the public surface behind the feature.
+#[cfg(feature = "diagnostics")]
+pub use pipeline::{run_pipeline, DebugFrame};
 
 /// Top-level detector.
 pub struct Detector {
@@ -49,7 +54,9 @@ impl Detector {
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
-            GraphBuildAlgorithm::ChessboardV2 => self.detect_with_diagnostics(corners).detection,
+            GraphBuildAlgorithm::ChessboardV2 => {
+                run_pipeline_lean(&self.params, corners, &HashSet::new()).detection
+            }
         }
     }
 
@@ -59,6 +66,9 @@ impl Detector {
     /// detection plus every per-stage trace. Use [`Self::detect`] when only
     /// the detection is needed; this is the channel for inspecting *how* it
     /// was reached.
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -94,11 +104,26 @@ impl Detector {
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
-            GraphBuildAlgorithm::ChessboardV2 => self
-                .detect_all_with_diagnostics(corners)
-                .into_iter()
-                .filter_map(|f| f.detection)
-                .collect(),
+            GraphBuildAlgorithm::ChessboardV2 => {
+                // Lean multi-component sweep: run the pipeline once per
+                // component, marking each recovered component's corners
+                // consumed so the next pass sees a fresh scene. Mirrors
+                // the diagnostics sweep but never builds a `DebugFrame`.
+                let cap = self.params.max_components.max(1) as usize;
+                let mut consumed: HashSet<usize> = HashSet::new();
+                let mut detections: Vec<ChessboardDetection> = Vec::with_capacity(cap);
+                for _ in 0..cap {
+                    let outcome = run_pipeline_lean(&self.params, corners, &consumed);
+                    let Some(detection) = outcome.detection else {
+                        break;
+                    };
+                    for corner in &detection.corners {
+                        consumed.insert(corner.input_index);
+                    }
+                    detections.push(detection);
+                }
+                detections
+            }
         }
     }
 
@@ -108,6 +133,9 @@ impl Detector {
     /// per-component detection plus every per-stage trace. Use
     /// [`Self::detect_all`] when only the detections are needed; this is the
     /// channel for inspecting *how* each component was reached.
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
     #[cfg_attr(
         feature = "tracing",
         tracing::instrument(
@@ -145,7 +173,6 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::corner::ChessCorner;
-    use crate::pipeline::StageCounts;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
@@ -191,6 +218,32 @@ mod tests {
         let det = Detector::new(DetectorParams::default());
         let d = det.detect(&corners).expect("detection");
         assert_eq!(d.corners.len(), 49);
+    }
+
+    /// The stable `detect()` path populates `ChessboardDetection.cell_size`
+    /// without any diagnostics. On a clean 20 px-pitch grid the seed-
+    /// derived cell size lands within a few pixels of the true pitch.
+    #[test]
+    fn detect_populates_cell_size_on_lean_path() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                let swapped = (i + j).rem_euclid(2) == 1;
+                corners.push(make_corner(k, x, y, swapped));
+                k += 1;
+            }
+        }
+        let det = Detector::new(DetectorParams::default());
+        let d = det.detect(&corners).expect("detection");
+        let cell = d.cell_size.expect("cell_size populated on detect() path");
+        assert!(
+            (cell - s).abs() < 2.0,
+            "cell_size {cell} not within 2 px of true pitch {s}"
+        );
     }
 
     #[test]
@@ -242,8 +295,10 @@ mod tests {
         assert!(p01.1 > p00.1, "+j axis not down-pointing");
     }
 
+    #[cfg(feature = "diagnostics")]
     #[test]
     fn instrumented_counts_match_clean_grid() {
+        use crate::pipeline::StageCounts;
         let s = 20.0_f32;
         let mut corners = Vec::new();
         let mut k = 0;

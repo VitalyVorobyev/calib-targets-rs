@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig};
 use calib_targets_chessboard::{
-    trace_topological, ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
+    trace_topological, AdvancedTuning, ChessboardDetection, Detector, DetectorParams,
+    GraphBuildAlgorithm,
 };
 use chess_corners::Threshold;
 use image::imageops::FilterType;
@@ -260,7 +261,9 @@ fn topo_grid_manifest_gates_hold() {
             let mut params = params_for(GraphBuildAlgorithm::Topological);
             params.min_labeled_corners = gate.min_labeled_corners;
             if let Some(deg) = gate.axis_align_tol_deg {
-                params.tuning.topological.axis_align_tol_rad = deg.to_radians();
+                let mut advanced: AdvancedTuning = params.effective_tuning().into_owned();
+                advanced.topological.axis_align_tol_rad = deg.to_radians();
+                params = params.with_advanced(advanced);
             }
             let trace = trace_topological(&default_corners, &params)
                 .unwrap_or_else(|e| panic!("{} diagnostic trace: {e}", case.path));

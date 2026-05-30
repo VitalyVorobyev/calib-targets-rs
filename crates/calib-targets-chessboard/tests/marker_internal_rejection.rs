@@ -17,7 +17,6 @@
 //! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
-use calib_targets_chessboard::diagnostics::CornerStage;
 use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
@@ -111,24 +110,21 @@ fn marker_internal_corners_never_labelled() {
     let marker_indices: Vec<usize> = (board_count..corners.len()).collect();
 
     let detector = Detector::new(DetectorParams::default());
-    let frame = detector.detect_with_diagnostics(&corners);
-    let detection = frame
-        .detection
-        .as_ref()
+    let detection = detector
+        .detect(&corners)
         .expect("board must still be detected despite marker-internal noise");
 
     // Every labelled corner should be a board corner (index < board_count).
-    // We read this via the DebugFrame, which carries the input_index on
-    // every CornerAug.
+    // The stable detection carries `input_index` on every labelled corner,
+    // so the precision check reads straight off the lean `detect()` path —
+    // no diagnostics needed.
     let marker_set: std::collections::HashSet<usize> = marker_indices.into_iter().collect();
-    let mut labelled_markers = Vec::new();
-    for aug in &frame.corners {
-        if marker_set.contains(&aug.input_index) {
-            if let CornerStage::Labeled { at, .. } = aug.stage {
-                labelled_markers.push((aug.input_index, at));
-            }
-        }
-    }
+    let labelled_markers: Vec<(usize, (i32, i32))> = detection
+        .corners
+        .iter()
+        .filter(|c| marker_set.contains(&c.input_index))
+        .map(|c| (c.input_index, (c.grid.i, c.grid.j)))
+        .collect();
     assert!(
         labelled_markers.is_empty(),
         "precision contract violated: marker-internal corners labelled as board: {labelled_markers:?}"

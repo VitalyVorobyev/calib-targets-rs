@@ -29,6 +29,7 @@ from typing import Any
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 import numpy as np
 from matplotlib.lines import Line2D
 from PIL import Image
@@ -167,13 +168,16 @@ def draw_grid_overlay(
     out_path: Path,
 ) -> dict[str, Any]:
     """Draw labelled corners + edges. Returns per-frame stats."""
-    fig, ax = plt.subplots(figsize=(12, 9), dpi=110)
+    fig, ax = plt.subplots(figsize=(16, 12), dpi=140)
     ax.imshow(image, cmap="gray", vmin=0, vmax=255)
 
     detection = frame["frame"].get("detection")
     labelled: list[dict[str, Any]] = []
     if detection is not None:
-        for lc in detection["target"]["corners"]:
+        # DebugFrame.detection schema: current emits `corners` directly;
+        # older frames nested them under `target`.
+        corners = (detection.get("target") or detection)["corners"]
+        for lc in corners:
             grid = lc.get("grid")
             if grid is None:
                 continue
@@ -231,6 +235,17 @@ def draw_grid_overlay(
         xs = [c["x"] for c in labelled]
         ys = [c["y"] for c in labelled]
         ax.scatter(xs, ys, s=18, c="gold", edgecolors="black", linewidths=0.4, zorder=5)
+        for c in labelled:
+            ax.annotate(
+                f'{c["i"]},{c["j"]}',
+                (c["x"], c["y"]),
+                textcoords="offset points",
+                xytext=(2.5, 2.5),
+                fontsize=4.5,
+                color="yellow",
+                zorder=6,
+                path_effects=[pe.withStroke(linewidth=0.7, foreground="black")],
+            )
 
     width = frame["width"]
     height = frame["height"]

@@ -16,14 +16,8 @@
 //! use calib_targets_core::GrayImageView;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let board = CharucoBoardSpec {
-//!     rows: 5,
-//!     cols: 7,
-//!     cell_size: 1.0,
-//!     marker_size_rel: 0.7,
-//!     dictionary: builtins::DICT_4X4_50,
-//!     marker_layout: MarkerLayout::OpenCvCharuco,
-//! };
+//! let board = CharucoBoardSpec::new(5, 7, 1.0, 0.7, builtins::DICT_4X4_50)
+//!     .with_marker_layout(MarkerLayout::OpenCvCharuco);
 //!
 //! let params = CharucoParams::for_board(&board);
 //! let detector = CharucoDetector::new(params)?;

@@ -8,10 +8,13 @@ publish = false
 description = "Internal regression / performance harness for the chessboard grid builder"
 
 [dependencies]
-calib-targets = { workspace = true, features = ["tracing"] }
-calib-targets-chessboard = { workspace = true, features = ["tracing"] }
+# The bench renders overlays from the chessboard `DebugFrame`, so it enables
+# the `diagnostics` feature. It reads the grid `cell_size` from the stable
+# `ChessboardDetection` (always available); the `DebugFrame` is used only
+# for per-corner overlay staging.
+calib-targets = { workspace = true, features = ["tracing", "diagnostics"] }
+calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 calib-targets-core = { workspace = true }
-projective-grid = { workspace = true, features = ["tracing"] }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }
 nalgebra = { workspace = true }
@@ -23,7 +26,7 @@ toml = "0.8"
 
 [[bin]]
 name = "bench"
-path = "src/bin/bench.rs"
+path = "src/bin/bench/main.rs"
 
 [[bin]]
 name = "topo_stage_timing"

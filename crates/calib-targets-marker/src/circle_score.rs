@@ -23,6 +23,12 @@ pub enum CirclePolarity {
 }
 
 /// Tuning knobs for per-cell circular-marker scoring.
+///
+/// **Unstable:** the fields of this struct are **NOT covered by semver** and
+/// may be retuned, retyped, renamed, or removed between minor versions as the
+/// circular-marker scorer evolves. Treat it as an escape hatch for a specific
+/// failing input backed by evidence — a calibration consumer should leave it
+/// at [`Default`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct CircleScoreParams {

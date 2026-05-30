@@ -126,6 +126,8 @@ export interface ChessboardCorner {
 export interface ChessboardDetectionResult {
   /** The labelled corners. */
   corners: ChessboardCorner[];
+  /** Grid pitch in pixels; `null` only on results built without a seed. */
+  cell_size: number | null;
 }
 
 export interface MarkerDetection {
@@ -254,10 +256,13 @@ export interface ChessConfig {
 // ---------------------------------------------------------------------------
 // Parameters: chessboard detector
 //
-// The Rust `DetectorParams` carries a small stable core plus a
-// `ChessboardTuning` advanced sub-struct. `ChessboardTuning` is
-// `#[serde(flatten)]`-ed, so the serialized JSON wire format is FLAT —
-// every tuning knob is a top-level key, no `tuning` object appears.
+// The Rust `DetectorParams` carries a small stable core plus an opt-in,
+// unstable `AdvancedTuning` sub-struct. `advanced` is `Option`-wrapped and
+// serialized as a NESTED `"advanced"` object (it is NOT flattened). When
+// omitted, detection runs on the default tuning. The four stable keys
+// (`graph_build_algorithm`, `min_labeled_corners`, `max_components`,
+// `min_corner_strength`) are covered by semver; the `AdvancedTuning` knobs
+// are NOT and may change between minor versions.
 // ---------------------------------------------------------------------------
 
 /** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
@@ -275,12 +280,12 @@ export interface AxisClusterCenters {
 export interface TopologicalParams {
   axis_align_tol_rad: number;
   max_axis_sigma_rad: number;
-  edge_ratio_max: number;
+  opposing_edge_ratio_max: number;
   min_quads_per_component: number;
   axis_cluster_centers: AxisClusterCenters | null;
   cluster_axis_tol_rad: number;
-  quad_edge_min_rel: number;
-  quad_edge_max_rel: number;
+  edge_length_min_rel: number;
+  edge_length_max_rel: number;
 }
 
 /** Tuning knobs for the shared local-geometry component merger (Rust `LocalMergeParams`). */
@@ -292,19 +297,14 @@ export interface LocalMergeParams {
 }
 
 /**
- * Chessboard detector parameters — the flat serialized shape of the Rust
- * `DetectorParams`. The first three keys are the stable core; the remainder
- * are the `#[serde(flatten)]`-ed `ChessboardTuning` knobs.
+ * Opt-in, **unstable** per-stage chessboard tuning knobs (Rust
+ * `AdvancedTuning`). Nested under {@link ChessboardParams.advanced}. These
+ * knobs are NOT covered by semver and may be renamed, retyped, or removed
+ * between minor versions — leave them unset unless a specific input fails.
  */
-export interface ChessboardParams {
-  // --- stable core ---
-  graph_build_algorithm: GraphBuildAlgorithm;
-  min_labeled_corners: number;
-  max_components: number;
-  // --- flattened ChessboardTuning ---
+export interface AdvancedTuning {
   topological: TopologicalParams;
   component_merge: LocalMergeParams;
-  min_corner_strength: number;
   max_fit_rms_ratio: number;
   num_bins: number;
   max_iters_2means: number;
@@ -340,11 +340,28 @@ export interface ChessboardParams {
   enable_post_geometry_rescue: boolean;
   geometry_check_line_tol_rel: number;
   geometry_check_local_h_tol_rel: number;
+  enable_final_edge_shape_check: boolean;
   stage6_local_h: boolean;
   stage6_local_k_nearest: number;
   enable_weak_cluster_rescue: boolean;
   weak_cluster_tol_deg: number;
   max_booster_iters: number;
+}
+
+/**
+ * Chessboard detector parameters — the serialized shape of the Rust
+ * `DetectorParams`. The four stable keys below are the semver-covered core;
+ * the optional `advanced` block holds the unstable per-stage tuning knobs and
+ * is omitted from the wire format unless set.
+ */
+export interface ChessboardParams {
+  // --- stable core ---
+  graph_build_algorithm: GraphBuildAlgorithm;
+  min_labeled_corners: number;
+  max_components: number;
+  min_corner_strength: number;
+  // --- opt-in, unstable tuning (omitted when unset) ---
+  advanced?: AdvancedTuning;
 }
 
 // ---------------------------------------------------------------------------
@@ -545,7 +562,7 @@ export interface ExtensionTrace {
   rejected_no_candidate: number;
   rejected_ambiguous: number;
   rejected_label: number;
-  rejected_validator: number;
+  rejected_policy: number;
   rejected_edge: number;
   attached_indices: number[];
 }

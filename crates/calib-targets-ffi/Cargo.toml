@@ -26,7 +26,11 @@ required-features = ["generate-header"]
 generate-header = ["dep:cbindgen"]
 
 [dependencies]
-calib-targets = { workspace = true, features = ["image"] }
+# The C ABI cannot express Cargo features, so the FFI crate enables
+# `diagnostics` unconditionally: the diagnostic JSON entry points
+# (`ct_*_detector_detect_diagnostics_json`) are always present and the
+# generated header is stable across build configurations.
+calib-targets = { workspace = true, features = ["image", "diagnostics"] }
 cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
 flate2.workspace = true

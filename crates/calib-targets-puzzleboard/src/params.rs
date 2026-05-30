@@ -2,7 +2,7 @@
 
 use crate::board::PuzzleBoardSpec;
 use crate::detector::PuzzleBoardDecodeConfig;
-use calib_targets_chessboard::DetectorParams;
+use calib_targets_chessboard::{DetectorParams, GraphBuildAlgorithm};
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
@@ -54,7 +54,13 @@ impl PuzzleBoardParams {
     /// is the geometry gate.
     pub fn for_board(board: &PuzzleBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.tuning.min_corner_strength = 0.1;
+        chessboard.min_corner_strength = 0.1;
+        // PuzzleBoard defaults to the topological grid builder: it is denser
+        // and faster on clean self-identifying boards, and (now that the
+        // builder is deterministic) its decoded master origin is stable and
+        // matches the seed-and-grow origin. ChessboardV2 stays a documented
+        // opt-in via `chessboard.graph_build_algorithm`.
+        chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
         Self {
             px_per_square: 60.0,
             chessboard,
@@ -71,7 +77,8 @@ impl PuzzleBoardParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
+                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                chessboard.graph_build_algorithm = base.chessboard.graph_build_algorithm;
                 Self {
                     chessboard,
                     ..base.clone()

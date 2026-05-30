@@ -7,6 +7,7 @@
   - [Tuning the Detector](tuning.md)
   - [Troubleshooting](troubleshooting.md)
   - [Understanding Results](output.md)
+  - [Migration Guide](migration.md)
 - [Project Overview](overview.md)
 - [Conventions](conventions.md)
 - [Pipeline Overview](pipeline.md)

@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::DetectorParams;
+use calib_targets_chessboard::{AdvancedTuning, DetectorParams};
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
@@ -87,29 +87,48 @@ pub struct CharucoParams {
     ///
     /// Default: `false` (legacy rotation + translation vote alignment).
     /// Opt in by setting this to `true` when decoding difficult targets
-    /// such as small-cell AprilTag boards; the ChArUco regression sweep on
-    /// `privatedata/target_0.png` goes from 0/6 to 3/6 detected frames
-    /// with the board-level matcher, and the flagship dataset improves
-    /// wrong-id count from 3 to 0.
+    /// such as small-cell AprilTag boards; on our internal regression set
+    /// the board-level matcher recovers frames the legacy vote drops and
+    /// removes the residual wrong-id labels.
     #[serde(default = "default_use_board_level_matcher")]
     pub use_board_level_matcher: bool,
     /// Logistic slope κ used in the soft-bit log-likelihood when
     /// [`Self::use_board_level_matcher`] is `true`. Larger = more confident
     /// per bit; 8–16 is a reasonable range.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Clip floor applied to each per-bit log-likelihood term before
     /// summing across bits, so a single wildly-wrong bit cannot dominate
     /// a cell score.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
     /// Minimum `(best − runner-up) / |best|` margin required for the
     /// board-level matcher to accept a hypothesis. Below this, detection
     /// is rejected rather than mislabelled.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
     /// Border-black fraction threshold below which a cell's weight is
     /// attenuated linearly toward 0 in the board-level score.
+    ///
+    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
+    /// semver** and may be retuned, retyped, or removed between minor versions
+    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
+    /// specific dataset with evidence.
     #[serde(default = "default_cell_weight_border_threshold")]
     pub cell_weight_border_threshold: f32,
 }
@@ -127,11 +146,13 @@ fn default_px_per_square() -> f32 {
 }
 
 fn default_min_marker_inliers() -> usize {
-    8
+    // Board-appropriate floor (the board-level matcher is the default; see
+    // `default_use_board_level_matcher`). The legacy vote matcher wants 8.
+    1
 }
 
 fn default_min_secondary_marker_inliers() -> usize {
-    2
+    1
 }
 
 fn default_bit_likelihood_slope() -> f32 {
@@ -157,7 +178,7 @@ fn default_cell_weight_border_threshold() -> f32 {
 }
 
 fn default_use_board_level_matcher() -> bool {
-    false
+    true
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -188,10 +209,22 @@ impl CharucoParams {
     /// chessboard tolerances).
     pub fn sweep_for_board(board: &CharucoBoardSpec) -> Vec<Self> {
         let base = Self::for_board(board);
+        // The ChArUco base sets a strength floor (stable field) and disables
+        // the standalone final edge-shape gate (advanced knob). Re-apply both
+        // to every recall-bracketed sweep config, preserving each config's own
+        // advanced overrides (the tighter / looser tolerances).
+        let base_strength = base.chessboard.min_corner_strength;
+        let base_edge_shape_check = base
+            .chessboard
+            .effective_tuning()
+            .enable_final_edge_shape_check;
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                chessboard.tuning.min_corner_strength = base.chessboard.tuning.min_corner_strength;
+                chessboard.min_corner_strength = base_strength;
+                let mut advanced = chessboard.effective_tuning().into_owned();
+                advanced.enable_final_edge_shape_check = base_edge_shape_check;
+                chessboard = chessboard.with_advanced(advanced);
                 Self {
                     chessboard,
                     ..base.clone()
@@ -209,17 +242,39 @@ impl CharucoParams {
     /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.tuning.min_corner_strength = 0.5;
+        // Absolute ChESS-strength floor. In defocused regions the corner
+        // detector fires weakly on ArUco-marker bit saddles that align with
+        // a grid extrapolation; those false corners are grid-consistent
+        // (they pass the homography validation) and so survive into the
+        // ChArUco product as biased corners — geometry alone cannot reject
+        // them (the weak-frontier ceiling). Cutting weak corners *before*
+        // the grid grows keeps the grid out of the blur entirely, which on
+        // the private regression set clears every reviewed marker-bit false
+        // corner (zero product-false), and — because the marker cells are
+        // sampled from that grid — also *improves* marker decode (fewer
+        // spurious cells), recovering frames the looser floor lost. The cost
+        // is the weakest blurred-margin corners (least useful for
+        // calibration). The board alignment is a *location* tool, never a
+        // corner-drop gate, so this floor — not marker presence — is the
+        // precision lever.
+        chessboard.min_corner_strength = 33.0;
+        // ChArUco has marker-ID and board-alignment validation after
+        // chessboard grid recovery. Keep the chessboard component
+        // recall-oriented here; the standalone chessboard detector
+        // still enables the stricter final edge-shape gate by default.
+        // `enable_final_edge_shape_check` is an advanced knob, so route it
+        // through an `AdvancedTuning` override.
+        let mut advanced = AdvancedTuning::default();
+        advanced.enable_final_edge_shape_check = false;
+        chessboard = chessboard.with_advanced(advanced);
 
-        let scan = ScanDecodeConfig {
-            marker_size_rel: board.marker_size_rel,
-            inset_frac: 0.06,
+        let scan = ScanDecodeConfig::default()
+            .with_marker_size_rel(board.marker_size_rel)
+            .with_inset_frac(0.06)
             // Lower than the default (0.85) — downstream alignment validation
             // rejects false positives, so a looser bar here improves recall on
             // blurry or unevenly-lit images.
-            min_border_score: 0.75,
-            ..ScanDecodeConfig::default()
-        };
+            .with_min_border_score(0.75);
 
         let max_hamming = board.dictionary.max_correction_bits().min(2);
 
@@ -229,12 +284,24 @@ impl CharucoParams {
             board: *board,
             scan,
             max_hamming,
-            min_marker_inliers: 8,
-            min_secondary_marker_inliers: 2,
+            // Board-level soft-LL matcher is the default (see
+            // `use_board_level_matcher` below): it is robust on partial /
+            // blurry views where the legacy rotation+translation vote needs
+            // many markers, so it takes board-appropriate low inlier floors
+            // (1 primary / 1 secondary, gated by `alignment_min_margin`).
+            // The legacy fallback wants the higher 8 / 2 floors; callers
+            // opting into it should raise these.
+            min_marker_inliers: 1,
+            min_secondary_marker_inliers: 1,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
-            use_board_level_matcher: false,
+            // Default to the board-level soft-LL matcher: on the internal
+            // 22×22 regression set it is 120/120 with zero self-consistency
+            // wrong-ids, vs the legacy vote matcher's lower recall and
+            // higher wrong-id noise. The legacy matcher stays a documented
+            // opt-in (`use_board_level_matcher = false`).
+            use_board_level_matcher: true,
             bit_likelihood_slope: default_bit_likelihood_slope(),
             per_bit_floor: default_per_bit_floor(),
             alignment_min_margin: default_alignment_min_margin(),

@@ -2,8 +2,8 @@
 //! from a private PuzzleBoard regression dataset.
 //!
 //! Phase-2 companion to `dataset_corners.rs`. Amortizes ChESS corner
-//! detection into setup and measures only
-//! `Detector::detect_with_diagnostics(&corners)` on a spread of snaps. Skips
+//! detection into setup and measures only the hot-path
+//! `Detector::detect(&corners)` on a spread of snaps. Skips
 //! silently when the private dataset is absent; override the default
 //! path with `CALIB_PUZZLE_PRIVATE_DATASET`.
 //!
@@ -83,8 +83,8 @@ fn bench_grid(c: &mut Criterion) {
             |b, corners| {
                 let detector = Detector::new(params.clone());
                 b.iter(|| {
-                    let frame = detector.detect_with_diagnostics(corners);
-                    criterion::black_box(frame)
+                    let detection = detector.detect(corners);
+                    criterion::black_box(detection)
                 });
             },
         );

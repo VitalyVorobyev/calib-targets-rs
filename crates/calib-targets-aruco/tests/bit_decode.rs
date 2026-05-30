@@ -67,14 +67,13 @@ fn identity_cell(img_side: f32) -> MarkerCell {
 }
 
 fn default_cfg() -> ScanDecodeConfig {
-    ScanDecodeConfig {
-        border_bits: 1,
-        inset_frac: 0.0,
-        marker_size_rel: 1.0,
-        min_border_score: 0.9,
-        dedup_by_id: false,
-        multi_threshold: true,
-    }
+    ScanDecodeConfig::default()
+        .with_border_bits(1)
+        .with_inset_frac(0.0)
+        .with_marker_size_rel(1.0)
+        .with_min_border_score(0.9)
+        .with_dedup_by_id(false)
+        .with_multi_threshold(true)
 }
 
 // ── 1. Round-trip: first 20 markers of DICT_4X4_100 ─────────────────────────
