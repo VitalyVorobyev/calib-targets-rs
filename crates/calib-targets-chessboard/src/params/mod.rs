@@ -32,35 +32,34 @@ use std::borrow::Cow;
 
 /// Which graph-build algorithm to run.
 ///
-/// The detector ships two pipelines side by side:
+/// The detector ships two grid builders side by side. Both produce the
+/// same `(i, j) → corner` labelling, so downstream consumers stay agnostic
+/// to the choice.
 ///
-/// - [`ChessboardV2`](GraphBuildAlgorithm::ChessboardV2) — invariant-rich
-///   8-stage seed-and-grow pipeline (axis clustering → cell-size
-///   estimate → 4-corner seed → BFS grow → validate → boosters).
-///   **Current default.** Pinned for ChArUco because non-uniform marker
-///   cells defeat the topological cell test.
-/// - [`Topological`](GraphBuildAlgorithm::Topological) — Delaunay
-///   triangulation + axis-driven cell test (see the SBF09 reference
-///   in [`projective_grid::TopologicalParams`]'s docs, here with
-///   image-free classification). Lower setup cost, no global cell-size
-///   dependency. **Currently opt-in only.** Designed to handle severe
-///   radial distortion and low view angles that the seed-and-grow
-///   pipeline stalls on. Recall on the chessboard testdata regression
-///   set is below ChessboardV2's; the default will flip once
-///   tolerances are tuned to match the precision-and-recall baseline.
-///   Opt in per call via [`DetectorParams::graph_build_algorithm`].
+/// - [`SeedAndGrow`](GraphBuildAlgorithm::SeedAndGrow) — the **default**.
+///   Finds a self-consistent 4-corner seed, then grows the grid outward
+///   (axis clustering → cell-size estimate → seed → BFS grow → validate →
+///   boosters). Robust across all four target families, and pinned for
+///   ChArUco because non-uniform marker cells defeat the topological
+///   cell test.
+/// - [`Topological`](GraphBuildAlgorithm::Topological) — **opt-in**. A
+///   Delaunay triangulation plus an axis-driven cell test (the image-free
+///   variant of the SBF09 grid finder; see
+///   [`projective_grid::TopologicalParams`]). Lower setup cost and no
+///   global cell-size dependency, which helps on severe radial distortion
+///   and low view angles. Select it per call via
+///   [`DetectorParams::graph_build_algorithm`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum GraphBuildAlgorithm {
     /// Delaunay-triangulation + axis-driven cell-test grid builder.
-    /// Opt-in; lower setup cost and no global cell-size dependency, but
-    /// recall on the regression set still trails [`Self::ChessboardV2`].
+    /// Opt-in; lower setup cost and no global cell-size dependency.
     Topological,
-    /// Conservative default while topological recall catches up to
-    /// ChessboardV2 on the public testdata regression set.
+    /// Self-consistent 4-corner seed plus BFS grow; the default builder,
+    /// robust across all four target families.
     #[default]
-    ChessboardV2,
+    SeedAndGrow,
 }
 
 fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
@@ -103,7 +102,7 @@ fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DetectorParams {
     /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
-    /// Default: [`GraphBuildAlgorithm::ChessboardV2`].
+    /// Default: [`GraphBuildAlgorithm::SeedAndGrow`].
     #[serde(default = "default_graph_build_algorithm")]
     pub graph_build_algorithm: GraphBuildAlgorithm,
 
@@ -248,7 +247,7 @@ mod tests {
         assert_eq!(topo.graph_build_algorithm, GraphBuildAlgorithm::Topological);
         assert_eq!(
             default.graph_build_algorithm,
-            GraphBuildAlgorithm::ChessboardV2
+            GraphBuildAlgorithm::SeedAndGrow
         );
         assert_eq!(
             topo.effective_tuning().topological.axis_align_tol_rad,

@@ -58,7 +58,7 @@ impl PuzzleBoardParams {
         // PuzzleBoard defaults to the topological grid builder: it is denser
         // and faster on clean self-identifying boards, and (now that the
         // builder is deterministic) its decoded master origin is stable and
-        // matches the seed-and-grow origin. ChessboardV2 stays a documented
+        // matches the seed-and-grow origin. SeedAndGrow stays a documented
         // opt-in via `chessboard.graph_build_algorithm`.
         chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
         Self {

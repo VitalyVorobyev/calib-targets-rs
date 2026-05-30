@@ -14,7 +14,7 @@ pipeline reference — those live with the code that owns them:
 - **`crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`** —
   canonical stage map for `projective_grid::topological::build_grid_topological`.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
-  stage maps for both `GraphBuildAlgorithm` variants (ChessboardV2
+  stage maps for both `GraphBuildAlgorithm` variants (SeedAndGrow
   default + Topological opt-in), including the chessboard-side
   topological input adapter and recovery layer.
 
@@ -44,7 +44,7 @@ mislabelling.
 Two labelling pipelines are exposed via
 `calib_targets_chessboard::GraphBuildAlgorithm`:
 
-- **`ChessboardV2`** — seed-and-grow with global-H boundary extension
+- **`SeedAndGrow`** — seed-and-grow with global-H boundary extension
   (`square::grow::bfs_grow` + `square::extension::extend_via_global_homography`),
   battle-tested across all four target families.
 - **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
@@ -55,7 +55,7 @@ Two labelling pipelines are exposed via
 Both pipelines feed an optional shared **component-merge** pass
 (`projective_grid::component_merge::merge_components_local`) that
 reunites disconnected labelled components using local geometry only —
-no global homography. ChessboardV2 keeps the labelled set connected by
+no global homography. SeedAndGrow keeps the labelled set connected by
 construction and does not currently invoke component merge; the
 topological pipeline calls it twice (once on raw components, once
 after recovery boosters).
@@ -189,9 +189,9 @@ labelled positions of the other. Same scoring (cell-size + position
 agreement) but applied to predicted-vs-labelled rather than
 labelled-vs-labelled pairs.
 
-### Gap 10 — Topological pipeline default vs `ChessboardV2` (OPEN)
+### Gap 10 — Topological pipeline default vs `SeedAndGrow` (OPEN)
 
-`GraphBuildAlgorithm::default()` returns `ChessboardV2`. The
+`GraphBuildAlgorithm::default()` returns `SeedAndGrow`. The
 topological pipeline regresses recall on the public ChArUco-style
 testdata because ChESS detects corners *inside* marker bits whose
 axes lock to the marker's local orientation, not the global grid.
@@ -236,7 +236,7 @@ the public bench and flip the default.
   the crate stays standalone. Selectable via
   `DetectorParams::graph_build_algorithm =
   GraphBuildAlgorithm::Topological`. Default is still
-  `ChessboardV2` until Gap 10 closes; topological is opt-in for
+  `SeedAndGrow` until Gap 10 closes; topological is opt-in for
   PuzzleBoard low-view-angle work where it already wins on
   recall + speed.
 - **Shared component merge** (was the long-standing
@@ -244,7 +244,7 @@ the public bench and flip the default.
   in `projective_grid::component_merge::merge_components_local`,
   uses local-geometry-only acceptance (D4 + anchor pair + cell-size
   + position-residual gates, no global homography). Currently
-  invoked only by the topological recovery layer; ChessboardV2
+  invoked only by the topological recovery layer; SeedAndGrow
   keeps the labelled set as a single connected component by
   construction. The `DetectorParams::component_merge:
   LocalMergeParams` field is consumed by the topological adapter

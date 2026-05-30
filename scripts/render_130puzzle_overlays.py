@@ -2,14 +2,14 @@
 """Render side-by-side detection overlays for the 130x130_puzzle dataset.
 
 For each requested ``target_<idx>.png`` snap, runs the chessboard detector
-twice — once with ``GraphBuildAlgorithm::ChessboardV2`` and once with
+twice — once with ``GraphBuildAlgorithm::SeedAndGrow`` and once with
 ``GraphBuildAlgorithm::Topological`` — and saves a 2-up PNG showing
 labelled corners and cardinal grid edges on top of the (2× upscaled) image.
 
 Output layout::
 
     docs/img/130x130_puzzle/<target>-<snap>/00-input.png
-    docs/img/130x130_puzzle/<target>-<snap>/01-chessboard-v2.png
+    docs/img/130x130_puzzle/<target>-<snap>/01-seed-and-grow.png
     docs/img/130x130_puzzle/<target>-<snap>/02-topological.png
     docs/img/130x130_puzzle/<target>-<snap>/03-side-by-side.png
     docs/img/130x130_puzzle/manifest.json
@@ -217,7 +217,7 @@ def render_frame(
         Image.fromarray(image).save(out_dir / "00-input.png")
 
     methods = [
-        ("ChessboardV2", "chessboard_v2", "01-chessboard-v2.png"),
+        ("SeedAndGrow", "seed_and_grow", "01-seed-and-grow.png"),
         ("Topological", "topological", "02-topological.png"),
     ]
     counts: dict[str, int] = {}
@@ -313,7 +313,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--side-by-side-only",
         action="store_true",
-        help="Write only the combined ChessboardV2/Topological overlay for each frame.",
+        help="Write only the combined SeedAndGrow/Topological overlay for each frame.",
     )
     parser.add_argument(
         "--label-grid",
@@ -366,7 +366,7 @@ def main() -> None:
         )
         print(
             f"target_{frame.target_idx} snap {frame.snap_idx}: "
-            f"v2={row['labelled']['ChessboardV2']} topo={row['labelled']['Topological']}"
+            f"v2={row['labelled']['SeedAndGrow']} topo={row['labelled']['Topological']}"
         )
         rows.append(row)
     manifest = {

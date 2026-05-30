@@ -1,15 +1,15 @@
 # ChArUco detection pipeline — atomic stages
 
 Concise stage-by-stage map of `calib-targets-charuco`'s detector. ChArUco
-runs the full chessboard-v2 pipeline first (forced via
-`graph_build_algorithm = ChessboardV2` — see Stage 0 below for why), then
+runs the full seed-and-grow pipeline first (forced via
+`graph_build_algorithm = SeedAndGrow` — see Stage 0 below for why), then
 adds marker decoding and corner ID assignment on top.
 
 ## Stage table
 
 | # | Name | In | Out | Decision | Failure modes | Knobs |
 |---|---|---|---|---|---|---|
-| 0 | chessboard grid detect | `&[Corner]` (ChESS raw) | `Vec<ChessDetection>` (one per disconnected component) | `ChessDetector::detect_all` with **forced** `ChessboardV2` (`pipeline.rs:175` overrides caller choice unconditionally — marker-cell features defeat the topological per-cell axis test, so this pin is a precision guarantee, not a configuration choice) | no grid components qualify (empty / sparse corner cloud) | every `chessboard.*` knob from `DetectorParams` (Stages 0-10 of `crates/calib-targets-chessboard/docs/PIPELINE.md`) |
+| 0 | chessboard grid detect | `&[Corner]` (ChESS raw) | `Vec<ChessDetection>` (one per disconnected component) | `ChessDetector::detect_all` with **forced** `SeedAndGrow` (`pipeline.rs:175` overrides caller choice unconditionally — marker-cell features defeat the topological per-cell axis test, so this pin is a precision guarantee, not a configuration choice) | no grid components qualify (empty / sparse corner cloud) | every `chessboard.*` knob from `DetectorParams` (Stages 0-10 of `crates/calib-targets-chessboard/docs/PIPELINE.md`) |
 | 1 | grid smoothness pre-filter | grid corners + image | redetected / removed corners | per-corner position vs midpoint-averaged neighbours; deviation `> grid_smoothness_threshold_rel × px_per_square` triggers a local ChESS redetection or a drop | blurry cells, over-aggressive threshold flags perspective drift | `grid_smoothness_threshold_rel` (default `0.05`), `corner_redetect_params` |
 | 2 | marker cell enumeration | corner map `{(i,j) → Point2}` | `Vec<MarkerCell>` | per-cell 4-corner completeness check `{(i,j), (i+1,j), (i+1,j+1), (i,j+1)}`; missing any corner → skip | grid edge / hole cells silently excluded — fewer candidate cells | — |
 | 3a | (legacy) marker scan + alignment | cells + image | `Vec<MarkerDetection>` → `CharucoAlignment` | per-cell hard-decode (Otsu threshold, rotation vote, translation vote); `select_alignment` solves for board → image transform from inlier marker IDs | blurry / low-contrast markers; rotation-vote ambiguity at cell edges; wrong-id markers passing decode | `scan.*` (`ScanDecodeConfig`), `max_hamming` |
@@ -19,17 +19,17 @@ adds marker decoding and corner ID assignment on top.
 | 6 | corner validation | mapped corners + markers + image | validated corners (drop false positives) | each detected corner's position is checked against the marker-predicted seed; deviation `> corner_validation_threshold_rel × px_per_square` triggers a marker-constrained redetection or drop | marker-constrained redetection misses true corners in low-contrast regions | `corner_validation_threshold_rel` (default `0.08`) |
 | 7 | emit detection | validated corners + alignment | `CharucoDetectionResult { corners, markers, alignment }` | sort typed ChArUco corners by ID; refuse if surviving count below caller's threshold | — | — |
 
-## What ChArUco inherits from chessboard-v2
+## What ChArUco inherits from seed-and-grow
 
-ChArUco runs **all** chessboard-v2 stages: BFS grow, validation loop,
+ChArUco runs **all** seed-and-grow stages: BFS grow, validation loop,
 Stage 6 / 6.5 / 6.75 (refit + BFS regrow), boosters, and the **mandatory
 final geometry check** (largest-connected-component + looser-`validate()`).
-The chessboard-v2 precision contract carries forward — wrong `(i, j)`
+The seed-and-grow precision contract carries forward — wrong `(i, j)`
 labels at the chessboard layer would corrupt every downstream marker
 match.
 
 The one override: `chessboard.graph_build_algorithm` is **always**
-`ChessboardV2`. Topological grid finding cannot survive marker-internal
+`SeedAndGrow`. Topological grid finding cannot survive marker-internal
 X-corners polluting per-cell axis tests.
 
 ## Diagnose dump
@@ -46,7 +46,7 @@ component carries:
 - `ComponentOutcome { status, markers, charuco_corners }` — final
   bookkeeping
 
-The embedded chessboard-v2 `DebugFrame` (with its `IterationTrace.{
+The embedded seed-and-grow `DebugFrame` (with its `IterationTrace.{
 extension, rescue, refit, extension2, rescue2, geometry_check }`) is
 preserved per component for the same diagnose-driven workflow used on
 the chessboard side.
@@ -54,9 +54,9 @@ the chessboard side.
 ## Cross-references
 
 - `crates/calib-targets-chessboard/docs/PIPELINE.md` — the upstream
-  chessboard-v2 stages this detector inherits.
+  seed-and-grow stages this detector inherits.
 - `CLAUDE.md` "Graph-build algorithm selection" — why ChArUco pins
-  ChessboardV2.
+  SeedAndGrow.
 - `CLAUDE.md` "Evidence-driven detector debugging" — methodology for
   investigating ChArUco failures (start with the per-component
   `BoardMatchDiagnostics`, then the embedded `DebugFrame`).

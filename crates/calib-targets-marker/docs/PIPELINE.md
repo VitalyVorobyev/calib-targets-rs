@@ -16,9 +16,9 @@ known frame.
 | 4 | per-corner offset mapping | matches + alignment | offset `(di, dj)` per circle | apply `alignment.transform` to each candidate cell coord; compute delta from expected | — | — |
 | 5 | emit detection | chessboard + circles + alignment | `MarkerBoardDetectionResult { corners, alignment }` + `MarkerBoardDiagnostics { inliers, circle_candidates, circle_matches, alignment_inliers }` | emit typed marker-board corners with optional IDs / target positions; circle evidence is returned through the diagnostics channel | — | — |
 
-## What the marker board inherits from chessboard-v2
+## What the marker board inherits from seed-and-grow
 
-Stages 0-10 of chessboard-v2 (BFS, validation, Stage 6 / 6.5 / 6.75
+Stages 0-10 of seed-and-grow (BFS, validation, Stage 6 / 6.5 / 6.75
 including mandatory geometry check). The 3-circle pattern serves only
 to **anchor** the labelled grid to a known frame — wrong `(i, j)`
 labels at the chessboard layer would mis-align every alignment-derived

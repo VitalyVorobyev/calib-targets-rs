@@ -406,7 +406,7 @@ pub(super) fn build_topological_detections(
             rebase_j_mod2: 0,
         };
 
-        // Geometry verification. The chessboard-v2 path runs this gate
+        // Geometry verification. The seed-and-grow path runs this gate
         // unconditionally before shipping a detection; the topological
         // dispatch used to skip it. The check can only drop labelled
         // corners (line collinearity / local-H residual / largest

@@ -81,7 +81,7 @@ pub fn run_geometry_check(
         tuning.line_min_members,
         tuning.geometry_check_local_h_tol_rel,
     );
-    // The edge-shape gate + weak-leaf peel are `ChessboardV2`-only. Their
+    // The edge-shape gate + weak-leaf peel are `SeedAndGrow`-only. Their
     // tolerances are tuned for seed-and-grow grids; diagnosis showed they
     // over-peel topological grids badly (≈97% of their topological drops
     // were good corners — the 8° continuation-angle test misfires on short
@@ -91,15 +91,15 @@ pub fn run_geometry_check(
     // instead runs `topological_wrong_label_drops` (Test 2.5 below), a
     // direct local check that targets the genuine wrong-label classes —
     // interior skipped-corner edges and duplicate-pixel labels — without
-    // the over-peel. ChArUco (pinned to `ChessboardV2`) is unaffected, so
+    // the over-peel. ChArUco (pinned to `SeedAndGrow`) is unaffected, so
     // its behaviour and the chessboard public bench stay byte-exact.
-    let on_chessboard_v2 = matches!(
+    let on_seed_and_grow = matches!(
         params.graph_build_algorithm,
-        GraphBuildAlgorithm::ChessboardV2
+        GraphBuildAlgorithm::SeedAndGrow
     );
     let dense_enough = geom_entries.len() >= MIN_EDGE_SHAPE_LABELS;
     let edge_shape_active =
-        tuning.enable_final_edge_shape_check && dense_enough && on_chessboard_v2;
+        tuning.enable_final_edge_shape_check && dense_enough && on_seed_and_grow;
     if edge_shape_active {
         geom_params = geom_params.with_edge_shape_gate(EdgeShapeParams::default());
     }
@@ -179,7 +179,7 @@ pub fn run_geometry_check(
     }
 
     // Test 2.5: direct local wrong-label check (topological builder only).
-    // The `ChessboardV2` edge-shape gate above cannot reach the dominant
+    // The `SeedAndGrow` edge-shape gate above cannot reach the dominant
     // topological wrong-label classes — interior skipped-corner edges and
     // duplicate-pixel labels — so the topological path runs this instead.
     // It can only drop corners; the largest-component filter below then
@@ -187,7 +187,7 @@ pub fn run_geometry_check(
     // skipped corner carried wrong `(i, j)` labels, so dropping it is
     // precision-correct).
     let mut topo_wrong_label_drop: Set<usize> = Set::new();
-    if tuning.enable_final_edge_shape_check && dense_enough && !on_chessboard_v2 {
+    if tuning.enable_final_edge_shape_check && dense_enough && !on_seed_and_grow {
         topo_wrong_label_drop = topological_wrong_label_drops(&grow_res.labelled, augs, cell_size);
         all_drop.extend(topo_wrong_label_drop.iter().copied());
     }
@@ -270,7 +270,7 @@ pub fn run_geometry_check(
     all_drop.extend(disconnect_drop.iter().copied());
 
     let dropped_validate = validate_drop.difference(&edge_shape_drop).count() as u32;
-    // edge_shape_drop/weak_leaf_drop (ChessboardV2) and topo_wrong_label_drop
+    // edge_shape_drop/weak_leaf_drop (SeedAndGrow) and topo_wrong_label_drop
     // (topological) are mutually exclusive by builder, so summing is exact.
     let dropped_edge_only =
         (edge_shape_drop.len() + weak_leaf_drop.len() + topo_wrong_label_drop.len()) as u32;
@@ -330,7 +330,7 @@ const TOPO_DUP_PIXEL_FRAC: f32 = 0.2;
 /// Direct local wrong-label edge detector for the topological grid
 /// builder (Test 2.5 in [`run_geometry_check`]).
 ///
-/// The `ChessboardV2` edge-shape gate cannot reach the dominant
+/// The `SeedAndGrow` edge-shape gate cannot reach the dominant
 /// topological wrong-label classes — interior skipped-corner edges (its
 /// overlong check is gated behind `weakly_supported` and needs a
 /// collinear triple) and duplicate-pixel labels — so this targets them

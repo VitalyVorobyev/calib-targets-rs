@@ -3,297 +3,297 @@
 > Code: [`projective-grid`](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/crates/projective-grid).
 
 `projective-grid` is the pattern-agnostic core of the workspace's
-grid detectors. It exposes two grid-construction pipelines (seed-and-
-grow BFS and a topological Delaunay-based finder), boundary-extension
-machinery, per-cell rectification, circular-statistics peak picking,
-and line / local-homography validation — with no dependency on
-calibration-specific types.
+grid detectors. Given a cloud of 2D feature points — plus, for the
+square detector, two local axis directions per point — it recovers an
+`(i, j) → point` labelling: which integer grid cell each feature
+occupies under perspective, together with a fitted projective
+transform from model-plane coordinates to image pixels.
+
+The crate is deliberately small and **image-free**. There are no
+image, pixel-buffer, or camera types anywhere in its public surface,
+and no target-specific identifiers (marker IDs, ring IDs, calibration
+metadata). It is **target-agnostic**: the same lattice recovery serves
+a chessboard detector, a laser-dot cloud, a scanned form, or a
+photographed board game. All math is generic over `f32` / `f64` via
+the `Float` trait. The other workspace detectors sit *above* this
+crate — they run a corner detector, convert its output into generic
+point or oriented features, and call in here for the labelling.
 
 The crate ships independently on crates.io and is used directly for
 non-calibration tasks: rectifying a photograph of a board game,
 fitting a locally-planar lattice to a laser-dot cloud, extracting a
-grid from a scanned document, or building a new detector for a
-pattern the workspace doesn't yet ship.
+grid from a scanned document, or building a new detector for a pattern
+the workspace doesn't yet ship.
 
 ---
 
-## Quick start
+## The model
 
-The zero-config entry point is `detect_regular_grid`: a bare point
-cloud goes in, a labelled grid comes out — no caller-written validator
-scaffolding.
+Three small pieces define the public surface.
 
-```rust
-use nalgebra::Point2;
-use projective_grid::detect_regular_grid;
+**Two lattice families** (`LatticeKind`). `Square` is the orthogonal
+`(i, j)` grid and is the family backed by an algorithm today. `Hex`
+(axial `(q, r)`) is modelled in the type system — coordinate mapping,
+neighbour offsets, the `D6` symmetry table — but has no detection
+algorithm yet; requesting it returns a typed error rather than a wrong
+answer.
 
-let mut points = Vec::new();
-for j in 0..4 {
-    for i in 0..5 {
-        points.push(Point2::new(i as f32 * 30.0, j as f32 * 30.0));
-    }
-}
-let grid = detect_regular_grid(&points).expect("clean grid detects");
-assert_eq!(grid.points.len(), 20);
-```
+**Two tasks.**
 
-Each `DetectedGridPoint` carries its rebased `(i, j)` label, its pixel
-position, and the index back into the input slice. The detector
-estimates the cell size and grid axes from the cloud itself, drives
-the seed-and-grow pipeline with a built-in permissive regular-grid
-policy, and applies generic output cleanup (connectivity pruning,
-visual top-left canonicalisation, `(j, i)` sort). Use
-`RegularGridDetector` + `RegularGridParams` to tune the
-boundary-extension strategy and the cleanup toggles, or
-`RegularGridDetector::detect_all` for multi-component clouds.
+- *Detection* — `detect_grid` / `detect_grid_all`: recover labels from
+  raw evidence when you do **not** know which feature is which cell.
+- *Consistency* — `check_consistency`: you already have a proposed
+  `(i, j)` label per feature (e.g. from a marker decode) and want to
+  know whether those labels are geometrically consistent under a single
+  projective fit. This is a separate entry point with its own request
+  and report types; it does not go through the `Evidence` enum.
 
-`detect_regular_grid` returns a `Result<RegularGridDetection,
-RegularGridError>`. The error enum has three distinct variants:
-`TooFewPoints` (fewer than 4 points — the minimum for a 2×2 seed),
-`DegeneratePointCloud` (coincident points or no measurable spread —
-the grid-axis estimator found nothing), and `NoGridFound` (a usable
-axis estimate, but no roughly-square seed quad). Note that a
-collinear-but-uniformly-spaced cloud is *not* reported as
-`DegeneratePointCloud` — it survives axis estimation and instead
-fails later as `NoGridFound`.
+**Explicit evidence shapes** (`Evidence`). Detection input is wrapped
+in an enum that names exactly what the caller can supply:
 
-### Runnable examples
-
-Three copy-pasteable programs under `crates/projective-grid/examples/`
-synthesize their own point clouds (no image files needed):
-
-```bash
-cargo run -p projective-grid --example regular_grid         # zero-config story
-cargo run -p projective-grid --example regular_grid_tuning  # RegularGridParams knobs
-cargo run -p projective-grid --example multi_component      # detect_all over disjoint grids
-```
-
-The first is walked through step by step in
-[Regular Grid Detection](example_regular_grid.md).
-
-## Pipelines
-
-### Square seed-and-grow (advanced / pattern-specific)
-
-A five-stage pipeline. `detect_regular_grid` (above) wraps it with a
-built-in policy; reach for the validator-driven API directly when you
-need pattern-specific gates (parity, axis-cluster, marker rules) — they
-plug in via the `square::grow::GrowValidator` and
-`square::seed::finder::SeedQuadValidator` traits, while the geometric
-machinery stays generic.
-
-| Stage | Entry points | What it does |
+| Variant | Payload | Status |
 |---|---|---|
-| **Cell-size estimate** | `estimate_global_cell_size`, `estimate_local_steps` | Infer approximate lattice spacing from a raw point cloud. |
-| **Seed-and-grow** | `square::grow::bfs_grow` + `GrowValidator` | BFS from a 2×2 seed quad, predicting each next cell with adaptive per-neighbour local-step. |
-| **Boundary extension (global H)** | `square::extension::extend_via_global_homography` | Fit a global H over the BFS-validated set; extend outward into perspective-foreshortened territory. Residual gate disables the pass under heavy lens distortion. |
-| **Boundary extension (local H)** | `square::extension::extend_via_local_homography` | Per-candidate H from the K nearest labelled corners. Tolerates heavy radial distortion and multi-region perspective where a single H breaks. Configured via `LocalExtensionParams`. |
-| **Validation** | `square::validate` | Line collinearity + local-homography residuals → blacklist of outlier corners; iterate the previous stages until convergence. |
-| **Rectification** | `square::rectify::SquareGridHomography`, `square::mesh::SquareGridHomographyMesh`, hex equivalents | Single global homography or per-cell mesh. |
+| `Positions` | `&[PointFeature]` | modelled, returns `UnsupportedCombination` |
+| `Oriented1` | `&[OrientedFeature<_, 1>]` | modelled, returns `UnsupportedCombination` |
+| `Oriented2` | `&[OrientedFeature<_, 2>]` | **implemented** (the square detector) |
+| `Oriented3` | `&[OrientedFeature<_, 3>]` | modelled, returns `UnsupportedCombination` |
+| `CoordinateHypotheses` | features + hypotheses | use `check_consistency` instead |
 
-`square::grow_extension` is a deprecated alias for `square::extension`
-retained for back-compat; new code imports from `square::extension`
-directly.
+Today the only `(lattice, evidence)` combination `detect_grid` solves
+is `(Square, Oriented2)`: each feature carries a `PointFeature`
+(position + caller-owned `source_index`) plus two roughly-orthogonal
+`LocalAxis` directions. Every other combination returns a typed
+`GridError::UnsupportedCombination { task, lattice, evidence }` — never
+a guessed answer. The unimplemented shapes exist in the type model so
+the API does not have to break when an algorithm lands behind one of
+them.
 
-### Topological grid finder
+---
 
-`projective_grid::build_grid_topological` implements the Shu /
-Brunton / Fiala 2009 grid finder: Delaunay triangulation over the
-corner cloud, edge classification by per-edge axis match, triangle-
-pair → quad merge, and flood-fill `(i, j)` labelling. Image-free —
-the original paper's per-cell colour test is replaced by an axis-
-driven cell predicate so `projective-grid` stays standalone.
+## Worked example
+
+A fully self-contained, image-free example: synthesize a small `3×3`
+grid with a mild perspective shear, wrap the features as evidence,
+detect, and read the recovered labels. This is the body of
+[`examples/hello_grid.rs`][hello-grid] — run it with
+`cargo run -p projective-grid --example hello_grid`.
 
 ```rust,ignore
+use nalgebra::Point2;
 use projective_grid::{
-    build_grid_topological, merge_components_local,
-    ComponentInput, LocalMergeParams, TopologicalParams,
+    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
+    OrientedFeature, PointFeature, SquareAlgorithm,
 };
 
-let topo = build_grid_topological(&positions, &axes_hints, &TopologicalParams::default())?;
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Build a 3x3 grid of oriented features. The `+ j * 6.0` term adds a
+    // mild perspective-style shear, so this is a genuine projective grid,
+    // not a perfectly axis-aligned one.
+    let mut features: Vec<OrientedFeature<f32, 2>> = Vec::new();
+    for j in 0..3 {
+        for i in 0..3 {
+            // Image-frame position: origin top-left, x right, y down.
+            let x = 60.0 + i as f32 * 40.0 + j as f32 * 6.0;
+            let y = 50.0 + j as f32 * 40.0;
 
-// merge_components_local reunites partial components and is shared
-// with the seed-and-grow pipeline.
-let views: Vec<ComponentInput<'_>> = topo.components.iter()
-    .map(|c| ComponentInput { labelled: &c.labelled, positions: &positions })
-    .collect();
-let merged = merge_components_local(&views, &LocalMergeParams::default());
-```
+            // `source_index` is a stable caller-owned handle; the solution
+            // reports it back so you can map a label to the input feature.
+            let point = PointFeature::new(features.len(), Point2::new(x, y));
 
-ChessboardV2 selects between the two pipelines via
-`DetectorParams::graph_build_algorithm`; the default is `ChessboardV2`
-(seed-and-grow). The topological path runs faster and denser on
-clean PuzzleBoards but currently regresses recall on ChArUco-style
-images because marker-internal corners poison the per-cell axis
-test. ChArUco unconditionally pins seed-and-grow inside
-`CharucoDetector::new` regardless of caller choice.
-
-See `crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md` in the
-workspace for the per-stage algorithm description and known
-limitations.
-
-### Reusable utilities
-
-- **Circular statistics** (`circular_stats`) — plateau-aware peak
-  detection and double-angle 2-means for axis-angle histograms.
-- **Homography** (`homography`) — 4-point + DLT solver with Hartley
-  normalisation and a reprojection-quality diagnostic. The DLT path
-  uses normal equations + 9×9 symmetric eigendecomposition for the
-  null-vector solve.
-- **Component merge** (`component_merge::merge_components_local`) —
-  position-based Hough alignment of `(D4-transform, label-delta)`,
-  shared by both pipelines as the post-stage that reunites partial
-  components.
-
----
-
-## Extension point: `GrowValidator`
-
-```rust,ignore
-use projective_grid::square::grow::{Admit, GrowValidator, LabelledNeighbour};
-use nalgebra::Point2;
-
-impl GrowValidator for MyValidator {
-    fn is_eligible(&self, idx: usize) -> bool { /* … */ }
-    fn required_label_at(&self, i: i32, j: i32) -> Option<u8> { /* … */ }
-    fn label_of(&self, idx: usize) -> Option<u8> { /* … */ }
-
-    fn accept_candidate(
-        &self,
-        idx: usize,
-        at: (i32, i32),
-        prediction: Point2<f32>,
-        neighbours: &[LabelledNeighbour],
-    ) -> Admit {
-        // Accept / Reject per candidate in order of increasing
-        // distance to `prediction`.
+            // Two roughly-orthogonal local axes: horizontal (0 rad) and
+            // vertical (pi/2 rad), each with a small angular sigma.
+            let axes = [
+                LocalAxis::new(0.0, Some(0.02)),
+                LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(0.02)),
+            ];
+            features.push(OrientedFeature::new(point, axes));
+        }
     }
 
-    fn edge_ok(
-        &self,
-        candidate_idx: usize,
-        neighbour_idx: usize,
-        at_candidate: (i32, i32),
-        at_neighbour: (i32, i32),
-    ) -> bool { /* soft per-edge check */ true }
+    // Wrap as Oriented2 evidence and ask for a square lattice. Grid
+    // dimensions are unknown (`None`); the detector infers the extent.
+    let request = DetectionRequest::new(
+        LatticeKind::Square,
+        Evidence::Oriented2(&features),
+        None,
+        DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow),
+    );
+
+    // `detect_grid` returns the largest recovered component.
+    let solution = detect_grid(request)?;
+    for entry in &solution.grid.entries {
+        // coord.u = i, coord.v = j; source_index maps back to the input.
+        println!(
+            "(i={}, j={}) <- feature {}",
+            entry.coord.u, entry.coord.v, entry.source_index
+        );
+    }
+    Ok(())
 }
 ```
 
-The same validator is used by `bfs_grow` (Stage 5) and
-`extend_via_global_homography` (Stage 6) — so parity, axis-matching,
-and edge invariants are enforced identically across both paths.
-
-The chessboard detector's plug-in
-(`crates/calib-targets-chessboard/src/grow.rs`) is the reference
-implementation: chess-specific axis-slot logic on top of the generic
-BFS / boundary-extension machinery.
+Running it labels all nine features `(0,0)` through `(2,2)` with a
+sub-pixel fit residual. Two sibling examples under
+`crates/projective-grid/examples/` round out the surface:
+`detect_square_oriented2` (a larger detection run) and
+`check_square_consistency` (the consistency task on pre-labelled
+features).
 
 ---
 
-## Module layout
+## Two square algorithms
 
-```text
-projective-grid/src/
-├── lib.rs
-├── float_helpers.rs          (private)
-├── global_step.rs            cell-size estimation from a raw cloud
-├── local_step.rs             per-region local-step estimation
-├── homography.rs             Homography, HomographyQuality, 4pt + DLT
-├── circular_stats.rs         wrap_pi, smooth_circular_5, pick_two_peaks,
-│                             refine_2means_double_angle
-├── affine.rs                 AffineTransform2D (generic 2D)
-├── component_merge.rs        merge_components_local
-├── square/                   4-connected square-grid support
-│   ├── regular.rs            detect_regular_grid (zero-config entry point)
-│   ├── cleanup.rs            rebase / prune / canonicalise / sort helpers
-│   ├── detect.rs             detect_square_grid (validator-driven path)
-│   ├── alignment.rs          D4 transforms
-│   ├── grow.rs               GrowValidator, bfs_grow, GrowResult
-│   ├── grow_extend.rs        extend_from_labelled (post-cluster boost)
-│   ├── extension/            Stage 6 — global / local homography
-│   │   ├── common.rs         try_attach_at_cell (shared per-cell ladder)
-│   │   ├── global.rs         extend_via_global_homography
-│   │   └── local.rs          extend_via_local_homography
-│   ├── index.rs              GridCoords (i, j)
-│   ├── mesh.rs               SquareGridHomographyMesh (per-cell)
-│   ├── rectify.rs            SquareGridHomography (global)
-│   ├── seed/                 2×2 seed primitives + finder
-│   │   ├── mod.rs            Seed, SeedOutput, midpoint check
-│   │   └── finder.rs         find_quad, SeedQuadValidator
-│   ├── smoothness.rs         square_predict_grid_position,
-│   │                         square_find_inconsistent_corners
-│   └── validate/             post-grow validation
-│       ├── mod.rs            validate(), LabelledEntry, ValidationParams
-│       ├── lines.rs          line collinearity flags
-│       ├── local_h.rs        local-H residual
-│       └── step.rs           per-corner step + step-deviation flags
-├── topological/              Shu/Brunton/Fiala 2009 grid finder
-│   ├── mod.rs                build_grid_topological, AxisEstimate
-│   ├── classify.rs           edge classification
-│   ├── delaunay.rs           triangulation wrapper
-│   ├── quads.rs              triangle-pair → quad merge
-│   ├── topo_filter.rs        topological + geometric filter
-│   ├── trace.rs              per-stage trace structs
-│   └── walk.rs               flood-fill (i, j) labelling
-└── hex/                      6-connected hex-grid (geometry only,
-    ├── alignment.rs           no seed-and-grow path yet)
-    ├── mesh.rs
-    ├── rectify.rs
-    └── smoothness.rs
-```
+Detection of `(Square, Oriented2)` is backed by two algorithms. Both
+consume the same `Evidence::Oriented2` input and produce the same
+`GridSolution` shape, so downstream code stays agnostic to which one
+ran. Select via `DetectionParams::with_algorithm`:
+
+- **`SquareAlgorithm::SeedAndGrow`** (default) — finds a self-consistent
+  `2×2` seed quad (four edges that agree on a cell size, chords aligned
+  to the corner axes), grows the grid breadth-first from that seed,
+  validates the result geometrically, and fits a projective transform.
+  Mature and conservative; returns a single connected component.
+- **`SquareAlgorithm::Topological`** — the Shu / Brunton / Fiala 2009
+  axis-driven grid finder: a Delaunay triangulation over the corner
+  cloud whose edges are classified by per-corner axis match, with
+  triangle pairs merged into cells and integer coordinates flooded
+  across the mesh. Image-free; tends to recover **denser** grids on
+  clean inputs and copes better with distortion, at the cost of more
+  sensitivity to per-feature axis quality. May produce several
+  components — see `detect_grid_all` below.
+
+Both paths share the same post-detection validation and projective fit.
+The deep-dive — the axis-classification test, the triangle-to-cell
+merge, and the line between the generic machinery here and the
+chessboard-specific wrapper — lives in
+`docs/topological-grid-detection.md` in the workspace repository.
+
+### Single vs. multi-component results
+
+`detect_grid` returns the **largest** recovered component as one
+`GridSolution`. When the lattice is split into islands (for example by
+occlusion) and the secondary components matter, call `detect_grid_all`:
+it returns a `DetectionReport` whose `solutions` vector holds one
+`GridSolution` per qualifying component, ordered by labelled-count
+descending. `SeedAndGrow` always yields at most one solution; the
+topological path may yield several.
 
 ---
 
-## Invariants worth keeping in mind
+## Inputs
 
-### Undirected-angle circular means
+Detection input is the `Evidence` enum (see *The model* above). For the
+supported `Oriented2` shape each element is an `OrientedFeature<F, 2>`:
 
-When averaging axis directions (orientations, not headings), accumulate
-`(cos 2θ, sin 2θ)` and halve the resulting atan2. `circular_stats::
-refine_2means_double_angle` does this correctly; naive `(cos θ, sin θ)`
-averaging silently breaks at the 0°/180° seam.
+- `point: PointFeature<F>` — `position` (image-frame pixel center) and a
+  stable, caller-owned `source_index`. The solution reports the
+  `source_index` back so a recovered label maps to the exact input.
+- `axes: [LocalAxis<F>; 2]` — two undirected local lattice directions,
+  each an `angle_rad` plus an optional `sigma_rad` (angular
+  uncertainty). Axes are *undirected*: `θ` and `θ + π` denote the same
+  direction.
 
-### Plateau-aware peak detection
+`DetectionRequest::new(lattice, evidence, dimensions, params)` bundles
+the lattice family, the evidence, optional known `GridDimensions`, and
+a `DetectionParams`. `DetectionParams` carries `max_residual_px` (the
+fit residual gate) and the algorithm selector, with per-algorithm
+sub-configs (`seed` / `grow` for seed-and-grow, `topological` for the
+topological path) and a shared `validate` sub-config; `Default` covers
+all the tuning knobs and the builder-style `with_*` methods override
+individual fields.
 
-When a physical direction's mass straddles a histogram bin boundary,
-the smoothed peak is flat-topped across two adjacent bins. Naive
-strict local-maximum detection misses it entirely. `circular_stats::
-pick_two_peaks` handles this by looking for maximal runs of equal-
-valued bins bordered on both sides by strictly lower values, and
-returning the plateau's midpoint.
+---
 
-### Non-negative grid labels with visual top-left origin
+## Outputs
 
-All `(i, j)` output from `bfs_grow` is rebased so the bounding-box
-minimum is `(0, 0)`. Downstream consumers that canonicalise axis
-direction (the chessboard detector does this in
-`calib_targets_chessboard::Detector::detect`) additionally swap /
-flip axes so `(0, 0)` sits at the **visual top-left** of the detected
-grid — `+i` points right (+x), `+j` points down (+y). This is not
-enforced by `bfs_grow` itself — it's a pattern-side contract.
+A successful detection is a `GridSolution<F>`:
 
-### Boundary extension is precision-safe
+| Field | Meaning |
+|---|---|
+| `grid: LabelledGrid<F>` | The labelled component: `entries` (one per placed feature), the `lattice` family, an inclusive coordinate `bbox`, and the optional caller-supplied `dimensions`. |
+| `fit: Option<LatticeFit<F>>` | The fitted model-plane-to-image projective transform (`model_to_image: Projective2<F>`) plus a `residuals: ResidualSummary` (`count`, `mean_px`, `max_px`). |
+| `rejected: Vec<RejectedFeature<F>>` | Features this component could not place. |
 
-Both extension flavours go through *every* gate the BFS uses —
-`is_eligible`, `label_of` against `required_label_at`,
-`accept_candidate`, and `edge_ok` — plus a tighter ambiguity gate
-(2.5× vs BFS's 1.5×) and a single-claim guarantee (one corner index
-can only be claimed by one cell per pass). The global-H pass adds an
-H-residual gate on the BFS-validated set: under heavy lens distortion
-the gate fires and the pass becomes a no-op. The local-H pass uses
-a per-candidate worst-residual gate over the K supports instead of a
-single global threshold, so it stays useful where global-H refuses.
+Each `GridEntry<F>` carries:
+
+- `coord: Coord` — the `(i, j)` label as `coord.u` / `coord.v`, rebased
+  so the labelled bounding box starts at `(0, 0)`.
+- `source_index: usize` — back into the caller's input slice.
+- `image_position: Point2<F>` — the feature's image-frame pixel-center
+  position.
+- `residual_px: Option<F>` — reprojection residual in pixels, present
+  when a fit was computed.
+
+Each `RejectedFeature<F>` carries the `source_index`, an optional
+`coord`, an optional `residual_px`, and a `RejectionReason`:
+`Unlabelled` (never placed — e.g. noise outside the recovered lattice),
+`ValidationDropped` (placed by the grow pass but dropped by post-grow
+validation: line collinearity, local-homography residual, or
+edge-length band), or `ResidualTooHigh` (reprojection residual exceeded
+`max_residual_px`).
+
+For multi-component runs, `detect_grid_all` returns a `DetectionReport`
+with the per-component `solutions` vector plus a top-level `rejected`
+slot.
+
+---
+
+## Checking caller-supplied labels
+
+When labels already exist — for instance after decoding marker IDs into
+`(i, j)` coordinates — `check_consistency` scores them against a single
+projective fit instead of recovering them from scratch. Build a
+`ConsistencyRequest::new(lattice, features, hypotheses, dimensions,
+params)` from position-only `PointFeature`s and a parallel slice of
+`CoordinateHypothesis` (each pairing a `source_index` with a proposed
+`Coord`), with a `ConsistencyParams` whose `max_residual_px` sets the
+acceptance threshold. The returned `ConsistencyReport` has `passed`
+(true when every residual clears the threshold), the full `solution`
+(labels, fit, and any over-residual `rejected` entries), and a
+`max_residual_px()` convenience accessor. `check_square_consistency` in
+the examples directory is the runnable version.
+
+This is also the one entry point that consumes coordinate hypotheses;
+`Evidence::CoordinateHypotheses` exists for symmetry in the detection
+enum but `detect_grid` does not yet act on it.
+
+---
+
+## Conventions
+
+- **Coordinates.** Image pixels: origin top-left, x right, y down. Grid
+  `i` (`coord.u`) increases right, `j` (`coord.v`) increases down.
+- **Undirected axes.** A `LocalAxis` angle is undirected — `θ` and
+  `θ + π` are the same direction. Any circular mean over axis angles
+  must therefore accumulate `(cos 2θ, sin 2θ)` and halve the resulting
+  `atan2`; naive `(cos θ, sin θ)` averaging breaks at the 0°/180° seam.
+- **Non-negative, top-left-origin labels.** Output `(i, j)` is rebased
+  so the labelled bounding-box minimum is `(0, 0)`.
+- **Float generic.** Every type is generic over `F: Float`, so the same
+  code runs in `f32` or `f64`.
 
 ---
 
 ## Out of scope
 
-- **3D grids.** Coordinates are `nalgebra::Point2<f32>`. There is no
-  3D support.
-- **Non-planar surfaces.** Boundary extension assumes a single planar
-  homography fits the labelled set. Severely curved surfaces need the
-  per-cell mesh variant for rectification, and the global-H extension
-  refuses to extend under those conditions.
-- **Dense point clouds without structure.** The seed finder assumes
-  the lattice spacing is recoverable from the seed's own edge
-  lengths; pure noise does not yield a stable seed.
+- **3D grids.** Coordinates are 2D (`nalgebra::Point2`); there is no 3D
+  support.
+- **Non-planar surfaces.** The fit assumes a single planar homography
+  maps the labelled set; severely curved surfaces are not modelled here.
+- **Feature detection.** This crate does lattice recovery and projective
+  consistency, not corner finding. Bring your own points; if you have an
+  image, run a corner detector first and convert its output into
+  `PointFeature` / `OrientedFeature` values before calling in.
+- **Dense, unstructured point clouds.** The seed finder recovers the
+  lattice spacing from the seed's own edge lengths; pure noise does not
+  yield a stable seed.
+
+---
+
+## Learn more
+
+API reference: [`projective-grid` on docs.rs](https://docs.rs/projective-grid).
+The topological grid finder has an in-repo deep-dive at
+`docs/topological-grid-detection.md`.
+
+[hello-grid]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/projective-grid/examples/hello_grid.rs

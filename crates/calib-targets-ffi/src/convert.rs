@@ -299,8 +299,8 @@ pub(crate) fn convert_chessboard_params(
     // C ABI explicitly surfaces them.
     let mut out = ChessboardDetectorParams::default();
     out.graph_build_algorithm = match params.graph_build_algorithm {
-        crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2 => {
-            calib_targets::chessboard::GraphBuildAlgorithm::ChessboardV2
+        crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW => {
+            calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow
         }
         crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL => {
             calib_targets::chessboard::GraphBuildAlgorithm::Topological
@@ -396,17 +396,17 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
     let d = ChessboardDetectorParams::default();
     ct_chessboard_params_t {
         graph_build_algorithm: match d.graph_build_algorithm {
-            calib_targets::chessboard::GraphBuildAlgorithm::ChessboardV2 => {
-                crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2
+            calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow => {
+                crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW
             }
             calib_targets::chessboard::GraphBuildAlgorithm::Topological => {
                 crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL
             }
             // GraphBuildAlgorithm is `#[non_exhaustive]`; new pipelines
             // added on the Rust side fall back to the historical
-            // ChessboardV2 selector until the FFI explicitly surfaces
+            // SeedAndGrow selector until the FFI explicitly surfaces
             // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
-            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2,
+            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW,
         },
         min_corner_strength: d.min_corner_strength,
         min_labeled_corners: d.min_labeled_corners,

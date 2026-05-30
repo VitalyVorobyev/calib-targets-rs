@@ -8,19 +8,20 @@ JSON config file (defaults point to `testdata/` or `tmpdata/`).
 To run an example from the workspace root:
 
 ```bash
-# Standalone projective-grid — synthesizes its own point cloud:
-cargo run -p projective-grid --example regular_grid
+# Standalone projective-grid — synthesizes its own oriented features:
+cargo run -p projective-grid --example hello_grid
 
 # Image-in / detection-out via the facade crate:
 cargo run -p calib-targets --example detect_chessboard -- testdata/mid.png
 ```
 
 The standalone [`projective-grid`](projective_grid.md) crate ships
-three onboarding examples that need no image files —
-`regular_grid`, `regular_grid_tuning`, and `multi_component`. The
-image-free chessboard detector has its own minimal onboarding
-program, `cargo run -p calib-targets-chessboard --example
-detect_chessboard`.
+three onboarding examples that need no image files — `hello_grid`
+(the minimal detect-a-grid quickstart), `detect_square_oriented2` (a
+larger detection run), and `check_square_consistency` (scoring
+caller-supplied labels). The image-free chessboard detector has its
+own minimal onboarding program, `cargo run -p
+calib-targets-chessboard --example detect_chessboard`.
 
 Python examples live under `crates/calib-targets-py/examples/` and use the `calib_targets` module.
 After `maturin develop`, run them with an image path, for example:

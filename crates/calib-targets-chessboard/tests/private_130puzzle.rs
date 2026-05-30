@@ -29,7 +29,7 @@ const UPSCALE: u32 = 2;
 const MIN_FULL_SWEEP_DETECTIONS: usize = 119;
 
 /// Topological-pipeline any-detection floor on the 120-snap sweep — the
-/// same metric the chessboard-v2 contract enforces. A "detection" is
+/// same metric the seed-and-grow contract enforces. A "detection" is
 /// any frame where `Detector::detect()` returns `Some(_)` whose grid
 /// labels satisfy the workspace invariants (no duplicates, finite
 /// positions, origin rebased). Ratchets up phase by phase per
@@ -114,9 +114,9 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> GrayImage {
     )
 }
 
-fn default_chessboard_v2_detector() -> Detector {
+fn default_seed_and_grow_detector() -> Detector {
     let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::ChessboardV2;
+    params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
     Detector::new(params)
 }
 
@@ -205,7 +205,7 @@ fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
 
     let snap = load_snap(15, 0);
     let corners = detect_corners(&snap, &default_chess_config());
-    let detector = default_chessboard_v2_detector();
+    let detector = default_seed_and_grow_detector();
     let detection = detector
         .detect(&corners)
         .expect("target_15 snap 0 must produce a chessboard detection");
@@ -218,7 +218,7 @@ fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
 }
 
 /// Fast topological-path gate. The default `cargo test` smoke above
-/// exercises `ChessboardV2`; this one exercises the topological builder —
+/// exercises `SeedAndGrow`; this one exercises the topological builder —
 /// the puzzle default — on a frame (`target_13` snap 0) that, with the
 /// wrong-label check disabled, carries a duplicate-pixel label fold and
 /// interior skipped-corner edges. The check must remove them while
@@ -254,13 +254,13 @@ fn puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels() {
 
 #[test]
 #[ignore = "private 120-snap 130x130_puzzle sweep; run with --ignored"]
-fn puzzle130_full_chessboard_v2_recall_contract() {
-    if !dataset_present_or_skip("puzzle130_full_chessboard_v2_recall_contract") {
+fn puzzle130_full_seed_and_grow_recall_contract() {
+    if !dataset_present_or_skip("puzzle130_full_seed_and_grow_recall_contract") {
         return;
     }
 
     let chess_cfg = default_chess_config();
-    let detector = default_chessboard_v2_detector();
+    let detector = default_seed_and_grow_detector();
     let mut frames = 0usize;
     let mut detected = 0usize;
 
@@ -289,7 +289,7 @@ fn puzzle130_full_chessboard_v2_recall_contract() {
         (NUM_TARGETS * SNAPS_PER_IMAGE) as usize,
         "dataset layout changed"
     );
-    eprintln!("130x130_puzzle chessboard-v2 detected {detected}/{frames} snaps");
+    eprintln!("130x130_puzzle seed-and-grow detected {detected}/{frames} snaps");
     assert!(
         detected >= MIN_FULL_SWEEP_DETECTIONS,
         "130x130_puzzle chessboard recall regression: detected {detected}/{frames}, expected >= {MIN_FULL_SWEEP_DETECTIONS}"

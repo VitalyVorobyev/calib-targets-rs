@@ -324,7 +324,7 @@ shows the access path: top-level for the four stable knobs,
 
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
-| `graph_build_algorithm` | `ChessboardV2` | — | Seed-and-grow or topological grid builder. |
+| `graph_build_algorithm` | `SeedAndGrow` | — | Seed-and-grow or topological grid builder. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
 | `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |

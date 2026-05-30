@@ -266,7 +266,7 @@ export interface ChessConfig {
 // ---------------------------------------------------------------------------
 
 /** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
-export type GraphBuildAlgorithm = "topological" | "chessboard_v2";
+export type GraphBuildAlgorithm = "topological" | "seed_and_grow";
 
 /** Global grid-direction centers for the topological pre-Delaunay gate. */
 export interface AxisClusterCenters {

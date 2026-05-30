@@ -286,7 +286,7 @@ fn smoke_apriltag_image_does_not_panic() {
 /// Pixel positions are at `upscale = 1`. The `min_corner_strength = 33`
 /// floor in [`CharucoParams::for_board`] must keep all of these out of the
 /// product. Counterpart to the chessboard-side
-/// `private_3536119669.rs::chessboard_v2_rejects_reviewed_3536119669_false_labels`.
+/// `private_3536119669.rs::seed_and_grow_rejects_reviewed_3536119669_false_labels`.
 type FalsePx = (f32, f32);
 type FalsePxCase = (u32, u32, &'static [FalsePx]);
 

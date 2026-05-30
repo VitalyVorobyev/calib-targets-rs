@@ -137,7 +137,7 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // Hoist clustering: chessboard-v2 uses `cluster_axes` as a precision
+    // Hoist clustering: seed-and-grow uses `cluster_axes` as a precision
     // bedrock before its seed-and-grow. Topological used to skip this and
     // pay the cost in spurious-edge admissions; we now compute centers
     // once up front, gate Delaunay through them, and reuse the same
@@ -157,7 +157,7 @@ pub fn detect_all_topological(
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
     // `NextTopologicalParams::default`. Do not reuse
-    // `tuning.cluster_tol_deg` (12°) — chessboard-v2's cluster gate
+    // `tuning.cluster_tol_deg` (12°) — seed-and-grow's cluster gate
     // has a sigma bonus and a booster fallback that topological lacks;
     // matching the 12° literally regresses Gemini2.
     let next_features = build_oriented_features(&inputs.positions, &inputs.axes);

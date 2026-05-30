@@ -15,14 +15,14 @@ pub struct CharucoParams {
     /// Chessboard detection parameters.
     ///
     /// Note: the [`graph_build_algorithm`] field is overridden to
-    /// [`GraphBuildAlgorithm::ChessboardV2`] inside the ChArUco detector
+    /// [`GraphBuildAlgorithm::SeedAndGrow`] inside the ChArUco detector
     /// regardless of the value passed in here. The topological pipeline's
     /// axis-driven cell test cannot reason about marker-bearing cells,
     /// whose embedded bit features perturb the per-corner ChESS axes;
     /// only the seed-and-grow pipeline reliably labels ChArUco grids.
     ///
     /// [`graph_build_algorithm`]: calib_targets_chessboard::DetectorParams::graph_build_algorithm
-    /// [`GraphBuildAlgorithm::ChessboardV2`]: calib_targets_chessboard::GraphBuildAlgorithm::ChessboardV2
+    /// [`GraphBuildAlgorithm::SeedAndGrow`]: calib_targets_chessboard::GraphBuildAlgorithm::SeedAndGrow
     #[serde(default)]
     pub chessboard: DetectorParams,
     /// ChArUco board parameters

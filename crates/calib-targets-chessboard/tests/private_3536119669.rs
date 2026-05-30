@@ -1,7 +1,7 @@
 //! Precision regression for the private `3536119669` dataset.
 //!
 //! The first three stitched target images contain ChArUco marker regions
-//! that can generate plausible but wrong chessboard-v2 labels. The table
+//! that can generate plausible but wrong seed-and-grow labels. The table
 //! below records the reviewed false coordinates. A passing detector either
 //! refuses the frame or emits a grid without those labels.
 
@@ -110,7 +110,7 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> image::GrayImage {
 }
 
 #[test]
-fn chessboard_v2_rejects_reviewed_3536119669_false_labels() {
+fn seed_and_grow_rejects_reviewed_3536119669_false_labels() {
     let dir = dataset_dir();
     if !dir.exists() {
         eprintln!(
@@ -122,7 +122,7 @@ fn chessboard_v2_rejects_reviewed_3536119669_false_labels() {
 
     let chess_cfg = default_chess_config();
     let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::ChessboardV2;
+    params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
     let detector = Detector::new(params);
 
     let mut detected = 0usize;

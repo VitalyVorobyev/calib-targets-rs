@@ -280,7 +280,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
     let labelled = detection.corners.len();
     assert!(
         labelled >= 365,
-        "DiskFit + chessboard-v2 must produce at least 365 labelled corners on large.png \
+        "DiskFit + seed-and-grow must produce at least 365 labelled corners on large.png \
          (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
          The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
          is broken — see fix_partial_slot_flips_post_stage6."
@@ -296,7 +296,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
 /// which on a clean chessboard (`testdata/mid.png`) sometimes picks
 /// the wrong antipodal dark sector and reports the same axis-slot
 /// ordering for adjacent chessboard intersections that should
-/// alternate. Pre-fix this collapsed the chessboard-v2 detection
+/// alternate. Pre-fix this collapsed the seed-and-grow detection
 /// from 77 → 22 labelled corners on `mid.png`.
 ///
 /// `cluster.rs::fix_axis_slot_coherence` runs after Stage 3 and
@@ -332,7 +332,7 @@ fn diskfit_mid_recovers_full_chessboard() {
     let labelled = detection.corners.len();
     assert!(
         labelled >= 77,
-        "DiskFit + chessboard-v2 must produce at least 77 labelled corners on mid.png \
+        "DiskFit + seed-and-grow must produce at least 77 labelled corners on mid.png \
          (matching the RingFit baseline). Got {labelled}. \
          The chess-corners 0.9 slot-ordering bug recovery in cluster.rs \
          is broken — see fix_axis_slot_coherence."

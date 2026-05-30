@@ -54,7 +54,7 @@ impl Detector {
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
-            GraphBuildAlgorithm::ChessboardV2 => {
+            GraphBuildAlgorithm::SeedAndGrow => {
                 run_pipeline_lean(&self.params, corners, &HashSet::new()).detection
             }
         }
@@ -104,7 +104,7 @@ impl Detector {
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
-            GraphBuildAlgorithm::ChessboardV2 => {
+            GraphBuildAlgorithm::SeedAndGrow => {
                 // Lean multi-component sweep: run the pipeline once per
                 // component, marking each recovered component's corners
                 // consumed so the next pass sees a fresh scene. Mirrors

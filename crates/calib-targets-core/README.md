@@ -64,18 +64,12 @@ nalgebra = "0.34"
 use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
-let corner = LabeledCorner {
-    position: Point2::new(10.0, 20.0),
-    grid: Some(GridCoords { i: 0, j: 0 }),
-    id: None,
-    target_position: None,
-    score: 1.0,
-};
+// Public types are `#[non_exhaustive]`: build them with the named
+// constructor plus `with_*` setters, not a struct literal.
+let corner = LabeledCorner::new(Point2::new(10.0, 20.0), 1.0)
+    .with_grid(GridCoords::from((0, 0)));
 
-let detection = TargetDetection {
-    kind: TargetKind::Chessboard,
-    corners: vec![corner],
-};
+let detection = TargetDetection::new(TargetKind::Chessboard, vec![corner]);
 
 println!(
     "{:?} {}",

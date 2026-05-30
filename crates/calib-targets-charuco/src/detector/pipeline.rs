@@ -236,7 +236,7 @@ impl CharucoDetector {
         // caller's choice unconditionally and document it on
         // `CharucoParams::chessboard`.
         let mut chess_params = self.params.chessboard.clone();
-        chess_params.graph_build_algorithm = GraphBuildAlgorithm::ChessboardV2;
+        chess_params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
         let detector = ChessDetector::new(chess_params);
         let components = detector.detect_all(corners);
 

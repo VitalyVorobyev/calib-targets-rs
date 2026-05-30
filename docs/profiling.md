@@ -2,7 +2,7 @@
 
 This page documents how to capture flamegraphs and per-span timing for the
 two grid-build pipelines (`GraphBuildAlgorithm::Topological` and
-`GraphBuildAlgorithm::ChessboardV2`) plus the shared
+`GraphBuildAlgorithm::SeedAndGrow`) plus the shared
 `merge_components_local` post-stage.
 
 ## TL;DR
@@ -16,7 +16,7 @@ cargo build --profile profiling -p calib-targets-bench --bin bench
 
 # 3. Capture a flamegraph for one image / one algorithm.
 samply record -- ./target/profiling/bench run \
-    --algorithm chessboard-v2 \
+    --algorithm seed-and-grow \
     --image testdata/large.png \
     --target chessboard
 
@@ -24,7 +24,7 @@ samply record -- ./target/profiling/bench run \
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm chessboard-v2 \
+    --algorithm seed-and-grow \
     --image testdata/large.png \
     --target chessboard
 ```
@@ -100,7 +100,7 @@ needs `sudo` and may be blocked by SIP. Install with
 ```bash
 sudo cargo flamegraph --profile profiling \
     -p calib-targets-bench --bin bench -- \
-    run --algorithm chessboard-v2 --image testdata/large.png --target chessboard
+    run --algorithm seed-and-grow --image testdata/large.png --target chessboard
 ```
 
 This produces a `flamegraph.svg` next to your invocation directory. Move
@@ -135,7 +135,7 @@ log level via `RUST_LOG`:
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm chessboard-v2 --image testdata/large.png --target chessboard
+    --algorithm seed-and-grow --image testdata/large.png --target chessboard
 
 # All substeps (more events; per-call detail).
 RUST_LOG=debug cargo run --profile profiling \
@@ -157,9 +157,9 @@ tracing JSON dump for each `(image, algorithm)` cell:
 
 | Image | Resolution | Target | Algorithms |
 |---|---|---|---|
-| `testdata/mid.png` | 1024×576 (0.6 MP) | chessboard | topological, chessboard-v2 |
-| `testdata/large.png` | 2048×1536 (3.1 MP) | chessboard | topological, chessboard-v2 |
-| `testdata/puzzleboard_reference/example4.png` | 4032×3024 (12.2 MP) | puzzleboard | topological, chessboard-v2 |
+| `testdata/mid.png` | 1024×576 (0.6 MP) | chessboard | topological, seed-and-grow |
+| `testdata/large.png` | 2048×1536 (3.1 MP) | chessboard | topological, seed-and-grow |
+| `testdata/puzzleboard_reference/example4.png` | 4032×3024 (12.2 MP) | puzzleboard | topological, seed-and-grow |
 
 Keep all output under `bench_results/flamegraphs/` (gitignored). Naming
 convention:

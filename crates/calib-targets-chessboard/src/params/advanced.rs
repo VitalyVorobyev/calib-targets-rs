@@ -133,7 +133,7 @@ fn default_enable_partial_slot_flip_fix() -> bool {
     // Cannot introduce wrong (i, j) labels — the BFS labels are not
     // modified.
     //
-    // Empirically: lifts chessboard-v2 + DiskFit recall on
+    // Empirically: lifts seed-and-grow + DiskFit recall on
     // `large.png` from 349 → 373 (parity with RingFit), with
     // matching gains across the small[0..5] family. Also lifts
     // RingFit on `small3.png` (119 → 125) and `small5.png`
@@ -283,12 +283,12 @@ pub struct AdvancedTuning {
     /// path. Ignored when
     /// [`DetectorParams::graph_build_algorithm`](super::DetectorParams::graph_build_algorithm)
     /// is
-    /// [`ChessboardV2`](super::GraphBuildAlgorithm::ChessboardV2).
+    /// [`SeedAndGrow`](super::GraphBuildAlgorithm::SeedAndGrow).
     #[serde(default = "default_topological_params")]
     pub topological: TopologicalParams<f32>,
 
     /// Tuning knobs for the shared local-geometry component merger.
-    /// Used by both the topological and chessboard-v2 pipelines.
+    /// Used by both the topological and seed-and-grow pipelines.
     #[serde(default = "default_component_merge_params")]
     pub component_merge: LocalMergeParams,
 
@@ -602,7 +602,7 @@ pub struct AdvancedTuning {
     #[serde(default = "default_geometry_check_local_h_tol_rel")]
     pub geometry_check_local_h_tol_rel: f32,
     /// Enable the final local edge-shape gate for standalone
-    /// chessboard-v2 detections. The gate checks cardinal support,
+    /// seed-and-grow detections. The gate checks cardinal support,
     /// adjacent-edge continuation, and complete-cell opposite-side
     /// consistency after the labelled grid has been assembled.
     ///

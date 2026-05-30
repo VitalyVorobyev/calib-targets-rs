@@ -14,10 +14,10 @@ pub const CT_TRUE: u32 = 1;
 ///
 /// Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
 /// keeps zero-initialised C structs on the historical seed-and-grow
-/// pipeline (`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`).
+/// pipeline (`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`).
 pub type ct_graph_build_algorithm_t = u32;
 /// Seed-and-grow pipeline. Currently the default.
-pub const CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2: ct_graph_build_algorithm_t = 0;
+pub const CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW: ct_graph_build_algorithm_t = 0;
 /// Topological pipeline (Delaunay + axis-driven cell test).
 pub const CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL: ct_graph_build_algorithm_t = 1;
 
@@ -463,7 +463,7 @@ pub struct ct_chess_config_t {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_params_t {
     /// Pipeline selector. See [`ct_graph_build_algorithm_t`].
-    /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
+    /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
     pub graph_build_algorithm: ct_graph_build_algorithm_t,
 
     // --- Stable core --------------------------------------------------------

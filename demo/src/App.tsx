@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { ImageUpload } from "./components/ImageUpload";
+import { ImageUpload, type SyntheticSpec } from "./components/ImageUpload";
 import { ImageCanvas } from "./components/ImageCanvas";
 import { ConfigPanel } from "./components/ConfigPanel";
 import { ResultsPanel } from "./components/ResultsPanel";
@@ -61,6 +61,31 @@ export default function App() {
       setPuzzleParams(defaultPuzzleBoardParams(10, 10));
     }
   }, [ready, chessCfg]);
+
+  const handleImageLoaded = useCallback(
+    (data: ImageData, synth?: SyntheticSpec) => {
+      setImage(data);
+      if (!synth) return;
+      // Sync the detector to the freshly generated target so generate→detect
+      // round-trips. The ChArUco and PuzzleBoard decoders need the board spec
+      // (rows/cols/dictionary/marker size) to match what was rendered, or they
+      // decode only a fragment of the board.
+      setMode(synth.kind);
+      if (synth.kind === "charuco") {
+        setCharucoParams(
+          defaultCharucoParams(
+            synth.rows,
+            synth.cols,
+            synth.markerRel,
+            synth.dictionary,
+          ),
+        );
+      } else if (synth.kind === "puzzleboard") {
+        setPuzzleParams(defaultPuzzleBoardParams(synth.rows, synth.cols));
+      }
+    },
+    [],
+  );
 
   const handleDetect = useCallback(() => {
     if (
@@ -158,7 +183,7 @@ export default function App() {
 
       <div className="app-body">
         <aside className="sidebar">
-          <ImageUpload onImageLoaded={setImage} />
+          <ImageUpload onImageLoaded={handleImageLoaded} />
           <ConfigPanel
             mode={mode}
             onModeChange={setMode}

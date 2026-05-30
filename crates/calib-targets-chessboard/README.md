@@ -93,7 +93,7 @@ The stable core — the knobs a calibration consumer has a basis to set:
 
 | Knob | Effect |
 |---|---|
-| `graph_build_algorithm` | Pick the seed-and-grow (`ChessboardV2`, default) or topological grid builder. |
+| `graph_build_algorithm` | Pick the seed-and-grow (`SeedAndGrow`, default) or topological grid builder. |
 | `min_labeled_corners` | Reject too-small detections. |
 | `max_components` | Cap the number of disconnected pieces returned by `detect_all`. |
 | `min_corner_strength` | Drop weak ChESS corners before clustering (`0.0` = off). |

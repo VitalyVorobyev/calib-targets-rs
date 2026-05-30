@@ -77,7 +77,7 @@ In `projective-grid`, this route is exposed as
 `projective_grid::build_grid_topological`. It is also available through the
 chessboard detector by setting
 `DetectorParams::graph_build_algorithm = GraphBuildAlgorithm::Topological`.
-The current default in `calib-targets-chessboard` is still `ChessboardV2`, the
+The current default in `calib-targets-chessboard` is still `SeedAndGrow`, the
 seed-and-grow pipeline. ChArUco pins that default internally because marker
 interiors produce extra ChESS corners whose axes describe the marker bits, not
 the chessboard grid.
@@ -244,7 +244,7 @@ The image-free `projective-grid` core stops at walked components. The
 chessboard detector adds one more layer before returning a public
 `Detection`.
 
-First, it builds the same `CornerAug` records used by `ChessboardV2` and runs
+First, it builds the same `CornerAug` records used by `SeedAndGrow` and runs
 orientation clustering. When cluster labels are available, the topological
 labels are parity-aligned to them. This is necessary because the recall
 boosters assume the chessboard parity convention used by the seed-and-grow
@@ -264,7 +264,7 @@ detections, canonicalise their labels, sort by labelled count, and apply
 
 The low-resolution recovery example is visible here:
 
-![GeminiChess4 low-res recovery](img/02-topo-grid/GeminiChess4-low-res-chessboard-v2/09-final-grid.png)
+![GeminiChess4 low-res recovery](img/02-topo-grid/GeminiChess4-low-res-seed-and-grow/09-final-grid.png)
 
 # Using the library
 
@@ -319,16 +319,16 @@ The script writes ten overlays per image and a manifest at
 `docs/img/02-topo-grid/manifest.json`.
 
 The low-resolution `GeminiChess4` recovery plot was generated with the
-explicit blur and ChessboardV2 final workflow:
+explicit blur and SeedAndGrow final workflow:
 
 ```bash
 uv run --python .venv/bin/python scripts/render_topological_blog_overlays.py \
   --image-dir testdata/02-topo-grid \
   --out-dir docs/img/02-topo-grid \
   --only GeminiChess4 \
-  --variant-name low-res-chessboard-v2 \
+  --variant-name low-res-seed-and-grow \
   --manifest-name manifest-geminichess4-low-res.json \
-  --final-algorithm chessboard_v2 \
+  --final-algorithm seed_and_grow \
   --pre-blur-sigma 2.0
 ```
 

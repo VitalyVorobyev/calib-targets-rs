@@ -44,7 +44,7 @@ fn main() {
     let mut dataset: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
     let mut upscale: u32 = 1;
-    let mut algorithm = GraphBuildAlgorithm::ChessboardV2;
+    let mut algorithm = GraphBuildAlgorithm::SeedAndGrow;
     let mut timing_only = false;
     let mut min_corner_strength: f32 = 0.0;
     let mut args = env::args().skip(1);
@@ -113,7 +113,7 @@ fn main() {
             corners_per_snap.push(corners.len());
             let detector = Detector::new(detector_params.clone());
             let (labelled, frame) = match algorithm {
-                GraphBuildAlgorithm::ChessboardV2 => {
+                GraphBuildAlgorithm::SeedAndGrow => {
                     let frame = detector.detect_with_diagnostics(&corners);
                     let labelled = frame
                         .detection
@@ -187,10 +187,10 @@ fn main() {
 
 fn parse_algorithm(raw: &str) -> GraphBuildAlgorithm {
     match raw {
-        "chessboard-v2" | "chessboard_v2" => GraphBuildAlgorithm::ChessboardV2,
+        "seed-and-grow" | "seed_and_grow" => GraphBuildAlgorithm::SeedAndGrow,
         "topological" => GraphBuildAlgorithm::Topological,
         other => {
-            eprintln!("unknown --algorithm {other:?}; expected chessboard-v2 or topological");
+            eprintln!("unknown --algorithm {other:?}; expected seed-and-grow or topological");
             std::process::exit(2);
         }
     }

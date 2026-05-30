@@ -121,7 +121,7 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 selects between two grid builders, both producing the same
 `(i, j) → corner_idx` map so downstream consumers stay agnostic:
 
-- `GraphBuildAlgorithm::ChessboardV2` (**current default**) — the
+- `GraphBuildAlgorithm::SeedAndGrow` (**current default**) — the
   invariant-rich seed-and-grow pipeline (`square::grow::bfs_grow` +
   `square::grow_extension::extend_via_global_homography`). Battle-
   tested across all four target families.
@@ -137,7 +137,7 @@ selects between two grid builders, both producing the same
 **ChArUco pinning.** `CharucoDetector::new`
 (`crates/calib-targets-charuco/src/detector/pipeline.rs`)
 unconditionally overrides `chessboard.graph_build_algorithm =
-ChessboardV2` regardless of caller choice — marker-cell features
+SeedAndGrow` regardless of caller choice — marker-cell features
 defeat the topological cell test, so the override is a precision
 guarantee, not a configuration choice. PuzzleBoard and marker board
 inherit the caller's choice via their nested `DetectorParams`.
@@ -151,7 +151,7 @@ shared implementation via `DetectorParams::component_merge:
 LocalMergeParams`.
 
 **Bench harness selector.** `cargo run -p calib-targets-bench --
-{run,preview,diagnose} --algorithm {topological,chessboard-v2}` runs
+{run,preview,diagnose} --algorithm {topological,seed-and-grow}` runs
 either pipeline; output JSON / overlay filenames carry the algorithm
 slug so two runs coexist in the same directory.
 `bench diagnose --algorithm topological` reports the per-triangle
@@ -228,7 +228,7 @@ editing those files, but do not ship new ones.
 
 ### Regression dataset: 3536119669 (chessboard)
 
-Canonical chessboard-v2 precision-and-recall benchmark. Precision
+Canonical seed-and-grow precision-and-recall benchmark. Precision
 contract: wrong `(i, j)` labels are unrecoverable (they would
 corrupt calibration); missing corners are acceptable. Any
 algorithmic change that drops this contract is a regression, full
@@ -308,10 +308,11 @@ Do **not** pass a pre-computed global cell-size into a seed or graph-
 build step. Cross-cluster nearest-neighbor distance distributions are
 bimodal on boards with ArUco markers (marker-internal pairs vs true
 board pairs), and all mode finders — multimodal mean-shift included —
-can pick the wrong mode. The v2 detector solves this by **deriving
-cell size from a self-consistent 4-corner seed** (edges match each
-other within a ratio tolerance, not against a prior scalar); see
-`crates/chessboard-v2/src/seed.rs`. If a future detector must commit
+can pick the wrong mode. The seed-and-grow detector solves this by
+**deriving cell size from a self-consistent 4-corner seed** (edges
+match each other within a ratio tolerance, not against a prior
+scalar); see `crates/calib-targets-chessboard/src/seed.rs`. If a
+future detector must commit
 to a cell size up front, validate it by trying a seed and only trust
 the estimate if the seed closes; otherwise fall back to the seed's
 own edge-length mean.
@@ -331,7 +332,7 @@ own edge-length mean.
 **Grid labels are non-negative.** Every detector that returns
 `LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the
 labelled bounding-box minimum is `(0, 0)`. This is a hard invariant
-for overlay / calibration consumers and for `chessboard-v2` is
+for overlay / calibration consumers and for `seed-and-grow` is
 enforced inside `grow::grow_from_seed`.
 
 **New warnings:** fix them; do not suppress.

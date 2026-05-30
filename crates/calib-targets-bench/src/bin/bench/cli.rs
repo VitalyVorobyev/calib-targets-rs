@@ -48,10 +48,10 @@ pub(crate) struct DiagnoseArgs {
     /// Local-only output; do not commit.
     #[arg(long)]
     pub(crate) dump_frame: Option<String>,
-    /// Which graph-build algorithm to diagnose. `chessboard-v2` produces a
+    /// Which graph-build algorithm to diagnose. `seed-and-grow` produces a
     /// full `DebugFrame`; `topological` runs the production topological
     /// detector and renders an overlay of which corners ended up labelled.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
     pub(crate) algorithm: AlgorithmArg,
     /// Override the topological pipeline's `axis_align_tol_rad` (in degrees).
     /// Larger values accept more edges as "grid" (potentially raising recall
@@ -59,7 +59,7 @@ pub(crate) struct DiagnoseArgs {
     #[arg(long)]
     pub(crate) axis_align_tol_deg: Option<f32>,
     /// Optional JSON file with a serialised `DetectorParams` to override
-    /// chessboard-v2 defaults. Use for parameter sweeps without
+    /// seed-and-grow defaults. Use for parameter sweeps without
     /// recompilation. Unspecified fields fall back to defaults via the
     /// `DetectorParams` `#[serde(default = ...)]` attributes.
     #[arg(long)]
@@ -88,10 +88,10 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) image: Option<String>,
     /// Which graph-build algorithm to exercise.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
     pub(crate) algorithm: AlgorithmArg,
     /// Optional JSON file with a serialised partial `DetectorParams` that
-    /// overrides chessboard-v2 defaults. Same semantics as the diagnose
+    /// overrides seed-and-grow defaults. Same semantics as the diagnose
     /// subcommand's `--chessboard-config` flag.
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
@@ -119,7 +119,7 @@ pub(crate) struct PreviewArgs {
     /// Which graph-build algorithm to exercise. Output filenames carry the
     /// algorithm name as a suffix so two runs can coexist in the same `--out`
     /// directory.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
     pub(crate) algorithm: AlgorithmArg,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
     /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
@@ -159,14 +159,14 @@ impl From<DatasetKindArg> for ImageKind {
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub(crate) enum AlgorithmArg {
     Topological,
-    ChessboardV2,
+    SeedAndGrow,
 }
 
 impl AlgorithmArg {
     pub(crate) fn slug(self) -> &'static str {
         match self {
             AlgorithmArg::Topological => "topological",
-            AlgorithmArg::ChessboardV2 => "chessboard_v2",
+            AlgorithmArg::SeedAndGrow => "seed_and_grow",
         }
     }
 }
@@ -175,7 +175,7 @@ impl From<AlgorithmArg> for GraphBuildAlgorithm {
     fn from(v: AlgorithmArg) -> Self {
         match v {
             AlgorithmArg::Topological => GraphBuildAlgorithm::Topological,
-            AlgorithmArg::ChessboardV2 => GraphBuildAlgorithm::ChessboardV2,
+            AlgorithmArg::SeedAndGrow => GraphBuildAlgorithm::SeedAndGrow,
         }
     }
 }
@@ -210,7 +210,7 @@ pub(crate) fn params_with(algorithm: AlgorithmArg) -> DetectorParams {
     p
 }
 
-/// Load a chessboard-v2 [`DetectorParams`] from an optional JSON file, falling
+/// Load a seed-and-grow [`DetectorParams`] from an optional JSON file, falling
 /// back to [`DetectorParams::default`] when the path is `None`. Partial files
 /// are supported: any field present overrides the default; missing fields keep
 /// their default value. Used by the diagnose subcommand to sweep params

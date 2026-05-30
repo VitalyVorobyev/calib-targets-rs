@@ -27,7 +27,7 @@ use calib_targets_core::init_tracing;
 #[derive(Debug)]
 enum Algorithm {
     Topological,
-    ChessboardV2,
+    SeedAndGrow,
 }
 
 #[derive(Debug)]
@@ -41,7 +41,7 @@ struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let mut image: Option<PathBuf> = None;
-    let mut algorithm = Algorithm::ChessboardV2;
+    let mut algorithm = Algorithm::SeedAndGrow;
     let mut iterations: usize = 1;
     let mut warmup: usize = 0;
     let mut print_corners = false;
@@ -56,7 +56,7 @@ fn parse_args() -> Result<Args, String> {
                 let v = it.next().ok_or("--algorithm requires a value")?;
                 algorithm = match v.as_str() {
                     "topological" => Algorithm::Topological,
-                    "chessboard-v2" | "chessboard_v2" => Algorithm::ChessboardV2,
+                    "seed-and-grow" | "seed_and_grow" => Algorithm::SeedAndGrow,
                     other => return Err(format!("unknown algorithm: {other}")),
                 };
             }
@@ -79,7 +79,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "-h" | "--help" => {
                 eprintln!(
-                    "Usage: profile_grid --image <path> [--algorithm topological|chessboard-v2]\n\
+                    "Usage: profile_grid --image <path> [--algorithm topological|seed-and-grow]\n\
                      [--iterations N] [--warmup N] [--print-corners]"
                 );
                 std::process::exit(0);
@@ -108,7 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = match args.algorithm {
         Algorithm::Topological => GraphBuildAlgorithm::Topological,
-        Algorithm::ChessboardV2 => GraphBuildAlgorithm::ChessboardV2,
+        Algorithm::SeedAndGrow => GraphBuildAlgorithm::SeedAndGrow,
     };
     let chess_cfg = detect::default_chess_config();
 
