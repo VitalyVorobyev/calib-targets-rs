@@ -55,7 +55,7 @@ pub mod local;
 pub use global::extend_via_global_homography;
 pub use local::extend_via_local_homography;
 
-use crate::detect::advanced::square::homography::HomographyQuality;
+use crate::geometry::HomographyQuality;
 
 /// Parameters shared between [`ExtensionParams`] (global-H extension)
 /// and [`LocalExtensionParams`] (local-H extension).

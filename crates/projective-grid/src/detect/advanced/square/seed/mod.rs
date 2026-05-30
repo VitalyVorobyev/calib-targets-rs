@@ -11,7 +11,7 @@
 
 pub mod finder;
 
-use crate::detect::advanced::square::homography::homography_from_4pt;
+use crate::geometry::homography_from_4pt;
 use nalgebra::Point2;
 
 /// Seed quad: corner indices at grid cells `(0, 0), (1, 0), (0, 1),
@@ -186,7 +186,7 @@ pub fn seed_cell_size(positions: &[Point2<f32>], seed: Seed) -> Option<f32> {
 pub fn seed_homography(
     positions: &[Point2<f32>],
     seed: Seed,
-) -> Option<crate::detect::advanced::square::homography::Homography> {
+) -> Option<crate::geometry::Homography> {
     let img_pts = [
         positions[seed.a],
         positions[seed.b],

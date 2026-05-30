@@ -13,7 +13,7 @@ use nalgebra::Point2;
 use crate::detect::advanced::square::extension::common::{try_attach_at_cell, TryCellResult};
 use crate::detect::advanced::square::extension::{ExtensionStats, LocalExtensionParams};
 use crate::detect::advanced::square::grow::{GrowResult, SquareAttachPolicy};
-use crate::detect::advanced::square::homography::estimate_homography;
+use crate::geometry::estimate_homography;
 
 /// Extend the labelled grid outward (and into interior holes) using a
 /// **per-candidate local homography** fit from the K nearest labelled

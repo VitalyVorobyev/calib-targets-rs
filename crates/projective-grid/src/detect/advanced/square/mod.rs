@@ -12,7 +12,6 @@ pub mod extension;
 pub mod fill;
 pub mod grow;
 pub mod grow_extend;
-pub mod homography;
 pub mod seed;
 pub mod topological_trace;
 pub mod validate;
