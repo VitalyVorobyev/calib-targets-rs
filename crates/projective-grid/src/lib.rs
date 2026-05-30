@@ -5,6 +5,21 @@
 //! identifiers and detector classes belong in caller crates and should be
 //! converted into generic point features or coordinate hypotheses before
 //! entering this crate.
+//!
+//! # Design references
+//!
+//! The crate is organised around three orthogonal axes — lattice family,
+//! recovery strategy, and input-feature kind. The architecture and the
+//! orientation-as-an-optional-cue model are documented under `docs/` in the
+//! crate source tree:
+//!
+//! - `docs/DESIGN.md` — the three design axes, the shared pipeline back-half,
+//!   and how the lattice family extends to hex.
+//! - `docs/ORIENTATION.md` — where each strategy consumes per-corner
+//!   orientation and how each can run orientation-free (the dot-grid path).
+//!
+//! The per-strategy stage maps live in `docs/topological-grid-detection.md`
+//! (repo root) and `calib-targets-chessboard/docs/PIPELINE.md`.
 
 #![warn(missing_docs)]
 
