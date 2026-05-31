@@ -4,9 +4,7 @@
 //! neighbours and complete adjacent cells in image pixel coordinates.
 //! No global homography or target-specific semantics are used.
 
-use crate::detect::advanced::square::validate::{
-    EdgeShapeDiagnostic, EdgeShapeParams, LabelledEntry,
-};
+use crate::shared::validate::{EdgeShapeDiagnostic, EdgeShapeParams, LabelledEntry};
 use nalgebra::Vector2;
 use std::collections::HashMap;
 

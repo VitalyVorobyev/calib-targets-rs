@@ -11,12 +11,12 @@
 //!   using local geometry only (radial-distortion safe).
 //! - **validate** — the advanced post-grow validator (line collinearity +
 //!   local-H) drops blacklisted corners per merged component.
-//! - **fit** — the shared [`super::shared::fit_component`] back-half fits a
+//! - **fit** — the shared [`fit_component`](crate::shared::fit) back-half fits a
 //!   projective transform and reports residuals, dropping over-threshold
 //!   corners once and refitting.
 //!
 //! The facade has no parity / feature-class labels, so the built-in
-//! [`super::oriented2_policy::Oriented2Policy`] treats every corner as
+//! `Oriented2Policy` (the private `policy` submodule) treats every corner as
 //! eligible. This path is exercised by synthetic tests only; the dataset-
 //! gated chessboard seed-and-grow path composes the advanced engine
 //! directly with its own policy.
@@ -25,21 +25,19 @@ use std::collections::{HashMap, HashSet};
 
 use nalgebra::Point2;
 
-use crate::detect::advanced::square::component_merge::{merge_components_local, ComponentInput};
-use crate::detect::advanced::square::grow::{
-    bfs_grow as adv_bfs_grow, GrowParams as AdvGrowParams,
-};
-use crate::detect::advanced::square::seed::finder::find_quad as adv_find_quad;
-use crate::detect::advanced::square::seed::Seed as AdvSeed;
-use crate::detect::advanced::square::validate as pg_validate;
 use crate::detect::DetectionParams;
 use crate::error::{GridError, Result};
 use crate::feature::OrientedFeature;
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{GridSolution, LabelledGrid, RejectedFeature, RejectionReason};
+use crate::seed_and_grow::grow::{bfs_grow as adv_bfs_grow, GrowParams as AdvGrowParams};
+use crate::seed_and_grow::seed::finder::find_quad as adv_find_quad;
+use crate::seed_and_grow::seed::Seed as AdvSeed;
+use crate::shared::merge::{merge_components_local, ComponentInput};
+use crate::shared::validate as pg_validate;
 
-use super::oriented2_policy::{derive_seed_axes, Oriented2Policy, Oriented2Tolerances};
 use super::shared::{fit_component, FitComponentResult};
+use crate::seed_and_grow::policy::{derive_seed_axes, Oriented2Policy, Oriented2Tolerances};
 
 /// Default per-candidate axis-alignment tolerance (radians) for the
 /// facade policy — matches the historical seed-grow engine's 25°.
@@ -57,7 +55,7 @@ const MAX_COMPONENTS: usize = 16;
 /// Returns one [`GridSolution`] per merged component, ordered by
 /// labelled-count descending (ties by smallest source_index). At least
 /// one solution is returned on success.
-pub(in crate::detect) fn detect_square_oriented2_seed_grow(
+pub(crate) fn detect_square_oriented2_seed_grow(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
@@ -202,7 +200,7 @@ struct RestrictedSeedPolicy<'a> {
     used: &'a HashSet<usize>,
 }
 
-impl crate::detect::advanced::square::seed::finder::SquareSeedPolicy for RestrictedSeedPolicy<'_> {
+impl crate::seed_and_grow::seed::finder::SquareSeedPolicy for RestrictedSeedPolicy<'_> {
     fn position(&self, idx: usize) -> Point2<f32> {
         self.positions[idx]
     }
@@ -228,7 +226,7 @@ struct RestrictedAttachPolicy<'a> {
     used: &'a HashSet<usize>,
 }
 
-impl crate::detect::advanced::square::grow::SquareAttachPolicy for RestrictedAttachPolicy<'_> {
+impl crate::seed_and_grow::grow::SquareAttachPolicy for RestrictedAttachPolicy<'_> {
     fn is_eligible(&self, idx: usize) -> bool {
         !self.used.contains(&idx) && self.inner.is_eligible(idx)
     }
@@ -243,8 +241,8 @@ impl crate::detect::advanced::square::grow::SquareAttachPolicy for RestrictedAtt
         idx: usize,
         at: (i32, i32),
         prediction: Point2<f32>,
-        neighbours: &[crate::detect::advanced::square::grow::LabelledNeighbour],
-    ) -> crate::detect::advanced::square::grow::Admit {
+        neighbours: &[crate::seed_and_grow::grow::LabelledNeighbour],
+    ) -> crate::seed_and_grow::grow::Admit {
         self.inner.accept_candidate(idx, at, prediction, neighbours)
     }
     fn edge_ok(
@@ -293,8 +291,7 @@ fn merge_raw_components(
             positions,
         })
         .collect();
-    let merge_params =
-        crate::detect::advanced::square::component_merge::LocalMergeParams::default();
+    let merge_params = crate::shared::merge::LocalMergeParams::default();
     let merged = merge_components_local(&inputs, &merge_params);
     if merged.components.is_empty() {
         raw_components.iter().map(rebase_to_origin).collect()
@@ -493,3 +490,12 @@ fn estimate_cell_size(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2
         sum / count as f32
     }
 }
+
+// Relocated submodules (were detect/advanced/square/* and detect/square/oriented2_policy).
+mod angle;
+pub mod extension;
+pub mod fill;
+pub mod grow;
+pub mod grow_extend;
+mod policy;
+pub mod seed;

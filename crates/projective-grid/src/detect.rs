@@ -12,18 +12,15 @@
 //! The detection surface is pinned to `f32`. The generic-`F` surface that
 //! remains in the crate is the pure-geometry [`crate::geometry`] module.
 
-pub mod advanced;
-mod square;
-
 use crate::error::{EvidenceKind, GridError, GridTask, Result};
 use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{GridSolution, RejectedFeature};
 
-pub use crate::detect::advanced::square::grow::GrowParams;
-pub use crate::detect::advanced::square::seed::finder::SeedQuadParams as SeedParams;
-pub use crate::detect::advanced::square::validate::ValidationParams as ValidateParams;
-pub use square::TopologicalParams;
+pub use crate::seed_and_grow::grow::GrowParams;
+pub use crate::seed_and_grow::seed::finder::SeedQuadParams as SeedParams;
+pub use crate::shared::validate::ValidationParams as ValidateParams;
+pub use crate::topological::TopologicalParams;
 
 /// Algorithm selector for `(LatticeKind::Square, Evidence::Oriented2)`.
 ///
@@ -260,16 +257,20 @@ pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
 pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport> {
     let solutions = match (request.lattice, request.evidence) {
         (LatticeKind::Square, Evidence::Oriented2(features)) => match request.params.algorithm {
-            SquareAlgorithm::SeedAndGrow => square::detect_square_oriented2_seed_grow(
-                features,
-                request.dimensions,
-                &request.params,
-            )?,
-            SquareAlgorithm::Topological => square::detect_square_oriented2_topological_all(
-                features,
-                request.dimensions,
-                &request.params,
-            )?,
+            SquareAlgorithm::SeedAndGrow => {
+                crate::seed_and_grow::detect_square_oriented2_seed_grow(
+                    features,
+                    request.dimensions,
+                    &request.params,
+                )?
+            }
+            SquareAlgorithm::Topological => {
+                crate::topological::detect_square_oriented2_topological_all(
+                    features,
+                    request.dimensions,
+                    &request.params,
+                )?
+            }
         },
         _ => {
             return Err(GridError::UnsupportedCombination {

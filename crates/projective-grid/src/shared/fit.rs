@@ -1,8 +1,8 @@
 //! Shared fit + residual helper for the `(Square, Oriented2)` facade
 //! paths.
 //!
-//! Both the seed-and-grow path ([`super::seed_grow`]) and the
-//! topological path ([`super::topological`]) end with the same back-half:
+//! Both the seed-and-grow path ([`crate::seed_and_grow`]) and the
+//! topological path ([`crate::topological`]) end with the same back-half:
 //! fit a projective `model → image` transform on a labelled component,
 //! compute per-corner reprojection residuals, and flag entries over the
 //! `max_residual_px` threshold. This module hosts that one helper so the
@@ -18,15 +18,15 @@ use crate::lattice::{Coord, LatticeKind};
 use crate::result::{GridEntry, LatticeFit, RejectedFeature, RejectionReason, ResidualSummary};
 
 /// Outcome of [`fit_component`].
-pub(super) struct FitComponentResult {
+pub(crate) struct FitComponentResult {
     /// Sorted [`GridEntry`] list (by `(coord, source_index)`) with
     /// per-corner residuals attached.
-    pub(super) entries: Vec<GridEntry>,
+    pub(crate) entries: Vec<GridEntry>,
     /// The fitted lattice transform + residual summary.
-    pub(super) fit: LatticeFit,
+    pub(crate) fit: LatticeFit,
     /// Entries whose residual exceeded `params.max_residual_px`, tagged
     /// [`RejectionReason::ResidualTooHigh`] keyed by `source_index`.
-    pub(super) over_threshold: Vec<RejectedFeature>,
+    pub(crate) over_threshold: Vec<RejectedFeature>,
 }
 
 /// Fit a projective transform on one labelled component and return the
@@ -37,7 +37,7 @@ pub(super) struct FitComponentResult {
 /// `corner_index` indexes both `features` and `positions`. The caller is
 /// responsible for rebasing coords to bbox-min `(0, 0)` (the seed-grow and
 /// topological label producers both already do this).
-pub(super) fn fit_component(
+pub(crate) fn fit_component(
     labelled: &[(Coord, usize)],
     features: &[OrientedFeature<2>],
     positions: &[Point2<f32>],

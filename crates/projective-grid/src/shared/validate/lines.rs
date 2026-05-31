@@ -4,7 +4,7 @@
 //! least `line_min_members` labelled members, fits a total-least-squares
 //! line in pixel space and counts the collinearity violations per corner.
 
-use crate::detect::advanced::square::validate::{LabelledEntry, ValidationParams};
+use crate::shared::validate::{LabelledEntry, ValidationParams};
 use std::collections::HashMap;
 
 /// For each labelled corner that violates at least one row/column line,

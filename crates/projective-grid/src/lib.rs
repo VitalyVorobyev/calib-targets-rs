@@ -41,10 +41,14 @@ pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};
 pub use crate::float::Float;
 pub use crate::lattice::{
-    Coord, GridDimensions, GridTransform, LatticeKind, D4_TRANSFORMS, D6_TRANSFORMS,
-    HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
+    Coord, GridDimensions, GridTransform, Hex, Lattice, LatticeKind, Square, D4_TRANSFORMS,
+    D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
 };
 pub use crate::result::{
     ConsistencyReport, GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature,
     RejectionReason, ResidualSummary,
 };
+
+pub mod seed_and_grow;
+pub mod shared;
+pub mod topological;

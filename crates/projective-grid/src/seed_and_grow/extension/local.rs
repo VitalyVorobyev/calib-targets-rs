@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet};
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
-use crate::detect::advanced::square::extension::common::{try_attach_at_cell, TryCellResult};
-use crate::detect::advanced::square::extension::{ExtensionStats, LocalExtensionParams};
-use crate::detect::advanced::square::grow::{GrowResult, SquareAttachPolicy};
 use crate::geometry::estimate_homography;
+use crate::seed_and_grow::extension::common::{try_attach_at_cell, TryCellResult};
+use crate::seed_and_grow::extension::{ExtensionStats, LocalExtensionParams};
+use crate::seed_and_grow::grow::{GrowResult, SquareAttachPolicy};
 
 /// Extend the labelled grid outward (and into interior holes) using a
 /// **per-candidate local homography** fit from the K nearest labelled

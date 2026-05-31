@@ -4,7 +4,7 @@
 //! from labelled-grid finite differences, and [`flag_step_deviations`]
 //! for detecting corners whose step deviates from the set median.
 
-use crate::detect::advanced::square::validate::LabelledEntry;
+use crate::shared::validate::LabelledEntry;
 use std::collections::{HashMap, HashSet};
 
 /// Compute per-corner local grid step from labelled grid neighbours.

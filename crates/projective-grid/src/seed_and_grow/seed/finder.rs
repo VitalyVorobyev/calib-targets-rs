@@ -31,8 +31,8 @@
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 
-use crate::detect::advanced::square::angle::{angular_dist_pi, wrap_pi};
 use crate::feature::LocalAxis;
+use crate::seed_and_grow::angle::{angular_dist_pi, wrap_pi};
 
 use super::{Seed, SeedOutput};
 

@@ -1,6 +1,25 @@
-//! Lattice taxonomy, coordinate transforms, and model-plane mapping.
+//! Lattice-family axis: the parameter that the strategies and the shared
+//! back-half are written against, rather than a copy per family.
+//!
+//! This module hosts the family-agnostic coordinate types ([`Coord`],
+//! [`GridDimensions`], [`GridTransform`]), the [`LatticeKind`] selector, and
+//! the [`Lattice`] trait that captures the per-family geometry a recovery
+//! pipeline needs: how a lattice coordinate maps into the model plane, the
+//! cardinal neighbour offsets, and the coordinate symmetry group.
+//!
+//! Today only [`Square`] is implemented; [`Hex`] is a
+//! roadmap stub (see `docs/DESIGN.md` "Extending to hex"). Both the strategies
+//! and `shared::fit` reach the geometry through [`LatticeKind`] /
+//! [`Lattice::model_point`], so adding hex detection is a fill-in-the-trait
+//! task rather than a new folder tree.
 
 use nalgebra::Point2;
+
+pub mod hex;
+pub mod square;
+
+pub use hex::Hex;
+pub use square::Square;
 
 /// Integer coordinate on a lattice.
 ///
@@ -55,18 +74,60 @@ impl LatticeKind {
     /// Square coordinates map to `(u, v)`. Hex axial coordinates map to
     /// `(q + 0.5*r, sqrt(3)/2*r)`, using unit nearest-neighbour spacing in the
     /// model plane.
+    ///
+    /// This dispatches to the [`Lattice::model_point`] of the family impl, so
+    /// callers holding only a [`LatticeKind`] (e.g. `shared::fit`,
+    /// [`crate::check`]) need not name the concrete family type.
     pub fn model_point(self, coord: Coord) -> Point2<f32> {
         match self {
-            Self::Square => Point2::new(coord.u as f32, coord.v as f32),
-            Self::Hex => {
-                let q = coord.u as f32;
-                let r = coord.v as f32;
-                let half = 0.5_f32;
-                let sqrt3_over_2 = 3.0_f32.sqrt() * half;
-                Point2::new(q + half * r, sqrt3_over_2 * r)
-            }
+            Self::Square => Square.model_point(coord),
+            Self::Hex => Hex.model_point(coord),
         }
     }
+
+    /// Cardinal neighbour offsets for this family (4 for square, 6 for hex).
+    pub fn neighbour_offsets(self) -> &'static [Coord] {
+        match self {
+            Self::Square => Square.neighbour_offsets(),
+            Self::Hex => Hex.neighbour_offsets(),
+        }
+    }
+
+    /// The coordinate symmetry group for this family (D4 for square,
+    /// D6 for hex).
+    pub fn symmetry_transforms(self) -> &'static [GridTransform] {
+        match self {
+            Self::Square => Square.symmetry_transforms(),
+            Self::Hex => Hex.symmetry_transforms(),
+        }
+    }
+}
+
+/// Per-family lattice geometry.
+///
+/// A [`Lattice`] impl supplies the geometry a recovery pipeline needs without
+/// hard-coding the family: how a coordinate maps into the model plane, the
+/// cardinal neighbour offsets used to walk the graph, and the coordinate
+/// symmetry group used by component merge. The shared back-half and (in the
+/// hex roadmap) the strategy skeletons are written against this trait so a new
+/// family is added by implementing the trait, not by copying machinery.
+///
+/// Implementations are zero-sized markers ([`Square`], [`Hex`]); the
+/// [`LatticeKind`] enum is the runtime selector that dispatches to them.
+pub trait Lattice: Copy {
+    /// The [`LatticeKind`] this impl corresponds to.
+    const KIND: LatticeKind;
+
+    /// Map an integer lattice coordinate into the model plane (unit
+    /// nearest-neighbour spacing).
+    fn model_point(self, coord: Coord) -> Point2<f32>;
+
+    /// Cardinal neighbour offsets used to walk between adjacent lattice
+    /// coordinates.
+    fn neighbour_offsets(self) -> &'static [Coord];
+
+    /// The coordinate symmetry group (dihedral) for this family.
+    fn symmetry_transforms(self) -> &'static [GridTransform];
 }
 
 /// A lattice-coordinate symmetry transform: `out = matrix * coord + offset`.
@@ -106,50 +167,16 @@ impl GridTransform {
 }
 
 /// Four cardinal neighbour offsets on a square grid.
-pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = [
-    Coord::new(1, 0),
-    Coord::new(0, 1),
-    Coord::new(-1, 0),
-    Coord::new(0, -1),
-];
+pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = square::SQUARE_CARDINAL_OFFSETS;
 
 /// Six axial neighbour offsets on a hex grid.
-pub const HEX_AXIAL_OFFSETS: [Coord; 6] = [
-    Coord::new(1, 0),
-    Coord::new(1, -1),
-    Coord::new(0, -1),
-    Coord::new(-1, 0),
-    Coord::new(-1, 1),
-    Coord::new(0, 1),
-];
+pub const HEX_AXIAL_OFFSETS: [Coord; 6] = hex::HEX_AXIAL_OFFSETS;
 
 /// Dihedral group D4 acting on square lattice coordinates.
-pub const D4_TRANSFORMS: [GridTransform; 8] = [
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [-1, 0]], [0, 0]),
-];
+pub const D4_TRANSFORMS: [GridTransform; 8] = square::D4_TRANSFORMS;
 
 /// Dihedral group D6 acting on hex axial coordinates.
-pub const D6_TRANSFORMS: [GridTransform; 12] = [
-    GridTransform::new(LatticeKind::Hex, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, -1], [1, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, 1], [-1, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 1], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 0], [-1, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, -1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, -1], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, 0], [1, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, 1], [1, 0]], [0, 0]),
-];
+pub const D6_TRANSFORMS: [GridTransform; 12] = hex::D6_TRANSFORMS;
 
 #[cfg(test)]
 mod tests {
@@ -168,6 +195,25 @@ mod tests {
         let p = LatticeKind::Hex.model_point(Coord::new(1, 2));
         assert!((p.x - 2.0).abs() < 1e-6);
         assert!((p.y - 3.0_f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn kind_dispatch_matches_trait_impls() {
+        let c = Coord::new(3, -1);
+        assert_eq!(LatticeKind::Square.model_point(c), Square.model_point(c));
+        assert_eq!(LatticeKind::Hex.model_point(c), Hex.model_point(c));
+        assert_eq!(
+            LatticeKind::Square.neighbour_offsets(),
+            Square.neighbour_offsets()
+        );
+        assert_eq!(
+            LatticeKind::Square.symmetry_transforms().len(),
+            D4_TRANSFORMS.len()
+        );
+        assert_eq!(
+            LatticeKind::Hex.symmetry_transforms().len(),
+            D6_TRANSFORMS.len()
+        );
     }
 
     #[test]

@@ -35,13 +35,11 @@ mod recovery;
 
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use projective_grid::detect::advanced::square::component_merge::{
-    merge_components_local, ComponentInput,
-};
-use projective_grid::detect::advanced::square::topological_trace::{
+use projective_grid::detect::ValidateParams as NextValidateParams;
+use projective_grid::shared::merge::{merge_components_local, ComponentInput};
+use projective_grid::topological::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
-use projective_grid::detect::ValidateParams as NextValidateParams;
 use projective_grid::{
     detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
     LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,

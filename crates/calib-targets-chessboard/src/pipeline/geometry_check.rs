@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use nalgebra::{Point2, Vector2};
-use projective_grid::detect::advanced::square::validate::EdgeShapeParams;
+use projective_grid::shared::validate::EdgeShapeParams;
 
 use crate::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
@@ -32,10 +32,10 @@ const WEAK_LEAF_SCORE_FRAC: f32 = 0.55;
 /// relabel.
 ///
 /// Drops any labelled corner that fails:
-/// - the shared [`validate`](projective_grid::detect::advanced::square::validate::validate)
+/// - the shared [`validate`](projective_grid::shared::validate::validate)
 ///   pass (line collinearity + local-H residual + final edge-shape gate,
 ///   attribution rules from
-///   [`mod@projective_grid::detect::advanced::square::validate`]); **or**
+///   [`mod@projective_grid::shared::validate`]); **or**
 /// - the per-cardinal-edge axis-slot-swap parity check from
 ///   `ChessboardSquareAttachPolicy::edge_ok` — every edge between two
 ///   cardinal-labelled corners must satisfy the same edge invariant
@@ -55,7 +55,7 @@ pub fn run_geometry_check(
     blacklist: &mut HashSet<usize>,
     params: &DetectorParams,
 ) -> GeometryCheckTrace {
-    use projective_grid::detect::advanced::square::validate as pg_validate;
+    use projective_grid::shared::validate as pg_validate;
     use std::collections::HashSet as Set;
 
     let tuning = params.effective_tuning();

@@ -6,7 +6,7 @@
 //! bounding box that are still empty, plus `±1` cells immediately
 //! outside each row / column boundary, and tries to attach a
 //! candidate at each one using the same per-cell ladder as
-//! [`crate::detect::advanced::square::grow::bfs_grow`].
+//! [`crate::seed_and_grow::grow::bfs_grow`].
 //!
 //! # Precision contract
 //!
@@ -40,7 +40,7 @@
 //! `eligible_for_fill` candidates because the previous iteration's
 //! attachments shrink the eligible set.
 
-use crate::detect::advanced::square::grow::{
+use crate::seed_and_grow::grow::{
     collect_labelled_neighbours, predict_from_neighbours, Admit, FillEdgeCtx, GrowResult,
     SquareAttachPolicy,
 };
@@ -369,7 +369,7 @@ fn any_cardinal_fill_edge_ok<V: SquareAttachPolicy>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::detect::advanced::square::grow::{Admit, LabelledNeighbour};
+    use crate::seed_and_grow::grow::{Admit, LabelledNeighbour};
     use std::collections::HashMap;
 
     /// Trivial policy: every corner eligible, no label constraint,

@@ -15,7 +15,7 @@
 //!    per-component median.
 //! 6. Flood-fill integer `(u, v)` labels through the surviving quad
 //!    mesh and rebase each connected component to `(0, 0)`.
-//! 7. Reuse the shared advanced [`validate`](crate::detect::advanced::square::validate)
+//! 7. Reuse the shared advanced [`validate`](crate::shared::validate)
 //!    post-stage to drop labelled corners flagged by line-collinearity and
 //!    local-H checks.
 //! 8. Fit a projective transform on the surviving labels and report
@@ -36,7 +36,6 @@ use std::collections::HashSet;
 
 use nalgebra::Point2;
 
-use crate::detect::advanced::square::validate as pg_validate;
 use crate::detect::DetectionParams;
 use crate::error::{GridError, Result};
 use crate::feature::OrientedFeature;
@@ -44,6 +43,7 @@ use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
 };
+use crate::shared::validate as pg_validate;
 
 use self::axis::{build_axis_caches, AxisCache};
 use super::shared::{fit_component, FitComponentResult};
@@ -217,7 +217,7 @@ impl TopologicalParams {
 /// caller-facing `detect_grid_all` wrapper turns an empty solutions
 /// vector into [`GridError::InsufficientEvidence`] when the request
 /// reached the orchestrator with enough features.
-pub(in crate::detect) fn detect_square_oriented2_topological_all(
+pub(crate) fn detect_square_oriented2_topological_all(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
@@ -727,3 +727,6 @@ mod tests {
         assert!((d_seam - 0.1).abs() < 1e-5, "{d_seam}");
     }
 }
+
+// Relocated from detect/advanced/square/topological_trace.rs.
+pub mod trace;

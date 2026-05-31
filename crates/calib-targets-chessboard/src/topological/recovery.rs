@@ -9,9 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::detect::advanced::square::component_merge::{
-    merge_components_local, ComponentInput,
-};
+use projective_grid::shared::merge::{merge_components_local, ComponentInput};
 
 use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};

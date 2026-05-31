@@ -18,7 +18,7 @@ use nalgebra::Point2;
 /// `(1, 1)` respectively.
 ///
 /// Created by the seed finder and consumed by
-/// [`crate::detect::advanced::square::grow::bfs_grow`].
+/// [`crate::seed_and_grow::grow::bfs_grow`].
 #[derive(Clone, Copy, Debug)]
 pub struct Seed {
     /// Corner index at grid cell `(0, 0)`.
@@ -42,7 +42,7 @@ pub struct SeedOutput {
 }
 
 /// Grid positions of the four seed corners in the seed quad layout
-/// used by [`crate::detect::advanced::square::grow::bfs_grow`]:
+/// used by [`crate::seed_and_grow::grow::bfs_grow`]:
 /// `A = (0, 0), B = (1, 0), C = (0, 1), D = (1, 1)`.
 pub const SEED_QUAD_GRID: [(i32, i32); 4] = [(0, 0), (1, 0), (0, 1), (1, 1)];
 

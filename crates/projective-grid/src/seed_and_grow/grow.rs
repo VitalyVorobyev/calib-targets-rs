@@ -33,14 +33,14 @@
 //!
 //! This function does **not** do post-growth validation (line
 //! collinearity / local-H residuals). See
-//! [`crate::detect::advanced::square::validate`](mod@crate::detect::advanced::square::validate) for
+//! [`crate::shared::validate`](mod@crate::shared::validate) for
 //! that.
 
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::{Point2, Vector2};
 use std::collections::{HashMap, HashSet, VecDeque};
 
-pub use crate::detect::advanced::square::seed::Seed;
+pub use crate::seed_and_grow::seed::Seed;
 
 /// Per-candidate decision from a [`SquareAttachPolicy`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,7 +135,7 @@ pub trait SquareAttachPolicy {
     /// override this to consult the labelled set when computing the
     /// expected edge length.
     ///
-    /// Only invoked by [`crate::detect::advanced::square::fill::fill_grid_holes`]; the
+    /// Only invoked by [`crate::seed_and_grow::fill::fill_grid_holes`]; the
     /// regular grow and boundary-extension passes call [`Self::edge_ok`]
     /// directly.
     fn fill_edge_ok(&self, ctx: FillEdgeCtx<'_>) -> bool {

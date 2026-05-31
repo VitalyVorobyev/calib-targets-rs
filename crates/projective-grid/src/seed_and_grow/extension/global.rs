@@ -10,10 +10,10 @@ use std::collections::{HashMap, HashSet};
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
-use crate::detect::advanced::square::extension::common::{try_attach_at_cell, TryCellResult};
-use crate::detect::advanced::square::extension::{ExtensionParams, ExtensionStats};
-use crate::detect::advanced::square::grow::{GrowResult, SquareAttachPolicy};
 use crate::geometry::estimate_homography_with_quality;
+use crate::seed_and_grow::extension::common::{try_attach_at_cell, TryCellResult};
+use crate::seed_and_grow::extension::{ExtensionParams, ExtensionStats};
+use crate::seed_and_grow::grow::{GrowResult, SquareAttachPolicy};
 
 /// Try to extend the labelled grid outward (and into interior holes)
 /// using a globally-fit homography. Mutates `grow.labelled` and

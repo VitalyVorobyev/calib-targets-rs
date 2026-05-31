@@ -24,9 +24,9 @@
 
 use nalgebra::{Point2, Vector2};
 
-use crate::detect::advanced::square::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
-use crate::detect::advanced::square::seed::finder::SquareSeedPolicy;
 use crate::feature::{LocalAxis, OrientedFeature};
+use crate::seed_and_grow::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
+use crate::seed_and_grow::seed::finder::SquareSeedPolicy;
 
 /// Tolerances the policy enforces; ported from the historical
 /// `square::grow::GrowParams` axis-alignment + edge-length knobs.
