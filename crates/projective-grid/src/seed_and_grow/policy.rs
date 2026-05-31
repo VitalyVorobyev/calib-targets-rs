@@ -7,46 +7,53 @@
 //! two local axes directly. It ports the seed-and-grow invariants that the
 //! historical generic-`F` `square::grow` engine enforced inline:
 //!
-//! - **`accept_candidate`** — the candidate's two axes each align (within
-//!   `axis_align_tol_rad`, undirected mod-π) with one of the grid axes,
-//!   and the two candidate axes pick *distinct* grid axes (the axis-slot-
-//!   swap parity check).
+//! - **`accept_candidate`** — the candidate's two axes align (within
+//!   `axis_align_tol_rad`, undirected mod-π) with the two axes of at least
+//!   one already-labelled neighbour. Comparing against a **local** neighbour
+//!   rather than a frozen global seed axis is what lets the facade track a
+//!   perspective warp: under perspective the two grid directions are not
+//!   orthogonal and rotate across the image, so a candidate far from the seed
+//!   no longer matches the seed's axes — but it still matches its immediate
+//!   neighbour's. A spurious corner with unrelated local axes finds no
+//!   voucher and is rejected, preserving the precision contract.
 //! - **`edge_ok`** — the induced edge length is within
 //!   `[1 - edge_length_tol, 1 + edge_length_tol] × cell_size`.
 //!
-//! The grid axes are derived once from the seed quad's `B-A` / `C-A`
-//! chords (or supplied via `GrowParams::global_axis_u_v`), mirroring the
-//! historical engine. Because the facade seed-and-grow path is exercised
-//! only by synthetic tests (the dataset-gated chessboard path composes the
-//! advanced engine directly with its own policy), this policy's job is to
-//! reproduce the historical engine's accept/reject behaviour on those
-//! tests, not to be tuned against real images.
+//! Because the facade seed-and-grow path is exercised only by synthetic tests
+//! (the dataset-gated chessboard path composes the advanced engine directly
+//! with its own policy), this policy's job is to reproduce sound accept/reject
+//! behaviour on those tests and on the orientation-free position path, not to
+//! be tuned against a specific real dataset.
 
-use nalgebra::{Point2, Vector2};
+use nalgebra::Point2;
 
 use crate::feature::{LocalAxis, OrientedFeature};
+use crate::seed_and_grow::angle::angular_dist_pi;
 use crate::seed_and_grow::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
 use crate::seed_and_grow::seed::finder::SquareSeedPolicy;
 
-/// Tolerances the policy enforces; ported from the historical
-/// `square::grow::GrowParams` axis-alignment + edge-length knobs.
+/// Tolerances the policy enforces: a per-candidate axis-alignment tolerance
+/// (used to vouch a candidate against a labelled neighbour's axes) plus the
+/// per-edge length band.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Oriented2Tolerances {
     /// Per-candidate axis-alignment tolerance in radians.
     pub axis_align_tol_rad: f32,
-    /// Per-edge length tolerance (fraction of `cell_size`).
+    /// Per-edge length tolerance (fraction of the local pitch).
     pub edge_length_tol: f32,
-    /// Scalar cell size in pixels (seed-derived).
+    /// Scalar fallback cell size in pixels (seed-derived); used only where a
+    /// corner has no usable local-pitch estimate.
     pub cell_size: f32,
-    /// Grid `u` direction (unit vector) and `v` direction (unit vector).
-    pub axis_u: Vector2<f32>,
-    pub axis_v: Vector2<f32>,
 }
 
 /// Built-in facade policy over oriented-2 features.
 pub(super) struct Oriented2Policy<'a> {
     features: &'a [OrientedFeature<2>],
     positions: &'a [Point2<f32>],
+    /// Per-corner local pitch in pixels (nearest-neighbour distance). Tracks
+    /// perspective foreshortening so the per-edge length check stays local
+    /// rather than gating against one global seed-derived scalar.
+    local_pitch: &'a [f32],
     tol: Oriented2Tolerances,
 }
 
@@ -54,11 +61,13 @@ impl<'a> Oriented2Policy<'a> {
     pub(super) fn new(
         features: &'a [OrientedFeature<2>],
         positions: &'a [Point2<f32>],
+        local_pitch: &'a [f32],
         tol: Oriented2Tolerances,
     ) -> Self {
         Self {
             features,
             positions,
+            local_pitch,
             tol,
         }
     }
@@ -107,14 +116,23 @@ impl SquareAttachPolicy for Oriented2Policy<'_> {
         idx: usize,
         _at: (i32, i32),
         _prediction: Point2<f32>,
-        _neighbours: &[LabelledNeighbour],
+        neighbours: &[LabelledNeighbour],
     ) -> Admit {
-        if candidate_axes_align(
-            self.axes(idx),
-            self.tol.axis_u,
-            self.tol.axis_v,
-            self.tol.axis_align_tol_rad,
-        ) {
+        let cand = self.axes(idx);
+        let tol = self.tol.axis_align_tol_rad;
+        // Vouch the candidate against the LOCAL axes of an already-labelled
+        // neighbour. This tracks a perspective warp (the grid directions
+        // rotate across the image) where a frozen global seed axis would
+        // reject everything far from the seed.
+        for n in neighbours {
+            if axis_pairs_align(cand, self.features[n.idx].axes, tol) {
+                return Admit::Accept;
+            }
+        }
+        // During normal grow there is always at least one labelled neighbour;
+        // if somehow none, defer precision to the geometry + validate + fit
+        // gates rather than block the attachment.
+        if neighbours.is_empty() {
             Admit::Accept
         } else {
             Admit::Reject
@@ -133,95 +151,32 @@ impl SquareAttachPolicy for Oriented2Policy<'_> {
         let dx = to.x - from.x;
         let dy = to.y - from.y;
         let len = (dx * dx + dy * dy).sqrt();
-        let ratio = len / self.tol.cell_size;
+        // Local expected pitch: the mean of the two endpoints' nearest-
+        // neighbour distances. Under perspective the pitch foreshortens across
+        // the image, so a *local* expectation keeps the band valid far from the
+        // seed where a single global `cell_size` would reject legitimate edges.
+        let local = 0.5 * (self.local_pitch[candidate_idx] + self.local_pitch[neighbour_idx]);
+        let expected = if local > 1e-3 {
+            local
+        } else {
+            self.tol.cell_size
+        };
+        let ratio = len / expected;
         let low = 1.0 - self.tol.edge_length_tol;
         let high = 1.0 + self.tol.edge_length_tol;
         ratio >= low && ratio <= high
     }
 }
 
-/// Each candidate axis must align with one of the grid axes (within
-/// `tol`, undirected mod-π) and the two candidate axes must pick distinct
-/// grid axes. Mirrors the historical `square::grow::candidate_axes_align`.
-fn candidate_axes_align(
-    axes: [LocalAxis; 2],
-    axis_u: Vector2<f32>,
-    axis_v: Vector2<f32>,
-    tol: f32,
-) -> bool {
-    let alpha = wrap_pi(axes[0].angle_rad);
-    let beta = wrap_pi(axes[1].angle_rad);
-    let theta_u = wrap_pi(axis_u.y.atan2(axis_u.x));
-    let theta_v = wrap_pi(axis_v.y.atan2(axis_v.x));
-
-    let (alpha_u, alpha_v) = (
-        angular_dist_pi(alpha, theta_u),
-        angular_dist_pi(alpha, theta_v),
-    );
-    let (beta_u, beta_v) = (
-        angular_dist_pi(beta, theta_u),
-        angular_dist_pi(beta, theta_v),
-    );
-
-    let alpha_pick = if alpha_u <= tol && alpha_u <= alpha_v {
-        Some(0)
-    } else if alpha_v <= tol {
-        Some(1)
-    } else {
-        None
-    };
-    let beta_pick = if beta_u <= tol && beta_u <= beta_v {
-        Some(0)
-    } else if beta_v <= tol {
-        Some(1)
-    } else {
-        None
-    };
-    match (alpha_pick, beta_pick) {
-        (Some(a), Some(b)) => a != b,
-        _ => false,
-    }
-}
-
-/// Derive the seed quad's two grid-axis unit vectors from the `B-A` and
-/// `C-A` chords, matching the historical engine's `derive_seed_axes`.
-pub(super) fn derive_seed_axes(
-    positions: &[Point2<f32>],
-    a: usize,
-    b: usize,
-    c: usize,
-) -> (Vector2<f32>, Vector2<f32>) {
-    let eps = 1e-6_f32;
-    let pa = positions[a];
-    let pb = positions[b];
-    let pc = positions[c];
-    let raw_u = pb - pa;
-    let raw_v = pc - pa;
-    let nu = raw_u.norm().max(eps);
-    let nv = raw_v.norm().max(eps);
-    (raw_u / nu, raw_v / nv)
-}
-
-#[inline]
-fn wrap_pi(theta: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    let mut t = theta % pi;
-    if t < 0.0 {
-        t += pi;
-    }
-    if t >= pi {
-        t -= pi;
-    }
-    t
-}
-
-#[inline]
-fn angular_dist_pi(a: f32, b: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    let mut diff = ((a - b) % pi + pi) % pi;
-    let comp = pi - diff;
-    if comp < diff {
-        diff = comp;
-    }
-    diff
+/// True iff the candidate's two axes align (undirected, mod-π, within `tol`)
+/// with the two axes of a labelled neighbour, under either slot assignment.
+/// The two grid directions need not be orthogonal (perspective), so this only
+/// checks that each candidate axis matches a *distinct* neighbour axis.
+fn axis_pairs_align(a: [LocalAxis; 2], b: [LocalAxis; 2], tol: f32) -> bool {
+    let d = |x: f32, y: f32| angular_dist_pi(x, y);
+    let direct =
+        d(a[0].angle_rad, b[0].angle_rad) <= tol && d(a[1].angle_rad, b[1].angle_rad) <= tol;
+    let swapped =
+        d(a[0].angle_rad, b[1].angle_rad) <= tol && d(a[1].angle_rad, b[0].angle_rad) <= tol;
+    direct || swapped
 }

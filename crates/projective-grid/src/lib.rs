@@ -30,6 +30,7 @@ pub mod feature;
 pub mod float;
 pub mod geometry;
 pub mod lattice;
+pub mod orient;
 pub mod result;
 
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
@@ -44,6 +45,7 @@ pub use crate::lattice::{
     Coord, GridDimensions, GridTransform, Hex, Lattice, LatticeKind, Square, D4_TRANSFORMS,
     D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
 };
+pub use crate::orient::synthesize_oriented2;
 pub use crate::result::{
     ConsistencyReport, GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature,
     RejectionReason, ResidualSummary,

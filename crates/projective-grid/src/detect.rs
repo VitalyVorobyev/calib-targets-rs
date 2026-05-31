@@ -216,9 +216,15 @@ impl<'a> DetectionRequest<'a> {
 ///
 ///   Both return a labelled [`GridSolution`] with a fitted projective
 ///   transform; downstream consumers stay agnostic.
+/// * `(Square, Positions)` — orientation-free input. Each corner's two
+///   local grid directions are synthesized from neighbour geometry
+///   ([`crate::orient::synthesize_oriented2`]) and then fed to the
+///   algorithm picked by [`DetectionParams::algorithm`], exactly as for
+///   `(Square, Oriented2)`. Use this for dot / circle grids and for
+///   chessboards whose corners carry no axis estimate.
 /// * Every other combination — typed [`GridError::UnsupportedCombination`].
 ///
-/// `(Square, Positions)`, `(Square, Oriented1)`, `(Square, Oriented3)`,
+/// `(Square, Oriented1)`, `(Square, Oriented3)`,
 /// `(Square, CoordinateHypotheses)`, and every `(Hex, *)` variant stay
 /// `UnsupportedCombination` — no working algorithm exists in the
 /// current implementation for those slots.
@@ -272,6 +278,29 @@ pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport>
                 )?
             }
         },
+        (LatticeKind::Square, Evidence::Positions(features)) => {
+            // Orientation-free input: recover each corner's two local grid
+            // directions from neighbour geometry, then run the chosen square
+            // strategy. Both strategies consume `OrientedFeature<2>`, so the
+            // synthesized axes feed either path unchanged.
+            let oriented = crate::orient::synthesize_oriented2(features);
+            match request.params.algorithm {
+                SquareAlgorithm::SeedAndGrow => {
+                    crate::seed_and_grow::detect_square_oriented2_seed_grow(
+                        &oriented,
+                        request.dimensions,
+                        &request.params,
+                    )?
+                }
+                SquareAlgorithm::Topological => {
+                    crate::topological::detect_square_oriented2_topological_all(
+                        &oriented,
+                        request.dimensions,
+                        &request.params,
+                    )?
+                }
+            }
+        }
         _ => {
             return Err(GridError::UnsupportedCombination {
                 task: GridTask::Detection,

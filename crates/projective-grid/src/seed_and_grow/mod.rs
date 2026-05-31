@@ -37,7 +37,7 @@ use crate::shared::merge::{merge_components_local, ComponentInput};
 use crate::shared::validate as pg_validate;
 
 use super::shared::{fit_component, FitComponentResult};
-use crate::seed_and_grow::policy::{derive_seed_axes, Oriented2Policy, Oriented2Tolerances};
+use crate::seed_and_grow::policy::{Oriented2Policy, Oriented2Tolerances};
 
 /// Default per-candidate axis-alignment tolerance (radians) for the
 /// facade policy — matches the historical seed-grow engine's 25°.
@@ -65,9 +65,13 @@ pub(crate) fn detect_square_oriented2_seed_grow(
     }
 
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
+    // Per-corner local pitch (nearest-neighbour distance). The attach policy's
+    // per-edge length band gates against this local expectation rather than a
+    // single seed-derived scalar, so growth tracks perspective foreshortening.
+    let local_pitch = compute_local_pitch(&positions);
 
     // Stage 1: assemble one labelled component per closed seed.
-    let raw_components = build_components(features, &positions, params);
+    let raw_components = build_components(features, &positions, &local_pitch, params);
     if raw_components.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }
@@ -105,6 +109,7 @@ pub(crate) fn detect_square_oriented2_seed_grow(
 fn build_components(
     features: &[OrientedFeature<2>],
     positions: &[Point2<f32>],
+    local_pitch: &[f32],
     params: &DetectionParams,
 ) -> Vec<HashMap<(i32, i32), usize>> {
     let mut out: Vec<HashMap<(i32, i32), usize>> = Vec::new();
@@ -121,7 +126,8 @@ fn build_components(
         // use the policy's `is_eligible` to mask. We restrict eligibility
         // to the remaining set by passing a fresh policy whose seed
         // candidate lists exclude already-used corners.
-        let Some(component) = grow_one_component(features, positions, params, &used) else {
+        let Some(component) = grow_one_component(features, positions, local_pitch, params, &used)
+        else {
             break;
         };
         if component.len() < 4 {
@@ -141,6 +147,7 @@ fn build_components(
 fn grow_one_component(
     features: &[OrientedFeature<2>],
     positions: &[Point2<f32>],
+    local_pitch: &[f32],
     params: &DetectionParams,
     used: &HashSet<usize>,
 ) -> Option<HashMap<(i32, i32), usize>> {
@@ -156,21 +163,16 @@ fn grow_one_component(
     let seed = seed_out.seed;
     let cell_size = seed_out.cell_size;
 
-    // Grid axes for the candidate-axis-alignment gate: from the seed's own
-    // B-A / C-A chords by default; overridden by global_axis_u_v if the
-    // caller's grow config carries one is not part of the advanced
-    // GrowParams, so we always derive from the seed here.
-    let (axis_u, axis_v) = derive_seed_axes(positions, seed.a, seed.b, seed.c);
-
+    // The attach policy vouches each candidate against its labelled
+    // neighbour's local axes (perspective-tracking), so no global grid axis
+    // needs to be derived from the seed here.
     let tol = Oriented2Tolerances {
         axis_align_tol_rad: FACADE_AXIS_ALIGN_TOL_RAD,
         edge_length_tol: FACADE_EDGE_LENGTH_TOL,
         cell_size,
-        axis_u,
-        axis_v,
     };
     let attach_policy = RestrictedAttachPolicy {
-        inner: Oriented2Policy::new(features, positions, tol),
+        inner: Oriented2Policy::new(features, positions, local_pitch, tol),
         used,
     };
 
@@ -465,6 +467,38 @@ fn assemble_solutions(
         solutions.push(GridSolution::new(grid, Some(fit), rejected));
     }
     solutions
+}
+
+/// Per-corner local pitch: the distance to each corner's nearest neighbour.
+/// Tracks perspective foreshortening (the projected cell pitch shrinks toward
+/// the vanishing points), so the attach policy's per-edge length band stays
+/// valid across the whole image instead of gating against one seed scalar.
+///
+/// Falls back to `0.0` for a corner with no finite neighbour; the policy treats
+/// a non-positive local pitch as "use the seed scalar".
+fn compute_local_pitch(positions: &[Point2<f32>]) -> Vec<f32> {
+    use kiddo::{KdTree, SquaredEuclidean};
+    let n = positions.len();
+    if n < 2 {
+        return vec![0.0; n];
+    }
+    let mut tree: KdTree<f32, 2> = KdTree::new();
+    for (i, p) in positions.iter().enumerate() {
+        tree.add(&[p.x, p.y], i as u64);
+    }
+    positions
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            // Two nearest: the point itself plus its closest neighbour.
+            let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], 2);
+            hits.into_iter()
+                .find(|nn| nn.item as usize != i)
+                .map(|nn| nn.distance.sqrt())
+                .filter(|d| d.is_finite() && *d > 1e-3)
+                .unwrap_or(0.0)
+        })
+        .collect()
 }
 
 /// Mean labelled-pair cardinal edge length, used as the validate
