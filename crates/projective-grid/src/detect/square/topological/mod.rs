@@ -15,9 +15,9 @@
 //!    per-component median.
 //! 6. Flood-fill integer `(u, v)` labels through the surviving quad
 //!    mesh and rebase each connected component to `(0, 0)`.
-//! 7. Reuse the shared [`crate::validate::square`] post-stage to drop
-//!    labelled corners flagged by line-collinearity, local-H, and edge-length
-//!    checks.
+//! 7. Reuse the shared advanced [`validate`](crate::detect::advanced::square::validate)
+//!    post-stage to drop labelled corners flagged by line-collinearity and
+//!    local-H checks.
 //! 8. Fit a projective transform on the surviving labels and report
 //!    per-corner residuals.
 //!
@@ -36,18 +36,17 @@ use std::collections::HashSet;
 
 use nalgebra::Point2;
 
+use crate::detect::advanced::square::validate as pg_validate;
 use crate::detect::DetectionParams;
 use crate::error::{GridError, Result};
 use crate::feature::OrientedFeature;
-use crate::float::{lit, Float};
-use crate::geometry::{apply_projective, estimate_projective};
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
-    ResidualSummary,
 };
 
 use self::axis::{build_axis_caches, AxisCache};
+use super::shared::{fit_component, FitComponentResult};
 
 /// Minimum number of usable features for Delaunay triangulation.
 const MIN_USABLE_FOR_DELAUNAY: usize = 3;
@@ -60,33 +59,33 @@ const MIN_USABLE_FOR_DELAUNAY: usize = 3;
 /// + struct-update syntax or [`Self::new`].
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
-pub struct TopologicalParams<F: Float> {
+pub struct TopologicalParams {
     /// Maximum angular distance, in radians, between an edge's
     /// direction and a corner's axis for the edge to classify as a
     /// grid edge at that corner. Default: 15° = 0.262 rad.
-    pub axis_align_tol_rad: F,
+    pub axis_align_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a feature axis to be
     /// considered informative. Features whose both axes have
     /// `sigma_rad ≥ max_axis_sigma_rad` are excluded from Delaunay;
     /// classification skips individual axes above the threshold.
     /// Default: `0.6 ≈ 34°`. `sigma_rad = None` is treated as informative.
-    pub max_axis_sigma_rad: F,
+    pub max_axis_sigma_rad: f32,
     /// Reject quads whose opposing edges differ in length by more than
     /// this factor (paper's parallelogram test). Default: `1.5`.
-    pub opposing_edge_ratio_max: F,
+    pub opposing_edge_ratio_max: f32,
     /// Lower bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge shorter than `edge_length_min_rel * component_median`
     /// are rejected as "below local cell scale". Default: `0.4`.
     /// Set to `0.0` to disable the lower bound entirely.
-    pub edge_length_min_rel: F,
+    pub edge_length_min_rel: f32,
     /// Upper bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge longer than `edge_length_max_rel * component_median`
     /// are rejected as "above local cell scale" (typically a quad formed
     /// across a missing corner). Default: `2.5`. Set to `+inf` to
     /// disable the upper bound entirely.
-    pub edge_length_max_rel: F,
+    pub edge_length_max_rel: f32,
     /// Discard labelled components with fewer than this many corners.
     /// Default: `4` (one quad of four corners).
     pub min_corners_for_component: usize,
@@ -98,33 +97,33 @@ pub struct TopologicalParams<F: Float> {
     /// Delaunay only if at least one of its informative axes is within
     /// [`Self::cluster_axis_tol_rad`] of one of the centers. When
     /// `None`, the gate is skipped.
-    pub axis_cluster_centers: Option<[F; 2]>,
+    pub axis_cluster_centers: Option<[f32; 2]>,
     /// Per-axis admission tolerance against
     /// [`Self::axis_cluster_centers`], in radians. Only consulted when
     /// `axis_cluster_centers.is_some()`. Default: `16° = 0.279`.
-    pub cluster_axis_tol_rad: F,
+    pub cluster_axis_tol_rad: f32,
 }
 
-impl<F: Float> Default for TopologicalParams<F> {
+impl Default for TopologicalParams {
     fn default() -> Self {
         Self {
-            axis_align_tol_rad: lit::<F>(15.0_f32.to_radians()),
-            max_axis_sigma_rad: lit::<F>(0.6_f32),
-            opposing_edge_ratio_max: lit::<F>(1.5_f32),
-            edge_length_min_rel: lit::<F>(0.4_f32),
-            edge_length_max_rel: lit::<F>(2.5_f32),
+            axis_align_tol_rad: 15.0_f32.to_radians(),
+            max_axis_sigma_rad: 0.6,
+            opposing_edge_ratio_max: 1.5,
+            edge_length_min_rel: 0.4,
+            edge_length_max_rel: 2.5,
             min_corners_for_component: 4,
             min_quads_per_component: 1,
             axis_cluster_centers: None,
-            cluster_axis_tol_rad: lit::<F>(16.0_f32.to_radians()),
+            cluster_axis_tol_rad: 16.0_f32.to_radians(),
         }
     }
 }
 
-impl<F: Float> TopologicalParams<F> {
+impl TopologicalParams {
     /// Construct topological params from the two most commonly tuned
     /// knobs; the remaining fields take their defaults.
-    pub fn new(axis_align_tol_rad: F, max_axis_sigma_rad: F) -> Self {
+    pub fn new(axis_align_tol_rad: f32, max_axis_sigma_rad: f32) -> Self {
         Self {
             axis_align_tol_rad,
             max_axis_sigma_rad,
@@ -133,31 +132,31 @@ impl<F: Float> TopologicalParams<F> {
     }
 
     /// Builder-style override for [`Self::axis_align_tol_rad`].
-    pub fn with_axis_align_tol_rad(mut self, value: F) -> Self {
+    pub fn with_axis_align_tol_rad(mut self, value: f32) -> Self {
         self.axis_align_tol_rad = value;
         self
     }
 
     /// Builder-style override for [`Self::max_axis_sigma_rad`].
-    pub fn with_max_axis_sigma_rad(mut self, value: F) -> Self {
+    pub fn with_max_axis_sigma_rad(mut self, value: f32) -> Self {
         self.max_axis_sigma_rad = value;
         self
     }
 
     /// Builder-style override for [`Self::opposing_edge_ratio_max`].
-    pub fn with_opposing_edge_ratio_max(mut self, value: F) -> Self {
+    pub fn with_opposing_edge_ratio_max(mut self, value: f32) -> Self {
         self.opposing_edge_ratio_max = value;
         self
     }
 
     /// Builder-style override for [`Self::edge_length_min_rel`].
-    pub fn with_edge_length_min_rel(mut self, value: F) -> Self {
+    pub fn with_edge_length_min_rel(mut self, value: f32) -> Self {
         self.edge_length_min_rel = value;
         self
     }
 
     /// Builder-style override for [`Self::edge_length_max_rel`].
-    pub fn with_edge_length_max_rel(mut self, value: F) -> Self {
+    pub fn with_edge_length_max_rel(mut self, value: f32) -> Self {
         self.edge_length_max_rel = value;
         self
     }
@@ -166,8 +165,8 @@ impl<F: Float> TopologicalParams<F> {
     /// `.with_edge_length_min_rel(min_rel).with_edge_length_max_rel(max_rel)`.
     ///
     /// Pass `min_rel = 0.0` to disable the lower bound; pass
-    /// `max_rel = F::infinity()` to disable the upper bound.
-    pub fn with_edge_length_band(mut self, min_rel: F, max_rel: F) -> Self {
+    /// `max_rel = f32::INFINITY` to disable the upper bound.
+    pub fn with_edge_length_band(mut self, min_rel: f32, max_rel: f32) -> Self {
         self.edge_length_min_rel = min_rel;
         self.edge_length_max_rel = max_rel;
         self
@@ -190,13 +189,13 @@ impl<F: Float> TopologicalParams<F> {
     /// for wrapping them into `[0, π)` if their source might emit
     /// signed angles. The internal alignment check works modulo π so
     /// either convention is accepted.
-    pub fn with_axis_cluster_centers(mut self, centers: [F; 2]) -> Self {
+    pub fn with_axis_cluster_centers(mut self, centers: [f32; 2]) -> Self {
         self.axis_cluster_centers = Some(centers);
         self
     }
 
     /// Builder-style override for [`Self::cluster_axis_tol_rad`].
-    pub fn with_cluster_axis_tol_rad(mut self, tol_rad: F) -> Self {
+    pub fn with_cluster_axis_tol_rad(mut self, tol_rad: f32) -> Self {
         self.cluster_axis_tol_rad = tol_rad;
         self
     }
@@ -218,20 +217,20 @@ impl<F: Float> TopologicalParams<F> {
 /// caller-facing `detect_grid_all` wrapper turns an empty solutions
 /// vector into [`GridError::InsufficientEvidence`] when the request
 /// reached the orchestrator with enough features.
-pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
-    features: &[OrientedFeature<F, 2>],
+pub(in crate::detect) fn detect_square_oriented2_topological_all(
+    features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
-    params: &DetectionParams<F>,
-) -> Result<Vec<GridSolution<F>>> {
+    params: &DetectionParams,
+) -> Result<Vec<GridSolution>> {
     if features.len() < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
     }
 
     let topo = &params.topological;
     let axes = build_axis_caches(features, topo.max_axis_sigma_rad);
-    // Apply the optional axis-cluster gate (Phase E.0). When no
-    // centers are supplied the predicate is the identity and `usable`
-    // matches the Phase D behaviour exactly.
+    // Apply the optional axis-cluster gate. When no centers are supplied
+    // the predicate is the identity and `usable` matches the ungated
+    // behaviour exactly.
     #[cfg(feature = "tracing")]
     let usable: Vec<bool> = {
         let _span = tracing::debug_span!("usable_mask", num_features = features.len()).entered();
@@ -247,7 +246,7 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
     // Triangulate over the packed usable set; remap triangles back into
     // the global feature index space so the downstream stages share
     // indices with `features` / `axes`.
-    let positions: Vec<Point2<F>> = features.iter().map(|f| f.point.position).collect();
+    let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
     let triangulation = triangulate_usable(&positions, &usable);
     if triangulation.num_tri() == 0 {
         return Err(GridError::DegenerateGeometry);
@@ -277,12 +276,12 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
     // source-indices of every component that yielded a valid solution
     // so the orchestrator can build the global "unlabelled" set
     // afterwards.
-    let mut component_outputs: Vec<ComponentOutput<F>> = Vec::new();
+    let mut component_outputs: Vec<ComponentOutput> = Vec::new();
     for component in &components {
         if component.len() < 4 {
             continue;
         }
-        match build_component_solution(component, features, dimensions, params) {
+        match build_component_solution(&component.labelled, features, &positions, params) {
             Some(out) => component_outputs.push(out),
             None => continue,
         }
@@ -301,12 +300,19 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
             .then_with(|| a.min_source_index.cmp(&b.min_source_index))
     });
 
-    // Build the global "unlabelled" set: every feature that no
-    // component admitted (neither kept nor validation-dropped). The
-    // Single-component callers read these on `solutions[0].rejected`; the
-    // multi-component path attributes them to the
-    // largest (first) component so callers that read solely
-    // `solutions[0].rejected` see the same shape.
+    let solutions = assemble_solutions(component_outputs, features, dimensions);
+    Ok(solutions)
+}
+
+/// Build the global "unlabelled" set and assemble the per-component
+/// solutions, attributing every globally-unseen feature to the largest
+/// component so callers that read solely `solutions[0].rejected` see the
+/// same shape as the single-solution path.
+fn assemble_solutions(
+    component_outputs: Vec<ComponentOutput>,
+    features: &[OrientedFeature<2>],
+    dimensions: Option<GridDimensions>,
+) -> Vec<GridSolution> {
     let mut globally_kept: HashSet<usize> = HashSet::new();
     let mut globally_validation_dropped: HashSet<usize> = HashSet::new();
     for out in &component_outputs {
@@ -317,16 +323,13 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
             globally_validation_dropped.insert(src);
         }
     }
-    let mut global_unlabelled: Vec<RejectedFeature<F>> = Vec::new();
+    let mut global_unlabelled: Vec<RejectedFeature> = Vec::new();
     for feature in features {
         let src = feature.point.source_index;
         if globally_kept.contains(&src) {
             continue;
         }
         if globally_validation_dropped.contains(&src) {
-            // A feature might be validation-dropped in one component
-            // and never seen in any other; surface that as a
-            // validation drop on the largest solution.
             global_unlabelled.push(RejectedFeature::new(
                 src,
                 None,
@@ -343,7 +346,7 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
         ));
     }
 
-    let mut solutions: Vec<GridSolution<F>> = Vec::with_capacity(component_outputs.len());
+    let mut solutions: Vec<GridSolution> = Vec::with_capacity(component_outputs.len());
     for (idx, out) in component_outputs.into_iter().enumerate() {
         let ComponentOutput {
             entries,
@@ -352,30 +355,27 @@ pub(in crate::detect) fn detect_square_oriented2_topological_all<F: Float>(
             ..
         } = out;
         if idx == 0 {
-            // Append the global unlabelled set to the largest
-            // component's rejection list so `detect_grid` callers see the
-            // same shape as the single-solution path.
             rejected.extend(global_unlabelled.iter().copied());
         }
         let grid = LabelledGrid::new(LatticeKind::Square, entries, dimensions);
         solutions.push(GridSolution::new(grid, Some(fit), rejected));
     }
-    Ok(solutions)
+    solutions
 }
 
-struct ComponentOutput<F: Float> {
-    entries: Vec<GridEntry<F>>,
-    fit: LatticeFit<F>,
-    rejected: Vec<RejectedFeature<F>>,
+struct ComponentOutput {
+    entries: Vec<GridEntry>,
+    fit: LatticeFit,
+    rejected: Vec<RejectedFeature>,
     kept_source_indices: HashSet<usize>,
     validation_drop_source_indices: HashSet<usize>,
     min_source_index: usize,
 }
 
-fn build_usable_mask<F: Float>(
-    features: &[OrientedFeature<F, 2>],
-    axes: &[AxisCache<F>],
-    topo: &TopologicalParams<F>,
+fn build_usable_mask(
+    features: &[OrientedFeature<2>],
+    axes: &[AxisCache],
+    topo: &TopologicalParams,
 ) -> Vec<bool> {
     features
         .iter()
@@ -384,72 +384,46 @@ fn build_usable_mask<F: Float>(
         .collect()
 }
 
-fn build_component_solution<F: Float>(
-    component: &walk::TopologicalComponent,
-    features: &[OrientedFeature<F, 2>],
-    _dimensions: Option<GridDimensions>,
-    params: &DetectionParams<F>,
-) -> Option<ComponentOutput<F>> {
-    let mut labelled_entries: Vec<LabelledEntryRaw<F>> = component
-        .labelled
+fn build_component_solution(
+    labelled: &std::collections::HashMap<Coord, usize>,
+    features: &[OrientedFeature<2>],
+    positions: &[Point2<f32>],
+    params: &DetectionParams,
+) -> Option<ComponentOutput> {
+    // Reuse the advanced post-stage. The advanced validate is the same
+    // module that backs the chessboard seed-and-grow path.
+    let validate_entries: Vec<pg_validate::LabelledEntry> = labelled
         .iter()
-        .map(|(coord, &idx)| LabelledEntryRaw {
+        .map(|(coord, &idx)| pg_validate::LabelledEntry {
             idx,
-            position: features[idx].point.position,
-            coord: *coord,
+            pixel: features[idx].point.position,
+            grid: (coord.u, coord.v),
         })
         .collect();
+    let cell_size = estimate_cell_size(labelled, positions);
+    let validation = pg_validate::validate(&validate_entries, cell_size, &params.validate);
 
-    // Reuse the shared post-stage. validate::square is lattice-shape-
-    // agnostic at the predicate level — same module used by seed-grow.
-    let validate_entries: Vec<crate::validate::LabelledEntry<F>> = labelled_entries
+    // Working label set after the validation drop, keyed by Coord.
+    let mut kept: Vec<(Coord, usize)> = labelled
         .iter()
-        .map(|e| crate::validate::LabelledEntry::new(e.idx, e.position, e.coord))
+        .filter(|(_, &idx)| !validation.blacklist.contains(&idx))
+        .map(|(&coord, &idx)| (coord, idx))
         .collect();
-    let cell_size = estimate_cell_size(&labelled_entries);
-    let validation = crate::validate::validate(&validate_entries, cell_size, &params.validate);
-    if !validation.blacklist.is_empty() {
-        labelled_entries.retain(|e| !validation.blacklist.contains(&e.idx));
-    }
-    if labelled_entries.len() < 4 {
+    if kept.len() < 4 {
         return None;
     }
 
     let lattice = LatticeKind::Square;
-    let mut fit_outcome = fit_and_residuals(&labelled_entries, features, lattice, params).ok()?;
-
-    if !fit_outcome.over_threshold.is_empty() {
-        let drop: HashSet<usize> = fit_outcome
-            .over_threshold
-            .iter()
-            .map(|r| r.source_index)
-            .collect();
-        let entries_kept: Vec<LabelledEntryRaw<F>> = labelled_entries
-            .iter()
-            .copied()
-            .filter(|e| !drop.contains(&features[e.idx].point.source_index))
-            .collect();
-        if entries_kept.len() < 4 {
-            return None;
-        }
-        let refit = fit_and_residuals(&entries_kept, features, lattice, params).ok()?;
-        labelled_entries = entries_kept;
-        fit_outcome = FitOutcome {
-            entries: refit.entries,
-            fit: refit.fit,
-            over_threshold: fit_outcome.over_threshold,
-        };
-    }
-
-    let FitOutcome {
+    let fit_result = run_fit_with_residual_drop(&mut kept, features, positions, lattice, params)?;
+    let FitComponentResult {
         entries: entries_out,
         fit,
         over_threshold,
-    } = fit_outcome;
+    } = fit_result;
 
-    let kept_source_indices: HashSet<usize> = labelled_entries
+    let kept_source_indices: HashSet<usize> = kept
         .iter()
-        .map(|e| features[e.idx].point.source_index)
+        .map(|&(_, idx)| features[idx].point.source_index)
         .collect();
     let validation_drop_source_indices: HashSet<usize> = validation
         .blacklist
@@ -457,11 +431,7 @@ fn build_component_solution<F: Float>(
         .map(|&idx| features[idx].point.source_index)
         .collect();
 
-    // Per-component rejected: validation drops scoped to this component,
-    // plus over-threshold post-fit residuals scoped to this component.
-    // Globally-unlabelled features are attributed by the orchestrator to
-    // the largest component so the primary solution remains complete.
-    let mut rejected: Vec<RejectedFeature<F>> = Vec::new();
+    let mut rejected: Vec<RejectedFeature> = Vec::new();
     for &src in &validation_drop_source_indices {
         rejected.push(RejectedFeature::new(
             src,
@@ -479,10 +449,9 @@ fn build_component_solution<F: Float>(
         .copied()
         .min()
         .unwrap_or(usize::MAX);
-    let entries_out_sorted = sorted_entries(entries_out);
 
     Some(ComponentOutput {
-        entries: entries_out_sorted,
+        entries: entries_out,
         fit,
         rejected,
         kept_source_indices,
@@ -491,15 +460,47 @@ fn build_component_solution<F: Float>(
     })
 }
 
+/// Run the shared `fit_component` helper, drop over-threshold entries
+/// once, and refit on the remaining set. Mutates `kept` to the surviving
+/// label set. Returns `None` when fewer than four entries survive.
+fn run_fit_with_residual_drop(
+    kept: &mut Vec<(Coord, usize)>,
+    features: &[OrientedFeature<2>],
+    positions: &[Point2<f32>],
+    lattice: LatticeKind,
+    params: &DetectionParams,
+) -> Option<FitComponentResult> {
+    let first = fit_component(kept, features, positions, lattice, params).ok()?;
+    if first.over_threshold.is_empty() {
+        return Some(first);
+    }
+    let drop: HashSet<usize> = first
+        .over_threshold
+        .iter()
+        .map(|r| r.source_index)
+        .collect();
+    kept.retain(|&(_, idx)| !drop.contains(&features[idx].point.source_index));
+    if kept.len() < 4 {
+        return None;
+    }
+    let refit = fit_component(kept, features, positions, lattice, params).ok()?;
+    // Preserve the first pass's over-threshold attribution.
+    Some(FitComponentResult {
+        entries: refit.entries,
+        fit: refit.fit,
+        over_threshold: first.over_threshold,
+    })
+}
+
 /// Per-feature alignment check against the optional axis-cluster
 /// centers in [`TopologicalParams`]. Returns `true` when the gate is
 /// disabled (`axis_cluster_centers.is_none()`) or when at least one
 /// informative axis is within `cluster_axis_tol_rad` of one of the
 /// centers under undirected (mod π) distance.
-fn axes_pass_cluster_gate<F: Float>(
-    axes: &[crate::feature::LocalAxis<F>; 2],
-    cache: &AxisCache<F>,
-    params: &TopologicalParams<F>,
+fn axes_pass_cluster_gate(
+    axes: &[crate::feature::LocalAxis; 2],
+    cache: &AxisCache,
+    params: &TopologicalParams,
 ) -> bool {
     let Some(centers) = params.axis_cluster_centers else {
         return true;
@@ -523,8 +524,8 @@ fn axes_pass_cluster_gate<F: Float>(
 /// `[0, π/2]`. The topological cluster gate is the only consumer in this
 /// crate, so the helper is local.
 #[inline]
-fn angular_dist_pi<F: Float>(a: F, b: F) -> F {
-    let pi = F::pi();
+fn angular_dist_pi(a: f32, b: f32) -> f32 {
+    let pi = std::f32::consts::PI;
     // `(diff % π + π) % π` keeps the result in `[0, π)` for any sign
     // of `diff`. Bare `%` in Rust is the truncated remainder, so the
     // double `+ π) % π` is necessary.
@@ -538,89 +539,11 @@ fn angular_dist_pi<F: Float>(a: F, b: F) -> F {
     }
 }
 
-#[derive(Clone, Copy)]
-struct LabelledEntryRaw<F: Float> {
-    idx: usize,
-    position: Point2<F>,
-    coord: Coord,
-}
-
-struct FitOutcome<F: Float> {
-    entries: Vec<GridEntry<F>>,
-    fit: LatticeFit<F>,
-    over_threshold: Vec<RejectedFeature<F>>,
-}
-
-fn fit_and_residuals<F: Float>(
-    entries: &[LabelledEntryRaw<F>],
-    features: &[OrientedFeature<F, 2>],
-    lattice: LatticeKind,
-    params: &DetectionParams<F>,
-) -> Result<FitOutcome<F>> {
-    if entries.len() < 4 {
-        return Err(GridError::InsufficientEvidence);
-    }
-    let mut model_pts: Vec<Point2<F>> = Vec::with_capacity(entries.len());
-    let mut image_pts: Vec<Point2<F>> = Vec::with_capacity(entries.len());
-    for entry in entries {
-        model_pts.push(lattice.model_point(entry.coord));
-        image_pts.push(entry.position);
-    }
-    let model_to_image = estimate_projective(&model_pts, &image_pts)?;
-
-    let mut entries_out: Vec<GridEntry<F>> = Vec::with_capacity(entries.len());
-    let mut residual_sum = F::zero();
-    let mut residual_max = F::zero();
-    let mut over_threshold: Vec<RejectedFeature<F>> = Vec::new();
-
-    for entry in entries {
-        let predicted = apply_projective(&model_to_image, lattice.model_point(entry.coord))
-            .ok_or(GridError::DegenerateGeometry)?;
-        let dx = entry.position.x - predicted.x;
-        let dy = entry.position.y - predicted.y;
-        let residual = (dx * dx + dy * dy).sqrt();
-        residual_sum += residual;
-        if residual > residual_max {
-            residual_max = residual;
-        }
-        let source_index = features[entry.idx].point.source_index;
-        if residual > params.max_residual_px {
-            over_threshold.push(RejectedFeature::new(
-                source_index,
-                Some(entry.coord),
-                Some(residual),
-                RejectionReason::ResidualTooHigh,
-            ));
-        }
-        entries_out.push(GridEntry::new(
-            entry.coord,
-            source_index,
-            entry.position,
-            Some(residual),
-        ));
-    }
-    let mean = residual_sum / lit::<F>(entries.len() as f32);
-    let summary = ResidualSummary::new(entries.len(), mean, residual_max);
-    Ok(FitOutcome {
-        entries: entries_out,
-        fit: LatticeFit::new(model_to_image, summary),
-        over_threshold,
-    })
-}
-
-fn sorted_entries<F: Float>(mut entries: Vec<GridEntry<F>>) -> Vec<GridEntry<F>> {
-    entries.sort_by_key(|e| (e.coord, e.source_index));
-    entries
-}
-
 /// Triangulate only the usable features and remap triangle vertex
 /// indices back into the global feature index space.
-fn triangulate_usable<F: Float>(
-    positions: &[Point2<F>],
-    usable: &[bool],
-) -> delaunay::Triangulation {
+fn triangulate_usable(positions: &[Point2<f32>], usable: &[bool]) -> delaunay::Triangulation {
     let mut packed_to_global: Vec<usize> = Vec::with_capacity(positions.len());
-    let mut packed_positions: Vec<Point2<F>> = Vec::with_capacity(positions.len());
+    let mut packed_positions: Vec<Point2<f32>> = Vec::with_capacity(positions.len());
     for (i, (&u, &p)) in usable.iter().zip(positions.iter()).enumerate() {
         if u {
             packed_to_global.push(i);
@@ -644,33 +567,31 @@ fn triangulate_usable<F: Float>(
 /// validate caller's relative tolerances reduce to absolute thresholds.
 /// In practice the topological pipeline only reaches this helper with
 /// at least one labelled quad, so the fallback is defensive.
-fn estimate_cell_size<F: Float>(entries: &[LabelledEntryRaw<F>]) -> F {
+fn estimate_cell_size(
+    labelled: &std::collections::HashMap<Coord, usize>,
+    positions: &[Point2<f32>],
+) -> f32 {
     use crate::lattice::SQUARE_CARDINAL_OFFSETS;
-    use std::collections::HashMap;
 
-    let by_grid: HashMap<Coord, usize> = entries
-        .iter()
-        .enumerate()
-        .map(|(slot, e)| (e.coord, slot))
-        .collect();
-    let mut sum = F::zero();
+    let mut sum = 0.0_f32;
     let mut count: usize = 0;
-    for entry in entries {
+    for (&coord, &idx) in labelled {
+        let here = positions[idx];
         for offset in &SQUARE_CARDINAL_OFFSETS {
-            let neigh = Coord::new(entry.coord.u + offset.u, entry.coord.v + offset.v);
-            if let Some(&slot) = by_grid.get(&neigh) {
-                let nb = entries[slot].position;
-                let dx = nb.x - entry.position.x;
-                let dy = nb.y - entry.position.y;
+            let neigh = Coord::new(coord.u + offset.u, coord.v + offset.v);
+            if let Some(&n_idx) = labelled.get(&neigh) {
+                let nb = positions[n_idx];
+                let dx = nb.x - here.x;
+                let dy = nb.y - here.y;
                 sum += (dx * dx + dy * dy).sqrt();
                 count += 1;
             }
         }
     }
     if count == 0 {
-        return lit::<F>(1.0_f32);
+        return 1.0;
     }
-    sum / lit::<F>(count as f32)
+    sum / count as f32
 }
 
 #[cfg(test)]
@@ -678,7 +599,7 @@ mod tests {
     use super::*;
     use crate::feature::{LocalAxis, PointFeature};
 
-    fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<f32, 2>> {
+    fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
         let origin = 50.0_f32;
         let mut out = Vec::with_capacity((rows * cols) as usize);
         let mut idx = 0_usize;
@@ -700,7 +621,7 @@ mod tests {
 
     #[test]
     fn default_params_match_regression_values() {
-        let p = TopologicalParams::<f32>::default();
+        let p = TopologicalParams::default();
         assert!((p.axis_align_tol_rad - 15.0_f32.to_radians()).abs() < 1e-5);
         assert!((p.max_axis_sigma_rad - 0.6).abs() < 1e-5);
         assert!((p.opposing_edge_ratio_max - 1.5).abs() < 1e-5);
@@ -715,7 +636,7 @@ mod tests {
     #[test]
     fn clean_5x5_grid_is_fully_labelled() {
         let features = axis_aligned_features(5, 5, 20.0);
-        let params = DetectionParams::<f32>::default();
+        let params = DetectionParams::default();
         let mut solutions =
             detect_square_oriented2_topological_all(&features, None, &params).unwrap();
         assert_eq!(solutions.len(), 1);
@@ -728,7 +649,7 @@ mod tests {
     #[test]
     fn fewer_than_three_features_errors() {
         let features = axis_aligned_features(1, 2, 20.0);
-        let params = DetectionParams::<f32>::default();
+        let params = DetectionParams::default();
         let err = detect_square_oriented2_topological_all(&features, None, &params).unwrap_err();
         assert_eq!(err, GridError::InsufficientEvidence);
     }
@@ -738,9 +659,7 @@ mod tests {
         // 5×5 axis-aligned grid (axes at 0°, 90°) + 4 noise features
         // whose axes both sit near 45°. With the cluster gate centered
         // at [0, π/2] and a 16° tolerance, the noise features must be
-        // dropped pre-Delaunay; with the gate disabled they survive
-        // (and may or may not get labelled — but the gate-OFF run keeps
-        // 29 informative features through the cache step).
+        // dropped pre-Delaunay; with the gate disabled they survive.
         let mut features = axis_aligned_features(5, 5, 20.0);
         let extra: [(f32, f32); 4] = [(40.0, 40.0), (180.0, 40.0), (40.0, 180.0), (180.0, 180.0)];
         let next = features.len();
@@ -754,9 +673,8 @@ mod tests {
             features.push(OrientedFeature::new(point, axes));
         }
 
-        // Gate ON: noise features fail the cluster gate.
-        let params_on = DetectionParams::<f32>::default().with_topological(
-            TopologicalParams::<f32>::default()
+        let params_on = DetectionParams::default().with_topological(
+            TopologicalParams::default()
                 .with_axis_cluster_centers([0.0, std::f32::consts::FRAC_PI_2]),
         );
         let mut sol_on =
@@ -765,21 +683,12 @@ mod tests {
         let primary = sol_on.remove(0);
         assert_eq!(primary.grid.entries.len(), 25, "gate must keep the 5×5");
 
-        // Gate OFF: same grid still labelled, but the noise features
-        // are NOT pre-filtered (they pass the per-axis-cache filter and
-        // enter Delaunay). They may still end up unlabelled by walk,
-        // but the rejection-reason distribution differs from the gated
-        // run.
-        let params_off = DetectionParams::<f32>::default();
+        let params_off = DetectionParams::default();
         let mut sol_off =
             detect_square_oriented2_topological_all(&features, None, &params_off).unwrap();
         assert_eq!(sol_off.len(), 1);
         let primary_off = sol_off.remove(0);
         assert_eq!(primary_off.grid.entries.len(), 25);
-        // The noise features make it into the orchestrator's rejected
-        // bucket in both cases (the grid labels them either way), but
-        // the gate path scrubs them at the pre-filter stage rather
-        // than after Delaunay. Both runs surface them as `Unlabelled`.
         let noise_ids: std::collections::HashSet<usize> = (next..next + 4).collect();
         for r in &primary.rejected {
             if noise_ids.contains(&r.source_index) {
@@ -790,8 +699,6 @@ mod tests {
 
     #[test]
     fn axes_pass_cluster_gate_with_no_centers_is_identity() {
-        // Sanity for the helper: gate disabled accepts everything; gate
-        // enabled rejects an axis 45° from both centers.
         let cache = AxisCache {
             angle_rad: [std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4],
             informative: [true, true],
@@ -800,35 +707,23 @@ mod tests {
             LocalAxis::new(std::f32::consts::FRAC_PI_4, Some(0.05_f32)),
             LocalAxis::new(std::f32::consts::FRAC_PI_4, Some(0.05_f32)),
         ];
-        let params_off = TopologicalParams::<f32>::default();
+        let params_off = TopologicalParams::default();
         assert!(axes_pass_cluster_gate(&axes, &cache, &params_off));
-        let params_on = TopologicalParams::<f32>::default()
+        let params_on = TopologicalParams::default()
             .with_axis_cluster_centers([0.0_f32, std::f32::consts::FRAC_PI_2]);
         assert!(!axes_pass_cluster_gate(&axes, &cache, &params_on));
     }
 
     #[test]
     fn angular_dist_pi_is_undirected() {
-        // 0 vs π should be 0 (same undirected axis); 0 vs π/2 is π/2.
         let pi = std::f32::consts::PI;
-        let d_zero = angular_dist_pi::<f32>(0.0, pi);
+        let d_zero = angular_dist_pi(0.0, pi);
         assert!(d_zero < 1e-5, "{d_zero}");
-        let d_perp = angular_dist_pi::<f32>(0.0, std::f32::consts::FRAC_PI_2);
+        let d_perp = angular_dist_pi(0.0, std::f32::consts::FRAC_PI_2);
         assert!((d_perp - std::f32::consts::FRAC_PI_2).abs() < 1e-5);
-        // Sign / wrapping: `-0.1` and `π + 0.1` represent the same
-        // direction on the mod-π circle only up to 0.2 rad apart
-        // (each is 0.1 rad either side of the 0-seam).
-        let d_signed = angular_dist_pi::<f64>(-0.1, std::f64::consts::PI + 0.1);
-        assert!((d_signed - 0.2).abs() < 1e-9, "{d_signed}");
-        // The seam itself: `π - 0.05` and `0.05` are 0.1 apart.
-        let d_seam = angular_dist_pi::<f32>(std::f32::consts::PI - 0.05, 0.05);
+        let d_signed = angular_dist_pi(-0.1, std::f32::consts::PI + 0.1);
+        assert!((d_signed - 0.2).abs() < 1e-4, "{d_signed}");
+        let d_seam = angular_dist_pi(std::f32::consts::PI - 0.05, 0.05);
         assert!((d_seam - 0.1).abs() < 1e-5, "{d_seam}");
-    }
-
-    #[test]
-    fn cluster_gate_default_f64_matches_f32() {
-        let p32 = TopologicalParams::<f32>::default();
-        let p64 = TopologicalParams::<f64>::default();
-        assert!((f64::from(p32.cluster_axis_tol_rad) - p64.cluster_axis_tol_rad).abs() < 1e-6);
     }
 }

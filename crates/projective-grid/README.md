@@ -65,7 +65,7 @@ use projective_grid::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a 3x3 grid of oriented features. The `+ j * 6.0` term adds a
     // mild perspective-style shear so this is a genuine projective grid.
-    let mut features: Vec<OrientedFeature<f32, 2>> = Vec::new();
+    let mut features: Vec<OrientedFeature<2>> = Vec::new();
     for j in 0..3 {
         for i in 0..3 {
             let x = 60.0 + i as f32 * 40.0 + j as f32 * 6.0;
@@ -120,7 +120,7 @@ same [`GridSolution`] output, so downstream code stays agnostic. Pick via
 ## Inputs & outputs
 
 **Inputs** are wrapped in an [`Evidence`] enum. The supported shape is
-`Oriented2` (a `&[OrientedFeature<F, 2>]`: each feature carries a
+`Oriented2` (a `&[OrientedFeature<2>]`: each feature carries a
 [`PointFeature`] plus two [`LocalAxis`] directions). The other variants —
 `Positions`, `Oriented1`, `Oriented3`, and `CoordinateHypotheses` — are part of
 the type model but return `UnsupportedCombination` for now. (Coordinate

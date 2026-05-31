@@ -8,19 +8,21 @@
 //! algorithm via [`SquareAlgorithm`].
 //! All other `(lattice, evidence)` combinations remain typed
 //! [`GridError::UnsupportedCombination`] placeholders.
+//!
+//! The detection surface is pinned to `f32`. The generic-`F` surface that
+//! remains in the crate is the pure-geometry [`crate::geometry`] module.
 
 pub mod advanced;
 mod square;
 
 use crate::error::{EvidenceKind, GridError, GridTask, Result};
 use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
-use crate::float::{lit, Float};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{GridSolution, RejectedFeature};
 
-pub use crate::grow::GrowParams;
-pub use crate::seed::SeedParams;
-pub use crate::validate::ValidateParams;
+pub use crate::detect::advanced::square::grow::GrowParams;
+pub use crate::detect::advanced::square::seed::finder::SeedQuadParams as SeedParams;
+pub use crate::detect::advanced::square::validate::ValidationParams as ValidateParams;
 pub use square::TopologicalParams;
 
 /// Algorithm selector for `(LatticeKind::Square, Evidence::Oriented2)`.
@@ -47,25 +49,25 @@ pub enum SquareAlgorithm {
 /// Evidence supplied to a detection task.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
-pub enum Evidence<'a, F: Float> {
+pub enum Evidence<'a> {
     /// Position-only point features.
-    Positions(&'a [PointFeature<F>]),
+    Positions(&'a [PointFeature]),
     /// Point features with one local lattice direction.
-    Oriented1(&'a [OrientedFeature<F, 1>]),
+    Oriented1(&'a [OrientedFeature<1>]),
     /// Point features with two local lattice directions.
-    Oriented2(&'a [OrientedFeature<F, 2>]),
+    Oriented2(&'a [OrientedFeature<2>]),
     /// Point features with three local lattice directions.
-    Oriented3(&'a [OrientedFeature<F, 3>]),
+    Oriented3(&'a [OrientedFeature<3>]),
     /// Point features plus caller-supplied coordinate hypotheses.
     CoordinateHypotheses {
         /// Position-only features.
-        features: &'a [PointFeature<F>],
+        features: &'a [PointFeature],
         /// Proposed coordinate labels.
-        hypotheses: &'a [CoordinateHypothesis<F>],
+        hypotheses: &'a [CoordinateHypothesis],
     },
 }
 
-impl<F: Float> Evidence<'_, F> {
+impl Evidence<'_> {
     /// Return this evidence's kind for dispatch and typed errors.
     pub fn kind(&self) -> EvidenceKind {
         match self {
@@ -85,33 +87,37 @@ impl<F: Float> Evidence<'_, F> {
 /// [`algorithm`](Self::algorithm) selector decides which of the
 /// `(Square, Oriented2)` paths consumes which sub-config; combinations
 /// not run by the chosen algorithm leave their sub-configs untouched.
-#[derive(Clone, Debug, PartialEq)]
+///
+/// The sub-config types (`SeedParams`, `GrowParams`, `ValidateParams`)
+/// are the advanced-engine configs and do not implement `PartialEq`, so
+/// neither does `DetectionParams`.
+#[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct DetectionParams<F: Float> {
+pub struct DetectionParams {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
-    pub max_residual_px: F,
+    pub max_residual_px: f32,
     /// Algorithm picker for `(Square, Oriented2)`. Defaults to
     /// [`SquareAlgorithm::SeedAndGrow`] so Phase C consumers compile
     /// without requiring an explicit algorithm choice.
     pub algorithm: SquareAlgorithm,
     /// Seed-quad finder tuning — consumed iff `algorithm ==
     /// SquareAlgorithm::SeedAndGrow`.
-    pub seed: SeedParams<F>,
+    pub seed: SeedParams,
     /// BFS grow engine tuning — consumed iff `algorithm ==
     /// SquareAlgorithm::SeedAndGrow`.
-    pub grow: GrowParams<F>,
+    pub grow: GrowParams,
     /// Topological grid-finder tuning — consumed iff `algorithm ==
     /// SquareAlgorithm::Topological`.
-    pub topological: TopologicalParams<F>,
+    pub topological: TopologicalParams,
     /// Post-detection validation tuning — shared between both
     /// `(Square, Oriented2)` algorithm paths.
-    pub validate: ValidateParams<F>,
+    pub validate: ValidateParams,
 }
 
-impl<F: Float> Default for DetectionParams<F> {
+impl Default for DetectionParams {
     fn default() -> Self {
         Self {
-            max_residual_px: lit::<F>(2.0),
+            max_residual_px: 2.0,
             algorithm: SquareAlgorithm::default(),
             seed: SeedParams::default(),
             grow: GrowParams::default(),
@@ -121,10 +127,10 @@ impl<F: Float> Default for DetectionParams<F> {
     }
 }
 
-impl<F: Float> DetectionParams<F> {
+impl DetectionParams {
     /// Construct detection parameters from just the residual threshold; the
     /// sub-configs take their defaults.
-    pub fn new(max_residual_px: F) -> Self {
+    pub fn new(max_residual_px: f32) -> Self {
         Self {
             max_residual_px,
             ..Self::default()
@@ -139,31 +145,31 @@ impl<F: Float> DetectionParams<F> {
     }
 
     /// Builder-style override: replace the topological sub-config.
-    pub fn with_topological(mut self, topological: TopologicalParams<F>) -> Self {
+    pub fn with_topological(mut self, topological: TopologicalParams) -> Self {
         self.topological = topological;
         self
     }
 
     /// Builder-style override: replace the validate sub-config.
-    pub fn with_validate(mut self, validate: ValidateParams<F>) -> Self {
+    pub fn with_validate(mut self, validate: ValidateParams) -> Self {
         self.validate = validate;
         self
     }
 
     /// Builder-style override: replace the seed-quad sub-config.
-    pub fn with_seed(mut self, seed: SeedParams<F>) -> Self {
+    pub fn with_seed(mut self, seed: SeedParams) -> Self {
         self.seed = seed;
         self
     }
 
     /// Builder-style override: replace the BFS-grow sub-config.
-    pub fn with_grow(mut self, grow: GrowParams<F>) -> Self {
+    pub fn with_grow(mut self, grow: GrowParams) -> Self {
         self.grow = grow;
         self
     }
 
     /// Builder-style override: replace the max residual threshold.
-    pub fn with_max_residual_px(mut self, max_residual_px: F) -> Self {
+    pub fn with_max_residual_px(mut self, max_residual_px: f32) -> Self {
         self.max_residual_px = max_residual_px;
         self
     }
@@ -172,24 +178,24 @@ impl<F: Float> DetectionParams<F> {
 /// Detection request.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct DetectionRequest<'a, F: Float> {
+pub struct DetectionRequest<'a> {
     /// Lattice family to recover.
     pub lattice: LatticeKind,
     /// Evidence available to the detector.
-    pub evidence: Evidence<'a, F>,
+    pub evidence: Evidence<'a>,
     /// Optional known grid dimensions.
     pub dimensions: Option<GridDimensions>,
     /// Detection parameters.
-    pub params: DetectionParams<F>,
+    pub params: DetectionParams,
 }
 
-impl<'a, F: Float> DetectionRequest<'a, F> {
+impl<'a> DetectionRequest<'a> {
     /// Construct a detection request.
     pub fn new(
         lattice: LatticeKind,
-        evidence: Evidence<'a, F>,
+        evidence: Evidence<'a>,
         dimensions: Option<GridDimensions>,
-        params: DetectionParams<F>,
+        params: DetectionParams,
     ) -> Self {
         Self {
             lattice,
@@ -206,10 +212,10 @@ impl<'a, F: Float> DetectionRequest<'a, F> {
 ///
 /// * `(Square, Oriented2)` — two algorithm choices, picked via
 ///   [`DetectionParams::algorithm`]:
-///     - [`SquareAlgorithm::SeedAndGrow`] (default): Phase C
-///       seed-quad finder + BFS grow + validate + fit.
-///     - [`SquareAlgorithm::Topological`]: Phase D axis-driven SBF09
-///       grid finder + validate + fit.
+///     - [`SquareAlgorithm::SeedAndGrow`] (default): seed-quad finder +
+///       BFS grow + validate + fit.
+///     - [`SquareAlgorithm::Topological`]: axis-driven SBF09 grid finder +
+///       validate + fit.
 ///
 ///   Both return a labelled [`GridSolution`] with a fitted projective
 ///   transform; downstream consumers stay agnostic.
@@ -220,15 +226,13 @@ impl<'a, F: Float> DetectionRequest<'a, F> {
 /// `UnsupportedCombination` — no working algorithm exists in the
 /// current implementation for those slots.
 ///
-/// **Multi-component results.** For algorithms that may produce more
-/// than one connected component (the topological path can; seed-and-
-/// grow returns exactly one), this entry point returns the largest
-/// component only. Use [`detect_grid_all`] when secondary components
-/// must be preserved with their own `(u, v)` labels.
-pub fn detect_grid<F>(request: DetectionRequest<'_, F>) -> Result<GridSolution<F>>
-where
-    F: Float + kiddo::float::kdtree::Axis,
-{
+/// **Multi-component results.** Both algorithms can produce more than one
+/// connected component (seed-and-grow assembles each disconnected patch
+/// independently, then runs local component merge; the topological path
+/// labels each connected quad-mesh component). This entry point returns
+/// the largest component only. Use [`detect_grid_all`] when secondary
+/// components must be preserved with their own `(u, v)` labels.
+pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
     let mut report = detect_grid_all(request)?;
     if report.solutions.is_empty() {
         Err(GridError::InsufficientEvidence)
@@ -241,9 +245,9 @@ where
 ///
 /// Returns a [`DetectionReport`] with one [`GridSolution`] per
 /// qualifying connected component, ordered by labelled-count
-/// descending (ties broken by smallest labelled `source_index`). The
-/// seed-and-grow algorithm always returns at most one solution; the
-/// topological algorithm may return several.
+/// descending (ties broken by smallest labelled `source_index`). Both
+/// the seed-and-grow and topological algorithms may return several
+/// solutions.
 ///
 /// Features that no component admitted are surfaced in the *first*
 /// solution's `rejected` vector (the same shape callers of
@@ -253,20 +257,14 @@ where
 ///
 /// The same `UnsupportedCombination` matrix applies as for
 /// [`detect_grid`].
-pub fn detect_grid_all<F>(request: DetectionRequest<'_, F>) -> Result<DetectionReport<F>>
-where
-    F: Float + kiddo::float::kdtree::Axis,
-{
+pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport> {
     let solutions = match (request.lattice, request.evidence) {
         (LatticeKind::Square, Evidence::Oriented2(features)) => match request.params.algorithm {
-            SquareAlgorithm::SeedAndGrow => {
-                let solution = square::detect_square_oriented2_seed_grow(
-                    features,
-                    request.dimensions,
-                    &request.params,
-                )?;
-                vec![solution]
-            }
+            SquareAlgorithm::SeedAndGrow => square::detect_square_oriented2_seed_grow(
+                features,
+                request.dimensions,
+                &request.params,
+            )?,
             SquareAlgorithm::Topological => square::detect_square_oriented2_topological_all(
                 features,
                 request.dimensions,
@@ -291,24 +289,24 @@ where
 /// [`detect_grid`] caller historically received. `rejected` is a
 /// crate-level slot reserved for features that no component admitted
 /// when the orchestrator (rather than a particular component) is the
-/// authoritative source of that information. Phase E.0 leaves this
-/// slot empty for the two algorithms currently implemented — the
-/// per-component rejected vectors already cover the wire shape.
-#[derive(Clone, Debug, PartialEq)]
+/// authoritative source of that information. It is left empty for the
+/// two algorithms currently implemented — the per-component rejected
+/// vectors already cover the wire shape.
+#[derive(Clone, Debug)]
 #[non_exhaustive]
-pub struct DetectionReport<F: Float> {
+pub struct DetectionReport {
     /// Per-component labelled solutions, ordered by component size
     /// descending.
-    pub solutions: Vec<GridSolution<F>>,
+    pub solutions: Vec<GridSolution>,
     /// Features that no component admitted, scoped to the orchestrator
     /// (not a particular component). Currently empty for both
     /// `SquareAlgorithm` variants — see the struct-level docs.
-    pub rejected: Vec<RejectedFeature<F>>,
+    pub rejected: Vec<RejectedFeature>,
 }
 
-impl<F: Float> DetectionReport<F> {
+impl DetectionReport {
     /// Construct a detection report.
-    pub fn new(solutions: Vec<GridSolution<F>>, rejected: Vec<RejectedFeature<F>>) -> Self {
+    pub fn new(solutions: Vec<GridSolution>, rejected: Vec<RejectedFeature>) -> Self {
         Self {
             solutions,
             rejected,

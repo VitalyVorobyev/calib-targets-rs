@@ -53,7 +53,7 @@ pub trait SquareSeedPolicy {
     ///
     /// Use [`LocalAxis::new`] when you do not track per-axis
     /// uncertainty.
-    fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2];
+    fn axes(&self, idx: usize) -> [LocalAxis; 2];
 
     /// Indices eligible to act as the seed's two diagonal corners
     /// `(0, 0)` and `(1, 1)`, sorted in descending preference order.
@@ -286,7 +286,7 @@ mod tests {
     /// indices come from a two-class bitmask the test fixture supplies.
     struct ToyValidator<'a> {
         positions: &'a [Point2<f32>],
-        axes: &'a [[LocalAxis<f32>; 2]],
+        axes: &'a [[LocalAxis; 2]],
         is_a: Vec<bool>,
     }
 
@@ -294,7 +294,7 @@ mod tests {
         fn position(&self, idx: usize) -> Point2<f32> {
             self.positions[idx]
         }
-        fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2] {
+        fn axes(&self, idx: usize) -> [LocalAxis; 2] {
             self.axes[idx]
         }
         fn primary_candidates(&self) -> Vec<usize> {
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn returns_none_when_one_class_is_empty() {
-        let axes_arr: &[[LocalAxis<f32>; 2]] = &[
+        let axes_arr: &[[LocalAxis; 2]] = &[
             [
                 LocalAxis::new(0.0, None),
                 LocalAxis::new(std::f32::consts::FRAC_PI_2, None),
@@ -368,7 +368,7 @@ mod tests {
             fn position(&self, idx: usize) -> Point2<f32> {
                 self.0.position(idx)
             }
-            fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2] {
+            fn axes(&self, idx: usize) -> [LocalAxis; 2] {
                 self.0.axes(idx)
             }
             fn primary_candidates(&self) -> Vec<usize> {
@@ -393,7 +393,7 @@ mod tests {
             fn position(&self, idx: usize) -> Point2<f32> {
                 self.0.position(idx)
             }
-            fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2] {
+            fn axes(&self, idx: usize) -> [LocalAxis; 2] {
                 self.0.axes(idx)
             }
             fn primary_candidates(&self) -> Vec<usize> {

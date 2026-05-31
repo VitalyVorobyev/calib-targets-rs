@@ -68,9 +68,9 @@ use self::recovery::{
 /// must preserve the labelled components produced by the topological
 /// graph builder.
 fn detection_params_for_topological(
-    topological: &NextTopologicalParams<f32>,
+    topological: &NextTopologicalParams,
     clustered_centers: Option<ClusterCenters>,
-) -> NextDetectionParams<f32> {
+) -> NextDetectionParams {
     let mut topo = *topological;
     topo.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
 
@@ -79,12 +79,12 @@ fn detection_params_for_topological(
     // and its own per-component boosters first. Disabling here means a
     // corner the new pipeline would have flagged still gets a chance to
     // survive the chessboard's downstream stages.
-    let validate = NextValidateParams::<f32>::default()
+    let validate = NextValidateParams::default()
         .with_line_tol_rel(f32::INFINITY)
         .with_local_h_tol_rel(f32::INFINITY)
         .with_edge_length_band_rel(f32::INFINITY);
 
-    NextDetectionParams::<f32>::default()
+    NextDetectionParams::default()
         .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)
         .with_validate(validate)
@@ -101,7 +101,7 @@ fn detection_params_for_topological(
 fn build_oriented_features(
     positions: &[nalgebra::Point2<f32>],
     axes: &[[AxisEstimate; 2]],
-) -> Vec<OrientedFeature<f32, 2>> {
+) -> Vec<OrientedFeature<2>> {
     debug_assert_eq!(positions.len(), axes.len());
     positions
         .iter()

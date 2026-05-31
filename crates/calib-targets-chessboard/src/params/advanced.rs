@@ -27,7 +27,7 @@ use projective_grid::detect::advanced::square::component_merge::LocalMergeParams
 use projective_grid::TopologicalParams;
 use serde::{Deserialize, Serialize};
 
-pub(super) fn default_topological_params() -> TopologicalParams<f32> {
+pub(super) fn default_topological_params() -> TopologicalParams {
     TopologicalParams::default()
         .with_opposing_edge_ratio_max(10.0)
         .with_edge_length_band(0.0, 1.8)
@@ -285,7 +285,7 @@ pub struct AdvancedTuning {
     /// is
     /// [`SeedAndGrow`](super::GraphBuildAlgorithm::SeedAndGrow).
     #[serde(default = "default_topological_params")]
-    pub topological: TopologicalParams<f32>,
+    pub topological: TopologicalParams,
 
     /// Tuning knobs for the shared local-geometry component merger.
     /// Used by both the topological and seed-and-grow pipelines.

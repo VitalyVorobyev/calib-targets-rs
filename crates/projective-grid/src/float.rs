@@ -51,13 +51,3 @@ impl<T> Float for T where T: nalgebra::RealField + Copy + From<f32> + 'static {}
 pub(crate) fn lit<F: Float>(value: f32) -> F {
     <F as From<f32>>::from(value)
 }
-
-/// Absolute value of `F`, routed through `nalgebra::ComplexField::abs`.
-/// The bare method name collides with the `num_traits::Float::abs` import
-/// some test modules bring in; a free function keeps call sites
-/// unambiguous.
-#[cfg(test)]
-#[inline]
-pub(crate) fn abs<F: Float>(value: F) -> F {
-    nalgebra::ComplexField::abs(value)
-}

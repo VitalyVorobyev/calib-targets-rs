@@ -15,8 +15,8 @@
 //! vertex using different local axis slots, the remaining edge is
 //! promoted to **Diagonal** for that triangle.
 //!
-//! The pre-filter in [`super::usable_mask`] guarantees both endpoints of
-//! every classified edge have at least one informative axis; `Spurious`
+//! The pre-filter in [`super::build_usable_mask`] guarantees both endpoints
+//! of every classified edge have at least one informative axis; `Spurious`
 //! here only flags genuine geometric misalignment, not uncertainty
 //! rejection.
 
@@ -24,7 +24,6 @@ use nalgebra::Point2;
 
 use super::axis::AxisCache;
 use super::delaunay::Triangulation;
-use crate::float::{lit, Float};
 
 /// Per-edge classification result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,9 +39,9 @@ pub(super) enum EdgeClass {
 
 /// Per-corner result of matching the half-edge against the two axes.
 #[derive(Clone, Copy, Debug)]
-struct GridAxisMatch<F: Float> {
+struct GridAxisMatch {
     slot: usize,
-    distance_rad: F,
+    distance_rad: f32,
 }
 
 /// Joint per-half-edge result of matching against both endpoints' axes.
@@ -57,11 +56,11 @@ struct GridEdgeMatch {
 /// Both `theta` and `alpha` are interpreted modulo π (axes are
 /// undirected). The result is the geodesic distance on the half-circle.
 #[inline]
-fn axis_diff<F: Float>(theta: F, alpha: F) -> F {
-    let pi = F::pi();
-    let half_pi = pi / lit::<F>(2.0_f32);
+fn axis_diff(theta: f32, alpha: f32) -> f32 {
+    let pi = std::f32::consts::PI;
+    let half_pi = pi / 2.0;
     let mut d = (theta - alpha) % pi;
-    if d < F::zero() {
+    if d < 0.0 {
         d += pi;
     }
     if d > half_pi {
@@ -71,8 +70,8 @@ fn axis_diff<F: Float>(theta: F, alpha: F) -> F {
 }
 
 /// Nearest informative grid axis to `theta` at this corner.
-fn nearest_axis_at_corner<F: Float>(theta: F, cache: &AxisCache<F>) -> Option<GridAxisMatch<F>> {
-    let mut best: Option<GridAxisMatch<F>> = None;
+fn nearest_axis_at_corner(theta: f32, cache: &AxisCache) -> Option<GridAxisMatch> {
+    let mut best: Option<GridAxisMatch> = None;
     for slot in 0..2 {
         if !cache.informative[slot] {
             continue;
@@ -101,11 +100,11 @@ fn nearest_axis_at_corner<F: Float>(theta: F, cache: &AxisCache<F>) -> Option<Gr
     best
 }
 
-fn grid_match_at_corner<F: Float>(
-    theta: F,
-    cache: &AxisCache<F>,
-    align_tol_rad: F,
-) -> Option<GridAxisMatch<F>> {
+fn grid_match_at_corner(
+    theta: f32,
+    cache: &AxisCache,
+    align_tol_rad: f32,
+) -> Option<GridAxisMatch> {
     let best = nearest_axis_at_corner(theta, cache)?;
     (best.distance_rad < align_tol_rad).then_some(best)
 }
@@ -205,7 +204,7 @@ fn promote_triangle_diagonals_from_grid_edges(
 /// Classify every directed half-edge in the triangulation.
 ///
 /// `axes_cache[global_idx]` carries the precomputed per-axis informative
-/// flag for the feature. The pre-filter in [`super::usable_mask`]
+/// flag for the feature. The pre-filter in [`super::build_usable_mask`]
 /// guarantees at least one informative axis at every endpoint of every
 /// triangulated edge.
 #[cfg_attr(
@@ -216,11 +215,11 @@ fn promote_triangle_diagonals_from_grid_edges(
         fields(num_edges = triangulation.triangles.len()),
     )
 )]
-pub(super) fn classify_all_edges<F: Float>(
-    positions: &[Point2<F>],
-    axes_cache: &[AxisCache<F>],
+pub(super) fn classify_all_edges(
+    positions: &[Point2<f32>],
+    axes_cache: &[AxisCache],
     triangulation: &Triangulation,
-    align_tol_rad: F,
+    align_tol_rad: f32,
 ) -> Vec<EdgeClass> {
     let n = triangulation.triangles.len();
     let mut kinds = vec![EdgeClass::Spurious; n];
@@ -248,89 +247,54 @@ pub(super) fn classify_all_edges<F: Float>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::float::lit;
 
-    fn cache<F: Float>(angle0: f32, angle1: f32) -> AxisCache<F> {
+    fn cache(angle0: f32, angle1: f32) -> AxisCache {
         AxisCache {
-            angle_rad: [lit::<F>(angle0), lit::<F>(angle1)],
+            angle_rad: [angle0, angle1],
             informative: [true, true],
         }
     }
 
-    fn assert_axis_diff_is_symmetric_modulo_pi<F: Float>() {
-        let pi = F::pi();
-        let frac_pi_4 = pi / lit::<F>(4.0_f32);
-        let eps = lit::<F>(1e-5_f32);
-        assert!(crate::float::abs::<F>(axis_diff::<F>(F::zero(), pi)) < eps);
-        let one_tenth = lit::<F>(0.1_f32);
-        assert!(crate::float::abs::<F>(axis_diff::<F>(one_tenth, F::zero()) - one_tenth) < eps);
-        assert!(
-            crate::float::abs::<F>(axis_diff::<F>(pi - one_tenth, F::zero()) - one_tenth) < eps
-        );
-        assert!(crate::float::abs::<F>(axis_diff::<F>(frac_pi_4, F::zero()) - frac_pi_4) < eps);
+    #[test]
+    fn axis_diff_is_symmetric_modulo_pi() {
+        let pi = std::f32::consts::PI;
+        let frac_pi_4 = pi / 4.0;
+        let eps = 1e-5_f32;
+        assert!(axis_diff(0.0, pi).abs() < eps);
+        let one_tenth = 0.1_f32;
+        assert!((axis_diff(one_tenth, 0.0) - one_tenth).abs() < eps);
+        assert!((axis_diff(pi - one_tenth, 0.0) - one_tenth).abs() < eps);
+        assert!((axis_diff(frac_pi_4, 0.0) - frac_pi_4).abs() < eps);
     }
 
-    fn assert_axis_aligned_edge_is_grid<F: Float>() {
-        let pi = F::pi();
-        let frac_pi_2 = pi / lit::<F>(2.0_f32);
-        let tol = lit::<F>(15.0_f32.to_radians());
-        let cache = cache::<F>(0.0, frac_pi_2.to_subset_unchecked());
-        let horizontal = grid_match_at_corner(F::zero(), &cache, tol).unwrap();
+    #[test]
+    fn axis_aligned_edge_is_grid() {
+        let frac_pi_2 = std::f32::consts::FRAC_PI_2;
+        let tol = 15.0_f32.to_radians();
+        let cache = cache(0.0, frac_pi_2);
+        let horizontal = grid_match_at_corner(0.0, &cache, tol).unwrap();
         assert_eq!(horizontal.slot, 0);
-        assert!(crate::float::abs::<F>(horizontal.distance_rad) < lit::<F>(1e-5_f32));
+        assert!(horizontal.distance_rad.abs() < 1e-5);
         let vertical = grid_match_at_corner(frac_pi_2, &cache, tol).unwrap();
         assert_eq!(vertical.slot, 1);
-        assert!(crate::float::abs::<F>(vertical.distance_rad) < lit::<F>(1e-5_f32));
+        assert!(vertical.distance_rad.abs() < 1e-5);
     }
 
-    fn assert_diagonal_angle_is_not_grid<F: Float>() {
-        let pi = F::pi();
-        let frac_pi_2 = pi / lit::<F>(2.0_f32);
-        let frac_pi_4 = pi / lit::<F>(4.0_f32);
-        let tol = lit::<F>(15.0_f32.to_radians());
-        let cache = cache::<F>(0.0, frac_pi_2.to_subset_unchecked());
+    #[test]
+    fn diagonal_angle_is_not_grid() {
+        let frac_pi_2 = std::f32::consts::FRAC_PI_2;
+        let frac_pi_4 = std::f32::consts::FRAC_PI_4;
+        let tol = 15.0_f32.to_radians();
+        let cache = cache(0.0, frac_pi_2);
         assert!(grid_match_at_corner(frac_pi_4, &cache, tol).is_none());
     }
 
-    fn assert_unaligned_edge_is_spurious<F: Float>() {
-        let pi = F::pi();
-        let frac_pi_2 = pi / lit::<F>(2.0_f32);
-        let tol = lit::<F>(15.0_f32.to_radians());
-        let cache = cache::<F>(0.0, frac_pi_2.to_subset_unchecked());
-        let twenty_two = lit::<F>(22.0_f32.to_radians());
+    #[test]
+    fn unaligned_edge_is_spurious() {
+        let frac_pi_2 = std::f32::consts::FRAC_PI_2;
+        let tol = 15.0_f32.to_radians();
+        let cache = cache(0.0, frac_pi_2);
+        let twenty_two = 22.0_f32.to_radians();
         assert!(grid_match_at_corner(twenty_two, &cache, tol).is_none());
-    }
-
-    #[test]
-    fn axis_diff_is_symmetric_modulo_pi_f32() {
-        assert_axis_diff_is_symmetric_modulo_pi::<f32>();
-    }
-    #[test]
-    fn axis_diff_is_symmetric_modulo_pi_f64() {
-        assert_axis_diff_is_symmetric_modulo_pi::<f64>();
-    }
-    #[test]
-    fn axis_aligned_edge_is_grid_f32() {
-        assert_axis_aligned_edge_is_grid::<f32>();
-    }
-    #[test]
-    fn axis_aligned_edge_is_grid_f64() {
-        assert_axis_aligned_edge_is_grid::<f64>();
-    }
-    #[test]
-    fn diagonal_angle_is_not_grid_f32() {
-        assert_diagonal_angle_is_not_grid::<f32>();
-    }
-    #[test]
-    fn diagonal_angle_is_not_grid_f64() {
-        assert_diagonal_angle_is_not_grid::<f64>();
-    }
-    #[test]
-    fn unaligned_edge_is_spurious_f32() {
-        assert_unaligned_edge_is_spurious::<f32>();
-    }
-    #[test]
-    fn unaligned_edge_is_spurious_f64() {
-        assert_unaligned_edge_is_spurious::<f64>();
     }
 }

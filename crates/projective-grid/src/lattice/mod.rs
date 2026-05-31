@@ -2,8 +2,6 @@
 
 use nalgebra::Point2;
 
-use crate::float::{lit, Float};
-
 /// Integer coordinate on a lattice.
 ///
 /// For square grids this is `(u, v) = (i, j)`. For hex grids this is axial
@@ -57,14 +55,14 @@ impl LatticeKind {
     /// Square coordinates map to `(u, v)`. Hex axial coordinates map to
     /// `(q + 0.5*r, sqrt(3)/2*r)`, using unit nearest-neighbour spacing in the
     /// model plane.
-    pub fn model_point<F: Float>(self, coord: Coord) -> Point2<F> {
+    pub fn model_point(self, coord: Coord) -> Point2<f32> {
         match self {
-            Self::Square => Point2::new(lit::<F>(coord.u as f32), lit::<F>(coord.v as f32)),
+            Self::Square => Point2::new(coord.u as f32, coord.v as f32),
             Self::Hex => {
-                let q = lit::<F>(coord.u as f32);
-                let r = lit::<F>(coord.v as f32);
-                let half = lit::<F>(0.5);
-                let sqrt3_over_2 = lit::<F>(3.0).sqrt() * half;
+                let q = coord.u as f32;
+                let r = coord.v as f32;
+                let half = 0.5_f32;
+                let sqrt3_over_2 = 3.0_f32.sqrt() * half;
                 Point2::new(q + half * r, sqrt3_over_2 * r)
             }
         }
@@ -161,15 +159,15 @@ mod tests {
 
     #[test]
     fn square_model_mapping_is_cartesian() {
-        let p = LatticeKind::Square.model_point::<f64>(Coord::new(2, -3));
+        let p = LatticeKind::Square.model_point(Coord::new(2, -3));
         assert_eq!(p, Point2::new(2.0, -3.0));
     }
 
     #[test]
     fn hex_model_mapping_is_axial() {
-        let p = LatticeKind::Hex.model_point::<f64>(Coord::new(1, 2));
-        assert!((p.x - 2.0).abs() < 1e-12);
-        assert!((p.y - 3.0_f64.sqrt()).abs() < 1e-12);
+        let p = LatticeKind::Hex.model_point(Coord::new(1, 2));
+        assert!((p.x - 2.0).abs() < 1e-6);
+        assert!((p.y - 3.0_f32.sqrt()).abs() < 1e-6);
     }
 
     #[test]

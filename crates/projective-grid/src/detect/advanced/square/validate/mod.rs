@@ -153,6 +153,35 @@ impl ValidationParams {
         self
     }
 
+    /// Builder-style override for [`Self::line_tol_rel`]. Set to
+    /// `f32::INFINITY` to disable the line-collinearity check.
+    pub fn with_line_tol_rel(mut self, value: f32) -> Self {
+        self.line_tol_rel = value;
+        self
+    }
+
+    /// Builder-style override for [`Self::local_h_tol_rel`]. Set to
+    /// `f32::INFINITY` to disable the local-H residual check.
+    pub fn with_local_h_tol_rel(mut self, value: f32) -> Self {
+        self.local_h_tol_rel = value;
+        self
+    }
+
+    /// Builder-style no-op kept for facade compatibility.
+    ///
+    /// The advanced validator has **no** unconditional edge-length-band
+    /// gate (the historical generic `validate` did; the advanced
+    /// validator replaces it with the opt-in [`Self::with_edge_shape_gate`]).
+    /// This builder accepts the value so callers that disable validation
+    /// by pushing every tolerance to `f32::INFINITY` keep compiling and
+    /// keep their intent — there is simply no band gate to widen here.
+    /// To disable the validator entirely, set `line_tol_rel` and
+    /// `local_h_tol_rel` to `f32::INFINITY` and leave the edge-shape gate
+    /// off (the default).
+    pub fn with_edge_length_band_rel(self, _value: f32) -> Self {
+        self
+    }
+
     /// Enable local edge-shape validation for final labelled-grid
     /// precision gates.
     pub fn with_edge_shape_gate(mut self, edge_shape: EdgeShapeParams) -> Self {

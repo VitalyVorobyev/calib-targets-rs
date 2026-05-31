@@ -2139,12 +2139,10 @@ dependencies = [
 name = "projective-grid"
 version = "0.10.0"
 dependencies = [
- "criterion",
  "delaunator",
  "kiddo",
  "nalgebra",
  "serde",
- "serde_json",
  "thiserror",
  "tracing",
 ]

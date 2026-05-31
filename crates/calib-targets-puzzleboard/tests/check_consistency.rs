@@ -104,13 +104,13 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
 
     // 3) Convert puzzleboard output into the new crate's evidence shape.
     //    Each corner's index in the vec is the natural `source_index`.
-    let features: Vec<PointFeature<f32>> = result
+    let features: Vec<PointFeature> = result
         .corners
         .iter()
         .enumerate()
         .map(|(i, c)| PointFeature::new(i, c.position))
         .collect();
-    let hypotheses: Vec<CoordinateHypothesis<f32>> = result
+    let hypotheses: Vec<CoordinateHypothesis> = result
         .corners
         .iter()
         .enumerate()

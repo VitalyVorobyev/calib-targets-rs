@@ -112,6 +112,30 @@ Orientation enters **only** inside `build_components`, via a **policy**
 (SeedAndGrow: seed + attach rules) or a **classifier** (Topological: edge
 Grid/Diagonal/Spurious). Lattice enters **only** via the `Lattice` trait.
 
+## Scalar precision: detection is `f32`, `geometry` stays generic
+
+The **detection surface** is pinned to concrete `f32`: `feature`
+(`PointFeature`, `LocalAxis`, `OrientedFeature<N>`, `CoordinateHypothesis`),
+`detect` (`DetectionParams`, `DetectionRequest`, `Evidence`, `GridSolution`,
+the `Square` strategy front-halves and the shared back-half), and the whole
+`advanced::square` engine (seed, grow, validate, topological) no longer carry
+a `F: Float` type parameter. Only the pure-numeric `geometry` module
+(`estimate_projective`, `apply_projective`, `Homography<F>` and the residual
+helpers) remains generic over `F: Float`.
+
+**Why.** The single-precision pin is not a precision regression. The ChESS
+corner front-end, the chessboard / charuco / puzzleboard detectors, and every
+cross-crate caller already feed and consume the grid surface at `f32`; the
+chessboard adapter calls `geometry` at `f32` too. The only consumer that ever
+instantiated the detection stack at `F = f64` was the now-deleted generic-`F`
+"Impl-1" (`src/{seed,grow,validate}/`). With Impl-1 gone there is no remaining
+`f64` detection path, so the type parameter bought nothing but `F::from(...)`
+noise on every literal and a `T: Float` bound on every signature. `geometry`
+stays generic because the projective-fit math is a standalone, reusable kernel
+a future `f64` calibration consumer may legitimately want at double precision —
+and keeping it generic costs nothing once the detection layer commits to `f32`
+at its boundary.
+
 ## Target module tree (≤ 2 levels; the three axes are legible)
 
 ```text

@@ -29,11 +29,8 @@ pub mod error;
 pub mod feature;
 pub mod float;
 pub mod geometry;
-mod grow;
 pub mod lattice;
 pub mod result;
-mod seed;
-mod validate;
 
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
 pub use crate::detect::{

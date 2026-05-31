@@ -2,7 +2,7 @@
 //!
 //! The pipeline reads per-corner axes many times (pre-filter, classify,
 //! local diagonal inference) and the original `LocalAxis::sigma_rad`
-//! `Option<F>` dance is cheap individually but verbose at every call
+//! `Option<f32>` dance is cheap individually but verbose at every call
 //! site. The cache pre-resolves `(angle_rad, informative)` for both slots
 //! of every feature once at the orchestrator entry point.
 //!
@@ -16,23 +16,22 @@
 //! pipeline's per-corner axes drive every classification, so callers
 //! that supply explicit `sigma_rad = Some(s)` with `s ≥
 //! max_axis_sigma_rad` are opted out — the parallel hand-off path
-//! consumes `LocalAxis::new(_, Some(F::pi()))` as the "no information"
+//! consumes `LocalAxis::new(_, Some(π))` as the "no information"
 //! sentinel, in line with the workspace's axis-only orientation
 //! contract.
 
 use crate::feature::{LocalAxis, OrientedFeature};
-use crate::float::Float;
 
 /// Precomputed per-corner axis view consumed by the topological stages.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct AxisCache<F: Float> {
+pub(super) struct AxisCache {
     /// Axis angle in radians per slot.
-    pub(super) angle_rad: [F; 2],
+    pub(super) angle_rad: [f32; 2],
     /// Whether each slot's axis carries usable angular evidence.
     pub(super) informative: [bool; 2],
 }
 
-impl<F: Float> AxisCache<F> {
+impl AxisCache {
     /// Return `true` when at least one slot is informative.
     #[inline]
     pub(super) fn any_informative(&self) -> bool {
@@ -43,7 +42,7 @@ impl<F: Float> AxisCache<F> {
 /// Decide whether a single [`LocalAxis`] carries usable evidence under
 /// the topological pipeline's policy.
 #[inline]
-pub(super) fn is_informative<F: Float>(axis: &LocalAxis<F>, max_sigma_rad: F) -> bool {
+pub(super) fn is_informative(axis: &LocalAxis, max_sigma_rad: f32) -> bool {
     match axis.sigma_rad {
         None => true,
         Some(s) => s.is_finite() && s < max_sigma_rad,
@@ -52,10 +51,10 @@ pub(super) fn is_informative<F: Float>(axis: &LocalAxis<F>, max_sigma_rad: F) ->
 
 /// Build the `[AxisCache; n]` slice from the input features under the
 /// active `max_axis_sigma_rad` threshold.
-pub(super) fn build_axis_caches<F: Float>(
-    features: &[OrientedFeature<F, 2>],
-    max_sigma_rad: F,
-) -> Vec<AxisCache<F>> {
+pub(super) fn build_axis_caches(
+    features: &[OrientedFeature<2>],
+    max_sigma_rad: f32,
+) -> Vec<AxisCache> {
     features
         .iter()
         .map(|f| AxisCache {
@@ -74,16 +73,13 @@ mod tests {
     use crate::feature::{LocalAxis, PointFeature};
     use nalgebra::Point2;
 
-    fn feature<F: Float>(idx: usize, axes: [LocalAxis<F>; 2]) -> OrientedFeature<F, 2> {
-        OrientedFeature::new(
-            PointFeature::new(idx, Point2::new(F::zero(), F::zero())),
-            axes,
-        )
+    fn feature(idx: usize, axes: [LocalAxis; 2]) -> OrientedFeature<2> {
+        OrientedFeature::new(PointFeature::new(idx, Point2::new(0.0, 0.0)), axes)
     }
 
     #[test]
     fn none_sigma_is_informative() {
-        let cache = build_axis_caches::<f32>(
+        let cache = build_axis_caches(
             &[feature(
                 0,
                 [
@@ -99,7 +95,7 @@ mod tests {
 
     #[test]
     fn high_sigma_is_not_informative() {
-        let cache = build_axis_caches::<f32>(
+        let cache = build_axis_caches(
             &[feature(
                 0,
                 [
@@ -115,12 +111,12 @@ mod tests {
 
     #[test]
     fn pi_sigma_is_not_informative() {
-        let cache = build_axis_caches::<f64>(
+        let cache = build_axis_caches(
             &[feature(
                 7,
                 [
-                    LocalAxis::new(0.0, Some(std::f64::consts::PI)),
-                    LocalAxis::new(std::f64::consts::FRAC_PI_2, Some(std::f64::consts::PI)),
+                    LocalAxis::new(0.0, Some(std::f32::consts::PI)),
+                    LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(std::f32::consts::PI)),
                 ],
             )],
             0.6,
@@ -132,7 +128,7 @@ mod tests {
 
     #[test]
     fn non_finite_sigma_is_not_informative() {
-        let cache = build_axis_caches::<f32>(
+        let cache = build_axis_caches(
             &[feature(
                 0,
                 [

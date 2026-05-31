@@ -39,13 +39,13 @@ impl AxisEstimate {
 /// Promote [`AxisEstimate`] into the [`projective_grid`] crate's generic
 /// local-axis shape.
 #[inline]
-pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis<f32> {
+pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis {
     NextLocalAxis::new(a.angle, Some(a.sigma))
 }
 
-/// Project a [`NextLocalAxis<f32>`] back into the legacy shape.
+/// Project a [`NextLocalAxis`] back into the legacy shape.
 #[inline]
-pub fn axis_estimate_from_next(a: NextLocalAxis<f32>) -> AxisEstimate {
+pub fn axis_estimate_from_next(a: NextLocalAxis) -> AxisEstimate {
     AxisEstimate {
         angle: a.angle_rad,
         sigma: a.sigma_rad.unwrap_or(std::f32::consts::PI),

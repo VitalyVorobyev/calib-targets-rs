@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // axis-aligned lattice), we add a gentle shear that grows with the row.
     // The shear is small (a few degrees), so each feature's two local axes
     // stay close to horizontal (0 rad) and vertical (pi/2 rad).
-    let mut features: Vec<OrientedFeature<f32, 2>> = Vec::new();
+    let mut features: Vec<OrientedFeature<2>> = Vec::new();
     let spacing = 40.0_f32;
     for j in 0..3 {
         for i in 0..3 {

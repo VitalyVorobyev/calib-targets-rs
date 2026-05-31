@@ -81,7 +81,7 @@ pub struct TopologicalTraceDiagnostics {
 #[non_exhaustive]
 pub struct TopologicalTrace {
     /// Parameters used by the topological stage.
-    pub params: TopologicalParams<f32>,
+    pub params: TopologicalParams,
     /// Every input corner with its usable flag.
     pub corners: Vec<TopologicalCornerTrace>,
     /// Labelled connected components.
@@ -107,8 +107,8 @@ pub enum TopologicalTraceError {
 
 /// Build a trace for the production square topological detector.
 pub fn build_grid_topological_trace(
-    features: &[OrientedFeature<f32, 2>],
-    params: TopologicalParams<f32>,
+    features: &[OrientedFeature<2>],
+    params: TopologicalParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
     let corners: Vec<TopologicalCornerTrace> = features
         .iter()
@@ -136,7 +136,7 @@ pub fn build_grid_topological_trace(
         });
     }
 
-    let validate = crate::detect::ValidateParams::<f32>::default()
+    let validate = crate::detect::ValidateParams::default()
         .with_line_tol_rel(f32::INFINITY)
         .with_local_h_tol_rel(f32::INFINITY)
         .with_edge_length_band_rel(f32::INFINITY);

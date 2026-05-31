@@ -13,7 +13,11 @@ keywords = ["calibration", "computer-vision", "puzzleboard", "chessboard", "de-b
 categories = ["computer-vision", "science"]
 
 [features]
-dataset = []
+# The `run_dataset` example consumes the chessboard detector's per-frame
+# `DebugFrame` via `detect_with_diagnostics`, both gated behind the
+# chessboard `diagnostics` feature — so the puzzleboard dataset harness
+# must forward it.
+dataset = ["calib-targets-chessboard/diagnostics"]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]

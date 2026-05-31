@@ -4,8 +4,8 @@
 //! in `(i, j)`-space, fits a 4-point local homography and measures the
 //! reprojection residual.
 
-use crate::geometry::homography_from_4pt;
 use crate::detect::advanced::square::validate::LabelledEntry;
+use crate::geometry::homography_from_4pt;
 use nalgebra::Point2;
 use std::collections::HashMap;
 

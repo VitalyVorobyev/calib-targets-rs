@@ -118,7 +118,7 @@ impl<'a> SquareSeedPolicy for ChessboardSeedValidator<'a> {
         self.corners[idx].position
     }
 
-    fn axes(&self, idx: usize) -> [LocalAxis<f32>; 2] {
+    fn axes(&self, idx: usize) -> [LocalAxis; 2] {
         [
             axis_estimate_to_next(self.corners[idx].axes[0]),
             axis_estimate_to_next(self.corners[idx].axes[1]),

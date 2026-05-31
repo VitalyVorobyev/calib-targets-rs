@@ -17,7 +17,6 @@ use nalgebra::Point2;
 
 use super::classify::EdgeClass;
 use super::delaunay::Triangulation;
-use crate::float::{lit, Float};
 
 /// One merged quad.
 #[derive(Clone, Copy, Debug)]
@@ -73,15 +72,14 @@ fn unique_diagonal_edge(kinds: &[EdgeClass], t: usize) -> Option<usize> {
 
 /// Build a quad from four distinct vertex indices, ordered CW around the
 /// centroid starting from the geometrically top-left vertex.
-fn build_quad<F: Float>(verts: [usize; 4], positions: &[Point2<F>]) -> Quad {
+fn build_quad(verts: [usize; 4], positions: &[Point2<f32>]) -> Quad {
     let pts = verts.map(|v| positions[v]);
-    let four = lit::<F>(4.0_f32);
-    let cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / four;
-    let cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / four;
+    let cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4.0;
+    let cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4.0;
 
     // Sort by angle from centroid. In image coords (y down), increasing
     // atan2(y - cy, x - cx) goes clockwise.
-    let mut indexed: [(usize, F); 4] = [
+    let mut indexed: [(usize, f32); 4] = [
         (verts[0], (pts[0].y - cy).atan2(pts[0].x - cx)),
         (verts[1], (pts[1].y - cy).atan2(pts[1].x - cx)),
         (verts[2], (pts[2].y - cy).atan2(pts[2].x - cx)),
@@ -119,10 +117,10 @@ fn build_quad<F: Float>(verts: [usize; 4], positions: &[Point2<F>]) -> Quad {
         fields(num_triangles = triangulation.num_tri()),
     )
 )]
-pub(super) fn merge_triangle_pairs<F: Float>(
+pub(super) fn merge_triangle_pairs(
     triangulation: &Triangulation,
     kinds: &[EdgeClass],
-    positions: &[Point2<F>],
+    positions: &[Point2<f32>],
 ) -> Vec<Quad> {
     let mut out = Vec::new();
     for t in 0..triangulation.num_tri() {
@@ -173,29 +171,15 @@ pub(super) fn merge_triangle_pairs<F: Float>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::float::lit;
 
-    fn pt<F: Float>(x: f32, y: f32) -> Point2<F> {
-        Point2::new(lit::<F>(x), lit::<F>(y))
+    fn pt(x: f32, y: f32) -> Point2<f32> {
+        Point2::new(x, y)
     }
 
-    fn assert_quad_ordering_is_cw_from_top_left<F: Float>() {
-        let positions = vec![
-            pt::<F>(0.0, 0.0),
-            pt::<F>(1.0, 0.0),
-            pt::<F>(1.0, 1.0),
-            pt::<F>(0.0, 1.0),
-        ];
+    #[test]
+    fn quad_ordering_is_cw_from_top_left() {
+        let positions = vec![pt(0.0, 0.0), pt(1.0, 0.0), pt(1.0, 1.0), pt(0.0, 1.0)];
         let q = build_quad([2, 0, 3, 1], &positions);
         assert_eq!(q.vertices, [0, 1, 2, 3]);
-    }
-
-    #[test]
-    fn quad_ordering_is_cw_from_top_left_f32() {
-        assert_quad_ordering_is_cw_from_top_left::<f32>();
-    }
-    #[test]
-    fn quad_ordering_is_cw_from_top_left_f64() {
-        assert_quad_ordering_is_cw_from_top_left::<f64>();
     }
 }

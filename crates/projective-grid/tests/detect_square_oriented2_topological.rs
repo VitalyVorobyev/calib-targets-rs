@@ -13,11 +13,11 @@ use projective_grid::{
     LocalAxis, OrientedFeature, PointFeature, RejectionReason, SquareAlgorithm,
 };
 
-fn topological_params() -> DetectionParams<f32> {
-    DetectionParams::<f32>::default().with_algorithm(SquareAlgorithm::Topological)
+fn topological_params() -> DetectionParams {
+    DetectionParams::default().with_algorithm(SquareAlgorithm::Topological)
 }
 
-fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<f32, 2>> {
+fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
     let origin = 50.0_f32;
     let mut out = Vec::with_capacity((rows * cols) as usize);
     let mut idx = 0_usize;
@@ -217,11 +217,11 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
         }
     }
 
-    let topo = projective_grid::TopologicalParams::<f32>::default()
+    let topo = projective_grid::TopologicalParams::default()
         // Loosen the per-cell length-ratio gate so the foreshortened
         // far end of the perspective doesn't trip the upper bound.
         .with_edge_length_max_rel(3.5);
-    let params = DetectionParams::<f32>::default()
+    let params = DetectionParams::default()
         .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)
         // Bump the residual threshold: the projective fit is global
@@ -285,7 +285,7 @@ fn topological_default_off_seed_grow_used_by_default() {
         LatticeKind::Square,
         Evidence::Oriented2(&features),
         None,
-        DetectionParams::<f32>::default(),
+        DetectionParams::default(),
     );
     let solution = detect_grid(request).expect("default (seed-and-grow) on clean 5x5");
     assert_eq!(solution.grid.entries.len(), 25);
