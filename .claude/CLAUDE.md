@@ -1,91 +1,31 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with
+code in this repository. It is intentionally short — the long-form guides it
+links to live under [`docs/development/`](../docs/development/).
 
-## Commands
+## Everyday gate
+
+Run before every commit (full rationale in
+[`docs/development/release-gates.md`](../docs/development/release-gates.md)):
 
 ```bash
-# Format
-cargo fmt --all
-
-# Lint (treat warnings as errors)
+cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-
-# Test
 cargo test --workspace
-cargo test --workspace --all-features
-
-# Docs — MUST produce zero warnings; run before every commit
-cargo doc --workspace --no-deps
-
-# Build book
-mdbook build book
+cargo doc --workspace --no-deps   # MUST produce zero warnings
 ```
 
-Run a single example:
-```bash
-cargo run --release --features "tracing" --example detect_chessboard -- testdata/mid.png
-cargo run --release --features "tracing" --example detect_charuco -- testdata/small2.png
-cargo run --release --features "tracing" --example detect_markerboard -- testdata/markerboard_crop.png
-cargo run --release --features "tracing" --example detect_puzzleboard -- testdata/puzzleboard_mid.png
-cargo run --release --features "tracing" --example detect_chessboard_best -- testdata/mid.png
-cargo run --release --features "tracing" --example detect_charuco_best -- testdata/small2.png
-cargo run --release --features "tracing" --example detect_puzzleboard_best -- testdata/puzzleboard_small.png
-```
+`cargo doc` zero-warnings is non-negotiable: broken intra-doc links and
+ambiguous references (a name that is both a module and a function) are hard
+errors here — fix them at source, do not rely on CI.
 
-Run examples with JSON config (produces detailed JSON reports):
-```bash
-cargo run --example chessboard -- testdata/chessboard_config.json
-cargo run --example charuco_detect -- testdata/charuco_detect_config.json
-cargo run -p calib-targets --example detect_puzzleboard -- testdata/puzzleboard_detect_config.json
-```
-
-Benchmarks + diagnostics:
-```bash
-# Criterion: PuzzleBoard detection timing across board sizes (Full vs KnownOrigin fast path)
-cargo bench -p calib-targets --bench puzzleboard_sizes
-
-# Per-size success/failure/per-stage-timing table — useful for diagnosing which stage fails
-cargo run --release -p calib-targets --example puzzleboard_size_sweep
-```
-
-Python bindings (built with `maturin`, managed with `uv`, crate is `crates/calib-targets-py`):
-```bash
-# Use the existing .venv in the project root — do not create new environments
-uv run maturin develop --release -m crates/calib-targets-py/Cargo.toml
-uv run python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
-
-# Regenerate typing stubs (must pass --check in CI)
-uv run python crates/calib-targets-py/tools/generate_typing_artifacts.py
-
-# Run Python tests
-uv run pytest crates/calib-targets-py/python_tests/ -v
-```
-
-WASM bindings (built with `wasm-pack`, demo at `demo/`):
-```bash
-# Build WASM package into demo/pkg/
-scripts/build-wasm.sh
-
-# Run demo dev server (use bun, not npm — the demo's lockfile is bun.lock)
-cd demo && bun install && bun run dev
-```
-
-Printable-target CLI (Rust binary in the facade crate, mirrored in the Python
-package via `[project.scripts]`):
-```bash
-# One-step generation (flags → JSON + SVG + PNG bundle)
-cargo run -p calib-targets --features cli --bin calib-targets -- \
-    gen puzzleboard --rows 8 --cols 10 --square-size-mm 15 --out-stem /tmp/puzzle
-
-# Python console script (after `maturin develop`)
-uv run calib-targets gen chessboard --inner-rows 6 --inner-cols 8 \
-    --square-size-mm 20 --out-stem /tmp/board
-```
+The full catalogue of build / example / benchmark / Python / WASM / CLI commands
+is in [`docs/development/commands.md`](../docs/development/commands.md).
 
 ## Architecture
 
-This is a Cargo workspace. All publishable crates live under `crates/`:
+A Cargo workspace; all publishable crates live under `crates/`:
 
 | Crate | Role |
 |---|---|
@@ -100,384 +40,123 @@ This is a Cargo workspace. All publishable crates live under `crates/`:
 | `calib-targets-print` | Printable target generation: JSON/SVG/PNG output bundles |
 | `calib-targets-ffi` | C ABI bindings with generated header and CMake package (not published) |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
-| `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (published to npm as `@vitavision/calib-targets`, not published to crates.io) |
+| `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (published to npm as `@vitavision/calib-targets`) |
 
-**CLI**: the `calib-targets` binary lives in the facade crate behind the default `cli` feature (`cargo install calib-targets`), and the Python package exposes the same subcommands as a console script via `[project.scripts]`.
+**CLI**: the `calib-targets` binary lives in the facade crate behind the default
+`cli` feature (`cargo install calib-targets`); the Python package exposes the
+same subcommands as a console script via `[project.scripts]`.
 
-**Dependency rules:** `projective-grid` is standalone (no internal deps). `core` depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`. No cyclic deps.
+**Dependency rules:** `projective-grid` is standalone (no internal deps). `core`
+depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`.
+No cyclic deps.
 
 **Detection pipeline** (same structure for all target types):
+
 1. Run `chess-corners` (external crate) to detect ChESS corner features.
-2. Build a proximity/orientation graph over corners and assemble a chessboard grid. Two algorithms are available behind `DetectorParams::graph_build_algorithm` (see "Graph-build algorithm selection" below).
-3. For ChArUco/marker boards: locally warp candidate cells and decode markers/circles.
-4. For PuzzleBoard: sample edge-midpoint dots and decode the master edge-code pattern.
-5. Output a `TargetDetection` (or wrapping result struct) containing `LabeledCorner` entries.
+2. Build a proximity/orientation graph over corners and assemble a chessboard
+   grid. Two algorithms sit behind `DetectorParams::graph_build_algorithm` —
+   `Topological` (default) and `SeedAndGrow` (pinned for ChArUco). See the
+   pipeline guide below.
+3. For ChArUco/marker boards: locally warp candidate cells and decode
+   markers/circles.
+4. For PuzzleBoard: sample edge-midpoint dots and decode the master edge-code
+   pattern.
+5. Output a `TargetDetection` (or wrapping result struct) containing
+   `LabeledCorner` entries.
 
-**Multi-config sweep:** `detect_*_best` functions try multiple parameter configs and return the best result (most markers/corners). Built-in presets: `ChessboardParams::sweep_default()`, `CharucoParams::sweep_for_board()`, and `PuzzleBoardParams::sweep_for_board()`.
+**Multi-config sweep:** `detect_*_best` functions try multiple parameter configs
+and return the best result (most markers/corners). Presets:
+`ChessboardParams::sweep_default()`, `CharucoParams::sweep_for_board()`,
+`PuzzleBoardParams::sweep_for_board()`.
 
-## Graph-build algorithm selection
+**`TargetDetection` / `LabeledCorner`** — the common output container. Fields:
+`position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`.
+See README for per-target field usage.
 
-`calib_targets_chessboard::DetectorParams::graph_build_algorithm`
-selects between two grid builders, both producing the same
-`(i, j) → corner_idx` map so downstream consumers stay agnostic:
+**`tracing` feature** — optional, gates all performance-tracing instrumentation
+across the workspace.
 
-- `GraphBuildAlgorithm::SeedAndGrow` (**current default**) — the
-  invariant-rich seed-and-grow pipeline (`square::grow::bfs_grow` +
-  `square::grow_extension::extend_via_global_homography`). Battle-
-  tested across all four target families.
-- `GraphBuildAlgorithm::Topological` (**opt-in**) — Shu/Brunton/Fiala
-  2009 grid finder (`projective_grid::topological::build_grid_topological`)
-  with an axis-driven cell test that replaces the paper's image-
-  color sampling so `projective-grid` stays standalone.
-  Image-free; faster + denser on clean PuzzleBoards. Currently
-  regresses recall on ChArUco-style images (corners detected inside
-  marker bits poison the per-cell axis test). Default flip is gated
-  on closing that gap; see `docs/projective_grid_overview.md` Gap 8 + 10.
+## Detailed guides
 
-**ChArUco pinning.** `CharucoDetector::new`
-(`crates/calib-targets-charuco/src/detector/pipeline.rs`)
-unconditionally overrides `chessboard.graph_build_algorithm =
-SeedAndGrow` regardless of caller choice — marker-cell features
-defeat the topological cell test, so the override is a precision
-guarantee, not a configuration choice. PuzzleBoard and marker board
-inherit the caller's choice via their nested `DetectorParams`.
+Read the relevant guide before touching that area:
 
-**Component merge** (`projective_grid::component_merge::merge_components_local`)
-runs as a post-stage for **both** pipelines and uses local geometry
-only — no global homography, so it tolerates heavy radial
-distortion that would break a global fit. The chessboard crate's
-historical `enable_component_merge` flag is now backed by this
-shared implementation via `DetectorParams::component_merge:
-LocalMergeParams`.
+- [`docs/development/detection-pipeline.md`](../docs/development/detection-pipeline.md)
+  — graph-build algorithm selection (Topological vs SeedAndGrow + ChArUco
+  pinning), component merge, orientation source, bench harness selector, the
+  axes-only corner-orientation contract, and the cell-size-estimation gotcha.
+- [`docs/development/debugging.md`](../docs/development/debugging.md)
+  — the **mandatory** evidence-driven protocol for any detector failure.
+- [`docs/development/conventions.md`](../docs/development/conventions.md)
+  — public struct conventions (`#[non_exhaustive]` + named constructors),
+  binding/CLI/dict-key parity, and local-only-artifact rules.
+- [`docs/development/private-dataset-policy.md`](../docs/development/private-dataset-policy.md)
+  — disclosure policy + the two regression datasets (3536119669, 130x130_puzzle).
+- [`docs/development/release-gates.md`](../docs/development/release-gates.md)
+  — full pre-release quality-gate checklist.
+- [`docs/development/commands.md`](../docs/development/commands.md)
+  — complete command reference.
 
-**Bench harness selector.** `cargo run -p calib-targets-bench --
-{run,preview,diagnose} --algorithm {topological,seed-and-grow}` runs
-either pipeline; output JSON / overlay filenames carry the algorithm
-slug so two runs coexist in the same directory.
-`bench diagnose --algorithm topological` reports the per-triangle
-composition counters (mergeable / multi-diagonal / has-spurious /
-all-grid) plus per-quadrant labelled/unlabelled counts and the
-unlabelled corners' axis sigmas — the right starting point when
-investigating recall holes.
-
-**`TargetDetection` / `LabeledCorner`** — the common output container. Fields: `position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`. See README for per-target field usage.
-
-**`tracing` feature** — optional, gates all performance-tracing instrumentation across the workspace.
-
-## Corner orientation contract (axes-only)
-
-`Corner::orientation` has been **removed** workspace-wide. The only
-per-corner orientation signal is `Corner.axes: [AxisEstimate; 2]`,
-populated by the `chess-corners` adapter.
-
-Convention (matches chess-corners 0.6 and enforced across the workspace):
-
-- `axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle, axes[0].angle + π)`.
-- `axes[1] − axes[0] ≈ π/2` (the two axes are orthogonal grid directions, NOT
-  diagonals of unit squares).
-- The CCW sweep from `axes[0]` to `axes[1]` crosses a **dark** sector.
-  This is what encodes parity: at parity-0 corners `axes[0] ≈ Θ_horizontal`
-  (dark-entering), at parity-1 corners `axes[0] ≈ Θ_vertical`. Adjacent
-  chessboard corners therefore have opposite axis-slot assignments.
-- Default-constructed axes carry `sigma = π` (no information).
-
-**Do not reintroduce `Corner::orientation`** or derive a "legacy"
-single-axis angle. All clustering and edge-validation logic now uses
-`axes` directly. In particular, edges in the grid graph align with
-one of the corner's own axes (no ±π/4 offset).
-
-**Undirected circular mean.** Any function computing a circular mean
-of axis angles (e.g. 2-means refinement, histogram peak centroid)
-MUST accumulate `(cos 2θ, sin 2θ)` and halve the atan2 result.
-Accumulating raw `(cos θ, sin θ)` breaks at the 0°/180° seam and
-silently returns garbage centers when a peak sits near 0°. This was
-the root cause of the v1 Phase-4 regression; the fix is in
-`calib-targets-core/src/orientation_clustering.rs` and
-`crates/calib-targets-chessboard/src/cluster.rs`.
-
-## Private dataset disclosure policy
-
-**Never cite any private regression dataset — or its concrete counts,
-filenames, hashes, or per-frame identifiers — in public-facing
-documentation.** Public surfaces include: every crate `README.md`,
-every file under `book/src/`, the top-level `README.md`, `CHANGELOG.md`
-entries for tagged releases, rustdoc / public docstring comments,
-Python-package README and docstrings, commit messages on `main`, and
-PR descriptions. Use **general performance statements only** in those
-surfaces (e.g. "high detection rate on our internal regression set
-with zero wrong labels", "precision-by-construction on a private
-dataset of real-world snaps") — never raw counts, filenames, dataset
-hashes, or per-frame identifiers.
-
-Concrete numbers are fine in local-only surfaces: `privatedata/`,
-`bench_results/`, the agent memory, the gitignored `docs/datasets/`
-tree, and PR review discussion that is not checked in.
-
-**Why.** The datasets belong to private engagements; leaking their
-size or failure breakdown into published crates, the book, or GitHub
-undermines the confidentiality agreement and freezes a specific
-number into a surface we can't update without a release.
-
-**How to apply.** Before editing any file outside `privatedata/`,
-`bench_results/`, the gitignored `docs/datasets/` tree, or the
-agent memory, grep the change for any dataset hash, `snap`, `t…s…`
-frame identifier, or `target_*.png` specifics; if any appear, rewrite
-to a general performance statement. Existing leaks in READMEs and
-`book/src/` are pre-existing — clean them up opportunistically when
-editing those files, but do not ship new ones.
-
-### Regression dataset: 3536119669 (chessboard)
-
-Canonical seed-and-grow precision-and-recall benchmark. Precision
-contract: wrong `(i, j)` labels are unrecoverable (they would
-corrupt calibration); missing corners are acceptable. Any
-algorithmic change that drops this contract is a regression, full
-stop.
-
-Dataset layout, baseline numbers, known failure modes, and harness
-commands live in `docs/datasets/3536119669.md` (gitignored,
-local-only — fresh clones will not have it).
-
-### Regression dataset: 130x130_puzzle (puzzleboard)
-
-Real-world PuzzleBoard regression set (sibling to `3536119669`).
-Precision contract: wrong master-(i, j) labels are unrecoverable;
-missing corners are acceptable. Any change that raises max BER above
-the current baseline, or introduces a failure variant other than
-`edge_sampling / NotEnoughEdges`, is a regression.
-
-**Decoder-algorithm decision (2026-04-20).** Do **not** pre-emptively
-rewrite the puzzleboard decoder from its current naive form
-(per-edge hard-bit + 501²×D4 exhaustive origin sweep + hard BER
-gate) to a ChArUco-style coherent-hypothesis matcher (soft bits,
-joint likelihood, best-vs-runner-up margin). The naive decoder
-already clears the precision/recall target on this dataset with
-effectively zero wrong labels; revisit only if a new dataset
-demonstrates a concrete gap. See
-`memory/feedback_puzzleboard_decoder_is_good_enough.md`.
-
-Dataset layout, baseline numbers, preprocessing requirements, and
-harness commands live in `docs/datasets/130x130_puzzle.md`
-(gitignored, local-only — fresh clones will not have it).
-
-## Evidence-driven detector debugging
-
-When investigating a detector failure on a real image, every conclusion
-must be tied to a **measurable number** from the diagnose JSON or a
-**verifiable spatial fact** about the corners. Plausible-sounding
-narratives without per-corner / per-stage evidence are not acceptable
-substitutes for data, and "shipping fixes against bench" without an
-independent geometry check has produced false positives in this
-codebase.
-
-**Required investigation pattern for any detector failure:**
-
-1. **Atomic-stage breakdown first.** Before proposing any fix, dump the
-   `DebugFrame` (`bench diagnose --dump-frame …`) and walk every stage:
-   per stage, list inputs, outputs, and the specific decision that
-   dropped each corner. Counts per stage (Strong / Clustered / NoCluster
-   / Labeled / Raw), per-corner `max_d`, per-rejection-reason buckets in
-   `extension` / `rescue`, and per-corner spatial coordinates relative
-   to the labelled bbox — these are the currency of analysis.
-
-2. **Don't trust `bench check` `pos=` for new labels.** The `pos=`
-   counter only verifies positions of corners present in the baseline
-   — not the correctness of new `(i, j)` assignments. A change can
-   ship `extra=22 pos=0` while introducing diagonal edges and wrong
-   `(i, j)` labels. Always inspect the rendered overlay visually for
-   crossing edges or non-cardinal connections, *and* run the geometry
-   check below before claiming a fix is precision-safe.
-
-3. **Distinguish hypothesis from data.** A hypothesis becomes a fact
-   only after explicit verification — e.g., "marker corners bias the
-   cluster centres" must be confirmed by stratifying corners by parity
-   and showing the asymmetry in `max_d`, *or* by recomputing centres
-   from labelled axes only and showing the parity-B failures resolve.
-
-4. **Geometry check is mandatory before returning a detection.** Every
-   labelled corner must satisfy a per-edge length + axis-slot-swap
-   parity check against its cardinal labelled neighbours, plus a
-   global / local homography residual gate. Detect first, *then*
-   verify by an independent geometric predicate the BFS / rescue
-   path didn't already enforce. False detections are unrecoverable
-   for downstream calibration; missing corners are not.
-
-## Cell-size estimation gotcha
-
-Do **not** pass a pre-computed global cell-size into a seed or graph-
-build step. Cross-cluster nearest-neighbor distance distributions are
-bimodal on boards with ArUco markers (marker-internal pairs vs true
-board pairs), and all mode finders — multimodal mean-shift included —
-can pick the wrong mode. The seed-and-grow detector solves this by
-**deriving cell size from a self-consistent 4-corner seed** (edges
-match each other within a ratio tolerance, not against a prior
-scalar); see `crates/calib-targets-chessboard/src/seed.rs`. If a
-future detector must commit
-to a cell size up front, validate it by trying a seed and only trust
-the estimate if the seed closes; otherwise fall back to the seed's
-own edge-length mean.
-
-## Key Conventions
+## Key conventions (always on)
 
 **Coordinate system:**
 - Image pixels: origin top-left, x right, y down.
 - Grid: `i` right, `j` down; indices are corner intersections.
-- Quad / homography corner order: **TL, TR, BR, BL** (clockwise). Never use self-crossing order.
+- Quad / homography corner order: **TL, TR, BR, BL** (clockwise). Never use
+  self-crossing order.
 - Pixel sampling: use `x + 0.5`, `y + 0.5` for pixel centers consistently.
 
-**Correctness first:** prefer clear correct implementations with tests over micro-optimizations. Mark future optimizations with TODO.
-
-**Marker decoding:** grid-aware scan in rectified space (not generic contour/quad detection). Keep bit packing order, polarity (black=1 or black=0), and `borderBits` explicit in code.
-
 **Grid labels are non-negative.** Every detector that returns
-`LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the
-labelled bounding-box minimum is `(0, 0)`. This is a hard invariant
-for overlay / calibration consumers and for `seed-and-grow` is
-enforced inside `grow::grow_from_seed`.
+`LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the labelled
+bounding-box minimum is `(0, 0)`. Hard invariant for overlay / calibration
+consumers; for `seed-and-grow` it is enforced inside `grow::grow_from_seed`.
+
+**Corner orientation is axes-only.** `Corner::orientation` has been removed
+workspace-wide — never reintroduce it. The only signal is
+`Corner.axes: [AxisEstimate; 2]`; any circular mean of axis angles MUST
+accumulate `(cos 2θ, sin 2θ)`. Full contract in the
+[detection-pipeline guide](../docs/development/detection-pipeline.md#corner-orientation-contract-axes-only).
+
+**Evidence-driven debugging.** Every detector-failure conclusion must be tied to
+a measured number or a verifiable spatial fact — never a plausible narrative.
+`bench check` `pos=` does NOT validate new `(i, j)` labels; overlays + an
+independent geometry check are mandatory. Full protocol in
+[`docs/development/debugging.md`](../docs/development/debugging.md).
+
+**Private dataset disclosure.** Never cite a private regression dataset (counts,
+filenames, hashes, frame ids) in any public surface — READMEs, `book/src/`,
+CHANGELOG, rustdoc, commit messages on `main`, PRs. General performance
+statements only. Concrete numbers live only in local-only surfaces. Full policy
+in [`docs/development/private-dataset-policy.md`](../docs/development/private-dataset-policy.md).
+
+**Public structs/enums:** `#[non_exhaustive]` + a named constructor on every
+public type in a published crate. New match arms in consumer code need wildcard
+patterns. Details in
+[`docs/development/conventions.md`](../docs/development/conventions.md).
+
+**Correctness first:** prefer clear correct implementations with tests over
+micro-optimizations. Mark future optimizations with TODO.
+
+**Marker decoding:** grid-aware scan in rectified space (not generic
+contour/quad detection). Keep bit packing order, polarity (black=1 or black=0),
+and `borderBits` explicit in code.
 
 **New warnings:** fix them; do not suppress.
 
-**No `#[allow(clippy::…)]` in production code.** If a clippy lint
-fires, fix the underlying issue — extract a param/context struct,
-split the function, or refine the design. The only acceptable file-
-scope allows are: (a) generated code (`include!`-style outputs), and
-(b) `#![allow(non_camel_case_types)]` on FFI crates for C ABI naming.
-Any new `#[allow(...)]` attribute requires explicit review approval.
-Workspace-level clippy lints are enforced via `[workspace.lints]` in
-the root `Cargo.toml` and `[lints] workspace = true` in every crate
-— `too_many_arguments` is `deny` and must not be re-introduced via
+**No `#[allow(clippy::…)]` in production code.** If a clippy lint fires, fix the
+underlying issue — extract a param/context struct, split the function, or refine
+the design. The only acceptable file-scope allows are: (a) generated code
+(`include!`-style outputs), and (b) `#![allow(non_camel_case_types)]` on FFI
+crates for C ABI naming. Any new `#[allow(...)]` attribute requires explicit
+review approval. Workspace-level clippy lints are enforced via
+`[workspace.lints]` in the root `Cargo.toml` and `[lints] workspace = true` in
+every crate — `too_many_arguments` is `deny` and must not be re-introduced via
 an inline allow.
 
-**Pre-commit gate — always run before `git commit`:**
+**Local-only artifacts — never commit.** `bench_results/`, rendered overlays,
+per-frame JSONLs, aggregate JSONs, profiling dumps, sweep CSVs, and similar
+generated data stay out of Git. Stage files individually; never `git add -A` in
+a directory that may contain them. Details in
+[`docs/development/conventions.md`](../docs/development/conventions.md#local-only-artifacts--never-commit).
 
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo doc --workspace --no-deps
-```
-
-`cargo doc` must produce zero warnings. Broken intra-doc links and
-ambiguous references (e.g. a name that is both a module and a function)
-are hard errors under this gate. Fix them at source — do not rely on
-CI to catch them.
-
-**`#[non_exhaustive]`:** all public enums in published crates are `#[non_exhaustive]`. New match arms in consumer code need wildcard patterns.
-
-**Public struct conventions:** every public struct in a published crate
-gets `#[non_exhaustive]` plus a named constructor. The three categories
-below — param structs, diagnostic structs, and data-carrier / result
-structs — follow the *same* rule; they differ only in which constructor
-shape reads best.
-
-- `#[non_exhaustive]` on the struct. New fields are then a non-breaking
-  change for every external consumer — they can neither build the struct
-  with literal syntax nor match it exhaustively, so adding a field cannot
-  break them. This applies even to result and data-carrier structs that
-  callers mostly *read*: a result struct accretes fields over its life
-  (this workspace's result structs have done so repeatedly), and without
-  `#[non_exhaustive]` each addition is a semver break.
-- A named constructor so the struct stays buildable from other crates
-  (test fixtures, bindings, downstream consumers) despite the literal-
-  construction block. Pick the shape that reads best:
-  - **Param structs** (detector configuration, e.g. `PuzzleBoardParams`,
-    `PuzzleBoardDecodeConfig`, `DetectorParams`): a `new` / `for_board`
-    that takes the required fields; `Default` covers the tuning knobs.
-  - **Diagnostic structs** (per-call evidence, e.g. `PuzzleBoardDecodeInfo`,
-    `*Diagnostics`): a `new` taking all fields, or `Default` + setters
-    when most fields are optional.
-  - **Data-carrier / result structs** (e.g. `TargetDetection`,
-    `LabeledCorner`, `ChessboardDetection`/`ChessboardCorner`,
-    `CharucoDetectionResult`, `PuzzleBoardDetectionResult`,
-    `MarkerBoardDetectionResult`): a `new` taking the required fields.
-    When several fields are optional, a minimal `new` plus `with_*`
-    setters reads better than a wide positional `new` — `LabeledCorner`
-    uses `new(position, score)` + `with_grid`/`with_id`/
-    `with_target_position`.
-- Same-crate code is unaffected by `#[non_exhaustive]`, so detectors may
-  still build their own result structs with literal syntax internally;
-  the constructor exists for *cross-crate* construction. When migrating an
-  existing struct, grep the whole workspace and route every cross-crate
-  literal through the constructor and add `..` to any cross-crate
-  exhaustive pattern.
-- This policy applies to every new detector crate going forward.
-
-**MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable` in `rust-toolchain.toml`.
-
-## Local-Only Artifacts — Never Commit
-
-`bench_results/`, rendered overlays, per-frame JSONLs, aggregate JSONs,
-profiling dumps, sweep CSVs, and any similarly-generated data are
-**local-only** and must stay out of Git. These files are large, noisy in
-diffs, and image-heavy — they bloat the repo and contaminate history.
-
-- Write sweep / overlay output under `bench_results/`, `tmpdata/`, or a
-  local scratch directory that matches an existing `.gitignore` rule.
-- Do not `git add -A` / `git add .` inside directories that may contain
-  `bench_results/`, `.DS_Store`, or any sweep artifacts — stage files
-  individually.
-- If you discover bench/sweep files already tracked, untrack them with
-  `git rm --cached <path>` and add a `.gitignore` rule in the same
-  commit rather than silently leaving them in the tree.
-
-## Pre-Release Quality Gates
-
-These checks must all pass before tagging a release. Several produce generated
-artifacts that go stale when the Rust API surface changes (new functions,
-`#[non_exhaustive]`, renamed types, etc.).
-
-```bash
-# 1. Standard Rust checks
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
-cargo test --workspace --all-features
-
-# 2. Doc warnings (broken intra-doc links, name collisions)
-cargo doc --workspace --no-deps  # must produce zero warnings
-
-# 3. Generated FFI header (stale after any change to FFI-visible types/enums)
-cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
-
-# 4. Python typing stubs (stale after any change to #[pyfunction] or #[pyclass])
-uv run maturin develop --release -m crates/calib-targets-py/Cargo.toml
-uv run python crates/calib-targets-py/tools/generate_typing_artifacts.py --check
-
-# 5. Python tests
-uv run pytest crates/calib-targets-py/python_tests/ -v
-
-# 6. WASM build (if wasm-pack is installed)
-scripts/build-wasm.sh
-
-# 7. Book build
-mdbook build book
-```
-
-**Common pitfall:** changing public enums or structs (e.g. adding
-`#[non_exhaustive]`) invalidates both the FFI header and Python typing stubs.
-Always regenerate both after such changes.
-
-**Binding API parity:** when adding new public functions to the Rust facade
-(`crates/calib-targets/src/detect.rs`), also expose them in:
-- Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
-- WASM bindings: `crates/calib-targets-wasm/src/lib.rs`
-- FFI bindings: `crates/calib-targets-ffi/src/lib.rs` + regenerated headers
-
-**CLI parity:** the printable-target CLI has two mirrors — the Rust binary in
-`crates/calib-targets/src/cli/` (gated on the `cli` feature, default on) and
-the Python console script in
-`crates/calib-targets-py/python/calib_targets/cli.py`. When adding a new
-target family, subcommand, or flag, update **both** and add integration
-coverage in `crates/calib-targets/tests/cli.rs` (Rust, uses `assert_cmd`) and
-`crates/calib-targets-py/python_tests/test_cli.py` (Python, uses `cli.main`
-in-process).
-
-**Binding dict-key parity:** Python result wrappers in
-`crates/calib-targets-py/python/calib_targets/_convert_out.py` deserialize the
-exact dict emitted by `serde_json::to_value(result)` on the Rust side. Keys,
-required-vs-optional fields, and nested shapes must match the Rust structs
-byte-for-byte — if Rust renames a serde field (or swaps a type alias like
-`GridCoords`/`GridCell`), the Python side breaks silently. Hand-written
-fixtures in `test_params.py` can mask this class of bug; every new result
-type needs a real-extension round-trip test (see
-`python_tests/test_detect_roundtrip.py`) that runs detection on a repo test
-image and exercises `from_dict`/`to_dict` on the actual Rust dict.
+**MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable`
+in `rust-toolchain.toml`.

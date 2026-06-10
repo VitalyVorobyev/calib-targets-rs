@@ -31,3 +31,6 @@ uv.lock
 REVIEW.md
 API_REVISION.md
 privatedata
+
+# codegraph local index daemon (SQLite DB, socket, pid, logs)
+.codegraph/
