@@ -469,10 +469,27 @@ fn assemble_solutions(
     solutions
 }
 
-/// Per-corner local pitch: the distance to each corner's nearest neighbour.
-/// Tracks perspective foreshortening (the projected cell pitch shrinks toward
-/// the vanishing points), so the attach policy's per-edge length band stays
-/// valid across the whole image instead of gating against one seed scalar.
+/// Number of nearest neighbours pooled per corner for the robust local-pitch
+/// estimate. On a square lattice a corner's four cardinal neighbours sit at the
+/// pitch and the diagonals are strictly farther (≈√2·pitch), so pooling five
+/// lands the median on the cardinal pitch while a single off-lattice point that
+/// is *closer* than the pitch — a noise feature dropped inside a cell, a marker
+/// corner — can only displace one or two slots and never the median.
+const LOCAL_PITCH_NEIGHBOURS: usize = 5;
+
+/// Per-corner local pitch: a robust order statistic of each corner's nearest
+/// neighbour distances. Tracks perspective foreshortening (the projected cell
+/// pitch shrinks toward the vanishing points), so the attach policy's per-edge
+/// length band stays valid across the whole image instead of gating against one
+/// seed scalar — yet, unlike the bare nearest-neighbour distance, it is not
+/// corrupted by a minority of off-lattice points sitting closer than the pitch.
+///
+/// The bare nearest-neighbour distance was maximally sensitive to exactly that:
+/// a noise feature at a cell centre is ≈0.71·pitch from each of the cell's four
+/// corners, so it became those corners' "pitch", collapsing the per-edge band
+/// and dropping real corners. Taking the median over the
+/// [`LOCAL_PITCH_NEIGHBOURS`] nearest distances tolerates such a minority while
+/// staying local.
 ///
 /// Falls back to `0.0` for a corner with no finite neighbour; the policy treats
 /// a non-positive local pitch as "use the seed scalar".
@@ -490,13 +507,24 @@ fn compute_local_pitch(positions: &[Point2<f32>]) -> Vec<f32> {
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            // Two nearest: the point itself plus its closest neighbour.
-            let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], 2);
-            hits.into_iter()
-                .find(|nn| nn.item as usize != i)
+            // Pool the nearest neighbours (the `+ 1` covers the point itself,
+            // which `nearest_n` returns at distance 0).
+            let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], LOCAL_PITCH_NEIGHBOURS + 1);
+            let mut dists: Vec<f32> = hits
+                .into_iter()
+                .filter(|nn| nn.item as usize != i)
                 .map(|nn| nn.distance.sqrt())
                 .filter(|d| d.is_finite() && *d > 1e-3)
-                .unwrap_or(0.0)
+                .collect();
+            if dists.is_empty() {
+                return 0.0;
+            }
+            dists.sort_by(|a, b| a.total_cmp(b));
+            // Upper-median order statistic: robust to a minority of off-lattice
+            // points closer than the pitch, and biases very slightly high (a
+            // larger expected pitch can only *lower* an edge ratio, so it never
+            // rejects a legitimate edge).
+            dists[dists.len() / 2]
         })
         .collect()
 }

@@ -22,22 +22,14 @@ fn assert_unsupported(request: DetectionRequest<'_>, evidence: EvidenceKind) {
     );
 }
 
-#[test]
-fn square_position_detection_is_typed_unsupported() {
-    let features = [point(0), point(1), point(2), point(3)];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Positions(&features),
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::Positions);
-}
-
-// `square_oriented_detection_is_typed_unsupported` was removed in Phase C of
-// the `projective-grid` rewrite: `(LatticeKind::Square,
-// Evidence::Oriented2)` now runs the seed-and-grow port and returns a real
-// labelled grid. The success path is covered by
+// `square_position_detection_is_typed_unsupported` was removed in Phase 4 of
+// the `projective-grid` rewrite: `(LatticeKind::Square, Evidence::Positions)`
+// now runs orientation-free detection and returns a real labelled grid. The
+// success path is covered by `tests/detect_square_positions.rs`.
+//
+// `square_oriented_detection_is_typed_unsupported` was removed in Phase C:
+// `(LatticeKind::Square, Evidence::Oriented2)` now runs the seed-and-grow port
+// and returns a real labelled grid. The success path is covered by
 // `tests/detect_square_oriented2.rs`.
 
 #[test]
