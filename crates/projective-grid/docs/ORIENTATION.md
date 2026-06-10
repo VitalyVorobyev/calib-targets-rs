@@ -8,23 +8,47 @@ lines, and local homographies are consistent. That structural cue already
 drives the shared `validate` stage and needs zero orientation.
 
 This document records **exactly where** each strategy consumes per-corner
-orientation today, and **how each can run orientation-free**, so the planned
-dot-grid (`Positions`) path is a fill-in rather than a redesign. Every claim
-below is grounded in the current code; line numbers drift, so treat the named
-functions as the anchors.
+orientation, and **how the orientation-free / single-axis inputs are
+supported**. Every claim below is grounded in the current code; line numbers
+drift, so treat the named functions as the anchors.
 
-## Why it matters
+## How it is implemented today: synthesize up front
 
-The next target family is the **dot grid** — a lattice of blobs with **no
-per-corner orientation**. The input types already model it
-(`Evidence::Positions`, `PointFeature`), but the strategies currently assume
-two axes, so `(Square, Positions)` returns `UnsupportedCombination`. Making
-orientation optional unblocks dot grids without a second pipeline.
+All three square evidence kinds are supported, and the implementation took the
+**simplest** route — rather than rewriting each strategy to run without axes,
+the facade **synthesizes the missing axes from neighbour geometry up front**
+and then runs the existing two-axis strategy unchanged:
+
+- `Evidence::Positions` → `orient::synthesize_oriented2` recovers **both** local
+  grid directions per point.
+- `Evidence::Oriented1` → `orient::synthesize_oriented2_from_oriented1` keeps the
+  supplied axis (anchored) and recovers the **second**.
+- `Evidence::Oriented2` → used directly.
+
+The synthesis is perspective-invariant: it folds neighbour-chord angles modulo
+π (collinear `±u` neighbours are antipodal, so they collapse to one direction
+*exactly* under any homography) and runs a per-corner undirected
+`(cos 2θ, sin 2θ)` 2-means seeded from a global two-mode prior. It assumes
+**no** orthogonality between the two axes, so the recovered directions track the
+local projected grid. A corner whose synthesized axes are wrong is rejected by
+the downstream geometry gates — it becomes a *missing* corner, never a
+*mislabelled* one.
+
+> Recall: zero wrong labels holds for all three kinds. The synthesized paths'
+> recovery *recall* on the facade seed-and-grow strategy under strong
+> perspective is still below the two-axis path (the synthesized second axis is
+> weaker at boundaries); the **topological** strategy is the recommended
+> orientation-free path today. Closing the seed-and-grow recall gap (a
+> positions-native attach policy + the recovery schedule) is the Phase 3 goal.
+
+The per-strategy "run truly without axes" substitutes described below remain a
+valid *alternative* design (and the likely Phase 3 direction for the
+seed-and-grow recall fix), but the shipped path is the up-front synthesis above.
 
 ## SeedAndGrow — almost orientation-free already
 
-The BFS grow core (`seed_and_grow::grow::bfs_grow`, currently
-`detect/advanced/square/grow.rs`) is **fully axis-agnostic**: it manages the
+The BFS grow core (`seed_and_grow::grow::bfs_grow`) is **fully axis-agnostic**:
+it manages the
 labelled map, the boundary queue, KD-tree candidate search, prediction
 averaging, ambiguity resolution, and the origin rebase — all from positions
 alone. Every orientation-dependent decision is delegated to a caller-supplied
@@ -40,9 +64,10 @@ The trait's defaults are axis-free (`edge_ok` defaults to "accept"), and a
 position-only attach policy already works in the crate's own tests.
 
 The **one** place generic SeedAndGrow code reads axes is the **seed finder**'s
-chord-pairing (`seed_and_grow::seed`, currently
-`detect/advanced/square/seed/finder.rs`): it calls `policy.axes(a)` to split a
-seed anchor's neighbours into the `+u` chord set and the `+v` chord set.
+chord-pairing (`seed_and_grow::seed::finder`): it calls `policy.axes(a)` to
+split a seed anchor's neighbours into the `+u` chord set and the `+v` chord set.
+(In the up-front-synthesis path it reads the *synthesized* axes, so it needs no
+geometric fallback today.)
 
 ### Orientation-free SeedAndGrow
 

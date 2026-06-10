@@ -12,11 +12,14 @@ per-strategy stage maps:
 - `crates/projective-grid/docs/ORIENTATION.md` — where per-corner orientation
   enters each strategy and how each can run orientation-free.
 
-> Status note. This document describes the **target** architecture the crate
-> is converging on. Some of the structure below (e.g. the `shared/` back-half,
-> the `Lattice` trait, the flat `seed_and_grow/` + `topological/` siblings) is
-> being introduced incrementally; where current and target differ, the text
-> says so.
+> Status note. The structural target below is now largely realized: the
+> `shared/` back-half, the sealed `Lattice` trait, and the flat
+> `seed_and_grow/` + `topological/` siblings all exist. The one remaining
+> asymmetry — the topological facade does not yet run component merge in-crate
+> (the chessboard adapter does it instead) — is tracked in *The pipeline*
+> below and closes when the chessboard general logic migrates down. Where a
+> roadmap item is not yet wired (hex detection, the topological-facade merge),
+> the text says so.
 
 ## Mission
 
@@ -46,10 +49,13 @@ independently.
 
 `Square` today; `Hex` is a roadmap stub (`LatticeKind::Hex`, `D6_TRANSFORMS`,
 `HEX_AXIAL_OFFSETS` exist; detection does not yet). The family is captured by a
-`Lattice` trait carrying the family-specific primitives — neighbour offsets,
-model-plane mapping (`model_point`), the symmetry group (D4 / D6), and the seed
-/ cell shape. The strategies and the shared back-half are written against the
-trait, **not** duplicated per family. See *Extending to hex* below.
+**sealed** `Lattice` trait carrying the family-specific primitives — neighbour
+offsets, model-plane mapping (`model_point`), the symmetry group (D4 / D6), and
+the seed / cell shape. The strategies and the shared back-half are written
+against the trait, **not** duplicated per family. The seal (a crate-private
+`Sealed` supertrait, impl'd only for `Square` / `Hex`) lets the hex roadmap add
+new required trait methods without breaking external callers, since no external
+crate can implement `Lattice`. See *Extending to hex* below.
 
 ### Axis 2 — strategy
 
@@ -71,17 +77,32 @@ per target follows from those two properties alone.
 
 ### Axis 3 — input-feature kind
 
-How much orientation each feature carries, modelled by `Evidence`:
+How much orientation each feature carries, modelled by `Evidence`. For square
+lattices **all three are implemented** — the less-oriented kinds synthesize the
+missing axes from neighbour geometry (`orient::synthesize_oriented2`,
+`orient::synthesize_oriented2_from_oriented1`) and then run the same strategy:
 
-- `Positions` — position only (0 axes); the planned **dot-grid** input.
-- `Oriented1` — one local lattice direction.
-- `Oriented2` — two orthogonal local directions (chessboard / ChArUco corners).
+- `Positions` — position only (0 axes); the **dot-grid** input. Both local grid
+  directions are recovered from neighbour chords.
+- `Oriented1` — one local lattice direction. The supplied axis is kept (trusted
+  as evidence, anchored); the second is recovered from neighbours.
+- `Oriented2` — two local directions (chessboard / ChArUco corners); the native
+  shape, no synthesis.
+
+(`Oriented3` is reserved as hex-native triple-axis evidence; `CoordinateHypotheses`
+is a decode-feedback roadmap slot. Both return `UnsupportedCombination`.)
 
 Orientation is an **optional cue**, not a requirement. The *universal* cue is
 the grid structure itself — rows are lines, columns are lines, local
 homographies are consistent — which needs no orientation at all. Orientation,
 when present, sharpens seeding and edge classification. See `ORIENTATION.md`
 for exactly where each strategy consumes it and how each runs without it.
+
+> Recall note. Zero wrong labels holds for all three kinds. Recovery *recall*
+> of the synthesized paths (`Positions`, `Oriented1`) on the facade
+> seed-and-grow strategy under strong perspective is still below the
+> two-axis path; full orientation-free recall parity is the Phase 3 goal. The
+> topological strategy is the recommended orientation-free path today.
 
 ## The pipeline: a strategy front-half + a shared back-half
 
@@ -97,11 +118,15 @@ detect_grid_all(request):
 ```
 
 - `merge` reunites disconnected labelled components using **local geometry
-  only** (no global homography), so it tolerates heavy radial distortion. It is
-  shared by **both** strategies. (Historically only the topological path called
-  it and SeedAndGrow kept a single connected component by construction; that
-  asymmetry is being removed — SeedAndGrow may return multiple components and
-  run merge like topological.)
+  only** (no global homography), so it tolerates heavy radial distortion. The
+  **seed-and-grow facade** runs it (it assembles one component per closed seed,
+  then merges). The **topological facade** does not yet run it in-crate — the
+  chessboard adapter runs `merge_components_local` on the facade's per-component
+  output instead. Unifying the two (so the topological facade merges too, with
+  the chessboard adapter's merge removed in the same change to avoid a
+  double-merge) is a tracked migrate-down item: adding the facade merge while
+  the adapter still merges double-merges and reintroduces false positives on
+  the private chessboard set, so the two must move together.
 - `validate` is the structural-cue gate: row/column collinearity
   ("lines are lines") + per-corner local-homography residual + edge-length
   band. It is **orientation-free**.
@@ -140,38 +165,46 @@ at its boundary.
 
 ```text
 src/
-  lib.rs            facade + this design summary
-  feature.rs        AXIS 3: PointFeature, OrientedFeature<N>, Evidence
-  geometry.rs       homography / projective estimators + quality (one home)
+  lib.rs            facade + two-tier docs
+  feature/          AXIS 3: PointFeature, OrientedFeature<N>, CoordinateHypothesis
+  orient.rs         AXIS 3: synthesize local axes from positions / one axis
+  geometry/         homography / projective estimators + quality (one home)
   result.rs · error.rs · float.rs
-  lattice/          AXIS 1: the parameter, not a copy
-    mod.rs          trait Lattice { offsets, model_point, symmetry, seed/cell };
+  lattice/          AXIS 1: the parameter, not a copy (sealed Lattice trait)
+    mod.rs          trait Lattice { offsets, model_point, symmetry } + Sealed;
                     Coord, LatticeKind, GridTransform
     square.rs       impl Lattice for Square (D4, 4-neighbour, 2×2 seed, quad cell)
     hex.rs          impl Lattice for Hex   (D6, 6-neighbour, …) — roadmap stub
-  shared/           SHARED back-half (generic over Lattice), used by BOTH strategies
-    mod.rs · merge.rs · validate.rs · fit.rs
-  seed_and_grow/    AXIS 2, strategy 1: build_components = (multi-seed) grow [+ boosters]
-    mod.rs · seed.rs · grow.rs · policy.rs · boosters.rs
-  topological/      AXIS 2, strategy 2: build_components = delaunay → classify → cells → walk
-    mod.rs · delaunay.rs · classify.rs · cells.rs · walk.rs
+  shared/           SHARED back-half (over Lattice), used by BOTH strategies
+    mod.rs · merge.rs · validate/ · fit.rs (fit is pub(crate))
+  seed_and_grow/    AXIS 2, strategy 1: build_components = (multi-seed) grow [+ fill]
+    mod.rs · seed/ · grow.rs · grow_extend.rs · extension/ · fill.rs · policy.rs · angle.rs
+  topological/      AXIS 2, strategy 2: delaunay → classify → quads → walk
+    mod.rs · delaunay.rs · classify.rs · quads.rs · filter.rs · walk.rs · axis.rs · trace.rs
   detect.rs         facade: detect_grid / detect_grid_all, DetectionParams,
-                    SquareAlgorithm; routes Evidence kind → policy/classifier;
+                    SquareAlgorithm; routes Evidence kind → synthesis + strategy;
                     runs strategy.build_components → shared merge/validate/fit
-  check.rs          consistency check (caller-supplied hypotheses)
+  check/            consistency check (caller-supplied hypotheses)
 ```
 
-seed / grow / policy / boosters belong to `seed_and_grow/` (they are *not*
-shared — topological never uses them). `shared/` holds only merge + validate +
-fit. Each strategy is a sibling directory; `shared/` is the third sibling.
+seed / grow / policy / fill (boosters) belong to `seed_and_grow/` (they are
+*not* shared — topological never uses them). `shared/` holds only merge +
+validate + fit. Each strategy is a sibling directory; `shared/` is the third
+sibling. This flat layout is now realized — the old `detect/advanced/square/*`
+nesting and the duplicate generic seed-and-grow implementation are gone.
 
-> Current layout (pre-restructure) differs: the production SeedAndGrow
-> mechanics live under `detect/advanced/square/*`, the topological strategy
-> under `detect/square/topological/`, and a second, unused generic
-> seed-and-grow implementation lives under top-level `seed/`, `grow/`,
-> `validate/` behind the public `detect_grid*` facade. Collapsing the
-> duplicate and flattening to the tree above is the structural work in
-> progress.
+### Two public tiers
+
+The crate exposes two tiers (see the `lib.rs` module docs):
+
+- **Stable tier** — the crate-root facade re-exports (`detect_grid*`,
+  `check_consistency`, the request / result / evidence / lattice types, the
+  `orient::synthesize_*` helpers). The supported surface for external callers.
+- **Advanced tier** — the `seed_and_grow`, `shared`, and `topological` engine
+  modules, semver-exempt pre-1.0, for in-workspace consumers (the chessboard
+  detector) that compose the engine directly with their own policies. Items
+  here change shape as the engine is refactored; engine items with no external
+  consumer are `pub(crate)`.
 
 ## Extending to hex (without copying machinery)
 

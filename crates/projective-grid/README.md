@@ -39,14 +39,40 @@ It handles:
 
 This crate does **lattice recovery and projective consistency, not feature
 detection**. It will not find corners in an image for you — the caller supplies
-the points and (for the square detector) two local axis directions per point.
-If you have an image and need corners first, run a corner detector and convert
-its output into [`PointFeature`] / [`OrientedFeature`] values before calling in.
+the points (and, optionally, local axis directions per point). If you have an
+image and need corners first, run a corner detector and convert its output into
+[`PointFeature`] / [`OrientedFeature`] values before calling in.
 
-It currently recovers **square** lattices from two-axis-per-feature evidence
-(`Evidence::Oriented2`). Other evidence shapes and the hexagonal lattice are
-modelled in the type system but not yet backed by an algorithm — they return a
-typed `UnsupportedCombination` error rather than a wrong answer.
+It currently recovers **square** lattices. The hexagonal lattice is modelled in
+the type system (axial coordinates, D6 symmetry) but its detection path is a
+roadmap item — `(Hex, *)` returns a typed `UnsupportedCombination` error rather
+than a wrong answer.
+
+## Three kinds of evidence
+
+How much you know about each point's orientation picks the [`Evidence`] variant.
+All three square variants share one back-half — the less-oriented kinds
+synthesize the missing axes from neighbour geometry and then run the same
+strategy — so they produce the same [`GridSolution`] shape:
+
+- **Unoriented — [`Evidence::Positions`]** (`&[PointFeature]`). Just points: a
+  dot grid, a circle grid, or corners with no axis estimate. Both local grid
+  directions are recovered per point from neighbour chords (folded modulo π, so
+  the estimate is perspective-invariant and never assumes the axes are 90°
+  apart).
+- **Single-axis — [`Evidence::Oriented1`]** (`&[OrientedFeature<1>]`). One
+  trusted direction per point (e.g. a detector that recovers a dominant edge
+  orientation but not the orthogonal one). The supplied axis is kept; the second
+  is synthesized from neighbours.
+- **Dual-axis — [`Evidence::Oriented2`]** (`&[OrientedFeature<2>]`). Two local
+  grid directions per point — the native shape, e.g. ChESS-style corner axes.
+  No synthesis; the strongest input.
+
+`Evidence::Oriented3` (hex-native triple-axis evidence, a roadmap consumer) and
+`Evidence::CoordinateHypotheses` (a decode-feedback roadmap slot) return
+`UnsupportedCombination`. Coordinate hypotheses *are* consumable through the
+separate [`check_consistency`] entry point, which scores caller-proposed labels
+against a projective fit.
 
 ## Quickstart
 
@@ -119,13 +145,10 @@ same [`GridSolution`] output, so downstream code stays agnostic. Pick via
 
 ## Inputs & outputs
 
-**Inputs** are wrapped in an [`Evidence`] enum. The supported shape is
-`Oriented2` (a `&[OrientedFeature<2>]`: each feature carries a
-[`PointFeature`] plus two [`LocalAxis`] directions). The other variants —
-`Positions`, `Oriented1`, `Oriented3`, and `CoordinateHypotheses` — are part of
-the type model but return `UnsupportedCombination` for now. (Coordinate
-hypotheses *are* consumable through the separate [`check_consistency`] entry
-point, which scores caller-proposed labels against a projective fit.)
+**Inputs** are wrapped in an [`Evidence`] enum — see *Three kinds of evidence*
+above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are all
+supported; `Oriented3` and `CoordinateHypotheses` (and every `(Hex, *)`
+combination) return `UnsupportedCombination`.
 
 **Output** is a [`GridSolution`]:
 
@@ -149,6 +172,8 @@ Licensed under either of MIT or Apache-2.0 at your option.
 [`OrientedFeature`]: https://docs.rs/projective-grid/latest/projective_grid/feature/struct.OrientedFeature.html
 [`LocalAxis`]: https://docs.rs/projective-grid/latest/projective_grid/feature/struct.LocalAxis.html
 [`Evidence`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
+[`Evidence::Positions`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
+[`Evidence::Oriented1`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`Evidence::Oriented2`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`DetectionParams::with_algorithm`]: https://docs.rs/projective-grid/latest/projective_grid/detect/struct.DetectionParams.html
 [`SquareAlgorithm::SeedAndGrow`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.SquareAlgorithm.html
