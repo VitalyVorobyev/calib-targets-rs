@@ -128,17 +128,27 @@ production. Two open framings:
 
 Pick one; defer the other. Tracked as deep-dive Phase 5.
 
-### Gap 6 — Booster duplicates BFS prediction logic (OPEN)
+### Gap 6 — Booster duplicates BFS prediction logic (LARGELY RESOLVED)
 
-`crates/calib-targets-chessboard/src/boosters.rs` has its own
-`predict_from_neighbors` and search loop. Any improvement to
-`bfs_grow` prediction must be mirrored to the booster, or behaviour
-diverges between "during grow" and "after grow."
+The original duplication — `boosters.rs` carrying its own
+`predict_from_neighbors` and search loop — has been removed. The
+structural skeleton (cell enumeration, KD-tree, per-cell attachment
+ladder, fixed-point iteration, and the adaptive per-cell prediction)
+now lives in `projective_grid::seed_and_grow::fill::fill_grid_holes`.
+`crates/calib-targets-chessboard/src/boosters.rs` is a policy wrapper:
+it supplies a chessboard-specific `SquareAttachPolicy` (weak-cluster
+rescue + optional directional edge scale) and delegates the prediction
+and search to `fill_grid_holes`. Any improvement to the shared
+prediction therefore reaches both the grow and booster paths.
 
-**Fix.** Promote the booster's "interior gap fill + 1-step line
-extension" into a generic `projective_grid::square::extension`
-module on top of `extend_via_global_homography`'s machinery, then
-delete the duplicate. Tracked as deep-dive Phase 2.
+**Status (verified 2026-06-10, Phase 2d).** The Phase-2d merge-unify /
+dedup work did **not** touch this — the prediction skeleton was already
+shared via `fill_grid_holes` before Phase 2d. What remains is a
+deliberate policy seam, not a duplicate. Residual follow-up: the booster
+still owns the line-extrapolation pass (1-step boundary extension) as a
+chessboard-side policy; folding that into a generic
+`projective_grid::seed_and_grow::extension` entry point would let the
+two paths share that pass too. Left open as a smaller incremental item.
 
 ### Gap 7 — No subpixel re-fit pass (out of scope)
 

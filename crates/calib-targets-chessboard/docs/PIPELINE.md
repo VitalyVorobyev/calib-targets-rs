@@ -130,26 +130,57 @@ the same directory.
 
 ## What lives in `projective-grid` vs `calib-targets-chessboard`
 
+The Phase-2 migration moved the lattice-general logic down into
+`projective-grid`; the chessboard keeps the ChESS glue, slot-parity
+semantics, and image-coupled stages. The current split:
+
 - `projective-grid` (image-free, no internal workspace deps):
-  `detect::advanced::square::{seed,grow,fill,grow_extend,extension,validate,component_merge,homography}`
-  plus `detect::square::topological`. Provides the
-  `SquareAttachPolicy` trait as the seam where caller-specific invariants
-  enter.
-- `calib-targets-chessboard` (chessboard-specific): orientation
-  histogram + 2-means (`cluster.rs`), seed validator (parity gate),
-  `ChessboardSquareAttachPolicy` + `ChessboardRescueValidator` (axis-slot-
-  swap edge invariants), recall boosters with parity, post-grow refit,
-  mandatory geometry check, multi-component dispatch, and the
-  topological input adapter + recovery layer (see
-  [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)).
+  - `cluster` — generic axis clustering: orientation histogram +
+    plateau-aware peak picking + double-angle 2-means (migrated down in
+    Phase 2a; `(cos 2θ, sin 2θ)` circular-mean contract preserved). The
+    chessboard's `circular_stats` is a thin re-export of this module's
+    `angular_dist_pi` / `wrap_pi`.
+  - `seed_and_grow::{seed,grow,fill,grow_extend,extension,pipeline}` —
+    the seed-quad finder, BFS grow, fill / extension engines, and the
+    `seed_and_grow::pipeline` convergence loop
+    (`run_convergence_loop` + `IterationDriver`, migrated down in
+    Phase 2b — the chessboard drives it via `ChessboardDriver` and
+    replays the per-iteration records onto its `CornerAug` / `DebugFrame`
+    state). Provides the `SquareAttachPolicy` trait as the seam where
+    caller-specific invariants enter.
+  - `topological` — the axis-driven SBF09 grid finder. **The topological
+    facade runs the shared component merge itself** (Phase 2d /
+    Task 1) — `merge_components_local` is invoked once inside
+    `detect_grid_all`, mirroring the seed-and-grow facade, so the two
+    algorithm facades expose identical multi-component semantics.
+  - `shared::{merge, fit, validate}` — the shared back-half:
+    `merge_components_local`, the projective fit + residual helper, and
+    `validate::recovery` (the three lattice-general drop filters —
+    weak-leaf peel, topological wrong-label drops, largest-component
+    filter — migrated down in Phase 2c).
+- `calib-targets-chessboard` (chessboard-specific): seed validator
+  (parity gate), `ChessboardSquareAttachPolicy` +
+  `ChessboardRescueValidator` (axis-slot-swap edge invariants),
+  `slot_coherence` parity semantics, recall boosters with parity,
+  post-grow refit + `fix_partial_slot_flips_post_stage6` (ChESS-DiskFit
+  specific), the mandatory geometry-check **orchestration** (the drop
+  filters themselves live in `shared::validate::recovery`;
+  the chessboard sequences them around the `CornerStage` interleave),
+  multi-component dispatch, and the topological input adapter +
+  recovery layer. The topological adapter consumes the already
+  facade-merged components directly — it no longer runs its own initial
+  `merge_components_local` (it keeps a distinct post-booster
+  corner-identity merge inside the recovery layer). See
+  [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md).
 
 ## Cross-references
 
 - [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)
   — the default `Topological` builder: generic `projective-grid` core,
   chessboard input adapter, and recovery layer.
-- `crates/projective-grid/src/detect/square/topological/` — the
-  projective-grid topological core, independent of chessboard semantics.
+- `crates/projective-grid/src/topological/` — the projective-grid
+  topological core (Delaunay classify → quads → walk → shared merge →
+  validate → fit), independent of chessboard semantics.
 - CLAUDE.md "Evidence-driven detector debugging" — methodology that
   every detector failure must be analysed against measurable numbers
   from this dump, not story-told.
