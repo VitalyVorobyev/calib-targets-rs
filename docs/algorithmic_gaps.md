@@ -108,12 +108,21 @@ predicate.
 - Or expose DLT design-matrix conditioning instead, with documented
   scale-aware semantics.
 
-### Gap 4 — Hex pipeline has no `bfs_grow` counterpart (OPEN)
+### Gap 4 — Hex seed-and-grow has no implementation (OPEN, now precisely scoped)
 
-`hex/{alignment, mesh, rectify, smoothness}.rs` ship the static
-geometry of a hex lattice. There is no `hex::grow::bfs_grow`. Hex
-consumers cannot do seed-and-grow today. Tracked as deep-dive
-Phase 7.
+Hex **topological** detection ships: `(Hex, Positions)` and `(Hex, Oriented3)`
+run the axis-driven path (`topological/hex.rs` — triangle-as-cell classify +
+axial `(q, r)` parallelogram-completion walk, D6 component merge, projective
+fit). What remains open is **hex seed-and-grow**: there is no
+`seed_and_grow` counterpart for hex (no hex seed-cell shape, no hex
+neighbour-prediction grow, no hex recovery schedule), so `(Hex, *)` under
+`SquareAlgorithm::SeedAndGrow` is a typed `UnsupportedCombination`. The hex
+topological path also has **no post-fit recovery schedule** (boundary
+extension / interior fill / rescue) — that machinery is seed-and-grow- and
+ChESS-axis-coupled and stays square-only — so hex recall is whatever the
+classify+walk recovers, with the fit residual as the precision gate. Adding hex
+seed-and-grow (and a geometry-only hex recovery schedule) is the remaining work.
+Tracked as a future deep-dive phase.
 
 ### Gap 5 — `estimate_local_steps` is implemented but unused (OPEN)
 

@@ -3,8 +3,9 @@
 [![docs.rs](https://docs.rs/projective-grid/badge.svg)](https://docs.rs/projective-grid)
 [![crates.io](https://img.shields.io/crates/v/projective-grid.svg)](https://crates.io/crates/projective-grid)
 
-Recover a **projective square grid** — an `(i, j) → point` labelling — from a
-set of 2D feature points plus optional per-feature local axis directions.
+Recover a **projective lattice** — an `(i, j) → point` labelling on a square or
+hexagonal grid — from a set of 2D feature points plus optional per-feature
+local axis directions.
 
 You bring the points (from whatever corner / feature detector you already
 have); `projective-grid` figures out how they tile a regular lattice under
@@ -43,17 +44,22 @@ the points (and, optionally, local axis directions per point). If you have an
 image and need corners first, run a corner detector and convert its output into
 [`PointFeature`] / [`OrientedFeature`] values before calling in.
 
-It currently recovers **square** lattices. The hexagonal lattice is modelled in
-the type system (axial coordinates, D6 symmetry) but its detection path is a
-roadmap item — `(Hex, *)` returns a typed `UnsupportedCombination` error rather
-than a wrong answer.
+It recovers both **square** and **hexagonal** lattices. Square supports two
+algorithms (seed-and-grow + topological); hex is **topological-only** (no
+seed-and-grow path) and runs the same Delaunay back-half — its triangles are
+the unit cells directly, so there is no diagonal/quad-merge stage. Select the
+hex path with `algorithm = Topological`; a hex request under the default
+seed-and-grow selector returns a typed `UnsupportedCombination` rather than a
+wrong answer.
 
 ## Three kinds of evidence
 
 How much you know about each point's orientation picks the [`Evidence`] variant.
-All three square variants share one back-half — the less-oriented kinds
-synthesize the missing axes from neighbour geometry and then run the same
-strategy — so they produce the same [`GridSolution`] shape:
+The square variants share one back-half — the less-oriented kinds synthesize the
+missing axes from neighbour geometry and then run the same strategy — so they
+produce the same [`GridSolution`] shape. The same evidence ladder applies to
+hex (`Positions` synthesizes three axis families;
+[`Evidence::Oriented3`] supplies them directly):
 
 - **Unoriented — [`Evidence::Positions`]** (`&[PointFeature]`). Just points: a
   dot grid, a circle grid, or corners with no axis estimate. Both local grid
@@ -71,11 +77,27 @@ strategy — so they produce the same [`GridSolution`] shape:
   grid directions per point — the native shape, e.g. ChESS-style corner axes.
   No synthesis; the strongest input.
 
-`Evidence::Oriented3` (hex-native triple-axis evidence, a roadmap consumer) and
-`Evidence::CoordinateHypotheses` (a decode-feedback roadmap slot) return
-`UnsupportedCombination`. Coordinate hypotheses *are* consumable through the
-separate [`check_consistency`] entry point, which scores caller-proposed labels
-against a projective fit.
+- **Triple-axis — [`Evidence::Oriented3`]** (`&[OrientedFeature<3>]`). The
+  **hex-native** shape: a hexagonal lattice has three axis families, and a
+  detector that recovers all three feeds them here. `(Square, Oriented3)`
+  stays `UnsupportedCombination` (square has only two families).
+
+`Evidence::CoordinateHypotheses` (a decode-feedback roadmap slot) returns
+`UnsupportedCombination` for detection. Coordinate hypotheses *are* consumable
+through the separate [`check_consistency`] entry point, which scores
+caller-proposed labels against a projective fit.
+
+### Evidence × lattice support matrix
+
+| Evidence | Square | Hex |
+|---|---|---|
+| `Positions` | ✅ (synthesize 2 axes) | ✅ (synthesize 3 axes, topological) |
+| `Oriented1` | ✅ (synthesize 2nd axis) | ❌ `UnsupportedCombination` |
+| `Oriented2` | ✅ (native, 2 algorithms) | ❌ `UnsupportedCombination` |
+| `Oriented3` | ❌ `UnsupportedCombination` | ✅ (native, topological) |
+
+Hex requires `algorithm = Topological`; hex under `SeedAndGrow` is
+`UnsupportedCombination`.
 
 ## Quickstart
 
@@ -129,11 +151,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Running it prints all nine features, labelled `(0,0)` through `(2,2)` with a
 sub-pixel fit residual.
 
-## Two algorithms
+## Two algorithms (square)
 
-Both algorithms consume the same [`Evidence::Oriented2`] input and produce the
-same [`GridSolution`] output, so downstream code stays agnostic. Pick via
-[`DetectionParams::with_algorithm`]:
+Both square algorithms consume the same [`Evidence::Oriented2`] input and
+produce the same [`GridSolution`] output, so downstream code stays agnostic.
+Pick via [`DetectionParams::with_algorithm`]:
 
 - **[`SquareAlgorithm::SeedAndGrow`]** (default) — finds a self-consistent 2×2
   seed quad (four edges that agree on a cell size, chords aligned to the corner
@@ -146,12 +168,21 @@ same [`GridSolution`] output, so downstream code stays agnostic. Pick via
   at the cost of more sensitivity to per-feature axis quality. May return
   several components (see [`detect_grid_all`]).
 
+**Hex** uses the topological algorithm only — there is no seed-and-grow hex
+path. On a hex point lattice the Delaunay triangles *are* the unit cells, so
+the diagonal/quad-merge stage is bypassed; the axial `(q, r)` walk and the
+projective fit back-half are otherwise shared with the square topological path.
+Hex has no post-fit recovery schedule (that machinery is seed-and-grow-coupled),
+so the fit residual is the precision gate.
+
 ## Inputs & outputs
 
 **Inputs** are wrapped in an [`Evidence`] enum — see *Three kinds of evidence*
-above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are all
-supported; `Oriented3` and `CoordinateHypotheses` (and every `(Hex, *)`
-combination) return `UnsupportedCombination`.
+above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are
+supported; for hex lattices `Positions` and `Oriented3` are supported on the
+topological path. The other combinations (`(Square, Oriented3)`,
+`(Hex, Oriented1/Oriented2)`, any `(Hex, *)` under `SeedAndGrow`, and
+`CoordinateHypotheses` for detection) return `UnsupportedCombination`.
 
 **Output** is a [`GridSolution`]:
 

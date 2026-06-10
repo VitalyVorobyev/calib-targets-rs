@@ -1,8 +1,9 @@
 # Orientation: an optional cue
 
-`projective-grid` accepts features with two local axes (`Oriented2`), one
-(`Oriented1`), or none (`Positions`). Orientation is an **optional cue** that
-sharpens seeding and edge classification — it is never required. The
+`projective-grid` accepts features with three local axes (`Oriented3`,
+hex-native), two (`Oriented2`), one (`Oriented1`), or none (`Positions`).
+Orientation is an **optional cue** that sharpens seeding and edge
+classification — it is never required. The
 *universal* cue is the grid structure itself: rows are lines, columns are
 lines, and local homographies are consistent. That structural cue already
 drives the shared `validate` stage and needs zero orientation.
@@ -20,16 +21,20 @@ the facade **synthesizes the missing axes from neighbour geometry up front**
 and then runs the existing two-axis strategy unchanged:
 
 - `Evidence::Positions` → `orient::synthesize_oriented2` recovers **both** local
-  grid directions per point.
+  grid directions per point (square); `orient::synthesize_oriented3` recovers
+  **all three** hex axis families.
 - `Evidence::Oriented1` → `orient::synthesize_oriented2_from_oriented1` keeps the
-  supplied axis (anchored) and recovers the **second**.
-- `Evidence::Oriented2` → used directly.
+  supplied axis (anchored) and recovers the **second** (square only).
+- `Evidence::Oriented2` → used directly (square).
+- `Evidence::Oriented3` → used directly (hex). Three axis families, consumed by
+  the hex topological path.
 
 The synthesis is perspective-invariant: it folds neighbour-chord angles modulo
 π (collinear `±u` neighbours are antipodal, so they collapse to one direction
 *exactly* under any homography) and runs a per-corner undirected
-`(cos 2θ, sin 2θ)` 2-means seeded from a global two-mode prior. It assumes
-**no** orthogonality between the two axes, so the recovered directions track the
+`(cos 2θ, sin 2θ)` `k`-means seeded from a global `k`-mode prior (`k = 2` for
+square via 4 nearest neighbours, `k = 3` for hex via 6 nearest neighbours). It
+assumes **no** fixed inter-axis angle, so the recovered directions track the
 local projected grid. A corner whose synthesized axes are wrong is rejected by
 the downstream geometry gates — it becomes a *missing* corner, never a
 *mislabelled* one.

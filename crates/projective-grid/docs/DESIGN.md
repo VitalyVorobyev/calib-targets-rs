@@ -14,12 +14,10 @@ per-strategy stage maps:
 
 > Status note. The structural target below is now largely realized: the
 > `shared/` back-half, the sealed `Lattice` trait, and the flat
-> `seed_and_grow/` + `topological/` siblings all exist. The one remaining
-> asymmetry — the topological facade does not yet run component merge in-crate
-> (the chessboard adapter does it instead) — is tracked in *The pipeline*
-> below and closes when the chessboard general logic migrates down. Where a
-> roadmap item is not yet wired (hex detection, the topological-facade merge),
-> the text says so.
+> `seed_and_grow/` + `topological/` siblings all exist. **Hex detection is
+> wired on the topological path** — `(Hex, Positions)` and `(Hex, Oriented3)`
+> are supported (square stays byte-identical); see *Extending to hex* below.
+> Hex seed-and-grow remains a typed `UnsupportedCombination`.
 
 ## Mission
 
@@ -47,15 +45,16 @@ independently.
 
 ### Axis 1 — lattice family
 
-`Square` today; `Hex` is a roadmap stub (`LatticeKind::Hex`, `D6_TRANSFORMS`,
-`HEX_AXIAL_OFFSETS` exist; detection does not yet). The family is captured by a
-**sealed** `Lattice` trait carrying the family-specific primitives — neighbour
-offsets, model-plane mapping (`model_point`), the symmetry group (D4 / D6), and
-the seed / cell shape. The strategies and the shared back-half are written
-against the trait, **not** duplicated per family. The seal (a crate-private
-`Sealed` supertrait, impl'd only for `Square` / `Hex`) lets the hex roadmap add
-new required trait methods without breaking external callers, since no external
-crate can implement `Lattice`. See *Extending to hex* below.
+`Square` (both algorithms) and `Hex` (topological only) are both implemented.
+The family is captured by a **sealed** `Lattice` trait carrying the
+family-specific primitives — neighbour offsets, model-plane mapping
+(`model_point`), the symmetry group (D4 / D6), the axis-family count (2 / 3),
+the model-plane axis directions, and the cell topology (`TrianglePairToQuad`
+for square, `TriangleIsCell` for hex). The strategies and the shared back-half
+are written against the trait, **not** duplicated per family. The seal (a
+crate-private `Sealed` supertrait, impl'd only for `Square` / `Hex`) let the
+hex work add new required trait methods without breaking external callers,
+since no external crate can implement `Lattice`. See *Extending to hex* below.
 
 ### Axis 2 — strategy
 
@@ -89,8 +88,12 @@ missing axes from neighbour geometry (`orient::synthesize_oriented2`,
 - `Oriented2` — two local directions (chessboard / ChArUco corners); the native
   shape, no synthesis.
 
-(`Oriented3` is reserved as hex-native triple-axis evidence; `CoordinateHypotheses`
-is a decode-feedback roadmap slot. Both return `UnsupportedCombination`.)
+- `Oriented3` — three local directions, the **hex-native** shape (a hexagonal
+  lattice has three axis families). Consumed by the hex topological path;
+  `(Square, Oriented3)` returns `UnsupportedCombination`.
+
+(`CoordinateHypotheses` is a decode-feedback roadmap slot and returns
+`UnsupportedCombination` for detection.)
 
 Orientation is an **optional cue**, not a requirement. The *universal* cue is
 the grid structure itself — rows are lines, columns are lines, local
@@ -174,13 +177,14 @@ src/
     mod.rs          trait Lattice { offsets, model_point, symmetry } + Sealed;
                     Coord, LatticeKind, GridTransform
     square.rs       impl Lattice for Square (D4, 4-neighbour, 2×2 seed, quad cell)
-    hex.rs          impl Lattice for Hex   (D6, 6-neighbour, …) — roadmap stub
+    hex.rs          impl Lattice for Hex   (D6, 6-neighbour, 3 families, triangle cell)
   shared/           SHARED back-half (over Lattice), used by BOTH strategies
-    mod.rs · merge.rs · validate/ · fit.rs (fit is pub(crate))
+    mod.rs · merge.rs (D4/D6) · validate/ · fit.rs (fit is pub(crate))
   seed_and_grow/    AXIS 2, strategy 1: build_components = (multi-seed) grow [+ fill]
     mod.rs · seed/ · grow.rs · grow_extend.rs · extension/ · fill.rs · policy.rs · angle.rs
-  topological/      AXIS 2, strategy 2: delaunay → classify → quads → walk
+  topological/      AXIS 2, strategy 2: delaunay → classify → quads → walk (square)
     mod.rs · delaunay.rs · classify.rs · quads.rs · filter.rs · walk.rs · axis.rs · trace.rs
+    hex.rs          hex topological: triangle-as-cell classify + axial walk
   detect.rs         facade: detect_grid / detect_grid_all, DetectionParams,
                     SquareAlgorithm; routes Evidence kind → synthesis + strategy;
                     runs strategy.build_components → shared merge/validate/fit
@@ -208,24 +212,34 @@ The crate exposes two tiers (see the `lib.rs` module docs):
 
 ## Extending to hex (without copying machinery)
 
-Hex is added by **filling in the trait**, not by duplicating folders:
+Hex detection is wired on the **topological path** by filling in the trait, not
+by duplicating folders. What was done:
 
 1. `impl Lattice for Hex` in `lattice/hex.rs` — axial neighbour offsets,
-   `model_point` (axial → model plane), D6 symmetry, and the hex seed / cell
-   shape.
-2. `shared/` (merge / validate / fit) already depends only on `Lattice`: `fit`
-   uses `model_point`; `merge` uses the symmetry group; `validate`'s
-   "lines are lines" becomes the three axial line families the trait exposes.
-   **No new files.**
-3. Each strategy's lattice-specific arm is filled behind the trait:
-   - SeedAndGrow — the neighbour set and seed-cell shape.
-   - Topological — `cells.rs` assembles a hexagon (six triangles) instead of a
-     quad (two triangles); Delaunay, the BFS skeleton, and the label walk are
-     unchanged.
+   `model_point` (axial → model plane), D6 symmetry, plus the three trait
+   additions the detection path needs: `axis_family_count` (3),
+   `model_axis_directions` (0°/60°/120°), and `cell_topology`
+   (`TriangleIsCell`).
+2. `shared/` (merge / validate / fit) depends only on `Lattice`: `fit` uses
+   `model_point` unchanged; `merge` is lattice-parameterized —
+   `merge_components_local_for(lattice)` selects D4 or D6 via
+   `symmetry_transforms`. Hex precision rests on the projective fit residual
+   (the square-oriented row/column validate is skipped on hex).
+3. The hex topological arm lives in `topological/hex.rs`: on a hex **point**
+   lattice the Delaunay triangles *are* the unit cells, so there is no diagonal
+   class and `quads.rs` (triangle-pair-to-quad merge) is **bypassed**.
+   Classification keeps triangles whose three edges align with three distinct
+   axis families; the walk labels axial `(q, r)` by parallelogram completion
+   (`d = a + b − c` across each shared edge). Delaunay and the projective fit
+   back-half are shared with the square topological path.
 
-The geometry-only hex primitives (D6 alignment, per-cell mesh, rectification,
-smoothness) existed previously and can be resurrected from history as the
-starting point. If oriented hex support is added later, model orientation as a
+**What hex does *not* get:** the post-convergence recovery schedule (boundary
+extension / interior fill / rescue) is seed-and-grow machinery and stays
+square-only. Hex is topological-only — `(Hex, *)` under `SeedAndGrow` is a typed
+`UnsupportedCombination` — and has no recovery stage. The geometry-only hex
+primitives (per-cell mesh, rectification, smoothness) and a hex seed-and-grow
+remain a roadmap item (see `docs/algorithmic_gaps.md` Gap 4). If oriented hex
+support is added later, model orientation as a
 set of **local lattice directions**, not as square-style x/y axes.
 
 ## Invariants any change must preserve
