@@ -1,4 +1,4 @@
-//! Local-geometry-only component merge for square grids.
+//! Local-geometry-only component merge.
 //!
 //! Both the topological pipeline and the
 //! seed-and-grow pipeline can leave multiple disconnected grid
@@ -6,6 +6,11 @@
 //! corners drops below the strength threshold, or when topological
 //! filtering removes a noisy quad in the middle of the board. This
 //! module attempts to reunite components in label space.
+//!
+//! The merge is lattice-parameterized: [`merge_components_local`] uses the
+//! square symmetry group (D4) for byte-compatibility with the square facades;
+//! [`merge_components_local_for`] takes a [`LatticeKind`] and uses its symmetry
+//! group (D6 for hex — a hex relabelling has 12 automorphisms).
 //!
 //! # Acceptance criterion
 //!
@@ -21,8 +26,9 @@
 //!   `position_tol_rel * mean_cell_size` pixels.
 //! - **Overlap count** must reach `min_overlap`.
 //!
-//! Component reorientation uses the eight elements of D4. The translation is fixed by an
-//! anchor-pair correspondence; we try every anchor pair from each
+//! Component reorientation uses the symmetry group of the lattice (the eight
+//! elements of D4 for square, the twelve of D6 for hex). The translation is
+//! fixed by an anchor-pair correspondence; we try every anchor pair from each
 //! component to find the best alignment.
 //!
 //! # Out-of-scope (v1)
@@ -210,6 +216,7 @@ fn find_best_alignment(
     c_q: &ComponentInput<'_>,
     cell_size: f32,
     params: &LocalMergeParams,
+    transforms: &[GridTransform],
 ) -> Option<(GridTransform, (i32, i32), usize)> {
     let pos_tol = params.position_tol_rel * cell_size.max(1.0);
     let pos_tol_sq = pos_tol * pos_tol;
@@ -237,7 +244,7 @@ fn find_best_alignment(
         {
             let slot = nn.item as usize;
             let (ij_q, _idx_q) = q_entries[slot];
-            for (t_idx, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
+            for (t_idx, t) in transforms.iter().enumerate() {
                 let tij_p = apply_transform(*t, ij_p);
                 let key = (t_idx as u8, ij_q.0 - tij_p.0, ij_q.1 - tij_p.1);
                 *hist.entry(key).or_insert(0usize) += 1;
@@ -264,7 +271,7 @@ fn find_best_alignment(
             // even bother re-scoring.
             continue;
         }
-        let t = GRID_TRANSFORMS_D4[t_idx as usize];
+        let t = transforms[t_idx as usize];
         let delta = (di, dj);
         let (overlap_full, max_err_full) = score_alignment(c_p, c_q, t, delta);
         if overlap_full < params.min_overlap || max_err_full > pos_tol {
@@ -288,7 +295,7 @@ fn find_best_alignment(
             best = Some((t_idx, (di, dj), overlap_full, max_err_full));
         }
     }
-    best.map(|(t_idx, d, n, _)| (GRID_TRANSFORMS_D4[t_idx as usize], d, n))
+    best.map(|(t_idx, d, n, _)| (transforms[t_idx as usize], d, n))
 }
 
 fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
@@ -326,6 +333,30 @@ fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
 pub fn merge_components_local(
     inputs: &[ComponentInput<'_>],
     params: &LocalMergeParams,
+) -> ComponentMergeResult {
+    // Default to the square symmetry group, preserving the historical
+    // byte-identical behaviour for the square callers (topological + seed-and-
+    // grow facades). The lattice-parameterized variant is
+    // [`merge_components_local_for`].
+    merge_components_local_with_transforms(inputs, params, &GRID_TRANSFORMS_D4)
+}
+
+/// Lattice-parameterized [`merge_components_local`]: reunite components under
+/// the symmetry group of `lattice` (D4 for square, D6 for hex). The hex path
+/// uses this so the 12 D6 relabellings of a hex component are all candidate
+/// alignments (Phase-4 Step 3).
+pub fn merge_components_local_for(
+    inputs: &[ComponentInput<'_>],
+    params: &LocalMergeParams,
+    lattice: LatticeKind,
+) -> ComponentMergeResult {
+    merge_components_local_with_transforms(inputs, params, lattice.symmetry_transforms())
+}
+
+fn merge_components_local_with_transforms(
+    inputs: &[ComponentInput<'_>],
+    params: &LocalMergeParams,
+    transforms: &[GridTransform],
 ) -> ComponentMergeResult {
     let mut stats = ComponentMergeStats {
         components_in: inputs.len(),
@@ -374,7 +405,8 @@ pub fn merge_components_local(
                     labelled: &working[j],
                     positions: positions_per[j],
                 };
-                let Some((t, delta, _overlap)) = find_best_alignment(&c_p, &c_q, cell_size, params)
+                let Some((t, delta, _overlap)) =
+                    find_best_alignment(&c_p, &c_q, cell_size, params, transforms)
                 else {
                     continue;
                 };
@@ -579,5 +611,87 @@ mod tests {
             "drifted corner should block the merge entirely"
         );
         assert_eq!(res.diagnostics.merges_accepted, 0);
+    }
+
+    // --- Hex (D6) merge -------------------------------------------------
+
+    fn hex_model(q: i32, r: i32) -> Point2<f32> {
+        let sqrt3_2 = 3.0_f32.sqrt() * 0.5;
+        Point2::new(q as f32 + 0.5 * r as f32, sqrt3_2 * r as f32)
+    }
+
+    /// Build a hex axial patch (radius `radius`) at pixel `scale`, with an axial
+    /// relabelling applied by `relabel` (a D6 element index 0..12) so the merge
+    /// must undo the automorphism. Positions are in model pixels regardless of
+    /// the relabelling (the physical points are the same).
+    fn hex_component(radius: i32, scale: f32, relabel: usize) -> (Labels, Positions) {
+        let t = crate::lattice::D6_TRANSFORMS[relabel];
+        let mut labelled = HashMap::new();
+        let mut positions = Vec::new();
+        for q in -radius..=radius {
+            for r in (-radius).max(-q - radius)..=radius.min(-q + radius) {
+                let idx = positions.len();
+                let m = hex_model(q, r);
+                positions.push(Point2::new(m.x * scale, m.y * scale));
+                let c = t.apply(Coord::new(q, r));
+                labelled.insert((c.u, c.v), idx);
+            }
+        }
+        (labelled, positions)
+    }
+
+    #[test]
+    fn hex_identical_components_merge_under_d6() {
+        // Two copies of the same hex patch, the second relabelled by a
+        // non-identity D6 element. The D6-aware merge must reunite them into
+        // one component (the D4-only merge would not find the alignment).
+        let (l1, p1) = hex_component(2, 14.0, 0);
+        let (l2, p2) = hex_component(2, 14.0, 4); // 120° rotation
+        let inputs = vec![
+            ComponentInput {
+                labelled: &l1,
+                positions: &p1,
+            },
+            ComponentInput {
+                labelled: &l2,
+                positions: &p2,
+            },
+        ];
+        let res =
+            merge_components_local_for(&inputs, &LocalMergeParams::default(), LatticeKind::Hex);
+        assert_eq!(
+            res.components.len(),
+            1,
+            "D6 merge should reunite the relabelled hex copies"
+        );
+        assert_eq!(res.components[0].len(), l1.len());
+        assert_eq!(res.diagnostics.merges_accepted, 1);
+    }
+
+    #[test]
+    fn hex_relabelled_copy_merges_for_every_d6_element() {
+        // For every D6 automorphism, a relabelled copy must still merge — the
+        // 12-element symmetry group is fully exercised.
+        for relabel in 0..crate::lattice::D6_TRANSFORMS.len() {
+            let (l1, p1) = hex_component(2, 16.0, 0);
+            let (l2, p2) = hex_component(2, 16.0, relabel);
+            let inputs = vec![
+                ComponentInput {
+                    labelled: &l1,
+                    positions: &p1,
+                },
+                ComponentInput {
+                    labelled: &l2,
+                    positions: &p2,
+                },
+            ];
+            let res =
+                merge_components_local_for(&inputs, &LocalMergeParams::default(), LatticeKind::Hex);
+            assert_eq!(
+                res.components.len(),
+                1,
+                "D6 element {relabel} failed to merge"
+            );
+        }
     }
 }

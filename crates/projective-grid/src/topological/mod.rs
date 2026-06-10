@@ -912,12 +912,21 @@ pub(crate) fn detect_hex_oriented3_topological_all(
         return Err(GridError::DegenerateGeometry);
     }
 
+    // Reunite the labelled hex components in axial label space under the D6
+    // symmetry group (the hex analogue of the square facade's D4
+    // `merge_components_local`). Ordered largest-first, ties by smallest feature
+    // index, for determinism.
+    let merged = merge_hex_components(&components, &positions);
+    if merged.is_empty() {
+        return Err(GridError::DegenerateGeometry);
+    }
+
     let mut component_outputs: Vec<ComponentOutput> = Vec::new();
-    for comp in &components {
-        if comp.labelled.len() < 4 {
+    for labelled in &merged {
+        if labelled.len() < 4 {
             continue;
         }
-        match build_hex_component_solution(&comp.labelled, features, &positions, params) {
+        match build_hex_component_solution(labelled, features, &positions, params) {
             Some(out) => component_outputs.push(out),
             None => continue,
         }
@@ -938,6 +947,63 @@ pub(crate) fn detect_hex_oriented3_topological_all(
         features,
         dimensions,
     ))
+}
+
+/// Reunite the hex walk's labelled components in axial label space via the
+/// shared local-geometry merge under the D6 symmetry group, returning one
+/// `Coord`-keyed map per surviving merged component.
+fn merge_hex_components(
+    components: &[hex::HexComponent],
+    positions: &[Point2<f32>],
+) -> Vec<std::collections::HashMap<Coord, usize>> {
+    let mut ordered: Vec<&hex::HexComponent> = components.iter().collect();
+    ordered.sort_by(|a, b| {
+        b.labelled.len().cmp(&a.labelled.len()).then_with(|| {
+            a.labelled
+                .values()
+                .copied()
+                .min()
+                .unwrap_or(usize::MAX)
+                .cmp(&b.labelled.values().copied().min().unwrap_or(usize::MAX))
+        })
+    });
+
+    let owned: Vec<std::collections::HashMap<(i32, i32), usize>> = ordered
+        .iter()
+        .map(|c| {
+            c.labelled
+                .iter()
+                .map(|(coord, &idx)| ((coord.u, coord.v), idx))
+                .collect()
+        })
+        .collect();
+    let views: Vec<ComponentInput<'_>> = owned
+        .iter()
+        .map(|labelled| ComponentInput {
+            labelled,
+            positions,
+        })
+        .collect();
+
+    let merged = crate::shared::merge::merge_components_local_for(
+        &views,
+        &LocalMergeParams::default(),
+        LatticeKind::Hex,
+    );
+    let merged = if merged.components.is_empty() {
+        owned
+    } else {
+        merged.components
+    };
+
+    merged
+        .into_iter()
+        .map(|m| {
+            m.into_iter()
+                .map(|((u, v), idx)| (Coord::new(u, v), idx))
+                .collect()
+        })
+        .collect()
 }
 
 /// Fit one hex component through [`LatticeKind::Hex`] with a single

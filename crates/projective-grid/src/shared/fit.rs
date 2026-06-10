@@ -97,3 +97,60 @@ pub(crate) fn fit_component(
         over_threshold,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::feature::{LocalAxis, PointFeature};
+    use nalgebra::{Matrix3, Vector3};
+
+    fn feat(idx: usize, p: Point2<f32>) -> OrientedFeature<2> {
+        OrientedFeature::<2>::new(
+            PointFeature::new(idx, p),
+            [LocalAxis::new(0.0, None), LocalAxis::new(1.0, None)],
+        )
+    }
+
+    /// The shared fit routes model coords through `LatticeKind::model_point`,
+    /// so a hex component projected through a homography fits to sub-pixel
+    /// residuals — proving the back-half is family-general (Phase-4 Step 3).
+    #[test]
+    fn fit_recovers_hex_component_under_homography() {
+        let h = Matrix3::new(
+            1.0, 0.12, 0.0, //
+            0.03, 1.0, 0.0, //
+            0.0006, 0.0004, 1.0,
+        );
+        // A small hex patch in axial coords.
+        let coords = [
+            Coord::new(0, 0),
+            Coord::new(1, 0),
+            Coord::new(0, 1),
+            Coord::new(1, 1),
+            Coord::new(-1, 1),
+            Coord::new(1, -1),
+            Coord::new(2, 0),
+        ];
+        let mut features = Vec::new();
+        let mut positions = Vec::new();
+        let mut labelled: Vec<(Coord, usize)> = Vec::new();
+        for (idx, &c) in coords.iter().enumerate() {
+            let m = LatticeKind::Hex.model_point(c);
+            let v = h * Vector3::new(m.x * 30.0 + 100.0, m.y * 30.0 + 100.0, 1.0);
+            let p = Point2::new(v.x / v.z, v.y / v.z);
+            features.push(feat(idx, p));
+            positions.push(p);
+            labelled.push((c, idx));
+        }
+        let params = DetectionParams::default();
+        let res = fit_component(&labelled, &features, &positions, LatticeKind::Hex, &params)
+            .expect("hex fit");
+        assert_eq!(res.entries.len(), coords.len());
+        assert!(
+            res.fit.residuals.max_px < 1e-2,
+            "hex fit residual {} px too high",
+            res.fit.residuals.max_px
+        );
+        assert!(res.over_threshold.is_empty());
+    }
+}
