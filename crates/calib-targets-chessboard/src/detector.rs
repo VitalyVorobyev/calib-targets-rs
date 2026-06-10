@@ -13,7 +13,7 @@
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
 
-use crate::params::{DetectorParams, GraphBuildAlgorithm, OrientationSource};
+use crate::params::{ChessboardParamsError, DetectorParams, GraphBuildAlgorithm};
 use crate::pipeline::{self, run_pipeline_lean};
 use crate::topological::detect_all_topological;
 
@@ -38,30 +38,42 @@ pub struct Detector {
 
 impl Detector {
     /// Construct a detector with the given parameters.
+    ///
+    /// Infallible for binding compatibility. An invalid configuration (see
+    /// [`DetectorParams::validate`]) is not rejected here; instead the
+    /// `detect*` methods return a no-detection result for it. Prefer
+    /// [`Self::try_new`] to surface the typed [`ChessboardParamsError`] up
+    /// front.
     pub fn new(params: DetectorParams) -> Self {
         Self { params }
     }
 
-    /// Reject the one unsupported configuration: neighbour-edge orientation
-    /// requires the topological builder. The native seed-and-grow pipeline
-    /// consumes ChESS corner axes directly throughout, so honouring
-    /// [`OrientationSource::NeighbourEdges`] there would silently fall back to
-    /// ChESS axes — a head-to-head measurement would then secretly compare the
-    /// wrong thing. Fail loudly instead.
-    fn guard_orientation_source(&self) {
-        if matches!(
-            self.params.graph_build_algorithm,
-            GraphBuildAlgorithm::SeedAndGrow
-        ) && matches!(
-            self.params.orientation_source,
-            OrientationSource::NeighbourEdges
-        ) {
-            panic!(
-                "OrientationSource::NeighbourEdges is only supported with \
-                 GraphBuildAlgorithm::Topological; the native SeedAndGrow pipeline \
-                 consumes ChESS corner axes directly and cannot run orientation-free"
-            );
-        }
+    /// Fallible constructor: validate the configuration and return a typed
+    /// [`ChessboardParamsError`] for any combination the detector cannot
+    /// honour (currently
+    /// [`OrientationSource::NeighbourEdges`](crate::params::OrientationSource::NeighbourEdges)
+    /// with [`GraphBuildAlgorithm::SeedAndGrow`]).
+    pub fn try_new(params: DetectorParams) -> Result<Self, ChessboardParamsError> {
+        params.validate()?;
+        Ok(Self { params })
+    }
+
+    /// Whether this detector's configuration is one the `detect*` paths can
+    /// honour. The native seed-and-grow pipeline consumes ChESS corner axes
+    /// directly throughout, so honouring
+    /// [`OrientationSource::NeighbourEdges`](crate::params::OrientationSource::NeighbourEdges)
+    /// there would silently fall back to ChESS axes — a head-to-head
+    /// measurement would then secretly compare the wrong thing. An unsupported
+    /// configuration yields a no-detection result (a debug build also asserts,
+    /// so a misconfiguration surfaces in tests).
+    fn config_supported(&self) -> bool {
+        let ok = self.params.validate().is_ok();
+        debug_assert!(
+            ok,
+            "unsupported chessboard configuration: {}",
+            ChessboardParamsError::NeighbourEdgesRequiresTopological
+        );
+        ok
     }
 
     /// Simple entry point: run the pipeline and return the best detection.
@@ -74,7 +86,9 @@ impl Detector {
         )
     )]
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
-        self.guard_orientation_source();
+        if !self.config_supported() {
+            return None;
+        }
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -101,7 +115,13 @@ impl Detector {
         )
     )]
     pub fn detect_with_diagnostics(&self, corners: &[ChessCorner]) -> DebugFrame {
-        self.guard_orientation_source();
+        // Unsupported config: run the pipeline over no corners so the caller
+        // gets a well-formed no-detection frame instead of a panic.
+        let corners: &[ChessCorner] = if self.config_supported() {
+            corners
+        } else {
+            &[]
+        };
         run_pipeline(&self.params, corners, &HashSet::new())
     }
 
@@ -126,7 +146,9 @@ impl Detector {
         )
     )]
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
-        self.guard_orientation_source();
+        if !self.config_supported() {
+            return Vec::new();
+        }
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -170,7 +192,13 @@ impl Detector {
         )
     )]
     pub fn detect_all_with_diagnostics(&self, corners: &[ChessCorner]) -> Vec<DebugFrame> {
-        self.guard_orientation_source();
+        // Unsupported config: run over no corners so the caller gets a
+        // well-formed no-detection frame instead of a panic.
+        let corners: &[ChessCorner] = if self.config_supported() {
+            corners
+        } else {
+            &[]
+        };
         let cap = self.params.max_components.max(1) as usize;
         let mut consumed: HashSet<usize> = HashSet::new();
         let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
@@ -199,6 +227,7 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::corner::ChessCorner;
+    use crate::params::OrientationSource;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
@@ -319,17 +348,24 @@ mod tests {
     }
 
     /// Neighbour-edge orientation on the native SeedAndGrow pipeline is
-    /// unsupported and must fail loudly rather than silently use ChESS axes.
+    /// unsupported. It is now a *typed* error surfaced by `validate()` /
+    /// `try_new()` rather than a runtime panic, so a head-to-head measurement
+    /// can never silently fall back to ChESS axes.
     #[test]
-    #[should_panic(expected = "NeighbourEdges is only supported")]
-    fn neighbour_edges_seed_and_grow_panics() {
+    fn neighbour_edges_seed_and_grow_is_typed_error() {
         let params = DetectorParams {
             graph_build_algorithm: GraphBuildAlgorithm::SeedAndGrow,
             orientation_source: OrientationSource::NeighbourEdges,
             ..DetectorParams::default()
         };
-        let det = Detector::new(params);
-        let _ = det.detect(&[]);
+        assert_eq!(
+            params.validate(),
+            Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
+        );
+        assert!(matches!(
+            Detector::try_new(params.clone()),
+            Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
+        ));
     }
 
     #[test]

@@ -75,8 +75,10 @@ fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
 /// corner axes directly throughout its seed / grow / validate / booster
 /// stages and cannot run orientation-free. Pairing
 /// [`NeighbourEdges`](OrientationSource::NeighbourEdges) with `SeedAndGrow`
-/// panics rather than silently falling back to ChESS axes (which would make a
-/// head-to-head measurement secretly compare the wrong thing).
+/// is a typed [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]
+/// (surfaced by [`DetectorParams::validate`] / [`crate::Detector::try_new`])
+/// rather than a silent fallback to ChESS axes (which would make a head-to-head
+/// measurement secretly compare the wrong thing).
 ///
 /// Default: [`ChessAxes`](OrientationSource::ChessAxes) — detection behaves
 /// exactly as before unless a caller opts in, and the default value is omitted
@@ -98,6 +100,39 @@ pub enum OrientationSource {
 fn default_orientation_source() -> OrientationSource {
     OrientationSource::default()
 }
+
+/// A [`DetectorParams`] configuration the chessboard detector cannot honour.
+///
+/// Returned by [`DetectorParams::validate`] / [`crate::Detector::try_new`]. The
+/// only current variant is the orientation-source / graph-builder mismatch that
+/// previously panicked at runtime; the enum is `#[non_exhaustive]` so future
+/// validations can be added without a breaking change.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ChessboardParamsError {
+    /// [`OrientationSource::NeighbourEdges`] was paired with
+    /// [`GraphBuildAlgorithm::SeedAndGrow`]. The native seed-and-grow pipeline
+    /// consumes ChESS corner axes directly throughout its seed / grow /
+    /// validate / booster stages and cannot run orientation-free; honouring
+    /// `NeighbourEdges` there would silently fall back to ChESS axes (a
+    /// head-to-head measurement would then secretly compare the wrong thing).
+    /// Use [`GraphBuildAlgorithm::Topological`] for the orientation-free path.
+    NeighbourEdgesRequiresTopological,
+}
+
+impl core::fmt::Display for ChessboardParamsError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NeighbourEdgesRequiresTopological => f.write_str(
+                "OrientationSource::NeighbourEdges is only supported with \
+                 GraphBuildAlgorithm::Topological; the native SeedAndGrow pipeline \
+                 consumes ChESS corner axes directly and cannot run orientation-free",
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ChessboardParamsError {}
 
 fn is_default_orientation_source(value: &OrientationSource) -> bool {
     *value == OrientationSource::default()
@@ -204,6 +239,25 @@ impl Default for DetectorParams {
 }
 
 impl DetectorParams {
+    /// Validate the configuration, returning a typed error for any combination
+    /// the detector cannot honour.
+    ///
+    /// Currently the only invalid combination is
+    /// [`OrientationSource::NeighbourEdges`] with
+    /// [`GraphBuildAlgorithm::SeedAndGrow`] (see
+    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]). The
+    /// fallible constructor [`crate::Detector::try_new`] surfaces this; the
+    /// infallible [`crate::Detector::new`] + `detect*` path treats an invalid
+    /// configuration as a no-detection result rather than aborting.
+    pub fn validate(&self) -> Result<(), ChessboardParamsError> {
+        if matches!(self.graph_build_algorithm, GraphBuildAlgorithm::SeedAndGrow)
+            && matches!(self.orientation_source, OrientationSource::NeighbourEdges)
+        {
+            return Err(ChessboardParamsError::NeighbourEdgesRequiresTopological);
+        }
+        Ok(())
+    }
+
     /// Attach an [`AdvancedTuning`] override and return the updated params.
     ///
     /// The advanced knobs are NOT covered by semver — see [`AdvancedTuning`].
