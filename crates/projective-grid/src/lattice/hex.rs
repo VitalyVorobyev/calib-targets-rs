@@ -10,9 +10,9 @@
 //! the shared back-half already runs through [`Lattice::model_point`] and the
 //! symmetry group unchanged.
 
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector2};
 
-use super::{Coord, GridTransform, Lattice, LatticeKind};
+use super::{CellTopology, Coord, GridTransform, Lattice, LatticeKind};
 
 /// Zero-sized marker for the axial-coordinate hexagonal lattice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -44,7 +44,31 @@ impl Lattice for Hex {
     fn symmetry_transforms(self) -> &'static [GridTransform] {
         &D6_TRANSFORMS
     }
+
+    fn axis_family_count(self) -> usize {
+        3
+    }
+
+    fn model_axis_directions(self) -> &'static [Vector2<f32>] {
+        &HEX_AXIS_DIRECTIONS
+    }
+
+    fn cell_topology(self) -> CellTopology {
+        CellTopology::TriangleIsCell
+    }
 }
+
+/// Unit model-plane directions of the three hex axis families.
+///
+/// Derived from the axial neighbour offsets through [`Hex::model_point`] and
+/// folded into the undirected upper half-plane: `(1,0)` maps to `(1,0)` at 0°,
+/// `(0,1)` maps to `(cos60°, sin60°)` at 60°, and `(1,-1)` maps to a direction
+/// at -60° ≡ 120°. The three families therefore sit at 0°, 60°, and 120°.
+static HEX_AXIS_DIRECTIONS: [Vector2<f32>; 3] = [
+    Vector2::new(1.0, 0.0),
+    Vector2::new(0.5, 0.866_025_4),
+    Vector2::new(-0.5, 0.866_025_4),
+];
 
 /// Six axial neighbour offsets on a hex grid.
 pub const HEX_AXIAL_OFFSETS: [Coord; 6] = [

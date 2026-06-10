@@ -13,13 +13,36 @@
 //! [`Lattice::model_point`], so adding hex detection is a fill-in-the-trait
 //! task rather than a new folder tree.
 
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector2};
 
 pub mod hex;
 pub mod square;
 
 pub use hex::Hex;
 pub use square::Square;
+
+/// How the topological pipeline turns Delaunay triangles into lattice cells.
+///
+/// The axis-driven topological grid finder triangulates the feature cloud and
+/// then has to recover the lattice cells from the triangle mesh. The recovery
+/// shape differs by family:
+///
+/// * On a **square** lattice a unit cell is a quad, which the Delaunay
+///   triangulation splits into two triangles sharing the cell **diagonal**.
+///   The pipeline classifies that diagonal, then merges the triangle pair back
+///   into one quad ([`crate::topological`] `quads.rs`).
+/// * On a **hex** point lattice (one feature per lattice node) the Delaunay
+///   triangles **are** the unit cells — three mutually-adjacent nodes form an
+///   equilateral-ish triangle, and there is no diagonal class. The triangle-pair
+///   merge is bypassed entirely; each kept triangle is walked directly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CellTopology {
+    /// Merge diagonal-sharing triangle pairs into quads (square lattice).
+    TrianglePairToQuad,
+    /// Each Delaunay triangle is itself a unit cell (hex point lattice).
+    TriangleIsCell,
+}
 
 /// Integer coordinate on a lattice.
 ///
@@ -101,6 +124,38 @@ impl LatticeKind {
             Self::Hex => Hex.symmetry_transforms(),
         }
     }
+
+    /// Number of distinct axis families: 2 for square (`±u`, `±v`), 3 for hex
+    /// (the three axial directions). This is the `k` the topological
+    /// classifier matches each edge against.
+    pub fn axis_family_count(self) -> usize {
+        match self {
+            Self::Square => Square.axis_family_count(),
+            Self::Hex => Hex.axis_family_count(),
+        }
+    }
+
+    /// Unit model-plane directions of the `k` primitive axis families.
+    ///
+    /// Returns one direction per family (`axis_family_count()` of them), each a
+    /// unit vector in the model plane. For square these are `(1,0)` and `(0,1)`;
+    /// for hex they are the three axial step directions folded into the upper
+    /// half-plane. The topological pipeline uses these as the canonical
+    /// orientation targets when synthesizing per-corner axes.
+    pub fn model_axis_directions(self) -> &'static [Vector2<f32>] {
+        match self {
+            Self::Square => Square.model_axis_directions(),
+            Self::Hex => Hex.model_axis_directions(),
+        }
+    }
+
+    /// How Delaunay triangles map to lattice cells for this family.
+    pub fn cell_topology(self) -> CellTopology {
+        match self {
+            Self::Square => Square.cell_topology(),
+            Self::Hex => Hex.cell_topology(),
+        }
+    }
 }
 
 /// Crate-private sealing for [`Lattice`].
@@ -154,6 +209,15 @@ pub trait Lattice: Copy + private::Sealed {
 
     /// The coordinate symmetry group (dihedral) for this family.
     fn symmetry_transforms(self) -> &'static [GridTransform];
+
+    /// Number of distinct axis families (`k`): 2 for square, 3 for hex.
+    fn axis_family_count(self) -> usize;
+
+    /// Unit model-plane directions of the `k` primitive axis families.
+    fn model_axis_directions(self) -> &'static [Vector2<f32>];
+
+    /// How Delaunay triangles map to lattice cells for this family.
+    fn cell_topology(self) -> CellTopology;
 }
 
 /// A lattice-coordinate symmetry transform: `out = matrix * coord + offset`.
@@ -249,6 +313,48 @@ mod tests {
         assert!(D4_TRANSFORMS
             .iter()
             .all(|t| t.source_kind == LatticeKind::Square && t.determinant().abs() == 1));
+    }
+
+    #[test]
+    fn axis_family_counts() {
+        assert_eq!(LatticeKind::Square.axis_family_count(), 2);
+        assert_eq!(LatticeKind::Hex.axis_family_count(), 3);
+    }
+
+    #[test]
+    fn cell_topology_by_family() {
+        assert_eq!(
+            LatticeKind::Square.cell_topology(),
+            CellTopology::TrianglePairToQuad
+        );
+        assert_eq!(
+            LatticeKind::Hex.cell_topology(),
+            CellTopology::TriangleIsCell
+        );
+    }
+
+    #[test]
+    fn model_axis_directions_are_unit_and_match_offsets() {
+        // Square: the two axis directions are the +u/+v unit vectors.
+        let sq = LatticeKind::Square.model_axis_directions();
+        assert_eq!(sq.len(), 2);
+        for v in sq {
+            assert!((v.norm() - 1.0).abs() < 1e-6);
+        }
+        // Hex: three unit directions at 0°, 60°, 120° (mod π).
+        let hx = LatticeKind::Hex.model_axis_directions();
+        assert_eq!(hx.len(), 3);
+        for v in hx {
+            assert!((v.norm() - 1.0).abs() < 1e-6);
+        }
+        // The first hex axis direction must equal the folded model direction
+        // of the (1,0) axial offset.
+        let d_q = LatticeKind::Hex.model_point(Coord::new(1, 0))
+            - LatticeKind::Hex.model_point(Coord::new(0, 0));
+        let ang_offset = d_q.y.atan2(d_q.x);
+        let ang_dir = hx[0].y.atan2(hx[0].x);
+        let diff = (ang_offset - ang_dir).abs() % std::f32::consts::PI;
+        assert!(diff < 1e-5 || (std::f32::consts::PI - diff) < 1e-5);
     }
 
     #[test]

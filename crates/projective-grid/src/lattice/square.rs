@@ -5,9 +5,9 @@
 //! cardinal neighbour offsets, and the dihedral D4 symmetry group acting on
 //! `(i, j)` coordinates.
 
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector2};
 
-use super::{Coord, GridTransform, Lattice, LatticeKind};
+use super::{CellTopology, Coord, GridTransform, Lattice, LatticeKind};
 
 /// Zero-sized marker for the orthogonal square lattice.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -35,7 +35,22 @@ impl Lattice for Square {
     fn symmetry_transforms(self) -> &'static [GridTransform] {
         &D4_TRANSFORMS
     }
+
+    fn axis_family_count(self) -> usize {
+        2
+    }
+
+    fn model_axis_directions(self) -> &'static [Vector2<f32>] {
+        &SQUARE_AXIS_DIRECTIONS
+    }
+
+    fn cell_topology(self) -> CellTopology {
+        CellTopology::TrianglePairToQuad
+    }
 }
+
+/// Unit model-plane directions of the two square axis families: `+u` and `+v`.
+static SQUARE_AXIS_DIRECTIONS: [Vector2<f32>; 2] = [Vector2::new(1.0, 0.0), Vector2::new(0.0, 1.0)];
 
 /// Four cardinal neighbour offsets on a square grid.
 pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = [
