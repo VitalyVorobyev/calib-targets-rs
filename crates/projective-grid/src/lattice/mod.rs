@@ -103,6 +103,22 @@ impl LatticeKind {
     }
 }
 
+/// Crate-private sealing for [`Lattice`].
+///
+/// External crates can *name* and *use* [`Lattice`] (it appears in the public
+/// API of the shared back-half) but cannot *implement* it. This lets the
+/// trait grow new required methods in later phases — the hex-detection axes,
+/// the cell-type discriminant, etc. (see `docs/DESIGN.md` "Extending to hex")
+/// — without those additions being a breaking change for downstream impls,
+/// because the only impls are the two zero-sized markers in this crate.
+mod private {
+    /// Sealed-trait marker. Implemented only for the in-crate lattice markers.
+    pub trait Sealed {}
+
+    impl Sealed for super::Square {}
+    impl Sealed for super::Hex {}
+}
+
 /// Per-family lattice geometry.
 ///
 /// A [`Lattice`] impl supplies the geometry a recovery pipeline needs without
@@ -114,7 +130,17 @@ impl LatticeKind {
 ///
 /// Implementations are zero-sized markers ([`Square`], [`Hex`]); the
 /// [`LatticeKind`] enum is the runtime selector that dispatches to them.
-pub trait Lattice: Copy {
+///
+/// # Sealed
+///
+/// This trait is **sealed**: it has a crate-private supertrait
+/// (`private::Sealed`) so only the two in-crate markers can implement it.
+/// The seal is deliberate — the hex-detection roadmap (Phase 4) adds new
+/// required methods (axis-family count, model-plane axis directions, cell-type
+/// discriminant). Because no external crate can implement `Lattice`, those
+/// additions are non-breaking. External callers depend on `Lattice` only as a
+/// bound / through [`LatticeKind`] dispatch, never as an impl target.
+pub trait Lattice: Copy + private::Sealed {
     /// The [`LatticeKind`] this impl corresponds to.
     const KIND: LatticeKind;
 
