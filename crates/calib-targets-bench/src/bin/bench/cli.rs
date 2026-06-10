@@ -52,7 +52,8 @@ pub(crate) struct DiagnoseArgs {
     /// Which graph-build algorithm to diagnose. `seed-and-grow` produces a
     /// full `DebugFrame`; `topological` runs the production topological
     /// detector and renders an overlay of which corners ended up labelled.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
+    /// Default matches the production `GraphBuildAlgorithm` default.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
     /// Where the topological builder gets per-corner grid directions.
     /// `neighbour-edges` synthesizes them from neighbour geometry (topological
@@ -93,8 +94,10 @@ pub(crate) struct RunArgs {
     /// Restrict to a single image (relative path under workspace root).
     #[arg(long)]
     pub(crate) image: Option<String>,
-    /// Which graph-build algorithm to exercise.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
+    /// Which graph-build algorithm to exercise. Default matches the
+    /// production `GraphBuildAlgorithm` default, which is also the cell
+    /// `bless` pins baselines from.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
     /// Detection engine. `pipeline` runs the full chessboard detector;
     /// `grid` drives the projective-grid grid builder directly (the
@@ -136,8 +139,8 @@ pub(crate) struct PreviewArgs {
     pub(crate) all: bool,
     /// Which graph-build algorithm to exercise. Output filenames carry the
     /// algorithm name as a suffix so two runs can coexist in the same `--out`
-    /// directory.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::SeedAndGrow)]
+    /// directory. Default matches the production `GraphBuildAlgorithm` default.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
     /// Detection engine (see `run --help`). The slug is part of the overlay
     /// filename so cells coexist in the same `--out` directory.
