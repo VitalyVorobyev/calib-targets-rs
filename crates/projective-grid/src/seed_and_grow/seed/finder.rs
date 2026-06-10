@@ -242,9 +242,7 @@ pub fn find_quad<V: SquareSeedPolicy>(policy: &V, params: &SeedQuadParams) -> Op
                     // ties by the smaller corner index for run-to-run stability.
                     let take = match best {
                         None => true,
-                        Some((best_idx, best_d)) => {
-                            d < best_d || (d == best_d && d_idx < best_idx)
-                        }
+                        Some((best_idx, best_d)) => d < best_d || (d == best_d && d_idx < best_idx),
                     };
                     if take {
                         best = Some((d_idx, d));

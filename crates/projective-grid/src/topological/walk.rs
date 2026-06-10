@@ -13,7 +13,7 @@
 //! component's `(u, v)` set is rebased to `(0, 0)` to satisfy the
 //! workspace's hard "non-negative grid labels" invariant.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use super::quads::Quad;
 use crate::lattice::Coord;
@@ -254,6 +254,7 @@ pub(super) fn label_components(
         // map. Conflicts (two quads disagreeing on the same vertex) drop
         // the component (it's not single-valued).
         let mut labelled: HashMap<Coord, usize> = HashMap::new();
+        let mut ambiguous_labels: HashSet<Coord> = HashSet::new();
         let mut by_corner: HashMap<usize, Coord> = HashMap::new();
         let mut conflicts = false;
         for (&qi, lbls) in &quad_labels {
@@ -272,9 +273,27 @@ pub(super) fn label_components(
         if conflicts {
             continue;
         }
+        // Two distinct corners can still claim the same coord (e.g. a
+        // marker-internal false corner one cell width away from the true
+        // intersection). Before this rule the winner was whichever corner
+        // `HashMap` iteration visited last — nondeterministic, and on a
+        // measured real case the structural quad-support majority favours
+        // the false corner. A collision is ambiguity the walk cannot
+        // resolve (it has no positions or scores), so label neither
+        // corner: downstream recovery re-attaches the coord from local
+        // geometric prediction, which discriminates correctly.
         for (v, lbl) in by_corner {
-            labelled.insert(lbl, v);
+            match labelled.entry(lbl) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(v);
+                }
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    e.remove();
+                    ambiguous_labels.insert(lbl);
+                }
+            }
         }
+        labelled.retain(|lbl, _| !ambiguous_labels.contains(lbl));
         if labelled.len() < min_corners_per_component {
             continue;
         }
