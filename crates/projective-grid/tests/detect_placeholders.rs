@@ -67,6 +67,30 @@ fn hex_oriented_detection_is_typed_unsupported() {
 }
 
 #[test]
+fn square_oriented3_detection_is_typed_unsupported() {
+    // `(Square, Oriented3)` is reserved as hex-native triple-axis evidence;
+    // no square algorithm consumes a third axis, so it stays unsupported.
+    let axis = LocalAxis::new(0.0_f32, None);
+    let features = [
+        OrientedFeature::<3>::new(
+            point(0),
+            [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
+        ),
+        OrientedFeature::<3>::new(
+            point(1),
+            [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
+        ),
+    ];
+    let request = DetectionRequest::new(
+        LatticeKind::Square,
+        Evidence::Oriented3(&features),
+        None,
+        DetectionParams::default(),
+    );
+    assert_unsupported(request, EvidenceKind::Oriented3);
+}
+
+#[test]
 fn coordinate_hypothesis_detection_is_typed_unsupported() {
     let features = [point(0), point(1), point(2), point(3)];
     let hypotheses = [

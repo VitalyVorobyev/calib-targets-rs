@@ -1,13 +1,19 @@
 //! Detection task facade.
 //!
-//! The first working implementation targets
-//! [`(LatticeKind::Square, Evidence::Oriented2)`](Evidence::Oriented2): a
-//! seed-and-grow pipeline (seed → BFS grow → validate → fit). The same
-//! evidence slot also supports an axis-driven topological grid finder.
-//! Both produce the same [`GridSolution`] shape; callers select the
-//! algorithm via [`SquareAlgorithm`].
-//! All other `(lattice, evidence)` combinations remain typed
-//! [`GridError::UnsupportedCombination`] placeholders.
+//! The working implementations target the square lattice with any of the three
+//! input-feature kinds. [`Evidence::Oriented2`] is the native shape: a
+//! seed-and-grow pipeline (seed → BFS grow → validate → fit) or an axis-driven
+//! topological grid finder, selected via [`SquareAlgorithm`].
+//! [`Evidence::Positions`] (orientation-free) and [`Evidence::Oriented1`]
+//! (single-axis) are synthesized up to the Oriented2 shape
+//! ([`crate::orient`]) and then run the same strategies — so all three
+//! square input kinds share one back-half. All produce the same
+//! [`GridSolution`] shape.
+//!
+//! The remaining combinations — [`Evidence::Oriented3`],
+//! [`Evidence::CoordinateHypotheses`], and every `(Hex, *)` variant — are
+//! typed [`GridError::UnsupportedCombination`] placeholders (see the support
+//! matrix on [`detect_grid`]).
 //!
 //! The detection surface is pinned to `f32`. The generic-`F` surface that
 //! remains in the crate is the pure-geometry [`crate::geometry`] module.
@@ -49,13 +55,27 @@ pub enum SquareAlgorithm {
 pub enum Evidence<'a> {
     /// Position-only point features.
     Positions(&'a [PointFeature]),
-    /// Point features with one local lattice direction.
+    /// Point features with one local lattice direction. Supported for
+    /// `Square`: the orthogonal direction is synthesized from neighbour
+    /// geometry ([`crate::orient::synthesize_oriented2_from_oriented1`]).
     Oriented1(&'a [OrientedFeature<1>]),
-    /// Point features with two local lattice directions.
+    /// Point features with two local lattice directions — the native square
+    /// input shape consumed by both algorithms.
     Oriented2(&'a [OrientedFeature<2>]),
-    /// Point features with three local lattice directions.
+    /// Point features with three local lattice directions. **Hex-native
+    /// evidence**: a hexagonal lattice has three axis families, and a feature
+    /// detector that recovers all three feeds them here. The hex detection
+    /// path is the Phase 4 consumer; until then this stays
+    /// [`GridError::UnsupportedCombination`].
     Oriented3(&'a [OrientedFeature<3>]),
-    /// Point features plus caller-supplied coordinate hypotheses.
+    /// Point features plus caller-supplied coordinate hypotheses. **Roadmap
+    /// slot** for decode-feedback labelling: a caller that has partially
+    /// decoded marker / ring IDs supplies them as `(source_index, coord)`
+    /// hypotheses to bias or seed the labelling. No detection algorithm
+    /// consumes hypotheses yet, so this stays
+    /// [`GridError::UnsupportedCombination`]; the
+    /// [`check_consistency`](crate::check::check_consistency) task is the only
+    /// current consumer of [`crate::feature::CoordinateHypothesis`].
     CoordinateHypotheses {
         /// Position-only features.
         features: &'a [PointFeature],
@@ -205,7 +225,16 @@ impl<'a> DetectionRequest<'a> {
 
 /// Detect a grid from feature evidence.
 ///
-/// Support matrix after Phase D:
+/// # Support matrix
+///
+/// | `(lattice, evidence)` | Status |
+/// |---|---|
+/// | `(Square, Oriented2)` | supported — two algorithms |
+/// | `(Square, Oriented1)` | supported — synthesize 2nd axis, then Oriented2 |
+/// | `(Square, Positions)` | supported — synthesize both axes, then Oriented2 |
+/// | `(Square, Oriented3)` | `UnsupportedCombination` |
+/// | `(Square, CoordinateHypotheses)` | `UnsupportedCombination` (roadmap) |
+/// | `(Hex, *)` | `UnsupportedCombination` (Phase 4 roadmap) |
 ///
 /// * `(Square, Oriented2)` — two algorithm choices, picked via
 ///   [`DetectionParams::algorithm`]:
@@ -222,12 +251,18 @@ impl<'a> DetectionRequest<'a> {
 ///   algorithm picked by [`DetectionParams::algorithm`], exactly as for
 ///   `(Square, Oriented2)`. Use this for dot / circle grids and for
 ///   chessboards whose corners carry no axis estimate.
+/// * `(Square, Oriented1)` — single-axis input. The supplied axis is kept
+///   and the orthogonal grid direction is recovered from neighbour geometry
+///   ([`crate::orient::synthesize_oriented2_from_oriented1`]); the resulting
+///   [`OrientedFeature<2>`] then runs the chosen algorithm, exactly as for
+///   `(Square, Positions)`. Use this for detectors that recover one dominant
+///   edge orientation per feature but not the orthogonal one.
 /// * Every other combination — typed [`GridError::UnsupportedCombination`].
 ///
-/// `(Square, Oriented1)`, `(Square, Oriented3)`,
-/// `(Square, CoordinateHypotheses)`, and every `(Hex, *)` variant stay
-/// `UnsupportedCombination` — no working algorithm exists in the
-/// current implementation for those slots.
+/// `(Square, Oriented3)` (hex-native triple-axis evidence, a Phase 4
+/// consumer), `(Square, CoordinateHypotheses)` (a decode-feedback roadmap
+/// slot), and every `(Hex, *)` variant stay `UnsupportedCombination` — no
+/// working algorithm exists in the current implementation for those slots.
 ///
 /// **Multi-component results.** Both algorithms can produce more than one
 /// connected component (seed-and-grow assembles each disconnected patch
@@ -241,6 +276,30 @@ pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
         Err(GridError::InsufficientEvidence)
     } else {
         Ok(report.solutions.remove(0))
+    }
+}
+
+/// Dispatch oriented-2 features (caller-supplied or synthesized) to the
+/// algorithm picked by [`DetectionParams::algorithm`]. The single dispatch
+/// point shared by the `Oriented2`, `Positions`, and `Oriented1` arms so the
+/// three input kinds reach identical strategy code.
+fn run_square_oriented2(
+    features: &[OrientedFeature<2>],
+    request: &DetectionRequest<'_>,
+) -> Result<Vec<GridSolution>> {
+    match request.params.algorithm {
+        SquareAlgorithm::SeedAndGrow => crate::seed_and_grow::detect_square_oriented2_seed_grow(
+            features,
+            request.dimensions,
+            &request.params,
+        ),
+        SquareAlgorithm::Topological => {
+            crate::topological::detect_square_oriented2_topological_all(
+                features,
+                request.dimensions,
+                &request.params,
+            )
+        }
     }
 }
 
@@ -262,44 +321,23 @@ pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
 /// [`detect_grid`].
 pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport> {
     let solutions = match (request.lattice, request.evidence) {
-        (LatticeKind::Square, Evidence::Oriented2(features)) => match request.params.algorithm {
-            SquareAlgorithm::SeedAndGrow => {
-                crate::seed_and_grow::detect_square_oriented2_seed_grow(
-                    features,
-                    request.dimensions,
-                    &request.params,
-                )?
-            }
-            SquareAlgorithm::Topological => {
-                crate::topological::detect_square_oriented2_topological_all(
-                    features,
-                    request.dimensions,
-                    &request.params,
-                )?
-            }
-        },
+        (LatticeKind::Square, Evidence::Oriented2(features)) => {
+            run_square_oriented2(features, &request)?
+        }
         (LatticeKind::Square, Evidence::Positions(features)) => {
             // Orientation-free input: recover each corner's two local grid
             // directions from neighbour geometry, then run the chosen square
             // strategy. Both strategies consume `OrientedFeature<2>`, so the
             // synthesized axes feed either path unchanged.
             let oriented = crate::orient::synthesize_oriented2(features);
-            match request.params.algorithm {
-                SquareAlgorithm::SeedAndGrow => {
-                    crate::seed_and_grow::detect_square_oriented2_seed_grow(
-                        &oriented,
-                        request.dimensions,
-                        &request.params,
-                    )?
-                }
-                SquareAlgorithm::Topological => {
-                    crate::topological::detect_square_oriented2_topological_all(
-                        &oriented,
-                        request.dimensions,
-                        &request.params,
-                    )?
-                }
-            }
+            run_square_oriented2(&oriented, &request)?
+        }
+        (LatticeKind::Square, Evidence::Oriented1(features)) => {
+            // Single-axis input: keep the supplied axis and recover the second
+            // local grid direction from neighbour geometry, then run the chosen
+            // square strategy. Same Oriented2 back-half as the Positions path.
+            let oriented = crate::orient::synthesize_oriented2_from_oriented1(features);
+            run_square_oriented2(&oriented, &request)?
         }
         _ => {
             return Err(GridError::UnsupportedCombination {
