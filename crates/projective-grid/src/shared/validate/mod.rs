@@ -59,6 +59,7 @@
 mod edge_shape;
 mod lines;
 mod local_h;
+pub mod recovery;
 mod step;
 
 use nalgebra::Point2;
