@@ -51,14 +51,56 @@ LocalMergeParams`.
 **topological** builder gets each corner's two grid directions: `ChessAxes`
 (default — the per-corner ChESS axes) or `NeighbourEdges` (synthesized from
 neighbour geometry via `projective_grid::synthesize_oriented2`, no ChESS-axis
-dependence). Proven precision-safe + more robust than ChESS axes on
-foreshortened images at the grid-build level, but the chessboard recovery
-boosters are ChESS-axis-coupled, so the orientation-free path skips them and
-lands at ~75–85% of production recall. Topological-only: `NeighbourEdges +
-SeedAndGrow` panics (the native seed-and-grow pipeline consumes ChESS axes
-directly). Serde-skipped at its default, so the stable config surface is
-unchanged. Full orientation-free parity would require orientation-free boosters
-(deferred). See `bench_results/A3_neighbour_edge_findings.md` (local-only).
+dependence). Serde-skipped at its default, so the stable config surface is
+unchanged. `NeighbourEdges + SeedAndGrow` is a typed
+`ChessboardParamsError::NeighbourEdgesRequiresTopological` (the native
+seed-and-grow *pipeline* consumes ChESS axes directly); use the topological
+builder, or the `projective-grid` grid engine, for the orientation-free path.
+
+The `projective-grid` facade now runs a **geometry-only recovery schedule**
+(`seed_and_grow::recovery`) on the synthesized-axis paths (`Evidence::Positions`
+/ `Evidence::Oriented1`) under `RecoverySchedule::Auto`: boundary extension
+(local-H + cardinal-BFS) → interior fill → revalidate → drop filters
+(topological wrong-label + largest-component), iterated to a fixed point. It is
+precision-safe by construction — every attachment passes the same gates as BFS
+grow, and a geometrically-incoherent attach is *dropped*, never mislabelled. On
+a clean synthetic perspective grid it reaches full recall at zero wrong labels
+(see `projective-grid/tests/detect_square_positions.rs`).
+
+The chessboard topological adapter pins `RecoverySchedule::Off` and keeps its
+own ChESS-axis-coupled recovery, so production output is byte-identical.
+
+#### Orientation parity metric
+
+The orientation-free vs ChESS-axis head-to-head is measured per-image as the
+labelled-count ratio of the two `grid`-engine cells:
+
+```
+parity(image) = labelled(grid, neighbour-edges) / labelled(grid, chess-axes)
+```
+
+Run both cells and compare the per-image `labelled_count` in the report JSONs:
+
+```bash
+cargo run -p calib-targets-bench -- run --engine grid \
+    --algorithm topological --orientation-source chess-axes
+cargo run -p calib-targets-bench -- run --engine grid \
+    --algorithm topological --orientation-source neighbour-edges
+```
+
+Acceptance target is median ≥ 0.98, per-image floor ≥ 0.95, **zero wrong
+labels**. As of the Phase-3 recovery work the picture is *bimodal and
+complementary across the two builders*, so the uniform floor is not yet met: the
+topological builder wins on large foreshortened boards (synthesized-axis +
+recovery materially exceeds the chess-axis grid-engine recall) but the
+synthesized-axis path is brittle on small / sharp-angle real chessboard frames,
+where the recovery's drop filters correctly refuse an incoherent quad mesh
+(recall lost, precision preserved); the seed-and-grow builder has the inverted
+profile. The binding constraint is the *synthesized-axis quality on noisy real
+corners* (upstream of the recovery schedule, in `projective_grid::orient`), not
+the recovery schedule itself — the schedule is precision-safe and a clear recall
+win wherever the synthesis yields a coherent seed. Concrete per-image numbers
+are local-only (`bench_results/`).
 
 ### Bench harness selector
 
