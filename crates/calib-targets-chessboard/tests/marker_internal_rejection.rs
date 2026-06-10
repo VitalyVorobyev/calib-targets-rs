@@ -17,7 +17,7 @@
 //! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 
@@ -109,7 +109,15 @@ fn marker_internal_corners_never_labelled() {
     }
     let marker_indices: Vec<usize> = (board_count..corners.len()).collect();
 
-    let detector = Detector::new(DetectorParams::default());
+    // Marker-internal rejection is a seed-and-grow guarantee — the Stage-3
+    // cluster gate (cluster_tol_deg = 12°) is the primary defense, and ChArUco
+    // pins seed-and-grow for exactly this reason. The topological builder (now
+    // the default) is intentionally NOT hardened against marker-internal
+    // corners, so this precision contract is exercised on the seed-and-grow
+    // path that actually runs on marker scenes.
+    let mut params = DetectorParams::default();
+    params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    let detector = Detector::new(params);
     let detection = detector
         .detect(&corners)
         .expect("board must still be detected despite marker-internal noise");

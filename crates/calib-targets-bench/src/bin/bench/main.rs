@@ -26,9 +26,12 @@ use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
 use calib_targets_bench::overlay::render_overlay_on_gray;
 use calib_targets_bench::runner::run_entry;
-use calib_targets_bench::{workspace_root, SCHEMA_VERSION};
+use calib_targets_bench::{workspace_root, Engine, SCHEMA_VERSION};
 
-use cli::{load_chessboard_config, params_with, BlessArgs, Cli, Cmd, PreviewArgs, RunArgs};
+use cli::{
+    load_chessboard_config, params_with, AlgorithmArg, BlessArgs, Cli, Cmd, EngineArg,
+    OrientationSourceArg, PreviewArgs, RunArgs,
+};
 use diagnose::cmd_diagnose;
 use report::{
     bench_results_dir, compute_report, make_summary, print_summary, save_report, RunReport,
@@ -48,6 +51,13 @@ fn main() -> ExitCode {
 }
 
 fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
+    if unsupported_combo(args.engine, args.algorithm, args.orientation_source) {
+        eprintln!(
+            "pipeline + seed-and-grow + neighbour-edges is unsupported; use \
+             --engine grid for neighbour-edge seed-and-grow, or --algorithm topological"
+        );
+        return ExitCode::from(2);
+    }
     let dataset = match Dataset::load_default() {
         Ok(d) => d,
         Err(e) => {
@@ -83,6 +93,8 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
         }
     };
     params.graph_build_algorithm = args.algorithm.into();
+    params.orientation_source = args.orientation_source.into();
+    let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
     let mut per_image = Vec::with_capacity(entries.len());
@@ -97,7 +109,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
             );
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg, engine) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -113,9 +125,11 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
 
     let summary = make_summary(&per_image, &elapsed);
     let config_id = format!(
-        "{}.{}",
+        "{}.{}.{}.{}",
+        args.engine.slug(),
         args.algorithm.slug(),
-        args.orientation_method.slug()
+        args.orientation_method.slug(),
+        args.orientation_source.slug()
     );
     let report = RunReport {
         schema: SCHEMA_VERSION,
@@ -143,6 +157,13 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
 }
 
 fn cmd_preview(args: PreviewArgs) -> ExitCode {
+    if unsupported_combo(args.engine, args.algorithm, args.orientation_source) {
+        eprintln!(
+            "pipeline + seed-and-grow + neighbour-edges is unsupported; use \
+             --engine grid for neighbour-edge seed-and-grow, or --algorithm topological"
+        );
+        return ExitCode::from(2);
+    }
     let dataset = match Dataset::load_default() {
         Ok(d) => d,
         Err(e) => {
@@ -167,7 +188,15 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
     }
 
     let out_root = workspace_root().join(&args.out);
-    let params = params_with(args.algorithm);
+    let params = params_with(args.algorithm, args.orientation_source);
+    let engine = Engine::from(args.engine);
+    let config_slug = format!(
+        "{}.{}.{}.{}",
+        args.engine.slug(),
+        args.algorithm.slug(),
+        args.orientation_method.slug(),
+        args.orientation_source.slug()
+    );
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
     let mut wrote = 0usize;
@@ -180,7 +209,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
             );
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg, engine) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -193,7 +222,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
                 .as_ref()
                 .map(|d| d.labelled_count)
                 .unwrap_or(0);
-            let dst = preview_path(&out_root, &outcome.label, args.algorithm.slug());
+            let dst = preview_path(&out_root, &outcome.label, &config_slug);
             if let Err(e) =
                 render_overlay_on_gray(&outcome.fed_image, outcome.detection.as_ref(), &dst)
             {
@@ -248,7 +277,8 @@ fn cmd_bless(args: BlessArgs) -> ExitCode {
             eprintln!("skipping {} — file missing", entry.path);
             continue;
         }
-        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg) {
+        // Baselines are pinned from the production pipeline only.
+        let outcomes = match run_entry(&abs, entry, &params, &chess_cfg, Engine::Pipeline) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("run_entry {}: {e}", entry.path);
@@ -303,7 +333,21 @@ fn filter_entries<'a>(
         .collect()
 }
 
-fn preview_path(out_root: &Path, label: &str, algorithm_slug: &str) -> PathBuf {
+/// The native seed-and-grow pipeline consumes ChESS axes directly, so
+/// `pipeline + seed-and-grow + neighbour-edges` would panic in the detector.
+/// Reject it at the CLI with guidance instead. The grid engine handles the
+/// seed-and-grow + neighbour-edge cell.
+fn unsupported_combo(
+    engine: EngineArg,
+    algorithm: AlgorithmArg,
+    orientation_source: OrientationSourceArg,
+) -> bool {
+    matches!(engine, EngineArg::Pipeline)
+        && matches!(algorithm, AlgorithmArg::SeedAndGrow)
+        && matches!(orientation_source, OrientationSourceArg::NeighbourEdges)
+}
+
+fn preview_path(out_root: &Path, label: &str, config_slug: &str) -> PathBuf {
     let (base, sub) = match label.rsplit_once('#') {
         Some((b, s)) => (b, Some(s)),
         None => (label, None),
@@ -322,8 +366,8 @@ fn preview_path(out_root: &Path, label: &str, algorithm_slug: &str) -> PathBuf {
         out_root.join(parent_dir)
     };
     let filename = match sub {
-        Some(s) => format!("{stem}.{s}.chessboard.{algorithm_slug}.png"),
-        None => format!("{stem}.chessboard.{algorithm_slug}.png"),
+        Some(s) => format!("{stem}.{s}.chessboard.{config_slug}.png"),
+        None => format!("{stem}.chessboard.{config_slug}.png"),
     };
     mirror.join(filename)
 }

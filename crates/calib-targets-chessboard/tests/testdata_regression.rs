@@ -18,8 +18,24 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
+use calib_targets_chessboard::{
+    ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
+};
 use serde::Deserialize;
+
+/// These gates are a recall ratchet calibrated for the **seed-and-grow**
+/// builder, which handles the full diverse set here (plain chessboard,
+/// ChArUco, puzzle) precisely. Topological is now the default builder, but it
+/// is precision-unsafe on the ChArUco frames in this set, so it is ratcheted
+/// separately — on the clean-grid subset in `topo_grid_regression.rs` and on
+/// the production puzzle path in `private_130puzzle.rs`. The `diskfit_*` tests
+/// below additionally regress seed-and-grow-only cluster.rs recovery stages.
+/// Pin seed-and-grow so each gate stays meaningful after the default flip.
+fn ratchet_params() -> DetectorParams {
+    let mut p = DetectorParams::default();
+    p.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    p
+}
 
 fn workspace_root() -> PathBuf {
     // Cargo sets CARGO_MANIFEST_DIR to the crate dir; go up two levels
@@ -59,8 +75,7 @@ fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
         .to_luma8();
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&img, &chess_cfg);
-    let params = DetectorParams::default();
-    let detector = Detector::new(params);
+    let detector = Detector::new(ratchet_params());
     let detection = detector.detect(&corners);
     let components = detector.detect_all(&corners).len();
     (detection, components)
@@ -273,7 +288,8 @@ fn diskfit_large_recovers_partial_slot_flips() {
         .with_orientation_method(OrientationMethod::DiskFit);
 
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(DetectorParams::default());
+    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
+    let detector = Detector::new(ratchet_params());
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on large.png");
@@ -325,7 +341,8 @@ fn diskfit_mid_recovers_full_chessboard() {
         .with_orientation_method(OrientationMethod::DiskFit);
 
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(DetectorParams::default());
+    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
+    let detector = Detector::new(ratchet_params());
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on mid.png");

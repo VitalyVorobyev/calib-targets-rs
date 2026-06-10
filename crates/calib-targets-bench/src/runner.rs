@@ -3,12 +3,35 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::{Detector, DetectorParams};
+use calib_targets::chessboard::{
+    ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm, OrientationSource,
+};
 use calib_targets::detect::{detect_corners, DetectorConfig};
+use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
+use projective_grid::{
+    detect_grid_all, DetectionParams, DetectionRequest, Evidence, GridSolution, LatticeKind,
+    OrientedFeature, PointFeature, SquareAlgorithm,
+};
 
 use crate::baseline::{BaselineCorner, BaselineImage};
 use crate::dataset::DatasetEntry;
+
+/// Which detection engine the bench drives.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    /// Full chessboard production pipeline ([`Detector::detect`]): clustering,
+    /// seed/grow or topological + recovery boosters + geometry check. Honours
+    /// [`OrientationSource`] only on the topological path (see the chessboard
+    /// detector docs).
+    Pipeline,
+    /// Raw [`detect_grid_all`] on the corner cloud, bypassing the chessboard
+    /// recovery stages. Used for the orientation-source head-to-head: it
+    /// isolates the orientation variable (ChESS axes vs neighbour-edge
+    /// synthesis) at the grid-builder layer, applying the same
+    /// `projective-grid` validate/fit to both.
+    Grid,
+}
 
 /// Outcome of detecting on a single (logical) sub-snap.
 #[derive(Clone, Debug)]
@@ -44,6 +67,7 @@ pub fn run_entry(
     entry: &DatasetEntry,
     params: &DetectorParams,
     chess_cfg: &DetectorConfig,
+    engine: Engine,
 ) -> Result<Vec<RunOutcome>, std::io::Error> {
     let img = ImageReader::open(image_path)
         .map_err(|e| std::io::Error::other(format!("open {}: {e}", image_path.display())))?
@@ -69,33 +93,14 @@ pub fn run_entry(
 
         let started = Instant::now();
         let corners = detect_corners(&upscaled, chess_cfg);
-        // The stable `ChessboardDetection` now carries `cell_size`, so the
+        // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
         // baseline reads it straight off the hot `detect()` path — no
         // `DebugFrame` needed here (overlays still use one separately).
-        let detection = Detector::new(params.clone()).detect(&corners);
+        let baseline_image = match engine {
+            Engine::Pipeline => run_pipeline_engine(params, &corners),
+            Engine::Grid => run_grid_engine(params, &corners),
+        };
         let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
-
-        let cell_size_px = detection.as_ref().and_then(|d| d.cell_size).unwrap_or(0.0);
-        let baseline_image = detection.as_ref().map(|d| {
-            let mut corners: Vec<BaselineCorner> = d
-                .corners
-                .iter()
-                .map(|lc| BaselineCorner {
-                    i: lc.grid.i,
-                    j: lc.grid.j,
-                    x: lc.position.x,
-                    y: lc.position.y,
-                    id: None,
-                    score: lc.score,
-                })
-                .collect();
-            corners.sort_by_key(|c| (c.j, c.i));
-            BaselineImage {
-                labelled_count: corners.len(),
-                cell_size_px,
-                corners,
-            }
-        });
 
         out.push(RunOutcome {
             label: entry.snap_label(k),
@@ -107,6 +112,118 @@ pub fn run_entry(
         });
     }
     Ok(out)
+}
+
+/// Full chessboard production pipeline → [`BaselineImage`].
+fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
+    let d = Detector::new(params.clone()).detect(corners)?;
+    let cell_size_px = d.cell_size.unwrap_or(0.0);
+    let mut out: Vec<BaselineCorner> = d
+        .corners
+        .iter()
+        .map(|lc| BaselineCorner {
+            i: lc.grid.i,
+            j: lc.grid.j,
+            x: lc.position.x,
+            y: lc.position.y,
+            id: None,
+            score: lc.score,
+        })
+        .collect();
+    out.sort_by_key(|c| (c.j, c.i));
+    Some(BaselineImage {
+        labelled_count: out.len(),
+        cell_size_px,
+        corners: out,
+    })
+}
+
+/// Raw `projective-grid` grid builder → [`BaselineImage`], bypassing the
+/// chessboard recovery stages. The corner cloud is identical for both
+/// orientation sources; only the axis *evidence* differs (ChESS axes →
+/// [`Evidence::Oriented2`], neighbour-edge → [`Evidence::Positions`]). Returns
+/// the largest labelled component (one board per frame, matching the pipeline
+/// engine's best-detection semantics).
+fn run_grid_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
+    let algorithm = match params.graph_build_algorithm {
+        GraphBuildAlgorithm::Topological => SquareAlgorithm::Topological,
+        GraphBuildAlgorithm::SeedAndGrow => SquareAlgorithm::SeedAndGrow,
+        _ => return None,
+    };
+    let grid_params = DetectionParams::default().with_algorithm(algorithm);
+    let report = match params.orientation_source {
+        OrientationSource::ChessAxes => {
+            let feats: Vec<OrientedFeature<2>> = corners
+                .iter()
+                .enumerate()
+                .map(|(i, c)| {
+                    OrientedFeature::new(
+                        PointFeature::new(i, c.position),
+                        [
+                            axis_estimate_to_next(c.axes[0]),
+                            axis_estimate_to_next(c.axes[1]),
+                        ],
+                    )
+                })
+                .collect();
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Oriented2(&feats),
+                None,
+                grid_params,
+            ))
+        }
+        OrientationSource::NeighbourEdges => {
+            let feats: Vec<PointFeature> = corners
+                .iter()
+                .enumerate()
+                .map(|(i, c)| PointFeature::new(i, c.position))
+                .collect();
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Positions(&feats),
+                None,
+                grid_params,
+            ))
+        }
+        _ => return None,
+    };
+    let best = report
+        .ok()?
+        .solutions
+        .into_iter()
+        .max_by_key(|s| s.grid.entries.len())?;
+    if best.grid.entries.is_empty() {
+        return None;
+    }
+    Some(grid_solution_to_baseline(&best))
+}
+
+/// Adapt a `projective-grid` [`GridSolution`] into the bench's
+/// [`BaselineImage`] shape so overlays + the wrong-label audit reuse unchanged.
+/// `image_position` is the pixel-center position; `(coord.u, coord.v)` are the
+/// lattice labels. The grid engine carries no per-corner score or cell size, so
+/// both are left at `0.0` (the head-to-head metric is `labelled_count`).
+fn grid_solution_to_baseline(sol: &GridSolution) -> BaselineImage {
+    let mut out: Vec<BaselineCorner> = sol
+        .grid
+        .entries
+        .iter()
+        .map(|e| BaselineCorner {
+            i: e.coord.u,
+            j: e.coord.v,
+            x: e.image_position.x,
+            y: e.image_position.y,
+            id: None,
+            score: 0.0,
+        })
+        .collect();
+    out.sort_by_key(|c| (c.j, c.i));
+    BaselineImage {
+        labelled_count: out.len(),
+        cell_size_px: 0.0,
+        corners: out,
+    }
 }
 
 fn extract_snap(

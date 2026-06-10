@@ -302,6 +302,7 @@ fn diagnose_topological(
         }
     };
     detector_params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+    detector_params.orientation_source = args.orientation_source.into();
     if let Some(deg) = args.axis_align_tol_deg {
         let mut advanced: AdvancedTuning = detector_params.effective_tuning().into_owned();
         advanced.topological.axis_align_tol_rad = deg.to_radians();

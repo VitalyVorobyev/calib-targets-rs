@@ -13,7 +13,7 @@
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
 
-use crate::params::{DetectorParams, GraphBuildAlgorithm};
+use crate::params::{DetectorParams, GraphBuildAlgorithm, OrientationSource};
 use crate::pipeline::{self, run_pipeline_lean};
 use crate::topological::detect_all_topological;
 
@@ -42,6 +42,28 @@ impl Detector {
         Self { params }
     }
 
+    /// Reject the one unsupported configuration: neighbour-edge orientation
+    /// requires the topological builder. The native seed-and-grow pipeline
+    /// consumes ChESS corner axes directly throughout, so honouring
+    /// [`OrientationSource::NeighbourEdges`] there would silently fall back to
+    /// ChESS axes — a head-to-head measurement would then secretly compare the
+    /// wrong thing. Fail loudly instead.
+    fn guard_orientation_source(&self) {
+        if matches!(
+            self.params.graph_build_algorithm,
+            GraphBuildAlgorithm::SeedAndGrow
+        ) && matches!(
+            self.params.orientation_source,
+            OrientationSource::NeighbourEdges
+        ) {
+            panic!(
+                "OrientationSource::NeighbourEdges is only supported with \
+                 GraphBuildAlgorithm::Topological; the native SeedAndGrow pipeline \
+                 consumes ChESS corner axes directly and cannot run orientation-free"
+            );
+        }
+    }
+
     /// Simple entry point: run the pipeline and return the best detection.
     #[cfg_attr(
         feature = "tracing",
@@ -52,6 +74,7 @@ impl Detector {
         )
     )]
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
+        self.guard_orientation_source();
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -78,6 +101,7 @@ impl Detector {
         )
     )]
     pub fn detect_with_diagnostics(&self, corners: &[ChessCorner]) -> DebugFrame {
+        self.guard_orientation_source();
         run_pipeline(&self.params, corners, &HashSet::new())
     }
 
@@ -102,6 +126,7 @@ impl Detector {
         )
     )]
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
+        self.guard_orientation_source();
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -145,6 +170,7 @@ impl Detector {
         )
     )]
     pub fn detect_all_with_diagnostics(&self, corners: &[ChessCorner]) -> Vec<DebugFrame> {
+        self.guard_orientation_source();
         let cap = self.params.max_components.max(1) as usize;
         let mut consumed: HashSet<usize> = HashSet::new();
         let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
@@ -250,6 +276,60 @@ mod tests {
     fn rejects_when_too_few_corners() {
         let det = Detector::new(DetectorParams::default());
         assert!(det.detect(&[]).is_none());
+    }
+
+    /// Neighbour-edge orientation (axes synthesized from neighbour geometry,
+    /// ChESS axes ignored) recovers a clean grid via the topological builder
+    /// with zero duplicate `(i, j)` labels.
+    #[test]
+    fn neighbour_edges_topological_recovers_clean_grid() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                // Axes are deliberately set; neighbour-edge mode must ignore
+                // them and synthesize directions from neighbour geometry.
+                corners.push(make_corner(k, x, y, (i + j).rem_euclid(2) == 1));
+                k += 1;
+            }
+        }
+        let params = DetectorParams {
+            graph_build_algorithm: GraphBuildAlgorithm::Topological,
+            orientation_source: OrientationSource::NeighbourEdges,
+            ..DetectorParams::default()
+        };
+        let det = Detector::new(params);
+        let d = det.detect(&corners).expect("neighbour-edge detection");
+        assert!(
+            d.corners.len() >= 36,
+            "neighbour-edge recall too low on clean grid: {}",
+            d.corners.len()
+        );
+        let mut seen = std::collections::HashSet::new();
+        for c in &d.corners {
+            assert!(
+                seen.insert((c.grid.i, c.grid.j)),
+                "duplicate label {:?}",
+                (c.grid.i, c.grid.j)
+            );
+        }
+    }
+
+    /// Neighbour-edge orientation on the native SeedAndGrow pipeline is
+    /// unsupported and must fail loudly rather than silently use ChESS axes.
+    #[test]
+    #[should_panic(expected = "NeighbourEdges is only supported")]
+    fn neighbour_edges_seed_and_grow_panics() {
+        let params = DetectorParams {
+            graph_build_algorithm: GraphBuildAlgorithm::SeedAndGrow,
+            orientation_source: OrientationSource::NeighbourEdges,
+            ..DetectorParams::default()
+        };
+        let det = Detector::new(params);
+        let _ = det.detect(&[]);
     }
 
     #[test]

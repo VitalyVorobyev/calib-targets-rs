@@ -19,17 +19,18 @@ builders that produce the same `(i, j) → corner_idx` output shape, so
 downstream consumers (ChArUco, marker board, PuzzleBoard) are agnostic
 to which ran:
 
-- **`GraphBuildAlgorithm::SeedAndGrow` (default)** — invariant-rich
-  seed-and-grow pipeline (`square::grow::bfs_grow` + boundary extension
-  via homography). Battle-tested across every target family. This is
-  the path documented below.
-- **`GraphBuildAlgorithm::Topological` (opt-in)** — Shu/Brunton/Fiala
+- **`GraphBuildAlgorithm::Topological` (default)** — Shu/Brunton/Fiala
   grid finder (`projective_grid::detect_grid_all`) wrapped by a
   chessboard-specific input adapter and recovery layer. Image-free
   below ChESS; an axis-driven cell test replaces the paper's
-  image-color test. Documented separately in
-  [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)
-  — this file covers only the `SeedAndGrow` path below.
+  image-color test. Higher recall than seed-and-grow on clean
+  chessboards / PuzzleBoards; not precision-safe on ChArUco-style
+  marker frames (hence the ChArUco pin below). Documented separately in
+  [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md).
+- **`GraphBuildAlgorithm::SeedAndGrow`** — invariant-rich seed-and-grow
+  pipeline (`crate::grow::bfs_grow` + boundary extension via
+  homography). Battle-tested across every target family and pinned for
+  ChArUco. This is the path documented below.
 
 **ChArUco pinning.** `CharucoDetector::new` unconditionally overrides
 `chessboard.graph_build_algorithm = SeedAndGrow` regardless of caller
@@ -40,7 +41,7 @@ caller's choice via their nested `DetectorParams`.
 
 ---
 
-## SeedAndGrow pipeline (default)
+## SeedAndGrow pipeline (pinned for ChArUco)
 
 ### Stage table
 
@@ -104,9 +105,9 @@ When investigating a missing-corner case, the canonical workflow is:
 
 ---
 
-## Topological pipeline (opt-in)
+## Topological pipeline (default)
 
-Opt in by setting:
+This is the default builder. To set it explicitly (or after overriding):
 
 ```rust
 DetectorParams {
@@ -145,7 +146,7 @@ the same directory.
 ## Cross-references
 
 - [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)
-  — the opt-in `Topological` builder: generic `projective-grid` core,
+  — the default `Topological` builder: generic `projective-grid` core,
   chessboard input adapter, and recovery layer.
 - `crates/projective-grid/src/detect/square/topological/` — the
   projective-grid topological core, independent of chessboard semantics.

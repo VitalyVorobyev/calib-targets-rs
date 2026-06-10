@@ -392,6 +392,7 @@ dependencies = [
  "clap",
  "image",
  "nalgebra",
+ "projective-grid",
  "serde",
  "serde_json",
  "toml 0.8.23",

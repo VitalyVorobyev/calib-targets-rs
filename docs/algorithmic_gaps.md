@@ -189,22 +189,28 @@ labelled positions of the other. Same scoring (cell-size + position
 agreement) but applied to predicted-vs-labelled rather than
 labelled-vs-labelled pairs.
 
-### Gap 10 — Topological pipeline default vs `SeedAndGrow` (OPEN)
+### Gap 10 — Topological pipeline default vs `SeedAndGrow` (RESOLVED 2026-06-01)
 
-`GraphBuildAlgorithm::default()` returns `SeedAndGrow`. The
-topological pipeline regresses recall on the public ChArUco-style
-testdata because ChESS detects corners *inside* marker bits whose
-axes lock to the marker's local orientation, not the global grid.
-ChArUco detection already pins to seed-and-grow regardless of caller
-choice, but the public bench harness exercises `detect_chessboard`
-directly on those images and the recall regression makes flipping
-the default unsafe today.
+`GraphBuildAlgorithm::default()` now returns `Topological`. The
+topological builder gives higher recall than seed-and-grow on the
+clean-chessboard regression set with precision held, so it is the
+default for plain chessboard / marker / puzzle detection.
 
-**Fix.** Add a "drop corners with axes inconsistent with the global
-mode" pre-filter that runs *before* Delaunay, removing the marker-
-internal X-corners whose local axes don't agree with the histogram
-peak found by `circular_stats`. Once that pre-filter ships, retest
-the public bench and flip the default.
+**Resolution — flip + scope ChArUco out, rather than the pre-Delaunay
+filter originally sketched here.** Topological is *not* precision-safe on
+ChArUco-style images: ChESS fires corners *inside* marker bits whose axes
+lock to the marker, and the per-cell axis test can admit them as
+chessboard corners. The decision (owner, 2026-06-01) is that marker scenes
+go through the ChArUco detector — which already pins seed-and-grow
+unconditionally — so the topological builder is **never gated against
+ChArUco**. Plain `detect_chessboard` on a marker image with default params
+is therefore explicitly out of scope (use the ChArUco detector). The
+flip's precision/recall gate was the non-marker regression set
+(clean-chessboard + puzzle), verified before flipping; the
+`graph_build_dispatch::default_dispatch_matches_topological` test pins the
+new default, and `marker_internal_rejection` / the private chessboard
+precision-regression test pin seed-and-grow explicitly as the marker-scene
+guarantee.
 
 ### Resolved gaps (April 2026 refactor)
 
@@ -235,10 +241,9 @@ the public bench and flip the default.
   axis-driven cell test (replacing the paper's image-color test) so
   the crate stays standalone. Selectable via
   `DetectorParams::graph_build_algorithm =
-  GraphBuildAlgorithm::Topological`. Default is still
-  `SeedAndGrow` until Gap 10 closes; topological is opt-in for
-  PuzzleBoard low-view-angle work where it already wins on
-  recall + speed.
+  GraphBuildAlgorithm::Topological`. Now the **default** (Gap 10
+  resolved 2026-06-01); `SeedAndGrow` is pinned for ChArUco and
+  available per call elsewhere.
 - **Shared component merge** (was the long-standing
   `enable_component_merge` flag with no implementation). Now lives
   in `projective_grid::component_merge::merge_components_local`,
@@ -255,8 +260,7 @@ the public bench and flip the default.
 ## Architectural-direction summary
 
 The next architectural moves are closing Gap 8 (topological recall in
-heavy-distortion regions) and Gap 10 (default-flip for the
-topological pipeline), wiring `estimate_local_steps` into the
+heavy-distortion regions), wiring `estimate_local_steps` into the
 production pipeline (Gap 5), unifying the chessboard booster with the
 generic extension machinery (Gap 6), and tightening the homography-
 quality public surface (Gap 3). Hex-grid grow (Gap 4) and

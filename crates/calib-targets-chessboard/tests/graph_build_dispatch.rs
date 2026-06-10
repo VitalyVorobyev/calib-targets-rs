@@ -104,12 +104,13 @@ fn dispatch_routes_to_seed_and_grow_pipeline() {
 }
 
 #[test]
-fn default_dispatch_matches_seed_and_grow() {
-    // The current default is SeedAndGrow; flipping it to Topological
-    // is gated on closing the recall gap on the public testdata
-    // regression set.
+fn default_dispatch_matches_topological() {
+    // Topological is the default builder (higher recall on the
+    // clean-chessboard regression set, precision held). ChArUco pins
+    // SeedAndGrow regardless via the charuco detector's unconditional
+    // override; PuzzleBoard already sets Topological explicitly.
     assert_eq!(
         DetectorParams::default().graph_build_algorithm,
-        GraphBuildAlgorithm::SeedAndGrow,
+        GraphBuildAlgorithm::Topological,
     );
 }

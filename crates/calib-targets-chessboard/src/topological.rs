@@ -41,15 +41,15 @@ use projective_grid::topological::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
 use projective_grid::{
-    detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
-    LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
+    detect_grid_all, synthesize_oriented2, DetectionParams as NextDetectionParams,
+    DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
     TopologicalParams as NextTopologicalParams,
 };
 use std::collections::HashMap;
 
 use crate::cluster::ClusterCenters;
 use crate::detector::ChessboardDetection;
-use crate::params::DetectorParams;
+use crate::params::{DetectorParams, OrientationSource};
 
 use self::inputs::topological_inputs;
 use self::recovery::{
@@ -140,7 +140,17 @@ pub fn detect_all_topological(
     // pay the cost in spurious-edge admissions; we now compute centers
     // once up front, gate Delaunay through them, and reuse the same
     // `(augs, centers)` pair for booster recovery (no re-clustering).
-    let (base_augs, clustered_centers) = clustered_augs(corners, params);
+    let (base_augs, clustered_centers_chess) = clustered_augs(corners, params);
+
+    // Neighbour-edge orientation derives grid directions geometrically inside
+    // `projective-grid` (`synthesize_oriented2`); the ChESS-axis cluster
+    // centers must NOT be threaded in. Passing `None` engages the
+    // grid-derived-center fallback and skips the ChESS-axis parity alignment
+    // and booster pass in `recovery` — see [`recover_topological_components`].
+    let clustered_centers = match params.orientation_source {
+        OrientationSource::ChessAxes => clustered_centers_chess,
+        OrientationSource::NeighbourEdges => None,
+    };
 
     let inputs = topological_inputs(corners, params);
     if inputs.usable_count < params.min_labeled_corners {
@@ -158,19 +168,41 @@ pub fn detect_all_topological(
     // `tuning.cluster_tol_deg` (12°) — seed-and-grow's cluster gate
     // has a sigma bonus and a booster fallback that topological lacks;
     // matching the 12° literally regresses Gemini2.
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
     let next_params = detection_params_for_topological(&tuning.topological, clustered_centers);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&next_features),
-        None,
-        next_params,
-    );
-    let report = match detect_grid_all(request) {
+    // ChESS axes feed `Evidence::Oriented2`; neighbour-edge mode feeds
+    // positions only and lets `projective-grid` synthesize the two local grid
+    // directions from neighbour geometry. The point cloud is identical in both
+    // modes (same `inputs.positions`), so only the axis *source* differs.
+    let report = match params.orientation_source {
+        OrientationSource::ChessAxes => {
+            let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Oriented2(&next_features),
+                None,
+                next_params,
+            ))
+        }
+        OrientationSource::NeighbourEdges => {
+            let point_features: Vec<PointFeature> = inputs
+                .positions
+                .iter()
+                .enumerate()
+                .map(|(i, &p)| PointFeature::new(i, p))
+                .collect();
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Positions(&point_features),
+                None,
+                next_params,
+            ))
+        }
+    };
+    let report = match report {
         Ok(r) => r,
         // `InsufficientEvidence` / `DegenerateGeometry` /
         // `UnsupportedCombination` all collapse to "no components". The
-        // The topological path maps these cases to "no components".
+        // topological path maps these cases to "no components".
         Err(_) => return Vec::new(),
     };
     if report.solutions.is_empty() {
@@ -252,9 +284,24 @@ pub fn trace_topological(
     params: &DetectorParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
     let inputs = topological_inputs(corners, params);
-    let (_augs, clustered_centers) = clustered_augs(corners, params);
+    let (_augs, clustered_centers_chess) = clustered_augs(corners, params);
+    let clustered_centers = match params.orientation_source {
+        OrientationSource::ChessAxes => clustered_centers_chess,
+        OrientationSource::NeighbourEdges => None,
+    };
     let mut topo_params = params.effective_tuning().topological;
     topo_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
+    let next_features = match params.orientation_source {
+        OrientationSource::ChessAxes => build_oriented_features(&inputs.positions, &inputs.axes),
+        OrientationSource::NeighbourEdges => {
+            let point_features: Vec<PointFeature> = inputs
+                .positions
+                .iter()
+                .enumerate()
+                .map(|(i, &p)| PointFeature::new(i, p))
+                .collect();
+            synthesize_oriented2(&point_features)
+        }
+    };
     build_grid_topological_trace(&next_features, topo_params)
 }

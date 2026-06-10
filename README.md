@@ -46,14 +46,14 @@ Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.1
   then decode anchors / dots / circles in rectified cells". The heavy
   lifting lives in [`calib-targets-chessboard`] and
   [`projective-grid`][projective-grid-readme].
-- **Two grid pipelines, typed outputs.** The default SeedAndGrow
+- **Two grid pipelines, typed outputs.** The default topological
+  pipeline (Shu / Brunton / Fiala 2009) is image-free Delaunay +
+  edge-classification + flood-fill labelling that runs faster and gives
+  higher recall on clean chessboards and PuzzleBoards. The seed-and-grow
   pipeline is invariant-first seed-and-grow with adaptive local-step
-  prediction, battle-tested across all four target families. The
-  opt-in topological pipeline (Shu / Brunton / Fiala 2009) is image-
-  free Delaunay + edge-classification + flood-fill labelling that runs
-  faster and denser on clean PuzzleBoards. Selectable per call via
-  `DetectorParams::graph_build_algorithm`; ChArUco unconditionally
-  pins SeedAndGrow.
+  prediction, battle-tested across all four target families and pinned
+  for ChArUco (marker-internal corners defeat the topological cell
+  test). Selectable per call via `DetectorParams::graph_build_algorithm`.
 - **Local invariants, not global warps.** Graph construction, seed
   formation, and validation all work on local neighbourhoods, so
   moderate perspective and radial distortion degrade gracefully
