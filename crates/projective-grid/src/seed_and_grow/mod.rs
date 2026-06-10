@@ -323,9 +323,16 @@ fn finish_component(
         return None;
     }
 
-    let validate_entries: Vec<pg_validate::LabelledEntry> = labelled
+    // Materialize the labelled set in deterministic `(i, j)`-sorted order.
+    // The downstream validate / fit stages consume an ordered slice and their
+    // tie-breaking can depend on input order, so iterating the HashMap in its
+    // (nondeterministic) hash order would make the detection output flip
+    // between runs on the same input. Sorting by coord pins it.
+    let ordered: Vec<((i32, i32), usize)> = sorted_labelled(labelled);
+
+    let validate_entries: Vec<pg_validate::LabelledEntry> = ordered
         .iter()
-        .map(|(&grid, &idx)| pg_validate::LabelledEntry {
+        .map(|&(grid, idx)| pg_validate::LabelledEntry {
             idx,
             pixel: positions[idx],
             grid,
@@ -334,10 +341,10 @@ fn finish_component(
     let cell_size = estimate_cell_size(labelled, positions);
     let validation = pg_validate::validate(&validate_entries, cell_size, &params.validate);
 
-    let mut kept: Vec<(Coord, usize)> = labelled
+    let mut kept: Vec<(Coord, usize)> = ordered
         .iter()
-        .filter(|(_, &idx)| !validation.blacklist.contains(&idx))
-        .map(|(&(i, j), &idx)| (Coord::new(i, j), idx))
+        .filter(|(_, idx)| !validation.blacklist.contains(idx))
+        .map(|&((i, j), idx)| (Coord::new(i, j), idx))
         .collect();
     if kept.len() < 4 {
         return None;
@@ -388,6 +395,15 @@ fn finish_component(
         validation_drop_source_indices,
         min_source_index,
     })
+}
+
+/// Materialize a labelled component as a `(i, j)`-sorted vector. Pins a
+/// deterministic processing order for the validate / fit stages, which would
+/// otherwise inherit the HashMap's nondeterministic iteration order.
+fn sorted_labelled(labelled: &HashMap<(i32, i32), usize>) -> Vec<((i32, i32), usize)> {
+    let mut out: Vec<((i32, i32), usize)> = labelled.iter().map(|(&k, &v)| (k, v)).collect();
+    out.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    out
 }
 
 /// Fit, drop over-threshold once, refit. Mutates `kept` to the survivors.

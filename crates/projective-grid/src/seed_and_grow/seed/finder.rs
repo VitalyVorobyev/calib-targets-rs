@@ -183,7 +183,12 @@ pub fn find_quad<V: SquareSeedPolicy>(policy: &V, params: &SeedQuadParams) -> Op
             })
             .filter(|(_, d, _)| d.is_finite() && *d > 1e-3)
             .collect();
-        neighbors.sort_by(|a, b| a.1.total_cmp(&b.1));
+        // Break distance ties by the stable corner index so the candidate
+        // order — and therefore the chosen seed — is deterministic. A perfect
+        // synthetic grid has many exactly-tied neighbour distances; without
+        // this tiebreak the surviving `nearest_n` order (and hence the seed,
+        // and hence the whole component) varies run-to-run.
+        neighbors.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
         if neighbors.len() < 2 {
             continue;
         }
@@ -233,7 +238,15 @@ pub fn find_quad<V: SquareSeedPolicy>(policy: &V, params: &SeedQuadParams) -> Op
                         continue;
                     }
                     let d = nn.distance.sqrt();
-                    if best.map(|b| d < b.1).unwrap_or(true) {
+                    // Strict-less keeps the first at equal distance; break exact
+                    // ties by the smaller corner index for run-to-run stability.
+                    let take = match best {
+                        None => true,
+                        Some((best_idx, best_d)) => {
+                            d < best_d || (d == best_d && d_idx < best_idx)
+                        }
+                    };
+                    if take {
                         best = Some((d_idx, d));
                     }
                 }

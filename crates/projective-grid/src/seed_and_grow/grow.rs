@@ -312,7 +312,12 @@ pub fn bfs_grow<V: SquareAttachPolicy>(
 
     let mut boundary: VecDeque<(i32, i32)> = VecDeque::new();
     let mut seen_boundary: HashSet<(i32, i32)> = HashSet::new();
-    for ij in labelled.keys().copied().collect::<Vec<_>>() {
+    // Seed the BFS frontier in a deterministic `(i, j)`-sorted order. Iterating
+    // the `labelled` HashMap directly would make the frontier order — and thus
+    // which attach wins under ambiguity — vary run-to-run on the same input.
+    let mut seed_cells: Vec<(i32, i32)> = labelled.keys().copied().collect();
+    seed_cells.sort_unstable();
+    for ij in seed_cells {
         enqueue_cardinal_neighbours(ij, &labelled, &mut boundary, &mut seen_boundary);
     }
 
@@ -576,7 +581,11 @@ pub(super) fn collect_candidates<V: SquareAttachPolicy>(
         let d = nn.distance.sqrt();
         out.push((idx, d));
     }
-    out.sort_by(|a, b| a.1.total_cmp(&b.1));
+    // Break exact distance ties by corner index. `within_unsorted` returns
+    // candidates in nondeterministic order; the ambiguity check and the
+    // first-Accept pick in `choose_unambiguous` are order-sensitive, so without
+    // the index tiebreak the attach decision can vary run-to-run.
+    out.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
     out
 }
 
