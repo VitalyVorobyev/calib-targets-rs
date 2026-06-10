@@ -276,10 +276,7 @@ mod tests {
             1.0,
         )];
         let params = DetectorParams::default();
-        let centers = ClusterCenters {
-            theta0: 0.0,
-            theta1: std::f32::consts::FRAC_PI_2,
-        };
+        let centers = ClusterCenters::new(0.0, std::f32::consts::FRAC_PI_2);
         corners[0].stage = CornerStage::Clustered {
             label: ClusterLabel::Canonical,
         };

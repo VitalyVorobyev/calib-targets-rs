@@ -267,7 +267,7 @@ fn merge_components_with_shared_corners(
 fn cluster_centers_from_grid(axis_i: Vector2<f32>, axis_j: Vector2<f32>) -> ClusterCenters {
     let theta0 = axis_i.y.atan2(axis_i.x);
     let theta1 = axis_j.y.atan2(axis_j.x);
-    ClusterCenters { theta0, theta1 }
+    ClusterCenters::new(theta0, theta1)
 }
 
 #[cfg_attr(

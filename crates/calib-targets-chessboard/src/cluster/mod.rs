@@ -1,54 +1,35 @@
-//! Axes-based orientation clustering for the detector.
+//! Chessboard adapter over [`projective_grid::cluster`].
 //!
-//! Computes the two global grid-direction centers `(Θ₀, Θ₁)` from the
-//! per-corner `axes[0]` and `axes[1]` angles, then labels every
-//! corner by matching its two axes against those two centers.
+//! The generic axis-clustering math — circular histogram + smoothing +
+//! plateau-aware peak picking + double-angle 2-means recovering the two
+//! global grid-direction centres `(Θ₀, Θ₁)` from per-feature dual-axis
+//! estimates — lives in [`projective_grid::cluster`]. This module is the
+//! chessboard-specific glue around it:
 //!
-//! # Why this differs from the workspace-level `cluster_orientations`
+//! * It selects which corners vote (the `Strong`-stage corners), maps
+//!   each `CornerAug`'s two [`calib_targets_core::AxisEstimate`]s into
+//!   [`projective_grid::cluster::AxisFeature`]s, and translates the
+//!   generic [`projective_grid::cluster::AxisAssignment`] back onto the
+//!   chessboard [`ClusterLabel`] / [`CornerStage`] vocabulary (see
+//!   [`assign`]).
+//! * It runs the chessboard-only spatial parity-coherence repair
+//!   ([`slot_coherence`]) that the generic stage knows nothing about.
 //!
-//! `calib_targets_core::cluster_orientations` (post Phase-0 migration)
-//! also clusters using axes. This module reuses its per-corner
-//! `axes[0]` / `axes[1]` contributions but is **self-contained** —
-//! This module keeps its own histogram + 2-means implementation so its
-//! per-stage debug surface is decoupled from the shared helper. The
-//! algorithm is identical (double-angle circular mean over per-axis
-//! votes; the double-angle trick is mandatory for undirected angles
-//! modulo π).
+//! The double-angle `(cos 2θ, sin 2θ)` undirected-circular-mean contract
+//! is enforced inside the generic helper.
 //!
 //! # Inputs / outputs
 //!
-//! * Input: a slice of [`CornerAug`] whose `axes` field is
-//!   populated. Axes with sigma equal to the no-info sentinel (π)
-//!   are skipped.
+//! * Input: a slice of [`CornerAug`] whose `axes` field is populated.
+//!   Axes with sigma equal to the no-info sentinel (π) are skipped.
 //! * Output:
-//!   - `ClusterCenters { theta0, theta1 }` in `[0, π)` with
-//!     `theta0 < theta1`.
-//!   - A per-corner [`AxisCluster`] assignment.
-//!
-//! # Algorithm
-//!
-//! 1. Build a smoothed circular histogram on `[0, π)` with
-//!    `num_bins` bins. For every corner and every axis `k ∈ {0, 1}`,
-//!    add a vote at `wrap_pi(axes[k].angle)` with weight
-//!    `strength / (1 + axes[k].sigma)`.
-//! 2. Smooth with a `[1, 4, 6, 4, 1] / 16` circular kernel.
-//! 3. Find local maxima. Keep peaks with total weight ≥
-//!    `min_peak_weight_fraction × total`. Pick the two strongest
-//!    peaks separated by at least `peak_min_separation_deg`.
-//! 4. Refine centers via **double-angle** 2-means over per-axis
-//!    votes. Each axis vote `θ` is mapped to `2θ` before averaging;
-//!    the average is halved back — this is the correct undirected-
-//!    angle (mod π) circular mean. Iterate up to `max_iters`.
-//! 5. Per-corner label: for each corner, compute the two possible
-//!    axis assignments (canonical vs swapped) and pick the cheaper.
-//!    Require the LARGER distance in the winning assignment to be
-//!    within `cluster_tol_deg`; otherwise the corner is unclustered.
+//!   - [`ClusterCenters`] `{ theta0, theta1 }` in `[0, π)` with
+//!     `theta0 ≤ theta1`.
+//!   - The per-corner `stage` / `label` fields, mutated in place.
 
-use crate::circular_stats as cs;
 use crate::corner::{CornerAug, CornerStage};
 use crate::params::DetectorParams;
-use serde::Serialize;
-use std::f32::consts::PI;
+use projective_grid::cluster::{self as pg, AxisFeature, AxisObservation, ClusterParams};
 
 mod assign;
 mod slot_coherence;
@@ -58,39 +39,55 @@ pub use assign::{assign_corner, refit_centers_from_labelled, AxisCluster};
 use slot_coherence::fix_axis_slot_coherence;
 pub(crate) use slot_coherence::fix_partial_slot_flips_post_stage6;
 
-// Re-export the hoisted angle helpers under their old local names so
+// Re-export the generic angle helpers under their old local names so
 // sibling modules (`seed`, `grow`, `boosters`) keep their existing
 // `use crate::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
 pub(crate) use crate::circular_stats::{angular_dist_pi, wrap_pi};
 
-/// Result of clustering: two grid-direction centers in `[0, π)`
-/// with `theta0 < theta1`.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub struct ClusterCenters {
-    pub theta0: f32,
-    pub theta1: f32,
-}
+/// Two grid-direction centres in `[0, π)` with `theta0 ≤ theta1`.
+///
+/// Re-export of `projective_grid::cluster::AxisClusterCenters`; the
+/// chessboard pipeline keeps the shorter local name.
+pub use projective_grid::cluster::AxisClusterCenters as ClusterCenters;
 
 /// Stage-3 introspection captured during a single `cluster_axes_debug`
-/// run. Surfaced through `DebugFrame` so an offline tool can plot the
-/// histogram and check whether 2-means refinement walked off the
-/// visible peaks. Local-only: never serialized into a public report.
-#[derive(Clone, Debug, Serialize)]
-pub struct ClusterDebug {
-    /// Number of histogram bins spanning the `[0, π)` axis-angle range.
-    pub num_bins: usize,
-    /// Raw per-bin weighted vote counts before smoothing.
-    pub histogram: Vec<f32>,
-    /// The histogram after circular smoothing — the curve peak-picking runs on.
-    pub smoothed: Vec<f32>,
-    /// Sum of all bin weights — the normalizer for the peak-weight floor.
-    pub total_weight: f32,
-    /// Peak seeds picked from the smoothed histogram, in radians (`[0, π)`),
-    /// before 2-means refinement. `None` when peak picking failed.
-    pub peak_seeds_rad: Option<[f32; 2]>,
-    /// Centers after 2-means refinement, in radians. `None` when peak
-    /// picking failed (refinement isn't run).
-    pub refined_centers_rad: Option<[f32; 2]>,
+/// run. Re-export of `projective_grid::cluster::AxisClusterDebug`.
+pub use projective_grid::cluster::AxisClusterDebug as ClusterDebug;
+
+/// Build the [`ClusterParams`] the generic clusterer consumes from the
+/// chessboard tuning.
+fn cluster_params(params: &DetectorParams) -> ClusterParams {
+    let tuning = params.effective_tuning();
+    ClusterParams::new(
+        tuning.num_bins,
+        tuning.min_peak_weight_fraction,
+        tuning.peak_min_separation_deg.to_radians(),
+        tuning.max_iters_2means,
+        tuning.cluster_tol_deg.to_radians(),
+        tuning.cluster_sigma_k,
+    )
+}
+
+/// Collect the `Strong`-stage corners as generic axis features, in input
+/// order, and return both the feature slice and the parallel list of the
+/// corner indices they came from.
+fn collect_strong_features(corners: &[CornerAug]) -> (Vec<AxisFeature>, Vec<usize>) {
+    let mut features = Vec::new();
+    let mut indices = Vec::new();
+    for (idx, corner) in corners.iter().enumerate() {
+        if !matches!(corner.stage, CornerStage::Strong) {
+            continue;
+        }
+        features.push(AxisFeature::new(
+            [
+                AxisObservation::new(corner.axes[0].angle, corner.axes[0].sigma),
+                AxisObservation::new(corner.axes[1].angle, corner.axes[1].sigma),
+            ],
+            corner.strength,
+        ));
+        indices.push(idx);
+    }
+    (features, indices)
 }
 
 /// Run clustering over a slice of [`CornerAug`]. Mutates each
@@ -118,68 +115,20 @@ pub fn cluster_axes_debug(
     corners: &mut [CornerAug],
     params: &DetectorParams,
 ) -> (Option<ClusterCenters>, ClusterDebug) {
-    let tuning = params.effective_tuning();
-    let mut debug = ClusterDebug {
-        num_bins: tuning.num_bins,
-        histogram: Vec::new(),
-        smoothed: Vec::new(),
-        total_weight: 0.0,
-        peak_seeds_rad: None,
-        refined_centers_rad: None,
-    };
+    let cluster_params = cluster_params(params);
+    let (features, indices) = collect_strong_features(corners);
 
-    if corners.is_empty() || tuning.num_bins < 4 {
-        return (None, debug);
-    }
+    let (centers, assignments, debug) = pg::cluster_axes(&features, &cluster_params);
 
-    let hist = build_histogram(corners, params);
-    debug.histogram = hist.bins.clone();
-    debug.total_weight = hist.total_weight;
-    if hist.total_weight <= 0.0 {
-        return (None, debug);
-    }
-
-    let smoothed = cs::smooth_circular_5(&hist.bins);
-    debug.smoothed = smoothed.clone();
-
-    let peak_opts = cs::PeakPickOptions::new(
-        tuning.min_peak_weight_fraction,
-        tuning.peak_min_separation_deg.to_radians(),
-    );
-    let Some((theta0_seed, theta1_seed)) =
-        cs::pick_two_peaks(&smoothed, hist.total_weight, &peak_opts)
-    else {
+    let Some(centers) = centers else {
         return (None, debug);
     };
-    debug.peak_seeds_rad = Some([theta0_seed, theta1_seed]);
 
-    let votes = collect_axis_votes(corners);
-    let (theta0, theta1) =
-        cs::refine_2means_double_angle(&votes, [theta0_seed, theta1_seed], tuning.max_iters_2means);
-    debug.refined_centers_rad = Some([theta0, theta1]);
-
-    let (a, b) = if theta0 <= theta1 {
-        (theta0, theta1)
-    } else {
-        (theta1, theta0)
-    };
-    let centers = ClusterCenters {
-        theta0: a,
-        theta1: b,
-    };
-
-    // Assign per-corner label. The effective per-corner tolerance is
-    // `cluster_tol_rad + cluster_sigma_k * max(σ_a0, σ_a1)` so noisy
-    // axes get proportional slack — see `AdvancedTuning::cluster_sigma_k`.
-    let base_tol_rad = tuning.cluster_tol_deg.to_radians();
-    let sigma_k = tuning.cluster_sigma_k;
-    for corner in corners.iter_mut() {
-        if !matches!(corner.stage, CornerStage::Strong) {
-            continue;
-        }
-        let tol_rad = effective_tol_rad(corner, base_tol_rad, sigma_k);
-        let assign = assign_corner(corner, centers, tol_rad);
-        match assign {
+    // Translate the generic per-feature assignment back onto the
+    // chessboard `ClusterLabel` / `CornerStage` vocabulary.
+    for (assign, &idx) in assignments.iter().zip(indices.iter()) {
+        let corner = &mut corners[idx];
+        match assign::map_assignment(*assign) {
             AxisCluster::Labeled { label, .. } => {
                 corner.label = Some(label);
                 corner.stage = CornerStage::Clustered { label };
@@ -213,72 +162,6 @@ pub fn cluster_axes_debug(
     fix_axis_slot_coherence(corners);
 
     (Some(centers), debug)
-}
-// --- internals ------------------------------------------------------------
-
-struct Histogram {
-    bins: Vec<f32>,
-    total_weight: f32,
-}
-
-fn build_histogram(corners: &[CornerAug], params: &DetectorParams) -> Histogram {
-    let n = params.effective_tuning().num_bins;
-    let mut bins = vec![0.0_f32; n];
-    let mut total = 0.0_f32;
-    for corner in corners {
-        if !matches!(corner.stage, CornerStage::Strong) {
-            continue;
-        }
-        for axis in &corner.axes {
-            if !axis.sigma.is_finite() || axis.sigma >= PI - f32::EPSILON {
-                // No-info sentinel → skip this axis.
-                continue;
-            }
-            let w = weight(corner.strength, axis.sigma);
-            if w <= 0.0 {
-                continue;
-            }
-            let bin = cs::angle_to_bin(cs::wrap_pi(axis.angle), n);
-            bins[bin] += w;
-            total += w;
-        }
-    }
-    Histogram {
-        bins,
-        total_weight: total,
-    }
-}
-
-#[inline]
-fn weight(strength: f32, sigma: f32) -> f32 {
-    let s = strength.max(0.0);
-    let base = if s > 0.0 { s } else { 1.0 };
-    base / (1.0 + sigma.max(0.0))
-}
-
-/// Materialise per-axis votes in the shape expected by the hoisted
-/// [`cs::refine_2means_double_angle`] helper.
-fn collect_axis_votes(corners: &[CornerAug]) -> Vec<cs::AngleVote> {
-    let mut votes: Vec<cs::AngleVote> = Vec::new();
-    for corner in corners {
-        if !matches!(corner.stage, CornerStage::Strong) {
-            continue;
-        }
-        for axis in &corner.axes {
-            if !axis.sigma.is_finite() || axis.sigma >= PI - f32::EPSILON {
-                continue;
-            }
-            let w = weight(corner.strength, axis.sigma);
-            if w <= 0.0 {
-                continue;
-            }
-            votes.push(cs::AngleVote {
-                angle: cs::wrap_pi(axis.angle),
-                weight: w,
-            });
-        }
-    }
-    votes
 }
 
 // --- tests ----------------------------------------------------------------
