@@ -31,6 +31,9 @@ use crate::feature::OrientedFeature;
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{GridSolution, LabelledGrid, RejectedFeature, RejectionReason};
 use crate::seed_and_grow::grow::{bfs_grow as adv_bfs_grow, GrowParams as AdvGrowParams};
+use crate::seed_and_grow::pipeline::{
+    run_convergence_loop, IterationDriver, IterationProduct, LoopParams,
+};
 use crate::seed_and_grow::seed::finder::find_quad as adv_find_quad;
 use crate::seed_and_grow::seed::Seed as AdvSeed;
 use crate::shared::merge::{merge_components_local, ComponentInput};
@@ -48,6 +51,11 @@ const FACADE_EDGE_LENGTH_TOL: f32 = 0.35;
 /// Hard cap on the number of seed-and-grow components assembled per call,
 /// so a pathological input can't spin forever.
 const MAX_COMPONENTS: usize = 16;
+/// Hard cap on the per-component seed → grow → validate convergence loop
+/// iterations. Mirrors the chessboard tuning default (`6`); a clean grid
+/// converges on the first iteration, so this only bounds the re-seed
+/// behaviour on noisy inputs.
+const FACADE_MAX_VALIDATION_ITERS: u32 = 6;
 
 /// Seed → grow (multi-component) → merge → validate → fit pipeline for
 /// square lattices with two-axis-per-feature evidence.
@@ -142,8 +150,16 @@ fn build_components(
     out
 }
 
-/// Find one seed quad over the not-yet-used corners and grow it into a
-/// labelled component. Returns `None` when no seed closes.
+/// Assemble one labelled component over the not-yet-used corners by running
+/// the shared seed → grow → validate → blacklist convergence loop. Returns
+/// the converged labelled map, or `None` when no seed closes.
+///
+/// The loop (hosted in [`crate::seed_and_grow::pipeline`]) re-seeds and
+/// re-grows the component whenever the post-grow validator flags outliers,
+/// excluding them, until the validator stops flagging (or a small residual
+/// soft-converges). On a clean grid the validator flags nothing, so the loop
+/// converges on its first iteration and the output equals the historical
+/// single-pass result.
 fn grow_one_component(
     features: &[OrientedFeature<2>],
     positions: &[Point2<f32>],
@@ -151,46 +167,105 @@ fn grow_one_component(
     params: &DetectionParams,
     used: &HashSet<usize>,
 ) -> Option<HashMap<(i32, i32), usize>> {
-    // Seed search restricted to the unused corners. The seed policy's
-    // candidate lists carry the eligibility mask; the attach policy below
-    // shares the same restriction via `is_eligible`.
-    let seed_policy = RestrictedSeedPolicy {
+    let mut driver = FacadeComponentDriver {
         features,
         positions,
+        local_pitch,
+        params,
         used,
     };
-    let seed_out = adv_find_quad(&seed_policy, &params.seed)?;
-    let seed = seed_out.seed;
-    let cell_size = seed_out.cell_size;
-
-    // The attach policy vouches each candidate against its labelled
-    // neighbour's local axes (perspective-tracking), so no global grid axis
-    // needs to be derived from the seed here.
-    let tol = Oriented2Tolerances {
-        axis_align_tol_rad: FACADE_AXIS_ALIGN_TOL_RAD,
-        edge_length_tol: FACADE_EDGE_LENGTH_TOL,
-        cell_size,
-    };
-    let attach_policy = RestrictedAttachPolicy {
-        inner: Oriented2Policy::new(features, positions, local_pitch, tol),
-        used,
-    };
-
-    let adv_seed = AdvSeed {
-        a: seed.a,
-        b: seed.b,
-        c: seed.c,
-        d: seed.d,
-    };
-    let grow_params = AdvGrowParams::new(
-        params.grow.attach_search_rel,
-        params.grow.attach_ambiguity_factor,
-    );
-    let result = adv_bfs_grow(positions, adv_seed, cell_size, &grow_params, &attach_policy);
-    if result.labelled.len() < 4 {
+    // Mirror the chessboard loop's soft-convergence shape: `it + 1 >= 2`,
+    // residual `<= 2`, labelled `>= 4` (the facade's minimum component size).
+    let loop_params = LoopParams::new(FACADE_MAX_VALIDATION_ITERS, 2, 2, 4);
+    let report = run_convergence_loop(&mut driver, loop_params);
+    let conv = report.converged_record()?;
+    if conv.labelled.len() < 4 {
         return None;
     }
-    Some(result.labelled)
+    Some(conv.labelled.clone())
+}
+
+/// One iteration of the facade's per-component assembly: find a seed over the
+/// `used ∪ blacklist`-masked corners, grow it, and validate the labelled set.
+struct FacadeComponentDriver<'a> {
+    features: &'a [OrientedFeature<2>],
+    positions: &'a [Point2<f32>],
+    local_pitch: &'a [f32],
+    params: &'a DetectionParams,
+    used: &'a HashSet<usize>,
+}
+
+impl IterationDriver for FacadeComponentDriver<'_> {
+    fn run_iteration(&mut self, blacklist: &HashSet<usize>, _it: u32) -> IterationProduct {
+        // The seed + attach masks exclude both the corners earlier components
+        // claimed (`used`) and this component's running blacklist.
+        let masked: HashSet<usize> = self.used.union(blacklist).copied().collect();
+
+        let seed_policy = RestrictedSeedPolicy {
+            features: self.features,
+            positions: self.positions,
+            used: &masked,
+        };
+        let Some(seed_out) = adv_find_quad(&seed_policy, &self.params.seed) else {
+            return IterationProduct::seed_failed();
+        };
+        let seed = seed_out.seed;
+        let cell_size = seed_out.cell_size;
+
+        let tol = Oriented2Tolerances {
+            axis_align_tol_rad: FACADE_AXIS_ALIGN_TOL_RAD,
+            edge_length_tol: FACADE_EDGE_LENGTH_TOL,
+            cell_size,
+        };
+        let attach_policy = RestrictedAttachPolicy {
+            inner: Oriented2Policy::new(self.features, self.positions, self.local_pitch, tol),
+            used: &masked,
+        };
+
+        let adv_seed = AdvSeed {
+            a: seed.a,
+            b: seed.b,
+            c: seed.c,
+            d: seed.d,
+        };
+        let grow_params = AdvGrowParams::new(
+            self.params.grow.attach_search_rel,
+            self.params.grow.attach_ambiguity_factor,
+        );
+        let result = adv_bfs_grow(
+            self.positions,
+            adv_seed,
+            cell_size,
+            &grow_params,
+            &attach_policy,
+        );
+        if result.labelled.len() < 4 {
+            return IterationProduct::seed_failed();
+        }
+
+        // Validate the grown component so the loop can blacklist outliers and
+        // re-seed. Use the grown set's mean cardinal-edge length as the
+        // validation cell size (matches `finish_component`'s estimate).
+        let validate_cell_size = estimate_cell_size(&result.labelled, self.positions);
+        let ordered = sorted_labelled(&result.labelled);
+        let entries: Vec<pg_validate::LabelledEntry> = ordered
+            .iter()
+            .map(|&(grid, idx)| pg_validate::LabelledEntry {
+                idx,
+                pixel: self.positions[idx],
+                grid,
+            })
+            .collect();
+        let validation = pg_validate::validate(&entries, validate_cell_size, &self.params.validate);
+
+        IterationProduct {
+            seed_found: true,
+            labelled: result.labelled,
+            validation_blacklist: validation.blacklist.iter().copied().collect(),
+            cell_size: Some(cell_size),
+            seed_indices: Some([seed.a, seed.b, seed.c, seed.d]),
+        }
+    }
 }
 
 /// Seed policy that restricts both candidate classes to the unused corner
