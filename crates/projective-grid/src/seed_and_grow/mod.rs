@@ -11,7 +11,7 @@
 //!   using local geometry only (radial-distortion safe).
 //! - **validate** — the advanced post-grow validator (line collinearity +
 //!   local-H) drops blacklisted corners per merged component.
-//! - **fit** — the shared [`fit_component`](crate::shared::fit) back-half fits a
+//! - **fit** — the shared `fit_component` back-half (in `shared::fit`) fits a
 //!   projective transform and reports residuals, dropping over-threshold
 //!   corners once and refitting.
 //!

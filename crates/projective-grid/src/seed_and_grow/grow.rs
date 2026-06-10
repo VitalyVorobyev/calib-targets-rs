@@ -461,7 +461,7 @@ pub(crate) fn collect_labelled_neighbours(
 /// infinite weight; in practice [`bfs_grow`] never enqueues such a
 /// neighbour (they're already labelled), but for robustness we treat
 /// `Δi = Δj = 0` as weight 1.0 to avoid `NaN`.
-pub fn predict_from_neighbours(
+pub(crate) fn predict_from_neighbours(
     target: (i32, i32),
     neighbours: &[LabelledNeighbour],
     u: Vector2<f32>,

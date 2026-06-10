@@ -20,6 +20,25 @@
 //!
 //! The per-strategy stage maps live in `docs/topological-grid-detection.md`
 //! (repo root) and `calib-targets-chessboard/docs/PIPELINE.md`.
+//!
+//! # Two public tiers
+//!
+//! The crate exposes two tiers with different stability promises:
+//!
+//! * **Stable tier — the facade.** The items re-exported at the crate root
+//!   ([`detect_grid`], [`detect_grid_all`], [`check_consistency`], the
+//!   [`Evidence`] / [`DetectionParams`] / [`DetectionRequest`] request types,
+//!   the [`GridSolution`] / [`LabelledGrid`] result types, the [`Lattice`] /
+//!   [`LatticeKind`] / [`Coord`] model, the feature evidence types, and the
+//!   `orient::synthesize_*` helpers). This is the supported surface for
+//!   external callers and follows normal semver intent.
+//! * **Advanced tier — the engine modules.** [`seed_and_grow`], [`shared`],
+//!   and [`topological`] expose the assembly engines the facade is built from,
+//!   for in-workspace consumers (the chessboard detector) that compose the
+//!   engine directly with their own policies. These are **semver-exempt
+//!   pre-1.0**: items here may change shape between minor releases as the
+//!   engine is refactored. Depend on the facade unless you are building a new
+//!   detector on top of the engine.
 
 #![warn(missing_docs)]
 
