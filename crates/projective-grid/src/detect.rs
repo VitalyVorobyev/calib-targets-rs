@@ -249,7 +249,10 @@ impl<'a> DetectionRequest<'a> {
 /// | `(Square, Positions)` | supported — synthesize both axes, then Oriented2 |
 /// | `(Square, Oriented3)` | `UnsupportedCombination` |
 /// | `(Square, CoordinateHypotheses)` | `UnsupportedCombination` (roadmap) |
-/// | `(Hex, *)` | `UnsupportedCombination` (Phase 4 roadmap) |
+/// | `(Hex, Oriented3)` | supported — topological only (`algorithm = Topological`) |
+/// | `(Hex, Positions)` | supported — synthesize 3 axes, then hex topological |
+/// | `(Hex, Oriented1 / Oriented2)` | `UnsupportedCombination` |
+/// | `(Hex, *)` with `algorithm = SeedAndGrow` | `UnsupportedCombination` |
 ///
 /// * `(Square, Oriented2)` — two algorithm choices, picked via
 ///   [`DetectionParams::algorithm`]:
@@ -274,10 +277,23 @@ impl<'a> DetectionRequest<'a> {
 ///   edge orientation per feature but not the orthogonal one.
 /// * Every other combination — typed [`GridError::UnsupportedCombination`].
 ///
-/// `(Square, Oriented3)` (hex-native triple-axis evidence, a Phase 4
-/// consumer), `(Square, CoordinateHypotheses)` (a decode-feedback roadmap
-/// slot), and every `(Hex, *)` variant stay `UnsupportedCombination` — no
-/// working algorithm exists in the current implementation for those slots.
+/// * `(Hex, Oriented3)` — hex-native triple-axis evidence. Runs the hex
+///   topological grid finder (Delaunay triangles *are* the unit cells; no
+///   diagonal class, no triangle-pair merge; axial `(q, r)` flood-fill walk).
+///   Hex is **topological-only** with **no recovery schedule**, so set
+///   [`DetectionParams::algorithm`] to [`SquareAlgorithm::Topological`]; the
+///   default [`SquareAlgorithm::SeedAndGrow`] yields `UnsupportedCombination`
+///   for any hex request (no seed-and-grow hex implementation).
+/// * `(Hex, Positions)` — orientation-free hex input. The three local grid
+///   directions are synthesized from neighbour geometry
+///   ([`crate::orient::synthesize_oriented3`]) and then fed to the hex
+///   topological path, mirroring the `(Square, Positions)` seam.
+///
+/// `(Square, Oriented3)` (square does not consume triple-axis evidence),
+/// `(Square, CoordinateHypotheses)` (a decode-feedback roadmap slot),
+/// `(Hex, Oriented1)` / `(Hex, Oriented2)` (hex needs three axis families),
+/// and any `(Hex, *)` request with `algorithm = SeedAndGrow` stay
+/// `UnsupportedCombination` — no working algorithm exists for those slots.
 ///
 /// **Multi-component results.** Both algorithms can produce more than one
 /// connected component (seed-and-grow assembles each disconnected patch
@@ -321,6 +337,35 @@ fn run_square_oriented2(
     }
 }
 
+/// Dispatch hex triple-axis features (caller-supplied or synthesized) to the
+/// hex topological path.
+///
+/// Hex detection is **topological-only**: the
+/// [`SquareAlgorithm::SeedAndGrow`] selector has no hex implementation (the
+/// seed-and-grow recovery machinery is square/ChESS-axis coupled), so a hex
+/// request with `algorithm == SeedAndGrow` is a typed
+/// [`GridError::UnsupportedCombination`] rather than a silent fallback. The
+/// algorithm selector enum is named [`SquareAlgorithm`]; for hex only its
+/// `Topological` variant is meaningful, and it is the default-equivalent path
+/// here (see the support matrix on [`detect_grid`]).
+fn run_hex_oriented3(
+    features: &[OrientedFeature<3>],
+    request: &DetectionRequest<'_>,
+) -> Result<Vec<GridSolution>> {
+    match request.params.algorithm {
+        SquareAlgorithm::Topological => crate::topological::detect_hex_oriented3_topological_all(
+            features,
+            request.dimensions,
+            &request.params,
+        ),
+        SquareAlgorithm::SeedAndGrow => Err(GridError::UnsupportedCombination {
+            task: GridTask::Detection,
+            lattice: LatticeKind::Hex,
+            evidence: request.evidence.kind(),
+        }),
+    }
+}
+
 /// Multi-component variant of [`detect_grid`].
 ///
 /// Returns a [`DetectionReport`] with one [`GridSolution`] per
@@ -360,6 +405,19 @@ pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport>
             // the second axis is synthesized, so `Auto` enables recovery.
             let oriented = crate::orient::synthesize_oriented2_from_oriented1(features);
             run_square_oriented2(&oriented, &request, true)?
+        }
+        (LatticeKind::Hex, Evidence::Oriented3(features)) => {
+            // Hex-native triple-axis evidence. Hex detection is
+            // topological-only; seed-and-grow hex is a typed
+            // `UnsupportedCombination` below.
+            run_hex_oriented3(features, &request)?
+        }
+        (LatticeKind::Hex, Evidence::Positions(features)) => {
+            // Orientation-free hex input: synthesize the three local grid
+            // directions from neighbour geometry, then run the hex topological
+            // path. Mirrors the `(Square, Positions)` synthesis seam.
+            let oriented = crate::orient::synthesize_oriented3(features);
+            run_hex_oriented3(&oriented, &request)?
         }
         _ => {
             return Err(GridError::UnsupportedCombination {

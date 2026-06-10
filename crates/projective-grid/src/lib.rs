@@ -71,7 +71,9 @@ pub use crate::lattice::{
     Coord, GridDimensions, GridTransform, Hex, Lattice, LatticeKind, Square, D4_TRANSFORMS,
     D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
 };
-pub use crate::orient::{synthesize_oriented2, synthesize_oriented2_from_oriented1};
+pub use crate::orient::{
+    synthesize_oriented2, synthesize_oriented2_from_oriented1, synthesize_oriented3,
+};
 pub use crate::result::{
     ConsistencyReport, GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature,
     RejectionReason, ResidualSummary,
