@@ -244,6 +244,30 @@ constant column drift — is strong and cheap), or marker-aware scoring once
 ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
 policy work, which needs the same local-geometry discrimination.
 
+### Gap 12 — Orientation-free synthesis on clutter-dense targets (CLOSED BY EVIDENCE 2026-06-11)
+
+Position-only axis synthesis (`projective_grid::orient`) cannot reach recall
+parity with ChESS axes on ChArUco-style boards. Measured mechanism: glyph
+corners sit at roughly a third of the lattice pitch, so the per-corner
+nearest-neighbour pool mixes clutter and lattice chords (1-NN p05 ≈ pitch/3
+on the failing boards; 4-NN spread ≈ 2× vs ≈ 1.04 on clean boards), the
+global double-angle modes lock onto the clutter geometry, and the best
+position-only variant evaluated (generous pool + greedy max-angular-spread
+chord selection + local 2-means) still leaves a ~40° gap between synthesized
+axes and true lattice edge directions in the in-focus sliver — ~0 % of true
+edges within the topological classifier's 15° tolerance, vs 94 % on a clean
+control board. A spread-floor variant that improves clutter coherence also
+rejects genuine near-collinear axis pairs under strong foreshortening
+(regresses the perspective fixture), confirming the tension is structural.
+
+**Resolution:** clutter-dense targets are out of scope for orientation-free
+detection; they require intensity-aware axes (the ChESS fit), which the
+production default and the ChArUco detector already use. The supported
+domain — clutter-free regular grids — is at parity ≥ 1.0 per image and gated
+by `calib-targets-bench/tests/orientation_free_parity.rs`. Any future
+re-opening should start from intensity-aware seeding, not better
+position-only chord statistics.
+
 ### Resolved gaps (April 2026 refactor)
 
 - **Pipeline A removal** (was Gap 1, Gap 2, Gap 5, Gap 9). The

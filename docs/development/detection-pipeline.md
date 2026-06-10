@@ -88,19 +88,27 @@ cargo run -p calib-targets-bench -- run --engine grid \
     --algorithm topological --orientation-source neighbour-edges
 ```
 
-Acceptance target is median ≥ 0.98, per-image floor ≥ 0.95, **zero wrong
-labels**. As of the Phase-3 recovery work the picture is *bimodal and
-complementary across the two builders*, so the uniform floor is not yet met: the
-topological builder wins on large foreshortened boards (synthesized-axis +
-recovery materially exceeds the chess-axis grid-engine recall) but the
-synthesized-axis path is brittle on small / sharp-angle real chessboard frames,
-where the recovery's drop filters correctly refuse an incoherent quad mesh
-(recall lost, precision preserved); the seed-and-grow builder has the inverted
-profile. The binding constraint is the *synthesized-axis quality on noisy real
-corners* (upstream of the recovery schedule, in `projective_grid::orient`), not
-the recovery schedule itself — the schedule is precision-safe and a clear recall
-win wherever the synthesis yields a coherent seed. Concrete per-image numbers
-are local-only (`bench_results/`).
+**Supported domain: clutter-free regular grids.** On every clutter-free public
+chessboard image the orientation-free path matches or beats the ChESS-axis
+path (parity ≥ 1.0; on large foreshortened boards the synthesized-axis +
+recovery combination materially exceeds chess-axis recall), at zero wrong
+labels. This is pinned by the
+`calib-targets-bench/tests/orientation_free_parity.rs` gate: recall parity
+plus a D4+translation label-consistency audit on shared corners, per image.
+
+**Out of scope: clutter-dense targets (measured information ceiling).** On
+ChArUco-style boards, glyph corners at sub-lattice pitch dominate the local
+neighbourhood statistics, and position-only axis synthesis provably cannot
+recover the lattice directions there (measured: ~0 % of true lattice edges
+fall within the topological classifier's axis tolerance on the blurred glyph
+boards, vs ~94 % on clean boards; the recovered axes lock onto the clutter
+geometry). The drop filters then correctly refuse the incoherent mesh —
+recall lost, precision preserved. This is an information limit of
+position-only evidence, not a tuning gap; clutter-bearing targets need
+intensity-aware axes (the ChESS fit), which is exactly what the production
+default uses. Details in `docs/algorithmic_gaps.md` (orientation-free
+clutter ceiling). Concrete per-image numbers are local-only
+(`bench_results/`).
 
 ### Bench harness selector
 

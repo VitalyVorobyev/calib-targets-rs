@@ -59,7 +59,10 @@ strategy — so they produce the same [`GridSolution`] shape:
   dot grid, a circle grid, or corners with no axis estimate. Both local grid
   directions are recovered per point from neighbour chords (folded modulo π, so
   the estimate is perspective-invariant and never assumes the axes are 90°
-  apart).
+  apart). Works when the lattice is the dominant local structure; if your
+  point cloud carries dense sub-lattice clutter (e.g. marker-glyph corners
+  between the true grid points), neighbour statistics cannot recover the
+  axes — supply measured orientations (`Oriented1`/`Oriented2`) instead.
 - **Single-axis — [`Evidence::Oriented1`]** (`&[OrientedFeature<1>]`). One
   trusted direction per point (e.g. a detector that recovers a dominant edge
   orientation but not the orthogonal one). The supplied axis is kept; the second
