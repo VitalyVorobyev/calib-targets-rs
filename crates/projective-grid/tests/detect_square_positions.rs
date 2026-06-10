@@ -207,18 +207,15 @@ fn perspective_grid_seed_and_grow_is_deterministic() {
     }
 }
 
-// DEFERRED (recall only — determinism is now asserted above): the
-// orientation-free (`Evidence::Positions`) facade seed-and-grow path does not
-// yet survive a strong perspective warp at full recall. The synthesized-axis
-// growth stalls under heavy foreshortening (currently recovers a small
-// self-consistent component, zero wrong labels). The `Topological` sibling
-// (`perspective_grid_topological_zero_wrong_labels`) is the supported
-// orientation-free path today. Re-enable in Phase 3 (orientation-free
-// parity), when the facade seed-and-grow positions path gets the recovery
-// schedule / PositionsAttachPolicy that brings its recall up to the
-// topological path's.
+// Phase 3 (orientation-free parity): the facade seed-and-grow positions path
+// now runs the `PositionsAttachPolicy` + post-convergence recovery schedule
+// (boundary extension + interior fill + revalidate + drop filters), which
+// brings its recall under a strong perspective warp up to the topological
+// path's level. On this fixture it recovers the full 8×8 (64/64) with zero
+// wrong labels; the floor is set to measured-minus-margin (60/64) so a minor
+// tuning drift stays green while a real regression trips it. The headline
+// contract — zero wrong `(i, j)` labels — is still verified for every label.
 #[test]
-#[ignore = "re-enable in Phase 3 (orientation-free parity): facade seed-and-grow positions recall stalls under perspective; topological is the supported path"]
 fn perspective_grid_seed_and_grow_zero_wrong_labels() {
     // Real perspective term: grid directions are non-orthogonal and drift.
     let h = Matrix3::new(
@@ -230,8 +227,8 @@ fn perspective_grid_seed_and_grow_zero_wrong_labels() {
     let sol = detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
         .expect("seed-and-grow on perspective grid");
     assert!(
-        sol.grid.entries.len() >= 48,
-        "recovered only {}/64 under perspective",
+        sol.grid.entries.len() >= 60,
+        "recovered only {}/64 under perspective (Phase-3 recovery floor 60)",
         sol.grid.entries.len()
     );
     assert_labels_consistent_with_truth(

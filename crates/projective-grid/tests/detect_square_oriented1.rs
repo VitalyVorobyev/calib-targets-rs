@@ -195,9 +195,12 @@ fn oriented1_topological_parity_and_zero_wrong() {
     let n1 = sol1.grid.entries.len();
     let n2 = sol2.grid.entries.len();
     assert!(n2 >= n1, "oriented2 should be the upper bound: {n2} < {n1}");
+    // Phase 3 wired the synthesized-axis topological path through the post-merge
+    // recovery schedule; it now recovers the full grid (measured 64/64). Floor
+    // set to measured-minus-margin (60).
     assert!(
-        n1 >= 48,
-        "oriented1 topological recovered only {n1}/64 (recall floor)"
+        n1 >= 60,
+        "oriented1 topological recovered only {n1}/64 (Phase-3 recall floor 60)"
     );
 }
 
@@ -215,12 +218,12 @@ fn oriented1_seed_and_grow_parity_and_zero_wrong() {
     let n1 = sol1.grid.entries.len();
     let n2 = sol2.grid.entries.len();
     assert!(n2 >= n1, "oriented2 should be the upper bound: {n2} < {n1}");
-    // Seed-and-grow under heavy foreshortening with a synthesized second axis
-    // stalls earlier than the topological path — the documented Phase 3 recall
-    // gap. The contract here is a partial grid with zero wrong labels (asserted
-    // above), so we require only a self-consistent multi-quad component.
+    // Phase 3: the seed-and-grow synthesized-axis path now runs the
+    // `PositionsAttachPolicy` + recovery schedule, closing the foreshortening
+    // gap — it recovers the full grid (measured 64/64). Floor set to
+    // measured-minus-margin (60).
     assert!(
-        n1 >= 16,
-        "oriented1 seed-and-grow recovered only {n1}/64 (recall floor)"
+        n1 >= 60,
+        "oriented1 seed-and-grow recovered only {n1}/64 (Phase-3 recall floor 60)"
     );
 }

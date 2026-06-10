@@ -41,6 +41,18 @@ use crate::shared::validate as pg_validate;
 
 use super::shared::{fit_component, FitComponentResult};
 use crate::seed_and_grow::policy::{Oriented2Policy, Oriented2Tolerances};
+use crate::seed_and_grow::positions_policy::{PositionsAttachPolicy, PositionsTolerances};
+use crate::seed_and_grow::recovery::RecoveryParams;
+
+/// Wide soft axis-alignment tolerance (radians) for the synthesized-axis
+/// position path — 50°, double the `Oriented2Policy` 25°. Synthesized axes are
+/// noisier than caller-supplied ones, so the position policy uses this only as
+/// a soft cue (see [`positions_policy`]).
+const POSITIONS_SOFT_AXIS_TOL_RAD: f32 = 0.872_664_6; // 50°
+/// Per-edge length tolerance for the position policy. Slightly wider than the
+/// oriented band so a foreshortened boundary edge is not rejected before the
+/// recovery schedule's revalidation can judge it in context.
+const POSITIONS_EDGE_LENGTH_TOL: f32 = 0.40;
 
 /// Default per-candidate axis-alignment tolerance (radians) for the
 /// facade policy — matches the historical seed-grow engine's 25°.
@@ -67,10 +79,22 @@ pub(crate) fn detect_square_oriented2_seed_grow(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
+    synthesized_axes: bool,
 ) -> Result<Vec<GridSolution>> {
     if features.len() < 4 {
         return Err(GridError::InsufficientEvidence);
     }
+
+    // Policy mode: native two-axis evidence uses the strict `Oriented2Policy`
+    // (axis voucher is a hard gate); synthesized-axis evidence uses the
+    // geometry-first `PositionsAttachPolicy` (axis voucher is a soft cue).
+    let mode = if synthesized_axes {
+        PolicyMode::Positions
+    } else {
+        PolicyMode::Oriented2
+    };
+    // Recovery schedule: enabled for the synthesized-axis path under `Auto`.
+    let recovery = params.recovery.resolve(synthesized_axes);
 
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
     // Per-corner local pitch (nearest-neighbour distance). The attach policy's
@@ -79,7 +103,7 @@ pub(crate) fn detect_square_oriented2_seed_grow(
     let local_pitch = compute_local_pitch(&positions);
 
     // Stage 1: assemble one labelled component per closed seed.
-    let raw_components = build_components(features, &positions, &local_pitch, params);
+    let raw_components = build_components(features, &positions, &local_pitch, params, mode);
     if raw_components.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }
@@ -89,6 +113,21 @@ pub(crate) fn detect_square_oriented2_seed_grow(
     if merged.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }
+
+    // Stage 2.5: per-component geometry-only recovery schedule (extension +
+    // fill + revalidate + drop filters) for the synthesized-axis path. Pushes
+    // recall up to the dense-recovery level without any target vocabulary;
+    // disabled for native `Oriented2` (recovery is `None`), preserving its
+    // single-pass behaviour byte-for-byte.
+    let merged = apply_recovery(
+        merged,
+        features,
+        &positions,
+        &local_pitch,
+        params,
+        mode,
+        &recovery,
+    );
 
     // Stage 3 + 4: validate + fit per merged component.
     let mut component_outputs: Vec<ComponentOutput> = Vec::new();
@@ -111,6 +150,17 @@ pub(crate) fn detect_square_oriented2_seed_grow(
     Ok(assemble_solutions(component_outputs, features, dimensions))
 }
 
+/// Which built-in attach policy the facade grows with. The native two-axis
+/// path keeps the strict axis voucher; the synthesized-axis path uses the
+/// geometry-first position policy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PolicyMode {
+    /// Caller-supplied two-axis evidence — strict axis voucher.
+    Oriented2,
+    /// Synthesized-axis evidence — soft axis cue, geometry-first.
+    Positions,
+}
+
 /// Repeatedly find a seed quad over the still-unlabelled corners, grow it,
 /// and collect the component. Stops when no seed closes or the component
 /// cap is hit.
@@ -119,6 +169,7 @@ fn build_components(
     positions: &[Point2<f32>],
     local_pitch: &[f32],
     params: &DetectionParams,
+    mode: PolicyMode,
 ) -> Vec<HashMap<(i32, i32), usize>> {
     let mut out: Vec<HashMap<(i32, i32), usize>> = Vec::new();
     let mut used: HashSet<usize> = HashSet::new();
@@ -134,7 +185,8 @@ fn build_components(
         // use the policy's `is_eligible` to mask. We restrict eligibility
         // to the remaining set by passing a fresh policy whose seed
         // candidate lists exclude already-used corners.
-        let Some(component) = grow_one_component(features, positions, local_pitch, params, &used)
+        let Some(component) =
+            grow_one_component(features, positions, local_pitch, params, &used, mode)
         else {
             break;
         };
@@ -166,6 +218,7 @@ fn grow_one_component(
     local_pitch: &[f32],
     params: &DetectionParams,
     used: &HashSet<usize>,
+    mode: PolicyMode,
 ) -> Option<HashMap<(i32, i32), usize>> {
     let mut driver = FacadeComponentDriver {
         features,
@@ -173,6 +226,7 @@ fn grow_one_component(
         local_pitch,
         params,
         used,
+        mode,
     };
     // Mirror the chessboard loop's soft-convergence shape: `it + 1 >= 2`,
     // residual `<= 2`, labelled `>= 4` (the facade's minimum component size).
@@ -193,6 +247,7 @@ struct FacadeComponentDriver<'a> {
     local_pitch: &'a [f32],
     params: &'a DetectionParams,
     used: &'a HashSet<usize>,
+    mode: PolicyMode,
 }
 
 impl IterationDriver for FacadeComponentDriver<'_> {
@@ -212,13 +267,15 @@ impl IterationDriver for FacadeComponentDriver<'_> {
         let seed = seed_out.seed;
         let cell_size = seed_out.cell_size;
 
-        let tol = Oriented2Tolerances {
-            axis_align_tol_rad: FACADE_AXIS_ALIGN_TOL_RAD,
-            edge_length_tol: FACADE_EDGE_LENGTH_TOL,
+        let inner = make_inner_policy(
+            self.mode,
+            self.features,
+            self.positions,
+            self.local_pitch,
             cell_size,
-        };
+        );
         let attach_policy = RestrictedAttachPolicy {
-            inner: Oriented2Policy::new(self.features, self.positions, self.local_pitch, tol),
+            inner,
             used: &masked,
         };
 
@@ -296,10 +353,92 @@ impl crate::seed_and_grow::seed::finder::SquareSeedPolicy for RestrictedSeedPoli
     }
 }
 
-/// Attach policy that wraps [`Oriented2Policy`] and masks out corners that
+/// The facade's built-in attach policy, dispatched on [`PolicyMode`]. Both
+/// variants implement [`SquareAttachPolicy`](crate::seed_and_grow::grow::SquareAttachPolicy);
+/// this enum lets the driver and recovery schedule hold one of them without a
+/// generic type parameter threading through every helper.
+enum FacadeInner<'a> {
+    Oriented2(Oriented2Policy<'a>),
+    Positions(PositionsAttachPolicy<'a>),
+}
+
+/// Build the inner attach policy for the given mode, sharing the per-corner
+/// local-pitch table and the seed-derived `cell_size` fallback.
+fn make_inner_policy<'a>(
+    mode: PolicyMode,
+    features: &'a [OrientedFeature<2>],
+    positions: &'a [Point2<f32>],
+    local_pitch: &'a [f32],
+    cell_size: f32,
+) -> FacadeInner<'a> {
+    match mode {
+        PolicyMode::Oriented2 => {
+            let tol = Oriented2Tolerances {
+                axis_align_tol_rad: FACADE_AXIS_ALIGN_TOL_RAD,
+                edge_length_tol: FACADE_EDGE_LENGTH_TOL,
+                cell_size,
+            };
+            FacadeInner::Oriented2(Oriented2Policy::new(features, positions, local_pitch, tol))
+        }
+        PolicyMode::Positions => {
+            let tol = PositionsTolerances {
+                soft_axis_tol_rad: POSITIONS_SOFT_AXIS_TOL_RAD,
+                edge_length_tol: POSITIONS_EDGE_LENGTH_TOL,
+                cell_size,
+            };
+            FacadeInner::Positions(PositionsAttachPolicy::new(
+                features,
+                positions,
+                local_pitch,
+                tol,
+            ))
+        }
+    }
+}
+
+impl crate::seed_and_grow::grow::SquareAttachPolicy for FacadeInner<'_> {
+    fn is_eligible(&self, idx: usize) -> bool {
+        match self {
+            FacadeInner::Oriented2(p) => p.is_eligible(idx),
+            FacadeInner::Positions(p) => p.is_eligible(idx),
+        }
+    }
+    fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
+        match self {
+            FacadeInner::Oriented2(p) => p.required_label_at(i, j),
+            FacadeInner::Positions(p) => p.required_label_at(i, j),
+        }
+    }
+    fn label_of(&self, idx: usize) -> Option<u8> {
+        match self {
+            FacadeInner::Oriented2(p) => p.label_of(idx),
+            FacadeInner::Positions(p) => p.label_of(idx),
+        }
+    }
+    fn accept_candidate(
+        &self,
+        idx: usize,
+        at: (i32, i32),
+        prediction: Point2<f32>,
+        neighbours: &[crate::seed_and_grow::grow::LabelledNeighbour],
+    ) -> crate::seed_and_grow::grow::Admit {
+        match self {
+            FacadeInner::Oriented2(p) => p.accept_candidate(idx, at, prediction, neighbours),
+            FacadeInner::Positions(p) => p.accept_candidate(idx, at, prediction, neighbours),
+        }
+    }
+    fn edge_ok(&self, c: usize, n: usize, ac: (i32, i32), an: (i32, i32)) -> bool {
+        match self {
+            FacadeInner::Oriented2(p) => p.edge_ok(c, n, ac, an),
+            FacadeInner::Positions(p) => p.edge_ok(c, n, ac, an),
+        }
+    }
+}
+
+/// Attach policy that wraps a [`FacadeInner`] and masks out corners that
 /// earlier components already claimed.
 struct RestrictedAttachPolicy<'a> {
-    inner: Oriented2Policy<'a>,
+    inner: FacadeInner<'a>,
     used: &'a HashSet<usize>,
 }
 
@@ -375,6 +514,40 @@ fn merge_raw_components(
     } else {
         merged.components
     }
+}
+
+/// Run the geometry-only recovery schedule over every merged component when
+/// `recovery` is enabled. Each component is recovered against the corners NOT
+/// claimed by any *other* component (so two components can't fight over the
+/// same corner), using the same attach policy the grow loop used. Returns the
+/// recovered (rebased) labelled maps; a no-op clone when `recovery` is `None`.
+fn apply_recovery(
+    merged: Vec<HashMap<(i32, i32), usize>>,
+    features: &[OrientedFeature<2>],
+    positions: &[Point2<f32>],
+    local_pitch: &[f32],
+    params: &DetectionParams,
+    mode: PolicyMode,
+    recovery: &Option<RecoveryParams>,
+) -> Vec<HashMap<(i32, i32), usize>> {
+    let Some(rec_params) = recovery else {
+        return merged;
+    };
+    debug_assert_eq!(
+        mode,
+        PolicyMode::Positions,
+        "recovery is `Auto`-enabled only for the synthesized-axis path"
+    );
+    crate::seed_and_grow::recovery::recover_components(
+        merged,
+        crate::seed_and_grow::recovery::RecoveryInputs {
+            features,
+            positions,
+            local_pitch,
+            params: rec_params,
+            validate_params: &params.validate,
+        },
+    )
 }
 
 struct ComponentOutput {
@@ -652,4 +825,6 @@ pub mod grow;
 pub mod grow_extend;
 pub mod pipeline;
 mod policy;
+mod positions_policy;
+pub mod recovery;
 pub mod seed;

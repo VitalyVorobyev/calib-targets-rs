@@ -24,6 +24,7 @@ use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{GridSolution, RejectedFeature};
 
 pub use crate::seed_and_grow::grow::GrowParams;
+pub use crate::seed_and_grow::recovery::{RecoveryParams, RecoverySchedule};
 pub use crate::seed_and_grow::seed::finder::SeedQuadParams as SeedParams;
 pub use crate::shared::validate::ValidationParams as ValidateParams;
 pub use crate::topological::TopologicalParams;
@@ -129,6 +130,13 @@ pub struct DetectionParams {
     /// Post-detection validation tuning — shared between both
     /// `(Square, Oriented2)` algorithm paths.
     pub validate: ValidateParams,
+    /// Post-convergence recovery schedule. Defaults to
+    /// [`RecoverySchedule::Auto`]: the facade runs the geometry-only recovery
+    /// schedule for the synthesized-axis paths (`Evidence::Positions` /
+    /// `Evidence::Oriented1`) and skips it for native `Evidence::Oriented2`.
+    /// Callers that own a downstream recovery stage set this to
+    /// [`RecoverySchedule::Off`].
+    pub recovery: RecoverySchedule,
 }
 
 impl Default for DetectionParams {
@@ -140,6 +148,7 @@ impl Default for DetectionParams {
             grow: GrowParams::default(),
             topological: TopologicalParams::default(),
             validate: ValidateParams::default(),
+            recovery: RecoverySchedule::default(),
         }
     }
 }
@@ -188,6 +197,12 @@ impl DetectionParams {
     /// Builder-style override: replace the max residual threshold.
     pub fn with_max_residual_px(mut self, max_residual_px: f32) -> Self {
         self.max_residual_px = max_residual_px;
+        self
+    }
+
+    /// Builder-style override: set the post-convergence recovery schedule.
+    pub fn with_recovery(mut self, recovery: RecoverySchedule) -> Self {
+        self.recovery = recovery;
         self
     }
 }
@@ -286,18 +301,21 @@ pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
 fn run_square_oriented2(
     features: &[OrientedFeature<2>],
     request: &DetectionRequest<'_>,
+    synthesized_axes: bool,
 ) -> Result<Vec<GridSolution>> {
     match request.params.algorithm {
         SquareAlgorithm::SeedAndGrow => crate::seed_and_grow::detect_square_oriented2_seed_grow(
             features,
             request.dimensions,
             &request.params,
+            synthesized_axes,
         ),
         SquareAlgorithm::Topological => {
             crate::topological::detect_square_oriented2_topological_all(
                 features,
                 request.dimensions,
                 &request.params,
+                synthesized_axes,
             )
         }
     }
@@ -322,22 +340,26 @@ fn run_square_oriented2(
 pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport> {
     let solutions = match (request.lattice, request.evidence) {
         (LatticeKind::Square, Evidence::Oriented2(features)) => {
-            run_square_oriented2(features, &request)?
+            // Native two-axis evidence: no synthesis, so the recovery schedule
+            // stays off under `RecoverySchedule::Auto` (byte-compat).
+            run_square_oriented2(features, &request, false)?
         }
         (LatticeKind::Square, Evidence::Positions(features)) => {
             // Orientation-free input: recover each corner's two local grid
             // directions from neighbour geometry, then run the chosen square
             // strategy. Both strategies consume `OrientedFeature<2>`, so the
-            // synthesized axes feed either path unchanged.
+            // synthesized axes feed either path unchanged. The axes are
+            // synthesized, so `Auto` enables the recovery schedule.
             let oriented = crate::orient::synthesize_oriented2(features);
-            run_square_oriented2(&oriented, &request)?
+            run_square_oriented2(&oriented, &request, true)?
         }
         (LatticeKind::Square, Evidence::Oriented1(features)) => {
             // Single-axis input: keep the supplied axis and recover the second
             // local grid direction from neighbour geometry, then run the chosen
-            // square strategy. Same Oriented2 back-half as the Positions path.
+            // square strategy. Same Oriented2 back-half as the Positions path;
+            // the second axis is synthesized, so `Auto` enables recovery.
             let oriented = crate::orient::synthesize_oriented2_from_oriented1(features);
-            run_square_oriented2(&oriented, &request)?
+            run_square_oriented2(&oriented, &request, true)?
         }
         _ => {
             return Err(GridError::UnsupportedCombination {

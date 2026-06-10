@@ -48,8 +48,8 @@ use projective_grid::topological::trace::{
 };
 use projective_grid::{
     detect_grid_all, synthesize_oriented2, DetectionParams as NextDetectionParams,
-    DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
-    TopologicalParams as NextTopologicalParams,
+    DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature, RecoverySchedule,
+    SquareAlgorithm, TopologicalParams as NextTopologicalParams,
 };
 use std::collections::HashMap;
 
@@ -96,6 +96,11 @@ fn detection_params_for_topological(
         // same reason: chessboard's `run_geometry_check` owns residual
         // gating downstream.
         .with_max_residual_px(f32::INFINITY)
+        // Disable the facade-internal recovery schedule. The chessboard runs
+        // its own `CornerStage`-coupled recovery (boosters + geometry check)
+        // downstream; the facade must add nothing here so production output
+        // (both ChESS-axis and neighbour-edge modes) stays byte-identical.
+        .with_recovery(RecoverySchedule::Off)
 }
 
 /// Build the new-crate oriented-feature slice from the chessboard's

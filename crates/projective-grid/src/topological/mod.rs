@@ -228,6 +228,7 @@ pub(crate) fn detect_square_oriented2_topological_all(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
+    synthesized_axes: bool,
 ) -> Result<Vec<GridSolution>> {
     if features.len() < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
@@ -290,6 +291,40 @@ pub(crate) fn detect_square_oriented2_topological_all(
     if merged.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }
+
+    // Geometry-only recovery schedule for the synthesized-axis path (enabled
+    // under `RecoverySchedule::Auto` when `synthesized_axes`). Disabled for the
+    // chessboard topological adapter, which sets `RecoverySchedule::Off` and
+    // runs its own `CornerStage`-coupled recovery — so its production output
+    // stays byte-identical. The recovery operates on the `(i32, i32)`-keyed
+    // shape, so convert to/from `Coord`.
+    let merged = if let Some(rec_params) = params.recovery.resolve(synthesized_axes) {
+        let ij_in: Vec<std::collections::HashMap<(i32, i32), usize>> = merged
+            .iter()
+            .map(|m| m.iter().map(|(c, &idx)| ((c.u, c.v), idx)).collect())
+            .collect();
+        let local_pitch = crate::seed_and_grow::recovery::local_pitch_of(&positions);
+        let recovered = crate::seed_and_grow::recovery::recover_components(
+            ij_in,
+            crate::seed_and_grow::recovery::RecoveryInputs {
+                features,
+                positions: &positions,
+                local_pitch: &local_pitch,
+                params: &rec_params,
+                validate_params: &params.validate,
+            },
+        );
+        recovered
+            .into_iter()
+            .map(|m| {
+                m.into_iter()
+                    .map(|((u, v), idx)| (Coord::new(u, v), idx))
+                    .collect()
+            })
+            .collect()
+    } else {
+        merged
+    };
 
     // Process each merged component independently; preserve the labelled
     // source-indices of every component that yielded a valid solution
@@ -739,7 +774,7 @@ mod tests {
         let features = axis_aligned_features(5, 5, 20.0);
         let params = DetectionParams::default();
         let mut solutions =
-            detect_square_oriented2_topological_all(&features, None, &params).unwrap();
+            detect_square_oriented2_topological_all(&features, None, &params, false).unwrap();
         assert_eq!(solutions.len(), 1);
         let solution = solutions.remove(0);
         assert_eq!(solution.grid.entries.len(), 25);
@@ -751,7 +786,8 @@ mod tests {
     fn fewer_than_three_features_errors() {
         let features = axis_aligned_features(1, 2, 20.0);
         let params = DetectionParams::default();
-        let err = detect_square_oriented2_topological_all(&features, None, &params).unwrap_err();
+        let err =
+            detect_square_oriented2_topological_all(&features, None, &params, false).unwrap_err();
         assert_eq!(err, GridError::InsufficientEvidence);
     }
 
@@ -779,14 +815,14 @@ mod tests {
                 .with_axis_cluster_centers([0.0, std::f32::consts::FRAC_PI_2]),
         );
         let mut sol_on =
-            detect_square_oriented2_topological_all(&features, None, &params_on).unwrap();
+            detect_square_oriented2_topological_all(&features, None, &params_on, false).unwrap();
         assert_eq!(sol_on.len(), 1);
         let primary = sol_on.remove(0);
         assert_eq!(primary.grid.entries.len(), 25, "gate must keep the 5×5");
 
         let params_off = DetectionParams::default();
         let mut sol_off =
-            detect_square_oriented2_topological_all(&features, None, &params_off).unwrap();
+            detect_square_oriented2_topological_all(&features, None, &params_off, false).unwrap();
         assert_eq!(sol_off.len(), 1);
         let primary_off = sol_off.remove(0);
         assert_eq!(primary_off.grid.entries.len(), 25);
