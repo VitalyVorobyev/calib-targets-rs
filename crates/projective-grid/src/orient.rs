@@ -73,6 +73,11 @@ use crate::feature::{LocalAxis, OrientedFeature, PointFeature};
 /// neighbours are exactly its axis neighbours (diagonals stay farther).
 const K_AXIS_NEIGHBOURS: usize = 4;
 
+/// Nearest neighbours used to estimate one hex corner's three local grid
+/// directions. Six is the principled count: an interior hex node's six nearest
+/// neighbours are exactly its six axial neighbours (`±` of the three axes).
+const K_HEX_NEIGHBOURS: usize = 6;
+
 /// Minimum chord length (pixels) for a neighbour edge to inform an estimate;
 /// guards against coincident / duplicate points.
 const MIN_CHORD_PX: f32 = 1e-3;
@@ -209,6 +214,69 @@ pub fn synthesize_oriented2_from_oriented1(
         .collect()
 }
 
+/// Synthesize three local lattice axes for every point feature from neighbour
+/// geometry — the **hex** analogue of [`synthesize_oriented2`].
+///
+/// A hexagonal point lattice has three axis families. Viewed in perspective the
+/// three projected directions are neither 60° apart nor fixed across the image,
+/// but the same perspective-invariant fact holds per axis: three collinear hex
+/// nodes `(q−1, r), (q, r), (q+1, r)` stay collinear, so a node's `+`/`−`
+/// neighbour chords along each axis are antipodal and collapse (mod π) onto one
+/// direction. Folding the six nearest-neighbour chords into `[0, π)` therefore
+/// yields three clusters — the three local grid directions.
+///
+/// # Algorithm (k = 3 generalization of [`synthesize_oriented2`])
+///
+/// 1. Per corner: fold the chord angles to its six nearest neighbours into
+///    `[0, π)`.
+/// 2. Pool every corner's folded chords into a global distribution and pick its
+///    three dominant modes — a robust image-wide prior used only to *seed* the
+///    per-corner estimate.
+/// 3. Per corner: run an undirected (mod-π) 3-means seeded at the global modes.
+///    The three centers are the corner's three local grid directions, with no
+///    inter-axis-angle constraint so they track the local perspective.
+///
+/// # Precision contract
+///
+/// Identical to [`synthesize_oriented2`]: a corner whose synthesized axes are
+/// wrong is rejected by the downstream geometry gates and becomes a *missing*
+/// corner, never a *mislabelled* one.
+pub fn synthesize_oriented3(features: &[PointFeature]) -> Vec<OrientedFeature<3>> {
+    let positions: Vec<Point2<f32>> = features.iter().map(|f| f.position).collect();
+    let n = positions.len();
+
+    if n < 4 {
+        // Too few points to recover three directions from neighbours. Emit a
+        // benign 0°/60°/120° default; such inputs cannot form a hex grid and
+        // are dropped downstream regardless.
+        let third = std::f32::consts::PI / 3.0;
+        return features
+            .iter()
+            .map(|f| OrientedFeature::<3>::new(*f, ordered_axes3([0.0, third, 2.0 * third])))
+            .collect();
+    }
+
+    let mut tree: KdTree<f32, 2> = KdTree::new();
+    for (i, p) in positions.iter().enumerate() {
+        tree.add(&[p.x, p.y], i as u64);
+    }
+
+    let per_corner: Vec<Vec<(f32, f32)>> = (0..n)
+        .map(|i| nearest_folded_chords_k(&tree, &positions, i, K_HEX_NEIGHBOURS))
+        .collect();
+
+    let globals = global_k_modes::<3>(&per_corner);
+
+    features
+        .iter()
+        .enumerate()
+        .map(|(i, feat)| {
+            let axes = refine_axes_k::<3>(&per_corner[i], globals);
+            OrientedFeature::<3>::new(*feat, ordered_axes3(axes))
+        })
+        .collect()
+}
+
 /// Recover the second grid direction with the first cluster *pinned* at the
 /// supplied `known` axis. Chords closer (mod π) to `known` are assigned to the
 /// anchored cluster and ignored for the mean; chords closer to the free
@@ -240,11 +308,25 @@ fn nearest_folded_chords(
     positions: &[Point2<f32>],
     i: usize,
 ) -> Vec<(f32, f32)> {
+    nearest_folded_chords_k(tree, positions, i, K_AXIS_NEIGHBOURS)
+}
+
+/// Folded (`[0, π)`) chord angles from corner `i` to its `k` nearest
+/// neighbours, each paired with an inverse-distance weight. The `k = 4`
+/// specialization backs [`synthesize_oriented2`]; `k = 6` backs
+/// [`synthesize_oriented3`] (an interior hex node's six nearest neighbours are
+/// its six axial neighbours).
+fn nearest_folded_chords_k(
+    tree: &KdTree<f32, 2>,
+    positions: &[Point2<f32>],
+    i: usize,
+    k: usize,
+) -> Vec<(f32, f32)> {
     let p = positions[i];
     // `+ 1` because the nearest hit is the query point itself.
-    let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], K_AXIS_NEIGHBOURS + 1);
+    let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], k + 1);
 
-    let mut out = Vec::with_capacity(K_AXIS_NEIGHBOURS);
+    let mut out = Vec::with_capacity(k);
     for nn in hits {
         let j = nn.item as usize;
         if j == i {
@@ -313,6 +395,118 @@ fn global_two_modes(per_corner: &[Vec<(f32, f32)>]) -> (f32, f32) {
         _ => fold_pi(g0 + std::f32::consts::FRAC_PI_2),
     };
     (g0, g1)
+}
+
+/// Find the `K` dominant grid-edge orientations across the whole image from a
+/// smoothed circular (mod-π) histogram of every corner's nearest-edge angles.
+///
+/// Generalizes [`global_two_modes`] to `K` modes via greedy non-maximum
+/// suppression: pick the global peak, suppress a [`MODE_MIN_SEPARATION`] window
+/// around it, repeat. Returns `K` centers sorted ascending in `[0, π)`. When
+/// fewer than `K` distinct peaks exist, the remaining slots are filled by
+/// spreading the found modes uniformly — they only *seed* the per-corner
+/// refinement, which still adapts to the true local angle.
+fn global_k_modes<const K: usize>(per_corner: &[Vec<(f32, f32)>]) -> [f32; K] {
+    let pi = std::f32::consts::PI;
+    let bin_w = pi / GLOBAL_BINS as f32;
+    let mut hist = [0.0_f32; GLOBAL_BINS];
+    let mut total = 0usize;
+    for chords in per_corner {
+        for &(a, w) in chords {
+            let mut b = (a / bin_w) as usize;
+            if b >= GLOBAL_BINS {
+                b = GLOBAL_BINS - 1;
+            }
+            hist[b] += w;
+            total += 1;
+        }
+    }
+    // Uniform fallback when there is no data.
+    let mut out = [0.0_f32; K];
+    for (k, slot) in out.iter_mut().enumerate() {
+        *slot = fold_pi(k as f32 * pi / K as f32);
+    }
+    if total == 0 {
+        return out;
+    }
+
+    let smoothed = smooth_circular(&hist);
+    let suppress = (MODE_MIN_SEPARATION / bin_w).ceil() as i32;
+    let mut chosen_bins: Vec<i32> = Vec::with_capacity(K);
+    for slot in 0..K {
+        let mut best_bin: Option<usize> = None;
+        let mut best_val = 0.0_f32;
+        for (b, &v) in smoothed.iter().enumerate() {
+            // Skip bins too close to any already-chosen mode.
+            if chosen_bins
+                .iter()
+                .any(|&c| circular_bin_distance(b as i32, c, GLOBAL_BINS as i32) <= suppress)
+            {
+                continue;
+            }
+            if v > best_val {
+                best_val = v;
+                best_bin = Some(b);
+            }
+        }
+        match best_bin {
+            Some(b) if best_val > 0.0 => {
+                chosen_bins.push(b as i32);
+                out[slot] = (b as f32 + 0.5) * bin_w;
+            }
+            // No further distinct peak: spread the remaining slots uniformly
+            // off the first found mode so every slot stays defined.
+            _ => {
+                let base = out[0];
+                out[slot] = fold_pi(base + slot as f32 * pi / K as f32);
+            }
+        }
+    }
+    out.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    out
+}
+
+/// Undirected (mod-π) `K`-means over a corner's folded chord angles, seeded at
+/// the global modes. Returns the `K` cluster centers — the corner's `K` local
+/// grid directions, unconstrained in their separation. An empty cluster keeps
+/// its global seed so every slot stays defined.
+fn refine_axes_k<const K: usize>(folded: &[(f32, f32)], seeds: [f32; K]) -> [f32; K] {
+    let mut centers = seeds;
+    if folded.is_empty() {
+        return centers;
+    }
+    for _ in 0..REFINE_ITERS {
+        let mut acc = [UndirectedMean::default(); K];
+        for &(a, w) in folded {
+            // Assign to the nearest center under the undirected (mod-π) metric;
+            // ties go to the lowest index for determinism.
+            let mut best = 0usize;
+            let mut best_d = dist_pi(a, centers[0]);
+            for (k, &c) in centers.iter().enumerate().skip(1) {
+                let d = dist_pi(a, c);
+                if d < best_d {
+                    best_d = d;
+                    best = k;
+                }
+            }
+            acc[best].push(a, w);
+        }
+        for (k, a) in acc.iter().enumerate() {
+            centers[k] = a.mean().unwrap_or(centers[k]);
+        }
+    }
+    centers
+}
+
+/// Order three directions ascending into `[0, π)` and wrap into the
+/// `OrientedFeature<3>` axis array.
+fn ordered_axes3(mut a: [f32; 3]) -> [LocalAxis; 3] {
+    a.sort_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal));
+    [
+        LocalAxis::new(a[0], None),
+        LocalAxis::new(a[1], None),
+        LocalAxis::new(a[2], None),
+    ]
 }
 
 /// Undirected (mod-π) 2-means over a corner's folded chord angles, seeded at
@@ -432,6 +626,7 @@ fn circular_bin_distance(a: i32, b: i32, n: i32) -> i32 {
 mod tests {
     use super::*;
     use nalgebra::Matrix3;
+    use std::collections::HashMap;
 
     fn grid_features(rows: i32, cols: i32, s: f32) -> Vec<PointFeature> {
         let mut out = Vec::new();
@@ -703,5 +898,186 @@ mod tests {
             assert_eq!(o.point.source_index, f.source_index);
             assert_eq!(o.point.position, f.position);
         }
+    }
+
+    // --- Positions → Oriented3 (hex) synthesis -------------------------
+
+    /// Axial hex node `(q, r)` model position with unit nearest-neighbour
+    /// spacing: `(q + r/2, sqrt(3)/2 · r)`.
+    fn hex_model(q: i32, r: i32) -> Point2<f32> {
+        let sqrt3_2 = 3.0_f32.sqrt() * 0.5;
+        Point2::new(q as f32 + 0.5 * r as f32, sqrt3_2 * r as f32)
+    }
+
+    /// Build a roughly-circular patch of hex nodes (axial radius `radius`),
+    /// projected through `h`. Returns the point features plus their `(q, r)`.
+    fn hex_features(radius: i32, s: f32, h: &Matrix3<f32>) -> (Vec<PointFeature>, Vec<(i32, i32)>) {
+        let mut feats = Vec::new();
+        let mut qr = Vec::new();
+        let mut idx = 0usize;
+        for q in -radius..=radius {
+            for r in (-radius).max(-q - radius)..=radius.min(-q + radius) {
+                let m = hex_model(q, r);
+                let v = h * nalgebra::Vector3::new(m.x * s + 200.0, m.y * s + 200.0, 1.0);
+                feats.push(PointFeature::new(idx, Point2::new(v.x / v.z, v.y / v.z)));
+                qr.push((q, r));
+                idx += 1;
+            }
+        }
+        (feats, qr)
+    }
+
+    /// Check the three synthesized axes match the three expected directions in
+    /// some assignment (undirected, no inter-axis-angle constraint).
+    fn assert_axes3_match(axes: [LocalAxis; 3], exp: [f32; 3], tol_deg: f32) {
+        let tol = tol_deg.to_radians();
+        let got = [axes[0].angle_rad, axes[1].angle_rad, axes[2].angle_rad];
+        // Optimal (min-max) assignment over all 3! permutations of expected.
+        const PERMS: [[usize; 3]; 6] = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        let best_max = PERMS
+            .iter()
+            .map(|p| {
+                (0..3)
+                    .map(|k| dist_pi(got[k], exp[p[k]]))
+                    .fold(0.0_f32, f32::max)
+            })
+            .fold(f32::INFINITY, f32::min);
+        assert!(
+            best_max < tol,
+            "axes {got:?} don't match expected {exp:?} (max err {best_max})"
+        );
+    }
+
+    #[test]
+    fn hex_axis_aligned_recovers_three_directions() {
+        // Identity homography: the three undirected hex directions are 0°, 60°,
+        // 120° regardless of node — recovered at every interior node.
+        let h = Matrix3::identity();
+        let (feats, qr) = hex_features(3, 26.0, &h);
+        let third = std::f32::consts::PI / 3.0;
+        // Pick a deep-interior node (the centre (0,0)).
+        let centre = qr.iter().position(|&c| c == (0, 0)).unwrap();
+        assert_axes3_match(feats_axes3(&feats)[centre], [0.0, third, 2.0 * third], 5.0);
+    }
+
+    #[test]
+    fn hex_perspective_axes_track_local_directions() {
+        // Genuine perspective term: the three projected hex directions bend
+        // across the patch. The recovered axis along a family is the undirected
+        // mean of the `+` and `−` chords; under perspective those two are
+        // antipodal through the node (collinearity) so the fold-mod-π mean
+        // recovers the chord line. We therefore compare each recovered axis to
+        // the line through the node's two opposite neighbours along that axis.
+        let h = Matrix3::new(
+            1.0, 0.12, 0.0, //
+            0.03, 1.0, 0.0, //
+            0.0006, 0.0004, 1.0,
+        );
+        let (feats, qr) = hex_features(4, 24.0, &h);
+        let index: HashMap<(i32, i32), usize> =
+            qr.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        let oriented = synthesize_oriented3(&feats);
+
+        let mut checked = 0usize;
+        for (flat, &(q, r)) in qr.iter().enumerate() {
+            // Need BOTH opposite neighbours along each of the three axes so the
+            // expected direction is the through-line (matching the mod-π mean).
+            let line_dir = |a: (i32, i32), b: (i32, i32)| -> Option<f32> {
+                let pa = feats[*index.get(&a)?].position;
+                let pb = feats[*index.get(&b)?].position;
+                Some(fold_pi((pb.y - pa.y).atan2(pb.x - pa.x)))
+            };
+            let (Some(dq), Some(dr), Some(ds)) = (
+                line_dir((q - 1, r), (q + 1, r)),
+                line_dir((q, r - 1), (q, r + 1)),
+                line_dir((q + 1, r - 1), (q - 1, r + 1)),
+            ) else {
+                continue;
+            };
+            assert_axes3_match(oriented[flat].axes, [dq, dr, ds], 8.0);
+            checked += 1;
+        }
+        assert!(checked >= 4, "too few interior nodes checked: {checked}");
+    }
+
+    #[test]
+    fn hex_axes_survive_position_noise() {
+        // Add small isotropic position noise; the synthesized axes should stay
+        // within a wider band of the local projected directions.
+        let h = Matrix3::new(
+            1.0, 0.10, 0.0, //
+            0.03, 1.0, 0.0, //
+            0.0005, 0.0004, 1.0,
+        );
+        let (mut feats, qr) = hex_features(4, 24.0, &h);
+        let index: HashMap<(i32, i32), usize> =
+            qr.iter().enumerate().map(|(i, &c)| (c, i)).collect();
+        // Deterministic xorshift noise, ±0.6 px.
+        let mut rng = 0x1234_5678u32;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            (rng as f32 / u32::MAX as f32) - 0.5
+        };
+        for f in feats.iter_mut() {
+            f.position.x += 1.2 * next();
+            f.position.y += 1.2 * next();
+        }
+        let oriented = synthesize_oriented3(&feats);
+        let mut checked = 0usize;
+        for (flat, &(q, r)) in qr.iter().enumerate() {
+            let line_dir = |a: (i32, i32), b: (i32, i32)| -> Option<f32> {
+                let pa = feats[*index.get(&a)?].position;
+                let pb = feats[*index.get(&b)?].position;
+                Some(fold_pi((pb.y - pa.y).atan2(pb.x - pa.x)))
+            };
+            let (Some(dq), Some(dr), Some(ds)) = (
+                line_dir((q - 1, r), (q + 1, r)),
+                line_dir((q, r - 1), (q, r + 1)),
+                line_dir((q + 1, r - 1), (q - 1, r + 1)),
+            ) else {
+                continue;
+            };
+            assert_axes3_match(oriented[flat].axes, [dq, dr, ds], 12.0);
+            checked += 1;
+        }
+        assert!(checked >= 4, "too few interior nodes checked: {checked}");
+    }
+
+    #[test]
+    fn hex_preserves_source_index_and_position() {
+        let h = Matrix3::identity();
+        let (feats, _) = hex_features(2, 20.0, &h);
+        let oriented = synthesize_oriented3(&feats);
+        assert_eq!(oriented.len(), feats.len());
+        for (f, o) in feats.iter().zip(&oriented) {
+            assert_eq!(o.point.source_index, f.source_index);
+            assert_eq!(o.point.position, f.position);
+        }
+    }
+
+    #[test]
+    fn hex_handles_degenerate_inputs() {
+        assert!(synthesize_oriented3(&[]).is_empty());
+        let one = vec![PointFeature::new(0, Point2::new(1.0, 2.0))];
+        let got = synthesize_oriented3(&one);
+        assert_eq!(got.len(), 1);
+        assert!(got[0].axes.iter().all(|a| a.angle_rad.is_finite()));
+    }
+
+    /// Helper: run `synthesize_oriented3` and collect just the axis arrays.
+    fn feats_axes3(feats: &[PointFeature]) -> Vec<[LocalAxis; 3]> {
+        synthesize_oriented3(feats)
+            .into_iter()
+            .map(|o| o.axes)
+            .collect()
     }
 }
