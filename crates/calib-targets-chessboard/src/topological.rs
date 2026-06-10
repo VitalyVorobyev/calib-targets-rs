@@ -17,14 +17,21 @@
 //! Production [`detect_all_topological`] now calls
 //! [`projective_grid::detect_grid_all`] with
 //! [`SquareAlgorithm::Topological`](projective_grid::SquareAlgorithm::Topological).
-//! The output is bridged into the advanced
-//! [`projective-grid`](projective_grid) component-merge view so the existing recovery
-//! pipeline ([`recovery::merge`](self::recovery), boosters, geometry
-//! check) stays byte-identical with the pre-migration version. Validation
-//! and over-residual drops in the new pipeline are disabled (tolerances
-//! pushed to `+inf`) because the chessboard owns its own validation
-//! downstream; the new path is asked solely to produce labelled
-//! `(coord -> source_index)` components.
+//! The facade runs the shared local-geometry component merge itself (the
+//! same `merge_components_local` the seed-and-grow facade uses), so
+//! `report.solutions` arrives already merged. The adapter consumes those
+//! merged labelled components directly and feeds them to the chessboard's
+//! own recovery pipeline (boosters, post-recovery merge, geometry check).
+//! Validation and over-residual drops in the facade are disabled
+//! (tolerances pushed to `+inf`) because the chessboard owns its own
+//! validation downstream; the facade is asked solely to produce labelled
+//! `(coord -> source_index)` components and to reunite them in label space.
+//!
+//! The facade merge runs with `LocalMergeParams::default()`. The
+//! chessboard's `tuning.component_merge` is `LocalMergeParams::default()`
+//! for every shipping config (no preset or sweep overrides it), so the
+//! merged components — and hence production output — are byte-identical to
+//! the prior chessboard-side merge.
 //!
 //! [`trace_topological`] uses the same `projective-grid` production
 //! detector path and returns a compact serializable trace of the final
@@ -36,7 +43,6 @@ mod recovery;
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
 use projective_grid::detect::ValidateParams as NextValidateParams;
-use projective_grid::shared::merge::{merge_components_local, ComponentInput};
 use projective_grid::topological::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
@@ -209,15 +215,17 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // Bridge the new-crate output into the advanced component-merge
-    // `ComponentInput<'_>` shape so the existing recovery pipeline is
-    // byte-identical with the pre-migration version.
-    //
-    // The `&HashMap` borrows in `ComponentInput` outlive the call as long
-    // as the owning `Vec<HashMap<...>>` is alive — hence the two-vector
-    // split: first allocate the maps (owned), then collect references to
-    // them.
-    let labelled_maps: Vec<HashMap<(i32, i32), usize>> = report
+    // `projective_grid::detect_grid_all` now runs the local-geometry
+    // component merge inside the topological facade itself (mirroring its
+    // seed-and-grow facade), so `report.solutions` already arrives merged.
+    // The adapter therefore consumes the facade-merged components directly:
+    // the previous chessboard-side `merge_components_local` call would have
+    // double-merged and produced measured false attachments. Both merges
+    // moved together in one commit; the facade merge runs with
+    // `LocalMergeParams::default()`, which equals the chessboard's
+    // `tuning.component_merge` for every shipping config (the field is never
+    // overridden), so production output is byte-identical.
+    let merged_components: Vec<HashMap<(i32, i32), usize>> = report
         .solutions
         .iter()
         .map(|sol| {
@@ -228,28 +236,9 @@ pub fn detect_all_topological(
                 .collect()
         })
         .collect();
-    let component_views: Vec<ComponentInput<'_>> = labelled_maps
-        .iter()
-        .map(|labelled| ComponentInput {
-            labelled,
-            positions: &inputs.positions,
-        })
-        .collect();
-
-    #[cfg(feature = "tracing")]
-    let merged = {
-        let _span = tracing::debug_span!(
-            "topological_initial_component_merge",
-            num_components = component_views.len()
-        )
-        .entered();
-        merge_components_local(&component_views, &tuning.component_merge)
-    };
-    #[cfg(not(feature = "tracing"))]
-    let merged = merge_components_local(&component_views, &tuning.component_merge);
 
     let final_components = recover_topological_components(
-        &merged.components,
+        &merged_components,
         &inputs.positions,
         &base_augs,
         clustered_centers,

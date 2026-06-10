@@ -15,10 +15,16 @@
 //!    per-component median.
 //! 6. Flood-fill integer `(u, v)` labels through the surviving quad
 //!    mesh and rebase each connected component to `(0, 0)`.
-//! 7. Reuse the shared advanced [`validate`](crate::shared::validate)
+//! 7. Reunite the labelled components in label space with the shared
+//!    [`crate::shared::merge::merge_components_local`]
+//!    pass (local geometry only, radial-distortion safe), mirroring the
+//!    seed-and-grow facade. This makes the two algorithm facades expose
+//!    identical multi-component semantics: the topological path no longer
+//!    leaves an un-merged quad-mesh component per disconnected patch.
+//! 8. Reuse the shared advanced [`validate`](crate::shared::validate)
 //!    post-stage to drop labelled corners flagged by line-collinearity and
 //!    local-H checks.
-//! 8. Fit a projective transform on the surviving labels and report
+//! 9. Fit a projective transform on the surviving labels and report
 //!    per-corner residuals.
 //!
 //! Multi-component output is represented directly: the orchestrator returns
@@ -43,6 +49,7 @@ use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
 };
+use crate::shared::merge::{merge_components_local, ComponentInput, LocalMergeParams};
 use crate::shared::validate as pg_validate;
 
 use self::axis::{build_axis_caches, AxisCache};
@@ -272,16 +279,28 @@ pub(crate) fn detect_square_oriented2_topological_all(
         return Err(GridError::DegenerateGeometry);
     }
 
-    // Process each component independently; preserve the labelled
+    // Reunite the labelled components in label space, mirroring the
+    // seed-and-grow facade's `merge_components_local` step. Until now the
+    // topological facade left one quad-mesh component per disconnected
+    // patch; the chessboard adapter compensated by running this same merge
+    // itself. Hosting it here unifies the two facades' multi-component
+    // semantics and lets the chessboard adapter consume a single
+    // already-merged output (see `calib-targets-chessboard::topological`).
+    let merged = merge_walk_components(&components, &positions);
+    if merged.is_empty() {
+        return Err(GridError::DegenerateGeometry);
+    }
+
+    // Process each merged component independently; preserve the labelled
     // source-indices of every component that yielded a valid solution
     // so the orchestrator can build the global "unlabelled" set
     // afterwards.
     let mut component_outputs: Vec<ComponentOutput> = Vec::new();
-    for component in &components {
-        if component.len() < 4 {
+    for labelled in &merged {
+        if labelled.len() < 4 {
             continue;
         }
-        match build_component_solution(&component.labelled, features, &positions, params) {
+        match build_component_solution(labelled, features, &positions, params) {
             Some(out) => component_outputs.push(out),
             None => continue,
         }
@@ -302,6 +321,88 @@ pub(crate) fn detect_square_oriented2_topological_all(
 
     let solutions = assemble_solutions(component_outputs, features, dimensions);
     Ok(solutions)
+}
+
+/// Reunite the walk's labelled components in label space via the shared
+/// local-geometry merge, then return one `Coord`-keyed map per surviving
+/// merged component.
+///
+/// The merge input is ordered exactly as the per-component solutions were
+/// historically presented to consumers: by labelled count descending, ties
+/// broken by the smallest feature index. The previous architecture ran the
+/// per-component validate + fit first and sorted the resulting solutions by
+/// `(kept_source_indices.len() desc, min_source_index asc)`; with this
+/// facade-hosted merge the validate/fit run *after* the merge, so the
+/// pre-merge ordering is reconstructed directly from the walk components
+/// (validate is membership-preserving for the merge-input ordering keys —
+/// labelled count and minimum feature index — so the two orderings agree).
+///
+/// `merge_components_local` re-sorts its working set by size on every
+/// iteration and rebases its output, so this ordering only fixes the
+/// tie-break among equal-size components; pinning it keeps the merge
+/// deterministic and byte-compatible with the prior chessboard-side merge.
+fn merge_walk_components(
+    components: &[walk::TopologicalComponent],
+    positions: &[Point2<f32>],
+) -> Vec<std::collections::HashMap<Coord, usize>> {
+    // Order the walk components by the historical solution-presentation key.
+    let mut ordered: Vec<&walk::TopologicalComponent> = components.iter().collect();
+    ordered.sort_by(|a, b| {
+        b.labelled
+            .len()
+            .cmp(&a.labelled.len())
+            .then_with(|| min_feature_index(a).cmp(&min_feature_index(b)))
+    });
+
+    // Convert each `Coord`-keyed walk map into the `(i32, i32)`-keyed shape
+    // the shared merge consumes. Hold the owned maps alive so the
+    // `ComponentInput` borrows stay valid for the merge call.
+    let owned: Vec<std::collections::HashMap<(i32, i32), usize>> = ordered
+        .iter()
+        .map(|c| {
+            c.labelled
+                .iter()
+                .map(|(coord, &idx)| ((coord.u, coord.v), idx))
+                .collect()
+        })
+        .collect();
+    let views: Vec<ComponentInput<'_>> = owned
+        .iter()
+        .map(|labelled| ComponentInput {
+            labelled,
+            positions,
+        })
+        .collect();
+
+    let merged = merge_components_local(&views, &LocalMergeParams::default());
+    let merged = if merged.components.is_empty() {
+        // Defensive: an empty merge result means no component qualified.
+        // Fall back to the (rebased) input maps so a degenerate merge can't
+        // silently drop everything.
+        owned
+    } else {
+        merged.components
+    };
+
+    merged
+        .into_iter()
+        .map(|m| {
+            m.into_iter()
+                .map(|((u, v), idx)| (Coord::new(u, v), idx))
+                .collect()
+        })
+        .collect()
+}
+
+/// Smallest feature index referenced by a walk component, used as the
+/// tie-break in [`merge_walk_components`]'s ordering.
+fn min_feature_index(component: &walk::TopologicalComponent) -> usize {
+    component
+        .labelled
+        .values()
+        .copied()
+        .min()
+        .unwrap_or(usize::MAX)
 }
 
 /// Build the global "unlabelled" set and assemble the per-component

@@ -26,14 +26,6 @@ pub(super) struct TopologicalComponent {
     pub(super) labelled: HashMap<Coord, usize>,
 }
 
-impl TopologicalComponent {
-    /// Number of labelled features in this component.
-    #[inline]
-    pub(super) fn len(&self) -> usize {
-        self.labelled.len()
-    }
-}
-
 /// Build adjacency: canonical undirected edge `(min, max)` → list of
 /// `(quad_idx, edge_idx)` where edge `k` of a quad is `Q[k] → Q[(k+1) % 4]`.
 pub(super) fn build_edge_index(quads: &[Quad]) -> HashMap<(usize, usize), Vec<(usize, usize)>> {
