@@ -575,5 +575,6 @@ pub mod extension;
 pub mod fill;
 pub mod grow;
 pub mod grow_extend;
+pub mod pipeline;
 mod policy;
 pub mod seed;
