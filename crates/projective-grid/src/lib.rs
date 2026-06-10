@@ -30,7 +30,9 @@
 //!   [`Evidence`] / [`DetectionParams`] / [`DetectionRequest`] request types,
 //!   the [`GridSolution`] / [`LabelledGrid`] result types, the [`Lattice`] /
 //!   [`LatticeKind`] / [`Coord`] model, the feature evidence types, and the
-//!   `orient::synthesize_*` helpers). This is the supported surface for
+//!   `orient::synthesize_*` helpers, and the [`cluster_axes`]
+//!   global-direction prior with its [`AxisClusterCenters`] /
+//!   [`AxisAssignment`] types). This is the supported surface for
 //!   external callers and follows normal semver intent.
 //! * **Advanced tier — the engine modules.** [`seed_and_grow`], [`shared`],
 //!   and [`topological`] expose the assembly engines the facade is built from,
@@ -43,6 +45,7 @@
 #![warn(missing_docs)]
 
 pub mod check;
+pub mod cluster;
 pub mod detect;
 pub mod error;
 pub mod feature;
@@ -53,6 +56,10 @@ pub mod orient;
 pub mod result;
 
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
+pub use crate::cluster::{
+    cluster_axes, AxisAssignment, AxisClusterCenters, AxisClusterDebug, AxisFeature,
+    AxisObservation, ClusterParams,
+};
 pub use crate::detect::{
     detect_grid, detect_grid_all, DetectionParams, DetectionReport, DetectionRequest, Evidence,
     SquareAlgorithm, TopologicalParams,
