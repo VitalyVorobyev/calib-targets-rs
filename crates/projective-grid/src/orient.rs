@@ -134,6 +134,105 @@ pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>
         .collect()
 }
 
+/// Synthesize the *second* local lattice axis for every single-axis feature,
+/// keeping the caller-supplied axis as the first.
+///
+/// `Evidence::Oriented1` carries one trusted direction per corner (e.g. a
+/// detector that recovers a single dominant edge orientation but not the
+/// orthogonal one). This recovers the missing direction from neighbour
+/// geometry — the same perspective-invariant fold-mod-π / undirected-2-means
+/// machinery as [`synthesize_oriented2`] — but anchors one cluster at the
+/// supplied axis instead of seeding both from the global modes. The supplied
+/// axis is trusted as evidence and is *not* moved; only the second cluster is
+/// recovered from the chords that fall closer to it than to the supplied axis.
+///
+/// The result is consumed by [`crate::seed_and_grow`] / [`crate::topological`]
+/// exactly like caller-supplied [`OrientedFeature<2>`] — the wiring in
+/// [`crate::detect`] funnels `Oriented1` through this synthesis and then runs
+/// the chosen square strategy, mirroring the `Positions` path.
+///
+/// # Precision contract
+///
+/// Identical to [`synthesize_oriented2`]: a corner whose recovered second axis
+/// is wrong is rejected by the downstream geometry gates and becomes a
+/// *missing* corner, never a *mislabelled* one.
+pub fn synthesize_oriented2_from_oriented1(
+    features: &[OrientedFeature<1>],
+) -> Vec<OrientedFeature<2>> {
+    let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
+    let n = positions.len();
+
+    if n < 3 {
+        // Too few points to recover a second direction from neighbours. Keep
+        // the supplied axis and seed the second orthogonally; such inputs
+        // cannot form a grid and are dropped downstream regardless.
+        return features
+            .iter()
+            .map(|f| {
+                let a0 = fold_pi(f.axes[0].angle_rad);
+                OrientedFeature::<2>::new(
+                    f.point,
+                    ordered_axes(a0, fold_pi(a0 + std::f32::consts::FRAC_PI_2)),
+                )
+            })
+            .collect();
+    }
+
+    let mut tree: KdTree<f32, 2> = KdTree::new();
+    for (i, p) in positions.iter().enumerate() {
+        tree.add(&[p.x, p.y], i as u64);
+    }
+
+    let per_corner: Vec<Vec<(f32, f32)>> = (0..n)
+        .map(|i| nearest_folded_chords(&tree, &positions, i))
+        .collect();
+
+    // Global two-mode prior, used only to seed the *second* cluster when a
+    // corner's chords don't clearly split — never as the answer.
+    let (g0, g1) = global_two_modes(&per_corner);
+
+    features
+        .iter()
+        .enumerate()
+        .map(|(i, feat)| {
+            let known = fold_pi(feat.axes[0].angle_rad);
+            // Seed the free cluster at whichever global mode is farther from
+            // the known axis (the likely "other" grid direction).
+            let seed1 = if dist_pi(g0, known) >= dist_pi(g1, known) {
+                g0
+            } else {
+                g1
+            };
+            let second = refine_second_axis(&per_corner[i], known, seed1);
+            OrientedFeature::<2>::new(feat.point, ordered_axes(known, second))
+        })
+        .collect()
+}
+
+/// Recover the second grid direction with the first cluster *pinned* at the
+/// supplied `known` axis. Chords closer (mod π) to `known` are assigned to the
+/// anchored cluster and ignored for the mean; chords closer to the free
+/// cluster refine it via the undirected `(cos 2θ, sin 2θ)` mean. An empty free
+/// cluster keeps its global seed.
+fn refine_second_axis(folded: &[(f32, f32)], known: f32, seed1: f32) -> f32 {
+    if folded.is_empty() {
+        return seed1;
+    }
+    let mut c1 = seed1;
+    for _ in 0..REFINE_ITERS {
+        let mut acc1 = UndirectedMean::default();
+        for &(a, w) in folded {
+            // Assign to the free cluster only when it is the closer center;
+            // the anchored `known` cluster absorbs the rest but stays fixed.
+            if dist_pi(a, c1) < dist_pi(a, known) {
+                acc1.push(a, w);
+            }
+        }
+        c1 = acc1.mean().unwrap_or(c1);
+    }
+    c1
+}
+
 /// Folded (`[0, π)`) chord angles from corner `i` to its `K_AXIS_NEIGHBOURS`
 /// nearest neighbours, each paired with an inverse-distance weight.
 fn nearest_folded_chords(
@@ -466,5 +565,143 @@ mod tests {
         let got = synthesize_oriented2(&one);
         assert_eq!(got.len(), 1);
         assert!(got[0].axes[0].angle_rad.is_finite() && got[0].axes[1].angle_rad.is_finite());
+    }
+
+    // --- Oriented1 → Oriented2 synthesis -------------------------------
+
+    /// Project a `rows × cols` grid through `h`; return the features and the
+    /// ground-truth per-feature LOCAL `+u` axis (the direction to the `(i+1,j)`
+    /// neighbour, folded to `[0, π)`), so each Oriented1 input carries one true
+    /// axis. Interior corners only carry a defined neighbour for both axes.
+    fn perspective_grid_with_u_axis(
+        rows: i32,
+        cols: i32,
+        s: f32,
+        h: &Matrix3<f32>,
+    ) -> (Vec<Point2<f32>>, Vec<(i32, i32)>) {
+        let mut pts = Vec::new();
+        let mut ij = Vec::new();
+        for j in 0..rows {
+            for i in 0..cols {
+                let v = h * nalgebra::Vector3::new(i as f32 * s + 40.0, j as f32 * s + 40.0, 1.0);
+                pts.push(Point2::new(v.x / v.z, v.y / v.z));
+                ij.push((i, j));
+            }
+        }
+        (pts, ij)
+    }
+
+    #[test]
+    fn oriented1_anchors_supplied_axis_and_recovers_second() {
+        // Random-ish homography with a genuine perspective term.
+        let h = Matrix3::new(
+            1.0, 0.16, 0.0, //
+            0.05, 1.0, 0.0, //
+            0.0012, 0.0008, 1.0,
+        );
+        let (rows, cols, s) = (9, 9, 30.0_f32);
+        let (pts, ij) = perspective_grid_with_u_axis(rows, cols, s, &h);
+        let cols_us = cols as usize;
+
+        // Build Oriented1 features: supply the TRUE local +u direction per
+        // corner, plus a small angular noise. Position-only otherwise.
+        let mut rng = 0x9E3779B9u32;
+        let mut next = || {
+            rng ^= rng << 13;
+            rng ^= rng >> 17;
+            rng ^= rng << 5;
+            (rng as f32 / u32::MAX as f32) - 0.5
+        };
+        let o1: Vec<OrientedFeature<1>> = ij
+            .iter()
+            .enumerate()
+            .map(|(flat, &(i, j))| {
+                // Use the +u neighbour where it exists, else the -u neighbour.
+                let here = pts[flat];
+                let u_nb = if i + 1 < cols {
+                    pts[(j as usize) * cols_us + (i as usize + 1)]
+                } else {
+                    pts[(j as usize) * cols_us + (i as usize - 1)]
+                };
+                let true_u = fold_pi((u_nb.y - here.y).atan2(u_nb.x - here.x));
+                let noisy = true_u + 3.0_f32.to_radians() * next();
+                OrientedFeature::<1>::new(
+                    PointFeature::new(flat, here),
+                    [LocalAxis::new(noisy, None)],
+                )
+            })
+            .collect();
+
+        let o2 = synthesize_oriented2_from_oriented1(&o1);
+        assert_eq!(o2.len(), o1.len());
+
+        // For interior corners, the recovered axes must match the LOCAL
+        // projected grid directions (both +u and +v), and the supplied axis
+        // must survive as one of the two (within the injected noise band).
+        for j in 1..rows - 1 {
+            for i in 1..cols - 1 {
+                let flat = (j as usize) * cols_us + i as usize;
+                let here = pts[flat];
+                let pu = pts[(j as usize) * cols_us + (i as usize + 1)];
+                let pv = pts[((j + 1) as usize) * cols_us + i as usize];
+                let exp_u = fold_pi((pu.y - here.y).atan2(pu.x - here.x));
+                let exp_v = fold_pi((pv.y - here.y).atan2(pv.x - here.x));
+                assert_axes_match(o2[flat].axes, exp_u, exp_v, 6.0);
+                // The supplied (noisy) axis is preserved (anchored): one of the
+                // two output axes equals exp_u within the noise band.
+                let d0 = dist_pi(o2[flat].axes[0].angle_rad, exp_u);
+                let d1 = dist_pi(o2[flat].axes[1].angle_rad, exp_u);
+                assert!(
+                    d0.min(d1) < 4.0_f32.to_radians(),
+                    "supplied +u axis not anchored at ({i},{j})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn oriented1_matches_oriented2_path_on_clean_grid() {
+        // On a clean axis-aligned grid the from-Oriented1 synthesis should
+        // produce the same two directions as the from-Positions synthesis:
+        // both recover (0, π/2) at every interior corner.
+        let feats = grid_features(7, 7, 25.0);
+        let o1: Vec<OrientedFeature<1>> = feats
+            .iter()
+            .map(|f| OrientedFeature::<1>::new(*f, [LocalAxis::new(0.0, None)]))
+            .collect();
+        let from_o1 = synthesize_oriented2_from_oriented1(&o1);
+        let from_pos = synthesize_oriented2(&feats);
+        // Interior corner (3,3) -> flat 3*7+3 = 24.
+        assert_axes_match(from_o1[24].axes, 0.0, std::f32::consts::FRAC_PI_2, 4.0);
+        assert_axes_match(from_pos[24].axes, 0.0, std::f32::consts::FRAC_PI_2, 4.0);
+    }
+
+    #[test]
+    fn oriented1_handles_degenerate_inputs() {
+        assert!(synthesize_oriented2_from_oriented1(&[]).is_empty());
+        let one = vec![OrientedFeature::<1>::new(
+            PointFeature::new(0, Point2::new(1.0, 2.0)),
+            [LocalAxis::new(0.3, None)],
+        )];
+        let got = synthesize_oriented2_from_oriented1(&one);
+        assert_eq!(got.len(), 1);
+        // Supplied axis preserved as one of the two.
+        let d = dist_pi(got[0].axes[0].angle_rad, fold_pi(0.3))
+            .min(dist_pi(got[0].axes[1].angle_rad, fold_pi(0.3)));
+        assert!(d < 1e-4);
+    }
+
+    #[test]
+    fn oriented1_preserves_source_index_and_position() {
+        let feats = grid_features(3, 3, 20.0);
+        let o1: Vec<OrientedFeature<1>> = feats
+            .iter()
+            .map(|f| OrientedFeature::<1>::new(*f, [LocalAxis::new(0.1, None)]))
+            .collect();
+        let got = synthesize_oriented2_from_oriented1(&o1);
+        for (f, o) in feats.iter().zip(&got) {
+            assert_eq!(o.point.source_index, f.source_index);
+            assert_eq!(o.point.position, f.position);
+        }
     }
 }
