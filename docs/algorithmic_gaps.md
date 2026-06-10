@@ -212,6 +212,28 @@ new default, and `marker_internal_rejection` / the private chessboard
 precision-regression test pin seed-and-grow explicitly as the marker-scene
 guarantee.
 
+### Gap 11 — Off-axis false labels in blurred regions defeat the structural check (OPEN)
+
+Measured on public `testdata/small3.png` (ChArUco, blurred bottom rows):
+the production topological output labels `(10, 8)` at `(495.9, 312.4)`,
+but column alignment against the adjacent sharp row (constant ≈ −2.4 px
+column drift, verified on two neighbouring columns) pins the true
+intersection at ≈ `(479.4, ·)` — the labelled corner is a marker-internal
+false corner ~16.5 px off-axis. The topological wrong-label structural
+check (overlong / off-axis / duplicate-pixel) does not fire: the offending
+vertical edge has near-nominal length and the off-axis threshold is kept
+deliberately low because aggressive values create diagonals on puzzle
+boards (see the wrong-label check notes). The same false-corner family
+caused the duplicate-coord ambiguity fixed in the walk (labels colliding
+one cell apart); collisions are now dropped, but a false corner whose true
+counterpart was never labelled still slips through.
+
+Candidate directions: per-column/row drift-consistency check at the
+component level (the measured signature — one corner breaking an otherwise
+constant column drift — is strong and cheap), or marker-aware scoring once
+ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
+policy work, which needs the same local-geometry discrimination.
+
 ### Resolved gaps (April 2026 refactor)
 
 - **Pipeline A removal** (was Gap 1, Gap 2, Gap 5, Gap 9). The
