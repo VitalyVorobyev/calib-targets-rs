@@ -111,7 +111,7 @@ fn main() {
             let started = Instant::now();
             let corners = detect_corners(&snap, &chess_cfg);
             corners_per_snap.push(corners.len());
-            let detector = Detector::new(detector_params.clone());
+            let detector = Detector::new(detector_params.clone()).expect("valid detector params");
             let (labelled, frame) = match algorithm {
                 GraphBuildAlgorithm::SeedAndGrow => {
                     let frame = detector.detect_with_diagnostics(&corners);

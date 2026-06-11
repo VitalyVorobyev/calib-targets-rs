@@ -116,7 +116,7 @@ pub fn run_entry(
 
 /// Full chessboard production pipeline → [`BaselineImage`].
 fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
-    let d = Detector::new(params.clone()).detect(corners)?;
+    let d = Detector::new(params.clone()).ok()?.detect(corners)?;
     let cell_size_px = d.cell_size.unwrap_or(0.0);
     let mut out: Vec<BaselineCorner> = d
         .corners

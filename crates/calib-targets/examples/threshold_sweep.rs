@@ -78,7 +78,7 @@ fn main() {
             let corners = detect_corners(&img, &cfg);
             let mut params = DetectorParams::default();
             params.graph_build_algorithm = algorithm;
-            let detector = Detector::new(params);
+            let detector = Detector::new(params).expect("valid detector params");
             let detection = detector.detect(&corners);
             let (labelled, holes) = match &detection {
                 Some(d) => {

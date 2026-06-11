@@ -58,7 +58,7 @@ fn run_with(
 ) -> Vec<calib_targets_chessboard::ChessboardDetection> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = algorithm;
-    let det = Detector::new(params);
+    let det = Detector::new(params).expect("valid detector params");
     det.detect_all(corners)
 }
 

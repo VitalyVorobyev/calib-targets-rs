@@ -122,7 +122,9 @@ fn run_detector(
     algorithm: GraphBuildAlgorithm,
 ) -> Option<ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    Detector::new(params_for(algorithm)).detect(&corners)
+    Detector::new(params_for(algorithm))
+        .expect("valid detector params")
+        .detect(&corners)
 }
 
 fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize) {
@@ -227,11 +229,13 @@ fn topo_grid_manifest_gates_hold() {
 
         if let Some(gate) = &case.topological {
             let detection = Detector::new(params_for(GraphBuildAlgorithm::Topological))
+                .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
         }
         if let Some(gate) = &case.seed_and_grow {
             let detection = Detector::new(params_for(GraphBuildAlgorithm::SeedAndGrow))
+                .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "seed_and_grow", gate, detection);
         }

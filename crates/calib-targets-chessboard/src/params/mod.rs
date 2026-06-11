@@ -76,7 +76,7 @@ fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
 /// stages and cannot run orientation-free. Pairing
 /// [`NeighbourEdges`](OrientationSource::NeighbourEdges) with `SeedAndGrow`
 /// is a typed [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]
-/// (surfaced by [`DetectorParams::validate`] / [`crate::Detector::try_new`])
+/// (surfaced by [`DetectorParams::validate`] / [`crate::Detector::new`])
 /// rather than a silent fallback to ChESS axes (which would make a head-to-head
 /// measurement secretly compare the wrong thing).
 ///
@@ -103,7 +103,7 @@ fn default_orientation_source() -> OrientationSource {
 
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
-/// Returned by [`DetectorParams::validate`] / [`crate::Detector::try_new`]. The
+/// Returned by [`DetectorParams::validate`] / [`crate::Detector::new`]. The
 /// only current variant is the orientation-source / graph-builder mismatch that
 /// previously panicked at runtime; the enum is `#[non_exhaustive]` so future
 /// validations can be added without a breaking change.
@@ -246,9 +246,9 @@ impl DetectorParams {
     /// [`OrientationSource::NeighbourEdges`] with
     /// [`GraphBuildAlgorithm::SeedAndGrow`] (see
     /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]). The
-    /// fallible constructor [`crate::Detector::try_new`] surfaces this; the
-    /// infallible [`crate::Detector::new`] + `detect*` path treats an invalid
-    /// configuration as a no-detection result rather than aborting.
+    /// fallible constructor [`crate::Detector::new`] calls this up front and
+    /// surfaces the typed error, so the `detect*` methods always run on a
+    /// validated configuration.
     pub fn validate(&self) -> Result<(), ChessboardParamsError> {
         if matches!(self.graph_build_algorithm, GraphBuildAlgorithm::SeedAndGrow)
             && matches!(self.orientation_source, OrientationSource::NeighbourEdges)

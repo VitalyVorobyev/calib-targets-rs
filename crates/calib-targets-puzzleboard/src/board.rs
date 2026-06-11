@@ -34,10 +34,18 @@ pub struct PuzzleBoardSpec {
     pub origin_col: u32,
 }
 
-/// Errors returned by [`PuzzleBoardSpec::new`].
+/// Errors returned by [`PuzzleBoardSpec::new`] and by
+/// [`PuzzleBoardDetector::new`](crate::PuzzleBoardDetector::new) (the latter
+/// also surfaces an invalid embedded chessboard configuration via
+/// [`PuzzleBoardSpecError::Chessboard`]).
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum PuzzleBoardSpecError {
+    /// The embedded chessboard detector configuration
+    /// ([`PuzzleBoardParams::chessboard`](crate::PuzzleBoardParams)) is one the
+    /// chessboard stage cannot honour.
+    #[error("invalid chessboard configuration: {0}")]
+    Chessboard(#[from] calib_targets_chessboard::ChessboardParamsError),
     /// `rows` or `cols` is below the 4×4 minimum needed for a unique decode.
     #[error("rows and cols must be >= 4")]
     TooSmall,

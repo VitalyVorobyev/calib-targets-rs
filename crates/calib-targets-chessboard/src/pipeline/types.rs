@@ -74,7 +74,11 @@ pub struct ChessboardDetection {
     /// when no seed was found (no detection is emitted in that case, so
     /// this is `Some` for every returned detection). Exposed on the
     /// stable result so consumers can scale geometry checks and overlays
-    /// without opting into the [`crate::diagnostics`] surface.
+    /// without opting into the diagnostics surface.
+    #[cfg_attr(
+        feature = "diagnostics",
+        doc = "See [`crate::diagnostics`] for the opt-in introspection surface."
+    )]
     pub cell_size: Option<f32>,
 }
 

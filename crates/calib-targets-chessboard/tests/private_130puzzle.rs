@@ -117,13 +117,13 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> GrayImage {
 fn default_seed_and_grow_detector() -> Detector {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
-    Detector::new(params)
+    Detector::new(params).expect("valid detector params")
 }
 
 fn default_topological_detector() -> Detector {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-    Detector::new(params)
+    Detector::new(params).expect("valid detector params")
 }
 
 fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {

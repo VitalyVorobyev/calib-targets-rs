@@ -63,7 +63,7 @@ fn detects_two_components_of_the_same_board() {
     // window (default 0.35 × cell_size ≈ 7 px) cannot bridge the gap.
     corners.extend(build_3x3(200.0, 50.0, spacing));
 
-    let detector = Detector::new(DetectorParams::default());
+    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
     let detections = detector.detect_all(&corners);
 
     assert_eq!(
@@ -111,7 +111,7 @@ fn detects_two_components_of_the_same_board() {
 #[test]
 fn single_component_scene_still_returns_one() {
     let corners = build_3x3(50.0, 50.0, 20.0);
-    let detector = Detector::new(DetectorParams::default());
+    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
     let detections = detector.detect_all(&corners);
     assert_eq!(detections.len(), 1);
     assert_eq!(detections[0].corners.len(), 9);

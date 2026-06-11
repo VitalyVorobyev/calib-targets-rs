@@ -280,7 +280,8 @@ fn main() {
             let t_corners = t0.elapsed();
 
             let t0 = Instant::now();
-            let chess_detector = ChessDetector::new(chess_params.clone());
+            let chess_detector =
+                ChessDetector::new(chess_params.clone()).expect("valid detector params");
             let chessboard_frame = chess_detector.detect_with_diagnostics(&corners);
             let t_chessboard = t0.elapsed();
 

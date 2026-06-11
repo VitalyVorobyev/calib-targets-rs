@@ -72,7 +72,7 @@ fn bench_detection(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             &corners,
             |b, corners| {
-                let detector = Detector::new(params.clone());
+                let detector = Detector::new(params.clone()).expect("valid detector params");
                 b.iter(|| {
                     let det = detector.detect(corners);
                     criterion::black_box(det)

@@ -117,7 +117,7 @@ fn marker_internal_corners_never_labelled() {
     // path that actually runs on marker scenes.
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
-    let detector = Detector::new(params);
+    let detector = Detector::new(params).expect("valid detector params");
     let detection = detector
         .detect(&corners)
         .expect("board must still be detected despite marker-internal noise");

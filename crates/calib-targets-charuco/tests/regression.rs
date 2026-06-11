@@ -436,7 +436,7 @@ fn detects_plain_chessboard_on_mid_png() {
 
     let mut chessboard = ChessboardParams::default();
     chessboard.min_corner_strength = 0.5;
-    let detector = ChessboardDetector::new(chessboard);
+    let detector = ChessboardDetector::new(chessboard).expect("valid detector params");
     let res = detector.detect(&corners).expect("chessboard detect");
 
     let mut max_i = 0;

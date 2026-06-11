@@ -75,7 +75,7 @@ fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
         .to_luma8();
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(ratchet_params());
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
     let components = detector.detect_all(&corners).len();
     (detection, components)
@@ -289,7 +289,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
 
     let corners = detect_corners(&img, &chess_cfg);
     // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
-    let detector = Detector::new(ratchet_params());
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on large.png");
@@ -342,7 +342,7 @@ fn diskfit_mid_recovers_full_chessboard() {
 
     let corners = detect_corners(&img, &chess_cfg);
     // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
-    let detector = Detector::new(ratchet_params());
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on mid.png");

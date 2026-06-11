@@ -133,7 +133,7 @@ fn assert_rejects_false_labels(algorithm: GraphBuildAlgorithm) {
     let chess_cfg = default_chess_config();
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = algorithm;
-    let detector = Detector::new(params);
+    let detector = Detector::new(params).expect("valid detector params");
 
     let mut detected = 0usize;
     for target_idx in 0..REVIEW_TARGETS {

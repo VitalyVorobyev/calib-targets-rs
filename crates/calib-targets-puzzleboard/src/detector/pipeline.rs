@@ -53,7 +53,7 @@ impl PuzzleBoardDetector {
             params.board.origin_row,
             params.board.origin_col,
         )?;
-        let chessboard = ChessDetector::new(params.chessboard.clone());
+        let chessboard = ChessDetector::new(params.chessboard.clone())?;
         Ok(Self { params, chessboard })
     }
 

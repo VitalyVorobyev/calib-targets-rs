@@ -90,7 +90,8 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let detector = calib_targets::chessboard::Detector::new(detector_params.clone());
+    let detector = calib_targets::chessboard::Detector::new(detector_params.clone())
+        .expect("valid detector params");
     let frame = detector.detect_with_diagnostics(&corners);
 
     print_stage_summary(&args.image, &frame);
@@ -98,7 +99,8 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // Also probe how many components `detect_all` recovers — useful when a
     // ChArUco split produces several disjoint chessboard subgraphs that the
     // single-best `detect()` call hides.
-    let detector_for_all = calib_targets::chessboard::Detector::new(detector_params);
+    let detector_for_all =
+        calib_targets::chessboard::Detector::new(detector_params).expect("valid detector params");
     let all_frames = detector_for_all.detect_all_with_diagnostics(&corners);
     if all_frames.len() > 1 {
         println!("\n  --- detect_all_with_diagnostics ---");
@@ -353,7 +355,9 @@ fn diagnose_topological(
         survives_fit - survives_axis,
     );
 
-    let detections = Detector::new(detector_params).detect_all(corners);
+    let detections = Detector::new(detector_params)
+        .expect("valid detector params")
+        .detect_all(corners);
     let labelled_corner_set: std::collections::HashSet<usize> = detections
         .iter()
         .flat_map(|d| d.corners.iter().map(|c| c.input_index))

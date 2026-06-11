@@ -73,7 +73,7 @@ fn main() {
     // ---- 2. Run the detector ------------------------------------------
     // `Detector::detect` returns `Option<ChessboardDetection>` — `None`
     // means no board passed the precision-by-construction invariant stack.
-    let detector = Detector::new(DetectorParams::default());
+    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
     let Some(detection) = detector.detect(&corners) else {
         eprintln!("no chessboard detected");
         return;

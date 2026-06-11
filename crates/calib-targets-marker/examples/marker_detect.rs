@@ -60,7 +60,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut report = MarkerBoardDetectReport::new(&cfg, &config_path, corners.clone());
 
-    let detector = cfg.build_detector();
+    let detector = cfg.build_detector()?;
     match detector.detect_from_image_and_corners(&src_view, &corners) {
         Some(res) => report.set_detection(res),
         None => {

@@ -176,7 +176,7 @@ pub fn detect_chessboard(
     params: &chessboard::DetectorParams,
 ) -> Option<chessboard::ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::Detector::new(params.clone());
+    let detector = chessboard::Detector::new(params.clone()).ok()?;
     detector.detect(&corners)
 }
 
@@ -196,7 +196,9 @@ pub fn detect_chessboard_all(
     params: &chessboard::DetectorParams,
 ) -> Vec<chessboard::ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::Detector::new(params.clone());
+    let Ok(detector) = chessboard::Detector::new(params.clone()) else {
+        return Vec::new();
+    };
     detector.detect_all(&corners)
 }
 
@@ -222,8 +224,16 @@ pub fn detect_chessboard_with_diagnostics(
     params: &chessboard::DetectorParams,
 ) -> chessboard::diagnostics::DebugFrame {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::Detector::new(params.clone());
-    detector.detect_with_diagnostics(&corners)
+    match chessboard::Detector::new(params.clone()) {
+        // Valid config: run with the real corners.
+        Ok(detector) => detector.detect_with_diagnostics(&corners),
+        // Invalid config (e.g. NeighbourEdges + SeedAndGrow): emit a
+        // well-formed no-detection frame so the caller can still introspect.
+        // Default params are always valid; run them over no corners.
+        Err(_) => chessboard::Detector::new(chessboard::DetectorParams::default())
+            .expect("default params valid")
+            .detect_with_diagnostics(&[]),
+    }
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
@@ -299,7 +309,7 @@ pub fn detect_marker_board(
     params: &marker::MarkerBoardParams,
 ) -> Option<marker::MarkerBoardDetectionResult> {
     let corners = detect_corners_default(img);
-    let detector = marker::MarkerBoardDetector::new(params.clone());
+    let detector = marker::MarkerBoardDetector::new(params.clone()).ok()?;
     detector.detect_from_image_and_corners(&gray_view(img), &corners)
 }
 
@@ -320,7 +330,11 @@ pub fn detect_chessboard_best(
     let corners = detect_corners(img, chess_cfg);
     param_configs
         .iter()
-        .filter_map(|params| chessboard::Detector::new(params.clone()).detect(&corners))
+        .filter_map(|params| {
+            chessboard::Detector::new(params.clone())
+                .ok()?
+                .detect(&corners)
+        })
         .max_by_key(|d| d.corners.len())
 }
 
@@ -406,7 +420,7 @@ pub fn detect_marker_board_best(
     configs
         .iter()
         .filter_map(|params| {
-            let detector = marker::MarkerBoardDetector::new(params.clone());
+            let detector = marker::MarkerBoardDetector::new(params.clone()).ok()?;
             detector.detect_from_image_and_corners(&gray_view(img), &corners)
         })
         .max_by_key(|r| r.corners.len())

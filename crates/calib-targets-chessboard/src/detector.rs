@@ -37,43 +37,19 @@ pub struct Detector {
 }
 
 impl Detector {
-    /// Construct a detector with the given parameters.
+    /// Construct a detector with the given parameters, validating the
+    /// configuration up front.
     ///
-    /// Infallible for binding compatibility. An invalid configuration (see
-    /// [`DetectorParams::validate`]) is not rejected here; instead the
-    /// `detect*` methods return a no-detection result for it. Prefer
-    /// [`Self::try_new`] to surface the typed [`ChessboardParamsError`] up
-    /// front.
-    pub fn new(params: DetectorParams) -> Self {
-        Self { params }
-    }
-
-    /// Fallible constructor: validate the configuration and return a typed
-    /// [`ChessboardParamsError`] for any combination the detector cannot
-    /// honour (currently
+    /// Returns a typed [`ChessboardParamsError`] for any combination the
+    /// detector cannot honour (currently
     /// [`OrientationSource::NeighbourEdges`](crate::params::OrientationSource::NeighbourEdges)
-    /// with [`GraphBuildAlgorithm::SeedAndGrow`]).
-    pub fn try_new(params: DetectorParams) -> Result<Self, ChessboardParamsError> {
+    /// with [`GraphBuildAlgorithm::SeedAndGrow`] — see
+    /// [`DetectorParams::validate`]). This mirrors the fallible constructors
+    /// on the sibling detectors (`CharucoDetector`, `PuzzleBoardDetector`),
+    /// so the binding layer wraps a single `Result` surface uniformly.
+    pub fn new(params: DetectorParams) -> Result<Self, ChessboardParamsError> {
         params.validate()?;
         Ok(Self { params })
-    }
-
-    /// Whether this detector's configuration is one the `detect*` paths can
-    /// honour. The native seed-and-grow pipeline consumes ChESS corner axes
-    /// directly throughout, so honouring
-    /// [`OrientationSource::NeighbourEdges`](crate::params::OrientationSource::NeighbourEdges)
-    /// there would silently fall back to ChESS axes — a head-to-head
-    /// measurement would then secretly compare the wrong thing. An unsupported
-    /// configuration yields a no-detection result (a debug build also asserts,
-    /// so a misconfiguration surfaces in tests).
-    fn config_supported(&self) -> bool {
-        let ok = self.params.validate().is_ok();
-        debug_assert!(
-            ok,
-            "unsupported chessboard configuration: {}",
-            ChessboardParamsError::NeighbourEdgesRequiresTopological
-        );
-        ok
     }
 
     /// Simple entry point: run the pipeline and return the best detection.
@@ -86,9 +62,6 @@ impl Detector {
         )
     )]
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
-        if !self.config_supported() {
-            return None;
-        }
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -115,13 +88,6 @@ impl Detector {
         )
     )]
     pub fn detect_with_diagnostics(&self, corners: &[ChessCorner]) -> DebugFrame {
-        // Unsupported config: run the pipeline over no corners so the caller
-        // gets a well-formed no-detection frame instead of a panic.
-        let corners: &[ChessCorner] = if self.config_supported() {
-            corners
-        } else {
-            &[]
-        };
         run_pipeline(&self.params, corners, &HashSet::new())
     }
 
@@ -146,9 +112,6 @@ impl Detector {
         )
     )]
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
-        if !self.config_supported() {
-            return Vec::new();
-        }
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
             GraphBuildAlgorithm::SeedAndGrow => {
@@ -192,13 +155,6 @@ impl Detector {
         )
     )]
     pub fn detect_all_with_diagnostics(&self, corners: &[ChessCorner]) -> Vec<DebugFrame> {
-        // Unsupported config: run over no corners so the caller gets a
-        // well-formed no-detection frame instead of a panic.
-        let corners: &[ChessCorner] = if self.config_supported() {
-            corners
-        } else {
-            &[]
-        };
         let cap = self.params.max_components.max(1) as usize;
         let mut consumed: HashSet<usize> = HashSet::new();
         let mut frames: Vec<DebugFrame> = Vec::with_capacity(cap);
@@ -270,7 +226,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         assert_eq!(d.corners.len(), 49);
     }
@@ -292,7 +248,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         let cell = d.cell_size.expect("cell_size populated on detect() path");
         assert!(
@@ -303,7 +259,7 @@ mod tests {
 
     #[test]
     fn rejects_when_too_few_corners() {
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         assert!(det.detect(&[]).is_none());
     }
 
@@ -330,7 +286,7 @@ mod tests {
             orientation_source: OrientationSource::NeighbourEdges,
             ..DetectorParams::default()
         };
-        let det = Detector::new(params);
+        let det = Detector::new(params).expect("topological + neighbour-edges valid");
         let d = det.detect(&corners).expect("neighbour-edge detection");
         assert!(
             d.corners.len() >= 36,
@@ -348,9 +304,9 @@ mod tests {
     }
 
     /// Neighbour-edge orientation on the native SeedAndGrow pipeline is
-    /// unsupported. It is now a *typed* error surfaced by `validate()` /
-    /// `try_new()` rather than a runtime panic, so a head-to-head measurement
-    /// can never silently fall back to ChESS axes.
+    /// unsupported. It is now a *typed* error surfaced by `validate()` and the
+    /// fallible [`Detector::new`] rather than a runtime panic, so a head-to-head
+    /// measurement can never silently fall back to ChESS axes.
     #[test]
     fn neighbour_edges_seed_and_grow_is_typed_error() {
         let params = DetectorParams {
@@ -363,7 +319,7 @@ mod tests {
             Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
         );
         assert!(matches!(
-            Detector::try_new(params.clone()),
+            Detector::new(params.clone()),
             Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
         ));
     }
@@ -386,7 +342,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         // Locate (0, 0) and the two neighbors.
         let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
@@ -427,7 +383,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let frame = det.detect_with_diagnostics(&corners);
         let counts = StageCounts::from_frame(&frame);
         assert!(frame.detection.is_some(), "expected detection on 7x7 grid");
