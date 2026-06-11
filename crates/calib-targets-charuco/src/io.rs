@@ -193,6 +193,13 @@ impl CharucoDetectConfig {
         }
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;
+            // ChArUco only supports the seed-and-grow builder (see
+            // `CharucoDetectError::UnsupportedAlgorithm`). A config-supplied
+            // chessboard override that omits `graph_build_algorithm` would
+            // otherwise carry the topological default and fail at detect time;
+            // re-pin seed-and-grow so existing configs keep working.
+            params.chessboard.graph_build_algorithm =
+                calib_targets_chessboard::GraphBuildAlgorithm::SeedAndGrow;
         }
         if let Some(aruco) = self.aruco.as_ref() {
             if let Some(max_hamming) = aruco.max_hamming {
@@ -279,5 +286,40 @@ impl CharucoDetectReport {
     /// Write this report to disk as pretty JSON.
     pub fn write_json(&self, path: impl AsRef<Path>) -> Result<(), CharucoIoError> {
         io::write_json(self, path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use calib_targets_chessboard::GraphBuildAlgorithm;
+
+    fn testdata(name: &str) -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../testdata")
+            .join(name)
+    }
+
+    /// Every checked-in ChArUco config still deserializes, and the chessboard
+    /// params it produces pin the seed-and-grow builder regardless of what the
+    /// (possibly legacy-schema) `chessboard` override block carries. Guards the
+    /// serde-compat contract after the typed-algorithm-override change.
+    #[test]
+    fn checked_in_configs_deserialize_and_pin_seed_and_grow() {
+        for name in [
+            "charuco_detect_config.json",
+            "charuco_detect_config_small.json",
+            "charuco_detect_config_test.json",
+        ] {
+            let path = testdata(name);
+            let cfg = CharucoDetectConfig::load_json(&path)
+                .unwrap_or_else(|e| panic!("load {name}: {e}"));
+            let params = cfg.build_params();
+            assert_eq!(
+                params.chessboard.graph_build_algorithm,
+                GraphBuildAlgorithm::SeedAndGrow,
+                "{name}: chessboard override must keep seed-and-grow pinned"
+            );
+        }
     }
 }

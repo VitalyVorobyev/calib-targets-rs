@@ -101,6 +101,14 @@ fn default_orientation_source() -> OrientationSource {
     OrientationSource::default()
 }
 
+fn default_min_labeled_corners() -> usize {
+    8
+}
+
+fn default_max_components() -> u32 {
+    3
+}
+
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
 /// Returned by [`DetectorParams::validate`] / [`crate::Detector::new`]. The
@@ -191,6 +199,9 @@ pub struct DetectorParams {
 
     /// Minimum labelled corners for a
     /// [`ChessboardDetection`](crate::ChessboardDetection) to be emitted.
+    /// Default `8`; defaulted on deserialization so partial configs (and
+    /// legacy configs that omit it) keep parsing.
+    #[serde(default = "default_min_labeled_corners")]
     pub min_labeled_corners: usize,
 
     /// Maximum number of components returned by [`crate::Detector::detect_all`].
@@ -198,10 +209,12 @@ pub struct DetectorParams {
     /// A chessboard can split into multiple disconnected pieces on ChArUco
     /// scenes where markers break contiguity. Each iteration peels off one
     /// grown grid from the unconsumed corners and re-runs seed → grow →
-    /// validate. Default `3`.
+    /// validate. Default `3`; defaulted on deserialization so partial configs
+    /// keep parsing.
     ///
     /// Does NOT claim to support scenes with two separate physical boards —
     /// one target per frame is the contract.
+    #[serde(default = "default_max_components")]
     pub max_components: u32,
 
     /// Minimum corner strength (ChESS response) for the Stage-1 pre-filter.
