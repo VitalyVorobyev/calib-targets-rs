@@ -5,6 +5,7 @@ pub mod configs;
 pub mod dataset;
 pub mod detect;
 pub mod diagnose;
+pub mod runs;
 
 use std::sync::Arc;
 
@@ -34,6 +35,8 @@ pub fn router(state: AppState, dev: bool) -> Router {
             "/configs/{name}",
             get(configs::get).put(configs::put).delete(configs::delete),
         )
+        .route("/runs", get(runs::list).post(runs::create))
+        .route("/runs/{id}", get(runs::get))
         .with_state(state)
         .layer(CorsLayer::permissive());
 

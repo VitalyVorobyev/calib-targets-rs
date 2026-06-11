@@ -13,6 +13,8 @@ pub enum ApiError {
     NotFound(String),
     /// 400 — malformed label, invalid params JSON, bad request body.
     BadRequest(String),
+    /// 409 — conflicting state (e.g. a dataset run is already active).
+    Conflict(String),
     /// 500 — I/O or internal failure.
     Internal(String),
 }
@@ -22,13 +24,17 @@ impl ApiError {
         match self {
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
     fn message(&self) -> &str {
         match self {
-            ApiError::NotFound(m) | ApiError::BadRequest(m) | ApiError::Internal(m) => m,
+            ApiError::NotFound(m)
+            | ApiError::BadRequest(m)
+            | ApiError::Conflict(m)
+            | ApiError::Internal(m) => m,
         }
     }
 }

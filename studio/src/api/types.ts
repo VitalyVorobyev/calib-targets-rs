@@ -262,3 +262,45 @@ export type DiagnoseResponse =
       frame: DebugFrameWire;
       stage_counts: Record<string, number>;
     };
+
+// --- dataset runs ------------------------------------------------------------
+
+export type RunStatus = "running" | "done" | "failed";
+export type DatasetReq = "public" | "private" | "all";
+
+export interface PerImageReport {
+  image: string;
+  passed: boolean;
+  has_baseline: boolean;
+  elapsed_ms: number;
+  labelled_count: number;
+  diff_vs_baseline: BaselineDiff;
+}
+
+export interface RunSummary {
+  images_total: number;
+  images_passed: number;
+  images_failed: number;
+  p50_ms: number;
+  p95_ms: number;
+  max_ms: number;
+}
+
+export interface RunRecord {
+  id: string;
+  status: RunStatus;
+  started_at: number;
+  config_id: string;
+  dataset: string;
+  progress: { done: number; total: number; current: string | null };
+  per_image: PerImageReport[];
+  summary: RunSummary | null;
+  error: string | null;
+}
+
+export interface RunRequest {
+  dataset?: DatasetReq;
+  params?: DetectorParamsOverride;
+  engine?: EngineReq;
+  orientation_method?: OrientationMethodReq;
+}

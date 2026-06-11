@@ -7,6 +7,8 @@ import type {
   DetectResponse,
   DiagnoseRequest,
   DiagnoseResponse,
+  RunRecord,
+  RunRequest,
 } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -53,4 +55,8 @@ export const api = {
     postJson<DetectResponse>("/api/detect", req),
   diagnose: (req: DiagnoseRequest) =>
     postJson<DiagnoseResponse>("/api/diagnose", req),
+  runs: () => getJson<RunRecord[]>("/api/runs"),
+  run: (id: string) => getJson<RunRecord>(`/api/runs/${id}`),
+  startRun: (req: RunRequest) =>
+    postJson<{ run_id: string }>("/api/runs", req),
 };

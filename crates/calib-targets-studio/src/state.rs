@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 
 use calib_targets_bench::dataset::Dataset;
 
+use crate::jobs::SharedRuns;
+
 /// Maximum number of encoded fed-image PNGs kept in memory. The current
 /// manifest tops out at ~27 logical snaps of a few hundred KB each, so this
 /// effectively caches the whole dataset while still bounding memory if the
@@ -17,6 +19,8 @@ const IMAGE_CACHE_CAP: usize = 32;
 pub struct StudioState {
     /// Parsed `datasets.toml` (loaded once at startup).
     pub dataset: Dataset,
+    /// Registry of dataset runs (at most one live at a time).
+    pub runs: SharedRuns,
     /// FIFO-evicted cache of encoded fed-image PNGs keyed by snap label.
     image_cache: Mutex<ImageCache>,
 }
@@ -27,6 +31,7 @@ impl StudioState {
         let dataset = Dataset::load_default()?;
         Ok(Self {
             dataset,
+            runs: SharedRuns::default(),
             image_cache: Mutex::new(ImageCache::default()),
         })
     }

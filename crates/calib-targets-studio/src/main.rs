@@ -6,6 +6,7 @@
 //! `studio/dist`. Launch with `cargo studio` and open the printed URL.
 
 mod error;
+mod jobs;
 mod routes;
 mod snaps;
 mod state;

@@ -2,10 +2,12 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import { CompareView } from "./views/CompareView";
 import { DatasetBrowser } from "./views/DatasetBrowser";
 import { ImageWorkspace } from "./views/ImageWorkspace";
+import { RunsView } from "./views/RunsView";
 
 const NAV = [
   { to: "/", label: "Dataset", end: true },
   { to: "/compare", label: "Compare", end: false },
+  { to: "/runs", label: "Runs", end: false },
 ];
 
 export default function App() {
@@ -57,6 +59,7 @@ export default function App() {
           <Route path="/" element={<DatasetBrowser />} />
           <Route path="/image/*" element={<ImageWorkspace />} />
           <Route path="/compare" element={<CompareView />} />
+          <Route path="/runs" element={<RunsView />} />
         </Routes>
       </main>
     </div>
