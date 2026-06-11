@@ -9,6 +9,7 @@
   - [Understanding Results](output.md)
   - [Migration Guide](migration.md)
 - [Project Overview](overview.md)
+- [Metrics](metrics.md)
 - [Conventions](conventions.md)
 - [Pipeline Overview](pipeline.md)
 - [Crates](crates.md)
