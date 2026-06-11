@@ -9,6 +9,61 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+This cycle continues the projective-grid generalization and a batched
+public-surface cleanup. The workspace is still `0.x`, so breaking changes are
+expected. Detection behaviour on the public benchmark is byte-identical.
+
+### Added
+
+- **`Evidence::Oriented1`** — single-supplied-axis input is now a first-class
+  evidence kind for `projective_grid::detect_grid`; the second axis is
+  recovered from neighbour-chord geometry.
+- **Hexagonal lattice detection (topological path)** — `projective_grid` now
+  detects hex dot/marker grids via the topological builder for `Positions` and
+  `Oriented3` evidence (`Lattice::Hex`); seed-and-grow hex stays a typed
+  `UnsupportedCombination`.
+- **`projective_grid::cluster::cluster_axes`** and `AxisClusterCenters` — the
+  axis-clustering primitive is exposed from the facade.
+- **`calib_targets_core::cell_rect_corners_at`** — the single shared definition
+  of the canonical unit-cell corner order (TL, TR, BR, BL), used by the ArUco
+  and ChArUco cell samplers.
+
+### Breaking
+
+- **`calib_targets_chessboard::Detector::new` is now fallible**
+  (`-> Result<Self, ChessboardParamsError>`), validating the configuration up
+  front; the previous infallible `new` + `try_new` pair and the internal
+  debug-assert/empty-result fallback are removed. This mirrors the fallible
+  constructors on the sibling detectors. `MarkerBoardDetector::new` is likewise
+  fallible (reusing `ChessboardParamsError`), and `PuzzleBoardSpecError` gains a
+  `Chessboard` variant so `PuzzleBoardDetector::new` surfaces an invalid
+  embedded chessboard configuration.
+
+- **ChArUco rejects the topological builder with a typed error.** Constructing
+  `CharucoParams.chessboard` with `GraphBuildAlgorithm::Topological` and running
+  detection now returns `CharucoDetectError::UnsupportedAlgorithm` instead of
+  silently overriding the choice (marker-internal corners defeat the topological
+  cell test). The `CharucoParams` constructors and the binding/config paths pin
+  `SeedAndGrow` so configs that omit the algorithm keep working.
+
+- **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
+  cargo feature** (default off), matching `calib-targets-chessboard`. The
+  `diagnostics` module, the diagnostics type re-exports, and
+  `detect_with_diagnostics` reach the public surface only with the feature
+  enabled; the facade `calib-targets/diagnostics` feature now forwards to all
+  three detector crates.
+
+- **`DetectorParams.min_labeled_corners` / `max_components` are now defaulted on
+  deserialization** (`8` / `3`), so partial and legacy configs that omit them
+  deserialize again. Values and serialization are unchanged.
+
+### Internal
+
+- The ChArUco legacy-vote alignment's dominant-rotation-only D4 selection is
+  recorded as a tracked gap (the default board-level matcher already enumerates
+  all rotations); the stale alignment TODO is removed. ArUco / ChArUco cell
+  corner enumeration is de-duplicated through `cell_rect_corners_at`.
+
 ## 0.10.0
 
 This release finalizes the public API surface ahead of a stable tag. The
