@@ -344,7 +344,7 @@ pub fn merge_components_local(
 /// Lattice-parameterized [`merge_components_local`]: reunite components under
 /// the symmetry group of `lattice` (D4 for square, D6 for hex). The hex path
 /// uses this so the 12 D6 relabellings of a hex component are all candidate
-/// alignments (Phase-4 Step 3).
+/// alignments.
 pub fn merge_components_local_for(
     inputs: &[ComponentInput<'_>],
     params: &LocalMergeParams,

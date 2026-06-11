@@ -66,7 +66,7 @@ pub enum Evidence<'a> {
     /// Point features with three local lattice directions. **Hex-native
     /// evidence**: a hexagonal lattice has three axis families, and a feature
     /// detector that recovers all three feeds them here. The hex detection
-    /// path is the Phase 4 consumer; until then this stays
+    /// path is the intended consumer; until a detector consumes it this stays
     /// [`GridError::UnsupportedCombination`].
     Oriented3(&'a [OrientedFeature<3>]),
     /// Point features plus caller-supplied coordinate hypotheses. **Roadmap
@@ -115,8 +115,8 @@ pub struct DetectionParams {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
     pub max_residual_px: f32,
     /// Algorithm picker for `(Square, Oriented2)`. Defaults to
-    /// [`SquareAlgorithm::SeedAndGrow`] so Phase C consumers compile
-    /// without requiring an explicit algorithm choice.
+    /// [`SquareAlgorithm::SeedAndGrow`] so callers compile without
+    /// requiring an explicit algorithm choice.
     pub algorithm: SquareAlgorithm,
     /// Seed-quad finder tuning — consumed iff `algorithm ==
     /// SquareAlgorithm::SeedAndGrow`.

@@ -63,9 +63,9 @@ let result = detect::detect_puzzleboard_best(&img, &configs);
   `detect_*_with_diagnostics` entry point (the `DebugFrame` /
   self-consistency channels). The detectors build no per-stage trace on
   the hot `detect_*` paths unless this is enabled (the `dataset` feature
-  on `calib-targets-chessboard` implies it). Phase-5 unified this:
-  ChArUco and puzzleboard diagnostics are now gated behind the same
-  feature as chessboard rather than being always-on.
+  on `calib-targets-chessboard` implies it). ChArUco and puzzleboard
+  diagnostics are gated behind the same feature as chessboard rather
+  than being always-on.
 
 See the [Migration Guide](migration.md) for the full breaking-change
 list when upgrading from an earlier release.

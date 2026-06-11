@@ -50,8 +50,7 @@ and documented in `CLAUDE.md`):
 
 Any function computing a circular mean of axis angles MUST accumulate
 `(cos 2θ, sin 2θ)` and halve the atan2 result. Accumulating raw
-`(cos θ, sin θ)` breaks at the 0°/180° seam — this was the root cause of the
-v1 Phase-4 regression.
+`(cos θ, sin θ)` breaks at the 0°/180° seam.
 
 ---
 

@@ -17,7 +17,7 @@
 //! `c` / `d` are the two triangles' apex vertices). That rule is exact for any
 //! lattice whose cells tile by reflection across shared edges, so it needs no
 //! hex-specific table. Duplicate-coordinate collisions drop the coordinate
-//! (the Phase-1 ambiguity-drop rule), and each component is rebased so its
+//! (the ambiguity-drop rule), and each component is rebased so its
 //! axial bounding-box minimum is `(0, 0)`.
 //!
 //! This module is the hex **lattice math** (axis caches, triangle-cell
@@ -363,7 +363,7 @@ pub(super) fn label_components(
         }
 
         // Collapse vertex → label into label → vertex; duplicate-coordinate
-        // collisions drop the coordinate (Phase-1 ambiguity-drop rule).
+        // collisions drop the coordinate (ambiguity-drop rule).
         let mut labelled: HashMap<Coord, usize> = HashMap::new();
         let mut ambiguous: HashSet<Coord> = HashSet::new();
         for (&vtx, &lbl) in &vertex_label {

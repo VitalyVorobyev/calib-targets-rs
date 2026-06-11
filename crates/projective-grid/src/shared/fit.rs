@@ -113,7 +113,7 @@ mod tests {
 
     /// The shared fit routes model coords through `LatticeKind::model_point`,
     /// so a hex component projected through a homography fits to sub-pixel
-    /// residuals — proving the back-half is family-general (Phase-4 Step 3).
+    /// residuals — proving the fit back-half is lattice-family-general.
     #[test]
     fn fit_recovers_hex_component_under_homography() {
         let h = Matrix3::new(

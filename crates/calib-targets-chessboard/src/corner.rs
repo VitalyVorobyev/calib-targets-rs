@@ -119,13 +119,12 @@ impl ClusterLabel {
 /// and advances as it passes (or fails) pipeline stages. This is the
 /// unit of observability for the debug frame.
 ///
-/// Note: a future cleanup (REVIEW.md F7) plans to split this enum into
-/// a pure pipeline cursor (`Raw / Strong / NoCluster / Clustered /
-/// Labeled`) plus an orthogonal `AttachmentOutcome { at, outcome,
-/// reason, local_h_residual_px }`. The current shape is preserved for
-/// now because the split exposed a subtle regression on the
-/// `puzzleboard_reference/example1.png` multi-component test; landing
-/// it safely needs additional investigation of the
+/// Note: a future cleanup may split this enum into a pure pipeline cursor
+/// (`Raw / Strong / NoCluster / Clustered / Labeled`) plus an orthogonal
+/// `AttachmentOutcome { at, outcome, reason, local_h_residual_px }`. The
+/// current shape is preserved for now because the split exposed a subtle
+/// regression on the `puzzleboard_reference/example1.png` multi-component
+/// test; landing it safely needs additional investigation of the
 /// `fix_partial_slot_flips_post_stage6` + `detect_all` interaction.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]

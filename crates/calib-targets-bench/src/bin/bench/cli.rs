@@ -39,7 +39,7 @@ pub(crate) enum Cmd {
 pub(crate) struct DiagnoseArgs {
     /// Image path (relative to workspace root). Stitched composites accept
     /// a `#k` suffix to pick one sub-snap, e.g.
-    /// `privatedata/130x130_puzzle/target_15.png#3`.
+    /// `privatedata/<dataset>/target_15.png#3`.
     pub(crate) image: String,
     /// Output overlay path (default: `preview/diagnose/<stem>.png`).
     #[arg(long)]

@@ -1,6 +1,6 @@
 //! Run the chessboard detector over a directory of stacked target
 //! images (one PNG per target, 6 × 720×540 snaps per image — the
-//! layout of our private flagship datasets).
+//! layout used by the large real-world calibration datasets).
 //!
 //! Writes per-snap `DebugFrame` JSON to `<out>/{t{T}s{S}.json}`. The
 //! Python overlay scripts consume these.

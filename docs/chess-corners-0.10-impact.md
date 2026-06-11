@@ -130,8 +130,8 @@ detector no longer attaches.
 ### testdata/02-topo-grid (4 images)
 
 The 4 synthetic extreme-perspective images are registered in
-`crates/calib-targets-bench/datasets.toml` (added during Phase 3
-overlay generation; required by `bench preview`, which filters
+`crates/calib-targets-bench/datasets.toml` (added for overlay
+generation; required by `bench preview`, which filters
 exclusively by `datasets.toml`). They flow through `bench run` and
 into `bench_results/chessboard.{alg}.{om}.json` with `has_baseline:
 false` (no `testdata/chessboard_regression_baselines.json` entries

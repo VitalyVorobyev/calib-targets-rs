@@ -662,8 +662,8 @@ impl Default for AdvancedTuning {
             // realistic axis noise, the per-bin weight of a genuine
             // grid-direction peak on a 500-corner scene can fall to
             // ~2–3% of total axis-vote weight (see small1/3/4
-            // ChArUco snaps in testdata/). 0.05 was tuned for the
-            // private flagship dataset where corners are cleaner and mass
+            // ChArUco snaps in testdata/). 0.05 was tuned for cleaner
+            // capture conditions where corners are sharper and mass
             // concentrates tightly; 0.02 is still comfortably above
             // pure-noise bins.
             min_peak_weight_fraction: 0.02,
@@ -694,10 +694,10 @@ impl Default for AdvancedTuning {
             // validate→blacklist→regrow loop can take 4–5 iterations
             // to settle (see testdata/puzzleboard_reference/example1.png
             // with ~230 labelled corners and an oscillating blacklist
-            // of 2–4 per iter). 3 was adequate for the private flagship
-            // benchmark where blacklists are typically empty on the
-            // first pass; 6 absorbs the wider real-world variance
-            // without noticeable cost (each iter is cheap).
+            // of 2–4 per iter). 3 was adequate for cleaner captures
+            // where blacklists are typically empty on the first pass;
+            // 6 absorbs the wider real-world variance without
+            // noticeable cost (each iter is cheap).
             max_validation_iters: 6,
 
             stage6_local_h: default_stage6_local_h(),

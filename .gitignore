@@ -14,6 +14,8 @@ testdata/charuco_detect_config_test.json
 bench_results/
 # calib-targets-bench overlay output for visual inspection of detector results.
 preview/
+# Local-only detection-performance reports + rendered overlays.
+report/
 # Private-dataset deep notes — concrete counts, frame IDs, failure
 # breakdowns. Keep locally; public surfaces get general performance
 # statements only (see CLAUDE.md disclosure policy).

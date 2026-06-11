@@ -309,7 +309,6 @@ mod tests {
         for name in [
             "charuco_detect_config.json",
             "charuco_detect_config_small.json",
-            "charuco_detect_config_test.json",
         ] {
             let path = testdata(name);
             let cfg = CharucoDetectConfig::load_json(&path)

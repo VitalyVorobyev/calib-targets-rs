@@ -190,10 +190,10 @@ mod private {
 ///
 /// This trait is **sealed**: it has a crate-private supertrait
 /// (`private::Sealed`) so only the two in-crate markers can implement it.
-/// The seal is deliberate — the hex-detection roadmap (Phase 4) adds new
-/// required methods (axis-family count, model-plane axis directions, cell-type
-/// discriminant). Because no external crate can implement `Lattice`, those
-/// additions are non-breaking. External callers depend on `Lattice` only as a
+/// The seal is deliberate — extending hex detection adds new required methods
+/// (axis-family count, model-plane axis directions, cell-type discriminant).
+/// Because no external crate can implement `Lattice`, those additions are
+/// non-breaking. External callers depend on `Lattice` only as a
 /// bound / through [`LatticeKind`] dispatch, never as an impl target.
 pub trait Lattice: Copy + private::Sealed {
     /// The [`LatticeKind`] this impl corresponds to.
