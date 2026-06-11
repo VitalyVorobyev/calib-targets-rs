@@ -4,6 +4,7 @@
 pub mod configs;
 pub mod dataset;
 pub mod detect;
+pub mod diagnose;
 
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ pub fn router(state: AppState, dev: bool) -> Router {
         .route("/image/{*label}", get(dataset::image))
         .route("/baseline/{*label}", get(dataset::baseline))
         .route("/detect", post(detect::detect))
+        .route("/diagnose", post(diagnose::diagnose))
         .route("/configs", get(configs::list))
         .route("/configs/_defaults", get(configs::defaults))
         .route(

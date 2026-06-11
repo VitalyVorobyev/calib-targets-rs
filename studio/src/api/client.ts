@@ -5,6 +5,8 @@ import type {
   DatasetResponse,
   DetectRequest,
   DetectResponse,
+  DiagnoseRequest,
+  DiagnoseResponse,
 } from "./types";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -49,4 +51,6 @@ export const api = {
     getJson<BaselineImage>(`/api/baseline/${encodeLabel(label)}`),
   detect: (req: DetectRequest) =>
     postJson<DetectResponse>("/api/detect", req),
+  diagnose: (req: DiagnoseRequest) =>
+    postJson<DiagnoseResponse>("/api/diagnose", req),
 };

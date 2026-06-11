@@ -1,24 +1,37 @@
 // Image workspace: interactive overlay canvas + a tabbed side panel
 // (Detect — stats / run options / layers; Config — full DetectorParams
-// editor with named configs; Baseline — structured diff vs the pinned
-// baseline). Param edits re-detect automatically (debounced).
+// editor with named configs; Diagnose — per-stage pipeline introspection;
+// Baseline — structured diff vs the pinned baseline). Param edits
+// re-detect automatically (debounced).
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
-import type {
-  BaselineCorner,
-  DetectorParamsOverride,
-  DetectRequest,
-  DetectResponse,
-  EngineReq,
-  GraphBuildAlgorithm,
-  OrientationMethodReq,
-  OrientationSource,
+import {
+  stageDetail,
+  stageName,
+  type BaselineCorner,
+  type CornerAugWire,
+  type DetectorParamsOverride,
+  type DetectRequest,
+  type DetectResponse,
+  type DiagnoseAlgorithm,
+  type EngineReq,
+  type GraphBuildAlgorithm,
+  type OrientationMethodReq,
+  type OrientationSource,
 } from "../api/types";
 import { CanvasViewport, type HitPoint } from "../components/CanvasViewport";
 import { ConfigEditor } from "../components/ConfigEditor";
+import { DiagnosePanel } from "../components/DiagnosePanel";
+import {
+  axesLayer,
+  stageMarkersLayer,
+  STAGE_COLORS,
+  topoSplitLayer,
+  TOPO_COLORS,
+} from "../components/diagnoseOverlays";
 import { DiffTable } from "../components/DiffTable";
 import { LayerToggles } from "../components/LayerToggles";
 import {
@@ -37,7 +50,15 @@ interface RunOptions {
   orientationMethod: OrientationMethodReq;
 }
 
-type Tab = "detect" | "config" | "baseline";
+type Tab = "detect" | "config" | "diagnose" | "baseline";
+
+type HoverData =
+  | { kind: "corner"; c: BaselineCorner }
+  | { kind: "aug"; c: CornerAugWire }
+  | {
+      kind: "topo";
+      c: { x: number; y: number; sigma0: number; sigma1: number; labelled: boolean };
+    };
 
 export function ImageWorkspace() {
   const label = useParams()["*"] ?? "";
@@ -54,6 +75,10 @@ export function ImageWorkspace() {
     ids: false,
     "baseline-diff": true,
   });
+  const [diagAlgorithm, setDiagAlgorithm] =
+    useState<DiagnoseAlgorithm>("topological");
+  const [axesOn, setAxesOn] = useState(false);
+  const [stageVis, setStageVis] = useState<Record<string, boolean>>({});
 
   const bitmap = useImageBitmap(label);
   const debouncedDraft = useDebounced(draft, 400);
@@ -81,11 +106,40 @@ export function ImageWorkspace() {
     retry: false,
   });
 
+  const diagnose = useQuery({
+    queryKey: [
+      "diagnose",
+      label,
+      diagAlgorithm,
+      debouncedDraft,
+      runOpts.orientationMethod,
+    ],
+    enabled: tab === "diagnose",
+    placeholderData: (prev) => prev,
+    queryFn: () =>
+      api.diagnose({
+        label,
+        algorithm: diagAlgorithm,
+        params: debouncedDraft,
+        orientation_method: runOpts.orientationMethod,
+      }),
+  });
+
   const corners = detect.data?.detection?.corners ?? [];
   const diff = detect.data?.baseline?.diff ?? null;
+  const diagnoseMode = tab === "diagnose" && diagnose.data != null;
 
-  const layers = useMemo(
-    () => [
+  const layers = useMemo(() => {
+    if (diagnoseMode && diagnose.data) {
+      if (diagnose.data.kind === "seed_and_grow") {
+        return [
+          stageMarkersLayer(diagnose.data.frame.corners, stageVis, true),
+          axesLayer(diagnose.data.frame.corners, axesOn),
+        ];
+      }
+      return [topoSplitLayer(diagnose.data.diagnosis, true)];
+    }
+    return [
       edgesLayer(corners, visible["edges"] ?? true),
       cornersLayer(corners, visible["corners"] ?? true),
       ringsLayer(corners, visible["rings"] ?? true),
@@ -96,17 +150,39 @@ export function ImageWorkspace() {
         corners,
         visible["baseline-diff"] ?? true,
       ),
-    ],
-    [corners, diff, baseline.data, visible],
-  );
+    ];
+  }, [
+    diagnoseMode,
+    diagnose.data,
+    stageVis,
+    axesOn,
+    corners,
+    diff,
+    baseline.data,
+    visible,
+  ]);
 
-  const hitPoints: HitPoint<BaselineCorner>[] = useMemo(
-    () => corners.map((c) => ({ x: c.x, y: c.y, data: c })),
-    [corners],
-  );
-
-  const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
-    setDraft((d) => ({ ...d, ...patch }));
+  const hitPoints: HitPoint<HoverData>[] = useMemo(() => {
+    if (diagnoseMode && diagnose.data) {
+      if (diagnose.data.kind === "seed_and_grow") {
+        return diagnose.data.frame.corners.map((c) => ({
+          x: c.position[0],
+          y: c.position[1],
+          data: { kind: "aug", c },
+        }));
+      }
+      return diagnose.data.diagnosis.corners.map((c) => ({
+        x: c.x,
+        y: c.y,
+        data: { kind: "topo", c },
+      }));
+    }
+    return corners.map((c) => ({
+      x: c.x,
+      y: c.y,
+      data: { kind: "corner", c },
+    }));
+  }, [diagnoseMode, diagnose.data, corners]);
 
   return (
     <div style={{ display: "flex", height: "100%" }}>
@@ -120,24 +196,14 @@ export function ImageWorkspace() {
             image={bitmap.data ?? null}
             layers={layers}
             hitPoints={hitPoints}
-            renderTooltip={(c) => (
-              <>
-                <div>
-                  (i, j) = ({c.i}, {c.j}){c.id != null && <> · id {c.id}</>}
-                </div>
-                <div style={{ color: "var(--text-muted)" }}>
-                  x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score{" "}
-                  {c.score.toFixed(1)}
-                </div>
-              </>
-            )}
+            renderTooltip={(h) => <HoverTooltip h={h} />}
           />
         )}
       </div>
 
       <aside
         style={{
-          width: 320,
+          width: 330,
           flexShrink: 0,
           borderLeft: "1px solid var(--border)",
           background: "var(--bg1)",
@@ -177,12 +243,12 @@ export function ImageWorkspace() {
             gap: 2,
           }}
         >
-          {(["detect", "config", "baseline"] as Tab[]).map((t) => (
+          {(["detect", "config", "diagnose", "baseline"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               style={{
-                padding: "6px 12px",
+                padding: "6px 10px",
                 background: "transparent",
                 border: "none",
                 borderBottom:
@@ -201,112 +267,30 @@ export function ImageWorkspace() {
         </div>
 
         {tab === "detect" && (
-          <>
-            <div>
-              <div className="label" style={{ marginBottom: "var(--s2)" }}>
-                Run options
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: "var(--s2)",
-                }}
-              >
-                <SelectRow
-                  label="Algorithm"
-                  value={draft.graph_build_algorithm ?? "topological"}
-                  options={["topological", "seed_and_grow"]}
-                  onChange={(v) =>
-                    setDraftField({
-                      graph_build_algorithm: v as GraphBuildAlgorithm,
-                    })
-                  }
-                />
-                <SelectRow
-                  label="Engine"
-                  value={runOpts.engine}
-                  options={["pipeline", "grid"]}
-                  onChange={(v) =>
-                    setRunOpts({ ...runOpts, engine: v as EngineReq })
-                  }
-                />
-                <SelectRow
-                  label="Orientation"
-                  value={draft.orientation_source ?? "chess_axes"}
-                  options={["chess_axes", "neighbour_edges"]}
-                  disabledOptions={
-                    (draft.graph_build_algorithm ?? "topological") ===
-                      "seed_and_grow" && runOpts.engine === "pipeline"
-                      ? ["neighbour_edges"]
-                      : []
-                  }
-                  onChange={(v) =>
-                    setDraftField({
-                      orientation_source: v as OrientationSource,
-                    })
-                  }
-                />
-                <SelectRow
-                  label="Axis fit"
-                  value={runOpts.orientationMethod}
-                  options={["ring_fit", "disk_fit"]}
-                  onChange={(v) =>
-                    setRunOpts({
-                      ...runOpts,
-                      orientationMethod: v as OrientationMethodReq,
-                    })
-                  }
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="label" style={{ marginBottom: "var(--s2)" }}>
-                Layers
-              </div>
-              <LayerToggles
-                toggles={[
-                  {
-                    id: "edges",
-                    label: "Grid edges",
-                    checked: visible["edges"] ?? true,
-                    swatch: OVERLAY_COLORS.edge,
-                  },
-                  {
-                    id: "corners",
-                    label: "Corners",
-                    checked: visible["corners"] ?? true,
-                    swatch: OVERLAY_COLORS.corner,
-                  },
-                  {
-                    id: "rings",
-                    label: "Origin / far rings",
-                    checked: visible["rings"] ?? true,
-                    swatch: OVERLAY_COLORS.origin,
-                  },
-                  {
-                    id: "ids",
-                    label: "(i, j) labels · zoom ≥ 2×",
-                    checked: visible["ids"] ?? false,
-                  },
-                  {
-                    id: "baseline-diff",
-                    label: "Baseline diff",
-                    checked: visible["baseline-diff"] ?? true,
-                    swatch: OVERLAY_COLORS.missing,
-                  },
-                ]}
-                onChange={(id, checked) =>
-                  setVisible((v) => ({ ...v, [id]: checked }))
-                }
-              />
-            </div>
-          </>
+          <DetectTab
+            draft={draft}
+            setDraft={setDraft}
+            runOpts={runOpts}
+            setRunOpts={setRunOpts}
+            visible={visible}
+            setVisible={setVisible}
+          />
         )}
 
-        {tab === "config" && (
-          <ConfigEditor draft={draft} onChange={setDraft} />
+        {tab === "config" && <ConfigEditor draft={draft} onChange={setDraft} />}
+
+        {tab === "diagnose" && (
+          <DiagnosePanel
+            data={diagnose.data}
+            isLoading={diagnose.isLoading}
+            error={diagnose.error}
+            algorithm={diagAlgorithm}
+            onAlgorithm={setDiagAlgorithm}
+            axesOn={axesOn}
+            onAxes={setAxesOn}
+            stageVis={stageVis}
+            onStageVis={setStageVis}
+          />
         )}
 
         {tab === "baseline" && (
@@ -324,6 +308,170 @@ export function ImageWorkspace() {
         )}
       </aside>
     </div>
+  );
+}
+
+function HoverTooltip({ h }: { h: HoverData }) {
+  if (h.kind === "corner") {
+    const c = h.c;
+    return (
+      <>
+        <div>
+          (i, j) = ({c.i}, {c.j}){c.id != null && <> · id {c.id}</>}
+        </div>
+        <div style={{ color: "var(--text-muted)" }}>
+          x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score {c.score.toFixed(1)}
+        </div>
+      </>
+    );
+  }
+  if (h.kind === "aug") {
+    const c = h.c;
+    const name = stageName(c.stage);
+    const detail = stageDetail(c.stage);
+    return (
+      <>
+        <div style={{ color: STAGE_COLORS[name] }}>
+          ● {name}
+          <span style={{ color: "var(--text-muted)" }}> #{c.input_index}</span>
+        </div>
+        {detail && (
+          <div style={{ maxWidth: 320, whiteSpace: "normal" }}>{detail}</div>
+        )}
+        <div style={{ color: "var(--text-muted)" }}>
+          strength {c.strength.toFixed(0)} · σ (
+          {((c.axes[0].sigma * 180) / Math.PI).toFixed(1)}°,{" "}
+          {((c.axes[1].sigma * 180) / Math.PI).toFixed(1)}°)
+        </div>
+      </>
+    );
+  }
+  const c = h.c;
+  return (
+    <>
+      <div
+        style={{ color: c.labelled ? TOPO_COLORS.labelled : TOPO_COLORS.dropped }}
+      >
+        ● {c.labelled ? "labelled" : "dropped"}
+      </div>
+      <div style={{ color: "var(--text-muted)" }}>
+        σ ({((c.sigma0 * 180) / Math.PI).toFixed(1)}°,{" "}
+        {((c.sigma1 * 180) / Math.PI).toFixed(1)}°)
+      </div>
+    </>
+  );
+}
+
+function DetectTab({
+  draft,
+  setDraft,
+  runOpts,
+  setRunOpts,
+  visible,
+  setVisible,
+}: {
+  draft: DetectorParamsOverride;
+  setDraft: (d: DetectorParamsOverride) => void;
+  runOpts: RunOptions;
+  setRunOpts: (r: RunOptions) => void;
+  visible: Record<string, boolean>;
+  setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+}) {
+  const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
+    setDraft({ ...draft, ...patch });
+  return (
+    <>
+      <div>
+        <div className="label" style={{ marginBottom: "var(--s2)" }}>
+          Run options
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
+        >
+          <SelectRow
+            label="Algorithm"
+            value={draft.graph_build_algorithm ?? "topological"}
+            options={["topological", "seed_and_grow"]}
+            onChange={(v) =>
+              setDraftField({ graph_build_algorithm: v as GraphBuildAlgorithm })
+            }
+          />
+          <SelectRow
+            label="Engine"
+            value={runOpts.engine}
+            options={["pipeline", "grid"]}
+            onChange={(v) => setRunOpts({ ...runOpts, engine: v as EngineReq })}
+          />
+          <SelectRow
+            label="Orientation"
+            value={draft.orientation_source ?? "chess_axes"}
+            options={["chess_axes", "neighbour_edges"]}
+            disabledOptions={
+              (draft.graph_build_algorithm ?? "topological") ===
+                "seed_and_grow" && runOpts.engine === "pipeline"
+                ? ["neighbour_edges"]
+                : []
+            }
+            onChange={(v) =>
+              setDraftField({ orientation_source: v as OrientationSource })
+            }
+          />
+          <SelectRow
+            label="Axis fit"
+            value={runOpts.orientationMethod}
+            options={["ring_fit", "disk_fit"]}
+            onChange={(v) =>
+              setRunOpts({
+                ...runOpts,
+                orientationMethod: v as OrientationMethodReq,
+              })
+            }
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="label" style={{ marginBottom: "var(--s2)" }}>
+          Layers
+        </div>
+        <LayerToggles
+          toggles={[
+            {
+              id: "edges",
+              label: "Grid edges",
+              checked: visible["edges"] ?? true,
+              swatch: OVERLAY_COLORS.edge,
+            },
+            {
+              id: "corners",
+              label: "Corners",
+              checked: visible["corners"] ?? true,
+              swatch: OVERLAY_COLORS.corner,
+            },
+            {
+              id: "rings",
+              label: "Origin / far rings",
+              checked: visible["rings"] ?? true,
+              swatch: OVERLAY_COLORS.origin,
+            },
+            {
+              id: "ids",
+              label: "(i, j) labels · zoom ≥ 2×",
+              checked: visible["ids"] ?? false,
+            },
+            {
+              id: "baseline-diff",
+              label: "Baseline diff",
+              checked: visible["baseline-diff"] ?? true,
+              swatch: OVERLAY_COLORS.missing,
+            },
+          ]}
+          onChange={(id, checked) =>
+            setVisible((v) => ({ ...v, [id]: checked }))
+          }
+        />
+      </div>
+    </>
   );
 }
 
