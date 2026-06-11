@@ -1,5 +1,7 @@
-// Image workspace: interactive overlay canvas + detection side panel.
-// Later milestones add the Config, Diagnose, and Baseline tabs.
+// Image workspace: interactive overlay canvas + a tabbed side panel
+// (Detect — stats / run options / layers; Config — full DetectorParams
+// editor with named configs; Baseline — structured diff vs the pinned
+// baseline). Param edits re-detect automatically (debounced).
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -7,16 +9,18 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
   BaselineCorner,
-  DetectRequest,
   DetectorParamsOverride,
+  DetectRequest,
+  DetectResponse,
   EngineReq,
   GraphBuildAlgorithm,
   OrientationMethodReq,
   OrientationSource,
 } from "../api/types";
 import { CanvasViewport, type HitPoint } from "../components/CanvasViewport";
+import { ConfigEditor } from "../components/ConfigEditor";
+import { DiffTable } from "../components/DiffTable";
 import { LayerToggles } from "../components/LayerToggles";
-import { useImageBitmap } from "../hooks/useImageBitmap";
 import {
   baselineDiffLayer,
   cornersLayer,
@@ -25,24 +29,24 @@ import {
   OVERLAY_COLORS,
   ringsLayer,
 } from "../components/overlays";
+import { useDebounced } from "../hooks/useDebounced";
+import { useImageBitmap } from "../hooks/useImageBitmap";
 
 interface RunOptions {
   engine: EngineReq;
-  algorithm: GraphBuildAlgorithm;
-  orientationSource: OrientationSource;
   orientationMethod: OrientationMethodReq;
 }
 
-const DEFAULT_RUN_OPTIONS: RunOptions = {
-  engine: "pipeline",
-  algorithm: "topological",
-  orientationSource: "chess_axes",
-  orientationMethod: "ring_fit",
-};
+type Tab = "detect" | "config" | "baseline";
 
 export function ImageWorkspace() {
   const label = useParams()["*"] ?? "";
-  const [run, setRun] = useState<RunOptions>(DEFAULT_RUN_OPTIONS);
+  const [tab, setTab] = useState<Tab>("detect");
+  const [draft, setDraft] = useState<DetectorParamsOverride>({});
+  const [runOpts, setRunOpts] = useState<RunOptions>({
+    engine: "pipeline",
+    orientationMethod: "ring_fit",
+  });
   const [visible, setVisible] = useState<Record<string, boolean>>({
     edges: true,
     corners: true,
@@ -52,29 +56,23 @@ export function ImageWorkspace() {
   });
 
   const bitmap = useImageBitmap(label);
-
-  const params: DetectorParamsOverride = useMemo(
-    () => ({
-      graph_build_algorithm: run.algorithm,
-      orientation_source: run.orientationSource,
-    }),
-    [run.algorithm, run.orientationSource],
-  );
+  const debouncedDraft = useDebounced(draft, 400);
 
   const detectReq: DetectRequest = useMemo(
     () => ({
       label,
-      engine: run.engine,
-      params,
-      orientation_method: run.orientationMethod,
+      engine: runOpts.engine,
+      params: debouncedDraft,
+      orientation_method: runOpts.orientationMethod,
       compare_baseline: true,
     }),
-    [label, run.engine, params, run.orientationMethod],
+    [label, runOpts, debouncedDraft],
   );
 
   const detect = useQuery({
     queryKey: ["detect", detectReq],
     queryFn: () => api.detect(detectReq),
+    placeholderData: (prev) => prev,
   });
 
   const baseline = useQuery({
@@ -107,6 +105,9 @@ export function ImageWorkspace() {
     [corners],
   );
 
+  const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
+    setDraft((d) => ({ ...d, ...patch }));
+
   return (
     <div style={{ display: "flex", height: "100%" }}>
       <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
@@ -136,7 +137,7 @@ export function ImageWorkspace() {
 
       <aside
         style={{
-          width: 300,
+          width: 320,
           flexShrink: 0,
           borderLeft: "1px solid var(--border)",
           background: "var(--bg1)",
@@ -148,9 +149,17 @@ export function ImageWorkspace() {
         }}
       >
         <div>
-          <Link to="/" style={{ fontSize: 12 }}>
-            ← dataset
-          </Link>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <Link to="/" style={{ fontSize: 12 }}>
+              ← dataset
+            </Link>
+            <Link
+              to={`/compare?label=${encodeURIComponent(label)}`}
+              style={{ fontSize: 12 }}
+            >
+              compare ⇄
+            </Link>
+          </div>
           <div
             className="mono"
             style={{ fontWeight: 600, marginTop: 4, wordBreak: "break-all" }}
@@ -161,95 +170,158 @@ export function ImageWorkspace() {
 
         <StatsBlock detect={detect} />
 
-        <div>
-          <div className="label" style={{ marginBottom: "var(--s2)" }}>
-            Run options
-          </div>
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
-          >
-            <SelectRow
-              label="Algorithm"
-              value={run.algorithm}
-              options={["topological", "seed_and_grow"]}
-              onChange={(v) =>
-                setRun({ ...run, algorithm: v as GraphBuildAlgorithm })
-              }
-            />
-            <SelectRow
-              label="Engine"
-              value={run.engine}
-              options={["pipeline", "grid"]}
-              onChange={(v) => setRun({ ...run, engine: v as EngineReq })}
-            />
-            <SelectRow
-              label="Orientation"
-              value={run.orientationSource}
-              options={["chess_axes", "neighbour_edges"]}
-              disabledOptions={
-                run.algorithm === "seed_and_grow" && run.engine === "pipeline"
-                  ? ["neighbour_edges"]
-                  : []
-              }
-              onChange={(v) =>
-                setRun({ ...run, orientationSource: v as OrientationSource })
-              }
-            />
-            <SelectRow
-              label="Axis fit"
-              value={run.orientationMethod}
-              options={["ring_fit", "disk_fit"]}
-              onChange={(v) =>
-                setRun({
-                  ...run,
-                  orientationMethod: v as OrientationMethodReq,
-                })
-              }
-            />
-          </div>
+        <div
+          style={{
+            display: "flex",
+            borderBottom: "1px solid var(--border)",
+            gap: 2,
+          }}
+        >
+          {(["detect", "config", "baseline"] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                padding: "6px 12px",
+                background: "transparent",
+                border: "none",
+                borderBottom:
+                  tab === t
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                color: tab === t ? "var(--text)" : "var(--text-muted)",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: tab === t ? 600 : 400,
+              }}
+            >
+              {t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ))}
         </div>
 
-        <div>
-          <div className="label" style={{ marginBottom: "var(--s2)" }}>
-            Layers
+        {tab === "detect" && (
+          <>
+            <div>
+              <div className="label" style={{ marginBottom: "var(--s2)" }}>
+                Run options
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "var(--s2)",
+                }}
+              >
+                <SelectRow
+                  label="Algorithm"
+                  value={draft.graph_build_algorithm ?? "topological"}
+                  options={["topological", "seed_and_grow"]}
+                  onChange={(v) =>
+                    setDraftField({
+                      graph_build_algorithm: v as GraphBuildAlgorithm,
+                    })
+                  }
+                />
+                <SelectRow
+                  label="Engine"
+                  value={runOpts.engine}
+                  options={["pipeline", "grid"]}
+                  onChange={(v) =>
+                    setRunOpts({ ...runOpts, engine: v as EngineReq })
+                  }
+                />
+                <SelectRow
+                  label="Orientation"
+                  value={draft.orientation_source ?? "chess_axes"}
+                  options={["chess_axes", "neighbour_edges"]}
+                  disabledOptions={
+                    (draft.graph_build_algorithm ?? "topological") ===
+                      "seed_and_grow" && runOpts.engine === "pipeline"
+                      ? ["neighbour_edges"]
+                      : []
+                  }
+                  onChange={(v) =>
+                    setDraftField({
+                      orientation_source: v as OrientationSource,
+                    })
+                  }
+                />
+                <SelectRow
+                  label="Axis fit"
+                  value={runOpts.orientationMethod}
+                  options={["ring_fit", "disk_fit"]}
+                  onChange={(v) =>
+                    setRunOpts({
+                      ...runOpts,
+                      orientationMethod: v as OrientationMethodReq,
+                    })
+                  }
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="label" style={{ marginBottom: "var(--s2)" }}>
+                Layers
+              </div>
+              <LayerToggles
+                toggles={[
+                  {
+                    id: "edges",
+                    label: "Grid edges",
+                    checked: visible["edges"] ?? true,
+                    swatch: OVERLAY_COLORS.edge,
+                  },
+                  {
+                    id: "corners",
+                    label: "Corners",
+                    checked: visible["corners"] ?? true,
+                    swatch: OVERLAY_COLORS.corner,
+                  },
+                  {
+                    id: "rings",
+                    label: "Origin / far rings",
+                    checked: visible["rings"] ?? true,
+                    swatch: OVERLAY_COLORS.origin,
+                  },
+                  {
+                    id: "ids",
+                    label: "(i, j) labels · zoom ≥ 2×",
+                    checked: visible["ids"] ?? false,
+                  },
+                  {
+                    id: "baseline-diff",
+                    label: "Baseline diff",
+                    checked: visible["baseline-diff"] ?? true,
+                    swatch: OVERLAY_COLORS.missing,
+                  },
+                ]}
+                onChange={(id, checked) =>
+                  setVisible((v) => ({ ...v, [id]: checked }))
+                }
+              />
+            </div>
+          </>
+        )}
+
+        {tab === "config" && (
+          <ConfigEditor draft={draft} onChange={setDraft} />
+        )}
+
+        {tab === "baseline" && (
+          <div>
+            {detect.data?.baseline?.exists && diff ? (
+              <DiffTable diff={diff} />
+            ) : (
+              <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
+                No baseline pinned for this snap. Baselines are blessed from
+                the bench CLI (<code>cargo bench-bless</code>); the studio is
+                read-only.
+              </div>
+            )}
           </div>
-          <LayerToggles
-            toggles={[
-              {
-                id: "edges",
-                label: "Grid edges",
-                checked: visible["edges"] ?? true,
-                swatch: OVERLAY_COLORS.edge,
-              },
-              {
-                id: "corners",
-                label: "Corners",
-                checked: visible["corners"] ?? true,
-                swatch: OVERLAY_COLORS.corner,
-              },
-              {
-                id: "rings",
-                label: "Origin / far rings",
-                checked: visible["rings"] ?? true,
-                swatch: OVERLAY_COLORS.origin,
-              },
-              {
-                id: "ids",
-                label: "(i, j) labels · zoom ≥ 2×",
-                checked: visible["ids"] ?? false,
-              },
-              {
-                id: "baseline-diff",
-                label: "Baseline diff",
-                checked: visible["baseline-diff"] ?? true,
-                swatch: OVERLAY_COLORS.missing,
-              },
-            ]}
-            onChange={(id, checked) =>
-              setVisible((v) => ({ ...v, [id]: checked }))
-            }
-          />
-        </div>
+        )}
       </aside>
     </div>
   );
@@ -258,7 +330,7 @@ export function ImageWorkspace() {
 function StatsBlock({
   detect,
 }: {
-  detect: ReturnType<typeof useQuery<import("../api/types").DetectResponse>>;
+  detect: { isLoading: boolean; error: unknown; data?: DetectResponse };
 }) {
   if (detect.isLoading) {
     return <div style={{ color: "var(--text-muted)" }}>detecting…</div>;

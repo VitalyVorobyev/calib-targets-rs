@@ -1,6 +1,7 @@
 //! Router assembly: `/api/*` JSON endpoints + static serving of the built
 //! SPA (`studio/dist`).
 
+pub mod configs;
 pub mod dataset;
 pub mod detect;
 
@@ -25,6 +26,12 @@ pub fn router(state: AppState, dev: bool) -> Router {
         .route("/image/{*label}", get(dataset::image))
         .route("/baseline/{*label}", get(dataset::baseline))
         .route("/detect", post(detect::detect))
+        .route("/configs", get(configs::list))
+        .route("/configs/_defaults", get(configs::defaults))
+        .route(
+            "/configs/{name}",
+            get(configs::get).put(configs::put).delete(configs::delete),
+        )
         .with_state(state)
         .layer(CorsLayer::permissive());
 
