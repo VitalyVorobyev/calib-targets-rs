@@ -20,7 +20,9 @@ cargo run -p calib-targets-bench --release --bin bench -- check --dataset privat
 
 # Private dataset test gates (slow, ignored by default)
 cargo test -p calib-targets-chessboard --release -- --ignored
-cargo test -p calib-targets-charuco --release -- --ignored
+# ChArUco's regression suites measure self-consistency wrong-ids via the
+# opt-in diagnostics channel, so they require the `diagnostics` feature.
+cargo test -p calib-targets-charuco --release --features diagnostics -- --ignored
 cargo test -p calib-targets-puzzleboard --release -- --ignored
 ```
 
