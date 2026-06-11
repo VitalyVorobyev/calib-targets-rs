@@ -254,7 +254,7 @@ def variants_for_case(
     threshold: float | None,
     axis_values: list[float | None],
 ) -> list[Variant]:
-    algorithms = ["topological", "chessboard_v2"] if algorithm == "all" else [algorithm]
+    algorithms = ["topological", "seed_and_grow"] if algorithm == "all" else [algorithm]
     variants: list[Variant] = []
     for algo in algorithms:
         if algo == "low_res":
@@ -358,7 +358,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", action="append", help="Image basename or manifest path to evaluate")
     parser.add_argument(
         "--algorithm",
-        choices=["all", "topological", "chessboard_v2", "low_res"],
+        choices=["all", "topological", "seed_and_grow", "low_res"],
         default="all",
     )
     parser.add_argument("--repeats", type=int, default=20)

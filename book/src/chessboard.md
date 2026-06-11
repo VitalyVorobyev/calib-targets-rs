@@ -50,8 +50,7 @@ and documented in `CLAUDE.md`):
 
 Any function computing a circular mean of axis angles MUST accumulate
 `(cos 2θ, sin 2θ)` and halve the atan2 result. Accumulating raw
-`(cos θ, sin θ)` breaks at the 0°/180° seam — this was the root cause of the
-v1 Phase-4 regression.
+`(cos θ, sin θ)` breaks at the 0°/180° seam.
 
 ---
 
@@ -324,7 +323,7 @@ shows the access path: top-level for the four stable knobs,
 
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
-| `graph_build_algorithm` | `ChessboardV2` | — | Seed-and-grow or topological grid builder. |
+| `graph_build_algorithm` | `Topological` | — | Topological or seed-and-grow grid builder. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
 | `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
@@ -400,7 +399,10 @@ use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 
 fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
-    let det = Detector::new(params);
+    // `Detector::new` validates params and is fallible: it returns
+    // `Err(ChessboardParamsError)` for an invalid combination (today, only
+    // `NeighbourEdges` orientation under `SeedAndGrow`).
+    let det = Detector::new(params).expect("valid params");
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());
         // `cell_size` (the seed-derived grid pitch in px) is populated on the
@@ -419,7 +421,7 @@ fn detect(corners: &[ChessCorner]) {
 }
 
 fn detect_multi(corners: &[ChessCorner]) {
-    let det = Detector::new(DetectorParams::default());
+    let det = Detector::new(DetectorParams::default()).expect("valid params");
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!("component {k}: {} corners", comp.corners.len());
     }

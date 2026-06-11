@@ -4,11 +4,11 @@ use projective_grid::{
     EvidenceKind, GridError, GridTask, LatticeKind, LocalAxis, OrientedFeature, PointFeature,
 };
 
-fn point(idx: usize) -> PointFeature<f32> {
+fn point(idx: usize) -> PointFeature {
     PointFeature::new(idx, Point2::new(idx as f32, 0.0))
 }
 
-fn assert_unsupported(request: DetectionRequest<'_, f32>, evidence: EvidenceKind) {
+fn assert_unsupported(request: DetectionRequest<'_>, evidence: EvidenceKind) {
     // Capture `lattice` before the request is consumed by `detect_grid`.
     let lattice = request.lattice;
     let err = detect_grid(request).unwrap_err();
@@ -22,22 +22,14 @@ fn assert_unsupported(request: DetectionRequest<'_, f32>, evidence: EvidenceKind
     );
 }
 
-#[test]
-fn square_position_detection_is_typed_unsupported() {
-    let features = [point(0), point(1), point(2), point(3)];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Positions(&features),
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::Positions);
-}
-
-// `square_oriented_detection_is_typed_unsupported` was removed in Phase C of
-// the `projective-grid` rewrite: `(LatticeKind::Square,
-// Evidence::Oriented2)` now runs the seed-and-grow port and returns a real
-// labelled grid. The success path is covered by
+// `square_position_detection_is_typed_unsupported` was removed in Phase 4 of
+// the `projective-grid` rewrite: `(LatticeKind::Square, Evidence::Positions)`
+// now runs orientation-free detection and returns a real labelled grid. The
+// success path is covered by `tests/detect_square_positions.rs`.
+//
+// `square_oriented_detection_is_typed_unsupported` was removed in Phase C:
+// `(LatticeKind::Square, Evidence::Oriented2)` now runs the seed-and-grow port
+// and returns a real labelled grid. The success path is covered by
 // `tests/detect_square_oriented2.rs`.
 
 #[test]
@@ -56,17 +48,41 @@ fn hex_position_detection_is_typed_unsupported() {
 fn hex_oriented_detection_is_typed_unsupported() {
     let axis = LocalAxis::new(0.0_f32, None);
     let features = [
-        OrientedFeature::<_, 3>::new(
+        OrientedFeature::<3>::new(
             point(0),
             [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
         ),
-        OrientedFeature::<_, 3>::new(
+        OrientedFeature::<3>::new(
             point(1),
             [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
         ),
     ];
     let request = DetectionRequest::new(
         LatticeKind::Hex,
+        Evidence::Oriented3(&features),
+        None,
+        DetectionParams::default(),
+    );
+    assert_unsupported(request, EvidenceKind::Oriented3);
+}
+
+#[test]
+fn square_oriented3_detection_is_typed_unsupported() {
+    // `(Square, Oriented3)` is reserved as hex-native triple-axis evidence;
+    // no square algorithm consumes a third axis, so it stays unsupported.
+    let axis = LocalAxis::new(0.0_f32, None);
+    let features = [
+        OrientedFeature::<3>::new(
+            point(0),
+            [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
+        ),
+        OrientedFeature::<3>::new(
+            point(1),
+            [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
+        ),
+    ];
+    let request = DetectionRequest::new(
+        LatticeKind::Square,
         Evidence::Oriented3(&features),
         None,
         DetectionParams::default(),

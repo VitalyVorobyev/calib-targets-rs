@@ -1,4 +1,16 @@
 //! Geometry helpers shared by grid tasks.
+//!
+//! Owns the crate's homography estimators: the public [`estimate_projective`]
+//! (plain DLT returning `nalgebra::Projective2`, used for the final lattice
+//! fit and consistency check) and the [`homography`] submodule's Hartley-
+//! normalised DLT + quality (returning the [`Homography`] wrapper, used for
+//! local per-cell fits in seed, validate, and extension).
+
+pub mod homography;
+pub use homography::{
+    estimate_homography, estimate_homography_with_quality, homography_from_4pt,
+    homography_from_4pt_with_quality, Homography, HomographyQuality,
+};
 
 use nalgebra::{DMatrix, DVector, Matrix3, Point2, Projective2, Vector3};
 

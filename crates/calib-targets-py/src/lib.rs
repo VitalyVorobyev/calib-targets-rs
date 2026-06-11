@@ -184,7 +184,13 @@ fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::C
     if obj.is_none() {
         return Err(value_error("params is required for ChArUco detection"));
     }
-    from_py_json(obj, "params")
+    let mut params: charuco::CharucoParams = from_py_json(obj, "params")?;
+    // ChArUco only supports the seed-and-grow builder. The embedded chessboard
+    // `graph_build_algorithm` defaults to the (standalone) topological builder
+    // when omitted from the config, which charuco rejects at detect time — so
+    // re-pin seed-and-grow, matching `CharucoParams::for_board`.
+    params.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::SeedAndGrow;
+    Ok(params)
 }
 
 fn marker_board_params_from_py(
@@ -287,7 +293,9 @@ fn detect_chessboard(
 
     let result = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone()).detect(&corners)
+        chessboard::Detector::new(params.clone())
+            .ok()
+            .and_then(|d| d.detect(&corners))
     });
     match result {
         Some(res) => {
@@ -329,7 +337,9 @@ fn detect_chessboard_all(
 
     let results = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone()).detect_all(&corners)
+        chessboard::Detector::new(params.clone())
+            .map(|d| d.detect_all(&corners))
+            .unwrap_or_default()
     });
     let json =
         serde_json::to_value(results).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -365,9 +375,13 @@ fn detect_chessboard_debug(
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
+    // Validate the configuration up front so an invalid combination surfaces
+    // as a Python error rather than panicking inside the worker thread.
+    let detector = chessboard::Detector::new(params.clone())
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let frame = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone()).detect_with_diagnostics(&corners)
+        detector.detect_with_diagnostics(&corners)
     });
     let json =
         serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
@@ -413,7 +427,9 @@ fn trace_chessboard_topological(
             .collect();
 
         let trace_result = chessboard::trace_topological(&corners, &params);
-        let detections = chessboard::Detector::new(params.clone()).detect_all(&corners);
+        let detections = chessboard::Detector::new(params.clone())
+            .map(|d| d.detect_all(&corners))
+            .unwrap_or_default();
 
         let mut payload = serde_json::json!({
             "schema": 1,
@@ -472,7 +488,8 @@ fn detect_marker_board(
     let result = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
         marker::MarkerBoardDetector::new(params.clone())
-            .detect_from_image_and_corners(&detect::gray_view(&img), &corners)
+            .ok()
+            .and_then(|d| d.detect_from_image_and_corners(&detect::gray_view(&img), &corners))
     });
     match result {
         Some(res) => {
@@ -584,7 +601,8 @@ fn detect_marker_board_with_diagnostics(
 
     let payload = py.detach(move || -> Result<Value, String> {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        let detector = marker::MarkerBoardDetector::new(params.clone());
+        let detector =
+            marker::MarkerBoardDetector::new(params.clone()).map_err(|e| e.to_string())?;
         match detector
             .detect_from_image_and_corners_with_diagnostics(&detect::gray_view(&img), &corners)
         {
@@ -712,7 +730,11 @@ fn detect_charuco_best(
         .map_err(|_| value_error("configs must be a list"))?;
     let mut params_vec = Vec::with_capacity(list.len());
     for item in list.iter() {
-        params_vec.push(from_py_json::<charuco::CharucoParams>(&item, "configs[]")?);
+        let mut cfg = from_py_json::<charuco::CharucoParams>(&item, "configs[]")?;
+        // ChArUco only supports seed-and-grow; re-pin in case the config
+        // omitted the (now topological-defaulting) chessboard algorithm.
+        cfg.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::SeedAndGrow;
+        params_vec.push(cfg);
     }
 
     let result = py.detach(move || detect::detect_charuco_best(&img, &params_vec));

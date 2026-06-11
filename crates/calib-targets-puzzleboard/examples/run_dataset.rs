@@ -20,9 +20,9 @@
 //! confidence statistics.
 //!
 //! `--algorithm` selects the chessboard graph-build algorithm the
-//! puzzle decode runs on (`chessboard-v2`, the default, or
+//! puzzle decode runs on (`seed-and-grow`, the default, or
 //! `topological`). PuzzleBoard inherits this choice via its nested
-//! `DetectorParams` — unlike ChArUco, it does not pin ChessboardV2 —
+//! `DetectorParams` — unlike ChArUco, it does not pin SeedAndGrow —
 //! so the flag exercises a genuinely different detection path.
 //!
 //! Usage:
@@ -31,7 +31,7 @@
 //!     --dataset <dir-of-stacked-targets> \
 //!     --out     <run-output-dir> \
 //!     --upscale 2 --rows N --cols N --cell-size-mm F \
-//!     [--algorithm chessboard-v2|topological]
+//!     [--algorithm seed-and-grow|topological]
 //! ```
 
 use std::env;
@@ -78,17 +78,17 @@ fn usage_and_exit() -> ! {
          [--upscale N] [--origin-row N] [--origin-col N] \
          [--search-mode full|fixed-board] \
          [--scoring-mode hard|soft] \
-         [--algorithm chessboard-v2|topological]"
+         [--algorithm seed-and-grow|topological]"
     );
     std::process::exit(2);
 }
 
 fn parse_algorithm(s: &str) -> GraphBuildAlgorithm {
     match s {
-        "chessboard-v2" | "chessboard_v2" | "v2" => GraphBuildAlgorithm::ChessboardV2,
+        "seed-and-grow" | "seed_and_grow" => GraphBuildAlgorithm::SeedAndGrow,
         "topological" | "topo" => GraphBuildAlgorithm::Topological,
         other => {
-            eprintln!("--algorithm must be 'chessboard-v2' or 'topological' (got '{other}')");
+            eprintln!("--algorithm must be 'seed-and-grow' or 'topological' (got '{other}')");
             std::process::exit(2);
         }
     }
@@ -229,7 +229,7 @@ fn main() {
         cfg.decode.search_mode = args.search_mode;
         cfg.decode.scoring_mode = args.scoring_mode;
         // PuzzleBoard inherits the caller's graph-build choice via its
-        // nested `DetectorParams` (unlike ChArUco, which pins ChessboardV2).
+        // nested `DetectorParams` (unlike ChArUco, which pins SeedAndGrow).
         cfg.chessboard.graph_build_algorithm = args.algorithm;
         cfg.chessboard.min_corner_strength = args.min_corner_strength;
     }
@@ -280,7 +280,8 @@ fn main() {
             let t_corners = t0.elapsed();
 
             let t0 = Instant::now();
-            let chess_detector = ChessDetector::new(chess_params.clone());
+            let chess_detector =
+                ChessDetector::new(chess_params.clone()).expect("valid detector params");
             let chessboard_frame = chess_detector.detect_with_diagnostics(&corners);
             let t_chessboard = t0.elapsed();
 

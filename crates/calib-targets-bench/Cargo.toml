@@ -18,6 +18,9 @@ calib-targets-core = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }
 nalgebra = { workspace = true }
+# The grid-level bench engine drives the grid builder directly (bypassing the
+# chessboard recovery stages) for the orientation-source head-to-head.
+projective-grid = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tracing = { workspace = true }

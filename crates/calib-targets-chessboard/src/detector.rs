@@ -13,7 +13,7 @@
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
 
-use crate::params::{DetectorParams, GraphBuildAlgorithm};
+use crate::params::{ChessboardParamsError, DetectorParams, GraphBuildAlgorithm};
 use crate::pipeline::{self, run_pipeline_lean};
 use crate::topological::detect_all_topological;
 
@@ -37,9 +37,19 @@ pub struct Detector {
 }
 
 impl Detector {
-    /// Construct a detector with the given parameters.
-    pub fn new(params: DetectorParams) -> Self {
-        Self { params }
+    /// Construct a detector with the given parameters, validating the
+    /// configuration up front.
+    ///
+    /// Returns a typed [`ChessboardParamsError`] for any combination the
+    /// detector cannot honour (currently
+    /// [`OrientationSource::NeighbourEdges`](crate::params::OrientationSource::NeighbourEdges)
+    /// with [`GraphBuildAlgorithm::SeedAndGrow`] — see
+    /// [`DetectorParams::validate`]). This mirrors the fallible constructors
+    /// on the sibling detectors (`CharucoDetector`, `PuzzleBoardDetector`),
+    /// so the binding layer wraps a single `Result` surface uniformly.
+    pub fn new(params: DetectorParams) -> Result<Self, ChessboardParamsError> {
+        params.validate()?;
+        Ok(Self { params })
     }
 
     /// Simple entry point: run the pipeline and return the best detection.
@@ -54,7 +64,7 @@ impl Detector {
     pub fn detect(&self, corners: &[ChessCorner]) -> Option<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => self.detect_all(corners).into_iter().next(),
-            GraphBuildAlgorithm::ChessboardV2 => {
+            GraphBuildAlgorithm::SeedAndGrow => {
                 run_pipeline_lean(&self.params, corners, &HashSet::new()).detection
             }
         }
@@ -104,7 +114,7 @@ impl Detector {
     pub fn detect_all(&self, corners: &[ChessCorner]) -> Vec<ChessboardDetection> {
         match self.params.graph_build_algorithm {
             GraphBuildAlgorithm::Topological => detect_all_topological(corners, &self.params),
-            GraphBuildAlgorithm::ChessboardV2 => {
+            GraphBuildAlgorithm::SeedAndGrow => {
                 // Lean multi-component sweep: run the pipeline once per
                 // component, marking each recovered component's corners
                 // consumed so the next pass sees a fresh scene. Mirrors
@@ -173,6 +183,7 @@ impl Detector {
 mod tests {
     use super::*;
     use crate::corner::ChessCorner;
+    use crate::params::OrientationSource;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
@@ -215,7 +226,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         assert_eq!(d.corners.len(), 49);
     }
@@ -237,7 +248,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         let cell = d.cell_size.expect("cell_size populated on detect() path");
         assert!(
@@ -248,8 +259,69 @@ mod tests {
 
     #[test]
     fn rejects_when_too_few_corners() {
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         assert!(det.detect(&[]).is_none());
+    }
+
+    /// Neighbour-edge orientation (axes synthesized from neighbour geometry,
+    /// ChESS axes ignored) recovers a clean grid via the topological builder
+    /// with zero duplicate `(i, j)` labels.
+    #[test]
+    fn neighbour_edges_topological_recovers_clean_grid() {
+        let s = 20.0_f32;
+        let mut corners = Vec::new();
+        let mut k = 0;
+        for j in 0..7_i32 {
+            for i in 0..7_i32 {
+                let x = i as f32 * s + 50.0;
+                let y = j as f32 * s + 50.0;
+                // Axes are deliberately set; neighbour-edge mode must ignore
+                // them and synthesize directions from neighbour geometry.
+                corners.push(make_corner(k, x, y, (i + j).rem_euclid(2) == 1));
+                k += 1;
+            }
+        }
+        let params = DetectorParams {
+            graph_build_algorithm: GraphBuildAlgorithm::Topological,
+            orientation_source: OrientationSource::NeighbourEdges,
+            ..DetectorParams::default()
+        };
+        let det = Detector::new(params).expect("topological + neighbour-edges valid");
+        let d = det.detect(&corners).expect("neighbour-edge detection");
+        assert!(
+            d.corners.len() >= 36,
+            "neighbour-edge recall too low on clean grid: {}",
+            d.corners.len()
+        );
+        let mut seen = std::collections::HashSet::new();
+        for c in &d.corners {
+            assert!(
+                seen.insert((c.grid.i, c.grid.j)),
+                "duplicate label {:?}",
+                (c.grid.i, c.grid.j)
+            );
+        }
+    }
+
+    /// Neighbour-edge orientation on the native SeedAndGrow pipeline is
+    /// unsupported. It is now a *typed* error surfaced by `validate()` and the
+    /// fallible [`Detector::new`] rather than a runtime panic, so a head-to-head
+    /// measurement can never silently fall back to ChESS axes.
+    #[test]
+    fn neighbour_edges_seed_and_grow_is_typed_error() {
+        let params = DetectorParams {
+            graph_build_algorithm: GraphBuildAlgorithm::SeedAndGrow,
+            orientation_source: OrientationSource::NeighbourEdges,
+            ..DetectorParams::default()
+        };
+        assert_eq!(
+            params.validate(),
+            Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
+        );
+        assert!(matches!(
+            Detector::new(params.clone()),
+            Err(ChessboardParamsError::NeighbourEdgesRequiresTopological)
+        ));
     }
 
     #[test]
@@ -270,7 +342,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         // Locate (0, 0) and the two neighbors.
         let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
@@ -311,7 +383,7 @@ mod tests {
                 k += 1;
             }
         }
-        let det = Detector::new(DetectorParams::default());
+        let det = Detector::new(DetectorParams::default()).expect("default params valid");
         let frame = det.detect_with_diagnostics(&corners);
         let counts = StageCounts::from_frame(&frame);
         assert!(frame.detection.is_some(), "expected detection on 7x7 grid");

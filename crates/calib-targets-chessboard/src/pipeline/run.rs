@@ -11,13 +11,22 @@
 //!   feature). Drives the *same* loop body via the shared helpers below
 //!   and additionally accumulates a full [`DebugFrame`].
 //!
-//! The seed/grow/validate iteration body and the converged-iteration
-//! post-grow stage sequence live in shared helpers
-//! ([`run_iteration_step`], [`run_converged_iteration`]) so the two entry
-//! points cannot diverge on which corners are admitted or dropped — only
-//! on how much introspection they record.
+//! The multi-iteration `find_seed → grow → validate → blacklist`
+//! convergence loop itself lives in
+//! [`projective_grid::seed_and_grow::pipeline`]; this module supplies the
+//! chessboard-specific per-iteration geometry via [`ChessboardDriver`] and
+//! replays the loop's per-iteration records onto the `CornerAug` stage
+//! machine + [`DebugFrame`]. The converged-iteration post-grow stage
+//! sequence lives in the shared [`run_converged_iteration`] helper so the
+//! two entry points cannot diverge on which corners are admitted or
+//! dropped — only on how much introspection they record.
 
 use std::collections::HashSet;
+
+use projective_grid::seed_and_grow::pipeline::{
+    run_convergence_loop, IterationDriver, IterationOutcome, IterationProduct, LoopParams,
+    LoopReport,
+};
 
 use crate::boosters::apply_boosters;
 use crate::cluster::{cluster_axes, fix_partial_slot_flips_post_stage6, ClusterCenters};
@@ -64,153 +73,127 @@ fn prefilter(augs: &mut [CornerAug], params: &DetectorParams, consumed: &HashSet
         >= params.min_labeled_corners
 }
 
-/// State carried across the `find_seed → grow → validate` loop, shared by
-/// both entry points so the iteration logic has a single source of truth.
-struct LoopState {
-    blacklist: HashSet<usize>,
-    /// Seed-derived cell size of the most recent seed. Recorded only for
-    /// the diagnostics frame; the stable result carries its own copy on
-    /// [`ChessboardDetection::cell_size`].
-    #[cfg(feature = "diagnostics")]
-    cell_size: Option<f32>,
-    /// Indices of the most recent seed quad, when one was found. Recorded
-    /// only for the diagnostics frame.
-    #[cfg(feature = "diagnostics")]
-    seed_indices: Option<[usize; 4]>,
-}
-
-/// Outcome of one `find_seed → grow → validate` iteration.
-enum IterStep {
-    /// No seed could be found — stop the loop with no further work.
-    SeedFailed,
-    /// Validation flagged new outliers; the loop re-runs after blacklisting.
-    /// The carried fields feed the diagnostics frame's per-iteration trace
-    /// only; the lean path ignores them.
-    NotConverged {
-        #[cfg(feature = "diagnostics")]
-        new_blacklist: Vec<usize>,
-        #[cfg(feature = "diagnostics")]
-        labelled_count: usize,
-    },
-    /// Converged (or soft-converged): post-grow stages ran, this is final.
-    Converged(Box<ConvergedOutput>),
-}
-
-/// Run a single `find_seed → grow → validate` iteration and, on
-/// convergence, the full post-grow stage sequence.
+/// Chessboard driver for [`projective_grid`]'s convergence loop.
 ///
-/// Mutates `augs` and `state` in place. The returned [`IterStep`] tells
-/// the caller whether to continue the loop, stop, or accept the converged
-/// result. This is the shared body both entry points drive.
-fn run_iteration_step(
-    augs: &mut [CornerAug],
-    state: &mut LoopState,
+/// The generic loop in
+/// [`projective_grid::seed_and_grow::pipeline`] owns the iteration counter,
+/// the soft-convergence arithmetic, and the blacklist accumulation, and
+/// reasons purely over feature **indices**. This driver supplies the
+/// chessboard-specific per-iteration geometry — `find_seed → grow → validate`
+/// composed with the chessboard's parity/cluster policy — and owns the
+/// per-corner [`CornerAug`] stage machine the loop never touches.
+///
+/// # Stage mutation is load-bearing across iterations
+///
+/// `find_seed` selects seed candidates by reading
+/// [`CornerStage::Clustered`], so the previous iteration's
+/// `Labeled → LabeledThenBlacklisted` stage marks (for blacklisted corners)
+/// and `Labeled → Clustered` resets (for surviving corners) must be applied
+/// *before* the next `find_seed`. The driver therefore re-derives those
+/// stage marks from the running blacklist at the start of every iteration
+/// (idempotent), reproducing the historical end-of-iteration mark sequence
+/// byte-for-byte. The terminal soft-convergence residual marks (which never
+/// feed a subsequent `find_seed`) are applied by the post-loop replay.
+///
+/// The converged iteration's `seed` / `cell_size` / `grow_res` / validation
+/// residuals are stashed so the post-loop handoff can drive
+/// [`run_converged_iteration`] without re-running the geometry.
+struct ChessboardDriver<'a> {
+    augs: &'a mut [CornerAug],
     centers: ClusterCenters,
-    it: u32,
-    params: &DetectorParams,
-) -> IterStep {
-    // Reset any Labeled stage on corners not in blacklist — re-run means
-    // re-label from scratch in this iteration.
-    for aug in augs.iter_mut() {
-        if matches!(aug.stage, CornerStage::Labeled { .. })
-            && !state.blacklist.contains(&aug.input_index)
-        {
-            // Stage-3 → Stage-5 invariant: every Labeled corner carries
-            // its cluster label. If it's somehow missing, leave the stage
-            // as-is rather than panicking — the next iteration's checks
-            // will re-handle this corner.
-            if let Some(label) = aug.label {
-                aug.stage = CornerStage::Clustered { label };
-            }
+    params: &'a DetectorParams,
+    /// Context of the most recent successful iteration, overwritten each
+    /// pass. After the loop stops on a converged iteration this holds that
+    /// iteration's context for the post-grow handoff.
+    last: Option<IterationContext>,
+}
+
+/// The geometric context the driver stashes per iteration for the post-loop
+/// converged handoff.
+struct IterationContext {
+    seed: Seed,
+    cell_size: f32,
+    grow_res: GrowResult,
+    validation: ValidationResult,
+}
+
+impl<'a> ChessboardDriver<'a> {
+    fn new(augs: &'a mut [CornerAug], centers: ClusterCenters, params: &'a DetectorParams) -> Self {
+        Self {
+            augs,
+            centers,
+            params,
+            last: None,
         }
     }
 
-    let seed_out: SeedOutput = match find_seed(augs, centers, params) {
-        Some(s) => s,
-        None => return IterStep::SeedFailed,
-    };
-    let seed = seed_out.seed;
-    let cell_size = seed_out.cell_size;
-    #[cfg(feature = "diagnostics")]
-    {
-        state.cell_size = Some(cell_size);
-        state.seed_indices = Some([seed.a, seed.b, seed.c, seed.d]);
-    }
-
-    let mut grow_res: GrowResult =
-        grow_from_seed(augs, seed, centers, cell_size, &state.blacklist, params);
-
-    let labelled_count = grow_res.labelled.len();
-
-    let v: ValidationResult = validate(augs, &grow_res.labelled, cell_size, params);
-    let new_blacklist: Vec<usize> = v
-        .blacklist
-        .iter()
-        .filter(|idx| !state.blacklist.contains(idx))
-        .copied()
-        .collect();
-
-    let converged = new_blacklist.is_empty();
-    // Soft convergence: when the validator keeps flagging a small residual
-    // set (≤ 2 corners) over multiple rounds, the labelled set has
-    // effectively stabilised — we're oscillating on borderline-outlier
-    // corners. Apply the current round's blacklist and accept. Bounded
-    // below by `iter >= 2` so we never emit until we've seen at least two
-    // validation passes confirm the bulk of the labels.
-    let soft_converged = !converged
-        && it + 1 >= 2
-        && new_blacklist.len() <= 2
-        && labelled_count >= params.min_labeled_corners;
-
-    if converged || soft_converged {
-        if soft_converged {
-            // Apply the current round's blacklist before accepting so the
-            // emitted detection excludes the flagged outliers.
-            for &idx in &new_blacklist {
-                if let CornerStage::Labeled { at, .. } = augs[idx].stage {
-                    augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+    /// Re-derive the per-corner stage marks from the running blacklist:
+    /// reset surviving `Labeled` corners to `Clustered` and mark blacklisted
+    /// `Labeled` corners as `LabeledThenBlacklisted`. Reproduces the
+    /// historical end-of-iteration mark sequence so `find_seed` sees an
+    /// identical stage state.
+    fn sync_stages_to_blacklist(&mut self, blacklist: &HashSet<usize>) {
+        for aug in self.augs.iter_mut() {
+            if blacklist.contains(&aug.input_index) {
+                if let CornerStage::Labeled { at, .. } = aug.stage {
+                    aug.stage = CornerStage::LabeledThenBlacklisted {
                         at,
-                        reason: "soft-convergence outlier".into(),
+                        reason: "post-validation outlier".into(),
                     };
                 }
-                grow_res.labelled.retain(|_, &mut v| v != idx);
-                grow_res.by_corner.remove(&idx);
-                state.blacklist.insert(idx);
+            } else if matches!(aug.stage, CornerStage::Labeled { .. }) {
+                // Stage-3 → Stage-5 invariant: every Labeled corner carries
+                // its cluster label. If it's somehow missing, leave the
+                // stage as-is rather than panicking — the next iteration's
+                // checks will re-handle this corner.
+                if let Some(label) = aug.label {
+                    aug.stage = CornerStage::Clustered { label };
+                }
             }
         }
+    }
+}
 
-        let output = run_converged_iteration(ConvergedCtx {
-            params,
-            it,
-            centers,
+impl IterationDriver for ChessboardDriver<'_> {
+    fn run_iteration(&mut self, blacklist: &HashSet<usize>, _it: u32) -> IterationProduct {
+        // Reset / mark stages from the running blacklist before seeding.
+        self.sync_stages_to_blacklist(blacklist);
+
+        let seed_out: SeedOutput = match find_seed(self.augs, self.centers, self.params) {
+            Some(s) => s,
+            None => return IterationProduct::seed_failed(),
+        };
+        let seed = seed_out.seed;
+        let cell_size = seed_out.cell_size;
+
+        let grow_res: GrowResult = grow_from_seed(
+            self.augs,
+            seed,
+            self.centers,
+            cell_size,
+            blacklist,
+            self.params,
+        );
+
+        let validation: ValidationResult =
+            validate(self.augs, &grow_res.labelled, cell_size, self.params);
+
+        let product = IterationProduct {
+            seed_found: true,
+            labelled: grow_res.labelled.clone(),
+            validation_blacklist: validation.blacklist.iter().copied().collect(),
+            cell_size: Some(cell_size),
+            seed_indices: Some([seed.a, seed.b, seed.c, seed.d]),
+        };
+
+        self.last = Some(IterationContext {
             seed,
             cell_size,
-            labelled_count,
-            new_blacklist,
-            augs,
             grow_res,
-            blacklist: &mut state.blacklist,
-            local_h_residuals: &v.local_h_residuals,
+            validation,
         });
-        return IterStep::Converged(Box::new(output));
-    }
 
-    // Non-converged: mark blacklisted corners and retry.
-    for &idx in &new_blacklist {
-        if let CornerStage::Labeled { at, .. } = augs[idx].stage {
-            augs[idx].stage = CornerStage::LabeledThenBlacklisted {
-                at,
-                reason: "post-validation outlier".into(),
-            };
-        }
-        state.blacklist.insert(idx);
-    }
-
-    IterStep::NotConverged {
-        #[cfg(feature = "diagnostics")]
-        new_blacklist,
-        #[cfg(feature = "diagnostics")]
-        labelled_count,
+        product
     }
 }
 
@@ -243,28 +226,98 @@ pub(crate) fn run_pipeline_lean(
         return PipelineOutcome { detection: None };
     };
 
-    let mut state = LoopState {
-        blacklist: HashSet::new(),
-        #[cfg(feature = "diagnostics")]
-        cell_size: None,
-        #[cfg(feature = "diagnostics")]
-        seed_indices: None,
-    };
-    let max_iters = params.effective_tuning().max_validation_iters.max(1);
+    let mut driver = ChessboardDriver::new(&mut augs, centers, params);
+    let report = run_convergence_loop(&mut driver, loop_params(params));
 
-    let mut detection = None;
-    for it in 0..max_iters {
-        match run_iteration_step(&mut augs, &mut state, centers, it, params) {
-            IterStep::SeedFailed => break,
-            IterStep::NotConverged { .. } => continue,
-            IterStep::Converged(output) => {
-                detection = output.detection;
-                break;
+    let detection = replay_converged(&mut driver, &report).and_then(|out| out.detection);
+
+    PipelineOutcome { detection }
+}
+
+/// Build the generic loop parameters from the chessboard tuning. Mirrors the
+/// historical soft-convergence constants (`it + 1 >= 2`, residual `≤ 2`,
+/// labelled `>= min_labeled_corners`) so the loop decisions are byte-exact.
+fn loop_params(params: &DetectorParams) -> LoopParams {
+    LoopParams::new(
+        params.effective_tuning().max_validation_iters,
+        2,
+        2,
+        params.min_labeled_corners,
+    )
+}
+
+/// Total blacklist accumulated across the loop — the union of every
+/// iteration's `new_blacklist` delta, which equals the loop's internal
+/// running blacklist at termination. Rebuilt here because the generic loop
+/// owns the set internally and reports only the per-iteration deltas.
+fn accumulated_blacklist(report: &LoopReport) -> HashSet<usize> {
+    let mut bl = HashSet::new();
+    for rec in &report.iterations {
+        for &idx in &rec.new_blacklist {
+            bl.insert(idx);
+        }
+    }
+    bl
+}
+
+/// Replay the converged iteration's record onto the driver's stashed
+/// geometry and run the full post-grow stage sequence.
+///
+/// Returns `None` when the loop did not converge (seed failure or
+/// iteration-cap exhaustion). On a *soft* convergence, applies the record's
+/// residual blacklist (stage marks + labelled-set strip) before the
+/// post-grow stages, exactly as the historical inline loop did.
+fn replay_converged(
+    driver: &mut ChessboardDriver<'_>,
+    report: &LoopReport,
+) -> Option<ConvergedOutput> {
+    let conv = report.converged_record()?;
+    let soft = matches!(conv.outcome, IterationOutcome::Converged { soft: true });
+
+    // The driver stashed the converged iteration's geometry on its last
+    // `run_iteration` (the loop stops immediately after).
+    let ctx = driver.last.take()?;
+    let IterationContext {
+        seed,
+        cell_size,
+        mut grow_res,
+        validation,
+    } = ctx;
+
+    let mut blacklist = accumulated_blacklist(report);
+    let augs = &mut *driver.augs;
+
+    if soft {
+        // Apply the residual blacklist before accepting so the emitted
+        // detection excludes the flagged outliers. The generic loop already
+        // stripped them from `conv.labelled`; mirror that onto `grow_res`
+        // and the per-corner stage machine here.
+        for &idx in &conv.new_blacklist {
+            if let CornerStage::Labeled { at, .. } = augs[idx].stage {
+                augs[idx].stage = CornerStage::LabeledThenBlacklisted {
+                    at,
+                    reason: "soft-convergence outlier".into(),
+                };
             }
+            grow_res.labelled.retain(|_, &mut v| v != idx);
+            grow_res.by_corner.remove(&idx);
+            blacklist.insert(idx);
         }
     }
 
-    PipelineOutcome { detection }
+    Some(run_converged_iteration(ConvergedCtx {
+        params: driver.params,
+        it: conv.iter,
+        centers: driver.centers,
+        seed,
+        cell_size,
+        labelled_count: conv.labelled_count,
+        new_blacklist: conv.new_blacklist.clone(),
+        augs,
+        grow_res,
+        blacklist: &mut blacklist,
+        local_h_residuals: &validation.local_h_residuals,
+    }))
 }
 
 /// Diagnostics entry point: run the full pipeline for a single component
@@ -318,27 +371,37 @@ pub fn run_pipeline(
     };
     frame.grid_directions = Some([centers.theta0, centers.theta1]);
 
-    let mut state = LoopState {
-        blacklist: HashSet::new(),
-        cell_size: None,
-        seed_indices: None,
-    };
-    let max_iters = params.effective_tuning().max_validation_iters.max(1);
+    let mut driver = ChessboardDriver::new(&mut augs, centers, params);
+    let report = run_convergence_loop(&mut driver, loop_params(params));
 
-    for it in 0..max_iters {
-        let step = run_iteration_step(&mut augs, &mut state, centers, it, params);
-        frame.cell_size = state.cell_size;
-        frame.seed = state.seed_indices;
-        match step {
-            IterStep::SeedFailed => break,
-            IterStep::NotConverged {
-                new_blacklist,
-                labelled_count,
-            } => {
+    // Most-recent seed cell-size / indices, mirroring the historical
+    // per-iteration `LoopState` snapshot (the last record that carried a
+    // seed wins).
+    if let Some(rec) = report
+        .iterations
+        .iter()
+        .rev()
+        .find(|r| r.seed_indices.is_some())
+    {
+        frame.cell_size = rec.cell_size;
+        frame.seed = rec.seed_indices;
+    }
+
+    // Replay the converged iteration's post-grow stages, if any. The driver
+    // borrow ends here so `augs` is free again below.
+    let mut converged_output = replay_converged(&mut driver, &report);
+
+    // Emit one IterationTrace per recorded iteration. Non-converged and
+    // seed-failed iterations carry no post-grow stage traces; the converged
+    // iteration carries the full post-grow payload from the replay.
+    for rec in &report.iterations {
+        match rec.outcome {
+            IterationOutcome::SeedFailed => break,
+            IterationOutcome::NotConverged => {
                 frame.iterations.push(IterationTrace {
-                    iter: it,
-                    labelled_count,
-                    new_blacklist,
+                    iter: rec.iter,
+                    labelled_count: rec.labelled_count,
+                    new_blacklist: rec.new_blacklist.clone(),
                     converged: false,
                     extension: None,
                     rescue: None,
@@ -349,7 +412,10 @@ pub fn run_pipeline(
                     geometry_check: None,
                 });
             }
-            IterStep::Converged(output) => {
+            IterationOutcome::Converged { .. } => {
+                let Some(output) = converged_output.take() else {
+                    break;
+                };
                 let ConvergedOutput {
                     detection,
                     boosters,
@@ -363,7 +429,7 @@ pub fn run_pipeline(
                     extension2,
                     rescue2,
                     geometry_check,
-                } = *output;
+                } = output;
                 frame.boosters = Some(boosters);
                 frame.iterations.push(IterationTrace {
                     iter,
@@ -381,6 +447,7 @@ pub fn run_pipeline(
                 frame.detection = detection;
                 break;
             }
+            _ => break,
         }
     }
 

@@ -17,14 +17,21 @@
 //! Production [`detect_all_topological`] now calls
 //! [`projective_grid::detect_grid_all`] with
 //! [`SquareAlgorithm::Topological`](projective_grid::SquareAlgorithm::Topological).
-//! The output is bridged into the advanced
-//! [`projective-grid`](projective_grid) component-merge view so the existing recovery
-//! pipeline ([`recovery::merge`](self::recovery), boosters, geometry
-//! check) stays byte-identical with the pre-migration version. Validation
-//! and over-residual drops in the new pipeline are disabled (tolerances
-//! pushed to `+inf`) because the chessboard owns its own validation
-//! downstream; the new path is asked solely to produce labelled
-//! `(coord -> source_index)` components.
+//! The facade runs the shared local-geometry component merge itself (the
+//! same `merge_components_local` the seed-and-grow facade uses), so
+//! `report.solutions` arrives already merged. The adapter consumes those
+//! merged labelled components directly and feeds them to the chessboard's
+//! own recovery pipeline (boosters, post-recovery merge, geometry check).
+//! Validation and over-residual drops in the facade are disabled
+//! (tolerances pushed to `+inf`) because the chessboard owns its own
+//! validation downstream; the facade is asked solely to produce labelled
+//! `(coord -> source_index)` components and to reunite them in label space.
+//!
+//! The facade merge runs with `LocalMergeParams::default()`. The
+//! chessboard's `tuning.component_merge` is `LocalMergeParams::default()`
+//! for every shipping config (no preset or sweep overrides it), so the
+//! merged components — and hence production output — are byte-identical to
+//! the prior chessboard-side merge.
 //!
 //! [`trace_topological`] uses the same `projective-grid` production
 //! detector path and returns a compact serializable trace of the final
@@ -35,23 +42,20 @@ mod recovery;
 
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use projective_grid::detect::advanced::square::component_merge::{
-    merge_components_local, ComponentInput,
-};
-use projective_grid::detect::advanced::square::topological_trace::{
+use projective_grid::detect::ValidateParams as NextValidateParams;
+use projective_grid::topological::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
-use projective_grid::detect::ValidateParams as NextValidateParams;
 use projective_grid::{
-    detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
-    LatticeKind, OrientedFeature, PointFeature, SquareAlgorithm,
-    TopologicalParams as NextTopologicalParams,
+    detect_grid_all, synthesize_oriented2, DetectionParams as NextDetectionParams,
+    DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature, RecoverySchedule,
+    SquareAlgorithm, TopologicalParams as NextTopologicalParams,
 };
 use std::collections::HashMap;
 
 use crate::cluster::ClusterCenters;
 use crate::detector::ChessboardDetection;
-use crate::params::DetectorParams;
+use crate::params::{DetectorParams, OrientationSource};
 
 use self::inputs::topological_inputs;
 use self::recovery::{
@@ -68,9 +72,9 @@ use self::recovery::{
 /// must preserve the labelled components produced by the topological
 /// graph builder.
 fn detection_params_for_topological(
-    topological: &NextTopologicalParams<f32>,
+    topological: &NextTopologicalParams,
     clustered_centers: Option<ClusterCenters>,
-) -> NextDetectionParams<f32> {
+) -> NextDetectionParams {
     let mut topo = *topological;
     topo.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
 
@@ -79,12 +83,12 @@ fn detection_params_for_topological(
     // and its own per-component boosters first. Disabling here means a
     // corner the new pipeline would have flagged still gets a chance to
     // survive the chessboard's downstream stages.
-    let validate = NextValidateParams::<f32>::default()
+    let validate = NextValidateParams::default()
         .with_line_tol_rel(f32::INFINITY)
         .with_local_h_tol_rel(f32::INFINITY)
         .with_edge_length_band_rel(f32::INFINITY);
 
-    NextDetectionParams::<f32>::default()
+    NextDetectionParams::default()
         .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)
         .with_validate(validate)
@@ -92,6 +96,11 @@ fn detection_params_for_topological(
         // same reason: chessboard's `run_geometry_check` owns residual
         // gating downstream.
         .with_max_residual_px(f32::INFINITY)
+        // Disable the facade-internal recovery schedule. The chessboard runs
+        // its own `CornerStage`-coupled recovery (boosters + geometry check)
+        // downstream; the facade must add nothing here so production output
+        // (both ChESS-axis and neighbour-edge modes) stays byte-identical.
+        .with_recovery(RecoverySchedule::Off)
 }
 
 /// Build the new-crate oriented-feature slice from the chessboard's
@@ -101,7 +110,7 @@ fn detection_params_for_topological(
 fn build_oriented_features(
     positions: &[nalgebra::Point2<f32>],
     axes: &[[AxisEstimate; 2]],
-) -> Vec<OrientedFeature<f32, 2>> {
+) -> Vec<OrientedFeature<2>> {
     debug_assert_eq!(positions.len(), axes.len());
     positions
         .iter()
@@ -137,12 +146,22 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // Hoist clustering: chessboard-v2 uses `cluster_axes` as a precision
+    // Hoist clustering: seed-and-grow uses `cluster_axes` as a precision
     // bedrock before its seed-and-grow. Topological used to skip this and
     // pay the cost in spurious-edge admissions; we now compute centers
     // once up front, gate Delaunay through them, and reuse the same
     // `(augs, centers)` pair for booster recovery (no re-clustering).
-    let (base_augs, clustered_centers) = clustered_augs(corners, params);
+    let (base_augs, clustered_centers_chess) = clustered_augs(corners, params);
+
+    // Neighbour-edge orientation derives grid directions geometrically inside
+    // `projective-grid` (`synthesize_oriented2`); the ChESS-axis cluster
+    // centers must NOT be threaded in. Passing `None` engages the
+    // grid-derived-center fallback and skips the ChESS-axis parity alignment
+    // and booster pass in `recovery` — see [`recover_topological_components`].
+    let clustered_centers = match params.orientation_source {
+        OrientationSource::ChessAxes => clustered_centers_chess,
+        OrientationSource::NeighbourEdges => None,
+    };
 
     let inputs = topological_inputs(corners, params);
     if inputs.usable_count < params.min_labeled_corners {
@@ -157,37 +176,61 @@ pub fn detect_all_topological(
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
     // `NextTopologicalParams::default`. Do not reuse
-    // `tuning.cluster_tol_deg` (12°) — chessboard-v2's cluster gate
+    // `tuning.cluster_tol_deg` (12°) — seed-and-grow's cluster gate
     // has a sigma bonus and a booster fallback that topological lacks;
     // matching the 12° literally regresses Gemini2.
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
     let next_params = detection_params_for_topological(&tuning.topological, clustered_centers);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&next_features),
-        None,
-        next_params,
-    );
-    let report = match detect_grid_all(request) {
+    // ChESS axes feed `Evidence::Oriented2`; neighbour-edge mode feeds
+    // positions only and lets `projective-grid` synthesize the two local grid
+    // directions from neighbour geometry. The point cloud is identical in both
+    // modes (same `inputs.positions`), so only the axis *source* differs.
+    let report = match params.orientation_source {
+        OrientationSource::ChessAxes => {
+            let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Oriented2(&next_features),
+                None,
+                next_params,
+            ))
+        }
+        OrientationSource::NeighbourEdges => {
+            let point_features: Vec<PointFeature> = inputs
+                .positions
+                .iter()
+                .enumerate()
+                .map(|(i, &p)| PointFeature::new(i, p))
+                .collect();
+            detect_grid_all(DetectionRequest::new(
+                LatticeKind::Square,
+                Evidence::Positions(&point_features),
+                None,
+                next_params,
+            ))
+        }
+    };
+    let report = match report {
         Ok(r) => r,
         // `InsufficientEvidence` / `DegenerateGeometry` /
         // `UnsupportedCombination` all collapse to "no components". The
-        // The topological path maps these cases to "no components".
+        // topological path maps these cases to "no components".
         Err(_) => return Vec::new(),
     };
     if report.solutions.is_empty() {
         return Vec::new();
     }
 
-    // Bridge the new-crate output into the advanced component-merge
-    // `ComponentInput<'_>` shape so the existing recovery pipeline is
-    // byte-identical with the pre-migration version.
-    //
-    // The `&HashMap` borrows in `ComponentInput` outlive the call as long
-    // as the owning `Vec<HashMap<...>>` is alive — hence the two-vector
-    // split: first allocate the maps (owned), then collect references to
-    // them.
-    let labelled_maps: Vec<HashMap<(i32, i32), usize>> = report
+    // `projective_grid::detect_grid_all` now runs the local-geometry
+    // component merge inside the topological facade itself (mirroring its
+    // seed-and-grow facade), so `report.solutions` already arrives merged.
+    // The adapter therefore consumes the facade-merged components directly:
+    // the previous chessboard-side `merge_components_local` call would have
+    // double-merged and produced measured false attachments. Both merges
+    // moved together in one commit; the facade merge runs with
+    // `LocalMergeParams::default()`, which equals the chessboard's
+    // `tuning.component_merge` for every shipping config (the field is never
+    // overridden), so production output is byte-identical.
+    let merged_components: Vec<HashMap<(i32, i32), usize>> = report
         .solutions
         .iter()
         .map(|sol| {
@@ -198,28 +241,9 @@ pub fn detect_all_topological(
                 .collect()
         })
         .collect();
-    let component_views: Vec<ComponentInput<'_>> = labelled_maps
-        .iter()
-        .map(|labelled| ComponentInput {
-            labelled,
-            positions: &inputs.positions,
-        })
-        .collect();
-
-    #[cfg(feature = "tracing")]
-    let merged = {
-        let _span = tracing::debug_span!(
-            "topological_initial_component_merge",
-            num_components = component_views.len()
-        )
-        .entered();
-        merge_components_local(&component_views, &tuning.component_merge)
-    };
-    #[cfg(not(feature = "tracing"))]
-    let merged = merge_components_local(&component_views, &tuning.component_merge);
 
     let final_components = recover_topological_components(
-        &merged.components,
+        &merged_components,
         &inputs.positions,
         &base_augs,
         clustered_centers,
@@ -254,9 +278,24 @@ pub fn trace_topological(
     params: &DetectorParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
     let inputs = topological_inputs(corners, params);
-    let (_augs, clustered_centers) = clustered_augs(corners, params);
+    let (_augs, clustered_centers_chess) = clustered_augs(corners, params);
+    let clustered_centers = match params.orientation_source {
+        OrientationSource::ChessAxes => clustered_centers_chess,
+        OrientationSource::NeighbourEdges => None,
+    };
     let mut topo_params = params.effective_tuning().topological;
     topo_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
+    let next_features = match params.orientation_source {
+        OrientationSource::ChessAxes => build_oriented_features(&inputs.positions, &inputs.axes),
+        OrientationSource::NeighbourEdges => {
+            let point_features: Vec<PointFeature> = inputs
+                .positions
+                .iter()
+                .enumerate()
+                .map(|(i, &p)| PointFeature::new(i, p))
+                .collect();
+            synthesize_oriented2(&point_features)
+        }
+    };
     build_grid_topological_trace(&next_features, topo_params)
 }

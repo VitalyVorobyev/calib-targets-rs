@@ -2,9 +2,10 @@
 //! the value-enum knobs and their conversions into detector types, and the
 //! small param-loading helpers shared by the subcommands.
 
-use calib_targets::chessboard::{DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{DetectorParams, GraphBuildAlgorithm, OrientationSource};
 use calib_targets::detect::OrientationMethod;
 use calib_targets_bench::dataset::ImageKind;
+use calib_targets_bench::Engine;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -38,7 +39,7 @@ pub(crate) enum Cmd {
 pub(crate) struct DiagnoseArgs {
     /// Image path (relative to workspace root). Stitched composites accept
     /// a `#k` suffix to pick one sub-snap, e.g.
-    /// `privatedata/130x130_puzzle/target_15.png#3`.
+    /// `privatedata/<dataset>/target_15.png#3`.
     pub(crate) image: String,
     /// Output overlay path (default: `preview/diagnose/<stem>.png`).
     #[arg(long)]
@@ -48,18 +49,24 @@ pub(crate) struct DiagnoseArgs {
     /// Local-only output; do not commit.
     #[arg(long)]
     pub(crate) dump_frame: Option<String>,
-    /// Which graph-build algorithm to diagnose. `chessboard-v2` produces a
+    /// Which graph-build algorithm to diagnose. `seed-and-grow` produces a
     /// full `DebugFrame`; `topological` runs the production topological
     /// detector and renders an overlay of which corners ended up labelled.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    /// Default matches the production `GraphBuildAlgorithm` default.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
+    /// Where the topological builder gets per-corner grid directions.
+    /// `neighbour-edges` synthesizes them from neighbour geometry (topological
+    /// only). Has no effect on the `seed-and-grow` diagnose path.
+    #[arg(long, value_enum, default_value_t = OrientationSourceArg::ChessAxes)]
+    pub(crate) orientation_source: OrientationSourceArg,
     /// Override the topological pipeline's `axis_align_tol_rad` (in degrees).
     /// Larger values accept more edges as "grid" (potentially raising recall
     /// in distorted regions at the cost of precision).
     #[arg(long)]
     pub(crate) axis_align_tol_deg: Option<f32>,
     /// Optional JSON file with a serialised `DetectorParams` to override
-    /// chessboard-v2 defaults. Use for parameter sweeps without
+    /// seed-and-grow defaults. Use for parameter sweeps without
     /// recompilation. Unspecified fields fall back to defaults via the
     /// `DetectorParams` `#[serde(default = ...)]` attributes.
     #[arg(long)]
@@ -87,11 +94,25 @@ pub(crate) struct RunArgs {
     /// Restrict to a single image (relative path under workspace root).
     #[arg(long)]
     pub(crate) image: Option<String>,
-    /// Which graph-build algorithm to exercise.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    /// Which graph-build algorithm to exercise. Default matches the
+    /// production `GraphBuildAlgorithm` default, which is also the cell
+    /// `bless` pins baselines from.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
+    /// Detection engine. `pipeline` runs the full chessboard detector;
+    /// `grid` drives the projective-grid grid builder directly (the
+    /// orientation-source head-to-head, bypassing chessboard recovery).
+    /// The slug is part of the report filename so cells coexist.
+    #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
+    pub(crate) engine: EngineArg,
+    /// Where the grid builder gets per-corner grid directions.
+    /// `neighbour-edges` synthesizes them from neighbour geometry
+    /// (topological / grid engine only); `chess-axes` uses the ChESS
+    /// estimates. The slug is part of the report filename.
+    #[arg(long, value_enum, default_value_t = OrientationSourceArg::ChessAxes)]
+    pub(crate) orientation_source: OrientationSourceArg,
     /// Optional JSON file with a serialised partial `DetectorParams` that
-    /// overrides chessboard-v2 defaults. Same semantics as the diagnose
+    /// overrides seed-and-grow defaults. Same semantics as the diagnose
     /// subcommand's `--chessboard-config` flag.
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
@@ -118,9 +139,17 @@ pub(crate) struct PreviewArgs {
     pub(crate) all: bool,
     /// Which graph-build algorithm to exercise. Output filenames carry the
     /// algorithm name as a suffix so two runs can coexist in the same `--out`
-    /// directory.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::ChessboardV2)]
+    /// directory. Default matches the production `GraphBuildAlgorithm` default.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
+    /// Detection engine (see `run --help`). The slug is part of the overlay
+    /// filename so cells coexist in the same `--out` directory.
+    #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
+    pub(crate) engine: EngineArg,
+    /// Where the grid builder gets per-corner grid directions (see
+    /// `run --help`). The slug is part of the overlay filename.
+    #[arg(long, value_enum, default_value_t = OrientationSourceArg::ChessAxes)]
+    pub(crate) orientation_source: OrientationSourceArg,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
     /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
     /// disk-sector fit added in chess-corners 0.9.
@@ -159,14 +188,14 @@ impl From<DatasetKindArg> for ImageKind {
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub(crate) enum AlgorithmArg {
     Topological,
-    ChessboardV2,
+    SeedAndGrow,
 }
 
 impl AlgorithmArg {
     pub(crate) fn slug(self) -> &'static str {
         match self {
             AlgorithmArg::Topological => "topological",
-            AlgorithmArg::ChessboardV2 => "chessboard_v2",
+            AlgorithmArg::SeedAndGrow => "seed_and_grow",
         }
     }
 }
@@ -175,7 +204,61 @@ impl From<AlgorithmArg> for GraphBuildAlgorithm {
     fn from(v: AlgorithmArg) -> Self {
         match v {
             AlgorithmArg::Topological => GraphBuildAlgorithm::Topological,
-            AlgorithmArg::ChessboardV2 => GraphBuildAlgorithm::ChessboardV2,
+            AlgorithmArg::SeedAndGrow => GraphBuildAlgorithm::SeedAndGrow,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
+pub(crate) enum EngineArg {
+    /// Full chessboard production pipeline (`Detector::detect`).
+    Pipeline,
+    /// Raw projective-grid grid builder — the orientation-source head-to-head.
+    Grid,
+}
+
+impl EngineArg {
+    pub(crate) fn slug(self) -> &'static str {
+        match self {
+            EngineArg::Pipeline => "pipeline",
+            EngineArg::Grid => "grid",
+        }
+    }
+}
+
+impl From<EngineArg> for Engine {
+    fn from(v: EngineArg) -> Self {
+        match v {
+            EngineArg::Pipeline => Engine::Pipeline,
+            EngineArg::Grid => Engine::Grid,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
+pub(crate) enum OrientationSourceArg {
+    /// Per-corner ChESS axis estimates (production default).
+    ChessAxes,
+    /// Synthesize the two grid directions from neighbour-edge geometry.
+    /// Topological / grid engine only (the native seed-and-grow pipeline
+    /// consumes ChESS axes directly and panics on this combination).
+    NeighbourEdges,
+}
+
+impl OrientationSourceArg {
+    pub(crate) fn slug(self) -> &'static str {
+        match self {
+            OrientationSourceArg::ChessAxes => "chess_axes",
+            OrientationSourceArg::NeighbourEdges => "neighbour_edges",
+        }
+    }
+}
+
+impl From<OrientationSourceArg> for OrientationSource {
+    fn from(v: OrientationSourceArg) -> Self {
+        match v {
+            OrientationSourceArg::ChessAxes => OrientationSource::ChessAxes,
+            OrientationSourceArg::NeighbourEdges => OrientationSource::NeighbourEdges,
         }
     }
 }
@@ -204,13 +287,17 @@ impl From<OrientationMethodArg> for OrientationMethod {
     }
 }
 
-pub(crate) fn params_with(algorithm: AlgorithmArg) -> DetectorParams {
+pub(crate) fn params_with(
+    algorithm: AlgorithmArg,
+    orientation_source: OrientationSourceArg,
+) -> DetectorParams {
     let mut p = DetectorParams::default();
     p.graph_build_algorithm = algorithm.into();
+    p.orientation_source = orientation_source.into();
     p
 }
 
-/// Load a chessboard-v2 [`DetectorParams`] from an optional JSON file, falling
+/// Load a seed-and-grow [`DetectorParams`] from an optional JSON file, falling
 /// back to [`DetectorParams::default`] when the path is `None`. Partial files
 /// are supported: any field present overrides the default; missing fields keep
 /// their default value. Used by the diagnose subcommand to sweep params

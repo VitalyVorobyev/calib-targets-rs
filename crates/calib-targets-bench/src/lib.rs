@@ -23,7 +23,7 @@ pub mod runner;
 pub use baseline::{Baseline, BaselineCorner, BaselineImage};
 pub use dataset::{Dataset, DatasetEntry, ImageKind, Stitched};
 pub use diff::{BaselineDiff, WrongPosition};
-pub use runner::{run_entry, RunOutcome};
+pub use runner::{run_entry, Engine, RunOutcome};
 
 /// Workspace root inferred from `CARGO_MANIFEST_DIR`. The bench crate sits
 /// two levels below the workspace root.

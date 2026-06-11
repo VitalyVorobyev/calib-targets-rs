@@ -107,7 +107,7 @@ fn bench_all(c: &mut Criterion) {
     let mut chess_group = c.benchmark_group("puzzleboard/dataset/chessboard");
     for (label, _, corners) in &fixtures {
         chess_group.bench_with_input(BenchmarkId::from_parameter(label), corners, |b, corners| {
-            let detector = ChessDetector::new(chess_params.clone());
+            let detector = ChessDetector::new(chess_params.clone()).expect("valid detector params");
             b.iter(|| {
                 let frame = detector.detect_with_diagnostics(corners);
                 criterion::black_box(frame)

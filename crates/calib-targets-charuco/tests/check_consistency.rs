@@ -44,13 +44,13 @@ fn charuco_corners_pass_check_consistency_without_corner_ids() {
     let result = synthetic_charuco_result();
     assert!(result.corners.iter().all(|corner| corner.id >= 481));
 
-    let features: Vec<PointFeature<f32>> = result
+    let features: Vec<PointFeature> = result
         .corners
         .iter()
         .enumerate()
         .map(|(source_index, corner)| PointFeature::new(source_index, corner.position))
         .collect();
-    let hypotheses: Vec<CoordinateHypothesis<f32>> = result
+    let hypotheses: Vec<CoordinateHypothesis> = result
         .corners
         .iter()
         .enumerate()

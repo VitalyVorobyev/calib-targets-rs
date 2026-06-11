@@ -14,15 +14,15 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 calib-targets-core = { workspace = true }
-# The WASM bindings expose the chessboard `detect_chessboard_with_diagnostics`
-# entry point, so they enable the chessboard `diagnostics` feature
-# unconditionally (the bindings have no Cargo feature of their own).
+# The WASM bindings expose the `*_with_diagnostics` entry points, so they
+# enable each detector's `diagnostics` feature unconditionally (the bindings
+# have no Cargo feature of their own).
 calib-targets-chessboard = { workspace = true, features = ["diagnostics"] }
-calib-targets-charuco = { workspace = true }
+calib-targets-charuco = { workspace = true, features = ["diagnostics"] }
 calib-targets-aruco = { workspace = true }
 calib-targets-marker = { workspace = true }
 calib-targets-print = { workspace = true }
-calib-targets-puzzleboard = { workspace = true }
+calib-targets-puzzleboard = { workspace = true, features = ["diagnostics"] }
 chess-corners = { workspace = true }
 nalgebra = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

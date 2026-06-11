@@ -45,6 +45,6 @@ This two-stage approach helps reject spurious markers while keeping the final co
 
 ## Status
 
-The current implementation focuses on the OpenCV-style layout and is intentionally conservative about alignment. Extensions for more layouts and improved robustness are planned (see the roadmap).
+The current implementation focuses on the OpenCV-style layout and is intentionally conservative about alignment.
 
 For alignment details, see [ChArUco Alignment and Refinement](charuco_alignment.md).

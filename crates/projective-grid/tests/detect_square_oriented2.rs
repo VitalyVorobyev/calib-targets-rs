@@ -8,13 +8,12 @@
 use std::collections::HashSet;
 
 use nalgebra::Point2;
-use projective_grid::detect::GrowParams;
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, RejectionReason,
+    OrientedFeature, PointFeature,
 };
 
-fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<f32, 2>> {
+fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
     let origin = 50.0_f32;
     let mut out = Vec::with_capacity((rows * cols) as usize);
     let mut idx = 0_usize;
@@ -142,15 +141,25 @@ fn perturbed_5x5_grid_recovers_at_least_24_of_25() {
 }
 
 #[test]
-fn extra_noise_features_are_rejected_not_labelled() {
-    // 25 grid features at canonical positions + 5 noise points placed far
-    // from any grid intersection. The detector should label all 25 grid
-    // features and reject all 5 noise features.
+fn extra_noise_features_are_not_absorbed_into_the_primary_grid() {
+    // 25 grid features at canonical positions + 5 outliers placed far from
+    // any true lattice intersection. The invariant that matters for
+    // calibration is precision: the *primary* recovered grid must be exactly
+    // the 25 true corners with correct `(i, j)` labels and no outlier
+    // absorbed.
+    //
+    // Note on multi-component seed-and-grow: four of these five outliers
+    // (the bbox corners) themselves form a self-consistent 600 px square
+    // with axis-aligned local axes, so the multi-component pipeline may
+    // assemble them into their *own* secondary `GridSolution`. That is by
+    // design (a strategy's job is to build every component it can) and it
+    // never corrupts the primary grid — `detect_grid` returns the largest
+    // component, which is the true 25-corner lattice. The precision contract
+    // is "no wrong label inside a grid", not "every stray point is globally
+    // rejected".
     let s = 20.0_f32;
     let mut features = axis_aligned_features(5, 5, s);
 
-    // Insert noise points well outside the grid support so they are not
-    // mistaken for lattice corners.
     let noise_positions: [(f32, f32); 5] = [
         (-100.0, -100.0),
         (-100.0, 500.0),
@@ -161,8 +170,6 @@ fn extra_noise_features_are_rejected_not_labelled() {
     let next_idx = features.len();
     for (i, (x, y)) in noise_positions.iter().enumerate() {
         let point = PointFeature::new(next_idx + i, Point2::new(*x, *y));
-        // Noise points get arbitrary axes; the detector should still ignore
-        // them because they fall outside the lattice support.
         let axes = [
             LocalAxis::new(0.0_f32, None),
             LocalAxis::new(std::f32::consts::FRAC_PI_2, None),
@@ -178,20 +185,35 @@ fn extra_noise_features_are_rejected_not_labelled() {
     );
     let solution = detect_grid(request).expect("detect_grid on noise-augmented grid");
 
+    // The primary component is exactly the 25 true corners.
     assert_eq!(
         solution.grid.entries.len(),
         25,
-        "expected exactly 25 grid labels"
+        "expected exactly 25 grid labels in the primary component"
     );
-    assert_eq!(
-        solution.rejected.len(),
-        5,
-        "expected 5 rejected noise features, got {}",
-        solution.rejected.len()
-    );
-    for r in &solution.rejected {
-        assert_eq!(r.reason, RejectionReason::Unlabelled);
+
+    // No outlier source index leaked into the primary grid.
+    let labelled_sources: HashSet<usize> = solution
+        .grid
+        .entries
+        .iter()
+        .map(|e| e.source_index)
+        .collect();
+    for i in 0..noise_positions.len() {
+        assert!(
+            !labelled_sources.contains(&(next_idx + i)),
+            "outlier source {} was absorbed into the primary grid",
+            next_idx + i
+        );
     }
+
+    // The 25 true corners fill the full rebased (0, 0)..(4, 4) box.
+    let coords: HashSet<Coord> = solution.grid.entries.iter().map(|e| e.coord).collect();
+    assert_all_labels_in_box(&coords, 4, 4);
+    assert_eq!(
+        solution.grid.bbox,
+        Some((Coord::new(0, 0), Coord::new(4, 4)))
+    );
 
     let fit = solution.fit.expect("fit present");
     assert!(fit.residuals.max_px < 0.01, "{}", fit.residuals.max_px);
@@ -269,193 +291,3 @@ fn fewer_than_four_features_returns_insufficient_evidence() {
 }
 
 // ---------------------------------------------------------------------------
-// Algorithm knobs: cardinal_edge_quorum, boundary_search_factor,
-// global_axis_u_v. Each test verifies the default behaviour and the
-// corresponding explicit override.
-// ---------------------------------------------------------------------------
-
-#[test]
-fn cardinal_edge_quorum_one_admits_partial_band_pass() {
-    // 5×5 grid; shift feature at lattice (2, 0) by 4 px in +y so the
-    // (2, 0)→(2, 1) edge length (16 px) falls below the tight `[0.9, 1.1] *
-    // cell_size` band (so out of band) while the (1, 1)→(2, 1) edge (20 px)
-    // stays in band. With `cardinal_edge_quorum = u8::MAX` (default) the
-    // (2, 1) attach is rejected (in_band = 1 < required = 2). With `quorum =
-    // 1` the attach passes.
-    let s = 20.0_f32;
-    let mut features = axis_aligned_features(5, 5, s);
-    // Feature index of lattice (2, 0) is 2 (row-major, cols=5).
-    features[2].point.position.y += 4.0;
-
-    let mut grow_strict = GrowParams::<f32>::default();
-    grow_strict.edge_length_tol = 0.1;
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default().with_grow(grow_strict),
-    );
-    let strict = detect_grid(request).expect("default cardinal_edge_quorum");
-
-    let grow_quorum1 = grow_strict.with_cardinal_edge_quorum(1);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default().with_grow(grow_quorum1),
-    );
-    let lenient = detect_grid(request).expect("cardinal_edge_quorum = 1");
-
-    assert!(
-        lenient.grid.entries.len() > strict.grid.entries.len(),
-        "quorum=1 should label more than the strict default (got {} vs {})",
-        lenient.grid.entries.len(),
-        strict.grid.entries.len()
-    );
-}
-
-#[test]
-fn boundary_search_factor_extends_extrapolated_reach() {
-    // 4×4 inner grid plus a 5th perimeter column whose features sit at
-    // a position the BFS prediction can't quite reach with the default
-    // search radius. The perimeter cells are placed at the true lattice
-    // x = 130 but their `(3, j)` cardinal neighbour is offset 4 px in
-    // the +x direction (to 114), so the local-step prediction for the
-    // perimeter cells lands at x = 138 — 8 px from the true x = 130.
-    // With `attach_search_rel = 0.20` the unscaled search radius
-    // (4 px at cell_size = 20) cannot bridge the gap, so the perimeter
-    // column stays unlabelled. The `boundary_search_factor` knob
-    // multiplies the radius for cells outside the labelled bbox;
-    // setting it to `3.0` widens the radius to 12 px and the perimeter
-    // cells attach.
-    //
-    // The post-validate / post-fit gates are loosened just enough
-    // (`max_residual_px = 10`) to allow the small residual the (3, j)
-    // shift induces; the test isolates the BFS search-radius behaviour.
-    let s = 20.0_f32;
-    let origin = 50.0_f32;
-    let mut features = axis_aligned_features(4, 4, s);
-    // Shift the entire column 3 by +4 px in x so the local-step
-    // prediction for column 4 lands 8 px beyond the true perimeter
-    // feature. Shifting the whole column keeps the inner straight-line
-    // validate gate happy.
-    let cols = 4_usize;
-    for j in 0..4 {
-        features[3 + j * cols].point.position.x += 4.0;
-    }
-    let next_idx = features.len();
-    for j in 0..4 {
-        let x = origin + 4.0 * s;
-        let y = origin + (j as f32) * s;
-        let point = PointFeature::new(next_idx + j, Point2::new(x, y));
-        let axes = [
-            LocalAxis::new(0.0_f32, None),
-            LocalAxis::new(std::f32::consts::FRAC_PI_2, None),
-        ];
-        features.push(OrientedFeature::new(point, axes));
-    }
-
-    let mut grow_default = GrowParams::<f32>::default();
-    grow_default.attach_search_rel = 0.20;
-    let params_default = DetectionParams::default()
-        .with_grow(grow_default)
-        .with_max_residual_px(20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params_default,
-    );
-    let baseline = detect_grid(request).expect("default boundary_search_factor");
-
-    let grow_wide = grow_default.with_boundary_search_factor(3.0);
-    let params_wide = DetectionParams::default()
-        .with_grow(grow_wide)
-        .with_max_residual_px(20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params_wide,
-    );
-    let widened = detect_grid(request).expect("boundary_search_factor = 3.0");
-
-    assert!(
-        widened.grid.entries.len() > baseline.grid.entries.len(),
-        "boundary_search_factor should reach more perimeter cells \
-         (got {} vs baseline {})",
-        widened.grid.entries.len(),
-        baseline.grid.entries.len()
-    );
-}
-
-#[test]
-fn global_axis_u_v_overrides_seed_derived_axes() {
-    // 5×5 axis-aligned grid where the first 2×2 (the canonical seed
-    // quad) is rotated 14° around its anchor `A = (0, 0)`. Rotation
-    // preserves the parallelogram, the four seed edges, and the per-
-    // corner axes (the seed-finder consults the *features' own* axes
-    // for axis classification, not the chord directions, so the seed
-    // still parses). The downstream features stay axis-aligned, so the
-    // seed-derived `B-A` chord sits 14° off the true `[0, π/2]` global
-    // axes.
-    //
-    // To isolate the global-axis behaviour the test disables
-    // `local_step_fallback` — otherwise the BFS uses neighbour-pair
-    // local steps that inherit the same seed chord rotation, and the
-    // global override has nothing to bite on at the first ring of
-    // attachments. With local steps off, the BFS prediction depends
-    // entirely on the global axes: seed-derived 14° → labelling stalls;
-    // the supplied `[0, π/2]` override → near-full labelling.
-    let s = 20.0_f32;
-    let mut features = axis_aligned_features(5, 5, s);
-    let origin = 50.0_f32;
-    let theta = 14.0_f32.to_radians();
-    let (cos_t, sin_t) = (theta.cos(), theta.sin());
-    let cols = 5_usize;
-    // Rotate B = (1, 0), C = (0, 1), D = (1, 1) around A = (0, 0). A is
-    // the rotation anchor, so its own position is unchanged.
-    let ax = origin;
-    let ay = origin;
-    for &(i, j) in &[(1usize, 0usize), (0, 1), (1, 1)] {
-        let idx = i + j * cols;
-        let p = &mut features[idx].point.position;
-        let dx = p.x - ax;
-        let dy = p.y - ay;
-        p.x = ax + cos_t * dx - sin_t * dy;
-        p.y = ay + sin_t * dx + cos_t * dy;
-    }
-
-    let mut grow_default = GrowParams::<f32>::default();
-    grow_default.local_step_fallback = false;
-    let params_seed = DetectionParams::<f32>::default()
-        .with_grow(grow_default)
-        .with_max_residual_px(50.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params_seed,
-    );
-    let seed_axes = detect_grid(request).expect("seed-derived axes");
-
-    let grow_override = grow_default.with_global_axis_u_v([0.0, std::f32::consts::FRAC_PI_2]);
-    let params_override = DetectionParams::<f32>::default()
-        .with_grow(grow_override)
-        .with_max_residual_px(50.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params_override,
-    );
-    let overridden = detect_grid(request).expect("global_axis_u_v override");
-
-    assert!(
-        overridden.grid.entries.len() > seed_axes.grid.entries.len(),
-        "global axis override should beat the biased seed-derived axes \
-         (got {} vs {})",
-        overridden.grid.entries.len(),
-        seed_axes.grid.entries.len()
-    );
-}

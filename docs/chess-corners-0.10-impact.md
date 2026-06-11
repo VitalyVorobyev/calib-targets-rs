@@ -57,7 +57,7 @@ and zero new wrong `(i, j)` labels.
 public testdata images (precision invariants `wrong_position`,
 `wrong_id`, `duplicate_run_positions` are 0 on every row):
 
-### chessboard-v2: DiskFit vs RingFit
+### seed-and-grow: DiskFit vs RingFit
 
 | image | rf labelled | df labelled | Δ |
 |---|---|---|---|
@@ -73,7 +73,7 @@ public testdata images (precision invariants `wrong_position`,
 | puzzleboard_reference/example2.png | 112 | 112 | 0 |
 | puzzleboard_reference/example3.png | 28 | 28 | 0 |
 
-DiskFit strictly dominates chessboard-v2: **No** (3 regressions).
+DiskFit strictly dominates seed-and-grow: **No** (3 regressions).
 
 ### topological: DiskFit vs RingFit
 
@@ -117,8 +117,8 @@ through `bench check` automatically.
 |---|---|---|---|---|---|---|---|---|---|---|
 | topological | ring-fit | 12/22 | 10 | **0** | **0** | **0** | 66 | 2056 | 2.43 | 10.01 |
 | topological | disk-fit | 10/22 | 12 | **0** | **0** | **0** | 87 | 2054 | 3.94 | 12.25 |
-| chessboard-v2 | ring-fit | 14/22 | 8 | **0** | **0** | **0** | 128 | 2249 | 10.72 | 180.79 |
-| chessboard-v2 | disk-fit | 11/22 | 11 | **0** | **0** | **0** | 123 | 2226 | 12.61 | 180.31 |
+| seed-and-grow | ring-fit | 14/22 | 8 | **0** | **0** | **0** | 128 | 2249 | 10.72 | 180.79 |
+| seed-and-grow | disk-fit | 11/22 | 11 | **0** | **0** | **0** | 123 | 2226 | 12.61 | 180.31 |
 
 Precision invariants (wp, wi, dup) are all zero across all 4 runs and
 all 29 images. The large `extra` counts are baseline-drift: the 0.10
@@ -130,8 +130,8 @@ detector no longer attaches.
 ### testdata/02-topo-grid (4 images)
 
 The 4 synthetic extreme-perspective images are registered in
-`crates/calib-targets-bench/datasets.toml` (added during Phase 3
-overlay generation; required by `bench preview`, which filters
+`crates/calib-targets-bench/datasets.toml` (added for overlay
+generation; required by `bench preview`, which filters
 exclusively by `datasets.toml`). They flow through `bench run` and
 into `bench_results/chessboard.{alg}.{om}.json` with `has_baseline:
 false` (no `testdata/chessboard_regression_baselines.json` entries
@@ -144,8 +144,8 @@ yet — those would be a separate `bench bless` step).
 |---|---|---|---|
 | topological | ring-fit | **4/4** | 0 |
 | topological | disk-fit | **4/4** | 0 |
-| chessboard-v2 | ring-fit | **4/4** | +2 |
-| chessboard-v2 | disk-fit | **4/4** | +4 |
+| seed-and-grow | ring-fit | **4/4** | +2 |
+| seed-and-grow | disk-fit | **4/4** | +4 |
 
 Per-image labelled counts (from `bench run`):
 
@@ -157,12 +157,12 @@ Per-image labelled counts (from `bench run`):
 | gptchess1.png (topo min 60, cv2 min 35) | 60 | 60 | 52 | 39 |
 
 Every gated manifest entry passes. GeminiChess2 + gptchess1 sit
-exactly at the topological floor (26 / 60). chessboard-v2 + ring-fit
-clears every floor with ≥ +2 margin; chessboard-v2 + disk-fit
+exactly at the topological floor (26 / 60). seed-and-grow + ring-fit
+clears every floor with ≥ +2 margin; seed-and-grow + disk-fit
 regresses GeminiChess1 (51 → 46) and gptchess1 (52 → 39) vs ring-fit
 but still satisfies the manifest floor. This matches the 0.9
 finding: DiskFit helps the synthetic-extreme-perspective regime on
-topological but is a wash-to-loss on chessboard-v2.
+topological but is a wash-to-loss on seed-and-grow.
 
 ### Chessboard private regression dataset
 
@@ -210,16 +210,16 @@ drift — the in-tree partial-slot-flip fix recovers ~2000 corners per
 cell that were missed under the pre-0.9 baselines pinned in
 `testdata/chessboard_regression_baselines.json`. The large `extra`
 counts are consistent grid-shift drift, not wrong labels.
-chessboard-v2 + ring-fit leads with 14/22 gated entries.
+seed-and-grow + ring-fit leads with 14/22 gated entries.
 
 **testdata/02-topo-grid:** Every manifest gate passes on `bench run`.
 topological + disk-fit ≥ topological + ring-fit on every image (the
 synthetic-extreme-perspective regime where DiskFit was designed to
 help): +1 on GeminiChess1, equal on the other 3 gated images.
-chessboard-v2 + disk-fit regresses against chessboard-v2 + ring-fit
+seed-and-grow + disk-fit regresses against seed-and-grow + ring-fit
 on GeminiChess1 (46 vs 51) and gptchess1 (39 vs 52) while still
 clearing the manifest floor — consistent with the 0.9 finding that
-DiskFit narrowly hurts chessboard-v2 on this set.
+DiskFit narrowly hurts seed-and-grow on this set.
 
 **Chessboard private regression set:** Detection rate matches the 0.9
 baseline at zero wrong labels. Mean labelled per detected snap is higher
@@ -281,7 +281,7 @@ numbers; 0.10 does not change the grid-build stages.
 
 ```bash
 # Step 1 — public bench matrix (re-runs overwrite bench_results/chessboard.*.json)
-for alg in topological chessboard-v2; do
+for alg in topological seed-and-grow; do
   for om in ring-fit disk-fit; do
     cargo run --release -p calib-targets-bench --bin bench -- \
       run --algorithm "$alg" --orientation-method "$om"

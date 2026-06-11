@@ -45,6 +45,6 @@ If decoding is too sparse on real images, reduce `inset_frac` slightly and re-ru
 
 ## Status
 
-Decoding is implemented and stable for rectified grids, but quad detection and image-space marker detection are deliberately out of scope. The roadmap chapter details planned improvements and API refinements.
+Decoding is implemented and stable for rectified grids, but quad detection and image-space marker detection are deliberately out of scope.
 
 For deeper tuning and sampling details, see [ArUco Decoding Details](aruco_decoding.md).

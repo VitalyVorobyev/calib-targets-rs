@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use nalgebra::Point2;
 
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
+use calib_targets_chessboard::{
+    ChessboardDetection, ChessboardParamsError, Detector as ChessDetector,
+};
 use calib_targets_core::{
     GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind,
 };
@@ -22,16 +24,20 @@ pub struct MarkerBoardDetector {
 
 impl MarkerBoardDetector {
     /// Construct a marker-board detector from its parameters.
-    pub fn new(params: MarkerBoardParams) -> Self {
+    ///
+    /// Returns the chessboard detector's typed [`ChessboardParamsError`] if the
+    /// embedded [`MarkerBoardParams::chessboard`](crate::MarkerBoardParams)
+    /// configuration is one the chessboard stage cannot honour.
+    pub fn new(params: MarkerBoardParams) -> Result<Self, ChessboardParamsError> {
         // chessboard detector is scale-invariant — it does not need
         // expected_rows/cols hints. The marker circles supply the geometry
         // constraint.
-        let chessboard_detector = ChessDetector::new(params.chessboard.clone());
+        let chessboard_detector = ChessDetector::new(params.chessboard.clone())?;
 
-        Self {
+        Ok(Self {
             params,
             chessboard_detector,
-        }
+        })
     }
 
     /// Borrow the parameters this detector was constructed with.

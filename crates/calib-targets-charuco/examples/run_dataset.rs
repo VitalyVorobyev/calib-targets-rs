@@ -1,6 +1,6 @@
 //! Run the ChArUco detector over a directory of stacked target images
-//! (one PNG per target, N × WxH snaps per image — the layout of our
-//! private flagship datasets).
+//! (one PNG per target, N × WxH snaps per image — the layout used by
+//! the large real-world calibration datasets).
 //!
 //! Writes a per-snap `CharucoFrameReport` JSON to
 //! `<out>/t{T}s{S}.json`, plus an aggregate `summary.json` recording

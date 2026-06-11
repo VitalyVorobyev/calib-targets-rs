@@ -6,7 +6,6 @@ use nalgebra::Point2;
 
 use crate::error::{GridError, Result};
 use crate::feature::{CoordinateHypothesis, PointFeature};
-use crate::float::{lit, Float};
 use crate::geometry::{apply_projective, estimate_projective};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{
@@ -17,22 +16,22 @@ use crate::result::{
 /// Parameters for coordinate-hypothesis consistency checks.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct ConsistencyParams<F: Float> {
+pub struct ConsistencyParams {
     /// Maximum accepted reprojection residual in image pixels.
-    pub max_residual_px: F,
+    pub max_residual_px: f32,
 }
 
-impl<F: Float> Default for ConsistencyParams<F> {
+impl Default for ConsistencyParams {
     fn default() -> Self {
         Self {
-            max_residual_px: lit::<F>(2.0),
+            max_residual_px: 2.0,
         }
     }
 }
 
-impl<F: Float> ConsistencyParams<F> {
+impl ConsistencyParams {
     /// Construct consistency parameters from a residual threshold in pixels.
-    pub fn new(max_residual_px: F) -> Self {
+    pub fn new(max_residual_px: f32) -> Self {
         Self { max_residual_px }
     }
 }
@@ -40,27 +39,27 @@ impl<F: Float> ConsistencyParams<F> {
 /// Coordinate-hypothesis consistency request.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
-pub struct ConsistencyRequest<'a, F: Float> {
+pub struct ConsistencyRequest<'a> {
     /// Lattice family to check.
     pub lattice: LatticeKind,
     /// Position-only features referenced by hypotheses.
-    pub features: &'a [PointFeature<F>],
+    pub features: &'a [PointFeature],
     /// Caller-supplied coordinate hypotheses.
-    pub hypotheses: &'a [CoordinateHypothesis<F>],
+    pub hypotheses: &'a [CoordinateHypothesis],
     /// Optional known grid dimensions.
     pub dimensions: Option<GridDimensions>,
     /// Consistency parameters.
-    pub params: ConsistencyParams<F>,
+    pub params: ConsistencyParams,
 }
 
-impl<'a, F: Float> ConsistencyRequest<'a, F> {
+impl<'a> ConsistencyRequest<'a> {
     /// Construct a consistency request.
     pub fn new(
         lattice: LatticeKind,
-        features: &'a [PointFeature<F>],
-        hypotheses: &'a [CoordinateHypothesis<F>],
+        features: &'a [PointFeature],
+        hypotheses: &'a [CoordinateHypothesis],
         dimensions: Option<GridDimensions>,
-        params: ConsistencyParams<F>,
+        params: ConsistencyParams,
     ) -> Self {
         Self {
             lattice,
@@ -74,9 +73,7 @@ impl<'a, F: Float> ConsistencyRequest<'a, F> {
 
 /// Check whether caller-supplied coordinate hypotheses are geometrically
 /// consistent under the requested lattice family.
-pub fn check_consistency<F: Float>(
-    request: ConsistencyRequest<'_, F>,
-) -> Result<ConsistencyReport<F>> {
+pub fn check_consistency(request: ConsistencyRequest<'_>) -> Result<ConsistencyReport> {
     let positions_by_source = validate_features(request.features)?;
     validate_hypotheses(request.hypotheses, &positions_by_source)?;
 
@@ -95,8 +92,8 @@ pub fn check_consistency<F: Float>(
 
     let mut entries = Vec::with_capacity(request.hypotheses.len());
     let mut rejected = Vec::new();
-    let mut residual_sum = F::zero();
-    let mut residual_max = F::zero();
+    let mut residual_sum = 0.0_f32;
+    let mut residual_max = 0.0_f32;
 
     for hypothesis in request.hypotheses {
         let model = request.lattice.model_point(hypothesis.coord);
@@ -128,8 +125,7 @@ pub fn check_consistency<F: Float>(
     rejected.sort_by_key(|entry| (entry.coord, entry.source_index));
 
     let count = entries.len();
-    let residuals =
-        ResidualSummary::new(count, residual_sum / lit::<F>(count as f32), residual_max);
+    let residuals = ResidualSummary::new(count, residual_sum / count as f32, residual_max);
     let fit = LatticeFit::new(model_to_image, residuals);
     let grid = LabelledGrid::new(request.lattice, entries, request.dimensions);
     let passed = rejected.is_empty();
@@ -137,7 +133,7 @@ pub fn check_consistency<F: Float>(
     Ok(ConsistencyReport::new(passed, solution))
 }
 
-fn validate_features<F: Float>(features: &[PointFeature<F>]) -> Result<HashMap<usize, Point2<F>>> {
+fn validate_features(features: &[PointFeature]) -> Result<HashMap<usize, Point2<f32>>> {
     let mut out = HashMap::with_capacity(features.len());
     for feature in features {
         if !feature.position.x.is_finite() || !feature.position.y.is_finite() {
@@ -156,9 +152,9 @@ fn validate_features<F: Float>(features: &[PointFeature<F>]) -> Result<HashMap<u
     Ok(out)
 }
 
-fn validate_hypotheses<F: Float>(
-    hypotheses: &[CoordinateHypothesis<F>],
-    positions_by_source: &HashMap<usize, Point2<F>>,
+fn validate_hypotheses(
+    hypotheses: &[CoordinateHypothesis],
+    positions_by_source: &HashMap<usize, Point2<f32>>,
 ) -> Result<()> {
     let mut seen_sources = HashSet::with_capacity(hypotheses.len());
     let mut seen_coords = HashSet::with_capacity(hypotheses.len());
@@ -185,7 +181,7 @@ fn validate_hypotheses<F: Float>(
     Ok(())
 }
 
-fn distance<F: Float>(a: Point2<F>, b: Point2<F>) -> F {
+fn distance(a: Point2<f32>, b: Point2<f32>) -> f32 {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
     (dx * dx + dy * dy).sqrt()

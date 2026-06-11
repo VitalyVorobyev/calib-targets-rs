@@ -69,7 +69,7 @@
 //!     }
 //! }
 //!
-//! let det = Detector::new(DetectorParams::default());
+//! let det = Detector::new(DetectorParams::default()).expect("default params are valid");
 //! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
 //! assert_eq!(detection.corners.len(), 49);
 //! ```
@@ -109,6 +109,8 @@ pub mod diagnostics;
 pub use corner::ChessCorner;
 pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{AdvancedTuning, DetectorParams, GraphBuildAlgorithm};
+pub use params::{
+    AdvancedTuning, ChessboardParamsError, DetectorParams, GraphBuildAlgorithm, OrientationSource,
+};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
 pub use topological::{detect_all_topological, trace_topological};

@@ -2,7 +2,9 @@
 
 use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
-use calib_targets_core::{homography_from_4pt, GrayImageView, GridCoords, Homography};
+use calib_targets_core::{
+    cell_rect_corners_at, homography_from_4pt, GrayImageView, GridCoords, Homography,
+};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -243,7 +245,7 @@ pub fn scan_decode_markers_in_cells(
         return out;
     };
 
-    let cell_rect = cell_rect_corners(px_per_square);
+    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
 
     for cell in cells {
         let Some(h) = homography_from_4pt(&cell_rect, &cell.corners_img) else {
@@ -315,7 +317,7 @@ pub fn sample_cell(
     bits: usize,
 ) -> Option<CellSamples> {
     let grid = SampleGrid::new(cfg, bits, px_per_square)?;
-    let cell_rect = cell_rect_corners(px_per_square);
+    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
 
     let mut mean_grid = Vec::with_capacity(grid.points.len());
@@ -386,7 +388,7 @@ pub fn decode_marker_in_cell(
         px_per_square,
         matcher,
     )?;
-    let cell_rect = cell_rect_corners(px_per_square);
+    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
     let mut det = build_detection(cell.gc, px_per_square, obs, matcher)?;
@@ -553,7 +555,7 @@ fn build_detection(
         _ => gc0,
     };
 
-    let corners_rect = cell_rect_corners(px_per_square);
+    let corners_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
     let x0 = gc0.i as f32 * px_per_square;
     let y0 = gc0.j as f32 * px_per_square;
     let corners = corners_rect.map(|p| Point2::new(p.x + x0, p.y + y0));
@@ -818,16 +820,6 @@ fn build_threshold_points(start: f32, side: f32, cells: usize) -> Vec<Point2<f32
         }
     }
     points
-}
-
-fn cell_rect_corners(px_per_square: f32) -> [Point2<f32>; 4] {
-    let s = px_per_square;
-    [
-        Point2::new(0.0, 0.0),
-        Point2::new(s, 0.0),
-        Point2::new(s, s),
-        Point2::new(0.0, s),
-    ]
 }
 
 fn sample_mean_3x3(img: &GrayImageView<'_>, x: f32, y: f32) -> Option<u8> {

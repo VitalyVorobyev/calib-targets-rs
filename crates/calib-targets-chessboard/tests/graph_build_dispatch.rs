@@ -58,7 +58,7 @@ fn run_with(
 ) -> Vec<calib_targets_chessboard::ChessboardDetection> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = algorithm;
-    let det = Detector::new(params);
+    let det = Detector::new(params).expect("valid detector params");
     det.detect_all(corners)
 }
 
@@ -88,28 +88,29 @@ fn dispatch_routes_to_topological_pipeline() {
 }
 
 #[test]
-fn dispatch_routes_to_chessboard_v2_pipeline() {
+fn dispatch_routes_to_seed_and_grow_pipeline() {
     let corners = synthetic_grid(6, 6, 12.0);
-    let detections = run_with(GraphBuildAlgorithm::ChessboardV2, &corners);
+    let detections = run_with(GraphBuildAlgorithm::SeedAndGrow, &corners);
     assert!(
         !detections.is_empty(),
-        "chessboard-v2 dispatch returned no detection on a clean 6x6 grid"
+        "seed-and-grow dispatch returned no detection on a clean 6x6 grid"
     );
     let total: usize = detections.iter().map(|d| d.corners.len()).sum();
     assert!(
         total >= 30,
-        "chessboard-v2 should label most corners on a clean grid (got {total})",
+        "seed-and-grow should label most corners on a clean grid (got {total})",
     );
     assert_labels_non_negative(&detections);
 }
 
 #[test]
-fn default_dispatch_matches_chessboard_v2() {
-    // The current default is ChessboardV2; flipping it to Topological
-    // is gated on closing the recall gap on the public testdata
-    // regression set.
+fn default_dispatch_matches_topological() {
+    // Topological is the default builder (higher recall on the
+    // clean-chessboard regression set, precision held). ChArUco pins
+    // SeedAndGrow regardless via the charuco detector's unconditional
+    // override; PuzzleBoard already sets Topological explicitly.
     assert_eq!(
         DetectorParams::default().graph_build_algorithm,
-        GraphBuildAlgorithm::ChessboardV2,
+        GraphBuildAlgorithm::Topological,
     );
 }

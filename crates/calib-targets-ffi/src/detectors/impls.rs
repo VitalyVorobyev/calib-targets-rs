@@ -50,7 +50,8 @@ pub(super) unsafe fn chessboard_detector_create_impl(
     // SAFETY: `out_detector` is a valid writable pointer for the duration of the call.
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?);
+    let detector = ChessboardDetector::new(convert_chessboard_params(&config.chessboard)?)
+        .map_err(|e| FfiError::config_error(e.to_string()))?;
     let handle = Box::new(ct_chessboard_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
@@ -83,7 +84,8 @@ pub(super) unsafe fn marker_board_detector_create_impl(
     // SAFETY: `out_detector` is a valid writable pointer for the duration of the call.
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = MarkerBoardDetector::new(convert_marker_board_params(&config.detector)?);
+    let detector = MarkerBoardDetector::new(convert_marker_board_params(&config.detector)?)
+        .map_err(|e| FfiError::config_error(e.to_string()))?;
     let handle = Box::new(ct_marker_board_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())

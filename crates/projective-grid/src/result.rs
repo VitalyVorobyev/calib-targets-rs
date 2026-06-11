@@ -1,31 +1,33 @@
 //! Shared output types for detection and consistency tasks.
+//!
+//! The detection surface is pinned to `f32`; see [`crate::feature`] for
+//! the rationale.
 
 use nalgebra::{Point2, Projective2};
 
-use crate::float::Float;
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 
 /// One labelled grid feature in a solved grid.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct GridEntry<F: Float> {
+pub struct GridEntry {
     /// Lattice coordinate assigned to this feature.
     pub coord: Coord,
     /// Caller-owned feature source index.
     pub source_index: usize,
     /// Image-frame pixel-center position.
-    pub image_position: Point2<F>,
+    pub image_position: Point2<f32>,
     /// Reprojection residual in image pixels, when a fit was computed.
-    pub residual_px: Option<F>,
+    pub residual_px: Option<f32>,
 }
 
-impl<F: Float> GridEntry<F> {
+impl GridEntry {
     /// Construct a labelled grid entry.
     pub fn new(
         coord: Coord,
         source_index: usize,
-        image_position: Point2<F>,
-        residual_px: Option<F>,
+        image_position: Point2<f32>,
+        residual_px: Option<f32>,
     ) -> Self {
         Self {
             coord,
@@ -39,22 +41,22 @@ impl<F: Float> GridEntry<F> {
 /// A labelled grid component.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct LabelledGrid<F: Float> {
+pub struct LabelledGrid {
     /// Lattice family of this grid.
     pub lattice: LatticeKind,
     /// Labelled feature entries.
-    pub entries: Vec<GridEntry<F>>,
+    pub entries: Vec<GridEntry>,
     /// Inclusive coordinate bounding box, if the grid is non-empty.
     pub bbox: Option<(Coord, Coord)>,
     /// Optional known dimensions supplied by the caller.
     pub dimensions: Option<GridDimensions>,
 }
 
-impl<F: Float> LabelledGrid<F> {
+impl LabelledGrid {
     /// Construct a labelled grid.
     pub fn new(
         lattice: LatticeKind,
-        entries: Vec<GridEntry<F>>,
+        entries: Vec<GridEntry>,
         dimensions: Option<GridDimensions>,
     ) -> Self {
         let bbox = bbox_for_entries(&entries);
@@ -67,7 +69,7 @@ impl<F: Float> LabelledGrid<F> {
     }
 
     /// Linear-scan lookup of the labelled entry with the given source index.
-    pub fn find(&self, source_index: usize) -> Option<&GridEntry<F>> {
+    pub fn find(&self, source_index: usize) -> Option<&GridEntry> {
         self.entries.iter().find(|e| e.source_index == source_index)
     }
 }
@@ -75,18 +77,18 @@ impl<F: Float> LabelledGrid<F> {
 /// Residual summary in image pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct ResidualSummary<F: Float> {
+pub struct ResidualSummary {
     /// Number of residuals included in the summary.
     pub count: usize,
     /// Mean residual in pixels.
-    pub mean_px: F,
+    pub mean_px: f32,
     /// Maximum residual in pixels.
-    pub max_px: F,
+    pub max_px: f32,
 }
 
-impl<F: Float> ResidualSummary<F> {
+impl ResidualSummary {
     /// Construct a residual summary.
-    pub fn new(count: usize, mean_px: F, max_px: F) -> Self {
+    pub fn new(count: usize, mean_px: f32, max_px: f32) -> Self {
         Self {
             count,
             mean_px,
@@ -98,16 +100,16 @@ impl<F: Float> ResidualSummary<F> {
 /// Fitted lattice-to-image transform plus residual summary.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct LatticeFit<F: Float> {
+pub struct LatticeFit {
     /// Projective mapping from model-plane lattice coordinates to image pixels.
-    pub model_to_image: Projective2<F>,
+    pub model_to_image: Projective2<f32>,
     /// Residual summary in image pixels.
-    pub residuals: ResidualSummary<F>,
+    pub residuals: ResidualSummary,
 }
 
-impl<F: Float> LatticeFit<F> {
+impl LatticeFit {
     /// Construct a lattice fit.
-    pub fn new(model_to_image: Projective2<F>, residuals: ResidualSummary<F>) -> Self {
+    pub fn new(model_to_image: Projective2<f32>, residuals: ResidualSummary) -> Self {
         Self {
             model_to_image,
             residuals,
@@ -133,23 +135,23 @@ pub enum RejectionReason {
 /// Rejected feature record.
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct RejectedFeature<F: Float> {
+pub struct RejectedFeature {
     /// Caller-owned source index.
     pub source_index: usize,
     /// Coordinate associated with the rejection, if one was proposed.
     pub coord: Option<Coord>,
     /// Residual in image pixels, if available.
-    pub residual_px: Option<F>,
+    pub residual_px: Option<f32>,
     /// Rejection reason.
     pub reason: RejectionReason,
 }
 
-impl<F: Float> RejectedFeature<F> {
+impl RejectedFeature {
     /// Construct a rejected-feature record.
     pub fn new(
         source_index: usize,
         coord: Option<Coord>,
-        residual_px: Option<F>,
+        residual_px: Option<f32>,
         reason: RejectionReason,
     ) -> Self {
         Self {
@@ -164,21 +166,21 @@ impl<F: Float> RejectedFeature<F> {
 /// Shared successful solution shape for grid tasks.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct GridSolution<F: Float> {
+pub struct GridSolution {
     /// Labelled grid entries.
-    pub grid: LabelledGrid<F>,
+    pub grid: LabelledGrid,
     /// Lattice fit, when the task computed one.
-    pub fit: Option<LatticeFit<F>>,
+    pub fit: Option<LatticeFit>,
     /// Features rejected by task gates.
-    pub rejected: Vec<RejectedFeature<F>>,
+    pub rejected: Vec<RejectedFeature>,
 }
 
-impl<F: Float> GridSolution<F> {
+impl GridSolution {
     /// Construct a grid solution.
     pub fn new(
-        grid: LabelledGrid<F>,
-        fit: Option<LatticeFit<F>>,
-        rejected: Vec<RejectedFeature<F>>,
+        grid: LabelledGrid,
+        fit: Option<LatticeFit>,
+        rejected: Vec<RejectedFeature>,
     ) -> Self {
         Self {
             grid,
@@ -188,7 +190,7 @@ impl<F: Float> GridSolution<F> {
     }
 
     /// Linear-scan lookup of the rejection record for the given source index, if any.
-    pub fn rejected_for(&self, source_index: usize) -> Option<&RejectedFeature<F>> {
+    pub fn rejected_for(&self, source_index: usize) -> Option<&RejectedFeature> {
         self.rejected
             .iter()
             .find(|r| r.source_index == source_index)
@@ -198,27 +200,27 @@ impl<F: Float> GridSolution<F> {
 /// Report returned by coordinate-hypothesis consistency checks.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct ConsistencyReport<F: Float> {
+pub struct ConsistencyReport {
     /// `true` when all residuals satisfy the configured threshold.
     pub passed: bool,
     /// Labelled solution and residual diagnostics.
-    pub solution: GridSolution<F>,
+    pub solution: GridSolution,
 }
 
-impl<F: Float> ConsistencyReport<F> {
+impl ConsistencyReport {
     /// Construct a consistency report.
-    pub fn new(passed: bool, solution: GridSolution<F>) -> Self {
+    pub fn new(passed: bool, solution: GridSolution) -> Self {
         Self { passed, solution }
     }
 
     /// Convenience accessor for the maximum residual in pixels from the fitted lattice,
     /// when one was computed.
-    pub fn max_residual_px(&self) -> Option<F> {
+    pub fn max_residual_px(&self) -> Option<f32> {
         Some(self.solution.fit.as_ref()?.residuals.max_px)
     }
 }
 
-fn bbox_for_entries<F: Float>(entries: &[GridEntry<F>]) -> Option<(Coord, Coord)> {
+fn bbox_for_entries(entries: &[GridEntry]) -> Option<(Coord, Coord)> {
     let first = entries.first()?;
     let mut min = first.coord;
     let mut max = first.coord;
@@ -237,16 +239,16 @@ mod tests {
 
     use super::*;
 
-    fn make_identity_fit<F: Float>() -> LatticeFit<F> {
+    fn make_identity_fit() -> LatticeFit {
         LatticeFit::new(
             Projective2::identity(),
-            ResidualSummary::new(1, F::from(0.5_f32), F::from(1.0_f32)),
+            ResidualSummary::new(1, 0.5_f32, 1.0_f32),
         )
     }
 
     #[test]
     fn max_residual_px_none_when_fit_absent() {
-        let grid = LabelledGrid::<f32>::new(LatticeKind::Square, vec![], None);
+        let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
         let solution = GridSolution::new(grid, None, vec![]);
         let report = ConsistencyReport::new(true, solution);
         assert_eq!(report.max_residual_px(), None);
@@ -254,11 +256,11 @@ mod tests {
 
     #[test]
     fn max_residual_px_some_when_fit_present() {
-        let grid = LabelledGrid::<f64>::new(LatticeKind::Square, vec![], None);
-        let fit = make_identity_fit::<f64>();
+        let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
+        let fit = make_identity_fit();
         let solution = GridSolution::new(grid, Some(fit), vec![]);
         let report = ConsistencyReport::new(true, solution);
-        assert_eq!(report.max_residual_px(), Some(1.0_f64));
+        assert_eq!(report.max_residual_px(), Some(1.0_f32));
     }
 
     #[test]

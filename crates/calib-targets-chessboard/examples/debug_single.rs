@@ -76,7 +76,7 @@ fn main() {
 
     if let Some(path) = &out_default {
         let params = DetectorParams::default();
-        let detector = Detector::new(params.clone());
+        let detector = Detector::new(params.clone()).expect("valid detector params");
         let frame = detector.detect_with_diagnostics(&corners);
         let components = detector.detect_all(&corners).len();
         write_compact_frame(path, &image_tag, width, height, &corners, &frame);
@@ -96,7 +96,11 @@ fn main() {
         let configs = DetectorParams::sweep_default();
         let best = configs
             .iter()
-            .map(|params| Detector::new(params.clone()).detect_with_diagnostics(&corners))
+            .map(|params| {
+                Detector::new(params.clone())
+                    .expect("valid detector params")
+                    .detect_with_diagnostics(&corners)
+            })
             .max_by(|a, b| frame_quality(a).cmp(&frame_quality(b)))
             .expect("sweep_default returns at least one config");
         write_compact_frame(path, &image_tag, width, height, &corners, &best);

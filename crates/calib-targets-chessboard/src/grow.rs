@@ -2,9 +2,9 @@
 //!
 //! The pattern-agnostic machinery (BFS queue, KD-tree, prediction,
 //! ambiguity resolution, rebase-to-origin) lives in
-//! [`projective_grid::detect::advanced::square::grow`]. This module supplies the
+//! [`projective_grid::seed_and_grow::grow`]. This module supplies the
 //! chessboard-specific
-//! [`SquareAttachPolicy`](projective_grid::detect::advanced::square::grow::SquareAttachPolicy)
+//! [`SquareAttachPolicy`](projective_grid::seed_and_grow::grow::SquareAttachPolicy)
 //! implementation — parity rules, axis-cluster matching, axis-slot-
 //! swap edge invariant — and carries the pipeline's per-corner stage
 //! updates.
@@ -18,7 +18,7 @@ use crate::params::DetectorParams;
 use crate::seed::Seed;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::detect::advanced::square::grow as pg_grow;
+use projective_grid::seed_and_grow::grow as pg_grow;
 use std::collections::HashSet;
 
 pub use pg_grow::GrowResult;
@@ -254,7 +254,7 @@ fn infer_label_with_max_d(
 /// corners (in addition to `Clustered`) when their inferred parity
 /// matches the required cell parity AND their axes match the global
 /// cluster centers within `rescue_tol_rad`. Position match is enforced
-/// by [`projective_grid::detect::advanced::square::extension::extend_via_local_homography`]'s
+/// by [`projective_grid::seed_and_grow::extension::extend_via_local_homography`]'s
 /// per-cell local-H prediction; this validator only owns the
 /// label-side gates.
 ///

@@ -96,7 +96,7 @@ fn smoke_first_subframe_detects() {
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&snap, &chess_cfg);
 
-    let detector = Detector::new(DetectorParams::default());
+    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
     let detection = detector
         .detect(&corners)
         .expect("target_0 snap 0 must produce a detection");
@@ -125,7 +125,7 @@ fn full_dataset_precision_contract() {
     }
 
     let chess_cfg = default_chess_config();
-    let detector = Detector::new(DetectorParams::default());
+    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
     let mut n_frames = 0usize;
     let mut n_detected = 0usize;
 

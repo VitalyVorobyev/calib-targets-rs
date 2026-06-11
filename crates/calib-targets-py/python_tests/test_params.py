@@ -201,8 +201,8 @@ def test_chessboard_params_roundtrip() -> None:
 def test_chessboard_params_graph_build_algorithm() -> None:
     # Default keeps callers on the historical seed-and-grow pipeline.
     default = calib_targets.ChessboardParams()
-    assert default.graph_build_algorithm == "chessboard_v2"
-    assert default.to_dict()["graph_build_algorithm"] == "chessboard_v2"
+    assert default.graph_build_algorithm == "seed_and_grow"
+    assert default.to_dict()["graph_build_algorithm"] == "seed_and_grow"
 
     # Topological is opt-in via the snake_case enum value.
     topo = calib_targets.ChessboardParams(graph_build_algorithm="topological")

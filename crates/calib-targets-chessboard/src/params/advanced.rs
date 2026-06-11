@@ -23,11 +23,11 @@
 //! global cell size) — the pipeline is scale-invariant once `s` is known. All
 //! angular tolerances are absolute degrees.
 
-use projective_grid::detect::advanced::square::component_merge::LocalMergeParams;
+use projective_grid::shared::merge::LocalMergeParams;
 use projective_grid::TopologicalParams;
 use serde::{Deserialize, Serialize};
 
-pub(super) fn default_topological_params() -> TopologicalParams<f32> {
+pub(super) fn default_topological_params() -> TopologicalParams {
     TopologicalParams::default()
         .with_opposing_edge_ratio_max(10.0)
         .with_edge_length_band(0.0, 1.8)
@@ -133,7 +133,7 @@ fn default_enable_partial_slot_flip_fix() -> bool {
     // Cannot introduce wrong (i, j) labels — the BFS labels are not
     // modified.
     //
-    // Empirically: lifts chessboard-v2 + DiskFit recall on
+    // Empirically: lifts seed-and-grow + DiskFit recall on
     // `large.png` from 349 → 373 (parity with RingFit), with
     // matching gains across the small[0..5] family. Also lifts
     // RingFit on `small3.png` (119 → 125) and `small5.png`
@@ -193,7 +193,7 @@ fn default_enable_post_grow_bfs_regrow() -> bool {
 fn default_enable_post_grow_bfs_extend() -> bool {
     // Default ON. After refit produces refined centres, walk the
     // existing labelled set's boundary with a non-destructive BFS
-    // (`projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`),
+    // (`projective_grid::seed_and_grow::grow_extend::extend_from_labelled`),
     // attaching newly-Clustered corners via cardinal-neighbour
     // propagation. Reaches interior-hole / left-strip corners that
     // local-H extrapolation (`extend_boundary` /
@@ -283,12 +283,12 @@ pub struct AdvancedTuning {
     /// path. Ignored when
     /// [`DetectorParams::graph_build_algorithm`](super::DetectorParams::graph_build_algorithm)
     /// is
-    /// [`ChessboardV2`](super::GraphBuildAlgorithm::ChessboardV2).
+    /// [`SeedAndGrow`](super::GraphBuildAlgorithm::SeedAndGrow).
     #[serde(default = "default_topological_params")]
-    pub topological: TopologicalParams<f32>,
+    pub topological: TopologicalParams,
 
     /// Tuning knobs for the shared local-geometry component merger.
-    /// Used by both the topological and chessboard-v2 pipelines.
+    /// Used by both the topological and seed-and-grow pipelines.
     #[serde(default = "default_component_merge_params")]
     pub component_merge: LocalMergeParams,
 
@@ -532,7 +532,7 @@ pub struct AdvancedTuning {
     pub enable_post_grow_bfs_regrow: bool,
     /// When `true` AND [`enable_post_grow_refit`] triggered a refit,
     /// run a non-destructive cardinal-neighbour BFS extension
-    /// (`projective_grid::detect::advanced::square::grow_extend::extend_from_labelled`) over
+    /// (`projective_grid::seed_and_grow::grow_extend::extend_from_labelled`) over
     /// the existing labelled set with the refined centres. Walks the
     /// labelled bbox boundary one cell at a time, predicts each cell
     /// from cardinal labelled neighbours only (K=1 — much more
@@ -602,7 +602,7 @@ pub struct AdvancedTuning {
     #[serde(default = "default_geometry_check_local_h_tol_rel")]
     pub geometry_check_local_h_tol_rel: f32,
     /// Enable the final local edge-shape gate for standalone
-    /// chessboard-v2 detections. The gate checks cardinal support,
+    /// seed-and-grow detections. The gate checks cardinal support,
     /// adjacent-edge continuation, and complete-cell opposite-side
     /// consistency after the labelled grid has been assembled.
     ///
@@ -614,7 +614,7 @@ pub struct AdvancedTuning {
 
     // --- `extend_boundary` stage --------------------------------------------
     /// Use the per-candidate local-homography boundary extension
-    /// (`projective_grid::detect::advanced::square::extension::extend_via_local_homography`)
+    /// (`projective_grid::seed_and_grow::extension::extend_via_local_homography`)
     /// instead of the single-global-H one. The local-H variant fits an
     /// H per candidate cell from the K nearest labelled corners, gets
     /// per-candidate trust gates, and reaches further past the bbox
@@ -662,8 +662,8 @@ impl Default for AdvancedTuning {
             // realistic axis noise, the per-bin weight of a genuine
             // grid-direction peak on a 500-corner scene can fall to
             // ~2–3% of total axis-vote weight (see small1/3/4
-            // ChArUco snaps in testdata/). 0.05 was tuned for the
-            // private flagship dataset where corners are cleaner and mass
+            // ChArUco snaps in testdata/). 0.05 was tuned for cleaner
+            // capture conditions where corners are sharper and mass
             // concentrates tightly; 0.02 is still comfortably above
             // pure-noise bins.
             min_peak_weight_fraction: 0.02,
@@ -694,10 +694,10 @@ impl Default for AdvancedTuning {
             // validate→blacklist→regrow loop can take 4–5 iterations
             // to settle (see testdata/puzzleboard_reference/example1.png
             // with ~230 labelled corners and an oscillating blacklist
-            // of 2–4 per iter). 3 was adequate for the private flagship
-            // benchmark where blacklists are typically empty on the
-            // first pass; 6 absorbs the wider real-world variance
-            // without noticeable cost (each iter is cheap).
+            // of 2–4 per iter). 3 was adequate for cleaner captures
+            // where blacklists are typically empty on the first pass;
+            // 6 absorbs the wider real-world variance without
+            // noticeable cost (each iter is cheap).
             max_validation_iters: 6,
 
             stage6_local_h: default_stage6_local_h(),

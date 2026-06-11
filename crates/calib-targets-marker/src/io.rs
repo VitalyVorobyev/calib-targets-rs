@@ -1,7 +1,7 @@
 //! JSON configuration and report helpers for marker board detection.
 
 use crate::{MarkerBoardDetectionResult, MarkerBoardDetector, MarkerBoardParams};
-use calib_targets_chessboard::ChessCorner;
+use calib_targets_chessboard::{ChessCorner, ChessboardParamsError};
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{DetectorConfig, GridAlignment, TargetDetection};
 use serde::{Deserialize, Serialize};
@@ -64,7 +64,7 @@ impl MarkerBoardDetectConfig {
     /// a nested ChESS detector config — `cfg.chess` is consumed upstream by
     /// the corner-detection step (`calib_targets::detect_corners`), not by
     /// the chessboard stage itself.
-    pub fn build_detector(&self) -> MarkerBoardDetector {
+    pub fn build_detector(&self) -> Result<MarkerBoardDetector, ChessboardParamsError> {
         let params = self.marker.clone();
         MarkerBoardDetector::new(params)
     }

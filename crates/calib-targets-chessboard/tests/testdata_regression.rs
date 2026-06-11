@@ -18,8 +18,24 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
+use calib_targets_chessboard::{
+    ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
+};
 use serde::Deserialize;
+
+/// These gates are a recall ratchet calibrated for the **seed-and-grow**
+/// builder, which handles the full diverse set here (plain chessboard,
+/// ChArUco, puzzle) precisely. Topological is now the default builder, but it
+/// is precision-unsafe on the ChArUco frames in this set, so it is ratcheted
+/// separately — on the clean-grid subset in `topo_grid_regression.rs` and on
+/// the production puzzle path in `private_130puzzle.rs`. The `diskfit_*` tests
+/// below additionally regress seed-and-grow-only cluster.rs recovery stages.
+/// Pin seed-and-grow so each gate stays meaningful after the default flip.
+fn ratchet_params() -> DetectorParams {
+    let mut p = DetectorParams::default();
+    p.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    p
+}
 
 fn workspace_root() -> PathBuf {
     // Cargo sets CARGO_MANIFEST_DIR to the crate dir; go up two levels
@@ -59,8 +75,7 @@ fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
         .to_luma8();
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&img, &chess_cfg);
-    let params = DetectorParams::default();
-    let detector = Detector::new(params);
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
     let components = detector.detect_all(&corners).len();
     (detection, components)
@@ -273,14 +288,15 @@ fn diskfit_large_recovers_partial_slot_flips() {
         .with_orientation_method(OrientationMethod::DiskFit);
 
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(DetectorParams::default());
+    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on large.png");
     let labelled = detection.corners.len();
     assert!(
         labelled >= 365,
-        "DiskFit + chessboard-v2 must produce at least 365 labelled corners on large.png \
+        "DiskFit + seed-and-grow must produce at least 365 labelled corners on large.png \
          (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
          The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
          is broken — see fix_partial_slot_flips_post_stage6."
@@ -296,7 +312,7 @@ fn diskfit_large_recovers_partial_slot_flips() {
 /// which on a clean chessboard (`testdata/mid.png`) sometimes picks
 /// the wrong antipodal dark sector and reports the same axis-slot
 /// ordering for adjacent chessboard intersections that should
-/// alternate. Pre-fix this collapsed the chessboard-v2 detection
+/// alternate. Pre-fix this collapsed the seed-and-grow detection
 /// from 77 → 22 labelled corners on `mid.png`.
 ///
 /// `cluster.rs::fix_axis_slot_coherence` runs after Stage 3 and
@@ -325,14 +341,15 @@ fn diskfit_mid_recovers_full_chessboard() {
         .with_orientation_method(OrientationMethod::DiskFit);
 
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(DetectorParams::default());
+    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
 
     let detection = detection.expect("DiskFit must produce a detection on mid.png");
     let labelled = detection.corners.len();
     assert!(
         labelled >= 77,
-        "DiskFit + chessboard-v2 must produce at least 77 labelled corners on mid.png \
+        "DiskFit + seed-and-grow must produce at least 77 labelled corners on mid.png \
          (matching the RingFit baseline). Got {labelled}. \
          The chess-corners 0.9 slot-ordering bug recovery in cluster.rs \
          is broken — see fix_axis_slot_coherence."

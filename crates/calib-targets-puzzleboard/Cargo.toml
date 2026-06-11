@@ -13,7 +13,17 @@ keywords = ["calibration", "computer-vision", "puzzleboard", "chessboard", "de-b
 categories = ["computer-vision", "science"]
 
 [features]
-dataset = []
+default = []
+# Opt-in introspection surface: the `diagnostics` module, the diagnostics
+# type re-exports, and `PuzzleBoardDetector::detect_with_diagnostics`. OFF by
+# default, consistent with `calib-targets-chessboard`. The detector still
+# captures the diagnostics internally for best-component selection; the feature
+# only controls whether they reach the public surface.
+diagnostics = []
+# The `run_dataset` example + dataset harness consume both the chessboard
+# detector's per-frame `DebugFrame` and the puzzleboard
+# `detect_with_diagnostics` tuple, so enable both diagnostics surfaces.
+dataset = ["calib-targets-chessboard/diagnostics", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
@@ -45,6 +55,9 @@ required-features = ["dataset"]
 [[bench]]
 name = "dataset_decode"
 harness = false
+# Consumes `detect_with_diagnostics` on both the chessboard and puzzleboard
+# detectors, so it only builds with the diagnostics surfaces enabled.
+required-features = ["dataset"]
 
 [[bin]]
 name = "generate-puzzleboard-code-maps"

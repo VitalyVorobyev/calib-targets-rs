@@ -41,13 +41,13 @@ fn marker_board_corners_pass_check_consistency_without_ids() {
     let result = synthetic_marker_result();
     assert!(result.corners.iter().all(|corner| corner.id.is_some()));
 
-    let features: Vec<PointFeature<f32>> = result
+    let features: Vec<PointFeature> = result
         .corners
         .iter()
         .enumerate()
         .map(|(source_index, corner)| PointFeature::new(source_index, corner.position))
         .collect();
-    let hypotheses: Vec<CoordinateHypothesis<f32>> = result
+    let hypotheses: Vec<CoordinateHypothesis> = result
         .corners
         .iter()
         .enumerate()

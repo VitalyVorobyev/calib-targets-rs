@@ -352,7 +352,7 @@ pub(crate) fn fix_partial_slot_flips_post_stage6(
     cell_size: f32,
     k_nearest: usize,
 ) -> u32 {
-    use projective_grid::detect::advanced::square::homography::estimate_homography;
+    use projective_grid::geometry::estimate_homography;
 
     if labelled.len() < 4 || cell_size <= 0.0 || k_nearest < 4 {
         return 0;

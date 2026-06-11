@@ -34,7 +34,7 @@ struct ImageCase {
     #[serde(default)]
     topological: Option<Gate>,
     #[serde(default)]
-    chessboard_v2: Option<Gate>,
+    seed_and_grow: Option<Gate>,
     #[serde(default)]
     low_res: Option<LowResGate>,
     #[serde(default)]
@@ -122,7 +122,9 @@ fn run_detector(
     algorithm: GraphBuildAlgorithm,
 ) -> Option<ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    Detector::new(params_for(algorithm)).detect(&corners)
+    Detector::new(params_for(algorithm))
+        .expect("valid detector params")
+        .detect(&corners)
 }
 
 fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize) {
@@ -208,7 +210,7 @@ fn assert_gate(case: &ImageCase, name: &str, gate: &Gate, detection: Option<Ches
 fn algorithm_from_name(name: &str) -> GraphBuildAlgorithm {
     match name {
         "topological" => GraphBuildAlgorithm::Topological,
-        "chessboard_v2" => GraphBuildAlgorithm::ChessboardV2,
+        "seed_and_grow" => GraphBuildAlgorithm::SeedAndGrow,
         other => panic!("unknown graph_build_algorithm {other:?}"),
     }
 }
@@ -227,13 +229,15 @@ fn topo_grid_manifest_gates_hold() {
 
         if let Some(gate) = &case.topological {
             let detection = Detector::new(params_for(GraphBuildAlgorithm::Topological))
+                .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
         }
-        if let Some(gate) = &case.chessboard_v2 {
-            let detection = Detector::new(params_for(GraphBuildAlgorithm::ChessboardV2))
+        if let Some(gate) = &case.seed_and_grow {
+            let detection = Detector::new(params_for(GraphBuildAlgorithm::SeedAndGrow))
+                .expect("valid detector params")
                 .detect(&default_corners);
-            assert_gate(case, "chessboard_v2", gate, detection);
+            assert_gate(case, "seed_and_grow", gate, detection);
         }
         if let Some(gate) = &case.low_res {
             let fed = maybe_upscale(&img, gate.upscale);

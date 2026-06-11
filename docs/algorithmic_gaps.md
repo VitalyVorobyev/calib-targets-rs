@@ -11,10 +11,10 @@ This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
 pipeline reference — those live with the code that owns them:
 
-- **`crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`** —
-  canonical stage map for `projective_grid::topological::build_grid_topological`.
+- **`docs/topological-grid-detection.md`** (repo root) — canonical
+  stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
-  stage maps for both `GraphBuildAlgorithm` variants (ChessboardV2
+  stage maps for both `GraphBuildAlgorithm` variants (SeedAndGrow
   default + Topological opt-in), including the chessboard-side
   topological input adapter and recovery layer.
 
@@ -44,21 +44,22 @@ mislabelling.
 Two labelling pipelines are exposed via
 `calib_targets_chessboard::GraphBuildAlgorithm`:
 
-- **`ChessboardV2`** — seed-and-grow with global-H boundary extension
-  (`square::grow::bfs_grow` + `square::extension::extend_via_global_homography`),
+- **`SeedAndGrow`** — seed-and-grow with homography boundary extension
+  (`seed_and_grow::grow::bfs_grow` +
+  `seed_and_grow::extension::extend_via_local_homography`),
   battle-tested across all four target families.
 - **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
-  (`topological::build_grid_topological`) with an axis-driven cell
-  test that replaces the paper's image-color sampling so
-  `projective-grid` stays standalone.
+  (`topological::detect_square_oriented2_topological_all`) with an
+  axis-driven cell test that replaces the paper's image-color sampling
+  so `projective-grid` stays standalone.
 
-Both pipelines feed an optional shared **component-merge** pass
-(`projective_grid::component_merge::merge_components_local`) that
-reunites disconnected labelled components using local geometry only —
-no global homography. ChessboardV2 keeps the labelled set connected by
-construction and does not currently invoke component merge; the
-topological pipeline calls it twice (once on raw components, once
-after recovery boosters).
+Both pipelines now run the shared **component-merge** pass
+(`projective_grid::shared::merge::merge_components_local`) inside their
+facade — local geometry only, no global homography (Phase 1.3 unified
+this; see Gap 9). The seed-and-grow facade merges its per-seed
+components; the topological facade merges its per-walk components. The
+chessboard adapter keeps a *distinct* post-booster corner-identity merge
+in its recovery layer, not a second copy of this initial merge.
 
 ---
 
@@ -70,15 +71,26 @@ items are kept in place as audit trail.
 
 ### Gap 1 — Generic seed finder for non-chessboard consumers (PARTIAL)
 
-`projective_grid::square::seed_finder` ships `find_quad`,
-`SeedQuadParams`, and `SeedQuadValidator` — the primitives a generic
-finder needs. The chessboard's parity-aware finder
+`projective_grid::seed_and_grow::seed::finder` ships `find_quad`,
+`SeedQuadParams`, and the `SquareSeedPolicy` seam — the primitives a
+generic finder needs. The chessboard's parity-aware finder
 (`calib-targets-chessboard::seed`) is built on top.
 
-What's missing: a default seed-finder that doesn't require axis
-clusters (uses only edge-length consistency + midpoint violation),
-for `SpatialSquareValidator`-style users with unoriented point
-clouds. Tracked as deep-dive Phase 3.
+**Progress (verified 2026-06-11, Phase 3).** A default, parity-free
+seed+attach policy for unoriented point clouds now ships:
+`projective_grid::seed_and_grow::positions_policy::PositionsAttachPolicy`
+implements both `SquareSeedPolicy` and `SquareAttachPolicy` with
+eligibility = all, no axis-cluster prior, and no parity hooks. It is the
+shipped `Evidence::Positions` path. **What it still consumes:** the
+*synthesized* per-corner axes (the facade runs `orient::synthesize_*` up
+front), so the seed chord-pairing reads `policy.axes(idx)` rather than a
+purely geometric "nearest + most-orthogonal chord" construction.
+
+What remains: a fully axis-free seed-finder (edge-length consistency +
+midpoint violation only, no synthesized axes at all) for inputs where no
+reliable axis can be synthesized. The synthesized-axis path covers the
+common case; the pure-geometric fallback is the remaining incremental
+item. Tracked as a future deep-dive phase.
 
 ### Gap 2 — `circular_stats` is `f32`-only (OPEN)
 
@@ -108,37 +120,64 @@ predicate.
 - Or expose DLT design-matrix conditioning instead, with documented
   scale-aware semantics.
 
-### Gap 4 — Hex pipeline has no `bfs_grow` counterpart (OPEN)
+### Gap 4 — Hex seed-and-grow has no implementation (OPEN, now precisely scoped)
 
-`hex/{alignment, mesh, rectify, smoothness}.rs` ship the static
-geometry of a hex lattice. There is no `hex::grow::bfs_grow`. Hex
-consumers cannot do seed-and-grow today. Tracked as deep-dive
-Phase 7.
+Hex **topological** detection ships: `(Hex, Positions)` and `(Hex, Oriented3)`
+run the axis-driven path (`topological/hex.rs` — triangle-as-cell classify +
+axial `(q, r)` parallelogram-completion walk, D6 component merge, projective
+fit). What remains open is **hex seed-and-grow**: there is no
+`seed_and_grow` counterpart for hex (no hex seed-cell shape, no hex
+neighbour-prediction grow, no hex recovery schedule), so `(Hex, *)` under
+`SquareAlgorithm::SeedAndGrow` is a typed `UnsupportedCombination`. The hex
+topological path also has **no post-fit recovery schedule** (boundary
+extension / interior fill / rescue) — that machinery is seed-and-grow- and
+ChESS-axis-coupled and stays square-only — so hex recall is whatever the
+classify+walk recovers, with the fit residual as the precision gate. Adding hex
+seed-and-grow (and a geometry-only hex recovery schedule) is the remaining work.
+Tracked as a future deep-dive phase.
 
-### Gap 5 — `estimate_local_steps` is implemented but unused (OPEN)
+### Gap 5 — `estimate_local_steps` wired into production (RESOLVED, verified 2026-06-11)
 
-`local_step.rs` returns `(step_u, step_v, confidence,
-supporters_u, supporters_v)` per corner. Nothing calls it from
-production. Two open framings:
+The old standalone `local_step.rs` / `estimate_local_steps` helper no
+longer exists; the local-step *concept* it tracked is now realized in
+production in **both** framings the gap proposed:
 
-- Wire it as a *prediction-time refinement* in `bfs_grow` —
-  finite-difference fallback when the global H isn't fit.
-- Wire it as an *outlier signal in validation* — confidence weights
-  the blacklist attribution.
+- **Prediction-time refinement.** `seed_and_grow::grow::predict`'s
+  `local_step_at` computes a per-neighbour finite-difference grid step
+  and `predict_from_neighbours` uses it inside `bfs_grow` (with the
+  global `(u, v, cell_size)` as the fallback) — this is the
+  foreshortening-aware prediction that closed the old "BFS overshoots on
+  the far edge" recall stall.
+- **Validation outlier signal.** `shared::validate::step::local_step_per_corner`
+  computes a per-corner scalar local step that
+  `find_inconsistent_corners_step_aware` uses to gate edge-length
+  outliers against the *local* pitch rather than a global cell size.
 
-Pick one; defer the other. Tracked as deep-dive Phase 5.
+Both are exercised by tests (`predict_uses_local_step_when_neighbour_has_own_neighbours`,
+`local_step_per_corner_central_diff`). No standalone confidence-scored
+helper remains to wire; the gap is closed.
 
-### Gap 6 — Booster duplicates BFS prediction logic (OPEN)
+### Gap 6 — Booster duplicates BFS prediction logic (LARGELY RESOLVED)
 
-`crates/calib-targets-chessboard/src/boosters.rs` has its own
-`predict_from_neighbors` and search loop. Any improvement to
-`bfs_grow` prediction must be mirrored to the booster, or behaviour
-diverges between "during grow" and "after grow."
+The original duplication — `boosters.rs` carrying its own
+`predict_from_neighbors` and search loop — has been removed. The
+structural skeleton (cell enumeration, KD-tree, per-cell attachment
+ladder, fixed-point iteration, and the adaptive per-cell prediction)
+now lives in `projective_grid::seed_and_grow::fill::fill_grid_holes`.
+`crates/calib-targets-chessboard/src/boosters.rs` is a policy wrapper:
+it supplies a chessboard-specific `SquareAttachPolicy` (weak-cluster
+rescue + optional directional edge scale) and delegates the prediction
+and search to `fill_grid_holes`. Any improvement to the shared
+prediction therefore reaches both the grow and booster paths.
 
-**Fix.** Promote the booster's "interior gap fill + 1-step line
-extension" into a generic `projective_grid::square::extension`
-module on top of `extend_via_global_homography`'s machinery, then
-delete the duplicate. Tracked as deep-dive Phase 2.
+**Status (verified 2026-06-10, Phase 2d).** The Phase-2d merge-unify /
+dedup work did **not** touch this — the prediction skeleton was already
+shared via `fill_grid_holes` before Phase 2d. What remains is a
+deliberate policy seam, not a duplicate. Residual follow-up: the booster
+still owns the line-extrapolation pass (1-step boundary extension) as a
+chessboard-side policy; folding that into a generic
+`projective_grid::seed_and_grow::extension` entry point would let the
+two paths share that pass too. Left open as a smaller incremental item.
 
 ### Gap 7 — No subpixel re-fit pass (out of scope)
 
@@ -168,18 +207,27 @@ the legacy 45° diagonal gate.
 - *Parity-assisted classification.* Use checkerboard parity when the
   caller has it to distinguish true diagonals from same-axis skips.
 - *Hybrid extension.* After the topological pass, run
-  `square::extension::extend_via_local_homography` on
+  `seed_and_grow::extension::extend_via_local_homography` on
   unlabelled corners adjacent to the topological bbox. Combines
   topological's dense interior with seed-and-grow's reach into the
   distorted boundary.
 
-### Gap 9 — Component merge handles only overlapping label sets (OPEN)
+### Gap 9 — Component merge handles only overlapping label sets (OPEN, verified 2026-06-11)
 
-`projective_grid::component_merge::merge_components_local` currently
-requires `min_overlap ≥ 1` shared label between two components. This
-handles the majority case (gap-induced splits where a few edge
-corners straddle both components), but disjoint patches separated by
-a missing row never satisfy the overlap test and stay split.
+`projective_grid::shared::merge::merge_components_local` (moved here from
+the old `component_merge` module) still requires
+`min_overlap` shared labels between two components (default `2`). This
+handles the majority case (gap-induced splits where a few edge corners
+straddle both components), but disjoint patches separated by a missing
+row never satisfy the overlap test and stay split — `merge.rs` still
+lists that case as explicit out-of-scope.
+
+**Verified unchanged by the Phase 1.3 merge-unification.** That work made
+*both* algorithm facades call `merge_components_local` (the topological
+facade now merges in-crate via `merge_walk_components`, and the
+chessboard adapter dropped its private merge), so the two facades expose
+identical multi-component semantics — but it did **not** touch the
+overlap requirement. Disjoint-set merge remains unimplemented.
 
 **Fix.** Add a "predict next corner from each side" boundary check:
 for each component, walk the labelled bbox boundary outward by one
@@ -189,22 +237,102 @@ labelled positions of the other. Same scoring (cell-size + position
 agreement) but applied to predicted-vs-labelled rather than
 labelled-vs-labelled pairs.
 
-### Gap 10 — Topological pipeline default vs `ChessboardV2` (OPEN)
+### Gap 10 — Topological pipeline default vs `SeedAndGrow` (RESOLVED 2026-06-01)
 
-`GraphBuildAlgorithm::default()` returns `ChessboardV2`. The
-topological pipeline regresses recall on the public ChArUco-style
-testdata because ChESS detects corners *inside* marker bits whose
-axes lock to the marker's local orientation, not the global grid.
-ChArUco detection already pins to seed-and-grow regardless of caller
-choice, but the public bench harness exercises `detect_chessboard`
-directly on those images and the recall regression makes flipping
-the default unsafe today.
+`GraphBuildAlgorithm::default()` now returns `Topological`. The
+topological builder gives higher recall than seed-and-grow on the
+clean-chessboard regression set with precision held, so it is the
+default for plain chessboard / marker / puzzle detection.
 
-**Fix.** Add a "drop corners with axes inconsistent with the global
-mode" pre-filter that runs *before* Delaunay, removing the marker-
-internal X-corners whose local axes don't agree with the histogram
-peak found by `circular_stats`. Once that pre-filter ships, retest
-the public bench and flip the default.
+**Resolution — flip + scope ChArUco out, rather than the pre-Delaunay
+filter originally sketched here.** Topological is *not* precision-safe on
+ChArUco-style images: ChESS fires corners *inside* marker bits whose axes
+lock to the marker, and the per-cell axis test can admit them as
+chessboard corners. The decision (owner, 2026-06-01) is that marker scenes
+go through the ChArUco detector — which already pins seed-and-grow
+unconditionally — so the topological builder is **never gated against
+ChArUco**. Plain `detect_chessboard` on a marker image with default params
+is therefore explicitly out of scope (use the ChArUco detector). The
+flip's precision/recall gate was the non-marker regression set
+(clean-chessboard + puzzle), verified before flipping; the
+`graph_build_dispatch::default_dispatch_matches_topological` test pins the
+new default, and `marker_internal_rejection` / the private chessboard
+precision-regression test pin seed-and-grow explicitly as the marker-scene
+guarantee.
+
+### Gap 11 — Off-axis false labels in blurred regions defeat the structural check (OPEN)
+
+Measured on public `testdata/small3.png` (ChArUco, blurred bottom rows):
+the production topological output labels `(10, 8)` at `(495.9, 312.4)`,
+but column alignment against the adjacent sharp row (constant ≈ −2.4 px
+column drift, verified on two neighbouring columns) pins the true
+intersection at ≈ `(479.4, ·)` — the labelled corner is a marker-internal
+false corner ~16.5 px off-axis. The topological wrong-label structural
+check (overlong / off-axis / duplicate-pixel) does not fire: the offending
+vertical edge has near-nominal length and the off-axis threshold is kept
+deliberately low because aggressive values create diagonals on puzzle
+boards (see the wrong-label check notes). The same false-corner family
+caused the duplicate-coord ambiguity fixed in the walk (labels colliding
+one cell apart); collisions are now dropped, but a false corner whose true
+counterpart was never labelled still slips through.
+
+Candidate directions: per-column/row drift-consistency check at the
+component level (the measured signature — one corner breaking an otherwise
+constant column drift — is strong and cheap), or marker-aware scoring once
+ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
+policy work, which needs the same local-geometry discrimination.
+
+### Gap 12 — Orientation-free synthesis on clutter-dense targets (CLOSED BY EVIDENCE 2026-06-11)
+
+Position-only axis synthesis (`projective_grid::orient`) cannot reach recall
+parity with ChESS axes on ChArUco-style boards. Measured mechanism: glyph
+corners sit at roughly a third of the lattice pitch, so the per-corner
+nearest-neighbour pool mixes clutter and lattice chords (1-NN p05 ≈ pitch/3
+on the failing boards; 4-NN spread ≈ 2× vs ≈ 1.04 on clean boards), the
+global double-angle modes lock onto the clutter geometry, and the best
+position-only variant evaluated (generous pool + greedy max-angular-spread
+chord selection + local 2-means) still leaves a ~40° gap between synthesized
+axes and true lattice edge directions in the in-focus sliver — ~0 % of true
+edges within the topological classifier's 15° tolerance, vs 94 % on a clean
+control board. A spread-floor variant that improves clutter coherence also
+rejects genuine near-collinear axis pairs under strong foreshortening
+(regresses the perspective fixture), confirming the tension is structural.
+
+**Resolution:** clutter-dense targets are out of scope for orientation-free
+detection; they require intensity-aware axes (the ChESS fit), which the
+production default and the ChArUco detector already use. The supported
+domain — clutter-free regular grids — is at parity ≥ 1.0 per image and gated
+by `calib-targets-bench/tests/orientation_free_parity.rs`. Any future
+re-opening should start from intensity-aware seeding, not better
+position-only chord statistics.
+
+### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (OPEN, low priority)
+
+`alignment::solve_alignment` (the legacy rotation+translation **vote**
+matcher, used only when `CharucoParams::use_board_level_matcher` is `false`)
+picks a single D4 rotation up front via a score-weighted
+`dominant_rotation` histogram, then solves the best integer translation for
+that one rotation. It never evaluates the other three D4 rotations, so a
+frame whose true board rotation differs from the score-dominant marker
+rotation (e.g. a few high-score noise decodings biasing the histogram) can
+get the wrong rotation and lose inliers. The vestigial single-element
+`candidate` tuple in `solve_alignment` is the remnant of an earlier
+multi-candidate selector.
+
+The stale `// TODO: just run solve_alignment on the full set of markers` at
+the former `select_and_refine_markers` call site was misleading: the full
+set *is* already passed to `solve_alignment` in one call — the real gap is
+the missing per-rotation enumeration, not a per-marker loop. The TODO has
+been removed in favour of this entry.
+
+**Why low priority:** the production default is the board-level soft-LL
+matcher (`use_board_level_matcher = true`), which already enumerates all
+(D4 rotation × integer translation) hypotheses and picks the
+maximum-likelihood one — so the dominant-rotation shortcut only affects the
+opt-in legacy fallback. A proper fix (enumerate all four rotations in
+`solve_alignment`, keep the max-inlier candidate) is small and contained but
+must be gated on the private ChArUco regression sweep before landing; it is
+deferred until that path needs attention.
 
 ### Resolved gaps (April 2026 refactor)
 
@@ -235,16 +363,15 @@ the public bench and flip the default.
   axis-driven cell test (replacing the paper's image-color test) so
   the crate stays standalone. Selectable via
   `DetectorParams::graph_build_algorithm =
-  GraphBuildAlgorithm::Topological`. Default is still
-  `ChessboardV2` until Gap 10 closes; topological is opt-in for
-  PuzzleBoard low-view-angle work where it already wins on
-  recall + speed.
+  GraphBuildAlgorithm::Topological`. Now the **default** (Gap 10
+  resolved 2026-06-01); `SeedAndGrow` is pinned for ChArUco and
+  available per call elsewhere.
 - **Shared component merge** (was the long-standing
   `enable_component_merge` flag with no implementation). Now lives
   in `projective_grid::component_merge::merge_components_local`,
   uses local-geometry-only acceptance (D4 + anchor pair + cell-size
   + position-residual gates, no global homography). Currently
-  invoked only by the topological recovery layer; ChessboardV2
+  invoked only by the topological recovery layer; SeedAndGrow
   keeps the labelled set as a single connected component by
   construction. The `DetectorParams::component_merge:
   LocalMergeParams` field is consumed by the topological adapter
@@ -255,8 +382,7 @@ the public bench and flip the default.
 ## Architectural-direction summary
 
 The next architectural moves are closing Gap 8 (topological recall in
-heavy-distortion regions) and Gap 10 (default-flip for the
-topological pipeline), wiring `estimate_local_steps` into the
+heavy-distortion regions), wiring `estimate_local_steps` into the
 production pipeline (Gap 5), unifying the chessboard booster with the
 generic extension machinery (Gap 6), and tightening the homography-
 quality public surface (Gap 3). Hex-grid grow (Gap 4) and

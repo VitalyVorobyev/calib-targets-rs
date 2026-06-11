@@ -21,8 +21,8 @@ per target, with a shared corner vocabulary.
 
 ![Target gallery — chessboard, ChArUco, PuzzleBoard, marker board](docs/img/target_gallery.png)
 
-> **Status:** feature-complete, heading into a 0.8 release. APIs are
-> stabilising but may still change at minor versions.
+> **Status:** feature-complete. The public API is being finalised ahead of
+> a stable release and may still change at minor versions.
 
 | Target | What it is |
 |---|---|
@@ -32,7 +32,7 @@ per target, with a shared corner vocabulary.
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
-Upgrading from an earlier release? See the [Migration Guide](MIGRATION.md)
+Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.10.0.md)
 ([book chapter][migration]).
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/
@@ -46,14 +46,14 @@ Upgrading from an earlier release? See the [Migration Guide](MIGRATION.md)
   then decode anchors / dots / circles in rectified cells". The heavy
   lifting lives in [`calib-targets-chessboard`] and
   [`projective-grid`][projective-grid-readme].
-- **Two grid pipelines, typed outputs.** The default ChessboardV2
+- **Two grid pipelines, typed outputs.** The default topological
+  pipeline (Shu / Brunton / Fiala 2009) is image-free Delaunay +
+  edge-classification + flood-fill labelling that runs faster and gives
+  higher recall on clean chessboards and PuzzleBoards. The seed-and-grow
   pipeline is invariant-first seed-and-grow with adaptive local-step
-  prediction, battle-tested across all four target families. The
-  opt-in topological pipeline (Shu / Brunton / Fiala 2009) is image-
-  free Delaunay + edge-classification + flood-fill labelling that runs
-  faster and denser on clean PuzzleBoards. Selectable per call via
-  `DetectorParams::graph_build_algorithm`; ChArUco unconditionally
-  pins ChessboardV2.
+  prediction, battle-tested across all four target families and pinned
+  for ChArUco (marker-internal corners defeat the topological cell
+  test). Selectable per call via `DetectorParams::graph_build_algorithm`.
 - **Local invariants, not global warps.** Graph construction, seed
   formation, and validation all work on local neighbourhoods, so
   moderate perspective and radial distortion degrade gracefully
@@ -94,22 +94,50 @@ use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let chess_cfg = detect::default_chess_config();
-    let configs = DetectorParams::sweep_default();
-    let result = detect::detect_chessboard_best(&img, &chess_cfg, &configs);
-    match result {
-        Some(det) => println!("{} corners", det.corners.len()),
+
+    // The simplest call: default ChESS corner config + default detector params.
+    let detection = detect::detect_chessboard(
+        &img,
+        &detect::default_chess_config(),
+        &DetectorParams::default(),
+    );
+
+    match detection {
+        Some(det) => {
+            println!("detected {} corners", det.corners.len());
+            for c in &det.corners {
+                // position: sub-pixel (x, y) in pixels; grid: (i, j) lattice index
+                println!("  ({:.1}, {:.1}) -> grid ({}, {})",
+                    c.position.x, c.position.y, c.grid.i, c.grid.j);
+            }
+        }
         None => println!("no board detected"),
     }
     Ok(())
 }
 ```
 
-See also
+If detection is unreliable on a hard image (steep angle, blur, glare), reach
+for the sweep helper instead of hand-tuning. `detect_chessboard_best` runs
+several parameter presets and keeps the richest result;
+`DetectorParams::sweep_default()` supplies three that bracket the
+robustness/precision trade-off (balanced, tighter for clean boards, looser
+for distorted views):
+
+```rust,no_run
+let detection = detect::detect_chessboard_best(
+    &img,
+    &detect::default_chess_config(),
+    &DetectorParams::sweep_default(),
+);
+```
+
+The other three targets follow the same shape — `detect_charuco`,
+`detect_puzzleboard`, `detect_marker_board`, each with a `*_best` sweep
+variant. Runnable examples:
 [`detect_charuco`](crates/calib-targets/examples/detect_charuco.rs),
 [`detect_markerboard`](crates/calib-targets/examples/detect_markerboard.rs),
-[`detect_puzzleboard`](crates/calib-targets/examples/detect_puzzleboard.rs),
-and every `*_best` variant.
+[`detect_puzzleboard`](crates/calib-targets/examples/detect_puzzleboard.rs).
 
 ### Python
 
@@ -123,15 +151,21 @@ from PIL import Image
 import calib_targets as ct
 
 image = np.asarray(Image.open("board.png").convert("L"), dtype=np.uint8)
-chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
-configs = [
-    ct.ChessboardParams(),
-    ct.ChessboardParams(min_labeled_corners=12),
-    ct.ChessboardParams(max_components=1),
-]
-result = ct.detect_chessboard_best(image, configs, chess_cfg=chess_cfg)
+
+# Simplest call — all defaults:
+result = ct.detect_chessboard(image)
 if result is not None:
-    print(f"{len(result.corners)} corners")
+    print(f"detected {len(result.corners)} corners")
+    for c in result.corners:
+        print(f"  pos={c.position} grid={c.grid}")  # position in pixels, grid = (i, j)
+
+# If detection is unreliable, try several presets and keep the best result:
+configs = [
+    ct.ChessboardParams(),                       # balanced default
+    ct.ChessboardParams(min_labeled_corners=12), # require a denser board
+    ct.ChessboardParams(max_components=1),        # single connected grid only
+]
+result = ct.detect_chessboard_best(image, configs)
 ```
 
 End-to-end round-trip examples per target type (generate → detect →
@@ -143,7 +177,7 @@ one runnable script per target:
 
 ### WebAssembly
 
-Browser-ready WASM (~195 KB gzipped), with a React demo:
+Browser-ready WASM bindings, with a React demo:
 
 ```bash
 scripts/build-wasm.sh
@@ -173,6 +207,24 @@ Ready-made specs for all four target types: [`testdata/printable/`](testdata/pri
 Canonical guide: [printable-target chapter][printable-chapter].
 
 [printable-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
+
+## Detection results
+
+Each detector returns a typed result; its corners share a common vocabulary.
+A chessboard corner (`ChessboardCorner`) carries:
+
+- **`position`** — sub-pixel `(x, y)` in **pixels** (image origin top-left).
+- **`grid`** — integer lattice index `GridCoords { i, j }` (`i` increases
+  right, `j` down), rebased so the top-left visible corner is `(0, 0)`.
+- **`score`** — corner quality.
+
+ChArUco, PuzzleBoard, and marker corners add an `id` (a globally unique
+corner identifier) and a `target_position` (the corner's location on the
+physical board, in millimetres) once the board is aligned. The book chapter
+[Understanding Results][output] documents exactly when each optional field
+is populated; the [API reference][api] lists every result type and field.
+
+[output]: https://vitalyvorobyev.github.io/calib-targets-rs/output.html
 
 ## Limitations
 

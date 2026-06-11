@@ -67,10 +67,10 @@ fn main() {
         let cfg0 = default_chess_config().with_threshold(Threshold::Absolute(0.0));
         let raw_at_zero = detect_corners(&img, &cfg0).len();
 
-        let algo = std::env::var("ALGO").unwrap_or_else(|_| "chessboard_v2".to_string());
+        let algo = std::env::var("ALGO").unwrap_or_else(|_| "seed_and_grow".to_string());
         let algorithm = match algo.as_str() {
             "topological" => GraphBuildAlgorithm::Topological,
-            _ => GraphBuildAlgorithm::ChessboardV2,
+            _ => GraphBuildAlgorithm::SeedAndGrow,
         };
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
@@ -78,7 +78,7 @@ fn main() {
             let corners = detect_corners(&img, &cfg);
             let mut params = DetectorParams::default();
             params.graph_build_algorithm = algorithm;
-            let detector = Detector::new(params);
+            let detector = Detector::new(params).expect("valid detector params");
             let detection = detector.detect(&corners);
             let (labelled, holes) = match &detection {
                 Some(d) => {

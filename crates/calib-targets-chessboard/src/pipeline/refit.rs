@@ -155,18 +155,17 @@ pub(crate) fn run_refit(
             let bfs_validator =
                 ChessboardSquareAttachPolicy::new(augs, blacklist, new_centers, cell_size, params)
                     .with_parity_shift(bfs_parity_shift);
-            let bfs_params = projective_grid::detect::advanced::square::grow::GrowParams::new(
+            let bfs_params = projective_grid::seed_and_grow::grow::GrowParams::new(
                 tuning.attach_search_rel,
                 tuning.attach_ambiguity_factor,
             );
-            let bfs_stats =
-                projective_grid::detect::advanced::square::grow_extend::extend_from_labelled(
-                    &positions,
-                    grow_res,
-                    cell_size,
-                    &bfs_params,
-                    &bfs_validator,
-                );
+            let bfs_stats = projective_grid::seed_and_grow::grow_extend::extend_from_labelled(
+                &positions,
+                grow_res,
+                cell_size,
+                &bfs_params,
+                &bfs_validator,
+            );
             for (k, &idx) in bfs_stats.attached_indices.iter().enumerate() {
                 let at = bfs_stats.attached_cells[k];
                 augs[idx].stage = CornerStage::Labeled {

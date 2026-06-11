@@ -919,10 +919,9 @@ class ChessboardParams:
     chess: ChessConfig = field(default_factory=ChessConfig)
     # --- Stable core --------------------------------------------------------
     # See `calib_targets_chessboard::GraphBuildAlgorithm`. Accepted
-    # snake_case values: "topological" or "chessboard_v2". Default
-    # ChessboardV2 — flip to "topological" when targeting low-view-angle
-    # PuzzleBoard captures or other distortion-heavy scenes.
-    graph_build_algorithm: str = "chessboard_v2"
+    # snake_case values: "seed_and_grow" (default) or "topological".
+    # "topological" suits low-view-angle or distortion-heavy scenes.
+    graph_build_algorithm: str = "seed_and_grow"
     min_corner_strength: float = 0.0
     min_labeled_corners: int = 8
     max_components: int = 3

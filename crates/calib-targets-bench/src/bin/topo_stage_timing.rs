@@ -318,7 +318,9 @@ fn measure_once(
     let corner_wall_ms = corner_start.elapsed().as_secs_f64() * 1000.0;
 
     let grid_start = Instant::now();
-    let detections = Detector::new(params.clone()).detect_all(&corners);
+    let detections = Detector::new(params.clone())
+        .expect("valid detector params")
+        .detect_all(&corners);
     let grid_wall_ms = grid_start.elapsed().as_secs_f64() * 1000.0;
     let full_wall_ms = full_start.elapsed().as_secs_f64() * 1000.0;
     let spans = totals.snapshot_ms();

@@ -4,15 +4,15 @@ use projective_grid::{
     GridError, LatticeKind, PointFeature,
 };
 
-fn feature(idx: usize, x: f64, y: f64) -> PointFeature<f64> {
+fn feature(idx: usize, x: f32, y: f32) -> PointFeature {
     PointFeature::new(idx, Point2::new(x, y))
 }
 
-fn hypothesis(idx: usize, u: i32, v: i32) -> CoordinateHypothesis<f64> {
+fn hypothesis(idx: usize, u: i32, v: i32) -> CoordinateHypothesis {
     CoordinateHypothesis::new(idx, Coord::new(u, v), None)
 }
 
-fn square_features() -> (Vec<PointFeature<f64>>, Vec<CoordinateHypothesis<f64>>) {
+fn square_features() -> (Vec<PointFeature>, Vec<CoordinateHypothesis>) {
     let mut features = Vec::new();
     let mut hypotheses = Vec::new();
     let mut idx = 0;
@@ -20,8 +20,8 @@ fn square_features() -> (Vec<PointFeature<f64>>, Vec<CoordinateHypothesis<f64>>)
         for u in 0..3 {
             features.push(feature(
                 idx,
-                10.0 + 20.0 * f64::from(u),
-                -5.0 + 30.0 * f64::from(v),
+                10.0 + 20.0 * (u as f32),
+                -5.0 + 30.0 * (v as f32),
             ));
             hypotheses.push(hypothesis(idx, u, v));
             idx += 1;
@@ -47,7 +47,7 @@ fn clean_square_coordinate_hypotheses_pass() {
         report.solution.grid.bbox,
         Some((Coord::new(0, 0), Coord::new(2, 2)))
     );
-    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-9);
+    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-3);
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn clean_hex_coordinate_hypotheses_pass() {
     let mut features = Vec::new();
     let mut hypotheses = Vec::new();
     for (idx, coord) in coords.into_iter().enumerate() {
-        let model = LatticeKind::Hex.model_point::<f64>(coord);
+        let model = LatticeKind::Hex.model_point(coord);
         features.push(feature(idx, 3.0 + 40.0 * model.x, 7.0 + 40.0 * model.y));
         hypotheses.push(CoordinateHypothesis::new(idx, coord, None));
     }
@@ -78,7 +78,7 @@ fn clean_hex_coordinate_hypotheses_pass() {
     .unwrap();
     assert!(report.passed);
     assert!(report.solution.rejected.is_empty());
-    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-8);
+    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-3);
 }
 
 #[test]

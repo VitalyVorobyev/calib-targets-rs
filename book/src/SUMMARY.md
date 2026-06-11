@@ -9,6 +9,7 @@
   - [Understanding Results](output.md)
   - [Migration Guide](migration.md)
 - [Project Overview](overview.md)
+- [Metrics](metrics.md)
 - [Conventions](conventions.md)
 - [Pipeline Overview](pipeline.md)
 - [Crates](crates.md)
@@ -29,4 +30,3 @@
   - [Global Rectification](example_rectify_global.md)
   - [Mesh Rectification](example_rectify_mesh.md)
 - [Data and Tools](data_and_tools.md)
-- [Roadmap](roadmap.md)

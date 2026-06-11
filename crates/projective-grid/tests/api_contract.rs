@@ -6,14 +6,14 @@ use projective_grid::{
 
 #[test]
 fn feature_evidence_types_are_constructible() {
-    let point = PointFeature::new(12, Point2::new(10.0_f64, 20.0));
+    let point = PointFeature::new(12, Point2::new(10.0_f32, 20.0));
     let axis0 = LocalAxis::new(0.0, Some(0.05));
-    let axis1 = LocalAxis::new(std::f64::consts::FRAC_PI_2, Some(0.05));
-    let axis2 = LocalAxis::new(std::f64::consts::PI / 3.0, None);
+    let axis1 = LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(0.05));
+    let axis2 = LocalAxis::new(std::f32::consts::PI / 3.0, None);
 
-    let one = OrientedFeature::<_, 1>::new(point, [axis0]);
-    let two = OrientedFeature::<_, 2>::new(point, [axis0, axis1]);
-    let three = OrientedFeature::<_, 3>::new(point, [axis0, axis1, axis2]);
+    let one = OrientedFeature::<1>::new(point, [axis0]);
+    let two = OrientedFeature::<2>::new(point, [axis0, axis1]);
+    let three = OrientedFeature::<3>::new(point, [axis0, axis1, axis2]);
     let hypothesis = CoordinateHypothesis::new(12, Coord::new(3, 4), Some(0.8));
 
     assert_eq!(one.axes.len(), 1);
@@ -29,12 +29,12 @@ fn dimensions_and_model_mapping_are_explicit() {
     assert_eq!(dims.width, 9);
     assert_eq!(dims.height, 6);
 
-    let square = LatticeKind::Square.model_point::<f64>(Coord::new(2, 5));
+    let square = LatticeKind::Square.model_point(Coord::new(2, 5));
     assert_eq!(square, Point2::new(2.0, 5.0));
 
-    let hex = LatticeKind::Hex.model_point::<f64>(Coord::new(1, 2));
-    assert!((hex.x - 2.0).abs() < 1e-12);
-    assert!((hex.y - 3.0_f64.sqrt()).abs() < 1e-12);
+    let hex = LatticeKind::Hex.model_point(Coord::new(1, 2));
+    assert!((hex.x - 2.0).abs() < 1e-5);
+    assert!((hex.y - 3.0_f32.sqrt()).abs() < 1e-5);
 }
 
 #[test]

@@ -9,9 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::detect::advanced::square::component_merge::{
-    merge_components_local, ComponentInput,
-};
+use projective_grid::shared::merge::{merge_components_local, ComponentInput};
 
 use crate::boosters::apply_boosters_with_directional_edge_scale;
 use crate::cluster::{cluster_axes, ClusterCenters};
@@ -269,7 +267,7 @@ fn merge_components_with_shared_corners(
 fn cluster_centers_from_grid(axis_i: Vector2<f32>, axis_j: Vector2<f32>) -> ClusterCenters {
     let theta0 = axis_i.y.atan2(axis_i.x);
     let theta1 = axis_j.y.atan2(axis_j.x);
-    ClusterCenters { theta0, theta1 }
+    ClusterCenters::new(theta0, theta1)
 }
 
 #[cfg_attr(
@@ -406,7 +404,7 @@ pub(super) fn build_topological_detections(
             rebase_j_mod2: 0,
         };
 
-        // Geometry verification. The chessboard-v2 path runs this gate
+        // Geometry verification. The seed-and-grow path runs this gate
         // unconditionally before shipping a detection; the topological
         // dispatch used to skip it. The check can only drop labelled
         // corners (line collinearity / local-H residual / largest

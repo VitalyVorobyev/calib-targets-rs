@@ -61,7 +61,7 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
  *
  * Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
  * keeps zero-initialised C structs on the historical seed-and-grow
- * pipeline (`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`).
+ * pipeline (`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`).
  */
 typedef uint32_t ct_graph_build_algorithm_t;
 
@@ -110,7 +110,7 @@ typedef struct ct_chessboard_advanced_t {
 typedef struct ct_chessboard_params_t {
   /**
    * Pipeline selector. See [`ct_graph_build_algorithm_t`].
-   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2`]).
+   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
    */
   ct_graph_build_algorithm_t graph_build_algorithm;
   /**
@@ -855,7 +855,7 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 /**
  * Seed-and-grow pipeline. Currently the default.
  */
-#define CT_GRAPH_BUILD_ALGORITHM_CHESSBOARD_V2 0
+#define CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW 0
 
 /**
  * Topological pipeline (Delaunay + axis-driven cell test).

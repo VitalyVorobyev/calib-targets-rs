@@ -16,16 +16,17 @@ categories = ["computer-vision", "science"]
 default = ["image", "cli"]
 image = ["dep:chess-corners", "dep:image"]
 cli = ["dep:clap"]
-# Opt-in detector introspection surface. Enables the chessboard
-# `detect_*_with_diagnostics` helpers + `chessboard::diagnostics`
-# (`DebugFrame`). OFF by default — the hot `detect_*` path never builds it.
-#
-# NOTE: this currently forwards only to the chessboard crate. Gating the
-# charuco / puzzle / marker diagnostic surfaces is deferred — see the
-# Phase-3b report (charuco's `detect_with_diagnostics` backs a locked
-# precision smoke gate that runs with diagnostics OFF; puzzle/marker define
-# their diagnostic types inside the module that would be gated).
-diagnostics = ["calib-targets-chessboard/diagnostics"]
+# Opt-in detector introspection surface. Enables the per-detector
+# `detect_*_with_diagnostics` entry points + the `diagnostics` modules
+# (`DebugFrame`, `CharucoDetectDiagnostics`, `PuzzleBoardDiagnostics`). OFF by
+# default — the hot `detect_*` path never assembles them. Forwards to every
+# detector crate that exposes a `diagnostics` feature, so the surface is gated
+# uniformly across the workspace.
+diagnostics = [
+    "calib-targets-chessboard/diagnostics",
+    "calib-targets-charuco/diagnostics",
+    "calib-targets-puzzleboard/diagnostics",
+]
 tracing = [
     "dep:tracing",
     "dep:tracing-log",

@@ -11,8 +11,17 @@ import {
 } from "../lib/detector";
 import type { SyntheticTargetKind } from "../types/calib-targets";
 
+/** Describes a generated synthetic target, so the detector can match it. */
+export interface SyntheticSpec {
+  kind: SyntheticTargetKind;
+  rows: number;
+  cols: number;
+  dictionary: string;
+  markerRel: number;
+}
+
 interface Props {
-  onImageLoaded: (data: ImageData) => void;
+  onImageLoaded: (data: ImageData, synth?: SyntheticSpec) => void;
 }
 
 const KIND_OPTIONS: ReadonlyArray<readonly [SyntheticTargetKind, string]> = [
@@ -100,7 +109,13 @@ export function ImageUpload({ onImageLoaded }: Props) {
             break;
         }
         const data = await loadImageFromBytes(bytes, "image/png", rgbaToGray);
-        onImageLoaded(data);
+        onImageLoaded(data, {
+          kind: synthKind,
+          rows: synthRows,
+          cols: synthCols,
+          dictionary: charucoDict,
+          markerRel: charucoMarkerRel,
+        });
       } catch (err) {
         setSynthError(err instanceof Error ? err.message : String(err));
       } finally {

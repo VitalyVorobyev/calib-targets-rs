@@ -1,6 +1,6 @@
 //! Run the chessboard detector over a directory of stacked target
 //! images (one PNG per target, 6 × 720×540 snaps per image — the
-//! layout of our private flagship datasets).
+//! layout used by the large real-world calibration datasets).
 //!
 //! Writes per-snap `DebugFrame` JSON to `<out>/{t{T}s{S}.json}`. The
 //! Python overlay scripts consume these.
@@ -44,7 +44,7 @@ fn main() {
     let mut dataset: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
     let mut upscale: u32 = 1;
-    let mut algorithm = GraphBuildAlgorithm::ChessboardV2;
+    let mut algorithm = GraphBuildAlgorithm::SeedAndGrow;
     let mut timing_only = false;
     let mut min_corner_strength: f32 = 0.0;
     let mut args = env::args().skip(1);
@@ -111,9 +111,9 @@ fn main() {
             let started = Instant::now();
             let corners = detect_corners(&snap, &chess_cfg);
             corners_per_snap.push(corners.len());
-            let detector = Detector::new(detector_params.clone());
+            let detector = Detector::new(detector_params.clone()).expect("valid detector params");
             let (labelled, frame) = match algorithm {
-                GraphBuildAlgorithm::ChessboardV2 => {
+                GraphBuildAlgorithm::SeedAndGrow => {
                     let frame = detector.detect_with_diagnostics(&corners);
                     let labelled = frame
                         .detection
@@ -187,10 +187,10 @@ fn main() {
 
 fn parse_algorithm(raw: &str) -> GraphBuildAlgorithm {
     match raw {
-        "chessboard-v2" | "chessboard_v2" => GraphBuildAlgorithm::ChessboardV2,
+        "seed-and-grow" | "seed_and_grow" => GraphBuildAlgorithm::SeedAndGrow,
         "topological" => GraphBuildAlgorithm::Topological,
         other => {
-            eprintln!("unknown --algorithm {other:?}; expected chessboard-v2 or topological");
+            eprintln!("unknown --algorithm {other:?}; expected seed-and-grow or topological");
             std::process::exit(2);
         }
     }

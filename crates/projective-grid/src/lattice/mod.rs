@@ -1,8 +1,48 @@
-//! Lattice taxonomy, coordinate transforms, and model-plane mapping.
+//! Lattice-family axis: the parameter that the strategies and the shared
+//! back-half are written against, rather than a copy per family.
+//!
+//! This module hosts the family-agnostic coordinate types ([`Coord`],
+//! [`GridDimensions`], [`GridTransform`]), the [`LatticeKind`] selector, and
+//! the [`Lattice`] trait that captures the per-family geometry a recovery
+//! pipeline needs: how a lattice coordinate maps into the model plane, the
+//! cardinal neighbour offsets, and the coordinate symmetry group.
+//!
+//! Today only [`Square`] is implemented; [`Hex`] is a
+//! roadmap stub (see `docs/DESIGN.md` "Extending to hex"). Both the strategies
+//! and `shared::fit` reach the geometry through [`LatticeKind`] /
+//! [`Lattice::model_point`], so adding hex detection is a fill-in-the-trait
+//! task rather than a new folder tree.
 
-use nalgebra::Point2;
+use nalgebra::{Point2, Vector2};
 
-use crate::float::{lit, Float};
+pub mod hex;
+pub mod square;
+
+pub use hex::Hex;
+pub use square::Square;
+
+/// How the topological pipeline turns Delaunay triangles into lattice cells.
+///
+/// The axis-driven topological grid finder triangulates the feature cloud and
+/// then has to recover the lattice cells from the triangle mesh. The recovery
+/// shape differs by family:
+///
+/// * On a **square** lattice a unit cell is a quad, which the Delaunay
+///   triangulation splits into two triangles sharing the cell **diagonal**.
+///   The pipeline classifies that diagonal, then merges the triangle pair back
+///   into one quad ([`crate::topological`] `quads.rs`).
+/// * On a **hex** point lattice (one feature per lattice node) the Delaunay
+///   triangles **are** the unit cells — three mutually-adjacent nodes form an
+///   equilateral-ish triangle, and there is no diagonal class. The triangle-pair
+///   merge is bypassed entirely; each kept triangle is walked directly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CellTopology {
+    /// Merge diagonal-sharing triangle pairs into quads (square lattice).
+    TrianglePairToQuad,
+    /// Each Delaunay triangle is itself a unit cell (hex point lattice).
+    TriangleIsCell,
+}
 
 /// Integer coordinate on a lattice.
 ///
@@ -57,18 +97,127 @@ impl LatticeKind {
     /// Square coordinates map to `(u, v)`. Hex axial coordinates map to
     /// `(q + 0.5*r, sqrt(3)/2*r)`, using unit nearest-neighbour spacing in the
     /// model plane.
-    pub fn model_point<F: Float>(self, coord: Coord) -> Point2<F> {
+    ///
+    /// This dispatches to the [`Lattice::model_point`] of the family impl, so
+    /// callers holding only a [`LatticeKind`] (e.g. `shared::fit`,
+    /// [`crate::check`]) need not name the concrete family type.
+    pub fn model_point(self, coord: Coord) -> Point2<f32> {
         match self {
-            Self::Square => Point2::new(lit::<F>(coord.u as f32), lit::<F>(coord.v as f32)),
-            Self::Hex => {
-                let q = lit::<F>(coord.u as f32);
-                let r = lit::<F>(coord.v as f32);
-                let half = lit::<F>(0.5);
-                let sqrt3_over_2 = lit::<F>(3.0).sqrt() * half;
-                Point2::new(q + half * r, sqrt3_over_2 * r)
-            }
+            Self::Square => Square.model_point(coord),
+            Self::Hex => Hex.model_point(coord),
         }
     }
+
+    /// Cardinal neighbour offsets for this family (4 for square, 6 for hex).
+    pub fn neighbour_offsets(self) -> &'static [Coord] {
+        match self {
+            Self::Square => Square.neighbour_offsets(),
+            Self::Hex => Hex.neighbour_offsets(),
+        }
+    }
+
+    /// The coordinate symmetry group for this family (D4 for square,
+    /// D6 for hex).
+    pub fn symmetry_transforms(self) -> &'static [GridTransform] {
+        match self {
+            Self::Square => Square.symmetry_transforms(),
+            Self::Hex => Hex.symmetry_transforms(),
+        }
+    }
+
+    /// Number of distinct axis families: 2 for square (`±u`, `±v`), 3 for hex
+    /// (the three axial directions). This is the `k` the topological
+    /// classifier matches each edge against.
+    pub fn axis_family_count(self) -> usize {
+        match self {
+            Self::Square => Square.axis_family_count(),
+            Self::Hex => Hex.axis_family_count(),
+        }
+    }
+
+    /// Unit model-plane directions of the `k` primitive axis families.
+    ///
+    /// Returns one direction per family (`axis_family_count()` of them), each a
+    /// unit vector in the model plane. For square these are `(1,0)` and `(0,1)`;
+    /// for hex they are the three axial step directions folded into the upper
+    /// half-plane. The topological pipeline uses these as the canonical
+    /// orientation targets when synthesizing per-corner axes.
+    pub fn model_axis_directions(self) -> &'static [Vector2<f32>] {
+        match self {
+            Self::Square => Square.model_axis_directions(),
+            Self::Hex => Hex.model_axis_directions(),
+        }
+    }
+
+    /// How Delaunay triangles map to lattice cells for this family.
+    pub fn cell_topology(self) -> CellTopology {
+        match self {
+            Self::Square => Square.cell_topology(),
+            Self::Hex => Hex.cell_topology(),
+        }
+    }
+}
+
+/// Crate-private sealing for [`Lattice`].
+///
+/// External crates can *name* and *use* [`Lattice`] (it appears in the public
+/// API of the shared back-half) but cannot *implement* it. This lets the
+/// trait grow new required methods in later phases — the hex-detection axes,
+/// the cell-type discriminant, etc. (see `docs/DESIGN.md` "Extending to hex")
+/// — without those additions being a breaking change for downstream impls,
+/// because the only impls are the two zero-sized markers in this crate.
+mod private {
+    /// Sealed-trait marker. Implemented only for the in-crate lattice markers.
+    pub trait Sealed {}
+
+    impl Sealed for super::Square {}
+    impl Sealed for super::Hex {}
+}
+
+/// Per-family lattice geometry.
+///
+/// A [`Lattice`] impl supplies the geometry a recovery pipeline needs without
+/// hard-coding the family: how a coordinate maps into the model plane, the
+/// cardinal neighbour offsets used to walk the graph, and the coordinate
+/// symmetry group used by component merge. The shared back-half and (in the
+/// hex roadmap) the strategy skeletons are written against this trait so a new
+/// family is added by implementing the trait, not by copying machinery.
+///
+/// Implementations are zero-sized markers ([`Square`], [`Hex`]); the
+/// [`LatticeKind`] enum is the runtime selector that dispatches to them.
+///
+/// # Sealed
+///
+/// This trait is **sealed**: it has a crate-private supertrait
+/// (`private::Sealed`) so only the two in-crate markers can implement it.
+/// The seal is deliberate — extending hex detection adds new required methods
+/// (axis-family count, model-plane axis directions, cell-type discriminant).
+/// Because no external crate can implement `Lattice`, those additions are
+/// non-breaking. External callers depend on `Lattice` only as a
+/// bound / through [`LatticeKind`] dispatch, never as an impl target.
+pub trait Lattice: Copy + private::Sealed {
+    /// The [`LatticeKind`] this impl corresponds to.
+    const KIND: LatticeKind;
+
+    /// Map an integer lattice coordinate into the model plane (unit
+    /// nearest-neighbour spacing).
+    fn model_point(self, coord: Coord) -> Point2<f32>;
+
+    /// Cardinal neighbour offsets used to walk between adjacent lattice
+    /// coordinates.
+    fn neighbour_offsets(self) -> &'static [Coord];
+
+    /// The coordinate symmetry group (dihedral) for this family.
+    fn symmetry_transforms(self) -> &'static [GridTransform];
+
+    /// Number of distinct axis families (`k`): 2 for square, 3 for hex.
+    fn axis_family_count(self) -> usize;
+
+    /// Unit model-plane directions of the `k` primitive axis families.
+    fn model_axis_directions(self) -> &'static [Vector2<f32>];
+
+    /// How Delaunay triangles map to lattice cells for this family.
+    fn cell_topology(self) -> CellTopology;
 }
 
 /// A lattice-coordinate symmetry transform: `out = matrix * coord + offset`.
@@ -108,50 +257,16 @@ impl GridTransform {
 }
 
 /// Four cardinal neighbour offsets on a square grid.
-pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = [
-    Coord::new(1, 0),
-    Coord::new(0, 1),
-    Coord::new(-1, 0),
-    Coord::new(0, -1),
-];
+pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = square::SQUARE_CARDINAL_OFFSETS;
 
 /// Six axial neighbour offsets on a hex grid.
-pub const HEX_AXIAL_OFFSETS: [Coord; 6] = [
-    Coord::new(1, 0),
-    Coord::new(1, -1),
-    Coord::new(0, -1),
-    Coord::new(-1, 0),
-    Coord::new(-1, 1),
-    Coord::new(0, 1),
-];
+pub const HEX_AXIAL_OFFSETS: [Coord; 6] = hex::HEX_AXIAL_OFFSETS;
 
 /// Dihedral group D4 acting on square lattice coordinates.
-pub const D4_TRANSFORMS: [GridTransform; 8] = [
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [-1, 0]], [0, 0]),
-];
+pub const D4_TRANSFORMS: [GridTransform; 8] = square::D4_TRANSFORMS;
 
 /// Dihedral group D6 acting on hex axial coordinates.
-pub const D6_TRANSFORMS: [GridTransform; 12] = [
-    GridTransform::new(LatticeKind::Hex, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, -1], [1, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, 1], [-1, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 1], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[1, 0], [-1, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, -1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, -1], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[-1, 0], [1, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Hex, [[0, 1], [1, 0]], [0, 0]),
-];
+pub const D6_TRANSFORMS: [GridTransform; 12] = hex::D6_TRANSFORMS;
 
 #[cfg(test)]
 mod tests {
@@ -161,15 +276,34 @@ mod tests {
 
     #[test]
     fn square_model_mapping_is_cartesian() {
-        let p = LatticeKind::Square.model_point::<f64>(Coord::new(2, -3));
+        let p = LatticeKind::Square.model_point(Coord::new(2, -3));
         assert_eq!(p, Point2::new(2.0, -3.0));
     }
 
     #[test]
     fn hex_model_mapping_is_axial() {
-        let p = LatticeKind::Hex.model_point::<f64>(Coord::new(1, 2));
-        assert!((p.x - 2.0).abs() < 1e-12);
-        assert!((p.y - 3.0_f64.sqrt()).abs() < 1e-12);
+        let p = LatticeKind::Hex.model_point(Coord::new(1, 2));
+        assert!((p.x - 2.0).abs() < 1e-6);
+        assert!((p.y - 3.0_f32.sqrt()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn kind_dispatch_matches_trait_impls() {
+        let c = Coord::new(3, -1);
+        assert_eq!(LatticeKind::Square.model_point(c), Square.model_point(c));
+        assert_eq!(LatticeKind::Hex.model_point(c), Hex.model_point(c));
+        assert_eq!(
+            LatticeKind::Square.neighbour_offsets(),
+            Square.neighbour_offsets()
+        );
+        assert_eq!(
+            LatticeKind::Square.symmetry_transforms().len(),
+            D4_TRANSFORMS.len()
+        );
+        assert_eq!(
+            LatticeKind::Hex.symmetry_transforms().len(),
+            D6_TRANSFORMS.len()
+        );
     }
 
     #[test]
@@ -179,6 +313,48 @@ mod tests {
         assert!(D4_TRANSFORMS
             .iter()
             .all(|t| t.source_kind == LatticeKind::Square && t.determinant().abs() == 1));
+    }
+
+    #[test]
+    fn axis_family_counts() {
+        assert_eq!(LatticeKind::Square.axis_family_count(), 2);
+        assert_eq!(LatticeKind::Hex.axis_family_count(), 3);
+    }
+
+    #[test]
+    fn cell_topology_by_family() {
+        assert_eq!(
+            LatticeKind::Square.cell_topology(),
+            CellTopology::TrianglePairToQuad
+        );
+        assert_eq!(
+            LatticeKind::Hex.cell_topology(),
+            CellTopology::TriangleIsCell
+        );
+    }
+
+    #[test]
+    fn model_axis_directions_are_unit_and_match_offsets() {
+        // Square: the two axis directions are the +u/+v unit vectors.
+        let sq = LatticeKind::Square.model_axis_directions();
+        assert_eq!(sq.len(), 2);
+        for v in sq {
+            assert!((v.norm() - 1.0).abs() < 1e-6);
+        }
+        // Hex: three unit directions at 0°, 60°, 120° (mod π).
+        let hx = LatticeKind::Hex.model_axis_directions();
+        assert_eq!(hx.len(), 3);
+        for v in hx {
+            assert!((v.norm() - 1.0).abs() < 1e-6);
+        }
+        // The first hex axis direction must equal the folded model direction
+        // of the (1,0) axial offset.
+        let d_q = LatticeKind::Hex.model_point(Coord::new(1, 0))
+            - LatticeKind::Hex.model_point(Coord::new(0, 0));
+        let ang_offset = d_q.y.atan2(d_q.x);
+        let ang_dir = hx[0].y.atan2(hx[0].x);
+        let diff = (ang_offset - ang_dir).abs() % std::f32::consts::PI;
+        assert!(diff < 1e-5 || (std::f32::consts::PI - diff) < 1e-5);
     }
 
     #[test]

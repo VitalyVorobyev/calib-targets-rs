@@ -42,6 +42,9 @@ mod detector;
 mod io;
 mod validation;
 
+// Opt-in introspection surface, gated behind the `diagnostics` feature (default
+// off), consistent with `calib-targets-chessboard`.
+#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 
 pub use alignment::CharucoAlignment;

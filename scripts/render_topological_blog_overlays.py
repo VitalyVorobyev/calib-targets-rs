@@ -573,7 +573,7 @@ def draw_final(ax: plt.Axes, payload: dict[str, Any]) -> None:
     The chessboard adapter consumes the topological walk labels (Stage
     8 above), runs `merge_components_local` on the per-component
     output, then runs the same `run_geometry_check` precision gate that
-    chessboard-v2 uses (line collinearity / local-H residual / largest
+    seed-and-grow uses (line collinearity / local-H residual / largest
     cardinally-connected component). Anything that survives is what the
     public `Detection` carries; that's what's drawn here.
     """
@@ -719,7 +719,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
-    parser.add_argument("--final-algorithm", choices=["topological", "chessboard_v2"], default="topological")
+    parser.add_argument("--final-algorithm", choices=["topological", "seed_and_grow"], default="topological")
     parser.add_argument("--chess-threshold", type=float, default=100.0)
     parser.add_argument("--chess-threshold-kind", choices=["absolute", "relative"], default="absolute")
     parser.add_argument("--orientation-method", choices=["ring_fit", "disk_fit"], default="ring_fit")

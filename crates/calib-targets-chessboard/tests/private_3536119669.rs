@@ -1,7 +1,7 @@
 //! Precision regression for the private `3536119669` dataset.
 //!
 //! The first three stitched target images contain ChArUco marker regions
-//! that can generate plausible but wrong chessboard-v2 labels. The table
+//! that can generate plausible but wrong seed-and-grow labels. The table
 //! below records the reviewed false coordinates. A passing detector either
 //! refuses the frame or emits a grid without those labels.
 
@@ -109,12 +109,22 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> image::GrayImage {
     img.view(x0, 0, SNAP_WIDTH, SNAP_HEIGHT).to_image()
 }
 
-#[test]
-fn chessboard_v2_rejects_reviewed_3536119669_false_labels() {
+/// Precision contract for the **seed-and-grow** builder on these ChArUco-style
+/// frames: no reviewed false `(i, j)` label may survive.
+///
+/// Only seed-and-grow is gated here, on purpose. These are marker images, and
+/// the ChArUco detector pins seed-and-grow precisely because the topological
+/// builder admits marker-internal corners (its per-cell axis test cannot reject
+/// an x-junction whose axes happen to align with the grid) — running the
+/// topological builder on this set reproduces known wrong labels. Topological
+/// is the default for *plain* chessboard / puzzle detection, where precision
+/// holds; marker scenes must go through the ChArUco detector. See
+/// `docs/algorithmic_gaps.md` Gap 10 and the `GraphBuildAlgorithm` docs.
+fn assert_rejects_false_labels(algorithm: GraphBuildAlgorithm) {
     let dir = dataset_dir();
     if !dir.exists() {
         eprintln!(
-            "[skipped] 3536119669 false-label regression: dataset missing at {}",
+            "[skipped] 3536119669 false-label regression ({algorithm:?}): dataset missing at {}",
             dir.display()
         );
         return;
@@ -122,8 +132,8 @@ fn chessboard_v2_rejects_reviewed_3536119669_false_labels() {
 
     let chess_cfg = default_chess_config();
     let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::ChessboardV2;
-    let detector = Detector::new(params);
+    params.graph_build_algorithm = algorithm;
+    let detector = Detector::new(params).expect("valid detector params");
 
     let mut detected = 0usize;
     for target_idx in 0..REVIEW_TARGETS {
@@ -146,14 +156,24 @@ fn chessboard_v2_rejects_reviewed_3536119669_false_labels() {
             for &coord in false_coords {
                 assert!(
                     !labels.contains(&coord),
-                    "target_{target_idx} snap {snap_idx}: false label {coord:?} survived"
+                    "{algorithm:?} target_{target_idx} snap {snap_idx}: false label {coord:?} survived"
                 );
             }
         }
     }
 
     eprintln!(
-        "3536119669 reviewed frames with detections after final gate: {detected}/{}",
+        "3536119669 reviewed frames with detections after final gate ({algorithm:?}): {detected}/{}",
         REVIEW_TARGETS * SNAPS_PER_TARGET
     );
 }
+
+#[test]
+fn seed_and_grow_rejects_reviewed_3536119669_false_labels() {
+    assert_rejects_false_labels(GraphBuildAlgorithm::SeedAndGrow);
+}
+
+// NOTE: deliberately no `topological_*` variant. Topological is not
+// precision-safe on ChArUco-style marker frames (it labels marker-internal
+// corners) and is intentionally not gated against them — marker scenes use the
+// ChArUco detector, which pins seed-and-grow.

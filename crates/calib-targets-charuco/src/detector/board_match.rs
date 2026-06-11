@@ -11,9 +11,9 @@ use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::{rotate_code_u64, sample_cell, CellSamples, MarkerCell, MarkerDetection};
 use calib_targets_core::{
-    log_sigmoid, GrayImageView, GridAlignment, GridCoords, GridTransform, GRID_TRANSFORMS_D4,
+    cell_rect_corners_at, log_sigmoid, GrayImageView, GridAlignment, GridCoords, GridTransform,
+    GRID_TRANSFORMS_D4,
 };
-use nalgebra::Point2;
 use serde::Serialize;
 
 /// Configuration of the board-level matcher.
@@ -664,18 +664,6 @@ fn emit_markers(
         out.push(m);
     }
     out
-}
-
-fn cell_rect_corners_at(gc: GridCoords, px_per_square: f32) -> [Point2<f32>; 4] {
-    let x0 = gc.i as f32 * px_per_square;
-    let y0 = gc.j as f32 * px_per_square;
-    let s = px_per_square;
-    [
-        Point2::new(x0, y0),
-        Point2::new(x0 + s, y0),
-        Point2::new(x0 + s, y0 + s),
-        Point2::new(x0, y0 + s),
-    ]
 }
 
 fn samples_bit_count(s: &CellSamples) -> usize {
