@@ -88,12 +88,27 @@ export interface DetectorParamsOverride {
   advanced?: Record<string, unknown>;
 }
 
+export type DetectorReq = "chessboard" | "charuco" | "puzzleboard";
+
+export interface BoardReq {
+  rows: number;
+  cols: number;
+  cell_size?: number;
+  marker_size_rel?: number;
+  dictionary?: string;
+  origin_row?: number;
+  origin_col?: number;
+}
+
 export interface DetectRequest {
   label: string;
+  detector?: DetectorReq;
+  board?: BoardReq;
   engine?: EngineReq;
   params?: DetectorParamsOverride;
   orientation_method?: OrientationMethodReq;
   compare_baseline?: boolean;
+  sweep?: boolean;
 }
 
 export interface BaselineBlock {
@@ -106,6 +121,18 @@ export interface DetectResponse {
   image: { width: number; height: number };
   detection: BaselineImage | null;
   baseline?: BaselineBlock;
+  /** Family extras: `{markers}` for charuco, `{decode}` for puzzleboard. */
+  info?: {
+    markers?: number;
+    decode?: {
+      edges_observed: number;
+      edges_matched: number;
+      mean_confidence: number;
+      bit_error_rate: number;
+      master_origin_row: number;
+      master_origin_col: number;
+    };
+  };
 }
 
 export interface ApiErrorBody {

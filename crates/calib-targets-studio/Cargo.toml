@@ -14,6 +14,7 @@ calib-targets-bench = { path = "../calib-targets-bench" }
 calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 clap = { workspace = true, features = ["derive"] }
 image = { workspace = true }
+open = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }

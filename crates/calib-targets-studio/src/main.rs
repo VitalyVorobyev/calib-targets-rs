@@ -35,6 +35,9 @@ struct Cli {
     /// and print the expected Vite dev-server URL instead.
     #[arg(long)]
     dev: bool,
+    /// Open the studio in the default browser once the server is up.
+    #[arg(long)]
+    open: bool,
 }
 
 #[tokio::main]
@@ -59,6 +62,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     } else {
         tracing::info!("studio listening on {url}");
+    }
+    if cli.open && !cli.dev {
+        let _ = open::that(&url);
     }
 
     axum::serve(listener, app)

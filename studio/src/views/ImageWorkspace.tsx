@@ -12,8 +12,10 @@ import {
   stageDetail,
   stageName,
   type BaselineCorner,
+  type BoardReq,
   type CornerAugWire,
   type DetectorParamsOverride,
+  type DetectorReq,
   type DetectRequest,
   type DetectResponse,
   type DiagnoseAlgorithm,
@@ -79,6 +81,18 @@ export function ImageWorkspace() {
     useState<DiagnoseAlgorithm>("topological");
   const [axesOn, setAxesOn] = useState(false);
   const [stageVis, setStageVis] = useState<Record<string, boolean>>({});
+  const [detector, setDetector] = useState<DetectorReq>("chessboard");
+  const [board, setBoard] = useState<BoardReq>({
+    rows: 22,
+    cols: 22,
+    cell_size: 1.0,
+    marker_size_rel: 0.75,
+    dictionary: "DICT_4X4_1000",
+    origin_row: 0,
+    origin_col: 0,
+  });
+  const [sweep, setSweep] = useState(false);
+  const debouncedBoard = useDebounced(board, 400);
 
   const bitmap = useImageBitmap(label);
   const debouncedDraft = useDebounced(draft, 400);
@@ -86,12 +100,15 @@ export function ImageWorkspace() {
   const detectReq: DetectRequest = useMemo(
     () => ({
       label,
+      detector,
+      board: detector === "chessboard" ? undefined : debouncedBoard,
       engine: runOpts.engine,
       params: debouncedDraft,
       orientation_method: runOpts.orientationMethod,
-      compare_baseline: true,
+      compare_baseline: detector === "chessboard",
+      sweep: detector !== "chessboard" && sweep,
     }),
-    [label, runOpts, debouncedDraft],
+    [label, detector, debouncedBoard, runOpts, debouncedDraft, sweep],
   );
 
   const detect = useQuery({
@@ -243,7 +260,10 @@ export function ImageWorkspace() {
             gap: 2,
           }}
         >
-          {(["detect", "config", "diagnose", "baseline"] as Tab[]).map((t) => (
+          {(detector === "chessboard"
+            ? (["detect", "config", "diagnose", "baseline"] as Tab[])
+            : (["detect", "config", "diagnose"] as Tab[])
+          ).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -274,6 +294,12 @@ export function ImageWorkspace() {
             setRunOpts={setRunOpts}
             visible={visible}
             setVisible={setVisible}
+            detector={detector}
+            setDetector={setDetector}
+            board={board}
+            setBoard={setBoard}
+            sweep={sweep}
+            setSweep={setSweep}
           />
         )}
 
@@ -369,6 +395,12 @@ function DetectTab({
   setRunOpts,
   visible,
   setVisible,
+  detector,
+  setDetector,
+  board,
+  setBoard,
+  sweep,
+  setSweep,
 }: {
   draft: DetectorParamsOverride;
   setDraft: (d: DetectorParamsOverride) => void;
@@ -376,11 +408,41 @@ function DetectTab({
   setRunOpts: (r: RunOptions) => void;
   visible: Record<string, boolean>;
   setVisible: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  detector: DetectorReq;
+  setDetector: (d: DetectorReq) => void;
+  board: BoardReq;
+  setBoard: (b: BoardReq) => void;
+  sweep: boolean;
+  setSweep: (s: boolean) => void;
 }) {
   const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
     setDraft({ ...draft, ...patch });
   return (
     <>
+      <div>
+        <div className="label" style={{ marginBottom: "var(--s2)" }}>
+          Target
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
+        >
+          <SelectRow
+            label="Family"
+            value={detector}
+            options={["chessboard", "charuco", "puzzleboard"]}
+            onChange={(v) => setDetector(v as DetectorReq)}
+          />
+          {detector !== "chessboard" && (
+            <BoardForm
+              detector={detector}
+              board={board}
+              setBoard={setBoard}
+              sweep={sweep}
+              setSweep={setSweep}
+            />
+          )}
+        </div>
+      </div>
       <div>
         <div className="label" style={{ marginBottom: "var(--s2)" }}>
           Run options
@@ -475,6 +537,120 @@ function DetectTab({
   );
 }
 
+function BoardForm({
+  detector,
+  board,
+  setBoard,
+  sweep,
+  setSweep,
+}: {
+  detector: DetectorReq;
+  board: BoardReq;
+  setBoard: (b: BoardReq) => void;
+  sweep: boolean;
+  setSweep: (s: boolean) => void;
+}) {
+  const num = (
+    label: string,
+    value: number | undefined,
+    onChange: (v: number) => void,
+    step = 1,
+  ) => (
+    <label
+      style={{
+        display: "grid",
+        gridTemplateColumns: "90px 1fr",
+        alignItems: "center",
+        gap: "var(--s2)",
+        fontSize: 12,
+        color: "var(--text-muted)",
+      }}
+    >
+      {label}
+      <input
+        className="input"
+        type="number"
+        step={step}
+        value={value ?? ""}
+        onChange={(e) => {
+          const v = e.target.valueAsNumber;
+          if (!Number.isNaN(v)) onChange(v);
+        }}
+      />
+    </label>
+  );
+  return (
+    <>
+      {num("Rows", board.rows, (v) => setBoard({ ...board, rows: v }))}
+      {num("Cols", board.cols, (v) => setBoard({ ...board, cols: v }))}
+      {num(
+        "Cell size",
+        board.cell_size,
+        (v) => setBoard({ ...board, cell_size: v }),
+        0.001,
+      )}
+      {detector === "charuco" && (
+        <>
+          {num(
+            "Marker rel",
+            board.marker_size_rel,
+            (v) => setBoard({ ...board, marker_size_rel: v }),
+            0.05,
+          )}
+          <SelectRow
+            label="Dictionary"
+            value={board.dictionary ?? "DICT_4X4_1000"}
+            options={[
+              "DICT_4X4_50",
+              "DICT_4X4_100",
+              "DICT_4X4_250",
+              "DICT_4X4_1000",
+              "DICT_5X5_50",
+              "DICT_5X5_100",
+              "DICT_5X5_250",
+              "DICT_5X5_1000",
+              "DICT_6X6_50",
+              "DICT_6X6_100",
+              "DICT_6X6_250",
+              "DICT_6X6_1000",
+              "DICT_APRILTAG_36h11",
+            ]}
+            onChange={(v) => setBoard({ ...board, dictionary: v })}
+          />
+        </>
+      )}
+      {detector === "puzzleboard" && (
+        <>
+          {num("Origin row", board.origin_row, (v) =>
+            setBoard({ ...board, origin_row: v }),
+          )}
+          {num("Origin col", board.origin_col, (v) =>
+            setBoard({ ...board, origin_col: v }),
+          )}
+        </>
+      )}
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          fontSize: 12,
+          cursor: "pointer",
+          color: "var(--text-muted)",
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={sweep}
+          onChange={(e) => setSweep(e.target.checked)}
+          style={{ accentColor: "var(--accent)" }}
+        />
+        Multi-config sweep (detect_*_best)
+      </label>
+    </>
+  );
+}
+
 function StatsBlock({
   detect,
 }: {
@@ -530,6 +706,22 @@ function StatsBlock({
         )
       ) : (
         <span className="chip">no baseline</span>
+      )}
+      {d.info?.markers != null && (
+        <span className="chip" title="decoded ArUco markers">
+          {d.info.markers} markers
+        </span>
+      )}
+      {d.info?.decode != null && (
+        <>
+          <span className="chip" title="decode bit error rate">
+            BER {(d.info.decode.bit_error_rate * 100).toFixed(2)}%
+          </span>
+          <span className="chip" title="master pattern origin">
+            origin ({d.info.decode.master_origin_row},{" "}
+            {d.info.decode.master_origin_col})
+          </span>
+        </>
       )}
       {d.detection == null && <span className="chip err">no detection</span>}
     </div>
