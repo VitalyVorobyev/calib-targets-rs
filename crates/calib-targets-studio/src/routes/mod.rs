@@ -2,10 +2,11 @@
 //! SPA (`studio/dist`).
 
 pub mod dataset;
+pub mod detect;
 
 use std::sync::Arc;
 
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
@@ -23,6 +24,7 @@ pub fn router(state: AppState, dev: bool) -> Router {
         .route("/dataset", get(dataset::dataset))
         .route("/image/{*label}", get(dataset::image))
         .route("/baseline/{*label}", get(dataset::baseline))
+        .route("/detect", post(detect::detect))
         .with_state(state)
         .layer(CorsLayer::permissive());
 

@@ -36,3 +36,9 @@ privatedata
 
 # codegraph local index daemon (SQLite DB, socket, pid, logs)
 .codegraph/
+
+# calib-targets-studio local artifacts
+studio/node_modules/
+studio/dist/
+studio_configs/
+studio/tsconfig.tsbuildinfo
