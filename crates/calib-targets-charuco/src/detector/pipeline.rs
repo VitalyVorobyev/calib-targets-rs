@@ -196,6 +196,9 @@ impl CharucoDetector {
     /// scores, chosen/runner-up hypotheses, rejection reasons). The caller
     /// receives diagnostics even when detection fails, so overlays can
     /// render failure modes.
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
     pub fn detect_with_diagnostics(
         &self,
         image: &GrayImageView<'_>,

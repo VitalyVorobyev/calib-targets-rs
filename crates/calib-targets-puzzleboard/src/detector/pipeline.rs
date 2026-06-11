@@ -113,6 +113,9 @@ impl PuzzleBoardDetector {
     /// See [`crate::diagnostics::PuzzleBoardDiagnostics`] for the shape and
     /// stability promise. The success/error semantics of the
     /// [`Result`] component match [`Self::detect`] exactly.
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
     pub fn detect_with_diagnostics(
         &self,
         image: &GrayImageView<'_>,

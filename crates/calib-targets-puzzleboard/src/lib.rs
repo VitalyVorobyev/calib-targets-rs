@@ -35,7 +35,16 @@
 #![deny(missing_docs)]
 
 pub mod code_maps;
+
+// Opt-in introspection surface, gated behind the `diagnostics` feature (default
+// off), mirroring `calib-targets-chessboard`. The diagnostics types are always
+// compiled (the detector captures them internally) but only reach the public
+// surface — the `diagnostics` module, the type re-exports, and
+// `PuzzleBoardDetector::detect_with_diagnostics` — when the feature is enabled.
+#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
+#[cfg(not(feature = "diagnostics"))]
+pub(crate) mod diagnostics;
 
 mod board;
 mod detector;
@@ -48,6 +57,7 @@ pub use detector::{
     PuzzleBoardCorner, PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError,
     PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
 };
+#[cfg(feature = "diagnostics")]
 pub use diagnostics::{
     PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics, PuzzleBoardObservedEdge,
 };

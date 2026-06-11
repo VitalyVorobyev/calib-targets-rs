@@ -28,7 +28,7 @@
 //! .with_cell_size(1.0);
 //!
 //! let params = MarkerBoardParams::new(layout);
-//! let detector = MarkerBoardDetector::new(params);
+//! let detector = MarkerBoardDetector::new(params).expect("valid chessboard config");
 //!
 //! let pixels = vec![0u8; 32 * 32];
 //! let view = GrayImageView {

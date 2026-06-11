@@ -570,6 +570,14 @@ pub(crate) fn convert_charuco_detector_params(
     let mut out = CharucoParams::for_board(&board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
+    // ChArUco only supports the seed-and-grow builder (see
+    // `CharucoDetectError::UnsupportedAlgorithm`). The standalone chessboard
+    // default is now the topological builder, so a C caller that fills the
+    // chessboard sub-config from `chessboard_params_default_values()` would
+    // otherwise request topological and fail at detect time. Re-pin
+    // seed-and-grow here, matching `CharucoParams::for_board`.
+    out.chessboard.graph_build_algorithm =
+        calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
     out.max_hamming = u8::try_from(params.max_hamming)

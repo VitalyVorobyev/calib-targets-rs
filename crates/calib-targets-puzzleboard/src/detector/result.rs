@@ -62,9 +62,12 @@ impl PuzzleBoardCorner {
 /// This is the part of the decode a consumer needs to *use* a PuzzleBoard
 /// detection: how much support the decode had and where local `(0, 0)`
 /// landed on the master board. Winner-vs-runner-up scoring evidence and the
-/// raw per-edge observations live in
-/// [`crate::diagnostics::PuzzleBoardDiagnostics`], obtained via
-/// [`crate::PuzzleBoardDetector::detect_with_diagnostics`].
+/// raw per-edge observations live in the opt-in diagnostics channel.
+#[cfg_attr(
+    feature = "diagnostics",
+    doc = "See [`crate::diagnostics::PuzzleBoardDiagnostics`], obtained via",
+    doc = "[`crate::PuzzleBoardDetector::detect_with_diagnostics`]."
+)]
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub struct PuzzleBoardDecodeInfo {

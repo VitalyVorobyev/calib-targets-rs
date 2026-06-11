@@ -9,7 +9,7 @@ mod gray;
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
@@ -567,7 +567,7 @@ pub fn detect_chessboard(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = ChessDetector::new(cb_params);
+    let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let result = detector.detect(&corners);
     to_js(&result)
 }
@@ -592,7 +592,7 @@ pub fn detect_chessboard_all(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = ChessDetector::new(cb_params);
+    let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let results = detector.detect_all(&corners);
     to_js(&results)
 }
@@ -614,7 +614,10 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    // ChArUco only supports seed-and-grow; re-pin in case the config omitted
+    // the (now topological-defaulting) chessboard algorithm.
+    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -648,7 +651,7 @@ pub fn detect_marker_board(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = MarkerBoardDetector::new(mb_params);
+    let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
     let result = detector.detect_from_image_and_corners(&view, &corners);
     to_js(&result)
@@ -718,7 +721,7 @@ pub fn detect_chessboard_with_diagnostics(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = ChessDetector::new(cb_params);
+    let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let frame = detector.detect_with_diagnostics(&corners);
     to_js(&serde_json::json!({
         "result": frame.detection,
@@ -741,7 +744,10 @@ pub fn detect_charuco_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    // ChArUco only supports seed-and-grow; re-pin in case the config omitted
+    // the (now topological-defaulting) chessboard algorithm.
+    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -775,7 +781,7 @@ pub fn detect_marker_board_with_diagnostics(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = MarkerBoardDetector::new(mb_params);
+    let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
     match detector.detect_from_image_and_corners_with_diagnostics(&view, &corners) {
         Some((result, diagnostics)) => to_js(&serde_json::json!({
@@ -847,7 +853,7 @@ pub fn detect_chessboard_best(
 
     let best = configs
         .iter()
-        .filter_map(|params| ChessDetector::new(params.clone()).detect(&corners))
+        .filter_map(|params| ChessDetector::new(params.clone()).ok()?.detect(&corners))
         .max_by_key(|d| d.corners.len());
     to_js(&best)
 }
@@ -862,7 +868,12 @@ pub fn detect_charuco_best(
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let configs: Vec<CharucoParams> = from_js(configs)?;
+    let mut configs: Vec<CharucoParams> = from_js(configs)?;
+    // ChArUco only supports seed-and-grow; re-pin in case a config omitted
+    // the (now topological-defaulting) chessboard algorithm.
+    for cfg in &mut configs {
+        cfg.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    }
 
     let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;
     let mut last_err = None;
@@ -921,7 +932,7 @@ pub fn detect_marker_board_best(
     let best = configs
         .iter()
         .filter_map(|params| {
-            let detector = MarkerBoardDetector::new(params.clone());
+            let detector = MarkerBoardDetector::new(params.clone()).ok()?;
             let view = make_view(pixels, width, height);
             detector.detect_from_image_and_corners(&view, &corners)
         })

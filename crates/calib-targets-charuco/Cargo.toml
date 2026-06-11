@@ -14,7 +14,15 @@ categories = ["computer-vision", "science"]
 
 [features]
 default = []
-dataset = ["dep:env_logger"]
+# Opt-in introspection surface: the `diagnostics` module, the diagnostics type
+# re-exports, and `CharucoDetector::detect_with_diagnostics`. OFF by default,
+# consistent with `calib-targets-chessboard`. The detector still captures the
+# diagnostics internally (the board-level matcher builds them as part of its
+# core return); the feature only controls whether they reach the public surface.
+diagnostics = []
+# The dataset harness / example renders per-component diagnostics overlays, so
+# it pulls in both the charuco and chessboard diagnostics surfaces.
+dataset = ["dep:env_logger", "diagnostics", "calib-targets-chessboard/diagnostics"]
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
@@ -39,6 +47,16 @@ projective-grid.workspace = true
 [[example]]
 name = "run_dataset"
 required-features = ["dataset"]
+
+# The regression suites measure self-consistency wrong-ids, which live on the
+# `detect_with_diagnostics` channel — so they require the `diagnostics` feature.
+[[test]]
+name = "regression"
+required-features = ["diagnostics"]
+
+[[test]]
+name = "private_dataset"
+required-features = ["diagnostics"]
 
 [package.metadata.docs.rs]
 all-features = true

@@ -15,13 +15,19 @@ mod params;
 mod pipeline;
 mod result;
 
+// Diagnostics types reach the public surface only behind the `diagnostics`
+// feature (default off), consistent with `calib-targets-chessboard`. They are
+// always compiled — the matcher/pipeline capture them internally — but are
+// re-exported (and namable in public signatures) only when the feature is on.
+#[cfg(feature = "diagnostics")]
 pub use board_match::{
     BoardMatchDiagnostics, CellBestMatch, CellDiag, DiagHypothesis, RejectReason,
 };
 pub use error::CharucoDetectError;
 pub use params::CharucoParams;
+pub use pipeline::CharucoDetector;
+#[cfg(feature = "diagnostics")]
 pub use pipeline::{
-    CharucoDetectDiagnostics, CharucoDetector, ComponentDiagnostics, ComponentOutcome,
-    MatcherDiagKind,
+    CharucoDetectDiagnostics, ComponentDiagnostics, ComponentOutcome, MatcherDiagKind,
 };
 pub use result::{CharucoCorner, CharucoDetectionResult};

@@ -35,9 +35,15 @@
 //! Images that fail to decode (our detector returns Err) are reported but not
 //! failed — the reference images vary widely in scale and quality.
 
-use calib_targets::detect::{self, default_chess_config, detect_corners, gray_view};
-use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::detect::{self};
+use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_core::GRID_TRANSFORMS_D4;
+// Imports used only by the `diagnostics`-gated `diag_example0_edge_bits` test.
+#[cfg(feature = "diagnostics")]
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
+#[cfg(feature = "diagnostics")]
+use calib_targets::puzzleboard::PuzzleBoardDetector;
+#[cfg(feature = "diagnostics")]
 use calib_targets_puzzleboard::code_maps::{
     horizontal_edge_bit, vertical_edge_bit, EdgeOrientation,
 };
@@ -286,6 +292,10 @@ fn interop_authors_reference_images() {
 /// Diagnostic: run detector on example0 and compare BER at our found origin
 /// vs the reference oracle origin. Also dumps the first observed edges.
 /// Not a failing test — run with --nocapture to see output.
+///
+/// Uses the opt-in `detect_with_diagnostics` channel, so it builds only with
+/// the `diagnostics` feature enabled.
+#[cfg(feature = "diagnostics")]
 #[test]
 fn diag_example0_edge_bits() {
     let dir = testdata_dir();

@@ -69,7 +69,7 @@
 //!     }
 //! }
 //!
-//! let det = Detector::new(DetectorParams::default());
+//! let det = Detector::new(DetectorParams::default()).expect("default params are valid");
 //! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
 //! assert_eq!(detection.corners.len(), 49);
 //! ```
