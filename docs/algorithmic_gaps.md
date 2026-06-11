@@ -277,6 +277,34 @@ by `calib-targets-bench/tests/orientation_free_parity.rs`. Any future
 re-opening should start from intensity-aware seeding, not better
 position-only chord statistics.
 
+### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (OPEN, low priority)
+
+`alignment::solve_alignment` (the legacy rotation+translation **vote**
+matcher, used only when `CharucoParams::use_board_level_matcher` is `false`)
+picks a single D4 rotation up front via a score-weighted
+`dominant_rotation` histogram, then solves the best integer translation for
+that one rotation. It never evaluates the other three D4 rotations, so a
+frame whose true board rotation differs from the score-dominant marker
+rotation (e.g. a few high-score noise decodings biasing the histogram) can
+get the wrong rotation and lose inliers. The vestigial single-element
+`candidate` tuple in `solve_alignment` is the remnant of an earlier
+multi-candidate selector.
+
+The stale `// TODO: just run solve_alignment on the full set of markers` at
+the former `select_and_refine_markers` call site was misleading: the full
+set *is* already passed to `solve_alignment` in one call — the real gap is
+the missing per-rotation enumeration, not a per-marker loop. The TODO has
+been removed in favour of this entry.
+
+**Why low priority:** the production default is the board-level soft-LL
+matcher (`use_board_level_matcher = true`), which already enumerates all
+(D4 rotation × integer translation) hypotheses and picks the
+maximum-likelihood one — so the dominant-rotation shortcut only affects the
+opt-in legacy fallback. A proper fix (enumerate all four rotations in
+`solve_alignment`, keep the max-inlier candidate) is small and contained but
+must be gated on the private ChArUco regression sweep before landing; it is
+deferred until that path needs attention.
+
 ### Resolved gaps (April 2026 refactor)
 
 - **Pipeline A removal** (was Gap 1, Gap 2, Gap 5, Gap 9). The

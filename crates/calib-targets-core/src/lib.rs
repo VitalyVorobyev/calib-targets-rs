@@ -59,9 +59,9 @@ pub use corner::{
     TargetDetection, TargetKind,
 };
 pub use grid_alignment::{
-    grid_alignment_from_next, grid_alignment_to_next, grid_coords_from_next, grid_coords_to_next,
-    grid_transform_from_next, grid_transform_to_next, GridAlignment, GridTransform,
-    GRID_TRANSFORMS_D4,
+    cell_rect_corners_at, grid_alignment_from_next, grid_alignment_to_next, grid_coords_from_next,
+    grid_coords_to_next, grid_transform_from_next, grid_transform_to_next, GridAlignment,
+    GridTransform, GRID_TRANSFORMS_D4,
 };
 
 #[cfg(feature = "tracing")]

@@ -531,7 +531,11 @@ impl CharucoDetector {
         &self,
         markers: Vec<MarkerDetection>,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-        // TODO: just run solve_aligment on the full set of markers
+        // The full marker set is solved in one pass by `select_alignment` →
+        // `solve_alignment`. The remaining limitation (dominant-rotation-only
+        // D4 selection in the legacy vote path) is tracked as Gap 13 in
+        // `docs/algorithmic_gaps.md`; the default board-level matcher already
+        // enumerates all rotations.
         let (markers, alignment) = select_alignment(&self.board, markers)?;
 
         Some((markers, alignment))

@@ -85,6 +85,29 @@ impl GridTransform {
     }
 }
 
+/// The four corners of a unit grid cell at `gc`, in canonical rectified
+/// space, in clockwise **TL, TR, BR, BL** order (the workspace-wide
+/// quad/homography order).
+///
+/// `gc` selects the cell whose top-left corner sits at
+/// `(gc.i * px_per_cell, gc.j * px_per_cell)`; the cell is `px_per_cell`
+/// pixels on a side. Pass `GridCoords { i: 0, j: 0 }` for the origin cell.
+///
+/// Shared by the ArUco rectified-cell scan and the ChArUco board-match
+/// sampler so the cell-corner order is defined in exactly one place.
+#[inline]
+pub fn cell_rect_corners_at(gc: GridCoords, px_per_cell: f32) -> [nalgebra::Point2<f32>; 4] {
+    let x0 = gc.i as f32 * px_per_cell;
+    let y0 = gc.j as f32 * px_per_cell;
+    let s = px_per_cell;
+    [
+        nalgebra::Point2::new(x0, y0),
+        nalgebra::Point2::new(x0 + s, y0),
+        nalgebra::Point2::new(x0 + s, y0 + s),
+        nalgebra::Point2::new(x0, y0 + s),
+    ]
+}
+
 /// A grid alignment: `dst = transform(src) + translation`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GridAlignment {
