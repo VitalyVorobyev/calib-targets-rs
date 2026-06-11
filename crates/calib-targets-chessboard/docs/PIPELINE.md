@@ -28,16 +28,25 @@ to which ran:
   marker frames (hence the ChArUco pin below). Documented separately in
   [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md).
 - **`GraphBuildAlgorithm::SeedAndGrow`** — invariant-rich seed-and-grow
-  pipeline (`crate::grow::bfs_grow` + boundary extension via
-  homography). Battle-tested across every target family and pinned for
-  ChArUco. This is the path documented below.
+  pipeline (`crate::grow`, a thin wrapper over the shared
+  `projective_grid::seed_and_grow::grow::bfs_grow` engine, plus boundary
+  extension via homography). Battle-tested across every target family
+  and pinned for ChArUco. This is the path documented below.
 
-**ChArUco pinning.** `CharucoDetector::new` unconditionally overrides
-`chessboard.graph_build_algorithm = SeedAndGrow` regardless of caller
-choice — the topological pipeline's per-edge axis test cannot survive
-marker-internal X-corners, so the override is a precision guarantee,
-not a configuration choice. PuzzleBoard and marker board inherit the
-caller's choice via their nested `DetectorParams`.
+**Fallible construction.** `Detector::new(params) -> Result<Self,
+ChessboardParamsError>` validates the params up front: the only invalid
+combination today is `NeighbourEdges` orientation under `SeedAndGrow`
+(`ChessboardParamsError::NeighbourEdgesRequiresTopological`). The old
+panicking guard was removed in the Phase-5 API cleanup.
+
+**ChArUco pinning (typed).** ChArUco requires `SeedAndGrow` — the
+topological per-edge axis test cannot survive marker-internal X-corners.
+Rather than silently overriding, `CharucoDetector` returns a typed
+`CharucoDetectError::UnsupportedAlgorithm` when the nested
+`chessboard.graph_build_algorithm` is anything other than `SeedAndGrow`
+(or the `NeighbourEdges + SeedAndGrow` combination the chessboard
+validator rejects). PuzzleBoard and marker board inherit the caller's
+choice via their nested `DetectorParams`.
 
 ---
 

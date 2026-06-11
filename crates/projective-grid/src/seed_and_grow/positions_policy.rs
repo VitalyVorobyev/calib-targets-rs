@@ -39,6 +39,13 @@
 //! recovery schedule that wraps this policy runs the line-collinearity +
 //! local-H + topological wrong-label + largest-component filters on every
 //! sweep, so a geometrically-incoherent attach is dropped, not mislabelled.
+//!
+//! What does NOT belong here: any parity / axis-cluster vocabulary (that is
+//! [`Oriented2Policy`](crate::seed_and_grow::policy)) and the convergence /
+//! recovery control flow ([`crate::seed_and_grow::pipeline`] /
+//! [`crate::seed_and_grow::recovery`]).
+//!
+//! **Tier:** advanced engine — semver-exempt pre-1.0.
 
 use nalgebra::Point2;
 

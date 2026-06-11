@@ -17,7 +17,8 @@ pixel-buffer, or camera types anywhere in the public surface, and no
 target-specific identifiers (marker IDs, ring IDs, calibration metadata). It
 is **target-agnostic** — the same lattice recovery serves a chessboard
 detector, a laser-dot cloud, a scanned form, or a photographed board game.
-All math is generic over `f32` / `f64` via the [`Float`] trait.
+The detection surface is single-precision (`f32`); the standalone projective
+geometry kernel stays generic over `f32` / `f64` via the [`Float`] trait.
 
 ## When to use it
 

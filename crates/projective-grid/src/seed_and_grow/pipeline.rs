@@ -21,6 +21,12 @@
 //! space (using the existing [`SquareAttachPolicy`] seam internally), and
 //! hands this loop only index-space data. **Data out, not callbacks.**
 //!
+//! What does NOT belong here: any per-corner state type, any parity / axis /
+//! marker vocabulary (that lives in the driver), and the post-convergence
+//! recovery schedule (that is [`crate::seed_and_grow::recovery`]).
+//!
+//! **Tier:** advanced engine — semver-exempt pre-1.0.
+//!
 //! [`SquareAttachPolicy`]: crate::seed_and_grow::grow::SquareAttachPolicy
 
 use std::collections::{HashMap, HashSet};

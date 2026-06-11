@@ -3,8 +3,8 @@
 > Code: [`projective-grid`](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/crates/projective-grid).
 
 `projective-grid` is the pattern-agnostic core of the workspace's
-grid detectors. Given a cloud of 2D feature points — plus, for the
-square detector, two local axis directions per point — it recovers an
+grid detectors. Given a cloud of 2D feature points — optionally carrying
+one, two, or three local axis directions per point — it recovers an
 `(i, j) → point` labelling: which integer grid cell each feature
 occupies under perspective, together with a fitted projective
 transform from model-plane coordinates to image pixels.
@@ -14,8 +14,9 @@ image, pixel-buffer, or camera types anywhere in its public surface,
 and no target-specific identifiers (marker IDs, ring IDs, calibration
 metadata). It is **target-agnostic**: the same lattice recovery serves
 a chessboard detector, a laser-dot cloud, a scanned form, or a
-photographed board game. All math is generic over `f32` / `f64` via
-the `Float` trait. The other workspace detectors sit *above* this
+photographed board game. The detection surface is single-precision
+(`f32`); the standalone projective geometry kernel stays generic over
+`f32` / `f64` via the `Float` trait. The other workspace detectors sit *above* this
 crate — they run a corner detector, convert its output into generic
 point or oriented features, and call in here for the labelling.
 
@@ -32,10 +33,11 @@ the workspace doesn't yet ship.
 Three small pieces define the public surface.
 
 **Two lattice families** (`LatticeKind`). `Square` is the orthogonal
-`(i, j)` grid and is the family backed by an algorithm today. `Hex`
-(axial `(q, r)`) is modelled in the type system — coordinate mapping,
-neighbour offsets, the `D6` symmetry table — but has no detection
-algorithm yet; requesting it returns a typed error rather than a wrong
+`(i, j)` grid and is backed by two algorithms. `Hex` (axial `(q, r)`)
+is detected on the **topological path**: its triangles are the unit
+cells directly, so there is no diagonal/quad-merge stage. Hex is
+topological-only — a hex request under the default seed-and-grow
+selector returns a typed `UnsupportedCombination` rather than a wrong
 answer.
 
 **Two tasks.**
@@ -49,24 +51,25 @@ answer.
   and report types; it does not go through the `Evidence` enum.
 
 **Explicit evidence shapes** (`Evidence`). Detection input is wrapped
-in an enum that names exactly what the caller can supply:
+in an enum that names exactly how much orientation the caller can
+supply. The less-oriented square kinds synthesize the missing axes from
+neighbour geometry up front and then run the same strategy:
 
-| Variant | Payload | Status |
-|---|---|---|
-| `Positions` | `&[PointFeature]` | modelled, returns `UnsupportedCombination` |
-| `Oriented1` | `&[OrientedFeature<_, 1>]` | modelled, returns `UnsupportedCombination` |
-| `Oriented2` | `&[OrientedFeature<_, 2>]` | **implemented** (the square detector) |
-| `Oriented3` | `&[OrientedFeature<_, 3>]` | modelled, returns `UnsupportedCombination` |
-| `CoordinateHypotheses` | features + hypotheses | use `check_consistency` instead |
+| Variant | Payload | Square | Hex |
+|---|---|---|---|
+| `Positions` | `&[PointFeature]` | ✅ synthesize 2 axes | ✅ synthesize 3 axes (topological) |
+| `Oriented1` | `&[OrientedFeature<1>]` | ✅ synthesize 2nd axis | ❌ `UnsupportedCombination` |
+| `Oriented2` | `&[OrientedFeature<2>]` | ✅ native, 2 algorithms | ❌ `UnsupportedCombination` |
+| `Oriented3` | `&[OrientedFeature<3>]` | ❌ `UnsupportedCombination` | ✅ native (topological) |
+| `CoordinateHypotheses` | features + hypotheses | use `check_consistency` instead | — |
 
-Today the only `(lattice, evidence)` combination `detect_grid` solves
-is `(Square, Oriented2)`: each feature carries a `PointFeature`
-(position + caller-owned `source_index`) plus two roughly-orthogonal
-`LocalAxis` directions. Every other combination returns a typed
-`GridError::UnsupportedCombination { task, lattice, evidence }` — never
-a guessed answer. The unimplemented shapes exist in the type model so
-the API does not have to break when an algorithm lands behind one of
-them.
+Each feature carries a `PointFeature` (position + caller-owned
+`source_index`) plus `N` undirected `LocalAxis` directions (`N = 0` for
+`Positions`). Any unsupported `(lattice, evidence)` combination — for
+example `(Square, Oriented3)`, `(Hex, Oriented1/Oriented2)`, any
+`(Hex, *)` under `SeedAndGrow`, or `CoordinateHypotheses` for detection
+— returns a typed `GridError::UnsupportedCombination { task, lattice,
+evidence }`, never a guessed answer.
 
 ---
 
@@ -89,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build a 3x3 grid of oriented features. The `+ j * 6.0` term adds a
     // mild perspective-style shear, so this is a genuine projective grid,
     // not a perfectly axis-aligned one.
-    let mut features: Vec<OrientedFeature<f32, 2>> = Vec::new();
+    let mut features: Vec<OrientedFeature<2>> = Vec::new();
     for j in 0..3 {
         for i in 0..3 {
             // Image-frame position: origin top-left, x right, y down.
@@ -162,11 +165,23 @@ ran. Select via `DetectionParams::with_algorithm`:
   sensitivity to per-feature axis quality. May produce several
   components — see `detect_grid_all` below.
 
-Both paths share the same post-detection validation and projective fit.
-The deep-dive — the axis-classification test, the triangle-to-cell
-merge, and the line between the generic machinery here and the
-chessboard-specific wrapper — lives in
-`docs/topological-grid-detection.md` in the workspace repository.
+Both paths share the same post-detection validation and projective fit,
+and both recover the full pattern with zero wrong labels — the practical
+differences are **speed** (topological is markedly faster) and
+**marker-bit robustness** (seed-and-grow tolerates corners inside marker
+glyphs, which is why ChArUco pins it). The deep-dive — the
+axis-classification test, the triangle-to-cell merge, and the line
+between the generic machinery here and the chessboard-specific wrapper —
+lives in `docs/topological-grid-detection.md` in the workspace
+repository.
+
+**Hex** uses the topological algorithm only. On a hex point lattice the
+Delaunay triangles *are* the unit cells, so the diagonal/quad-merge
+stage is bypassed; the axial `(q, r)` walk and the projective fit
+back-half are otherwise shared with the square topological path. Hex has
+no post-fit recovery schedule (that machinery is seed-and-grow-coupled),
+so the fit residual is the precision gate. Select it with
+`DetectionParams::with_algorithm(SquareAlgorithm::Topological)`.
 
 ### Single vs. multi-component results
 
@@ -183,12 +198,12 @@ topological path may yield several.
 ## Inputs
 
 Detection input is the `Evidence` enum (see *The model* above). For the
-supported `Oriented2` shape each element is an `OrientedFeature<F, 2>`:
+native `Oriented2` shape each element is an `OrientedFeature<2>`:
 
-- `point: PointFeature<F>` — `position` (image-frame pixel center) and a
+- `point: PointFeature` — `position` (image-frame pixel center) and a
   stable, caller-owned `source_index`. The solution reports the
   `source_index` back so a recovered label maps to the exact input.
-- `axes: [LocalAxis<F>; 2]` — two undirected local lattice directions,
+- `axes: [LocalAxis; 2]` — two undirected local lattice directions,
   each an `angle_rad` plus an optional `sigma_rad` (angular
   uncertainty). Axes are *undirected*: `θ` and `θ + π` denote the same
   direction.
@@ -206,25 +221,25 @@ individual fields.
 
 ## Outputs
 
-A successful detection is a `GridSolution<F>`:
+A successful detection is a `GridSolution`:
 
 | Field | Meaning |
 |---|---|
-| `grid: LabelledGrid<F>` | The labelled component: `entries` (one per placed feature), the `lattice` family, an inclusive coordinate `bbox`, and the optional caller-supplied `dimensions`. |
-| `fit: Option<LatticeFit<F>>` | The fitted model-plane-to-image projective transform (`model_to_image: Projective2<F>`) plus a `residuals: ResidualSummary` (`count`, `mean_px`, `max_px`). |
-| `rejected: Vec<RejectedFeature<F>>` | Features this component could not place. |
+| `grid: LabelledGrid` | The labelled component: `entries` (one per placed feature), the `lattice` family, an inclusive coordinate `bbox`, and the optional caller-supplied `dimensions`. |
+| `fit: Option<LatticeFit>` | The fitted model-plane-to-image projective transform plus a `residuals: ResidualSummary` (`count`, `mean_px`, `max_px`). |
+| `rejected: Vec<RejectedFeature>` | Features this component could not place. |
 
-Each `GridEntry<F>` carries:
+Each `GridEntry` carries:
 
 - `coord: Coord` — the `(i, j)` label as `coord.u` / `coord.v`, rebased
   so the labelled bounding box starts at `(0, 0)`.
 - `source_index: usize` — back into the caller's input slice.
-- `image_position: Point2<F>` — the feature's image-frame pixel-center
+- `image_position: Point2<f32>` — the feature's image-frame pixel-center
   position.
-- `residual_px: Option<F>` — reprojection residual in pixels, present
+- `residual_px: Option<f32>` — reprojection residual in pixels, present
   when a fit was computed.
 
-Each `RejectedFeature<F>` carries the `source_index`, an optional
+Each `RejectedFeature` carries the `source_index`, an optional
 `coord`, an optional `residual_px`, and a `RejectionReason`:
 `Unlabelled` (never placed — e.g. noise outside the recovered lattice),
 `ValidationDropped` (placed by the grow pass but dropped by post-grow
@@ -269,8 +284,9 @@ enum but `detect_grid` does not yet act on it.
   `atan2`; naive `(cos θ, sin θ)` averaging breaks at the 0°/180° seam.
 - **Non-negative, top-left-origin labels.** Output `(i, j)` is rebased
   so the labelled bounding-box minimum is `(0, 0)`.
-- **Float generic.** Every type is generic over `F: Float`, so the same
-  code runs in `f32` or `f64`.
+- **Single precision.** The detection surface is pinned to `f32`. Only
+  the standalone projective geometry kernel stays generic over
+  `F: Float`, for a future `f64` calibration consumer.
 
 ---
 

@@ -101,11 +101,13 @@ homographies are consistent — which needs no orientation at all. Orientation,
 when present, sharpens seeding and edge classification. See `ORIENTATION.md`
 for exactly where each strategy consumes it and how each runs without it.
 
-> Recall note. Zero wrong labels holds for all three kinds. Recovery *recall*
-> of the synthesized paths (`Positions`, `Oriented1`) on the facade
-> seed-and-grow strategy under strong perspective is still below the
-> two-axis path; full orientation-free recall parity is the Phase 3 goal. The
-> topological strategy is the recommended orientation-free path today.
+> Recall note. Zero wrong labels holds for all three kinds. The
+> orientation-free path now reaches **recall parity** with the two-axis path:
+> the geometry-only `PositionsAttachPolicy` (seed-and-grow) plus the
+> post-convergence recovery schedule close the gap that the hard axis-voucher
+> previously left under strong perspective. The parity is measured per-image
+> (labelled-free / labelled-oriented) and gated; see
+> `docs/development/detection-pipeline.md` and `ORIENTATION.md`.
 
 ## The pipeline: a strategy front-half + a shared back-half
 
@@ -121,15 +123,13 @@ detect_grid_all(request):
 ```
 
 - `merge` reunites disconnected labelled components using **local geometry
-  only** (no global homography), so it tolerates heavy radial distortion. The
-  **seed-and-grow facade** runs it (it assembles one component per closed seed,
-  then merges). The **topological facade** does not yet run it in-crate — the
-  chessboard adapter runs `merge_components_local` on the facade's per-component
-  output instead. Unifying the two (so the topological facade merges too, with
-  the chessboard adapter's merge removed in the same change to avoid a
-  double-merge) is a tracked migrate-down item: adding the facade merge while
-  the adapter still merges double-merges and reintroduces false positives on
-  the private chessboard set, so the two must move together.
+  only** (no global homography), so it tolerates heavy radial distortion. **Both
+  facades run it in-crate**: the seed-and-grow facade assembles one component
+  per closed seed and merges; the topological facade runs the same
+  `merge_components_local` (`merge_walk_components`) on its per-component walk
+  output. The chessboard adapter no longer carries a private merge call, so the
+  two algorithm facades now expose **identical multi-component semantics** and
+  there is no double-merge.
 - `validate` is the structural-cue gate: row/column collinearity
   ("lines are lines") + per-corner local-homography residual + edge-length
   band. It is **orientation-free**.
@@ -181,10 +181,12 @@ src/
   shared/           SHARED back-half (over Lattice), used by BOTH strategies
     mod.rs · merge.rs (D4/D6) · validate/ · fit.rs (fit is pub(crate))
   seed_and_grow/    AXIS 2, strategy 1: build_components = (multi-seed) grow [+ fill]
-    mod.rs · seed/ · grow.rs · grow_extend.rs · extension/ · fill.rs · policy.rs · angle.rs
+    mod.rs · seed/ · grow/ (mod·params·predict) · grow_extend.rs · extension/
+    fill.rs · policy.rs · positions_policy.rs · pipeline.rs · recovery.rs · angle.rs
   topological/      AXIS 2, strategy 2: delaunay → classify → quads → walk (square)
     mod.rs · delaunay.rs · classify.rs · quads.rs · filter.rs · walk.rs · axis.rs · trace.rs
-    hex.rs          hex topological: triangle-as-cell classify + axial walk
+    hex.rs          hex topological lattice math: triangle-as-cell classify + axial walk
+    hex_detect.rs   hex orchestration: entry point + D6 merge + fit + assembly
   detect.rs         facade: detect_grid / detect_grid_all, DetectionParams,
                     SquareAlgorithm; routes Evidence kind → synthesis + strategy;
                     runs strategy.build_components → shared merge/validate/fit

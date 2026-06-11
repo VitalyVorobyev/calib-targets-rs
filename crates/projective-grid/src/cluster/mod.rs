@@ -12,6 +12,10 @@
 //! caller's own label type, parity-coherence repair) stays caller-side;
 //! this module is the pure direction-clustering math.
 //!
+//! **Tier:** stable facade — [`cluster_axes`] and its
+//! [`AxisClusterCenters`] / [`AxisAssignment`] types are re-exported at the
+//! crate root and follow normal semver intent.
+//!
 //! # Inputs / outputs
 //!
 //! * Input: a slice of [`AxisFeature`], each carrying its two

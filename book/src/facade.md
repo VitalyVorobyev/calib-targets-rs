@@ -58,12 +58,14 @@ let result = detect::detect_puzzleboard_best(&img, &configs);
 
 - `image` (default): enables `calib_targets::detect`.
 - `tracing`: enables tracing output across the subcrates.
-- `diagnostics` (off): forwards to `calib-targets-chessboard/diagnostics`
-  and gates `detect_chessboard_with_diagnostics` (the `DebugFrame`
-  channel). The chessboard detector builds no per-stage trace on the hot
-  `detect_chessboard` path unless this is enabled (the `dataset` feature
-  on `calib-targets-chessboard` implies it). The other detectors'
-  diagnostics (`detect_*_with_diagnostics`) are always available.
+- `diagnostics` (off): forwards to the `diagnostics` feature of the
+  chessboard, ChArUco, and puzzleboard subcrates, and gates **every**
+  `detect_*_with_diagnostics` entry point (the `DebugFrame` /
+  self-consistency channels). The detectors build no per-stage trace on
+  the hot `detect_*` paths unless this is enabled (the `dataset` feature
+  on `calib-targets-chessboard` implies it). Phase-5 unified this:
+  ChArUco and puzzleboard diagnostics are now gated behind the same
+  feature as chessboard rather than being always-on.
 
 See the [Migration Guide](migration.md) for the full breaking-change
 list when upgrading from an earlier release.

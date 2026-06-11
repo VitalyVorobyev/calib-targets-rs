@@ -19,6 +19,15 @@
 //! hex-specific table. Duplicate-coordinate collisions drop the coordinate
 //! (the Phase-1 ambiguity-drop rule), and each component is rebased so its
 //! axial bounding-box minimum is `(0, 0)`.
+//!
+//! This module is the hex **lattice math** (axis caches, triangle-cell
+//! classification, the axial flood-fill walk, component labelling). The hex
+//! *pipeline wiring* — the public entry point, component merge under D6, fit,
+//! and solution assembly — lives in [`super::hex_detect`]. What does NOT
+//! belong here: image sampling, and any square-specific stage (diagonal
+//! class, triangle-pair-to-quad merge).
+//!
+//! **Tier:** advanced engine — semver-exempt pre-1.0.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 

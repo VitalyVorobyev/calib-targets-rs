@@ -16,6 +16,12 @@
 //! tuning), but the geometry itself lives here so the topological and
 //! seed-and-grow strategies share one implementation.
 //!
+//! What does NOT belong here: the stage *orchestration* (which filter runs
+//! when, and the parity / axis recheck) — that is irreducibly coupled to the
+//! caller's stage machine and stays caller-side.
+//!
+//! **Tier:** advanced engine — semver-exempt pre-1.0.
+//!
 //! # Determinism
 //!
 //! None of these filters depend on `HashMap` iteration order: the

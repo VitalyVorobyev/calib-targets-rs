@@ -39,16 +39,20 @@ local projected grid. A corner whose synthesized axes are wrong is rejected by
 the downstream geometry gates — it becomes a *missing* corner, never a
 *mislabelled* one.
 
-> Recall: zero wrong labels holds for all three kinds. The synthesized paths'
-> recovery *recall* on the facade seed-and-grow strategy under strong
-> perspective is still below the two-axis path (the synthesized second axis is
-> weaker at boundaries); the **topological** strategy is the recommended
-> orientation-free path today. Closing the seed-and-grow recall gap (a
-> positions-native attach policy + the recovery schedule) is the Phase 3 goal.
+> Recall: zero wrong labels holds for all three kinds, and the synthesized
+> square paths now reach **recall parity** with the two-axis path. The gap that
+> the hard axis-voucher left under strong perspective is closed by a
+> positions-native attach policy (`seed_and_grow::positions_policy`) plus the
+> post-convergence recovery schedule (`seed_and_grow::recovery`); both the
+> seed-and-grow and topological strategies are first-class orientation-free
+> paths. Parity is measured per-image and gated — see
+> `docs/development/detection-pipeline.md`.
 
-The per-strategy "run truly without axes" substitutes described below remain a
-valid *alternative* design (and the likely Phase 3 direction for the
-seed-and-grow recall fix), but the shipped path is the up-front synthesis above.
+The up-front synthesis above stays the **entry seam** (it lets every strategy
+run unchanged on synthesized axes). On top of it, the seed-and-grow path also
+realizes the "run truly without axes" design below as the shipped
+`PositionsAttachPolicy`, where the synthesized axes are only a *soft* cue and
+the geometry is the gate.
 
 ## SeedAndGrow — almost orientation-free already
 
@@ -74,21 +78,30 @@ split a seed anchor's neighbours into the `+u` chord set and the `+v` chord set.
 (In the up-front-synthesis path it reads the *synthesized* axes, so it needs no
 geometric fallback today.)
 
-### Orientation-free SeedAndGrow
+### Orientation-free SeedAndGrow (shipped: `PositionsAttachPolicy`)
 
-1. **Policy.** Supply an `Unoriented` `SquareAttachPolicy`: `edge_ok` keeps
-   only the length band, `accept_candidate` accepts on geometry, and
-   `required_label_at` / `label_of` return `None` (no parity — a dot grid has
-   no two-colour alternation).
-2. **Seed.** Replace the axis chord-pairing with a **geometric** one: take the
-   nearest neighbour as the first chord, then the neighbour whose chord is most
-   orthogonal to it as the second (the two cell sides are ~90° apart), and
-   complete the parallelogram. The rest of the seed finder (edge-ratio match,
-   parallelogram closure, the 2×-spacing midpoint-violation check) is already
-   axis-free.
+The shipped orientation-free seed-and-grow path is
+`seed_and_grow::positions_policy::PositionsAttachPolicy`:
 
-That is the whole change — a new policy plus a geometric seed fallback. Validate
-and the shared back-half are untouched.
+1. **Policy.** Eligibility is all corners; `required_label_at` / `label_of`
+   return `None` (no parity — a dot grid has no two-colour alternation);
+   `edge_ok` keeps only the local-pitch length band; `accept_candidate` accepts
+   on geometry, using the *synthesized* axes only as a **soft** cue with a wide
+   tolerance (`soft_axis_tol_rad`) — a noisy synthesized axis can never block a
+   geometrically-coherent attach, so a wrong axis costs a *missing* corner, not
+   a mislabel.
+2. **Seed.** The seed finder reads `policy.axes(idx)` (the synthesized axes) for
+   chord-pairing, exactly as the oriented path does — the up-front synthesis
+   supplies them, so no separate geometric chord-pairing fallback was needed.
+3. **Recovery.** The convergence loop (`seed_and_grow::pipeline`) plus the
+   geometry-only recovery schedule (`seed_and_grow::recovery`: extension → fill
+   → revalidate → drop filters) wrap the policy and push recall to parity with
+   the oriented path.
+
+Validate and the shared back-half are untouched. The fully axis-free seed
+fallback (geometric nearest + most-orthogonal chord) below remains a possible
+future option for inputs with *no* reliable synthesized axes, but is not the
+shipped path.
 
 ## Topological — needs a geometric edge classifier
 
@@ -132,23 +145,28 @@ triangles whose geometry happens to look cell-like can no longer be rejected by
 orientation. That is precisely why **ChArUco keeps SeedAndGrow** and the
 orientation-free topological path is targeted at dot grids, not marker boards.
 
-## Parity clustering lives in the consumer, not here
+## Axis clustering is shared math; parity semantics live in the consumer
 
-The orientation histogram + double-angle 2-means that assigns chessboard parity
-(the two cluster centres consumed by the policy above) is **chessboard-crate
-code** (`calib-targets-chessboard/src/cluster/`), not part of `projective-grid`.
-A dot grid has no parity, so this stage is simply skipped — there is nothing to
-remove from this crate.
+The orientation histogram + double-angle 2-means that recovers the two global
+grid-direction centres is **shared math** in this crate
+(`projective_grid::cluster`, re-exported as `cluster_axes` with
+`AxisClusterCenters` / `AxisAssignment`). What stays **chessboard-crate code**
+is the *parity semantics* on top of those centres — mapping the
+canonical/swapped axis assignment onto the two-colour `(i, j)` parity and the
+slot-coherence repair (`calib-targets-chessboard/src/cluster/slot_coherence.rs`).
+A dot grid has no parity, so the consumer simply skips the parity mapping and
+uses the cluster centres (if any) as a soft prior — there is nothing
+parity-specific in this crate to remove.
 
 ## Summary
 
 | Stage | Reads orientation? | Orientation-free substitute |
 |---|---|---|
-| SeedAndGrow seed finder | yes (chord-pairing) | geometric nearest + most-orthogonal chord |
-| SeedAndGrow grow core | no (policy only) | `Unoriented` policy (length band, no parity) |
+| SeedAndGrow seed finder | yes (chord-pairing) | reads *synthesized* axes (shipped); geometric chord fallback possible |
+| SeedAndGrow grow core | no (policy only) | `PositionsAttachPolicy` (length band, soft axis cue, no parity) |
 | SeedAndGrow validate | no | unchanged |
 | Topological pre-filter | yes (quality gate) | keep all |
 | Topological classify | yes (load-bearing) | per-triangle longest-edge + √2 + right-angle |
 | Topological merge / walk / fit | no | unchanged |
 | shared merge / validate / fit | no | unchanged |
-| parity clustering | yes — but in the consumer crate | skipped (dot grids have no parity) |
+| axis clustering (`cluster_axes`) | yes (shared math, this crate) | soft prior; skip the consumer-side parity mapping |
