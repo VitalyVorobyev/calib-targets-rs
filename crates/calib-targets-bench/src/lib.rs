@@ -15,15 +15,19 @@
 //! private numbers leak into public surfaces.
 
 pub mod baseline;
+pub mod config;
 pub mod dataset;
+pub mod diagnose;
 pub mod diff;
 pub mod overlay;
+pub mod report;
 pub mod runner;
 
 pub use baseline::{Baseline, BaselineCorner, BaselineImage};
 pub use dataset::{Dataset, DatasetEntry, ImageKind, Stitched};
 pub use diff::{BaselineDiff, WrongPosition};
-pub use runner::{run_entry, Engine, RunOutcome};
+pub use report::{PerImageReport, RunReport, Summary};
+pub use runner::{run_entry, run_snap, Engine, RunOutcome};
 
 /// Workspace root inferred from `CARGO_MANIFEST_DIR`. The bench crate sits
 /// two levels below the workspace root.

@@ -297,24 +297,6 @@ pub(crate) fn params_with(
     p
 }
 
-/// Load a seed-and-grow [`DetectorParams`] from an optional JSON file, falling
-/// back to [`DetectorParams::default`] when the path is `None`. Partial files
-/// are supported: any field present overrides the default; missing fields keep
-/// their default value. Used by the diagnose subcommand to sweep params
-/// without rebuilding the binary.
-pub(crate) fn load_chessboard_config(path: Option<&str>) -> std::io::Result<DetectorParams> {
-    let Some(path) = path else {
-        return Ok(DetectorParams::default());
-    };
-    let text = std::fs::read_to_string(path)?;
-    let overrides: serde_json::Value =
-        serde_json::from_str(&text).map_err(std::io::Error::other)?;
-    let mut base =
-        serde_json::to_value(DetectorParams::default()).map_err(std::io::Error::other)?;
-    if let (Some(base_obj), Some(over_obj)) = (base.as_object_mut(), overrides.as_object()) {
-        for (k, v) in over_obj {
-            base_obj.insert(k.clone(), v.clone());
-        }
-    }
-    serde_json::from_value(base).map_err(std::io::Error::other)
-}
+// Partial-config loading lives in the library so the studio server shares
+// the exact `--chessboard-config` merge semantics.
+pub(crate) use calib_targets_bench::config::load_chessboard_config;

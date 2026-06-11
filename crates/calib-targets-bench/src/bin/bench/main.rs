@@ -28,14 +28,15 @@ use calib_targets_bench::overlay::render_overlay_on_gray;
 use calib_targets_bench::runner::run_entry;
 use calib_targets_bench::{workspace_root, Engine, SCHEMA_VERSION};
 
+use calib_targets_bench::report::{
+    bench_results_dir, compute_report, make_summary, save_report, RunReport,
+};
 use cli::{
     load_chessboard_config, params_with, AlgorithmArg, BlessArgs, Cli, Cmd, EngineArg,
     OrientationSourceArg, PreviewArgs, RunArgs,
 };
 use diagnose::cmd_diagnose;
-use report::{
-    bench_results_dir, compute_report, make_summary, print_summary, save_report, RunReport,
-};
+use report::print_summary;
 
 use clap::Parser;
 
@@ -133,7 +134,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     );
     let report = RunReport {
         schema: SCHEMA_VERSION,
-        detector: "chessboard",
+        detector: "chessboard".to_string(),
         config_id: config_id.clone(),
         summary,
         per_image,
