@@ -27,13 +27,15 @@ serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 tracing = { workspace = true, optional = true }
 
-# NOTE: the Criterion microbenchmarks (grow / homography / topological /
-# merge / validate) were removed in the Phase 2 collapse — they targeted the
-# pre-collapse internal module paths (`detect::advanced::square::*`, plus the
-# `homography` module already folded into `geometry` in Phase 1) that Phase 3
-# renames wholesale. Benchmark coverage is re-added in Phase 3 against the
-# final `seed_and_grow` / `shared` / `topological` module tree, restoring the
-# `criterion` (and any `serde_json`) dev-dependency alongside them.
+[dev-dependencies]
+criterion = { workspace = true }
+
+# Criterion benchmark for the public `detect_grid_all` entry across the three
+# canonical lattice/evidence cells, run on deterministic seeded-LCG synthetic
+# fixtures (no `rand` dependency). See `benches/detect_grid.rs`.
+[[bench]]
+name = "detect_grid"
+harness = false
 
 [package.metadata.docs.rs]
 all-features = true
