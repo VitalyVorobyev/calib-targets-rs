@@ -11,8 +11,8 @@ This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
 pipeline reference — those live with the code that owns them:
 
-- **`crates/projective-grid/docs/TOPOLOGICAL_PIPELINE.md`** —
-  canonical stage map for `projective_grid::topological::build_grid_topological`.
+- **`docs/topological-grid-detection.md`** (repo root) — canonical
+  stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
   stage maps for both `GraphBuildAlgorithm` variants (SeedAndGrow
   default + Topological opt-in), including the chessboard-side
@@ -44,21 +44,22 @@ mislabelling.
 Two labelling pipelines are exposed via
 `calib_targets_chessboard::GraphBuildAlgorithm`:
 
-- **`SeedAndGrow`** — seed-and-grow with global-H boundary extension
-  (`square::grow::bfs_grow` + `square::extension::extend_via_global_homography`),
+- **`SeedAndGrow`** — seed-and-grow with homography boundary extension
+  (`seed_and_grow::grow::bfs_grow` +
+  `seed_and_grow::extension::extend_via_local_homography`),
   battle-tested across all four target families.
 - **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
-  (`topological::build_grid_topological`) with an axis-driven cell
-  test that replaces the paper's image-color sampling so
-  `projective-grid` stays standalone.
+  (`topological::detect_square_oriented2_topological_all`) with an
+  axis-driven cell test that replaces the paper's image-color sampling
+  so `projective-grid` stays standalone.
 
-Both pipelines feed an optional shared **component-merge** pass
-(`projective_grid::component_merge::merge_components_local`) that
-reunites disconnected labelled components using local geometry only —
-no global homography. SeedAndGrow keeps the labelled set connected by
-construction and does not currently invoke component merge; the
-topological pipeline calls it twice (once on raw components, once
-after recovery boosters).
+Both pipelines now run the shared **component-merge** pass
+(`projective_grid::shared::merge::merge_components_local`) inside their
+facade — local geometry only, no global homography (Phase 1.3 unified
+this; see Gap 9). The seed-and-grow facade merges its per-seed
+components; the topological facade merges its per-walk components. The
+chessboard adapter keeps a *distinct* post-booster corner-identity merge
+in its recovery layer, not a second copy of this initial merge.
 
 ---
 
@@ -70,15 +71,26 @@ items are kept in place as audit trail.
 
 ### Gap 1 — Generic seed finder for non-chessboard consumers (PARTIAL)
 
-`projective_grid::square::seed_finder` ships `find_quad`,
-`SeedQuadParams`, and `SeedQuadValidator` — the primitives a generic
-finder needs. The chessboard's parity-aware finder
+`projective_grid::seed_and_grow::seed::finder` ships `find_quad`,
+`SeedQuadParams`, and the `SquareSeedPolicy` seam — the primitives a
+generic finder needs. The chessboard's parity-aware finder
 (`calib-targets-chessboard::seed`) is built on top.
 
-What's missing: a default seed-finder that doesn't require axis
-clusters (uses only edge-length consistency + midpoint violation),
-for `SpatialSquareValidator`-style users with unoriented point
-clouds. Tracked as deep-dive Phase 3.
+**Progress (verified 2026-06-11, Phase 3).** A default, parity-free
+seed+attach policy for unoriented point clouds now ships:
+`projective_grid::seed_and_grow::positions_policy::PositionsAttachPolicy`
+implements both `SquareSeedPolicy` and `SquareAttachPolicy` with
+eligibility = all, no axis-cluster prior, and no parity hooks. It is the
+shipped `Evidence::Positions` path. **What it still consumes:** the
+*synthesized* per-corner axes (the facade runs `orient::synthesize_*` up
+front), so the seed chord-pairing reads `policy.axes(idx)` rather than a
+purely geometric "nearest + most-orthogonal chord" construction.
+
+What remains: a fully axis-free seed-finder (edge-length consistency +
+midpoint violation only, no synthesized axes at all) for inputs where no
+reliable axis can be synthesized. The synthesized-axis path covers the
+common case; the pure-geometric fallback is the remaining incremental
+item. Tracked as a future deep-dive phase.
 
 ### Gap 2 — `circular_stats` is `f32`-only (OPEN)
 
@@ -124,18 +136,26 @@ classify+walk recovers, with the fit residual as the precision gate. Adding hex
 seed-and-grow (and a geometry-only hex recovery schedule) is the remaining work.
 Tracked as a future deep-dive phase.
 
-### Gap 5 — `estimate_local_steps` is implemented but unused (OPEN)
+### Gap 5 — `estimate_local_steps` wired into production (RESOLVED, verified 2026-06-11)
 
-`local_step.rs` returns `(step_u, step_v, confidence,
-supporters_u, supporters_v)` per corner. Nothing calls it from
-production. Two open framings:
+The old standalone `local_step.rs` / `estimate_local_steps` helper no
+longer exists; the local-step *concept* it tracked is now realized in
+production in **both** framings the gap proposed:
 
-- Wire it as a *prediction-time refinement* in `bfs_grow` —
-  finite-difference fallback when the global H isn't fit.
-- Wire it as an *outlier signal in validation* — confidence weights
-  the blacklist attribution.
+- **Prediction-time refinement.** `seed_and_grow::grow::predict`'s
+  `local_step_at` computes a per-neighbour finite-difference grid step
+  and `predict_from_neighbours` uses it inside `bfs_grow` (with the
+  global `(u, v, cell_size)` as the fallback) — this is the
+  foreshortening-aware prediction that closed the old "BFS overshoots on
+  the far edge" recall stall.
+- **Validation outlier signal.** `shared::validate::step::local_step_per_corner`
+  computes a per-corner scalar local step that
+  `find_inconsistent_corners_step_aware` uses to gate edge-length
+  outliers against the *local* pitch rather than a global cell size.
 
-Pick one; defer the other. Tracked as deep-dive Phase 5.
+Both are exercised by tests (`predict_uses_local_step_when_neighbour_has_own_neighbours`,
+`local_step_per_corner_central_diff`). No standalone confidence-scored
+helper remains to wire; the gap is closed.
 
 ### Gap 6 — Booster duplicates BFS prediction logic (LARGELY RESOLVED)
 
@@ -187,18 +207,27 @@ the legacy 45° diagonal gate.
 - *Parity-assisted classification.* Use checkerboard parity when the
   caller has it to distinguish true diagonals from same-axis skips.
 - *Hybrid extension.* After the topological pass, run
-  `square::extension::extend_via_local_homography` on
+  `seed_and_grow::extension::extend_via_local_homography` on
   unlabelled corners adjacent to the topological bbox. Combines
   topological's dense interior with seed-and-grow's reach into the
   distorted boundary.
 
-### Gap 9 — Component merge handles only overlapping label sets (OPEN)
+### Gap 9 — Component merge handles only overlapping label sets (OPEN, verified 2026-06-11)
 
-`projective_grid::component_merge::merge_components_local` currently
-requires `min_overlap ≥ 1` shared label between two components. This
-handles the majority case (gap-induced splits where a few edge
-corners straddle both components), but disjoint patches separated by
-a missing row never satisfy the overlap test and stay split.
+`projective_grid::shared::merge::merge_components_local` (moved here from
+the old `component_merge` module) still requires
+`min_overlap` shared labels between two components (default `2`). This
+handles the majority case (gap-induced splits where a few edge corners
+straddle both components), but disjoint patches separated by a missing
+row never satisfy the overlap test and stay split — `merge.rs` still
+lists that case as explicit out-of-scope.
+
+**Verified unchanged by the Phase 1.3 merge-unification.** That work made
+*both* algorithm facades call `merge_components_local` (the topological
+facade now merges in-crate via `merge_walk_components`, and the
+chessboard adapter dropped its private merge), so the two facades expose
+identical multi-component semantics — but it did **not** touch the
+overlap requirement. Disjoint-set merge remains unimplemented.
 
 **Fix.** Add a "predict next corner from each side" boundary check:
 for each component, walk the labelled bbox boundary outward by one
