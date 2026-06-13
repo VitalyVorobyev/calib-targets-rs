@@ -33,6 +33,25 @@ pub(crate) enum Cmd {
     /// overlay. Use this to investigate "why is this corner missing?"
     /// before changing detector code.
     Diagnose(DiagnoseArgs),
+    /// Join two existing `run` JSON reports into a per-family comparison
+    /// table (markdown + JSON). Re-runs nothing; reads + writes bench_results/.
+    Compare(CompareArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct CompareArgs {
+    /// First report JSON (the "A" column, e.g. the topological run). Resolved
+    /// as given, then relative to `bench_results/`.
+    #[arg(long)]
+    pub(crate) a: String,
+    /// Second report JSON (the "B" column, e.g. the seed-and-grow run).
+    #[arg(long)]
+    pub(crate) b: String,
+    /// Output stem (relative to workspace root unless absolute). Defaults to
+    /// `bench_results/compare.<a_alg>_vs_<b_alg>`. `.md` and `.json` are
+    /// written alongside it.
+    #[arg(long)]
+    pub(crate) out: Option<String>,
 }
 
 #[derive(Args)]

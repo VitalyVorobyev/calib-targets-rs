@@ -20,8 +20,9 @@ pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
             "FAIL"
         };
         let dup = d.duplicate_run_positions.len();
+        let sp = &r.structural_precision;
         println!(
-            "{status:<11} {:<50} {:>4} corners {:>7.1} ms  miss={:>3} extra={:>3} pos={:>3} id={:>3} dup={:>3}{}",
+            "{status:<11} {:<50} {:>4} corners {:>7.1} ms  miss={:>3} extra={:>3} pos={:>3} id={:>3} dup={:>3} ov={:>3} col={:>3}{}",
             r.image,
             r.labelled_count,
             r.elapsed_ms,
@@ -30,6 +31,8 @@ pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
             d.wrong_position.len(),
             d.wrong_id.len(),
             dup,
+            sp.overlong_edges,
+            sp.collapsed_pairs,
             if d.inconsistent_shift { "  SHIFT-INCONSISTENT" } else { "" },
         );
     }

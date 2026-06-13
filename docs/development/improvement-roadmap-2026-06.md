@@ -35,9 +35,27 @@ problem flags (no-detection / low labelled-count vs a `min_labelled` floor).
 This turned out a better mechanism than the originally-planned adhoc-folder
 route, so A1c is narrowed (see backlog).
 
-**Next up — Phase B** (measurement campaigns): B1 Topological-vs-SeedAndGrow
-parity across families, B2 ChESS `min_corner_strength` default. No default
-flips land in Phase B — outputs are recommendations for a follow-up decision.
+**Phase B — B1 complete** (measurement campaigns). The **B1 parity harness**
+shipped: a baseline-free structural precision metric (overlong-edge /
+collapsed-pixel audit, bench-crate `precision.rs`) threaded into every per-snap
+run report, plus a `bench compare` subcommand (`compare.rs`) that joins two run
+reports into a per-family-substrate recall + precision table. At the **grid
+level** topological dominates recall + speed across families, confirming the
+chessboard/puzzle defaults.
+
+**B1b — charuco decode, end-to-end.** The Item-3 premise that a topological
+override already flows into the charuco decode was **wrong**: the pipeline
+hard-rejected non-seed-and-grow with `UnsupportedAlgorithm`. B1b added a
+measurement-only `CharucoParams::allow_topological_grid` opt-in (relaxing the
+guard without changing the production default) and ran the full decode
+head-to-head. Topological charuco decode is **precision-clean** (zero
+self-consistency wrong-ids, zero reviewed marker-bit false corners — refuting
+the guard's premise) and faster, but lands fewer charuco corners per frame at
+the current strength floor and is **not yet deterministic** on that path. So
+**B1c keeps seed-and-grow** as the charuco default; making topological viable
+there is future work (determinism-hardening + a topological strength-floor
+sweep, which folds into B2). **No default flips landed.** B2 (ChESS
+`min_corner_strength`) is next.
 
 ---
 
@@ -210,9 +228,29 @@ Three independent, low-risk workstreams — any order.
   Arbitrary **non-registered** on-disk folder browsing still deferred.
 
 ### Phase B
-- [ ] B1a Per-family Topological-vs-SeedAndGrow comparison harness/run
-- [ ] B1b Charuco precision metric (marker-internal false corners + wrong IDs)
-- [ ] B1c Retire-vs-keep recommendation → decision checkpoint
+- [x] B1a Per-family Topological-vs-SeedAndGrow comparison harness: baseline-free
+  structural precision metric (`crates/calib-targets-bench/src/precision.rs`) +
+  the `bench compare` aggregator (`compare.rs`) producing a grid-quality
+  per-family-substrate recall + precision table.
+- [x] B1b Charuco **decode** end-to-end comparison: added the measurement-only
+  `CharucoParams::allow_topological_grid` opt-in (relaxing the hard
+  `UnsupportedAlgorithm` guard without changing the production default) and a
+  `--algorithm` flag on `examples/run_dataset.rs`, then ran the full charuco
+  decode head-to-head (board-level matcher). **Finding:** the guard's premise is
+  refuted — topological charuco decode is precision-clean (zero self-consistency
+  wrong-ids, zero reviewed marker-bit false corners, on par with seed-and-grow)
+  and faster. But it is **not yet a drop-in default**: it lands fewer charuco
+  corners per frame at the seed-and-grow-tuned strength floor, and the
+  topological→charuco path is not yet deterministic (it was never exercised
+  before the guard was relaxed). Durable `#[ignore]` regression tests pin both
+  the recall floor and the zero-wrong-id contract.
+- [x] B1c Retire-vs-keep recommendation → decision checkpoint: **keep
+  seed-and-grow.** At the grid level topological dominates recall + speed
+  (confirming the chessboard/puzzle defaults). For charuco, decode precision is
+  tied, but seed-and-grow remains the deterministic, higher-corner-recall grid;
+  retiring it awaits (1) determinism-hardening the topological charuco path and
+  (2) a strength-floor sweep for topological on charuco (folds into B2). No
+  default flips land.
 - [ ] B2a Evidence attribution of the `mid.png` neighbour_edges failure (overlays)
 - [ ] B2b Continuous `min_corner_strength` recall/precision sweep + default recommendation
 

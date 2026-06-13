@@ -28,11 +28,12 @@ use calib_targets_bench::overlay::render_overlay_on_gray;
 use calib_targets_bench::runner::run_entry;
 use calib_targets_bench::{workspace_root, Engine, SCHEMA_VERSION};
 
+use calib_targets_bench::compare::{build_comparison, load_report, render_markdown};
 use calib_targets_bench::report::{
     bench_results_dir, compute_report, make_summary, save_report, RunReport,
 };
 use cli::{
-    load_chessboard_config, params_with, AlgorithmArg, BlessArgs, Cli, Cmd, EngineArg,
+    load_chessboard_config, params_with, AlgorithmArg, BlessArgs, Cli, Cmd, CompareArgs, EngineArg,
     OrientationSourceArg, PreviewArgs, RunArgs,
 };
 use diagnose::cmd_diagnose;
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
         Cmd::Preview(args) => cmd_preview(args),
         Cmd::Bless(args) => cmd_bless(args),
         Cmd::Diagnose(args) => cmd_diagnose(args),
+        Cmd::Compare(args) => cmd_compare(args),
     }
 }
 
@@ -322,7 +324,100 @@ fn cmd_bless(args: BlessArgs) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn cmd_compare(args: CompareArgs) -> ExitCode {
+    let a_path = resolve_report_path(&args.a);
+    let b_path = resolve_report_path(&args.b);
+    let a = match load_report(&a_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("load {}: {e}", a_path.display());
+            return ExitCode::from(2);
+        }
+    };
+    let b = match load_report(&b_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("load {}: {e}", b_path.display());
+            return ExitCode::from(2);
+        }
+    };
+
+    let comparison = build_comparison(&a, &b);
+    let markdown = render_markdown(&comparison);
+    print!("{markdown}");
+
+    let stem = compare_out_stem(args.out.as_deref(), &a.config_id, &b.config_id);
+    let md_path = append_ext(&stem, ".md");
+    let json_path = append_ext(&stem, ".json");
+    if let Some(parent) = md_path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("create {}: {e}", parent.display());
+            return ExitCode::from(2);
+        }
+    }
+    let json = match serde_json::to_string_pretty(&comparison) {
+        Ok(j) => j,
+        Err(e) => {
+            eprintln!("serialize comparison: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    if let Err(e) = std::fs::write(&md_path, &markdown) {
+        eprintln!("write {}: {e}", md_path.display());
+        return ExitCode::from(2);
+    }
+    if let Err(e) = std::fs::write(&json_path, json) {
+        eprintln!("write {}: {e}", json_path.display());
+        return ExitCode::from(2);
+    }
+    println!("\nwrote {}", md_path.display());
+    println!("wrote {}", json_path.display());
+    ExitCode::SUCCESS
+}
+
 // --- helpers --------------------------------------------------------------
+
+/// Resolve a report path: use it as given when it exists, else fall back to
+/// `bench_results/<path>`.
+fn resolve_report_path(p: &str) -> PathBuf {
+    let direct = PathBuf::from(p);
+    if direct.exists() {
+        direct
+    } else {
+        bench_results_dir().join(p)
+    }
+}
+
+/// The output stem for a comparison: the explicit `--out` (workspace-relative
+/// unless absolute), else `bench_results/compare.<a_alg>_vs_<b_alg>`.
+fn compare_out_stem(out: Option<&str>, a_config_id: &str, b_config_id: &str) -> PathBuf {
+    match out {
+        Some(o) => {
+            let p = Path::new(o);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                workspace_root().join(o)
+            }
+        }
+        None => {
+            let alg = |id: &str| id.split('.').nth(1).unwrap_or(id).to_string();
+            bench_results_dir().join(format!(
+                "compare.{}_vs_{}",
+                alg(a_config_id),
+                alg(b_config_id)
+            ))
+        }
+    }
+}
+
+/// Append a literal extension (e.g. `.md`) to a stem path that may itself
+/// contain dots — `Path::with_extension` would clobber the last segment.
+fn append_ext(stem: &Path, ext: &str) -> PathBuf {
+    let mut s = stem.to_path_buf().into_os_string();
+    s.push(ext);
+    PathBuf::from(s)
+}
 
 fn filter_entries<'a>(
     ds: &'a Dataset,

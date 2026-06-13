@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::baseline::Baseline;
 use crate::diff::BaselineDiff;
+use crate::precision::{structural_precision, StructuralPrecision};
 use crate::runner::RunOutcome;
 use crate::workspace_root;
 
@@ -28,6 +29,12 @@ pub struct PerImageReport {
     pub labelled_count: usize,
     /// Structured diff against the baseline (empty when no baseline).
     pub diff_vs_baseline: BaselineDiff,
+    /// Baseline-free structural precision audit over the labelled corners
+    /// (overlong cardinal edges + collapsed duplicate-pixel pairs). All-zero
+    /// when the detector produced no detection. `#[serde(default)]` so reports
+    /// written before this field existed still deserialize.
+    #[serde(default)]
+    pub structural_precision: StructuralPrecision,
 }
 
 /// Aggregate counters + latency percentiles over a whole run.
@@ -93,6 +100,12 @@ pub fn compute_report(outcome: &RunOutcome, baseline: Option<&Baseline>) -> PerI
         (None, None) => BaselineDiff::default(),
     };
 
+    let precision = outcome
+        .detection
+        .as_ref()
+        .map(|d| structural_precision(&d.corners))
+        .unwrap_or_default();
+
     let has_baseline = baseline_image.is_some();
     let passed = has_baseline && diff.passed();
     PerImageReport {
@@ -102,6 +115,7 @@ pub fn compute_report(outcome: &RunOutcome, baseline: Option<&Baseline>) -> PerI
         elapsed_ms: outcome.elapsed_ms,
         labelled_count,
         diff_vs_baseline: diff,
+        structural_precision: precision,
     }
 }
 

@@ -31,6 +31,24 @@ pub struct CharucoParams {
     /// [`GraphBuildAlgorithm::Topological`]: calib_targets_chessboard::GraphBuildAlgorithm::Topological
     #[serde(default)]
     pub chessboard: DetectorParams,
+    /// **Measurement-only escape hatch — leave `false` in production.**
+    ///
+    /// When `false` (the default), a [`chessboard`](Self::chessboard) request for
+    /// any builder other than [`GraphBuildAlgorithm::SeedAndGrow`] is rejected
+    /// with [`CharucoDetectError::UnsupportedAlgorithm`](crate::CharucoDetectError::UnsupportedAlgorithm).
+    /// When `true`, the detector permits
+    /// [`GraphBuildAlgorithm::Topological`] and runs the full decode on the
+    /// topological grid. The decode stages downstream of grid construction are
+    /// algorithm-agnostic, so this is sound — it exists so the algorithm-parity
+    /// campaign can measure topological charuco decode precision (false corners
+    /// and wrong IDs) head-to-head against seed-and-grow before any default is
+    /// changed.
+    ///
+    /// **Unstable:** NOT covered by semver; this flag may be removed once the
+    /// parity decision lands (either the guard is dropped, or topological stays
+    /// unsupported for charuco).
+    #[serde(default)]
+    pub allow_topological_grid: bool,
     /// ChArUco board parameters
     #[serde(alias = "charuco")]
     pub board: CharucoBoardSpec,
@@ -296,6 +314,9 @@ impl CharucoParams {
         Self {
             px_per_square: 60.0,
             chessboard,
+            // Production charuco is pinned to seed-and-grow; the topological
+            // escape hatch is opt-in for the measurement campaign only.
+            allow_topological_grid: false,
             board: *board,
             scan,
             max_hamming,

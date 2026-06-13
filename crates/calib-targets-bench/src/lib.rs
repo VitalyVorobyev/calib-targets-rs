@@ -15,17 +15,21 @@
 //! private numbers leak into public surfaces.
 
 pub mod baseline;
+pub mod compare;
 pub mod config;
 pub mod dataset;
 pub mod diagnose;
 pub mod diff;
 pub mod overlay;
+pub mod precision;
 pub mod report;
 pub mod runner;
 
 pub use baseline::{Baseline, BaselineCorner, BaselineImage};
+pub use compare::{build_comparison, ComparisonReport, FamilyComparison};
 pub use dataset::{Dataset, DatasetEntry, ImageKind, Stitched};
 pub use diff::{BaselineDiff, WrongPosition};
+pub use precision::{structural_precision, StructuralPrecision};
 pub use report::{PerImageReport, RunReport, Summary};
 pub use runner::{run_entry, run_snap, Engine, RunOutcome};
 

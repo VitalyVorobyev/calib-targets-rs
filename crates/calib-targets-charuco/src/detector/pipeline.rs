@@ -238,9 +238,20 @@ impl CharucoDetector {
         // cells fails on every marker-bearing cell. Rather than silently
         // overriding the caller's choice, an explicit `Topological`
         // request is a typed error (documented on `CharucoParams::chessboard`).
+        //
+        // The one exception is the measurement-only `allow_topological_grid`
+        // escape hatch: the decode stages downstream of grid construction are
+        // algorithm-agnostic, so the parity campaign can opt in to run the full
+        // decode on the topological grid (see `CharucoParams::allow_topological_grid`).
         let chess_params = self.params.chessboard.clone();
         match chess_params.graph_build_algorithm {
             GraphBuildAlgorithm::SeedAndGrow => {}
+            GraphBuildAlgorithm::Topological if self.params.allow_topological_grid => {
+                debug!(
+                    "ChArUco running on the topological grid via allow_topological_grid \
+                     (measurement-only opt-in)"
+                );
+            }
             _ => {
                 warn!(
                     "ChArUco does not support graph_build_algorithm={:?}; \
@@ -618,5 +629,29 @@ mod tests {
             result,
             Err(CharucoDetectError::UnsupportedAlgorithm)
         ));
+    }
+
+    /// The measurement-only `allow_topological_grid` opt-in bypasses the
+    /// algorithm guard: a `Topological` request is no longer rejected up front,
+    /// so the decode proceeds to the chessboard stage (which here, with no
+    /// corners, reports `ChessboardNotDetected` rather than the guard error).
+    #[test]
+    fn allow_topological_grid_bypasses_guard() {
+        let mut params = CharucoParams::for_board(&test_board());
+        params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+        params.allow_topological_grid = true;
+        let detector = CharucoDetector::new(params).expect("detector");
+        let buf = [0u8; 16];
+        let image = GrayImageView {
+            width: 4,
+            height: 4,
+            data: &buf,
+        };
+        let result = detector.detect(&image, &[]);
+        assert!(
+            matches!(result, Err(CharucoDetectError::ChessboardNotDetected)),
+            "opt-in must clear the algorithm guard and reach the chessboard \
+             stage, got {result:?}"
+        );
     }
 }
