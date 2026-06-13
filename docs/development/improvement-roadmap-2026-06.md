@@ -19,6 +19,28 @@ artifacts per the disclosure policy.
 
 ---
 
+## Status (updated 2026-06-13)
+
+**Phase A — shipped** (commit `c24c716`, branch `feature/calib-targets-studio`):
+A1a snap/image prev-next nav, A1b integral dataset stats, A2 book reorder
+("The Grid Model" ahead of the tuning pages), A3 Detect-tab preset picker
+backed by a new built-in `/api/presets` endpoint.
+
+**Full-dataset browsing & per-dataset performance — shipped** (same commit):
+the "dataset iteration" gap (item 4) landed via `datasets.toml` directory-glob
+expansion — each registered private dataset now exposes its full ~120 snaps —
+plus per-dataset run selection (`RunRequest.group`), a per-dataset aggregate
+(detected/total, labelled p50/min, #flagged), and baseline-free per-snap
+problem flags (no-detection / low labelled-count vs a `min_labelled` floor).
+This turned out a better mechanism than the originally-planned adhoc-folder
+route, so A1c is narrowed (see backlog).
+
+**Next up — Phase B** (measurement campaigns): B1 Topological-vs-SeedAndGrow
+parity across families, B2 ChESS `min_corner_strength` default. No default
+flips land in Phase B — outputs are recommendations for a follow-up decision.
+
+---
+
 ## Review findings (evidence-anchored)
 
 ### Item 1 — ChESS false positives on `mid.png` (topological + neighbour_edges)
@@ -178,12 +200,14 @@ Three independent, low-risk workstreams — any order.
 
 ## Backlog
 
-### Phase A
-- [ ] A1a Snap/image prev-next nav in `ImageWorkspace`
-- [ ] A1b Surface integral dataset stats in the browser (reuse `make_summary`)
-- [ ] A1c Arbitrary on-disk folder browsing (adhoc dataset route + picker)
-- [ ] A2  Reorder `SUMMARY.md`: grid-model chapter before tuning; reframe + cross-link
-- [ ] A3  Preset picker in the Detect tab (load `/api/configs`)
+### Phase A — done (commit `c24c716`)
+- [x] A1a Snap/image prev-next nav in `ImageWorkspace` (scoped to the current dataset group)
+- [x] A1b Integral dataset stats in the browser + per-dataset "Run this dataset" affordance
+- [x] A2  `SUMMARY.md` reorder: "The Grid Model" before tuning; reframed + cross-linked
+- [x] A3  Detect-tab preset picker (built-in `/api/presets` + saved `/api/configs`)
+- [~] A1c Full **registered** datasets now browsable via `datasets.toml` directory-glob
+  expansion (~120 snaps each) + per-dataset runs + baseline-free problem flags.
+  Arbitrary **non-registered** on-disk folder browsing still deferred.
 
 ### Phase B
 - [ ] B1a Per-family Topological-vs-SeedAndGrow comparison harness/run
@@ -221,3 +245,11 @@ Every phase ends with the [everyday gate](release-gates.md): `cargo fmt --all
 - No default flips land in Phase B — they are *recommendations* for a follow-up
   decision (SeedAndGrow fate, ChESS default).
 - The PuzzleBoard decoder rewrite stays deferred (no measured precision gap).
+- Lifting `audit_wrong_label_edges` (overlong-edge / duplicate-pixel structural
+  audit) from a test-local helper into a reusable library fn + surfacing it as a
+  per-snap problem signal — the strongest baseline-free detector, deferred from
+  the full-dataset batch as its own algorithm-surface change.
+- Arbitrary **non-registered** on-disk folder browsing (the `datasets.toml` glob
+  covers the known datasets; ad-hoc folders remain a nice-to-have).
+- Charuco/puzzle family-specific problem signals (marker-internal false corners,
+  wrong IDs, decode BER) in the per-snap flags.
