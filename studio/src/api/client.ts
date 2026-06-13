@@ -2,11 +2,14 @@
 
 import type {
   BaselineImage,
+  ConfigSummary,
   DatasetResponse,
+  DetectorParamsOverride,
   DetectRequest,
   DetectResponse,
   DiagnoseRequest,
   DiagnoseResponse,
+  Preset,
   RunRecord,
   RunRequest,
 } from "./types";
@@ -55,6 +58,10 @@ export const api = {
     postJson<DetectResponse>("/api/detect", req),
   diagnose: (req: DiagnoseRequest) =>
     postJson<DiagnoseResponse>("/api/diagnose", req),
+  presets: () => getJson<Preset[]>("/api/presets"),
+  configs: () => getJson<ConfigSummary[]>("/api/configs"),
+  config: (name: string) =>
+    getJson<DetectorParamsOverride>(`/api/configs/${name}`),
   runs: () => getJson<RunRecord[]>("/api/runs"),
   run: (id: string) => getJson<RunRecord>(`/api/runs/${id}`),
   startRun: (req: RunRequest) =>

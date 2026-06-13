@@ -26,6 +26,10 @@ export interface ImageInfo {
   upscale: number;
   stitched: StitchedInfo | null;
   available: boolean;
+  /** Dataset group name (directory-derived or explicit). */
+  dataset: string;
+  /** Baseline-free low-recall floor; null ⇒ flag only no-detection. */
+  min_labelled: number | null;
   snaps: SnapInfo[];
 }
 
@@ -86,6 +90,21 @@ export interface DetectorParamsOverride {
   max_components?: number;
   min_corner_strength?: number;
   advanced?: Record<string, unknown>;
+}
+
+/** A built-in detector preset served by `GET /api/presets`. */
+export interface Preset {
+  name: string;
+  description: string;
+  params: DetectorParamsOverride;
+}
+
+/** One row of the saved-config listing (`GET /api/configs`). */
+export interface ConfigSummary {
+  name: string;
+  modified_at: number;
+  algorithm: string;
+  has_advanced: boolean;
 }
 
 export type DetectorReq = "chessboard" | "charuco" | "puzzleboard";
@@ -327,6 +346,8 @@ export interface RunRecord {
 
 export interface RunRequest {
   dataset?: DatasetReq;
+  /** Scope the run to a single dataset group (overrides the kind filter). */
+  group?: string;
   params?: DetectorParamsOverride;
   engine?: EngineReq;
   orientation_method?: OrientationMethodReq;

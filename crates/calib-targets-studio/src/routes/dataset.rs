@@ -49,6 +49,12 @@ pub struct ImageInfo {
     pub stitched: Option<StitchedInfo>,
     /// Whether the file exists on disk (private data may be absent).
     pub available: bool,
+    /// Dataset group name (directory-derived or explicit) for grouping the
+    /// browser and scoping per-dataset runs/nav.
+    pub dataset: String,
+    /// Baseline-free low-recall floor: snaps below this labelled-corner count
+    /// are flagged as a likely problem. `null` ⇒ flag only no-detection.
+    pub min_labelled: Option<u32>,
     /// Logical sub-snaps (a single element for plain images).
     pub snaps: Vec<SnapInfo>,
 }
@@ -102,6 +108,8 @@ fn image_info(entry: &DatasetEntry) -> ImageInfo {
             snap_height: s.snap_height,
         }),
         available,
+        dataset: entry.dataset.clone(),
+        min_labelled: entry.min_labelled,
         snaps,
     }
 }

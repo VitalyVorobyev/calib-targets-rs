@@ -34,13 +34,7 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // Find the matching dataset entry; if absent, build a default one for the path.
     let entry = match dataset.find(base_path) {
         Some(e) => e.clone(),
-        None => DatasetEntry {
-            path: base_path.to_string(),
-            kind: ImageKind::Public,
-            note: String::new(),
-            upscale: 1,
-            stitched: None,
-        },
+        None => DatasetEntry::single(base_path.to_string(), ImageKind::Public),
     };
     let abs = entry.absolute();
     if !abs.exists() {

@@ -4,10 +4,10 @@
 // Baseline — structured diff vs the pinned baseline). Param edits
 // re-detect automatically (debounced).
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import { api } from "../api/client";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, encodeLabel } from "../api/client";
 import {
   stageDetail,
   stageName,
@@ -36,6 +36,7 @@ import {
 } from "../components/diagnoseOverlays";
 import { DiffTable } from "../components/DiffTable";
 import { LayerToggles } from "../components/LayerToggles";
+import { PresetPicker } from "../components/PresetPicker";
 import {
   baselineDiffLayer,
   cornersLayer,
@@ -64,6 +65,53 @@ type HoverData =
 
 export function ImageWorkspace() {
   const label = useParams()["*"] ?? "";
+  const navigate = useNavigate();
+  // Shares the cached ["dataset"] query with the browser — no extra fetch.
+  const dataset = useQuery({ queryKey: ["dataset"], queryFn: api.dataset });
+
+  // Flattened, manifest-order snap labels for prev/next — scoped to the
+  // current snap's dataset group so ←/→ steps through (say) all 120 snaps of
+  // 130x130_puzzle without crossing into another dataset. Falls back to the
+  // full list when the group can't be resolved.
+  const flatLabels = useMemo(() => {
+    const imgs = dataset.data?.images ?? [];
+    const currentGroup = imgs.find((i) =>
+      i.snaps.some((s) => s.label === label),
+    )?.dataset;
+    const out: string[] = [];
+    for (const img of imgs) {
+      if (!img.available) continue;
+      if (currentGroup && img.dataset !== currentGroup) continue;
+      for (const snap of img.snaps) out.push(snap.label);
+    }
+    return out;
+  }, [dataset.data, label]);
+  const pos = flatLabels.indexOf(label);
+  const prevLabel = pos > 0 ? flatLabels[pos - 1] : null;
+  const nextLabel =
+    pos >= 0 && pos < flatLabels.length - 1 ? flatLabels[pos + 1] : null;
+  const go = useCallback(
+    (l: string | null) => {
+      if (l) navigate(`/image/${encodeLabel(l)}`);
+    },
+    [navigate],
+  );
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target;
+      if (
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLSelectElement ||
+        el instanceof HTMLTextAreaElement
+      )
+        return;
+      if (e.key === "ArrowLeft") go(prevLabel);
+      else if (e.key === "ArrowRight") go(nextLabel);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [go, prevLabel, nextLabel]);
+
   const [tab, setTab] = useState<Tab>("detect");
   const [draft, setDraft] = useState<DetectorParamsOverride>({});
   const [runOpts, setRunOpts] = useState<RunOptions>({
@@ -249,6 +297,45 @@ export function ImageWorkspace() {
           >
             {label}
           </div>
+          {flatLabels.length > 1 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--s2)",
+                marginTop: "var(--s2)",
+              }}
+            >
+              <button
+                className="btn"
+                style={{ padding: "2px 10px" }}
+                disabled={!prevLabel}
+                onClick={() => go(prevLabel)}
+                title="previous snap (←)"
+              >
+                ←
+              </button>
+              <span
+                style={{
+                  flex: 1,
+                  textAlign: "center",
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                }}
+              >
+                {pos >= 0 ? `${pos + 1} / ${flatLabels.length}` : "—"}
+              </span>
+              <button
+                className="btn"
+                style={{ padding: "2px 10px" }}
+                disabled={!nextLabel}
+                onClick={() => go(nextLabel)}
+                title="next snap (→)"
+              >
+                →
+              </button>
+            </div>
+          )}
         </div>
 
         <StatsBlock detect={detect} />
@@ -419,6 +506,7 @@ function DetectTab({
     setDraft({ ...draft, ...patch });
   return (
     <>
+      <PresetPicker onLoad={setDraft} />
       <div>
         <div className="label" style={{ marginBottom: "var(--s2)" }}>
           Target

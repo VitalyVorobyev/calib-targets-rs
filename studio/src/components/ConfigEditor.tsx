@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "../api/client";
 import type {
   DetectorParamsOverride,
   GraphBuildAlgorithm,
@@ -15,13 +16,6 @@ async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json() as Promise<T>;
-}
-
-interface ConfigSummary {
-  name: string;
-  modified_at: number;
-  algorithm: string;
-  has_advanced: boolean;
 }
 
 export function ConfigEditor({
@@ -346,10 +340,7 @@ function ConfigLibrary({
   const [name, setName] = useState("");
   const [savedJson, setSavedJson] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const list = useQuery({
-    queryKey: ["configs"],
-    queryFn: () => getJson<ConfigSummary[]>("/api/configs"),
-  });
+  const list = useQuery({ queryKey: ["configs"], queryFn: api.configs });
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["configs"] });
@@ -382,7 +373,7 @@ function ConfigLibrary({
   });
 
   const load = async (n: string) => {
-    const cfg = await getJson<DetectorParamsOverride>(`/api/configs/${n}`);
+    const cfg = await api.config(n);
     onLoad(cfg);
     setName(n);
     setSavedJson(JSON.stringify(cfg));

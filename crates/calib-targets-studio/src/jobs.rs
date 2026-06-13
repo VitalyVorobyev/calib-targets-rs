@@ -105,10 +105,17 @@ pub struct RunSpec {
     pub dataset: String,
 }
 
-/// Filter the manifest by kind, keeping only entries present on disk.
-pub fn select_entries(dataset: &Dataset, kind: Option<ImageKind>) -> Vec<DatasetEntry> {
+/// Filter the manifest by kind and (optionally) dataset group, keeping only
+/// entries present on disk. When `group` is set it scopes the selection to a
+/// single dataset (e.g. `130x130_puzzle`); `kind` is then typically `None`.
+pub fn select_entries(
+    dataset: &Dataset,
+    kind: Option<ImageKind>,
+    group: Option<&str>,
+) -> Vec<DatasetEntry> {
     dataset
         .iter_kind(kind)
+        .filter(|e| group.map(|g| e.dataset == g).unwrap_or(true))
         .filter(|e| e.absolute().exists())
         .cloned()
         .collect()

@@ -49,9 +49,13 @@ impl DatasetReq {
 /// Request body for `POST /api/runs`.
 #[derive(Deserialize)]
 pub struct RunRequest {
-    /// Dataset filter (default: all).
+    /// Dataset filter (default: all). Ignored when `group` is set.
     #[serde(default)]
     pub dataset: DatasetReq,
+    /// Scope the run to a single dataset group (e.g. `130x130_puzzle`). When
+    /// set, overrides the kind filter so the run covers exactly that dataset.
+    #[serde(default)]
+    pub group: Option<String>,
     /// Partial `DetectorParams` override (CLI merge semantics).
     #[serde(default)]
     pub params: serde_json::Value,
@@ -70,7 +74,13 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<serde_json::Value>), ApiError> {
     let engine = Engine::from(req.engine);
     let params = effective_params(&req.params, engine)?;
-    let entries = select_entries(&state.dataset, req.dataset.kind());
+    // A group scopes to one dataset across kinds; otherwise filter by kind.
+    let kind = if req.group.is_some() {
+        None
+    } else {
+        req.dataset.kind()
+    };
+    let entries = select_entries(&state.dataset, kind, req.group.as_deref());
     if entries.is_empty() {
         return Err(ApiError::NotFound(
             "no available images match the dataset filter".into(),
@@ -95,7 +105,10 @@ pub async fn create(
         chess_cfg,
         engine,
         config_id,
-        dataset: req.dataset.slug().to_string(),
+        dataset: req
+            .group
+            .clone()
+            .unwrap_or_else(|| req.dataset.slug().to_string()),
     };
     match launch(&state.runs, spec) {
         Some(run_id) => Ok((

@@ -1,15 +1,26 @@
 // Dataset browser: every datasets.toml entry with availability, thumbnails,
 // and per-snap navigation into the image workspace.
 
-import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router-dom";
 import { api, encodeLabel, imageUrl } from "../api/client";
-import type { ImageInfo } from "../api/types";
+import type { DatasetReq, ImageInfo } from "../api/types";
 
 export function DatasetBrowser() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useQuery({
     queryKey: ["dataset"],
     queryFn: api.dataset,
+  });
+  const startRun = useMutation({
+    mutationFn: (req: { dataset?: DatasetReq; group?: string }) =>
+      api.startRun({
+        ...req,
+        params: {},
+        engine: "pipeline",
+        orientation_method: "ring_fit",
+      }),
+    onSuccess: () => navigate("/runs"),
   });
 
   if (isLoading) {
@@ -19,37 +30,140 @@ export function DatasetBrowser() {
     return <Centered>Failed to load dataset: {String(error)}</Centered>;
   }
   const images = data?.images ?? [];
-  const publicImages = images.filter((i) => i.kind === "public");
-  const privateImages = images.filter((i) => i.kind === "private");
+
+  const snapCount = (imgs: ImageInfo[]) =>
+    imgs.reduce((n, i) => n + i.snaps.length, 0);
+  const availableCount = images.filter((i) => i.available).length;
+  const upscaledCount = images.filter((i) => i.upscale > 1).length;
 
   return (
     <div style={{ height: "100%", overflowY: "auto", padding: "var(--s5)" }}>
       <h1 style={{ fontSize: 18, margin: "0 0 var(--s4)" }}>Dataset</h1>
-      <Section title={`Public — testdata/ (${publicImages.length})`}>
-        {publicImages.map((img) => (
-          <EntryCard key={img.path} img={img} />
-        ))}
-      </Section>
-      <Section title={`Private — privatedata/ (${privateImages.length})`}>
-        {privateImages.map((img) => (
-          <EntryCard key={img.path} img={img} />
-        ))}
-      </Section>
+      <div
+        className="panel"
+        style={{
+          padding: "var(--s3)",
+          marginBottom: "var(--s5)",
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: "var(--s3)",
+        }}
+      >
+        <span className="chip">
+          {availableCount}/{images.length} images available
+        </span>
+        <span className="chip">{snapCount(images)} snaps</span>
+        {upscaledCount > 0 && (
+          <span className="chip warn">{upscaledCount} upscaled</span>
+        )}
+        <span style={{ flex: 1 }} />
+        <span
+          className="label"
+          style={{ textTransform: "none", color: "var(--text-faint)" }}
+        >
+          run dataset →
+        </span>
+        <button
+          className="btn"
+          disabled={startRun.isPending}
+          onClick={() => startRun.mutate({ dataset: "public" })}
+        >
+          Public
+        </button>
+        <button
+          className="btn"
+          disabled={startRun.isPending}
+          onClick={() => startRun.mutate({ dataset: "private" })}
+        >
+          Private
+        </button>
+        <button
+          className="btn primary"
+          disabled={startRun.isPending}
+          onClick={() => startRun.mutate({ dataset: "all" })}
+        >
+          All
+        </button>
+      </div>
+      {startRun.error && (
+        <div
+          style={{
+            color: "var(--err)",
+            fontSize: 12,
+            marginBottom: "var(--s4)",
+          }}
+        >
+          {String(startRun.error)} · <Link to="/runs">see runs</Link>
+        </div>
+      )}
+      {groupByDataset(images).map((g) => (
+        <Section
+          key={g.name}
+          title={`${g.kind === "private" ? "🔒 " : ""}${g.name} (${g.images.length} frames · ${snapCount(g.images)} snaps)`}
+          action={
+            <button
+              className="btn"
+              disabled={startRun.isPending}
+              onClick={() => startRun.mutate({ group: g.name })}
+              title={`Run all ${snapCount(g.images)} snaps of ${g.name}`}
+            >
+              Run this dataset
+            </button>
+          }
+        >
+          {g.images.map((img) => (
+            <EntryCard key={img.path} img={img} />
+          ))}
+        </Section>
+      ))}
     </div>
   );
 }
 
+interface DatasetGroup {
+  name: string;
+  kind: "public" | "private";
+  images: ImageInfo[];
+}
+
+/** Group manifest entries by their `dataset` group, preserving first-seen
+ *  (manifest) order so public groups precede private ones. */
+function groupByDataset(images: ImageInfo[]): DatasetGroup[] {
+  const groups: DatasetGroup[] = [];
+  for (const img of images) {
+    let g = groups.find((x) => x.name === img.dataset);
+    if (!g) {
+      g = { name: img.dataset, kind: img.kind, images: [] };
+      groups.push(g);
+    }
+    g.images.push(img);
+  }
+  return groups;
+}
+
 function Section({
   title,
+  action,
   children,
 }: {
   title: string;
+  action?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section style={{ marginBottom: "var(--s6)" }}>
-      <div className="label" style={{ marginBottom: "var(--s3)" }}>
-        {title}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--s3)",
+          marginBottom: "var(--s3)",
+        }}
+      >
+        <div className="label">{title}</div>
+        <span style={{ flex: 1 }} />
+        {action}
       </div>
       <div
         style={{

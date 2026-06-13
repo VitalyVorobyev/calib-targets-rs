@@ -1,13 +1,19 @@
-# projective-grid (Standalone)
+# The Grid Model
 
 > Code: [`projective-grid`](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/crates/projective-grid).
 
-`projective-grid` is the pattern-agnostic core of the workspace's
-grid detectors. Given a cloud of 2D feature points — optionally carrying
-one, two, or three local axis directions per point — it recovers an
-`(i, j) → point` labelling: which integer grid cell each feature
-occupies under perspective, together with a fitted projective
-transform from model-plane coordinates to image pixels.
+This is the **foundational model every detector in the workspace shares**.
+Before you tune a chessboard, ChArUco, or PuzzleBoard detector it pays to
+understand the layer beneath them all — the `projective-grid` crate. Given a
+cloud of 2D feature points — optionally carrying one, two, or three local axis
+directions per point — it recovers an `(i, j) → point` labelling: which integer
+grid cell each feature occupies under perspective, together with a fitted
+projective transform from model-plane coordinates to image pixels.
+
+The **input-feature kinds** introduced here (plain points versus oriented
+features) and the **two recovery algorithms** below are exactly the vocabulary
+the [Tuning the Detector](tuning.md) chapter's parameters act on — read this
+first, and the tuning knobs stop being a flat list of names.
 
 The crate is deliberately small and **image-free**. There are no
 image, pixel-buffer, or camera types anywhere in its public surface,
