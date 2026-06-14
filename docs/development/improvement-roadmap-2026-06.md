@@ -148,6 +148,26 @@ ablation catalogue, the hand-maintained WASM typings, `PIPELINE.md`, and the
 Studio / `bench diagnose` display labels. Zero `stage6` strings remain in
 code / UI / docs.
 
+**Phase C — C4 complete (grouped, labelled, tooltipped Studio param UI).**
+The Config tab's advanced-params section no longer renders raw snake_case JSON
+keys. A hand-authored **param-schema catalogue** in the Studio backend
+(`crates/calib-targets-studio/src/routes/params_schema.rs`, served at
+`GET /api/params/schema`, mirroring the `routes/presets.rs` pattern) carries one
+entry per editable `AdvancedTuning` knob — section, human label, a one-line
+tooltip distilled from the field's rustdoc, value-kind, and gating parent —
+across 14 ordered sections matching the source `// --- <stage> ---` headers (53
+fields). The chosen architecture is a Rust catalogue (not a frontend TS map) so
+a **completeness test** (`every_advanced_leaf_has_metadata`) can walk the
+materialised `advanced` tree (the exact JSON `/api/configs/_defaults` returns)
+and fail if any knob lacks metadata — adding a knob to `AdvancedTuning` turns
+the Studio suite red until its entry is supplied. A second test pins kind/group/
+gating consistency. The frontend replaced the raw-key `AdvancedTree` with a
+schema-driven `ParamForm` (grouped collapsibles, gating-aware greying of child
+fields when the parent flag is off, the modified-vs-default accent highlight
+preserved, and a graceful "Unmapped" fallback so no knob is ever hidden if the
+schema lags or the endpoint fails) plus a reusable token-themed `InfoTip` hover
+card. **The 2026-06 roadmap is now complete** (Phases A, B, C all shipped).
+
 **Deferred (recorded C2 findings, not acted on).** On the seed-and-grow path the
 remaining boosters are individually small or mixed on chess-corners 0.10:
 `boundary_extension_local_h` (local-H *loses* +7 vs global-H on `example2.png`),
@@ -399,7 +419,12 @@ Three independent, low-risk workstreams — any order.
   `no_cluster_rescue_*`, `run_boundary_extension` / `run_no_cluster_rescue` /
   `fix_partial_slot_flips`). Clean break; ablation catalogue + WASM typings +
   `PIPELINE.md` + Studio / bench labels updated; zero `stage6` strings remain.
-- [ ] C4  Grouped, labelled, tooltipped Studio param UI
+- [x] C4  Grouped, labelled, tooltipped Studio param UI: a hand-authored
+  param-schema catalogue (`crates/calib-targets-studio/src/routes/params_schema.rs`,
+  `GET /api/params/schema`) with a completeness test that fails if any
+  `AdvancedTuning` knob lacks metadata; a schema-driven `ParamForm` (grouped /
+  labelled / tooltipped / gating-aware, with an Unmapped fallback) replacing the
+  raw-key tree; a reusable `InfoTip`. **Roadmap complete.**
 
 ---
 

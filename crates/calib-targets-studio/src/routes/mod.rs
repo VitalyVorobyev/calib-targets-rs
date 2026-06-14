@@ -5,6 +5,7 @@ pub mod configs;
 pub mod dataset;
 pub mod detect;
 pub mod diagnose;
+pub mod params_schema;
 pub mod presets;
 pub mod runs;
 
@@ -37,6 +38,7 @@ pub fn router(state: AppState, dev: bool) -> Router {
             get(configs::get).put(configs::put).delete(configs::delete),
         )
         .route("/presets", get(presets::list))
+        .route("/params/schema", get(params_schema::schema))
         .route("/runs", get(runs::list).post(runs::create))
         .route("/runs/{id}", get(runs::get))
         .with_state(state)

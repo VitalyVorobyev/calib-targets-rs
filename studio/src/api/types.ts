@@ -107,6 +107,35 @@ export interface ConfigSummary {
   has_advanced: boolean;
 }
 
+// --- advanced-param schema (`GET /api/params/schema`) ----------------------
+// Rust source of truth: crates/calib-targets-studio/src/routes/params_schema.rs
+
+export type ParamKind = "bool" | "int" | "float";
+
+/** One section of the advanced-param form, in display order. */
+export interface ParamGroup {
+  id: string;
+  title: string;
+}
+
+/** Human metadata for one editable advanced knob, keyed by JSON pointer. */
+export interface ParamField {
+  /** RFC-6901 pointer into the materialised params (e.g. `/advanced/cluster_tol_deg`). */
+  pointer: string;
+  group: string;
+  label: string;
+  help: string;
+  kind: ParamKind;
+  /** Pointer of the bool flag that gates this knob (greyed when false). */
+  gated_by?: string;
+}
+
+/** The advanced-param UI metadata catalogue. */
+export interface ParamSchema {
+  groups: ParamGroup[];
+  fields: ParamField[];
+}
+
 export type DetectorReq = "chessboard" | "charuco" | "puzzleboard";
 
 export interface BoardReq {

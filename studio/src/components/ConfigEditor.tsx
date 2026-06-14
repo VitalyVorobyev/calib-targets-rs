@@ -11,6 +11,7 @@ import type {
   GraphBuildAlgorithm,
   OrientationSource,
 } from "../api/types";
+import { ParamForm } from "./ParamForm";
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -136,7 +137,7 @@ export function ConfigEditor({
         </label>
         {advancedOn && draft.advanced && (
           <div style={{ marginTop: "var(--s3)" }}>
-            <AdvancedTree
+            <ParamForm
               node={draft.advanced}
               defaults={(d?.["advanced"] ?? {}) as Record<string, unknown>}
               onChange={(next) => set("advanced", next)}
@@ -147,184 +148,6 @@ export function ConfigEditor({
 
       <ConfigLibrary draft={draft} onLoad={onChange} />
     </div>
-  );
-}
-
-// --- advanced tree (dynamic from JSON) -------------------------------------
-
-function AdvancedTree({
-  node,
-  defaults,
-  onChange,
-}: {
-  node: Record<string, unknown>;
-  defaults: Record<string, unknown>;
-  onChange: (next: Record<string, unknown>) => void;
-}) {
-  const scalarKeys = Object.keys(node)
-    .filter((k) => typeof node[k] !== "object" || node[k] === null)
-    .sort();
-  const groupKeys = Object.keys(node)
-    .filter((k) => typeof node[k] === "object" && node[k] !== null)
-    .sort();
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
-      {scalarKeys.length > 0 && (
-        <Group title="general" defaultOpen={false}>
-          {scalarKeys.map((k) => (
-            <ScalarField
-              key={k}
-              name={k}
-              value={node[k]}
-              defaultValue={defaults[k]}
-              onChange={(v) => onChange({ ...node, [k]: v })}
-            />
-          ))}
-        </Group>
-      )}
-      {groupKeys.map((g) => (
-        <Group key={g} title={g} defaultOpen={false}>
-          {Object.keys(node[g] as Record<string, unknown>)
-            .sort()
-            .map((k) => {
-              const sub = node[g] as Record<string, unknown>;
-              const subDefaults = (defaults[g] ?? {}) as Record<
-                string,
-                unknown
-              >;
-              return (
-                <ScalarField
-                  key={k}
-                  name={k}
-                  value={sub[k]}
-                  defaultValue={subDefaults[k]}
-                  onChange={(v) => onChange({ ...node, [g]: { ...sub, [k]: v } })}
-                />
-              );
-            })}
-        </Group>
-      ))}
-    </div>
-  );
-}
-
-function Group({
-  title,
-  defaultOpen,
-  children,
-}: {
-  title: string;
-  defaultOpen: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        overflow: "hidden",
-      }}
-    >
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%",
-          textAlign: "left",
-          padding: "6px 10px",
-          background: "var(--bg2)",
-          border: "none",
-          cursor: "pointer",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--text-muted)",
-        }}
-      >
-        {open ? "▾" : "▸"} {title}
-      </button>
-      {open && (
-        <div
-          style={{
-            padding: "var(--s2) var(--s3)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ScalarField({
-  name,
-  value,
-  defaultValue,
-  onChange,
-}: {
-  name: string;
-  value: unknown;
-  defaultValue: unknown;
-  onChange: (v: unknown) => void;
-}) {
-  const modified =
-    defaultValue !== undefined &&
-    JSON.stringify(value) !== JSON.stringify(defaultValue);
-  const labelStyle: React.CSSProperties = {
-    display: "grid",
-    gridTemplateColumns: "1fr 92px",
-    alignItems: "center",
-    gap: 8,
-    fontSize: 11,
-    fontFamily: "var(--font-mono)",
-    color: modified ? "var(--accent)" : "var(--text-muted)",
-  };
-  if (typeof value === "boolean") {
-    return (
-      <label style={labelStyle} title={modified ? `default: ${defaultValue}` : ""}>
-        {name}
-        <input
-          type="checkbox"
-          checked={value}
-          style={{ accentColor: "var(--accent)", justifySelf: "start" }}
-          onChange={(e) => onChange(e.target.checked)}
-        />
-      </label>
-    );
-  }
-  if (typeof value === "number") {
-    return (
-      <label style={labelStyle} title={modified ? `default: ${defaultValue}` : ""}>
-        {name}
-        <input
-          className="input"
-          type="number"
-          step="any"
-          value={value}
-          style={{ padding: "2px 6px", fontSize: 11 }}
-          onChange={(e) => {
-            const v = e.target.valueAsNumber;
-            if (!Number.isNaN(v)) onChange(v);
-          }}
-        />
-      </label>
-    );
-  }
-  // Strings / enums / nulls: free-form JSON-ish text input.
-  return (
-    <label style={labelStyle} title={modified ? `default: ${defaultValue}` : ""}>
-      {name}
-      <input
-        className="input"
-        type="text"
-        value={String(value)}
-        style={{ padding: "2px 6px", fontSize: 11 }}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </label>
   );
 }
 

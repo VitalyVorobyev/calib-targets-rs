@@ -9,6 +9,7 @@ import type {
   DetectResponse,
   DiagnoseRequest,
   DiagnoseResponse,
+  ParamSchema,
   Preset,
   RunRecord,
   RunRequest,
@@ -59,6 +60,8 @@ export const api = {
   diagnose: (req: DiagnoseRequest) =>
     postJson<DiagnoseResponse>("/api/diagnose", req),
   presets: () => getJson<Preset[]>("/api/presets"),
+  /** Advanced-param UI metadata (sections, labels, tooltips, gating). */
+  paramSchema: () => getJson<ParamSchema>("/api/params/schema"),
   /**
    * Effective chessboard grid defaults for a target family — the real values
    * that family's detector runs with (e.g. charuco / puzzle pin a different
