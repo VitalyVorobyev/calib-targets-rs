@@ -14,6 +14,7 @@
 //! also gitignored. Per the workspace `CLAUDE.md` policy, no concrete
 //! private numbers leak into public surfaces.
 
+pub mod ablate;
 pub mod baseline;
 pub mod compare;
 pub mod config;
@@ -23,14 +24,17 @@ pub mod diff;
 pub mod overlay;
 pub mod precision;
 pub mod report;
+pub mod run_set;
 pub mod runner;
 
+pub use ablate::{run_ablation, AblationOpts, AblationReport};
 pub use baseline::{Baseline, BaselineCorner, BaselineImage};
 pub use compare::{build_comparison, ComparisonReport, FamilyComparison};
 pub use dataset::{Dataset, DatasetEntry, ImageKind, Stitched};
 pub use diff::{BaselineDiff, WrongPosition};
 pub use precision::{structural_precision, StructuralPrecision};
 pub use report::{PerImageReport, RunReport, Summary};
+pub use run_set::{run_report_for_params, RunContext};
 pub use runner::{run_entry, run_snap, Engine, RunOutcome};
 
 /// Workspace root inferred from `CARGO_MANIFEST_DIR`. The bench crate sits

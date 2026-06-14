@@ -19,7 +19,7 @@ artifacts per the disclosure policy.
 
 ---
 
-## Status (updated 2026-06-13)
+## Status (updated 2026-06-14)
 
 **Phase A — shipped** (commit `c24c716`, branch `feature/calib-targets-studio`):
 A1a snap/image prev-next nav, A1b integral dataset stats, A2 book reorder
@@ -71,6 +71,35 @@ basic-config** also landed: a curated, editable, family-aware basic-config
 section in the Detect tab (`min_corner_strength`, `min_labeled_corners`,
 `max_components`) backed by a family-aware `/api/configs/_defaults?family=`
 endpoint, so switching families shows the genuine per-family defaults.
+
+**Phase C — C1 complete (`AdvancedTuning` ablation harness).** A committed
+`bench ablate` subcommand toggles each tuning knob one at a time over a chosen
+dataset and emits a per-knob recall / precision / speed delta table (markdown +
+JSON, local-only). It reuses the existing detection + reporting machinery
+(`merge_detector_params`, the new shared `run_report_for_params` loop now shared
+with `bench run`, `precision.rs`, `report.rs`); each variation is a fully
+materialised single-leaf override so it differs from the baseline in exactly one
+knob. The **verdict is quality-only** — recall (median labelled count) and
+precision (overlong / collapsed structural signals) are deterministic, so a
+zero-delta knob is `no-effect`; the Δp50 column is informational (a per-variation
+warmup pass removes the cold-start skew, but cross-run timing is not reliably
+knob-attributable). Knobs downstream of a conditional stage are flagged
+`no-effect [gated by …]` so the prune cannot drop a merely-dormant knob.
+**Finding** (both regression substrates + the public set, determinism confirmed
+across repeat runs): the large majority of knobs are inert at ±25%, with a
+further ~20 gated-inert; the recall/precision signal concentrates in a handful —
+the ChESS prefilter (`max_fit_rms_ratio`), the weak-cluster booster
+(`enable_weak_cluster_rescue` + `weak_cluster_tol_deg`), admission tolerances
+(`edge_axis_tol_deg`, `attach_axis_tol_deg`), the topological grid-build
+tolerances (`topological.axis_align_tol_rad`, `topological.edge_length_max_rel`),
+and `enable_final_edge_shape_check` (a *precision* gate — disabling it admits
+overlong / collapsed wrong-labels, so it stays on). The recovery-booster flags
+that read `no-effect` on **both** substrates
+(`enable_stage6_5_rescue`, `enable_partial_slot_flip_fix`,
+`enable_post_grow_refit` + its BFS regrow/extend, `enable_post_geometry_rescue`,
+`stage6_local_h`) are the **C2 prune candidates** — but each was added for a
+specific hard image, so C2 must confirm against those images (some are outside
+the regression sets) and force the gated sub-knobs before removing.
 
 ---
 
@@ -290,8 +319,17 @@ Three independent, low-risk workstreams — any order.
   dense interiors. Targets the residual puzzle overlong-edge audit hit.
 
 ### Phase C
-- [ ] C1  Per-knob `AdvancedTuning` ablation table on the regression set
-- [ ] C2  Remove/merge/fold knobs with no measured effect
+- [x] C1  Per-knob `AdvancedTuning` ablation harness: a committed `bench ablate`
+  subcommand (catalogue of the flat knobs + representative nested
+  `topological`/`component_merge` knobs; materialised single-leaf overrides;
+  quality-only verdict with `[gated by …]` annotation; warmup pass; markdown +
+  JSON to local-only `bench_results/`). Extracted the shared
+  `run_report_for_params` loop so `bench run` and `bench ablate` measure the
+  same thing. 7 unit tests. Findings + C2 prune candidates recorded in the
+  Status section above.
+- [ ] C2  Remove/merge/fold knobs with no measured effect (confirm the
+  `no-effect` recovery-boosters against the specific images each targeted, and
+  force gated sub-knobs, before removing — see C1 findings)
 - [ ] C3  Rename stage6/stage6_5 → semantic names (update presets + UI)
 - [ ] C4  Grouped, labelled, tooltipped Studio param UI
 
