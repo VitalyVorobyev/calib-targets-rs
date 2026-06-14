@@ -10,7 +10,7 @@
 use std::collections::HashSet;
 
 use crate::cluster::{
-    angular_dist_pi, assign_corner, effective_tol_rad, fix_partial_slot_flips_post_stage6,
+    angular_dist_pi, assign_corner, effective_tol_rad, fix_partial_slot_flips,
     refit_centers_from_labelled, AxisCluster, ClusterCenters,
 };
 use crate::corner::{CornerAug, CornerStage};
@@ -20,7 +20,7 @@ use crate::seed::Seed;
 
 use nalgebra::Point2;
 
-use super::extension::{run_stage6, run_stage6_5_rescue};
+use super::extension::{run_boundary_extension, run_no_cluster_rescue};
 use super::types::{BfsExtendTrace, ExtensionTrace, RefitTrace};
 
 /// Per-pass output of [`run_refit`].
@@ -150,7 +150,7 @@ pub(crate) fn run_refit(
         if tuning.enable_post_grow_bfs_extend {
             let positions: Vec<Point2<f32>> = augs.iter().map(|c| c.position).collect();
             // Stage 6.75 BFS extend runs in post-rebase coords; same
-            // parity-shift rationale as `run_stage6`.
+            // parity-shift rationale as `run_boundary_extension`.
             let bfs_parity_shift = (grow_res.rebase_i_mod2 + grow_res.rebase_j_mod2).rem_euclid(2);
             let bfs_validator =
                 ChessboardSquareAttachPolicy::new(augs, blacklist, new_centers, cell_size, params)
@@ -184,7 +184,8 @@ pub(crate) fn run_refit(
         // Second-pass Stage 6 / 6.5 with the new centres so any cells
         // the BFS still missed get a second look at the wider local-H
         // prediction radius.
-        let ext2 = run_stage6(augs, grow_res, new_centers, cell_size, blacklist, params);
+        let ext2 =
+            run_boundary_extension(augs, grow_res, new_centers, cell_size, blacklist, params);
         for (k, &idx) in ext2.attached_indices.iter().enumerate() {
             let at = ext2.attached_cells[k];
             augs[idx].stage = CornerStage::Labeled {
@@ -200,16 +201,16 @@ pub(crate) fn run_refit(
         // set's parity (using the refined centres + extended labelled
         // set), and flip them so the second-pass rescue can attach.
         if tuning.enable_partial_slot_flip_fix {
-            let _flipped = fix_partial_slot_flips_post_stage6(
+            let _flipped = fix_partial_slot_flips(
                 augs,
                 &grow_res.labelled,
                 cell_size,
                 tuning.partial_slot_flip_k_nearest,
             );
         }
-        if tuning.enable_stage6_5_rescue {
+        if tuning.enable_no_cluster_rescue {
             let rescue2 =
-                run_stage6_5_rescue(augs, grow_res, new_centers, cell_size, blacklist, params);
+                run_no_cluster_rescue(augs, grow_res, new_centers, cell_size, blacklist, params);
             for (k, &idx) in rescue2.attached_indices.iter().enumerate() {
                 let at = rescue2.attached_cells[k];
                 augs[idx].stage = CornerStage::Labeled {

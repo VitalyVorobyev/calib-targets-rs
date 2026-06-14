@@ -397,8 +397,8 @@ fn small3_topological_default_suppresses_weak_frontier() {
 /// clean chessboard corners still get the slot-flip — `large.png`
 /// loses 22 of 373 corners that way pre-fix (349 → 373 after fix).
 ///
-/// `cluster.rs::fix_partial_slot_flips_post_stage6` runs between
-/// Stage 6 and Stage 6.5 and detects partial slot-flips by checking
+/// `cluster.rs::fix_partial_slot_flips` runs between boundary extension
+/// and no-cluster rescue and detects partial slot-flips by checking
 /// each orphan `Clustered` corner against the labelled set's
 /// local-H prediction + 2/3-majority parity vote. Precision-safe
 /// because the labelled set itself is already invariant-correct.
@@ -435,13 +435,66 @@ fn diskfit_large_recovers_partial_slot_flips() {
         "DiskFit + seed-and-grow must produce at least 365 labelled corners on large.png \
          (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
          The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
-         is broken — see fix_partial_slot_flips_post_stage6."
+         is broken — see fix_partial_slot_flips."
     );
 
     // Hard invariants the precision contract requires.
     assert_no_duplicate_labels(&detection, "large.png + DiskFit");
     assert_grid_rebased_to_origin(&detection, "large.png + DiskFit");
     assert_origin_top_left(&detection, "large.png + DiskFit");
+}
+
+/// Regression (C2 ablation campaign, 2026-06): the destructive post-grow
+/// BFS regrow (`enable_post_grow_bfs_regrow`) is default-**off**. Its
+/// design relied on the non-destructive `enable_post_grow_bfs_extend`
+/// running after to re-attach the borderline slots the regrow demolishes,
+/// but on chess-corners 0.10 that recovery contract no longer holds — the
+/// extend pass re-attaches nothing — so the regrow nets negative. On
+/// `small3.png` (seed-and-grow with `DiskFit`) the grow, boundary-extension
+/// and no-cluster-rescue stages reach 117 labelled corners; with the regrow
+/// **on**, the destructive demotion stripped them back to 88. The recovered
+/// corners are a clean two-column lattice extension onto real
+/// intersections (structural-precision-clean, verified by overlay). This
+/// pins the win so the destructive regrow cannot be silently re-enabled
+/// (nor its no-op recovery contract regress unnoticed).
+#[test]
+fn diskfit_small3_seed_and_grow_keeps_extended_lattice() {
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
+    use chess_corners::Threshold;
+
+    let path = workspace_root().join("testdata/small3.png");
+    if !path.exists() {
+        eprintln!("skipping: testdata/small3.png not on disk");
+        return;
+    }
+    let img = image::open(&path)
+        .unwrap_or_else(|e| panic!("decode small3.png: {e}"))
+        .to_luma8();
+
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Absolute(15.0))
+        .with_orientation_method(OrientationMethod::DiskFit);
+
+    let corners = detect_corners(&img, &chess_cfg);
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
+    let detection = detector
+        .detect(&corners)
+        .expect("DiskFit + seed-and-grow must produce a detection on small3.png");
+
+    let labelled = detection.corners.len();
+    assert!(
+        labelled >= 110,
+        "DiskFit + seed-and-grow must keep the extended lattice on small3.png \
+         (regrow-off observation: 117; with the destructive regrow it collapsed \
+         to 88). Got {labelled}. Has `enable_post_grow_bfs_regrow` been re-enabled \
+         or its no-op recovery contract regressed? See the C2 ablation campaign in \
+         docs/development/improvement-roadmap-2026-06.md."
+    );
+
+    // Hard invariants the precision contract requires.
+    assert_no_duplicate_labels(&detection, "small3.png + DiskFit");
+    assert_grid_rebased_to_origin(&detection, "small3.png + DiskFit");
+    assert_origin_top_left(&detection, "small3.png + DiskFit");
 }
 
 /// Regression: chess-corners 0.9 added `OrientationMethod::DiskFit`,

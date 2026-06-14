@@ -1,11 +1,15 @@
 //! Per-knob ablation of the chessboard detector's `AdvancedTuning` knobs.
 //!
 //! Toggles each tuning knob one at a time over a fixed dataset and reports the
-//! per-knob delta in recall (median labelled-corner count), precision
-//! (baseline-free structural signals), and speed (median per-frame latency)
-//! against an unperturbed baseline. The output table is the evidence the
-//! `AdvancedTuning` prune (roadmap item C2) needs: a `no-effect` knob whose
-//! effect is not merely gated behind a dormant stage is a prune candidate.
+//! per-knob delta in recall, precision (baseline-free structural signals), and
+//! speed (median per-frame latency) against an unperturbed baseline. Recall is
+//! reported **both** as the dataset median labelled-corner count and as the
+//! worst single-frame swing: the recovery boosters each rescue corners on one
+//! specific hard image, which leaves the median flat, so the per-image term is
+//! what keeps such a knob from a false `no-effect`. The output table is the
+//! evidence the `AdvancedTuning` prune (roadmap item C2) needs: a `no-effect`
+//! knob whose effect is not merely gated behind a dormant stage is a prune
+//! candidate.
 //!
 //! # Override mechanism
 //!
@@ -126,8 +130,8 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/validate_step_aware",
         ),
         with_pointer(
-            k("enable_stage6_5_rescue", BoolToggle, None),
-            "/advanced/enable_stage6_5_rescue",
+            k("enable_no_cluster_rescue", BoolToggle, None),
+            "/advanced/enable_no_cluster_rescue",
         ),
         with_pointer(
             k("enable_partial_slot_flip_fix", BoolToggle, None),
@@ -166,8 +170,8 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/enable_weak_cluster_rescue",
         ),
         with_pointer(
-            k("stage6_local_h", BoolToggle, None),
-            "/advanced/stage6_local_h",
+            k("boundary_extension_local_h", BoolToggle, None),
+            "/advanced/boundary_extension_local_h",
         ),
         // --- scalar thresholds ---------------------------------------------
         with_pointer(
@@ -249,23 +253,23 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             k(
                 "rescue_axis_tol_deg",
                 ScalarRel,
-                Some("enable_stage6_5_rescue"),
+                Some("enable_no_cluster_rescue"),
             ),
             "/advanced/rescue_axis_tol_deg",
         ),
         with_pointer(
             k(
-                "stage6_5_local_k_nearest",
+                "no_cluster_rescue_k_nearest",
                 ScalarRel,
-                Some("enable_stage6_5_rescue"),
+                Some("enable_no_cluster_rescue"),
             ),
-            "/advanced/stage6_5_local_k_nearest",
+            "/advanced/no_cluster_rescue_k_nearest",
         ),
         with_pointer(
             k(
                 "rescue_search_rel",
                 ScalarRel,
-                Some("enable_stage6_5_rescue"),
+                Some("enable_no_cluster_rescue"),
             ),
             "/advanced/rescue_search_rel",
         ),
@@ -302,8 +306,12 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/geometry_check_local_h_tol_rel",
         ),
         with_pointer(
-            k("stage6_local_k_nearest", ScalarRel, Some("stage6_local_h")),
-            "/advanced/stage6_local_k_nearest",
+            k(
+                "boundary_extension_k_nearest",
+                ScalarRel,
+                Some("boundary_extension_local_h"),
+            ),
+            "/advanced/boundary_extension_k_nearest",
         ),
         with_pointer(
             k(
@@ -505,6 +513,10 @@ impl AblationMetrics {
         };
         AblationDelta {
             d_labelled: self.labelled_median as i64 - base.labelled_median as i64,
+            // Filled in by `run_ablation`, which has both per-image lists in
+            // scope; the scalar metrics here cannot see individual frames.
+            d_labelled_worst: 0,
+            worst_image: None,
             d_overlong: self.overlong_total as i64 - base.overlong_total as i64,
             d_collapsed: self.collapsed_total as i64 - base.collapsed_total as i64,
             d_p50_ms,
@@ -513,11 +525,56 @@ impl AblationMetrics {
     }
 }
 
+/// Worst single-image labelled-count swing between `base` and `var`, joined on
+/// the image label.
+///
+/// Returns the per-image `var − base` delta of largest magnitude (signed; ties
+/// resolve to the more negative, i.e. the worst recall loss) and the image it
+/// occurs on. The dataset-median recall delta is blind to a knob that only
+/// moves one or two frames — exactly the failure mode of the recovery boosters,
+/// each of which was added for one specific hard image — so this per-image
+/// signal is what keeps a single-image booster from reading `no-effect`.
+/// Returns `(0, None)` when the runs share no image labels.
+fn worst_image_recall_delta(base: &RunReport, var: &RunReport) -> (i64, Option<String>) {
+    use std::collections::HashMap;
+    let base_by_image: HashMap<&str, usize> = base
+        .per_image
+        .iter()
+        .map(|p| (p.image.as_str(), p.labelled_count))
+        .collect();
+    let mut worst: i64 = 0;
+    let mut worst_image: Option<String> = None;
+    for p in &var.per_image {
+        let Some(&b) = base_by_image.get(p.image.as_str()) else {
+            continue;
+        };
+        let d = p.labelled_count as i64 - b as i64;
+        // Largest magnitude wins; ties go to the more negative (worst recall).
+        if d.abs() > worst.abs() || (d.abs() == worst.abs() && d < worst) {
+            worst = d;
+            worst_image = Some(p.image.clone());
+        }
+    }
+    (worst, worst_image)
+}
+
+/// File-name tail of an image label for compact display (keeps any `#snap`).
+fn image_stem(label: &str) -> &str {
+    label.rsplit('/').next().unwrap_or(label)
+}
+
 /// Per-knob delta against the baseline metrics.
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AblationDelta {
-    /// Δ median labelled count (recall).
+    /// Δ median labelled count (recall), over the whole dataset.
     pub d_labelled: i64,
+    /// Worst single-image labelled-count swing (recall), joined per image.
+    /// Signed; the per-image `variation − baseline` delta of largest magnitude.
+    /// The dataset median is blind to a knob that only moves one or two frames,
+    /// so this is the signal that keeps a single-image booster off `no-effect`.
+    pub d_labelled_worst: i64,
+    /// The image at which [`Self::d_labelled_worst`] occurs (`None` when flat).
+    pub worst_image: Option<String>,
     /// Δ overlong-edge total (precision).
     pub d_overlong: i64,
     /// Δ collapsed-pair total (precision).
@@ -531,12 +588,17 @@ pub struct AblationDelta {
 /// Classify a delta into a human-readable verdict that seeds the C2 decision.
 ///
 /// Quality-only by design: recall + precision are deterministic, so a knob with
-/// zero recall/precision delta is `no-effect` (a prune candidate). The Δp50
-/// column is *not* consulted — each variation is a separate process, so its
-/// timing carries cross-run / warmup jitter that cannot be attributed to the
-/// knob. Read Δp50 for gross speed shifts, not the verdict.
+/// zero recall/precision delta is `no-effect` (a prune candidate). Recall is
+/// judged on **both** the dataset median ([`AblationDelta::d_labelled`]) and the
+/// worst single image ([`AblationDelta::d_labelled_worst`]): a booster that
+/// rescues corners on one hard frame leaves the median flat, so the per-image
+/// term is what stops it reading `no-effect`. The Δp50 column is *not* consulted
+/// — each variation is a separate process, so its timing carries cross-run /
+/// warmup jitter that cannot be attributed to the knob. Read Δp50 for gross
+/// speed shifts, not the verdict.
 fn verdict_for(d: &AblationDelta, gated_by: Option<&str>) -> String {
-    let quality_unchanged = d.d_labelled == 0 && d.d_overlong == 0 && d.d_collapsed == 0;
+    let quality_unchanged =
+        d.d_labelled == 0 && d.d_labelled_worst == 0 && d.d_overlong == 0 && d.d_collapsed == 0;
     if quality_unchanged {
         match gated_by {
             Some(g) => format!("no-effect [gated by {g}]"),
@@ -546,6 +608,13 @@ fn verdict_for(d: &AblationDelta, gated_by: Option<&str>) -> String {
         let mut parts = Vec::new();
         if d.d_labelled != 0 {
             parts.push(format!("recall{:+}", d.d_labelled));
+        }
+        // Surface the per-image worst only when it carries information the
+        // median misses (the masked single-image case); skip the redundant
+        // echo when median and worst coincide (e.g. single-image runs).
+        if d.d_labelled_worst != 0 && d.d_labelled_worst != d.d_labelled {
+            let img = d.worst_image.as_deref().map(image_stem).unwrap_or("?");
+            parts.push(format!("img{:+}@{img}", d.d_labelled_worst));
         }
         if d.d_overlong != 0 {
             parts.push(format!("overlong{:+}", d.d_overlong));
@@ -658,7 +727,10 @@ where
             dump_report(dir, &label, &report)?;
         }
         let metrics = AblationMetrics::from_report(&report);
-        let delta = metrics.delta_from(&baseline);
+        let mut delta = metrics.delta_from(&baseline);
+        let (worst, worst_image) = worst_image_recall_delta(&baseline_report, &report);
+        delta.d_labelled_worst = worst;
+        delta.worst_image = worst_image;
         let verdict = verdict_for(&delta, v.gated_by);
         rows.push(AblationRow {
             knob: v.knob.clone(),
@@ -705,14 +777,17 @@ pub fn render_ablation_markdown(report: &AblationReport) -> String {
     let _ = writeln!(
         s,
         "Per-knob recall / precision / speed deltas vs the baseline config, over the \
-         chessboard grid builder. Recall = median labelled-corner count; precision = \
-         baseline-free structural signals (overlong cardinal edges, collapsed \
-         duplicate-pixel pairs). A `no-effect` verdict (zero recall/precision delta) is a \
-         prune candidate — unless `[gated by …]`, meaning the knob is downstream of a \
-         conditional stage that may not have fired on these frames. The Δp50 column is \
-         informational only: each variation is a separate process, so its timing carries \
-         cross-run jitter and is not reliably knob-attributable — read it for gross speed \
-         shifts, not the verdict."
+         chessboard grid builder. Recall = labelled-corner count, judged both as the \
+         dataset median (Δlabelled) and as the worst single frame (Δlbl·worst-img) — the \
+         median is blind to a knob that only rescues one hard image, which is exactly what \
+         the recovery boosters do, so the per-image column is the one that stops such a \
+         knob reading `no-effect`. Precision = baseline-free structural signals (overlong \
+         cardinal edges, collapsed duplicate-pixel pairs). A `no-effect` verdict (zero \
+         recall *and* per-image recall *and* precision delta) is a prune candidate — \
+         unless `[gated by …]`, meaning the knob is downstream of a conditional stage that \
+         may not have fired on these frames. The Δp50 column is informational only: each \
+         variation is a separate process, so its timing carries cross-run jitter and is \
+         not reliably knob-attributable — read it for gross speed shifts, not the verdict."
     );
     let _ = writeln!(s);
     let _ = writeln!(s, "- **Baseline**: `{}`", report.baseline_config_id);
@@ -734,16 +809,28 @@ pub fn render_ablation_markdown(report: &AblationReport) -> String {
     let _ = writeln!(s);
     let _ = writeln!(
         s,
-        "| Knob | Dir | Δlabelled | Δoverlong | Δcollapsed | Δp50 ms | Verdict |"
+        "| Knob | Dir | Δlabelled | Δlbl·worst-img | Δoverlong | Δcollapsed | Δp50 ms | Verdict |"
     );
-    let _ = writeln!(s, "|---|---|--:|--:|--:|--:|---|");
+    let _ = writeln!(s, "|---|---|--:|---|--:|--:|--:|---|");
     for r in &report.rows {
+        let worst_cell = if r.delta.d_labelled_worst != 0 {
+            let img = r
+                .delta
+                .worst_image
+                .as_deref()
+                .map(image_stem)
+                .unwrap_or("?");
+            format!("{:+} @{img}", r.delta.d_labelled_worst)
+        } else {
+            "·".to_string()
+        };
         let _ = writeln!(
             s,
-            "| {} | {} | {:+} | {:+} | {:+} | {:+.2} | {} |",
+            "| {} | {} | {:+} | {} | {:+} | {:+} | {:+.2} | {} |",
             r.knob,
             direction_slug(r.direction),
             r.delta.d_labelled,
+            worst_cell,
             r.delta.d_overlong,
             r.delta.d_collapsed,
             r.delta.d_p50_ms,
@@ -910,6 +997,8 @@ mod tests {
     fn verdict_classification() {
         let no_effect = AblationDelta {
             d_labelled: 0,
+            d_labelled_worst: 0,
+            worst_image: None,
             d_overlong: 0,
             d_collapsed: 0,
             d_p50_ms: 0.0,
@@ -923,6 +1012,8 @@ mod tests {
 
         let recall = AblationDelta {
             d_labelled: -4,
+            d_labelled_worst: -4,
+            worst_image: None,
             d_overlong: 2,
             d_collapsed: 0,
             d_p50_ms: 0.0,
@@ -934,12 +1025,89 @@ mod tests {
         // jitter is not knob-attributable), so it reads `no-effect`.
         let speed = AblationDelta {
             d_labelled: 0,
+            d_labelled_worst: 0,
+            worst_image: None,
             d_overlong: 0,
             d_collapsed: 0,
             d_p50_ms: -1.0,
             d_p50_frac: -0.2,
         };
         assert_eq!(verdict_for(&speed, None), "no-effect");
+
+        // The masked case: dataset median flat, but one frame lost 59 corners.
+        // The per-image term must keep this off `no-effect` — the whole point of
+        // C2.1. A single-image booster used to read `no-effect` here.
+        let masked = AblationDelta {
+            d_labelled: 0,
+            d_labelled_worst: -59,
+            worst_image: Some("testdata/puzzleboard_reference/example2.png".to_string()),
+            d_overlong: 0,
+            d_collapsed: 0,
+            d_p50_ms: 0.0,
+            d_p50_frac: 0.0,
+        };
+        assert_eq!(verdict_for(&masked, None), "img-59@example2.png");
+    }
+
+    fn report_with(images: &[(&str, usize)]) -> RunReport {
+        use crate::report::{PerImageReport, Summary};
+        let per_image = images
+            .iter()
+            .map(|(img, lc)| PerImageReport {
+                image: (*img).to_string(),
+                passed: true,
+                has_baseline: false,
+                elapsed_ms: 0.0,
+                labelled_count: *lc,
+                diff_vs_baseline: Default::default(),
+                structural_precision: Default::default(),
+            })
+            .collect();
+        RunReport {
+            schema: 0,
+            detector: "chessboard".to_string(),
+            config_id: "test".to_string(),
+            summary: Summary {
+                images_total: images.len(),
+                images_passed: 0,
+                images_failed: 0,
+                p50_ms: 0.0,
+                p95_ms: 0.0,
+                max_ms: 0.0,
+            },
+            per_image,
+        }
+    }
+
+    #[test]
+    fn worst_image_delta_empty_and_disjoint_are_flat() {
+        assert_eq!(
+            worst_image_recall_delta(&report_with(&[]), &report_with(&[])),
+            (0, None)
+        );
+        // No shared labels → nothing to compare → flat.
+        let base = report_with(&[("a.png", 100)]);
+        let var = report_with(&[("b.png", 10)]);
+        assert_eq!(worst_image_recall_delta(&base, &var), (0, None));
+    }
+
+    #[test]
+    fn worst_image_delta_picks_largest_magnitude() {
+        let base = report_with(&[("a.png", 100), ("b.png", 50), ("c.png", 30)]);
+        let var = report_with(&[("a.png", 95), ("b.png", 9), ("c.png", 31)]);
+        // deltas: a −5, b −41, c +1 → worst = −41 @ b.png
+        let (d, img) = worst_image_recall_delta(&base, &var);
+        assert_eq!(d, -41);
+        assert_eq!(img.as_deref(), Some("b.png"));
+    }
+
+    #[test]
+    fn worst_image_delta_tie_prefers_recall_loss() {
+        let base = report_with(&[("a.png", 10), ("b.png", 10)]);
+        let var = report_with(&[("a.png", 15), ("b.png", 5)]); // +5 and −5
+        let (d, img) = worst_image_recall_delta(&base, &var);
+        assert_eq!(d, -5);
+        assert_eq!(img.as_deref(), Some("b.png"));
     }
 
     #[test]
@@ -966,6 +1134,8 @@ mod tests {
                 },
                 delta: AblationDelta {
                     d_labelled: -4,
+                    d_labelled_worst: -4,
+                    worst_image: Some("testdata/small3.png".to_string()),
                     d_overlong: 0,
                     d_collapsed: 0,
                     d_p50_ms: 0.0,
@@ -977,7 +1147,9 @@ mod tests {
         };
         let md = render_ablation_markdown(&report);
         assert!(md.contains("AdvancedTuning per-knob ablation"));
-        assert!(md.contains("| cluster_tol_deg | down | -4 |"));
+        assert!(md.contains("Δlbl·worst-img"));
+        // Row carries the dataset-median delta then the worst-image cell.
+        assert!(md.contains("| cluster_tol_deg | down | -4 | -4 @small3.png |"));
         assert!(md.contains("Frames**: 5"));
     }
 }

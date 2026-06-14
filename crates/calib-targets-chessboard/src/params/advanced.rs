@@ -72,7 +72,7 @@ pub(super) fn default_cluster_sigma_k() -> f32 {
     0.0
 }
 
-fn default_enable_stage6_5_rescue() -> bool {
+fn default_enable_no_cluster_rescue() -> bool {
     // Default on. The rescue pass runs after `extend_boundary` and is
     // gated on (a) local-H position match, (b) parity match against
     // the global centers, and (c) the axis-slot-swap edge invariant.
@@ -147,7 +147,7 @@ fn default_enable_partial_slot_flip_fix() -> bool {
 }
 
 fn default_partial_slot_flip_k_nearest() -> usize {
-    // K = 12 mirrors `stage6_local_k_nearest`'s justification: 3×
+    // K = 12 mirrors `boundary_extension_k_nearest`'s justification: 3×
     // over-determination on the 9-DOF DLT; wide enough to capture
     // local perspective without diluting it with far-away labels;
     // robust to a few outlier supports under the per-support
@@ -178,16 +178,23 @@ fn default_refit_min_shift_deg() -> f32 {
 }
 
 fn default_enable_post_grow_bfs_regrow() -> bool {
-    // Default ON. Runs first when the refit triggers; lifts recall
-    // on cases where the orphan strip is 1+ cells past the existing
-    // labelled set's bbox edge (small3.png left strip, +21 corners
-    // on the public bench). The destructive regrow can flip a few
-    // borderline parity slots under the small (~3°) centre shift —
-    // those losses are recovered immediately by
-    // `enable_post_grow_bfs_extend` running after, which walks the
-    // regrown labelled set's boundary and re-attaches dropped
-    // corners via cardinal-neighbour prediction.
-    true
+    // Default OFF (flipped from ON, 2026-06). The destructive regrow
+    // demotes the whole labelled set and re-grows from scratch under
+    // the refit-refined centres. Its design relied on
+    // `enable_post_grow_bfs_extend` running after to re-attach the
+    // borderline parity slots the regrow flips — but on chess-corners
+    // 0.10 that recovery contract no longer holds: the extend pass
+    // reads no-effect (it re-attaches nothing), so the regrow's
+    // demolition is permanent and the pass nets negative. Measured on
+    // the public bench (`testdata/small3.png`, seed-and-grow +
+    // disk-fit): the grow + boundary-extension + no-cluster-rescue
+    // stages reach 117 labelled corners, then the destructive regrow
+    // strips them back to 88. Disabling the regrow keeps all 117 (a
+    // clean two-column lattice extension onto real intersections,
+    // structural-precision-clean). The non-destructive
+    // `enable_post_grow_bfs_extend` remains the safe boundary walk.
+    // See the C2 ablation campaign in the 2026-06 improvement roadmap.
+    false
 }
 
 fn default_enable_post_grow_bfs_extend() -> bool {
@@ -228,7 +235,7 @@ fn default_enable_final_edge_shape_check() -> bool {
     true
 }
 
-fn default_stage6_local_h() -> bool {
+fn default_boundary_extension_local_h() -> bool {
     // Local-H `extend_boundary` is the production default: per-
     // candidate homography from the K nearest labelled corners +
     // deeper bbox enumeration (`extend_depth = 3`). On the public
@@ -245,7 +252,7 @@ fn default_stage6_local_h() -> bool {
     true
 }
 
-pub(super) fn default_stage6_local_k_nearest() -> usize {
+pub(super) fn default_local_h_k_nearest() -> usize {
     // K = 12 gives 3× over-determination on the 9-DOF DLT and is
     // wide enough to capture local perspective without diluting it
     // with far-away labels. Reduce to 8 for very small labelled sets;
@@ -418,11 +425,11 @@ pub struct AdvancedTuning {
     /// and `example2.png`).
     ///
     /// Default `true`. Set to `false` to disable the rescue pass.
-    #[serde(default = "default_enable_stage6_5_rescue")]
-    pub enable_stage6_5_rescue: bool,
+    #[serde(default = "default_enable_no_cluster_rescue")]
+    pub enable_no_cluster_rescue: bool,
     /// Per-axis absolute tolerance (degrees) for `rescue_no_cluster`
     /// admission (see
-    /// [`enable_stage6_5_rescue`](AdvancedTuning::enable_stage6_5_rescue)).
+    /// [`enable_no_cluster_rescue`](AdvancedTuning::enable_no_cluster_rescue)).
     /// Wider than [`cluster_tol_deg`] (typically 12°) and the booster's
     /// [`weak_cluster_tol_deg`] (typically 18°) because the rescue
     /// pass is precision-anchored on local-H position match — a wide
@@ -438,11 +445,11 @@ pub struct AdvancedTuning {
     #[serde(default = "default_rescue_axis_tol_deg")]
     pub rescue_axis_tol_deg: f32,
     /// `K` parameter for `rescue_no_cluster` local-H fitting (same
-    /// semantics as [`stage6_local_k_nearest`]).
+    /// semantics as [`boundary_extension_k_nearest`]).
     ///
-    /// [`stage6_local_k_nearest`]: AdvancedTuning::stage6_local_k_nearest
-    #[serde(default = "default_stage6_local_k_nearest")]
-    pub stage6_5_local_k_nearest: usize,
+    /// [`boundary_extension_k_nearest`]: AdvancedTuning::boundary_extension_k_nearest
+    #[serde(default = "default_local_h_k_nearest")]
+    pub no_cluster_rescue_k_nearest: usize,
     /// Position-search radius for `rescue_no_cluster` candidate
     /// matching, as a fraction of `cell_size`. Wider than the
     /// `extend_boundary` `search_rel` (default 0.40) because heavy
@@ -473,14 +480,14 @@ pub struct AdvancedTuning {
     /// no-op under this pass.
     ///
     /// Default `true`. Precision-safe by construction (see
-    /// `crate::cluster::fix_partial_slot_flips_post_stage6` for the
+    /// `crate::cluster::fix_partial_slot_flips` for the
     /// full gate ladder — function is private but the comment chain
     /// in the source is the canonical reference).
     #[serde(default = "default_enable_partial_slot_flip_fix")]
     pub enable_partial_slot_flip_fix: bool,
     /// `K` parameter for the partial slot-flip fix's local-H. Same
     /// justification as
-    /// [`stage6_local_k_nearest`](Self::stage6_local_k_nearest).
+    /// [`boundary_extension_k_nearest`](Self::boundary_extension_k_nearest).
     #[serde(default = "default_partial_slot_flip_k_nearest")]
     pub partial_slot_flip_k_nearest: usize,
 
@@ -622,17 +629,17 @@ pub struct AdvancedTuning {
     /// growing labelled set.
     ///
     /// Default `true` (per-candidate local-H — see
-    /// `default_stage6_local_h` for the bench evidence). Set to
+    /// `default_boundary_extension_local_h` for the bench evidence). Set to
     /// `false` to fall back to single-global-H boundary extension.
-    #[serde(default = "default_stage6_local_h")]
-    pub stage6_local_h: bool,
-    /// `K` parameter for [`stage6_local_h`]: the number of nearest
+    #[serde(default = "default_boundary_extension_local_h")]
+    pub boundary_extension_local_h: bool,
+    /// `K` parameter for [`boundary_extension_local_h`]: the number of nearest
     /// labelled corners (by grid Manhattan distance) used to fit each
     /// candidate cell's local H.
     ///
-    /// [`stage6_local_h`]: AdvancedTuning::stage6_local_h
-    #[serde(default = "default_stage6_local_k_nearest")]
-    pub stage6_local_k_nearest: usize,
+    /// [`boundary_extension_local_h`]: AdvancedTuning::boundary_extension_local_h
+    #[serde(default = "default_local_h_k_nearest")]
+    pub boundary_extension_k_nearest: usize,
 
     // --- `apply_boosters` stage ---------------------------------------------
     /// Enable the weak-cluster rescue booster: re-admit corners that
@@ -700,12 +707,12 @@ impl Default for AdvancedTuning {
             // noticeable cost (each iter is cheap).
             max_validation_iters: 6,
 
-            stage6_local_h: default_stage6_local_h(),
-            stage6_local_k_nearest: default_stage6_local_k_nearest(),
+            boundary_extension_local_h: default_boundary_extension_local_h(),
+            boundary_extension_k_nearest: default_local_h_k_nearest(),
 
-            enable_stage6_5_rescue: default_enable_stage6_5_rescue(),
+            enable_no_cluster_rescue: default_enable_no_cluster_rescue(),
             rescue_axis_tol_deg: default_rescue_axis_tol_deg(),
-            stage6_5_local_k_nearest: default_stage6_local_k_nearest(),
+            no_cluster_rescue_k_nearest: default_local_h_k_nearest(),
             rescue_search_rel: default_rescue_search_rel(),
 
             enable_partial_slot_flip_fix: default_enable_partial_slot_flip_fix(),

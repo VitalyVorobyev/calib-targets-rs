@@ -125,7 +125,7 @@ impl ClusterLabel {
 /// current shape is preserved for now because the split exposed a subtle
 /// regression on the `puzzleboard_reference/example1.png` multi-component
 /// test; landing it safely needs additional investigation of the
-/// `fix_partial_slot_flips_post_stage6` + `detect_all` interaction.
+/// `fix_partial_slot_flips` + `detect_all` interaction.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub enum CornerStage {

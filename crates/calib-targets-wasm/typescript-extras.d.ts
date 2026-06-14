@@ -326,9 +326,9 @@ export interface AdvancedTuning {
   validate_step_aware: boolean;
   validate_step_deviation_thresh_rel: number;
   max_validation_iters: number;
-  enable_stage6_5_rescue: boolean;
+  enable_no_cluster_rescue: boolean;
   rescue_axis_tol_deg: number;
-  stage6_5_local_k_nearest: number;
+  no_cluster_rescue_k_nearest: number;
   rescue_search_rel: number;
   enable_partial_slot_flip_fix: boolean;
   partial_slot_flip_k_nearest: number;
@@ -341,8 +341,8 @@ export interface AdvancedTuning {
   geometry_check_line_tol_rel: number;
   geometry_check_local_h_tol_rel: number;
   enable_final_edge_shape_check: boolean;
-  stage6_local_h: boolean;
-  stage6_local_k_nearest: number;
+  boundary_extension_local_h: boolean;
+  boundary_extension_k_nearest: number;
   enable_weak_cluster_rescue: boolean;
   weak_cluster_tol_deg: number;
   max_booster_iters: number;

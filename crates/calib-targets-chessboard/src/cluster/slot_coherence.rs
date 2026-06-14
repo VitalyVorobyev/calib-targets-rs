@@ -8,8 +8,8 @@
 //! - [`fix_axis_slot_coherence`] — the **whole-image** case, run as a
 //!   post-pass inside [`super::cluster_axes_debug`]. Gated on a gross global
 //!   label imbalance + a spatial 2-colouring quality check.
-//! - [`fix_partial_slot_flips_post_stage6`] — the **partial** case, run after
-//!   the Stage-6 BFS has produced a labelled set that serves as parity
+//! - [`fix_partial_slot_flips`] — the **partial** case, run after
+//!   boundary extension has produced a labelled set that serves as parity
 //!   ground truth.
 //!
 //! The slot swap is the load-bearing mutation: every downstream consumer
@@ -346,7 +346,7 @@ pub(super) fn fix_axis_slot_coherence(corners: &mut [CornerAug]) {
 /// # Returns
 ///
 /// The number of orphans whose axis slots were swapped.
-pub(crate) fn fix_partial_slot_flips_post_stage6(
+pub(crate) fn fix_partial_slot_flips(
     corners: &mut [CornerAug],
     labelled: &std::collections::HashMap<(i32, i32), usize>,
     cell_size: f32,

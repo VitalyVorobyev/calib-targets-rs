@@ -101,6 +101,65 @@ that read `no-effect` on **both** substrates
 specific hard image, so C2 must confirm against those images (some are outside
 the regression sets) and force the gated sub-knobs before removing.
 
+**Phase C — C2 complete (the prune candidates were not dead — one was
+harmful).** Re-verifying the C1 candidates per image refuted the prune premise
+on two counts. **(1) Metric artifact (fixed):** C1's recall signal was the
+dataset **median** labelled count, which is structurally blind to a booster that
+rescues corners on one or two frames — exactly what these boosters do. C2.1 added
+a **per-image worst-frame recall delta** (`d_labelled_worst` + the worst image)
+to `bench ablate`; a knob now reads `no-effect` only when **both** the median and
+the worst single frame are flat. **(2) Wrong code path:** the stage6/refit
+boosters run on the **seed-and-grow path only** (`detector.rs` dispatches
+`SeedAndGrow → run_pipeline_lean`; `Topological → detect_all_topological`, which
+never touches them). The production chessboard and puzzle defaults are
+topological, so "no-effect on topological" was *trivial* — the only production
+consumer of these boosters is **charuco** (seed-and-grow default, inheriting
+`AdvancedTuning::default()`). Re-run on seed-and-grow (public DiskFit + the
+charuco substrate) with the per-frame metric, the boosters are net-negative or
+inert on chess-corners 0.10 — their 0.9-era rustdoc gains no longer reproduce.
+**Overlay-verified** (`bench diagnose`, on `small3.png` and a charuco frame): the
+corners admitted when the boosters are disabled are a **clean lattice extension
+onto real intersections**, not marker-bit / off-grid false positives.
+**Attribution:** the single culprit is the **destructive post-grow BFS regrow**
+(`enable_post_grow_bfs_regrow`) — its designated recovery partner
+`enable_post_grow_bfs_extend` reads no-effect on 0.10, so the regrow's demolition
+is permanent. On `small3.png` the grow + boundary-extension + no-cluster-rescue
+stages reach 117 labelled corners, then the regrow strips them back to 88;
+disabling it alone keeps all 117. **Action: default flipped `true → false`** (the
+other candidates are individually positive — `enable_stage6_5_rescue` adds +25 on
+`small3.png` — or small/mixed, so they stay; see deferred list). A durable public
+`small3.png` seed-and-grow + DiskFit recall test pins the win. **Verification:**
+all committed chessboard + charuco + bench tests pass; the puzzle substrate holds
+under both algorithms; the charuco substrate's grid precision (reviewed
+false-label rejection), the full 120-frame board-matcher **decode**, and the
+marker-bit false-corner rejection all hold — **no baseline re-bless required**
+(the change recovers real corners without admitting wrong ones).
+
+**Phase C — C3 complete (stage6 → semantic rename).** Clean break, no
+`serde(alias)` (the struct is not semver-covered; no checked-in config uses the
+old keys). `stage6_local_h → boundary_extension_local_h`,
+`stage6_local_k_nearest → boundary_extension_k_nearest`,
+`enable_stage6_5_rescue → enable_no_cluster_rescue`,
+`stage6_5_local_k_nearest → no_cluster_rescue_k_nearest`; functions
+`run_stage6 → run_boundary_extension`,
+`run_stage6_5_rescue → run_no_cluster_rescue`,
+`fix_partial_slot_flips_post_stage6 → fix_partial_slot_flips`. Updated the
+ablation catalogue, the hand-maintained WASM typings, `PIPELINE.md`, and the
+Studio / `bench diagnose` display labels. Zero `stage6` strings remain in
+code / UI / docs.
+
+**Deferred (recorded C2 findings, not acted on).** On the seed-and-grow path the
+remaining boosters are individually small or mixed on chess-corners 0.10:
+`boundary_extension_local_h` (local-H *loses* +7 vs global-H on `example2.png`),
+`enable_post_geometry_rescue` (helps `example2.png`, harms one charuco frame),
+`enable_partial_slot_flip_fix` (no-effect public, small charuco swing). Each is a
+candidate for a follow-up seed-and-grow recovery-stack cleanup with the same
+overlay-verified, per-frame method — not bundled here because the signals are
+mixed and would each need their own re-bless judgement. Also deferred: the
+`--chessboard-config` partial loader requires a *complete* `advanced` block
+(no per-field serde defaults on some scalars), a minor papercut for single-knob
+overrides.
+
 ---
 
 ## Review findings (evidence-anchored)
@@ -327,10 +386,19 @@ Three independent, low-risk workstreams — any order.
   `run_report_for_params` loop so `bench run` and `bench ablate` measure the
   same thing. 7 unit tests. Findings + C2 prune candidates recorded in the
   Status section above.
-- [ ] C2  Remove/merge/fold knobs with no measured effect (confirm the
-  `no-effect` recovery-boosters against the specific images each targeted, and
-  force gated sub-knobs, before removing — see C1 findings)
-- [ ] C3  Rename stage6/stage6_5 → semantic names (update presets + UI)
+- [x] C2  Per-image re-verification overturned the prune premise: fixed the
+  ablation's median-recall blind spot (`d_labelled_worst`), established the
+  boosters are seed-and-grow-only (charuco's path, not the topological default),
+  and overlay-attributed the one real defect — the destructive
+  `enable_post_grow_bfs_regrow`, whose recovery partner is no-effect on
+  chess-corners 0.10. **Default flipped `true → false`** (a recall win: public
+  `small3.png` 88 → 117), pinned by a durable seed-and-grow recall test; full
+  charuco decode + both regression substrates hold with no re-bless. Remaining
+  candidates kept (positive or mixed) and recorded as deferred. See Status above.
+- [x] C3  Renamed stage6/stage6_5 → semantic names (`boundary_extension_*`,
+  `no_cluster_rescue_*`, `run_boundary_extension` / `run_no_cluster_rescue` /
+  `fix_partial_slot_flips`). Clean break; ablation catalogue + WASM typings +
+  `PIPELINE.md` + Studio / bench labels updated; zero `stage6` strings remain.
 - [ ] C4  Grouped, labelled, tooltipped Studio param UI
 
 ---

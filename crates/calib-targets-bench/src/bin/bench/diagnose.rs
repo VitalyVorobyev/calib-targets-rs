@@ -188,7 +188,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .map(|v| format!("{v:.2}"))
                     .unwrap_or_else(|| "—".to_string());
                 println!(
-                    "    stage6: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
+                    "    extend: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
                      rej(no_cand={} ambig={} label={} policy={} edge={})",
                     ext.h_trusted,
                     med,
@@ -212,7 +212,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .map(|v| format!("{v:.2}"))
                     .unwrap_or_else(|| "—".to_string());
                 println!(
-                    "    stage6.5: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
+                    "    rescue: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
                      rej(no_cand={} ambig={} label={} policy={} edge={})",
                     rescue.h_trusted,
                     med,

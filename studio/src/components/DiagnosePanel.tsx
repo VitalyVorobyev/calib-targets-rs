@@ -231,8 +231,8 @@ function SagPanel({
 function IterationRow({ it }: { it: IterationTraceWire }) {
   const [open, setOpen] = useState(false);
   const traces: [string, ExtensionTraceWire | null | undefined][] = [
-    ["stage6 extension", it.extension],
-    ["stage6.5 rescue", it.rescue],
+    ["boundary extension", it.extension],
+    ["no-cluster rescue", it.rescue],
     ["extension2", it.extension2],
     ["rescue2", it.rescue2],
   ];
