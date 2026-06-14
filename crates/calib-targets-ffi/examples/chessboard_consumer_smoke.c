@@ -5,7 +5,7 @@
 #include "native_smoke_common.h"
 
 /* Expected labelled-corner count for testdata/mid.pgm under the default
- * chessboard detector config (min_corner_strength raised to 0.5). */
+ * chessboard detector config (min_corner_strength overridden to 0.5). */
 #define CT_SMOKE_EXPECTED_CORNERS 77
 
 static int copy_last_error(char *out, size_t out_capacity) {

@@ -109,6 +109,10 @@ fn default_max_components() -> u32 {
     3
 }
 
+fn default_min_corner_strength() -> f32 {
+    33.0
+}
+
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
 /// Returned by [`DetectorParams::validate`] / [`crate::Detector::new`]. The
@@ -219,11 +223,22 @@ pub struct DetectorParams {
 
     /// Minimum corner strength (ChESS response) for the Stage-1 pre-filter.
     /// Corners with `strength < min_corner_strength` are dropped before
-    /// clustering. `0.0` (the default) disables the filter.
+    /// clustering. `0.0` disables the filter.
+    ///
+    /// **Default `33.0`.** A defocused board edge (or marker-bit saddle)
+    /// fires the ChESS detector weakly — strength ≈ 15–30 against a sharp
+    /// board's ≈ 90+ — and such corners, while grid-consistent in position,
+    /// are low-confidence and pollute the labelled frontier with a ragged,
+    /// noisy row that is unhelpful for calibration. A `33.0` floor removes
+    /// that weak frontier; sharp boards (whose every corner clears the
+    /// floor) are unaffected. The value matches the ChArUco detector's floor
+    /// (`CharucoParams::for_board`), so the chessboard and ChArUco grid
+    /// builds now start from the same corner set — set this to `0.0`
+    /// explicitly to recover the previous maximum-recall behaviour.
     ///
     /// Part of the stable configuration core. Serializes as the top-level
     /// `min_corner_strength` key.
-    #[serde(default)]
+    #[serde(default = "default_min_corner_strength")]
     pub min_corner_strength: f32,
 
     /// Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)
@@ -245,7 +260,7 @@ impl Default for DetectorParams {
             orientation_source: OrientationSource::default(),
             min_labeled_corners: 8,
             max_components: 3,
-            min_corner_strength: 0.0,
+            min_corner_strength: default_min_corner_strength(),
             advanced: None,
         }
     }

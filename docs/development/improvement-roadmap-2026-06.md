@@ -54,8 +54,23 @@ the guard's premise) and faster, but lands fewer charuco corners per frame at
 the current strength floor and is **not yet deterministic** on that path. So
 **B1c keeps seed-and-grow** as the charuco default; making topological viable
 there is future work (determinism-hardening + a topological strength-floor
-sweep, which folds into B2). **No default flips landed.** B2 (ChESS
-`min_corner_strength`) is next.
+sweep, which folds into B2). **No default flips landed in B1.**
+
+**Phase B2 — complete (chessboard precision).** Evidence on `small3.png` showed
+the reported "false" topological corners are **weak** low-confidence corners
+(strength ≈ 16–31 vs body ≈ 93), grid-consistent in position — admitted by the
+`min_corner_strength = 0.0` chessboard default, the same lever as Item 3. The
+chessboard `min_corner_strength` default is **flipped `0.0 → 33.0`** (matching
+charuco, so the two families' grids now start from the same corner set, directly
+narrowing Item 3). Sharp boards are immune; only the blurry-frontier weak corners
+drop; both regression datasets hold (one non-default `GeminiChess1` seed-and-grow
+gate ratcheted `40 → 38`, documented). Shipped alongside: a sparse-frontier
+global-fallback in the topological wrong-label check (puzzle precision), and a
+durable public-`small3.png` topological precision test. **Item 1b / Studio
+basic-config** also landed: a curated, editable, family-aware basic-config
+section in the Detect tab (`min_corner_strength`, `min_labeled_corners`,
+`max_components`) backed by a family-aware `/api/configs/_defaults?family=`
+endpoint, so switching families shows the genuine per-family defaults.
 
 ---
 
@@ -251,8 +266,28 @@ Three independent, low-risk workstreams — any order.
   retiring it awaits (1) determinism-hardening the topological charuco path and
   (2) a strength-floor sweep for topological on charuco (folds into B2). No
   default flips land.
-- [ ] B2a Evidence attribution of the `mid.png` neighbour_edges failure (overlays)
-- [ ] B2b Continuous `min_corner_strength` recall/precision sweep + default recommendation
+- [x] B2a Evidence attribution of the weak-frontier failure (overlays + per-corner
+  geometry, on `small3.png`). **Finding:** the reported false `(i, j)` corners are
+  **weak** (ChESS strength ≈ 16–31 vs a body median ≈ 93), grid-consistent in
+  position (collinearity residual ≤ 0.23× cell; the structural audit reports
+  `overlong = 0`), i.e. low-confidence true-ish positives admitted by the
+  `min_corner_strength = 0.0` default — *not* the overlong / wrong-label class.
+  Same lever as Item 3 (charuco's `33.0` floor cuts exactly these). No global
+  *relative* floor separates them (sharp boards' weak outliers are real); the
+  absolute floor is the clean lever.
+- [x] B2b `min_corner_strength` sweep → **default flipped `0.0 → 33.0`** (matches
+  the charuco floor; cross-family consistency). Sharp boards (`mid`/`large`)
+  immune; angled `small*.png` shed only the weak frontier and stay above every
+  recall gate; puzzle smoke holds with wide margin. One non-default casualty:
+  `GeminiChess1` **seed_and_grow** gate ratcheted `40 → 38` (the floor trims a
+  weak corner, s&g's grow-cascade amplifies it; the topological default path is
+  unaffected). Synthetic test fixtures bumped to realistic strengths; a durable
+  topological-default precision test on public `small3.png` locks the win.
+- [x] B2b-bonus Closed the `topological_wrong_label_drops` **sparse-frontier
+  bypass**: a component-global same-direction median fallback (overlong-only at
+  `1.6×`, skipped when the component is globally sparse) now judges sparse
+  frontier edges the local-sample floor previously skipped — byte-identical on
+  dense interiors. Targets the residual puzzle overlong-edge audit hit.
 
 ### Phase C
 - [ ] C1  Per-knob `AdvancedTuning` ablation table on the regression set

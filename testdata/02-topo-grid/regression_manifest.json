@@ -11,7 +11,11 @@
     {
       "path": "testdata/02-topo-grid/GeminiChess1.png",
       "topological": { "min_labelled": 53, "max_holes": 3 },
-      "seed_and_grow": { "min_labelled": 40, "max_holes": 20 }
+      "seed_and_grow": {
+        "min_labelled": 38,
+        "max_holes": 20,
+        "note": "Ratcheted 40->38 when the chessboard min_corner_strength default flipped 0->33 (weak-frontier precision fix). The floor trims a sub-33-strength corner and seed-and-grow's grow-cascade amplifies it to 39 labelled on this synthetic frame; the topological default path (min_labelled 53) is unaffected. Bumping lower is a regression."
+      }
     },
     {
       "path": "testdata/02-topo-grid/GeminiChess2.png",

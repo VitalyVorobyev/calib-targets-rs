@@ -61,6 +61,21 @@ const TOPO_OFF_AXIS_TOL_DEG: f32 = 30.0;
 /// cannot both be correct (the topological grid folded onto one pixel).
 const TOPO_DUP_PIXEL_FRAC: f32 = 0.2;
 
+/// Minimum same-direction edges in a component (per direction) before the
+/// global-reference fallback is trusted. Below this the component is too
+/// small to define a reliable median, so a sparse edge is left for the
+/// largest-component filter rather than judged.
+const TOPO_MIN_GLOBAL_SAMPLES: usize = 8;
+
+/// Overlong multiple for the **global** fallback reference (sparse frontier
+/// regions, fewer than [`TOPO_MIN_LOCAL_SAMPLES`] nearby same-direction
+/// edges). Looser than the local [`TOPO_OVERLONG_EDGE_RATIO`] because the
+/// component-global median spans the whole board, so a foreshortened-but-
+/// legitimate frontier edge can sit modestly above it; matches the
+/// independent overlong-edge audit's `1.6×` threshold so the check and the
+/// audit agree at the frontier.
+const TOPO_GLOBAL_OVERLONG_EDGE_RATIO: f32 = 1.6;
+
 /// Direct local wrong-label edge detector for the topological grid
 /// builder.
 ///
@@ -79,6 +94,18 @@ const TOPO_DUP_PIXEL_FRAC: f32 = 0.2;
 /// 3. **Duplicate pixel.** Two distinct labels within `0.2`× the cell
 ///    size cannot both be correct.
 ///
+/// **Sparse-frontier fallback.** Checks (1)/(2) need
+/// `TOPO_MIN_LOCAL_SAMPLES` nearby same-direction edges to define a local
+/// reference; a ragged frontier in a defocused band can fall below that and
+/// historically slipped through. When the local window is too sparse, the
+/// overlong test (1) falls back to the **component-global** same-direction
+/// median at the looser `TOPO_GLOBAL_OVERLONG_EDGE_RATIO` (`1.6×`, the
+/// independent audit's threshold), skipped only when the component itself
+/// has fewer than `TOPO_MIN_GLOBAL_SAMPLES` edges in that direction. The
+/// off-axis test (2) is *not* applied in the global branch — a board-spanning
+/// mean direction is unreliable under perspective rotation, so only the
+/// length signal carries over.
+///
 /// Both endpoints of a flagged edge are dropped; the caller's
 /// largest-component filter then sweeps any strip orphaned by the drop.
 /// The result is deterministic — it does not depend on `HashMap`
@@ -96,9 +123,31 @@ where
 {
     let mut drop: HashSet<usize> = HashSet::new();
 
+    // Component-global same-direction references (median length + summed unit
+    // direction), one per cardinal direction. Computed once; used only as the
+    // sparse-frontier fallback below, so dense interiors are unaffected.
+    let global_reference = |di: i32, dj: i32| -> Option<f32> {
+        let mut lens: Vec<f32> = Vec::new();
+        for (&(i, j), _) in labelled.iter() {
+            if let Some(&idx_b) = labelled.get(&(i + di, j + dj)) {
+                let idx_a = labelled[&(i, j)];
+                let l = (position_of(idx_b) - position_of(idx_a)).norm();
+                if l > 0.0 {
+                    lens.push(l);
+                }
+            }
+        }
+        if lens.len() < TOPO_MIN_GLOBAL_SAMPLES {
+            return None;
+        }
+        lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(lens[lens.len() / 2])
+    };
+    let global_median = [global_reference(1, 0), global_reference(0, 1)];
+
     // Overlong / off-axis edge checks against nearby same-direction edges.
     for (&(i, j), &idx_g) in labelled.iter() {
-        for (di, dj) in [(1i32, 0i32), (0, 1)] {
+        for (dir_k, (di, dj)) in [(1i32, 0i32), (0, 1)].into_iter().enumerate() {
             let Some(&idx_n) = labelled.get(&(i + di, j + dj)) else {
                 continue;
             };
@@ -126,15 +175,31 @@ where
                     }
                 }
             }
-            if lens.len() < TOPO_MIN_LOCAL_SAMPLES {
-                continue; // too sparse to judge — leave the ragged frontier alone
-            }
-            lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-            let med = lens[lens.len() / 2];
-            let overlong = med > 0.0 && len > TOPO_OVERLONG_EDGE_RATIO * med;
-            let off_axis = dir_sum.norm() > 0.0 && {
-                let cos = (edge / len).dot(&dir_sum.normalize()).clamp(-1.0, 1.0);
-                cos.acos().to_degrees() > TOPO_OFF_AXIS_TOL_DEG
+            // Pick the reference: the local same-direction window when dense
+            // enough (the precise, perspective-robust path — byte-identical to
+            // the original), else the component-global median as a sparse-
+            // frontier fallback (overlong-only). Skip entirely when even the
+            // global reference is too sparse.
+            let (median, overlong_ratio, off_axis_dir) = if lens.len() >= TOPO_MIN_LOCAL_SAMPLES {
+                lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                (
+                    lens[lens.len() / 2],
+                    TOPO_OVERLONG_EDGE_RATIO,
+                    Some(dir_sum),
+                )
+            } else {
+                match global_median[dir_k] {
+                    Some(gm) => (gm, TOPO_GLOBAL_OVERLONG_EDGE_RATIO, None),
+                    None => continue, // too sparse to judge — leave it alone
+                }
+            };
+            let overlong = median > 0.0 && len > overlong_ratio * median;
+            let off_axis = match off_axis_dir {
+                Some(ds) if ds.norm() > 0.0 => {
+                    let cos = (edge / len).dot(&ds.normalize()).clamp(-1.0, 1.0);
+                    cos.acos().to_degrees() > TOPO_OFF_AXIS_TOL_DEG
+                }
+                _ => false,
             };
             if overlong || off_axis {
                 drop.insert(idx_g);
@@ -403,6 +468,70 @@ mod tests {
         let position_of = |i: usize| pos[&i];
         let drop = topological_wrong_label_drops(&labelled, position_of, 1.0);
         assert!(drop.contains(&far));
+    }
+
+    #[test]
+    fn topological_global_fallback_drops_sparse_overlong_edge() {
+        // Dense 6×6 unit grid → component-global +i/+j median = 1.0 with many
+        // samples (>= TOPO_MIN_GLOBAL_SAMPLES). Plus a sparse 2-cell vertical
+        // pair far away whose edge is length 3 — overlong vs the global median —
+        // and whose local 2-cell window holds no other +j edge. This is exactly
+        // the sparse-frontier-bypass class the global fallback must now catch
+        // (the original local-only check `continue`d and kept it).
+        let mut labelled = HashMap::new();
+        let mut pos: HashMap<usize, Point2<f32>> = HashMap::new();
+        let mut idx = 0usize;
+        for i in 0..6 {
+            for j in 0..6 {
+                labelled.insert((i, j), idx);
+                pos.insert(idx, p(i as f32, j as f32));
+                idx += 1;
+            }
+        }
+        labelled.insert((20, 0), idx);
+        pos.insert(idx, p(20.0, 0.0));
+        let a = idx;
+        idx += 1;
+        labelled.insert((20, 1), idx);
+        pos.insert(idx, p(20.0, 3.0));
+        let b = idx;
+        let position_of = |i: usize| pos[&i];
+        let drop = topological_wrong_label_drops(&labelled, position_of, 1.0);
+        assert!(
+            drop.contains(&a) && drop.contains(&b),
+            "sparse overlong edge must be caught by the global fallback"
+        );
+    }
+
+    #[test]
+    fn topological_global_fallback_keeps_ragged_frontier_edge() {
+        // Same dense grid, but the sparse far pair's edge is only 1.1× the
+        // global median — a legitimate ragged / foreshortened frontier. The
+        // global fallback (overlong-only at 1.6×) must NOT drop it, proving the
+        // fix does not cost recall on a genuinely sparse-but-valid frontier.
+        let mut labelled = HashMap::new();
+        let mut pos: HashMap<usize, Point2<f32>> = HashMap::new();
+        let mut idx = 0usize;
+        for i in 0..6 {
+            for j in 0..6 {
+                labelled.insert((i, j), idx);
+                pos.insert(idx, p(i as f32, j as f32));
+                idx += 1;
+            }
+        }
+        labelled.insert((20, 0), idx);
+        pos.insert(idx, p(20.0, 0.0));
+        let a = idx;
+        idx += 1;
+        labelled.insert((20, 1), idx);
+        pos.insert(idx, p(20.0, 1.1));
+        let b = idx;
+        let position_of = |i: usize| pos[&i];
+        let drop = topological_wrong_label_drops(&labelled, position_of, 1.0);
+        assert!(
+            !drop.contains(&a) && !drop.contains(&b),
+            "a sparse but ~unit-length frontier edge must be kept"
+        );
     }
 
     #[test]

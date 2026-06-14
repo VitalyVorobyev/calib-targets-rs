@@ -504,6 +504,21 @@ function DetectTab({
 }) {
   const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
     setDraft({ ...draft, ...patch });
+  // Effective `graph_build_algorithm` default when the draft leaves it unset.
+  // Charuco's `for_board` pins seed-and-grow (topological is a measurement-only
+  // opt-in honoured by the backend); chessboard / puzzleboard default to
+  // topological. Surface the real default so the dropdown matches what runs.
+  const algoDefault: GraphBuildAlgorithm =
+    detector === "charuco" ? "seed_and_grow" : "topological";
+  // Effective per-family defaults seed the basic-config placeholders, so the
+  // shown values track the family the detector actually runs with (charuco /
+  // puzzle pin a different strength floor + algorithm).
+  const effectiveDefaults = useQuery({
+    queryKey: ["effective-defaults", detector],
+    queryFn: () => api.effectiveDefaults(detector),
+    staleTime: Infinity,
+  });
+  const ed = effectiveDefaults.data;
   return (
     <>
       <PresetPicker onLoad={setDraft} />
@@ -540,7 +555,7 @@ function DetectTab({
         >
           <SelectRow
             label="Algorithm"
-            value={draft.graph_build_algorithm ?? "topological"}
+            value={draft.graph_build_algorithm ?? algoDefault}
             options={["topological", "seed_and_grow"]}
             onChange={(v) =>
               setDraftField({ graph_build_algorithm: v as GraphBuildAlgorithm })
@@ -557,8 +572,8 @@ function DetectTab({
             value={draft.orientation_source ?? "chess_axes"}
             options={["chess_axes", "neighbour_edges"]}
             disabledOptions={
-              (draft.graph_build_algorithm ?? "topological") ===
-                "seed_and_grow" && runOpts.engine === "pipeline"
+              (draft.graph_build_algorithm ?? algoDefault) === "seed_and_grow" &&
+              runOpts.engine === "pipeline"
                 ? ["neighbour_edges"]
                 : []
             }
@@ -577,6 +592,49 @@ function DetectTab({
               })
             }
           />
+        </div>
+      </div>
+
+      <div>
+        <div className="label" style={{ marginBottom: "var(--s2)" }}>
+          Basic config
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
+        >
+          <NumberRow
+            label="Min strength"
+            value={draft.min_corner_strength}
+            placeholder={ed?.min_corner_strength}
+            onChange={(v) => setDraftField({ min_corner_strength: v })}
+          />
+          <NumberRow
+            label="Min labels"
+            value={draft.min_labeled_corners}
+            placeholder={ed?.min_labeled_corners}
+            integer
+            onChange={(v) => setDraftField({ min_labeled_corners: v })}
+          />
+          <NumberRow
+            label="Max comps"
+            value={draft.max_components}
+            placeholder={ed?.max_components}
+            integer
+            onChange={(v) => setDraftField({ max_components: v })}
+          />
+        </div>
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--text-muted)",
+            marginTop: "var(--s1)",
+            lineHeight: 1.4,
+          }}
+        >
+          Placeholders are the <strong>{detector}</strong> defaults. charuco /
+          puzzleboard pin a different strength floor &amp; grid algorithm — that
+          is why the same image detects differently across families. Edit to
+          override; clear to restore the default.
         </div>
       </div>
 
@@ -813,6 +871,50 @@ function StatsBlock({
       )}
       {d.detection == null && <span className="chip err">no detection</span>}
     </div>
+  );
+}
+
+function NumberRow({
+  label,
+  value,
+  placeholder,
+  integer,
+  onChange,
+}: {
+  label: string;
+  value: number | undefined;
+  placeholder: number | undefined;
+  integer?: boolean;
+  onChange: (v: number | undefined) => void;
+}) {
+  return (
+    <label
+      style={{
+        display: "grid",
+        gridTemplateColumns: "90px 1fr",
+        alignItems: "center",
+        gap: "var(--s2)",
+        fontSize: 12,
+        color: "var(--text-muted)",
+      }}
+    >
+      {label}
+      <input
+        className="input"
+        type="number"
+        step={integer ? 1 : "any"}
+        value={value ?? ""}
+        placeholder={placeholder !== undefined ? String(placeholder) : ""}
+        onChange={(e) => {
+          if (e.target.value === "") {
+            onChange(undefined);
+            return;
+          }
+          const v = e.target.valueAsNumber;
+          if (!Number.isNaN(v)) onChange(v);
+        }}
+      />
+    </label>
   );
 }
 

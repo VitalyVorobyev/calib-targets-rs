@@ -64,7 +64,8 @@
 //!             ],
 //!             contrast: 10.0,
 //!             fit_rms: 1.0,
-//!             strength: 1.0,
+//!             // Above the default `min_corner_strength` floor (33.0).
+//!             strength: 100.0,
 //!         });
 //!     }
 //! }

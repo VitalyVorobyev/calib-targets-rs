@@ -208,7 +208,11 @@ mod tests {
             ],
             contrast: 10.0,
             fit_rms: 1.0,
-            strength: 1.0,
+            // A sharp synthetic corner: well above the default
+            // `min_corner_strength` floor (33.0) so these grid-building
+            // tests exercise the real default path rather than the
+            // strength pre-filter.
+            strength: 100.0,
         }
     }
 

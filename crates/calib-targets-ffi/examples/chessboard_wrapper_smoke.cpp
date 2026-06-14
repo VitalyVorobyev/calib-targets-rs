@@ -8,7 +8,7 @@
 #include "native_smoke_common.h"
 
 // Expected labelled-corner count for testdata/mid.pgm under the default
-// chessboard detector config (min_corner_strength raised to 0.5).
+// chessboard detector config (min_corner_strength overridden to 0.5).
 namespace {
 constexpr std::size_t kExpectedCorners = 77;
 }  // namespace

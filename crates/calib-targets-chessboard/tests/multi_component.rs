@@ -37,7 +37,9 @@ fn corner(x: f32, y: f32, parity: usize) -> ChessCorner {
         ],
         contrast: 30.0,
         fit_rms: 1.0,
-        strength: 1.0,
+        // Above the default `min_corner_strength` floor (33.0) so the
+        // synthetic boards survive the strength pre-filter.
+        strength: 100.0,
     }
 }
 

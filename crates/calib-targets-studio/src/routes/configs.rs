@@ -6,12 +6,12 @@
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::Json;
-use calib_targets::chessboard::{AdvancedTuning, DetectorParams};
+use calib_targets::chessboard::DetectorParams;
 use calib_targets_bench::config::merge_detector_params;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::ApiError;
 
@@ -89,10 +89,52 @@ pub async fn list() -> Result<Json<Vec<ConfigSummary>>, ApiError> {
     Ok(Json(out))
 }
 
-/// `GET /api/configs/_defaults` — fully materialised defaults (stable params
-/// + every `advanced` knob) so the config form never hardcodes Rust values.
-pub async fn defaults() -> Result<Json<serde_json::Value>, ApiError> {
-    let full = DetectorParams::default().with_advanced(AdvancedTuning::default());
+/// Query for [`defaults`]: optional target family selector.
+#[derive(Deserialize)]
+pub struct DefaultsQuery {
+    /// `chessboard` (default), `charuco`, or `puzzleboard`. Selects which
+    /// family's *effective* chessboard grid params are returned, so the
+    /// Detect-tab basic-config seeds the real per-family values (e.g. the
+    /// `min_corner_strength` floor and `graph_build_algorithm` charuco /
+    /// puzzle pin) rather than the bare chessboard defaults.
+    #[serde(default)]
+    family: Option<String>,
+}
+
+/// `GET /api/configs/_defaults[?family=chessboard|charuco|puzzleboard]` — the
+/// fully materialised *effective* chessboard grid params for the chosen target
+/// family (stable params + every `advanced` knob), so the UI never hardcodes
+/// Rust values. With no `family` (or `chessboard`) this is the bare
+/// [`DetectorParams::default`]; `charuco` / `puzzleboard` return the chessboard
+/// sub-params their `for_board` constructors pin (the family-specific
+/// strength floor, algorithm, and edge-shape gating), which is what actually
+/// runs for those families.
+pub async fn defaults(Query(q): Query<DefaultsQuery>) -> Result<Json<serde_json::Value>, ApiError> {
+    // The chessboard sub-params each `for_board` pins are board-independent
+    // constants, so a minimal representative spec yields the same effective
+    // grid params the real board would.
+    let chess: DetectorParams = match q.family.as_deref() {
+        None | Some("") | Some("chessboard") => DetectorParams::default(),
+        Some("charuco") => {
+            let dict = calib_targets::aruco::builtins::builtin_dictionary("DICT_4X4_50")
+                .ok_or_else(|| ApiError::Internal("missing builtin ArUco dictionary".into()))?;
+            let spec = calib_targets::charuco::CharucoBoardSpec::new(5, 5, 1.0, 0.7, dict);
+            calib_targets::charuco::CharucoParams::for_board(&spec).chessboard
+        }
+        Some("puzzleboard") => {
+            let spec = calib_targets::puzzleboard::PuzzleBoardSpec::with_origin(5, 5, 1.0, 0, 0)
+                .map_err(|e| ApiError::Internal(e.to_string()))?;
+            calib_targets::puzzleboard::PuzzleBoardParams::for_board(&spec).chessboard
+        }
+        Some(other) => {
+            return Err(ApiError::BadRequest(format!(
+                "unknown family {other:?} (expected chessboard | charuco | puzzleboard)"
+            )));
+        }
+    };
+    // Materialise the advanced block so the full knob tree is present.
+    let advanced = chess.effective_tuning().into_owned();
+    let full = chess.with_advanced(advanced);
     serde_json::to_value(&full)
         .map(Json)
         .map_err(|e| ApiError::Internal(e.to_string()))
