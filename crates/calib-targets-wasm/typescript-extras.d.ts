@@ -268,6 +268,16 @@ export interface ChessConfig {
 /** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
 export type GraphBuildAlgorithm = "topological" | "seed_and_grow";
 
+/**
+ * Where the detector gets each corner's two grid-axis directions (Rust
+ * `OrientationSource`). `chess_axes` (default) uses the per-corner ChESS axis
+ * estimates; `neighbour_edges` synthesizes them from neighbour geometry
+ * (orientation-free). `neighbour_edges` is **topological-only** — pairing it
+ * with `graph_build_algorithm: "seed_and_grow"` is rejected by the detector.
+ * Omitted from the wire format at its default (`chess_axes`).
+ */
+export type OrientationSource = "chess_axes" | "neighbour_edges";
+
 /** Global grid-direction centers for the topological pre-Delaunay gate. */
 export interface AxisClusterCenters {
   /** First grid-axis direction (radians, `[0, π)`, `theta0 < theta1`). */
@@ -357,6 +367,8 @@ export interface AdvancedTuning {
 export interface ChessboardParams {
   // --- stable core ---
   graph_build_algorithm: GraphBuildAlgorithm;
+  /** Orientation source; omitted at its default (`chess_axes`). */
+  orientation_source?: OrientationSource;
   min_labeled_corners: number;
   max_components: number;
   min_corner_strength: number;

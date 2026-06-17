@@ -66,6 +66,19 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 typedef uint32_t ct_graph_build_algorithm_t;
 
 /**
+ * Selector for the chessboard orientation source. Mirrors the
+ * `calib_targets_chessboard::OrientationSource` enum.
+ *
+ * Defaulting `ct_chessboard_params_t::orientation_source` to `0` keeps
+ * zero-initialised C structs on per-corner ChESS axes
+ * (`CT_ORIENTATION_SOURCE_CHESS_AXES`). `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES`
+ * is **topological-only** — pairing it with
+ * [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`] is rejected by the detector with a
+ * configuration error.
+ */
+typedef uint32_t ct_orientation_source_t;
+
+/**
  * Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
  *
  * Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
@@ -113,6 +126,13 @@ typedef struct ct_chessboard_params_t {
    * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
    */
   ct_graph_build_algorithm_t graph_build_algorithm;
+  /**
+   * Orientation source. See [`ct_orientation_source_t`].
+   * Default `0` (== [`CT_ORIENTATION_SOURCE_CHESS_AXES`]).
+   * `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES` requires
+   * [`CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL`].
+   */
+  ct_orientation_source_t orientation_source;
   /**
    * Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
    * (the zero-initialised default) disables the filter. Stable field.
@@ -861,6 +881,17 @@ typedef struct ct_puzzleboard_detect_buffers_t {
  * Topological pipeline (Delaunay + axis-driven cell test).
  */
 #define CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL 1
+
+/**
+ * Per-corner ChESS axis estimates. The default.
+ */
+#define CT_ORIENTATION_SOURCE_CHESS_AXES 0
+
+/**
+ * Synthesize the two grid directions from neighbour-edge geometry
+ * (topological builder only).
+ */
+#define CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES 1
 
 #define CT_DICTIONARY_DICT_4X4_50 1
 
