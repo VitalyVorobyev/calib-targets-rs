@@ -270,10 +270,14 @@ impl DetectorParams {
     /// Validate the configuration, returning a typed error for any combination
     /// the detector cannot honour.
     ///
-    /// Currently the only invalid combination is
-    /// [`OrientationSource::NeighbourEdges`] with
-    /// [`GraphBuildAlgorithm::SeedAndGrow`] (see
-    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]). The
+    /// [`OrientationSource::NeighbourEdges`] is **topological-only**. It is
+    /// rejected with [`GraphBuildAlgorithm::SeedAndGrow`] (see
+    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]) because the
+    /// seed-and-grow seed finder stakes the whole grid frame on ~4 seed corners'
+    /// axes, and a measured head-to-head (2026-06-17) showed synthesized axes
+    /// collapse it — 0 corners on 3 of 6 clutter-free frames, 19 vs 373 on a
+    /// dense board — whereas the topological builder, which labels connected
+    /// components from many local edge classifications, tolerates the noise. The
     /// fallible constructor [`crate::Detector::new`] calls this up front and
     /// surfaces the typed error, so the `detect*` methods always run on a
     /// validated configuration.

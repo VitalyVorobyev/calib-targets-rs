@@ -538,10 +538,12 @@ fn filter_entries<'a>(
         .collect()
 }
 
-/// The native seed-and-grow pipeline consumes ChESS axes directly, so
-/// `pipeline + seed-and-grow + neighbour-edges` would panic in the detector.
-/// Reject it at the CLI with guidance instead. The grid engine handles the
-/// seed-and-grow + neighbour-edge cell.
+/// The native seed-and-grow pipeline consumes ChESS axes directly, and a
+/// measured head-to-head (2026-06-17) confirmed feeding it synthesized
+/// neighbour-edge axes collapses recall (0 corners on most clutter-free
+/// frames), so `pipeline + seed-and-grow + neighbour-edges` stays a typed error
+/// in the detector. Reject it at the CLI with guidance instead. The grid engine
+/// handles the seed-and-grow + neighbour-edge cell for measurement.
 fn unsupported_combo(
     engine: EngineArg,
     algorithm: AlgorithmArg,
