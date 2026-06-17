@@ -67,6 +67,16 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Fixed
 
+- **Topological false-positive under strong barrel distortion.** The topological
+  builder's final precision gate gained a fourth, second-order criterion —
+  *frontier line-spacing smoothness*: a frontier (line-endpoint) corner whose
+  edge overshoots the smooth spacing extrapolation of its own grid line is a
+  false attachment past the true board edge and is dropped. This catches a wrong
+  `(i, j)` label that is normal-length and on-axis (so the existing first-order
+  overlong / off-axis / duplicate-pixel checks could not see it) without any
+  ad-hoc edge-length constant. The criterion is scale-free and
+  distortion-model-agnostic (radial and perspective); it runs only on the
+  topological builder, so the ChArUco (seed-and-grow) path is unaffected.
 - **ChArUco decode determinism.** Deterministic tie-breaks in the marker
   alignment (`best_translation`) and multi-component merge (`merge_charuco_
   results`) — both previously resolved (weight, count) / marker-count ties by

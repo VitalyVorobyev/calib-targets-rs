@@ -410,33 +410,65 @@ fully reproducible full-detection pass, and (2) a `min_corner_strength` floor
 sweep for topological ChArUco to close the per-frame corner-count gap. Precision
 is not a blocker.
 
-### Gap 15 — Topological boundary false-positive under strong barrel distortion (OPEN, blocker)
+### Gap 15 — Topological boundary false-positive under strong barrel distortion (RESOLVED 2026-06-17)
 
 On a heavily barrel-distorted physical board (the `GeminiChess1` regression
-frame), the topological + ChESS-axes (production) path produces a **false-positive
-labelled corner on the curved left edge** — a single corner attached well off the
-true grid into the distorted border, i.e. a wrong `(i, j)` label that the
-mandatory geometry check fails to drop. This violates the hard no-mislabel
-invariant and is a **blocker**. Two related symptoms on the same frame: a real
-bottom-left corner is detected but not reconstructed (recall miss), and the
-committed baseline itself flags a phantom top-left "miss" that is not a real
-corner (so `baselines/chessboard.json` for this frame is wrong and must be
-re-blessed once the false-positive is fixed — do not re-bless before). SeedAndGrow
-performs significantly worse on this frame (cause not yet diagnosed).
+frame), the topological + ChESS-axes (production) path produced a **false-positive
+labelled corner on the curved left edge** — a single frontier leaf labelled one
+cell past the true board edge, i.e. a wrong `(i, j)` label the mandatory geometry
+check failed to drop. This violated the hard no-mislabel invariant and was a
+**blocker** (a miss is acceptable; a false positive is a contract violation).
 
-This is the precision counterpart to Gap 8 (topological recall under heavy
-distortion) and Gap 11 (off-axis false labels defeating the structural check):
-under strong radial distortion the cell-relative local-H residual gate
-(`geometry_check_local_h_tol_rel`) is too loose at the boundary to reject an
-edge-region attachment, and the targeted `topological_wrong_label_drops` check
-does not catch this class. Pre-existing on the production path (not introduced by
-the 2026-06-17 orientation-free work, which leaves ChESS-axes byte-identical).
+**Root cause (second-order, measured).** The false corner's edge to the board
+was **normal length and on-axis**, so it passed all three *first-order* criteria
+of `topological_wrong_label_drops` (overlong-edge, off-axis-direction,
+duplicate-pixel). The only signature was *second-order*: along its grid line the
+cell spacing must vary smoothly and shrink toward the periphery, but this corner's
+outermost edge was **larger** than the next edge inward — it reversed the smooth
+spacing trend (normalised second difference ≈0.34 vs ≈0.07–0.13 on legitimate
+interior). No edge-length ratio can separate it: the false edge was *shorter* than
+many legitimate centre edges, which is exactly why an ad-hoc `continuation_length_
+ratio_max`-style constant could not catch it (it would be simultaneously too loose
+and too tight).
 
-**Next step:** reproduce with `bench diagnose testdata/02-topo-grid/GeminiChess1.png`
-(overlay + per-corner facts, evidence-driven), localize which stage attaches the
-left-edge corner, and tighten the boundary wrong-label gate (a distortion-aware
-or degree/continuation-based leaf check) without over-peeling the legitimate
-ragged frontier — then re-bless the frame and diagnose the SeedAndGrow gap.
+**Fix (general, not a tune).** Added a fourth, second-order criterion to
+`projective_grid::shared::validate::recovery::topological_wrong_label_drops`:
+**frontier line-spacing smoothness**. For every grid line whose outermost four
+members are consecutive, the frontier edge is compared to the linear extrapolation
+`2·e1 − e2` of the next two inner edges; a frontier member of cardinal degree ≤ 2
+whose edge *overshoots* the extrapolation by more than `TOPO_FRONTIER_CURV_TOL`
+(0.30, a dimensionless smoothness bound) is dropped — only it, not its neighbours.
+The criterion is scale-free and distortion-model-agnostic (it assumes only that
+spacing varies smoothly, true for radial *and* perspective), so the example is a
+*consequence* of a sounder predicate, not a fitted target. Verified to flag
+**exactly** the one false corner across all six public topo-grid frames (zero
+flags on mid/large/GeminiChess2/3/gptchess1) and, by pixel-diff of the overlay,
+to drop precisely the left-edge leaf at pixel ≈(210,163) and nothing else.
+
+**Regression status:** topo-grid manifest gate corrected 53→52 / holes 3→4 (the
+honest count after removing a false positive); 130x130_puzzle (topological + S&G),
+ChArUco contract, orientation-free parity, and all public gates hold at baseline.
+ChArUco is structurally unaffected (it pins SeedAndGrow; this criterion runs only
+on the topological builder). The committed `baselines/chessboard.json` was
+re-blessed for this frame (it had encoded the false positive plus a phantom
+top-left "miss"). **Residual (not blockers, tracked):** a real bottom-left corner
+on this frame is detected but not reconstructed (a recall miss, acceptable under
+the contract), and SeedAndGrow recalls much less here (cause undiagnosed) — both
+fold into the Gap 8 distortion-recall family and the Gap 16 follow-up.
+
+### Gap 16 — Global smooth-warp precision backstop (OPEN, follow-up to Gap 15)
+
+The Gap 15 fix is a *local* per-line smoothness criterion — surgical and
+low-risk, the agreed first phase. The agreed second phase is a *global* precision
+backstop: model the whole labelled lattice as a low-order smooth warp
+(biquadratic / thin-plate spline) and reject corners whose reprojection residual
+is high, replacing the rigid global-homography drop that cannot represent radial
+distortion at all. A single smooth-warp model would subsume the distortion-recall
+(Gap 8), off-axis-false-label (Gap 11), and frontier-false-positive (Gap 15)
+families under one principled predicate instead of a stack of local checks, and
+is the right place to also recover the legitimate-but-unreconstructed frontier
+corners (the Gap 15 recall residual) without re-admitting false positives. Larger
+change to the validation core; deferred as a tracked follow-up.
 
 ### Resolved gaps (April 2026 refactor)
 

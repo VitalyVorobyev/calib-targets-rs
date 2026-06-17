@@ -76,6 +76,38 @@ const TOPO_MIN_GLOBAL_SAMPLES: usize = 8;
 /// audit agree at the frontier.
 const TOPO_GLOBAL_OVERLONG_EDGE_RATIO: f32 = 1.6;
 
+/// Dimensionless smoothness bound for the frontier line-spacing check
+/// (criterion 4). A frontier (outermost) grid-line member whose edge to its
+/// inner neighbour *overshoots* the linear extrapolation of the next two
+/// inner edges by more than this fraction of the inner edge length is a
+/// structural kink in an otherwise-smooth line — a false attachment, not
+/// distortion.
+///
+/// This is a **second-order** criterion (line-spacing curvature), the
+/// complement of the first-order overlong / off-axis checks above: a
+/// normal-length, on-axis false attachment one cell past the true board
+/// edge passes all three first-order tests yet reverses the smooth spacing
+/// trend of its own grid line. The bound is scale-free and
+/// distortion-model-agnostic: under any smooth (C²) lens distortion the
+/// edge-length sequence along a grid line is a smooth function, so its
+/// normalised second difference stays well below this value (measured
+/// ≈0.07–0.13 even on a heavily barrel-distorted board's interior) while a
+/// kink jumps past it. It is therefore an order-of-magnitude smoothness
+/// argument, **not** a constant fitted to any one frame. Only the overshoot
+/// direction (`r > tol`) is flagged: a smooth foreshortened frontier
+/// undershoots or matches the extrapolation, so this can never peel a
+/// legitimate compressed frontier.
+const TOPO_FRONTIER_CURV_TOL: f32 = 0.30;
+
+/// The frontier line-spacing check judges only genuinely dangling frontier
+/// members: a line-endpoint with cardinal degree above this is part of a
+/// well-supported board edge (a kink there is caught by the overlong /
+/// local-H checks, and dropping a supported corner could fragment the
+/// grid). Degree ≤ 2 admits true frontier leaves (degree 1) and board-corner
+/// members (degree 2) only — a mid-edge member with a full perpendicular
+/// neighbour pair has degree 3 and is spared.
+const TOPO_FRONTIER_MAX_DEGREE: usize = 2;
+
 /// Direct local wrong-label edge detector for the topological grid
 /// builder.
 ///
@@ -93,6 +125,11 @@ const TOPO_GLOBAL_OVERLONG_EDGE_RATIO: f32 = 1.6;
 ///    diagonal label.
 /// 3. **Duplicate pixel.** Two distinct labels within `0.2`× the cell
 ///    size cannot both be correct.
+/// 4. **Frontier line-spacing kink.** A frontier (line-endpoint) member
+///    whose edge overshoots the smooth spacing extrapolation of its grid
+///    line is a false attachment past the true board edge — a *second-order*
+///    signal that catches normal-length, on-axis extensions the first three
+///    (first-order) checks miss (see the private `frontier_curvature_drops`).
 ///
 /// **Sparse-frontier fallback.** Checks (1)/(2) need
 /// `TOPO_MIN_LOCAL_SAMPLES` nearby same-direction edges to define a local
@@ -225,6 +262,92 @@ where
         }
     }
 
+    // Criterion 4: frontier line-spacing smoothness. Catches a
+    // normal-length, on-axis false attachment one cell past the true board
+    // edge — invisible to the first-order overlong / off-axis tests above —
+    // as a second-order kink in the otherwise-smooth grid-line spacing.
+    drop.extend(frontier_curvature_drops(labelled, &position_of));
+
+    drop
+}
+
+/// Frontier line-spacing smoothness check (criterion 4 of the topological
+/// wrong-label detector). See [`TOPO_FRONTIER_CURV_TOL`].
+///
+/// For every grid line — each row (`j = const`) and column (`i = const`) —
+/// whose outermost four members are consecutive, the frontier edge `e0`
+/// (between the outermost member and its inner neighbour) is compared to the
+/// linear extrapolation `2·e1 − e2` of the next two inner edges. A frontier
+/// member of cardinal degree ≤ [`TOPO_FRONTIER_MAX_DEGREE`] whose edge
+/// **overshoots** that extrapolation by more than [`TOPO_FRONTIER_CURV_TOL`]
+/// × `e1` is dropped — and only it, never its (legitimate) inner neighbours.
+///
+/// Both ends of every line are tested. The check is order-independent: it
+/// only ever inserts into the returned set, and every decision depends only
+/// on the (sorted) members of a single line.
+fn frontier_curvature_drops<F>(
+    labelled: &HashMap<(i32, i32), usize>,
+    position_of: F,
+) -> HashSet<usize>
+where
+    F: Fn(usize) -> Point2<f32>,
+{
+    let mut drop: HashSet<usize> = HashSet::new();
+    let degree = |i: i32, j: i32| -> usize {
+        [(1, 0), (-1, 0), (0, 1), (0, -1)]
+            .into_iter()
+            .filter(|&(di, dj)| labelled.contains_key(&(i + di, j + dj)))
+            .count()
+    };
+
+    // `axis == 0` → rows (line key = j, member coordinate = i);
+    // `axis == 1` → columns (line key = i, member coordinate = j).
+    for axis in 0..2 {
+        let mut lines: HashMap<i32, Vec<i32>> = HashMap::new();
+        for &(i, j) in labelled.keys() {
+            let (key, coord) = if axis == 0 { (j, i) } else { (i, j) };
+            lines.entry(key).or_default().push(coord);
+        }
+        for (&key, coords) in lines.iter_mut() {
+            if coords.len() < 4 {
+                continue;
+            }
+            coords.sort_unstable();
+            let cell_of = |coord: i32| -> (i32, i32) {
+                if axis == 0 {
+                    (coord, key)
+                } else {
+                    (key, coord)
+                }
+            };
+            let pos_at = |coord: i32| -> Point2<f32> { position_of(labelled[&cell_of(coord)]) };
+            // Both ends: ascending (`dir = +1`) and descending (`dir = -1`).
+            for &dir in &[1i32, -1] {
+                let outer: Vec<i32> = if dir == 1 {
+                    coords[..4].to_vec()
+                } else {
+                    coords[coords.len() - 4..].iter().rev().copied().collect()
+                };
+                let (c0, c1, c2, c3) = (outer[0], outer[1], outer[2], outer[3]);
+                // Extrapolation is only defined on an unbroken run of four.
+                if c1 != c0 + dir || c2 != c0 + 2 * dir || c3 != c0 + 3 * dir {
+                    continue;
+                }
+                let e0 = (pos_at(c1) - pos_at(c0)).norm();
+                let e1 = (pos_at(c2) - pos_at(c1)).norm();
+                let e2 = (pos_at(c3) - pos_at(c2)).norm();
+                if e1 <= 0.0 {
+                    continue;
+                }
+                let predicted = 2.0 * e1 - e2;
+                let r = (e0 - predicted) / e1;
+                let (oi, oj) = cell_of(c0);
+                if r > TOPO_FRONTIER_CURV_TOL && degree(oi, oj) <= TOPO_FRONTIER_MAX_DEGREE {
+                    drop.insert(labelled[&(oi, oj)]);
+                }
+            }
+        }
+    }
     drop
 }
 
@@ -545,5 +668,126 @@ mod tests {
         let position_of = |i: usize| pos[&i];
         let drop = topological_wrong_label_drops(&labelled, position_of, 1.0);
         assert_eq!(drop, HashSet::from([0, 1]));
+    }
+
+    /// A labelled `(i, j) → idx` map plus an idx-indexed position list.
+    type GridFixture = (HashMap<(i32, i32), usize>, Vec<Point2<f32>>);
+
+    /// Build a labelled map + position lookup from `(i, j, x, y)` rows.
+    fn grid_from(cells: &[(i32, i32, f32, f32)]) -> GridFixture {
+        let mut labelled = HashMap::new();
+        let mut pos = Vec::new();
+        for &(i, j, x, y) in cells {
+            let idx = pos.len();
+            labelled.insert((i, j), idx);
+            pos.push(p(x, y));
+        }
+        (labelled, pos)
+    }
+
+    #[test]
+    fn frontier_curvature_keeps_clean_grid() {
+        // Uniform 6×6 grid: every edge equal → extrapolation exact → r = 0.
+        let mut cells = Vec::new();
+        for i in 0..6 {
+            for j in 0..6 {
+                cells.push((i, j, i as f32 * 50.0, j as f32 * 50.0));
+            }
+        }
+        let (labelled, pos) = grid_from(&cells);
+        let drop = frontier_curvature_drops(&labelled, |idx| pos[idx]);
+        assert!(drop.is_empty(), "{drop:?}");
+    }
+
+    #[test]
+    fn frontier_curvature_keeps_smooth_distorted_frontier() {
+        // A single row whose cell pitch follows a smooth bell (barrel-style:
+        // shrinking toward both ends). Cumulative x from edges 40,50,56,56,50,40.
+        let xs = [0.0_f32, 40.0, 90.0, 146.0, 202.0, 252.0, 292.0];
+        let cells: Vec<_> = xs
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| (i as i32, 0, x, 0.0))
+            .collect();
+        let (labelled, pos) = grid_from(&cells);
+        let drop = frontier_curvature_drops(&labelled, |idx| pos[idx]);
+        assert!(
+            drop.is_empty(),
+            "smooth distorted frontier must be kept: {drop:?}"
+        );
+    }
+
+    #[test]
+    fn frontier_curvature_drops_overshoot_leaf() {
+        // Reproduces the GeminiChess1 row-2 signature: an isolated frontier
+        // leaf whose outermost edge (45) overshoots the smooth inward trend
+        // (edges 41, 50, …; extrapolated frontier ≈ 32). r = (45−32)/41 ≈
+        // 0.32 > 0.30. Only the leaf (0,0) is dropped, not its neighbours.
+        let xs = [0.0_f32, 45.0, 86.0, 136.0, 193.0];
+        let cells: Vec<_> = xs
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| (i as i32, 0, x, 0.0))
+            .collect();
+        let (labelled, pos) = grid_from(&cells);
+        let leaf = labelled[&(0, 0)];
+        let drop = frontier_curvature_drops(&labelled, |idx| pos[idx]);
+        assert_eq!(drop, HashSet::from([leaf]), "only the overshoot leaf drops");
+
+        // And it propagates through the public detector (cell_size irrelevant
+        // to this criterion; pass the inner edge length).
+        let via_public = topological_wrong_label_drops(&labelled, |idx| pos[idx], 41.0);
+        assert!(via_public.contains(&leaf));
+    }
+
+    #[test]
+    fn frontier_curvature_skips_across_gap() {
+        // Low end is non-consecutive (missing i=1), so the wild i=0 overshoot
+        // is NOT judged — extrapolation is undefined across a gap.
+        let cells = [
+            (0, 0, 0.0, 0.0), // wild overshoot, but unreachable across the gap
+            (2, 0, 200.0, 0.0),
+            (3, 0, 250.0, 0.0),
+            (4, 0, 300.0, 0.0),
+            (5, 0, 345.0, 0.0),
+        ];
+        let (labelled, pos) = grid_from(&cells);
+        let leaf = labelled[&(0, 0)];
+        let drop = frontier_curvature_drops(&labelled, |idx| pos[idx]);
+        assert!(
+            !drop.contains(&leaf),
+            "must not judge across a gap: {drop:?}"
+        );
+    }
+
+    #[test]
+    fn frontier_curvature_spares_supported_edge_member() {
+        // (0,1) overshoots on its row, but it has cardinal degree 3 (a
+        // well-supported left-edge member, not a dangling frontier), so the
+        // degree gate spares it.
+        let mut cells = vec![(0, 1, -20.0, 50.0)]; // displaced outward → row-1 overshoot
+        for j in 0..3 {
+            for i in 0..4 {
+                if (i, j) == (0, 1) {
+                    continue;
+                }
+                cells.push((i, j, i as f32 * 50.0, j as f32 * 50.0));
+            }
+        }
+        let (labelled, pos) = grid_from(&cells);
+        let supported = labelled[&(0, 1)];
+        assert_eq!(
+            [(1, 1), (-1, 1), (0, 0), (0, 2)]
+                .into_iter()
+                .filter(|c| labelled.contains_key(c))
+                .count(),
+            3,
+            "test setup: (0,1) must have cardinal degree 3"
+        );
+        let drop = frontier_curvature_drops(&labelled, |idx| pos[idx]);
+        assert!(
+            !drop.contains(&supported),
+            "degree-3 member must be spared: {drop:?}"
+        );
     }
 }
