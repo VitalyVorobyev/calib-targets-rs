@@ -306,6 +306,39 @@ by `calib-targets-bench/tests/orientation_free_parity.rs`. Any future
 re-opening should start from intensity-aware seeding, not better
 position-only chord statistics.
 
+### Gap 12b — Orientation-free *pipeline* parity on the topological path (RESOLVED 2026-06-17)
+
+Gap 12 closed the *grid-builder* layer; the full chessboard *pipeline* still
+under-recovered with `OrientationSource::NeighbourEdges` (e.g. `testdata/mid.png`
+stalled at the interior block, ≈ 0.82× recall, missing the boundary row).
+
+**Mechanism:** neighbour-edge axes are synthesized once at the chessboard input
+stage (`topological/inputs.rs::corners_with_synthesized_axes`, with a finite
+~2° sigma — the π no-info sentinel would make the clusterer skip every axis),
+then both orientation sources feed `Evidence::Oriented2`. The recovery that
+lifts the noisier synthesized-axis walk to full recall is **projective-grid's
+own geometry-only synthesized-axis recovery** (`RecoverySchedule::On`), NOT the
+chessboard's ChESS-axis boosters — those gate every attach on `axes_match_centers`
+and reject synthesized boundary axes (got only 61→63 on mid.png). The
+neighbour-edge recovery keeps local validation on but disables only the global
+post-fit homography residual drop (which kills warped grids like the GeminiChess
+set); the local-H revalidation rejects the over-extension a fully-disabled
+validate would attach one cell past the board edge. The ChESS path is unchanged
+(byte-identical). Gated by the pipeline arm of `orientation_free_parity.rs`.
+
+### Gap 12c — Orientation-free seed-and-grow is non-viable (CLOSED BY EVIDENCE 2026-06-17)
+
+`OrientationSource::NeighbourEdges` is intentionally **topological-only** —
+`validate()` rejects it with `SeedAndGrow` as a typed error. A measured
+head-to-head (synthesized axes wired through `run_pipeline_lean`) confirmed why:
+seed-and-grow returned **0 corners on 3 of 6 clutter-free frames** and collapsed
+to 19 vs 373 on a dense board, while being slower. The seed finder stakes the
+whole grid frame on ~4 seed corners' axes; synthesized axes (noisiest where the
+seed quad picks, at the boundary) make the seed fail outright. The topological
+builder labels connected components from many local edge classifications, so it
+tolerates the noise. Re-opening would require an axis-robust seed selector
+(cell-size-consistent or trial-grow-scored seeding), not just wiring.
+
 ### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (OPEN, low priority)
 
 `alignment::solve_alignment` (the legacy rotation+translation **vote**
@@ -333,6 +366,35 @@ opt-in legacy fallback. A proper fix (enumerate all four rotations in
 `solve_alignment`, keep the max-inlier candidate) is small and contained but
 must be gated on the private ChArUco regression sweep before landing; it is
 deferred until that path needs attention.
+
+### Gap 14 — Topological→ChArUco determinism (PARTIAL, 2026-06-17)
+
+The topological grid is a *correct* ChArUco grid — decode precision is tied with
+seed-and-grow (zero self-consistency wrong-ids on every run), refuting the old
+"topological poisons charuco decode" premise. The blocker to making it the
+ChArUco default is **determinism**: across fresh process seeds the full 120-frame
+flagship sweep tips one borderline frame (119 vs 120 detected).
+
+Two `HashMap`-iteration-order tie-breaks in the **decode** path were root-caused
+and fixed with deterministic tie-breaks (both shipped): `alignment::best_translation`
+(translation vote — smaller `[i,j]` wins on a (weight_sum, count) tie) and
+`merge::merge_charuco_results` (the multi-component group selector and
+best-alignment pick). These reduce but do **not** eliminate the flake: a residual
+seed-dependent source remains, almost certainly **upstream in the chessboard
+topological component ordering** — `build_topological_detections` sorts components
+by `Reverse(corners.len())` with a *stable* sort, so equal-count components keep
+their recovery order, which can be `HashMap`-derived; ChArUco's multi-component
+sweep (`detect_all` + consumed-tracking) is sensitive to that order. (Note:
+[[project_topo_grid_test_flaky]]'s 2026-05-29 fix hardened the chessboard *bench*
+path, not necessarily every order that the ChArUco multi-component route exercises.)
+
+**Resolution:** ChArUco stays pinned to seed-and-grow
+(`CharucoParams::for_board`), with `allow_topological_grid` the measurement-only
+opt-in. Re-opening the flip requires (1) a deterministic total order on the
+topological component list (tie-break the count-sort on a positions-derived key
+such as the bbox-min corner index), verified by a multi-seed sweep landing a hard
+120/120, and (2) a `min_corner_strength` floor sweep for topological ChArUco to
+close the ~10% per-frame corner-count gap. Precision is not a blocker.
 
 ### Resolved gaps (April 2026 refactor)
 
