@@ -238,15 +238,16 @@ fn full_flagship_sweep_board_matcher_topological_contract() {
     // contract — zero self-consistency wrong-ids — refuting the premise that
     // the topological cell test poisons charuco decode.
     //
-    // Two gaps vs the deterministic seed-and-grow 120/120 baseline, both
-    // recall (not precision): (1) the topological→charuco path is NOT yet
-    // deterministic — three identical runs returned 120, 119, 119, tipping one
-    // borderline frame run-to-run (this path was never exercised before, since
-    // the guard blocked it, so its nondeterminism was never hardened); (2) it
-    // lands slightly fewer charuco corners per frame (~44 vs ~49) at the
-    // seed-and-grow-tuned `min_corner_strength = 33` floor. The detected floor
-    // below is therefore `>= 119`, not `== 120`; raising it to a hard 120
-    // requires determinism-hardening the topological charuco path first.
+    // Determinism is improved but not yet hard. One source — a `HashMap`
+    // tie-break in `alignment::best_translation` (on a (weight_sum, count) tie
+    // the winning translation depended on iteration order) — is fixed with a
+    // deterministic lexicographic tie-break. With that fix three separate-process
+    // runs gave 120/120/120, but the full `--ignored` suite (one process, one
+    // RandomState seed) still tips to 119: at least one more seed-dependent site
+    // remains in the topological→charuco path. Precision is solid regardless
+    // (wrong_id == 0). So the detected floor stays `>= 119` until determinism is
+    // fully hardened; the remaining ~10% charuco-corner gap vs seed-and-grow is a
+    // separate `min_corner_strength`-floor tuning question, not a localization gap.
     let Some((frames, detected, wrong_id_total)) =
         run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological)
     else {

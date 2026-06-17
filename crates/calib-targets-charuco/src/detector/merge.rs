@@ -32,11 +32,20 @@ pub(crate) fn merge_charuco_results(
         groups.entry(key).or_default().push(r);
     }
 
-    // Pick the group with the most total markers.
+    // Pick the group with the most total markers. Iterate over `(key, group)`
+    // and break ties on the D4-transform key (smaller wins) so the choice does
+    // not depend on `HashMap` iteration order — otherwise two groups with equal
+    // total markers select nondeterministically, flipping the merged alignment
+    // (and corner IDs) of a borderline frame run-to-run.
     // INVARIANT: groups is non-empty because results is non-empty (each result contributes to a group).
     let best_group = groups
-        .into_values()
-        .max_by_key(|group| group.iter().map(|r| r.0.markers.len()).sum::<usize>())
+        .into_iter()
+        .max_by(|(ka, ga), (kb, gb)| {
+            let sa = ga.iter().map(|r| r.0.markers.len()).sum::<usize>();
+            let sb = gb.iter().map(|r| r.0.markers.len()).sum::<usize>();
+            sa.cmp(&sb).then_with(|| kb.cmp(ka))
+        })
+        .map(|(_, group)| group)
         .unwrap();
 
     debug!(
@@ -77,11 +86,18 @@ pub(crate) fn merge_charuco_results(
         }
     }
 
-    // Pick alignment from the component with the most markers.
+    // Pick alignment from the component with the most markers, breaking ties on
+    // the alignment translation (smaller wins) so the pick is independent of the
+    // group's `HashMap`-derived ordering.
     // INVARIANT: best_group is non-empty — it was selected from a non-empty groups map above.
     let best_alignment = best_group
         .iter()
-        .max_by_key(|r| r.0.markers.len())
+        .max_by(|a, b| {
+            a.0.markers
+                .len()
+                .cmp(&b.0.markers.len())
+                .then_with(|| b.0.alignment.translation.cmp(&a.0.alignment.translation))
+        })
         .unwrap()
         .0
         .alignment;
