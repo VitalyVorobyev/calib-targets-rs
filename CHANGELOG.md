@@ -27,6 +27,14 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`calib_targets_core::cell_rect_corners_at`** — the single shared definition
   of the canonical unit-cell corner order (TL, TR, BR, BL), used by the ArUco
   and ChArUco cell samplers.
+- **Orientation-free chessboard detection now reaches full recall in the
+  pipeline.** `OrientationSource::NeighbourEdges` (axes synthesized from
+  neighbour geometry, topological builder only) previously stalled at the
+  interior block; it now drives the full board via the synthesized-axis recovery
+  schedule. `OrientationSource` is exposed in the Python (`ChessboardParams.
+  orientation_source`), FFI (`ct_orientation_source_t` + struct field), and WASM
+  (TypeScript `OrientationSource`) binding surfaces; it remains topological-only
+  (rejected with `SeedAndGrow`).
 
 ### Breaking
 
@@ -56,6 +64,16 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`DetectorParams.min_labeled_corners` / `max_components` are now defaulted on
   deserialization** (`8` / `3`), so partial and legacy configs that omit them
   deserialize again. Values and serialization are unchanged.
+
+### Fixed
+
+- **ChArUco decode determinism.** Deterministic tie-breaks in the marker
+  alignment (`best_translation`) and multi-component merge (`merge_charuco_
+  results`) — both previously resolved (weight, count) / marker-count ties by
+  `HashMap` iteration order, so a borderline frame's alignment and corner IDs
+  could flip run-to-run. Decode precision was never affected (zero
+  self-consistency wrong-ids throughout). The production ChArUco path
+  (seed-and-grow) is unchanged.
 
 ### Internal
 
