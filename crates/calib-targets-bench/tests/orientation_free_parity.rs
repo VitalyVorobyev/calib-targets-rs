@@ -111,11 +111,18 @@ fn neighbour_edges_matches_or_beats_chess_axes_on_clutter_free_grids() {
 /// check. The chess-axis and neighbour-edge paths run *different*, axis-source
 /// -appropriate recovery (ChESS-axis boosters vs the geometry-only synthesized
 /// -axis schedule), so per-image recall differs by a few corners either way;
-/// neighbour-edges wins on most images and trails by < 10% on the rest. The
-/// invariant that matters is precision: on corners both paths labelled, the
-/// labels must agree up to one D4+translation (no wrong labels), and recall
-/// must not collapse. Before the recovery fix, neighbour-edges stalled at the
-/// interior block on `testdata/mid.png` (≈ 0.82× recall) — this guards that.
+/// neighbour-edges wins on most images and trails by < 10% on the rest.
+///
+/// This test asserts two things: (a) recall does not collapse (>= 90% of the
+/// ChESS-axis count) — before the recovery fix neighbour-edges stalled at the
+/// interior block on `testdata/mid.png` at ≈ 0.82×; and (b) on the corners
+/// *both* paths labelled, the labels agree up to one D4+translation (no relative
+/// mislabel). It deliberately does NOT bound neighbour-edges from above — it can
+/// legitimately recover more corners than ChESS axes — so it cannot by itself
+/// catch a single false *extra* corner. Guarding against over-extension past the
+/// board edge is the job of the recovery's local-H revalidation gate (verified
+/// by inspection on mid.png, where disabling it attached one false margin
+/// corner); this test is the recall + relative-precision net, not that gate.
 #[test]
 fn neighbour_edges_matches_or_beats_chess_axes_pipeline() {
     for image in CLUTTER_FREE {

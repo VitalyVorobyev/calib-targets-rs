@@ -326,6 +326,18 @@ set); the local-H revalidation rejects the over-extension a fully-disabled
 validate would attach one cell past the board edge. The ChESS path is unchanged
 (byte-identical). Gated by the pipeline arm of `orientation_free_parity.rs`.
 
+**Residual precision caveat (follow-up):** enabling the recovery + chessboard
+boosters for NeighbourEdges adds two attachment passes that run on the noisier
+synthesized axes. On *sparse* grids (< `MIN_EDGE_SHAPE_LABELS` = 40 labelled
+corners) the targeted topological wrong-label check (`Test 2.5`,
+`topological_wrong_label_drops`) is gated off, so the only wrong-label net there
+is the local-H `validate()` pass. For dense clutter-free boards (the gated test
+set) this is fine, but a partially-occluded NeighbourEdges board could in
+principle ship a mislabel the sparse-grid gate would have caught. NeighbourEdges
+is experimental/opt-in and the default ChESS path is unaffected; before promoting
+it, either lower the `Test 2.5` density gate for this path or add a sparse
+NeighbourEdges precision fixture. Same weak-net family as Gap 15.
+
 ### Gap 12c — Orientation-free seed-and-grow is non-viable (CLOSED BY EVIDENCE 2026-06-17)
 
 `OrientationSource::NeighbourEdges` is intentionally **topological-only** —
@@ -372,8 +384,9 @@ deferred until that path needs attention.
 The topological grid is a *correct* ChArUco grid — decode precision is tied with
 seed-and-grow (zero self-consistency wrong-ids on every run), refuting the old
 "topological poisons charuco decode" premise. The blocker to making it the
-ChArUco default is **determinism**: across fresh process seeds the full 120-frame
-flagship sweep tips one borderline frame (119 vs 120 detected).
+ChArUco default is **determinism**: across fresh process seeds the private
+flagship sweep tips one borderline frame run-to-run (a single-frame
+detection flake; precision is unaffected).
 
 Two `HashMap`-iteration-order tie-breaks in the **decode** path were root-caused
 and fixed with deterministic tie-breaks (both shipped): `alignment::best_translation`
@@ -392,9 +405,38 @@ path, not necessarily every order that the ChArUco multi-component route exercis
 (`CharucoParams::for_board`), with `allow_topological_grid` the measurement-only
 opt-in. Re-opening the flip requires (1) a deterministic total order on the
 topological component list (tie-break the count-sort on a positions-derived key
-such as the bbox-min corner index), verified by a multi-seed sweep landing a hard
-120/120, and (2) a `min_corner_strength` floor sweep for topological ChArUco to
-close the ~10% per-frame corner-count gap. Precision is not a blocker.
+such as the bbox-min corner index), verified by a multi-seed sweep landing a
+fully reproducible full-detection pass, and (2) a `min_corner_strength` floor
+sweep for topological ChArUco to close the per-frame corner-count gap. Precision
+is not a blocker.
+
+### Gap 15 — Topological boundary false-positive under strong barrel distortion (OPEN, blocker)
+
+On a heavily barrel-distorted physical board (the `GeminiChess1` regression
+frame), the topological + ChESS-axes (production) path produces a **false-positive
+labelled corner on the curved left edge** — a single corner attached well off the
+true grid into the distorted border, i.e. a wrong `(i, j)` label that the
+mandatory geometry check fails to drop. This violates the hard no-mislabel
+invariant and is a **blocker**. Two related symptoms on the same frame: a real
+bottom-left corner is detected but not reconstructed (recall miss), and the
+committed baseline itself flags a phantom top-left "miss" that is not a real
+corner (so `baselines/chessboard.json` for this frame is wrong and must be
+re-blessed once the false-positive is fixed — do not re-bless before). SeedAndGrow
+performs significantly worse on this frame (cause not yet diagnosed).
+
+This is the precision counterpart to Gap 8 (topological recall under heavy
+distortion) and Gap 11 (off-axis false labels defeating the structural check):
+under strong radial distortion the cell-relative local-H residual gate
+(`geometry_check_local_h_tol_rel`) is too loose at the boundary to reject an
+edge-region attachment, and the targeted `topological_wrong_label_drops` check
+does not catch this class. Pre-existing on the production path (not introduced by
+the 2026-06-17 orientation-free work, which leaves ChESS-axes byte-identical).
+
+**Next step:** reproduce with `bench diagnose testdata/02-topo-grid/GeminiChess1.png`
+(overlay + per-corner facts, evidence-driven), localize which stage attaches the
+left-edge corner, and tighten the boundary wrong-label gate (a distortion-aware
+or degree/continuation-based leaf check) without over-peeling the legitimate
+ragged frontier — then re-bless the frame and diagnose the SeedAndGrow gap.
 
 ### Resolved gaps (April 2026 refactor)
 
