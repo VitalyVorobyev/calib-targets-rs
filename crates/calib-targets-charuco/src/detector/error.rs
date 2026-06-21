@@ -27,6 +27,11 @@ pub enum CharucoDetectError {
     /// test marker-safe is out of scope; use
     /// [`GraphBuildAlgorithm::SeedAndGrow`] (the default) instead.
     ///
+    /// The measurement-only
+    /// [`CharucoParams::allow_topological_grid`](crate::CharucoParams::allow_topological_grid)
+    /// opt-in suppresses this error and runs the decode on the topological grid
+    /// — used by the algorithm-parity campaign, not production.
+    ///
     /// [`GraphBuildAlgorithm::SeedAndGrow`]: calib_targets_chessboard::GraphBuildAlgorithm::SeedAndGrow
     #[error(
         "ChArUco does not support GraphBuildAlgorithm::Topological; \

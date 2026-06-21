@@ -35,14 +35,14 @@
 //! 4. **Stage 5 — grow.** BFS attach from the seed under the
 //!    alternating-parity edge invariant (`crate::grow`).
 //! 5. **Stage 6 — boundary extension.** Local/global-H prediction at the
-//!    labelled-set boundary ([`extension::run_stage6`]).
+//!    labelled-set boundary ([`extension::run_boundary_extension`]).
 //! 6. **Stage 6.25 — partial slot-flip fix** (`enable_partial_slot_flip_fix`).
-//! 7. **Stage 6.5 — NoCluster rescue** (`enable_stage6_5_rescue`).
+//! 7. **No-cluster rescue** (`enable_no_cluster_rescue`).
 //! 8. **Stage 6.75 — post-grow refit** (`enable_post_grow_refit`),
 //!    which internally runs a destructive BFS regrow
 //!    (`enable_post_grow_bfs_regrow`), a non-destructive BFS extend
-//!    (`enable_post_grow_bfs_extend`), then re-runs Stages 6.25 / 6.5
-//!    on the refined centres ([`refit::run_refit`]).
+//!    (`enable_post_grow_bfs_extend`), then re-runs Stages 6.25 / no-cluster
+//!    rescue on the refined centres ([`refit::run_refit`]).
 //! 9. **Stage 11 — recall boosters.** Interior gap-fill + line
 //!    extrapolation (`crate::boosters`, `enable_weak_cluster_rescue`).
 //! 10. **Stage 12 — geometry check** ([`geometry_check`], **mandatory**;

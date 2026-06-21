@@ -213,8 +213,8 @@ static ct_chessboard_detector_config_t ct_native_default_chessboard_detector_con
   // C ABI: the chessboard detector's 30-field `ct_chessboard_params_t`
   // mirrors `DetectorParams`. The `init_default` helper populates a
   // valid default-configured value; callers override individual fields
-  // as needed (here: raise `min_corner_strength` from 0 → 0.5 to trim
-  // weak ChESS responses on test images).
+  // as needed (here: override `min_corner_strength`; the library default
+  // is 33.0, which trims weak ChESS responses on defocused edges).
   ct_chessboard_params_init_default(&config.chessboard);
   config.chessboard.min_corner_strength = 0.5f;
   return config;

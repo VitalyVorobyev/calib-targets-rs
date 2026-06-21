@@ -31,7 +31,7 @@ use calib_targets_charuco::{
     diagnostics::CharucoDetectDiagnostics, load_board_spec_any, CharucoBoardSpec,
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams,
 };
-use calib_targets_chessboard::ChessCorner as Corner;
+use calib_targets_chessboard::{ChessCorner as Corner, GraphBuildAlgorithm};
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
 use serde::Serialize;
@@ -53,13 +53,35 @@ struct Args {
     save_snaps: bool,
     bit_slope: Option<f32>,
     min_margin: Option<f32>,
+    /// Grid-build algorithm. `seed-and-grow` (default, production) or
+    /// `topological` (opts in to `CharucoParams::allow_topological_grid` for
+    /// the measurement campaign).
+    algorithm: GraphBuildAlgorithm,
+}
+
+/// Stable slug for a grid-build algorithm (for summary JSON + parsing).
+fn algorithm_slug(algorithm: GraphBuildAlgorithm) -> &'static str {
+    match algorithm {
+        GraphBuildAlgorithm::SeedAndGrow => "seed-and-grow",
+        GraphBuildAlgorithm::Topological => "topological",
+        _ => "unknown",
+    }
+}
+
+fn parse_algorithm(s: &str) -> Option<GraphBuildAlgorithm> {
+    match s {
+        "seed-and-grow" | "seed_and_grow" => Some(GraphBuildAlgorithm::SeedAndGrow),
+        "topological" | "topo" => Some(GraphBuildAlgorithm::Topological),
+        _ => None,
+    }
 }
 
 fn usage_and_exit() -> ! {
     eprintln!(
         "usage: run_dataset --dataset <dir> --board <path> --out <dir> \
          [--upscale N] [--snaps N] [--snap-width N] [--snap-height N] \
-         [--use-board-matcher] [--emit-diag] [--save-snaps]"
+         [--use-board-matcher] [--emit-diag] [--save-snaps] \
+         [--algorithm seed-and-grow|topological]"
     );
     std::process::exit(2);
 }
@@ -78,6 +100,7 @@ fn parse_args() -> Args {
     let mut save_snaps = false;
     let mut bit_slope: Option<f32> = None;
     let mut min_margin: Option<f32> = None;
+    let mut algorithm = GraphBuildAlgorithm::SeedAndGrow;
 
     let mut it = env::args().skip(1);
     while let Some(a) = it.next() {
@@ -85,6 +108,13 @@ fn parse_args() -> Args {
             "--dataset" => dataset = it.next().map(PathBuf::from),
             "--board" => board = it.next().map(PathBuf::from),
             "--out" => out = it.next().map(PathBuf::from),
+            "--algorithm" => {
+                let raw = it.next().unwrap_or_default();
+                algorithm = parse_algorithm(&raw).unwrap_or_else(|| {
+                    eprintln!("--algorithm must be seed-and-grow|topological (got {raw:?})");
+                    std::process::exit(2);
+                });
+            }
             "--upscale" => upscale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1),
             "--snaps" => {
                 snaps = it.next().and_then(|v| v.parse().ok()).unwrap_or(snaps);
@@ -128,6 +158,7 @@ fn parse_args() -> Args {
         save_snaps,
         bit_slope,
         min_margin,
+        algorithm,
     }
 }
 
@@ -165,6 +196,11 @@ fn main() {
 
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
+    // Grid-build algorithm. `for_board` pins seed-and-grow; the topological
+    // option is the algorithm-parity measurement path and needs the
+    // measurement-only opt-in to clear the charuco guard.
+    params.chessboard.graph_build_algorithm = args.algorithm;
+    params.allow_topological_grid = matches!(args.algorithm, GraphBuildAlgorithm::Topological);
     params.use_board_level_matcher = args.use_board_matcher;
     if args.use_board_matcher {
         // The board-level matcher is its own inlier gate — don't add a
@@ -181,12 +217,13 @@ fn main() {
         params.alignment_min_margin = min_margin;
     }
     eprintln!(
-        "matcher: {}",
+        "matcher: {}  algorithm: {}",
         if args.use_board_matcher {
             "board-level (soft-bit log-likelihood)"
         } else {
             "legacy (rotation + translation vote)"
-        }
+        },
+        algorithm_slug(args.algorithm),
     );
     let detector = CharucoDetector::new(params.clone()).expect("build detector");
 
@@ -245,7 +282,8 @@ fn main() {
     .expect("write summary");
 
     println!(
-        "frames={} detected={} rate={:.1}% markers_mean={:.1} corners_mean={:.1} wrong_id_total={} runtime_mean_ms={:.1}",
+        "algorithm={} frames={} detected={} rate={:.1}% markers_mean={:.1} corners_mean={:.1} wrong_id_total={} runtime_mean_ms={:.1}",
+        summary.algorithm,
         summary.frames,
         summary.detected,
         summary.detection_rate_pct,
@@ -612,6 +650,7 @@ impl Aggregate {
             runtime_mean_ms: self.total_ms_sum / frames,
             upscale: args.upscale,
             use_board_matcher: args.use_board_matcher,
+            algorithm: algorithm_slug(args.algorithm),
             board: *spec,
         }
     }
@@ -628,5 +667,7 @@ struct SummaryReport {
     runtime_mean_ms: f32,
     upscale: u32,
     use_board_matcher: bool,
+    /// Grid-build algorithm slug (`seed-and-grow` | `topological`).
+    algorithm: &'static str,
     board: CharucoBoardSpec,
 }

@@ -72,6 +72,21 @@ real-extension round-trip test (see `python_tests/test_detect_roundtrip.py`)
 that runs detection on a repo test image and exercises `from_dict`/`to_dict` on
 the actual Rust dict.
 
+**Hand-maintained Rust→frontend mirrors.** A few surfaces are deliberately
+hand-mirrored from Rust rather than generated, each with a drift contract:
+
+- **WASM TypeScript typings** (`crates/calib-targets-wasm/typescript-extras.d.ts`)
+  mirror the serde shapes (incl. `AdvancedTuning`). Update them whenever a Rust
+  serde field is added, renamed, or retyped.
+- **Studio param-schema catalogue**
+  (`crates/calib-targets-studio/src/routes/params_schema.rs`, served at
+  `GET /api/params/schema`) carries the per-knob UI metadata (section, label,
+  one-line tooltip distilled from the rustdoc, value-kind, gating) the Config
+  tab renders. Its `every_advanced_leaf_has_metadata` test walks the
+  materialised `advanced` tree and **fails if any knob lacks an entry** — so a
+  new `AdvancedTuning` field cannot ship un-described. When you add or rename an
+  advanced knob, add/fix its catalogue entry (the test tells you exactly which).
+
 ## Local-only artifacts — never commit
 
 `bench_results/`, rendered overlays, per-frame JSONLs, aggregate JSONs,

@@ -297,7 +297,20 @@ pub fn validate(
     params: &ValidationParams,
 ) -> ValidationResult {
     // Quick lookup maps (built once per call).
-    let by_idx: HashMap<usize, &LabelledEntry> = entries.iter().map(|e| (e.idx, e)).collect();
+    //
+    // `by_grid` is injective on its key (each `grid` cell is unique), so its
+    // contents are order-independent. `by_idx` is NOT: the topological walk can
+    // label the same `source_index` at two grid cells, so an `idx` may appear in
+    // `entries` twice with different `grid`/pixel — and a plain `collect` is
+    // last-write-wins in the caller's `HashMap` iteration order. Build it from a
+    // `(grid, idx)`-sorted pass so the surviving entry for a duplicated `idx`
+    // (used by step-aware scale and Rule 3's base pick) is reproducible
+    // run-to-run; this is part of the duplicate-label determinism contract on
+    // the residual loop below.
+    let mut sorted_entries: Vec<&LabelledEntry> = entries.iter().collect();
+    sorted_entries.sort_unstable_by_key(|e| (e.grid, e.idx));
+    let by_idx: HashMap<usize, &LabelledEntry> =
+        sorted_entries.iter().map(|&e| (e.idx, e)).collect();
     let by_grid: HashMap<(i32, i32), usize> = entries.iter().map(|e| (e.grid, e.idx)).collect();
 
     // Per-corner scale: in step-aware mode this is the labelled-
@@ -320,17 +333,32 @@ pub fn validate(
     let line_flags = lines::line_collinearity_flags(&by_idx, &by_grid, params, &scale_at);
 
     // --- 7b. Local-H residual -------------------------------------------
+    // Visit entries in a fixed `(grid, idx)` order, not slice order.
+    //
+    // Determinism contract: the per-corner maps below are keyed by `idx`, but
+    // the topological walk can label the same `source_index` at two different
+    // grid cells (a non-injective labelled set). Such an `idx` then appears in
+    // `entries` twice — once per grid cell — each with a *different* residual
+    // (its local homography is fit at a different grid position). Inserting by
+    // `idx` is last-write-wins, so in slice order (which is the caller's
+    // `HashMap` iteration order) the stored residual would depend on which
+    // duplicate was visited last, varying per process. That flipped a
+    // borderline corner's drop and was the residual source of the
+    // topological→ChArUco recall flake. Sorting the visitation pins which
+    // duplicate wins without changing the result for the injective (common)
+    // case.
+    let mut entry_order: Vec<usize> = (0..entries.len()).collect();
+    entry_order.sort_unstable_by_key(|&k| (entries[k].grid, entries[k].idx));
     let mut residuals: HashMap<usize, f32> = HashMap::new();
     let mut local_h_flagged: HashMap<usize, f32> = HashMap::new();
     let mut local_h_high: HashMap<usize, f32> = HashMap::new();
-    for entry in entries {
+    for &k in &entry_order {
+        let entry = &entries[k];
         let base = local_h::pick_local_h_base(&by_grid, entry.idx, entry.grid);
         if base.len() < 4 {
             continue;
         }
-        let Some(resid) =
-            local_h::local_h_residual(&by_idx, entry.idx, entry.grid, &base, &by_grid)
-        else {
+        let Some(resid) = local_h::local_h_residual(&by_idx, entry.idx, entry.grid, &base) else {
             continue;
         };
         residuals.insert(entry.idx, resid);
@@ -367,7 +395,21 @@ pub fn validate(
     }
     // Rule 3: local-H flag with no line flag BUT base neighbor flagged
     // in a line → blacklist the worst base instead.
-    for &idx in local_h_flagged.keys() {
+    //
+    // Determinism contract: unlike Rules 1/2/4 (each an unconditional
+    // per-`idx` set insertion, so iteration order is irrelevant), this rule
+    // is order-sensitive. It both reads (`blacklist.contains(&idx)`) and
+    // writes (`blacklist.insert(base_idx)`) the shared blacklist, and a
+    // `base_idx` it inserts for one corner may be the `idx` of a later
+    // corner — which then gets skipped. So the *set* of blacklisted corners
+    // depends on the visitation order. `local_h_flagged` is a `HashMap`, so
+    // iterating its keys directly would make the drop set depend on
+    // per-process `HashMap` seeding — the residual source of the
+    // topological→ChArUco recall flake. Visit the flagged corners in a fixed
+    // `idx` order so the resolution is reproducible run-to-run.
+    let mut local_h_flagged_order: Vec<usize> = local_h_flagged.keys().copied().collect();
+    local_h_flagged_order.sort_unstable();
+    for idx in local_h_flagged_order {
         if line_flags.get(&idx).copied().unwrap_or(0) >= 1 {
             continue;
         }
@@ -379,10 +421,10 @@ pub fn validate(
         };
         let base = local_h::pick_local_h_base(&by_grid, idx, entry.grid);
         let mut worst: Option<(usize, u32)> = None;
-        for base_idx in &base {
-            if let Some(&flags) = line_flags.get(base_idx) {
+        for &(base_idx, _) in &base {
+            if let Some(&flags) = line_flags.get(&base_idx) {
                 if flags >= 1 && worst.map(|w| flags > w.1).unwrap_or(true) {
-                    worst = Some((*base_idx, flags));
+                    worst = Some((base_idx, flags));
                 }
             }
         }

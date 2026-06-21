@@ -69,49 +69,80 @@ pub fn run_entry(
     chess_cfg: &DetectorConfig,
     engine: Engine,
 ) -> Result<Vec<RunOutcome>, std::io::Error> {
-    let img = ImageReader::open(image_path)
-        .map_err(|e| std::io::Error::other(format!("open {}: {e}", image_path.display())))?
-        .decode()
-        .map_err(|e| std::io::Error::other(format!("decode {}: {e}", image_path.display())))?
-        .to_luma8();
-
+    let img = load_entry_image(image_path)?;
     let snap_count = entry.snap_count();
     let mut out = Vec::with_capacity(snap_count as usize);
     for k in 0..snap_count {
-        let (snap, origin) = extract_snap(&img, entry, k)?;
-        let upscaled = if entry.upscale > 1 {
-            let (w, h) = snap.dimensions();
-            image::imageops::resize(
-                &snap,
-                w * entry.upscale,
-                h * entry.upscale,
-                FilterType::Triangle,
-            )
-        } else {
-            snap
-        };
-
-        let started = Instant::now();
-        let corners = detect_corners(&upscaled, chess_cfg);
-        // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
-        // baseline reads it straight off the hot `detect()` path — no
-        // `DebugFrame` needed here (overlays still use one separately).
-        let baseline_image = match engine {
-            Engine::Pipeline => run_pipeline_engine(params, &corners),
-            Engine::Grid => run_grid_engine(params, &corners),
-        };
-        let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
-
-        out.push(RunOutcome {
-            label: entry.snap_label(k),
-            snap_origin_in_source: origin,
-            upscale: entry.upscale,
-            elapsed_ms,
-            detection: baseline_image,
-            fed_image: upscaled,
-        });
+        out.push(run_snap(&img, entry, k, params, chess_cfg, engine)?);
     }
     Ok(out)
+}
+
+/// Decode an entry's source image (the full stitched composite for stitched
+/// entries) into a grayscale buffer ready for [`run_snap`].
+pub fn load_entry_image(image_path: &Path) -> Result<GrayImage, std::io::Error> {
+    Ok(ImageReader::open(image_path)
+        .map_err(|e| std::io::Error::other(format!("open {}: {e}", image_path.display())))?
+        .decode()
+        .map_err(|e| std::io::Error::other(format!("decode {}: {e}", image_path.display())))?
+        .to_luma8())
+}
+
+/// Crop one sub-snap out of an already-decoded source image, apply the
+/// entry's upscale, and return the fed image (post-crop, post-upscale)
+/// without running detection. This is the exact image every detection
+/// coordinate refers to.
+pub fn fed_image(
+    img: &GrayImage,
+    entry: &DatasetEntry,
+    k: u32,
+) -> Result<GrayImage, std::io::Error> {
+    let (snap, _) = extract_snap(img, entry, k)?;
+    Ok(upscale_snap(snap, entry.upscale))
+}
+
+/// Run detection on one sub-snap of an already-decoded source image.
+/// `img` must be the entry's full source image (see [`load_entry_image`]);
+/// `k` selects the sub-snap (`0` for non-stitched entries).
+pub fn run_snap(
+    img: &GrayImage,
+    entry: &DatasetEntry,
+    k: u32,
+    params: &DetectorParams,
+    chess_cfg: &DetectorConfig,
+    engine: Engine,
+) -> Result<RunOutcome, std::io::Error> {
+    let (snap, origin) = extract_snap(img, entry, k)?;
+    let upscaled = upscale_snap(snap, entry.upscale);
+
+    let started = Instant::now();
+    let corners = detect_corners(&upscaled, chess_cfg);
+    // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
+    // baseline reads it straight off the hot `detect()` path — no
+    // `DebugFrame` needed here (overlays still use one separately).
+    let baseline_image = match engine {
+        Engine::Pipeline => run_pipeline_engine(params, &corners),
+        Engine::Grid => run_grid_engine(params, &corners),
+    };
+    let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
+
+    Ok(RunOutcome {
+        label: entry.snap_label(k),
+        snap_origin_in_source: origin,
+        upscale: entry.upscale,
+        elapsed_ms,
+        detection: baseline_image,
+        fed_image: upscaled,
+    })
+}
+
+fn upscale_snap(snap: GrayImage, upscale: u32) -> GrayImage {
+    if upscale > 1 {
+        let (w, h) = snap.dimensions();
+        image::imageops::resize(&snap, w * upscale, h * upscale, FilterType::Triangle)
+    } else {
+        snap
+    }
 }
 
 /// Full chessboard production pipeline → [`BaselineImage`].

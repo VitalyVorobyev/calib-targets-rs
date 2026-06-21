@@ -246,6 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Topic | Where |
 |---|---|
+| How detection works underneath | [The Grid Model](projective_grid.md) |
 | Detection parameters explained | [Tuning the Detector](tuning.md) |
 | Detection fails or gives errors | [Troubleshooting](troubleshooting.md) |
 | What every output field means | [Understanding Results](output.md) |

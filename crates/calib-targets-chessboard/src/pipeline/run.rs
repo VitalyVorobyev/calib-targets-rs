@@ -29,14 +29,14 @@ use projective_grid::seed_and_grow::pipeline::{
 };
 
 use crate::boosters::apply_boosters;
-use crate::cluster::{cluster_axes, fix_partial_slot_flips_post_stage6, ClusterCenters};
+use crate::cluster::{cluster_axes, fix_partial_slot_flips, ClusterCenters};
 use crate::corner::{CornerAug, CornerStage};
 use crate::grow::{grow_from_seed, GrowResult};
 use crate::params::DetectorParams;
 use crate::seed::{find_seed, Seed, SeedOutput};
 use crate::validate::{validate, ValidationResult};
 
-use super::extension::{run_stage6, run_stage6_5_rescue};
+use super::extension::{run_boundary_extension, run_no_cluster_rescue};
 use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
 use super::prefilter::{passes_fit_quality, passes_strength};
@@ -552,7 +552,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // re-validate immediately after Stage 6 and drop any extension
     // attachments the validator rejects, but DON'T re-run the BFS /
     // re-fit H.
-    let extension_stats = run_stage6(
+    let extension_stats = run_boundary_extension(
         augs,
         &mut grow_res,
         active_centers,
@@ -601,7 +601,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // standard rescue path. RingFit is unaffected — its slot orderings
     // are consistent by construction.
     if tuning.enable_partial_slot_flip_fix {
-        let _flipped = fix_partial_slot_flips_post_stage6(
+        let _flipped = fix_partial_slot_flips(
             augs,
             &grow_res.labelled,
             cell_size,
@@ -609,15 +609,15 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
         );
     }
 
-    // Stage 6.5: NoCluster rescue. Re-considers `Strong` / `NoCluster`
+    // NoCluster rescue: re-considers `Strong` / `NoCluster`
     // corners as candidates using the same local-H prediction
-    // machinery as Stage 6, with a wider axis-tolerance
+    // machinery as boundary extension, with a wider axis-tolerance
     // (`rescue_axis_tol_deg`) and inferred parity. Position match +
     // parity match + axis-slot-swap edge invariant keep precision.
     #[cfg(feature = "diagnostics")]
     let mut iteration_rescue: Option<ExtensionTrace> = None;
-    if tuning.enable_stage6_5_rescue {
-        let rescue_stats = run_stage6_5_rescue(
+    if tuning.enable_no_cluster_rescue {
+        let rescue_stats = run_no_cluster_rescue(
             augs,
             &mut grow_res,
             active_centers,
@@ -736,7 +736,7 @@ fn run_converged_iteration(ctx: ConvergedCtx<'_>) -> ConvergedOutput {
     // blocking the right orphan; only after geometry check drops the
     // wrong attachment does the right orphan have a chance.
     if tuning.enable_post_geometry_rescue && !geometry_check_trace.detection_refused {
-        let rescue_post = run_stage6_5_rescue(
+        let rescue_post = run_no_cluster_rescue(
             augs,
             &mut grow_mut,
             active_centers,

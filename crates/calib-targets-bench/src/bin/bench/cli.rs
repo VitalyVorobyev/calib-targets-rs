@@ -33,6 +33,81 @@ pub(crate) enum Cmd {
     /// overlay. Use this to investigate "why is this corner missing?"
     /// before changing detector code.
     Diagnose(DiagnoseArgs),
+    /// Join two existing `run` JSON reports into a per-family comparison
+    /// table (markdown + JSON). Re-runs nothing; reads + writes bench_results/.
+    Compare(CompareArgs),
+    /// Per-knob `AdvancedTuning` ablation: toggle each tuning knob one at a
+    /// time over the dataset and emit a recall/precision/speed delta table
+    /// (markdown + JSON) to bench_results/. Local-only output.
+    Ablate(AblateArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct AblateArgs {
+    /// Restrict to one kind of image set.
+    #[arg(long, value_enum)]
+    pub(crate) dataset: Option<DatasetKindArg>,
+    /// Restrict to a single image (relative path under workspace root).
+    #[arg(long)]
+    pub(crate) image: Option<String>,
+    /// Restrict to one `datasets.toml` group (the parent-directory name, e.g.
+    /// `130x130_puzzle`). The key tractability lever for the private campaign.
+    #[arg(long)]
+    pub(crate) group: Option<String>,
+    /// Graph-build algorithm of the baseline (and every variation). Default
+    /// matches the production `GraphBuildAlgorithm` default; `topological.*`
+    /// knob rows are only meaningful here.
+    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
+    pub(crate) algorithm: AlgorithmArg,
+    /// Detection engine. `pipeline` runs the full chessboard detector.
+    #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
+    pub(crate) engine: EngineArg,
+    /// Where the grid builder gets per-corner grid directions.
+    #[arg(long, value_enum, default_value_t = OrientationSourceArg::ChessAxes)]
+    pub(crate) orientation_source: OrientationSourceArg,
+    /// Override chess-corners' axis-fit method.
+    #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
+    pub(crate) orientation_method: OrientationMethodArg,
+    /// Optional JSON file with a partial `DetectorParams` that seeds the
+    /// baseline (the ablation perturbs each knob relative to this base).
+    #[arg(long)]
+    pub(crate) chessboard_config: Option<String>,
+    /// Output stem (workspace-relative unless absolute). `.md` and `.json`
+    /// are written alongside it. Default `bench_results/ablation`.
+    #[arg(long)]
+    pub(crate) out: Option<String>,
+    /// Scalar perturbation fraction: each scalar knob is run at `× (1 ± rel)`.
+    #[arg(long, default_value_t = 0.25)]
+    pub(crate) rel: f64,
+    /// Restrict the ablation to these knob names (comma-separated or repeated).
+    /// Overrides `--bool-only` / `--scalars-only`.
+    #[arg(long, value_delimiter = ',')]
+    pub(crate) only: Vec<String>,
+    /// Ablate only the boolean (`enable_*`) flags.
+    #[arg(long)]
+    pub(crate) bool_only: bool,
+    /// Ablate only the scalar knobs.
+    #[arg(long)]
+    pub(crate) scalars_only: bool,
+    /// Also write each variation's full run report under `<out>_runs/`.
+    #[arg(long)]
+    pub(crate) dump_runs: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct CompareArgs {
+    /// First report JSON (the "A" column, e.g. the topological run). Resolved
+    /// as given, then relative to `bench_results/`.
+    #[arg(long)]
+    pub(crate) a: String,
+    /// Second report JSON (the "B" column, e.g. the seed-and-grow run).
+    #[arg(long)]
+    pub(crate) b: String,
+    /// Output stem (relative to workspace root unless absolute). Defaults to
+    /// `bench_results/compare.<a_alg>_vs_<b_alg>`. `.md` and `.json` are
+    /// written alongside it.
+    #[arg(long)]
+    pub(crate) out: Option<String>,
 }
 
 #[derive(Args)]
@@ -297,24 +372,6 @@ pub(crate) fn params_with(
     p
 }
 
-/// Load a seed-and-grow [`DetectorParams`] from an optional JSON file, falling
-/// back to [`DetectorParams::default`] when the path is `None`. Partial files
-/// are supported: any field present overrides the default; missing fields keep
-/// their default value. Used by the diagnose subcommand to sweep params
-/// without rebuilding the binary.
-pub(crate) fn load_chessboard_config(path: Option<&str>) -> std::io::Result<DetectorParams> {
-    let Some(path) = path else {
-        return Ok(DetectorParams::default());
-    };
-    let text = std::fs::read_to_string(path)?;
-    let overrides: serde_json::Value =
-        serde_json::from_str(&text).map_err(std::io::Error::other)?;
-    let mut base =
-        serde_json::to_value(DetectorParams::default()).map_err(std::io::Error::other)?;
-    if let (Some(base_obj), Some(over_obj)) = (base.as_object_mut(), overrides.as_object()) {
-        for (k, v) in over_obj {
-            base_obj.insert(k.clone(), v.clone());
-        }
-    }
-    serde_json::from_value(base).map_err(std::io::Error::other)
-}
+// Partial-config loading lives in the library so the studio server shares
+// the exact `--chessboard-config` merge semantics.
+pub(crate) use calib_targets_bench::config::load_chessboard_config;

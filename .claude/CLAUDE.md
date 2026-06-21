@@ -136,6 +136,37 @@ patterns. Details in
 **Correctness first:** prefer clear correct implementations with tests over
 micro-optimizations. Mark future optimizations with TODO.
 
+**No fine-tuning to examples — improve the fundamental approach.** A failing
+image is a *witness* that exposes a weakness in the algorithm, never a target to
+tune against. Do not nudge a threshold, ratio, or magic constant so that one
+frame (or one dataset) starts passing — that is overfitting and it is forbidden.
+The legitimate use of an example is to (a) localize *which concept* is too weak
+and (b) replace it with a more general, distortion-/scale-invariant criterion
+that the example then passes *as a consequence*. The one exception: when a config
+parameter is genuinely mis-set (a wrong default), restoring a *sane, principled*
+value is a fix — but that is distinct from per-example tuning, and you must say
+which one you are doing and why the new value is principled, not fitted.
+
+Ad-hoc per-pixel / per-ratio constants are a smell. A bare
+`continuation_length_ratio_max: 1.18`-style literal that only works on the data
+it was measured on is not generalizable: under smooth lens distortion a single
+edge-length ratio is simultaneously too loose (misses a false attachment whose
+edge happens to be short) and too tight (rejects a legitimate foreshortened
+edge). Prefer criteria that are scale-relative and order-of-magnitude-justified,
+or — better — second-order/structural (line-spacing smoothness, curvature
+continuity, parity) over first-order magnitude thresholds.
+
+**False positives are a contract violation, never a tuning matter.** The
+detection contract we give users is asymmetric: **we may fail to detect (a miss
+is acceptable), but we must never deliver a false positive** — a wrong `(i, j)`
+label is unrecoverable for downstream calibration. Eliminating a false positive
+is therefore *always* an algorithmic/structural problem (find the general
+geometric predicate that distinguishes the false attachment from a legitimate
+corner), and *never* a matter of tightening a threshold until the bad corner
+falls outside it. If you cannot articulate the general criterion, you have not
+fixed the bug. See the evidence-driven debugging rule below and
+[`docs/development/debugging.md`](../docs/development/debugging.md).
+
 **Marker decoding:** grid-aware scan in rectified space (not generic
 contour/quad detection). Keep bit packing order, polarity (black=1 or black=0),
 and `borderBits` explicit in code.

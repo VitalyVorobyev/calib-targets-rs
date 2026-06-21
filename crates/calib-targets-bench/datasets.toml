@@ -93,19 +93,26 @@ path = "testdata/puzzleboard_reference/example3.png"
 kind = "public"
 note = "PuzzleBoard, third extreme-angle reference frame."
 
-# Low-res PuzzleBoard, moderate perspective.
-# Stitched composite: 6 × 720 × 540 sub-snaps. Detector consumes 2× upscale.
+# Low-res PuzzleBoard, moderate perspective. Full dataset: every
+# `target_*.png` is a stitched composite of 6 × 720 × 540 sub-snaps; the
+# detector consumes a 2× upscale. The glob expands to one entry per frame at
+# load (committed baselines cover target_15 only; other frames have no
+# baseline and surface as detection-quality signals in the studio).
 [[image]]
-path = "privatedata/130x130_puzzle/target_15.png"
+glob = "privatedata/130x130_puzzle/target_*.png"
 kind = "private"
+dataset = "130x130_puzzle"
 upscale = 2
 stitched = { count = 6, snap_width = 720, snap_height = 540 }
-note = "6 puzzle sub-snaps, 2× upscale before detection."
+min_labelled = 250
+note = "PuzzleBoard frames, 6 sub-snaps each, 2× upscale before detection."
 
-# Challenging-focus ChArUco, six camera positions.
-# Stitched composite: 6 × 720 × 540 sub-snaps, no upscale.
+# Challenging-focus ChArUco, six camera positions per frame. Full dataset:
+# every `target_*.png` is a stitched composite of 6 × 720 × 540 sub-snaps,
+# native resolution. Committed baselines cover target_7 only.
 [[image]]
-path = "privatedata/3536119669/target_7.png"
+glob = "privatedata/3536119669/target_*.png"
 kind = "private"
+dataset = "3536119669"
 stitched = { count = 6, snap_width = 720, snap_height = 540 }
-note = "6 charuco sub-snaps, native resolution."
+note = "ChArUco frames, 6 sub-snaps each, native resolution."

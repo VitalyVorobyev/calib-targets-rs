@@ -10,8 +10,12 @@
   "images": [
     {
       "path": "testdata/02-topo-grid/GeminiChess1.png",
-      "topological": { "min_labelled": 53, "max_holes": 3 },
-      "seed_and_grow": { "min_labelled": 40, "max_holes": 20 }
+      "topological": { "min_labelled": 52, "max_holes": 4, "note": "Ratcheted 53->52 / holes 3->4 when the frontier line-spacing-smoothness check (projective-grid topological_wrong_label_drops criterion 4) dropped a false-positive left-edge leaf at pixel ~(210,163): a normal-length, on-axis frontier corner labelled one cell past the true board edge under strong barrel distortion. It overshot its grid line's smooth spacing extrapolation (r~0.34 > 0.30) — a wrong (i,j) label the first-order overlong/off-axis checks could not see. Removing a false positive is precision-correct (no-false-positive contract); the count drop and new hole at the leaf's cell are expected. Bumping min_labelled back up would re-admit the false positive." },
+      "seed_and_grow": {
+        "min_labelled": 38,
+        "max_holes": 20,
+        "note": "Ratcheted 40->38 when the chessboard min_corner_strength default flipped 0->33 (weak-frontier precision fix). The floor trims a sub-33-strength corner and seed-and-grow's grow-cascade amplifies it to 39 labelled on this synthetic frame; the topological default path (min_labelled 53) is unaffected. Bumping lower is a regression."
+      }
     },
     {
       "path": "testdata/02-topo-grid/GeminiChess2.png",

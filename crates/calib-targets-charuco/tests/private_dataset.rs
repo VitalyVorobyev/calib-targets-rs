@@ -19,10 +19,19 @@
 
 use std::path::PathBuf;
 
+use calib_targets::chessboard::GraphBuildAlgorithm;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_charuco::{load_board_spec_any, CharucoDetector, CharucoParams};
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
+
+/// Apply a grid-build algorithm to charuco params: production charuco pins
+/// seed-and-grow; the topological measurement path needs the measurement-only
+/// opt-in to clear the algorithm guard.
+fn set_algorithm(params: &mut CharucoParams, algorithm: GraphBuildAlgorithm) {
+    params.chessboard.graph_build_algorithm = algorithm;
+    params.allow_topological_grid = matches!(algorithm, GraphBuildAlgorithm::Topological);
+}
 
 const SNAP_WIDTH: u32 = 720;
 const SNAP_HEIGHT: u32 = 540;
@@ -111,6 +120,13 @@ fn smoke_flagship_snap_0_detects() {
 }
 
 fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> {
+    run_flagship_sweep_with(use_board_matcher, GraphBuildAlgorithm::SeedAndGrow)
+}
+
+fn run_flagship_sweep_with(
+    use_board_matcher: bool,
+    algorithm: GraphBuildAlgorithm,
+) -> Option<(usize, usize, usize)> {
     let dir = flagship_dir();
     let board_path = flagship_board();
     if !dir.exists() || !board_path.exists() {
@@ -121,6 +137,7 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
+    set_algorithm(&mut params, algorithm);
     params.use_board_level_matcher = use_board_matcher;
     if use_board_matcher {
         params.min_marker_inliers = 1;
@@ -213,6 +230,64 @@ fn full_flagship_sweep_board_matcher_contract() {
 }
 
 #[test]
+#[ignore = "full 120-frame flagship sweep; run with --ignored"]
+fn full_flagship_sweep_board_matcher_topological_contract() {
+    // B1b algorithm-parity measurement: run the full charuco decode on the
+    // *topological* grid (via `allow_topological_grid`). On the 2026-06-13
+    // head-to-head topological decode precision matched seed-and-grow's gold
+    // contract — zero self-consistency wrong-ids — refuting the premise that
+    // the topological cell test poisons charuco decode.
+    //
+    // Determinism is improved but not yet hard. One source — a `HashMap`
+    // tie-break in `alignment::best_translation` (on a (weight_sum, count) tie
+    // the winning translation depended on iteration order) — is fixed with a
+    // deterministic lexicographic tie-break. With that fix three separate-process
+    // runs gave 120/120/120, but the full `--ignored` suite (one process, one
+    // RandomState seed) still tips to 119: at least one more seed-dependent site
+    // remains in the topological→charuco path. Precision is solid regardless
+    // (wrong_id == 0). So the detected floor stays `>= 119` until determinism is
+    // fully hardened; the remaining ~10% charuco-corner gap vs seed-and-grow is a
+    // separate `min_corner_strength`-floor tuning question, not a localization gap.
+    let Some((frames, detected, wrong_id_total)) =
+        run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological)
+    else {
+        return;
+    };
+    assert_eq!(frames, 120);
+    assert!(
+        detected >= 119,
+        "topological charuco recall regression: detected {detected}/120 (expected >= 119)"
+    );
+    assert_eq!(
+        wrong_id_total, 0,
+        "topological charuco must be self-consistent (zero wrong-ids); got {wrong_id_total}"
+    );
+}
+
+/// A1 determinism characterization (algorithm-consolidation Phase 1): print the
+/// live A-side (seed-and-grow) and B-side (topological) detected counts,
+/// repeating the topological sweep in-process so successive `RandomState` seeds
+/// surface the residual HashMap-iteration-order flake that keeps the
+/// retire-SeedAndGrow decision blocked. Ignored; run with
+/// `--features diagnostics -- --ignored --nocapture`.
+#[test]
+#[ignore = "A1 determinism characterization; run with --ignored --nocapture"]
+fn ab_charuco_topological_determinism_repeats() {
+    let Some((frames, sg_detected, sg_wrong)) =
+        run_flagship_sweep_with(true, GraphBuildAlgorithm::SeedAndGrow)
+    else {
+        eprintln!("skipping: flagship dataset missing");
+        return;
+    };
+    eprintln!("[A seed-and-grow ] frames={frames} detected={sg_detected}/120 wrong_id={sg_wrong}");
+    for rep in 0..6 {
+        let (_f, detected, wrong) =
+            run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological).expect("flagship");
+        eprintln!("[B topological r{rep}] detected={detected}/120 wrong_id={wrong}");
+    }
+}
+
+#[test]
 fn smoke_apriltag_image_does_not_panic() {
     let img_path = apriltag_image();
     let cfg_path = apriltag_config();
@@ -299,6 +374,20 @@ const REVIEWED_FALSE_PX: &[FalsePxCase] = &[
 
 #[test]
 fn flagship_rejects_reviewed_marker_bit_false_corners() {
+    // The seed-and-grow + `min_corner_strength = 33` floor must keep every
+    // reviewed marker-bit false corner out of the product.
+    assert_reviewed_false_corners_rejected(GraphBuildAlgorithm::SeedAndGrow);
+}
+
+#[test]
+fn flagship_topological_rejects_reviewed_marker_bit_false_corners() {
+    // B1b: the topological grid (measurement opt-in) must reject the same
+    // reviewed marker-bit false corners — confirming topological does not
+    // reintroduce the marker-bit false-corner failure the guard feared.
+    assert_reviewed_false_corners_rejected(GraphBuildAlgorithm::Topological);
+}
+
+fn assert_reviewed_false_corners_rejected(algorithm: GraphBuildAlgorithm) {
     let dir = flagship_dir();
     let board_path = flagship_board();
     if !dir.exists() || !board_path.exists() {
@@ -308,6 +397,7 @@ fn flagship_rejects_reviewed_marker_bit_false_corners() {
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
+    set_algorithm(&mut params, algorithm);
     params.use_board_level_matcher = true;
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;

@@ -2,6 +2,12 @@
 
 This chapter answers the question: *"My detection fails or gives poor results — what do I change?"*
 
+> **Background first.** Every parameter below acts on the grid-recovery
+> pipeline — its input-feature kinds, the two graph-build algorithms
+> (topological and seed-and-grow), and the per-stage contract. If a knob's name
+> reads as jargon, read [The Grid Model](projective_grid.md) first; the tuning
+> reference assumes that vocabulary.
+
 ## Start here: use the built-in defaults
 
 Before tuning anything, confirm you are starting from the library defaults:

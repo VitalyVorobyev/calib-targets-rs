@@ -21,6 +21,22 @@ pub const CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW: ct_graph_build_algorithm_t = 0
 /// Topological pipeline (Delaunay + axis-driven cell test).
 pub const CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL: ct_graph_build_algorithm_t = 1;
 
+/// Selector for the chessboard orientation source. Mirrors the
+/// `calib_targets_chessboard::OrientationSource` enum.
+///
+/// Defaulting `ct_chessboard_params_t::orientation_source` to `0` keeps
+/// zero-initialised C structs on per-corner ChESS axes
+/// (`CT_ORIENTATION_SOURCE_CHESS_AXES`). `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES`
+/// is **topological-only** — pairing it with
+/// [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`] is rejected by the detector with a
+/// configuration error.
+pub type ct_orientation_source_t = u32;
+/// Per-corner ChESS axis estimates. The default.
+pub const CT_ORIENTATION_SOURCE_CHESS_AXES: ct_orientation_source_t = 0;
+/// Synthesize the two grid directions from neighbour-edge geometry
+/// (topological builder only).
+pub const CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES: ct_orientation_source_t = 1;
+
 /// Fixed dictionary identifier type for built-in marker dictionaries.
 pub type ct_dictionary_id_t = u32;
 pub const CT_DICTIONARY_DICT_4X4_50: ct_dictionary_id_t = 1;
@@ -465,6 +481,11 @@ pub struct ct_chessboard_params_t {
     /// Pipeline selector. See [`ct_graph_build_algorithm_t`].
     /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
     pub graph_build_algorithm: ct_graph_build_algorithm_t,
+    /// Orientation source. See [`ct_orientation_source_t`].
+    /// Default `0` (== [`CT_ORIENTATION_SOURCE_CHESS_AXES`]).
+    /// `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES` requires
+    /// [`CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL`].
+    pub orientation_source: ct_orientation_source_t,
 
     // --- Stable core --------------------------------------------------------
     /// Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`

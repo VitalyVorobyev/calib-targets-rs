@@ -5,11 +5,10 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use calib_targets::chessboard::{
-    diagnostics::CornerStage, AdvancedTuning, Detector, GraphBuildAlgorithm,
-};
+use calib_targets::chessboard::{AdvancedTuning, GraphBuildAlgorithm};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
+use calib_targets_bench::diagnose::{stage_counts_by_name, TopologicalDiagnosis};
 use calib_targets_bench::overlay::{render_diagnose_overlay, render_diagnose_overlay_with_axes};
 use calib_targets_bench::workspace_root;
 use image::imageops::FilterType;
@@ -35,13 +34,7 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // Find the matching dataset entry; if absent, build a default one for the path.
     let entry = match dataset.find(base_path) {
         Some(e) => e.clone(),
-        None => DatasetEntry {
-            path: base_path.to_string(),
-            kind: ImageKind::Public,
-            note: String::new(),
-            upscale: 1,
-            stitched: None,
-        },
+        None => DatasetEntry::single(base_path.to_string(), ImageKind::Public),
     };
     let abs = entry.absolute();
     if !abs.exists() {
@@ -169,22 +162,7 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
 }
 
 fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnostics::DebugFrame) {
-    let mut counts: std::collections::BTreeMap<&'static str, usize> =
-        std::collections::BTreeMap::new();
-    for aug in &frame.corners {
-        let key: &'static str = match &aug.stage {
-            CornerStage::Raw => "Raw",
-            CornerStage::Strong => "Strong",
-            CornerStage::NoCluster { .. } => "NoCluster",
-            CornerStage::Clustered { .. } => "Clustered",
-            CornerStage::AttachmentAmbiguous { .. } => "AttachmentAmbiguous",
-            CornerStage::AttachmentFailedInvariants { .. } => "AttachmentFailedInvariants",
-            CornerStage::Labeled { .. } => "Labeled",
-            CornerStage::LabeledThenBlacklisted { .. } => "LabeledThenBlacklisted",
-            _ => "Other",
-        };
-        *counts.entry(key).or_insert(0) += 1;
-    }
+    let counts = stage_counts_by_name(frame);
     println!("--- {label} ---");
     println!("  input corners: {}", frame.input_count);
     for (k, v) in &counts {
@@ -210,7 +188,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .map(|v| format!("{v:.2}"))
                     .unwrap_or_else(|| "—".to_string());
                 println!(
-                    "    stage6: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
+                    "    extend: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
                      rej(no_cand={} ambig={} label={} policy={} edge={})",
                     ext.h_trusted,
                     med,
@@ -234,7 +212,7 @@ fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnosti
                     .map(|v| format!("{v:.2}"))
                     .unwrap_or_else(|| "—".to_string());
                 println!(
-                    "    stage6.5: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
+                    "    rescue: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
                      rej(no_cand={} ambig={} label={} policy={} edge={})",
                     rescue.h_trusted,
                     med,
@@ -310,92 +288,39 @@ fn diagnose_topological(
         advanced.topological.axis_align_tol_rad = deg.to_radians();
         detector_params = detector_params.with_advanced(advanced);
     }
-    let tuning = detector_params.effective_tuning();
-    let params = &tuning.topological;
+    let diagnosis: TopologicalDiagnosis =
+        calib_targets_bench::diagnose::diagnose_topological(&detector_params, corners);
+    let tols = &diagnosis.effective_tols;
     println!(
         "--- {} (topological) ---\n  input corners: {}\n  axis_align_tol_rad: {:.3} ({}°)  max_axis_sigma_rad: {:.3} ({}°)  cluster_axis_tol_rad: {:.3} ({}°)  edge_length_max_rel: {:.2}",
         args.image,
-        corners.len(),
-        params.axis_align_tol_rad,
-        (params.axis_align_tol_rad.to_degrees() as i32),
-        params.max_axis_sigma_rad,
-        (params.max_axis_sigma_rad.to_degrees() as i32),
-        params.cluster_axis_tol_rad,
-        (params.cluster_axis_tol_rad.to_degrees() as i32),
-        params.edge_length_max_rel,
+        diagnosis.input_count,
+        tols.axis_align_tol_rad,
+        (tols.axis_align_tol_rad.to_degrees() as i32),
+        tols.max_axis_sigma_rad,
+        (tols.max_axis_sigma_rad.to_degrees() as i32),
+        tols.cluster_axis_tol_rad,
+        (tols.cluster_axis_tol_rad.to_degrees() as i32),
+        tols.edge_length_max_rel,
     );
-
-    // Pre-filter: at least one axis with sigma below threshold AND the
-    // standard chessboard strength + fit-quality gates.
-    let mut survives_strength = 0usize;
-    let mut survives_fit = 0usize;
-    let mut survives_axis = 0usize;
-    for c in corners {
-        let strong = c.strength >= detector_params.min_corner_strength;
-        let fit_ok = !tuning.max_fit_rms_ratio.is_finite()
-            || c.contrast <= 0.0
-            || c.fit_rms <= tuning.max_fit_rms_ratio * c.contrast;
-        let axis_ok = c.axes[0].sigma < params.max_axis_sigma_rad
-            || c.axes[1].sigma < params.max_axis_sigma_rad;
-        if strong {
-            survives_strength += 1;
-        }
-        if strong && fit_ok {
-            survives_fit += 1;
-        }
-        if strong && fit_ok && axis_ok {
-            survives_axis += 1;
-        }
-    }
     println!(
         "  pre-filter: strength→{} fit→{} axis→{} (lost {} on axis sigma alone)",
-        survives_strength,
-        survives_fit,
-        survives_axis,
-        survives_fit - survives_axis,
+        diagnosis.prefilter.survives_strength,
+        diagnosis.prefilter.survives_fit,
+        diagnosis.prefilter.survives_axis,
+        diagnosis.prefilter.survives_fit - diagnosis.prefilter.survives_axis,
     );
-
-    let detections = Detector::new(detector_params)
-        .expect("valid detector params")
-        .detect_all(corners);
-    let labelled_corner_set: std::collections::HashSet<usize> = detections
-        .iter()
-        .flat_map(|d| d.corners.iter().map(|c| c.input_index))
-        .collect();
     println!(
         "  production components: {}  labelled corners (unique across components): {} / {} input",
-        detections.len(),
-        labelled_corner_set.len(),
-        corners.len(),
+        diagnosis.components.len(),
+        diagnosis.labelled_indices.len(),
+        diagnosis.input_count,
     );
-    for (k, detection) in detections.iter().enumerate() {
-        let min_i = detection
-            .corners
-            .iter()
-            .map(|c| c.grid.i)
-            .min()
-            .unwrap_or(0);
-        let max_i = detection
-            .corners
-            .iter()
-            .map(|c| c.grid.i)
-            .max()
-            .unwrap_or(0);
-        let min_j = detection
-            .corners
-            .iter()
-            .map(|c| c.grid.j)
-            .min()
-            .unwrap_or(0);
-        let max_j = detection
-            .corners
-            .iter()
-            .map(|c| c.grid.j)
-            .max()
-            .unwrap_or(0);
+    for (k, comp) in diagnosis.components.iter().enumerate() {
+        let [min_i, max_i, min_j, max_j] = comp.bbox;
         println!(
             "  component {k}: labelled={} bbox=i[{min_i},{max_i}] j[{min_j},{max_j}] ({}×{})",
-            detection.corners.len(),
+            comp.labelled,
             max_i - min_i + 1,
             max_j - min_j + 1,
         );
@@ -409,20 +334,15 @@ fn diagnose_topological(
     let mut q_lab = [0usize; 4];
     let mut q_unl = [0usize; 4];
     let mut unlabelled_positions: Vec<(f32, f32, f32, f32)> = Vec::new();
-    for (k, c) in corners.iter().enumerate() {
-        let qx = if c.position.x < half_w { 0 } else { 1 };
-        let qy = if c.position.y < half_h { 0 } else { 1 };
+    for c in &diagnosis.corners {
+        let qx = if c.x < half_w { 0 } else { 1 };
+        let qy = if c.y < half_h { 0 } else { 1 };
         let q = qy * 2 + qx;
-        if labelled_corner_set.contains(&k) {
+        if c.labelled {
             q_lab[q] += 1;
         } else {
             q_unl[q] += 1;
-            unlabelled_positions.push((
-                c.position.x,
-                c.position.y,
-                c.axes[0].sigma,
-                c.axes[1].sigma,
-            ));
+            unlabelled_positions.push((c.x, c.y, c.sigma0, c.sigma1));
         }
     }
     println!("\n  per-quadrant labelled / unlabelled (bottom-left = corners with x<W/2, y>H/2):");
@@ -453,6 +373,8 @@ fn diagnose_topological(
             println!("    ... ({} more)", sorted.len() - 20);
         }
     }
+    let labelled_corner_set: std::collections::HashSet<usize> =
+        diagnosis.labelled_indices.iter().copied().collect();
 
     // Render an overlay: green dots = labelled corners, red dots = corners
     // dropped by the pre-filter or classification.

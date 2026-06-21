@@ -109,6 +109,10 @@ fn default_max_components() -> u32 {
     3
 }
 
+fn default_min_corner_strength() -> f32 {
+    33.0
+}
+
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
 /// Returned by [`DetectorParams::validate`] / [`crate::Detector::new`]. The
@@ -219,11 +223,22 @@ pub struct DetectorParams {
 
     /// Minimum corner strength (ChESS response) for the Stage-1 pre-filter.
     /// Corners with `strength < min_corner_strength` are dropped before
-    /// clustering. `0.0` (the default) disables the filter.
+    /// clustering. `0.0` disables the filter.
+    ///
+    /// **Default `33.0`.** A defocused board edge (or marker-bit saddle)
+    /// fires the ChESS detector weakly — strength ≈ 15–30 against a sharp
+    /// board's ≈ 90+ — and such corners, while grid-consistent in position,
+    /// are low-confidence and pollute the labelled frontier with a ragged,
+    /// noisy row that is unhelpful for calibration. A `33.0` floor removes
+    /// that weak frontier; sharp boards (whose every corner clears the
+    /// floor) are unaffected. The value matches the ChArUco detector's floor
+    /// (`CharucoParams::for_board`), so the chessboard and ChArUco grid
+    /// builds now start from the same corner set — set this to `0.0`
+    /// explicitly to recover the previous maximum-recall behaviour.
     ///
     /// Part of the stable configuration core. Serializes as the top-level
     /// `min_corner_strength` key.
-    #[serde(default)]
+    #[serde(default = "default_min_corner_strength")]
     pub min_corner_strength: f32,
 
     /// Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)
@@ -245,7 +260,7 @@ impl Default for DetectorParams {
             orientation_source: OrientationSource::default(),
             min_labeled_corners: 8,
             max_components: 3,
-            min_corner_strength: 0.0,
+            min_corner_strength: default_min_corner_strength(),
             advanced: None,
         }
     }
@@ -255,10 +270,14 @@ impl DetectorParams {
     /// Validate the configuration, returning a typed error for any combination
     /// the detector cannot honour.
     ///
-    /// Currently the only invalid combination is
-    /// [`OrientationSource::NeighbourEdges`] with
-    /// [`GraphBuildAlgorithm::SeedAndGrow`] (see
-    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]). The
+    /// [`OrientationSource::NeighbourEdges`] is **topological-only**. It is
+    /// rejected with [`GraphBuildAlgorithm::SeedAndGrow`] (see
+    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]) because the
+    /// seed-and-grow seed finder stakes the whole grid frame on ~4 seed corners'
+    /// axes, and a measured head-to-head (2026-06-17) showed synthesized axes
+    /// collapse it — 0 corners on 3 of 6 clutter-free frames, 19 vs 373 on a
+    /// dense board — whereas the topological builder, which labels connected
+    /// components from many local edge classifications, tolerates the noise. The
     /// fallible constructor [`crate::Detector::new`] calls this up front and
     /// surfaces the typed error, so the `detect*` methods always run on a
     /// validated configuration.

@@ -311,6 +311,19 @@ pub(crate) fn convert_chessboard_params(
             )));
         }
     };
+    out.orientation_source = match params.orientation_source {
+        crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES => {
+            calib_targets::chessboard::OrientationSource::ChessAxes
+        }
+        crate::types::CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES => {
+            calib_targets::chessboard::OrientationSource::NeighbourEdges
+        }
+        other => {
+            return Err(FfiError::config_error(format!(
+                "chessboard.orientation_source: unknown value {other}"
+            )));
+        }
+    };
     out.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
     out.min_labeled_corners = params.min_labeled_corners;
@@ -407,6 +420,18 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
             // SeedAndGrow selector until the FFI explicitly surfaces
             // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
             _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW,
+        },
+        orientation_source: match d.orientation_source {
+            calib_targets::chessboard::OrientationSource::ChessAxes => {
+                crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES
+            }
+            calib_targets::chessboard::OrientationSource::NeighbourEdges => {
+                crate::types::CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES
+            }
+            // OrientationSource is `#[non_exhaustive]`; a new variant on the
+            // Rust side falls back to the ChESS-axes selector until the FFI
+            // surfaces it via a new `CT_ORIENTATION_SOURCE_*` constant.
+            _ => crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES,
         },
         min_corner_strength: d.min_corner_strength,
         min_labeled_corners: d.min_labeled_corners,

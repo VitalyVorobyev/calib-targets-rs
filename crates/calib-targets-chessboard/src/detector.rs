@@ -208,7 +208,11 @@ mod tests {
             ],
             contrast: 10.0,
             fit_rms: 1.0,
-            strength: 1.0,
+            // A sharp synthetic corner: well above the default
+            // `min_corner_strength` floor (33.0) so these grid-building
+            // tests exercise the real default path rather than the
+            // strength pre-filter.
+            strength: 100.0,
         }
     }
 
@@ -304,9 +308,12 @@ mod tests {
     }
 
     /// Neighbour-edge orientation on the native SeedAndGrow pipeline is
-    /// unsupported. It is now a *typed* error surfaced by `validate()` and the
-    /// fallible [`Detector::new`] rather than a runtime panic, so a head-to-head
-    /// measurement can never silently fall back to ChESS axes.
+    /// unsupported. It is a *typed* error surfaced by `validate()` and the
+    /// fallible [`Detector::new`] rather than a runtime panic. A measured
+    /// head-to-head (2026-06-17) confirmed the combination is non-viable —
+    /// seed-and-grow collapses to 0 corners on most clutter-free frames when fed
+    /// synthesized axes — so the topological builder is the only neighbour-edge
+    /// path; see [`DetectorParams::validate`].
     #[test]
     fn neighbour_edges_seed_and_grow_is_typed_error() {
         let params = DetectorParams {

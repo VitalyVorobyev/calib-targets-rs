@@ -113,11 +113,22 @@ fn best_translation(pairs: &[Pair], transform: GridTransform) -> Option<([i32; 2
         entry.1 += 1;
     }
 
-    let (translation, (weight_sum, count)) = counts.into_iter().max_by(|(_, a), (_, b)| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.cmp(&b.1))
-    })?;
+    let (translation, weight_sum, count) = counts
+        .into_iter()
+        .max_by(|(ta, a), (tb, b)| {
+            a.0.partial_cmp(&b.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.cmp(&b.1))
+                // Deterministic final tie-break: when two translations tie on
+                // (weight_sum, count), prefer the lexicographically smaller
+                // `[i, j]`. Without this the winner depends on `HashMap`
+                // iteration order, which made the topological→ChArUco path
+                // nondeterministic run-to-run (a frame's alignment, and hence
+                // its corner IDs, could flip). `tb.cmp(ta)` ranks the smaller
+                // translation as greater so `max_by` selects it.
+                .then_with(|| tb.cmp(ta))
+        })
+        .map(|(t, (w, c))| (t, w, c))?;
     Some((translation, weight_sum, count))
 }
 
@@ -183,5 +194,33 @@ mod tests {
         assert_eq!(alignment.alignment.transform, GridTransform::IDENTITY);
         assert_eq!(alignment.alignment.translation, [0, 0]);
         assert!(!alignment.marker_inliers.is_empty());
+    }
+
+    /// `best_translation` must be deterministic when two candidate translations
+    /// tie on (weight_sum, count): the lexicographically smaller `[i, j]` wins,
+    /// regardless of insertion order. Without the tie-break the winner depended
+    /// on `HashMap` iteration order, making the topological→ChArUco alignment
+    /// (and the corner IDs derived from it) flip run-to-run.
+    #[test]
+    fn best_translation_breaks_ties_deterministically() {
+        // Two markers under the identity transform vote for two different
+        // translations with equal weight (1.0) and equal count (1): a corner at
+        // gc=(0,0)→bc=(0,0) votes translation [0, 0]; a corner at
+        // gc=(0,0)→bc=(1,1) votes [1, 1]. The smaller, [0, 0], must win.
+        let mk = |gc: (i32, i32), bc: (i32, i32)| Pair {
+            idx: 0,
+            bc: GridCoords { i: bc.0, j: bc.1 },
+            gc: GridCoords { i: gc.0, j: gc.1 },
+            weight: 1.0,
+        };
+        let a = mk((0, 0), (0, 0)); // → translation [0, 0]
+        let b = mk((0, 0), (1, 1)); // → translation [1, 1]
+        let forward = best_translation(&[a, b], GridTransform::IDENTITY).expect("translation");
+        let reversed = best_translation(&[b, a], GridTransform::IDENTITY).expect("translation");
+        assert_eq!(forward.0, [0, 0], "smaller translation must win");
+        assert_eq!(
+            forward.0, reversed.0,
+            "result must not depend on insertion order"
+        );
     }
 }

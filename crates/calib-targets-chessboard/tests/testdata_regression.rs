@@ -252,6 +252,142 @@ fn every_listed_image_meets_its_gate() {
     }
 }
 
+/// Independent structural audit over a detection's labelled corners, using
+/// the per-frame **global** median cardinal-edge length as the reference (so
+/// it does not reuse the detector's own local predicate). Returns
+/// `(overlong_edges, collapsed_pairs, degree1_overlong_appendages)`:
+/// - `overlong_edges`: cardinal edges > `1.6×` the global median (skipped-
+///   corner / diagonal-boundary signature).
+/// - `collapsed_pairs`: distinct `(i, j)` labels within `0.2×` the median.
+/// - `degree1_overlong_appendages`: corners with exactly one cardinal
+///   neighbour reached by an edge > `1.6×` the median — the lone weak-frontier
+///   appendage class the `min_corner_strength` floor is meant to suppress.
+fn audit_structural(detection: &ChessboardDetection) -> (usize, usize, usize) {
+    use std::collections::HashMap;
+    let by_grid: HashMap<(i32, i32), (f32, f32)> = detection
+        .corners
+        .iter()
+        .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
+        .collect();
+    let mut lens: Vec<f32> = Vec::new();
+    for (&(i, j), &(x, y)) in &by_grid {
+        for (di, dj) in [(1, 0), (0, 1)] {
+            if let Some(&(nx, ny)) = by_grid.get(&(i + di, j + dj)) {
+                lens.push(((nx - x).powi(2) + (ny - y).powi(2)).sqrt());
+            }
+        }
+    }
+    if lens.is_empty() {
+        return (0, 0, 0);
+    }
+    lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let med = lens[lens.len() / 2];
+    let overlong = lens.iter().filter(|&&l| l > 1.6 * med).count();
+
+    let pts: Vec<(f32, f32)> = by_grid.values().copied().collect();
+    let eps2 = (0.2 * med).powi(2);
+    let mut collapsed = 0usize;
+    for (a, &(ax, ay)) in pts.iter().enumerate() {
+        for &(bx, by) in &pts[a + 1..] {
+            if (ax - bx).powi(2) + (ay - by).powi(2) < eps2 {
+                collapsed += 1;
+            }
+        }
+    }
+
+    let mut appendage = 0usize;
+    for (&(i, j), &(x, y)) in &by_grid {
+        let mut degree = 0u32;
+        let mut has_long_edge = false;
+        for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            if let Some(&(nx, ny)) = by_grid.get(&(i + di, j + dj)) {
+                degree += 1;
+                if ((nx - x).powi(2) + (ny - y).powi(2)).sqrt() > 1.6 * med {
+                    has_long_edge = true;
+                }
+            }
+        }
+        if degree == 1 && has_long_edge {
+            appendage += 1;
+        }
+    }
+    (overlong, collapsed, appendage)
+}
+
+/// Topological-**default** precision on `testdata/small3.png` — the reported
+/// weak-frontier regression. Before the `min_corner_strength` default flip
+/// (`0 → 33`) the topological builder emitted a ragged row of sub-33-strength
+/// corners into the defocused lower band (e.g. `(1, 8)` strength ≈ 17,
+/// `(10, 8)` ≈ 22, `(12, 8)` ≈ 31) — grid-consistent in position but
+/// low-confidence noise that the position-based `bench check` could not catch
+/// (it does not validate new `(i, j)` labels). This pins the fix on the
+/// DEFAULT path; the broad gate above pins seed-and-grow only.
+#[test]
+fn small3_topological_default_suppresses_weak_frontier() {
+    let path = workspace_root().join("testdata/small3.png");
+    if !path.exists() {
+        eprintln!("skipping: testdata/small3.png not on disk");
+        return;
+    }
+    let img = image::open(&path)
+        .unwrap_or_else(|e| panic!("decode small3.png: {e}"))
+        .to_luma8();
+    let chess_cfg = default_chess_config();
+    let corners = detect_corners(&img, &chess_cfg);
+
+    // Defaults: topological builder + the new min_corner_strength = 33 floor.
+    let params = DetectorParams::default();
+    assert_eq!(
+        params.graph_build_algorithm,
+        GraphBuildAlgorithm::Topological,
+        "this test assumes the topological default"
+    );
+    let floor = params.min_corner_strength;
+    let detector = Detector::new(params).expect("valid detector params");
+    let detection = detector
+        .detect(&corners)
+        .expect("small3.png must detect on the topological default");
+
+    // Recall floor: post-fix observation is 117 labelled; allow margin.
+    assert!(
+        detection.corners.len() >= 105,
+        "small3 topological recall regressed: {} labelled (expected >= 105)",
+        detection.corners.len()
+    );
+
+    // Direct guard: no emitted corner may sit below the strength floor — the
+    // literal contract of the default flip, and the exact class the user
+    // reported.
+    for c in &detection.corners {
+        let strength = corners[c.input_index].strength;
+        assert!(
+            strength >= floor,
+            "small3: emitted corner ({}, {}) has strength {strength:.1} below the floor {floor}",
+            c.grid.i,
+            c.grid.j
+        );
+    }
+
+    // Structural cleanliness, independent of the detector's own predicate.
+    let (overlong, collapsed, appendage) = audit_structural(&detection);
+    assert_eq!(
+        collapsed, 0,
+        "small3: {collapsed} duplicate-pixel label pair(s)"
+    );
+    assert_eq!(
+        overlong, 0,
+        "small3: {overlong} overlong wrong-label edge(s)"
+    );
+    assert_eq!(
+        appendage, 0,
+        "small3: {appendage} weak degree-1 overlong frontier appendage(s) survived"
+    );
+
+    assert_no_duplicate_labels(&detection, "small3 topological");
+    assert_grid_rebased_to_origin(&detection, "small3 topological");
+    assert_origin_top_left(&detection, "small3 topological");
+}
+
 /// Regression: chess-corners 0.9 `DiskFit`'s **partial** slot-flip
 /// case on `testdata/large.png`. The whole-image slot-flip case
 /// (`mid.png`, see `diskfit_mid_recovers_full_chessboard`) is caught
@@ -261,8 +397,8 @@ fn every_listed_image_meets_its_gate() {
 /// clean chessboard corners still get the slot-flip — `large.png`
 /// loses 22 of 373 corners that way pre-fix (349 → 373 after fix).
 ///
-/// `cluster.rs::fix_partial_slot_flips_post_stage6` runs between
-/// Stage 6 and Stage 6.5 and detects partial slot-flips by checking
+/// `cluster.rs::fix_partial_slot_flips` runs between boundary extension
+/// and no-cluster rescue and detects partial slot-flips by checking
 /// each orphan `Clustered` corner against the labelled set's
 /// local-H prediction + 2/3-majority parity vote. Precision-safe
 /// because the labelled set itself is already invariant-correct.
@@ -299,13 +435,66 @@ fn diskfit_large_recovers_partial_slot_flips() {
         "DiskFit + seed-and-grow must produce at least 365 labelled corners on large.png \
          (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
          The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
-         is broken — see fix_partial_slot_flips_post_stage6."
+         is broken — see fix_partial_slot_flips."
     );
 
     // Hard invariants the precision contract requires.
     assert_no_duplicate_labels(&detection, "large.png + DiskFit");
     assert_grid_rebased_to_origin(&detection, "large.png + DiskFit");
     assert_origin_top_left(&detection, "large.png + DiskFit");
+}
+
+/// Regression (C2 ablation campaign, 2026-06): the destructive post-grow
+/// BFS regrow (`enable_post_grow_bfs_regrow`) is default-**off**. Its
+/// design relied on the non-destructive `enable_post_grow_bfs_extend`
+/// running after to re-attach the borderline slots the regrow demolishes,
+/// but on chess-corners 0.10 that recovery contract no longer holds — the
+/// extend pass re-attaches nothing — so the regrow nets negative. On
+/// `small3.png` (seed-and-grow with `DiskFit`) the grow, boundary-extension
+/// and no-cluster-rescue stages reach 117 labelled corners; with the regrow
+/// **on**, the destructive demotion stripped them back to 88. The recovered
+/// corners are a clean two-column lattice extension onto real
+/// intersections (structural-precision-clean, verified by overlay). This
+/// pins the win so the destructive regrow cannot be silently re-enabled
+/// (nor its no-op recovery contract regress unnoticed).
+#[test]
+fn diskfit_small3_seed_and_grow_keeps_extended_lattice() {
+    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
+    use chess_corners::Threshold;
+
+    let path = workspace_root().join("testdata/small3.png");
+    if !path.exists() {
+        eprintln!("skipping: testdata/small3.png not on disk");
+        return;
+    }
+    let img = image::open(&path)
+        .unwrap_or_else(|e| panic!("decode small3.png: {e}"))
+        .to_luma8();
+
+    let chess_cfg = DetectorConfig::chess()
+        .with_threshold(Threshold::Absolute(15.0))
+        .with_orientation_method(OrientationMethod::DiskFit);
+
+    let corners = detect_corners(&img, &chess_cfg);
+    let detector = Detector::new(ratchet_params()).expect("valid detector params");
+    let detection = detector
+        .detect(&corners)
+        .expect("DiskFit + seed-and-grow must produce a detection on small3.png");
+
+    let labelled = detection.corners.len();
+    assert!(
+        labelled >= 110,
+        "DiskFit + seed-and-grow must keep the extended lattice on small3.png \
+         (regrow-off observation: 117; with the destructive regrow it collapsed \
+         to 88). Got {labelled}. Has `enable_post_grow_bfs_regrow` been re-enabled \
+         or its no-op recovery contract regressed? See the C2 ablation campaign in \
+         docs/development/improvement-roadmap-2026-06.md."
+    );
+
+    // Hard invariants the precision contract requires.
+    assert_no_duplicate_labels(&detection, "small3.png + DiskFit");
+    assert_grid_rebased_to_origin(&detection, "small3.png + DiskFit");
+    assert_origin_top_left(&detection, "small3.png + DiskFit");
 }
 
 /// Regression: chess-corners 0.9 added `OrientationMethod::DiskFit`,

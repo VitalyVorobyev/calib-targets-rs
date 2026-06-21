@@ -5,7 +5,7 @@
 `chess-corners` upgraded 0.8 → 0.10. This branch incorporates both
 the 0.9-era work (the `OrientationMethod` enum, `DiskFit` variant,
 `--orientation-method` bench flag, `fix_axis_slot_coherence`,
-`fix_partial_slot_flips_post_stage6`) and the 0.10 API migration.
+`fix_partial_slot_flips`) and the 0.10 API migration.
 
 ## 1. Headline change: 0.8 → 0.10
 
