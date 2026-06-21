@@ -11,9 +11,7 @@ use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{
-    ChessboardDetection, Detector as ChessDetector, GraphBuildAlgorithm,
-};
+use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use log::{debug, warn};
 
@@ -230,41 +228,17 @@ impl CharucoDetector {
             self.params.px_per_square,
             self.params.min_marker_inliers
         );
-        // ChArUco MUST run on the seed-and-grow pipeline. The topological
-        // pipeline's axis-driven cell test assumes uniform black/white
-        // tiles, which marker squares break: a marker carries embedded
-        // bit features whose ChESS axes do not align with the global
-        // board directions, so triangle-pair merging into chessboard
-        // cells fails on every marker-bearing cell. Rather than silently
-        // overriding the caller's choice, an explicit `Topological`
-        // request is a typed error (documented on `CharucoParams::chessboard`).
+        // ChArUco runs on the topological grid builder (the workspace default;
+        // the `min_corner_strength` floor in `CharucoParams::for_board` keeps
+        // marker-bit saddles out of the grid, and the marker-decode stages
+        // downstream of grid construction are builder-agnostic).
         //
-        // The one exception is the measurement-only `allow_topological_grid`
-        // escape hatch: the decode stages downstream of grid construction are
-        // algorithm-agnostic, so the parity campaign can opt in to run the full
-        // decode on the topological grid (see `CharucoParams::allow_topological_grid`).
+        // The chessboard detector still validates its own configuration; the
+        // only combination it rejects is an orientation-source / graph-builder
+        // mismatch (an orientation source ChArUco never sets, but a caller
+        // could construct on the embedded `chessboard` field). Surface it as a
+        // typed error rather than panicking.
         let chess_params = self.params.chessboard.clone();
-        match chess_params.graph_build_algorithm {
-            GraphBuildAlgorithm::SeedAndGrow => {}
-            GraphBuildAlgorithm::Topological if self.params.allow_topological_grid => {
-                debug!(
-                    "ChArUco running on the topological grid via allow_topological_grid \
-                     (measurement-only opt-in)"
-                );
-            }
-            _ => {
-                warn!(
-                    "ChArUco does not support graph_build_algorithm={:?}; \
-                     marker-internal corners defeat the topological cell test",
-                    chess_params.graph_build_algorithm
-                );
-                return (Err(CharucoDetectError::UnsupportedAlgorithm), diagnostics);
-            }
-        }
-        // SeedAndGrow is pinned above; the only other invalid combination the
-        // chessboard validator rejects is NeighbourEdges + SeedAndGrow (an
-        // orientation source ChArUco never sets but a caller could). Surface
-        // it as the same unsupported-algorithm error rather than panicking.
         let detector = match ChessDetector::new(chess_params) {
             Ok(detector) => detector,
             Err(e) => {
@@ -582,64 +556,42 @@ mod tests {
     use super::*;
     use crate::board::{CharucoBoardSpec, MarkerLayout};
     use calib_targets_aruco::builtins;
+    use calib_targets_chessboard::GraphBuildAlgorithm;
 
     fn test_board() -> CharucoBoardSpec {
         CharucoBoardSpec::new(5, 7, 20.0, 0.75, builtins::DICT_4X4_50)
             .with_marker_layout(MarkerLayout::OpenCvCharuco)
     }
 
-    /// The default constructor pins the seed-and-grow builder, so a detect
-    /// call on default params never trips the algorithm guard.
+    /// ChArUco runs on the topological builder (the workspace default); the
+    /// `for_board` constructor leaves the default builder in place.
     #[test]
-    fn for_board_pins_seed_and_grow() {
+    fn for_board_uses_topological() {
         let params = CharucoParams::for_board(&test_board());
         assert_eq!(
             params.chessboard.graph_build_algorithm,
-            GraphBuildAlgorithm::SeedAndGrow
+            GraphBuildAlgorithm::Topological
         );
     }
 
-    /// `sweep_for_board` configs are all seed-and-grow even though the
-    /// chessboard sweep preset defaults to the topological builder.
+    /// Every `sweep_for_board` config runs on the topological builder.
     #[test]
-    fn sweep_for_board_pins_seed_and_grow() {
+    fn sweep_for_board_uses_topological() {
         for params in CharucoParams::sweep_for_board(&test_board()) {
             assert_eq!(
                 params.chessboard.graph_build_algorithm,
-                GraphBuildAlgorithm::SeedAndGrow
+                GraphBuildAlgorithm::Topological
             );
         }
     }
 
-    /// An explicit `Topological` request is a typed error, surfaced before
-    /// the chessboard stage runs (so empty corners suffice).
+    /// A `Topological` request is accepted: with no corners it reaches the
+    /// chessboard stage and reports `ChessboardNotDetected` (no algorithm
+    /// guard rejects it up front).
     #[test]
-    fn topological_is_typed_error() {
+    fn topological_is_accepted() {
         let mut params = CharucoParams::for_board(&test_board());
         params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-        let detector = CharucoDetector::new(params).expect("detector");
-        let buf = [0u8; 16];
-        let image = GrayImageView {
-            width: 4,
-            height: 4,
-            data: &buf,
-        };
-        let result = detector.detect(&image, &[]);
-        assert!(matches!(
-            result,
-            Err(CharucoDetectError::UnsupportedAlgorithm)
-        ));
-    }
-
-    /// The measurement-only `allow_topological_grid` opt-in bypasses the
-    /// algorithm guard: a `Topological` request is no longer rejected up front,
-    /// so the decode proceeds to the chessboard stage (which here, with no
-    /// corners, reports `ChessboardNotDetected` rather than the guard error).
-    #[test]
-    fn allow_topological_grid_bypasses_guard() {
-        let mut params = CharucoParams::for_board(&test_board());
-        params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-        params.allow_topological_grid = true;
         let detector = CharucoDetector::new(params).expect("detector");
         let buf = [0u8; 16];
         let image = GrayImageView {
@@ -650,8 +602,7 @@ mod tests {
         let result = detector.detect(&image, &[]);
         assert!(
             matches!(result, Err(CharucoDetectError::ChessboardNotDetected)),
-            "opt-in must clear the algorithm guard and reach the chessboard \
-             stage, got {result:?}"
+            "topological must reach the chessboard stage, got {result:?}"
         );
     }
 }

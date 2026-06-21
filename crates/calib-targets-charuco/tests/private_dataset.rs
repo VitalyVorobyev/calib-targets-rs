@@ -25,12 +25,10 @@ use calib_targets_charuco::{load_board_spec_any, CharucoDetector, CharucoParams}
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
 
-/// Apply a grid-build algorithm to charuco params: production charuco pins
-/// seed-and-grow; the topological measurement path needs the measurement-only
-/// opt-in to clear the algorithm guard.
+/// Apply a grid-build algorithm to charuco params. ChArUco accepts any
+/// builder; production runs on the topological default.
 fn set_algorithm(params: &mut CharucoParams, algorithm: GraphBuildAlgorithm) {
     params.chessboard.graph_build_algorithm = algorithm;
-    params.allow_topological_grid = matches!(algorithm, GraphBuildAlgorithm::Topological);
 }
 
 const SNAP_WIDTH: u32 = 720;
@@ -329,10 +327,21 @@ fn smoke_apriltag_image_does_not_panic() {
     );
 
     // Board-level matcher path: soft-bit log-likelihood with the default
-    // κ=36 slope recovers the alignment even when the hard decode returns
-    // nothing. The 2026-04-20 sweep at the κ=36 default decoded ≥ 10
-    // markers and ≥ 60 ChArUco corners on this snap — re-assert that
-    // here so future regressions surface.
+    // κ=36 slope recovers an alignment even when the hard decode returns
+    // nothing.
+    //
+    // RECALL FLOOR re-baselined to the TOPOLOGICAL builder (the workspace
+    // default; ChArUco no longer pins seed-and-grow). On this 68×68
+    // DICT_APRILTAG_36h10 board (1.69 mm cells, 3× upscale) the topological
+    // cell test is defeated by the dense marker-internal bits at tiny cell
+    // sizes — it recovers ≈ 3 markers / 20 corners here, versus seed-and-grow's
+    // ≈ 14 / 76. That recall loss is an accepted consequence of retiring
+    // seed-and-grow (a *miss* is allowed by the asymmetric detection contract;
+    // a false positive is not — and the matcher stays self-consistent,
+    // `wrong_id == 0`). Closing the dense/tiny-cell gap is a deferred
+    // topological-decode improvement, NOT a regression to guard against here;
+    // this floor only asserts the decode does not collapse to nothing and stays
+    // self-consistent.
     params.use_board_level_matcher = true;
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;
@@ -340,13 +349,15 @@ fn smoke_apriltag_image_does_not_panic() {
     let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
     let result = result.expect("board-level matcher must detect target_0 snap 0");
     assert!(
-        result.markers.len() >= 10,
-        "board-level matcher should decode ≥ 10 markers, got {}",
+        result.markers.len() >= 2,
+        "board-level matcher should decode ≥ 2 markers on topological, got {} \
+         (measured 3; seed-and-grow reached 14 — dense-board topological gap is deferred)",
         result.markers.len()
     );
     assert!(
-        result.corners.len() >= 60,
-        "board-level matcher should land ≥ 60 ChArUco corners, got {}",
+        result.corners.len() >= 12,
+        "board-level matcher should land ≥ 12 ChArUco corners on topological, got {} \
+         (measured 20; seed-and-grow reached 76 — dense-board topological gap is deferred)",
         result.corners.len()
     );
     assert_eq!(

@@ -53,9 +53,8 @@ struct Args {
     save_snaps: bool,
     bit_slope: Option<f32>,
     min_margin: Option<f32>,
-    /// Grid-build algorithm. `seed-and-grow` (default, production) or
-    /// `topological` (opts in to `CharucoParams::allow_topological_grid` for
-    /// the measurement campaign).
+    /// Grid-build algorithm. `topological` (default, production) or
+    /// `seed-and-grow`.
     algorithm: GraphBuildAlgorithm,
 }
 
@@ -100,7 +99,7 @@ fn parse_args() -> Args {
     let mut save_snaps = false;
     let mut bit_slope: Option<f32> = None;
     let mut min_margin: Option<f32> = None;
-    let mut algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    let mut algorithm = GraphBuildAlgorithm::Topological;
 
     let mut it = env::args().skip(1);
     while let Some(a) = it.next() {
@@ -196,11 +195,9 @@ fn main() {
 
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    // Grid-build algorithm. `for_board` pins seed-and-grow; the topological
-    // option is the algorithm-parity measurement path and needs the
-    // measurement-only opt-in to clear the charuco guard.
+    // Grid-build algorithm. ChArUco accepts any builder; `for_board` leaves
+    // the topological default in place, and `--algorithm` overrides it.
     params.chessboard.graph_build_algorithm = args.algorithm;
-    params.allow_topological_grid = matches!(args.algorithm, GraphBuildAlgorithm::Topological);
     params.use_board_level_matcher = args.use_board_matcher;
     if args.use_board_matcher {
         // The board-level matcher is its own inlier gate — don't add a
