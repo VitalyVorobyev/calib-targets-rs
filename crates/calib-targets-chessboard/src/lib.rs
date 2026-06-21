@@ -89,6 +89,6 @@ mod rectified_view;
 pub use corner::ChessCorner;
 pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{AdvancedTuning, ChessboardParamsError, DetectorParams, GraphBuildAlgorithm};
+pub use params::{AdvancedTuning, ChessboardParamsError, DetectorParams};
 pub use pipeline::{detect_all_topological, trace_topological};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};

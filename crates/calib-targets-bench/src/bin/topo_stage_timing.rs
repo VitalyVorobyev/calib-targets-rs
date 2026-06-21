@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use calib_targets::chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{Detector, DetectorParams};
 use calib_targets::core::DetectorConfig;
 use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use clap::Parser;
@@ -363,8 +363,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
 
-    let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+    let params = DetectorParams::default();
 
     let mut images = Vec::new();
     for path in image_paths(&args.image_dir)? {

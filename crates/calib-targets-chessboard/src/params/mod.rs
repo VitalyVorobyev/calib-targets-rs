@@ -2,12 +2,11 @@
 //!
 //! The configuration is split into two surfaces:
 //!
-//! - [`DetectorParams`] — the **stable core**. Four knobs a calibration
-//!   consumer has a basis to set: the graph-build algorithm, the minimum
-//!   labelled-corner count for a detection to be emitted, the maximum number
-//!   of disconnected components returned by
-//!   [`crate::Detector::detect_all`], and the minimum ChESS corner strength
-//!   pre-filter. These fields are covered by semver.
+//! - [`DetectorParams`] — the **stable core**. Three knobs a calibration
+//!   consumer has a basis to set: the minimum labelled-corner count for a
+//!   detection to be emitted, the maximum number of disconnected components
+//!   returned by [`crate::Detector::detect_all`], and the minimum ChESS corner
+//!   strength pre-filter. These fields are covered by semver.
 //! - [`AdvancedTuning`] — the **opt-in, unstable** sub-struct behind
 //!   [`DetectorParams::advanced`]. ~40 stage-tuning knobs named after the
 //!   internal pipeline stages, accreted over algorithm-debugging sessions.
@@ -18,7 +17,7 @@
 //!
 //! `advanced` is `Option`-wrapped and serialized as a nested `"advanced"`
 //! object (it is **not** flattened). When unset, the serialized config carries
-//! only the four stable top-level keys and no `"advanced"` key, and detection
+//! only the three stable top-level keys and no `"advanced"` key, and detection
 //! behaves exactly as if every advanced knob held its [`Default`] value —
 //! [`DetectorParams::effective_tuning`] returns an owned
 //! [`AdvancedTuning::default()`] in that case.
@@ -29,48 +28,6 @@ pub use advanced::AdvancedTuning;
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-
-/// Which graph-build algorithm to run.
-///
-/// The chessboard detector builds its `(i, j) → corner` labelling with the
-/// **topological** grid finder: a Delaunay triangulation plus an axis-driven
-/// cell test (the image-free variant of the SBF09 grid finder; see
-/// [`projective_grid::TopologicalParams`]). It has a low setup cost, no global
-/// cell-size dependency, high recall on the clean-chessboard regression set,
-/// and tolerates severe radial distortion and low view angles well.
-///
-/// The enum is retained (as a single-variant, `#[non_exhaustive]` type with a
-/// reserved `graph_build_algorithm` field on [`DetectorParams`]) so that the
-/// config schema stays stable across the seed-and-grow retirement and a future
-/// alternative builder can be added without a breaking change. The historical
-/// `SeedAndGrow` variant — a self-consistent 4-corner seed plus BFS grow — was
-/// removed once the topological builder matched or beat it on every shipping
-/// path, including ChArUco.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum GraphBuildAlgorithm {
-    /// Delaunay-triangulation + axis-driven cell-test grid builder; the
-    /// only builder. Lower setup cost, no global cell-size dependency.
-    #[default]
-    Topological,
-}
-
-fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
-    GraphBuildAlgorithm::default()
-}
-
-fn default_min_labeled_corners() -> usize {
-    8
-}
-
-fn default_max_components() -> u32 {
-    3
-}
-
-fn default_min_corner_strength() -> f32 {
-    33.0
-}
 
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
@@ -99,13 +56,20 @@ impl std::error::Error for ChessboardParamsError {}
 
 /// Top-level detector configuration.
 ///
-/// A small **stable core** of four knobs a calibration consumer has a basis to
+/// A small **stable core** of three knobs a calibration consumer has a basis to
 /// set, plus an opt-in, unstable [`AdvancedTuning`] sub-struct
 /// ([`advanced`](Self::advanced)) holding the ~40 per-stage tuning knobs.
 ///
-/// The four stable fields are part of the public configuration contract and
-/// serialize as top-level JSON keys (`graph_build_algorithm`,
-/// `min_labeled_corners`, `max_components`, `min_corner_strength`). The
+/// The grid `(i, j) → corner` labelling is built with the **topological** grid
+/// finder: a Delaunay triangulation plus an axis-driven cell test (the
+/// image-free variant of the SBF09 grid finder; see
+/// [`projective_grid::TopologicalParams`]). It has a low setup cost, no global
+/// cell-size dependency, high recall on the clean-chessboard regression set,
+/// and tolerates severe radial distortion and low view angles well.
+///
+/// The three stable fields are part of the public configuration contract and
+/// serialize as top-level JSON keys (`min_labeled_corners`, `max_components`,
+/// `min_corner_strength`). The
 /// advanced knobs are gated behind [`with_advanced`](Self::with_advanced):
 /// when set they serialize under a nested `"advanced"` object, and when unset
 /// no `"advanced"` key appears.
@@ -131,18 +95,12 @@ impl std::error::Error for ChessboardParamsError {}
 /// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DetectorParams {
-    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`]. The
-    /// only value today is [`GraphBuildAlgorithm::Topological`]; the field is
-    /// retained as a reserved, `#[non_exhaustive]`-backed config seam.
-    #[serde(default = "default_graph_build_algorithm")]
-    pub graph_build_algorithm: GraphBuildAlgorithm,
-
     /// Minimum labelled corners for a
     /// [`ChessboardDetection`](crate::ChessboardDetection) to be emitted.
-    /// Default `8`; defaulted on deserialization so partial configs (and
-    /// legacy configs that omit it) keep parsing.
-    #[serde(default = "default_min_labeled_corners")]
+    /// Default `8` ([`DetectorParams::default`]); a **required** key in a
+    /// serialized config.
     pub min_labeled_corners: usize,
 
     /// Maximum number of components returned by [`crate::Detector::detect_all`].
@@ -150,12 +108,11 @@ pub struct DetectorParams {
     /// A chessboard can split into multiple disconnected pieces on ChArUco
     /// scenes where markers break contiguity. Each iteration peels off one
     /// grown grid from the unconsumed corners and re-runs seed → grow →
-    /// validate. Default `3`; defaulted on deserialization so partial configs
-    /// keep parsing.
+    /// validate. Default `3` ([`DetectorParams::default`]); a **required** key
+    /// in a serialized config.
     ///
     /// Does NOT claim to support scenes with two separate physical boards —
     /// one target per frame is the contract.
-    #[serde(default = "default_max_components")]
     pub max_components: u32,
 
     /// Minimum corner strength (ChESS response) for the Stage-1 pre-filter.
@@ -173,9 +130,8 @@ pub struct DetectorParams {
     /// builds now start from the same corner set — set this to `0.0`
     /// explicitly to recover the previous maximum-recall behaviour.
     ///
-    /// Part of the stable configuration core. Serializes as the top-level
-    /// `min_corner_strength` key.
-    #[serde(default = "default_min_corner_strength")]
+    /// Part of the stable configuration core. A **required** key in a
+    /// serialized config (top-level `min_corner_strength`).
     pub min_corner_strength: f32,
 
     /// Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)
@@ -193,10 +149,9 @@ pub struct DetectorParams {
 impl Default for DetectorParams {
     fn default() -> Self {
         Self {
-            graph_build_algorithm: GraphBuildAlgorithm::default(),
             min_labeled_corners: 8,
             max_components: 3,
-            min_corner_strength: default_min_corner_strength(),
+            min_corner_strength: 33.0,
             advanced: None,
         }
     }
@@ -242,18 +197,14 @@ impl DetectorParams {
         }
     }
 
-    /// Convenience preset for the topological graph builder.
+    /// Convenience preset for the topological grid builder.
     ///
-    /// Equivalent to `DetectorParams { graph_build_algorithm:
-    /// GraphBuildAlgorithm::Topological, ..DetectorParams::default() }`.
-    /// Useful for examples and one-off experiments where the caller wants
-    /// the Delaunay/topological path without spelling out the full struct
-    /// update.
+    /// The detector ships a single grid builder (the Delaunay/topological grid
+    /// finder), so this is equivalent to [`DetectorParams::default`]. Retained
+    /// as a named, intention-revealing constructor for examples and one-off
+    /// experiments that want to spell out the topological path explicitly.
     pub fn topological() -> Self {
-        Self {
-            graph_build_algorithm: GraphBuildAlgorithm::Topological,
-            ..Self::default()
-        }
+        Self::default()
     }
 
     /// Three-config sweep preset: default + tighter + looser angular tolerances.
@@ -301,16 +252,11 @@ mod tests {
 
     #[test]
     fn topological_preset_matches_the_default_builder() {
-        // Topological is now the default builder, so the `topological()`
-        // preset agrees with `default()` on the algorithm and leaves the
-        // tuning / labelled-corner knobs untouched.
+        // Topological is the only builder, so the `topological()` preset is
+        // equivalent to `default()` and leaves the tuning / labelled-corner
+        // knobs untouched.
         let topo = DetectorParams::topological();
         let default = DetectorParams::default();
-        assert_eq!(topo.graph_build_algorithm, GraphBuildAlgorithm::Topological);
-        assert_eq!(
-            default.graph_build_algorithm,
-            GraphBuildAlgorithm::Topological
-        );
         assert_eq!(
             topo.effective_tuning().topological.axis_align_tol_rad,
             default.effective_tuning().topological.axis_align_tol_rad
@@ -334,7 +280,7 @@ mod tests {
 
     #[test]
     fn default_params_serialize_only_stable_keys() {
-        // The default config must carry exactly the four stable top-level
+        // The default config must carry exactly the three stable top-level
         // keys, NO advanced knobs, and no `"advanced"` key.
         let value = serde_json::to_value(DetectorParams::default()).unwrap();
         let obj = value.as_object().expect("params serialize to an object");
@@ -343,7 +289,6 @@ mod tests {
         assert_eq!(
             keys,
             [
-                "graph_build_algorithm",
                 "max_components",
                 "min_corner_strength",
                 "min_labeled_corners",
@@ -405,5 +350,31 @@ mod tests {
         .unwrap();
         assert_eq!(restored.min_corner_strength, 0.5);
         assert!(restored.advanced.is_none());
+    }
+
+    #[test]
+    fn omitting_a_required_stable_key_fails_to_deserialize() {
+        // No serde defaults on the stable core: a config that omits any of the
+        // three required keys is rejected rather than silently defaulted —
+        // there is no hidden redundant default to fall back on.
+        let result = serde_json::from_value::<DetectorParams>(serde_json::json!({
+            "min_corner_strength": 33.0,
+            "max_components": 3,
+            // `min_labeled_corners` omitted on purpose.
+        }));
+        assert!(result.is_err(), "a config missing a required key must fail");
+    }
+
+    #[test]
+    fn unknown_key_is_rejected() {
+        // `deny_unknown_fields`: a stray / legacy key (e.g. the removed
+        // `graph_build_algorithm`) is rejected, not silently ignored.
+        let result = serde_json::from_value::<DetectorParams>(serde_json::json!({
+            "min_labeled_corners": 8,
+            "max_components": 3,
+            "min_corner_strength": 33.0,
+            "graph_build_algorithm": "topological",
+        }));
+        assert!(result.is_err(), "an unknown key must be rejected");
     }
 }

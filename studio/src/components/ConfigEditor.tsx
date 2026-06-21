@@ -6,11 +6,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
-import type {
-  DetectorParamsOverride,
-  GraphBuildAlgorithm,
-  OrientationSource,
-} from "../api/types";
+import type { DetectorParamsOverride } from "../api/types";
 import { ParamForm } from "./ParamForm";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -50,32 +46,6 @@ export function ConfigEditor({
       <div
         style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
       >
-        <Row label="Algorithm">
-          <select
-            className="select"
-            value={draft.graph_build_algorithm ?? "topological"}
-            onChange={(e) =>
-              set(
-                "graph_build_algorithm",
-                e.target.value as GraphBuildAlgorithm,
-              )
-            }
-          >
-            <option value="topological">topological</option>
-          </select>
-        </Row>
-        <Row label="Orientation">
-          <select
-            className="select"
-            value={draft.orientation_source ?? "chess_axes"}
-            onChange={(e) =>
-              set("orientation_source", e.target.value as OrientationSource)
-            }
-          >
-            <option value="chess_axes">chess_axes</option>
-            <option value="neighbour_edges">neighbour_edges</option>
-          </select>
-        </Row>
         <NumberRow
           label="Min labeled corners"
           value={draft.min_labeled_corners}
@@ -247,7 +217,6 @@ function ConfigLibrary({
             >
               {c.name}
             </button>
-            <span className="chip">{c.algorithm}</span>
             {c.has_advanced && <span className="chip warn">adv</span>}
             <button
               className="btn"

@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use calib_targets::chessboard::{Detector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{Detector, DetectorParams};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use chess_corners::Threshold;
 use image::imageops::FilterType;
@@ -67,15 +67,11 @@ fn main() {
         let cfg0 = default_chess_config().with_threshold(Threshold::Absolute(0.0));
         let raw_at_zero = detect_corners(&img, &cfg0).len();
 
-        // `ALGO` is retained for back-compat; the only builder is topological.
-        let _algo = std::env::var("ALGO").unwrap_or_else(|_| "topological".to_string());
-        let algorithm = GraphBuildAlgorithm::Topological;
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
             let cfg = default_chess_config().with_threshold(Threshold::Absolute(t));
             let corners = detect_corners(&img, &cfg);
-            let mut params = DetectorParams::default();
-            params.graph_build_algorithm = algorithm;
+            let params = DetectorParams::default();
             let detector = Detector::new(params).expect("valid detector params");
             let detection = detector.detect(&corners);
             let (labelled, holes) = match &detection {

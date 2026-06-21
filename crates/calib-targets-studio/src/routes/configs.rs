@@ -40,8 +40,6 @@ pub struct ConfigSummary {
     pub name: String,
     /// Unix seconds of the file's last modification.
     pub modified_at: u64,
-    /// Effective `graph_build_algorithm` after merging over defaults.
-    pub algorithm: String,
     /// Whether the file overrides any `advanced` tuning.
     pub has_advanced: bool,
 }
@@ -68,7 +66,7 @@ pub async fn list() -> Result<Json<Vec<ConfigSummary>>, ApiError> {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
             continue;
         };
-        let Ok(merged) = merge_detector_params(&value) else {
+        let Ok(_merged) = merge_detector_params(&value) else {
             continue;
         };
         let modified_at = entry
@@ -81,7 +79,6 @@ pub async fn list() -> Result<Json<Vec<ConfigSummary>>, ApiError> {
         out.push(ConfigSummary {
             name: name.to_string(),
             modified_at,
-            algorithm: format!("{:?}", merged.graph_build_algorithm).to_lowercase(),
             has_advanced: value.get("advanced").is_some(),
         });
     }
@@ -95,8 +92,8 @@ pub struct DefaultsQuery {
     /// `chessboard` (default), `charuco`, or `puzzleboard`. Selects which
     /// family's *effective* chessboard grid params are returned, so the
     /// Detect-tab basic-config seeds the real per-family values (e.g. the
-    /// `min_corner_strength` floor and `graph_build_algorithm` charuco /
-    /// puzzle pin) rather than the bare chessboard defaults.
+    /// `min_corner_strength` floor (charuco / puzzle pin)) rather than the
+    /// bare chessboard defaults.
     #[serde(default)]
     family: Option<String>,
 }
@@ -107,7 +104,7 @@ pub struct DefaultsQuery {
 /// Rust values. With no `family` (or `chessboard`) this is the bare
 /// [`DetectorParams::default`]; `charuco` / `puzzleboard` return the chessboard
 /// sub-params their `for_board` constructors pin (the family-specific
-/// strength floor, algorithm, and edge-shape gating), which is what actually
+/// strength floor and edge-shape gating), which is what actually
 /// runs for those families.
 pub async fn defaults(Query(q): Query<DefaultsQuery>) -> Result<Json<serde_json::Value>, ApiError> {
     // The chessboard sub-params each `for_board` pins are board-independent
@@ -177,4 +174,67 @@ pub async fn delete(Path(name): Path<String>) -> Result<StatusCode, ApiError> {
     std::fs::remove_file(&path)
         .map_err(|_| ApiError::NotFound(format!("no config named {name}")))?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The exact JSON `GET /api/configs/_defaults` (no family) materialises:
+    /// the bare chessboard defaults with the full `advanced` block present.
+    /// This is what the Config-tab editor receives and the UI clones to seed
+    /// an advanced override.
+    fn materialised_defaults() -> serde_json::Value {
+        let chess = DetectorParams::default();
+        let advanced = chess.effective_tuning().into_owned();
+        serde_json::to_value(chess.with_advanced(advanced)).expect("serialize DetectorParams")
+    }
+
+    /// The materialised `_defaults` value round-trips through the server's
+    /// merge path (`merge_detector_params`) under the strict
+    /// `deny_unknown_fields` + all-required-key `DetectorParams` contract. This
+    /// is the round-trip the studio actually exercises when a user opens the
+    /// editor and re-applies the shown defaults; it must not carry any removed
+    /// key (e.g. `graph_build_algorithm`) nor omit a required one.
+    #[test]
+    fn materialised_defaults_merge_into_valid_params() {
+        let value = materialised_defaults();
+        merge_detector_params(&value)
+            .expect("materialised _defaults must merge into valid DetectorParams");
+    }
+
+    /// A UI-style partial override that sets one stable field plus the
+    /// *complete* materialised `advanced` block (the exact shape the Config
+    /// editor produces when "Override advanced tuning" is ticked) survives the
+    /// merge. A partial `advanced` block would be rejected — the UI seeds the
+    /// full block from `_defaults`, which this guards.
+    #[test]
+    fn ui_override_with_full_advanced_block_merges() {
+        let advanced = materialised_defaults()
+            .get("advanced")
+            .cloned()
+            .expect("materialised defaults carry an advanced block");
+        let override_value = serde_json::json!({
+            "min_corner_strength": 50.0,
+            "advanced": advanced,
+        });
+        let merged = merge_detector_params(&override_value)
+            .expect("UI override with a full advanced block must merge");
+        assert_eq!(merged.min_corner_strength, 50.0);
+        assert!(merged.advanced.is_some());
+    }
+
+    /// The removed `graph_build_algorithm` key (and any other unknown key) is
+    /// rejected by the merge rather than silently dropped — the regression
+    /// witness for the stalled-config breakage.
+    #[test]
+    fn override_with_removed_key_is_rejected() {
+        let override_value = serde_json::json!({
+            "graph_build_algorithm": "topological",
+        });
+        assert!(
+            merge_detector_params(&override_value).is_err(),
+            "an override carrying the removed graph_build_algorithm key must be rejected"
+        );
+    }
 }

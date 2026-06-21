@@ -2,7 +2,7 @@
 
 use crate::board::PuzzleBoardSpec;
 use crate::detector::PuzzleBoardDecodeConfig;
-use calib_targets_chessboard::{DetectorParams, GraphBuildAlgorithm};
+use calib_targets_chessboard::DetectorParams;
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
@@ -54,13 +54,15 @@ impl PuzzleBoardParams {
     /// is the geometry gate.
     pub fn for_board(board: &PuzzleBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        chessboard.min_corner_strength = 0.1;
-        // PuzzleBoard defaults to the topological grid builder: it is denser
-        // and faster on clean self-identifying boards, and (now that the
-        // builder is deterministic) its decoded master origin is stable and
-        // matches the seed-and-grow origin. SeedAndGrow stays a documented
-        // opt-in via `chessboard.graph_build_algorithm`.
-        chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+        // Align with the chessboard/ChArUco corner-strength floor (33): a
+        // defocused board edge fires the ChESS detector weakly (strength
+        // ≈ 15–30 vs a sharp board's ≈ 90+), and such corners — while
+        // grid-consistent in position — pollute the blurred-region frontier
+        // with false labels. The PuzzleBoard decoder is robust to the
+        // missing weak corners but not to the wrong ones, so the floor is a
+        // net win. (`DetectorParams::default()` already sets 33; kept
+        // explicit here to document the PuzzleBoard intent.)
+        chessboard.min_corner_strength = 33.0;
         Self {
             px_per_square: 60.0,
             chessboard,
@@ -78,7 +80,6 @@ impl PuzzleBoardParams {
             .into_iter()
             .map(|mut chessboard| {
                 chessboard.min_corner_strength = base.chessboard.min_corner_strength;
-                chessboard.graph_build_algorithm = base.chessboard.graph_build_algorithm;
                 Self {
                     chessboard,
                     ..base.clone()

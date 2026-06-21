@@ -41,11 +41,6 @@ impl Preset {
 fn catalogue() -> Vec<Preset> {
     vec![
         Preset::new(
-            "topo",
-            "Topological graph build with ChESS-axis orientation (the chessboard default).",
-            json!({ "graph_build_algorithm": "topological" }),
-        ),
-        Preset::new(
             "charuco-floor",
             "ChESS strength floor used by the ChArUco detector (clears marker-bit false corners). Select the ChArUco family too.",
             json!({ "min_corner_strength": 33.0 }),

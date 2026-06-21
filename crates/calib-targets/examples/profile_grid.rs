@@ -17,7 +17,7 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use calib_targets::chessboard::{DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::DetectorParams;
 use calib_targets::detect;
 use image::ImageReader;
 
@@ -25,14 +25,8 @@ use image::ImageReader;
 use calib_targets_core::init_tracing;
 
 #[derive(Debug)]
-enum Algorithm {
-    Topological,
-}
-
-#[derive(Debug)]
 struct Args {
     image: PathBuf,
-    algorithm: Algorithm,
     iterations: usize,
     warmup: usize,
     print_corners: bool,
@@ -40,7 +34,6 @@ struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let mut image: Option<PathBuf> = None;
-    let mut algorithm = Algorithm::Topological;
     let mut iterations: usize = 1;
     let mut warmup: usize = 0;
     let mut print_corners = false;
@@ -52,12 +45,8 @@ fn parse_args() -> Result<Args, String> {
                 image = Some(PathBuf::from(it.next().ok_or("--image requires a value")?));
             }
             "--algorithm" => {
-                let v = it.next().ok_or("--algorithm requires a value")?;
-                algorithm = match v.as_str() {
-                    // `seed-and-grow` accepted for back-compat → topological.
-                    "topological" | "seed-and-grow" | "seed_and_grow" => Algorithm::Topological,
-                    other => return Err(format!("unknown algorithm: {other}")),
-                };
+                // Accepted for back-compat; the only builder is topological.
+                let _ = it.next().ok_or("--algorithm requires a value")?;
             }
             "--iterations" => {
                 iterations = it
@@ -90,7 +79,6 @@ fn parse_args() -> Result<Args, String> {
     let image = image.ok_or("--image is required")?;
     Ok(Args {
         image,
-        algorithm,
         iterations,
         warmup,
         print_corners,
@@ -104,18 +92,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = parse_args().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     let img = ImageReader::open(&args.image)?.decode()?.to_luma8();
-    let mut params = DetectorParams::default();
-    params.graph_build_algorithm = match args.algorithm {
-        Algorithm::Topological => GraphBuildAlgorithm::Topological,
-    };
+    let params = DetectorParams::default();
     let chess_cfg = detect::default_chess_config();
 
     eprintln!(
-        "image: {:?} ({}x{}), algorithm: {:?}",
+        "image: {:?} ({}x{}), algorithm: topological",
         args.image,
         img.width(),
         img.height(),
-        args.algorithm
     );
 
     for _ in 0..args.warmup {

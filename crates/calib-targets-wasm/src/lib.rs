@@ -9,7 +9,7 @@ mod gray;
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
 use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
@@ -614,10 +614,7 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    // ChArUco runs on the topological grid builder (the only builder); re-pin
-    // in case the config carries a legacy chessboard algorithm value.
-    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -717,10 +714,7 @@ pub fn detect_charuco_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    // ChArUco runs on the topological grid builder (the only builder); re-pin
-    // in case the config carries a legacy chessboard algorithm value.
-    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -841,13 +835,7 @@ pub fn detect_charuco_best(
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mut configs: Vec<CharucoParams> = from_js(configs)?;
-    // ChArUco runs on the topological grid builder (the only builder); re-pin
-    // in case a config carries a legacy chessboard algorithm value.
-    for cfg in &mut configs {
-        cfg.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-    }
-
+    let configs: Vec<CharucoParams> = from_js(configs)?;
     let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;
     let mut last_err = None;
 

@@ -15,8 +15,8 @@
 //! Pointers are RFC-6901 JSON pointers into the materialised `DetectorParams`
 //! (`/advanced/<name>`, `/advanced/topological/<name>`,
 //! `/advanced/component_merge/<name>`) — the same pointer space the bench
-//! ablation catalogue (`calib_targets_bench::ablate`) uses. The four stable
-//! core fields (`graph_build_algorithm`, …) keep their bespoke hand-labelled
+//! ablation catalogue (`calib_targets_bench::ablate`) uses. The stable
+//! core fields (`min_corner_strength`, …) keep their bespoke hand-labelled
 //! controls in the Config tab and are intentionally not in this catalogue.
 
 use axum::Json;

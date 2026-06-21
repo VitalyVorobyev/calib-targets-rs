@@ -9,19 +9,6 @@ pub const CT_FALSE: u32 = 0;
 /// ABI boolean true.
 pub const CT_TRUE: u32 = 1;
 
-/// Selector for the chessboard graph-build algorithm. Mirrors the
-/// `calib_targets_chessboard::GraphBuildAlgorithm` enum.
-///
-/// The chessboard detector builds its grid with the topological pipeline (the
-/// only builder). Both selector values resolve to it; the seed-and-grow
-/// constant is retained only for source/ABI compatibility.
-pub type ct_graph_build_algorithm_t = u32;
-/// Retired seed-and-grow selector. Accepted for ABI compatibility and mapped
-/// to the topological pipeline.
-pub const CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW: ct_graph_build_algorithm_t = 0;
-/// Topological pipeline (Delaunay + axis-driven cell test). The only builder.
-pub const CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL: ct_graph_build_algorithm_t = 1;
-
 /// Fixed dictionary identifier type for built-in marker dictionaries.
 pub type ct_dictionary_id_t = u32;
 pub const CT_DICTIONARY_DICT_4X4_50: ct_dictionary_id_t = 1;
@@ -463,11 +450,6 @@ pub struct ct_chess_config_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_params_t {
-    /// Pipeline selector. See [`ct_graph_build_algorithm_t`]. Both values
-    /// resolve to the topological builder (the only builder); the field is
-    /// retained for ABI stability.
-    pub graph_build_algorithm: ct_graph_build_algorithm_t,
-
     // --- Stable core --------------------------------------------------------
     /// Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
     /// (the zero-initialised default) disables the filter. Stable field.

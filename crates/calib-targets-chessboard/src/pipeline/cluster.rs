@@ -4,16 +4,13 @@
 //! plateau-aware peak picking + double-angle 2-means recovering the two
 //! global grid-direction centres `(Θ₀, Θ₁)` from per-feature dual-axis
 //! estimates — lives in [`projective_grid::cluster`]. This module is the
-//! chessboard-specific glue around it:
-//!
-//! * It selects which corners vote (the `Strong`-stage corners), maps
-//!   each `CornerAug`'s two [`calib_targets_core::AxisEstimate`]s into
-//!   [`projective_grid::cluster::AxisFeature`]s, and translates the
-//!   generic [`projective_grid::cluster::AxisAssignment`] back onto the
-//!   chessboard [`ClusterLabel`] / [`CornerStage`] vocabulary (see
-//!   [`assign`]).
-//! * It runs the chessboard-only spatial parity-coherence repair
-//!   ([`slot_coherence`]) that the generic stage knows nothing about.
+//! chessboard-specific glue around it: it selects which corners vote
+//! (the `Strong`-stage corners), maps each `CornerAug`'s two
+//! [`calib_targets_core::AxisEstimate`]s into
+//! [`projective_grid::cluster::AxisFeature`]s, and translates the generic
+//! [`projective_grid::cluster::AxisAssignment`] back onto the chessboard
+//! [`ClusterLabel`](crate::corner::ClusterLabel) / [`CornerStage`]
+//! vocabulary ([`map_assignment`]).
 //!
 //! The double-angle `(cos 2θ, sin 2θ)` undirected-circular-mean contract
 //! is enforced inside the generic helper.
@@ -27,15 +24,37 @@
 //!     `theta0 ≤ theta1`.
 //!   - The per-corner `stage` / `label` fields, mutated in place.
 
-use crate::corner::{CornerAug, CornerStage};
+use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::DetectorParams;
-use projective_grid::cluster::{self as pg, AxisFeature, AxisObservation, ClusterParams};
+use projective_grid::cluster::{
+    self as pg, AxisAssignment, AxisFeature, AxisObservation, ClusterParams,
+};
 
-mod assign;
-mod slot_coherence;
+/// Per-corner assignment produced by [`cluster_axes`]: either a slot
+/// label (Canonical / Swapped), or unclustered when the best assignment
+/// still left an axis beyond `cluster_tol_deg` from its matched centre.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum AxisCluster {
+    /// Both axes matched a centre within tolerance, with this slot label.
+    Labeled { label: ClusterLabel },
+    /// The best assignment left one axis beyond tolerance; `max_d_rad`
+    /// is the worst per-axis distance to its matched centre (radians).
+    Unclustered { max_d_rad: f32 },
+}
 
-use assign::AxisCluster;
-use slot_coherence::fix_axis_slot_coherence;
+/// Map a generic [`AxisAssignment`] onto the chessboard [`AxisCluster`].
+fn map_assignment(assign: AxisAssignment) -> AxisCluster {
+    match assign {
+        AxisAssignment::Canonical { .. } => AxisCluster::Labeled {
+            label: ClusterLabel::Canonical,
+        },
+        AxisAssignment::Swapped { .. } => AxisCluster::Labeled {
+            label: ClusterLabel::Swapped,
+        },
+        AxisAssignment::None { max_d_rad } => AxisCluster::Unclustered { max_d_rad },
+        _ => unreachable!("AxisAssignment is exhaustively handled"),
+    }
+}
 
 // Re-export the generic angle helpers under their old local names so
 // the sibling `boosters` module keeps its existing
@@ -126,8 +145,8 @@ pub fn cluster_axes_debug(
     // chessboard `ClusterLabel` / `CornerStage` vocabulary.
     for (assign, &idx) in assignments.iter().zip(indices.iter()) {
         let corner = &mut corners[idx];
-        match assign::map_assignment(*assign) {
-            AxisCluster::Labeled { label, .. } => {
+        match map_assignment(*assign) {
+            AxisCluster::Labeled { label } => {
                 corner.label = Some(label);
                 corner.stage = CornerStage::Clustered { label };
             }
@@ -139,26 +158,6 @@ pub fn cluster_axes_debug(
             }
         }
     }
-
-    // Spatial-coherence pass: the DiskFit orientation mode can pick the
-    // wrong antipodal dark sector for some chessboard corners, leaving
-    // adjacent corners with the SAME axis-slot ordering instead of the
-    // alternating pattern the topological cell-test + edge invariant
-    // relies on. The
-    // bug shows up as a same-label cluster of neighbours where a
-    // chessboard demands opposite labels. Detect the offenders by
-    // spatial majority vote and recover by swapping their two
-    // `AxisEstimate` slots (which also flips the cluster label).
-    //
-    // Gated on a heavy label imbalance (one class < ~22% of the
-    // total). RingFit produces ~50/50 balanced labels by construction
-    // and is unaffected by this gate. DiskFit produces ~50/50 on
-    // ChArUco-style images (small0..small5, target_7) where the
-    // existing parity convention is fine — also unaffected by the
-    // gate. The gate fires on clean-chessboard scenes where DiskFit's
-    // antipodal-sector pick collapses to the same physical axis for
-    // most corners (mid.png 62/15 = 80% Canonical pre-fix).
-    fix_axis_slot_coherence(corners);
 
     (Some(centers), debug)
 }

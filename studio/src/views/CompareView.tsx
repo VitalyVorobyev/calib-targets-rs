@@ -8,12 +8,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
 import type {
   BaselineCorner,
-  DetectorParamsOverride,
   DetectResponse,
   EngineReq,
-  GraphBuildAlgorithm,
   OrientationMethodReq,
-  OrientationSource,
 } from "../api/types";
 import {
   CanvasViewport,
@@ -30,27 +27,16 @@ const B_COLOR = "rgb(80, 200, 255)";
 const COMMON_COLOR = "rgba(170, 180, 190, 0.8)";
 
 interface Slot {
-  algorithm: GraphBuildAlgorithm;
   engine: EngineReq;
-  orientationSource: OrientationSource;
   orientationMethod: OrientationMethodReq;
 }
 
 const DEFAULT_A: Slot = {
-  algorithm: "topological",
   engine: "pipeline",
-  orientationSource: "chess_axes",
   orientationMethod: "ring_fit",
 };
 
 const DEFAULT_B: Slot = { ...DEFAULT_A };
-
-function slotParams(s: Slot): DetectorParamsOverride {
-  return {
-    graph_build_algorithm: s.algorithm,
-    orientation_source: s.orientationSource,
-  };
-}
 
 function useSlotDetect(label: string, slot: Slot) {
   const debounced = useDebounced(slot, 300);
@@ -61,7 +47,6 @@ function useSlotDetect(label: string, slot: Slot) {
       api.detect({
         label,
         engine: debounced.engine,
-        params: slotParams(debounced),
         orientation_method: debounced.orientationMethod,
         compare_baseline: true,
       }),
@@ -437,16 +422,8 @@ function SlotControls({
   );
   const body = (
     <>
-      {sel(slot.algorithm, ["topological"], (v) =>
-        onSlot({ ...slot, algorithm: v as GraphBuildAlgorithm }),
-      )}
       {sel(slot.engine, ["pipeline", "grid"], (v) =>
         onSlot({ ...slot, engine: v as EngineReq }),
-      )}
-      {sel(
-        slot.orientationSource,
-        ["chess_axes", "neighbour_edges"],
-        (v) => onSlot({ ...slot, orientationSource: v as OrientationSource }),
       )}
       {sel(slot.orientationMethod, ["ring_fit", "disk_fit"], (v) =>
         onSlot({ ...slot, orientationMethod: v as OrientationMethodReq }),

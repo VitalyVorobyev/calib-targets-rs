@@ -89,12 +89,11 @@ pub async fn create(
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = req.orientation_method.into();
     let config_id = format!(
-        "{}.{:?}.{:?}",
+        "{}.{:?}",
         match engine {
             Engine::Pipeline => "pipeline",
             Engine::Grid => "grid",
         },
-        params.graph_build_algorithm,
         req.orientation_method,
     )
     .to_lowercase();

@@ -83,14 +83,13 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     .into_iter()
     .collect();
 
-    let mut params = match load_chessboard_config(args.chessboard_config.as_deref()) {
+    let params = match load_chessboard_config(args.chessboard_config.as_deref()) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("load --chessboard-config: {e}");
             return ExitCode::from(2);
         }
     };
-    params.graph_build_algorithm = args.algorithm.into();
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
@@ -364,14 +363,13 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
     .into_iter()
     .collect();
 
-    let mut base = match load_chessboard_config(args.chessboard_config.as_deref()) {
+    let base = match load_chessboard_config(args.chessboard_config.as_deref()) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("load --chessboard-config: {e}");
             return ExitCode::from(2);
         }
     };
-    base.graph_build_algorithm = args.algorithm.into();
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();

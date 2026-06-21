@@ -28,60 +28,6 @@ use projective_grid::shared::merge::LocalMergeParams;
 use projective_grid::TopologicalParams;
 use serde::{Deserialize, Serialize};
 
-pub(super) fn default_topological_params() -> TopologicalParams {
-    TopologicalParams::default()
-        .with_opposing_edge_ratio_max(10.0)
-        .with_edge_length_band(0.0, 1.8)
-}
-
-fn default_component_merge_params() -> LocalMergeParams {
-    LocalMergeParams::default()
-}
-
-fn default_validate_step_aware() -> bool {
-    // Default off: shipping the capability without changing behaviour.
-    // The step-aware threshold is anisotropic per-corner — tighter in
-    // perspective-foreshortened regions, looser in radially-distorted
-    // ones. On the public bench, enabling it drops one labelled corner
-    // on `testdata/puzzleboard_reference/example1.png` (the tighter
-    // back-edge tolerance over-flags). Treat enabling it as a focused
-    // experiment per dataset until we have a tuned tolerance pair that
-    // holds the precision contract on every blessed image.
-    false
-}
-
-fn default_cluster_sigma_k() -> f32 {
-    // k = 0 by default — sigma-aware tolerance is plumbed through but
-    // disabled. Empirical study (k = 0.5–2.0 with cap 3–4°): every
-    // positive setting that recovers `small3.png`'s NoCluster set also
-    // destabilises clustering under heavy radial distortion. Setting
-    // `cluster_sigma_k` > 0 in a custom `AdvancedTuning` is fine for
-    // experiments.
-    0.0
-}
-
-fn default_geometry_check_line_tol_rel() -> f32 {
-    // The final geometry check uses a much looser line-collinearity
-    // tolerance than the grid builder's validation pass: its role is to
-    // catch gross mislabels — full-cell or diagonal shifts (~1.4 cell
-    // residual) — not the borderline perspective drift the builder
-    // already accepted. A tight tolerance here produces catastrophic
-    // recall regressions on heavy-radial-distortion boards.
-    0.45
-}
-
-fn default_geometry_check_local_h_tol_rel() -> f32 {
-    // Same logic as above for local-H residual. A diagonal mislabel
-    // shifts a corner by ~1.4 cell from its predicted position; a
-    // tolerance of 0.6 cell is well below that gap while leaving the
-    // legitimate perspective-distorted corners alone.
-    0.6
-}
-
-fn default_enable_final_edge_shape_check() -> bool {
-    true
-}
-
 /// Advanced, **unstable** per-stage tuning knobs for the chessboard detector.
 ///
 /// Behind [`DetectorParams::advanced`](super::DetectorParams::advanced). The
@@ -95,7 +41,7 @@ fn default_enable_final_edge_shape_check() -> bool {
 /// internal pipeline stages; they may be **renamed, retyped, or removed
 /// between minor versions** without a major-version bump. Do not depend on the
 /// field set being stable. The stable configuration contract lives entirely on
-/// [`DetectorParams`](super::DetectorParams)'s four top-level fields.
+/// [`DetectorParams`](super::DetectorParams)'s three top-level fields.
 ///
 /// When set on [`DetectorParams`](super::DetectorParams) via
 /// [`with_advanced`](super::DetectorParams::with_advanced), the whole struct
@@ -106,15 +52,12 @@ fn default_enable_final_edge_shape_check() -> bool {
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AdvancedTuning {
-    /// Tuning knobs for the
-    /// [`GraphBuildAlgorithm::Topological`](super::GraphBuildAlgorithm::Topological)
+    /// Tuning knobs for the topological (Delaunay + axis-driven cell test)
     /// grid builder — the only graph builder the detector ships.
-    #[serde(default = "default_topological_params")]
     pub topological: TopologicalParams,
 
     /// Tuning knobs for the shared local-geometry component merger that
     /// reunites the topological grid's connected components in label space.
-    #[serde(default = "default_component_merge_params")]
     pub component_merge: LocalMergeParams,
 
     // --- `prefilter` stage ---------------------------------------------------
@@ -141,7 +84,6 @@ pub struct AdvancedTuning {
     /// but whose ChESS estimate fell outside under noise.
     ///
     /// [`cluster_tol_deg`]: AdvancedTuning::cluster_tol_deg
-    #[serde(default = "default_cluster_sigma_k")]
     pub cluster_sigma_k: f32,
     /// Minimal angular separation (degrees) between the two peaks. Guards
     /// against seed-peak collisions; true grid axes are `~90°` apart.
@@ -180,8 +122,8 @@ pub struct AdvancedTuning {
     /// (diagonal / full-cell shifts), not the borderline perspective drift the
     /// grid builder already accepted.
     ///
-    /// Default `0.45` of cell_size.
-    #[serde(default = "default_geometry_check_line_tol_rel")]
+    /// Default `0.45` of cell_size. A tight tolerance here produces
+    /// catastrophic recall regressions on heavy-radial-distortion boards.
     pub geometry_check_line_tol_rel: f32,
     /// Local-H residual tolerance (fraction of cell_size) for the MANDATORY
     /// final geometry check. A diagonal mislabel shifts a corner by ~1.4 cell
@@ -189,7 +131,6 @@ pub struct AdvancedTuning {
     /// while leaving the legitimate perspective-distorted corners alone.
     ///
     /// Default `0.6` of cell_size.
-    #[serde(default = "default_geometry_check_local_h_tol_rel")]
     pub geometry_check_local_h_tol_rel: f32,
     /// Minimum members required to fit a line / column for the geometry
     /// check's collinearity test.
@@ -201,10 +142,12 @@ pub struct AdvancedTuning {
     /// miss, and stay loose in distorted regions where the local cell pitch
     /// grows.
     ///
-    /// Default `false` (see `default_validate_step_aware` for the rationale —
-    /// enabling it currently drops a labelled corner on one blessed bench
-    /// image). Set to `true` to opt in per dataset.
-    #[serde(default = "default_validate_step_aware")]
+    /// Default `false`: the capability is shipped without changing behaviour.
+    /// Enabling it currently drops one labelled corner on
+    /// `testdata/puzzleboard_reference/example1.png` (the tighter back-edge
+    /// tolerance over-flags), so treat it as a focused per-dataset experiment
+    /// until a tuned tolerance pair holds the precision contract on every
+    /// blessed image. Set to `true` to opt in.
     pub validate_step_aware: bool,
     /// Enable the final local edge-shape gate (the direct topological
     /// wrong-label check: interior skipped-corner edges and duplicate-pixel
@@ -213,14 +156,15 @@ pub struct AdvancedTuning {
     /// Default `true` for direct chessboard detection. Downstream
     /// target-specific detectors with their own geometry/ID alignment gates
     /// (e.g. ChArUco) may disable it to preserve recall.
-    #[serde(default = "default_enable_final_edge_shape_check")]
     pub enable_final_edge_shape_check: bool,
 }
 
 impl Default for AdvancedTuning {
     fn default() -> Self {
         Self {
-            topological: default_topological_params(),
+            topological: TopologicalParams::default()
+                .with_opposing_edge_ratio_max(10.0)
+                .with_edge_length_band(0.0, 1.8),
             component_merge: LocalMergeParams::default(),
 
             max_fit_rms_ratio: 0.5,
@@ -228,7 +172,7 @@ impl Default for AdvancedTuning {
             num_bins: 90,
             max_iters_2means: 10,
             cluster_tol_deg: 12.0,
-            cluster_sigma_k: default_cluster_sigma_k(),
+            cluster_sigma_k: 0.0,
             peak_min_separation_deg: 60.0,
             // Raised from 0.05 → 0.02: with fine (2°) bins and
             // realistic axis noise, the per-bin weight of a genuine
@@ -249,11 +193,11 @@ impl Default for AdvancedTuning {
             weak_cluster_tol_deg: 18.0,
             max_booster_iters: 5,
 
-            geometry_check_line_tol_rel: default_geometry_check_line_tol_rel(),
-            geometry_check_local_h_tol_rel: default_geometry_check_local_h_tol_rel(),
+            geometry_check_line_tol_rel: 0.45,
+            geometry_check_local_h_tol_rel: 0.6,
             line_min_members: 3,
-            validate_step_aware: default_validate_step_aware(),
-            enable_final_edge_shape_check: default_enable_final_edge_shape_check(),
+            validate_step_aware: false,
+            enable_final_edge_shape_check: true,
         }
     }
 }

@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig};
 use calib_targets_chessboard::{
     trace_topological, AdvancedTuning, ChessboardDetection, Detector, DetectorParams,
-    GraphBuildAlgorithm,
 };
 use chess_corners::Threshold;
 use image::imageops::FilterType;
@@ -51,7 +50,6 @@ struct Gate {
 
 #[derive(Debug, Deserialize)]
 struct LowResGate {
-    algorithm: String,
     #[serde(default = "default_upscale")]
     upscale: f32,
     chess: LowResChessConfig,
@@ -108,19 +106,13 @@ fn maybe_upscale(img: &GrayImage, scale: f32) -> GrayImage {
     image::imageops::resize(img, width, height, FilterType::Triangle)
 }
 
-fn params_for(algorithm: GraphBuildAlgorithm) -> DetectorParams {
-    let mut params = DetectorParams::default();
-    params.graph_build_algorithm = algorithm;
-    params
+fn topological_params() -> DetectorParams {
+    DetectorParams::default()
 }
 
-fn run_detector(
-    img: &GrayImage,
-    chess_cfg: &DetectorConfig,
-    algorithm: GraphBuildAlgorithm,
-) -> Option<ChessboardDetection> {
+fn run_detector(img: &GrayImage, chess_cfg: &DetectorConfig) -> Option<ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    Detector::new(params_for(algorithm))
+    Detector::new(topological_params())
         .expect("valid detector params")
         .detect(&corners)
 }
@@ -205,15 +197,6 @@ fn assert_gate(case: &ImageCase, name: &str, gate: &Gate, detection: Option<Ches
     }
 }
 
-fn algorithm_from_name(name: &str) -> GraphBuildAlgorithm {
-    match name {
-        // `seed_and_grow` is accepted for manifest back-compat but maps to the
-        // only remaining builder.
-        "topological" | "seed_and_grow" => GraphBuildAlgorithm::Topological,
-        other => panic!("unknown graph_build_algorithm {other:?}"),
-    }
-}
-
 #[test]
 fn topo_grid_manifest_gates_hold() {
     let manifest = load_manifest();
@@ -227,7 +210,7 @@ fn topo_grid_manifest_gates_hold() {
         let default_corners = detect_corners(&img, &default_cfg);
 
         if let Some(gate) = &case.topological {
-            let detection = Detector::new(params_for(GraphBuildAlgorithm::Topological))
+            let detection = Detector::new(topological_params())
                 .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
@@ -240,7 +223,7 @@ fn topo_grid_manifest_gates_hold() {
             // so the JSON keeps its original semantics.
             let cfg = default_chess_config()
                 .with_threshold(Threshold::Relative(gate.chess.threshold_value));
-            let detection = run_detector(&fed, &cfg, algorithm_from_name(&gate.algorithm));
+            let detection = run_detector(&fed, &cfg);
             let context = format!("{} low_res", case.path);
             let detection =
                 detection.unwrap_or_else(|| panic!("{context}: detector returned None"));
@@ -255,7 +238,7 @@ fn topo_grid_manifest_gates_hold() {
             }
         }
         if let Some(gate) = &case.diagnostic_topological {
-            let mut params = params_for(GraphBuildAlgorithm::Topological);
+            let mut params = topological_params();
             params.min_labeled_corners = gate.min_labeled_corners;
             if let Some(deg) = gate.axis_align_tol_deg {
                 let mut advanced: AdvancedTuning = params.effective_tuning().into_owned();

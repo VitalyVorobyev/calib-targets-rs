@@ -56,16 +56,6 @@ typedef struct ct_marker_board_detector_t ct_marker_board_detector_t;
 typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 
 /**
- * Selector for the chessboard graph-build algorithm. Mirrors the
- * `calib_targets_chessboard::GraphBuildAlgorithm` enum.
- *
- * The chessboard detector builds its grid with the topological pipeline (the
- * only builder). Both selector values resolve to it; the seed-and-grow
- * constant is retained only for source/ABI compatibility.
- */
-typedef uint32_t ct_graph_build_algorithm_t;
-
-/**
  * Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
  *
  * Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
@@ -102,12 +92,6 @@ typedef struct ct_chessboard_advanced_t {
  * literal zero-initialisation.
  */
 typedef struct ct_chessboard_params_t {
-  /**
-   * Pipeline selector. See [`ct_graph_build_algorithm_t`]. Both values
-   * resolve to the topological builder (the only builder); the field is
-   * retained for ABI stability.
-   */
-  ct_graph_build_algorithm_t graph_build_algorithm;
   /**
    * Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
    * (the zero-initialised default) disables the filter. Stable field.
@@ -846,17 +830,6 @@ typedef struct ct_puzzleboard_detect_buffers_t {
    */
   size_t *out_corners_len;
 } ct_puzzleboard_detect_buffers_t;
-
-/**
- * Retired seed-and-grow selector. Accepted for ABI compatibility and mapped
- * to the topological pipeline.
- */
-#define CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW 0
-
-/**
- * Topological pipeline (Delaunay + axis-driven cell test). The only builder.
- */
-#define CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL 1
 
 #define CT_DICTIONARY_DICT_4X4_50 1
 

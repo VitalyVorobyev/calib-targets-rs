@@ -57,7 +57,7 @@ export function PresetPicker({
                 key={c.name}
                 className="btn"
                 style={chip}
-                title={`load ${c.name} · ${c.algorithm}${c.has_advanced ? " · adv" : ""}`}
+                title={`load ${c.name}${c.has_advanced ? " · adv" : ""}`}
                 onClick={() => api.config(c.name).then(onLoad)}
               >
                 {c.name}
