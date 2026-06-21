@@ -85,8 +85,8 @@ fn is_charuco_small(base: &str) -> bool {
 }
 
 /// The graph-build algorithm slug carried in a `config_id`
-/// (`engine.algorithm.orientation_method.orientation_source`); falls back to
-/// the whole id when it isn't in that shape.
+/// (`engine.algorithm.orientation_method`); falls back to the whole id when it
+/// isn't in that shape.
 fn algorithm_token(config_id: &str) -> &str {
     config_id.split('.').nth(1).unwrap_or(config_id)
 }
@@ -163,7 +163,7 @@ pub fn render_markdown(report: &ComparisonReport) -> String {
     let mut s = String::new();
     let _ = writeln!(
         s,
-        "# Topological vs SeedAndGrow — grid quality by family-substrate"
+        "# Grid-builder A/B comparison — grid quality by family-substrate"
     );
     let _ = writeln!(s);
     let _ = writeln!(

@@ -867,19 +867,13 @@ _ADVANCED_SCALAR_FIELDS = (
     "cluster_tol_deg",
     "peak_min_separation_deg",
     "min_peak_weight_fraction",
-    "seed_edge_tol",
-    "seed_axis_tol_deg",
-    "seed_close_tol",
     "attach_search_rel",
     "attach_axis_tol_deg",
     "attach_ambiguity_factor",
     "step_tol",
     "edge_axis_tol_deg",
-    "line_tol_rel",
     "line_min_members",
-    "local_h_tol_rel",
     "enable_final_edge_shape_check",
-    "max_validation_iters",
     "enable_weak_cluster_rescue",
     "weak_cluster_tol_deg",
     "max_booster_iters",
@@ -900,7 +894,7 @@ class ChessboardParams:
     ``graph_build_algorithm``, ``min_labeled_corners``, ``max_components``,
     ``min_corner_strength``.
 
-    Everything else (``cluster_tol_deg``, ``seed_edge_tol``,
+    Everything else (``cluster_tol_deg``, ``attach_axis_tol_deg``,
     ``enable_final_edge_shape_check``, ``topological``, …) is an **advanced**
     knob. :meth:`to_dict` nests these under ``"advanced"`` and
     :meth:`from_dict` reads them back from there. The advanced knobs are NOT
@@ -918,16 +912,10 @@ class ChessboardParams:
 
     chess: ChessConfig = field(default_factory=ChessConfig)
     # --- Stable core --------------------------------------------------------
-    # See `calib_targets_chessboard::GraphBuildAlgorithm`. Accepted
-    # snake_case values: "seed_and_grow" (default) or "topological".
-    # "topological" suits low-view-angle or distortion-heavy scenes.
-    graph_build_algorithm: str = "seed_and_grow"
-    # See `calib_targets_chessboard::OrientationSource`. Accepted snake_case
-    # values: "chess_axes" (default; per-corner ChESS axes) or
-    # "neighbour_edges" (orientation-free; axes synthesized from neighbour
-    # geometry). "neighbour_edges" is **topological-only** — pairing it with
-    # ``graph_build_algorithm="seed_and_grow"`` is rejected by the detector.
-    orientation_source: str = "chess_axes"
+    # See `calib_targets_chessboard::GraphBuildAlgorithm`. The only accepted
+    # value is "topological" (the seed-and-grow builder has been retired); the
+    # field is kept so the config schema stays stable.
+    graph_build_algorithm: str = "topological"
     min_corner_strength: float = 0.0
     min_labeled_corners: int = 8
     max_components: int = 3
@@ -941,10 +929,6 @@ class ChessboardParams:
     cluster_tol_deg: float = 12.0
     peak_min_separation_deg: float = 60.0
     min_peak_weight_fraction: float = 0.02
-    # Stage 5 — seed
-    seed_edge_tol: float = 0.25
-    seed_axis_tol_deg: float = 15.0
-    seed_close_tol: float = 0.25
     # Stage 6 — grow
     attach_search_rel: float = 0.35
     attach_axis_tol_deg: float = 15.0
@@ -952,11 +936,8 @@ class ChessboardParams:
     step_tol: float = 0.25
     edge_axis_tol_deg: float = 15.0
     # Stage 7 — validate
-    line_tol_rel: float = 0.18
     line_min_members: int = 3
-    local_h_tol_rel: float = 0.20
     enable_final_edge_shape_check: bool = True
-    max_validation_iters: int = 6
     # Stage 8 — recall boosters
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
@@ -982,7 +963,6 @@ class ChessboardParams:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
-            "orientation_source": self.orientation_source,
             "min_corner_strength": self.min_corner_strength,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
@@ -1002,9 +982,6 @@ class ChessboardParams:
             "chess": ChessConfig.from_dict(data.get("chess", {})),
             "graph_build_algorithm": data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
-            ),
-            "orientation_source": data.get(
-                "orientation_source", d.orientation_source
             ),
             "min_corner_strength": data.get(
                 "min_corner_strength", d.min_corner_strength

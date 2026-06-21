@@ -30,8 +30,8 @@ cargo test -p calib-targets-puzzleboard --release -- --ignored
 
 The bench CLI defaults (`--algorithm topological --engine pipeline
 --orientation-source chess-axes --orientation-method ring-fit`) track the
-production `GraphBuildAlgorithm` default — the same cell `bench bless` pins
-baselines from. Non-default cells (seed-and-grow, grid engine,
+production `GraphBuildAlgorithm::Topological` (the sole algorithm) — the same
+cell `bench bless` pins baselines from. Non-default cells (grid engine,
 neighbour-edges) write coexisting reports under `bench_results/` but are
 **not** compared against the committed baseline; they are tracked by the
 "before" snapshots recorded at the start of the effort (local-only, see
@@ -65,7 +65,7 @@ below).
 
 Recorded at the start of the effort (local-only, never committed):
 `bench_results/chessboard.<engine>.<algorithm>.<orientation_method>.<orientation_source>.json`
-for the 7 valid cells of {topological, seed-and-grow} × {pipeline, grid} ×
+for the valid cells of {topological} × {pipeline, grid} ×
 {chess-axes, neighbour-edges} over the full (public + private) set, archived
 under `bench_results/phase0-before/`, plus the `topo_stage_timing` report
 (`tools/out/topo-grid-performance/stage-breakdown-ring_fit.json`). Later

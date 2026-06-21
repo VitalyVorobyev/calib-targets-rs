@@ -29,7 +29,7 @@ them up opportunistically when editing those files, but do not ship new ones.
 
 ## Regression dataset: 3536119669 (chessboard)
 
-Canonical seed-and-grow precision-and-recall benchmark. Precision contract:
+Canonical chessboard precision-and-recall benchmark (topological algorithm). Precision contract:
 wrong `(i, j)` labels are unrecoverable (they would corrupt calibration);
 missing corners are acceptable. Any algorithmic change that drops this contract
 is a regression, full stop.

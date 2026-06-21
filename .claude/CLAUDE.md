@@ -54,9 +54,9 @@ No cyclic deps.
 
 1. Run `chess-corners` (external crate) to detect ChESS corner features.
 2. Build a proximity/orientation graph over corners and assemble a chessboard
-   grid. Two algorithms sit behind `DetectorParams::graph_build_algorithm` —
-   `Topological` (default) and `SeedAndGrow` (pinned for ChArUco). See the
-   pipeline guide below.
+   grid with the `Topological` grid builder (Delaunay triangulation + an
+   axis-driven cell test) in `projective-grid` — the sole grid builder, used by
+   every target type including ChArUco. See the pipeline guide below.
 3. For ChArUco/marker boards: locally warp candidate cells and decode
    markers/circles.
 4. For PuzzleBoard: sample edge-midpoint dots and decode the master edge-code
@@ -81,9 +81,9 @@ across the workspace.
 Read the relevant guide before touching that area:
 
 - [`docs/development/detection-pipeline.md`](../docs/development/detection-pipeline.md)
-  — graph-build algorithm selection (Topological vs SeedAndGrow + ChArUco
-  pinning), component merge, orientation source, bench harness selector, the
-  axes-only corner-orientation contract, and the cell-size-estimation gotcha.
+  — the topological grid builder, component merge, orientation source, bench
+  harness selector, the axes-only corner-orientation contract, and the
+  cell-size-estimation gotcha.
 - [`docs/development/debugging.md`](../docs/development/debugging.md)
   — the **mandatory** evidence-driven protocol for any detector failure.
 - [`docs/development/conventions.md`](../docs/development/conventions.md)
@@ -108,7 +108,9 @@ Read the relevant guide before touching that area:
 **Grid labels are non-negative.** Every detector that returns
 `LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the labelled
 bounding-box minimum is `(0, 0)`. Hard invariant for overlay / calibration
-consumers; for `seed-and-grow` it is enforced inside `grow::grow_from_seed`.
+consumers; the chessboard output stage (`build_detection`) re-rebases every
+labelled set before it ships, and `projective-grid`'s shared grow/recovery
+applies the same `min (i, j) → (0, 0)` shift.
 
 **Corner orientation is axes-only.** `Corner::orientation` has been removed
 workspace-wide — never reintroduce it. The only signal is

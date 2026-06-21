@@ -93,13 +93,13 @@ println!("iterations: {:#?}", frame.iterations);
 3. **`grid_directions` set, `seed: None`?** Seeding failed — no
    qualifying 2×2 quad was found.
    - Try `detect_chessboard_best` with
-     `DetectorParams::sweep_default()` (widens seed tolerances).
-   - Raise `seed_edge_tol` (default `0.25`) if the board has
-     noticeable cell-size variation under perspective.
+     `DetectorParams::sweep_default()` (widens clustering and attachment
+     tolerances, which gives the seed finder more to work with).
 
 4. **`seed` set, `detection: None`?** Validation failed to converge.
-   - Check `iterations`: if the labelled count oscillates, raise
-     `max_validation_iters` (default `3` → try `6`).
+   - Check `iterations`: if the labelled count oscillates, try
+     `detect_chessboard_best` with a wider config from
+     `DetectorParams::sweep_default()`.
    - Scene may contain multiple boards — try
      `detect_chessboard_all` and handle each component separately.
 
@@ -167,12 +167,12 @@ specification in a geometrically consistent way.
 |---|---|
 | Strong blur | Lower `min_border_score` to `0.65`, enable `multi_threshold` |
 | Uneven / gradient lighting | `multi_threshold` (already default) |
-| Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `local_h_tol_rel` on the chessboard side |
+| Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `geometry_check_local_h_tol_rel` on the chessboard side |
 | Partial occlusion | Use `detect_chessboard_all`; for ChArUco, lower `min_marker_inliers` |
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
 | Specular reflections on board | Pre-process with local contrast normalisation (CLAHE); if pre-processing is off the table, lower `min_peak_weight_fraction` so clustering can cope with the reduced corner count |
-| Validation loop oscillates (seed found, detection `None`) | Raise `max_validation_iters`; inspect `DebugFrame.iterations` to confirm the labelled count is bouncing |
+| Validation loop oscillates (seed found, detection `None`) | Use `detect_chessboard_best`; inspect `DebugFrame.iterations` to confirm the labelled count is bouncing |
 
 ---
 

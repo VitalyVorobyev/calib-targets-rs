@@ -158,9 +158,9 @@ def test_chessboard_advanced_payload_accepted_by_rust() -> None:
     nesting and Rust's ``DetectorParams.advanced`` serde shape — the class of
     bug a Python-only ``to_dict``→``from_dict`` round-trip cannot catch."""
     image = _load_gray("mid.png")
-    params = ct.ChessboardParams(min_corner_strength=0.1, max_validation_iters=5)
+    params = ct.ChessboardParams(min_corner_strength=0.1, max_booster_iters=5)
     payload = params.to_dict()
-    assert payload["advanced"]["max_validation_iters"] == 5
+    assert payload["advanced"]["max_booster_iters"] == 5
     # If the dict shape drifted from Rust's serde encoding, this raises
     # ValueError instead of returning a (possibly None) raw result dict.
     via_dict = _core.detect_chessboard(image, params=payload)
@@ -177,86 +177,6 @@ def test_chessboard_advanced_payload_accepted_by_rust() -> None:
     # The custom-advanced run is accepted; it may legitimately differ in
     # corner count, but it must not error out.
     assert via_dict is None or len(via_dict["corners"]) >= 0
-
-
-# ---------------------------------------------------------------------------
-# chessboard debug frame (Phase A instrumentation)
-# ---------------------------------------------------------------------------
-
-
-def _assert_debug_frame_shape(frame: dict[str, Any]) -> None:
-    """Structural check for the `DebugFrame` payload.
-
-    Asserts the top-level keys Rust's `calib_targets_chessboard::
-    DebugFrame` serializes so the Python overlay script stays in
-    sync. If Rust ever renames a field, this test flags it before
-    the overlay breaks silently.
-    """
-    expected_top = {
-        "schema",
-        "input_count",
-        "grid_directions",
-        "cell_size",
-        "seed",
-        "iterations",
-        "boosters",
-        "detection",
-        "corners",
-    }
-    assert expected_top.issubset(frame.keys()), (
-        f"missing top-level keys: {expected_top - frame.keys()}"
-    )
-    assert isinstance(frame["schema"], int) and frame["schema"] >= 1
-    assert isinstance(frame["input_count"], int) and frame["input_count"] >= 0
-    # `corners` mirrors the input corner array, with per-corner stage.
-    assert len(frame["corners"]) == frame["input_count"]
-    if frame["input_count"] > 0:
-        c0 = frame["corners"][0]
-        expected_corner_keys = {
-            "input_index",
-            "position",
-            "axes",
-            "strength",
-            "contrast",
-            "fit_rms",
-            "stage",
-            "label",
-        }
-        assert expected_corner_keys.issubset(c0.keys()), (
-            f"corner missing keys: {expected_corner_keys - c0.keys()}"
-        )
-        assert len(c0["axes"]) == 2
-        for axis in c0["axes"]:
-            assert {"angle", "sigma"}.issubset(axis.keys())
-
-
-def test_detect_chessboard_debug_success_path() -> None:
-    """Debug frame on an image that normally detects: must have
-    a labelled `detection` block plus a populated iteration trace."""
-    image = _load_gray("mid.png")
-    frame = ct.detect_chessboard_debug(image)
-    _assert_debug_frame_shape(frame)
-    assert frame["input_count"] > 0
-    if frame["detection"] is None:
-        pytest.skip("no chessboard detected on testdata/mid.png")
-    assert frame["cell_size"] is not None
-    assert frame["grid_directions"] is not None
-
-
-def test_detect_chessboard_debug_failure_path_still_emits_counts() -> None:
-    """Debug frame on a failure path: no detection, but `input_count` is
-    populated and the caller can see which stage each corner reached via
-    `corners[*].stage`. Uses `min_corner_strength` well above typical
-    ChESS responses to drop every corner before clustering."""
-    image = _load_gray("mid.png")
-    params = ct.ChessboardParams(min_corner_strength=1e9)  # unreachable
-    frame = ct.detect_chessboard_debug(image, params=params)
-    _assert_debug_frame_shape(frame)
-    assert frame["detection"] is None
-    # Every corner should stay at `Raw` because the strength filter
-    # drops every input.
-    n_raw = sum(1 for c in frame["corners"] if c["stage"] == "Raw")
-    assert n_raw == frame["input_count"]
 
 
 # ---------------------------------------------------------------------------

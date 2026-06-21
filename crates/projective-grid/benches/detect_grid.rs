@@ -141,35 +141,29 @@ fn hex_positions(radius: i32, spacing: f32, jitter: f32) -> Vec<PointFeature> {
 fn bench_detect_grid(c: &mut Criterion) {
     let mut group = c.benchmark_group("detect_grid_all");
 
-    // (Square, Oriented2) — both algorithm choices.
+    // (Square, Oriented2) — the topological assembler (the only square choice).
     let sq2 = square_oriented2(16, 16, 22.0);
-    for algo in [SquareAlgorithm::SeedAndGrow, SquareAlgorithm::Topological] {
-        let label = match algo {
-            SquareAlgorithm::SeedAndGrow => "seed_and_grow",
-            SquareAlgorithm::Topological => "topological",
-            _ => "unknown",
-        };
-        group.bench_with_input(
-            BenchmarkId::new("square_oriented2", label),
-            &sq2,
-            |b, feats| {
-                b.iter(|| {
-                    let req = DetectionRequest::new(
-                        LatticeKind::Square,
-                        Evidence::Oriented2(feats),
-                        None,
-                        DetectionParams::default().with_algorithm(algo),
-                    );
-                    detect_grid_all(req).unwrap()
-                });
-            },
-        );
-    }
+    group.bench_with_input(
+        BenchmarkId::new("square_oriented2", "topological"),
+        &sq2,
+        |b, feats| {
+            b.iter(|| {
+                let req = DetectionRequest::new(
+                    LatticeKind::Square,
+                    Evidence::Oriented2(feats),
+                    None,
+                    DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+                );
+                detect_grid_all(req).unwrap()
+            });
+        },
+    );
 
-    // (Square, Positions) — orientation-free, default (seed-and-grow) algorithm.
+    // (Square, Positions) — orientation-free, default (topological) assembler
+    // with the geometry-only recovery schedule on the synthesized-axis path.
     let sqp = square_positions(16, 16, 22.0, 0.15);
     group.bench_with_input(
-        BenchmarkId::new("square_positions", "seed_and_grow"),
+        BenchmarkId::new("square_positions", "topological"),
         &sqp,
         |b, feats| {
             b.iter(|| {

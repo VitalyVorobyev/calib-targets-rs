@@ -190,7 +190,7 @@ def test_chessboard_params_roundtrip() -> None:
     params = calib_targets.ChessboardParams(
         min_corner_strength=0.25,
         cluster_tol_deg=10.0,
-        max_validation_iters=5,
+        max_booster_iters=5,
         topological=calib_targets.TopologicalParams(axis_align_tol_rad=0.30),
     )
     serialized = params.to_dict()
@@ -199,12 +199,12 @@ def test_chessboard_params_roundtrip() -> None:
 
 
 def test_chessboard_params_graph_build_algorithm() -> None:
-    # Default keeps callers on the historical seed-and-grow pipeline.
+    # Topological is the only builder (seed-and-grow retired); it is the default.
     default = calib_targets.ChessboardParams()
-    assert default.graph_build_algorithm == "seed_and_grow"
-    assert default.to_dict()["graph_build_algorithm"] == "seed_and_grow"
+    assert default.graph_build_algorithm == "topological"
+    assert default.to_dict()["graph_build_algorithm"] == "topological"
 
-    # Topological is opt-in via the snake_case enum value.
+    # Setting it explicitly round-trips.
     topo = calib_targets.ChessboardParams(graph_build_algorithm="topological")
     assert topo.to_dict()["graph_build_algorithm"] == "topological"
 

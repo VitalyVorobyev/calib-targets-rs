@@ -62,7 +62,6 @@ export function ConfigEditor({
             }
           >
             <option value="topological">topological</option>
-            <option value="seed_and_grow">seed_and_grow</option>
           </select>
         </Row>
         <Row label="Orientation">
@@ -74,12 +73,7 @@ export function ConfigEditor({
             }
           >
             <option value="chess_axes">chess_axes</option>
-            <option
-              value="neighbour_edges"
-              disabled={draft.graph_build_algorithm === "seed_and_grow"}
-            >
-              neighbour_edges
-            </option>
+            <option value="neighbour_edges">neighbour_edges</option>
           </select>
         </Row>
         <NumberRow

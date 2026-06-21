@@ -85,15 +85,15 @@ the cell size is also carried on the result (`ChessboardDetection::cell_size`).
 
 [`DetectorParams`] is a small **stable core** of four knobs plus an
 opt-in, unstable [`AdvancedTuning`] sub-struct
-([`DetectorParams::advanced`]) holding the 40-plus per-stage tuning
-knobs. Defaults are chosen to post the precision contract above; tune
-only when a specific input fails.
+([`DetectorParams::advanced`]) holding the per-stage tuning knobs for
+the live topological pipeline. Defaults are chosen to post the precision
+contract above; tune only when a specific input fails.
 
 The stable core — the knobs a calibration consumer has a basis to set:
 
 | Knob | Effect |
 |---|---|
-| `graph_build_algorithm` | Pick the topological (`Topological`, default) or seed-and-grow grid builder. ChArUco pins `SeedAndGrow`. |
+| `graph_build_algorithm` | Reserved, single-valued (`Topological`) — the Delaunay + axis-driven cell-test grid builder, used by every target type including ChArUco. |
 | `min_labeled_corners` | Reject too-small detections. |
 | `max_components` | Cap the number of disconnected pieces returned by `detect_all`. |
 | `min_corner_strength` | Drop weak ChESS corners before clustering (`0.0` = off). |
@@ -107,14 +107,14 @@ contract.
 
 | Group | Main knobs (on `AdvancedTuning`) | Effect |
 |---|---|---|
-| Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
-| Seed | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | 2×2 seed-quad validation. |
-| Grow | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | BFS attachment invariants. Rarely need tuning. |
-| Validation | `line_tol_rel`, `local_h_tol_rel`, `max_validation_iters` | Line + local-H residuals. Loosen `local_h_tol_rel` under strong lens distortion; keep `line_tol_rel` tight. |
-| Boosters | `enable_weak_cluster_rescue` | Toggle for the weak-cluster rescue booster. Line extrapolation, gap fill, and component merge run unconditionally. |
+| Pre-filter | `max_fit_rms_ratio` | Drop corners whose tanh-fit residual is too large relative to contrast. |
+| Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg`, `cluster_sigma_k`, `min_peak_weight_fraction` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
+| Recall boosters | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters` | Interior gap fill + line extrapolation onto empty cells, reusing the attachment invariants. Rarely need tuning. |
+| Geometry check | `geometry_check_line_tol_rel`, `geometry_check_local_h_tol_rel`, `line_min_members`, `enable_final_edge_shape_check` | Mandatory final precision gate: line collinearity + local-H residual + wrong-label check. |
 
-The cell size is **not** a tuning knob — the detector derives it from a
-self-consistent 4-corner seed, so there is nothing to configure.
+The cell size is **not** a tuning knob — the detector derives it from the
+labelled grid's median cardinal-edge length, so there is nothing to
+configure.
 
 `advanced` is serialized as a nested `"advanced"` object (it is **not**
 flattened) and is omitted entirely when unset; `min_corner_strength` and
@@ -128,14 +128,15 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
   detector. Tune the upstream ChESS corner detector (its
   `chess-corners` `DetectorConfig` — e.g. lower the corner-response
   threshold, enable a multiscale pyramid for large frames), then try
-  `DetectorParams::sweep_default()` which varies clustering/seed
+  `DetectorParams::sweep_default()` which varies clustering/attachment
   tolerances on this crate's side.
 - **Strong perspective / tilted view** — widen `cluster_tol_deg` and
   `attach_axis_tol_deg` by a few degrees; grow may refuse otherwise-valid
   neighbours at the image edge.
-- **Moderate radial distortion (no fisheye)** — loosen `local_h_tol_rel`
-  from the default 0.2 to ~0.35; the per-corner local-H check is the
-  strictest invariant under curvature.
+- **Moderate radial distortion (no fisheye)** — loosen
+  `geometry_check_local_h_tol_rel` from its default; the final geometry
+  check's per-corner local-H residual is the strictest invariant under
+  curvature.
 - **Low-contrast / glare** — glare patches starve the corner detector;
   adjust the upstream ChESS `DetectorConfig` thresholding (an absolute
   floor survives glare better than a relative one) so enough corners

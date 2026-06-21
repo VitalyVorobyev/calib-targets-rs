@@ -329,25 +329,6 @@ fn hex_detection_is_deterministic() {
     }
 }
 
-/// Negative: hex on the seed-and-grow selector is a typed UnsupportedCombination.
-#[test]
-fn hex_seed_and_grow_is_unsupported() {
-    let (feats, _) = hex_patch(2, 30.0, 100.0, &Matrix3::identity());
-    let req = DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Positions(&feats),
-        None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow),
-    );
-    let err = detect_grid(req).expect_err("hex + seed-and-grow must be unsupported");
-    match err {
-        projective_grid::GridError::UnsupportedCombination { lattice, .. } => {
-            assert_eq!(lattice, LatticeKind::Hex);
-        }
-        other => panic!("expected UnsupportedCombination, got {other:?}"),
-    }
-}
-
 /// Negative: `(Hex, Oriented1)` and `(Hex, Oriented2)` are unsupported (hex
 /// needs three axis families).
 #[test]

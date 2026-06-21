@@ -1,9 +1,8 @@
-# Profiling the projective-grid pipelines
+# Profiling the projective-grid pipeline
 
 This page documents how to capture flamegraphs and per-span timing for the
-two grid-build pipelines (`GraphBuildAlgorithm::Topological` and
-`GraphBuildAlgorithm::SeedAndGrow`) plus the shared
-`merge_components_local` post-stage.
+topological grid-build pipeline (`GraphBuildAlgorithm::Topological`) plus
+the shared `merge_components_local` post-stage.
 
 ## TL;DR
 
@@ -14,9 +13,9 @@ cargo install samply
 # 2. Build a release binary with debug info.
 cargo build --profile profiling -p calib-targets-bench --bin bench
 
-# 3. Capture a flamegraph for one image / one algorithm.
+# 3. Capture a flamegraph for one image.
 samply record -- ./target/profiling/bench run \
-    --algorithm seed-and-grow \
+    --algorithm topological \
     --image testdata/large.png \
     --target chessboard
 
@@ -24,7 +23,7 @@ samply record -- ./target/profiling/bench run \
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm seed-and-grow \
+    --algorithm topological \
     --image testdata/large.png \
     --target chessboard
 ```
@@ -100,7 +99,7 @@ needs `sudo` and may be blocked by SIP. Install with
 ```bash
 sudo cargo flamegraph --profile profiling \
     -p calib-targets-bench --bin bench -- \
-    run --algorithm seed-and-grow --image testdata/large.png --target chessboard
+    run --algorithm topological --image testdata/large.png --target chessboard
 ```
 
 This produces a `flamegraph.svg` next to your invocation directory. Move
@@ -116,9 +115,8 @@ event with field metadata:
 | Crate | Function | Span level | Fields |
 |---|---|---|---|
 | `projective-grid` | `build_grid_topological` | info | `num_corners` |
-| `projective-grid` | `square::grow::bfs_grow` | info | `num_corners`, `cell_size` |
 | `projective-grid` | `merge_components_local` | info | `num_components` |
-| `projective-grid` | `square::validate::validate` | info | `num_labelled`, `cell_size` |
+| `projective-grid` | `shared::validate::validate` | info | `num_labelled`, `cell_size` |
 | `projective-grid` | `topological::classify::classify_all_edges` | debug | `num_edges` |
 | `projective-grid` | `topological::quads::merge_triangle_pairs` | debug | `num_triangles` |
 | `projective-grid` | `topological::topo_filter::filter_quads` | debug | `num_quads_in` |
@@ -135,7 +133,7 @@ log level via `RUST_LOG`:
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm seed-and-grow --image testdata/large.png --target chessboard
+    --algorithm topological --image testdata/large.png --target chessboard
 
 # All substeps (more events; per-call detail).
 RUST_LOG=debug cargo run --profile profiling \
@@ -155,11 +153,11 @@ event per span if you pass `init_tracing(true)`).
 For a full pre-optimization snapshot, capture `samply` flamegraphs and a
 tracing JSON dump for each `(image, algorithm)` cell:
 
-| Image | Resolution | Target | Algorithms |
+| Image | Resolution | Target | Algorithm |
 |---|---|---|---|
-| `testdata/mid.png` | 1024×576 (0.6 MP) | chessboard | topological, seed-and-grow |
-| `testdata/large.png` | 2048×1536 (3.1 MP) | chessboard | topological, seed-and-grow |
-| `testdata/puzzleboard_reference/example4.png` | 4032×3024 (12.2 MP) | puzzleboard | topological, seed-and-grow |
+| `testdata/mid.png` | 1024×576 (0.6 MP) | chessboard | topological |
+| `testdata/large.png` | 2048×1536 (3.1 MP) | chessboard | topological |
+| `testdata/puzzleboard_reference/example4.png` | 4032×3024 (12.2 MP) | puzzleboard | topological |
 
 Keep all output under `bench_results/flamegraphs/` (gitignored). Naming
 convention:

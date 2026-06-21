@@ -50,25 +50,6 @@ every image — the `pos=` counter validates *positions of baseline
 corners*, not new labels (see the debugging guide), so new `(i, j)`
 labels are gated separately by overlay inspection + the geometry checks.
 
-## Orientation-free recall parity (public)
-
-The orientation-free path (`Evidence::Positions` /
-`OrientationSource::NeighbourEdges`, synthesizing grid axes from
-neighbour geometry) reaches recall **parity** with the ChESS-axis path
-on the clutter-free chessboard domain. The gate
-(`crates/calib-targets-bench/tests/orientation_free_parity.rs`) asserts,
-per public image, both:
-
-1. **recall parity** — `labelled(neighbour-edges) ≥ labelled(chess-axes)`;
-2. **zero wrong labels** — shared corners (matched by pixel position)
-   agree up to a single D4 transform + integer translation.
-
-Measured ≥ 1.0 on every clutter-free public image (`mid`, `large`, the
-four `02-topo-grid` boards). **Out of scope:** clutter-dense targets
-(ChArUco-style glyph corners at sub-lattice pitch), where position-only
-axis synthesis is information-limited — see *Algorithmic gaps* and the
-clutter-ceiling note in `ORIENTATION.md`.
-
 ## Synthetic suites (projective-grid)
 
 Two in-crate synthetic suites gate the precision contract on
@@ -98,14 +79,12 @@ reference dev machine (16×16 = 256-corner square, hex radius-6 =
 | Cell | Algorithm | Time |
 |---|---|---|
 | `square_oriented2` | topological | ~0.6 ms |
-| `square_oriented2` | seed-and-grow | ~0.9 ms |
-| `square_positions` | seed-and-grow (axis synthesis) | ~0.8 ms |
+| `square_positions` | topological (axis synthesis) | ~0.8 ms |
 | `hex_positions` | topological (axis synthesis) | ~0.19 ms |
 
 These are perf-regression *tracking* numbers, not a benchmark of any
 competitor; absolute values depend heavily on hardware, corner count,
-and perspective. The topological path is consistently faster than
-seed-and-grow on the same square input.
+and perspective.
 
 The workspace also ships a puzzleboard-size criterion suite
 (`cargo bench -p calib-targets --bench puzzleboard_sizes`).

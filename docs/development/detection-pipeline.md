@@ -1,129 +1,97 @@
 # Detection pipeline internals
 
-How the grid builders work, which one is wired where, and the per-corner
-invariants the whole stack relies on. Read this before touching graph-build,
-clustering, or orientation code.
+How the grid builder works, where it is wired, and the per-corner invariants the
+whole stack relies on. Read this before touching graph-build, clustering, or
+orientation code.
 
-## Graph-build algorithm selection
+## The grid builder: topological only
 
-`calib_targets_chessboard::DetectorParams::graph_build_algorithm` selects
-between two grid builders, both producing the same `(i, j) → corner_idx` map
-so downstream consumers stay agnostic:
+`projective_grid::topological::build_grid_topological` is the **sole** grid
+builder, used by every target type — chessboard, ChArUco, puzzleboard, and the
+marker board. It is the Shu/Brunton/Fiala 2009 grid finder with an axis-driven
+cell test that replaces the paper's image-color sampling so `projective-grid`
+stays image-free and standalone: Delaunay triangulation → classify edges
+(Grid / Diagonal / Spurious) → merge triangle pairs into cells → flood-fill
+integer labels → shared validate → shared fit. It carries no global cell-size
+dependency, and the same `(i, j) → corner_idx` map flows to every downstream
+consumer.
 
-- `GraphBuildAlgorithm::Topological` (**current default**) — Shu/Brunton/Fiala
-  2009 grid finder (`projective_grid::topological::build_grid_topological`)
-  with an axis-driven cell test that replaces the paper's image-color sampling
-  so `projective-grid` stays standalone. Image-free; faster, and higher recall
-  than seed-and-grow on the clean-chessboard regression set with precision held
-  (default flipped 2026-06-01). **NOT precision-safe on ChArUco-style images** —
-  ChESS fires corners inside marker bits whose axes poison the per-cell axis
-  test, so the topological builder can label marker-internal corners. Marker
-  scenes therefore go through the ChArUco detector, which pins seed-and-grow
-  (see below). Topological is not gated against ChArUco; see
-  `docs/algorithmic_gaps.md` Gap 8 + 10.
-- `GraphBuildAlgorithm::SeedAndGrow` — the invariant-rich seed-and-grow
-  pipeline (`crate::seed`/`grow`/`validate` + cluster + boosters,
-  ChESS-axis-driven). Pinned for ChArUco and the supported choice whenever
-  marker-internal corners are present; battle-tested across all four target
-  families.
+`calib_targets_chessboard::DetectorParams::graph_build_algorithm` (typed
+`GraphBuildAlgorithm`) and `projective_grid::SquareAlgorithm` are now
+**single-variant `#[non_exhaustive]` enums** with only `Topological`. They are
+**retained, not deleted** — reserved config seams so the schema stays stable and
+a future alternative builder can be added without a breaking change. The
+historical `SeedAndGrow` variant (a self-consistent 4-corner seed plus BFS grow
+with axis-coupled boosters) was retired once the topological builder matched or
+beat it on every shipping path, including ChArUco. The wire string
+`"seed_and_grow"` no longer deserializes; config loaders that previously
+accepted it now resolve any legacy `graph_build_algorithm` value to
+`Topological`.
 
-### ChArUco pinning
+### Marker-internal corners (formerly the ChArUco concern)
 
-`CharucoDetector::new` (`crates/calib-targets-charuco/src/detector/pipeline.rs`)
-unconditionally overrides `chessboard.graph_build_algorithm = SeedAndGrow`
-regardless of caller choice — marker-cell features defeat the topological cell
-test, so the override is a precision guarantee, not a configuration choice.
-PuzzleBoard and marker board inherit the caller's choice via their nested
-`DetectorParams`.
+On ChArUco-style scenes ChESS fires spurious corners *inside* marker bits whose
+axes lock to the marker rather than the grid; historically those poisoned the
+topological per-cell axis test, which is why ChArUco used to pin the
+seed-and-grow builder. That pin is gone. ChArUco now runs the topological
+builder with two `CharucoParams::for_board` settings that handle the marker-bit
+corners directly:
+
+- a `min_corner_strength` floor (set to `33.0`) cuts the weak ChESS responses on
+  marker-bit saddles **before** the grid grows, so the grid never extends into
+  the marker interior; and
+- `enable_final_edge_shape_check` is disabled (the marker-ID and
+  board-alignment validation downstream of grid recovery is the precision gate
+  for ChArUco, so the chessboard component stays recall-oriented).
+
+See `crates/calib-targets-charuco/docs/PIPELINE.md` for the full ChArUco stage
+map and `docs/algorithmic_gaps.md` for the remaining open items.
 
 ### Component merge
 
 `projective_grid::component_merge::merge_components_local` runs as a post-stage
-for **both** pipelines and uses local geometry only — no global homography, so
-it tolerates heavy radial distortion that would break a global fit. The
-chessboard crate's historical `enable_component_merge` flag is now backed by
-this shared implementation via `DetectorParams::component_merge:
-LocalMergeParams`.
+on the topological builder's per-component walk output and uses local geometry
+only — no global homography, so it tolerates heavy radial distortion that would
+break a global fit. The chessboard crate's historical `enable_component_merge`
+flag is now backed by this shared implementation via
+`DetectorParams::component_merge: LocalMergeParams`.
 
-### Orientation source (experimental, default-off)
+### Orientation source
 
-`DetectorParams::orientation_source: OrientationSource` selects where the
-**topological** builder gets each corner's two grid directions: `ChessAxes`
-(default — the per-corner ChESS axes) or `NeighbourEdges` (synthesized from
-neighbour geometry via `projective_grid::synthesize_oriented2`, no ChESS-axis
-dependence). Serde-skipped at its default, so the stable config surface is
-unchanged. `NeighbourEdges + SeedAndGrow` is a typed
-`ChessboardParamsError::NeighbourEdgesRequiresTopological` (the native
-seed-and-grow *pipeline* consumes ChESS axes directly); use the topological
-builder, or the `projective-grid` grid engine, for the orientation-free path.
+The chessboard detector consumes the per-corner ChESS axis estimates carried by
+each `ChessCorner` directly: clustering, Delaunay admission, and the recovery
+boosters all read `ChessCorner.axes`. (The experimental chessboard-level
+`OrientationSource::NeighbourEdges` knob — which synthesized the two grid
+directions from neighbour geometry — was removed; the orientation-free path now
+lives only in `projective-grid` for external callers, see below.)
 
-The `projective-grid` facade now runs a **geometry-only recovery schedule**
-(`seed_and_grow::recovery`) on the synthesized-axis paths (`Evidence::Positions`
-/ `Evidence::Oriented1`) under `RecoverySchedule::Auto`: boundary extension
+The `projective-grid` facade still runs a **geometry-only recovery schedule**
+(`RecoverySchedule`) on the synthesized-axis paths (`Evidence::Positions` /
+`Evidence::Oriented1`) under `RecoverySchedule::Auto`: boundary extension
 (local-H + cardinal-BFS) → interior fill → revalidate → drop filters
-(topological wrong-label + largest-component), iterated to a fixed point. It is
-precision-safe by construction — every attachment passes the same gates as BFS
-grow, and a geometrically-incoherent attach is *dropped*, never mislabelled. On
+(topological wrong-label + largest-component), iterated to a fixed point. (This
+schedule originated with the retired seed-and-grow builder and survived the
+retirement; it now powers the topological synthesized-axis path.) It is
+precision-safe by construction — every attachment passes the same geometric
+gates, and a geometrically-incoherent attach is *dropped*, never mislabelled. On
 a clean synthetic perspective grid it reaches full recall at zero wrong labels
 (see `projective-grid/tests/detect_square_positions.rs`).
 
 The chessboard topological adapter pins `RecoverySchedule::Off` and keeps its
 own ChESS-axis-coupled recovery, so production output is byte-identical.
 
-#### Orientation parity metric
-
-The orientation-free vs ChESS-axis head-to-head is measured per-image as the
-labelled-count ratio of the two `grid`-engine cells:
-
-```
-parity(image) = labelled(grid, neighbour-edges) / labelled(grid, chess-axes)
-```
-
-Run both cells and compare the per-image `labelled_count` in the report JSONs:
-
-```bash
-cargo run -p calib-targets-bench -- run --engine grid \
-    --algorithm topological --orientation-source chess-axes
-cargo run -p calib-targets-bench -- run --engine grid \
-    --algorithm topological --orientation-source neighbour-edges
-```
-
-**Supported domain: clutter-free regular grids.** On every clutter-free public
-chessboard image the orientation-free path matches or beats the ChESS-axis
-path (parity ≥ 1.0; on large foreshortened boards the synthesized-axis +
-recovery combination materially exceeds chess-axis recall), at zero wrong
-labels. This is pinned by the
-`calib-targets-bench/tests/orientation_free_parity.rs` gate: recall parity
-plus a D4+translation label-consistency audit on shared corners, per image.
-
-**Out of scope: clutter-dense targets (measured information ceiling).** On
-ChArUco-style boards, glyph corners at sub-lattice pitch dominate the local
-neighbourhood statistics, and position-only axis synthesis provably cannot
-recover the lattice directions there (measured: ~0 % of true lattice edges
-fall within the topological classifier's axis tolerance on the blurred glyph
-boards, vs ~94 % on clean boards; the recovered axes lock onto the clutter
-geometry). The drop filters then correctly refuse the incoherent mesh —
-recall lost, precision preserved. This is an information limit of
-position-only evidence, not a tuning gap; clutter-bearing targets need
-intensity-aware axes (the ChESS fit), which is exactly what the production
-default uses. Details in `docs/algorithmic_gaps.md` (orientation-free
-clutter ceiling). Concrete per-image numbers are local-only
-(`bench_results/`).
-
 ### Bench harness selector
 
 ```bash
 cargo run -p calib-targets-bench -- {run,preview,diagnose} \
-    --algorithm {topological,seed-and-grow} \
-    [--engine {pipeline,grid}] \
-    [--orientation-source {chess-axes,neighbour-edges}]
+    [--engine {pipeline,grid}]
 ```
 
-Runs either pipeline; the `grid` engine drives `detect_grid_all` directly
-(bypassing chessboard recovery) for the orientation-source head-to-head. Output
-JSON / overlay filenames carry the engine + algorithm + orientation-source
-slugs so cells coexist in the same directory. `bench diagnose --algorithm
-topological` reports the per-triangle composition counters (mergeable /
+Runs the chessboard pipeline on the topological builder; the `grid` engine
+drives `detect_grid_all` directly (bypassing chessboard recovery) over the
+ChESS-axis evidence. Output JSON / overlay filenames carry the engine +
+orientation-method slugs so cells coexist in the same directory. `bench
+diagnose` reports the per-triangle composition counters (mergeable /
 multi-diagonal / has-spurious / all-grid) plus per-quadrant labelled/unlabelled
 counts and the unlabelled corners' axis sigmas — the right starting point when
 investigating recall holes.
@@ -160,13 +128,14 @@ in `calib-targets-core/src/orientation_clustering.rs` and
 
 ## Cell-size estimation gotcha
 
-Do **not** pass a pre-computed global cell-size into a seed or graph-build step.
+Do **not** pass a pre-computed global cell-size into a graph-build step.
 Cross-cluster nearest-neighbor distance distributions are bimodal on boards with
 ArUco markers (marker-internal pairs vs true board pairs), and all mode finders —
-multimodal mean-shift included — can pick the wrong mode. The seed-and-grow
-detector solves this by **deriving cell size from a self-consistent 4-corner
-seed** (edges match each other within a ratio tolerance, not against a prior
-scalar); see `crates/calib-targets-chessboard/src/seed.rs`. If a future detector
-must commit to a cell size up front, validate it by trying a seed and only trust
-the estimate if the seed closes; otherwise fall back to the seed's own
-edge-length mean.
+multimodal mean-shift included — can pick the wrong mode. The topological builder
+sidesteps this entirely: it never commits to a global cell size, deriving every
+length judgement from **local** triangle geometry (per-cell edge-length bands and
+the √2 diagonal ratio inside each Delaunay triangle), so it tolerates the smooth
+pitch variation a global scalar would mis-model. If a future detector must commit
+to a cell size up front, validate it against local geometry — try to close a
+small consistent patch and only trust the estimate if that patch agrees — rather
+than trusting a single global mode.

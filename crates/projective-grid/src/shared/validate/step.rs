@@ -15,9 +15,9 @@ use std::collections::{HashMap, HashSet};
 /// The returned value is `(|i_step| + |j_step|) / 2` in pixels — the
 /// same scalar metric used by `find_inconsistent_corners_step_aware`.
 ///
-/// See also `crate::seed_and_grow::grow` `local_step_at` — the
-/// prediction-time per-neighbour local step used inside `bfs_grow`; this
-/// function is the validation-time scalar companion.
+/// See also `crate::shared::grow::predict` — the prediction-time per-neighbour
+/// local step used inside the growth helpers; this function is the
+/// validation-time scalar companion.
 pub(super) fn local_step_per_corner(
     by_idx: &HashMap<usize, &LabelledEntry>,
     by_grid: &HashMap<(i32, i32), usize>,

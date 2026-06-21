@@ -43,7 +43,7 @@ const DEFAULT_A: Slot = {
   orientationMethod: "ring_fit",
 };
 
-const DEFAULT_B: Slot = { ...DEFAULT_A, algorithm: "seed_and_grow" };
+const DEFAULT_B: Slot = { ...DEFAULT_A };
 
 function slotParams(s: Slot): DetectorParamsOverride {
   return {
@@ -437,7 +437,7 @@ function SlotControls({
   );
   const body = (
     <>
-      {sel(slot.algorithm, ["topological", "seed_and_grow"], (v) =>
+      {sel(slot.algorithm, ["topological"], (v) =>
         onSlot({ ...slot, algorithm: v as GraphBuildAlgorithm }),
       )}
       {sel(slot.engine, ["pipeline", "grid"], (v) =>
@@ -447,9 +447,6 @@ function SlotControls({
         slot.orientationSource,
         ["chess_axes", "neighbour_edges"],
         (v) => onSlot({ ...slot, orientationSource: v as OrientationSource }),
-        slot.algorithm === "seed_and_grow" && slot.engine === "pipeline"
-          ? ["neighbour_edges"]
-          : [],
       )}
       {sel(slot.orientationMethod, ["ring_fit", "disk_fit"], (v) =>
         onSlot({ ...slot, orientationMethod: v as OrientationMethodReq }),

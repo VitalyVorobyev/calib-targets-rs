@@ -11,8 +11,7 @@ use crate::detectors::{
     ct_charuco_detector_destroy, ct_charuco_detector_detect,
     ct_charuco_detector_detect_diagnostics_json, ct_chessboard_detect_args_t,
     ct_chessboard_detect_buffers_t, ct_chessboard_detector_create, ct_chessboard_detector_destroy,
-    ct_chessboard_detector_detect, ct_chessboard_detector_detect_diagnostics_json,
-    ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
+    ct_chessboard_detector_detect, ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
     ct_marker_board_detector_create, ct_marker_board_detector_destroy,
     ct_marker_board_detector_detect, ct_marker_board_detector_detect_diagnostics_json,
     ct_puzzleboard_detect_args_t, ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
@@ -806,29 +805,6 @@ fn diagnostics_json_via(accessor: impl Fn(*mut i8, usize, *mut usize) -> ct_stat
         .to_str()
         .unwrap()
         .to_string()
-}
-
-#[test]
-fn chessboard_diagnostics_json_is_well_formed() {
-    let config = chessboard_config_mid_png();
-    let mut detector = ptr::null_mut();
-    let status = unsafe { ct_chessboard_detector_create(&config, &mut detector) };
-    assert_eq!(status, ct_status_t::CT_STATUS_OK);
-
-    let image = load_gray("mid.png");
-    let descriptor = image_descriptor(&image);
-    let args = ct_chessboard_detect_args_t {
-        detector,
-        image: &descriptor,
-    };
-    let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_chessboard_detector_detect_diagnostics_json(&args, out, cap, len)
-    });
-    let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-    assert!(parsed.get("schema").is_some());
-    assert!(parsed.get("corners").is_some());
-
-    unsafe { ct_chessboard_detector_destroy(detector) };
 }
 
 #[test]

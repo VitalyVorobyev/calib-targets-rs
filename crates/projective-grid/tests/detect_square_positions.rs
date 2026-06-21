@@ -2,9 +2,11 @@
 //! `(LatticeKind::Square, Evidence::Positions)` — the orientation-free path.
 //!
 //! These exercise the position-only entry: per-corner local grid directions are
-//! synthesized from neighbour geometry, then the chosen square strategy runs.
-//! Inputs are synthetic and target-agnostic, including a genuine perspective
-//! warp (the two grid directions are non-orthogonal and vary across the image).
+//! synthesized from neighbour geometry, then the topological square assembler
+//! runs with the geometry-only recovery schedule enabled (the `Auto`-on
+//! synthesized-axis path). Inputs are synthetic and target-agnostic, including a
+//! genuine perspective warp (the two grid directions are non-orthogonal and
+//! vary across the image).
 //!
 //! The precision contract is the headline assertion: **zero wrong `(i, j)`
 //! labels**. A perfect synthetic grid must also be *fully* recovered.
@@ -129,20 +131,6 @@ fn entries_with_truth(sol: &projective_grid::GridSolution) -> Vec<(usize, Coord)
 }
 
 #[test]
-fn perfect_grid_seed_and_grow_fully_recovered_zero_wrong() {
-    let feats = grid_positions(7, 7, 24.0, 60.0);
-    let truth: HashMap<usize, (i32, i32)> = feats
-        .iter()
-        .enumerate()
-        .map(|(idx, _)| (idx, ((idx as i32) % 7, (idx as i32) / 7)))
-        .collect();
-    let sol = detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
-        .expect("seed-and-grow on perfect 7x7 position grid");
-    assert_eq!(sol.grid.entries.len(), 49, "should recover all 49 corners");
-    assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "perfect SeedAndGrow");
-}
-
-#[test]
 fn perfect_grid_topological_fully_recovered_zero_wrong() {
     let feats = grid_positions(7, 7, 24.0, 60.0);
     let truth: HashMap<usize, (i32, i32)> = feats
@@ -152,8 +140,8 @@ fn perfect_grid_topological_fully_recovered_zero_wrong() {
         .collect();
     let sol = detect_grid(request(&feats, SquareAlgorithm::Topological))
         .expect("topological on perfect 7x7 position grid");
-    // Topological recovers the full quad-mesh interior; a few boundary corners
-    // (whose synthesized axes pull in a diagonal neighbour) may drop. The
+    // Topological recovers the full quad-mesh interior; with the recovery
+    // schedule on the synthesized-axis path the boundary fills in too. The
     // contract is zero wrong labels, not 100% recall.
     assert!(
         sol.grid.entries.len() >= 36,
@@ -163,15 +151,15 @@ fn perfect_grid_topological_fully_recovered_zero_wrong() {
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "perfect Topological");
 }
 
-/// Determinism (enabled): the orientation-free (`Evidence::Positions`) facade
-/// seed-and-grow path must produce byte-identical output across repeated runs
-/// on the same input. This guards the Phase-1 determinism fix — the facade
-/// component assembly, seed candidate selection (`seed/finder.rs`), and BFS
-/// frontier ordering (`seed_and_grow/grow.rs`) now break HashMap-iteration /
-/// kiddo `within_unsorted` ties by stable corner index / sorted coords, so the
-/// run-to-run swing (formerly ~4 vs ~22 of 64 from identical input) is gone.
+/// Determinism (enabled): the orientation-free (`Evidence::Positions`)
+/// topological path must produce byte-identical output across repeated runs on
+/// the same input. The topological walk, the local component merge, and the
+/// recovery schedule's extension / fill / drop filters all break
+/// HashMap-iteration / kiddo `within_unsorted` ties by stable corner index /
+/// sorted coords, so the run-to-run swing (formerly ~4 vs ~22 of 64 from
+/// identical input) is gone.
 #[test]
-fn perspective_grid_seed_and_grow_is_deterministic() {
+fn perspective_grid_positions_is_deterministic() {
     // Real perspective term: grid directions are non-orthogonal and drift.
     let h = Matrix3::new(
         1.0, 0.18, 0.0, //
@@ -192,50 +180,19 @@ fn perspective_grid_seed_and_grow_is_deterministic() {
     };
 
     let first = signature(
-        &detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
-            .expect("seed-and-grow on perspective grid"),
+        &detect_grid(request(&feats, SquareAlgorithm::Topological))
+            .expect("topological on perspective grid"),
     );
     for run in 1..10 {
         let again = signature(
-            &detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
-                .expect("seed-and-grow on perspective grid"),
+            &detect_grid(request(&feats, SquareAlgorithm::Topological))
+                .expect("topological on perspective grid"),
         );
         assert_eq!(
             first, again,
-            "facade seed-and-grow output differs on run {run} (non-determinism)"
+            "positions topological output differs on run {run} (non-determinism)"
         );
     }
-}
-
-// Phase 3 (orientation-free parity): the facade seed-and-grow positions path
-// now runs the `PositionsAttachPolicy` + post-convergence recovery schedule
-// (boundary extension + interior fill + revalidate + drop filters), which
-// brings its recall under a strong perspective warp up to the topological
-// path's level. On this fixture it recovers the full 8×8 (64/64) with zero
-// wrong labels; the floor is set to measured-minus-margin (60/64) so a minor
-// tuning drift stays green while a real regression trips it. The headline
-// contract — zero wrong `(i, j)` labels — is still verified for every label.
-#[test]
-fn perspective_grid_seed_and_grow_zero_wrong_labels() {
-    // Real perspective term: grid directions are non-orthogonal and drift.
-    let h = Matrix3::new(
-        1.0, 0.18, 0.0, //
-        0.0, 1.0, 0.0, //
-        0.0011, 0.0007, 1.0,
-    );
-    let (feats, truth) = perspective_grid(8, 8, 28.0, 50.0, &h);
-    let sol = detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
-        .expect("seed-and-grow on perspective grid");
-    assert!(
-        sol.grid.entries.len() >= 60,
-        "recovered only {}/64 under perspective (Phase-3 recovery floor 60)",
-        sol.grid.entries.len()
-    );
-    assert_labels_consistent_with_truth(
-        &entries_with_truth(&sol),
-        &truth,
-        "perspective SeedAndGrow",
-    );
 }
 
 #[test]
@@ -278,8 +235,8 @@ fn outliers_do_not_corrupt_labels() {
     {
         feats.push(PointFeature::new(base + k, Point2::new(x, y)));
     }
-    let sol = detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow))
-        .expect("seed-and-grow with outliers");
+    let sol = detect_grid(request(&feats, SquareAlgorithm::Topological))
+        .expect("topological with outliers");
     // Keep only labelled corners that belong to the true grid for the
     // consistency check; the contract is "no wrong label on a grid corner".
     let grid_entries: Vec<(usize, Coord)> = entries_with_truth(&sol)
@@ -291,16 +248,15 @@ fn outliers_do_not_corrupt_labels() {
         "recovered only {}/36 grid corners with outliers present",
         grid_entries.len()
     );
-    assert_labels_consistent_with_truth(&grid_entries, &truth, "outliers SeedAndGrow");
+    assert_labels_consistent_with_truth(&grid_entries, &truth, "outliers Topological");
 }
 
-/// Sanity: the synthesized-axis path and a caller-supplied-axis path agree on a
-/// clean grid (the position-only path is not worse than giving exact axes).
+/// Sanity: the synthesized-axis position-only path recovers a clean grid fully.
 #[test]
 fn position_only_matches_oriented_on_clean_grid() {
     let feats = grid_positions(6, 6, 25.0, 60.0);
     let pos_sol =
-        detect_grid(request(&feats, SquareAlgorithm::SeedAndGrow)).expect("position-only detect");
+        detect_grid(request(&feats, SquareAlgorithm::Topological)).expect("position-only detect");
     let pos_labels: HashSet<usize> = pos_sol
         .grid
         .entries

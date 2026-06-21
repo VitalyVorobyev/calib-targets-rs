@@ -12,30 +12,15 @@ pub const CT_TRUE: u32 = 1;
 /// Selector for the chessboard graph-build algorithm. Mirrors the
 /// `calib_targets_chessboard::GraphBuildAlgorithm` enum.
 ///
-/// Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
-/// keeps zero-initialised C structs on the historical seed-and-grow
-/// pipeline (`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`).
+/// The chessboard detector builds its grid with the topological pipeline (the
+/// only builder). Both selector values resolve to it; the seed-and-grow
+/// constant is retained only for source/ABI compatibility.
 pub type ct_graph_build_algorithm_t = u32;
-/// Seed-and-grow pipeline. Currently the default.
+/// Retired seed-and-grow selector. Accepted for ABI compatibility and mapped
+/// to the topological pipeline.
 pub const CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW: ct_graph_build_algorithm_t = 0;
-/// Topological pipeline (Delaunay + axis-driven cell test).
+/// Topological pipeline (Delaunay + axis-driven cell test). The only builder.
 pub const CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL: ct_graph_build_algorithm_t = 1;
-
-/// Selector for the chessboard orientation source. Mirrors the
-/// `calib_targets_chessboard::OrientationSource` enum.
-///
-/// Defaulting `ct_chessboard_params_t::orientation_source` to `0` keeps
-/// zero-initialised C structs on per-corner ChESS axes
-/// (`CT_ORIENTATION_SOURCE_CHESS_AXES`). `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES`
-/// is **topological-only** — pairing it with
-/// [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`] is rejected by the detector with a
-/// configuration error.
-pub type ct_orientation_source_t = u32;
-/// Per-corner ChESS axis estimates. The default.
-pub const CT_ORIENTATION_SOURCE_CHESS_AXES: ct_orientation_source_t = 0;
-/// Synthesize the two grid directions from neighbour-edge geometry
-/// (topological builder only).
-pub const CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES: ct_orientation_source_t = 1;
 
 /// Fixed dictionary identifier type for built-in marker dictionaries.
 pub type ct_dictionary_id_t = u32;
@@ -478,14 +463,10 @@ pub struct ct_chess_config_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_params_t {
-    /// Pipeline selector. See [`ct_graph_build_algorithm_t`].
-    /// Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
+    /// Pipeline selector. See [`ct_graph_build_algorithm_t`]. Both values
+    /// resolve to the topological builder (the only builder); the field is
+    /// retained for ABI stability.
     pub graph_build_algorithm: ct_graph_build_algorithm_t,
-    /// Orientation source. See [`ct_orientation_source_t`].
-    /// Default `0` (== [`CT_ORIENTATION_SOURCE_CHESS_AXES`]).
-    /// `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES` requires
-    /// [`CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL`].
-    pub orientation_source: ct_orientation_source_t,
 
     // --- Stable core --------------------------------------------------------
     /// Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
@@ -532,11 +513,6 @@ pub struct ct_chessboard_advanced_t {
     pub peak_min_separation_deg: f32,
     pub min_peak_weight_fraction: f32,
 
-    // Seed
-    pub seed_edge_tol: f32,
-    pub seed_axis_tol_deg: f32,
-    pub seed_close_tol: f32,
-
     // Grow
     pub attach_search_rel: f32,
     pub attach_axis_tol_deg: f32,
@@ -545,10 +521,7 @@ pub struct ct_chessboard_advanced_t {
     pub edge_axis_tol_deg: f32,
 
     // Validate
-    pub line_tol_rel: f32,
     pub line_min_members: usize,
-    pub local_h_tol_rel: f32,
-    pub max_validation_iters: u32,
 
     // Recall boosters
     pub enable_weak_cluster_rescue: u32,

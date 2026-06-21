@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::{AdvancedTuning, DetectorParams, GraphBuildAlgorithm};
+use calib_targets_chessboard::{AdvancedTuning, DetectorParams};
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
 use serde::{Deserialize, Serialize};
@@ -14,41 +14,17 @@ pub struct CharucoParams {
     pub px_per_square: f32,
     /// Chessboard detection parameters.
     ///
-    /// **Only [`GraphBuildAlgorithm::SeedAndGrow`] is supported.** The
-    /// topological pipeline's axis-driven cell test cannot reason about
-    /// marker-bearing cells, whose embedded bit features perturb the
-    /// per-corner ChESS axes; only the seed-and-grow pipeline reliably
-    /// labels ChArUco grids. Constructing this field with
-    /// [`GraphBuildAlgorithm::Topological`] is honoured up front by the
-    /// constructors ([`CharucoParams::for_board`] /
-    /// [`CharucoParams::sweep_for_board`] pin seed-and-grow), and a detect
-    /// call made with an explicit `Topological` setting returns the typed
-    /// [`CharucoDetectError::UnsupportedAlgorithm`](crate::CharucoDetectError::UnsupportedAlgorithm)
-    /// rather than silently overriding the choice.
+    /// ChArUco runs on the **topological** grid builder (the workspace
+    /// default). The `min_corner_strength` floor set by
+    /// [`CharucoParams::for_board`] keeps marker-bit saddles out of the grid,
+    /// so the topological cell test labels ChArUco grids cleanly, and the
+    /// marker-decode stages downstream of grid construction are
+    /// builder-agnostic. The decode is precision-clean on the topological grid
+    /// (zero self-consistency wrong-ids on the private flagship sweep).
     ///
     /// [`graph_build_algorithm`]: calib_targets_chessboard::DetectorParams::graph_build_algorithm
-    /// [`GraphBuildAlgorithm::SeedAndGrow`]: calib_targets_chessboard::GraphBuildAlgorithm::SeedAndGrow
-    /// [`GraphBuildAlgorithm::Topological`]: calib_targets_chessboard::GraphBuildAlgorithm::Topological
     #[serde(default)]
     pub chessboard: DetectorParams,
-    /// **Measurement-only escape hatch — leave `false` in production.**
-    ///
-    /// When `false` (the default), a [`chessboard`](Self::chessboard) request for
-    /// any builder other than [`GraphBuildAlgorithm::SeedAndGrow`] is rejected
-    /// with [`CharucoDetectError::UnsupportedAlgorithm`](crate::CharucoDetectError::UnsupportedAlgorithm).
-    /// When `true`, the detector permits
-    /// [`GraphBuildAlgorithm::Topological`] and runs the full decode on the
-    /// topological grid. The decode stages downstream of grid construction are
-    /// algorithm-agnostic, so this is sound — it exists so the algorithm-parity
-    /// campaign can measure topological charuco decode precision (false corners
-    /// and wrong IDs) head-to-head against seed-and-grow before any default is
-    /// changed.
-    ///
-    /// **Unstable:** NOT covered by semver; this flag may be removed once the
-    /// parity decision lands (either the guard is dropped, or topological stays
-    /// unsupported for charuco).
-    #[serde(default)]
-    pub allow_topological_grid: bool,
     /// ChArUco board parameters
     #[serde(alias = "charuco")]
     pub board: CharucoBoardSpec,
@@ -245,10 +221,8 @@ impl CharucoParams {
         DetectorParams::sweep_default()
             .into_iter()
             .map(|mut chessboard| {
-                // ChArUco runs only on seed-and-grow; `sweep_default()` builds
-                // topological configs, so pin the algorithm here (see
-                // `CharucoDetectError::UnsupportedAlgorithm`).
-                chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+                // `sweep_default()` already builds topological configs (the
+                // workspace default), which is the builder ChArUco runs on.
                 chessboard.min_corner_strength = base_strength;
                 let mut advanced = chessboard.effective_tuning().into_owned();
                 advanced.enable_final_edge_shape_check = base_edge_shape_check;
@@ -270,11 +244,8 @@ impl CharucoParams {
     /// gate.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
-        // ChArUco runs only on the seed-and-grow pipeline (see
-        // `CharucoParams::chessboard` and `CharucoDetectError::UnsupportedAlgorithm`).
-        // `DetectorParams::default()` now defaults to the topological builder,
-        // so pin seed-and-grow here explicitly.
-        chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+        // `DetectorParams::default()` already selects the topological builder,
+        // which is the builder ChArUco runs on (see `CharucoParams::chessboard`).
         // Absolute ChESS-strength floor. In defocused regions the corner
         // detector fires weakly on ArUco-marker bit saddles that align with
         // a grid extrapolation; those false corners are grid-consistent
@@ -314,9 +285,6 @@ impl CharucoParams {
         Self {
             px_per_square: 60.0,
             chessboard,
-            // Production charuco is pinned to seed-and-grow; the topological
-            // escape hatch is opt-in for the measurement campaign only.
-            allow_topological_grid: false,
             board: *board,
             scan,
             max_hamming,

@@ -14,29 +14,16 @@ pub enum CharucoDetectError {
         /// Number of markers that agreed with the best alignment found.
         inliers: usize,
     },
-    /// The chessboard `graph_build_algorithm` requested via
-    /// [`CharucoParams::chessboard`](crate::CharucoParams::chessboard) is not
-    /// supported by the ChArUco detector.
+    /// The chessboard parameters supplied via
+    /// [`CharucoParams::chessboard`](crate::CharucoParams::chessboard) were
+    /// rejected by the chessboard detector's own configuration validator
+    /// (`calib_targets_chessboard::Detector::new`).
     ///
-    /// Only [`GraphBuildAlgorithm::SeedAndGrow`] is supported: the topological
-    /// builder's axis-driven cell test assumes uniform black/white tiles, which
-    /// marker squares break — a marker carries embedded bit features whose ChESS
-    /// axes do not align with the global board directions, so triangle-pair
-    /// merging into chessboard cells fails on every marker-bearing cell (see
-    /// Gaps 8 + 10 in `docs/algorithmic_gaps.md`). Making the topological cell
-    /// test marker-safe is out of scope; use
-    /// [`GraphBuildAlgorithm::SeedAndGrow`] (the default) instead.
-    ///
-    /// The measurement-only
-    /// [`CharucoParams::allow_topological_grid`](crate::CharucoParams::allow_topological_grid)
-    /// opt-in suppresses this error and runs the decode on the topological grid
-    /// — used by the algorithm-parity campaign, not production.
-    ///
-    /// [`GraphBuildAlgorithm::SeedAndGrow`]: calib_targets_chessboard::GraphBuildAlgorithm::SeedAndGrow
-    #[error(
-        "ChArUco does not support GraphBuildAlgorithm::Topological; \
-         marker-internal corners defeat the topological cell test — \
-         use GraphBuildAlgorithm::SeedAndGrow (the default)"
-    )]
+    /// ChArUco runs on the topological grid builder; the only configuration the
+    /// chessboard validator currently rejects is an orientation-source /
+    /// graph-builder mismatch (a combination ChArUco never sets itself but a
+    /// caller could construct on the embedded `chessboard` field). The detector
+    /// surfaces it here rather than panicking.
+    #[error("chessboard configuration rejected by the chessboard detector validator")]
     UnsupportedAlgorithm,
 }

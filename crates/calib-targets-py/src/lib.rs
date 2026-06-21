@@ -185,11 +185,10 @@ fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::C
         return Err(value_error("params is required for ChArUco detection"));
     }
     let mut params: charuco::CharucoParams = from_py_json(obj, "params")?;
-    // ChArUco only supports the seed-and-grow builder. The embedded chessboard
-    // `graph_build_algorithm` defaults to the (standalone) topological builder
-    // when omitted from the config, which charuco rejects at detect time — so
-    // re-pin seed-and-grow, matching `CharucoParams::for_board`.
-    params.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::SeedAndGrow;
+    // ChArUco runs on the topological grid builder (the only builder); re-pin
+    // it so a config carrying a legacy `graph_build_algorithm` value still
+    // resolves to the supported builder. Matches `CharucoParams::for_board`.
+    params.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
     Ok(params)
 }
 
@@ -343,48 +342,6 @@ fn detect_chessboard_all(
     });
     let json =
         serde_json::to_value(results).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
-}
-
-/// Run the instrumented chessboard detector and return a self-contained
-/// debug frame: strong corners with both axis estimates, graph edges,
-/// per-reason rejection counts, continuous quality metrics, and the
-/// optional labelled detection.
-///
-/// Unlike [`detect_chessboard`] this always returns a dict — failure
-/// paths carry non-empty stage counts and partial metrics so the caller
-/// can diagnose *why* detection failed.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chess`.
-///   params: dict with ChessboardParams fields, or None for defaults.
-///
-/// Returns:
-///   dict with the `ChessboardDebugFrame` schema.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn detect_chessboard_debug(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let params = chessboard_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-
-    // Validate the configuration up front so an invalid combination surfaces
-    // as a Python error rather than panicking inside the worker thread.
-    let detector = chessboard::Detector::new(params.clone())
-        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
-    let frame = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
-        detector.detect_with_diagnostics(&corners)
-    });
-    let json =
-        serde_json::to_value(frame).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)
 }
 
@@ -731,9 +688,9 @@ fn detect_charuco_best(
     let mut params_vec = Vec::with_capacity(list.len());
     for item in list.iter() {
         let mut cfg = from_py_json::<charuco::CharucoParams>(&item, "configs[]")?;
-        // ChArUco only supports seed-and-grow; re-pin in case the config
-        // omitted the (now topological-defaulting) chessboard algorithm.
-        cfg.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::SeedAndGrow;
+        // ChArUco runs on the topological grid builder (the only builder);
+        // re-pin in case the config carries a legacy chessboard algorithm.
+        cfg.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
         params_vec.push(cfg);
     }
 
@@ -876,7 +833,6 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_chessboard_all, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_chessboard_debug, m)?)?;
     m.add_function(wrap_pyfunction!(trace_chessboard_topological, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;

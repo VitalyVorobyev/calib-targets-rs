@@ -1,14 +1,13 @@
 //! Geometry-only post-convergence recovery schedule (advanced tier).
 //!
-//! After the seed → grow → validate convergence loop
-//! ([`crate::seed_and_grow::pipeline`]) has produced one self-consistent
-//! labelled component, recall on a foreshortened / partially-occluded grid is
-//! still bounded by how far the BFS frontier reached before the per-edge band
-//! or the synthesized-axis voucher stalled it. This module composes the
-//! already-migrated boundary-extension and interior-fill engines, interleaved
-//! with revalidation and the lattice-general drop filters, into a single
-//! fixed-point schedule that pushes recall up to the dense-recovery level the
-//! topological path reaches — **without** any target-specific vocabulary.
+//! After a component-assembly pass has produced one self-consistent labelled
+//! component, recall on a foreshortened / partially-occluded grid is still
+//! bounded by how far the growth frontier reached before the per-edge band or
+//! the synthesized-axis voucher stalled it. This module composes the
+//! boundary-extension and interior-fill engines, interleaved with revalidation
+//! and the lattice-general drop filters, into a single fixed-point schedule
+//! that pushes recall up to the dense-recovery level the topological walk
+//! reaches — **without** any target-specific vocabulary.
 //!
 //! # Stage order
 //!
@@ -65,10 +64,10 @@ use std::collections::{HashMap, HashSet};
 
 use nalgebra::{Point2, Vector2};
 
-use crate::seed_and_grow::extension::{extend_via_local_homography, LocalExtensionParams};
-use crate::seed_and_grow::fill::{fill_grid_holes, FillParams};
-use crate::seed_and_grow::grow::{GrowParams, GrowResult, SquareAttachPolicy};
-use crate::seed_and_grow::grow_extend::extend_from_labelled;
+use crate::shared::extension::{extend_via_local_homography, LocalExtensionParams};
+use crate::shared::fill::{fill_grid_holes, FillParams};
+use crate::shared::grow::{GrowParams, GrowResult, SquareAttachPolicy};
+use crate::shared::grow_extend::extend_from_labelled;
 use crate::shared::validate::recovery::{largest_component_filter, topological_wrong_label_drops};
 use crate::shared::validate::{self as pg_validate, ValidationParams};
 
@@ -413,14 +412,14 @@ fn min_index(labelled: &HashMap<(i32, i32), usize>) -> usize {
 }
 
 /// Number of nearest neighbours pooled per corner for the robust local-pitch
-/// estimate (matches the facade's [`crate::seed_and_grow`] constant).
+/// estimate.
 const LOCAL_PITCH_NEIGHBOURS: usize = 5;
 
 /// Per-corner robust local pitch (upper-median of the nearest-neighbour
 /// distances). Tracks perspective foreshortening while tolerating a minority of
-/// off-lattice points sitting closer than the pitch. Shared by both facades'
-/// recovery entry; the seed-and-grow facade computes the same quantity inline
-/// for its grow policy.
+/// off-lattice points sitting closer than the pitch. The topological facade's
+/// synthesized-axis recovery entry uses this to gate per-edge growth against
+/// the local cell scale.
 pub(crate) fn local_pitch_of(positions: &[Point2<f32>]) -> Vec<f32> {
     use kiddo::{KdTree, SquaredEuclidean};
     let n = positions.len();
@@ -488,9 +487,9 @@ fn rebase_to_origin(labelled: &HashMap<(i32, i32), usize>) -> HashMap<(i32, i32)
 /// Run the geometry-only recovery schedule over a labelled `(i, j) → index`
 /// component using the geometry-first [`PositionsAttachPolicy`].
 ///
-/// This is the shared entry both the seed-and-grow and topological facades use
-/// for the synthesized-axis (`Evidence::Positions` / `Evidence::Oriented1`)
-/// path. `features` carries positions + synthesized axes; `masked` lists corner
+/// This is the entry the topological facade uses for the synthesized-axis
+/// (`Evidence::Positions` / `Evidence::Oriented1`) path. `features` carries
+/// positions + synthesized axes; `masked` lists corner
 /// indices owned by *other* components (so the recovery can't steal them).
 /// Returns the recovered (NOT yet rebased) labelled map; the caller rebases to
 /// the non-negative `(i, j)` origin.
@@ -500,7 +499,7 @@ pub(crate) fn recover_positions_component(
     cell_size: f32,
     inputs: RecoveryInputs<'_>,
 ) -> HashMap<(i32, i32), usize> {
-    use crate::seed_and_grow::positions_policy::{PositionsAttachPolicy, PositionsTolerances};
+    use crate::shared::positions_policy::{PositionsAttachPolicy, PositionsTolerances};
 
     // 50° soft axis tolerance / 0.40 edge band — the position-policy defaults
     // documented in the facade.
@@ -549,8 +548,8 @@ impl<V: SquareAttachPolicy> SquareAttachPolicy for MaskedPolicy<'_, V> {
         idx: usize,
         at: (i32, i32),
         prediction: Point2<f32>,
-        neighbours: &[crate::seed_and_grow::grow::LabelledNeighbour],
-    ) -> crate::seed_and_grow::grow::Admit {
+        neighbours: &[crate::shared::grow::LabelledNeighbour],
+    ) -> crate::shared::grow::Admit {
         self.inner.accept_candidate(idx, at, prediction, neighbours)
     }
     fn edge_ok(&self, c: usize, n: usize, ac: (i32, i32), an: (i32, i32)) -> bool {
@@ -579,7 +578,7 @@ pub(crate) fn grow_result_from_labelled(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed_and_grow::grow::{Admit, LabelledNeighbour};
+    use crate::shared::grow::{Admit, LabelledNeighbour};
 
     /// Open policy: every corner eligible, no label constraint, accept all,
     /// edges within ±40% of the local cell size. Mirrors the geometry-only

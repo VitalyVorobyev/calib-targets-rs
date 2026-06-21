@@ -1,17 +1,11 @@
 //! End-to-end smoke test for the [`GraphBuildAlgorithm`] dispatch.
 //!
-//! Builds a clean 6×6 synthetic grid and runs the detector once with
-//! each algorithm. Verifies:
+//! Builds a clean 6×6 synthetic grid and runs the detector. Verifies:
 //!
-//! 1. The dispatch wiring routes to the correct path (no panics).
-//! 2. Both pipelines emit a labelled detection.
+//! 1. The dispatch wiring routes to the topological path (no panics).
+//! 2. The pipeline emits a labelled detection.
 //! 3. The labelled grid is non-negative and well-formed
 //!    (workspace invariant on grid coordinates).
-//!
-//! Recall comparison between the two pipelines is intentionally *not*
-//! gated here — the topological pipeline ships with looser recall on
-//! noisy real-world images and is iterated separately. This test only
-//! covers the dispatch contract.
 
 use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets_core::AxisEstimate;
@@ -23,8 +17,7 @@ fn synthetic_grid(rows: usize, cols: usize, step: f32) -> Vec<ChessCorner> {
     for j in 0..rows {
         for i in 0..cols {
             // Alternate axis-slot assignment by parity, matching the
-            // chessboard `cluster.label_of` contract used by the
-            // seed-and-grow validator.
+            // chessboard `cluster.label_of` contract.
             let parity = (i + j) % 2;
             let (a0, a1) = if parity == 0 {
                 (0.0_f32, FRAC_PI_2)
@@ -88,27 +81,8 @@ fn dispatch_routes_to_topological_pipeline() {
 }
 
 #[test]
-fn dispatch_routes_to_seed_and_grow_pipeline() {
-    let corners = synthetic_grid(6, 6, 12.0);
-    let detections = run_with(GraphBuildAlgorithm::SeedAndGrow, &corners);
-    assert!(
-        !detections.is_empty(),
-        "seed-and-grow dispatch returned no detection on a clean 6x6 grid"
-    );
-    let total: usize = detections.iter().map(|d| d.corners.len()).sum();
-    assert!(
-        total >= 30,
-        "seed-and-grow should label most corners on a clean grid (got {total})",
-    );
-    assert_labels_non_negative(&detections);
-}
-
-#[test]
 fn default_dispatch_matches_topological() {
-    // Topological is the default builder (higher recall on the
-    // clean-chessboard regression set, precision held). ChArUco pins
-    // SeedAndGrow regardless via the charuco detector's unconditional
-    // override; PuzzleBoard already sets Topological explicitly.
+    // Topological is the only builder and the workspace default.
     assert_eq!(
         DetectorParams::default().graph_build_algorithm,
         GraphBuildAlgorithm::Topological,

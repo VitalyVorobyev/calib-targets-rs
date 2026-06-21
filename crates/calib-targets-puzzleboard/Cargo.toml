@@ -48,15 +48,11 @@ projective-grid.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
 
-[[example]]
-name = "run_dataset"
-required-features = ["dataset"]
-
 [[bench]]
 name = "dataset_decode"
 harness = false
-# Consumes `detect_with_diagnostics` on both the chessboard and puzzleboard
-# detectors, so it only builds with the diagnostics surfaces enabled.
+# Times the chessboard and puzzleboard detectors over the dataset fixtures;
+# gated behind `dataset` for the puzzleboard diagnostics + fixture harness.
 required-features = ["dataset"]
 
 [[bin]]

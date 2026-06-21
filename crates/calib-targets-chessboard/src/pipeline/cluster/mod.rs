@@ -34,14 +34,12 @@ use projective_grid::cluster::{self as pg, AxisFeature, AxisObservation, Cluster
 mod assign;
 mod slot_coherence;
 
-pub(crate) use assign::effective_tol_rad;
-pub use assign::{assign_corner, refit_centers_from_labelled, AxisCluster};
+use assign::AxisCluster;
 use slot_coherence::fix_axis_slot_coherence;
-pub(crate) use slot_coherence::fix_partial_slot_flips;
 
 // Re-export the generic angle helpers under their old local names so
-// sibling modules (`seed`, `grow`, `boosters`) keep their existing
-// `use crate::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
+// the sibling `boosters` module keeps its existing
+// `use super::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
 pub(crate) use crate::circular_stats::{angular_dist_pi, wrap_pi};
 
 /// Two grid-direction centres in `[0, π)` with `theta0 ≤ theta1`.
@@ -142,10 +140,11 @@ pub fn cluster_axes_debug(
         }
     }
 
-    // Spatial-coherence pass: chess-corners 0.9's DiskFit can pick the
+    // Spatial-coherence pass: the DiskFit orientation mode can pick the
     // wrong antipodal dark sector for some chessboard corners, leaving
     // adjacent corners with the SAME axis-slot ordering instead of the
-    // alternating pattern the BFS / seed / edge-invariant relies on. The
+    // alternating pattern the topological cell-test + edge invariant
+    // relies on. The
     // bug shows up as a same-label cluster of neighbours where a
     // chessboard demands opposite labels. Detect the offenders by
     // spatial majority vote and recover by swapping their two

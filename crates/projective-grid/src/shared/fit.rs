@@ -1,12 +1,11 @@
 //! Shared fit + residual helper for the `(Square, Oriented2)` facade
 //! paths.
 //!
-//! Both the seed-and-grow path ([`crate::seed_and_grow`]) and the
-//! topological path ([`crate::topological`]) end with the same back-half:
-//! fit a projective `model → image` transform on a labelled component,
-//! compute per-corner reprojection residuals, and flag entries over the
-//! `max_residual_px` threshold. This module hosts that one helper so the
-//! two paths stay byte-identical.
+//! The topological square path ([`crate::topological`]) and the hex path end
+//! with the same back-half: fit a projective `model → image` transform on a
+//! labelled component, compute per-corner reprojection residuals, and flag
+//! entries over the `max_residual_px` threshold. This module hosts that one
+//! helper so the paths stay byte-identical.
 
 use nalgebra::Point2;
 

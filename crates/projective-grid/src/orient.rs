@@ -98,7 +98,7 @@ const REFINE_ITERS: usize = 4;
 /// and position plus the recovered axes. The two axes are **not** constrained
 /// to be orthogonal — they track the local projected grid directions.
 ///
-/// The result is consumed by [`crate::seed_and_grow`] / [`crate::topological`]
+/// The result is consumed by the topological assembler ([`crate::topological`])
 /// exactly like caller-supplied oriented features.
 pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>> {
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.position).collect();
@@ -151,7 +151,7 @@ pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>
 /// axis is trusted as evidence and is *not* moved; only the second cluster is
 /// recovered from the chords that fall closer to it than to the supplied axis.
 ///
-/// The result is consumed by [`crate::seed_and_grow`] / [`crate::topological`]
+/// The result is consumed by the topological assembler ([`crate::topological`])
 /// exactly like caller-supplied [`OrientedFeature<2>`] — the wiring in
 /// [`crate::detect`] funnels `Oriented1` through this synthesis and then runs
 /// the chosen square strategy, mirroring the `Positions` path.

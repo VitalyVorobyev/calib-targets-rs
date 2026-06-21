@@ -11,9 +11,9 @@ use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
 use crate::geometry::estimate_homography_with_quality;
-use crate::seed_and_grow::extension::common::{try_attach_at_cell, TryCellResult};
-use crate::seed_and_grow::extension::{ExtensionParams, ExtensionStats};
-use crate::seed_and_grow::grow::{GrowResult, SquareAttachPolicy};
+use crate::shared::extension::common::{try_attach_at_cell, TryCellResult};
+use crate::shared::extension::{ExtensionParams, ExtensionStats};
+use crate::shared::grow::{GrowResult, SquareAttachPolicy};
 
 /// Try to extend the labelled grid outward (and into interior holes)
 /// using a globally-fit homography. Mutates `grow.labelled` and

@@ -14,10 +14,10 @@ categories = ["computer-vision", "science"]
 
 [features]
 default = []
-# Opt-in introspection surface: `DebugFrame`, per-stage traces, the
-# `diagnostics` module, and `Detector::detect*_with_diagnostics`. OFF by
-# default — the hot `detect()` / `detect_all()` path never assembles a
-# `DebugFrame`. Enable for offline triage, benchmarking, and overlays.
+# Reserved opt-in introspection seam. The rich per-stage `DebugFrame` surface
+# was retired with the seed-and-grow builder; the topological builder exposes
+# `trace_topological` on the always-on surface instead. The flag is retained
+# (gating no extra code today) so dependent crates' feature wiring stays valid.
 diagnostics = []
 dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
@@ -41,14 +41,6 @@ criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true
 serde_json.workspace = true
-
-[[example]]
-name = "run_dataset"
-required-features = ["dataset"]
-
-[[example]]
-name = "debug_single"
-required-features = ["dataset"]
 
 [[bench]]
 name = "chessboard_timing"

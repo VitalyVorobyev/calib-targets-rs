@@ -34,13 +34,15 @@
 //!   global-direction prior with its [`AxisClusterCenters`] /
 //!   [`AxisAssignment`] types). This is the supported surface for
 //!   external callers and follows normal semver intent.
-//! * **Advanced tier — the engine modules.** [`seed_and_grow`], [`shared`],
-//!   and [`topological`] expose the assembly engines the facade is built from,
-//!   for in-workspace consumers (the chessboard detector) that compose the
-//!   engine directly with their own policies. These are **semver-exempt
-//!   pre-1.0**: items here may change shape between minor releases as the
-//!   engine is refactored. Depend on the facade unless you are building a new
-//!   detector on top of the engine.
+//! * **Advanced tier — the engine modules.** [`shared`] and [`topological`]
+//!   expose the assembly engines the facade is built from, for in-workspace
+//!   consumers (the chessboard detector) that compose the engine directly with
+//!   their own policies. [`shared`] hosts the geometry-only grid-growth
+//!   primitives ([`shared::grow`], [`shared::fill`], [`shared::extension`],
+//!   [`shared::grow_extend`]) and the [`shared::recovery`] schedule.
+//!   These are **semver-exempt pre-1.0**: items here may change shape between
+//!   minor releases as the engine is refactored. Depend on the facade unless
+//!   you are building a new detector on top of the engine.
 
 #![warn(missing_docs)]
 
@@ -79,6 +81,5 @@ pub use crate::result::{
     RejectionReason, ResidualSummary,
 };
 
-pub mod seed_and_grow;
 pub mod shared;
 pub mod topological;

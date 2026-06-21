@@ -34,8 +34,7 @@ cd studio && bun run dev       # UI on the Vite port
   gitignored `studio_configs/` in the exact `--chessboard-config` format
   (interchangeable with the bench CLI).
 - **Diagnose** — the GUI twin of `bench diagnose`: per-stage corner
-  markers + iteration traces (seed-and-grow `DebugFrame`), prefilter
-  funnel + labelled/unlabelled split (topological).
+  markers + iteration traces (`DebugFrame`), prefilter funnel + labelled/unlabelled split.
 - **Compare** — two configs side-by-side with synced viewports, or a
   position-matched A/B diff overlay with metric deltas.
 - **Runs** — bench-style dataset runs with live progress and the

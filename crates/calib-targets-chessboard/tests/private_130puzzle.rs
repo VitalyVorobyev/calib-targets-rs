@@ -26,12 +26,10 @@ const SNAP_HEIGHT: u32 = 540;
 const SNAPS_PER_IMAGE: u32 = 6;
 const NUM_TARGETS: u32 = 20;
 const UPSCALE: u32 = 2;
-const MIN_FULL_SWEEP_DETECTIONS: usize = 119;
 
-/// Topological-pipeline any-detection floor on the 120-snap sweep — the
-/// same metric the seed-and-grow contract enforces. A "detection" is
-/// any frame where `Detector::detect()` returns `Some(_)` whose grid
-/// labels satisfy the workspace invariants (no duplicates, finite
+/// Topological-pipeline any-detection floor on the 120-snap sweep. A
+/// "detection" is any frame where `Detector::detect()` returns `Some(_)`
+/// whose grid labels satisfy the workspace invariants (no duplicates, finite
 /// positions, origin rebased). Ratchets up phase by phase per
 /// `.claude/plans/we-changed-topological-grid-eager-valiant.md`.
 ///
@@ -114,12 +112,6 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> GrayImage {
     )
 }
 
-fn default_seed_and_grow_detector() -> Detector {
-    let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
-    Detector::new(params).expect("valid detector params")
-}
-
 fn default_topological_detector() -> Detector {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
@@ -197,33 +189,12 @@ fn audit_wrong_label_edges(detection: &ChessboardDetection) -> (usize, usize) {
     (overlong, collapsed)
 }
 
-#[test]
-fn puzzle130_smoke_target15_snap0_keeps_large_grid() {
-    if !dataset_present_or_skip("puzzle130_smoke_target15_snap0_keeps_large_grid") {
-        return;
-    }
-
-    let snap = load_snap(15, 0);
-    let corners = detect_corners(&snap, &default_chess_config());
-    let detector = default_seed_and_grow_detector();
-    let detection = detector
-        .detect(&corners)
-        .expect("target_15 snap 0 must produce a chessboard detection");
-    assert!(
-        detection.corners.len() >= 500,
-        "target_15 snap 0 labelled {} corners, expected at least 500",
-        detection.corners.len()
-    );
-    assert_detection_invariants(&detection, "target_15 snap 0");
-}
-
-/// Fast topological-path gate. The default `cargo test` smoke above
-/// exercises `SeedAndGrow`; this one exercises the topological builder —
-/// the puzzle default — on a frame (`target_13` snap 0) that, with the
+/// Fast topological-path gate on the puzzle dataset. Runs the topological
+/// builder (the only builder) on a frame (`target_13` snap 0) that, with the
 /// wrong-label check disabled, carries a duplicate-pixel label fold and
-/// interior skipped-corner edges. The check must remove them while
-/// keeping the dense grid, so this locks the structural-check contract
-/// into the default test pass (not just the `#[ignore]` sweep).
+/// interior skipped-corner edges. The check must remove them while keeping the
+/// dense grid, so this locks the structural-check contract into the default
+/// test pass (not just the `#[ignore]` sweep).
 #[test]
 fn puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels() {
     if !dataset_present_or_skip("puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels") {
@@ -249,50 +220,6 @@ fn puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels() {
     assert_eq!(
         overlong, 0,
         "target_13 snap 0: {overlong} overlong wrong-label edge(s) survived the topological wrong-label check"
-    );
-}
-
-#[test]
-#[ignore = "private 120-snap 130x130_puzzle sweep; run with --ignored"]
-fn puzzle130_full_seed_and_grow_recall_contract() {
-    if !dataset_present_or_skip("puzzle130_full_seed_and_grow_recall_contract") {
-        return;
-    }
-
-    let chess_cfg = default_chess_config();
-    let detector = default_seed_and_grow_detector();
-    let mut frames = 0usize;
-    let mut detected = 0usize;
-
-    for target_idx in 0..NUM_TARGETS {
-        let path = target_path(target_idx);
-        assert!(
-            path.exists(),
-            "missing target_{target_idx}.png at {}",
-            path.display()
-        );
-        for snap_idx in 0..SNAPS_PER_IMAGE {
-            let snap = load_snap(target_idx, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
-            frames += 1;
-            let Some(detection) = detector.detect(&corners) else {
-                continue;
-            };
-            detected += 1;
-            let context = format!("target_{target_idx} snap {snap_idx}");
-            assert_detection_invariants(&detection, &context);
-        }
-    }
-
-    assert_eq!(
-        frames,
-        (NUM_TARGETS * SNAPS_PER_IMAGE) as usize,
-        "dataset layout changed"
-    );
-    eprintln!("130x130_puzzle seed-and-grow detected {detected}/{frames} snaps");
-    assert!(
-        detected >= MIN_FULL_SWEEP_DETECTIONS,
-        "130x130_puzzle chessboard recall regression: detected {detected}/{frames}, expected >= {MIN_FULL_SWEEP_DETECTIONS}"
     );
 }
 

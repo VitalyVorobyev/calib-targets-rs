@@ -340,14 +340,9 @@ async fn detect_board_family(
                         let mut cparams = calib_targets::charuco::CharucoParams::for_board(&spec);
                         cparams.chessboard =
                             merge_params_over(&cparams.chessboard, &params_override)?;
-                        // Studio is a measurement surface: honour a Topological
-                        // `graph_build_algorithm` override on the charuco grid
-                        // via the measurement-only opt-in rather than rejecting
-                        // it with `UnsupportedAlgorithm`. Production still pins
-                        // seed-and-grow (`for_board`); this only takes effect
-                        // when the caller explicitly selects topological, and
-                        // is a no-op for seed-and-grow.
-                        cparams.allow_topological_grid = true;
+                        // ChArUco accepts any grid builder; a `graph_build_algorithm`
+                        // override on the charuco grid flows straight through.
+                        // Production runs on the topological default (`for_board`).
                         calib_targets::detect::detect_charuco(&fed, &cparams)
                             .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     };

@@ -1,6 +1,6 @@
-//! The `diagnose` subcommand: per-stage corner-count breakdown plus the
-//! per-stage / topological diagnostic overlays. This is the "why is this
-//! corner missing?" tool — run before changing detector code.
+//! The `diagnose` subcommand: the topological labelled-vs-unlabelled
+//! breakdown plus a diagnostic overlay. This is the "why is this corner
+//! missing?" tool — run before changing detector code.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -8,13 +8,12 @@ use std::process::ExitCode;
 use calib_targets::chessboard::{AdvancedTuning, GraphBuildAlgorithm};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
-use calib_targets_bench::diagnose::{stage_counts_by_name, TopologicalDiagnosis};
-use calib_targets_bench::overlay::{render_diagnose_overlay, render_diagnose_overlay_with_axes};
+use calib_targets_bench::diagnose::TopologicalDiagnosis;
 use calib_targets_bench::workspace_root;
 use image::imageops::FilterType;
 use image::{GenericImageView, ImageReader};
 
-use super::cli::{AlgorithmArg, DiagnoseArgs};
+use super::cli::DiagnoseArgs;
 use super::load_chessboard_config;
 
 pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
@@ -73,191 +72,9 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
     let corners = detect_corners(&upscaled, &chess_cfg);
-    if args.algorithm == AlgorithmArg::Topological {
-        return diagnose_topological(&args, &upscaled, &corners);
-    }
-    let detector_params = match load_chessboard_config(args.chessboard_config.as_deref()) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("load --chessboard-config: {e}");
-            return ExitCode::from(2);
-        }
-    };
-    let detector = calib_targets::chessboard::Detector::new(detector_params.clone())
-        .expect("valid detector params");
-    let frame = detector.detect_with_diagnostics(&corners);
-
-    print_stage_summary(&args.image, &frame);
-
-    // Also probe how many components `detect_all` recovers — useful when a
-    // ChArUco split produces several disjoint chessboard subgraphs that the
-    // single-best `detect()` call hides.
-    let detector_for_all =
-        calib_targets::chessboard::Detector::new(detector_params).expect("valid detector params");
-    let all_frames = detector_for_all.detect_all_with_diagnostics(&corners);
-    if all_frames.len() > 1 {
-        println!("\n  --- detect_all_with_diagnostics ---");
-        for (k, f) in all_frames.iter().enumerate() {
-            let labelled = f.detection.as_ref().map(|d| d.corners.len()).unwrap_or(0);
-            println!("  component {k}: labelled={labelled}");
-        }
-    }
-
-    let label = if sub_idx.is_some() {
-        args.image.clone()
-    } else {
-        base_path.to_string()
-    };
-    let dst = args.out.as_deref().map_or_else(
-        || {
-            workspace_root()
-                .join("preview/diagnose")
-                .join(diagnose_filename(&label))
-        },
-        |p| workspace_root().join(p),
-    );
-    let render_result = if args.draw_axes {
-        render_diagnose_overlay_with_axes(&upscaled, &frame, &dst)
-    } else {
-        render_diagnose_overlay(&upscaled, &frame, &dst)
-    };
-    if let Err(e) = render_result {
-        eprintln!("render diagnose overlay: {e}");
-        return ExitCode::from(2);
-    }
-    println!(
-        "\nwrote diagnose overlay → {}",
-        dst.strip_prefix(workspace_root()).unwrap_or(&dst).display()
-    );
-
-    if let Some(dump_path) = args.dump_frame.as_deref() {
-        let dump_dst = workspace_root().join(dump_path);
-        if let Some(parent) = dump_dst.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                eprintln!("create dump-frame parent dir: {e}");
-                return ExitCode::from(2);
-            }
-        }
-        let json = match serde_json::to_string_pretty(&frame) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("serialize debug frame: {e}");
-                return ExitCode::from(2);
-            }
-        };
-        if let Err(e) = std::fs::write(&dump_dst, json) {
-            eprintln!("write debug frame to {}: {e}", dump_dst.display());
-            return ExitCode::from(2);
-        }
-        println!(
-            "wrote debug frame → {}",
-            dump_dst
-                .strip_prefix(workspace_root())
-                .unwrap_or(&dump_dst)
-                .display()
-        );
-    }
-
-    ExitCode::SUCCESS
-}
-
-fn print_stage_summary(label: &str, frame: &calib_targets::chessboard::diagnostics::DebugFrame) {
-    let counts = stage_counts_by_name(frame);
-    println!("--- {label} ---");
-    println!("  input corners: {}", frame.input_count);
-    for (k, v) in &counts {
-        println!("  {k:>30}: {v}");
-    }
-    if !frame.iterations.is_empty() {
-        println!("  --- validation iterations ---");
-        for it in &frame.iterations {
-            println!(
-                "  iter {}: labelled={} new_blacklist={} converged={}",
-                it.iter,
-                it.labelled_count,
-                it.new_blacklist.len(),
-                it.converged
-            );
-            if let Some(ext) = &it.extension {
-                let med = ext
-                    .h_residual_median_px
-                    .map(|v| format!("{v:.2}"))
-                    .unwrap_or_else(|| "—".to_string());
-                let max = ext
-                    .h_residual_max_px
-                    .map(|v| format!("{v:.2}"))
-                    .unwrap_or_else(|| "—".to_string());
-                println!(
-                    "    extend: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
-                     rej(no_cand={} ambig={} label={} policy={} edge={})",
-                    ext.h_trusted,
-                    med,
-                    max,
-                    ext.iterations,
-                    ext.attached,
-                    ext.rejected_no_candidate,
-                    ext.rejected_ambiguous,
-                    ext.rejected_label,
-                    ext.rejected_policy,
-                    ext.rejected_edge,
-                );
-            }
-            if let Some(rescue) = &it.rescue {
-                let med = rescue
-                    .h_residual_median_px
-                    .map(|v| format!("{v:.2}"))
-                    .unwrap_or_else(|| "—".to_string());
-                let max = rescue
-                    .h_residual_max_px
-                    .map(|v| format!("{v:.2}"))
-                    .unwrap_or_else(|| "—".to_string());
-                println!(
-                    "    rescue: h_trusted={} median_res={} px max_res={} px iters={} attached={} \
-                     rej(no_cand={} ambig={} label={} policy={} edge={})",
-                    rescue.h_trusted,
-                    med,
-                    max,
-                    rescue.iterations,
-                    rescue.attached,
-                    rescue.rejected_no_candidate,
-                    rescue.rejected_ambiguous,
-                    rescue.rejected_label,
-                    rescue.rejected_policy,
-                    rescue.rejected_edge,
-                );
-            }
-        }
-    }
-    if let Some(b) = &frame.boosters {
-        println!("  boosters: {b:?}");
-    }
-    if let Some(d) = &frame.detection {
-        println!(
-            "  detection: {} labelled corners, cell_size = {:.2} px",
-            d.corners.len(),
-            frame.cell_size.unwrap_or(0.0)
-        );
-        // Print bbox of labelled set.
-        let mut min_i = i32::MAX;
-        let mut max_i = i32::MIN;
-        let mut min_j = i32::MAX;
-        let mut max_j = i32::MIN;
-        for lc in &d.corners {
-            min_i = min_i.min(lc.grid.i);
-            max_i = max_i.max(lc.grid.i);
-            min_j = min_j.min(lc.grid.j);
-            max_j = max_j.max(lc.grid.j);
-        }
-        if min_i != i32::MAX {
-            println!(
-                "  labelled bbox: i ∈ [{min_i}, {max_i}], j ∈ [{min_j}, {max_j}]  ({}×{})",
-                max_i - min_i + 1,
-                max_j - min_j + 1,
-            );
-        }
-    } else {
-        println!("  detection: NONE");
-    }
+    // The topological builder is the only builder; always run its diagnosis.
+    let _ = (sub_idx, base_path);
+    diagnose_topological(&args, &upscaled, &corners)
 }
 
 pub(crate) fn diagnose_filename(label: &str) -> String {
@@ -282,7 +99,6 @@ fn diagnose_topological(
         }
     };
     detector_params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-    detector_params.orientation_source = args.orientation_source.into();
     if let Some(deg) = args.axis_align_tol_deg {
         let mut advanced: AdvancedTuning = detector_params.effective_tuning().into_owned();
         advanced.topological.axis_align_tol_rad = deg.to_radians();

@@ -11,7 +11,7 @@ grid cell each feature occupies under perspective, together with a fitted
 projective transform from model-plane coordinates to image pixels.
 
 The **input-feature kinds** introduced here (plain points versus oriented
-features) and the **two recovery algorithms** below are exactly the vocabulary
+features) and the **recovery algorithm** below are exactly the vocabulary
 the [Tuning the Detector](tuning.md) chapter's parameters act on — read this
 first, and the tuning knobs stop being a flat list of names.
 
@@ -39,12 +39,9 @@ the workspace doesn't yet ship.
 Three small pieces define the public surface.
 
 **Two lattice families** (`LatticeKind`). `Square` is the orthogonal
-`(i, j)` grid and is backed by two algorithms. `Hex` (axial `(q, r)`)
-is detected on the **topological path**: its triangles are the unit
-cells directly, so there is no diagonal/quad-merge stage. Hex is
-topological-only — a hex request under the default seed-and-grow
-selector returns a typed `UnsupportedCombination` rather than a wrong
-answer.
+`(i, j)` grid and is detected by the topological algorithm. `Hex` (axial `(q, r)`)
+is also detected on the **topological path**: its triangles are the unit
+cells directly, so there is no diagonal/quad-merge stage.
 
 **Two tasks.**
 
@@ -65,17 +62,17 @@ neighbour geometry up front and then run the same strategy:
 |---|---|---|---|
 | `Positions` | `&[PointFeature]` | ✅ synthesize 2 axes | ✅ synthesize 3 axes (topological) |
 | `Oriented1` | `&[OrientedFeature<1>]` | ✅ synthesize 2nd axis | ❌ `UnsupportedCombination` |
-| `Oriented2` | `&[OrientedFeature<2>]` | ✅ native, 2 algorithms | ❌ `UnsupportedCombination` |
+| `Oriented2` | `&[OrientedFeature<2>]` | ✅ native (topological) | ❌ `UnsupportedCombination` |
 | `Oriented3` | `&[OrientedFeature<3>]` | ❌ `UnsupportedCombination` | ✅ native (topological) |
 | `CoordinateHypotheses` | features + hypotheses | use `check_consistency` instead | — |
 
 Each feature carries a `PointFeature` (position + caller-owned
 `source_index`) plus `N` undirected `LocalAxis` directions (`N = 0` for
 `Positions`). Any unsupported `(lattice, evidence)` combination — for
-example `(Square, Oriented3)`, `(Hex, Oriented1/Oriented2)`, any
-`(Hex, *)` under `SeedAndGrow`, or `CoordinateHypotheses` for detection
-— returns a typed `GridError::UnsupportedCombination { task, lattice,
-evidence }`, never a guessed answer.
+example `(Square, Oriented3)`, `(Hex, Oriented1/Oriented2)`, or
+`CoordinateHypotheses` for detection — returns a typed
+`GridError::UnsupportedCombination { task, lattice, evidence }`, never a
+guessed answer.
 
 ---
 
@@ -125,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LatticeKind::Square,
         Evidence::Oriented2(&features),
         None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow),
+        DetectionParams::default(),
     );
 
     // `detect_grid` returns the largest recovered component.
@@ -150,44 +147,31 @@ features).
 
 ---
 
-## Two square algorithms
+## The square algorithm: Topological
 
-Detection of `(Square, Oriented2)` is backed by two algorithms. Both
-consume the same `Evidence::Oriented2` input and produce the same
-`GridSolution` shape, so downstream code stays agnostic to which one
-ran. Select via `DetectionParams::with_algorithm`:
+Detection of `(Square, Oriented2)` uses the **`SquareAlgorithm::Topological`**
+algorithm — the sole grid builder for all square targets. It is the Shu /
+Brunton / Fiala 2009 axis-driven grid finder: a Delaunay triangulation over
+the corner cloud whose edges are classified by per-corner axis match, with
+triangle pairs merged into cells and integer coordinates flooded across the
+mesh. Image-free; recovers dense grids and copes well with distortion. May
+produce several components — see `detect_grid_all` below.
 
-- **`SquareAlgorithm::SeedAndGrow`** (default) — finds a self-consistent
-  `2×2` seed quad (four edges that agree on a cell size, chords aligned
-  to the corner axes), grows the grid breadth-first from that seed,
-  validates the result geometrically, and fits a projective transform.
-  Mature and conservative; returns a single connected component.
-- **`SquareAlgorithm::Topological`** — the Shu / Brunton / Fiala 2009
-  axis-driven grid finder: a Delaunay triangulation over the corner
-  cloud whose edges are classified by per-corner axis match, with
-  triangle pairs merged into cells and integer coordinates flooded
-  across the mesh. Image-free; tends to recover **denser** grids on
-  clean inputs and copes better with distortion, at the cost of more
-  sensitivity to per-feature axis quality. May produce several
-  components — see `detect_grid_all` below.
+The `GraphBuildAlgorithm` type still exists in the public API (for
+`DetectorParams`), but the `SeedAndGrow` variant was removed; `Topological`
+is the only variant.
 
-Both paths share the same post-detection validation and projective fit,
-and both recover the full pattern with zero wrong labels — the practical
-differences are **speed** (topological is markedly faster) and
-**marker-bit robustness** (seed-and-grow tolerates corners inside marker
-glyphs, which is why ChArUco pins it). The deep-dive — the
-axis-classification test, the triangle-to-cell merge, and the line
-between the generic machinery here and the chessboard-specific wrapper —
-lives in `docs/topological-grid-detection.md` in the workspace
-repository.
+The algorithm shares the post-detection validation and projective fit across
+all target types, recovering the full pattern with zero wrong labels. The
+deep-dive — the axis-classification test, the triangle-to-cell merge, and the
+line between the generic machinery here and the chessboard-specific wrapper —
+lives in `docs/topological-grid-detection.md` in the workspace repository.
 
-**Hex** uses the topological algorithm only. On a hex point lattice the
-Delaunay triangles *are* the unit cells, so the diagonal/quad-merge
-stage is bypassed; the axial `(q, r)` walk and the projective fit
-back-half are otherwise shared with the square topological path. Hex has
-no post-fit recovery schedule (that machinery is seed-and-grow-coupled),
-so the fit residual is the precision gate. Select it with
-`DetectionParams::with_algorithm(SquareAlgorithm::Topological)`.
+**Hex** also uses the topological algorithm. On a hex point lattice the
+Delaunay triangles *are* the unit cells, so the diagonal/quad-merge stage is
+bypassed; the axial `(q, r)` walk and the projective fit back-half are
+otherwise shared with the square topological path. The fit residual is the
+precision gate.
 
 ### Single vs. multi-component results
 
@@ -196,8 +180,7 @@ so the fit residual is the precision gate. Select it with
 occlusion) and the secondary components matter, call `detect_grid_all`:
 it returns a `DetectionReport` whose `solutions` vector holds one
 `GridSolution` per qualifying component, ordered by labelled-count
-descending. `SeedAndGrow` always yields at most one solution; the
-topological path may yield several.
+descending. The topological path may yield several components.
 
 ---
 
@@ -217,11 +200,10 @@ native `Oriented2` shape each element is an `OrientedFeature<2>`:
 `DetectionRequest::new(lattice, evidence, dimensions, params)` bundles
 the lattice family, the evidence, optional known `GridDimensions`, and
 a `DetectionParams`. `DetectionParams` carries `max_residual_px` (the
-fit residual gate) and the algorithm selector, with per-algorithm
-sub-configs (`seed` / `grow` for seed-and-grow, `topological` for the
-topological path) and a shared `validate` sub-config; `Default` covers
-all the tuning knobs and the builder-style `with_*` methods override
-individual fields.
+fit residual gate) and the algorithm selector (always `Topological`),
+with a `topological` sub-config and a shared `validate` sub-config;
+`Default` covers all the tuning knobs and the builder-style `with_*`
+methods override individual fields.
 
 ---
 
@@ -248,10 +230,10 @@ Each `GridEntry` carries:
 Each `RejectedFeature` carries the `source_index`, an optional
 `coord`, an optional `residual_px`, and a `RejectionReason`:
 `Unlabelled` (never placed — e.g. noise outside the recovered lattice),
-`ValidationDropped` (placed by the grow pass but dropped by post-grow
-validation: line collinearity, local-homography residual, or
-edge-length band), or `ResidualTooHigh` (reprojection residual exceeded
-`max_residual_px`).
+`ValidationDropped` (placed by the topological pass but dropped by
+post-detection validation: line collinearity, local-homography residual,
+or edge-length band), or `ResidualTooHigh` (reprojection residual
+exceeded `max_residual_px`).
 
 For multi-component runs, `detect_grid_all` returns a `DetectionReport`
 with the per-component `solutions` vector plus a top-level `rejected`
@@ -306,9 +288,8 @@ enum but `detect_grid` does not yet act on it.
   consistency, not corner finding. Bring your own points; if you have an
   image, run a corner detector first and convert its output into
   `PointFeature` / `OrientedFeature` values before calling in.
-- **Dense, unstructured point clouds.** The seed finder recovers the
-  lattice spacing from the seed's own edge lengths; pure noise does not
-  yield a stable seed.
+- **Dense, unstructured point clouds.** Pure noise without any local
+  axis structure does not yield a usable Delaunay classification.
 
 ---
 

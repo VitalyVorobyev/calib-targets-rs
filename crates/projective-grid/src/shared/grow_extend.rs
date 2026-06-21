@@ -1,15 +1,15 @@
-//! BFS extension from an existing labelled grid.
+//! Cardinal-BFS extension from an existing labelled grid.
 //!
-//! [`extend_from_labelled`] takes an existing [`GrowResult`] (already grown
-//! from a seed) and walks its boundary with the same candidate-selection
-//! pipeline as [`crate::seed_and_grow::grow::bfs_grow`], attaching newly-eligible
-//! corners without disturbing the corners that are already labelled.
+//! [`extend_from_labelled`] takes an existing [`GrowResult`] and walks its
+//! boundary with the shared candidate-selection pipeline from
+//! [`crate::shared::grow`], attaching newly-eligible corners without disturbing
+//! the corners that are already labelled.
 //!
 //! This is a **non-destructive** extension: it never demotes or moves
 //! existing labelled entries, so it is safe to call after a refit that
 //! refined corner positions.
 
-use crate::seed_and_grow::grow::{
+use crate::shared::grow::{
     any_cardinal_edge_ok, choose_unambiguous, collect_candidates, collect_labelled_neighbours,
     enqueue_cardinal_neighbours, is_extrapolating, predict_from_neighbours, CandidateChoice,
     GrowParams, GrowResult, SquareAttachPolicy,
@@ -21,9 +21,9 @@ use std::collections::{HashSet, VecDeque};
 /// Counters returned by [`extend_from_labelled`].
 ///
 /// Mirrors the fields of
-/// [`crate::seed_and_grow::extension::ExtensionStats`], but covers the
-/// simpler cardinal-BFS path (no homography, no local-H, just
-/// `process_boundary_cell`).
+/// [`crate::shared::extension::ExtensionStats`], but covers the
+/// simpler cardinal-BFS path (no homography, no local-H, just the
+/// shared boundary-cell candidate decision).
 #[non_exhaustive]
 #[derive(Clone, Debug, Default)]
 pub struct BfsExtensionStats {
@@ -47,14 +47,13 @@ pub struct BfsExtensionStats {
 /// cardinal-BFS candidate pipeline.
 ///
 /// Builds a KD-tree over corners that are currently eligible (per the
-/// policy) but not yet labelled, then drives the same
-/// `process_boundary_cell` logic used by
-/// [`crate::seed_and_grow::grow::bfs_grow`]. Already-labelled corners are
-/// never moved or removed.
+/// policy) but not yet labelled, then drives the same boundary-cell
+/// candidate logic used by the shared [`crate::shared::grow`] helpers.
+/// Already-labelled corners are never moved or removed.
 ///
 /// The extension uses `grow.axis_i` and `grow.axis_j` for direction; the
-/// caller must ensure those fields are meaningful (they are set by
-/// `bfs_grow`).
+/// caller must ensure those fields are meaningful (the recovery schedule's
+/// `ensure_axes` repair estimates them from the labelled set when absent).
 ///
 /// # Returns
 ///

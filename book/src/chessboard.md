@@ -22,11 +22,11 @@ the algorithm refuses to break.
 ```text
 ┌───────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌───────────┐
 │Corners│ -> │ Pre-     │ -> │ Cluster  │ -> │ Seed +   │ -> │ Validate  │
-│  in   │    │ filter   │    │ axes,    │    │ Grow     │    │ + Recall  │
-└───────┘    │ (Stage 1)│    │ Cell     │    │ (Stages  │    │ Boosters  │
-             └──────────┘    │ size     │    │ 5 + 6)   │    │ (Stages   │
-                             │ (Stages  │    └──────────┘    │ 7 + 8)    │
-                             │ 2-4)     │                    └───────────┘
+│  in   │    │ filter   │    │ axes,    │    │ Topo     │    │ + Recall  │
+└───────┘    │ (Stage 1)│    │ Cell     │    │ Grid     │    │ Boosters  │
+             └──────────┘    │ size     │    │ (Stages  │    │ (Stages   │
+                             │ (Stages  │    │ 5 + 6)   │    │ 7 + 8)    │
+                             │ 2-4)     │    └──────────┘    └───────────┘
                              └──────────┘
 ```
 
@@ -173,11 +173,10 @@ swapped, `D` canonical) satisfying invariants 4-6 on all 4 edges:
 
 1. Iterate canonical corners by descending strength.
 2. For each candidate `A`, kNN-search ~32 swapped corners. Classify each
-   neighbor by which of `A.axes[0]` or `A.axes[1]` the chord is closer to,
-   within `seed_axis_tol_deg`.
-3. For the shortest few `(B, C)` pairs, require `|AB| ≈ |AC|` within
-   `seed_edge_tol`. Predict `D = A + (B − A) + (C − A)`. Find the nearest
-   canonical corner within `seed_close_tol × avg_edge` of the prediction.
+   neighbor by which of `A.axes[0]` or `A.axes[1]` the chord is closer to.
+3. For the shortest few `(B, C)` pairs, require `|AB| ≈ |AC|`. Predict
+   `D = A + (B − A) + (C − A)`. Find the nearest canonical corner near
+   the prediction.
 4. Verify all 4 edges pass invariants. **First quad wins.**
 5. **Cell size `s` is the mean of the 4 seed edge lengths** — output, not
    input.
@@ -291,9 +290,9 @@ stage from the `DebugFrame` (see §7) and consult this table.
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
 | `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Most common on very-bad-light frames. |
-| `frame.cell_size.is_none()` | Stage 5 (seed) | `seed_edge_tol`, `seed_axis_tol_deg`, `seed_close_tol` | No 4-corner quad passed the consistency check. |
+| `frame.cell_size.is_none()` | Stage 5 (seed) | Try `detect_chessboard_best` with `DetectorParams::sweep_default()` | No 4-corner quad passed the consistency check. Seeding tolerances are internal. |
 | `frame.detection` has very few corners | Stage 6 (grow) | `attach_search_rel`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg` | Seed succeeded but growth couldn't extend. Common on heavily distorted views. |
-| Many `LabeledThenBlacklisted` corners | Stage 7 (validate) | `line_tol_rel`, `local_h_tol_rel` | Invariants found outliers; check the blacklist reasons. |
+| Many `LabeledThenBlacklisted` corners | Stage 7 (validate) | `geometry_check_local_h_tol_rel` | Invariants found outliers; check the blacklist reasons. |
 | Wrong `(i, j)` labels emitted | **never** | — | If you ever see this, file a bug. The precision contract has been violated. |
 
 The rare unrecovered frame on our internal regression set is
@@ -305,7 +304,8 @@ converges.
 ## 6. Parameters
 
 `DetectorParams` is `#[non_exhaustive]` and splits into a small **stable
-core** — `graph_build_algorithm`, `min_labeled_corners`, `max_components`,
+core** — `graph_build_algorithm` (single-variant `Topological`; retained as a
+reserved config seam), `min_labeled_corners`, `max_components`,
 `min_corner_strength` — plus an opt-in, unstable `AdvancedTuning` sub-struct
 (`DetectorParams::advanced`) holding the per-stage tuning knobs. Build with
 `Default::default()` and overwrite the stable fields, attach advanced
@@ -323,7 +323,7 @@ shows the access path: top-level for the four stable knobs,
 
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
-| `graph_build_algorithm` | `Topological` | — | Topological or seed-and-grow grid builder. |
+| `graph_build_algorithm` | `Topological` | — | Grid builder algorithm. `Topological` is the only value; the field is a reserved config seam. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
 | `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
@@ -332,19 +332,14 @@ shows the access path: top-level for the four stable knobs,
 | `advanced.cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
 | `advanced.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
 | `advanced.min_peak_weight_fraction` | 0.02 | 2 | Minimum fraction of total vote weight per peak. |
-| `advanced.seed_edge_tol` | 0.25 | 5 | Seed-edge length window (fraction of `s`). |
-| `advanced.seed_axis_tol_deg` | 15.0 | 5 | Seed-edge axis tolerance. |
-| `advanced.seed_close_tol` | 0.25 | 5 | Parallelogram-closure tolerance. |
 | `advanced.attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
 | `advanced.attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
 | `advanced.attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
 | `advanced.step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
 | `advanced.edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
-| `advanced.line_tol_rel` | 0.18 | 7 | Straight-line collinearity tolerance. |
+| `advanced.geometry_check_local_h_tol_rel` | 0.20 | 12 | Local-H prediction tolerance in the final geometry check. |
 | `advanced.line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
-| `advanced.local_h_tol_rel` | 0.20 | 7 | Local-H prediction tolerance. |
-| `advanced.max_validation_iters` | 6 | 7 | Blacklist-retry cap. |
-| `advanced.enable_*` (flags) | true | 8 | Toggles for the recall boosters. |
+| `advanced.enable_weak_cluster_rescue` | true | 8 | Toggle for the weak-cluster rescue booster. |
 | `advanced.weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
 
 The `advanced.` rows above are part of `AdvancedTuning`, which is opt-in
@@ -400,8 +395,9 @@ use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
     // `Detector::new` validates params and is fallible: it returns
-    // `Err(ChessboardParamsError)` for an invalid combination (today, only
-    // `NeighbourEdges` orientation under `SeedAndGrow`).
+    // `Err(ChessboardParamsError)` for an invalid combination. No combination
+    // the public surface can express is rejected today; the fallible signature
+    // is a reserved seam for future validations.
     let det = Detector::new(params).expect("valid params");
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());

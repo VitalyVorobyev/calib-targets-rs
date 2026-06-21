@@ -1,13 +1,12 @@
 //! Recall boosters that run after the precision core converges.
 //!
-//! Run **after** the precision core (seed + grow + validate) has
-//! converged with no new blacklist entries. Boosters ADD labelled
-//! corners without compromising the precision contract — they reuse
-//! the same attachment invariants as growth.
+//! Run **after** the topological grid build + axis clustering have
+//! produced labelled components. Boosters ADD labelled corners reusing
+//! the same attachment invariants, never compromising precision.
 //!
 //! The structural skeleton (cell enumeration, KD-tree, per-cell
 //! attachment ladder, fixed-point iteration) lives in
-//! [`projective_grid::seed_and_grow::fill::fill_grid_holes`]; this module
+//! [`projective_grid::shared::fill::fill_grid_holes`]; this module
 //! wraps it with a chessboard-specific [`SquareAttachPolicy`] that adds:
 //!
 //! - **Weak-cluster rescue**: admit `NoCluster` corners whose
@@ -20,19 +19,17 @@
 //!   whose visible component can be strongly anisotropic before final
 //!   recovery has filled the boundary.
 
-use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
+use super::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
-use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::seed_and_grow::fill::{fill_grid_holes, FillParams};
-use projective_grid::seed_and_grow::grow::{
-    Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy,
-};
+use projective_grid::shared::fill::{fill_grid_holes, FillParams};
+use projective_grid::shared::grow::GrowResult;
+use projective_grid::shared::grow::{Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy};
 use std::collections::{HashMap, HashSet};
 
-/// Diagnostic returned by the `apply_boosters` stage.
+/// Diagnostic returned by the recall-booster stage.
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct BoosterResult {
     /// Corners added to the labelled set across all booster passes.
@@ -43,32 +40,15 @@ pub struct BoosterResult {
     pub holes_untouched: usize,
 }
 
-/// Extend the labelled set via interior gap fill + line
-/// extrapolation. Mutates `grow.labelled` and `corners[*].stage`.
+/// Extend the labelled set via interior gap fill + line extrapolation.
+/// Mutates `grow.labelled` and `corners[*].stage`.
 ///
-/// `blacklist` — corner indices to keep excluded from candidate
-/// searches, same as the precision core.
-#[cfg_attr(
-    feature = "tracing",
-    tracing::instrument(
-        level = "debug",
-        skip_all,
-        fields(labelled = grow.labelled.len(), cell_size = cell_size)
-    )
-)]
-pub fn apply_boosters(
-    corners: &mut [CornerAug],
-    grow: &mut GrowResult,
-    centers: ClusterCenters,
-    cell_size: f32,
-    blacklist: &HashSet<usize>,
-    params: &DetectorParams,
-) -> BoosterResult {
-    apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, false)
-}
-
-/// Variant used by the topological path, whose visible components can be
-/// strongly anisotropic before final recovery has filled the boundary.
+/// Used by the topological recovery path, whose visible components can be
+/// strongly anisotropic before final recovery has filled the boundary — the
+/// edge-length check uses a per-axis directional scale rather than a single
+/// scalar cell size.
+///
+/// `blacklist` — corner indices to keep excluded from candidate searches.
 pub(crate) fn apply_boosters_with_directional_edge_scale(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,
@@ -150,7 +130,7 @@ struct ChessboardFillValidator<'a> {
     step_tol: f32,
     enable_weak_cluster_rescue: bool,
     use_directional_edge_scale: bool,
-    /// `(rebase_i_mod2 + rebase_j_mod2) % 2` from the BFS rebase.
+    /// `(rebase_i_mod2 + rebase_j_mod2) % 2` from the grid rebase.
     /// See `GrowResult::rebase_i_mod2` for the full discussion.
     parity_shift: i32,
 }
@@ -183,7 +163,7 @@ impl<'a> SquareAttachPolicy for ChessboardFillValidator<'a> {
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
         // Apply the post-rebase parity shift so the chessboard parity
-        // at `(i, j)` matches the BFS pre-rebase convention. See
+        // at `(i, j)` matches the grid's pre-rebase parity convention. See
         // `GrowResult::rebase_i_mod2` for the full discussion.
         Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
@@ -261,8 +241,8 @@ impl<'a> SquareAttachPolicy for ChessboardFillValidator<'a> {
     }
 }
 
-/// Required parity-derived chessboard label at `(i, j)` under the seed
-/// convention (seed `A` at `(0, 0)` is `Canonical`).
+/// Required parity-derived chessboard label at `(i, j)` under the parity
+/// convention (`(0, 0)` is `Canonical`).
 fn required_label_at(i: i32, j: i32) -> ClusterLabel {
     if (i + j).rem_euclid(2) == 0 {
         ClusterLabel::Canonical
@@ -391,10 +371,8 @@ fn expected_cardinal_edge_len(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cluster::cluster_axes;
     use crate::corner::ChessCorner;
-    use crate::grow::grow_from_seed;
-    use crate::seed::find_seed;
+    use crate::pipeline::cluster::cluster_axes;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 
@@ -429,64 +407,6 @@ mod tests {
         let mut aug = CornerAug::from_chess_corner(idx, &c);
         aug.stage = CornerStage::Strong;
         aug
-    }
-
-    fn build_grid(rows: i32, cols: i32, s: f32) -> Vec<CornerAug> {
-        let axis_u = 0.0_f32;
-        let axis_v = std::f32::consts::FRAC_PI_2;
-        let mut out = Vec::new();
-        let mut idx = 0;
-        for j in 0..rows {
-            for i in 0..cols {
-                let x = i as f32 * s + 50.0;
-                let y = j as f32 * s + 50.0;
-                let label = if (i + j).rem_euclid(2) == 0 {
-                    ClusterLabel::Canonical
-                } else {
-                    ClusterLabel::Swapped
-                };
-                out.push(make_corner(idx, x, y, axis_u, axis_v, label));
-                idx += 1;
-            }
-        }
-        out
-    }
-
-    #[test]
-    fn interior_gap_fill_recovers_missing_corner() {
-        let s = 20.0_f32;
-        let mut corners = build_grid(5, 5, s);
-        let params = DetectorParams::default();
-        let centers = cluster_axes(&mut corners, &params).expect("centers");
-        let seed = find_seed(&corners, centers, &params).expect("seed").seed;
-        let blacklist = HashSet::new();
-        let mut protect: HashSet<usize> = HashSet::new();
-        let center_idx = 2 * 5 + 2;
-        protect.insert(center_idx);
-        let mut grow = grow_from_seed(&mut corners, seed, centers, s, &protect, &params);
-        let before = grow.labelled.len();
-        assert!((20..25).contains(&before), "got {before}");
-        let result = apply_boosters(&mut corners, &mut grow, centers, s, &blacklist, &params);
-        assert!(
-            grow.labelled.len() > before,
-            "booster should attach at least 1"
-        );
-        assert!(result.added >= 1);
-    }
-
-    #[test]
-    fn line_extrapolation_extends_beyond_bbox() {
-        let s = 20.0_f32;
-        let mut corners = build_grid(3, 7, s);
-        let params = DetectorParams::default();
-        let centers = cluster_axes(&mut corners, &params).expect("centers");
-        let seed = find_seed(&corners, centers, &params).expect("seed").seed;
-        let blacklist = HashSet::new();
-        let mut grow = grow_from_seed(&mut corners, seed, centers, s, &blacklist, &params);
-        let before = grow.labelled.len();
-        let result = apply_boosters(&mut corners, &mut grow, centers, s, &blacklist, &params);
-        assert_eq!(grow.labelled.len(), before);
-        assert_eq!(result.added, 0);
     }
 
     #[test]

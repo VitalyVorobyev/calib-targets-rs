@@ -16,7 +16,7 @@
 use nalgebra::Point2;
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -62,9 +62,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     //
     // `Evidence::Oriented2` is the shape the square detector consumes. We ask
     // for a `Square` lattice, leave the grid dimensions unknown (`None`), and
-    // pick the default seed-and-grow algorithm. `SquareAlgorithm::Topological`
-    // is the alternative for distorted inputs.
-    let params = DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow);
+    // use the default topological assembler.
+    let params = DetectionParams::default();
     let request = DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(&features),

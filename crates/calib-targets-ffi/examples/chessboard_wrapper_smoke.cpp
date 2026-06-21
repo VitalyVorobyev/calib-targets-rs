@@ -50,17 +50,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // The diagnostics-JSON accessor follows the caller-owned-buffer
-  // query/fill discipline; a successful detection yields a non-empty
-  // JSON payload.
-  std::string diagnostics;
-  status = detector.detect_diagnostics_json(image.descriptor, &diagnostics);
-  if (!status.ok() || diagnostics.empty()) {
-    std::cerr << "wrapper diagnostics failed: " << status.message << "\n";
-    ct_native_gray_image_buffer_reset(&image);
-    return 1;
-  }
-
   calib_targets::ffi::ChessboardDetector moved = std::move(detector);
   corners.clear();
   std::memset(&result, 0, sizeof(result));

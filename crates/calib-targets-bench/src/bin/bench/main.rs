@@ -34,8 +34,8 @@ use calib_targets_bench::{workspace_root, Engine};
 use calib_targets_bench::compare::{build_comparison, load_report, render_markdown};
 use calib_targets_bench::report::{bench_results_dir, save_report};
 use cli::{
-    load_chessboard_config, params_with, AblateArgs, AlgorithmArg, BlessArgs, Cli, Cmd,
-    CompareArgs, EngineArg, OrientationSourceArg, PreviewArgs, RunArgs,
+    load_chessboard_config, params_with, AblateArgs, BlessArgs, Cli, Cmd, CompareArgs, PreviewArgs,
+    RunArgs,
 };
 use diagnose::cmd_diagnose;
 use report::print_summary;
@@ -56,13 +56,6 @@ fn main() -> ExitCode {
 }
 
 fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
-    if unsupported_combo(args.engine, args.algorithm, args.orientation_source) {
-        eprintln!(
-            "pipeline + seed-and-grow + neighbour-edges is unsupported; use \
-             --engine grid for neighbour-edge seed-and-grow, or --algorithm topological"
-        );
-        return ExitCode::from(2);
-    }
     let dataset = match Dataset::load_default() {
         Ok(d) => d,
         Err(e) => {
@@ -98,17 +91,15 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
         }
     };
     params.graph_build_algorithm = args.algorithm.into();
-    params.orientation_source = args.orientation_source.into();
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
 
     let config_id = format!(
-        "{}.{}.{}.{}",
+        "{}.{}.{}",
         args.engine.slug(),
         args.algorithm.slug(),
         args.orientation_method.slug(),
-        args.orientation_source.slug()
     );
     let ctx = RunContext {
         chess_cfg: &chess_cfg,
@@ -135,13 +126,6 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
 }
 
 fn cmd_preview(args: PreviewArgs) -> ExitCode {
-    if unsupported_combo(args.engine, args.algorithm, args.orientation_source) {
-        eprintln!(
-            "pipeline + seed-and-grow + neighbour-edges is unsupported; use \
-             --engine grid for neighbour-edge seed-and-grow, or --algorithm topological"
-        );
-        return ExitCode::from(2);
-    }
     let dataset = match Dataset::load_default() {
         Ok(d) => d,
         Err(e) => {
@@ -166,14 +150,13 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
     }
 
     let out_root = workspace_root().join(&args.out);
-    let params = params_with(args.algorithm, args.orientation_source);
+    let params = params_with(args.algorithm);
     let engine = Engine::from(args.engine);
     let config_slug = format!(
-        "{}.{}.{}.{}",
+        "{}.{}.{}",
         args.engine.slug(),
         args.algorithm.slug(),
         args.orientation_method.slug(),
-        args.orientation_source.slug()
     );
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
@@ -351,13 +334,6 @@ fn cmd_compare(args: CompareArgs) -> ExitCode {
 }
 
 fn cmd_ablate(args: AblateArgs) -> ExitCode {
-    if unsupported_combo(args.engine, args.algorithm, args.orientation_source) {
-        eprintln!(
-            "pipeline + seed-and-grow + neighbour-edges is unsupported; use \
-             --engine grid for neighbour-edge seed-and-grow, or --algorithm topological"
-        );
-        return ExitCode::from(2);
-    }
     let dataset = match Dataset::load_default() {
         Ok(d) => d,
         Err(e) => {
@@ -396,16 +372,14 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
         }
     };
     base.graph_build_algorithm = args.algorithm.into();
-    base.orientation_source = args.orientation_source.into();
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = args.orientation_method.into();
     let base_config_id = format!(
-        "{}.{}.{}.{}",
+        "{}.{}.{}",
         args.engine.slug(),
         args.algorithm.slug(),
         args.orientation_method.slug(),
-        args.orientation_source.slug()
     );
     let dataset_filter = args
         .group
@@ -536,22 +510,6 @@ fn filter_entries<'a>(
     ds.iter_kind(kind)
         .filter(|e| image.map(|i| e.path == i).unwrap_or(true))
         .collect()
-}
-
-/// The native seed-and-grow pipeline consumes ChESS axes directly, and a
-/// measured head-to-head (2026-06-17) confirmed feeding it synthesized
-/// neighbour-edge axes collapses recall (0 corners on most clutter-free
-/// frames), so `pipeline + seed-and-grow + neighbour-edges` stays a typed error
-/// in the detector. Reject it at the CLI with guidance instead. The grid engine
-/// handles the seed-and-grow + neighbour-edge cell for measurement.
-fn unsupported_combo(
-    engine: EngineArg,
-    algorithm: AlgorithmArg,
-    orientation_source: OrientationSourceArg,
-) -> bool {
-    matches!(engine, EngineArg::Pipeline)
-        && matches!(algorithm, AlgorithmArg::SeedAndGrow)
-        && matches!(orientation_source, OrientationSourceArg::NeighbourEdges)
 }
 
 fn preview_path(out_root: &Path, label: &str, config_slug: &str) -> PathBuf {

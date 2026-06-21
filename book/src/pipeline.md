@@ -60,18 +60,18 @@ would compromise precision:
 | 2 | `cluster_axes` | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner canonical or swapped. | `cluster::cluster_axes` |
 | 3 | `estimate_cell_size` | Cross-cluster nearest-neighbour mode → global cell size `s` (sanity prior only). | `cell_size::estimate_cell_size` |
 | 4 | `find_seed` | Pick a 2×2 quad passing every geometric invariant; refine `s` from the seed edges. | `seed::find_seed` |
-| 5 | `grow` | BFS over the `(i, j)` boundary with the full invariant stack at every attachment. | [`projective-grid`](projective_grid.md) (square seed-and-grow) |
+| 5 | `grow` | BFS over the `(i, j)` boundary with the full invariant stack at every attachment. | [`projective-grid`](projective_grid.md) (topological grid builder) |
 | 6 | `extend_boundary` | Homography-based extension (global or per-candidate local-H) outward and into interior holes. | `pipeline::extension` |
 | 7 | `fix_partial_slot_flip` | Re-check axis-slot-swap parity after extension; flip disagreeing entries. | `pipeline::extension` |
 | 8 | `rescue_no_cluster` | Re-admit `Strong` / `NoCluster` corners within the rescue tolerance via local-H prediction. | `pipeline::extension` |
 | 9 | `refit_cluster_centers` | Re-estimate `{Θ₀, Θ₁}` from labelled corners; on a large shift, re-run extension + rescue. | `pipeline::refit` |
-| 10 | `validate` | Line collinearity + local-H residual checks; blacklist outliers and restart from `find_seed`. | [`projective-grid`](projective_grid.md) (square validation) |
+| 10 | `validate` | Line collinearity + local-H residual checks; blacklist outliers and restart from `find_seed`. | [`projective-grid`](projective_grid.md) (topological validation) |
 | 11 | `apply_boosters` | Recall boosters: interior gap fill + line extrapolation + component merge. | `boosters::apply_boosters` |
 | 12 | `final_geometry_check` | Mandatory precision gate: per-edge length + axis-slot parity + largest cardinal component. Can only drop corners. | `pipeline::geometry_check` |
 
 Stages 4–10 run inside a blacklist loop — each iteration the validator
 may reject outliers; the pipeline re-seeds on the remaining set.
-Capped by `DetectorParams::max_validation_iters` (default 3).
+The loop is internally capped to prevent infinite cycling.
 
 See the [Chessboard Detector chapter](chessboard.md) for the full
 invariant stack and failure-mode analysis.

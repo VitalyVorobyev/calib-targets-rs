@@ -13,28 +13,19 @@
 //!
 //! # Pipeline
 //!
-//! The pipeline runs as a sequence of named stages. Internal source
-//! comments and diagnostic field names refer to these names; the
-//! numbered shorthand below is the canonical enumeration. Earlier
-//! versions of this crate used fractional sub-stages ("6.25", "6.5",
-//! "6.5b", "6.75") — those have been folded into descriptive names
-//! that capture *what* the pass does rather than where it sits in a
-//! numerical lattice.
+//! The detector builds its `(i, j)` labelling with the **topological** grid
+//! finder in [`projective_grid`] (a Delaunay triangulation + an axis-driven
+//! cell test), then runs a chessboard-specific recovery + precision pass over
+//! the labelled components:
 //!
-//! | Stage | Name                         | Responsibility |
-//! |-------|------------------------------|----------------|
-//! | 1     | `prefilter`                  | Drop corners failing strength / fit-quality / axes-validity gates. |
-//! | 2     | `cluster_axes`               | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner as canonical or swapped. |
-//! | 3     | `estimate_cell_size`         | Cross-cluster nearest-neighbour mode → global cell size `s`. |
-//! | 4     | `find_seed`                  | Pick a 2×2 quad passing every geometric invariant; refine `s` from the seed. |
-//! | 5     | `grow`                       | BFS over `(i, j)` boundary with the full invariant stack enforced at every attachment. |
-//! | 6     | `extend_boundary`            | Homography-based extension (global or per-candidate local-H) of the labelled boundary outward and into interior holes. |
-//! | 7     | `fix_partial_slot_flip`      | Defensive sweep that re-checks the axis-slot-swap parity after boundary extension; flips entries whose induced edges disagree. |
-//! | 8     | `rescue_no_cluster`          | Re-admit `Strong` / `NoCluster` corners within `rescue_axis_tol_deg` via local-H prediction. |
-//! | 9     | `refit_cluster_centers`      | Re-estimate `{Θ₀, Θ₁}` from labelled corners; if the shift exceeds `refit_min_shift_deg`, run a second extension + rescue. |
-//! | 10    | `validate`                   | Line collinearity + local-H residual checks; blacklist outliers; restart `find_seed` through `validate` with the blacklist excluded. |
-//! | 11    | `apply_boosters`             | Recall boosters: interior gap fill + line extrapolation. |
-//! | 12    | `final_geometry_check`       | Mandatory precision gate: shared square-grid validation + local edge-shape checks + largest cardinal component. Can only drop corners; never adds. |
+//! | Stage | Name                   | Responsibility |
+//! |-------|------------------------|----------------|
+//! | 1     | `prefilter`            | Drop corners failing strength / fit-quality / axes-validity gates. |
+//! | 2     | `cluster_axes`         | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner as canonical or swapped. |
+//! | 3     | `topological_grid`     | Delaunay + axis-driven cell test → connected labelled `(i, j)` components ([`projective_grid::detect_grid_all`]). |
+//! | 4     | `recover_components`   | Per-component recall boosters (interior gap fill + line extrapolation with a directional edge scale) + shared component merge. |
+//! | 5     | `final_geometry_check` | Mandatory precision gate: line collinearity + local-H residual + direct wrong-label check + largest cardinal component. Can only drop corners; never adds. |
+//! | 6     | `output`               | Labelled grid → canonicalised, non-negative-rebased [`ChessboardDetection`]. |
 //!
 //! Each stage is its own module or function; see the submodules.
 //!
@@ -86,32 +77,18 @@
 //! labelling.
 #![deny(missing_docs)]
 
-mod boosters;
 mod circular_stats;
-mod cluster;
 mod corner;
 mod detector;
-mod grow;
 mod mesh_warp;
 mod params;
 mod pipeline;
 mod rectified_view;
-mod seed;
-mod topological;
-mod validate;
-
-/// Opt-in detector introspection surface (`DebugFrame`, per-stage traces,
-/// `StageCounts`). Compiled only with the `diagnostics` feature; the hot
-/// [`Detector::detect`] path never assembles these.
-#[cfg(feature = "diagnostics")]
-pub mod diagnostics;
 
 // --- Public contract ---------------------------------------------------
 pub use corner::ChessCorner;
 pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{
-    AdvancedTuning, ChessboardParamsError, DetectorParams, GraphBuildAlgorithm, OrientationSource,
-};
+pub use params::{AdvancedTuning, ChessboardParamsError, DetectorParams, GraphBuildAlgorithm};
+pub use pipeline::{detect_all_topological, trace_topological};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
-pub use topological::{detect_all_topological, trace_topological};

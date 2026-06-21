@@ -299,28 +299,15 @@ pub(crate) fn convert_chessboard_params(
     // C ABI explicitly surfaces them.
     let mut out = ChessboardDetectorParams::default();
     out.graph_build_algorithm = match params.graph_build_algorithm {
-        crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW => {
-            calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow
-        }
-        crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL => {
+        // The seed-and-grow builder has been retired; the legacy constant is
+        // still accepted over the ABI and maps to the only remaining builder.
+        crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW
+        | crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL => {
             calib_targets::chessboard::GraphBuildAlgorithm::Topological
         }
         other => {
             return Err(FfiError::config_error(format!(
                 "chessboard.graph_build_algorithm: unknown value {other}"
-            )));
-        }
-    };
-    out.orientation_source = match params.orientation_source {
-        crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES => {
-            calib_targets::chessboard::OrientationSource::ChessAxes
-        }
-        crate::types::CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES => {
-            calib_targets::chessboard::OrientationSource::NeighbourEdges
-        }
-        other => {
-            return Err(FfiError::config_error(format!(
-                "chessboard.orientation_source: unknown value {other}"
             )));
         }
     };
@@ -355,11 +342,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
             "chessboard.line_min_members must be >= 2",
         ));
     }
-    if adv.max_validation_iters == 0 {
-        return Err(FfiError::config_error(
-            "chessboard.max_validation_iters must be > 0",
-        ));
-    }
     let mut tuning = AdvancedTuning::default();
     tuning.max_fit_rms_ratio =
         require_finite(adv.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
@@ -375,10 +357,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
         adv.min_peak_weight_fraction,
         "chessboard.min_peak_weight_fraction",
     )?;
-    tuning.seed_edge_tol = require_nonnegative(adv.seed_edge_tol, "chessboard.seed_edge_tol")?;
-    tuning.seed_axis_tol_deg =
-        require_nonnegative(adv.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
-    tuning.seed_close_tol = require_nonnegative(adv.seed_close_tol, "chessboard.seed_close_tol")?;
     tuning.attach_search_rel =
         require_positive(adv.attach_search_rel, "chessboard.attach_search_rel")?;
     tuning.attach_axis_tol_deg =
@@ -390,11 +368,7 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
     tuning.step_tol = require_nonnegative(adv.step_tol, "chessboard.step_tol")?;
     tuning.edge_axis_tol_deg =
         require_nonnegative(adv.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
-    tuning.line_tol_rel = require_nonnegative(adv.line_tol_rel, "chessboard.line_tol_rel")?;
     tuning.line_min_members = adv.line_min_members;
-    tuning.local_h_tol_rel =
-        require_nonnegative(adv.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
-    tuning.max_validation_iters = adv.max_validation_iters;
     tuning.enable_weak_cluster_rescue = flag_to_bool(
         adv.enable_weak_cluster_rescue,
         "chessboard.enable_weak_cluster_rescue",
@@ -409,29 +383,14 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
     let d = ChessboardDetectorParams::default();
     ct_chessboard_params_t {
         graph_build_algorithm: match d.graph_build_algorithm {
-            calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow => {
-                crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW
-            }
             calib_targets::chessboard::GraphBuildAlgorithm::Topological => {
                 crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL
             }
             // GraphBuildAlgorithm is `#[non_exhaustive]`; new pipelines
-            // added on the Rust side fall back to the historical
-            // SeedAndGrow selector until the FFI explicitly surfaces
-            // them via a new `CT_GRAPH_BUILD_ALGORITHM_*` constant.
-            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW,
-        },
-        orientation_source: match d.orientation_source {
-            calib_targets::chessboard::OrientationSource::ChessAxes => {
-                crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES
-            }
-            calib_targets::chessboard::OrientationSource::NeighbourEdges => {
-                crate::types::CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES
-            }
-            // OrientationSource is `#[non_exhaustive]`; a new variant on the
-            // Rust side falls back to the ChESS-axes selector until the FFI
-            // surfaces it via a new `CT_ORIENTATION_SOURCE_*` constant.
-            _ => crate::types::CT_ORIENTATION_SOURCE_CHESS_AXES,
+            // added on the Rust side fall back to the topological selector
+            // until the FFI explicitly surfaces them via a new
+            // `CT_GRAPH_BUILD_ALGORITHM_*` constant.
+            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL,
         },
         min_corner_strength: d.min_corner_strength,
         min_labeled_corners: d.min_labeled_corners,
@@ -454,18 +413,12 @@ fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
         cluster_tol_deg: t.cluster_tol_deg,
         peak_min_separation_deg: t.peak_min_separation_deg,
         min_peak_weight_fraction: t.min_peak_weight_fraction,
-        seed_edge_tol: t.seed_edge_tol,
-        seed_axis_tol_deg: t.seed_axis_tol_deg,
-        seed_close_tol: t.seed_close_tol,
         attach_search_rel: t.attach_search_rel,
         attach_axis_tol_deg: t.attach_axis_tol_deg,
         attach_ambiguity_factor: t.attach_ambiguity_factor,
         step_tol: t.step_tol,
         edge_axis_tol_deg: t.edge_axis_tol_deg,
-        line_tol_rel: t.line_tol_rel,
         line_min_members: t.line_min_members,
-        local_h_tol_rel: t.local_h_tol_rel,
-        max_validation_iters: t.max_validation_iters,
         enable_weak_cluster_rescue: if t.enable_weak_cluster_rescue {
             CT_TRUE
         } else {
@@ -595,14 +548,12 @@ pub(crate) fn convert_charuco_detector_params(
     let mut out = CharucoParams::for_board(&board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
-    // ChArUco only supports the seed-and-grow builder (see
-    // `CharucoDetectError::UnsupportedAlgorithm`). The standalone chessboard
-    // default is now the topological builder, so a C caller that fills the
-    // chessboard sub-config from `chessboard_params_default_values()` would
-    // otherwise request topological and fail at detect time. Re-pin
-    // seed-and-grow here, matching `CharucoParams::for_board`.
+    // ChArUco runs on the topological grid builder (the only builder). Re-pin
+    // it here so a C caller filling the chessboard sub-config from a legacy
+    // selector still resolves to the supported builder, matching
+    // `CharucoParams::for_board`.
     out.chessboard.graph_build_algorithm =
-        calib_targets::chessboard::GraphBuildAlgorithm::SeedAndGrow;
+        calib_targets::chessboard::GraphBuildAlgorithm::Topological;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
     out.max_hamming = u8::try_from(params.max_hamming)

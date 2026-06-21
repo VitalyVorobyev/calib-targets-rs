@@ -1,16 +1,18 @@
 //! `POST /api/diagnose` — per-stage pipeline introspection for one snap.
 //!
-//! The two graph-build algorithms expose different diagnostics by
-//! construction: seed-and-grow has the full `DebugFrame` (per-corner stage
-//! cursors + iteration traces), the topological path has the
-//! labelled-vs-unlabelled breakdown with pre-filter survival counts. The
-//! response is a discriminated union on `"kind"`.
+//! The detector builds its grid with the topological path (the only builder),
+//! whose diagnosis is the labelled-vs-unlabelled breakdown with pre-filter
+//! survival counts. The response is a discriminated union on `"kind"`.
+//!
+//! The legacy seed-and-grow `DebugFrame` diagnosis has been retired together
+//! with the seed-and-grow builder; a request asking for it returns a clear
+//! error rather than fabricated data.
 
 use axum::extract::State;
 use axum::Json;
-use calib_targets::chessboard::{Detector, GraphBuildAlgorithm};
+use calib_targets::chessboard::GraphBuildAlgorithm;
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_bench::diagnose::{diagnose_topological, stage_counts_by_name};
+use calib_targets_bench::diagnose::diagnose_topological;
 use calib_targets_bench::runner::load_entry_image;
 use serde::Deserialize;
 use serde_json::json;
@@ -27,7 +29,8 @@ pub enum AlgorithmReq {
     /// Production topological path → labelled/unlabelled diagnosis.
     #[default]
     Topological,
-    /// Seed-and-grow pipeline → full `DebugFrame`.
+    /// Retired seed-and-grow `DebugFrame` diagnosis. Accepted for request
+    /// back-compat but no longer serviced; returns a clear error.
     SeedAndGrow,
 }
 
@@ -52,16 +55,22 @@ pub async fn diagnose(
     State(state): State<AppState>,
     Json(req): Json<DiagnoseRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    // The seed-and-grow per-stage `DebugFrame` diagnosis was retired with the
+    // seed-and-grow builder; refuse it with a clear error rather than
+    // fabricating data. A topological per-stage analog is a separate future
+    // addition.
+    if req.algorithm == AlgorithmReq::SeedAndGrow {
+        return Err(ApiError::BadRequest(
+            "seed-and-grow per-stage diagnostics have been retired (topological analog pending); \
+             request algorithm \"topological\" instead"
+                .to_string(),
+        ));
+    }
+
     let mut params = calib_targets_bench::config::merge_detector_params(&req.params)
         .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;
-    // Mirror the bench CLI exactly: the topological diagnosis forces the
-    // production topological path; the seed-and-grow diagnosis runs
-    // `detect_with_diagnostics` with the caller's params untouched (the
-    // DebugFrame pipeline is seed-and-grow by construction, but stages
-    // like the geometry check still consult `graph_build_algorithm`).
-    if req.algorithm == AlgorithmReq::Topological {
-        params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-    }
+    // The topological builder is the only builder; force it explicitly.
+    params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     params
         .validate()
         .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;
@@ -77,29 +86,13 @@ pub async fn diagnose(
     }
     let mut chess_cfg = default_chess_config();
     chess_cfg.orientation_method = req.orientation_method.into();
-    let algorithm = req.algorithm;
 
     let value = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiError> {
         let img = load_entry_image(&abs)?;
         let fed = calib_targets_bench::runner::fed_image(&img, &entry, k)?;
         let corners = detect_corners(&fed, &chess_cfg);
-        match algorithm {
-            AlgorithmReq::Topological => {
-                let diagnosis = diagnose_topological(&params, &corners);
-                Ok(json!({ "kind": "topological", "diagnosis": diagnosis }))
-            }
-            AlgorithmReq::SeedAndGrow => {
-                let detector = Detector::new(params)
-                    .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;
-                let frame = detector.detect_with_diagnostics(&corners);
-                let stage_counts = stage_counts_by_name(&frame);
-                Ok(json!({
-                    "kind": "seed_and_grow",
-                    "frame": frame,
-                    "stage_counts": stage_counts,
-                }))
-            }
-        }
+        let diagnosis = diagnose_topological(&params, &corners);
+        Ok(json!({ "kind": "topological", "diagnosis": diagnosis }))
     })
     .await
     .map_err(|e| ApiError::Internal(e.to_string()))??;

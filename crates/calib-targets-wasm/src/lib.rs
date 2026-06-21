@@ -615,9 +615,9 @@ pub fn detect_charuco(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    // ChArUco only supports seed-and-grow; re-pin in case the config omitted
-    // the (now topological-defaulting) chessboard algorithm.
-    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    // ChArUco runs on the topological grid builder (the only builder); re-pin
+    // in case the config carries a legacy chessboard algorithm value.
+    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -702,33 +702,6 @@ pub fn detect_puzzleboard(
 // the result API. See `typescript-extras.d.ts` for the object shapes.
 // ---------------------------------------------------------------------------
 
-/// Detect a chessboard grid and additionally return the diagnostics channel.
-///
-/// Returns a `{ result, diagnostics }` object. `result` is a
-/// `ChessboardDetectionResult` (or `null` when no board is found);
-/// `diagnostics` is the `ChessboardDebugFrame` introspection payload, which
-/// also embeds the detection under its own `detection` field.
-#[wasm_bindgen]
-pub fn detect_chessboard_with_diagnostics(
-    width: u32,
-    height: u32,
-    pixels: &[u8],
-    chess_cfg: JsValue,
-    params: JsValue,
-) -> Result<JsValue, JsError> {
-    validate_gray(pixels, width, height)?;
-    let cb_params: DetectorParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
-
-    let corners = detect_corners_impl(pixels, width, height, &chess);
-    let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let frame = detector.detect_with_diagnostics(&corners);
-    to_js(&serde_json::json!({
-        "result": frame.detection,
-        "diagnostics": frame,
-    }))
-}
-
 /// Detect a ChArUco board and additionally return the diagnostics channel.
 ///
 /// Returns a `{ result, diagnostics }` object. `result` is a
@@ -745,9 +718,9 @@ pub fn detect_charuco_with_diagnostics(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    // ChArUco only supports seed-and-grow; re-pin in case the config omitted
-    // the (now topological-defaulting) chessboard algorithm.
-    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+    // ChArUco runs on the topological grid builder (the only builder); re-pin
+    // in case the config carries a legacy chessboard algorithm value.
+    charuco_params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -869,10 +842,10 @@ pub fn detect_charuco_best(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let mut configs: Vec<CharucoParams> = from_js(configs)?;
-    // ChArUco only supports seed-and-grow; re-pin in case a config omitted
-    // the (now topological-defaulting) chessboard algorithm.
+    // ChArUco runs on the topological grid builder (the only builder); re-pin
+    // in case a config carries a legacy chessboard algorithm value.
     for cfg in &mut configs {
-        cfg.chessboard.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
+        cfg.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     }
 
     let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;

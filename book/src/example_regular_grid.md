@@ -71,25 +71,25 @@ dimensions are unknown (`None`); the detector infers the extent.
 
 ```rust
 use projective_grid::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, SquareAlgorithm,
+    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind,
 };
 
 let request = DetectionRequest::new(
     LatticeKind::Square,
     Evidence::Oriented2(&features),
     None, // grid dimensions unknown; the detector infers the extent
-    DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow),
+    DetectionParams::default(),
 );
 let solution = detect_grid(request)?;
 assert_eq!(solution.grid.entries.len(), 9);
 ```
 
 `DetectionParams::default()` carries a `max_residual_px` fit gate and
-selects `SquareAlgorithm::SeedAndGrow`, the default builder: it finds a
-self-consistent `2×2` seed quad, grows the grid breadth-first from it,
-validates the result geometrically, and fits a projective transform.
-`SquareAlgorithm::Topological` is the alternative for distorted inputs;
-both produce the same `GridSolution` shape.
+selects `SquareAlgorithm::Topological` — the sole grid builder (the
+`SeedAndGrow` variant was removed). It runs a Delaunay triangulation
+over the corner cloud, classifies edges by axis match, merges triangle
+pairs into cells, and floods integer coordinates across the mesh, then
+fits a projective transform.
 
 ### 3. Handle the `Result`
 
@@ -158,8 +158,8 @@ sub-pixel fit residual.
   `DetectionReport` whose `solutions` vector holds one `GridSolution`
   per recovered component, ordered by labelled count descending. Use it
   when the lattice fragments into islands (for example by occlusion)
-  and the secondary components matter. `SeedAndGrow` yields at most one
-  solution; `SquareAlgorithm::Topological` may yield several.
+  and the secondary components matter. The topological algorithm may
+  yield several components.
 - **Checking caller-supplied labels** — when `(i, j)` labels already
   exist (for instance from a marker decode), `check_consistency` scores
   them against a single projective fit instead of recovering them from
@@ -170,5 +170,5 @@ sub-pixel fit residual.
   the same `Evidence::Oriented2` path on a bigger synthetic grid.
 
 See the [`projective-grid` chapter](projective_grid.md) for the full
-model — the two lattice families, the `Evidence` shapes, and the two
-square algorithms.
+model — the two lattice families, the `Evidence` shapes, and the
+topological algorithm.

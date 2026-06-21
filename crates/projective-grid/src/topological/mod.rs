@@ -17,10 +17,9 @@
 //!    mesh and rebase each connected component to `(0, 0)`.
 //! 7. Reunite the labelled components in label space with the shared
 //!    [`crate::shared::merge::merge_components_local`]
-//!    pass (local geometry only, radial-distortion safe), mirroring the
-//!    seed-and-grow facade. This makes the two algorithm facades expose
-//!    identical multi-component semantics: the topological path no longer
-//!    leaves an un-merged quad-mesh component per disconnected patch.
+//!    pass (local geometry only, radial-distortion safe), so the topological
+//!    path no longer leaves an un-merged quad-mesh component per disconnected
+//!    patch.
 //! 8. Reuse the shared advanced [`validate`](crate::shared::validate)
 //!    post-stage to drop labelled corners flagged by line-collinearity and
 //!    local-H checks.
@@ -281,13 +280,11 @@ pub(crate) fn detect_square_oriented2_topological_all(
         return Err(GridError::DegenerateGeometry);
     }
 
-    // Reunite the labelled components in label space, mirroring the
-    // seed-and-grow facade's `merge_components_local` step. Until now the
-    // topological facade left one quad-mesh component per disconnected
-    // patch; the chessboard adapter compensated by running this same merge
-    // itself. Hosting it here unifies the two facades' multi-component
-    // semantics and lets the chessboard adapter consume a single
-    // already-merged output (see `calib-targets-chessboard::topological`).
+    // Reunite the labelled components in label space with the shared
+    // `merge_components_local` step. The topological walk leaves one quad-mesh
+    // component per disconnected patch; hosting the merge here lets the
+    // chessboard adapter consume a single already-merged output (see
+    // `calib-targets-chessboard::topological`).
     let merged = merge_walk_components(&components, &positions);
     if merged.is_empty() {
         return Err(GridError::DegenerateGeometry);
@@ -304,10 +301,10 @@ pub(crate) fn detect_square_oriented2_topological_all(
             .iter()
             .map(|m| m.iter().map(|(c, &idx)| ((c.u, c.v), idx)).collect())
             .collect();
-        let local_pitch = crate::seed_and_grow::recovery::local_pitch_of(&positions);
-        let recovered = crate::seed_and_grow::recovery::recover_components(
+        let local_pitch = crate::shared::recovery::local_pitch_of(&positions);
+        let recovered = crate::shared::recovery::recover_components(
             ij_in,
-            crate::seed_and_grow::recovery::RecoveryInputs {
+            crate::shared::recovery::RecoveryInputs {
                 features,
                 positions: &positions,
                 local_pitch: &local_pitch,
@@ -527,8 +524,8 @@ fn build_component_solution(
     positions: &[Point2<f32>],
     params: &DetectionParams,
 ) -> Option<ComponentOutput> {
-    // Reuse the advanced post-stage. The advanced validate is the same
-    // module that backs the chessboard seed-and-grow path.
+    // Reuse the shared advanced validate post-stage (the same module the
+    // chessboard topological adapter and the recovery schedule consume).
     let validate_entries: Vec<pg_validate::LabelledEntry> = labelled
         .iter()
         .map(|(coord, &idx)| pg_validate::LabelledEntry {
