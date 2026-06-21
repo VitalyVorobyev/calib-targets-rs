@@ -193,12 +193,6 @@ impl CharucoDetectConfig {
         }
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;
-            // ChArUco runs on the topological grid builder (the workspace
-            // default). Re-pin it here so a config-supplied chessboard override
-            // carrying a legacy `graph_build_algorithm` value still resolves to
-            // the supported builder.
-            params.chessboard.graph_build_algorithm =
-                calib_targets_chessboard::GraphBuildAlgorithm::Topological;
         }
         if let Some(aruco) = self.aruco.as_ref() {
             if let Some(max_hamming) = aruco.max_hamming {
@@ -291,7 +285,6 @@ impl CharucoDetectReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_chessboard::GraphBuildAlgorithm;
 
     fn testdata(name: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -299,12 +292,10 @@ mod tests {
             .join(name)
     }
 
-    /// Every checked-in ChArUco config still deserializes, and the chessboard
-    /// params it produces pin the topological builder regardless of what the
-    /// (possibly legacy-schema) `chessboard` override block carries. Guards the
-    /// serde-compat contract after the typed-algorithm-override change.
+    /// Every checked-in ChArUco config deserializes and produces a valid
+    /// detector. Guards the serde-compat contract.
     #[test]
-    fn checked_in_configs_deserialize_and_pin_topological() {
+    fn checked_in_configs_deserialize() {
         for name in [
             "charuco_detect_config.json",
             "charuco_detect_config_small.json",
@@ -312,12 +303,8 @@ mod tests {
             let path = testdata(name);
             let cfg = CharucoDetectConfig::load_json(&path)
                 .unwrap_or_else(|e| panic!("load {name}: {e}"));
-            let params = cfg.build_params();
-            assert_eq!(
-                params.chessboard.graph_build_algorithm,
-                GraphBuildAlgorithm::Topological,
-                "{name}: chessboard override must resolve to the topological builder"
-            );
+            cfg.build_detector()
+                .unwrap_or_else(|e| panic!("{name}: build_detector failed: {e}"));
         }
     }
 }

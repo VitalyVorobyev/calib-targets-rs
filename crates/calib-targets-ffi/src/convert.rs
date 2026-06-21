@@ -298,19 +298,6 @@ pub(crate) fn convert_chessboard_params(
     // added in future Rust releases keep their defaults until the
     // C ABI explicitly surfaces them.
     let mut out = ChessboardDetectorParams::default();
-    out.graph_build_algorithm = match params.graph_build_algorithm {
-        // The seed-and-grow builder has been retired; the legacy constant is
-        // still accepted over the ABI and maps to the only remaining builder.
-        crate::types::CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW
-        | crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL => {
-            calib_targets::chessboard::GraphBuildAlgorithm::Topological
-        }
-        other => {
-            return Err(FfiError::config_error(format!(
-                "chessboard.graph_build_algorithm: unknown value {other}"
-            )));
-        }
-    };
     out.min_corner_strength =
         require_finite(params.min_corner_strength, "chessboard.min_corner_strength")?;
     out.min_labeled_corners = params.min_labeled_corners;
@@ -382,16 +369,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
 pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
     let d = ChessboardDetectorParams::default();
     ct_chessboard_params_t {
-        graph_build_algorithm: match d.graph_build_algorithm {
-            calib_targets::chessboard::GraphBuildAlgorithm::Topological => {
-                crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL
-            }
-            // GraphBuildAlgorithm is `#[non_exhaustive]`; new pipelines
-            // added on the Rust side fall back to the topological selector
-            // until the FFI explicitly surfaces them via a new
-            // `CT_GRAPH_BUILD_ALGORITHM_*` constant.
-            _ => crate::types::CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL,
-        },
         min_corner_strength: d.min_corner_strength,
         min_labeled_corners: d.min_labeled_corners,
         max_components: d.max_components,
@@ -548,12 +525,6 @@ pub(crate) fn convert_charuco_detector_params(
     let mut out = CharucoParams::for_board(&board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
-    // ChArUco runs on the topological grid builder (the only builder). Re-pin
-    // it here so a C caller filling the chessboard sub-config from a legacy
-    // selector still resolves to the supported builder, matching
-    // `CharucoParams::for_board`.
-    out.chessboard.graph_build_algorithm =
-        calib_targets::chessboard::GraphBuildAlgorithm::Topological;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
     out.max_hamming = u8::try_from(params.max_hamming)

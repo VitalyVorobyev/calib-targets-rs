@@ -21,8 +21,6 @@ pub struct CharucoParams {
     /// marker-decode stages downstream of grid construction are
     /// builder-agnostic. The decode is precision-clean on the topological grid
     /// (zero self-consistency wrong-ids on the private flagship sweep).
-    ///
-    /// [`graph_build_algorithm`]: calib_targets_chessboard::DetectorParams::graph_build_algorithm
     #[serde(default)]
     pub chessboard: DetectorParams,
     /// ChArUco board parameters

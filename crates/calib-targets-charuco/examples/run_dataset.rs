@@ -31,7 +31,7 @@ use calib_targets_charuco::{
     diagnostics::CharucoDetectDiagnostics, load_board_spec_any, CharucoBoardSpec,
     CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams,
 };
-use calib_targets_chessboard::{ChessCorner as Corner, GraphBuildAlgorithm};
+use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
 use serde::Serialize;
@@ -53,36 +53,18 @@ struct Args {
     save_snaps: bool,
     bit_slope: Option<f32>,
     min_margin: Option<f32>,
-    /// Grid-build algorithm. Only `topological` is supported (the
-    /// seed-and-grow builder has been retired); the flag is kept for
-    /// backwards compatibility.
-    algorithm: GraphBuildAlgorithm,
 }
 
-/// Stable slug for a grid-build algorithm (for summary JSON + parsing).
-fn algorithm_slug(algorithm: GraphBuildAlgorithm) -> &'static str {
-    match algorithm {
-        GraphBuildAlgorithm::Topological => "topological",
-        _ => "unknown",
-    }
-}
-
-fn parse_algorithm(s: &str) -> Option<GraphBuildAlgorithm> {
-    match s {
-        // `seed-and-grow` is accepted but maps to the only remaining builder.
-        "topological" | "topo" | "seed-and-grow" | "seed_and_grow" => {
-            Some(GraphBuildAlgorithm::Topological)
-        }
-        _ => None,
-    }
+/// Stable slug for the grid-build algorithm used in summary JSON + report filenames.
+fn algorithm_slug() -> &'static str {
+    "topological"
 }
 
 fn usage_and_exit() -> ! {
     eprintln!(
         "usage: run_dataset --dataset <dir> --board <path> --out <dir> \
          [--upscale N] [--snaps N] [--snap-width N] [--snap-height N] \
-         [--use-board-matcher] [--emit-diag] [--save-snaps] \
-         [--algorithm seed-and-grow|topological]"
+         [--use-board-matcher] [--emit-diag] [--save-snaps]"
     );
     std::process::exit(2);
 }
@@ -101,7 +83,6 @@ fn parse_args() -> Args {
     let mut save_snaps = false;
     let mut bit_slope: Option<f32> = None;
     let mut min_margin: Option<f32> = None;
-    let mut algorithm = GraphBuildAlgorithm::Topological;
 
     let mut it = env::args().skip(1);
     while let Some(a) = it.next() {
@@ -110,11 +91,8 @@ fn parse_args() -> Args {
             "--board" => board = it.next().map(PathBuf::from),
             "--out" => out = it.next().map(PathBuf::from),
             "--algorithm" => {
-                let raw = it.next().unwrap_or_default();
-                algorithm = parse_algorithm(&raw).unwrap_or_else(|| {
-                    eprintln!("--algorithm must be seed-and-grow|topological (got {raw:?})");
-                    std::process::exit(2);
-                });
+                // Accepted for back-compat; the only builder is topological.
+                let _ = it.next().unwrap_or_default();
             }
             "--upscale" => upscale = it.next().and_then(|v| v.parse().ok()).unwrap_or(1),
             "--snaps" => {
@@ -159,7 +137,6 @@ fn parse_args() -> Args {
         save_snaps,
         bit_slope,
         min_margin,
-        algorithm,
     }
 }
 
@@ -197,9 +174,6 @@ fn main() {
 
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    // Grid-build algorithm. ChArUco accepts any builder; `for_board` leaves
-    // the topological default in place, and `--algorithm` overrides it.
-    params.chessboard.graph_build_algorithm = args.algorithm;
     params.use_board_level_matcher = args.use_board_matcher;
     if args.use_board_matcher {
         // The board-level matcher is its own inlier gate — don't add a
@@ -222,7 +196,7 @@ fn main() {
         } else {
             "legacy (rotation + translation vote)"
         },
-        algorithm_slug(args.algorithm),
+        algorithm_slug(),
     );
     let detector = CharucoDetector::new(params.clone()).expect("build detector");
 
@@ -649,7 +623,7 @@ impl Aggregate {
             runtime_mean_ms: self.total_ms_sum / frames,
             upscale: args.upscale,
             use_board_matcher: args.use_board_matcher,
-            algorithm: algorithm_slug(args.algorithm),
+            algorithm: algorithm_slug(),
             board: *spec,
         }
     }

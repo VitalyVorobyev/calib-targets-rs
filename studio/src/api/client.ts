@@ -65,8 +65,8 @@ export const api = {
   /**
    * Effective chessboard grid defaults for a target family — the real values
    * that family's detector runs with (e.g. charuco / puzzle pin a different
-   * `min_corner_strength` floor and `graph_build_algorithm`). Seeds the
-   * Detect-tab basic-config so switching family shows the genuine defaults.
+   * `min_corner_strength` floor). Seeds the Detect-tab basic-config so
+   * switching family shows the genuine defaults.
    */
   effectiveDefaults: (family: string) =>
     getJson<DetectorParamsOverride>(

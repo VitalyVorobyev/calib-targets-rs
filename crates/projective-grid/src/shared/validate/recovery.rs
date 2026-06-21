@@ -503,6 +503,95 @@ pub fn largest_component_filter(
     }
 }
 
+/// Per-stage breakdown of a [`drop_set`] precision pass.
+pub struct DropSet {
+    /// Union of every dropped index across the three filters below.
+    pub drop: HashSet<usize>,
+    /// Indices dropped by the line-collinearity / local-H validate pass.
+    pub validate_drop: HashSet<usize>,
+    /// Indices dropped by the topological wrong-label check (empty when
+    /// `apply_wrong_label_drops` was `false`).
+    pub wrong_label_drop: HashSet<usize>,
+    /// Indices dropped by the largest-component filter (empty when
+    /// `apply_largest_component` was `false`).
+    pub component_drop: HashSet<usize>,
+    /// Number of cardinally-connected components the component filter saw
+    /// (`0` when `apply_largest_component` was `false`).
+    pub components_seen: u32,
+}
+
+/// Combined precision drop-set shared by the geometry-only recovery
+/// schedule's revalidation and a downstream detector's mandatory final
+/// geometry check.
+///
+/// Over a labelled `(i, j) → index` map, computes the union of:
+/// 1. line-collinearity + local-H residual outliers
+///    ([`validate`](crate::shared::validate::validate));
+/// 2. topological wrong-label drops ([`topological_wrong_label_drops`]) when
+///    `apply_wrong_label_drops`;
+/// 3. the non-largest cardinally-connected component sweep
+///    ([`largest_component_filter`]) when `apply_largest_component`, computed
+///    over the union of (1)+(2) so a drop that splits a component removes the
+///    orphaned half.
+///
+/// Entries are materialised in deterministic `(i, j)`-sorted order before the
+/// validate pass, so the result never depends on the caller's `HashMap`
+/// iteration order (the validate pass is order-sensitive on coincident
+/// positions; the other two filters are already order-independent — see the
+/// module-level determinism note). The per-stage index sets are returned
+/// alongside the union so the caller can attribute drops in its own trace.
+///
+/// This is the *composition*; applying the drop set to the caller's stage
+/// machine (blacklist, `CornerStage`, refusal threshold) stays caller-side.
+pub fn drop_set<F>(
+    labelled: &HashMap<(i32, i32), usize>,
+    position: F,
+    cell_size: f32,
+    validate_params: &super::ValidationParams,
+    apply_wrong_label_drops: bool,
+    apply_largest_component: bool,
+) -> DropSet
+where
+    F: Fn(usize) -> Point2<f32>,
+{
+    let mut ordered: Vec<((i32, i32), usize)> = labelled.iter().map(|(&k, &v)| (k, v)).collect();
+    ordered.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let entries: Vec<super::LabelledEntry> = ordered
+        .iter()
+        .map(|&(grid, idx)| super::LabelledEntry {
+            idx,
+            pixel: position(idx),
+            grid,
+        })
+        .collect();
+
+    let validate_drop = super::validate(&entries, cell_size, validate_params).blacklist;
+    let mut drop = validate_drop.clone();
+
+    let mut wrong_label_drop = HashSet::new();
+    if apply_wrong_label_drops {
+        wrong_label_drop = topological_wrong_label_drops(labelled, &position, cell_size);
+        drop.extend(wrong_label_drop.iter().copied());
+    }
+
+    let mut component_drop = HashSet::new();
+    let mut components_seen = 0;
+    if apply_largest_component {
+        let comp = largest_component_filter(labelled, &drop);
+        components_seen = comp.components_seen;
+        component_drop = comp.drop;
+        drop.extend(component_drop.iter().copied());
+    }
+
+    DropSet {
+        drop,
+        validate_drop,
+        wrong_label_drop,
+        component_drop,
+        components_seen,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

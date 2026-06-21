@@ -15,9 +15,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{
-    ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
-};
+use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
@@ -113,9 +111,7 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> GrayImage {
 }
 
 fn default_topological_detector() -> Detector {
-    let mut params = DetectorParams::default();
-    params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
-    Detector::new(params).expect("valid detector params")
+    Detector::new(DetectorParams::default()).expect("valid detector params")
 }
 
 fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {

@@ -556,42 +556,33 @@ mod tests {
     use super::*;
     use crate::board::{CharucoBoardSpec, MarkerLayout};
     use calib_targets_aruco::builtins;
-    use calib_targets_chessboard::GraphBuildAlgorithm;
 
     fn test_board() -> CharucoBoardSpec {
         CharucoBoardSpec::new(5, 7, 20.0, 0.75, builtins::DICT_4X4_50)
             .with_marker_layout(MarkerLayout::OpenCvCharuco)
     }
 
-    /// ChArUco runs on the topological builder (the workspace default); the
-    /// `for_board` constructor leaves the default builder in place.
+    /// `for_board` produces a valid detector config.
     #[test]
-    fn for_board_uses_topological() {
+    fn for_board_builds_detector() {
         let params = CharucoParams::for_board(&test_board());
-        assert_eq!(
-            params.chessboard.graph_build_algorithm,
-            GraphBuildAlgorithm::Topological
-        );
+        CharucoDetector::new(params).expect("detector must build from for_board params");
     }
 
-    /// Every `sweep_for_board` config runs on the topological builder.
+    /// Every `sweep_for_board` config produces a valid detector.
     #[test]
-    fn sweep_for_board_uses_topological() {
+    fn sweep_for_board_builds_detectors() {
         for params in CharucoParams::sweep_for_board(&test_board()) {
-            assert_eq!(
-                params.chessboard.graph_build_algorithm,
-                GraphBuildAlgorithm::Topological
-            );
+            CharucoDetector::new(params).expect("detector must build from sweep_for_board params");
         }
     }
 
-    /// A `Topological` request is accepted: with no corners it reaches the
-    /// chessboard stage and reports `ChessboardNotDetected` (no algorithm
-    /// guard rejects it up front).
+    /// The default detector config reaches the chessboard stage and reports
+    /// `ChessboardNotDetected` on an empty image (no algorithm guard rejects
+    /// it up front).
     #[test]
-    fn topological_is_accepted() {
-        let mut params = CharucoParams::for_board(&test_board());
-        params.chessboard.graph_build_algorithm = GraphBuildAlgorithm::Topological;
+    fn detector_reaches_chessboard_stage() {
+        let params = CharucoParams::for_board(&test_board());
         let detector = CharucoDetector::new(params).expect("detector");
         let buf = [0u8; 16];
         let image = GrayImageView {
@@ -602,7 +593,7 @@ mod tests {
         let result = detector.detect(&image, &[]);
         assert!(
             matches!(result, Err(CharucoDetectError::ChessboardNotDetected)),
-            "topological must reach the chessboard stage, got {result:?}"
+            "detector must reach the chessboard stage, got {result:?}"
         );
     }
 }

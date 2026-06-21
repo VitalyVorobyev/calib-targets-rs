@@ -82,8 +82,7 @@ pub struct TopologicalDiagnosis {
 }
 
 /// Run the production topological detector path on `corners` and compute a
-/// [`TopologicalDiagnosis`]. `params` is used as-is — callers are responsible
-/// for forcing `graph_build_algorithm` beforehand.
+/// [`TopologicalDiagnosis`]. `params` is used as-is.
 pub fn diagnose_topological(
     params: &DetectorParams,
     corners: &[ChessCorner],

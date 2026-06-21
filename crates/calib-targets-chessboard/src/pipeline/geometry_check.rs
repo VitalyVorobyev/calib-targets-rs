@@ -43,94 +43,51 @@ pub fn run_geometry_check(
     params: &DetectorParams,
 ) -> GeometryCheckTrace {
     use projective_grid::shared::validate as pg_validate;
-    use std::collections::HashSet as Set;
 
     let tuning = params.effective_tuning();
 
-    // Test 1: line collinearity + local-H residual via shared
-    // validator, but with the LOOSER `geometry_check_*` tolerances —
-    // the topological walk already accepted borderline perspective
-    // drift; the geometry check's job is to catch gross mislabels
-    // (full-cell or diagonal shifts) only.
-    let geom_entries: Vec<pg_validate::LabelledEntry> = grow_res
-        .labelled
-        .iter()
-        .map(|(&grid, &idx)| pg_validate::LabelledEntry {
-            idx,
-            pixel: augs[idx].position,
-            grid,
-        })
-        .collect();
+    // Looser `geometry_check_*` tolerances than the topological walk: the
+    // walk already accepted borderline perspective drift; the geometry
+    // check's job is to catch gross mislabels (full-cell or diagonal
+    // shifts) only. (Per-edge axis-slot-swap was tried and rejected — too
+    // rigid for heavily distorted boards; the local-H residual in
+    // `validate` handles the diagonal-mislabel case without touching
+    // legitimate perspective-distorted corners.)
     let mut geom_params = pg_validate::ValidationParams::new(
         tuning.geometry_check_line_tol_rel,
         tuning.line_min_members,
         tuning.geometry_check_local_h_tol_rel,
     );
-    let dense_enough = geom_entries.len() >= MIN_EDGE_SHAPE_LABELS;
     if tuning.validate_step_aware {
-        // Geometry check stays step-aware so heavily distorted boards
-        // get the same scale-relative thresholds as the walk. The
+        // Geometry check stays step-aware so heavily distorted boards get
+        // the same scale-relative thresholds as the walk. The
         // step-deviation gate is disabled here (set to 0).
         geom_params = geom_params.with_step_aware(0.0);
     }
-    let v = pg_validate::validate(&geom_entries, cell_size, &geom_params);
-    let validate_drop: Set<usize> = v.blacklist.iter().copied().collect();
 
-    // Per-edge axis-slot-swap was tried as an additional check but
-    // was too rigid for heavily distorted boards (every cell with a
-    // perspective-foreshortened edge failed the length test, even
-    // requiring 2-of-4 failing edges still flagged 27+ corners on
-    // `puzzleboard_reference/example2.png`). Local-H residual via
-    // `validate()` with looser geometry-check tolerances handles the
-    // diagonal-mislabel case (residual ~1.4 cell on a wrong-cell
-    // attachment, well above the 0.6 cell threshold) without
-    // touching legitimate perspective-distorted corners.
-    let mut all_drop: Set<usize> = Set::new();
-    all_drop.extend(validate_drop.iter().copied());
+    // The validate → wrong-label → largest-component composition (and its
+    // deterministic input ordering) lives in the shared `drop_set` helper —
+    // the same path the geometry-only recovery schedule routes through. Only
+    // the chessboard-specific bookkeeping below (stage machine, blacklist,
+    // refusal threshold) stays here. The direct wrong-label check needs a
+    // dense enough grid to be meaningful, so it stays gated on the
+    // chessboard's label count.
+    let dense_enough = grow_res.labelled.len() >= MIN_EDGE_SHAPE_LABELS;
+    let result = pg_validate::recovery::drop_set(
+        &grow_res.labelled,
+        |idx| augs[idx].position,
+        cell_size,
+        &geom_params,
+        tuning.enable_final_edge_shape_check && dense_enough,
+        true,
+    );
 
-    // Test 2: direct local wrong-label check. The dominant topological
-    // wrong-label classes — interior skipped-corner edges and
-    // duplicate-pixel labels — are caught here. It can only drop corners;
-    // the largest-component filter below then sweeps any strip orphaned by
-    // a drop (a shifted strip beyond a skipped corner carried wrong
-    // `(i, j)` labels, so dropping it is precision-correct). The
-    // lattice-general geometry lives in
-    // [`projective_grid::shared::validate::recovery::topological_wrong_label_drops`].
-    let mut topo_wrong_label_drop: Set<usize> = Set::new();
-    if tuning.enable_final_edge_shape_check && dense_enough {
-        topo_wrong_label_drop = pg_validate::recovery::topological_wrong_label_drops(
-            &grow_res.labelled,
-            |idx| augs[idx].position,
-            cell_size,
-        );
-        all_drop.extend(topo_wrong_label_drop.iter().copied());
-    }
+    let dropped_validate = result.validate_drop.len() as u32;
+    let dropped_edge_only = result.wrong_label_drop.len() as u32;
+    let dropped_disconnected = result.component_drop.len() as u32;
+    let components_seen = result.components_seen;
 
-    // Test 3: cardinally-connected components. A chessboard detection
-    // is by construction one (i, j)-labelled connected planar graph;
-    // any singleton or small-component that survived earlier stages
-    // is a false positive (commonly a marker corner that passed the
-    // axis cluster + parity gates but sits in isolation, well outside
-    // the main grid). Keep only the largest component; drop the rest.
-    //
-    // Implemented after the validate() drops so a corner that's both
-    // a residual outlier AND disconnected gets attributed to validate
-    // (dominant reason). Components are computed AFTER the validate
-    // drops so dropping a "bridge" corner can split a component, and
-    // then the smaller half is correctly removed. The lattice-general
-    // filter (component scan + deterministic tie-break) lives in
-    // [`projective_grid::shared::validate::recovery::largest_component_filter`].
-    let component_filter =
-        pg_validate::recovery::largest_component_filter(&grow_res.labelled, &all_drop);
-    let components_seen = component_filter.components_seen;
-    let disconnect_drop = component_filter.drop;
-    all_drop.extend(disconnect_drop.iter().copied());
-
-    let dropped_validate = validate_drop.len() as u32;
-    let dropped_edge_only = topo_wrong_label_drop.len() as u32;
-    let dropped_disconnected = disconnect_drop.len() as u32;
-
-    for &idx in &all_drop {
+    for &idx in &result.drop {
         if let CornerStage::Labeled { at, .. } = augs[idx].stage {
             augs[idx].stage = CornerStage::LabeledThenBlacklisted {
                 at,
@@ -144,7 +101,7 @@ pub fn run_geometry_check(
 
     let detection_refused = grow_res.labelled.len() < params.min_labeled_corners;
     GeometryCheckTrace {
-        dropped: all_drop.len() as u32,
+        dropped: result.drop.len() as u32,
         dropped_line_collinearity: dropped_validate,
         dropped_local_h_residual: 0, // shared validator lumps these — kept for forward-compat
         dropped_edge_invariant: dropped_edge_only,

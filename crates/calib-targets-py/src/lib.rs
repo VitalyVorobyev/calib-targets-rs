@@ -184,11 +184,7 @@ fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::C
     if obj.is_none() {
         return Err(value_error("params is required for ChArUco detection"));
     }
-    let mut params: charuco::CharucoParams = from_py_json(obj, "params")?;
-    // ChArUco runs on the topological grid builder (the only builder); re-pin
-    // it so a config carrying a legacy `graph_build_algorithm` value still
-    // resolves to the supported builder. Matches `CharucoParams::for_board`.
-    params.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
+    let params: charuco::CharucoParams = from_py_json(obj, "params")?;
     Ok(params)
 }
 
@@ -347,9 +343,8 @@ fn detect_chessboard_all(
 
 /// Run ChESS corner detection plus the topological grid trace.
 ///
-/// This is an offline diagnostics / visualization entry point. It always
-/// forces `DetectorParams.graph_build_algorithm = "topological"` before
-/// running final detections, then returns the raw corners, the
+/// This is an offline diagnostics / visualization entry point. It applies
+/// the topological detector defaults, then returns the raw corners, the
 /// `projective-grid` topological trace when at least three usable corners are
 /// available, and the final merged detections produced by the chessboard
 /// detector.
@@ -364,8 +359,7 @@ fn trace_chessboard_topological(
     let img = gray_image_from_py(image)?;
     let width = img.width();
     let height = img.height();
-    let mut params = chessboard_params_from_py(params)?;
-    params.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
+    let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
@@ -394,7 +388,6 @@ fn trace_chessboard_topological(
                 "width": width,
                 "height": height,
             },
-            "graph_build_algorithm": "topological",
             "corners": corner_payload,
             "detections": detections,
         });
@@ -687,10 +680,7 @@ fn detect_charuco_best(
         .map_err(|_| value_error("configs must be a list"))?;
     let mut params_vec = Vec::with_capacity(list.len());
     for item in list.iter() {
-        let mut cfg = from_py_json::<charuco::CharucoParams>(&item, "configs[]")?;
-        // ChArUco runs on the topological grid builder (the only builder);
-        // re-pin in case the config carries a legacy chessboard algorithm.
-        cfg.chessboard.graph_build_algorithm = chessboard::GraphBuildAlgorithm::Topological;
+        let cfg = from_py_json::<charuco::CharucoParams>(&item, "configs[]")?;
         params_vec.push(cfg);
     }
 

@@ -78,13 +78,18 @@ export interface BaselineDiff {
 
 export type EngineReq = "pipeline" | "grid";
 export type OrientationMethodReq = "ring_fit" | "disk_fit";
-export type GraphBuildAlgorithm = "topological";
-export type OrientationSource = "chess_axes" | "neighbour_edges";
 
-/** Partial DetectorParams override (top-level-key merge over defaults). */
+/**
+ * Partial DetectorParams override (top-level-key merge over defaults).
+ *
+ * Mirrors `calib_targets_chessboard::DetectorParams`, which is
+ * `#[serde(deny_unknown_fields)]`: only these keys are accepted, and any
+ * other (unknown or removed) key is rejected by the server's merge.
+ * `advanced`, when present, must be the *complete*
+ * `AdvancedTuning` block (every field required) — the UI seeds it from the
+ * fully-materialised `/api/configs/_defaults` response.
+ */
 export interface DetectorParamsOverride {
-  graph_build_algorithm?: GraphBuildAlgorithm;
-  orientation_source?: OrientationSource;
   min_labeled_corners?: number;
   max_components?: number;
   min_corner_strength?: number;
@@ -102,7 +107,6 @@ export interface Preset {
 export interface ConfigSummary {
   name: string;
   modified_at: number;
-  algorithm: string;
   has_advanced: boolean;
 }
 

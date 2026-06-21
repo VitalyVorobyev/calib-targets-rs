@@ -546,8 +546,8 @@ def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
 def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
     """Largest detection from the trace payload, after geometry check.
 
-    The Rust trace endpoint runs the full chessboard detector with
-    `GraphBuildAlgorithm::Topological` alongside the per-stage trace and
+    The Rust trace endpoint runs the full chessboard detector (the
+    topological grid builder) alongside the per-stage trace and
     pickles the resulting `Detection`s into the payload. We pick the
     first (largest by labelled-corner count) — same selection
     `Detector::detect()` makes — so Stage 9 reflects the precision-gated
@@ -621,7 +621,7 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         edge_length_min_rel=args.edge_length_min_rel,
         edge_length_max_rel=args.edge_length_max_rel,
     )
-    trace_params = ct.ChessboardParams(graph_build_algorithm="topological", topological=topo)
+    trace_params = ct.ChessboardParams(topological=topo)
     if args.chess_threshold_kind == "absolute":
         threshold = ct.Threshold.absolute(args.chess_threshold)
     else:
@@ -636,17 +636,6 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         params=trace_params,
     )
     augment_trace_with_python_graph(payload)
-    if args.final_algorithm != "topological":
-        final_params = ct.ChessboardParams(graph_build_algorithm=args.final_algorithm)
-        payload["detections"] = [
-            detection.to_dict()
-            for detection in ct.detect_chessboard_all(
-                image,
-                chess_cfg=chess_cfg,
-                params=final_params,
-            )
-        ]
-        payload["final_graph_build_algorithm"] = args.final_algorithm
 
     stem = f"{path.stem}-{args.variant_name}" if args.variant_name else path.stem
     stem_dir = out_dir / stem
@@ -700,7 +689,6 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     return {
         "image": str(path),
         "variant": args.variant_name,
-        "final_algorithm": args.final_algorithm,
         "output_dir": str(stem_dir),
         "stages": STAGES,
         "width": int(image.shape[1]),
@@ -719,7 +707,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
-    parser.add_argument("--final-algorithm", choices=["topological", "seed_and_grow"], default="topological")
     parser.add_argument("--chess-threshold", type=float, default=100.0)
     parser.add_argument("--chess-threshold-kind", choices=["absolute", "relative"], default="absolute")
     parser.add_argument("--orientation-method", choices=["ring_fit", "disk_fit"], default="ring_fit")
@@ -755,7 +742,6 @@ def main() -> None:
             "orientation_method": args.orientation_method,
             "pre_blur_sigma": args.pre_blur_sigma,
             "upscale": args.upscale,
-            "final_algorithm": args.final_algorithm,
             "axis_align_tol_deg": args.axis_align_tol_deg,
             "max_axis_sigma_deg": args.max_axis_sigma_deg,
             "opposing_edge_ratio_max": args.opposing_edge_ratio_max,

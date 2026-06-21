@@ -2,7 +2,7 @@
 //! the value-enum knobs and their conversions into detector types, and the
 //! small param-loading helpers shared by the subcommands.
 
-use calib_targets::chessboard::{DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::DetectorParams;
 use calib_targets::detect::OrientationMethod;
 use calib_targets_bench::dataset::ImageKind;
 use calib_targets_bench::Engine;
@@ -55,7 +55,7 @@ pub(crate) struct AblateArgs {
     #[arg(long)]
     pub(crate) group: Option<String>,
     /// Graph-build algorithm of the baseline (and every variation). Default
-    /// matches the production `GraphBuildAlgorithm` default; `topological.*`
+    /// is the topological grid builder; `topological.*`
     /// knob rows are only meaningful here.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
@@ -142,9 +142,8 @@ pub(crate) struct RunArgs {
     /// Restrict to a single image (relative path under workspace root).
     #[arg(long)]
     pub(crate) image: Option<String>,
-    /// Which graph-build algorithm to exercise. Default matches the
-    /// production `GraphBuildAlgorithm` default, which is also the cell
-    /// `bless` pins baselines from.
+    /// Which graph-build algorithm to exercise. Default is the topological
+    /// grid builder, which is also the cell `bless` pins baselines from.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
     /// Detection engine. `pipeline` runs the full chessboard detector;
@@ -181,7 +180,7 @@ pub(crate) struct PreviewArgs {
     pub(crate) all: bool,
     /// Which graph-build algorithm to exercise. Output filenames carry the
     /// algorithm name as a suffix so two runs can coexist in the same `--out`
-    /// directory. Default matches the production `GraphBuildAlgorithm` default.
+    /// directory. Default is the topological grid builder.
     #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
     pub(crate) algorithm: AlgorithmArg,
     /// Detection engine (see `run --help`). The slug is part of the overlay
@@ -236,14 +235,6 @@ impl AlgorithmArg {
     }
 }
 
-impl From<AlgorithmArg> for GraphBuildAlgorithm {
-    fn from(v: AlgorithmArg) -> Self {
-        match v {
-            AlgorithmArg::Topological => GraphBuildAlgorithm::Topological,
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub(crate) enum EngineArg {
     /// Full chessboard production pipeline (`Detector::detect`).
@@ -294,10 +285,8 @@ impl From<OrientationMethodArg> for OrientationMethod {
     }
 }
 
-pub(crate) fn params_with(algorithm: AlgorithmArg) -> DetectorParams {
-    let mut p = DetectorParams::default();
-    p.graph_build_algorithm = algorithm.into();
-    p
+pub(crate) fn params_with(_algorithm: AlgorithmArg) -> DetectorParams {
+    DetectorParams::default()
 }
 
 // Partial-config loading lives in the library so the studio server shares

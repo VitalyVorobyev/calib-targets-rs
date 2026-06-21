@@ -76,15 +76,6 @@ impl ClusterLabel {
             ClusterLabel::Swapped => 1,
         }
     }
-
-    /// The other label.
-    #[inline]
-    pub fn flipped(self) -> Self {
-        match self {
-            ClusterLabel::Canonical => ClusterLabel::Swapped,
-            ClusterLabel::Swapped => ClusterLabel::Canonical,
-        }
-    }
 }
 
 /// Stage marker tracked per input corner through the pipeline.
@@ -182,12 +173,7 @@ mod tests {
 
     #[test]
     fn cluster_label_slot_invariants() {
-        let a = ClusterLabel::Canonical;
-        assert_eq!(a.flipped(), ClusterLabel::Swapped);
-        assert_eq!(a.as_u8(), 0);
-
-        let b = ClusterLabel::Swapped;
-        assert_eq!(b.flipped(), ClusterLabel::Canonical);
-        assert_eq!(b.as_u8(), 1);
+        assert_eq!(ClusterLabel::Canonical.as_u8(), 0);
+        assert_eq!(ClusterLabel::Swapped.as_u8(), 1);
     }
 }

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
+use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams};
 use calib_targets::detect::{detect_corners, DetectorConfig};
 use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
@@ -170,12 +170,8 @@ fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Opti
 /// [`Evidence::Oriented2`] over the corner cloud and returns the largest
 /// labelled component (one board per frame, matching the pipeline engine's
 /// best-detection semantics).
-fn run_grid_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
-    let algorithm = match params.graph_build_algorithm {
-        GraphBuildAlgorithm::Topological => SquareAlgorithm::Topological,
-        _ => return None,
-    };
-    let grid_params = DetectionParams::default().with_algorithm(algorithm);
+fn run_grid_engine(_params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
+    let grid_params = DetectionParams::default().with_algorithm(SquareAlgorithm::Topological);
     let feats: Vec<OrientedFeature<2>> = corners
         .iter()
         .enumerate()

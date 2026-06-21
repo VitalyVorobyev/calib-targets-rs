@@ -84,7 +84,7 @@ def trace_payload(
         threshold=threshold,
         orientation_method=orientation_method,
     )
-    params = ct.ChessboardParams(graph_build_algorithm="topological")
+    params = ct.ChessboardParams()
     return ct.trace_chessboard_topological(
         image,
         chess_cfg=chess_cfg,

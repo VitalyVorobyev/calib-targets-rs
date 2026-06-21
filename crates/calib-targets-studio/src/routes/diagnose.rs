@@ -10,7 +10,6 @@
 
 use axum::extract::State;
 use axum::Json;
-use calib_targets::chessboard::GraphBuildAlgorithm;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::diagnose::diagnose_topological;
 use calib_targets_bench::runner::load_entry_image;
@@ -67,10 +66,8 @@ pub async fn diagnose(
         ));
     }
 
-    let mut params = calib_targets_bench::config::merge_detector_params(&req.params)
+    let params = calib_targets_bench::config::merge_detector_params(&req.params)
         .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;
-    // The topological builder is the only builder; force it explicitly.
-    params.graph_build_algorithm = GraphBuildAlgorithm::Topological;
     params
         .validate()
         .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;

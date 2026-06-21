@@ -10,7 +10,6 @@ import { api, encodeLabel } from "../api/client";
 import type {
   DatasetReq,
   EngineReq,
-  GraphBuildAlgorithm,
   OrientationMethodReq,
   PerImageReport,
   RunRecord,
@@ -22,7 +21,6 @@ const KIND_TARGETS = ["all", "public", "private"];
 
 export function RunsView() {
   const [target, setTarget] = useState<string>("public");
-  const [algorithm, setAlgorithm] = useState<GraphBuildAlgorithm>("topological");
   const [engine, setEngine] = useState<EngineReq>("pipeline");
   const [method, setMethod] = useState<OrientationMethodReq>("ring_fit");
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,7 +62,6 @@ export function RunsView() {
       return api.startRun({
         ...(isKind ? { dataset: target as DatasetReq } : { group: target }),
         engine,
-        params: { graph_build_algorithm: algorithm },
         orientation_method: method,
       });
     },
@@ -92,11 +89,6 @@ export function RunsView() {
           value={target}
           options={[...KIND_TARGETS, ...groups]}
           onChange={setTarget}
-        />
-        <Sel
-          value={algorithm}
-          options={["topological"]}
-          onChange={(v) => setAlgorithm(v as GraphBuildAlgorithm)}
         />
         <Sel
           value={engine}

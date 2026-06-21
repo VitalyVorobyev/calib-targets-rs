@@ -116,3 +116,15 @@ kind = "private"
 dataset = "3536119669"
 stitched = { count = 6, snap_width = 720, snap_height = 540 }
 note = "ChArUco frames, 6 sub-snaps each, native resolution."
+
+# Single known-regression frame for overlay review. A 6 × 720 × 540 stitched
+# AprilTag/ChArUco composite with a dense, fine cell pitch, so it needs a 2×
+# upscale (native resolution detects zero ChESS corners). No committed baseline
+# — surfaces as a detection-quality signal in the studio.
+[[image]]
+path = "privatedata/target_0.png"
+kind = "private"
+dataset = "target_0"
+upscale = 2
+stitched = { count = 6, snap_width = 720, snap_height = 540 }
+note = "Known regression — single AprilTag/ChArUco frame, 6 sub-snaps, 2× upscale, under review."

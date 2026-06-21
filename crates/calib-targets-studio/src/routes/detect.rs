@@ -340,9 +340,8 @@ async fn detect_board_family(
                         let mut cparams = calib_targets::charuco::CharucoParams::for_board(&spec);
                         cparams.chessboard =
                             merge_params_over(&cparams.chessboard, &params_override)?;
-                        // ChArUco accepts any grid builder; a `graph_build_algorithm`
-                        // override on the charuco grid flows straight through.
-                        // Production runs on the topological default (`for_board`).
+                        // The charuco grid runs on the topological default (`for_board`);
+                        // DetectorParams overrides flow straight through.
                         calib_targets::detect::detect_charuco(&fed, &cparams)
                             .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     };

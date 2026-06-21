@@ -20,46 +20,19 @@ use projective_grid::shared::grow::GrowResult;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
 
-/// Estimate the global cell size of a labelled component as the median
-/// nearest-neighbour pixel distance along the labelled `i` and `j` axes.
-fn estimate_cell_size_from_labels(labelled: &LabelledComponent, positions: &[Point2<f32>]) -> f32 {
-    let mut dists: Vec<f32> = Vec::new();
-    for (&(i, j), &idx) in labelled.iter() {
-        let p = positions[idx];
-        if let Some(&right) = labelled.get(&(i + 1, j)) {
-            let q = positions[right];
-            dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-        if let Some(&down) = labelled.get(&(i, j + 1)) {
-            let q = positions[down];
-            dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-    }
-    if dists.is_empty() {
-        return 0.0;
-    }
-    dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    dists[dists.len() / 2]
-}
-
-fn median(mut values: Vec<f32>) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(values[values.len() / 2])
-}
-
-fn estimate_recovery_cell_size_from_labels(
+/// Cardinal edge lengths (pixels) along the labelled `i` and `j` axes,
+/// returned as two separate per-axis lists.
+///
+/// This is the chessboard detector's own scale primitive. It deliberately does
+/// NOT reuse `projective_grid`'s `cell_size_of` (a single **mean** over all
+/// cardinal edges) because the chessboard cell-size estimators below are
+/// **median**-based (robust to the ragged blurred-region frontier) and
+/// **directional** (anisotropy-aware for the booster scale) — different choices
+/// for different reasons, not a duplicate to consolidate.
+fn directional_edge_lengths(
     labelled: &LabelledComponent,
     positions: &[Point2<f32>],
-) -> f32 {
-    // The topological walk can produce components whose visible axes are
-    // strongly anisotropic under perspective. Using the median over both
-    // axes as the booster scale makes the longer axis fail the shared
-    // edge-length gate, so use the larger directional median for recovery
-    // while keeping the final reported cell_size on the conservative
-    // all-edge median.
+) -> (Vec<f32>, Vec<f32>) {
     let mut i_dists: Vec<f32> = Vec::new();
     let mut j_dists: Vec<f32> = Vec::new();
     for (&(i, j), &idx) in labelled.iter() {
@@ -73,6 +46,38 @@ fn estimate_recovery_cell_size_from_labels(
             j_dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
         }
     }
+    (i_dists, j_dists)
+}
+
+fn median(mut values: Vec<f32>) -> Option<f32> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(values[values.len() / 2])
+}
+
+/// Global cell size of a labelled component: the median nearest-neighbour pixel
+/// distance over **all** labelled `i` and `j` cardinal edges. The conservative
+/// all-edge median is the final reported `cell_size` and the scale the geometry
+/// check runs against.
+fn estimate_cell_size_from_labels(labelled: &LabelledComponent, positions: &[Point2<f32>]) -> f32 {
+    let (mut dists, j_dists) = directional_edge_lengths(labelled, positions);
+    dists.extend(j_dists);
+    median(dists).unwrap_or(0.0)
+}
+
+/// Booster scale for a labelled component: the **larger** of the two per-axis
+/// medians. The topological walk can produce components whose visible axes are
+/// strongly anisotropic under perspective; using the all-edge median as the
+/// booster scale would make the longer axis fail the shared edge-length gate,
+/// so recovery uses the larger directional median while the reported
+/// `cell_size` keeps the conservative all-edge median above.
+fn estimate_recovery_cell_size_from_labels(
+    labelled: &LabelledComponent,
+    positions: &[Point2<f32>],
+) -> f32 {
+    let (i_dists, j_dists) = directional_edge_lengths(labelled, positions);
     match (median(i_dists), median(j_dists)) {
         (Some(i), Some(j)) => i.max(j),
         (Some(v), None) | (None, Some(v)) => v,
@@ -240,6 +245,21 @@ fn shared_corner_alignment(
     Some((t, delta))
 }
 
+/// Merge labelled components that share corner **indices**, in label space.
+///
+/// This is a distinct, complementary pass to the geometric
+/// [`merge_components_local`](projective_grid::shared::merge::merge_components_local)
+/// that runs right after it in [`recover_topological_components`]: this pass
+/// aligns two components by an *exact shared-corner-index* correspondence under
+/// a D4 relabelling (a corner that appears in both components pins the
+/// transform + offset), whereas the geometric merge aligns by *position
+/// agreement*. Neither subsumes the other, so both run.
+///
+/// It stays in the chessboard crate — rather than moving to `projective-grid` —
+/// because it needs [`calib_targets_core::GRID_TRANSFORMS_D4`], and
+/// `projective-grid` is standalone (no workspace deps). With a single caller
+/// and a criterion distinct from the geometric merge, duplicating a D4 table
+/// into `projective-grid` to host it there is not worth the coupling.
 fn merge_components_with_shared_corners(
     components: Vec<LabelledComponent>,
     min_overlap: usize,

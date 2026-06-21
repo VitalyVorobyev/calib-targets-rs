@@ -68,7 +68,6 @@ use crate::shared::extension::{extend_via_local_homography, LocalExtensionParams
 use crate::shared::fill::{fill_grid_holes, FillParams};
 use crate::shared::grow::{GrowParams, GrowResult, SquareAttachPolicy};
 use crate::shared::grow_extend::extend_from_labelled;
-use crate::shared::validate::recovery::{largest_component_filter, topological_wrong_label_drops};
 use crate::shared::validate::{self as pg_validate, ValidationParams};
 
 /// Tuning for the geometry-only recovery schedule.
@@ -239,48 +238,32 @@ fn revalidate_and_filter(
     params: &RecoveryParams,
     validate_params: &ValidationParams,
 ) -> usize {
-    // Materialize the labelled set in deterministic (i, j)-sorted order so the
-    // validate stage's input order is reproducible.
-    let mut ordered: Vec<((i32, i32), usize)> =
-        grow.labelled.iter().map(|(&k, &v)| (k, v)).collect();
-    ordered.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    // The validate + wrong-label + largest-component composition (and its
+    // deterministic input ordering) lives in the shared `drop_set` helper,
+    // which the chessboard detector's final geometry check also routes
+    // through; only the application to this `GrowResult` stays here.
+    let result = pg_validate::recovery::drop_set(
+        &grow.labelled,
+        |idx| positions[idx],
+        cell_size,
+        validate_params,
+        params.apply_wrong_label_drops,
+        params.apply_largest_component,
+    );
 
-    let entries: Vec<pg_validate::LabelledEntry> = ordered
-        .iter()
-        .map(|&(grid, idx)| pg_validate::LabelledEntry {
-            idx,
-            pixel: positions[idx],
-            grid,
-        })
-        .collect();
-    let validation = pg_validate::validate(&entries, cell_size, validate_params);
-
-    let mut drop: HashSet<usize> = validation.blacklist;
-
-    if params.apply_wrong_label_drops {
-        let wrong =
-            topological_wrong_label_drops(&grow.labelled, |idx: usize| positions[idx], cell_size);
-        drop.extend(wrong);
-    }
-
-    if params.apply_largest_component {
-        let comp = largest_component_filter(&grow.labelled, &drop);
-        drop.extend(comp.drop);
-    }
-
-    if drop.is_empty() {
+    if result.drop.is_empty() {
         return 0;
     }
     let mut removed = 0usize;
     grow.labelled.retain(|_, &mut idx| {
-        if drop.contains(&idx) {
+        if result.drop.contains(&idx) {
             removed += 1;
             false
         } else {
             true
         }
     });
-    grow.by_corner.retain(|idx, _| !drop.contains(idx));
+    grow.by_corner.retain(|idx, _| !result.drop.contains(idx));
     removed
 }
 

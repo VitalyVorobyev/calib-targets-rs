@@ -18,7 +18,6 @@ import {
   type DiagnoseAlgorithm,
   type EngineReq,
   type OrientationMethodReq,
-  type OrientationSource,
 } from "../api/types";
 import { CanvasViewport, type HitPoint } from "../components/CanvasViewport";
 import { ConfigEditor } from "../components/ConfigEditor";
@@ -498,26 +497,10 @@ function DetectTab({
           style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
         >
           <SelectRow
-            label="Algorithm"
-            value={draft.graph_build_algorithm ?? "topological"}
-            options={["topological"]}
-            onChange={(v) =>
-              setDraftField({ graph_build_algorithm: v as "topological" })
-            }
-          />
-          <SelectRow
             label="Engine"
             value={runOpts.engine}
             options={["pipeline", "grid"]}
             onChange={(v) => setRunOpts({ ...runOpts, engine: v as EngineReq })}
-          />
-          <SelectRow
-            label="Orientation"
-            value={draft.orientation_source ?? "chess_axes"}
-            options={["chess_axes", "neighbour_edges"]}
-            onChange={(v) =>
-              setDraftField({ orientation_source: v as OrientationSource })
-            }
           />
           <SelectRow
             label="Axis fit"
