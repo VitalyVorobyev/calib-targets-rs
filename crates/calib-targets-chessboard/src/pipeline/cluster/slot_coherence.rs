@@ -1,12 +1,20 @@
 //! Axis-slot coherence repair pass.
 //!
-//! chess-corners 0.9's `DiskFit` axes-fitter can pick the wrong antipodal
-//! dark sector, leaving a corner's `(axes[0], axes[1])` ordering reversed
-//! relative to the rest of the chessboard. [`fix_axis_slot_coherence`] — the
-//! **whole-image** case, run as a post-pass inside
-//! [`super::cluster_axes_debug`] — detects that and recovers by swapping the
-//! two `AxisEstimate` slots. Gated on a gross global label imbalance + a
-//! spatial 2-colouring quality check.
+//! The `DiskFit` axes-fitter (one of the two `OrientationMethod`s the
+//! upstream `chess-corners` detector exposes, still selectable via the
+//! facade / Studio / bench) can pick the wrong antipodal dark sector,
+//! leaving a corner's `(axes[0], axes[1])` ordering reversed relative to the
+//! rest of the chessboard. [`fix_axis_slot_coherence`] — the **whole-image**
+//! case, run as a post-pass inside [`super::cluster_axes_debug`] — detects
+//! that and recovers by swapping the two `AxisEstimate` slots. Gated on a
+//! gross global label imbalance + a spatial 2-colouring quality check.
+//!
+//! This pass is a live recall safety-net for the `DiskFit` path: under
+//! `RingFit` (the other orientation mode) the slot ordering is consistent,
+//! the imbalance gate never fires, and the pass is a no-op. It is
+//! precision-safe by construction (the bipartite-quality gate aborts unless
+//! the 2-colouring is essentially perfect), so it can only add recall, never
+//! a wrong label.
 //!
 //! The slot swap is the load-bearing mutation: every downstream consumer of
 //! the cluster label reads `axes[0]` vs `axes[1]`, so swapping is equivalent
@@ -18,12 +26,12 @@ use kiddo::{KdTree, SquaredEuclidean};
 /// Spatial-coherence post-pass for [`super::cluster_axes_debug`].
 ///
 /// A chessboard corner's k=4 cardinal neighbours are at the OPPOSITE
-/// parity by construction. When chess-corners 0.9 DiskFit picks the
-/// wrong antipodal dark sector *uniformly* for a clean chessboard
-/// (`mid.png`), every corner sees mostly same-label neighbours and
-/// the alternating-parity invariant the BFS / seed / edge-ok rule
-/// depends on breaks globally. This pass detects that regime by a
-/// **two-stage gate** and recovers via spatial 2-colouring.
+/// parity by construction. When `DiskFit` picks the wrong antipodal
+/// dark sector *uniformly* for a clean chessboard (`mid.png`), every
+/// corner sees mostly same-label neighbours and the alternating-parity
+/// invariant the topological cell-test and the edge-ok rule depend on
+/// breaks globally. This pass detects that regime by a **two-stage
+/// gate** and recovers via spatial 2-colouring.
 ///
 /// Stage 1 — gross-imbalance gate. The cluster step's per-corner
 /// Canonical/Swapped split is computed before any rebalancing pass
@@ -37,9 +45,10 @@ use kiddo::{KdTree, SquaredEuclidean};
 /// strongest corner, and flip whichever Clustered corners disagree
 /// with the 2-colouring (swapping their two [`calib_targets_core::AxisEstimate`] slots).
 /// The slot swap propagates through every downstream consumer that
-/// reads `axes[0]` vs `axes[1]` — `edge_ok` (BFS, rescue, seed,
-/// geometry check), `assign_corner`'s canonical / swapped cost, and
-/// the parity-aware `label_of` in `pg_grow::SquareAttachPolicy`.
+/// reads `axes[0]` vs `axes[1]` — the booster fill validator's
+/// `edge_ok` / `accept_candidate`, the cluster cost in `assign`, the
+/// geometry check, and the parity-aware `label_of` in
+/// `pg_grow::SquareAttachPolicy`.
 ///
 /// On RingFit (where axis-slot ordering is consistent) Stage 1
 /// always passes (~50/50 split) and Stage 2 never runs. On DiskFit
@@ -78,8 +87,8 @@ pub(super) fn fix_axis_slot_coherence(corners: &mut [CornerAug]) {
     }
 
     // Stage 1 — gross-imbalance gate. Real chessboards produce a
-    // near-50/50 Canonical/Swapped split; the chess-corners 0.9
-    // DiskFit slot-ordering bug pushes it past 80/20. Below 22%
+    // near-50/50 Canonical/Swapped split; the DiskFit
+    // slot-ordering bug pushes it past 80/20. Below 22%
     // minority class is the regime we recover from.
     let canonical_count = clustered_label
         .iter()

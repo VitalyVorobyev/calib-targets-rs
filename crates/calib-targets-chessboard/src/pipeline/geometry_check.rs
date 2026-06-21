@@ -7,10 +7,10 @@
 
 use std::collections::HashSet;
 
-use crate::cluster::ClusterCenters;
+use super::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
-use crate::grow::GrowResult;
 use crate::params::DetectorParams;
+use projective_grid::shared::grow::GrowResult;
 
 use super::types::GeometryCheckTrace;
 

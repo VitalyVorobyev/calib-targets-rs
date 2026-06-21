@@ -20,13 +20,13 @@
 //!   whose visible component can be strongly anisotropic before final
 //!   recovery has filled the boundary.
 
-use crate::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
+use super::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
-use crate::grow::GrowResult;
 use crate::params::DetectorParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use projective_grid::shared::fill::{fill_grid_holes, FillParams};
+use projective_grid::shared::grow::GrowResult;
 use projective_grid::shared::grow::{Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy};
 use std::collections::{HashMap, HashSet};
 
@@ -372,8 +372,8 @@ fn expected_cardinal_edge_len(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cluster::cluster_axes;
     use crate::corner::ChessCorner;
+    use crate::pipeline::cluster::cluster_axes;
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
 

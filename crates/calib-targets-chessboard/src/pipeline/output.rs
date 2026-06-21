@@ -18,8 +18,8 @@
 //! `grow::grow_from_seed`.
 
 use crate::corner::CornerAug;
-use crate::grow::GrowResult;
 use calib_targets_core::GridCoords;
+use projective_grid::shared::grow::GrowResult;
 
 use super::types::{ChessboardCorner, ChessboardDetection};
 

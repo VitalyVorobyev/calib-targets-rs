@@ -1,7 +1,7 @@
 //! Detector entry points.
 //!
 //! [`Detector`] is a thin facade over the topological grid builder in
-//! [`crate::topological`]: each `detect*` method runs
+//! [`crate::pipeline`]: each `detect*` method runs
 //! [`detect_all_topological`] and shapes the result. The labelled grid is
 //! produced by `projective-grid`'s topological square-grid finder; the
 //! chessboard crate owns the ChESS corner pre-filter, the recall boosters,
@@ -12,7 +12,7 @@
 
 use crate::params::{ChessboardParamsError, DetectorParams};
 use crate::pipeline;
-use crate::topological::detect_all_topological;
+use crate::pipeline::detect_all_topological;
 
 use crate::corner::ChessCorner;
 
