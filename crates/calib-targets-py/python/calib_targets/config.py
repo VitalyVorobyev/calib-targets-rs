@@ -853,18 +853,57 @@ class TopologicalParams:
         )
 
 
-# Names of the advanced (opt-in, unstable) tuning knobs that the Python
+@dataclass(slots=True)
+class LocalMergeParams:
+    """Tuning knobs for the shared local-geometry component merger.
+
+    Mirrors ``projective_grid::shared::merge::LocalMergeParams``. Defaults
+    match the Rust ``LocalMergeParams::default()`` impl exactly.
+    """
+
+    position_tol_rel: float = 0.20
+    cell_size_ratio_tol: float = 0.20
+    min_overlap: int = 2
+    max_components: int = 4
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "position_tol_rel": self.position_tol_rel,
+            "cell_size_ratio_tol": self.cell_size_ratio_tol,
+            "min_overlap": self.min_overlap,
+            "max_components": self.max_components,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> LocalMergeParams:
+        d = cls()
+        return cls(
+            position_tol_rel=float(data.get("position_tol_rel", d.position_tol_rel)),
+            cell_size_ratio_tol=float(
+                data.get("cell_size_ratio_tol", d.cell_size_ratio_tol)
+            ),
+            min_overlap=int(data.get("min_overlap", d.min_overlap)),
+            max_components=int(data.get("max_components", d.max_components)),
+        )
+
+
+# Names of the advanced (opt-in, unstable) scalar tuning knobs that the Python
 # ``ChessboardParams`` dataclass carries flat for ergonomics but serialises
 # under the nested ``"advanced"`` block (matching Rust's
-# ``DetectorParams.advanced: Option<Box<AdvancedTuning>>``). The four stable
-# fields (``graph_build_algorithm`` / ``min_labeled_corners`` /
-# ``max_components`` / ``min_corner_strength``) and the round-trip-only
-# ``chess`` carrier stay at the top level.
+# ``DetectorParams.advanced: Option<Box<AdvancedTuning>>``). The two advanced
+# struct knobs (``topological`` / ``component_merge``) are emitted separately.
+# The three stable fields (``min_labeled_corners`` / ``max_components`` /
+# ``min_corner_strength``) stay at the top level. The order here matches the
+# Rust ``AdvancedTuning`` field declaration order. Every field of the Rust
+# struct MUST appear (either here or as one of the two struct knobs): the Rust
+# ``AdvancedTuning`` has no serde defaults, so an omitted field fails to
+# deserialize with ``missing field ...``.
 _ADVANCED_SCALAR_FIELDS = (
     "max_fit_rms_ratio",
     "num_bins",
     "max_iters_2means",
     "cluster_tol_deg",
+    "cluster_sigma_k",
     "peak_min_separation_deg",
     "min_peak_weight_fraction",
     "attach_search_rel",
@@ -872,11 +911,14 @@ _ADVANCED_SCALAR_FIELDS = (
     "attach_ambiguity_factor",
     "step_tol",
     "edge_axis_tol_deg",
-    "line_min_members",
-    "enable_final_edge_shape_check",
     "enable_weak_cluster_rescue",
     "weak_cluster_tol_deg",
     "max_booster_iters",
+    "geometry_check_line_tol_rel",
+    "geometry_check_local_h_tol_rel",
+    "line_min_members",
+    "validate_step_aware",
+    "enable_final_edge_shape_check",
 )
 
 
@@ -891,78 +933,85 @@ class ChessboardParams:
     ``DetectorParams.advanced``.
 
     Stable core (top-level keys, covered by semver):
-    ``graph_build_algorithm``, ``min_labeled_corners``, ``max_components``,
-    ``min_corner_strength``.
+    ``min_labeled_corners``, ``max_components``, ``min_corner_strength``.
 
     Everything else (``cluster_tol_deg``, ``attach_axis_tol_deg``,
-    ``enable_final_edge_shape_check``, ``topological``, …) is an **advanced**
-    knob. :meth:`to_dict` nests these under ``"advanced"`` and
-    :meth:`from_dict` reads them back from there. The advanced knobs are NOT
-    covered by semver and may change between minor versions — leave them at
+    ``enable_final_edge_shape_check``, ``topological``, ``component_merge``, …)
+    is an **advanced** knob. :meth:`to_dict` nests these under ``"advanced"``
+    and :meth:`from_dict` reads them back from there. The advanced knobs are
+    NOT covered by semver and may change between minor versions — leave them at
     their defaults unless a specific input fails.
+
+    The serialized ``"advanced"`` block is always **complete**: the Rust
+    ``AdvancedTuning`` has no serde defaults, so every knob must be present.
+    :meth:`to_dict` emits every field of the Rust struct.
 
     The ChESS corner detector config is *not* embedded here — the Rust facade
     uses ``default_chess_config()`` for chessboard detection. Pass a
     ``chess_cfg`` argument separately to ``detect_chessboard`` if you need to
-    override it. The ``chess`` field is preserved as a convenience carrier for
-    round-tripping: when set, ``to_dict`` nests it under ``"chess"`` so
-    external pipelines can keep ChESS + chessboard params together, but the
-    Rust detector itself ignores it.
+    override it. The ``chess`` field is a Python-side convenience carrier so
+    external pipelines can keep ChESS + chessboard params together on one
+    object; it is **not** part of the ``DetectorParams`` wire shape (the Rust
+    detector reads its ChESS config separately and rejects an unknown
+    ``"chess"`` key under ``#[serde(deny_unknown_fields)]``), so it is not
+    emitted by :meth:`to_dict`.
     """
 
-    chess: ChessConfig = field(default_factory=ChessConfig)
     # --- Stable core --------------------------------------------------------
-    # See `calib_targets_chessboard::GraphBuildAlgorithm`. The only accepted
-    # value is "topological" (the seed-and-grow builder has been retired); the
-    # field is kept so the config schema stays stable.
-    graph_build_algorithm: str = "topological"
     min_corner_strength: float = 0.0
     min_labeled_corners: int = 8
     max_components: int = 3
     # --- Advanced (opt-in, unstable; serialised under "advanced") ----------
     topological: TopologicalParams = field(default_factory=TopologicalParams)
-    # Stage 1 — pre-filter
+    component_merge: LocalMergeParams = field(default_factory=LocalMergeParams)
+    # prefilter
     max_fit_rms_ratio: float = 0.5
-    # Stages 2-3 — clustering
+    # cluster_axes
     num_bins: int = 90
     max_iters_2means: int = 10
     cluster_tol_deg: float = 12.0
+    cluster_sigma_k: float = 0.0
     peak_min_separation_deg: float = 60.0
     min_peak_weight_fraction: float = 0.02
-    # Stage 6 — grow
+    # recall boosters (grow / line extrapolation)
     attach_search_rel: float = 0.35
     attach_axis_tol_deg: float = 15.0
     attach_ambiguity_factor: float = 1.5
     step_tol: float = 0.25
     edge_axis_tol_deg: float = 15.0
-    # Stage 7 — validate
-    line_min_members: int = 3
-    enable_final_edge_shape_check: bool = True
-    # Stage 8 — recall boosters
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
     max_booster_iters: int = 5
+    # mandatory final geometry check
+    geometry_check_line_tol_rel: float = 0.45
+    geometry_check_local_h_tol_rel: float = 0.6
+    line_min_members: int = 3
+    validate_step_aware: bool = False
+    enable_final_edge_shape_check: bool = True
+    # --- Python-side convenience carrier (NOT part of the wire shape) -------
+    chess: ChessConfig = field(default_factory=ChessConfig)
 
     @classmethod
     def for_topological(cls, **overrides: Any) -> ChessboardParams:
-        """Return defaults with the topological graph builder selected.
+        """Return default chessboard params.
 
-        ``overrides`` are forwarded to ``ChessboardParams(...)`` after setting
-        ``graph_build_algorithm="topological"``.
+        The detector ships a single (topological) grid builder, so this is
+        equivalent to ``ChessboardParams(**overrides)``; it is retained as an
+        intention-revealing constructor. ``overrides`` are forwarded verbatim.
         """
-        overrides.setdefault("graph_build_algorithm", "topological")
         return cls(**overrides)
 
     def _advanced_to_dict(self) -> dict[str, Any]:
-        advanced: dict[str, Any] = {"topological": self.topological.to_dict()}
+        advanced: dict[str, Any] = {
+            "topological": self.topological.to_dict(),
+            "component_merge": self.component_merge.to_dict(),
+        }
         for name in _ADVANCED_SCALAR_FIELDS:
             advanced[name] = getattr(self, name)
         return advanced
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "chess": self.chess.to_dict(),
-            "graph_build_algorithm": self.graph_build_algorithm,
             "min_corner_strength": self.min_corner_strength,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
@@ -979,10 +1028,6 @@ class ChessboardParams:
         if not isinstance(advanced, dict):
             advanced = data
         kwargs: dict[str, Any] = {
-            "chess": ChessConfig.from_dict(data.get("chess", {})),
-            "graph_build_algorithm": data.get(
-                "graph_build_algorithm", d.graph_build_algorithm
-            ),
             "min_corner_strength": data.get(
                 "min_corner_strength", d.min_corner_strength
             ),
@@ -993,6 +1038,13 @@ class ChessboardParams:
             "topological": TopologicalParams.from_dict(
                 advanced.get("topological", {})
             ),
+            "component_merge": LocalMergeParams.from_dict(
+                advanced.get("component_merge", {})
+            ),
+            # `chess` is a Python-side carrier, not part of the wire shape; we
+            # still read it back when present so a Python `to_dict`-with-chess
+            # round-trip (external pipelines may add it) is preserved.
+            "chess": ChessConfig.from_dict(data.get("chess", {})),
         }
         for name in _ADVANCED_SCALAR_FIELDS:
             kwargs[name] = advanced.get(name, getattr(d, name))
@@ -1555,6 +1607,7 @@ __all__ = [
     "GridGraphParams",
     "ChessboardParams",
     "TopologicalParams",
+    "LocalMergeParams",
     "AxisClusterCenters",
     # ChArUco / marker / puzzleboard pipelines.
     "ScanDecodeConfig",

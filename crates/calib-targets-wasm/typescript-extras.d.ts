@@ -259,14 +259,12 @@ export interface ChessConfig {
 // The Rust `DetectorParams` carries a small stable core plus an opt-in,
 // unstable `AdvancedTuning` sub-struct. `advanced` is `Option`-wrapped and
 // serialized as a NESTED `"advanced"` object (it is NOT flattened). When
-// omitted, detection runs on the default tuning. The four stable keys
-// (`graph_build_algorithm`, `min_labeled_corners`, `max_components`,
-// `min_corner_strength`) are covered by semver; the `AdvancedTuning` knobs
-// are NOT and may change between minor versions.
+// omitted, detection runs on the default tuning. The three stable keys
+// (`min_labeled_corners`, `max_components`, `min_corner_strength`) are covered
+// by semver; the `AdvancedTuning` knobs are NOT and may change between minor
+// versions. The Rust `DetectorParams` uses `#[serde(deny_unknown_fields)]`, so
+// any key outside the stable core / nested `advanced` block is rejected.
 // ---------------------------------------------------------------------------
-
-/** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
-export type GraphBuildAlgorithm = "topological" | "seed_and_grow";
 
 /** Global grid-direction centers for the topological pre-Delaunay gate. */
 export interface AxisClusterCenters {
@@ -335,7 +333,6 @@ export interface AdvancedTuning {
  */
 export interface ChessboardParams {
   // --- stable core ---
-  graph_build_algorithm: GraphBuildAlgorithm;
   min_labeled_corners: number;
   max_components: number;
   min_corner_strength: number;

@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Render side-by-side detection overlays for the 130x130_puzzle dataset.
+"""Render detection overlays for the 130x130_puzzle dataset.
 
 For each requested ``target_<idx>.png`` snap, runs the chessboard detector
-twice — once with ``GraphBuildAlgorithm::SeedAndGrow`` and once with
-``GraphBuildAlgorithm::Topological`` — and saves a 2-up PNG showing
-labelled corners and cardinal grid edges on top of the (2× upscaled) image.
+(the topological grid builder — the only builder the detector ships) and
+saves a PNG showing labelled corners and cardinal grid edges on top of the
+(2× upscaled) image.
 
 Output layout::
 
     docs/img/130x130_puzzle/<target>-<snap>/00-input.png
-    docs/img/130x130_puzzle/<target>-<snap>/01-seed-and-grow.png
     docs/img/130x130_puzzle/<target>-<snap>/02-topological.png
     docs/img/130x130_puzzle/<target>-<snap>/03-side-by-side.png
     docs/img/130x130_puzzle/manifest.json
@@ -103,13 +102,10 @@ def load_snap(path: Path, snap_idx: int, upscale: int) -> np.ndarray:
 
 def run_detector(
     image: np.ndarray,
-    algorithm: str,
     min_corner_strength: float,
 ) -> dict | None:
-    params = ct.ChessboardParams(
-        graph_build_algorithm=algorithm,
-        min_corner_strength=min_corner_strength,
-    )
+    # The detector ships a single (topological) grid builder.
+    params = ct.ChessboardParams(min_corner_strength=min_corner_strength)
     result = ct.detect_chessboard(image, params=params)
     if result is None:
         return None
@@ -217,13 +213,12 @@ def render_frame(
         Image.fromarray(image).save(out_dir / "00-input.png")
 
     methods = [
-        ("SeedAndGrow", "seed_and_grow", "01-seed-and-grow.png"),
-        ("Topological", "topological", "02-topological.png"),
+        ("Topological", "02-topological.png"),
     ]
     counts: dict[str, int] = {}
     detections: dict[str, dict | None] = {}
-    for label, algorithm, filename in methods:
-        det = run_detector(image, algorithm, min_corner_strength)
+    for label, filename in methods:
+        det = run_detector(image, min_corner_strength)
         detections[label] = det
         if side_by_side_only:
             corners = det.get("corners") if det is not None else []

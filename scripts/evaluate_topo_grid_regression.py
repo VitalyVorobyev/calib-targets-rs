@@ -102,11 +102,12 @@ def load_image(path: Path, upscale: float) -> np.ndarray:
 
 
 def params_for(variant: Variant) -> ct.ChessboardParams:
+    # The detector ships a single (topological) grid builder; `variant.algorithm`
+    # survives for run naming/reporting only — there is no graph-builder selector.
     topological = ct.TopologicalParams()
     if variant.axis_align_tol_deg is not None:
         topological.axis_align_tol_rad = np.deg2rad(variant.axis_align_tol_deg).item()
     return ct.ChessboardParams(
-        graph_build_algorithm=variant.algorithm,
         min_labeled_corners=variant.min_labeled_corners,
         topological=topological,
     )
@@ -254,7 +255,8 @@ def variants_for_case(
     threshold: float | None,
     axis_values: list[float | None],
 ) -> list[Variant]:
-    algorithms = ["topological", "seed_and_grow"] if algorithm == "all" else [algorithm]
+    # Topological is the only grid builder; "all" collapses to it.
+    algorithms = ["topological"] if algorithm in ("all", "topological") else [algorithm]
     variants: list[Variant] = []
     for algo in algorithms:
         if algo == "low_res":
@@ -358,7 +360,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--image", action="append", help="Image basename or manifest path to evaluate")
     parser.add_argument(
         "--algorithm",
-        choices=["all", "topological", "seed_and_grow", "low_res"],
+        choices=["all", "topological", "low_res"],
         default="all",
     )
     parser.add_argument("--repeats", type=int, default=20)

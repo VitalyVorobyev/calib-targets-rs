@@ -185,44 +185,88 @@ def test_chess_config_rejects_old_flat_shape() -> None:
 
 
 def test_chessboard_params_roundtrip() -> None:
-    # Exercise a couple of chessboard-specific fields to confirm the round-trip
-    # covers the flat DetectorParams shape.
+    # Exercise stable-core and advanced fields (scalar + both struct knobs) to
+    # confirm the round-trip covers the nested DetectorParams shape.
     params = calib_targets.ChessboardParams(
         min_corner_strength=0.25,
         cluster_tol_deg=10.0,
         max_booster_iters=5,
         topological=calib_targets.TopologicalParams(axis_align_tol_rad=0.30),
+        component_merge=calib_targets.LocalMergeParams(min_overlap=3),
     )
     serialized = params.to_dict()
     restored = calib_targets.ChessboardParams.from_dict(serialized)
     assert restored.to_dict() == serialized
+    assert serialized["advanced"]["component_merge"]["min_overlap"] == 3
 
 
-def test_chessboard_params_graph_build_algorithm() -> None:
-    # Topological is the only builder (seed-and-grow retired); it is the default.
+def test_chessboard_params_no_graph_build_algorithm() -> None:
+    # `graph_build_algorithm` was removed (topological is the only builder, and
+    # the field would be rejected by Rust's `deny_unknown_fields`). It must not
+    # exist as a field, a constructor kwarg, or a serialized key.
     default = calib_targets.ChessboardParams()
-    assert default.graph_build_algorithm == "topological"
-    assert default.to_dict()["graph_build_algorithm"] == "topological"
+    assert not hasattr(default, "graph_build_algorithm")
+    with pytest.raises(TypeError):
+        calib_targets.ChessboardParams(graph_build_algorithm="topological")  # type: ignore[call-arg]
 
-    # Setting it explicitly round-trips.
-    topo = calib_targets.ChessboardParams(graph_build_algorithm="topological")
-    assert topo.to_dict()["graph_build_algorithm"] == "topological"
+    payload = default.to_dict()
+    assert "graph_build_algorithm" not in payload
+    # The wire payload carries only the three stable keys plus the nested
+    # advanced block — no `chess` carrier, no removed selector.
+    assert set(payload) == {
+        "min_corner_strength",
+        "min_labeled_corners",
+        "max_components",
+        "advanced",
+    }
 
-    # Round-trip preserves the selector exactly.
-    restored = calib_targets.ChessboardParams.from_dict(topo.to_dict())
-    assert restored.graph_build_algorithm == "topological"
-
+    # `for_topological` still works as an intention-revealing constructor.
     preset = calib_targets.ChessboardParams.for_topological(min_labeled_corners=16)
-    assert preset.graph_build_algorithm == "topological"
     assert preset.min_labeled_corners == 16
-    assert preset.to_dict()["graph_build_algorithm"] == "topological"
+
+
+def test_chessboard_advanced_block_is_complete() -> None:
+    # The nested `advanced` block must carry every Rust `AdvancedTuning` field
+    # (the Rust struct has no serde defaults; an omitted field fails to
+    # deserialize). Pin the exact key set here so any Rust field add/rename is
+    # caught at the binding boundary.
+    advanced = calib_targets.ChessboardParams().to_dict()["advanced"]
+    assert set(advanced) == {
+        "topological",
+        "component_merge",
+        "max_fit_rms_ratio",
+        "num_bins",
+        "max_iters_2means",
+        "cluster_tol_deg",
+        "cluster_sigma_k",
+        "peak_min_separation_deg",
+        "min_peak_weight_fraction",
+        "attach_search_rel",
+        "attach_axis_tol_deg",
+        "attach_ambiguity_factor",
+        "step_tol",
+        "edge_axis_tol_deg",
+        "enable_weak_cluster_rescue",
+        "weak_cluster_tol_deg",
+        "max_booster_iters",
+        "geometry_check_line_tol_rel",
+        "geometry_check_local_h_tol_rel",
+        "line_min_members",
+        "validate_step_aware",
+        "enable_final_edge_shape_check",
+    }
+    assert set(advanced["component_merge"]) == {
+        "position_tol_rel",
+        "cell_size_ratio_tol",
+        "min_overlap",
+        "max_components",
+    }
 
 
 def test_topological_trace_wrapper_shape() -> None:
-    params = calib_targets.ChessboardParams(graph_build_algorithm="topological")
+    params = calib_targets.ChessboardParams()
     payload = calib_targets.trace_chessboard_topological(_image(), params=params)
     assert payload["schema"] == 1
-    assert payload["graph_build_algorithm"] == "topological"
     assert payload["image"] == {"width": 32, "height": 32}
     assert isinstance(payload["corners"], list)
     assert "trace" in payload

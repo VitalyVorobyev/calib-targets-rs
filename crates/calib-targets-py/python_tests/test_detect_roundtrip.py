@@ -133,23 +133,28 @@ def test_detect_chessboard_best_roundtrip() -> None:
 
 def test_chessboard_params_dict_has_stable_core_and_nested_advanced() -> None:
     """``ChessboardParams.to_dict()`` matches the Rust ``DetectorParams``
-    wire shape: the four stable knobs at the top level, every advanced knob
-    nested under ``"advanced"``."""
+    wire shape: the three stable knobs at the top level, every advanced knob
+    nested under ``"advanced"``, and no removed/foreign top-level keys (the Rust
+    side rejects unknown keys via ``deny_unknown_fields``)."""
     payload = ct.ChessboardParams(cluster_tol_deg=9.0).to_dict()
     # Stable core at the top level.
     for stable in (
-        "graph_build_algorithm",
         "min_corner_strength",
         "min_labeled_corners",
         "max_components",
     ):
         assert stable in payload, f"missing stable key {stable!r}"
+    # `graph_build_algorithm` was removed; the Python `chess` carrier is not
+    # part of the wire shape — neither may leak to the top level.
+    assert "graph_build_algorithm" not in payload
+    assert "chess" not in payload
     # Advanced knobs are nested, never flattened to the top level.
     assert isinstance(payload["advanced"], dict)
     assert "cluster_tol_deg" not in payload
     assert payload["advanced"]["cluster_tol_deg"] == 9.0
     assert "topological" in payload["advanced"]
     assert "topological" not in payload
+    assert "component_merge" in payload["advanced"]
 
 
 def test_chessboard_advanced_payload_accepted_by_rust() -> None:
