@@ -32,73 +32,32 @@ use std::borrow::Cow;
 
 /// Which graph-build algorithm to run.
 ///
-/// The detector ships two grid builders side by side. Both produce the
-/// same `(i, j) → corner` labelling, so downstream consumers stay agnostic
-/// to the choice.
+/// The chessboard detector builds its `(i, j) → corner` labelling with the
+/// **topological** grid finder: a Delaunay triangulation plus an axis-driven
+/// cell test (the image-free variant of the SBF09 grid finder; see
+/// [`projective_grid::TopologicalParams`]). It has a low setup cost, no global
+/// cell-size dependency, high recall on the clean-chessboard regression set,
+/// and tolerates severe radial distortion and low view angles well.
 ///
-/// - [`Topological`](GraphBuildAlgorithm::Topological) — the **default**. A
-///   Delaunay triangulation plus an axis-driven cell test (the image-free
-///   variant of the SBF09 grid finder; see
-///   [`projective_grid::TopologicalParams`]). Lower setup cost, no global
-///   cell-size dependency, and higher recall on the clean-chessboard
-///   regression set than seed-and-grow; it also tolerates severe radial
-///   distortion and low view angles better.
-/// - [`SeedAndGrow`](GraphBuildAlgorithm::SeedAndGrow) — finds a
-///   self-consistent 4-corner seed, then grows the grid outward (axis
-///   clustering → cell-size estimate → seed → BFS grow → validate →
-///   boosters). Pinned for ChArUco because non-uniform marker cells defeat
-///   the topological cell test; available elsewhere per call via
-///   [`DetectorParams::graph_build_algorithm`].
+/// The enum is retained (as a single-variant, `#[non_exhaustive]` type with a
+/// reserved `graph_build_algorithm` field on [`DetectorParams`]) so that the
+/// config schema stays stable across the seed-and-grow retirement and a future
+/// alternative builder can be added without a breaking change. The historical
+/// `SeedAndGrow` variant — a self-consistent 4-corner seed plus BFS grow — was
+/// removed once the topological builder matched or beat it on every shipping
+/// path, including ChArUco.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum GraphBuildAlgorithm {
     /// Delaunay-triangulation + axis-driven cell-test grid builder; the
-    /// default builder. Lower setup cost, no global cell-size dependency.
+    /// only builder. Lower setup cost, no global cell-size dependency.
     #[default]
     Topological,
-    /// Self-consistent 4-corner seed plus BFS grow. Pinned for ChArUco
-    /// (non-uniform marker cells defeat the topological cell test).
-    SeedAndGrow,
 }
 
 fn default_graph_build_algorithm() -> GraphBuildAlgorithm {
     GraphBuildAlgorithm::default()
-}
-
-/// Where the topological grid builder gets each corner's two local grid
-/// directions.
-///
-/// **Experimental — NOT covered by semver.** Today this only affects the
-/// [`Topological`](GraphBuildAlgorithm::Topological) builder: the native
-/// [`SeedAndGrow`](GraphBuildAlgorithm::SeedAndGrow) pipeline consumes ChESS
-/// corner axes directly throughout its seed / grow / validate / booster
-/// stages and cannot run orientation-free. Pairing
-/// [`NeighbourEdges`](OrientationSource::NeighbourEdges) with `SeedAndGrow`
-/// is a typed [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]
-/// (surfaced by [`DetectorParams::validate`] / [`crate::Detector::new`])
-/// rather than a silent fallback to ChESS axes (which would make a head-to-head
-/// measurement secretly compare the wrong thing).
-///
-/// Default: [`ChessAxes`](OrientationSource::ChessAxes) — detection behaves
-/// exactly as before unless a caller opts in, and the default value is omitted
-/// from serialization so the stable config surface is unchanged.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum OrientationSource {
-    /// Use the per-corner ChESS axis estimates carried by each
-    /// [`ChessCorner`](crate::ChessCorner). The production default.
-    #[default]
-    ChessAxes,
-    /// Ignore the ChESS axes and synthesize each corner's two local grid
-    /// directions from neighbour-edge geometry (`projective_grid`'s
-    /// `synthesize_oriented2`). Topological builder only.
-    NeighbourEdges,
-}
-
-fn default_orientation_source() -> OrientationSource {
-    OrientationSource::default()
 }
 
 fn default_min_labeled_corners() -> usize {
@@ -115,40 +74,28 @@ fn default_min_corner_strength() -> f32 {
 
 /// A [`DetectorParams`] configuration the chessboard detector cannot honour.
 ///
-/// Returned by [`DetectorParams::validate`] / [`crate::Detector::new`]. The
-/// only current variant is the orientation-source / graph-builder mismatch that
-/// previously panicked at runtime; the enum is `#[non_exhaustive]` so future
-/// validations can be added without a breaking change.
+/// Reserved for future configuration validations; currently none. No
+/// configuration is rejected — every value combination the public surface can
+/// express is honoured — so [`DetectorParams::validate`] always returns
+/// `Ok(())` and this error is never constructed today. The fallible
+/// [`crate::Detector::new`] signature and this `#[non_exhaustive]` error type
+/// are retained as a stable seam so a future validation can be added (a new
+/// variant) without a breaking change, and so the binding layer keeps wrapping
+/// a single `Result` surface uniformly across the sibling detectors.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum ChessboardParamsError {
-    /// [`OrientationSource::NeighbourEdges`] was paired with
-    /// [`GraphBuildAlgorithm::SeedAndGrow`]. The native seed-and-grow pipeline
-    /// consumes ChESS corner axes directly throughout its seed / grow /
-    /// validate / booster stages and cannot run orientation-free; honouring
-    /// `NeighbourEdges` there would silently fall back to ChESS axes (a
-    /// head-to-head measurement would then secretly compare the wrong thing).
-    /// Use [`GraphBuildAlgorithm::Topological`] for the orientation-free path.
-    NeighbourEdgesRequiresTopological,
-}
+pub enum ChessboardParamsError {}
 
 impl core::fmt::Display for ChessboardParamsError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match self {
-            Self::NeighbourEdgesRequiresTopological => f.write_str(
-                "OrientationSource::NeighbourEdges is only supported with \
-                 GraphBuildAlgorithm::Topological; the native SeedAndGrow pipeline \
-                 consumes ChESS corner axes directly and cannot run orientation-free",
-            ),
-        }
+        // Uninhabited today: no validation rejects a config, so no value of
+        // this type can exist. The generic message keeps the binding layer's
+        // error mapping uniform without a per-variant match.
+        f.write_str("invalid chessboard detector configuration")
     }
 }
 
 impl std::error::Error for ChessboardParamsError {}
-
-fn is_default_orientation_source(value: &OrientationSource) -> bool {
-    *value == OrientationSource::default()
-}
 
 /// Top-level detector configuration.
 ///
@@ -185,21 +132,11 @@ fn is_default_orientation_source(value: &OrientationSource) -> bool {
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DetectorParams {
-    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`].
-    /// Default: [`GraphBuildAlgorithm::Topological`].
+    /// Which graph-build algorithm to run. See [`GraphBuildAlgorithm`]. The
+    /// only value today is [`GraphBuildAlgorithm::Topological`]; the field is
+    /// retained as a reserved, `#[non_exhaustive]`-backed config seam.
     #[serde(default = "default_graph_build_algorithm")]
     pub graph_build_algorithm: GraphBuildAlgorithm,
-
-    /// **Experimental:** where the topological builder gets per-corner grid
-    /// directions. See [`OrientationSource`]. Default
-    /// [`OrientationSource::ChessAxes`]; only affects the
-    /// [`Topological`](GraphBuildAlgorithm::Topological) builder. Omitted from
-    /// serialization at its default so the stable config surface is unchanged.
-    #[serde(
-        default = "default_orientation_source",
-        skip_serializing_if = "is_default_orientation_source"
-    )]
-    pub orientation_source: OrientationSource,
 
     /// Minimum labelled corners for a
     /// [`ChessboardDetection`](crate::ChessboardDetection) to be emitted.
@@ -257,7 +194,6 @@ impl Default for DetectorParams {
     fn default() -> Self {
         Self {
             graph_build_algorithm: GraphBuildAlgorithm::default(),
-            orientation_source: OrientationSource::default(),
             min_labeled_corners: 8,
             max_components: 3,
             min_corner_strength: default_min_corner_strength(),
@@ -270,23 +206,13 @@ impl DetectorParams {
     /// Validate the configuration, returning a typed error for any combination
     /// the detector cannot honour.
     ///
-    /// [`OrientationSource::NeighbourEdges`] is **topological-only**. It is
-    /// rejected with [`GraphBuildAlgorithm::SeedAndGrow`] (see
-    /// [`ChessboardParamsError::NeighbourEdgesRequiresTopological`]) because the
-    /// seed-and-grow seed finder stakes the whole grid frame on ~4 seed corners'
-    /// axes, and a measured head-to-head (2026-06-17) showed synthesized axes
-    /// collapse it — 0 corners on 3 of 6 clutter-free frames, 19 vs 373 on a
-    /// dense board — whereas the topological builder, which labels connected
-    /// components from many local edge classifications, tolerates the noise. The
-    /// fallible constructor [`crate::Detector::new`] calls this up front and
-    /// surfaces the typed error, so the `detect*` methods always run on a
-    /// validated configuration.
+    /// Currently every value combination the public surface can express is
+    /// honoured, so this always returns `Ok(())`. The fallible signature is
+    /// retained as a stable seam (see [`ChessboardParamsError`]): the fallible
+    /// constructor [`crate::Detector::new`] calls this up front so the
+    /// `detect*` methods always run on a validated configuration, and a future
+    /// validation can be added without changing the call sites.
     pub fn validate(&self) -> Result<(), ChessboardParamsError> {
-        if matches!(self.graph_build_algorithm, GraphBuildAlgorithm::SeedAndGrow)
-            && matches!(self.orientation_source, OrientationSource::NeighbourEdges)
-        {
-            return Err(ChessboardParamsError::NeighbourEdgesRequiresTopological);
-        }
         Ok(())
     }
 
@@ -481,41 +407,5 @@ mod tests {
         .unwrap();
         assert_eq!(restored.min_corner_strength, 0.5);
         assert!(restored.advanced.is_none());
-    }
-
-    #[test]
-    fn orientation_source_omitted_at_default_round_trips_when_set() {
-        // Default (ChessAxes) is skipped → the stable 4-key surface is unchanged
-        // (also asserted by `default_params_serialize_only_stable_keys`).
-        let default = serde_json::to_value(DetectorParams::default()).unwrap();
-        assert!(!default
-            .as_object()
-            .unwrap()
-            .contains_key("orientation_source"));
-
-        // Explicitly set NeighbourEdges → serializes as snake_case + round-trips.
-        let params = DetectorParams {
-            orientation_source: OrientationSource::NeighbourEdges,
-            ..DetectorParams::default()
-        };
-        let value = serde_json::to_value(&params).unwrap();
-        assert_eq!(
-            value["orientation_source"],
-            serde_json::json!("neighbour_edges")
-        );
-        let restored: DetectorParams = serde_json::from_value(value).unwrap();
-        assert_eq!(
-            restored.orientation_source,
-            OrientationSource::NeighbourEdges
-        );
-
-        // A config that omits the key deserializes back to the ChessAxes default.
-        let restored: DetectorParams = serde_json::from_value(serde_json::json!({
-            "graph_build_algorithm": "topological",
-            "min_labeled_corners": 8,
-            "max_components": 3,
-        }))
-        .unwrap();
-        assert_eq!(restored.orientation_source, OrientationSource::ChessAxes);
     }
 }

@@ -18,23 +18,15 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{
-    ChessboardDetection, Detector, DetectorParams, GraphBuildAlgorithm,
-};
+use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
 use serde::Deserialize;
 
-/// These gates are a recall ratchet calibrated for the **seed-and-grow**
-/// builder, which handles the full diverse set here (plain chessboard,
-/// ChArUco, puzzle) precisely. Topological is now the default builder, but it
-/// is precision-unsafe on the ChArUco frames in this set, so it is ratcheted
-/// separately — on the clean-grid subset in `topo_grid_regression.rs` and on
-/// the production puzzle path in `private_130puzzle.rs`. The `diskfit_*` tests
-/// below additionally regress seed-and-grow-only cluster.rs recovery stages.
-/// Pin seed-and-grow so each gate stays meaningful after the default flip.
+/// These gates are a recall ratchet over the topological builder (the only
+/// builder, the workspace default). It handles the full diverse set here
+/// (plain chessboard, ChArUco, puzzle); tighten the per-image numbers as the
+/// detector improves, never loosen them silently.
 fn ratchet_params() -> DetectorParams {
-    let mut p = DetectorParams::default();
-    p.graph_build_algorithm = GraphBuildAlgorithm::SeedAndGrow;
-    p
+    DetectorParams::default()
 }
 
 fn workspace_root() -> PathBuf {
@@ -320,8 +312,9 @@ fn audit_structural(detection: &ChessboardDetection) -> (usize, usize, usize) {
 /// corners into the defocused lower band (e.g. `(1, 8)` strength ≈ 17,
 /// `(10, 8)` ≈ 22, `(12, 8)` ≈ 31) — grid-consistent in position but
 /// low-confidence noise that the position-based `bench check` could not catch
-/// (it does not validate new `(i, j)` labels). This pins the fix on the
-/// DEFAULT path; the broad gate above pins seed-and-grow only.
+/// (it does not validate new `(i, j)` labels). The broad gate above runs the
+/// same topological default across the whole `testdata/` set; this test adds
+/// the per-corner strength-floor + structural-cleanliness guard on `small3`.
 #[test]
 fn small3_topological_default_suppresses_weak_frontier() {
     let path = workspace_root().join("testdata/small3.png");
@@ -335,13 +328,8 @@ fn small3_topological_default_suppresses_weak_frontier() {
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&img, &chess_cfg);
 
-    // Defaults: topological builder + the new min_corner_strength = 33 floor.
+    // Defaults: topological builder + the min_corner_strength = 33 floor.
     let params = DetectorParams::default();
-    assert_eq!(
-        params.graph_build_algorithm,
-        GraphBuildAlgorithm::Topological,
-        "this test assumes the topological default"
-    );
     let floor = params.min_corner_strength;
     let detector = Detector::new(params).expect("valid detector params");
     let detection = detector
@@ -386,166 +374,4 @@ fn small3_topological_default_suppresses_weak_frontier() {
     assert_no_duplicate_labels(&detection, "small3 topological");
     assert_grid_rebased_to_origin(&detection, "small3 topological");
     assert_origin_top_left(&detection, "small3 topological");
-}
-
-/// Regression: chess-corners 0.9 `DiskFit`'s **partial** slot-flip
-/// case on `testdata/large.png`. The whole-image slot-flip case
-/// (`mid.png`, see `diskfit_mid_recovers_full_chessboard`) is caught
-/// by `cluster.rs::fix_axis_slot_coherence` via global imbalance
-/// detection. But on real photos with marker / partial-cell corners
-/// the imbalance stays balanced overall, while a small subset of
-/// clean chessboard corners still get the slot-flip — `large.png`
-/// loses 22 of 373 corners that way pre-fix (349 → 373 after fix).
-///
-/// `cluster.rs::fix_partial_slot_flips` runs between boundary extension
-/// and no-cluster rescue and detects partial slot-flips by checking
-/// each orphan `Clustered` corner against the labelled set's
-/// local-H prediction + 2/3-majority parity vote. Precision-safe
-/// because the labelled set itself is already invariant-correct.
-/// This test pins the recovery: `DiskFit` must produce ≥ 365
-/// labelled corners on `large.png` (allowing ±8 for run-to-run
-/// noise; the post-fix observation is 373).
-#[test]
-fn diskfit_large_recovers_partial_slot_flips() {
-    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
-    use chess_corners::Threshold;
-
-    let path = workspace_root().join("testdata/large.png");
-    if !path.exists() {
-        eprintln!("skipping: testdata/large.png not on disk");
-        return;
-    }
-    let img = image::open(&path)
-        .unwrap_or_else(|e| panic!("decode large.png: {e}"))
-        .to_luma8();
-
-    let chess_cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Absolute(15.0))
-        .with_orientation_method(OrientationMethod::DiskFit);
-
-    let corners = detect_corners(&img, &chess_cfg);
-    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
-    let detector = Detector::new(ratchet_params()).expect("valid detector params");
-    let detection = detector.detect(&corners);
-
-    let detection = detection.expect("DiskFit must produce a detection on large.png");
-    let labelled = detection.corners.len();
-    assert!(
-        labelled >= 365,
-        "DiskFit + seed-and-grow must produce at least 365 labelled corners on large.png \
-         (post-fix observation: 373; RingFit baseline: 373). Got {labelled}. \
-         The chess-corners 0.9 partial-slot-flip recovery in cluster.rs \
-         is broken — see fix_partial_slot_flips."
-    );
-
-    // Hard invariants the precision contract requires.
-    assert_no_duplicate_labels(&detection, "large.png + DiskFit");
-    assert_grid_rebased_to_origin(&detection, "large.png + DiskFit");
-    assert_origin_top_left(&detection, "large.png + DiskFit");
-}
-
-/// Regression (C2 ablation campaign, 2026-06): the destructive post-grow
-/// BFS regrow (`enable_post_grow_bfs_regrow`) is default-**off**. Its
-/// design relied on the non-destructive `enable_post_grow_bfs_extend`
-/// running after to re-attach the borderline slots the regrow demolishes,
-/// but on chess-corners 0.10 that recovery contract no longer holds — the
-/// extend pass re-attaches nothing — so the regrow nets negative. On
-/// `small3.png` (seed-and-grow with `DiskFit`) the grow, boundary-extension
-/// and no-cluster-rescue stages reach 117 labelled corners; with the regrow
-/// **on**, the destructive demotion stripped them back to 88. The recovered
-/// corners are a clean two-column lattice extension onto real
-/// intersections (structural-precision-clean, verified by overlay). This
-/// pins the win so the destructive regrow cannot be silently re-enabled
-/// (nor its no-op recovery contract regress unnoticed).
-#[test]
-fn diskfit_small3_seed_and_grow_keeps_extended_lattice() {
-    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
-    use chess_corners::Threshold;
-
-    let path = workspace_root().join("testdata/small3.png");
-    if !path.exists() {
-        eprintln!("skipping: testdata/small3.png not on disk");
-        return;
-    }
-    let img = image::open(&path)
-        .unwrap_or_else(|e| panic!("decode small3.png: {e}"))
-        .to_luma8();
-
-    let chess_cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Absolute(15.0))
-        .with_orientation_method(OrientationMethod::DiskFit);
-
-    let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(ratchet_params()).expect("valid detector params");
-    let detection = detector
-        .detect(&corners)
-        .expect("DiskFit + seed-and-grow must produce a detection on small3.png");
-
-    let labelled = detection.corners.len();
-    assert!(
-        labelled >= 110,
-        "DiskFit + seed-and-grow must keep the extended lattice on small3.png \
-         (regrow-off observation: 117; with the destructive regrow it collapsed \
-         to 88). Got {labelled}. Has `enable_post_grow_bfs_regrow` been re-enabled \
-         or its no-op recovery contract regressed? See the C2 ablation campaign in \
-         docs/development/improvement-roadmap-2026-06.md."
-    );
-
-    // Hard invariants the precision contract requires.
-    assert_no_duplicate_labels(&detection, "small3.png + DiskFit");
-    assert_grid_rebased_to_origin(&detection, "small3.png + DiskFit");
-    assert_origin_top_left(&detection, "small3.png + DiskFit");
-}
-
-/// Regression: chess-corners 0.9 added `OrientationMethod::DiskFit`,
-/// which on a clean chessboard (`testdata/mid.png`) sometimes picks
-/// the wrong antipodal dark sector and reports the same axis-slot
-/// ordering for adjacent chessboard intersections that should
-/// alternate. Pre-fix this collapsed the seed-and-grow detection
-/// from 77 → 22 labelled corners on `mid.png`.
-///
-/// `cluster.rs::fix_axis_slot_coherence` runs after Stage 3 and
-/// detects + recovers from this regime via spatial 2-colouring.
-/// This test pins the recovery: `DiskFit` must produce ≥ 77
-/// labelled corners on `mid.png`, matching the `RingFit` baseline.
-#[test]
-fn diskfit_mid_recovers_full_chessboard() {
-    use calib_targets::detect::{detect_corners, DetectorConfig, OrientationMethod};
-    use chess_corners::Threshold;
-
-    let mid_path = workspace_root().join("testdata/mid.png");
-    if !mid_path.exists() {
-        eprintln!("skipping: testdata/mid.png not on disk");
-        return;
-    }
-    let img = image::open(&mid_path)
-        .unwrap_or_else(|e| panic!("decode mid.png: {e}"))
-        .to_luma8();
-
-    // Build a DetectorConfig with DiskFit + the workspace's standard
-    // threshold override. Mirrors `default_chess_config()` but flips
-    // the orientation method to disk-sector fit.
-    let chess_cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Absolute(15.0))
-        .with_orientation_method(OrientationMethod::DiskFit);
-
-    let corners = detect_corners(&img, &chess_cfg);
-    // Seed-and-grow recovery (cluster.rs) regression — pin the builder.
-    let detector = Detector::new(ratchet_params()).expect("valid detector params");
-    let detection = detector.detect(&corners);
-
-    let detection = detection.expect("DiskFit must produce a detection on mid.png");
-    let labelled = detection.corners.len();
-    assert!(
-        labelled >= 77,
-        "DiskFit + seed-and-grow must produce at least 77 labelled corners on mid.png \
-         (matching the RingFit baseline). Got {labelled}. \
-         The chess-corners 0.9 slot-ordering bug recovery in cluster.rs \
-         is broken — see fix_axis_slot_coherence."
-    );
-
-    // Hard invariants the precision contract requires.
-    assert_no_duplicate_labels(&detection, "mid.png + DiskFit");
-    assert_grid_rebased_to_origin(&detection, "mid.png + DiskFit");
-    assert_origin_top_left(&detection, "mid.png + DiskFit");
 }

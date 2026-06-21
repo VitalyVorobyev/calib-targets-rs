@@ -27,14 +27,6 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`calib_targets_core::cell_rect_corners_at`** — the single shared definition
   of the canonical unit-cell corner order (TL, TR, BR, BL), used by the ArUco
   and ChArUco cell samplers.
-- **Orientation-free chessboard detection now reaches full recall in the
-  pipeline.** `OrientationSource::NeighbourEdges` (axes synthesized from
-  neighbour geometry, topological builder only) previously stalled at the
-  interior block; it now drives the full board via the synthesized-axis recovery
-  schedule. `OrientationSource` is exposed in the Python (`ChessboardParams.
-  orientation_source`), FFI (`ct_orientation_source_t` + struct field), and WASM
-  (TypeScript `OrientationSource`) binding surfaces; it remains topological-only
-  (rejected with `SeedAndGrow`).
 
 ### Breaking
 

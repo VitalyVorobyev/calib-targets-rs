@@ -19,17 +19,10 @@
 
 use std::path::PathBuf;
 
-use calib_targets::chessboard::GraphBuildAlgorithm;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_charuco::{load_board_spec_any, CharucoDetector, CharucoParams};
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
-
-/// Apply a grid-build algorithm to charuco params. ChArUco accepts any
-/// builder; production runs on the topological default.
-fn set_algorithm(params: &mut CharucoParams, algorithm: GraphBuildAlgorithm) {
-    params.chessboard.graph_build_algorithm = algorithm;
-}
 
 const SNAP_WIDTH: u32 = 720;
 const SNAP_HEIGHT: u32 = 540;
@@ -117,14 +110,10 @@ fn smoke_flagship_snap_0_detects() {
     );
 }
 
+/// Run the full 120-frame flagship sweep on the (only) topological builder.
+/// Returns `(frames, detected, wrong_id_total)`, or `None` when the private
+/// dataset is absent.
 fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> {
-    run_flagship_sweep_with(use_board_matcher, GraphBuildAlgorithm::SeedAndGrow)
-}
-
-fn run_flagship_sweep_with(
-    use_board_matcher: bool,
-    algorithm: GraphBuildAlgorithm,
-) -> Option<(usize, usize, usize)> {
     let dir = flagship_dir();
     let board_path = flagship_board();
     if !dir.exists() || !board_path.exists() {
@@ -135,7 +124,6 @@ fn run_flagship_sweep_with(
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    set_algorithm(&mut params, algorithm);
     params.use_board_level_matcher = use_board_matcher;
     if use_board_matcher {
         params.min_marker_inliers = 1;
@@ -180,26 +168,26 @@ fn run_flagship_sweep_with(
 #[test]
 #[ignore = "full 120-frame flagship sweep; run with --ignored"]
 fn full_flagship_sweep_legacy_recall_contract() {
+    // The legacy rotation+translation vote matcher is a deprecated opt-in
+    // (`use_board_level_matcher = false`). On the topological builder (the only
+    // remaining builder after the seed-and-grow retirement) it detects ~96/120;
+    // the gold board-level matcher (`full_flagship_sweep_board_matcher_contract`)
+    // holds at >= 119/120 with wrong_id 0 on the *same* topological grid. The
+    // recall floor below is therefore re-baselined to a gross-regression
+    // tripwire for the deprecated path on the only-remaining builder (>= 90,
+    // measured 96, with margin for the vote thresholds' interaction with the
+    // topological corner set) — it is NOT a production gate, and it is NOT a
+    // grid regression signal. The wrong-id contract (<= 8) is deliberately left
+    // unchanged: a deprecated path may detect less, but it must not start
+    // mislabelling.
     let Some((frames, detected, wrong_id_total)) = run_flagship_sweep(false) else {
         return;
     };
-    // Baseline from bench_results/charuco/3536119669_baseline (2026-04-19):
-    //   detected 108/120 (90.0 %), wrong_id_total = 3.
-    //
-    // TODO(charuco-legacy-drift): on `refactor/projective-grid-next` the
-    // *legacy* (rotation+translation vote) matcher's wrong-id count rose to
-    // 24 at the looser corner floor — outvoted marker-decode noise that the
-    // board-level matcher (the modern path, 0 wrong-id) is unaffected by, but
-    // an 8× drift that likely traces to the projective-grid rewrite and wants
-    // a separate root-cause pass. The 2026-05-29 `min_corner_strength = 33`
-    // floor in `CharucoParams::for_board` (cleaner grid → cleaner marker-cell
-    // sampling) recovers most of it to wrong_id_total = 8; the threshold below
-    // is refreshed to that improved state so this guards against further
-    // legacy regression while the drift is investigated.
     assert_eq!(frames, 120);
     assert!(
-        detected >= 108,
-        "flagship legacy recall regression: detected {detected}/120 (expected ≥ 108)"
+        detected >= 90,
+        "flagship legacy recall regression: detected {detected}/120 (expected ≥ 90) \
+         — deprecated vote matcher gross-regression tripwire on the topological grid"
     );
     assert!(
         wrong_id_total <= 8,
@@ -210,79 +198,30 @@ fn full_flagship_sweep_legacy_recall_contract() {
 #[test]
 #[ignore = "full 120-frame flagship sweep; run with --ignored"]
 fn full_flagship_sweep_board_matcher_contract() {
-    let Some((frames, detected, wrong_id_total)) = run_flagship_sweep(true) else {
-        return;
-    };
-    // Baseline from bench_results/charuco/3536119669_k36 (2026-04-20,
-    // bit_likelihood_slope default κ=36):
-    //   detected 120/120 (100 %), wrong_id_total = 0
-    assert_eq!(frames, 120);
-    assert_eq!(
-        detected, 120,
-        "flagship board-matcher recall regression: detected {detected}/120 (expected 120)"
-    );
-    assert_eq!(
-        wrong_id_total, 0,
-        "board-level matcher must never emit markers inconsistent with its own alignment; got {wrong_id_total}"
-    );
-}
-
-#[test]
-#[ignore = "full 120-frame flagship sweep; run with --ignored"]
-fn full_flagship_sweep_board_matcher_topological_contract() {
-    // B1b algorithm-parity measurement: run the full charuco decode on the
-    // *topological* grid (via `allow_topological_grid`). On the 2026-06-13
-    // head-to-head topological decode precision matched seed-and-grow's gold
-    // contract — zero self-consistency wrong-ids — refuting the premise that
-    // the topological cell test poisons charuco decode.
+    // THE flagship board-level-matcher contract, on the topological builder
+    // (the only builder; ChArUco no longer pins seed-and-grow). The 2026-06-13
+    // head-to-head showed topological decode precision matches the historical
+    // seed-and-grow gold — zero self-consistency wrong-ids.
     //
-    // Determinism is improved but not yet hard. One source — a `HashMap`
-    // tie-break in `alignment::best_translation` (on a (weight_sum, count) tie
-    // the winning translation depended on iteration order) — is fixed with a
-    // deterministic lexicographic tie-break. With that fix three separate-process
-    // runs gave 120/120/120, but the full `--ignored` suite (one process, one
-    // RandomState seed) still tips to 119: at least one more seed-dependent site
-    // remains in the topological→charuco path. Precision is solid regardless
-    // (wrong_id == 0). So the detected floor stays `>= 119` until determinism is
-    // fully hardened; the remaining ~10% charuco-corner gap vs seed-and-grow is a
-    // separate `min_corner_strength`-floor tuning question, not a localization gap.
-    let Some((frames, detected, wrong_id_total)) =
-        run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological)
-    else {
+    // Recall floor is `>= 119`, not `== 120`: a deterministic lexicographic
+    // tie-break in `alignment::best_translation` fixed one `HashMap`
+    // iteration-order site (three separate-process runs then gave 120/120/120),
+    // but the full single-process `--ignored` suite still tips to 119 on at
+    // least one more seed-dependent site in the topological→charuco path.
+    // Precision is solid regardless (`wrong_id == 0`); the floor stays `>= 119`
+    // until determinism is fully hardened.
+    let Some((frames, detected, wrong_id_total)) = run_flagship_sweep(true) else {
         return;
     };
     assert_eq!(frames, 120);
     assert!(
         detected >= 119,
-        "topological charuco recall regression: detected {detected}/120 (expected >= 119)"
+        "flagship board-matcher recall regression: detected {detected}/120 (expected >= 119)"
     );
     assert_eq!(
         wrong_id_total, 0,
-        "topological charuco must be self-consistent (zero wrong-ids); got {wrong_id_total}"
+        "board-level matcher must never emit markers inconsistent with its own alignment; got {wrong_id_total}"
     );
-}
-
-/// A1 determinism characterization (algorithm-consolidation Phase 1): print the
-/// live A-side (seed-and-grow) and B-side (topological) detected counts,
-/// repeating the topological sweep in-process so successive `RandomState` seeds
-/// surface the residual HashMap-iteration-order flake that keeps the
-/// retire-SeedAndGrow decision blocked. Ignored; run with
-/// `--features diagnostics -- --ignored --nocapture`.
-#[test]
-#[ignore = "A1 determinism characterization; run with --ignored --nocapture"]
-fn ab_charuco_topological_determinism_repeats() {
-    let Some((frames, sg_detected, sg_wrong)) =
-        run_flagship_sweep_with(true, GraphBuildAlgorithm::SeedAndGrow)
-    else {
-        eprintln!("skipping: flagship dataset missing");
-        return;
-    };
-    eprintln!("[A seed-and-grow ] frames={frames} detected={sg_detected}/120 wrong_id={sg_wrong}");
-    for rep in 0..6 {
-        let (_f, detected, wrong) =
-            run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological).expect("flagship");
-        eprintln!("[B topological r{rep}] detected={detected}/120 wrong_id={wrong}");
-    }
 }
 
 #[test]
@@ -372,7 +311,7 @@ fn smoke_apriltag_image_does_not_panic() {
 /// Pixel positions are at `upscale = 1`. The `min_corner_strength = 33`
 /// floor in [`CharucoParams::for_board`] must keep all of these out of the
 /// product. Counterpart to the chessboard-side
-/// `private_3536119669.rs::seed_and_grow_rejects_reviewed_3536119669_false_labels`.
+/// `private_3536119669.rs::topological_rejects_reviewed_3536119669_false_labels`.
 type FalsePx = (f32, f32);
 type FalsePxCase = (u32, u32, &'static [FalsePx]);
 
@@ -385,20 +324,12 @@ const REVIEWED_FALSE_PX: &[FalsePxCase] = &[
 
 #[test]
 fn flagship_rejects_reviewed_marker_bit_false_corners() {
-    // The seed-and-grow + `min_corner_strength = 33` floor must keep every
-    // reviewed marker-bit false corner out of the product.
-    assert_reviewed_false_corners_rejected(GraphBuildAlgorithm::SeedAndGrow);
+    // The topological builder + `min_corner_strength = 33` floor must keep
+    // every reviewed marker-bit false corner out of the product.
+    assert_reviewed_false_corners_rejected();
 }
 
-#[test]
-fn flagship_topological_rejects_reviewed_marker_bit_false_corners() {
-    // B1b: the topological grid (measurement opt-in) must reject the same
-    // reviewed marker-bit false corners — confirming topological does not
-    // reintroduce the marker-bit false-corner failure the guard feared.
-    assert_reviewed_false_corners_rejected(GraphBuildAlgorithm::Topological);
-}
-
-fn assert_reviewed_false_corners_rejected(algorithm: GraphBuildAlgorithm) {
+fn assert_reviewed_false_corners_rejected() {
     let dir = flagship_dir();
     let board_path = flagship_board();
     if !dir.exists() || !board_path.exists() {
@@ -408,7 +339,6 @@ fn assert_reviewed_false_corners_rejected(algorithm: GraphBuildAlgorithm) {
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    set_algorithm(&mut params, algorithm);
     params.use_board_level_matcher = true;
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;

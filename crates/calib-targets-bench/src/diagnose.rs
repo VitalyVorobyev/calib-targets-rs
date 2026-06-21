@@ -1,36 +1,14 @@
 //! Diagnose computations shared by the bench CLI's `diagnose` subcommand and
-//! programmatic consumers (e.g. the studio server): per-stage counts for the
-//! seed-and-grow [`DebugFrame`], and the topological labelled-vs-unlabelled
-//! breakdown with pre-filter survival counts.
+//! programmatic consumers (e.g. the studio server): the topological
+//! labelled-vs-unlabelled breakdown with pre-filter survival counts.
 //!
 //! All printing / overlay-file output stays with the callers; this module
 //! only computes serializable data.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
-use calib_targets::chessboard::diagnostics::{CornerStage, DebugFrame};
 use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams};
 use serde::Serialize;
-
-/// Count [`DebugFrame`] corners by stage name, in stable (alphabetical) order.
-pub fn stage_counts_by_name(frame: &DebugFrame) -> BTreeMap<&'static str, usize> {
-    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
-    for aug in &frame.corners {
-        let key: &'static str = match &aug.stage {
-            CornerStage::Raw => "Raw",
-            CornerStage::Strong => "Strong",
-            CornerStage::NoCluster { .. } => "NoCluster",
-            CornerStage::Clustered { .. } => "Clustered",
-            CornerStage::AttachmentAmbiguous { .. } => "AttachmentAmbiguous",
-            CornerStage::AttachmentFailedInvariants { .. } => "AttachmentFailedInvariants",
-            CornerStage::Labeled { .. } => "Labeled",
-            CornerStage::LabeledThenBlacklisted { .. } => "LabeledThenBlacklisted",
-            _ => "Other",
-        };
-        *counts.entry(key).or_insert(0) += 1;
-    }
-    counts
-}
 
 /// The effective topological tolerances a diagnosis ran with (radians /
 /// relative units, straight from the resolved `AdvancedTuning`).
@@ -105,7 +83,7 @@ pub struct TopologicalDiagnosis {
 
 /// Run the production topological detector path on `corners` and compute a
 /// [`TopologicalDiagnosis`]. `params` is used as-is — callers are responsible
-/// for forcing `graph_build_algorithm` / `orientation_source` beforehand.
+/// for forcing `graph_build_algorithm` beforehand.
 pub fn diagnose_topological(
     params: &DetectorParams,
     corners: &[ChessCorner],

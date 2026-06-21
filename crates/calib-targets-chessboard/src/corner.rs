@@ -77,32 +77,6 @@ impl ClusterLabel {
         }
     }
 
-    /// The slot index whose axis matches `Θ₀` under this label.
-    ///
-    /// * `Canonical` → `0`.
-    /// * `Swapped`   → `1`.
-    ///
-    /// Part of the diagnostics-facing vocabulary (consumers interpreting a
-    /// `CornerStage::Clustered { label }` out of a `DebugFrame`); compiled
-    /// only with the `diagnostics` feature (or under `cfg(test)`).
-    #[cfg(any(test, feature = "diagnostics"))]
-    #[inline]
-    pub fn slot_of_theta0(self) -> usize {
-        match self {
-            ClusterLabel::Canonical => 0,
-            ClusterLabel::Swapped => 1,
-        }
-    }
-
-    /// The slot index whose axis matches `Θ₁` under this label.
-    ///
-    /// See [`ClusterLabel::slot_of_theta0`]; same diagnostics-only gate.
-    #[cfg(any(test, feature = "diagnostics"))]
-    #[inline]
-    pub fn slot_of_theta1(self) -> usize {
-        1 - self.slot_of_theta0()
-    }
-
     /// The other label.
     #[inline]
     pub fn flipped(self) -> Self {
@@ -116,22 +90,16 @@ impl ClusterLabel {
 /// Stage marker tracked per input corner through the pipeline.
 ///
 /// Every `Corner` the detector sees starts at [`CornerStage::Raw`]
-/// and advances as it passes (or fails) pipeline stages. This is the
-/// unit of observability for the debug frame.
-///
-/// Note: a future cleanup may split this enum into a pure pipeline cursor
-/// (`Raw / Strong / NoCluster / Clustered / Labeled`) plus an orthogonal
-/// `AttachmentOutcome { at, outcome, reason, local_h_residual_px }`. The
-/// current shape is preserved for now because the split exposed a subtle
-/// regression on the `puzzleboard_reference/example1.png` multi-component
-/// test; landing it safely needs additional investigation of the
-/// `fix_partial_slot_flips` + `detect_all` interaction.
+/// and advances as it passes (or fails) pipeline stages. It is the
+/// internal cursor the clustering, topological recovery, booster, and
+/// geometry-check stages read and write to decide which corners are
+/// eligible at each step.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize)]
 pub enum CornerStage {
     /// Newly ingested corner, no checks yet.
     Raw,
-    /// Passed `prefilter` (strength + fit-quality + axes validity).
+    /// Passed the strength + fit-quality + axes-validity pre-filter.
     Strong,
     /// `cluster_axes` rejected — at least one axis further than
     /// `cluster_tol_deg` from the matching center. `max_d_deg` is the
@@ -146,33 +114,8 @@ pub enum CornerStage {
         /// The axis-slot label assigned by clustering.
         label: ClusterLabel,
     },
-    /// `extend_boundary` attempted to attach this corner at `at` but
-    /// found ≥2 candidates inside `attach_ambiguity_factor × nearest`.
-    ///
-    /// A diagnostics-only stage marker (rendered by overlays); compiled
-    /// only with the `diagnostics` feature. The current pipeline records
-    /// ambiguous extension candidates as plain un-labelled corners.
-    #[cfg(feature = "diagnostics")]
-    AttachmentAmbiguous {
-        /// The `(i, j)` cell the corner was being attached at.
-        at: (i32, i32),
-    },
-    /// `extend_boundary` attempted to attach this corner at `at` but
-    /// the induced edges failed an invariant. The pipeline leaves the
-    /// corner un-labelled and continues.
-    ///
-    /// A diagnostics-only stage marker (rendered by overlays); compiled
-    /// only with the `diagnostics` feature.
-    #[cfg(feature = "diagnostics")]
-    AttachmentFailedInvariants {
-        /// The `(i, j)` cell the corner was being attached at.
-        at: (i32, i32),
-        /// Human-readable description of the invariant that failed.
-        reason: String,
-    },
-    /// Attached as a labelled corner. Filled in by the `grow` /
-    /// `extend_boundary` / `rescue_no_cluster` / `apply_boosters`
-    /// stages.
+    /// Attached as a labelled corner. Filled in by the topological
+    /// recovery / booster stages.
     Labeled {
         /// The corner's final `(i, j)` grid label.
         at: (i32, i32),
@@ -180,12 +123,12 @@ pub enum CornerStage {
         /// corner was attached via a local-H stage; `None` otherwise.
         local_h_residual_px: Option<f32>,
     },
-    /// Previously labelled at `at`, then blacklisted during
-    /// post-validation. `reason` is human-readable for overlays.
+    /// Previously labelled at `at`, then dropped by the geometry check.
+    /// `reason` is human-readable for overlays.
     LabeledThenBlacklisted {
         /// The `(i, j)` cell the corner had been labelled at.
         at: (i32, i32),
-        /// Human-readable reason the corner was blacklisted.
+        /// Human-readable reason the corner was dropped.
         reason: String,
     },
 }
@@ -240,14 +183,10 @@ mod tests {
     #[test]
     fn cluster_label_slot_invariants() {
         let a = ClusterLabel::Canonical;
-        assert_eq!(a.slot_of_theta0(), 0);
-        assert_eq!(a.slot_of_theta1(), 1);
         assert_eq!(a.flipped(), ClusterLabel::Swapped);
         assert_eq!(a.as_u8(), 0);
 
         let b = ClusterLabel::Swapped;
-        assert_eq!(b.slot_of_theta0(), 1);
-        assert_eq!(b.slot_of_theta1(), 0);
         assert_eq!(b.flipped(), ClusterLabel::Canonical);
         assert_eq!(b.as_u8(), 1);
     }

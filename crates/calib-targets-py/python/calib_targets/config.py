@@ -918,16 +918,10 @@ class ChessboardParams:
 
     chess: ChessConfig = field(default_factory=ChessConfig)
     # --- Stable core --------------------------------------------------------
-    # See `calib_targets_chessboard::GraphBuildAlgorithm`. Accepted
-    # snake_case values: "seed_and_grow" (default) or "topological".
-    # "topological" suits low-view-angle or distortion-heavy scenes.
-    graph_build_algorithm: str = "seed_and_grow"
-    # See `calib_targets_chessboard::OrientationSource`. Accepted snake_case
-    # values: "chess_axes" (default; per-corner ChESS axes) or
-    # "neighbour_edges" (orientation-free; axes synthesized from neighbour
-    # geometry). "neighbour_edges" is **topological-only** — pairing it with
-    # ``graph_build_algorithm="seed_and_grow"`` is rejected by the detector.
-    orientation_source: str = "chess_axes"
+    # See `calib_targets_chessboard::GraphBuildAlgorithm`. The only accepted
+    # value is "topological" (the seed-and-grow builder has been retired); the
+    # field is kept so the config schema stays stable.
+    graph_build_algorithm: str = "topological"
     min_corner_strength: float = 0.0
     min_labeled_corners: int = 8
     max_components: int = 3
@@ -982,7 +976,6 @@ class ChessboardParams:
         return {
             "chess": self.chess.to_dict(),
             "graph_build_algorithm": self.graph_build_algorithm,
-            "orientation_source": self.orientation_source,
             "min_corner_strength": self.min_corner_strength,
             "min_labeled_corners": self.min_labeled_corners,
             "max_components": self.max_components,
@@ -1002,9 +995,6 @@ class ChessboardParams:
             "chess": ChessConfig.from_dict(data.get("chess", {})),
             "graph_build_algorithm": data.get(
                 "graph_build_algorithm", d.graph_build_algorithm
-            ),
-            "orientation_source": data.get(
-                "orientation_source", d.orientation_source
             ),
             "min_corner_strength": data.get(
                 "min_corner_strength", d.min_corner_strength

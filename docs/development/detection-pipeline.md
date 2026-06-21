@@ -45,19 +45,16 @@ chessboard crate's historical `enable_component_merge` flag is now backed by
 this shared implementation via `DetectorParams::component_merge:
 LocalMergeParams`.
 
-### Orientation source (experimental, default-off)
+### Orientation source
 
-`DetectorParams::orientation_source: OrientationSource` selects where the
-**topological** builder gets each corner's two grid directions: `ChessAxes`
-(default — the per-corner ChESS axes) or `NeighbourEdges` (synthesized from
-neighbour geometry via `projective_grid::synthesize_oriented2`, no ChESS-axis
-dependence). Serde-skipped at its default, so the stable config surface is
-unchanged. `NeighbourEdges + SeedAndGrow` is a typed
-`ChessboardParamsError::NeighbourEdgesRequiresTopological` (the native
-seed-and-grow *pipeline* consumes ChESS axes directly); use the topological
-builder, or the `projective-grid` grid engine, for the orientation-free path.
+The chessboard detector consumes the per-corner ChESS axis estimates carried by
+each `ChessCorner` directly: clustering, Delaunay admission, and the recovery
+boosters all read `ChessCorner.axes`. (The experimental chessboard-level
+`OrientationSource::NeighbourEdges` knob — which synthesized the two grid
+directions from neighbour geometry — was removed; the orientation-free path now
+lives only in `projective-grid` for external callers, see below.)
 
-The `projective-grid` facade now runs a **geometry-only recovery schedule**
+The `projective-grid` facade still runs a **geometry-only recovery schedule**
 (`seed_and_grow::recovery`) on the synthesized-axis paths (`Evidence::Positions`
 / `Evidence::Oriented1`) under `RecoverySchedule::Auto`: boundary extension
 (local-H + cardinal-BFS) → interior fill → revalidate → drop filters
@@ -70,58 +67,17 @@ a clean synthetic perspective grid it reaches full recall at zero wrong labels
 The chessboard topological adapter pins `RecoverySchedule::Off` and keeps its
 own ChESS-axis-coupled recovery, so production output is byte-identical.
 
-#### Orientation parity metric
-
-The orientation-free vs ChESS-axis head-to-head is measured per-image as the
-labelled-count ratio of the two `grid`-engine cells:
-
-```
-parity(image) = labelled(grid, neighbour-edges) / labelled(grid, chess-axes)
-```
-
-Run both cells and compare the per-image `labelled_count` in the report JSONs:
-
-```bash
-cargo run -p calib-targets-bench -- run --engine grid \
-    --algorithm topological --orientation-source chess-axes
-cargo run -p calib-targets-bench -- run --engine grid \
-    --algorithm topological --orientation-source neighbour-edges
-```
-
-**Supported domain: clutter-free regular grids.** On every clutter-free public
-chessboard image the orientation-free path matches or beats the ChESS-axis
-path (parity ≥ 1.0; on large foreshortened boards the synthesized-axis +
-recovery combination materially exceeds chess-axis recall), at zero wrong
-labels. This is pinned by the
-`calib-targets-bench/tests/orientation_free_parity.rs` gate: recall parity
-plus a D4+translation label-consistency audit on shared corners, per image.
-
-**Out of scope: clutter-dense targets (measured information ceiling).** On
-ChArUco-style boards, glyph corners at sub-lattice pitch dominate the local
-neighbourhood statistics, and position-only axis synthesis provably cannot
-recover the lattice directions there (measured: ~0 % of true lattice edges
-fall within the topological classifier's axis tolerance on the blurred glyph
-boards, vs ~94 % on clean boards; the recovered axes lock onto the clutter
-geometry). The drop filters then correctly refuse the incoherent mesh —
-recall lost, precision preserved. This is an information limit of
-position-only evidence, not a tuning gap; clutter-bearing targets need
-intensity-aware axes (the ChESS fit), which is exactly what the production
-default uses. Details in `docs/algorithmic_gaps.md` (orientation-free
-clutter ceiling). Concrete per-image numbers are local-only
-(`bench_results/`).
-
 ### Bench harness selector
 
 ```bash
 cargo run -p calib-targets-bench -- {run,preview,diagnose} \
-    --algorithm {topological,seed-and-grow} \
-    [--engine {pipeline,grid}] \
-    [--orientation-source {chess-axes,neighbour-edges}]
+    --algorithm topological \
+    [--engine {pipeline,grid}]
 ```
 
-Runs either pipeline; the `grid` engine drives `detect_grid_all` directly
-(bypassing chessboard recovery) for the orientation-source head-to-head. Output
-JSON / overlay filenames carry the engine + algorithm + orientation-source
+Runs the chessboard pipeline; the `grid` engine drives `detect_grid_all`
+directly (bypassing chessboard recovery) over the ChESS-axis evidence. Output
+JSON / overlay filenames carry the engine + algorithm + orientation-method
 slugs so cells coexist in the same directory. `bench diagnose --algorithm
 topological` reports the per-triangle composition counters (mergeable /
 multi-diagonal / has-spurious / all-grid) plus per-quadrant labelled/unlabelled

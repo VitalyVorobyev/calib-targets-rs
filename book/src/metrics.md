@@ -50,25 +50,6 @@ every image — the `pos=` counter validates *positions of baseline
 corners*, not new labels (see the debugging guide), so new `(i, j)`
 labels are gated separately by overlay inspection + the geometry checks.
 
-## Orientation-free recall parity (public)
-
-The orientation-free path (`Evidence::Positions` /
-`OrientationSource::NeighbourEdges`, synthesizing grid axes from
-neighbour geometry) reaches recall **parity** with the ChESS-axis path
-on the clutter-free chessboard domain. The gate
-(`crates/calib-targets-bench/tests/orientation_free_parity.rs`) asserts,
-per public image, both:
-
-1. **recall parity** — `labelled(neighbour-edges) ≥ labelled(chess-axes)`;
-2. **zero wrong labels** — shared corners (matched by pixel position)
-   agree up to a single D4 transform + integer translation.
-
-Measured ≥ 1.0 on every clutter-free public image (`mid`, `large`, the
-four `02-topo-grid` boards). **Out of scope:** clutter-dense targets
-(ChArUco-style glyph corners at sub-lattice pitch), where position-only
-axis synthesis is information-limited — see *Algorithmic gaps* and the
-clutter-ceiling note in `ORIENTATION.md`.
-
 ## Synthetic suites (projective-grid)
 
 Two in-crate synthetic suites gate the precision contract on

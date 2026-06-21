@@ -59,24 +59,11 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
  * Selector for the chessboard graph-build algorithm. Mirrors the
  * `calib_targets_chessboard::GraphBuildAlgorithm` enum.
  *
- * Defaulting `ct_chessboard_params_t::graph_build_algorithm` to `0`
- * keeps zero-initialised C structs on the historical seed-and-grow
- * pipeline (`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`).
+ * The chessboard detector builds its grid with the topological pipeline (the
+ * only builder). Both selector values resolve to it; the seed-and-grow
+ * constant is retained only for source/ABI compatibility.
  */
 typedef uint32_t ct_graph_build_algorithm_t;
-
-/**
- * Selector for the chessboard orientation source. Mirrors the
- * `calib_targets_chessboard::OrientationSource` enum.
- *
- * Defaulting `ct_chessboard_params_t::orientation_source` to `0` keeps
- * zero-initialised C structs on per-corner ChESS axes
- * (`CT_ORIENTATION_SOURCE_CHESS_AXES`). `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES`
- * is **topological-only** — pairing it with
- * [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`] is rejected by the detector with a
- * configuration error.
- */
-typedef uint32_t ct_orientation_source_t;
 
 /**
  * Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
@@ -122,17 +109,11 @@ typedef struct ct_chessboard_advanced_t {
  */
 typedef struct ct_chessboard_params_t {
   /**
-   * Pipeline selector. See [`ct_graph_build_algorithm_t`].
-   * Default `0` (== [`CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW`]).
+   * Pipeline selector. See [`ct_graph_build_algorithm_t`]. Both values
+   * resolve to the topological builder (the only builder); the field is
+   * retained for ABI stability.
    */
   ct_graph_build_algorithm_t graph_build_algorithm;
-  /**
-   * Orientation source. See [`ct_orientation_source_t`].
-   * Default `0` (== [`CT_ORIENTATION_SOURCE_CHESS_AXES`]).
-   * `CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES` requires
-   * [`CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL`].
-   */
-  ct_orientation_source_t orientation_source;
   /**
    * Minimum ChESS corner strength for the Stage-1 pre-filter. `0.0`
    * (the zero-initialised default) disables the filter. Stable field.
@@ -873,25 +854,15 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 } ct_puzzleboard_detect_buffers_t;
 
 /**
- * Seed-and-grow pipeline. Currently the default.
+ * Retired seed-and-grow selector. Accepted for ABI compatibility and mapped
+ * to the topological pipeline.
  */
 #define CT_GRAPH_BUILD_ALGORITHM_SEED_AND_GROW 0
 
 /**
- * Topological pipeline (Delaunay + axis-driven cell test).
+ * Topological pipeline (Delaunay + axis-driven cell test). The only builder.
  */
 #define CT_GRAPH_BUILD_ALGORITHM_TOPOLOGICAL 1
-
-/**
- * Per-corner ChESS axis estimates. The default.
- */
-#define CT_ORIENTATION_SOURCE_CHESS_AXES 0
-
-/**
- * Synthesize the two grid directions from neighbour-edge geometry
- * (topological builder only).
- */
-#define CT_ORIENTATION_SOURCE_NEIGHBOUR_EDGES 1
 
 #define CT_DICTIONARY_DICT_4X4_50 1
 
@@ -1049,32 +1020,6 @@ void ct_chessboard_detector_destroy(struct ct_chessboard_detector_t *detector);
  */
 enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect_args_t *args,
                                                struct ct_chessboard_detect_buffers_t *bufs);
-
-/**
- * Run chessboard detection and write the diagnostics channel as a
- * NUL-terminated UTF-8 JSON string into a caller-owned buffer.
- *
- * The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
- * diagnostics struct (every input corner's terminal stage, per-iteration
- * pipeline traces, cluster histograms, geometry-check outcomes). Its
- * schema carries a looser stability promise than the typed result API and
- * may evolve between minor versions.
- *
- * `out_len` is required and always receives the JSON length excluding the
- * trailing NUL terminator. Query the required size by passing
- * `out_utf8 = NULL` and `out_capacity = 0`.
- *
- * # Safety
- *
- * `args` must be a valid non-null pointer whose `detector` and `image`
- * fields are valid non-null pointers. If `out_utf8` is non-null it must
- * point to writable memory of at least `out_capacity` bytes. `out_len`
- * must always be a valid writable pointer.
- */
-enum ct_status_t ct_chessboard_detector_detect_diagnostics_json(const struct ct_chessboard_detect_args_t *args,
-                                                                char *out_utf8,
-                                                                size_t out_capacity,
-                                                                size_t *out_len);
 
 /**
  * Run end-to-end multi-component chessboard detection on a grayscale image.

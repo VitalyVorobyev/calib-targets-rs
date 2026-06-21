@@ -27,7 +27,6 @@ use calib_targets_core::init_tracing;
 #[derive(Debug)]
 enum Algorithm {
     Topological,
-    SeedAndGrow,
 }
 
 #[derive(Debug)]
@@ -41,7 +40,7 @@ struct Args {
 
 fn parse_args() -> Result<Args, String> {
     let mut image: Option<PathBuf> = None;
-    let mut algorithm = Algorithm::SeedAndGrow;
+    let mut algorithm = Algorithm::Topological;
     let mut iterations: usize = 1;
     let mut warmup: usize = 0;
     let mut print_corners = false;
@@ -55,8 +54,8 @@ fn parse_args() -> Result<Args, String> {
             "--algorithm" => {
                 let v = it.next().ok_or("--algorithm requires a value")?;
                 algorithm = match v.as_str() {
-                    "topological" => Algorithm::Topological,
-                    "seed-and-grow" | "seed_and_grow" => Algorithm::SeedAndGrow,
+                    // `seed-and-grow` accepted for back-compat → topological.
+                    "topological" | "seed-and-grow" | "seed_and_grow" => Algorithm::Topological,
                     other => return Err(format!("unknown algorithm: {other}")),
                 };
             }
@@ -108,7 +107,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut params = DetectorParams::default();
     params.graph_build_algorithm = match args.algorithm {
         Algorithm::Topological => GraphBuildAlgorithm::Topological,
-        Algorithm::SeedAndGrow => GraphBuildAlgorithm::SeedAndGrow,
     };
     let chess_cfg = detect::default_chess_config();
 

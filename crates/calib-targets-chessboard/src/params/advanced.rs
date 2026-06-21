@@ -287,10 +287,7 @@ pub(super) fn default_local_h_k_nearest() -> usize {
 pub struct AdvancedTuning {
     /// Tuning knobs for the
     /// [`GraphBuildAlgorithm::Topological`](super::GraphBuildAlgorithm::Topological)
-    /// path. Ignored when
-    /// [`DetectorParams::graph_build_algorithm`](super::DetectorParams::graph_build_algorithm)
-    /// is
-    /// [`SeedAndGrow`](super::GraphBuildAlgorithm::SeedAndGrow).
+    /// path — the only graph builder the detector ships.
     #[serde(default = "default_topological_params")]
     pub topological: TopologicalParams,
 

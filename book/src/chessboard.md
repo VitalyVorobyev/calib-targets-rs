@@ -400,8 +400,9 @@ use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
 fn detect(corners: &[ChessCorner]) {
     let params = DetectorParams::default();
     // `Detector::new` validates params and is fallible: it returns
-    // `Err(ChessboardParamsError)` for an invalid combination (today, only
-    // `NeighbourEdges` orientation under `SeedAndGrow`).
+    // `Err(ChessboardParamsError)` for an invalid combination. No combination
+    // the public surface can express is rejected today; the fallible signature
+    // is a reserved seam for future validations.
     let det = Detector::new(params).expect("valid params");
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());

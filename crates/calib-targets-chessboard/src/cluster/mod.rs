@@ -34,10 +34,8 @@ use projective_grid::cluster::{self as pg, AxisFeature, AxisObservation, Cluster
 mod assign;
 mod slot_coherence;
 
-pub(crate) use assign::effective_tol_rad;
-pub use assign::{assign_corner, refit_centers_from_labelled, AxisCluster};
+use assign::AxisCluster;
 use slot_coherence::fix_axis_slot_coherence;
-pub(crate) use slot_coherence::fix_partial_slot_flips;
 
 // Re-export the generic angle helpers under their old local names so
 // sibling modules (`seed`, `grow`, `boosters`) keep their existing

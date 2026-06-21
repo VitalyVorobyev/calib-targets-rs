@@ -1,9 +1,8 @@
 //! Built-in detector presets. Unlike the named configs under
 //! `studio_configs/` (user-saved, gitignored), these are hardcoded,
 //! committed `DetectorParams` overrides surfaced in the Detect tab so the
-//! common starting points (the two grid-build × orientation pairings,
-//! seed-and-grow, and the per-family ChESS strength floors) are one click
-//! away without leaving the workspace.
+//! common starting points (the topological grid build and the per-family
+//! ChESS strength floors) are one click away without leaving the workspace.
 //!
 //! Each preset's `params` is a partial-`DetectorParams` override object in
 //! the same top-level-key merge format the Detect tab's draft and the bench
@@ -42,19 +41,9 @@ impl Preset {
 fn catalogue() -> Vec<Preset> {
     vec![
         Preset::new(
-            "topo-chess-axes",
+            "topo",
             "Topological graph build with ChESS-axis orientation (the chessboard default).",
-            json!({ "graph_build_algorithm": "topological", "orientation_source": "chess_axes" }),
-        ),
-        Preset::new(
-            "topo-neighbour-edges",
-            "Topological graph build with orientation-free neighbour-edge axes (robust under foreshortening; recall-limited by the booster gap).",
-            json!({ "graph_build_algorithm": "topological", "orientation_source": "neighbour_edges" }),
-        ),
-        Preset::new(
-            "seed-and-grow",
-            "Seed-and-grow graph build (the ChArUco-pinned algorithm; orientation is ChESS-axis only).",
-            json!({ "graph_build_algorithm": "seed_and_grow" }),
+            json!({ "graph_build_algorithm": "topological" }),
         ),
         Preset::new(
             "charuco-floor",

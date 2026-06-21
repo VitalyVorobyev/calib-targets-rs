@@ -34,8 +34,6 @@ struct ImageCase {
     #[serde(default)]
     topological: Option<Gate>,
     #[serde(default)]
-    seed_and_grow: Option<Gate>,
-    #[serde(default)]
     low_res: Option<LowResGate>,
     #[serde(default)]
     diagnostic_topological: Option<DiagnosticGate>,
@@ -209,8 +207,9 @@ fn assert_gate(case: &ImageCase, name: &str, gate: &Gate, detection: Option<Ches
 
 fn algorithm_from_name(name: &str) -> GraphBuildAlgorithm {
     match name {
-        "topological" => GraphBuildAlgorithm::Topological,
-        "seed_and_grow" => GraphBuildAlgorithm::SeedAndGrow,
+        // `seed_and_grow` is accepted for manifest back-compat but maps to the
+        // only remaining builder.
+        "topological" | "seed_and_grow" => GraphBuildAlgorithm::Topological,
         other => panic!("unknown graph_build_algorithm {other:?}"),
     }
 }
@@ -232,12 +231,6 @@ fn topo_grid_manifest_gates_hold() {
                 .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
-        }
-        if let Some(gate) = &case.seed_and_grow {
-            let detection = Detector::new(params_for(GraphBuildAlgorithm::SeedAndGrow))
-                .expect("valid detector params")
-                .detect(&default_corners);
-            assert_gate(case, "seed_and_grow", gate, detection);
         }
         if let Some(gate) = &case.low_res {
             let fed = maybe_upscale(&img, gate.upscale);

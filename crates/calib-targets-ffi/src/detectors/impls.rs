@@ -459,28 +459,6 @@ fn diagnostics_json<T: serde::Serialize>(value: &T) -> FfiResult<String> {
         .map_err(|err| FfiError::internal(format!("failed to serialize diagnostics: {err}")))
 }
 
-pub(super) unsafe fn chessboard_detector_detect_diagnostics_impl(
-    args: *const ct_chessboard_detect_args_t,
-    out_utf8: *mut c_char,
-    out_capacity: usize,
-    out_len: *mut usize,
-) -> FfiResult<()> {
-    // SAFETY: caller contract: `args` points to a valid struct with valid sub-pointers.
-    let args = unsafe { require_ref(args, "args")? };
-    // SAFETY: caller contract: `args.detector` is a valid chessboard handle.
-    let detector = unsafe { require_ref(args.detector, "args.detector")? };
-    // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
-    let image = unsafe { require_ref(args.image, "args.image")? };
-    let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
-
-    let frame = detector.detector.detect_with_diagnostics(&corners);
-    let json = diagnostics_json(&frame)?;
-    // SAFETY: `out_utf8` / `out_len` validity is the caller's contract; the
-    // helper rejects the null/capacity-mismatch cases internally.
-    unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
-}
-
 pub(super) unsafe fn charuco_detector_detect_diagnostics_impl(
     args: *const ct_charuco_detect_args_t,
     out_utf8: *mut c_char,

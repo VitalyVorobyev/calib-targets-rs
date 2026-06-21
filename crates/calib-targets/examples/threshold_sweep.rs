@@ -67,11 +67,9 @@ fn main() {
         let cfg0 = default_chess_config().with_threshold(Threshold::Absolute(0.0));
         let raw_at_zero = detect_corners(&img, &cfg0).len();
 
-        let algo = std::env::var("ALGO").unwrap_or_else(|_| "seed_and_grow".to_string());
-        let algorithm = match algo.as_str() {
-            "topological" => GraphBuildAlgorithm::Topological,
-            _ => GraphBuildAlgorithm::SeedAndGrow,
-        };
+        // `ALGO` is retained for back-compat; the only builder is topological.
+        let _algo = std::env::var("ALGO").unwrap_or_else(|_| "topological".to_string());
+        let algorithm = GraphBuildAlgorithm::Topological;
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
             let cfg = default_chess_config().with_threshold(Threshold::Absolute(t));

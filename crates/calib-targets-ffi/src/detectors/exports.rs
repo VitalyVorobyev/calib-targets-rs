@@ -6,11 +6,10 @@
 use super::impls::{
     charuco_detector_create_impl, charuco_detector_detect_diagnostics_impl,
     charuco_detector_detect_impl, chessboard_detector_create_impl,
-    chessboard_detector_detect_all_impl, chessboard_detector_detect_diagnostics_impl,
-    chessboard_detector_detect_impl, marker_board_detector_create_impl,
-    marker_board_detector_detect_diagnostics_impl, marker_board_detector_detect_impl,
-    puzzleboard_detector_create_impl, puzzleboard_detector_detect_diagnostics_impl,
-    puzzleboard_detector_detect_impl,
+    chessboard_detector_detect_all_impl, chessboard_detector_detect_impl,
+    marker_board_detector_create_impl, marker_board_detector_detect_diagnostics_impl,
+    marker_board_detector_detect_impl, puzzleboard_detector_create_impl,
+    puzzleboard_detector_detect_diagnostics_impl, puzzleboard_detector_detect_impl,
 };
 use crate::error::ffi_status;
 use crate::types::{
@@ -270,37 +269,6 @@ pub unsafe extern "C" fn ct_chessboard_detector_detect(
     bufs: *mut ct_chessboard_detect_buffers_t,
 ) -> ct_status_t {
     ffi_status(|| unsafe { chessboard_detector_detect_impl(args, bufs) })
-}
-
-/// Run chessboard detection and write the diagnostics channel as a
-/// NUL-terminated UTF-8 JSON string into a caller-owned buffer.
-///
-/// The JSON payload is `serde_json::to_string` of the Rust `DebugFrame`
-/// diagnostics struct (every input corner's terminal stage, per-iteration
-/// pipeline traces, cluster histograms, geometry-check outcomes). Its
-/// schema carries a looser stability promise than the typed result API and
-/// may evolve between minor versions.
-///
-/// `out_len` is required and always receives the JSON length excluding the
-/// trailing NUL terminator. Query the required size by passing
-/// `out_utf8 = NULL` and `out_capacity = 0`.
-///
-/// # Safety
-///
-/// `args` must be a valid non-null pointer whose `detector` and `image`
-/// fields are valid non-null pointers. If `out_utf8` is non-null it must
-/// point to writable memory of at least `out_capacity` bytes. `out_len`
-/// must always be a valid writable pointer.
-#[no_mangle]
-pub unsafe extern "C" fn ct_chessboard_detector_detect_diagnostics_json(
-    args: *const ct_chessboard_detect_args_t,
-    out_utf8: *mut c_char,
-    out_capacity: usize,
-    out_len: *mut usize,
-) -> ct_status_t {
-    ffi_status(|| unsafe {
-        chessboard_detector_detect_diagnostics_impl(args, out_utf8, out_capacity, out_len)
-    })
 }
 
 /// Run end-to-end multi-component chessboard detection on a grayscale image.

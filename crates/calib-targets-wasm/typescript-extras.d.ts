@@ -268,16 +268,6 @@ export interface ChessConfig {
 /** Which grid-build algorithm to run (Rust `GraphBuildAlgorithm`). */
 export type GraphBuildAlgorithm = "topological" | "seed_and_grow";
 
-/**
- * Where the detector gets each corner's two grid-axis directions (Rust
- * `OrientationSource`). `chess_axes` (default) uses the per-corner ChESS axis
- * estimates; `neighbour_edges` synthesizes them from neighbour geometry
- * (orientation-free). `neighbour_edges` is **topological-only** — pairing it
- * with `graph_build_algorithm: "seed_and_grow"` is rejected by the detector.
- * Omitted from the wire format at its default (`chess_axes`).
- */
-export type OrientationSource = "chess_axes" | "neighbour_edges";
-
 /** Global grid-direction centers for the topological pre-Delaunay gate. */
 export interface AxisClusterCenters {
   /** First grid-axis direction (radians, `[0, π)`, `theta0 < theta1`). */
@@ -367,8 +357,6 @@ export interface AdvancedTuning {
 export interface ChessboardParams {
   // --- stable core ---
   graph_build_algorithm: GraphBuildAlgorithm;
-  /** Orientation source; omitted at its default (`chess_axes`). */
-  orientation_source?: OrientationSource;
   min_labeled_corners: number;
   max_components: number;
   min_corner_strength: number;
@@ -516,132 +504,6 @@ export interface DetectionWithDiagnostics<TResult, TDiagnostics> {
    * detection (that channel yields evidence only on success).
    */
   diagnostics: TDiagnostics | null;
-}
-
-// --- Chessboard diagnostics (Rust `DebugFrame` and per-stage traces) -------
-
-/** Cluster axis-slot label (Rust `ClusterLabel`). */
-export type ClusterLabel = "Canonical" | "Swapped";
-
-/**
- * Terminal pipeline stage of one input corner (Rust `CornerStage`,
- * externally tagged: unit variants serialise as strings, struct variants
- * as a single-key object). `#[non_exhaustive]` — default any `switch`.
- */
-export type CornerStage =
-  | "Raw"
-  | "Strong"
-  | { NoCluster: { max_d_deg: number } }
-  | { Clustered: { label: ClusterLabel } }
-  | { AttachmentAmbiguous: { at: [number, number] } }
-  | {
-      AttachmentFailedInvariants: { at: [number, number]; reason: string };
-    }
-  | {
-      Labeled: { at: [number, number]; local_h_residual_px: number | null };
-    }
-  | { LabeledThenBlacklisted: { at: [number, number]; reason: string } };
-
-/** Augmented per-corner pipeline record (Rust `CornerAug`). */
-export interface CornerAug {
-  input_index: number;
-  position: Point2;
-  axes: [AxisEstimate, AxisEstimate];
-  strength: number;
-  contrast: number;
-  fit_rms: number;
-  stage: CornerStage;
-  label: ClusterLabel | null;
-}
-
-/** Stage-3 clustering introspection (Rust `ClusterDebug`). */
-export interface ClusterDebug {
-  num_bins: number;
-  histogram: number[];
-  smoothed: number[];
-  total_weight: number;
-  peak_seeds_rad: [number, number] | null;
-  refined_centers_rad: [number, number] | null;
-}
-
-/** One homography-based boundary-extension pass (Rust `ExtensionTrace`). */
-export interface ExtensionTrace {
-  h_trusted: boolean;
-  h_residual_median_px: number | null;
-  h_residual_max_px: number | null;
-  iterations: number;
-  attached: number;
-  rejected_no_candidate: number;
-  rejected_ambiguous: number;
-  rejected_label: number;
-  rejected_policy: number;
-  rejected_edge: number;
-  attached_indices: number[];
-}
-
-/** Post-grow cardinal-neighbour BFS extension trace (Rust `BfsExtendTrace`). */
-export interface BfsExtendTrace {
-  attached: number;
-  rejected_no_candidate: number;
-  rejected_ambiguous: number;
-  rejected_edge: number;
-  attached_indices: number[];
-}
-
-/** Post-grow centre-refit trace (Rust `RefitTrace`). */
-export interface RefitTrace {
-  shift_deg: number;
-  new_centers_deg: [number, number];
-  labelled_used: number;
-  promoted: number;
-  second_pass_ran: boolean;
-}
-
-/** Mandatory final geometry-check trace (Rust `GeometryCheckTrace`). */
-export interface GeometryCheckTrace {
-  dropped: number;
-  dropped_line_collinearity: number;
-  dropped_local_h_residual: number;
-  dropped_edge_invariant: number;
-  dropped_disconnected: number;
-  components_seen: number;
-  detection_refused: boolean;
-}
-
-/** Per-iteration trace of the seed→grow→validate loop (Rust `IterationTrace`). */
-export interface IterationTrace {
-  iter: number;
-  labelled_count: number;
-  new_blacklist: number[];
-  converged: boolean;
-  extension?: ExtensionTrace;
-  rescue?: ExtensionTrace;
-  refit?: RefitTrace;
-  bfs_extend?: BfsExtendTrace;
-  extension2?: ExtensionTrace;
-  rescue2?: ExtensionTrace;
-  geometry_check?: GeometryCheckTrace;
-}
-
-/** Summary from the `apply_boosters` stage (Rust `BoosterResult`). */
-export interface BoosterResult {
-  added: number;
-  holes_untouched: number;
-}
-
-/** Chessboard detector diagnostics payload (Rust `DebugFrame`). */
-export interface ChessboardDebugFrame {
-  schema: number;
-  input_count: number;
-  grid_directions: [number, number] | null;
-  cell_size: number | null;
-  seed: [number, number, number, number] | null;
-  iterations: IterationTrace[];
-  boosters: BoosterResult | null;
-  /** The final detection (also surfaced as the wrapper's `result`). */
-  detection: ChessboardDetectionResult | null;
-  corners: CornerAug[];
-  cluster_debug?: ClusterDebug;
 }
 
 // --- ChArUco diagnostics (Rust `CharucoDetectDiagnostics`) -----------------

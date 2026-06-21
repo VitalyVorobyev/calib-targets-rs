@@ -34,19 +34,19 @@ to which ran:
   and pinned for ChArUco. This is the path documented below.
 
 **Fallible construction.** `Detector::new(params) -> Result<Self,
-ChessboardParamsError>` validates the params up front: the only invalid
-combination today is `NeighbourEdges` orientation under `SeedAndGrow`
-(`ChessboardParamsError::NeighbourEdgesRequiresTopological`). The old
-panicking guard was removed in the Phase-5 API cleanup.
+ChessboardParamsError>` validates the params up front. No combination the
+public surface can express is rejected today (`ChessboardParamsError` is a
+reserved, uninhabited seam); the fallible signature is retained so a future
+validation can be added without a breaking change. The old panicking guard was
+removed in the Phase-5 API cleanup.
 
 **ChArUco pinning (typed).** ChArUco requires `SeedAndGrow` — the
 topological per-edge axis test cannot survive marker-internal X-corners.
 Rather than silently overriding, `CharucoDetector` returns a typed
 `CharucoDetectError::UnsupportedAlgorithm` when the nested
-`chessboard.graph_build_algorithm` is anything other than `SeedAndGrow`
-(or the `NeighbourEdges + SeedAndGrow` combination the chessboard
-validator rejects). PuzzleBoard and marker board inherit the caller's
-choice via their nested `DetectorParams`.
+`chessboard.graph_build_algorithm` is anything other than `SeedAndGrow`.
+PuzzleBoard and marker board inherit the caller's choice via their nested
+`DetectorParams`.
 
 ---
 

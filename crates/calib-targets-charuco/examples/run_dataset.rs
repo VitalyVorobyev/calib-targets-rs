@@ -53,15 +53,15 @@ struct Args {
     save_snaps: bool,
     bit_slope: Option<f32>,
     min_margin: Option<f32>,
-    /// Grid-build algorithm. `topological` (default, production) or
-    /// `seed-and-grow`.
+    /// Grid-build algorithm. Only `topological` is supported (the
+    /// seed-and-grow builder has been retired); the flag is kept for
+    /// backwards compatibility.
     algorithm: GraphBuildAlgorithm,
 }
 
 /// Stable slug for a grid-build algorithm (for summary JSON + parsing).
 fn algorithm_slug(algorithm: GraphBuildAlgorithm) -> &'static str {
     match algorithm {
-        GraphBuildAlgorithm::SeedAndGrow => "seed-and-grow",
         GraphBuildAlgorithm::Topological => "topological",
         _ => "unknown",
     }
@@ -69,8 +69,10 @@ fn algorithm_slug(algorithm: GraphBuildAlgorithm) -> &'static str {
 
 fn parse_algorithm(s: &str) -> Option<GraphBuildAlgorithm> {
     match s {
-        "seed-and-grow" | "seed_and_grow" => Some(GraphBuildAlgorithm::SeedAndGrow),
-        "topological" | "topo" => Some(GraphBuildAlgorithm::Topological),
+        // `seed-and-grow` is accepted but maps to the only remaining builder.
+        "topological" | "topo" | "seed-and-grow" | "seed_and_grow" => {
+            Some(GraphBuildAlgorithm::Topological)
+        }
         _ => None,
     }
 }

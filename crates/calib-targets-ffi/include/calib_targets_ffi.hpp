@@ -218,23 +218,6 @@ class ChessboardDetector {
     return {};
   }
 
-  // Run detection and capture the diagnostics channel as a JSON string.
-  // The JSON schema carries a looser stability promise than the typed
-  // result API and may evolve between minor versions.
-  [[nodiscard]] Status detect_diagnostics_json(
-      const ct_gray_image_u8_t &image,
-      std::string *out_json) const {
-    if (!handle_.has_value()) {
-      return local_status(CT_STATUS_INVALID_ARGUMENT, "chessboard detector is not initialized");
-    }
-    const ct_chessboard_detect_args_t args{handle_.get(), &image};
-    return fill_owned_string(
-        [&args](char *buf, std::size_t cap, std::size_t *len) {
-          return ct_chessboard_detector_detect_diagnostics_json(&args, buf, cap, len);
-        },
-        out_json);
-  }
-
   [[nodiscard]] bool initialized() const noexcept {
     return handle_.has_value();
   }

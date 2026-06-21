@@ -48,17 +48,16 @@ use projective_grid::topological::trace::{
 };
 use projective_grid::{
     detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
-    LatticeKind, OrientedFeature, PointFeature, RecoveryParams, RecoverySchedule, SquareAlgorithm,
+    LatticeKind, OrientedFeature, PointFeature, RecoverySchedule, SquareAlgorithm,
     TopologicalParams as NextTopologicalParams,
 };
-use std::borrow::Cow;
 use std::collections::HashMap;
 
 use crate::cluster::ClusterCenters;
 use crate::detector::ChessboardDetection;
-use crate::params::{DetectorParams, OrientationSource};
+use crate::params::DetectorParams;
 
-use self::inputs::{corners_with_synthesized_axes, topological_inputs};
+use self::inputs::topological_inputs;
 use self::recovery::{
     build_topological_detections, clustered_augs, recover_topological_components,
 };
@@ -75,55 +74,27 @@ use self::recovery::{
 fn detection_params_for_topological(
     topological: &NextTopologicalParams,
     clustered_centers: Option<ClusterCenters>,
-    orientation_source: OrientationSource,
 ) -> NextDetectionParams {
     let mut topo = *topological;
     topo.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
 
-    match orientation_source {
-        OrientationSource::ChessAxes => {
-            // ChESS axes are accurate enough that the walk alone reaches full
-            // recall, and the chessboard owns its own validation + booster
-            // recovery downstream. Disable the facade's post-grow validation,
-            // post-fit residual drop, and recovery schedule (tolerances → +inf,
-            // recovery `Off`) so the facade adds nothing and production output
-            // stays byte-identical: a corner the facade would have flagged still
-            // gets a chance to survive the chessboard's downstream stages.
-            let validate = NextValidateParams::default()
-                .with_line_tol_rel(f32::INFINITY)
-                .with_local_h_tol_rel(f32::INFINITY)
-                .with_edge_length_band_rel(f32::INFINITY);
-            NextDetectionParams::default()
-                .with_algorithm(SquareAlgorithm::Topological)
-                .with_topological(topo)
-                .with_validate(validate)
-                .with_max_residual_px(f32::INFINITY)
-                .with_recovery(RecoverySchedule::Off)
-        }
-        OrientationSource::NeighbourEdges => {
-            // Neighbour-edge synthesized axes are noisier, so the walk alone
-            // reaches a smaller component. Run the facade's geometry-only
-            // recovery — purpose-built for synthesized-axis grids — to lift it to
-            // full recall. `Auto` would stay off here (the Oriented2 dispatch
-            // reports `synthesized_axes = false`), so force it `On`.
-            //
-            // Gating split: keep the *local* validation (line collinearity +
-            // local-H residual, both cell-size-relative) at its default, because
-            // the recovery's per-sweep revalidation reuses it and that is what
-            // rejects the over-extension a fully-disabled validate would attach
-            // one cell past the board edge into the margin (measured on the
-            // canonical reference frame). Disable only the *global* post-fit
-            // residual drop (`max_residual_px = +inf`): a single global-homography
-            // reprojection gate rejects whole legitimate but perspective-/
-            // distortion-warped grids (e.g. the AI-generated GeminiChess set) —
-            // exactly why the ChESS path disables it and leans on local checks.
-            NextDetectionParams::default()
-                .with_algorithm(SquareAlgorithm::Topological)
-                .with_topological(topo)
-                .with_max_residual_px(f32::INFINITY)
-                .with_recovery(RecoverySchedule::On(RecoveryParams::default()))
-        }
-    }
+    // ChESS axes are accurate enough that the walk alone reaches full recall,
+    // and the chessboard owns its own validation + booster recovery downstream.
+    // Disable the facade's post-grow validation, post-fit residual drop, and
+    // recovery schedule (tolerances → +inf, recovery `Off`) so the facade adds
+    // nothing and production output stays byte-identical: a corner the facade
+    // would have flagged still gets a chance to survive the chessboard's
+    // downstream stages.
+    let validate = NextValidateParams::default()
+        .with_line_tol_rel(f32::INFINITY)
+        .with_local_h_tol_rel(f32::INFINITY)
+        .with_edge_length_band_rel(f32::INFINITY);
+    NextDetectionParams::default()
+        .with_algorithm(SquareAlgorithm::Topological)
+        .with_topological(topo)
+        .with_validate(validate)
+        .with_max_residual_px(f32::INFINITY)
+        .with_recovery(RecoverySchedule::Off)
 }
 
 /// Build the new-crate oriented-feature slice from the chessboard's
@@ -169,28 +140,15 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // Resolve the per-corner axis source once, up front. `ChessAxes` uses the
-    // corners as handed in (borrowed — the path stays byte-identical to before).
-    // `NeighbourEdges` synthesizes the two grid directions from neighbour-edge
-    // geometry and stamps them onto a cloned corner view; every downstream stage
-    // (clustering, boosters, geometry check) then consumes them exactly as it
-    // would ChESS axes. There is no longer a separate orientation-free code
-    // path — neighbour-edge orientation is just another way to populate
-    // `ChessCorner.axes`, which is what unlocks the recovery boosters for it.
-    let corners: Cow<'_, [ChessCorner]> = match params.orientation_source {
-        OrientationSource::ChessAxes => Cow::Borrowed(corners),
-        OrientationSource::NeighbourEdges => Cow::Owned(corners_with_synthesized_axes(corners)),
-    };
-    let corners: &[ChessCorner] = &corners;
+    // The topological builder consumes the per-corner ChESS axis estimates
+    // carried by each `ChessCorner` directly: clustering, Delaunay admission,
+    // and the recovery boosters all read `ChessCorner.axes`.
 
     // Hoist clustering: seed-and-grow uses `cluster_axes` as a precision
     // bedrock before its seed-and-grow. Topological used to skip this and
     // pay the cost in spurious-edge admissions; we now compute centers
     // once up front, gate Delaunay through them, and reuse the same
     // `(augs, centers)` pair for booster recovery (no re-clustering).
-    // Clustering runs over whichever axes the corner view carries, so the
-    // centers are `Some(..)` for both orientation sources and the booster pass
-    // in `recovery` fires for both — see [`recover_topological_components`].
     let (base_augs, clustered_centers) = clustered_augs(corners, params);
 
     let inputs = topological_inputs(corners, params);
@@ -210,20 +168,12 @@ pub fn detect_all_topological(
     // has a sigma bonus and a booster fallback that topological lacks;
     // matching the 12° literally regresses Gemini2.
     //
-    // The facade's recovery + validation gating differs by orientation source
-    // (see `detection_params_for_topological`): ChESS axes leave it to the
-    // chessboard downstream (byte-identical); neighbour-edge synthesized axes
-    // run the facade's geometry-only recovery to reach full recall.
-    let next_params = detection_params_for_topological(
-        &tuning.topological,
-        clustered_centers,
-        params.orientation_source,
-    );
-    // Both orientation sources now feed `Evidence::Oriented2` built from
-    // `inputs.axes` — ChESS-derived in `ChessAxes` mode, neighbour-edge
-    // synthesized in `NeighbourEdges` mode. The point cloud is identical
-    // (same `inputs.positions`); only the axis *source* differs, and that was
-    // already resolved into the corner view above.
+    // The facade's recovery + post-fit residual drop are disabled here (the
+    // chessboard owns its own validation + booster recovery downstream); see
+    // `detection_params_for_topological`.
+    let next_params = detection_params_for_topological(&tuning.topological, clustered_centers);
+    // The grid builder consumes `Evidence::Oriented2` built from the
+    // ChESS-derived `inputs.axes` over the `inputs.positions` point cloud.
     let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
     let report = detect_grid_all(DetectionRequest::new(
         LatticeKind::Square,
@@ -299,15 +249,9 @@ pub fn trace_topological(
     corners: &[ChessCorner],
     params: &DetectorParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
-    // Mirror the production path: resolve the axis source into a unified corner
-    // view, then trace the single `Oriented2` evidence path. This keeps the
-    // diagnostic trace consistent with production for both orientation sources.
-    let corners: Cow<'_, [ChessCorner]> = match params.orientation_source {
-        OrientationSource::ChessAxes => Cow::Borrowed(corners),
-        OrientationSource::NeighbourEdges => Cow::Owned(corners_with_synthesized_axes(corners)),
-    };
-    let corners: &[ChessCorner] = &corners;
-
+    // Mirror the production path: trace the single `Oriented2` evidence path
+    // built from the ChESS axes carried by each corner. This keeps the
+    // diagnostic trace consistent with production.
     let inputs = topological_inputs(corners, params);
     let (_augs, clustered_centers) = clustered_augs(corners, params);
     let mut topo_params = params.effective_tuning().topological;

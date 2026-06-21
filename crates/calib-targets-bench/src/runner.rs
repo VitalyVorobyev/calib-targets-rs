@@ -3,9 +3,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::{
-    ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm, OrientationSource,
-};
+use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams, GraphBuildAlgorithm};
 use calib_targets::detect::{detect_corners, DetectorConfig};
 use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
@@ -21,15 +19,13 @@ use crate::dataset::DatasetEntry;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine {
     /// Full chessboard production pipeline ([`Detector::detect`]): clustering,
-    /// seed/grow or topological + recovery boosters + geometry check. Honours
-    /// [`OrientationSource`] only on the topological path (see the chessboard
-    /// detector docs).
+    /// topological grid build + recovery boosters + geometry check.
     Pipeline,
     /// Raw [`detect_grid_all`] on the corner cloud, bypassing the chessboard
-    /// recovery stages. Used for the orientation-source head-to-head: it
-    /// isolates the orientation variable (ChESS axes vs neighbour-edge
-    /// synthesis) at the grid-builder layer, applying the same
-    /// `projective-grid` validate/fit to both.
+    /// recovery stages. Feeds the per-corner ChESS axes as
+    /// [`Evidence::Oriented2`] and applies the `projective-grid` validate/fit
+    /// directly, so it isolates the grid-builder layer from the chessboard
+    /// recovery stages.
     Grid,
 }
 
@@ -170,55 +166,35 @@ fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Opti
 }
 
 /// Raw `projective-grid` grid builder → [`BaselineImage`], bypassing the
-/// chessboard recovery stages. The corner cloud is identical for both
-/// orientation sources; only the axis *evidence* differs (ChESS axes →
-/// [`Evidence::Oriented2`], neighbour-edge → [`Evidence::Positions`]). Returns
-/// the largest labelled component (one board per frame, matching the pipeline
-/// engine's best-detection semantics).
+/// chessboard recovery stages. Feeds the per-corner ChESS axes as
+/// [`Evidence::Oriented2`] over the corner cloud and returns the largest
+/// labelled component (one board per frame, matching the pipeline engine's
+/// best-detection semantics).
 fn run_grid_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
     let algorithm = match params.graph_build_algorithm {
         GraphBuildAlgorithm::Topological => SquareAlgorithm::Topological,
-        GraphBuildAlgorithm::SeedAndGrow => SquareAlgorithm::SeedAndGrow,
         _ => return None,
     };
     let grid_params = DetectionParams::default().with_algorithm(algorithm);
-    let report = match params.orientation_source {
-        OrientationSource::ChessAxes => {
-            let feats: Vec<OrientedFeature<2>> = corners
-                .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    OrientedFeature::new(
-                        PointFeature::new(i, c.position),
-                        [
-                            axis_estimate_to_next(c.axes[0]),
-                            axis_estimate_to_next(c.axes[1]),
-                        ],
-                    )
-                })
-                .collect();
-            detect_grid_all(DetectionRequest::new(
-                LatticeKind::Square,
-                Evidence::Oriented2(&feats),
-                None,
-                grid_params,
-            ))
-        }
-        OrientationSource::NeighbourEdges => {
-            let feats: Vec<PointFeature> = corners
-                .iter()
-                .enumerate()
-                .map(|(i, c)| PointFeature::new(i, c.position))
-                .collect();
-            detect_grid_all(DetectionRequest::new(
-                LatticeKind::Square,
-                Evidence::Positions(&feats),
-                None,
-                grid_params,
-            ))
-        }
-        _ => return None,
-    };
+    let feats: Vec<OrientedFeature<2>> = corners
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            OrientedFeature::new(
+                PointFeature::new(i, c.position),
+                [
+                    axis_estimate_to_next(c.axes[0]),
+                    axis_estimate_to_next(c.axes[1]),
+                ],
+            )
+        })
+        .collect();
+    let report = detect_grid_all(DetectionRequest::new(
+        LatticeKind::Square,
+        Evidence::Oriented2(&feats),
+        None,
+        grid_params,
+    ));
     let best = report
         .ok()?
         .solutions

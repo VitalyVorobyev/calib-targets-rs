@@ -155,14 +155,6 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::Chess
 /// - [`detect_chessboard_from_gray_u8`] — takes a raw grayscale byte
 ///   buffer instead of an [`::image::GrayImage`].
 #[cfg_attr(
-    feature = "diagnostics",
-    doc = "- [`detect_chessboard_with_diagnostics`] — returns the diagnostics"
-)]
-#[cfg_attr(
-    feature = "diagnostics",
-    doc = "   channel ([`chessboard::diagnostics::DebugFrame`]) instead of the plain detection."
-)]
-#[cfg_attr(
     feature = "tracing",
     instrument(
         level = "info",
@@ -200,40 +192,6 @@ pub fn detect_chessboard_all(
         return Vec::new();
     };
     detector.detect_all(&corners)
-}
-
-/// Diagnostics-channel variant of [`detect_chessboard`]: returns a
-/// [`chessboard::diagnostics::DebugFrame`] with every input corner's terminal
-/// stage, per-iteration traces, and the labelled detection (when one was
-/// produced). Always returns a frame — never panics — so the caller can see
-/// *why* detection failed.
-///
-/// Available only with the `diagnostics` feature enabled.
-#[cfg(feature = "diagnostics")]
-#[cfg_attr(
-    feature = "tracing",
-    instrument(
-        level = "info",
-        skip(img, chess_cfg, params),
-        fields(width = img.width(), height = img.height())
-    )
-)]
-pub fn detect_chessboard_with_diagnostics(
-    img: &::image::GrayImage,
-    chess_cfg: &DetectorConfig,
-    params: &chessboard::DetectorParams,
-) -> chessboard::diagnostics::DebugFrame {
-    let corners = detect_corners(img, chess_cfg);
-    match chessboard::Detector::new(params.clone()) {
-        // Valid config: run with the real corners.
-        Ok(detector) => detector.detect_with_diagnostics(&corners),
-        // Invalid config (e.g. NeighbourEdges + SeedAndGrow): emit a
-        // well-formed no-detection frame so the caller can still introspect.
-        // Default params are always valid; run them over no corners.
-        Err(_) => chessboard::Detector::new(chessboard::DetectorParams::default())
-            .expect("default params valid")
-            .detect_with_diagnostics(&[]),
-    }
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
