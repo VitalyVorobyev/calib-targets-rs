@@ -513,11 +513,6 @@ pub struct ct_chessboard_advanced_t {
     pub peak_min_separation_deg: f32,
     pub min_peak_weight_fraction: f32,
 
-    // Seed
-    pub seed_edge_tol: f32,
-    pub seed_axis_tol_deg: f32,
-    pub seed_close_tol: f32,
-
     // Grow
     pub attach_search_rel: f32,
     pub attach_axis_tol_deg: f32,
@@ -526,10 +521,7 @@ pub struct ct_chessboard_advanced_t {
     pub edge_axis_tol_deg: f32,
 
     // Validate
-    pub line_tol_rel: f32,
     pub line_min_members: usize,
-    pub local_h_tol_rel: f32,
-    pub max_validation_iters: u32,
 
     // Recall boosters
     pub enable_weak_cluster_rescue: u32,

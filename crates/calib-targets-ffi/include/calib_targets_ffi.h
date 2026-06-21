@@ -81,18 +81,12 @@ typedef struct ct_chessboard_advanced_t {
   float cluster_tol_deg;
   float peak_min_separation_deg;
   float min_peak_weight_fraction;
-  float seed_edge_tol;
-  float seed_axis_tol_deg;
-  float seed_close_tol;
   float attach_search_rel;
   float attach_axis_tol_deg;
   float attach_ambiguity_factor;
   float step_tol;
   float edge_axis_tol_deg;
-  float line_tol_rel;
   size_t line_min_members;
-  float local_h_tol_rel;
-  uint32_t max_validation_iters;
   uint32_t enable_weak_cluster_rescue;
   float weak_cluster_tol_deg;
   uint32_t max_booster_iters;

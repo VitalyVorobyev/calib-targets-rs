@@ -49,9 +49,6 @@ enum Perturbation {
     /// Multiply a scalar leaf by `1 - rel` and `1 + rel`. Two variations
     /// (integer leaves round + clamp + de-dup no-op rounds).
     ScalarRel,
-    /// Set a scalar leaf to an absolute value. For knobs whose default is
-    /// `0.0`, where a relative step is a no-op.
-    Absolute(f64),
 }
 
 /// One tunable knob, addressed by its JSON pointer into a materialised
@@ -106,7 +103,7 @@ struct Variation {
 /// is also the C2 prune / C3 rename worklist. Pointers are validated by
 /// `every_catalogue_pointer_resolves`.
 fn knob_catalogue() -> Vec<KnobSpec> {
-    use Perturbation::{Absolute, BoolToggle, ScalarRel};
+    use Perturbation::{BoolToggle, ScalarRel};
     // Helper to cut the repetition.
     fn k(name: &'static str, perturb: Perturbation, gated_by: Option<&'static str>) -> KnobSpec {
         // The pointer is `/advanced/<name>` for every flat knob; nested knobs
@@ -130,48 +127,12 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/validate_step_aware",
         ),
         with_pointer(
-            k("enable_no_cluster_rescue", BoolToggle, None),
-            "/advanced/enable_no_cluster_rescue",
-        ),
-        with_pointer(
-            k("enable_partial_slot_flip_fix", BoolToggle, None),
-            "/advanced/enable_partial_slot_flip_fix",
-        ),
-        with_pointer(
-            k("enable_post_grow_refit", BoolToggle, None),
-            "/advanced/enable_post_grow_refit",
-        ),
-        with_pointer(
-            k(
-                "enable_post_grow_bfs_regrow",
-                BoolToggle,
-                Some("enable_post_grow_refit"),
-            ),
-            "/advanced/enable_post_grow_bfs_regrow",
-        ),
-        with_pointer(
-            k(
-                "enable_post_grow_bfs_extend",
-                BoolToggle,
-                Some("enable_post_grow_refit"),
-            ),
-            "/advanced/enable_post_grow_bfs_extend",
-        ),
-        with_pointer(
-            k("enable_post_geometry_rescue", BoolToggle, None),
-            "/advanced/enable_post_geometry_rescue",
-        ),
-        with_pointer(
             k("enable_final_edge_shape_check", BoolToggle, None),
             "/advanced/enable_final_edge_shape_check",
         ),
         with_pointer(
             k("enable_weak_cluster_rescue", BoolToggle, None),
             "/advanced/enable_weak_cluster_rescue",
-        ),
-        with_pointer(
-            k("boundary_extension_local_h", BoolToggle, None),
-            "/advanced/boundary_extension_local_h",
         ),
         // --- scalar thresholds ---------------------------------------------
         with_pointer(
@@ -200,18 +161,6 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/min_peak_weight_fraction",
         ),
         with_pointer(
-            k("seed_edge_tol", ScalarRel, None),
-            "/advanced/seed_edge_tol",
-        ),
-        with_pointer(
-            k("seed_axis_tol_deg", ScalarRel, None),
-            "/advanced/seed_axis_tol_deg",
-        ),
-        with_pointer(
-            k("seed_close_tol", ScalarRel, None),
-            "/advanced/seed_close_tol",
-        ),
-        with_pointer(
             k("attach_search_rel", ScalarRel, None),
             "/advanced/attach_search_rel",
         ),
@@ -228,74 +177,9 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             k("edge_axis_tol_deg", ScalarRel, None),
             "/advanced/edge_axis_tol_deg",
         ),
-        with_pointer(k("line_tol_rel", ScalarRel, None), "/advanced/line_tol_rel"),
         with_pointer(
             k("line_min_members", ScalarRel, None),
             "/advanced/line_min_members",
-        ),
-        with_pointer(
-            k("local_h_tol_rel", ScalarRel, None),
-            "/advanced/local_h_tol_rel",
-        ),
-        with_pointer(
-            k(
-                "validate_step_deviation_thresh_rel",
-                Absolute(0.5),
-                Some("validate_step_aware"),
-            ),
-            "/advanced/validate_step_deviation_thresh_rel",
-        ),
-        with_pointer(
-            k("max_validation_iters", ScalarRel, None),
-            "/advanced/max_validation_iters",
-        ),
-        with_pointer(
-            k(
-                "rescue_axis_tol_deg",
-                ScalarRel,
-                Some("enable_no_cluster_rescue"),
-            ),
-            "/advanced/rescue_axis_tol_deg",
-        ),
-        with_pointer(
-            k(
-                "no_cluster_rescue_k_nearest",
-                ScalarRel,
-                Some("enable_no_cluster_rescue"),
-            ),
-            "/advanced/no_cluster_rescue_k_nearest",
-        ),
-        with_pointer(
-            k(
-                "rescue_search_rel",
-                ScalarRel,
-                Some("enable_no_cluster_rescue"),
-            ),
-            "/advanced/rescue_search_rel",
-        ),
-        with_pointer(
-            k(
-                "partial_slot_flip_k_nearest",
-                ScalarRel,
-                Some("enable_partial_slot_flip_fix"),
-            ),
-            "/advanced/partial_slot_flip_k_nearest",
-        ),
-        with_pointer(
-            k(
-                "refit_min_labelled",
-                ScalarRel,
-                Some("enable_post_grow_refit"),
-            ),
-            "/advanced/refit_min_labelled",
-        ),
-        with_pointer(
-            k(
-                "refit_min_shift_deg",
-                ScalarRel,
-                Some("enable_post_grow_refit"),
-            ),
-            "/advanced/refit_min_shift_deg",
         ),
         with_pointer(
             k("geometry_check_line_tol_rel", ScalarRel, None),
@@ -304,14 +188,6 @@ fn knob_catalogue() -> Vec<KnobSpec> {
         with_pointer(
             k("geometry_check_local_h_tol_rel", ScalarRel, None),
             "/advanced/geometry_check_local_h_tol_rel",
-        ),
-        with_pointer(
-            k(
-                "boundary_extension_k_nearest",
-                ScalarRel,
-                Some("boundary_extension_local_h"),
-            ),
-            "/advanced/boundary_extension_k_nearest",
         ),
         with_pointer(
             k(
@@ -445,18 +321,6 @@ fn build_variations(base: &Value, catalogue: &[KnobSpec], rel: f64) -> Vec<Varia
                         gated_by: spec.gated_by,
                     });
                 }
-            }
-            Perturbation::Absolute(v) => {
-                let new_leaf = Value::from(v);
-                if &new_leaf == leaf {
-                    continue;
-                }
-                out.push(Variation {
-                    knob: spec.name.to_string(),
-                    direction: Direction::Set,
-                    override_value: with_leaf(base, spec.pointer, new_leaf),
-                    gated_by: spec.gated_by,
-                });
             }
         }
     }
@@ -976,24 +840,6 @@ mod tests {
     }
 
     #[test]
-    fn absolute_perturbation_sets_zero_default_knob() {
-        let base = base_value();
-        let vars = build_variations(&base, &knob_catalogue(), 0.25);
-        let v = vars
-            .iter()
-            .find(|v| v.knob == "validate_step_deviation_thresh_rel")
-            .expect("absolute-knob variation exists");
-        assert_eq!(v.direction, Direction::Set);
-        let set = v
-            .override_value
-            .pointer("/advanced/validate_step_deviation_thresh_rel")
-            .unwrap()
-            .as_f64()
-            .unwrap();
-        assert!((set - 0.5).abs() < 1e-9);
-    }
-
-    #[test]
     fn verdict_classification() {
         let no_effect = AblationDelta {
             d_labelled: 0,
@@ -1006,8 +852,8 @@ mod tests {
         };
         assert_eq!(verdict_for(&no_effect, None), "no-effect");
         assert_eq!(
-            verdict_for(&no_effect, Some("enable_post_grow_refit")),
-            "no-effect [gated by enable_post_grow_refit]"
+            verdict_for(&no_effect, Some("enable_weak_cluster_rescue")),
+            "no-effect [gated by enable_weak_cluster_rescue]"
         );
 
         let recall = AblationDelta {

@@ -190,7 +190,7 @@ def test_chessboard_params_roundtrip() -> None:
     params = calib_targets.ChessboardParams(
         min_corner_strength=0.25,
         cluster_tol_deg=10.0,
-        max_validation_iters=5,
+        max_booster_iters=5,
         topological=calib_targets.TopologicalParams(axis_align_tol_rad=0.30),
     )
     serialized = params.to_dict()

@@ -269,13 +269,11 @@ impl DetectorParams {
         let base_tuning = base.effective_tuning().into_owned();
         let tight = base.clone().with_advanced(AdvancedTuning {
             cluster_tol_deg: 9.0,
-            seed_edge_tol: 0.18,
             attach_axis_tol_deg: 12.0,
             ..base_tuning.clone()
         });
         let loose = base.clone().with_advanced(AdvancedTuning {
             cluster_tol_deg: 16.0,
-            seed_edge_tol: 0.32,
             attach_axis_tol_deg: 18.0,
             ..base_tuning
         });
@@ -297,8 +295,8 @@ mod tests {
         let loose = configs[2].effective_tuning();
         assert!(tight.cluster_tol_deg < base.cluster_tol_deg);
         assert!(loose.cluster_tol_deg > base.cluster_tol_deg);
-        assert!(tight.seed_edge_tol < base.seed_edge_tol);
-        assert!(loose.seed_edge_tol > base.seed_edge_tol);
+        assert!(tight.attach_axis_tol_deg < base.attach_axis_tol_deg);
+        assert!(loose.attach_axis_tol_deg > base.attach_axis_tol_deg);
     }
 
     #[test]

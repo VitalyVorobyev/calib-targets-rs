@@ -342,11 +342,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
             "chessboard.line_min_members must be >= 2",
         ));
     }
-    if adv.max_validation_iters == 0 {
-        return Err(FfiError::config_error(
-            "chessboard.max_validation_iters must be > 0",
-        ));
-    }
     let mut tuning = AdvancedTuning::default();
     tuning.max_fit_rms_ratio =
         require_finite(adv.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
@@ -362,10 +357,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
         adv.min_peak_weight_fraction,
         "chessboard.min_peak_weight_fraction",
     )?;
-    tuning.seed_edge_tol = require_nonnegative(adv.seed_edge_tol, "chessboard.seed_edge_tol")?;
-    tuning.seed_axis_tol_deg =
-        require_nonnegative(adv.seed_axis_tol_deg, "chessboard.seed_axis_tol_deg")?;
-    tuning.seed_close_tol = require_nonnegative(adv.seed_close_tol, "chessboard.seed_close_tol")?;
     tuning.attach_search_rel =
         require_positive(adv.attach_search_rel, "chessboard.attach_search_rel")?;
     tuning.attach_axis_tol_deg =
@@ -377,11 +368,7 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
     tuning.step_tol = require_nonnegative(adv.step_tol, "chessboard.step_tol")?;
     tuning.edge_axis_tol_deg =
         require_nonnegative(adv.edge_axis_tol_deg, "chessboard.edge_axis_tol_deg")?;
-    tuning.line_tol_rel = require_nonnegative(adv.line_tol_rel, "chessboard.line_tol_rel")?;
     tuning.line_min_members = adv.line_min_members;
-    tuning.local_h_tol_rel =
-        require_nonnegative(adv.local_h_tol_rel, "chessboard.local_h_tol_rel")?;
-    tuning.max_validation_iters = adv.max_validation_iters;
     tuning.enable_weak_cluster_rescue = flag_to_bool(
         adv.enable_weak_cluster_rescue,
         "chessboard.enable_weak_cluster_rescue",
@@ -426,18 +413,12 @@ fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
         cluster_tol_deg: t.cluster_tol_deg,
         peak_min_separation_deg: t.peak_min_separation_deg,
         min_peak_weight_fraction: t.min_peak_weight_fraction,
-        seed_edge_tol: t.seed_edge_tol,
-        seed_axis_tol_deg: t.seed_axis_tol_deg,
-        seed_close_tol: t.seed_close_tol,
         attach_search_rel: t.attach_search_rel,
         attach_axis_tol_deg: t.attach_axis_tol_deg,
         attach_ambiguity_factor: t.attach_ambiguity_factor,
         step_tol: t.step_tol,
         edge_axis_tol_deg: t.edge_axis_tol_deg,
-        line_tol_rel: t.line_tol_rel,
         line_min_members: t.line_min_members,
-        local_h_tol_rel: t.local_h_tol_rel,
-        max_validation_iters: t.max_validation_iters,
         enable_weak_cluster_rescue: if t.enable_weak_cluster_rescue {
             CT_TRUE
         } else {

@@ -867,19 +867,13 @@ _ADVANCED_SCALAR_FIELDS = (
     "cluster_tol_deg",
     "peak_min_separation_deg",
     "min_peak_weight_fraction",
-    "seed_edge_tol",
-    "seed_axis_tol_deg",
-    "seed_close_tol",
     "attach_search_rel",
     "attach_axis_tol_deg",
     "attach_ambiguity_factor",
     "step_tol",
     "edge_axis_tol_deg",
-    "line_tol_rel",
     "line_min_members",
-    "local_h_tol_rel",
     "enable_final_edge_shape_check",
-    "max_validation_iters",
     "enable_weak_cluster_rescue",
     "weak_cluster_tol_deg",
     "max_booster_iters",
@@ -900,7 +894,7 @@ class ChessboardParams:
     ``graph_build_algorithm``, ``min_labeled_corners``, ``max_components``,
     ``min_corner_strength``.
 
-    Everything else (``cluster_tol_deg``, ``seed_edge_tol``,
+    Everything else (``cluster_tol_deg``, ``attach_axis_tol_deg``,
     ``enable_final_edge_shape_check``, ``topological``, …) is an **advanced**
     knob. :meth:`to_dict` nests these under ``"advanced"`` and
     :meth:`from_dict` reads them back from there. The advanced knobs are NOT
@@ -935,10 +929,6 @@ class ChessboardParams:
     cluster_tol_deg: float = 12.0
     peak_min_separation_deg: float = 60.0
     min_peak_weight_fraction: float = 0.02
-    # Stage 5 — seed
-    seed_edge_tol: float = 0.25
-    seed_axis_tol_deg: float = 15.0
-    seed_close_tol: float = 0.25
     # Stage 6 — grow
     attach_search_rel: float = 0.35
     attach_axis_tol_deg: float = 15.0
@@ -946,11 +936,8 @@ class ChessboardParams:
     step_tol: float = 0.25
     edge_axis_tol_deg: float = 15.0
     # Stage 7 — validate
-    line_tol_rel: float = 0.18
     line_min_members: int = 3
-    local_h_tol_rel: float = 0.20
     enable_final_edge_shape_check: bool = True
-    max_validation_iters: int = 6
     # Stage 8 — recall boosters
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0

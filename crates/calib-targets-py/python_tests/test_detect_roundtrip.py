@@ -158,9 +158,9 @@ def test_chessboard_advanced_payload_accepted_by_rust() -> None:
     nesting and Rust's ``DetectorParams.advanced`` serde shape — the class of
     bug a Python-only ``to_dict``→``from_dict`` round-trip cannot catch."""
     image = _load_gray("mid.png")
-    params = ct.ChessboardParams(min_corner_strength=0.1, max_validation_iters=5)
+    params = ct.ChessboardParams(min_corner_strength=0.1, max_booster_iters=5)
     payload = params.to_dict()
-    assert payload["advanced"]["max_validation_iters"] == 5
+    assert payload["advanced"]["max_booster_iters"] == 5
     # If the dict shape drifted from Rust's serde encoding, this raises
     # ValueError instead of returning a (possibly None) raw result dict.
     via_dict = _core.detect_chessboard(image, params=payload)
