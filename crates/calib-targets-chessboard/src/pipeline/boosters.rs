@@ -1,9 +1,8 @@
 //! Recall boosters that run after the precision core converges.
 //!
-//! Run **after** the precision core (seed + grow + validate) has
-//! converged with no new blacklist entries. Boosters ADD labelled
-//! corners without compromising the precision contract — they reuse
-//! the same attachment invariants as growth.
+//! Run **after** the topological grid build + axis clustering have
+//! produced labelled components. Boosters ADD labelled corners reusing
+//! the same attachment invariants, never compromising precision.
 //!
 //! The structural skeleton (cell enumeration, KD-tree, per-cell
 //! attachment ladder, fixed-point iteration) lives in
@@ -131,7 +130,7 @@ struct ChessboardFillValidator<'a> {
     step_tol: f32,
     enable_weak_cluster_rescue: bool,
     use_directional_edge_scale: bool,
-    /// `(rebase_i_mod2 + rebase_j_mod2) % 2` from the BFS rebase.
+    /// `(rebase_i_mod2 + rebase_j_mod2) % 2` from the grid rebase.
     /// See `GrowResult::rebase_i_mod2` for the full discussion.
     parity_shift: i32,
 }
@@ -164,7 +163,7 @@ impl<'a> SquareAttachPolicy for ChessboardFillValidator<'a> {
 
     fn required_label_at(&self, i: i32, j: i32) -> Option<u8> {
         // Apply the post-rebase parity shift so the chessboard parity
-        // at `(i, j)` matches the BFS pre-rebase convention. See
+        // at `(i, j)` matches the grid's pre-rebase parity convention. See
         // `GrowResult::rebase_i_mod2` for the full discussion.
         Some(label_to_u8(required_label_at(i + self.parity_shift, j)))
     }
@@ -242,8 +241,8 @@ impl<'a> SquareAttachPolicy for ChessboardFillValidator<'a> {
     }
 }
 
-/// Required parity-derived chessboard label at `(i, j)` under the seed
-/// convention (seed `A` at `(0, 0)` is `Canonical`).
+/// Required parity-derived chessboard label at `(i, j)` under the parity
+/// convention (`(0, 0)` is `Canonical`).
 fn required_label_at(i: i32, j: i32) -> ClusterLabel {
     if (i + j).rem_euclid(2) == 0 {
         ClusterLabel::Canonical

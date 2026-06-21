@@ -3,10 +3,10 @@
 This chapter answers the question: *"My detection fails or gives poor results — what do I change?"*
 
 > **Background first.** Every parameter below acts on the grid-recovery
-> pipeline — its input-feature kinds, the two graph-build algorithms
-> (topological and seed-and-grow), and the per-stage contract. If a knob's name
-> reads as jargon, read [The Grid Model](projective_grid.md) first; the tuning
-> reference assumes that vocabulary.
+> pipeline — its input-feature kinds, the topological grid builder, and the
+> per-stage contract. If a knob's name reads as jargon, read
+> [The Grid Model](projective_grid.md) first; the tuning reference assumes
+> that vocabulary.
 
 ## Start here: use the built-in defaults
 
@@ -66,8 +66,8 @@ let charuco_result = detect_charuco_best(&img, &charuco_configs);
 ```
 
 `DetectorParams::sweep_default()` returns three configs: default +
-tighter + looser on `cluster_tol_deg`, `seed_edge_tol`, and
-`attach_axis_tol_deg`. All three preserve the detector's precision-
+tighter + looser on `cluster_tol_deg`, `attach_axis_tol_deg`, and
+related tolerances. All three preserve the detector's precision-
 by-construction invariants; only recall-affecting tolerances are
 varied.
 
@@ -91,10 +91,9 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 | Symptom | Parameter to adjust |
 |---|---|
 | `detect_chessboard` returns `None` | `min_corner_strength` ↓, `cluster_tol_deg` ↑, `min_peak_weight_fraction` ↓, or try `detect_chessboard_best` |
-| Partial board, many holes | `attach_search_rel` ↑, `attach_axis_tol_deg` ↑, `seed_edge_tol` ↑ |
+| Partial board, many holes | `attach_search_rel` ↑, `attach_axis_tol_deg` ↑ |
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
-| Validation loop oscillates, no detection | `max_validation_iters` ↑ (default 3) |
-| Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `local_h_tol_rel` ↑ |
+| Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `geometry_check_local_h_tol_rel` ↑ |
 | Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
 | `NoMarkers` on blurry ChArUco | `min_border_score` ↓, `multi_threshold: true` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
@@ -107,7 +106,8 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 `DetectorParams` is a `#[non_exhaustive]` struct split into two surfaces:
 
 - a **stable core** of four fields covered by semver —
-  `graph_build_algorithm`, `min_labeled_corners`, `max_components`, and
+  `graph_build_algorithm` (single-variant, `Topological`; retained as a
+  reserved config seam), `min_labeled_corners`, `max_components`, and
   `min_corner_strength` (see [Output gates](#output-gates) and Stage 1
   below);
 - an opt-in **`advanced`** sub-struct (`Option<Box<AdvancedTuning>>`)
@@ -156,11 +156,10 @@ the full invariant-to-parameter mapping and
 
 ### Stage 5 — seed
 
-| Field | Default | Guidance |
-|---|---|---|
-| `seed_edge_tol` | `0.25` | Edge-length ratio tolerance within a candidate quad. Larger accepts more irregular perspective. |
-| `seed_axis_tol_deg` | `15.0` | Angular tolerance classifying the 32 kNN into "+i direction" vs "+j direction" off the A-corner. |
-| `seed_close_tol` | `0.25` | Parallelogram closure tolerance (fraction of the seed's own edge length). |
+Seed-finding tolerances are internal to the topological grid builder and
+are not exposed as public tuning knobs. If seeding consistently fails, use
+`detect_chessboard_best` with `DetectorParams::sweep_default()` which
+varies the upstream clustering and attachment tolerances.
 
 ### Stage 6 — grow
 
@@ -176,10 +175,8 @@ the full invariant-to-parameter mapping and
 
 | Field | Default | Guidance |
 |---|---|---|
-| `line_tol_rel` | `0.15` | Straight-line perpendicular residual tolerance (fraction of `s`). |
+| `geometry_check_local_h_tol_rel` | `0.20` | Local 4-point homography residual tolerance for the final geometry check. |
 | `line_min_members` | `3` | Minimum row/column length for a line fit to be attempted. |
-| `local_h_tol_rel` | `0.20` | Local 4-point homography residual tolerance. |
-| `max_validation_iters` | `3` | Blacklist-retry cap. If validation keeps oscillating, raise to `5`–`8`. |
 
 ### Stage 8 — recall boosters
 
@@ -250,8 +247,8 @@ Verify against the printed board or the JSON spec used to generate it.
    the `grid_directions: None` case means clustering failed (try
    lowering the advanced `min_peak_weight_fraction`), `seed: None` means
    seeding failed (try `detect_chessboard_best`), and an iteration trace
-   that never converges means the advanced `max_validation_iters` was hit
-   (raise it).
+   that never converges means the validation loop is cycling (try
+   `detect_chessboard_best` with a wider config).
 4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
    lower `min_border_score`.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,

@@ -299,9 +299,8 @@ pub(super) fn recover_topological_components(
         }
         mark_labelled(&mut augs, &labelled);
 
-        // Topological recovery's (i, j) frame is independent of BFS:
-        // the parity convention here is set by `align_label_parity`
-        // (called above when `clustered_centers.is_some()`) which
+        // The parity convention here is set by `align_label_parity`
+        // (called above when `clustered_centers.is_some()`), which
         // ensures the labelled set's labels match `(i + j) % 2 == 0
         // → Canonical`. So `parity_shift = 0` for the topological
         // path's labelled set, regardless of the bbox min.
@@ -404,13 +403,12 @@ pub(super) fn build_topological_detections(
             rebase_j_mod2: 0,
         };
 
-        // Geometry verification. The seed-and-grow path runs this gate
-        // unconditionally before shipping a detection; the topological
-        // dispatch used to skip it. The check can only drop labelled
-        // corners (line collinearity / local-H residual / largest
-        // cardinal component) — it never adds wrong labels — and it
-        // sets `detection_refused` if too few survive. Skip when
-        // cell_size is degenerate (would divide-by-zero in validate).
+        // Mandatory geometry check before shipping a detection. The
+        // check can only drop labelled corners (line collinearity /
+        // local-H residual / largest cardinal component) — it never
+        // adds wrong labels — and it sets `detection_refused` if too
+        // few survive. Skip when cell_size is degenerate (would
+        // divide-by-zero in validate).
         if cell_size > 0.0 {
             let mut blacklist: HashSet<usize> = HashSet::new();
             let trace = crate::detector::run_geometry_check(

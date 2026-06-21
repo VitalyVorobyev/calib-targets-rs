@@ -9,18 +9,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, encodeLabel } from "../api/client";
 import {
-  stageDetail,
-  stageName,
   type BaselineCorner,
   type BoardReq,
-  type CornerAugWire,
   type DetectorParamsOverride,
   type DetectorReq,
   type DetectRequest,
   type DetectResponse,
   type DiagnoseAlgorithm,
   type EngineReq,
-  type GraphBuildAlgorithm,
   type OrientationMethodReq,
   type OrientationSource,
 } from "../api/types";
@@ -28,9 +24,6 @@ import { CanvasViewport, type HitPoint } from "../components/CanvasViewport";
 import { ConfigEditor } from "../components/ConfigEditor";
 import { DiagnosePanel } from "../components/DiagnosePanel";
 import {
-  axesLayer,
-  stageMarkersLayer,
-  STAGE_COLORS,
   topoSplitLayer,
   TOPO_COLORS,
 } from "../components/diagnoseOverlays";
@@ -57,7 +50,6 @@ type Tab = "detect" | "config" | "diagnose" | "baseline";
 
 type HoverData =
   | { kind: "corner"; c: BaselineCorner }
-  | { kind: "aug"; c: CornerAugWire }
   | {
       kind: "topo";
       c: { x: number; y: number; sigma0: number; sigma1: number; labelled: boolean };
@@ -127,8 +119,6 @@ export function ImageWorkspace() {
   });
   const [diagAlgorithm, setDiagAlgorithm] =
     useState<DiagnoseAlgorithm>("topological");
-  const [axesOn, setAxesOn] = useState(false);
-  const [stageVis, setStageVis] = useState<Record<string, boolean>>({});
   const [detector, setDetector] = useState<DetectorReq>("chessboard");
   const [board, setBoard] = useState<BoardReq>({
     rows: 22,
@@ -196,12 +186,6 @@ export function ImageWorkspace() {
 
   const layers = useMemo(() => {
     if (diagnoseMode && diagnose.data) {
-      if (diagnose.data.kind === "seed_and_grow") {
-        return [
-          stageMarkersLayer(diagnose.data.frame.corners, stageVis, true),
-          axesLayer(diagnose.data.frame.corners, axesOn),
-        ];
-      }
       return [topoSplitLayer(diagnose.data.diagnosis, true)];
     }
     return [
@@ -219,8 +203,6 @@ export function ImageWorkspace() {
   }, [
     diagnoseMode,
     diagnose.data,
-    stageVis,
-    axesOn,
     corners,
     diff,
     baseline.data,
@@ -229,13 +211,6 @@ export function ImageWorkspace() {
 
   const hitPoints: HitPoint<HoverData>[] = useMemo(() => {
     if (diagnoseMode && diagnose.data) {
-      if (diagnose.data.kind === "seed_and_grow") {
-        return diagnose.data.frame.corners.map((c) => ({
-          x: c.position[0],
-          y: c.position[1],
-          data: { kind: "aug", c },
-        }));
-      }
       return diagnose.data.diagnosis.corners.map((c) => ({
         x: c.x,
         y: c.y,
@@ -399,10 +374,6 @@ export function ImageWorkspace() {
             error={diagnose.error}
             algorithm={diagAlgorithm}
             onAlgorithm={setDiagAlgorithm}
-            axesOn={axesOn}
-            onAxes={setAxesOn}
-            stageVis={stageVis}
-            onStageVis={setStageVis}
           />
         )}
 
@@ -434,27 +405,6 @@ function HoverTooltip({ h }: { h: HoverData }) {
         </div>
         <div style={{ color: "var(--text-muted)" }}>
           x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score {c.score.toFixed(1)}
-        </div>
-      </>
-    );
-  }
-  if (h.kind === "aug") {
-    const c = h.c;
-    const name = stageName(c.stage);
-    const detail = stageDetail(c.stage);
-    return (
-      <>
-        <div style={{ color: STAGE_COLORS[name] }}>
-          ● {name}
-          <span style={{ color: "var(--text-muted)" }}> #{c.input_index}</span>
-        </div>
-        {detail && (
-          <div style={{ maxWidth: 320, whiteSpace: "normal" }}>{detail}</div>
-        )}
-        <div style={{ color: "var(--text-muted)" }}>
-          strength {c.strength.toFixed(0)} · σ (
-          {((c.axes[0].sigma * 180) / Math.PI).toFixed(1)}°,{" "}
-          {((c.axes[1].sigma * 180) / Math.PI).toFixed(1)}°)
         </div>
       </>
     );
@@ -504,12 +454,6 @@ function DetectTab({
 }) {
   const setDraftField = (patch: Partial<DetectorParamsOverride>) =>
     setDraft({ ...draft, ...patch });
-  // Effective `graph_build_algorithm` default when the draft leaves it unset.
-  // Charuco's `for_board` pins seed-and-grow (topological is a measurement-only
-  // opt-in honoured by the backend); chessboard / puzzleboard default to
-  // topological. Surface the real default so the dropdown matches what runs.
-  const algoDefault: GraphBuildAlgorithm =
-    detector === "charuco" ? "seed_and_grow" : "topological";
   // Effective per-family defaults seed the basic-config placeholders, so the
   // shown values track the family the detector actually runs with (charuco /
   // puzzle pin a different strength floor + algorithm).
@@ -555,10 +499,10 @@ function DetectTab({
         >
           <SelectRow
             label="Algorithm"
-            value={draft.graph_build_algorithm ?? algoDefault}
-            options={["topological", "seed_and_grow"]}
+            value={draft.graph_build_algorithm ?? "topological"}
+            options={["topological"]}
             onChange={(v) =>
-              setDraftField({ graph_build_algorithm: v as GraphBuildAlgorithm })
+              setDraftField({ graph_build_algorithm: v as "topological" })
             }
           />
           <SelectRow
@@ -571,12 +515,6 @@ function DetectTab({
             label="Orientation"
             value={draft.orientation_source ?? "chess_axes"}
             options={["chess_axes", "neighbour_edges"]}
-            disabledOptions={
-              (draft.graph_build_algorithm ?? algoDefault) === "seed_and_grow" &&
-              runOpts.engine === "pipeline"
-                ? ["neighbour_edges"]
-                : []
-            }
             onChange={(v) =>
               setDraftField({ orientation_source: v as OrientationSource })
             }
@@ -632,9 +570,9 @@ function DetectTab({
           }}
         >
           Placeholders are the <strong>{detector}</strong> defaults. charuco /
-          puzzleboard pin a different strength floor &amp; grid algorithm — that
-          is why the same image detects differently across families. Edit to
-          override; clear to restore the default.
+          puzzleboard pin a different strength floor — that is why the same
+          image detects differently across families. Edit to override; clear to
+          restore the default.
         </div>
       </div>
 

@@ -95,7 +95,7 @@ export function RunsView() {
         />
         <Sel
           value={algorithm}
-          options={["topological", "seed_and_grow"]}
+          options={["topological"]}
           onChange={(v) => setAlgorithm(v as GraphBuildAlgorithm)}
         />
         <Sel

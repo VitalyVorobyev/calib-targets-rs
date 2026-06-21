@@ -45,13 +45,11 @@ the points (and, optionally, local axis directions per point). If you have an
 image and need corners first, run a corner detector and convert its output into
 [`PointFeature`] / [`OrientedFeature`] values before calling in.
 
-It recovers both **square** and **hexagonal** lattices. Square supports two
-algorithms (seed-and-grow + topological); hex is **topological-only** (no
-seed-and-grow path) and runs the same Delaunay back-half — its triangles are
-the unit cells directly, so there is no diagonal/quad-merge stage. Select the
-hex path with `algorithm = Topological`; a hex request under the default
-seed-and-grow selector returns a typed `UnsupportedCombination` rather than a
-wrong answer.
+It recovers both **square** and **hexagonal** lattices. Both use the
+**topological** algorithm — the only square assembler in this crate. Hex runs
+the same Delaunay back-half — its triangles are the unit cells directly, so
+there is no diagonal/quad-merge stage. Select the hex path with
+`algorithm = Topological` (which is also the only square value).
 
 ## Three kinds of evidence
 
@@ -94,11 +92,11 @@ caller-proposed labels against a projective fit.
 |---|---|---|
 | `Positions` | ✅ (synthesize 2 axes) | ✅ (synthesize 3 axes, topological) |
 | `Oriented1` | ✅ (synthesize 2nd axis) | ❌ `UnsupportedCombination` |
-| `Oriented2` | ✅ (native, 2 algorithms) | ❌ `UnsupportedCombination` |
+| `Oriented2` | ✅ (native, topological) | ❌ `UnsupportedCombination` |
 | `Oriented3` | ❌ `UnsupportedCombination` | ✅ (native, topological) |
 
-Hex requires `algorithm = Topological`; hex under `SeedAndGrow` is
-`UnsupportedCombination`.
+All square and hex paths use `algorithm = Topological` (the only value of
+`SquareAlgorithm`; the seed-and-grow variant was removed).
 
 ## Quickstart
 
@@ -137,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LatticeKind::Square,
         Evidence::Oriented2(&features),
         None, // grid dimensions unknown
-        DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow),
+        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
     );
 
     let solution = detect_grid(request)?;
@@ -152,29 +150,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Running it prints all nine features, labelled `(0,0)` through `(2,2)` with a
 sub-pixel fit residual.
 
-## Two algorithms (square)
+## Algorithm (square)
 
-Both square algorithms consume the same [`Evidence::Oriented2`] input and
-produce the same [`GridSolution`] output, so downstream code stays agnostic.
-Pick via [`DetectionParams::with_algorithm`]:
+Square lattice detection uses [`SquareAlgorithm::Topological`] — the sole
+square assembler. It consumes [`Evidence::Oriented2`] (or synthesizes axes from
+`Positions` / `Oriented1`) and produces a [`GridSolution`]. Select it via
+[`DetectionParams::with_algorithm`] or rely on the default:
 
-- **[`SquareAlgorithm::SeedAndGrow`]** (default) — finds a self-consistent 2×2
-  seed quad (four edges that agree on a cell size, chords aligned to the corner
-  axes), then grows the grid breadth-first from that seed, validates the result
-  geometrically, and fits a projective transform. Mature and conservative;
-  returns a single connected component.
 - **[`SquareAlgorithm::Topological`]** — the Shu/Brunton/Fiala axis-driven grid
-  finder (Delaunay triangulation + a per-cell axis test). Image-free; tends to
-  recover **denser** grids on clean inputs and copes better with distortion,
-  at the cost of more sensitivity to per-feature axis quality. May return
-  several components (see [`detect_grid_all`]).
+  finder (Delaunay triangulation + a per-cell axis test). Image-free; recovers
+  dense grids and copes well with distortion. May return several components (see
+  [`detect_grid_all`]). This is the only value of `SquareAlgorithm`; the
+  historical `SeedAndGrow` variant was removed.
 
-**Hex** uses the topological algorithm only — there is no seed-and-grow hex
-path. On a hex point lattice the Delaunay triangles *are* the unit cells, so
-the diagonal/quad-merge stage is bypassed; the axial `(q, r)` walk and the
-projective fit back-half are otherwise shared with the square topological path.
-Hex has no post-fit recovery schedule (that machinery is seed-and-grow-coupled),
-so the fit residual is the precision gate.
+**Hex** also uses the topological algorithm. On a hex point lattice the Delaunay
+triangles *are* the unit cells, so the diagonal/quad-merge stage is bypassed;
+the axial `(q, r)` walk and the projective fit back-half are shared with the
+square topological path.
 
 ## Inputs & outputs
 
@@ -182,8 +174,8 @@ so the fit residual is the precision gate.
 above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are
 supported; for hex lattices `Positions` and `Oriented3` are supported on the
 topological path. The other combinations (`(Square, Oriented3)`,
-`(Hex, Oriented1/Oriented2)`, any `(Hex, *)` under `SeedAndGrow`, and
-`CoordinateHypotheses` for detection) return `UnsupportedCombination`.
+`(Hex, Oriented1/Oriented2)`, and `CoordinateHypotheses` for detection) return
+`UnsupportedCombination`.
 
 **Output** is a [`GridSolution`]:
 
@@ -211,7 +203,6 @@ Licensed under either of MIT or Apache-2.0 at your option.
 [`Evidence::Oriented1`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`Evidence::Oriented2`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`DetectionParams::with_algorithm`]: https://docs.rs/projective-grid/latest/projective_grid/detect/struct.DetectionParams.html
-[`SquareAlgorithm::SeedAndGrow`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.SquareAlgorithm.html
 [`SquareAlgorithm::Topological`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.SquareAlgorithm.html
 [`detect_grid`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid.html
 [`detect_grid_all`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid_all.html

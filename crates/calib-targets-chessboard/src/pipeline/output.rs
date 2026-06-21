@@ -14,8 +14,8 @@
 //!
 //! The rebase here is the same `min (i, j) → (0, 0)` shift as
 //! the square-grid grow path. Keeping the whole pair local preserves
-//! byte-for-byte behaviour and the non-negative-label invariant from
-//! `grow::grow_from_seed`.
+//! byte-for-byte behaviour and the non-negative-label invariant
+//! (bbox minimum rebased to `(0, 0)`).
 
 use crate::corner::CornerAug;
 use calib_targets_core::GridCoords;
@@ -23,10 +23,8 @@ use projective_grid::shared::grow::GrowResult;
 
 use super::types::{ChessboardCorner, ChessboardDetection};
 
-/// Public re-export so the topological dispatch path can reuse the same
-/// canonicalisation + non-negative-rebase logic as the seed-and-grow
-/// pipeline. The two pipelines emit identical [`ChessboardDetection`]
-/// shapes.
+/// A thin public wrapper exposing the canonicalisation +
+/// non-negative-rebase logic for the topological recovery path.
 ///
 /// `cell_size` is the grid pitch in pixels to record on the result (see
 /// [`ChessboardDetection::cell_size`]).
@@ -65,9 +63,9 @@ pub(crate) fn build_detection(
     }
 
     // Canonicalize orientation so +i points roughly +x (right) and +j
-    // points roughly +y (down) in image coords. The grow stage assigns
-    // (i, j) from the seed's internal axis-slot convention, which has
-    // no relation to image orientation; without this step, (0, 0) can
+    // points roughly +y (down) in image coords. The grid builder assigns
+    // (i, j) from its internal axis-slot convention, which has no
+    // relation to image orientation; without this step, (0, 0) can
     // land anywhere on the detected board.
     canonicalize_orientation(&mut labelled_pairs, corners);
 

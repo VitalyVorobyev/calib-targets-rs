@@ -45,8 +45,8 @@ fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
 /// Convert ChESS corners into the image-free input format expected by
 /// `projective-grid`.
 ///
-/// Corners that fail the same strength / fit-quality gate used by
-/// seed-and-grow are retained as positions but given no-information axes.
+/// Corners that fail the strength / fit-quality gate are retained as
+/// positions but given no-information axes.
 /// This keeps raw corner indices stable for traces while preventing weak
 /// corners from classifying Delaunay edges.
 #[cfg_attr(

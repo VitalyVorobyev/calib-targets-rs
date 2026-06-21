@@ -17,8 +17,7 @@
 //! Production [`detect_all_topological`] now calls
 //! [`projective_grid::detect_grid_all`] with
 //! [`SquareAlgorithm::Topological`](projective_grid::SquareAlgorithm::Topological).
-//! The facade runs the shared local-geometry component merge itself (the
-//! same `merge_components_local` the seed-and-grow facade uses), so
+//! The facade runs the shared local-geometry component merge itself, so
 //! `report.solutions` arrives already merged. The adapter consumes those
 //! merged labelled components directly and feeds them to the chessboard's
 //! own recovery pipeline (boosters, post-recovery merge, geometry check).
@@ -166,11 +165,9 @@ pub fn detect_all_topological(
     // carried by each `ChessCorner` directly: clustering, Delaunay admission,
     // and the recovery boosters all read `ChessCorner.axes`.
 
-    // Hoist clustering: seed-and-grow uses `cluster_axes` as a precision
-    // bedrock before its seed-and-grow. Topological used to skip this and
-    // pay the cost in spurious-edge admissions; we now compute centers
-    // once up front, gate Delaunay through them, and reuse the same
-    // `(augs, centers)` pair for booster recovery (no re-clustering).
+    // Hoist clustering: compute centers once up front to gate Delaunay
+    // admission and reuse the same `(augs, centers)` pair for booster
+    // recovery (no re-clustering), avoiding spurious-edge admissions.
     let (base_augs, clustered_centers) = clustered_augs(corners, params);
 
     let inputs = topological_inputs(corners, params);
@@ -186,9 +183,8 @@ pub fn detect_all_topological(
     //
     // Note on `cluster_axis_tol_rad`: keep the default 16° baked into
     // `NextTopologicalParams::default`. Do not reuse
-    // `tuning.cluster_tol_deg` (12°) — seed-and-grow's cluster gate
-    // has a sigma bonus and a booster fallback that topological lacks;
-    // matching the 12° literally regresses Gemini2.
+    // `tuning.cluster_tol_deg` (12°) — the tighter literal value
+    // regresses recovery on foreshortened boards (e.g. Gemini2).
     //
     // The facade's recovery + post-fit residual drop are disabled here (the
     // chessboard owns its own validation + booster recovery downstream); see
@@ -214,9 +210,9 @@ pub fn detect_all_topological(
         return Vec::new();
     }
 
-    // `projective_grid::detect_grid_all` now runs the local-geometry
-    // component merge inside the topological facade itself (mirroring its
-    // seed-and-grow facade), so `report.solutions` already arrives merged.
+    // `projective_grid::detect_grid_all` runs the local-geometry
+    // component merge inside the topological facade itself, so
+    // `report.solutions` already arrives merged.
     // The adapter therefore consumes the facade-merged components directly:
     // the previous chessboard-side `merge_components_local` call would have
     // double-merged and produced measured false attachments. Both merges

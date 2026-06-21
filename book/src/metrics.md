@@ -79,14 +79,12 @@ reference dev machine (16×16 = 256-corner square, hex radius-6 =
 | Cell | Algorithm | Time |
 |---|---|---|
 | `square_oriented2` | topological | ~0.6 ms |
-| `square_oriented2` | seed-and-grow | ~0.9 ms |
-| `square_positions` | seed-and-grow (axis synthesis) | ~0.8 ms |
+| `square_positions` | topological (axis synthesis) | ~0.8 ms |
 | `hex_positions` | topological (axis synthesis) | ~0.19 ms |
 
 These are perf-regression *tracking* numbers, not a benchmark of any
 competitor; absolute values depend heavily on hardware, corner count,
-and perspective. The topological path is consistently faster than
-seed-and-grow on the same square input.
+and perspective.
 
 The workspace also ships a puzzleboard-size criterion suite
 (`cargo bench -p calib-targets --bench puzzleboard_sizes`).

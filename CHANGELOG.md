@@ -18,10 +18,9 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`Evidence::Oriented1`** — single-supplied-axis input is now a first-class
   evidence kind for `projective_grid::detect_grid`; the second axis is
   recovered from neighbour-chord geometry.
-- **Hexagonal lattice detection (topological path)** — `projective_grid` now
-  detects hex dot/marker grids via the topological builder for `Positions` and
-  `Oriented3` evidence (`Lattice::Hex`); seed-and-grow hex stays a typed
-  `UnsupportedCombination`.
+- **Hexagonal lattice detection** — `projective_grid` now detects hex
+  dot/marker grids via the topological builder for `Positions` and `Oriented3`
+  evidence (`Lattice::Hex`).
 - **`projective_grid::cluster::cluster_axes`** and `AxisClusterCenters` — the
   axis-clustering primitive is exposed from the facade.
 - **`calib_targets_core::cell_rect_corners_at`** — the single shared definition
@@ -39,12 +38,21 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   `Chessboard` variant so `PuzzleBoardDetector::new` surfaces an invalid
   embedded chessboard configuration.
 
-- **ChArUco rejects the topological builder with a typed error.** Constructing
-  `CharucoParams.chessboard` with `GraphBuildAlgorithm::Topological` and running
-  detection now returns `CharucoDetectError::UnsupportedAlgorithm` instead of
-  silently overriding the choice (marker-internal corners defeat the topological
-  cell test). The `CharucoParams` constructors and the binding/config paths pin
-  `SeedAndGrow` so configs that omit the algorithm keep working.
+- **The seed-and-grow grid builder is retired; `Topological` is the sole
+  builder.** Both seed-and-grow engines — the chessboard pipeline's own and
+  `projective-grid`'s `SquareAlgorithm::SeedAndGrow` — are deleted, and ChArUco,
+  PuzzleBoard, and marker boards all run the topological builder now (a
+  `min_corner_strength` floor pre-filters the marker-bit corners that the old
+  ChArUco pin had guarded against). `GraphBuildAlgorithm` and `SquareAlgorithm`
+  collapse to single-variant `#[non_exhaustive]` enums (only `Topological`),
+  retained as reserved config seams; the wire string `"seed_and_grow"` no longer
+  deserializes. The chessboard `AdvancedTuning` block drops its
+  seed-and-grow-only stage knobs (`seed_*`, `rescue_*`, `refit_*`,
+  `boundary_extension_*`, `partial_slot_flip_*`, and the dead BFS-validate
+  tolerances), with the removal propagated through the FFI / Python / WASM /
+  Studio surfaces. The chessboard rich `DebugFrame` diagnostics and the
+  experimental `OrientationSource::NeighbourEdges` path are removed with the
+  engine.
 
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The
@@ -67,15 +75,15 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   `(i, j)` label that is normal-length and on-axis (so the existing first-order
   overlong / off-axis / duplicate-pixel checks could not see it) without any
   ad-hoc edge-length constant. The criterion is scale-free and
-  distortion-model-agnostic (radial and perspective); it runs only on the
-  topological builder, so the ChArUco (seed-and-grow) path is unaffected.
+  distortion-model-agnostic (radial and perspective) and runs inside the
+  topological builder's final precision gate.
 - **ChArUco decode determinism.** Deterministic tie-breaks in the marker
   alignment (`best_translation`) and multi-component merge (`merge_charuco_
   results`) — both previously resolved (weight, count) / marker-count ties by
   `HashMap` iteration order, so a borderline frame's alignment and corner IDs
   could flip run-to-run. Decode precision was never affected (zero
-  self-consistency wrong-ids throughout). The production ChArUco path
-  (seed-and-grow) is unchanged.
+  self-consistency wrong-ids throughout); this fix only stabilises the
+  tie-breaks in the decode path.
 
 ### Internal
 

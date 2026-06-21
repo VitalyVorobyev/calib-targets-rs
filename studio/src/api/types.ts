@@ -2,7 +2,6 @@
 // Rust sources of truth:
 //   crates/calib-targets-studio/src/routes/*.rs
 //   crates/calib-targets-bench/src/{baseline,diff,report,diagnose}.rs
-//   crates/calib-targets-chessboard/src/pipeline/types.rs (DebugFrame)
 
 // --- dataset ---------------------------------------------------------------
 
@@ -79,7 +78,7 @@ export interface BaselineDiff {
 
 export type EngineReq = "pipeline" | "grid";
 export type OrientationMethodReq = "ring_fit" | "disk_fit";
-export type GraphBuildAlgorithm = "topological" | "seed_and_grow";
+export type GraphBuildAlgorithm = "topological";
 export type OrientationSource = "chess_axes" | "neighbour_edges";
 
 /** Partial DetectorParams override (top-level-key merge over defaults). */
@@ -189,112 +188,6 @@ export interface ApiErrorBody {
 
 // --- diagnose ----------------------------------------------------------------
 
-export interface AxisEstimateWire {
-  angle: number;
-  sigma: number;
-}
-
-/** Externally-tagged serde enum: unit variants are strings, others objects. */
-export type CornerStageWire =
-  | "Raw"
-  | "Strong"
-  | { NoCluster: { max_d_deg: number } }
-  | { Clustered: { label: string } }
-  | { AttachmentAmbiguous: { at: [number, number] } }
-  | { AttachmentFailedInvariants: { at: [number, number]; reason: string } }
-  | {
-      Labeled: { at: [number, number]; local_h_residual_px: number | null };
-    }
-  | { LabeledThenBlacklisted: { at: [number, number]; reason: string } };
-
-export type StageName =
-  | "Raw"
-  | "Strong"
-  | "NoCluster"
-  | "Clustered"
-  | "AttachmentAmbiguous"
-  | "AttachmentFailedInvariants"
-  | "Labeled"
-  | "LabeledThenBlacklisted"
-  | "Other";
-
-export function stageName(stage: CornerStageWire): StageName {
-  if (typeof stage === "string") {
-    return stage === "Raw" || stage === "Strong" ? stage : "Other";
-  }
-  const key = Object.keys(stage)[0] as StageName;
-  return key ?? "Other";
-}
-
-/** Human-readable detail for a corner's stage (reason / cell / residual). */
-export function stageDetail(stage: CornerStageWire): string | null {
-  if (typeof stage === "string") return null;
-  if ("NoCluster" in stage)
-    return `max_d ${stage.NoCluster.max_d_deg.toFixed(1)}°`;
-  if ("Clustered" in stage) return stage.Clustered.label;
-  if ("AttachmentAmbiguous" in stage)
-    return `at (${stage.AttachmentAmbiguous.at.join(", ")})`;
-  if ("AttachmentFailedInvariants" in stage)
-    return `at (${stage.AttachmentFailedInvariants.at.join(", ")}): ${stage.AttachmentFailedInvariants.reason}`;
-  if ("Labeled" in stage) {
-    const r = stage.Labeled.local_h_residual_px;
-    return `at (${stage.Labeled.at.join(", ")})${r != null ? ` · res ${r.toFixed(2)} px` : ""}`;
-  }
-  if ("LabeledThenBlacklisted" in stage)
-    return `was (${stage.LabeledThenBlacklisted.at.join(", ")}): ${stage.LabeledThenBlacklisted.reason}`;
-  return null;
-}
-
-export interface CornerAugWire {
-  input_index: number;
-  position: [number, number];
-  axes: [AxisEstimateWire, AxisEstimateWire];
-  strength: number;
-  contrast: number;
-  fit_rms: number;
-  stage: CornerStageWire;
-  label: string | null;
-}
-
-export interface ExtensionTraceWire {
-  h_trusted: boolean;
-  h_residual_median_px: number | null;
-  h_residual_max_px: number | null;
-  iterations: number;
-  attached: number;
-  rejected_no_candidate: number;
-  rejected_ambiguous: number;
-  rejected_label: number;
-  rejected_policy: number;
-  rejected_edge: number;
-}
-
-export interface IterationTraceWire {
-  iter: number;
-  labelled_count: number;
-  new_blacklist: number[];
-  converged: boolean;
-  extension?: ExtensionTraceWire | null;
-  rescue?: ExtensionTraceWire | null;
-  extension2?: ExtensionTraceWire | null;
-  rescue2?: ExtensionTraceWire | null;
-  bfs_extend?: Record<string, unknown> | null;
-  geometry_check?: Record<string, unknown> | null;
-  refit?: Record<string, unknown> | null;
-}
-
-export interface DebugFrameWire {
-  schema: number;
-  input_count: number;
-  grid_directions: [number, number] | null;
-  cell_size: number | null;
-  seed: number[] | null;
-  iterations: IterationTraceWire[];
-  boosters: Record<string, unknown> | null;
-  detection: { corners: unknown[] } | null;
-  corners: CornerAugWire[];
-}
-
 export interface TolSummaryWire {
   axis_align_tol_rad: number;
   max_axis_sigma_rad: number;
@@ -321,7 +214,7 @@ export interface TopologicalDiagnosisWire {
   }[];
 }
 
-export type DiagnoseAlgorithm = "topological" | "seed_and_grow";
+export type DiagnoseAlgorithm = "topological";
 
 export interface DiagnoseRequest {
   label: string;
@@ -330,13 +223,10 @@ export interface DiagnoseRequest {
   orientation_method?: OrientationMethodReq;
 }
 
-export type DiagnoseResponse =
-  | { kind: "topological"; diagnosis: TopologicalDiagnosisWire }
-  | {
-      kind: "seed_and_grow";
-      frame: DebugFrameWire;
-      stage_counts: Record<string, number>;
-    };
+export type DiagnoseResponse = {
+  kind: "topological";
+  diagnosis: TopologicalDiagnosisWire;
+};
 
 // --- dataset runs ------------------------------------------------------------
 

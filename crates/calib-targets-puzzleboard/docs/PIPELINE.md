@@ -10,7 +10,7 @@ carries a midpoint dot, and the dot pattern uniquely identifies any
 
 | # | Name | In | Out | Decision | Failure modes | Knobs |
 |---|---|---|---|---|---|---|
-| 0 | chessboard grid detect | `&[Corner]` (ChESS raw) | `Vec<ChessDetection>` (multi-component) | `ChessDetector::detect_all` with caller-chosen `graph_build_algorithm` (defaults to `SeedAndGrow`; PuzzleBoard does NOT pin) | no grid components qualify | every `chessboard.*` knob from `DetectorParams` (full pipeline of `crates/calib-targets-chessboard/docs/PIPELINE.md`) |
+| 0 | chessboard grid detect | `&[Corner]` (ChESS raw) | `Vec<ChessDetection>` (multi-component) | `ChessDetector::detect_all` on the **topological** grid builder (the only builder; `graph_build_algorithm` is a single-variant reserved seam) | no grid components qualify | every `chessboard.*` knob from `DetectorParams` (full pipeline of `crates/calib-targets-chessboard/docs/PIPELINE.md`) |
 | 1 | edge sampling | labelled corners + image | `Vec<PuzzleBoardObservedEdge>` (`bit ∈ {0,1}, confidence ∈ [0,1]` per interior edge) | per-edge: sample a disk of radius `sample_radius_rel × edge_len` (min 1 px) centred at the edge midpoint; compute local bright/dark references from adjacent cells; classify mid-pixel against threshold; **confidence** = `clip\|(midpoint − ref_mean) / (0.5 × dynamic_range)\|` | edge midpoint outside image; low-contrast cell pair (bright ≈ dark) | `sample_radius_rel` (default `0.2`) |
 | 2 | bit confidence filter | observed edges | edges with `confidence ≥ min_bit_confidence` | hard threshold drop | low-confidence bits become unknown; if too few survive → `NotEnoughEdges` error | `min_bit_confidence` (default `0.5`) |
 | 3 | minimum-edges gate | filtered edges | pass / fail | require `edges_filtered ≥ required_edges(min_window)`, where `min_window² ≥ 4²` is the paper's uniqueness floor for a 501×501 code | sparse grid / small ROI fails this gate immediately | `min_window` (default `4` → 16 inner edges) |
@@ -21,17 +21,18 @@ carries a midpoint dot, and the dot pattern uniquely identifies any
 | 5 | best-component selection | per-component decode results | single `PuzzleBoardDecodeInfo` | when `search_all_components = true`, rank components by `edges_matched` (primary), then BER (secondary), then soft-score / hard-tie-break; **conflict detection**: two well-supported components disagreeing on master origin → `InconsistentPosition` error | multiple sub-grids with disagreeing decodes (unrecoverable ambiguity) | `search_all_components` (default `true`) |
 | 6 | emit detection | best decode | `PuzzleBoardDetectionResult { detection, decode: PuzzleBoardDecodeInfo }` | rebase `(i, j)` to non-negative; sort by `(j, i)` | — | — |
 
-## What PuzzleBoard inherits from seed-and-grow
+## What PuzzleBoard inherits from the chessboard detector
 
-The full seed-and-grow pipeline runs on the input ChESS corners
-(BFS, validation loop, Stage 6 / 6.5 / 6.75, boosters, **mandatory
-geometry check**). Wrong `(i, j)` labels at the chessboard layer
-become wrong absolute master labels under decode — same precision-
-unrecoverable property as ChArUco.
+The full chessboard topological pipeline runs on the input ChESS
+corners (prefilter, axis clustering, the topological grid walk,
+booster-driven component recovery, **mandatory final geometry check**).
+Wrong `(i, j)` labels at the chessboard layer become wrong absolute
+master labels under decode — same precision-unrecoverable property as
+ChArUco.
 
-PuzzleBoard does **not** pin `graph_build_algorithm`. The caller can
-choose Topological for clean planar boards or SeedAndGrow (default)
-when in doubt.
+PuzzleBoard already defaulted to the topological builder, which is now
+the only builder. `graph_build_algorithm` is a single-variant reserved
+seam.
 
 ## Decoder algorithm decision (2026-04-20, see agent memory)
 
@@ -51,8 +52,9 @@ precision gap demonstrated on a new dataset.
 - D4 rotation index (0..7)
 - (when soft mode) `soft_score`, `runner_up_score`, `score_margin`
 
-The embedded seed-and-grow `DebugFrame` is preserved for upstream-stage
-investigation.
+For upstream grid-stage investigation, run the chessboard topological
+trace (`pipeline::trace_topological`) on the same input corners — it is
+the production grid path serialized stage-by-stage.
 
 ## Cross-references
 
