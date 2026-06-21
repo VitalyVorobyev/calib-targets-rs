@@ -264,6 +264,29 @@ fn full_flagship_sweep_board_matcher_topological_contract() {
     );
 }
 
+/// A1 determinism characterization (algorithm-consolidation Phase 1): print the
+/// live A-side (seed-and-grow) and B-side (topological) detected counts,
+/// repeating the topological sweep in-process so successive `RandomState` seeds
+/// surface the residual HashMap-iteration-order flake that keeps the
+/// retire-SeedAndGrow decision blocked. Ignored; run with
+/// `--features diagnostics -- --ignored --nocapture`.
+#[test]
+#[ignore = "A1 determinism characterization; run with --ignored --nocapture"]
+fn ab_charuco_topological_determinism_repeats() {
+    let Some((frames, sg_detected, sg_wrong)) =
+        run_flagship_sweep_with(true, GraphBuildAlgorithm::SeedAndGrow)
+    else {
+        eprintln!("skipping: flagship dataset missing");
+        return;
+    };
+    eprintln!("[A seed-and-grow ] frames={frames} detected={sg_detected}/120 wrong_id={sg_wrong}");
+    for rep in 0..6 {
+        let (_f, detected, wrong) =
+            run_flagship_sweep_with(true, GraphBuildAlgorithm::Topological).expect("flagship");
+        eprintln!("[B topological r{rep}] detected={detected}/120 wrong_id={wrong}");
+    }
+}
+
 #[test]
 fn smoke_apriltag_image_does_not_panic() {
     let img_path = apriltag_image();
