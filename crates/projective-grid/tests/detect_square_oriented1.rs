@@ -200,30 +200,6 @@ fn oriented1_topological_parity_and_zero_wrong() {
     // set to measured-minus-margin (60).
     assert!(
         n1 >= 60,
-        "oriented1 topological recovered only {n1}/64 (Phase-3 recall floor 60)"
-    );
-}
-
-#[test]
-fn oriented1_seed_and_grow_parity_and_zero_wrong() {
-    let (pts, truth) = perspective_grid(8, 8, 28.0, 50.0, &h_perspective());
-    let (o1, o2) = build_features(&pts, 8, 8);
-
-    let sol1 = detect_o1(&o1, SquareAlgorithm::SeedAndGrow);
-    let sol2 = detect_o2(&o2, SquareAlgorithm::SeedAndGrow);
-
-    assert_labels_consistent_with_truth(&entries(&sol1), &truth, "oriented1 seed-and-grow");
-    assert_labels_consistent_with_truth(&entries(&sol2), &truth, "oriented2 seed-and-grow");
-
-    let n1 = sol1.grid.entries.len();
-    let n2 = sol2.grid.entries.len();
-    assert!(n2 >= n1, "oriented2 should be the upper bound: {n2} < {n1}");
-    // Phase 3: the seed-and-grow synthesized-axis path now runs the
-    // `PositionsAttachPolicy` + recovery schedule, closing the foreshortening
-    // gap — it recovers the full grid (measured 64/64). Floor set to
-    // measured-minus-margin (60).
-    assert!(
-        n1 >= 60,
-        "oriented1 seed-and-grow recovered only {n1}/64 (Phase-3 recall floor 60)"
+        "oriented1 topological recovered only {n1}/64 (recovery-schedule recall floor 60)"
     );
 }

@@ -1,12 +1,12 @@
 //! Post-grow fill pass: interior holes + line extrapolation.
 //!
 //! [`fill_grid_holes`] is the pattern-agnostic "booster" pass that
-//! runs **after** the precision core (seed + grow + validate) has
-//! converged. It enumerates `(i, j)` cells inside the labelled
-//! bounding box that are still empty, plus `±1` cells immediately
-//! outside each row / column boundary, and tries to attach a
-//! candidate at each one using the same per-cell ladder as
-//! [`crate::seed_and_grow::grow::bfs_grow`].
+//! runs **after** a component-assembly + validate pass has converged.
+//! It enumerates `(i, j)` cells inside the labelled bounding box that
+//! are still empty, plus `±1` cells immediately outside each row /
+//! column boundary, and tries to attach a candidate at each one using
+//! the same per-cell ladder as the [`crate::shared::grow`] candidate
+//! search.
 //!
 //! # Precision contract
 //!
@@ -40,7 +40,7 @@
 //! `eligible_for_fill` candidates because the previous iteration's
 //! attachments shrink the eligible set.
 
-use crate::seed_and_grow::grow::{
+use crate::shared::grow::{
     collect_labelled_neighbours, predict_from_neighbours, Admit, FillEdgeCtx, GrowResult,
     SquareAttachPolicy,
 };
@@ -369,7 +369,7 @@ fn any_cardinal_fill_edge_ok<V: SquareAttachPolicy>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed_and_grow::grow::{Admit, LabelledNeighbour};
+    use crate::shared::grow::{Admit, LabelledNeighbour};
     use std::collections::HashMap;
 
     /// Trivial policy: every corner eligible, no label constraint,

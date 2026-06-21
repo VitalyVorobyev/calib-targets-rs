@@ -185,7 +185,7 @@ pub struct ExtensionStats {
     /// Candidate cells skipped because the target `(i, j)` was already labelled.
     pub rejected_label: usize,
     /// Candidate corners rejected by the caller-supplied
-    /// [`SquareAttachPolicy`](crate::seed_and_grow::grow::SquareAttachPolicy).
+    /// [`SquareAttachPolicy`](crate::shared::grow::SquareAttachPolicy).
     pub rejected_policy: usize,
     /// Candidate corners rejected by the induced-edge geometry check.
     pub rejected_edge: usize,
@@ -198,7 +198,7 @@ pub struct ExtensionStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::seed_and_grow::grow::{Admit, GrowResult, LabelledNeighbour, SquareAttachPolicy};
+    use crate::shared::grow::{Admit, GrowResult, LabelledNeighbour, SquareAttachPolicy};
     use nalgebra::Point2;
     use std::collections::HashMap;
 

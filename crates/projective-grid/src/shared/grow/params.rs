@@ -1,12 +1,12 @@
 //! Grow policy trait, tuning, and result types.
 //!
-//! This module owns the *contract* of [`bfs_grow`](super::bfs_grow): the
-//! [`SquareAttachPolicy`] trait that lets a caller plug pattern-specific
-//! invariants into the otherwise pure-geometry BFS, the per-candidate
-//! [`Admit`] / [`LabelledNeighbour`] / [`FillEdgeCtx`] data carriers, the
-//! [`GrowParams`] tolerances, and the [`GrowResult`] output container. It
-//! deliberately holds no algorithm — the BFS core lives in
-//! [`super`](crate::seed_and_grow::grow) and the prediction geometry in
+//! This module owns the growth *contract*: the [`SquareAttachPolicy`] trait
+//! that lets a caller plug pattern-specific invariants into the otherwise
+//! pure-geometry candidate search, the per-candidate [`Admit`] /
+//! [`LabelledNeighbour`] / [`FillEdgeCtx`] data carriers, the [`GrowParams`]
+//! tolerances, and the [`GrowResult`] output container. It deliberately holds
+//! no algorithm — the candidate-search / ambiguity helpers live in
+//! [`super`](crate::shared::grow) and the prediction geometry in
 //! [`super::predict`] — so the policy contract can be read without wading
 //! through the search loop. Tier: advanced engine (semver-exempt pre-1.0).
 
@@ -35,7 +35,7 @@ pub struct LabelledNeighbour {
     pub position: Point2<f32>,
 }
 
-/// Caller-supplied attachment policy for [`bfs_grow`](super::bfs_grow).
+/// Caller-supplied attachment policy for the square-lattice growth helpers.
 ///
 /// Implementations typically hold references to the caller's feature
 /// data (axes, labels, strengths) plus tuning parameters, and use `idx`
@@ -106,7 +106,7 @@ pub trait SquareAttachPolicy {
     /// override this to consult the labelled set when computing the
     /// expected edge length.
     ///
-    /// Only invoked by [`crate::seed_and_grow::fill::fill_grid_holes`]; the
+    /// Only invoked by [`crate::shared::fill::fill_grid_holes`]; the
     /// regular grow and boundary-extension passes call [`Self::edge_ok`]
     /// directly.
     fn fill_edge_ok(&self, ctx: FillEdgeCtx<'_>) -> bool {
@@ -144,7 +144,7 @@ pub struct FillEdgeCtx<'a> {
     pub cell_size: f32,
 }
 
-/// Tolerances for [`bfs_grow`](super::bfs_grow).
+/// Tolerances for the square-lattice growth helpers.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct GrowParams {

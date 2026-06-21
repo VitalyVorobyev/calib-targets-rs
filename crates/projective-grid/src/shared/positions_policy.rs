@@ -1,14 +1,13 @@
 //! Geometry-only [`SquareAttachPolicy`] for the orientation-free
 //! (`Evidence::Positions`) and single-axis (`Evidence::Oriented1`) paths.
 //!
-//! [`Oriented2Policy`](crate::seed_and_grow::policy) treats the per-corner axes
-//! as a *hard* voucher: a candidate is accepted only if its two synthesized
-//! axes align (within ~25°) with a labelled neighbour's. That works when the
-//! caller supplied real per-corner orientation (chess-corners DiskFit axes),
-//! but on the orientation-free path the axes are *synthesized* from neighbour
-//! geometry ([`crate::orient`]) and are systematically less reliable near the
-//! grid boundary and under heavy foreshortening — exactly where recall matters.
-//! A hard axis voucher there stalls the BFS frontier and is the binding
+//! A *hard* axis voucher (a candidate is accepted only if its two synthesized
+//! axes align, within ~25°, with a labelled neighbour's) works when the caller
+//! supplied real per-corner orientation (chess-corners DiskFit axes), but on
+//! the orientation-free path the axes are *synthesized* from neighbour geometry
+//! ([`crate::orient`]) and are systematically less reliable near the grid
+//! boundary and under heavy foreshortening — exactly where recall matters. A
+//! hard axis voucher there stalls the growth frontier and is the binding
 //! constraint behind the position path's recall gap.
 //!
 //! [`PositionsAttachPolicy`] inverts the trust order: the **geometry** is the
@@ -27,39 +26,36 @@
 //!   axis becomes a *missing* corner only if the geometry also fails — never a
 //!   mislabel the gates would not catch.
 //! - **`edge_ok`** — per-edge length band against the *local* pitch (tracks
-//!   perspective foreshortening), identical in spirit to the `Oriented2Policy`
-//!   band.
+//!   perspective foreshortening).
 //!
 //! # Precision contract
 //!
-//! The accept gate is *wider* than `Oriented2Policy`, so the precision burden
-//! shifts onto the per-edge band, the search-radius prediction gate, and the
-//! post-convergence revalidation + drop filters
-//! ([`crate::shared::validate`] + [`crate::shared::validate::recovery`]). The
-//! recovery schedule that wraps this policy runs the line-collinearity +
-//! local-H + topological wrong-label + largest-component filters on every
-//! sweep, so a geometrically-incoherent attach is dropped, not mislabelled.
+//! The accept gate is *wide*, so the precision burden shifts onto the per-edge
+//! band, the search-radius prediction gate, and the post-convergence
+//! revalidation + drop filters ([`crate::shared::validate`] +
+//! [`crate::shared::validate::recovery`]). The recovery schedule that wraps
+//! this policy runs the line-collinearity + local-H + topological wrong-label +
+//! largest-component filters on every sweep, so a geometrically-incoherent
+//! attach is dropped, not mislabelled.
 //!
-//! What does NOT belong here: any parity / axis-cluster vocabulary (that is
-//! [`Oriented2Policy`](crate::seed_and_grow::policy)) and the convergence /
-//! recovery control flow ([`crate::seed_and_grow::pipeline`] /
-//! [`crate::seed_and_grow::recovery`]).
+//! What does NOT belong here: any parity / axis-cluster vocabulary, or the
+//! recovery control flow ([`crate::shared::recovery`]).
 //!
 //! **Tier:** advanced engine — semver-exempt pre-1.0.
 
 use nalgebra::Point2;
 
 use crate::feature::{LocalAxis, OrientedFeature};
-use crate::seed_and_grow::angle::angular_dist_pi;
-use crate::seed_and_grow::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
-use crate::seed_and_grow::seed::finder::SquareSeedPolicy;
+use crate::shared::angle::angular_dist_pi;
+use crate::shared::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
 
 /// Tolerances for [`PositionsAttachPolicy`].
 #[derive(Clone, Copy, Debug)]
 pub(super) struct PositionsTolerances {
     /// Wide axis-alignment tolerance (radians) for the *soft* synthesized-axis
     /// cue. Synthesized axes are noisier than caller-supplied ones, so this is
-    /// deliberately wider than the `Oriented2Policy` 25°.
+    /// deliberately wide (the facade passes 50°, double a strict hard-voucher
+    /// 25°).
     pub soft_axis_tol_rad: f32,
     /// Per-edge length tolerance (fraction of the local pitch).
     pub edge_length_tol: f32,
@@ -95,24 +91,6 @@ impl<'a> PositionsAttachPolicy<'a> {
 
     fn axes(&self, idx: usize) -> [LocalAxis; 2] {
         self.features[idx].axes
-    }
-}
-
-impl SquareSeedPolicy for PositionsAttachPolicy<'_> {
-    fn position(&self, idx: usize) -> Point2<f32> {
-        self.positions[idx]
-    }
-
-    fn axes(&self, idx: usize) -> [LocalAxis; 2] {
-        self.features[idx].axes
-    }
-
-    fn primary_candidates(&self) -> Vec<usize> {
-        (0..self.features.len()).collect()
-    }
-
-    fn secondary_candidates(&self) -> Vec<usize> {
-        (0..self.features.len()).collect()
     }
 }
 

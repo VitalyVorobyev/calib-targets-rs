@@ -1,4 +1,4 @@
-//! Per-neighbour grid-step prediction geometry for [`bfs_grow`](super::bfs_grow).
+//! Per-neighbour grid-step prediction geometry for the boundary-cell decision.
 //!
 //! This module owns the pure-geometry half of the grow: collecting the
 //! labelled neighbours around a boundary cell, predicting that cell's image
@@ -6,7 +6,7 @@
 //! trusting the seed's global `(u, v, cell_size)`), the extrapolation-vs-
 //! interpolation test that widens the search at the labelled-set frontier,
 //! and the local finite-difference step estimator. No policy, no BFS queue,
-//! no KD-tree — those live in [`super`](crate::seed_and_grow::grow). Tier:
+//! no KD-tree — those live in [`super`](crate::shared::grow). Tier:
 //! advanced engine (semver-exempt pre-1.0).
 
 use nalgebra::{Point2, Vector2};
@@ -69,9 +69,9 @@ pub(crate) fn collect_labelled_neighbours(
 /// per grid step.
 ///
 /// A neighbour at the target cell itself (`Δi = Δj = 0`) would yield an
-/// infinite weight; in practice [`bfs_grow`](super::bfs_grow) never
-/// enqueues such a neighbour (they're already labelled), but for robustness
-/// we treat `Δi = Δj = 0` as weight 1.0 to avoid `NaN`.
+/// infinite weight; in practice the boundary frontier never enqueues such a
+/// neighbour (they're already labelled), but for robustness we treat
+/// `Δi = Δj = 0` as weight 1.0 to avoid `NaN`.
 pub(crate) fn predict_from_neighbours(
     target: (i32, i32),
     neighbours: &[LabelledNeighbour],

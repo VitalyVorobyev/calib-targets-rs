@@ -7,7 +7,7 @@
 //! `is_eligible` and `by_corner`); this function decides whether to
 //! attach the best candidate and reports the outcome.
 
-use crate::seed_and_grow::grow::{Admit, GrowResult, LabelledNeighbour, SquareAttachPolicy};
+use crate::shared::grow::{Admit, GrowResult, LabelledNeighbour, SquareAttachPolicy};
 use nalgebra::Point2;
 use std::collections::HashMap;
 

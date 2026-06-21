@@ -1,6 +1,6 @@
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let params = DetectionParams::default().with_algorithm(SquareAlgorithm::SeedAndGrow);
+    let params = DetectionParams::default();
     let request = DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(&features),
