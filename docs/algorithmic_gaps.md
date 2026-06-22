@@ -77,33 +77,37 @@ all) for inputs where no reliable axis can be synthesized. The
 synthesized-axis path covers the common case; the pure-geometric fallback
 is the remaining incremental item. Tracked as a future deep-dive phase.
 
-### Gap 2 — `circular_stats` is `f32`-only (OPEN)
+### Gap 2 — `circular_stats` is `f32`-only (CLOSED — moot, 2026-06-22)
 
-The rest of the crate is generic in `Float = RealField + Copy`.
-`circular_stats` is hard-coded to `f32`. Consumers that want `f64`
-precision throughout pay a type cast on every histogram pass.
+The detection surface is pinned to `f32` (`detect.rs`: "The detection surface
+is pinned to `f32`"), so a `Float`-generic clustering histogram would be dead
+generality — no consumer instantiates that path at `f64`. The two duplicate
+undirected-angle helper sites (`shared/angle.rs` vs `cluster/circular.rs`) were
+also consolidated to a single `f32` source of truth in `cluster::circular`, and
+the chessboard `circular_stats.rs` re-export module was deleted. Re-open only if
+a future `f64` detection surface appears; until then this is closed.
 
-**Fix.** Promote the helpers to `Float` generic; the only `f32`
-constants are `PI` and the histogram smoothing kernel weights.
-Tracked as deep-dive Phase 6.
+### Gap 3 — `HomographyQuality` is not a stable production metric (RESOLVED 2026-06-22)
 
-### Gap 3 — `HomographyQuality` is not a stable production metric (OPEN)
+`homography::HomographyQuality` returns SVD-derived ratios of the unnormalised
+3×3 H matrix; the absolute-magnitude fields (`min_singular_value`,
+`determinant`) depend on coordinate scale and translation magnitude, so they
+are not a scale-stable geometry-degeneracy threshold across image scales.
 
-`homography::HomographyQuality` returns SVD-derived ratios of the
-unnormalised 3×3 H matrix. Those ratios depend on coordinate scale
-and translation magnitude — they are not a stable
-geometry-degeneracy threshold across image scales.
+Two things resolve the misuse risk:
 
-Status: `extend_via_global_homography` already does **not** use it as
-a gate (it uses pixel-unit reprojection residuals — see
-`extension.rs`). The struct is still re-exported at the crate root,
-so external callers can still misuse the `is_ill_conditioned`
-predicate.
+- It is **not** re-exported at either crate root. `projective-grid` exposes it
+  only under `projective_grid::geometry::`, and the production extension path
+  gates on pixel-unit reprojection residuals (`extension.rs`), not on this
+  struct. (The earlier note that it was "re-exported at the crate root" was
+  stale — corrected here.)
+- The rustdoc on both copies (projective-grid `geometry/homography.rs` and the
+  `calib-targets-core` copy) now states **diagnostic only — not a scale-stable
+  stability gate**, and `is_ill_conditioned` carries the same caveat.
+  `is_ill_conditioned` has no production caller (test-only).
 
-**Fix options.**
-- Narrow the doc-comment to "diagnostic only, not a stability gate."
-- Or expose DLT design-matrix conditioning instead, with documented
-  scale-aware semantics.
+The deeper "expose DLT design-matrix conditioning with documented scale-aware
+semantics" option is left as a future enhancement, not a blocker.
 
 ### Gap 4 — Hex post-fit recovery schedule (OPEN, now precisely scoped)
 
@@ -460,12 +464,14 @@ change to the validation core; deferred as a tracked follow-up.
 
 ## Architectural-direction summary
 
-The next architectural moves are closing Gap 8 (topological recall in
-heavy-distortion regions), unifying the chessboard booster boundary
-extension with the generic extension machinery (Gap 6), and tightening
-the homography-quality public surface (Gap 3). Hex-grid recovery
-schedule (Gap 4) and `circular_stats` `Float`-genericisation (Gap 2)
-are smaller incremental items.
+The next architectural move is **Gap 16** (a global smooth-warp precision
+backstop), intended to subsume the distortion-recall (Gap 8),
+off-axis-false-label (Gap 11), and frontier-false-positive (Gap 15) families
+under one principled predicate. After that, unifying the chessboard booster
+boundary extension with the generic extension machinery (Gap 6) and the
+disjoint-set component merge (Gap 9) remain. Gap 3 (homography-quality surface)
+and Gap 2 (`circular_stats`) are now closed; the hex-grid recovery schedule
+(Gap 4) is a smaller incremental item.
 
 ---
 

@@ -22,6 +22,13 @@ pub struct Homography<F = f32> {
 }
 
 /// Numerical quality of a homography matrix.
+///
+/// **Diagnostic only — not a scale-stable stability gate.** The
+/// absolute-magnitude fields (`min_singular_value`, `determinant`) depend on
+/// the coordinate scale of the points `H` was fit from, so a single absolute
+/// threshold is not portable across image scales. Use for inspection and
+/// relative comparison; for production gating prefer a pixel-unit re-projection
+/// residual.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct HomographyQuality<F = f32> {
@@ -64,6 +71,10 @@ impl<F: RealField + Copy> HomographyQuality<F> {
     }
 
     /// `true` when `min_singular_value < threshold`.
+    ///
+    /// **Diagnostic only**: `min_singular_value` scales with the coordinate
+    /// magnitudes of `H`, so a single threshold is not portable across image
+    /// scales. Not a production stability gate.
     pub fn is_ill_conditioned(&self, min_singular_value_threshold: F) -> bool {
         self.min_singular_value < min_singular_value_threshold
     }
