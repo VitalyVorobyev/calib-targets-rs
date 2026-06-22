@@ -47,6 +47,12 @@ cargo run -p calib-targets --example detect_puzzleboard -- testdata/puzzleboard_
 ## Benchmarks + diagnostics
 
 ```bash
+# Full performance campaign (end-to-end + per-stage + criterion + flamegraphs)
+bash scripts/run-perf-campaign.sh
+
+# Whole-workspace criterion micro-benches
+cargo bench --workspace
+
 # Criterion: PuzzleBoard detection timing across board sizes (Full vs KnownOrigin fast path)
 cargo bench -p calib-targets --bench puzzleboard_sizes
 
@@ -55,7 +61,9 @@ cargo run --release -p calib-targets --example puzzleboard_size_sweep
 ```
 
 The grid bench harness (`calib-targets-bench`) selector is documented in
-[detection-pipeline.md](detection-pipeline.md#bench-harness-selector).
+[detection-pipeline.md](detection-pipeline.md#bench-harness-selector); profiling
+how-to + the bottleneck ranking live in [profiling.md](profiling.md) and
+[performance.md](performance.md).
 
 ## Python bindings
 

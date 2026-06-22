@@ -103,10 +103,11 @@ two distinct). Read the relevant guide before touching that area:
   — complete command reference.
 - [`profiling.md`](../docs/development/profiling.md)
   — flamegraph / per-span timing capture for the grid-build pipeline.
+- [`performance.md`](../docs/development/performance.md)
+  — benchmark methodology, current bottleneck ranking, and the prioritized
+  optimization backlog.
 - [`subagent-workflow.md`](../docs/development/subagent-workflow.md)
   — how to dispatch quick-/deep-implementer subagents during feature work.
-- [`improvement-roadmap-2026-06.md`](../docs/development/improvement-roadmap-2026-06.md)
-  — Studio-driven detection/parameter improvement roadmap.
 
 **Algorithm references** ([`docs/algorithms/`](../docs/algorithms/)):
 
@@ -114,8 +115,6 @@ two distinct). Read the relevant guide before touching that area:
   — canonical stage-by-stage map for the sole grid builder.
 - [`algorithmic_gaps.md`](../docs/algorithms/algorithmic_gaps.md)
   — workspace-wide ledger of open/closed algorithmic gaps and known limits.
-- [`chess-corners-0.10-impact.md`](../docs/algorithms/chess-corners-0.10-impact.md)
-  — the `chess-corners` 0.8→0.10 integration report (and why RingFit is default).
 - [`puzzle_detection_spec.md`](../docs/algorithms/puzzle_detection_spec.md)
   — PuzzleBoard soft-edge-decode + global-inference design.
 - [`charuco_concept.md`](../docs/algorithms/charuco_concept.md)

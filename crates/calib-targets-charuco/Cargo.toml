@@ -43,10 +43,15 @@ image.workspace = true
 tempfile.workspace = true
 calib-targets = { path = "../calib-targets" }
 projective-grid.workspace = true
+criterion.workspace = true
 
 [[example]]
 name = "run_dataset"
 required-features = ["dataset"]
+
+[[bench]]
+name = "dataset_decode"
+harness = false
 
 # The regression suites measure self-consistency wrong-ids, which live on the
 # `detect_with_diagnostics` channel — so they require the `diagnostics` feature.
