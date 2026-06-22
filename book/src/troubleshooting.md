@@ -37,75 +37,67 @@ the binary, not in a parent process.
 
 ## `detect_chessboard` returns `None`
 
-The detector has no single error variant — a `None` return means
-some stage failed to converge. To diagnose, enable the `diagnostics`
-cargo feature on `calib-targets` and use
-`detect_chessboard_with_diagnostics` to get a full `DebugFrame`
-(off by default; the hot `detect()` path no longer builds one) and
-follow the chain:
+The detector has no single error variant — a `None` return means some
+stage failed. To diagnose, run the chessboard crate's serializable
+topological trace, `calib_targets_chessboard::trace_topological`,
+which is layered over the production path (so it reflects what `detect()`
+actually does) and reports per-corner usability plus the labelled
+components:
 
 ```rust,ignore
-// Requires `calib-targets = { ..., features = ["diagnostics"] }`.
-use calib_targets::detect::{default_chess_config, detect_chessboard_with_diagnostics};
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets_chessboard::{trace_topological, DetectorParams};
 # let img: image::GrayImage = todo!();
 
-let frame = detect_chessboard_with_diagnostics(
-    &img,
-    &default_chess_config(),
-    &DetectorParams::default(),
-);
-println!("stage counts: {:#?}", frame.corners.iter().fold(
-    std::collections::HashMap::new(),
-    |mut acc, c| {
-        *acc.entry(format!("{:?}", c.stage)).or_insert(0u32) += 1;
-        acc
-    },
-));
-println!("grid_directions: {:?}", frame.grid_directions);
-println!("cell_size: {:?}", frame.cell_size);
-println!("seed: {:?}", frame.seed);
-println!("iterations: {:#?}", frame.iterations);
+let corners = detect_corners(&img, &default_chess_config());
+match trace_topological(&corners, &DetectorParams::default()) {
+    Ok(trace) => {
+        let usable = trace.corners.iter().filter(|c| c.usable).count();
+        println!("corners_in: {}", trace.diagnostics.corners_in);
+        println!("corners_used: {usable}");
+        println!("components: {}", trace.components.len());
+        println!("total labels: {}", trace.diagnostics.labels);
+    }
+    Err(e) => println!("topological stage produced no grid: {e}"),
+}
 ```
 
 **Checklist:**
 
-1. **No ChESS corners found?** Look for `input_count: 0` in the frame.
-   The ChESS detector saw nothing. Check image resolution / contrast;
-   override `calib_targets::detect::default_chess_config()` with a
-   custom `DetectorConfig` if necessary — e.g.
-   `DetectorConfig::chess().with_threshold(Threshold::Absolute(8.0))`
-   to drop the noise floor, or
-   `.with_threshold(Threshold::Relative(0.05))` for a fraction of the
-   per-frame peak response. The chess-corners 0.10 release replaced
-   the legacy `(threshold_mode, threshold_value)` pair with the
-   tagged-enum `Threshold` shown above.
+1. **No ChESS corners found?** `corners.is_empty()` (and
+   `trace.diagnostics.corners_in == 0`). The ChESS detector saw nothing —
+   check image resolution / contrast; override
+   `calib_targets::detect::default_chess_config()` with a custom
+   `DetectorConfig` if necessary — e.g.
+   `DetectorConfig::chess().with_threshold(Threshold::Absolute(8.0))` to
+   drop the noise floor, or `.with_threshold(Threshold::Relative(0.05))`
+   for a fraction of the per-frame peak response. The chess-corners 0.10
+   release replaced the legacy `(threshold_mode, threshold_value)` pair
+   with the tagged-enum `Threshold` shown above.
 
-2. **Corners found, `grid_directions: None`?** Clustering failed.
-   Most common causes:
-   - Noisy axes: raise `cluster_tol_deg` (default `12.0` → try `16.0`).
-   - Few real corners: lower `min_peak_weight_fraction` (default
-     `0.02` → try `0.01`).
-   - Perfectly rectilinear board with axes exactly at the π-wrap
-     boundary: the detector handles this via plateau-aware peak picking — if
-     you hit this, verify you're on v0.6.0+.
+2. **Corners found but few `usable`?** The strength / fit prefilter or the
+   axis-usability gate is rejecting most corners. Lower
+   `min_corner_strength`, raise `max_fit_rms_ratio`, and check the axis
+   clustering tolerances (`cluster_tol_deg` default `12.0` → try `16.0`;
+   `min_peak_weight_fraction` default `0.02` → try `0.01`). A perfectly
+   rectilinear board with axes on the π-wrap boundary is handled by
+   plateau-aware peak picking.
 
-3. **`grid_directions` set, `seed: None`?** Seeding failed — no
-   qualifying 2×2 quad was found.
-   - Try `detect_chessboard_best` with
-     `DetectorParams::sweep_default()` (widens clustering and attachment
-     tolerances, which gives the seed finder more to work with).
+3. **Usable corners but `Err(NoComponents)`?** The topological builder
+   assembled no quad mesh. Try `detect_chessboard_best` with
+   `DetectorParams::sweep_default()` (widens the clustering and attachment
+   tolerances).
 
-4. **`seed` set, `detection: None`?** Validation failed to converge.
-   - Check `iterations`: if the labelled count oscillates, try
-     `detect_chessboard_best` with a wider config from
-     `DetectorParams::sweep_default()`.
-   - Scene may contain multiple boards — try
-     `detect_chessboard_all` and handle each component separately.
+4. **Components found but `detect_chessboard` still `None`?** The final
+   geometry check refused the detection (survivors below
+   `min_labeled_corners`) or only tiny components survived. Try a wider
+   config via `detect_chessboard_best`; if the scene legitimately holds
+   multiple boards, use `detect_chessboard_all` and handle each component
+   separately.
 
-5. **Multiple same-board components in the scene** (ChArUco markers
-   break contiguity): this is expected. Use `detect_chessboard_all`;
-   each piece comes back with its own locally-rebased `(i, j)`.
+5. **Multiple same-board components in the scene** (ChArUco markers break
+   contiguity): this is expected. Use `detect_chessboard_all`; each piece
+   comes back with its own locally-rebased `(i, j)`.
 
 ---
 
@@ -152,8 +144,9 @@ specification in a geometrically consistent way.
 2. **`inliers` small but non-zero:**
    - Board is partially visible — lower `min_marker_inliers` to the number of markers
      you reliably expect to see.
-   - Strong perspective distortion — the homography RANSAC may not converge. Raise
-     `orientation_tolerance_deg` so more corners enter the initial grid.
+   - Strong perspective distortion — raise the chessboard-side attachment
+     tolerances (`attach_axis_tol_deg`, `edge_axis_tol_deg`) so more
+     corners enter the grid, or use `detect_charuco_best` with a sweep.
 
 3. **`inliers` near threshold:**
    - One or two spurious decodings are pulling the fit off. Raise `min_border_score`
@@ -172,7 +165,7 @@ specification in a geometrically consistent way.
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
 | Specular reflections on board | Pre-process with local contrast normalisation (CLAHE); if pre-processing is off the table, lower `min_peak_weight_fraction` so clustering can cope with the reduced corner count |
-| Validation loop oscillates (seed found, detection `None`) | Use `detect_chessboard_best`; inspect `DebugFrame.iterations` to confirm the labelled count is bouncing |
+| Grid components found but detection `None` | Use `detect_chessboard_best`; inspect the `trace_topological` components and the final-check `GeometryCheckTrace.dropped_*` counters |
 
 ---
 

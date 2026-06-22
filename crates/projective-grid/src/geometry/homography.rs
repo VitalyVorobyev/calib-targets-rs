@@ -19,14 +19,20 @@ pub struct Homography<F: Float = f32> {
 
 /// Numerical quality of a homography matrix.
 ///
-/// Computed from the SVD of the 3×3 matrix `H`. Use these fields to gate
-/// downstream consumers (mesh cells, quality gates) against degenerate
-/// solutions: a near-singular `H` arises when the source or destination
-/// quad has three near-collinear points and would lead to large
-/// re-projection error away from the fitted points.
+/// Computed from the SVD of the 3×3 matrix `H`. A near-singular `H` arises
+/// when the source or destination quad has three near-collinear points and
+/// would lead to large re-projection error away from the fitted points.
 ///
 /// `condition` is a unitless ratio; the other two are in the same units
 /// as `H`'s entries.
+///
+/// **Diagnostic only — not a scale-stable stability gate.** The
+/// absolute-magnitude fields (`min_singular_value`, `determinant`) depend on
+/// the coordinate scale and translation of the points `H` was fit from, so a
+/// single absolute threshold is not portable across image scales. Use this
+/// struct for inspection and relative comparison, not as a production
+/// degeneracy gate. For production gating prefer a pixel-unit re-projection
+/// residual (as the [`extension`](crate::shared::extension) module does).
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct HomographyQuality<F: Float = f32> {
@@ -74,9 +80,13 @@ impl<F: Float> HomographyQuality<F> {
         }
     }
 
-    /// `true` when `min_singular_value < threshold`. Useful as a single
-    /// boolean gate for `mesh::from_corners_with_min_singular_value` and
-    /// similar opt-in conditioning checks.
+    /// `true` when `min_singular_value < threshold`.
+    ///
+    /// **Diagnostic only.** `min_singular_value` scales with the coordinate
+    /// magnitudes of the points `H` was fit from, so a single threshold is not
+    /// portable across image scales — do not use this as a production stability
+    /// gate (prefer a pixel-unit re-projection residual). Retained for opt-in
+    /// conditioning spot-checks and tests.
     pub fn is_ill_conditioned(&self, min_singular_value_threshold: F) -> bool {
         self.min_singular_value < min_singular_value_threshold
     }

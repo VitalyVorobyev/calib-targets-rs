@@ -11,7 +11,7 @@ This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
 pipeline reference — those live with the code that owns them:
 
-- **`docs/topological-grid-detection.md`** (repo root) — canonical
+- **`docs/algorithms/topological-grid-detection.md`** (repo root) — canonical
   stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
   stage map for the `GraphBuildAlgorithm::Topological` pipeline,
@@ -21,6 +21,11 @@ pipeline reference — those live with the code that owns them:
 Read those first for any pipeline question. The remainder of this
 file lists what is known to be missing or suboptimal, with a
 proposed fix per gap.
+
+> Related upstream-defect note:
+> [`docs/algorithms/diskfit-antipodal-sector.md`](diskfit-antipodal-sector.md)
+> records why `RingFit` stays the default `OrientationMethod` (a latent
+> axis-slot inversion in `chess-corners`' `DiskFit` fitter).
 
 ---
 
@@ -77,33 +82,37 @@ all) for inputs where no reliable axis can be synthesized. The
 synthesized-axis path covers the common case; the pure-geometric fallback
 is the remaining incremental item. Tracked as a future deep-dive phase.
 
-### Gap 2 — `circular_stats` is `f32`-only (OPEN)
+### Gap 2 — `circular_stats` is `f32`-only (CLOSED — moot, 2026-06-22)
 
-The rest of the crate is generic in `Float = RealField + Copy`.
-`circular_stats` is hard-coded to `f32`. Consumers that want `f64`
-precision throughout pay a type cast on every histogram pass.
+The detection surface is pinned to `f32` (`detect.rs`: "The detection surface
+is pinned to `f32`"), so a `Float`-generic clustering histogram would be dead
+generality — no consumer instantiates that path at `f64`. The two duplicate
+undirected-angle helper sites (`shared/angle.rs` vs `cluster/circular.rs`) were
+also consolidated to a single `f32` source of truth in `cluster::circular`, and
+the chessboard `circular_stats.rs` re-export module was deleted. Re-open only if
+a future `f64` detection surface appears; until then this is closed.
 
-**Fix.** Promote the helpers to `Float` generic; the only `f32`
-constants are `PI` and the histogram smoothing kernel weights.
-Tracked as deep-dive Phase 6.
+### Gap 3 — `HomographyQuality` is not a stable production metric (RESOLVED 2026-06-22)
 
-### Gap 3 — `HomographyQuality` is not a stable production metric (OPEN)
+`homography::HomographyQuality` returns SVD-derived ratios of the unnormalised
+3×3 H matrix; the absolute-magnitude fields (`min_singular_value`,
+`determinant`) depend on coordinate scale and translation magnitude, so they
+are not a scale-stable geometry-degeneracy threshold across image scales.
 
-`homography::HomographyQuality` returns SVD-derived ratios of the
-unnormalised 3×3 H matrix. Those ratios depend on coordinate scale
-and translation magnitude — they are not a stable
-geometry-degeneracy threshold across image scales.
+Two things resolve the misuse risk:
 
-Status: `extend_via_global_homography` already does **not** use it as
-a gate (it uses pixel-unit reprojection residuals — see
-`extension.rs`). The struct is still re-exported at the crate root,
-so external callers can still misuse the `is_ill_conditioned`
-predicate.
+- It is **not** re-exported at either crate root. `projective-grid` exposes it
+  only under `projective_grid::geometry::`, and the production extension path
+  gates on pixel-unit reprojection residuals (`extension.rs`), not on this
+  struct. (The earlier note that it was "re-exported at the crate root" was
+  stale — corrected here.)
+- The rustdoc on both copies (projective-grid `geometry/homography.rs` and the
+  `calib-targets-core` copy) now states **diagnostic only — not a scale-stable
+  stability gate**, and `is_ill_conditioned` carries the same caveat.
+  `is_ill_conditioned` has no production caller (test-only).
 
-**Fix options.**
-- Narrow the doc-comment to "diagnostic only, not a stability gate."
-- Or expose DLT design-matrix conditioning instead, with documented
-  scale-aware semantics.
+The deeper "expose DLT design-matrix conditioning with documented scale-aware
+semantics" option is left as a future enhancement, not a blocker.
 
 ### Gap 4 — Hex post-fit recovery schedule (OPEN, now precisely scoped)
 
@@ -404,19 +413,45 @@ blockers, tracked):** a real bottom-left corner on this frame is detected but
 not reconstructed (a recall miss, acceptable under the contract) — folds into
 the Gap 8 distortion-recall family and the Gap 16 follow-up.
 
-### Gap 16 — Global smooth-warp precision backstop (OPEN, follow-up to Gap 15)
+### Gap 16 — Global smooth-warp precision backstop (CLOSED BY EVIDENCE 2026-06-22 — approach falsified)
 
-The Gap 15 fix is a *local* per-line smoothness criterion — surgical and
-low-risk, the agreed first phase. The agreed second phase is a *global* precision
-backstop: model the whole labelled lattice as a low-order smooth warp
-(biquadratic / thin-plate spline) and reject corners whose reprojection residual
-is high, replacing the rigid global-homography drop that cannot represent radial
-distortion at all. A single smooth-warp model would subsume the distortion-recall
-(Gap 8), off-axis-false-label (Gap 11), and frontier-false-positive (Gap 15)
-families under one principled predicate instead of a stack of local checks, and
-is the right place to also recover the legitimate-but-unreconstructed frontier
-corners (the Gap 15 recall residual) without re-admitting false positives. Larger
-change to the validation core; deferred as a tracked follow-up.
+The proposed second phase to Gap 15 was a *global* precision backstop: model the
+whole labelled lattice as a low-order smooth warp (biquadratic / TPS) and reject
+corners whose reprojection residual is a high outlier, on the hypothesis that one
+global model subsumes the distortion-recall (Gap 8), off-axis-false-label
+(Gap 11), and frontier-false-positive (Gap 15) families under one predicate.
+
+**The premise is falsified by measurement.** Fitting `(i, j) → pixel`
+(biquadratic and affine, with leave-one-out leverage correction) over the
+production labelled set on every public frame shows the global-residual gate is
+*simultaneously too loose and too tight* — the exact smell CLAUDE.md names:
+
+- On the Gap-15 witness `GeminiChess1.png`, the known false positive (the
+  left-edge leaf one cell past the true board edge, pixel ≈ (210.7, 163.6)) has a
+  leave-one-out residual of **0.096 cell (z = −0.96, 3rd-*smallest* of 53)** — a
+  global low-order polynomial extrapolates the lattice through a one-cell-past-edge
+  leaf almost exactly, giving the false corner a *tiny* residual. Legitimate
+  barrel-distorted periphery corners meanwhile reach **0.5–0.58 cell
+  (z = +4.5…+5.5)**: the false positive's residual is ~6× *smaller* than the
+  legitimate ones. No threshold separates the classes because the separation does
+  not exist in this feature.
+- On `GeminiChess2/3` the biquadratic fits so tightly that legitimate corners
+  reach z = 6.5–8.0, so any robust z-gate strict enough to be useful elsewhere
+  manufactures false *drops* here (recall regression on the ratchets).
+
+The Gap-15 signal is a **local second-order** spacing kink, which a global fit
+averages away. So a global-residual drop gate is not precision-safe and cannot be
+made safe by threshold choice; it was **not implemented** (zero source change).
+The full per-corner numbers are recorded in the calibration-target-detector agent
+memory (`gap16_smooth_warp_backstop.md`).
+
+**What remains real (re-scoped).** Keep the Gap-15 *local* second-order criterion
+— it is already the right shape. The genuinely open item is the *recall* half:
+recovering the legitimate-but-unreconstructed bottom-left frontier corner on
+`GeminiChess1` (the Gap-15 recall residual), a distinct problem a global-residual
+*drop* gate never addressed. A *local* boundary-extension predicate (the Gap 6
+family) is the right tool; folded back into the Gap 8 / Gap 6 distortion-recall
+line.
 
 ### Resolved gaps (April 2026 refactor)
 
@@ -460,12 +495,16 @@ change to the validation core; deferred as a tracked follow-up.
 
 ## Architectural-direction summary
 
-The next architectural moves are closing Gap 8 (topological recall in
-heavy-distortion regions), unifying the chessboard booster boundary
-extension with the generic extension machinery (Gap 6), and tightening
-the homography-quality public surface (Gap 3). Hex-grid recovery
-schedule (Gap 4) and `circular_stats` `Float`-genericisation (Gap 2)
-are smaller incremental items.
+The next architectural move is the **distortion-recall** line: recovering the
+legitimate-but-unreconstructed frontier corners in heavy radial distortion
+(Gap 8) via a *local* boundary-extension predicate unified with the generic
+extension machinery (Gap 6). The global smooth-warp backstop once proposed as
+Gap 16 was **falsified by measurement** (a global residual gate cannot separate a
+one-cell-past-edge false positive from legitimate distorted corners) and is
+closed; the Gap-15 *local* second-order criterion stays the precision tool there.
+The disjoint-set component merge (Gap 9) also remains. Gap 3 (homography-quality
+surface) and Gap 2 (`circular_stats`) are closed; the hex-grid recovery schedule
+(Gap 4) is a smaller incremental item.
 
 ---
 

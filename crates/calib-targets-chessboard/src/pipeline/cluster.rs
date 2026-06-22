@@ -56,10 +56,11 @@ fn map_assignment(assign: AxisAssignment) -> AxisCluster {
     }
 }
 
-// Re-export the generic angle helpers under their old local names so
-// the sibling `boosters` module keeps its existing
-// `use super::cluster::{angular_dist_pi, wrap_pi, ...}` imports.
-pub(crate) use crate::circular_stats::{angular_dist_pi, wrap_pi};
+// The generic undirected-angle helpers live in `projective_grid::cluster`
+// (the single source of truth). Re-export them under their short local names
+// so this module and the sibling `boosters` module keep their
+// `{angular_dist_pi, wrap_pi}` imports.
+pub(crate) use projective_grid::cluster::{angular_dist_pi, wrap_pi};
 
 /// Two grid-direction centres in `[0, π)` with `theta0 ≤ theta1`.
 ///

@@ -15,8 +15,10 @@
 //! - [`recovery`] — the [`RecoverySchedule`](recovery::RecoverySchedule)
 //!   fixed-point that composes extension + fill + revalidation + drop filters.
 //!
-//! Two crate-private helpers back the recovery schedule: a geometry-first
-//! attach policy for synthesized-axis evidence, and undirected-angle helpers.
+//! A crate-private geometry-first attach policy for synthesized-axis evidence
+//! backs the recovery schedule. The undirected-angle helpers it needs live in
+//! [`crate::cluster`] (the single source of truth for `wrap_pi` /
+//! `angular_dist_pi`).
 //!
 //! The chessboard crate composes [`grow`] / [`fill`] / [`extension`] /
 //! [`grow_extend`] directly for its own topological recovery path.
@@ -32,7 +34,6 @@ pub mod validate;
 // Geometry-only grid-growth engine + recovery schedule (relocated from the
 // retired `seed_and_grow` module; consumed by the topological recovery path
 // and, externally, by the chessboard crate).
-pub(crate) mod angle;
 pub mod extension;
 pub mod fill;
 pub mod grow;

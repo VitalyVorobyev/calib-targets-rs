@@ -30,7 +30,7 @@ around it: the prefilter, axis clustering (including the DiskFit
 slot-coherence repair), the recall boosters, the mandatory geometry
 check, and output canonicalisation. The generic grid-finder internals
 are documented separately in
-[`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md).
+[`docs/algorithms/topological-grid-detection.md`](../../../docs/algorithms/topological-grid-detection.md).
 
 **Fallible construction.** `Detector::new(params) -> Result<Self,
 ChessboardParamsError>` validates params up front. No combination the
@@ -64,7 +64,7 @@ stages map onto the `pipeline/` module tree as follows.
 | 3 | `topological_grid` | `projective-grid` via `mod.rs` | oriented features (positions + dual axes) + cluster centres as an axis hint | connected labelled `(i, j) → source_index` components | `detect_grid_all(SquareAlgorithm::Topological)`: Delaunay classify → quad assembly → axis-driven cell-test walk → facade `merge_components_local`. The facade's own post-build validation / residual drop / recovery are disabled (`+∞`, `Off`) — the chessboard owns those downstream | axis-driven cell test admitting a spurious edge across a marker; foreshortening near the band edges | `topological` (`TopologicalParams`) |
 | 4 | `recover_components` | `recover.rs` + `boosters.rs` | facade-merged components + clustered corners | per-component grid extended by booster fills, then re-merged in label space | per component: estimate cell size from labelled cardinal edges, then `boosters.rs` (interior gap fill + line extrapolation via `fill_grid_holes`, with a per-axis **directional edge scale** since the visible component can be anisotropic before boundaries fill); each addition re-runs the same axis / parity / edge-slot-swap invariants as the walk; capped by `max_booster_iters`. Optional weak-cluster rescue re-admits `NoCluster` corners within `weak_cluster_tol_deg`. Then `merge_components_local` reunites components | over-flag of borderline corners; line extrapolation projecting past the true board edge | `attach_search_rel`, `attach_axis_tol_deg`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters`, `component_merge` |
 | 5 | `final_geometry_check` | `geometry_check.rs` | final labelled set | drop list + `detection_refused` flag | **mandatory, can only DROP** (never add or relabel): (a) shared `validate` (line collinearity + local-H residual) with **looser** `geometry_check_*` tolerances — catches gross mislabels (full-cell / diagonal ≈ 1.4-cell residual) without flagging accepted perspective drift; (b) the direct topological wrong-label check (interior skipped-corner edges + duplicate-pixel labels); (c) largest-cardinally-connected-component filter, dropping isolated leaks outside the main grid. Refuses the detection if survivors `< min_labeled_corners` | strict per-edge length tests over-flag distorted boards (kept loose deliberately); single-component constraint is the chessboard contract | `geometry_check_line_tol_rel`, `geometry_check_local_h_tol_rel`, `line_min_members`, `validate_step_aware`, `enable_final_edge_shape_check` |
-| 6 | `output` | `output.rs` | surviving labelled set | `ChessboardDetection { grid_directions, cell_size, corners: ChessboardCorner[] }` | rebase `(i, j)` to non-negative (min → `(0, 0)`); canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable sort by `(j, i)` | — | `params.min_labeled_corners` |
+| 6 | `output` | `output.rs` | surviving labelled set | `ChessboardDetection { grid_directions, cell_size, corners: ChessboardCorner[] }` | build a `projective_grid::LabelledGrid` from the labelled set and call `LabelledGrid::normalize()` (rebase min → `(0, 0)`; canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)` sort — all owned by projective-grid), then adapt the normalized lattice `Coord{u,v}` to the workspace `GridCoords{i,j}` | — | `params.min_labeled_corners` |
 
 ### Key invariants
 
@@ -148,12 +148,15 @@ crate keeps the ChESS glue and slot-parity semantics.
   per-component recovery + post-booster merge (`recover.rs`), the
   mandatory geometry-check **orchestration** (the drop filters
   themselves live in `shared::validate`; the chessboard sequences them),
-  output canonicalisation + non-negative rebase (`output.rs`), and the
-  multi-component dispatch.
+  the output adapter (`output.rs`) that maps the normalized lattice
+  `Coord{u,v}` back to the workspace `GridCoords{i,j}` — the rebase +
+  canonicalise + sort *algorithm* itself now lives in
+  `projective_grid::LabelledGrid::normalize` — and the multi-component
+  dispatch.
 
 ## Cross-references
 
-- [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)
+- [`docs/algorithms/topological-grid-detection.md`](../../../docs/algorithms/topological-grid-detection.md)
   — the generic `projective-grid` topological builder in full (core +
   chessboard input adapter + recovery layer).
 - `crates/projective-grid/src/topological/` — the projective-grid

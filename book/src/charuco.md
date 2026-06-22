@@ -5,6 +5,12 @@
 ![ChArUco detection overlay](img/charuco_detect_report_small2_overlay.png)
 *ChArUco detection overlay with assigned corner IDs.*
 
+> For the end-to-end stage map, failure modes, and tuning, see the
+> [ChArUco pipeline](pipeline_charuco.md); for the marker-side algorithms
+> see [ArUco bit decode](algo_aruco_decode.md) and
+> [ChArUco alignment & corner IDs](algo_charuco_alignment.md). This page is
+> the crate API reference.
+
 1. Detect a chessboard grid from ChESS corners.
 2. Build per-cell quads from the detected grid.
 3. Decode markers per cell (no full-image warp).

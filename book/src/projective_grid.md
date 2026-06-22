@@ -157,15 +157,18 @@ triangle pairs merged into cells and integer coordinates flooded across the
 mesh. Image-free; recovers dense grids and copes well with distortion. May
 produce several components — see `detect_grid_all` below.
 
-The `GraphBuildAlgorithm` type still exists in the public API (for
-`DetectorParams`), but the `SeedAndGrow` variant was removed; `Topological`
-is the only variant.
+There is only one square grid builder. `GraphBuildAlgorithm` (on
+`DetectorParams`) is a single-variant, `#[non_exhaustive]` enum
+(`Topological`) retained purely as a reserved config seam — there is no
+algorithm to choose.
 
 The algorithm shares the post-detection validation and projective fit across
 all target types, recovering the full pattern with zero wrong labels. The
 deep-dive — the axis-classification test, the triangle-to-cell merge, and the
 line between the generic machinery here and the chessboard-specific wrapper —
-lives in `docs/topological-grid-detection.md` in the workspace repository.
+is on the [Topological grid finder](algo_topological_grid.md) algorithm page,
+with the full stage-by-stage reference in
+`docs/algorithms/topological-grid-detection.md`.
 
 **Hex** also uses the topological algorithm. On a hex point lattice the
 Delaunay triangles *are* the unit cells, so the diagonal/quad-merge stage is
@@ -297,6 +300,6 @@ enum but `detect_grid` does not yet act on it.
 
 API reference: [`projective-grid` on docs.rs](https://docs.rs/projective-grid).
 The topological grid finder has an in-repo deep-dive at
-`docs/topological-grid-detection.md`.
+`docs/algorithms/topological-grid-detection.md`.
 
 [hello-grid]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/projective-grid/examples/hello_grid.rs

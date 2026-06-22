@@ -18,7 +18,7 @@
 //! - `docs/ORIENTATION.md` — where each strategy consumes per-corner
 //!   orientation and how each can run orientation-free (the dot-grid path).
 //!
-//! The per-strategy stage maps live in `docs/topological-grid-detection.md`
+//! The per-strategy stage maps live in `docs/algorithms/topological-grid-detection.md`
 //! (repo root) and `calib-targets-chessboard/docs/PIPELINE.md`.
 //!
 //! # Two public tiers

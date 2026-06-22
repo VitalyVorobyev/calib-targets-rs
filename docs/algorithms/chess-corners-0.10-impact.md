@@ -270,6 +270,19 @@ The only failure variant remains `edge_sampling / NotEnoughEdges`.
    Python / WASM / FFI. Deferred — the workspace default is `Chess +
    ChessConfig` which existing bindings already handle.
 
+### Resolution status (2026-06-22)
+
+- **(1) Baseline bless** — folded into the chessboard/projective-grid boundary
+  break (result normalization moves into `projective-grid`, which re-baselines
+  chessboard output by design). The `bench bless` runs there, after overlay
+  review, not as a separate pass.
+- **(2) manifest gates** — no action needed (already passing under `bench run`).
+- **(3) `--orientation-method` in `run_dataset`** — still deferred; mechanical,
+  only needed if DiskFit becomes a default candidate, which it is not.
+- **(4) DiskFit not the default** — confirmed and unchanged; `RingFit` stays
+  `default_chess_config()` (the strict-dominance rule does not trigger).
+- **(5) bindings parity for the new 0.10 types** — still deferred.
+
 ## Step 2 — Topo stage timing
 
 `tools/out/topo-grid-performance/stage-breakdown.json` exists and is

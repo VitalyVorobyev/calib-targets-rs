@@ -5,7 +5,7 @@ describes **what the crate is for** and **the three orthogonal axes** the
 module structure is organised around. It is the companion to the per-strategy
 stage maps:
 
-- `docs/topological-grid-detection.md` (repo root) — the Topological grid
+- `docs/algorithms/topological-grid-detection.md` (repo root) — the Topological grid
   finder, step by step.
 - `crates/calib-targets-chessboard/docs/PIPELINE.md` — the topological path
   as composed by the chessboard detector.
@@ -253,7 +253,7 @@ by duplicating folders. What was done:
 extension / interior fill / rescue) is square-only — its grid-growth primitives
 assume a 4-neighbour D4 lattice. Hex has no recovery stage. The geometry-only hex
 primitives (per-cell mesh, rectification, smoothness) remain a roadmap item (see
-`docs/algorithmic_gaps.md` Gap 4). If oriented hex support is added later, model
+`docs/algorithms/algorithmic_gaps.md` Gap 4). If oriented hex support is added later, model
 orientation as a set of **local lattice directions**, not as square-style x/y
 axes.
 

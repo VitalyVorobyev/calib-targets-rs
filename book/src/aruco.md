@@ -5,6 +5,11 @@
 ![Mesh-rectified grid](img/mesh_rectified_small.png)
 *Rectified grid used for ArUco/AprilTag decoding.*
 
+> For the algorithm — the grid-aware bit sampling model, the explicit bit
+> order / polarity / `borderBits` conventions, and why this is not generic
+> contour detection — see [ArUco bit decode](algo_aruco_decode.md). This
+> page is the crate API reference.
+
 ## Current API surface
 
 - `Dictionary`: built-in dictionary metadata and packed codes.

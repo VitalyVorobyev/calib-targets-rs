@@ -5,6 +5,10 @@
 ![Marker-board detection overlay](img/marker_detect_report_crop_overlay.png)
 *Detected circle markers and aligned grid overlay.*
 
+> For the end-to-end stage map, failure modes, and tuning, see the
+> [Marker board pipeline](pipeline_marker.md). This page is the crate API
+> reference.
+
 ## Detection pipeline
 
 1. **Chessboard detection**: run `calib-targets-chessboard` to obtain grid-labeled corners (partial boards are allowed).
@@ -17,7 +21,7 @@
 
 - `MarkerBoardDetector`: main entry point.
 - `MarkerBoardSpec`: rows/cols plus the three expected circles (cell coordinate + polarity).
-- `MarkerBoardParams`: layout + chessboard/grid graph params + circle score + match settings.
+- `MarkerBoardParams`: layout + chessboard params + circle score + match settings.
 - `MarkerBoardDetectionResult`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
   - `alignment`: optional `GridAlignment` from detected grid coords to board coords.
@@ -37,8 +41,11 @@
 
 `MarkerBoardParams` configures detection:
 
-- `chessboard`: `ChessboardParams` (defaults to `completeness_threshold = 0.05` to allow partial boards).
-- `grid_graph`: `GridGraphParams` for neighbor search constraints.
+- `layout`: the `MarkerBoardSpec` to detect.
+- `chessboard`: `DetectorParams` for the underlying corner-grid step. The
+  chessboard detector is scale-invariant, so the v1 `expected_rows/cols`
+  and `completeness_threshold` knobs no longer apply — the marker circles
+  supply the geometry constraint.
 - `circle_score`: per-cell circle scoring parameters.
 - `match_params`: candidate filtering and matching thresholds.
 - `roi_cells`: optional cell ROI `[i0, j0, i1, j1]`.

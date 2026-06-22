@@ -13,8 +13,10 @@ use projective_grid::shared::merge::{merge_components_local, ComponentInput};
 
 use super::boosters::apply_boosters_with_directional_edge_scale;
 use super::cluster::{cluster_axes, ClusterCenters};
+use super::geometry_check::run_geometry_check;
+use super::output::build_detection;
+use super::types::ChessboardDetection;
 use crate::corner::{CornerAug, CornerStage};
-use crate::detector::{build_detection_from_grow, ChessboardDetection};
 use crate::params::DetectorParams;
 use projective_grid::shared::grow::GrowResult;
 
@@ -431,7 +433,7 @@ pub(super) fn build_topological_detections(
         // divide-by-zero in validate).
         if cell_size > 0.0 {
             let mut blacklist: HashSet<usize> = HashSet::new();
-            let trace = crate::detector::run_geometry_check(
+            let trace = run_geometry_check(
                 &mut augs,
                 &mut grow,
                 centers,
@@ -447,7 +449,7 @@ pub(super) fn build_topological_detections(
             continue;
         }
 
-        out.push(build_detection_from_grow(&augs, &grow, cell_size));
+        out.push(build_detection(&augs, &grow, cell_size));
     }
 
     out.sort_by_key(|d| std::cmp::Reverse(d.corners.len()));

@@ -242,13 +242,14 @@ Verify against the printed board or the JSON spec used to generate it.
 2. If **no corners** are found: loosen `min_corner_strength`, check
    image resolution and contrast.
 3. If **corners found but no grid** (`detect_chessboard` returns
-   `None`): build with the `diagnostics` feature and inspect the
-   `DebugFrame` via `detect_chessboard_with_diagnostics` —
-   the `grid_directions: None` case means clustering failed (try
-   lowering the advanced `min_peak_weight_fraction`), `seed: None` means
-   seeding failed (try `detect_chessboard_best`), and an iteration trace
-   that never converges means the validation loop is cycling (try
-   `detect_chessboard_best` with a wider config).
+   `None`): run `calib_targets_chessboard::trace_topological` —
+   few `usable` corners means the prefilter / clustering is too tight (try
+   lowering `min_corner_strength` or the advanced
+   `min_peak_weight_fraction`), `Err(NoComponents)` means the topological
+   builder assembled no grid (try `detect_chessboard_best`), and components
+   found but a refused detection points at the final geometry check
+   (inspect `GeometryCheckTrace.dropped_*`; try a wider config). See
+   [Troubleshooting](troubleshooting.md) for the full chain.
 4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
    lower `min_border_score`.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,

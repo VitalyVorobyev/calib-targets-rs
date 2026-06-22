@@ -16,11 +16,8 @@ use crate::pipeline::detect_all_topological;
 
 use crate::corner::ChessCorner;
 
-// Re-export from the pipeline: stable result types used in method signatures
-// and the internal helpers reused by the topological dispatch path.
-pub use pipeline::{
-    build_detection_from_grow, run_geometry_check, ChessboardCorner, ChessboardDetection,
-};
+// Re-export the stable result types used in method signatures.
+pub use pipeline::{ChessboardCorner, ChessboardDetection};
 
 /// Top-level detector.
 pub struct Detector {
