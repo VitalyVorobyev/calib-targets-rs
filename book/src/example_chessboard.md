@@ -35,34 +35,21 @@ cargo run --release -p calib-targets --example detect_chessboard_best -- testdat
 
 ## Instrumentation
 
-`calib_targets::detect::detect_chessboard_with_diagnostics` returns a
-`DebugFrame` with the full per-stage trace — every input corner's
-terminal stage, per-validation-iteration labelled counts + blacklist,
-booster deltas, and the final detection. This is the entry point for
-everything the book's overlay tooling and the testdata regression
-harness consume. It is gated behind the `diagnostics` cargo feature
-(OFF by default, so the hot `detect()` path builds no trace); the
-`dataset` feature used by the example below enables it.
+The chessboard crate's diagnostic entry point is
+`calib_targets_chessboard::pipeline::trace_topological(corners, params)`,
+which returns a serializable `TopologicalTrace` layered over the
+*production* `detect_grid_all` path (so the trace matches what `detect()`
+actually does). It records every input corner with its `usable` flag, the
+labelled connected components (`(u, v) -> source_index`), and summary
+counters; the final-check drop accounting lives in the pipeline's
+`GeometryCheckTrace`. See
+[The Chessboard Detector §7](chessboard.md#7-debugging-via-the-topological-trace)
+for the field-by-field walkthrough.
 
-```bash
-cargo run --release -p calib-targets-chessboard \
-  --example debug_single --features dataset -- \
-  --image testdata/mid.png \
-  --out-default /tmp/mid_default.json
-```
-
-Then render an overlay:
-
-```bash
-uv run python crates/calib-targets-py/examples/overlay_chessboard.py \
-  --single-image testdata/mid.png \
-  --frame-json /tmp/mid_default.json \
-  --out /tmp/mid_default.png --tag default
-```
-
-The overlay draws labelled corners in gold with their `(i, j)` text,
-blue/green grid edges, cluster-direction tangent lines, and the faint
-grey input-corner cloud as context.
+The `crates/calib-targets-py/examples/overlay_chessboard.py` script draws
+labelled corners in gold with their `(i, j)` text, grid edges,
+cluster-direction tangent lines, and the faint grey input-corner cloud as
+context.
 
 ---
 

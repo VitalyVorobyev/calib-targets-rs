@@ -85,11 +85,12 @@ assert_eq!(solution.grid.entries.len(), 9);
 ```
 
 `DetectionParams::default()` carries a `max_residual_px` fit gate and
-selects `SquareAlgorithm::Topological` — the sole grid builder (the
-`SeedAndGrow` variant was removed). It runs a Delaunay triangulation
-over the corner cloud, classifies edges by axis match, merges triangle
-pairs into cells, and floods integer coordinates across the mesh, then
-fits a projective transform.
+selects `SquareAlgorithm::Topological` — the sole grid builder. It runs a
+Delaunay triangulation over the corner cloud, classifies edges by axis
+match, merges triangle pairs into cells, and floods integer coordinates
+across the mesh, then fits a projective transform. See the
+[Topological grid finder](algo_topological_grid.md) algorithm page for the
+full method.
 
 ### 3. Handle the `Result`
 

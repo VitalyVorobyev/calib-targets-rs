@@ -1,9 +1,15 @@
 # The Chessboard Detector
 
 > Code: [`calib-targets-chessboard`](https://github.com/VitalyVorobyev/calib-targets-rs/tree/main/crates/calib-targets-chessboard).
-> Related: the generic BFS growth, circular-histogram peak picking, and
+> Related: the generic axis clustering, topological grid construction, and
 > line/local-H validation live in the standalone
 > [`projective-grid`](projective_grid.md) crate.
+>
+> For the canonical end-to-end stage map see the
+> [Chessboard pipeline](pipeline_chessboard.md); for the individual
+> building blocks see the [Algorithms](algorithms.md) section. This page is
+> the crate's invariant-and-API reference and goes deeper on the
+> precision-by-construction design.
 
 The chessboard detector takes a cloud of ChESS X-junction corners and produces
 an integer-labelled chessboard grid `(i, j) → image position`. It is
@@ -20,14 +26,17 @@ A wrong label would corrupt downstream calibration; that is the constraint
 the algorithm refuses to break.
 
 ```text
-┌───────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌───────────┐
-│Corners│ -> │ Pre-     │ -> │ Cluster  │ -> │ Seed +   │ -> │ Validate  │
-│  in   │    │ filter   │    │ axes,    │    │ Topo     │    │ + Recall  │
-└───────┘    │ (Stage 1)│    │ Cell     │    │ Grid     │    │ Boosters  │
-             └──────────┘    │ size     │    │ (Stages  │    │ (Stages   │
-                             │ (Stages  │    │ 5 + 6)   │    │ 7 + 8)    │
-                             │ 2-4)     │    └──────────┘    └───────────┘
-                             └──────────┘
+┌───────┐   ┌─────────┐   ┌─────────┐   ┌──────────┐   ┌─────────┐   ┌────────┐
+│Corners│ ->│Prefilter│ ->│ Cluster │ ->│  Topo    │ ->│ Recover │ ->│ Geom   │
+│  in   │   │(Stage 1)│   │  axes   │   │  grid    │   │  + boost│   │ check  │
+└───────┘   └─────────┘   │(Stage 2)│   │(Stage 3) │   │(Stage 4)│   │(Stage 5)│
+                          └─────────┘   └──────────┘   └─────────┘   └────────┘
+                                                                          │
+                                                                          v
+                                                                     ┌────────┐
+                                                                     │ Output │
+                                                                     │(Stage 6)│
+                                                                     └────────┘
 ```
 
 ---
@@ -93,155 +102,121 @@ capped at `max_validation_iters`.
 ## 3. Pipeline
 
 The detector runs as a sequence of named stages, orchestrated by
-`pipeline::run_pipeline` with one module per stage group under
-`crates/calib-targets-chessboard/src/pipeline/`. The canonical
-enumeration (also in the crate-level rustdoc):
+`pipeline::detect_all_topological` with one module per stage group under
+`crates/calib-targets-chessboard/src/pipeline/`. The canonical six-stage
+map (this mirrors `crates/calib-targets-chessboard/docs/PIPELINE.md` and
+the crate-level rustdoc — that crate doc is the authoritative stage list):
 
 ```text
 ChessCorner[]
- →  1. prefilter             strength + fit-quality + axes-validity
- →  2. cluster_axes          global axes Θ₀, Θ₁ + per-corner label
- →  3. estimate_cell_size    global cell size s (sanity prior)
- →  4. find_seed             2×2 quad; refine s from the seed edges
- →  5. grow                  BFS attachment with the full invariant stack
- →  6. extend_boundary       global / local-H extension outward + into holes
- →  7. fix_partial_slot_flip re-check axis-slot parity after extension
- →  8. rescue_no_cluster     re-admit Strong / NoCluster corners via local-H
- →  9. refit_cluster_centers re-estimate Θ₀, Θ₁; re-extend on a large shift
- → 10. validate              line + local-H residual checks; blacklist + loop
- → 11. apply_boosters        gap fill, line extrapolation, component merge
- → 12. final_geometry_check  mandatory precision gate; can only drop corners
- → Output: ChessboardDetection (single component) or None
+ →  1. prefilter            strength + fit-quality gates; weak corners kept as
+ →                          positions with no-information axes (indices stay stable)
+ →  2. cluster_axes         global axes Θ₀, Θ₁ + per-corner slot label,
+ →                          then the DiskFit slot-coherence repair
+ →  3. topological_grid     the projective-grid topological builder
+ →                          (Delaunay → classify → quads → walk → facade merge)
+ →  4. recover_components   per-component cell-size estimate, recall boosters
+ →                          (gap fill + line extrapolation), weak-cluster rescue,
+ →                          merge_components_local
+ →  5. final_geometry_check MANDATORY precision pass; can only DROP corners
+ →  6. output               LabelledGrid::normalize + GridCoords adaptation
+ → Output: ChessboardDetection (one per component) or None
 ```
 
-Stages 4–10 are the **precision core**: any corner labelled at the end
-of validation has passed every invariant. The boosters (Stage 11) only
-add corners and the final geometry check (Stage 12) only drops them —
-neither relaxes an invariant.
+The **precision core** is the whole chain: any corner that survives to
+output has passed every axis / parity / edge invariant. The boosters
+(Stage 4) only *add* corners — each addition re-runs the same invariants
+the topological walk uses — and the final geometry check (Stage 5) only
+*drops* them. Neither relaxes an invariant.
 
-> The detailed subsections below predate the finer-grained
-> enumeration and group several named stages together — "Stage 6
-> (Growth)" here covers `grow`; "Stage 7 (Validate)" covers
-> `validate`; "Stage 8 (Recall boosters)" covers `extend_boundary`
-> through `apply_boosters`. The numbered table in the crate-level
-> rustdoc is the authoritative stage list.
+> **One builder, no seed/grow loop.** The historical seed-and-grow grid
+> builder (with its `find_seed` / `grow` / `extend_boundary` /
+> blacklist-restart loop) has been removed. `(i, j)` labelling is done by
+> the topological grid finder; the chessboard crate owns the prefilter,
+> clustering, recovery boosters, the mandatory geometry check, and output
+> canonicalisation around it. The generic builder is documented on the
+> [Topological grid finder](algo_topological_grid.md) algorithm page and
+> in `docs/topological-grid-detection.md`.
 
-### Stage 1 — Pre-filter
+### Stage 1 — Pre-filter (`inputs.rs`)
 
-Drop corner `c` if:
+Mark corner `c` usable iff:
 
-- `c.strength < min_corner_strength` (default `0.0`, off);
-- `c.contrast > 0` and `c.fit_rms > max_fit_rms_ratio × c.contrast`
-  (default `0.5`);
-- both `axes[*].sigma == π` (no axis information).
+- `c.strength ≥ min_corner_strength` (default `0.0`, off); **and**
+- `c.contrast ≤ 0`, or `c.fit_rms ≤ max_fit_rms_ratio × c.contrast`
+  (default `0.5`).
 
-### Stage 2 — Global grid directions
+A corner that fails keeps its pixel position but has its axes replaced by
+the no-information sentinel (`sigma = π`), so it cannot vote on edges but
+the corner array is not renumbered (trace / index stability).
 
-Build a circular histogram on `[0, π)` with `num_bins` bins. For each
-corner `c` and each axis `axes[k]`, add a vote at `axes[k].angle mod π`
-weighted by `c.strength / (1 + axes[k].sigma)`. Smooth with `[1, 4, 6, 4, 1] / 16`.
-Find local maxima. Refine the two best peaks via **2-means in
-double-angle space** (`(cos 2θ, sin 2θ)`); halve the mean atan2 to recover
-`(Θ₀, Θ₁) ∈ [0, π)`.
+### Stage 2 — Axis clustering (`cluster/`)
+
+Recover the two global grid directions `{Θ₀ ≤ Θ₁}` from the strong
+corners' axes with the generic [axis clustering](algo_axis_clustering.md)
+(circular histogram + plateau-aware peak picking + **double-angle 2-means**
+on `(cos 2θ, sin 2θ)`), and label each corner `Canonical` (axes[0] matches
+Θ₀), `Swapped`, or `NoCluster`.
 
 > **Why double-angle.** Axes are undirected — `θ` and `θ + π` are the same
 > direction. Naïve circular mean over raw `(cos θ, sin θ)` produces zero
 > when votes straddle the 0°/π seam. Doubling the angle wraps both halves
 > together; the inverse halving gives a stable mean.
 
-### Stage 3 — Cluster assignment
+The **DiskFit slot-coherence repair** (`slot_coherence.rs`) then runs: when
+the upstream detector's `DiskFit` mode uniformly reverses a corner's
+`(axes[0], axes[1])` ordering, a gross-imbalance gate fires, the clustered
+corners are BFS-2-coloured at cell spacing, and the two `AxisEstimate`
+slots of the disagreeing corners are swapped. A bipartite-quality gate
+aborts the pass unless the 2-colouring is essentially perfect, so it can
+only add recall, never a wrong label. Under `RingFit` it is a no-op.
 
-For each survivor, score the two possible 2×2 axis assignments:
+### Stage 3 — Topological grid (`mod.rs` → `projective-grid`)
 
-- **Canonical** (cost `d(axes[0], Θ₀) + d(axes[1], Θ₁)`)
-- **Swapped** (cost `d(axes[0], Θ₁) + d(axes[1], Θ₀)`)
+Hand the oriented features (positions + dual axes) and the cluster centres
+(as an axis hint) to the [topological grid finder](algo_topological_grid.md)
+(`detect_grid_all` with `SquareAlgorithm::Topological`): Delaunay
+triangulation → axis-driven edge classification → triangle-pair → quad
+merge → flood-fill `(i, j)` walk → the facade's `merge_components_local`.
+The facade's *own* post-build validation / residual drop / recovery are
+disabled here (tolerances at `+∞`, recovery `Off`) — the chessboard owns
+those downstream.
 
-Pick the cheaper. Drop if the worse axis exceeds `cluster_tol_deg`.
-Otherwise label the corner `Canonical` (cluster = 0) or `Swapped` (cluster
-= 1).
+### Stage 4 — Recover components (`recover.rs` + `boosters.rs`)
 
-### Stage 4 — Global cell size
+Per labelled component: estimate the cell size from the labelled cardinal
+edges, then run the [recovery boosters](algo_recovery_validation.md) —
+interior gap fill + line extrapolation via `fill_grid_holes`, with a
+per-axis **directional edge scale** because a partially-grown component can
+be anisotropic before its boundaries fill in. Each addition re-runs the
+same axis / parity / edge-slot-swap invariants as the walk; the pass is
+capped by `max_booster_iters`. Optional weak-cluster rescue re-admits
+`NoCluster` corners within `weak_cluster_tol_deg`. Finally
+`merge_components_local` reunites components in label space.
 
-Specialized estimator: nearest-neighbor distances **across cluster
-boundaries** (canonical → swapped). The cross-cluster constraint suppresses
-intra-marker noise on ChArUco scenes — see the cell-size gotcha below.
+### Stage 5 — Final geometry check (`geometry_check.rs`)
 
-### Stage 5 — Seed
+**Mandatory, and can only DROP** (never add or relabel). It sequences the
+shared [`drop_set`](algo_recovery_validation.md) precision pass:
 
-Find the best 2×2 quad `A, B, C, D` (`A` canonical, `B` swapped, `C`
-swapped, `D` canonical) satisfying invariants 4-6 on all 4 edges:
+- the shared `validate` (line collinearity + local-H residual) with
+  **looser** `geometry_check_*` tolerances — catches gross mislabels
+  (full-cell / diagonal ≈ 1.4-cell residual) without flagging accepted
+  perspective drift;
+- the direct topological wrong-label check (interior skipped-corner edges,
+  duplicate-pixel labels, frontier line-spacing smoothness);
+- the largest-cardinally-connected-component filter, dropping isolated
+  leaks outside the main grid.
 
-1. Iterate canonical corners by descending strength.
-2. For each candidate `A`, kNN-search ~32 swapped corners. Classify each
-   neighbor by which of `A.axes[0]` or `A.axes[1]` the chord is closer to.
-3. For the shortest few `(B, C)` pairs, require `|AB| ≈ |AC|`. Predict
-   `D = A + (B − A) + (C − A)`. Find the nearest canonical corner near
-   the prediction.
-4. Verify all 4 edges pass invariants. **First quad wins.**
-5. **Cell size `s` is the mean of the 4 seed edge lengths** — output, not
-   input.
+The detection is refused if survivors fall below `min_labeled_corners`.
 
-If no quad passes, retry with every tolerance widened by 1.5×.
+### Stage 6 — Output (`output.rs`)
 
-### Stage 6 — Growth
-
-BFS over the `(i, j)` boundary. For each unlabelled boundary position:
-
-1. Compute the required cluster `k = (i + j) mod 2` (XOR with the seed's
-   parity offset).
-2. Predict the pixel position from labelled neighbors via a local
-   affine / 4-point homography.
-3. Search strong corners with `cluster == k` whose axes match the global
-   centers and whose distance to the prediction is `≤ attach_search_rel × s`.
-4. If 0 candidates → `Hole`. If ≥ 2 within `attach_ambiguity_factor × `
-   the nearest → `Ambiguous` (no blacklist; the candidate may be valid at
-   another position).
-5. For the unique nearest, verify the induced edges to all labelled
-   neighbors satisfy invariants 4-6. If any fails → `Hole`.
-6. Otherwise label and push its cardinal unlabelled neighbors.
-
-### Stage 7 — Validate (precision pass)
-
-Two independent geometric checks across the labelled set:
-
-- **7a. Line collinearity.** For each row / column with `≥ line_min_members`
-  members, fit both a straight TLS line and (when `≥ 4` members) a
-  projective-line. Pick the better fit by χ². Flag members with
-  perpendicular residual exceeding the per-fit tolerance.
-- **7b. Local-H residual.** For each labelled corner with ≥ 4 non-collinear
-  labelled neighbors, fit a 4-point local homography and predict the
-  corner's pixel position. Flag if the residual exceeds `local_h_tol × s`.
-
-Attribution rules (from spec §5.7c) decide who to blacklist:
-
-1. Flagged in `≥ 2` lines → outlier.
-2. Local-H flagged AND `≥ 1` line flag → outlier.
-3. Local-H flagged but no line flag, with a base neighbor flagged in a
-   line → blame the base instead.
-4. Otherwise → defer (no blacklist this iteration).
-
-If any new blacklist entries appeared, restart from Stage 5 with the
-blacklist excluded. Loop is capped at `max_validation_iters`.
-
-### Stage 8 — Recall boosters
-
-Each booster strictly adds corners; none relax invariants 4-6, 9.
-
-- **8a. Line extrapolation.** Extend each labelled row / column one corner
-  at a time along the projective-line fit. Each candidate must pass the
-  full attachment check.
-- **8b. Interior gap fill.** For each unlabelled `(i, j)` strictly inside
-  the bbox with ≥ 3 labelled neighbors, attempt the standard attachment.
-- **8c. Component merge.** Re-run the precision core with all currently
-  labelled corners excluded; if a second seed grows into a disjoint
-  component, align its `(i, j)` frame via local homography and merge.
-- **8d. Weak-cluster rescue.** Corners dropped in Stage 3 with
-  `max_d ∈ (cluster_tol, weak_cluster_tol]` become eligible attachment
-  candidates in 8a-8c, with halved search radius and the full invariant
-  stack still enforced.
-
-A final Stage-7 pass runs over the enlarged labelled set so the precision
-contract holds end-to-end.
+Build a `projective_grid::LabelledGrid` from the surviving labelled set and
+call [`LabelledGrid::normalize()`](algo_recovery_validation.md) (rebase
+min → `(0, 0)`; canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)`
+sort — all owned by projective-grid), then adapt the normalized lattice
+`Coord{u,v}` to the workspace `GridCoords{i,j}`.
 
 ---
 
@@ -251,15 +226,17 @@ The design constraint "wrong `(i, j)` labels are unrecoverable" is what
 shapes every non-obvious choice in the pipeline. Two examples:
 
 **Cell size is an OUTPUT, not an input.** A naïve detector estimates a
-global cell size first, then uses it to set the search window during seed
-finding. On ChArUco scenes the nearest-neighbor histogram is **bimodal**
-(marker-internal pairs at ~10 px vs true board pairs at ~55 px); even
-multimodal mean-shift can pick the wrong mode. The detector instead
-finds a 4-corner quad that matches itself in edge lengths and reports the
-mean of those 4 edge lengths as `s`. The window is whatever the seed
-itself agrees on — there is no global scalar to mispick. See
-`crates/calib-targets-chessboard/src/seed.rs` and the **Cell-size
-gotcha** in `CLAUDE.md`.
+global cell size first, then uses it to set a search window. On ChArUco
+scenes the nearest-neighbor histogram is **bimodal** (marker-internal
+pairs at ~10 px vs true board pairs at ~55 px); even multimodal mean-shift
+can pick the wrong mode. The topological builder instead assembles cells
+from local axis topology — its quad filter uses a **per-component**
+edge-length band (relative to that component's own median), never a global
+scalar — and the chessboard recovery stage then derives each component's
+cell size from its own labelled cardinal edges. There is no global pitch to
+mispick. See the per-component cell-size band on the
+[Topological grid finder](algo_topological_grid.md) page and the
+**Cell-size gotcha** in `CLAUDE.md`.
 
 **Edges align with axes, not diagonals.** Some chessboard detectors model
 ChESS corners as having a single orientation `θ` and check that grid
@@ -284,15 +261,16 @@ boards. One target per frame is the contract.
 
 ## 5. Failure modes
 
-When detection fails or returns fewer corners than expected, identify the
-stage from the `DebugFrame` (see §7) and consult this table.
+When detection fails or returns fewer corners than expected, run the
+serializable trace (`pipeline::trace_topological`, see §7) and consult this
+table.
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
-| `frame.detection.is_none()` and `frame.grid_directions.is_none()` | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated. Most common on very-bad-light frames. |
-| `frame.cell_size.is_none()` | Stage 5 (seed) | Try `detect_chessboard_best` with `DetectorParams::sweep_default()` | No 4-corner quad passed the consistency check. Seeding tolerances are internal. |
-| `frame.detection` has very few corners | Stage 6 (grow) | `attach_search_rel`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg` | Seed succeeded but growth couldn't extend. Common on heavily distorted views. |
-| Many `LabeledThenBlacklisted` corners | Stage 7 (validate) | `geometry_check_local_h_tol_rel` | Invariants found outliers; check the blacklist reasons. |
+| No detection; trace shows few `usable` corners | Stage 1–2 (prefilter / clustering) | `min_corner_strength` ↓, `max_fit_rms_ratio` ↑, `min_peak_weight_fraction`, `peak_min_separation_deg` | Either the corners failed the prefilter or the two grid axes never separated. Most common on very-bad-light frames. |
+| No detection; trace shows usable corners but `NoComponents` | Stage 3 (topological grid) | Try `detect_chessboard_best` with `DetectorParams::sweep_default()` | No quad mesh assembled. Builder tolerances are internal; the sweep widens the upstream clustering / attachment tolerances. |
+| Detection has very few corners | Stage 4 (recover) | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | The grid walked but couldn't extend. Common on heavily distorted views. |
+| Many corners dropped (`GeometryCheckTrace.dropped` high) | Stage 5 (geometry check) | `geometry_check_local_h_tol_rel` | Invariants found outliers; inspect the per-reason `dropped_*` counters. |
 | Wrong `(i, j)` labels emitted | **never** | — | If you ever see this, file a bug. The precision contract has been violated. |
 
 The rare unrecovered frame on our internal regression set is
@@ -325,65 +303,68 @@ shows the access path: top-level for the four stable knobs,
 |---|---|---|---|
 | `graph_build_algorithm` | `Topological` | — | Grid builder algorithm. `Topological` is the only value; the field is a reserved config seam. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
-| `min_labeled_corners` | 8 | 9 | Minimum labelled corners to emit a `ChessboardDetection`. |
+| `min_labeled_corners` | 8 | 5 | Minimum labelled corners to emit a `ChessboardDetection`. |
 | `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
 | `advanced.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
 | `advanced.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
-| `advanced.cluster_tol_deg` | 12.0 | 2-3 | Per-axis tolerance from a cluster center. |
+| `advanced.cluster_tol_deg` | 12.0 | 2 | Per-axis tolerance from a cluster center. |
 | `advanced.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
 | `advanced.min_peak_weight_fraction` | 0.02 | 2 | Minimum fraction of total vote weight per peak. |
-| `advanced.attach_search_rel` | 0.35 | 6 | Candidate radius around predicted position. |
-| `advanced.attach_axis_tol_deg` | 15.0 | 6 | Axis match at attachment. |
-| `advanced.attach_ambiguity_factor` | 1.5 | 6 | Reject if 2nd-nearest within `factor × nearest`. |
-| `advanced.step_tol` | 0.25 | 6 | Edge-length window when admitting attachments. |
-| `advanced.edge_axis_tol_deg` | 15.0 | 6 | Edge axis tolerance at admission. |
-| `advanced.geometry_check_local_h_tol_rel` | 0.20 | 12 | Local-H prediction tolerance in the final geometry check. |
-| `advanced.line_min_members` | 3 | 7 | Minimum members to fit a row / column. |
-| `advanced.enable_weak_cluster_rescue` | true | 8 | Toggle for the weak-cluster rescue booster. |
-| `advanced.weak_cluster_tol_deg` | 18.0 | 8d | Loosened cluster tolerance for rescue candidates. |
+| `advanced.attach_search_rel` | 0.35 | 4 | Candidate radius around predicted position (booster attachment). |
+| `advanced.attach_axis_tol_deg` | 15.0 | 4 | Axis match at booster attachment. |
+| `advanced.attach_ambiguity_factor` | 1.5 | 4 | Reject if 2nd-nearest within `factor × nearest`. |
+| `advanced.step_tol` | 0.25 | 4 | Edge-length window when admitting attachments. |
+| `advanced.edge_axis_tol_deg` | 15.0 | 4 | Edge axis tolerance at admission. |
+| `advanced.geometry_check_local_h_tol_rel` | 0.20 | 5 | Local-H prediction tolerance in the final geometry check. |
+| `advanced.line_min_members` | 3 | 5 | Minimum members to fit a row / column. |
+| `advanced.enable_weak_cluster_rescue` | true | 4 | Toggle for the weak-cluster rescue booster. |
+| `advanced.weak_cluster_tol_deg` | 18.0 | 4 | Loosened cluster tolerance for rescue candidates. |
 
 The `advanced.` rows above are part of `AdvancedTuning`, which is opt-in
-and **not covered by semver**.
+and **not covered by semver**. (`AdvancedTuning` carries more per-stage
+knobs than shown — see `crates/calib-targets-chessboard/src/params/`.)
 
-All spatial tolerances are **multiplicative** with respect to `s` — the
-pipeline is scale-invariant once `s` is known.
+All spatial tolerances are **multiplicative** with respect to the cell
+size — the pipeline is scale-invariant once the per-component cell size is
+estimated.
 
 ---
 
-## 7. Debugging via `DebugFrame`
+## 7. Debugging via the topological trace
 
-`Detector::detect_with_diagnostics` and `detect_all_with_diagnostics` return
-a `DebugFrame` per detection attempt. Both entry points — and the whole
-`diagnostics` module (`DebugFrame`, the per-stage traces, `StageCounts`,
-`DEBUG_FRAME_SCHEMA`) — are gated behind the `diagnostics` cargo feature,
-which is **OFF by default**: the hot `detect()` path builds no trace.
-Enable `diagnostics` (or the `dataset` feature, which implies it) to access
-this surface. Key fields:
+The diagnostic entry point is `pipeline::trace_topological(corners,
+params) -> Result<TopologicalTrace, TopologicalTraceError>`. It is layered
+over the *production* `detect_grid_all` facade (no separate timed
+implementation), so the trace stays consistent with what `detect()`
+actually does. `TopologicalTrace` (re-exported from
+`projective_grid::topological::trace`) carries:
 
-- `schema: u32` — `DEBUG_FRAME_SCHEMA = 1` today; bumped on shape change.
-  Overlay scripts gate on this.
-- `input_count`, `grid_directions`, `cell_size`, `seed: Option<[usize; 4]>` —
-  global outputs of stages 1-5.
-- `iterations: Vec<IterationTrace>` — one entry per blacklist-retry pass.
-  Each carries `iter`, `labelled_count`, `new_blacklist`, `converged`.
-- `boosters: Option<BoosterResult>` — additions from Stage 8.
-- `detection: Option<ChessboardDetection>` — final output (`None` if
-  min-corners gate failed or no seed). The stable `cell_size` is also
-  carried on `ChessboardDetection` (the seed-derived grid pitch, populated
-  on the normal `detect()` path); `grid_directions` lives only on the
-  `DebugFrame`.
-- `corners: Vec<CornerAug>` — every input corner with its terminal stage:
-  `Raw`, `Strong`, `NoCluster`, `Clustered`, `AttachmentAmbiguous`,
-  `AttachmentFailedInvariants`, `Labeled { at, local_h_residual_px }`,
-  `LabeledThenBlacklisted { at, reason }`.
+- `params: TopologicalParams` — the parameters the topological stage ran
+  with.
+- `corners: Vec<TopologicalCornerTrace>` — every input corner with its
+  `index`, `source_index`, `position`, per-axis `axis_angles_rad` /
+  `axis_sigmas_rad`, and a `usable` flag (did it survive the
+  sigma/axis prefilter).
+- `components: Vec<TopologicalComponentTrace>` — the labelled connected
+  components, each a list of `(u, v) -> source_index` labels sorted by
+  `(v, u, source_index)`.
+- `diagnostics: TopologicalTraceDiagnostics` — summary counters
+  (`corners_in`, `corners_used`, `components`, `labels`).
 
-Render overlays with
-`crates/calib-targets-py/examples/overlay_chessboard.py`; it warns
-once per observed schema mismatch.
+`TopologicalTraceError` is `NotEnoughCorners { usable }` (fewer than three
+usable corners for Delaunay) or `NoComponents` (production detection
+returned no labelled component) — these are the two ways the grid stage
+can come up empty.
 
-For compact telemetry, pass the `DebugFrame` to `StageCounts::from_frame`,
-which summarises the per-stage corner survivorship in a handful of
-integers.
+For the **drop accounting** in the final geometry check, the pipeline's
+`GeometryCheckTrace` records `dropped` plus per-reason counters
+(`dropped_line_collinearity`, `dropped_local_h_residual`,
+`dropped_edge_invariant`, `dropped_disconnected`), `components_seen`, and a
+`detection_refused` flag — the place to look when corners that should
+survive are being dropped.
+
+The stable `cell_size` (the grid pitch in px) is carried on
+`ChessboardDetection` directly, populated on the normal `detect()` path.
 
 ---
 
@@ -432,29 +413,28 @@ corner cloud detected and printed end to end — see
 cargo run -p calib-targets-chessboard --example detect_chessboard
 ```
 
-The full dev driver — including ChESS corner detection, JSON
-debug-frame output, and an internal-dataset sweep — lives in
-`crates/calib-targets-chessboard/examples/run_dataset.rs`. A single-
-image variant (`examples/debug_single.rs`) + the driver script
-`scripts/chessboard_regression_overlays.sh` emit per-image overlays for
-the `testdata/` regression set and are wired into a `#[test]` harness
-at `crates/calib-targets-chessboard/tests/testdata_regression.rs`.
+The per-image regression overlays for the `testdata/` set are emitted by
+the driver script `scripts/chessboard_regression_overlays.sh` and are
+wired into a `#[test]` harness at
+`crates/calib-targets-chessboard/tests/testdata_regression.rs`.
 
 ---
 
 ## 9. Open questions
 
-Tracked in spec §10:
-
-- **Degenerate axes** (one axis with `sigma = π`) — current: drop the
-  corner. Could a single-axis attachment pathway recover some recall?
-- **Seed retry policy** — current: try the next-best seed. A
-  blacklist-and-research scheme might catch genuinely-bad seeds earlier.
-- **Distortion-curved lines** — current: projective fit when ≥ 4 members,
-  straight fit fallback. A true polynomial fit could absorb more
-  distortion at the cost of false-negative risk.
-- **Multi-seed growth** — current: single seed only, multi-component is a
-  post-hoc booster. A first-class multi-seed grower could reduce the
-  Stage-8 dependency.
+- **Degenerate axes** (one axis with `sigma = π`) — current: the corner
+  keeps its position but cannot vote on edges. Could a single-axis
+  attachment pathway recover some recall on low-quality inputs?
+- **Three-corner cells.** The topological merge needs a complete cell (two
+  triangles sharing a diagonal); one missing corner per cell starves the
+  surrounding walk and the gap fill only recovers single interior holes.
+  A richer local-geometry recovery could rebuild more partial cells.
+- **Distortion-curved lines** — current: projective-line fit when there
+  are enough members, straight-fit fallback. A true polynomial fit could
+  absorb more distortion at the cost of false-negative risk.
+- **Delaunay under severe distortion** — current: a Delaunay triangle can
+  span more than one physical cell under combined perspective + radial
+  distortion, leaving cells the diagonal-inference rule cannot resolve. A
+  distortion-aware candidate-neighbour graph could help.
 
 Contributions welcome.

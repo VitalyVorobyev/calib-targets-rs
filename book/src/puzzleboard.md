@@ -9,6 +9,11 @@ absolute corner IDs and object-space coordinates.
 
 PuzzleBoard is based on Stelldinger 2024, arXiv:2409.20127.
 
+> For the end-to-end stage map, failure modes, and tuning, see the
+> [PuzzleBoard pipeline](pipeline_puzzleboard.md); for the decoder itself
+> see [PuzzleBoard edge-code decode](algo_puzzleboard_decode.md). This page
+> is the crate API reference.
+
 ## Target Model
 
 `PuzzleBoardSpec` describes the printable board:
