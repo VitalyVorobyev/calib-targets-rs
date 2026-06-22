@@ -45,8 +45,8 @@
 
 use nalgebra::Point2;
 
+use crate::cluster::angular_dist_pi;
 use crate::feature::{LocalAxis, OrientedFeature};
-use crate::shared::angle::angular_dist_pi;
 use crate::shared::grow::{Admit, LabelledNeighbour, SquareAttachPolicy};
 
 /// Tolerances for [`PositionsAttachPolicy`].

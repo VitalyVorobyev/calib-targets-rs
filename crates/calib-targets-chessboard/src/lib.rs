@@ -77,7 +77,6 @@
 //! labelling.
 #![deny(missing_docs)]
 
-mod circular_stats;
 mod corner;
 mod detector;
 mod mesh_warp;

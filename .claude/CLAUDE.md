@@ -175,6 +175,16 @@ and `borderBits` explicit in code.
 
 **New warnings:** fix them; do not suppress.
 
+**No trivial wrapper / re-export-only modules.** A module must carry real logic
+to exist. Do not create a `mod foo` whose body is only a `pub use` /
+`pub(crate) use` forwarding another path — inline the import at the call site or
+use the canonical path directly — nor leave an emptied-out module as a
+comment-only stub (delete it and its `mod` declaration). Re-exporting at a
+crate's public facade (`lib.rs`) is fine; a *separate file* that exists solely to
+rename or forward symbols is not. This is the complement of the large-file rule
+(split files past ~1000 lines): delete files too thin to justify a module
+boundary.
+
 **No `#[allow(clippy::…)]` in production code.** If a clippy lint fires, fix the
 underlying issue — extract a param/context struct, split the function, or refine
 the design. The only acceptable file-scope allows are: (a) generated code
