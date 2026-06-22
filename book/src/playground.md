@@ -9,7 +9,7 @@ machine: detection happens in the WASM module loaded into this page.
 
 <iframe
   id="calib-targets-playground"
-  src="./playground/"
+  src="../demo/"
   title="calib-targets WebAssembly playground"
   loading="lazy"
   allow="clipboard-read; clipboard-write"
@@ -22,12 +22,14 @@ machine: detection happens in the WASM module loaded into this page.
 
 | Surface | Description |
 |---|---|
-| **Image input** | Drop or browse a file, or generate a synthetic chessboard / ChArUco / marker / PuzzleBoard target in WASM. |
-| **Detection mode** | Switch between corner detection and the four target detectors. |
-| **3-config sweep** | Toggle `detect_*_best` to try the built-in 3-config preset and keep the best result. |
-| **Live tuning** | ChESS threshold / NMS / pyramid plus per-detector knobs (board dims, dictionary, marker size, board size, bit confidence). |
-| **Overlays** | Detected corners colour-coded by grid position; PuzzleBoard edge bits drawn at decoded edge midpoints. |
-| **JSON dump** | Toggle the raw `serde_json` payload returned by the WASM call — the same shape the Rust facade emits. |
+| **Image input** | Drop or browse a file; or pick a bundled public sample (chessboard, ChArUco, marker board, PuzzleBoard); or generate a synthetic target on-the-fly in WASM (Generate tab). |
+| **Target family** | Switch between corner detection and the four target detectors (Chessboard, ChArUco, Marker board, PuzzleBoard). |
+| **Board geometry** | For ChArUco, marker, and PuzzleBoard targets: configure rows, cols, and (ChArUco) ArUco dictionary directly in the panel. |
+| **Core params** | Override `min_corner_strength`, `min_labeled_corners`, and `max_components` — the three params shared across all detector families. |
+| **Multi-config sweep** | Toggle `detect_*_best` to run the built-in 3-config preset and keep the best result. |
+| **Overlays** | Red corners, light-blue grid edges, yellow origin ring, and green far-corner ring drawn in image pixel coordinates. Toggled per-layer. |
+| **Zoom / pan** | Scroll to zoom (up to 32×, pixel-crisp above 4×), drag to pan, double-click to fit. Hover a corner for an (i, j) / id / score tooltip. |
+| **Synthetic generation** | `render_*_png` WASM functions produce a full-resolution target PNG; loading it auto-configures the matching detector. |
 
 ## Running locally
 
