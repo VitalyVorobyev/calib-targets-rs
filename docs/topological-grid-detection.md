@@ -12,11 +12,12 @@ core stays image-free and tolerant of perspective and radial distortion.
 This document explains the pipeline step by step and draws a clean line
 between the **generic, image-free** machinery in the `projective-grid`
 crate and the **chessboard-specific** wrapper in
-`calib-targets-chessboard`. It is the companion reference for the
-`SeedAndGrow` path documented in
-`crates/calib-targets-chessboard/docs/PIPELINE.md`; the two grid builders
-produce the same `(i, j) -> corner` output and downstream consumers stay
-agnostic to which ran.
+`calib-targets-chessboard`. It is the canonical stage map for the generic
+grid finder; the chessboard wrapper that drives it (prefilter, recall
+boosters, precision check) is documented in
+`crates/calib-targets-chessboard/docs/PIPELINE.md`. The topological finder is
+the **sole** grid builder for every target family — the earlier `SeedAndGrow`
+builder was removed once topological matched or beat it on every path.
 
 ## Vocabulary
 
@@ -77,8 +78,7 @@ ChESS corners are converted into `projective-grid`'s image-free input:
 parallel vectors of pixel positions and `[AxisEstimate; 2]` per corner.
 A corner passes the prefilter when its strength clears
 `min_corner_strength` **and** its fit residual clears the fit-RMS gate
-(`fit_rms <= max_fit_rms_ratio * contrast`) — the same Stage-1 gate the
-`SeedAndGrow` path applies. Corners that fail the prefilter keep their
+(`fit_rms <= max_fit_rms_ratio * contrast`). Corners that fail the prefilter keep their
 pixel position but have their axes replaced with the no-information
 sentinel (`sigma = π`).
 
@@ -278,12 +278,12 @@ then:
 3. Marks the component and runs the **recall boosters**
    (`calib_targets_chessboard::boosters::apply_boosters_with_directional_edge_scale`)
    — interior gap fill and line extrapolation — under the same axis /
-   parity / edge gates the `SeedAndGrow` BFS uses. Boosters use the larger
+   parity / edge gates the topological walk uses. Boosters use the larger
    directional median as their edge scale, while the final reported
    `cell_size` stays on the conservative all-edge median.
 4. Merges boosted components by shared corner identity, runs a **second**
-   local component merge, then **canonicalises** each surviving component
-   through the same path as `SeedAndGrow`: a mandatory geometry check
+   local component merge, then **canonicalises** each surviving component:
+   a mandatory geometry check
    (`run_geometry_check`), rebase to non-negative labels, axis-orientation
    canonicalisation, and sort. Detections are ordered by labelled count
    and capped at `max_components`.
@@ -299,8 +299,10 @@ missing corners are acceptable).
 
 - **Three-corner cells are not recovered as quads.** The merge needs a
   complete cell (two triangles sharing a diagonal). One missing corner per
-  cell starves the surrounding flood-fill. The seed-and-grow path can
-  still predict and validate a single missing corner from local geometry.
+  cell starves the surrounding flood-fill. The recall boosters can later
+  refill such a corner from local geometry once enough of its neighbours are
+  labelled, but a cell missing a corner up front is not recovered by the
+  initial triangle-pair merge.
 - **Delaunay is not projective-invariant.** Severe perspective combined
   with radial distortion can make Delaunay triangles span more than one
   physical cell, leaving cells the diagonal-inference rule cannot resolve.
@@ -311,8 +313,9 @@ missing corners are acceptable).
   The edge classifier only checks that an edge aligns with *some* endpoint
   axis, not the parity-correct one, so a marker-internal corner whose axes
   happen to match the global grid directions can be admitted into a quad.
-  This is why ChArUco detection pins the `SeedAndGrow` builder and the
-  topological builder is opt-in for chessboard/puzzleboard use.
+  ChArUco detection mitigates this with a raised `min_corner_strength` floor
+  (`CharucoParams::for_board`) that keeps marker-bit saddles out of the grid
+  entirely, so the per-cell axis test is never poisoned in the first place.
 
 ## References
 
@@ -326,8 +329,9 @@ missing corners are acceptable).
   finder" section of the book chapter
   [`book/src/projective_grid.md`](../book/src/projective_grid.md).
 - Generic core source:
-  `crates/projective-grid/src/detect/square/topological/`.
+  `crates/projective-grid/src/topological/`.
 - Chessboard adapter + recovery source:
-  `crates/calib-targets-chessboard/src/topological/`.
-- `crates/calib-targets-chessboard/docs/PIPELINE.md` — the companion
-  `SeedAndGrow` pipeline reference.
+  `crates/calib-targets-chessboard/src/pipeline/`.
+- `crates/calib-targets-chessboard/docs/PIPELINE.md` — the chessboard wrapper
+  pipeline reference (prefilter, axis clustering, the topological adapter,
+  recovery boosters, and the precision check).
