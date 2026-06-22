@@ -35,10 +35,10 @@ Full documentation: [book][book] · [API reference][api] · [getting-started tut
 Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.10.0.md)
 ([book chapter][migration]).
 
-[book]: https://vitalyvorobyev.github.io/calib-targets-rs/
-[api]: https://vitalyvorobyev.github.io/calib-targets-rs/api
-[getting-started]: https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html
-[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/migration.html
+[book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/
+[api]: https://vitalyvorobyev.github.io/calib-targets-rs/api/
+[getting-started]: https://vitalyvorobyev.github.io/calib-targets-rs/book/getting-started.html
+[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/book/migration.html
 
 ## Main ideas
 

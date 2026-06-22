@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build the unified GitHub Pages tree locally:
-#   public/                -> mdBook (book chapters + interactive playground)
+#   public/                -> landing page (.github/pages/) + performance report
+#   public/book/           -> mdBook (book chapters + embedded demo)
 #   public/api/            -> cargo doc workspace API reference
-#   public/playground/     -> built React + WASM demo
+#   public/demo/           -> built React + WASM demo
 #
 # Mirrors the layout produced by .github/workflows/docs.yml.
 set -euo pipefail
@@ -25,9 +26,10 @@ echo "==> Building WASM + demo..."
 
 echo "==> Assembling public/..."
 rm -rf public
-mkdir -p public/api public/playground
-rsync -a target/doc/ public/api/
-rsync -a book/book/ public/
-rsync -a demo/dist/ public/playground/
+mkdir -p public/api public/book public/demo
+rsync -a .github/pages/ public/
+rsync -a target/doc/    public/api/
+rsync -a book/book/     public/book/
+rsync -a demo/dist/     public/demo/
 
 echo "==> Done. Serve the site with: python3 -m http.server -d public 8080"
