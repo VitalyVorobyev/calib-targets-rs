@@ -89,7 +89,9 @@ impl LabelledGrid {
     ///    step `(0, 0)` can land anywhere on the detected grid. The decision is
     ///    driven by [`GridEntry::image_position`] (averaged step vectors over all
     ///    adjacent labelled pairs); positions are never modified, only labels are
-    ///    permuted / sign-flipped.
+    ///    permuted / sign-flipped. When this step transposes the two axes, any
+    ///    caller-supplied [`dimensions`](LabelledGrid::dimensions) have their
+    ///    `width`/`height` swapped too, so they stay aligned with the new axes.
     /// 3. **Sort** entries by `(v, u)` for a stable output order, and recompute
     ///    [`bbox`](LabelledGrid::bbox).
     ///
@@ -100,7 +102,15 @@ impl LabelledGrid {
     /// longer valid afterwards — normalize before fitting, or refit.
     pub fn normalize(&mut self) {
         rebase_entries_to_origin(&mut self.entries);
-        canonicalize_to_image_axes(&mut self.entries);
+        let swapped = canonicalize_to_image_axes(&mut self.entries);
+        if swapped {
+            // The `u` ↔ `v` transpose must carry to caller-supplied dimensions,
+            // or `dimensions` would describe the pre-swap axes while `entries`
+            // and `bbox` describe the new ones.
+            if let Some(dims) = self.dimensions.as_mut() {
+                std::mem::swap(&mut dims.width, &mut dims.height);
+            }
+        }
         self.entries.sort_by_key(|e| (e.coord.v, e.coord.u));
         self.bbox = bbox_for_entries(&self.entries);
     }
@@ -277,9 +287,13 @@ fn rebase_entries_to_origin(entries: &mut [GridEntry]) {
 /// not depend on map iteration order — the swap / flip decision is a function of
 /// signs and magnitude comparisons that is robust to ULP-level summation
 /// differences.
-fn canonicalize_to_image_axes(entries: &mut [GridEntry]) {
+/// Canonicalize entry labels to the image-axis frame, returning `true` when the
+/// two lattice axes were transposed (`u` ↔ `v`). Callers that hold an axis-keyed
+/// side value (e.g. [`GridDimensions`]) must apply the same transpose when this
+/// returns `true`; sign flips alone (return `false`) keep the axis assignment.
+fn canonicalize_to_image_axes(entries: &mut [GridEntry]) -> bool {
     if entries.len() < 2 {
-        return;
+        return false;
     }
     let pos_by_uv: HashMap<(i32, i32), (f32, f32)> = entries
         .iter()
@@ -311,7 +325,7 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) {
         }
     }
     if vu_n == 0 || vv_n == 0 {
-        return;
+        return false;
     }
     let vu = (vu_sum.0 / vu_n as f32, vu_sum.1 / vu_n as f32);
     let vv = (vv_sum.0 / vv_n as f32, vv_sum.1 / vv_n as f32);
@@ -324,7 +338,7 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) {
     let flip_v = new_vv.1 < 0.0;
 
     if !swap && !flip_u && !flip_v {
-        return;
+        return false;
     }
 
     // Post-swap extents, so the sign flip stays within the non-negative domain.
@@ -355,6 +369,8 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) {
         e.coord.u = nu;
         e.coord.v = nv;
     }
+
+    swap
 }
 
 fn bbox_for_entries(entries: &[GridEntry]) -> Option<(Coord, Coord)> {
@@ -471,6 +487,54 @@ mod tests {
         );
         assert_eq!(by_pos[&(20, 10)], (1, 0), "+u must point +x");
         assert_eq!(by_pos[&(10, 20)], (0, 1), "+v must point +y");
+    }
+
+    #[test]
+    fn normalize_transposes_dimensions_on_axis_swap() {
+        // Same 90°-rotated geometry as the test above (builder put +u along +y
+        // and +v along +x), so normalize swaps u ↔ v. Caller-supplied
+        // rectangular dimensions must transpose with the axes, or they would
+        // describe the pre-swap frame while entries/bbox describe the new one.
+        let entries = vec![
+            mk_entry(0, 0, 10.0, 10.0),
+            mk_entry(0, 1, 20.0, 10.0),
+            mk_entry(1, 0, 10.0, 20.0),
+            mk_entry(1, 1, 20.0, 20.0),
+        ];
+        let mut grid = LabelledGrid::new(
+            LatticeKind::Square,
+            entries,
+            Some(GridDimensions::new(5, 3)),
+        );
+        grid.normalize();
+        assert_eq!(
+            grid.dimensions,
+            Some(GridDimensions::new(3, 5)),
+            "axis swap must transpose width/height"
+        );
+    }
+
+    #[test]
+    fn normalize_keeps_dimensions_when_axes_only_flip() {
+        // +u along -x, +v along +y: a sign flip on u, NO transpose. Dimensions
+        // must be left untouched.
+        let entries = vec![
+            mk_entry(0, 0, 20.0, 10.0),
+            mk_entry(1, 0, 10.0, 10.0),
+            mk_entry(0, 1, 20.0, 20.0),
+            mk_entry(1, 1, 10.0, 20.0),
+        ];
+        let mut grid = LabelledGrid::new(
+            LatticeKind::Square,
+            entries,
+            Some(GridDimensions::new(5, 3)),
+        );
+        grid.normalize();
+        assert_eq!(
+            grid.dimensions,
+            Some(GridDimensions::new(5, 3)),
+            "a sign flip without a transpose must not touch dimensions"
+        );
     }
 
     #[test]

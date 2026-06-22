@@ -242,7 +242,7 @@ Verify against the printed board or the JSON spec used to generate it.
 2. If **no corners** are found: loosen `min_corner_strength`, check
    image resolution and contrast.
 3. If **corners found but no grid** (`detect_chessboard` returns
-   `None`): run `calib_targets_chessboard::pipeline::trace_topological` —
+   `None`): run `calib_targets_chessboard::trace_topological` —
    few `usable` corners means the prefilter / clustering is too tight (try
    lowering `min_corner_strength` or the advanced
    `min_peak_weight_fraction`), `Err(NoComponents)` means the topological

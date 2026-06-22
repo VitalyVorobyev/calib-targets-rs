@@ -36,7 +36,7 @@ cargo run --release -p calib-targets --example detect_chessboard_best -- testdat
 ## Instrumentation
 
 The chessboard crate's diagnostic entry point is
-`calib_targets_chessboard::pipeline::trace_topological(corners, params)`,
+`calib_targets_chessboard::trace_topological(corners, params)`,
 which returns a serializable `TopologicalTrace` layered over the
 *production* `detect_grid_all` path (so the trace matches what `detect()`
 actually does). It records every input corner with its `usable` flag, the

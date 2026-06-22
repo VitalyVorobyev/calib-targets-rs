@@ -39,14 +39,14 @@ the binary, not in a parent process.
 
 The detector has no single error variant — a `None` return means some
 stage failed. To diagnose, run the chessboard crate's serializable
-topological trace, `calib_targets_chessboard::pipeline::trace_topological`,
+topological trace, `calib_targets_chessboard::trace_topological`,
 which is layered over the production path (so it reflects what `detect()`
 actually does) and reports per-corner usability plus the labelled
 components:
 
 ```rust,ignore
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{pipeline::trace_topological, DetectorParams};
+use calib_targets_chessboard::{trace_topological, DetectorParams};
 # let img: image::GrayImage = todo!();
 
 let corners = detect_corners(&img, &default_chess_config());
