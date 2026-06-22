@@ -3,6 +3,8 @@
 //! The detection surface is pinned to `f32`; see [`crate::feature`] for
 //! the rationale.
 
+use std::collections::HashMap;
+
 use nalgebra::{Point2, Projective2};
 
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
@@ -71,6 +73,36 @@ impl LabelledGrid {
     /// Linear-scan lookup of the labelled entry with the given source index.
     pub fn find(&self, source_index: usize) -> Option<&GridEntry> {
         self.entries.iter().find(|e| e.source_index == source_index)
+    }
+
+    /// Normalize the labelled grid in place to the canonical output frame.
+    ///
+    /// Three steps, in order:
+    ///
+    /// 1. **Rebase** the coordinate bounding-box minimum to `(0, 0)`, so every
+    ///    `coord` is non-negative (the hard non-negative-label invariant for
+    ///    overlay / calibration consumers).
+    /// 2. **Canonicalize orientation** so the first lattice axis (`u`) points
+    ///    roughly `+x` (right) and the second (`v`) roughly `+y` (down) in image
+    ///    pixels. The grid finder assigns `(u, v)` from its internal axis-slot
+    ///    convention, which has no relation to image orientation; without this
+    ///    step `(0, 0)` can land anywhere on the detected grid. The decision is
+    ///    driven by [`GridEntry::image_position`] (averaged step vectors over all
+    ///    adjacent labelled pairs); positions are never modified, only labels are
+    ///    permuted / sign-flipped.
+    /// 3. **Sort** entries by `(v, u)` for a stable output order, and recompute
+    ///    [`bbox`](LabelledGrid::bbox).
+    ///
+    /// This is the single source of truth for grid-result normalization: target
+    /// detectors call it instead of re-implementing rebase / canonicalize / sort
+    /// at their output stage. It operates only on the labelled grid, so any
+    /// [`LatticeFit`] computed against the *pre*-normalization labels is no
+    /// longer valid afterwards — normalize before fitting, or refit.
+    pub fn normalize(&mut self) {
+        rebase_entries_to_origin(&mut self.entries);
+        canonicalize_to_image_axes(&mut self.entries);
+        self.entries.sort_by_key(|e| (e.coord.v, e.coord.u));
+        self.bbox = bbox_for_entries(&self.entries);
     }
 }
 
@@ -220,6 +252,111 @@ impl ConsistencyReport {
     }
 }
 
+/// Shift every entry's coordinate so the bounding-box minimum is `(0, 0)`.
+fn rebase_entries_to_origin(entries: &mut [GridEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+    let (min_u, min_v) = entries.iter().fold((i32::MAX, i32::MAX), |(a, b), e| {
+        (a.min(e.coord.u), b.min(e.coord.v))
+    });
+    if min_u != 0 || min_v != 0 {
+        for e in entries.iter_mut() {
+            e.coord.u -= min_u;
+            e.coord.v -= min_v;
+        }
+    }
+}
+
+/// Permute / sign-flip the lattice axes so `+u` points roughly `+x` and `+v`
+/// roughly `+y` in image pixels, keeping labels non-negative. Uses only
+/// [`GridEntry::image_position`]; positions are unchanged.
+///
+/// The mean `+u` and `+v` step vectors are accumulated over adjacent labelled
+/// pairs in a deterministic coordinate order (sorted keys), so the `f32` sums do
+/// not depend on map iteration order — the swap / flip decision is a function of
+/// signs and magnitude comparisons that is robust to ULP-level summation
+/// differences.
+fn canonicalize_to_image_axes(entries: &mut [GridEntry]) {
+    if entries.len() < 2 {
+        return;
+    }
+    let pos_by_uv: HashMap<(i32, i32), (f32, f32)> = entries
+        .iter()
+        .map(|e| {
+            (
+                (e.coord.u, e.coord.v),
+                (e.image_position.x, e.image_position.y),
+            )
+        })
+        .collect();
+
+    let mut keys: Vec<(i32, i32)> = pos_by_uv.keys().copied().collect();
+    keys.sort_unstable();
+    let mut vu_sum = (0.0_f32, 0.0_f32);
+    let mut vv_sum = (0.0_f32, 0.0_f32);
+    let mut vu_n = 0u32;
+    let mut vv_n = 0u32;
+    for &(u, v) in &keys {
+        let (x, y) = pos_by_uv[&(u, v)];
+        if let Some(&(xn, yn)) = pos_by_uv.get(&(u + 1, v)) {
+            vu_sum.0 += xn - x;
+            vu_sum.1 += yn - y;
+            vu_n += 1;
+        }
+        if let Some(&(xn, yn)) = pos_by_uv.get(&(u, v + 1)) {
+            vv_sum.0 += xn - x;
+            vv_sum.1 += yn - y;
+            vv_n += 1;
+        }
+    }
+    if vu_n == 0 || vv_n == 0 {
+        return;
+    }
+    let vu = (vu_sum.0 / vu_n as f32, vu_sum.1 / vu_n as f32);
+    let vv = (vv_sum.0 / vv_n as f32, vv_sum.1 / vv_n as f32);
+
+    // Make the axis with the larger |x| component the horizontal (`u`) axis.
+    let swap = vu.0.abs() < vv.0.abs();
+    let new_vu = if swap { vv } else { vu };
+    let new_vv = if swap { vu } else { vv };
+    let flip_u = new_vu.0 < 0.0;
+    let flip_v = new_vv.1 < 0.0;
+
+    if !swap && !flip_u && !flip_v {
+        return;
+    }
+
+    // Post-swap extents, so the sign flip stays within the non-negative domain.
+    let mut umax = i32::MIN;
+    let mut vmax = i32::MIN;
+    for e in entries.iter() {
+        let (nu, nv) = if swap {
+            (e.coord.v, e.coord.u)
+        } else {
+            (e.coord.u, e.coord.v)
+        };
+        umax = umax.max(nu);
+        vmax = vmax.max(nv);
+    }
+
+    for e in entries.iter_mut() {
+        let (mut nu, mut nv) = if swap {
+            (e.coord.v, e.coord.u)
+        } else {
+            (e.coord.u, e.coord.v)
+        };
+        if flip_u {
+            nu = umax - nu;
+        }
+        if flip_v {
+            nv = vmax - nv;
+        }
+        e.coord.u = nu;
+        e.coord.v = nv;
+    }
+}
+
 fn bbox_for_entries(entries: &[GridEntry]) -> Option<(Coord, Coord)> {
     let first = entries.first()?;
     let mut min = first.coord;
@@ -269,6 +406,71 @@ mod tests {
         let grid = LabelledGrid::new(LatticeKind::Square, vec![entry], None);
         assert!(grid.find(42).is_some());
         assert!(grid.find(99).is_none());
+    }
+
+    fn mk_entry(u: i32, v: i32, x: f32, y: f32) -> GridEntry {
+        GridEntry::new(Coord::new(u, v), 0, Point2::new(x, y), None)
+    }
+
+    fn coord_by_pos(grid: &LabelledGrid) -> HashMap<(i32, i32), (i32, i32)> {
+        grid.entries
+            .iter()
+            .map(|e| {
+                (
+                    (e.image_position.x as i32, e.image_position.y as i32),
+                    (e.coord.u, e.coord.v),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn normalize_rebases_and_sorts_already_canonical() {
+        // +u already points +x, +v already points +y; only an offset to remove.
+        let entries = vec![
+            mk_entry(3, 5, 10.0, 10.0),
+            mk_entry(4, 5, 20.0, 10.0),
+            mk_entry(3, 6, 10.0, 20.0),
+            mk_entry(4, 6, 20.0, 20.0),
+        ];
+        let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
+        grid.normalize();
+        let by_pos = coord_by_pos(&grid);
+        assert_eq!(by_pos[&(10, 10)], (0, 0));
+        assert_eq!(by_pos[&(20, 10)], (1, 0));
+        assert_eq!(by_pos[&(10, 20)], (0, 1));
+        assert_eq!(by_pos[&(20, 20)], (1, 1));
+        assert_eq!(grid.bbox, Some((Coord::new(0, 0), Coord::new(1, 1))));
+        // Stable (v, u) order.
+        let order: Vec<(i32, i32)> = grid
+            .entries
+            .iter()
+            .map(|e| (e.coord.u, e.coord.v))
+            .collect();
+        assert_eq!(order, vec![(0, 0), (1, 0), (0, 1), (1, 1)]);
+    }
+
+    #[test]
+    fn normalize_canonicalizes_rotated_axes() {
+        // Builder assigned +u along +y and +v along +x (a 90° rotation);
+        // normalize must swap so +u ≈ +x and +v ≈ +y, putting (0, 0) at the
+        // smallest (x, y) corner.
+        let entries = vec![
+            mk_entry(0, 0, 10.0, 10.0),
+            mk_entry(0, 1, 20.0, 10.0),
+            mk_entry(1, 0, 10.0, 20.0),
+            mk_entry(1, 1, 20.0, 20.0),
+        ];
+        let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
+        grid.normalize();
+        let by_pos = coord_by_pos(&grid);
+        assert_eq!(
+            by_pos[&(10, 10)],
+            (0, 0),
+            "(0,0) must land at smallest (x,y)"
+        );
+        assert_eq!(by_pos[&(20, 10)], (1, 0), "+u must point +x");
+        assert_eq!(by_pos[&(10, 20)], (0, 1), "+v must point +y");
     }
 
     #[test]

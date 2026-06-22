@@ -79,8 +79,6 @@ use self::cluster::ClusterCenters;
 use self::inputs::topological_inputs;
 use self::recover::{build_topological_detections, clustered_augs, recover_topological_components};
 
-pub use geometry_check::run_geometry_check;
-pub use output::build_detection_from_grow;
 pub use types::{ChessboardCorner, ChessboardDetection};
 
 /// Build a `projective-grid` [`NextDetectionParams`] for the
