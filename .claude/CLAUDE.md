@@ -78,23 +78,54 @@ across the workspace.
 
 ## Detailed guides
 
-Read the relevant guide before touching that area:
+[`docs/README.md`](../docs/README.md) is the map of the whole internal docs
+tree (the public mdBook under `book/src/` is the *user-facing* docs — keep the
+two distinct). Read the relevant guide before touching that area:
 
-- [`docs/development/detection-pipeline.md`](../docs/development/detection-pipeline.md)
+**Developer guides** ([`docs/development/`](../docs/development/)):
+
+- [`detection-pipeline.md`](../docs/development/detection-pipeline.md)
   — the topological grid builder, component merge, orientation source, bench
   harness selector, the axes-only corner-orientation contract, and the
   cell-size-estimation gotcha.
-- [`docs/development/debugging.md`](../docs/development/debugging.md)
+- [`debugging.md`](../docs/development/debugging.md)
   — the **mandatory** evidence-driven protocol for any detector failure.
-- [`docs/development/conventions.md`](../docs/development/conventions.md)
+- [`conventions.md`](../docs/development/conventions.md)
   — public struct conventions (`#[non_exhaustive]` + named constructors),
   binding/CLI/dict-key parity, and local-only-artifact rules.
-- [`docs/development/private-dataset-policy.md`](../docs/development/private-dataset-policy.md)
+- [`private-dataset-policy.md`](../docs/development/private-dataset-policy.md)
   — disclosure policy + the two regression datasets (3536119669, 130x130_puzzle).
-- [`docs/development/release-gates.md`](../docs/development/release-gates.md)
+- [`release-gates.md`](../docs/development/release-gates.md)
   — full pre-release quality-gate checklist.
-- [`docs/development/commands.md`](../docs/development/commands.md)
+- [`refactor-gates.md`](../docs/development/refactor-gates.md)
+  — standing per-phase validation gate for in-flight refactors.
+- [`commands.md`](../docs/development/commands.md)
   — complete command reference.
+- [`profiling.md`](../docs/development/profiling.md)
+  — flamegraph / per-span timing capture for the grid-build pipeline.
+- [`subagent-workflow.md`](../docs/development/subagent-workflow.md)
+  — how to dispatch quick-/deep-implementer subagents during feature work.
+- [`improvement-roadmap-2026-06.md`](../docs/development/improvement-roadmap-2026-06.md)
+  — Studio-driven detection/parameter improvement roadmap.
+
+**Algorithm references** ([`docs/algorithms/`](../docs/algorithms/)):
+
+- [`topological-grid-detection.md`](../docs/algorithms/topological-grid-detection.md)
+  — canonical stage-by-stage map for the sole grid builder.
+- [`algorithmic_gaps.md`](../docs/algorithms/algorithmic_gaps.md)
+  — workspace-wide ledger of open/closed algorithmic gaps and known limits.
+- [`chess-corners-0.10-impact.md`](../docs/algorithms/chess-corners-0.10-impact.md)
+  — the `chess-corners` 0.8→0.10 integration report (and why RingFit is default).
+- [`puzzle_detection_spec.md`](../docs/algorithms/puzzle_detection_spec.md)
+  — PuzzleBoard soft-edge-decode + global-inference design.
+- [`charuco_concept.md`](../docs/algorithms/charuco_concept.md)
+  — ChArUco board-level hypothesis-scoring concept.
+- [`diskfit-antipodal-sector.md`](../docs/algorithms/diskfit-antipodal-sector.md)
+  — upstream `chess-corners` DiskFit axis-slot defect note.
+
+**Other:** FFI / C-API consumer docs in [`docs/ffi/`](../docs/ffi/); release
+history in [`docs/changelog/`](../docs/changelog/) (archive, indexed by the root
+`CHANGELOG.md`) and the live [`docs/migrations/0.10.0.md`](../docs/migrations/0.10.0.md).
 
 ## Key conventions (always on)
 

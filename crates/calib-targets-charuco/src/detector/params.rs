@@ -77,7 +77,7 @@ pub struct CharucoParams {
     pub corner_redetect_params: ChessCornerParams,
     /// Replace the per-marker hard-threshold decode + rotation/translation
     /// vote alignment with a board-level soft-bit log-likelihood matcher
-    /// (see `docs/charuco_concept.md`).
+    /// (see `docs/algorithms/charuco_concept.md`).
     ///
     /// When `true`, the detector computes a per-cell × per-marker-id score
     /// matrix, enumerates (D4 rotation × integer translation) board

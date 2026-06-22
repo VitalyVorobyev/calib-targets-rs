@@ -5,12 +5,11 @@ work in this Rust workspace, with the goal of keeping the main
 conversation's context lean while still using the right model for each
 slice of work.
 
-It is the everyday-work counterpart to
-[`docs/review-workflow.md`](review-workflow.md), which documents the
-release-time `/rust-workspace-review` 3-agent pipeline. The dispatch
-ideas are the same — Sonnet for mechanical work, Opus for judgement —
-just generalised away from the release pipeline so they apply to any
-plan.
+It is the everyday-work counterpart to the release-time
+`/rust-workspace-review` skill (run that skill for a full pre-release
+audit). The dispatch ideas are the same — Sonnet for mechanical work,
+Opus for judgement — just generalised away from the release pipeline so
+they apply to any plan.
 
 ## Why subagents
 
@@ -215,11 +214,9 @@ prevent.
 
 ## Relationship to other workflows
 
-- The release-time
-  [`/rust-workspace-review`](review-workflow.md) pipeline (Architect
-  → Implementer → Reviewer) is unchanged. Implementer is Sonnet,
-  Reviewer is Opus, Architect is the main conversation. The named
-  agents in this doc are siblings, not replacements.
+- For a full pre-release audit, run the `/rust-workspace-review` skill
+  directly — it owns the release-time review flow. The named agents in
+  this doc are the everyday-feature-work siblings, not replacements.
 - The
   [`calibration-target-detector`](../.claude/agents/calibration-target-detector.md)
   domain agent stays the right call for vision-specific design,

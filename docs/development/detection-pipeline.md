@@ -45,7 +45,7 @@ corners directly:
   for ChArUco, so the chessboard component stays recall-oriented).
 
 See `crates/calib-targets-charuco/docs/PIPELINE.md` for the full ChArUco stage
-map and `docs/algorithmic_gaps.md` for the remaining open items.
+map and `docs/algorithms/algorithmic_gaps.md` for the remaining open items.
 
 ### Component merge
 

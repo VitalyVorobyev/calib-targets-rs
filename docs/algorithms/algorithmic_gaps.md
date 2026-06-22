@@ -11,7 +11,7 @@ This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
 pipeline reference — those live with the code that owns them:
 
-- **`docs/topological-grid-detection.md`** (repo root) — canonical
+- **`docs/algorithms/topological-grid-detection.md`** (repo root) — canonical
   stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
   stage map for the `GraphBuildAlgorithm::Topological` pipeline,
@@ -21,6 +21,11 @@ pipeline reference — those live with the code that owns them:
 Read those first for any pipeline question. The remainder of this
 file lists what is known to be missing or suboptimal, with a
 proposed fix per gap.
+
+> Related upstream-defect note:
+> [`docs/algorithms/diskfit-antipodal-sector.md`](diskfit-antipodal-sector.md)
+> records why `RingFit` stays the default `OrientationMethod` (a latent
+> axis-slot inversion in `chess-corners`' `DiskFit` fitter).
 
 ---
 

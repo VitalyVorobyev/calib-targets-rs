@@ -30,7 +30,7 @@ around it: the prefilter, axis clustering (including the DiskFit
 slot-coherence repair), the recall boosters, the mandatory geometry
 check, and output canonicalisation. The generic grid-finder internals
 are documented separately in
-[`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md).
+[`docs/algorithms/topological-grid-detection.md`](../../../docs/algorithms/topological-grid-detection.md).
 
 **Fallible construction.** `Detector::new(params) -> Result<Self,
 ChessboardParamsError>` validates params up front. No combination the
@@ -156,7 +156,7 @@ crate keeps the ChESS glue and slot-parity semantics.
 
 ## Cross-references
 
-- [`docs/topological-grid-detection.md`](../../../docs/topological-grid-detection.md)
+- [`docs/algorithms/topological-grid-detection.md`](../../../docs/algorithms/topological-grid-detection.md)
   — the generic `projective-grid` topological builder in full (core +
   chessboard input adapter + recovery layer).
 - `crates/projective-grid/src/topological/` — the projective-grid

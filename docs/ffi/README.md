@@ -463,8 +463,7 @@ cargo test -p calib-targets-ffi --test release_archive_smoke -- --nocapture
 
 ## Design History
 
-If you need the design rationale rather than the consumer workflow, start with:
-
-- `docs/ffi/decision-record.md`
-- `docs/handoffs/TASK-001-plan-c-ffi-crate/01-architect.md`
-- `docs/handoffs/TASK-004-add-c-examples-cpp-raii-wrapper-and-abi-verification/01-architect.md`
+If you need the design rationale rather than the consumer workflow, see
+[`docs/ffi/decision-record.md`](decision-record.md) — the accepted ADR for the
+FFI ABI shape (dedicated crate, C-only extern, fixed structs, no JSON transport,
+built-in dictionaries, cdylib packaging).

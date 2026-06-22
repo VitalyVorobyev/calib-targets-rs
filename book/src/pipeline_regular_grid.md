@@ -3,7 +3,7 @@
 > Composes: [axis clustering](algo_axis_clustering.md) →
 > [topological grid finder](algo_topological_grid.md) →
 > [recovery & validation](algo_recovery_validation.md).
-> Source of truth: `docs/topological-grid-detection.md`.
+> Source of truth: `docs/algorithms/topological-grid-detection.md`.
 > Public surface: [The Grid Model](projective_grid.md).
 
 The regular grid pipeline is the **target-free** end-to-end path: a cloud
@@ -94,4 +94,4 @@ owns its own checks); see [Tuning the Detector](tuning.md).
   worked example.
 - [Chessboard pipeline](pipeline_chessboard.md) — the same spine with the
   chessboard precision discipline layered on.
-- `docs/topological-grid-detection.md` — the generic core in full.
+- `docs/algorithms/topological-grid-detection.md` — the generic core in full.

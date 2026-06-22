@@ -2,7 +2,7 @@
 
 > Code: `projective_grid::topological`
 > (`detect_grid_all` with `SquareAlgorithm::Topological`). In-repo
-> deep-dive: `docs/topological-grid-detection.md`.
+> deep-dive: `docs/algorithms/topological-grid-detection.md`.
 
 The topological grid finder is the **sole grid builder** in the
 workspace. Given a cloud of oriented features (positions + two undirected
@@ -132,7 +132,7 @@ chessboard wrapper adds parity discipline in
 
 ## Cross-references
 
-- `docs/topological-grid-detection.md` — the generic core in full, stage
+- `docs/algorithms/topological-grid-detection.md` — the generic core in full, stage
   by stage, with the clean line between `projective-grid` and the
   chessboard adapter.
 - [Axis clustering](algo_axis_clustering.md) — supplies the two global

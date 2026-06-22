@@ -168,7 +168,7 @@ deep-dive — the axis-classification test, the triangle-to-cell merge, and the
 line between the generic machinery here and the chessboard-specific wrapper —
 is on the [Topological grid finder](algo_topological_grid.md) algorithm page,
 with the full stage-by-stage reference in
-`docs/topological-grid-detection.md`.
+`docs/algorithms/topological-grid-detection.md`.
 
 **Hex** also uses the topological algorithm. On a hex point lattice the
 Delaunay triangles *are* the unit cells, so the diagonal/quad-merge stage is
@@ -300,6 +300,6 @@ enum but `detect_grid` does not yet act on it.
 
 API reference: [`projective-grid` on docs.rs](https://docs.rs/projective-grid).
 The topological grid finder has an in-repo deep-dive at
-`docs/topological-grid-detection.md`.
+`docs/algorithms/topological-grid-detection.md`.
 
 [hello-grid]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/projective-grid/examples/hello_grid.rs

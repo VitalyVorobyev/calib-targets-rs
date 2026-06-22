@@ -1,9 +1,10 @@
-# TASK-002 DiskFit antipodal-sector axis-slot inversion
+# DiskFit antipodal-sector axis-slot inversion (upstream `chess-corners` defect)
 
-Status: ready_for_chess_corners_maintainer
-Backlog ID: n/a
-Source: spun out of the calib-targets-rs chessboard↔projective-grid dedup, 2026-06-21
-Fix target: the **`chess-corners` crate** (DiskFit orientation/axes fitter) — NOT this workspace.
+**Upstream issue note** — the fix belongs in the external **`chess-corners`**
+crate (its DiskFit orientation/axes fitter), *not* in this workspace. Recorded
+here because it shapes our `OrientationMethod` defaults: `RingFit` stays the
+default precisely because `DiskFit` carries the slot-ordering inversion below.
+Spun out of the calib-targets-rs chessboard↔projective-grid dedup (2026-06-21).
 
 ## Problem
 

@@ -47,7 +47,7 @@ Every detector shares the same first three steps:
 
 | Pipeline | Composes | Source of truth |
 |---|---|---|
-| [Regular grid](pipeline_regular_grid.md) | clustering + topological grid + validation | `docs/topological-grid-detection.md` |
+| [Regular grid](pipeline_regular_grid.md) | clustering + topological grid + validation | `docs/algorithms/topological-grid-detection.md` |
 | [Chessboard](pipeline_chessboard.md) | the full grid stack, precision-anchored | `crates/calib-targets-chessboard/docs/PIPELINE.md` |
 | [PuzzleBoard](pipeline_puzzleboard.md) | chessboard grid + [edge-code decode](algo_puzzleboard_decode.md) | `crates/calib-targets-puzzleboard/docs/PIPELINE.md` |
 | [ChArUco](pipeline_charuco.md) | chessboard grid + [ArUco decode](algo_aruco_decode.md) + [alignment](algo_charuco_alignment.md) | `crates/calib-targets-charuco/docs/PIPELINE.md` |

@@ -136,7 +136,7 @@ the topological walk uses — and the final geometry check (Stage 5) only
 > clustering, recovery boosters, the mandatory geometry check, and output
 > canonicalisation around it. The generic builder is documented on the
 > [Topological grid finder](algo_topological_grid.md) algorithm page and
-> in `docs/topological-grid-detection.md`.
+> in `docs/algorithms/topological-grid-detection.md`.
 
 ### Stage 1 — Pre-filter (`inputs.rs`)
 
