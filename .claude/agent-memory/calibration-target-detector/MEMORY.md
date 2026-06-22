@@ -95,3 +95,9 @@ match marker.rotation { 1 => (gc.gx-1, gc.gy), 2 => (gc.gx-1, gc.gy-1), 3 => (gc
   - `detects_charuco_on_large_png` (22×22, DICT_4X4_1000, ≥200 corners, IDs 369/309/109 not outliers)
   - `detects_charuco_on_small_png` (22×22 partial, DICT_4X4_250, ≥60 corners)
   - `detects_plain_chessboard_on_mid_png` (7×11 inner corners, 100% detection)
+
+## Investigations
+
+- [Gap 16 smooth-warp backstop — NOT SAFE](gap16_smooth_warp_backstop.md) — global biquadratic/affine
+  warp residual cannot catch the Gap-15 false positive (LOO z=−0.96, 3rd-smallest of 53); falsified by
+  measurement on GeminiChess1. Do not re-attempt as a global-residual gate.

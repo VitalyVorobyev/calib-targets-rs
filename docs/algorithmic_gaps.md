@@ -408,19 +408,45 @@ blockers, tracked):** a real bottom-left corner on this frame is detected but
 not reconstructed (a recall miss, acceptable under the contract) — folds into
 the Gap 8 distortion-recall family and the Gap 16 follow-up.
 
-### Gap 16 — Global smooth-warp precision backstop (OPEN, follow-up to Gap 15)
+### Gap 16 — Global smooth-warp precision backstop (CLOSED BY EVIDENCE 2026-06-22 — approach falsified)
 
-The Gap 15 fix is a *local* per-line smoothness criterion — surgical and
-low-risk, the agreed first phase. The agreed second phase is a *global* precision
-backstop: model the whole labelled lattice as a low-order smooth warp
-(biquadratic / thin-plate spline) and reject corners whose reprojection residual
-is high, replacing the rigid global-homography drop that cannot represent radial
-distortion at all. A single smooth-warp model would subsume the distortion-recall
-(Gap 8), off-axis-false-label (Gap 11), and frontier-false-positive (Gap 15)
-families under one principled predicate instead of a stack of local checks, and
-is the right place to also recover the legitimate-but-unreconstructed frontier
-corners (the Gap 15 recall residual) without re-admitting false positives. Larger
-change to the validation core; deferred as a tracked follow-up.
+The proposed second phase to Gap 15 was a *global* precision backstop: model the
+whole labelled lattice as a low-order smooth warp (biquadratic / TPS) and reject
+corners whose reprojection residual is a high outlier, on the hypothesis that one
+global model subsumes the distortion-recall (Gap 8), off-axis-false-label
+(Gap 11), and frontier-false-positive (Gap 15) families under one predicate.
+
+**The premise is falsified by measurement.** Fitting `(i, j) → pixel`
+(biquadratic and affine, with leave-one-out leverage correction) over the
+production labelled set on every public frame shows the global-residual gate is
+*simultaneously too loose and too tight* — the exact smell CLAUDE.md names:
+
+- On the Gap-15 witness `GeminiChess1.png`, the known false positive (the
+  left-edge leaf one cell past the true board edge, pixel ≈ (210.7, 163.6)) has a
+  leave-one-out residual of **0.096 cell (z = −0.96, 3rd-*smallest* of 53)** — a
+  global low-order polynomial extrapolates the lattice through a one-cell-past-edge
+  leaf almost exactly, giving the false corner a *tiny* residual. Legitimate
+  barrel-distorted periphery corners meanwhile reach **0.5–0.58 cell
+  (z = +4.5…+5.5)**: the false positive's residual is ~6× *smaller* than the
+  legitimate ones. No threshold separates the classes because the separation does
+  not exist in this feature.
+- On `GeminiChess2/3` the biquadratic fits so tightly that legitimate corners
+  reach z = 6.5–8.0, so any robust z-gate strict enough to be useful elsewhere
+  manufactures false *drops* here (recall regression on the ratchets).
+
+The Gap-15 signal is a **local second-order** spacing kink, which a global fit
+averages away. So a global-residual drop gate is not precision-safe and cannot be
+made safe by threshold choice; it was **not implemented** (zero source change).
+The full per-corner numbers are recorded in the calibration-target-detector agent
+memory (`gap16_smooth_warp_backstop.md`).
+
+**What remains real (re-scoped).** Keep the Gap-15 *local* second-order criterion
+— it is already the right shape. The genuinely open item is the *recall* half:
+recovering the legitimate-but-unreconstructed bottom-left frontier corner on
+`GeminiChess1` (the Gap-15 recall residual), a distinct problem a global-residual
+*drop* gate never addressed. A *local* boundary-extension predicate (the Gap 6
+family) is the right tool; folded back into the Gap 8 / Gap 6 distortion-recall
+line.
 
 ### Resolved gaps (April 2026 refactor)
 
@@ -464,13 +490,15 @@ change to the validation core; deferred as a tracked follow-up.
 
 ## Architectural-direction summary
 
-The next architectural move is **Gap 16** (a global smooth-warp precision
-backstop), intended to subsume the distortion-recall (Gap 8),
-off-axis-false-label (Gap 11), and frontier-false-positive (Gap 15) families
-under one principled predicate. After that, unifying the chessboard booster
-boundary extension with the generic extension machinery (Gap 6) and the
-disjoint-set component merge (Gap 9) remain. Gap 3 (homography-quality surface)
-and Gap 2 (`circular_stats`) are now closed; the hex-grid recovery schedule
+The next architectural move is the **distortion-recall** line: recovering the
+legitimate-but-unreconstructed frontier corners in heavy radial distortion
+(Gap 8) via a *local* boundary-extension predicate unified with the generic
+extension machinery (Gap 6). The global smooth-warp backstop once proposed as
+Gap 16 was **falsified by measurement** (a global residual gate cannot separate a
+one-cell-past-edge false positive from legitimate distorted corners) and is
+closed; the Gap-15 *local* second-order criterion stays the precision tool there.
+The disjoint-set component merge (Gap 9) also remains. Gap 3 (homography-quality
+surface) and Gap 2 (`circular_stats`) are closed; the hex-grid recovery schedule
 (Gap 4) is a smaller incremental item.
 
 ---
