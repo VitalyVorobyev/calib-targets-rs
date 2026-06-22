@@ -67,7 +67,7 @@ fn parse_args() -> Result<Args, String> {
             }
             "-h" | "--help" => {
                 eprintln!(
-                    "Usage: profile_grid --image <path> [--algorithm topological|seed-and-grow]\n\
+                    "Usage: profile_grid --image <path> [--algorithm topological]\n\
                      [--iterations N] [--warmup N] [--print-corners]"
                 );
                 std::process::exit(0);

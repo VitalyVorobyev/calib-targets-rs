@@ -6,9 +6,9 @@
 //! strategy skeletons are square-concrete today. Per `docs/DESIGN.md`
 //! ("Extending to hex"), adding hex recovery is a fill-in-the-trait task:
 //! implement the lattice-specific arms of each strategy against this trait
-//! (seed/cell shape for seed-and-grow, hexagon assembly for topological) while
-//! the shared back-half already runs through [`Lattice::model_point`] and the
-//! symmetry group unchanged.
+//! (hexagon assembly for the topological builder) while the shared back-half
+//! already runs through [`Lattice::model_point`] and the symmetry group
+//! unchanged.
 
 use nalgebra::{Point2, Vector2};
 

@@ -216,7 +216,7 @@ fn enumerate_fill_cells(grow: &GrowResult) -> Vec<(i32, i32)> {
     // run for identical input. Sort by `(i, j)` to pin the scan order;
     // this is byte-stable across runs and does not change the outcome
     // for inputs whose attachments are uncontested (the common case for
-    // the seed-and-grow caller, which is already order-invariant).
+    // the topological recovery caller).
     let mut cells: Vec<(i32, i32)> = out.into_iter().collect();
     cells.sort_unstable();
     cells

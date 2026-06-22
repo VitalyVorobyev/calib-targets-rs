@@ -640,7 +640,7 @@ struct SummaryReport {
     runtime_mean_ms: f32,
     upscale: u32,
     use_board_matcher: bool,
-    /// Grid-build algorithm slug (`seed-and-grow` | `topological`).
+    /// Grid-build algorithm slug (always `topological` — the sole builder).
     algorithm: &'static str,
     board: CharucoBoardSpec,
 }

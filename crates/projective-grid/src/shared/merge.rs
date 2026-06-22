@@ -1,7 +1,6 @@
 //! Local-geometry-only component merge.
 //!
-//! Both the topological pipeline and the
-//! seed-and-grow pipeline can leave multiple disconnected grid
+//! The topological pipeline can leave multiple disconnected grid
 //! components when a board is partially occluded, when a line of
 //! corners drops below the strength threshold, or when topological
 //! filtering removes a noisy quad in the middle of the board. This

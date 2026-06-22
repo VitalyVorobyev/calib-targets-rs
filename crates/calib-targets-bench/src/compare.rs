@@ -278,8 +278,9 @@ mod tests {
                 row("testdata/small0.png", 100),
             ],
         );
+        // Synthetic second-builder slug — AlgorithmReq/SquareAlgorithm reserve a seam for a future alternative builder; this exercises multi-algorithm aggregation.
         let b = report(
-            "pipeline.seed_and_grow.ring_fit.chess_axes",
+            "pipeline.alt_builder.ring_fit.chess_axes",
             vec![
                 row("testdata/mid.png", 70),
                 row("testdata/large.png", 280),
@@ -302,7 +303,7 @@ mod tests {
         let charuco_b = cmp
             .rows
             .iter()
-            .find(|r| r.family == "charuco" && r.algorithm == "seed_and_grow")
+            .find(|r| r.family == "charuco" && r.algorithm == "alt_builder")
             .unwrap();
         assert_eq!(charuco_b.snaps, 2);
         assert_eq!(charuco_b.zero_detection_snaps, 1);

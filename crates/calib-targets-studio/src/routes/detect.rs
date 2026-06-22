@@ -63,7 +63,7 @@ pub enum DetectorReq {
     /// Plain chessboard (the only family with pinned baselines).
     #[default]
     Chessboard,
-    /// ChArUco fusion (requires a `board` spec; pins seed-and-grow).
+    /// ChArUco fusion (requires a `board` spec).
     Charuco,
     /// PuzzleBoard self-identifying chessboard (requires a `board` spec).
     Puzzleboard,
@@ -184,9 +184,9 @@ pub struct DetectResponse {
 
 /// Resolve and validate the effective [`DetectorParams`] from a partial
 /// override object. Pipeline-engine params go through
-/// [`DetectorParams::validate`] (which rejects the unsupported
-/// seed-and-grow + neighbour-edges cell); the grid engine accepts all
-/// algorithm × orientation-source combinations, matching the bench CLI.
+/// [`DetectorParams::validate`] (which enforces the topological cell
+/// test constraints); the grid engine accepts all orientation-source
+/// combinations, matching the bench CLI.
 pub fn effective_params(
     params: &serde_json::Value,
     engine: Engine,

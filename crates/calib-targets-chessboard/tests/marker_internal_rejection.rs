@@ -106,7 +106,7 @@ fn marker_internal_corners_never_labelled() {
     // 25 marker-internal corners: one per interior cell, offset from the
     // cell center, with axes rotated 20° off the board axes. This rotation
     // exceeds the default cluster_tol_deg = 12°, so Stage 3 rejects the
-    // markers outright before seed/grow get a chance to attach them.
+    // markers outright before the grid grows.
     let marker_rot = 20.0_f32.to_radians();
     for j in 0..rows - 1 {
         for i in 0..cols - 1 {

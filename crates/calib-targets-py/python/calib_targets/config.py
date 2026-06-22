@@ -605,8 +605,8 @@ class ChessConfig:
     ChESS strategy with ``Threshold::Absolute(15.0)``, no upscaling,
     ring-fit orientation, and a 3.0-pixel merge radius. The 15.0
     absolute threshold is a small noise floor that keeps the
-    seed-and-grow chessboard detector and the topological pipeline
-    from drowning in weak responses (chosen by sweeping the public
+    topological pipeline from drowning in weak responses (chosen by
+    sweeping the public
     testdata regression set; see
     ``crates/calib-targets/examples/threshold_sweep.rs``).
 
@@ -1541,8 +1541,9 @@ class PuzzleBoardParams:
 
     @classmethod
     def for_board(cls, board: PuzzleBoardSpec) -> PuzzleBoardParams:
-        # The chessboard detector's defaults already cover seed/grow/validate on
-        # dense puzzleboards. The only field worth overriding is the
+        # The chessboard detector's defaults already handle topological grid
+        # build and validate on dense puzzleboards. The only field worth
+        # overriding is the
         # pre-filter `min_corner_strength` — the puzzle-piece cutout
         # pattern tends to produce a lot of weak spurious corners that
         # we can drop before clustering.

@@ -12,7 +12,7 @@
 //! matching how the chess-corners adapter and other detectors hand
 //! corners to the new contract without always populating sigma.
 //!
-//! This is **stricter than the seed-and-grow path**: the topological
+//! This is **stricter than the historical seed-and-grow path**: the topological
 //! pipeline's per-corner axes drive every classification, so callers
 //! that supply explicit `sigma_rad = Some(s)` with `s ≥
 //! max_axis_sigma_rad` are opted out — the parallel hand-off path

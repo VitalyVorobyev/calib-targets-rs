@@ -28,9 +28,9 @@
 //! The catalogue covers the flat `AdvancedTuning` knobs plus a representative
 //! set of the nested `topological` / `component_merge` sub-knobs. The
 //! `topological.*` rows are only meaningful on a topological run (the default);
-//! on a seed-and-grow run they read `no-effect`. Per-sub-field ablation of the
-//! nested structs is otherwise out of scope (they belong to `projective-grid`'s
-//! own surface).
+//! ablating a field that has no effect under the topological builder reads
+//! `no-effect`. Per-sub-field ablation of the nested structs is otherwise out
+//! of scope (they belong to `projective-grid`'s own surface).
 
 use std::path::{Path, PathBuf};
 
