@@ -2,7 +2,6 @@
 //! the value-enum knobs and their conversions into detector types, and the
 //! small param-loading helpers shared by the subcommands.
 
-use calib_targets::chessboard::DetectorParams;
 use calib_targets::detect::OrientationMethod;
 use calib_targets_bench::dataset::ImageKind;
 use calib_targets_bench::Engine;
@@ -54,11 +53,6 @@ pub(crate) struct AblateArgs {
     /// `130x130_puzzle`). The key tractability lever for the private campaign.
     #[arg(long)]
     pub(crate) group: Option<String>,
-    /// Graph-build algorithm of the baseline (and every variation). Default
-    /// is the topological grid builder; `topological.*`
-    /// knob rows are only meaningful here.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
-    pub(crate) algorithm: AlgorithmArg,
     /// Detection engine. `pipeline` runs the full chessboard detector.
     #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
     pub(crate) engine: EngineArg,
@@ -142,10 +136,6 @@ pub(crate) struct RunArgs {
     /// Restrict to a single image (relative path under workspace root).
     #[arg(long)]
     pub(crate) image: Option<String>,
-    /// Which graph-build algorithm to exercise. Default is the topological
-    /// grid builder, which is also the cell `bless` pins baselines from.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
-    pub(crate) algorithm: AlgorithmArg,
     /// Detection engine. `pipeline` runs the full chessboard detector;
     /// `grid` drives the projective-grid grid builder directly (bypassing
     /// chessboard recovery). The slug is part of the report filename so cells
@@ -178,11 +168,6 @@ pub(crate) struct PreviewArgs {
     /// Render every image, even when the dataset filter / image filter would skip.
     #[arg(long)]
     pub(crate) all: bool,
-    /// Which graph-build algorithm to exercise. Output filenames carry the
-    /// algorithm name as a suffix so two runs can coexist in the same `--out`
-    /// directory. Default is the topological grid builder.
-    #[arg(long, value_enum, default_value_t = AlgorithmArg::Topological)]
-    pub(crate) algorithm: AlgorithmArg,
     /// Detection engine (see `run --help`). The slug is part of the overlay
     /// filename so cells coexist in the same `--out` directory.
     #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
@@ -222,18 +207,12 @@ impl From<DatasetKindArg> for ImageKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
-pub(crate) enum AlgorithmArg {
-    Topological,
-}
-
-impl AlgorithmArg {
-    pub(crate) fn slug(self) -> &'static str {
-        match self {
-            AlgorithmArg::Topological => "topological",
-        }
-    }
-}
+/// The bench exercises a single graph-build algorithm (the topological grid
+/// builder — the sole builder since the seed-and-grow seam was removed). The
+/// slug is still embedded in the `engine.algorithm.orientation` config id, the
+/// result rows, and output filenames, so `compare` parsing and pinned baselines
+/// stay stable.
+pub(crate) const ALGORITHM_SLUG: &str = "topological";
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub(crate) enum EngineArg {
@@ -283,10 +262,6 @@ impl From<OrientationMethodArg> for OrientationMethod {
             OrientationMethodArg::DiskFit => OrientationMethod::DiskFit,
         }
     }
-}
-
-pub(crate) fn params_with(_algorithm: AlgorithmArg) -> DetectorParams {
-    DetectorParams::default()
 }
 
 // Partial-config loading lives in the library so the studio server shares

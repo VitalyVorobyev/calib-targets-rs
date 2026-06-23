@@ -28,10 +28,11 @@ cargo test -p calib-targets-puzzleboard --release -- --ignored
 
 ## Canonical cells
 
-The bench CLI defaults (`--algorithm topological --engine pipeline
---orientation-source chess-axes --orientation-method ring-fit`) track the
-production `GraphBuildAlgorithm::Topological` (the sole algorithm) — the same
-cell `bench bless` pins baselines from. Non-default cells (grid engine,
+The bench CLI defaults (`--engine pipeline --orientation-source chess-axes
+--orientation-method ring-fit`) exercise the production
+`GraphBuildAlgorithm::Topological` (the sole graph builder, hard-wired since the
+seed-and-grow seam was removed) — the same cell `bench bless` pins baselines
+from. Non-default cells (grid engine,
 neighbour-edges) write coexisting reports under `bench_results/` but are
 **not** compared against the committed baseline; they are tracked by the
 "before" snapshots recorded at the start of the effort (local-only, see
