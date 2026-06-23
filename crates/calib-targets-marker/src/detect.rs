@@ -2,10 +2,7 @@ use crate::circle_score::{
     score_circle_in_square, CircleCandidate, CirclePolarity, CircleScoreParams,
 };
 use crate::coords::CellCoords;
-use calib_targets_core::{GrayImageView, GridCoords};
-
-use nalgebra::Point2;
-use std::collections::HashMap;
+use calib_targets_core::{complete_cell_corners, corner_map_bounds, CornerMap, GrayImageView};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
@@ -16,29 +13,15 @@ use tracing::instrument;
 )]
 pub(crate) fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,
-    map: &HashMap<GridCoords, Point2<f32>>, // (i,j)->pixel corner
+    map: &CornerMap, // (i,j) -> pixel corner
     score_params: &CircleScoreParams,
     // optional ROI in grid cell coords to avoid scanning whole board:
     roi: Option<(i32, i32, i32, i32)>, // (i_min, j_min, i_max, j_max) on CELL indices
 ) -> Vec<CircleCandidate> {
-    if map.is_empty() {
+    // Corner bounds → cell-index range: cells span [min .. max-1] on each axis.
+    let Some((min_i, min_j, max_i, max_j)) = corner_map_bounds(map) else {
         return Vec::new();
-    }
-
-    // Determine scan bounds from map
-    let mut min_i = i32::MAX;
-    let mut min_j = i32::MAX;
-    let mut max_i = i32::MIN;
-    let mut max_j = i32::MIN;
-
-    for g in map.keys() {
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
-        max_i = max_i.max(g.i);
-        max_j = max_j.max(g.j);
-    }
-
-    // cell indices range: i in [min_i .. max_i-1], j in [min_j .. max_j-1]
+    };
     let cell_min_i = min_i;
     let cell_min_j = min_j;
     let cell_max_i = max_i - 1;
@@ -62,19 +45,10 @@ pub(crate) fn detect_circles_via_square_warp(
 
     for j in scan_j0..=scan_j1 {
         for i in scan_i0..=scan_i1 {
-            // corners TL,TR,BR,BL in image space
-            let g00 = GridCoords { i, j };
-            let g10 = GridCoords { i: i + 1, j };
-            let g11 = GridCoords { i: i + 1, j: j + 1 };
-            let g01 = GridCoords { i, j: j + 1 };
-
-            let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
-                (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
-            else {
+            // corners_img is [TL, TR, BR, BL] in image space
+            let Some(corners_img) = complete_cell_corners(map, i, j) else {
                 continue;
             };
-
-            let corners_img = [p00, p10, p11, p01]; // TL,TR,BR,BL
 
             let cell = CellCoords { i, j };
             if let Some(c) = score_circle_in_square(img, &corners_img, cell, score_params) {
@@ -119,7 +93,8 @@ pub(crate) fn top_k_by_polarity(
 mod tests {
     use super::*;
     use crate::circle_score::CircleScoreParams;
-    use calib_targets_core::GrayImageView;
+    use calib_targets_core::{GrayImageView, GridCoords};
+    use nalgebra::Point2;
 
     fn dummy_image() -> GrayImageView<'static> {
         GrayImageView {
@@ -132,7 +107,7 @@ mod tests {
     #[test]
     fn detect_circles_empty_map_returns_empty() {
         let img = dummy_image();
-        let map = HashMap::new();
+        let map = CornerMap::new();
         let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
         assert!(out.is_empty());
     }
@@ -140,7 +115,7 @@ mod tests {
     #[test]
     fn detect_circles_insufficient_corners_returns_empty() {
         let img = dummy_image();
-        let mut map = HashMap::new();
+        let mut map = CornerMap::new();
         map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
         map.insert(GridCoords { i: 1, j: 0 }, Point2::new(1.0, 0.0));
 

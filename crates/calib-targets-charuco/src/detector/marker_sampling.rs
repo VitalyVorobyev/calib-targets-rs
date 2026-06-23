@@ -1,17 +1,15 @@
 use calib_targets_aruco::MarkerCell;
-use calib_targets_core::{GridCoords, LabeledCorner};
-use nalgebra::Point2;
-use std::collections::HashMap;
+use calib_targets_core::{
+    complete_cell_corners, corner_map_bounds, CornerMap, GridCoords, LabeledCorner,
+};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-pub(crate) type CornerMap = HashMap<GridCoords, Point2<f32>>;
-
 /// Build a grid -> image map from inlier chessboard corners.
 #[cfg_attr(feature = "tracing", instrument(level = "info", skip(corners, inliers), fields(corners=inliers.len())))]
 pub(crate) fn build_corner_map(corners: &[LabeledCorner], inliers: &[usize]) -> CornerMap {
-    let mut map = HashMap::new();
+    let mut map = CornerMap::new();
     for &idx in inliers {
         if let Some(c) = corners.get(idx) {
             if let Some(g) = c.grid {
@@ -23,43 +21,28 @@ pub(crate) fn build_corner_map(corners: &[LabeledCorner], inliers: &[usize]) -> 
 }
 
 /// Enumerate complete square cells (TL, TR, BR, BL) from a corner map.
+///
+/// The bounds scan and per-cell corner lookup (including the canonical
+/// TL, TR, BR, BL quad order) are the shared [`corner_map_bounds`] /
+/// [`complete_cell_corners`] primitives; this only wraps each complete cell as
+/// a [`MarkerCell`].
 #[cfg_attr(feature = "tracing", instrument(level = "info", skip(map), fields(corners=map.len())))]
 pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
-    let mut min_i = i32::MAX;
-    let mut min_j = i32::MAX;
-    let mut max_i = i32::MIN;
-    let mut max_j = i32::MIN;
-
-    for g in map.keys() {
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
-        max_i = max_i.max(g.i);
-        max_j = max_j.max(g.j);
-    }
-
-    if min_i == i32::MAX || min_j == i32::MAX {
+    let Some((min_i, min_j, max_i, max_j)) = corner_map_bounds(map) else {
         return Vec::new();
-    }
+    };
 
     let cells_x = (max_i - min_i).max(0) as usize;
     let cells_y = (max_j - min_j).max(0) as usize;
     let mut out = Vec::with_capacity(cells_x * cells_y);
     for j in min_j..max_j {
         for i in min_i..max_i {
-            let g00 = GridCoords { i, j };
-            let g10 = GridCoords { i: i + 1, j };
-            let g11 = GridCoords { i: i + 1, j: j + 1 };
-            let g01 = GridCoords { i, j: j + 1 };
-
-            let (Some(&p00), Some(&p10), Some(&p11), Some(&p01)) =
-                (map.get(&g00), map.get(&g10), map.get(&g11), map.get(&g01))
-            else {
+            let Some(corners_img) = complete_cell_corners(map, i, j) else {
                 continue;
             };
-
             out.push(MarkerCell {
                 gc: GridCoords { i, j },
-                corners_img: [p00, p10, p11, p01],
+                corners_img,
             });
         }
     }
@@ -70,6 +53,7 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nalgebra::Point2;
 
     #[test]
     fn build_corner_map_filters_inliers() {

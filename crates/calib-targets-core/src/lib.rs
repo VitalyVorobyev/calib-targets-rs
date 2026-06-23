@@ -26,6 +26,7 @@
 mod bit_likelihood;
 mod chess;
 mod corner;
+mod corner_map;
 mod grid_alignment;
 mod grid_smoothness;
 mod homography;
@@ -57,6 +58,7 @@ pub use corner::{
     axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, GridCoords, LabeledCorner,
     TargetDetection, TargetKind,
 };
+pub use corner_map::{complete_cell_corners, corner_map_bounds, CornerMap};
 pub use grid_alignment::{
     cell_rect_corners_at, grid_alignment_from_next, grid_alignment_to_next, grid_coords_from_next,
     grid_coords_to_next, grid_transform_from_next, grid_transform_to_next, GridAlignment,
