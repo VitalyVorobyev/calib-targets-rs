@@ -69,9 +69,16 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   deleted (the board-level matcher uses soft-bit scoring and a margin gate, with
   no Hamming cap). The Rust field, the WASM `CharucoParams` type entry, and the
   Python `CharucoParams` dataclass field are removed; an unknown `max_hamming`
-  serde / config key is now ignored on deserialization. The C ABI
-  `ct_charuco_detector_params_t.max_hamming` field is **retained** (accepted but
-  ignored) to keep the published 1.0 FFI struct layout stable.
+  serde / config key is now ignored on deserialization.
+
+- **`calib-targets-ffi` is bumped to 2.0.0 — a struct-layout-breaking C ABI
+  change.** The `max_hamming` field is removed from
+  `ct_charuco_detector_params_t` (it only fed the retired ChArUco vote matcher),
+  so the struct layout, and therefore the ABI, change for C consumers. The
+  generated `calib_targets_ffi.h` no longer declares the field; recompile C/C++
+  consumers against the regenerated header and stop setting `max_hamming` on the
+  params struct. `ct_version_string()` and the CMake config-version now report
+  `2.0.0`.
 
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The

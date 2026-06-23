@@ -1,10 +1,13 @@
 [package]
 name = "calib-targets-ffi"
 # Version pinned (not inherited) because the C ABI evolves
-# independently of the Rust crate workspace. v1.0.0 marks the
+# independently of the Rust crate workspace. v1.0.0 marked the
 # args/buffers struct redesign of the `*_detect_all` entry points
-# (breaking change vs the 0.8 surface).
-version = "1.0.0"
+# (breaking change vs the 0.8 surface). v2.0.0 drops a now-dead field
+# from `ct_charuco_detector_params_t` (a struct-layout-breaking ABI
+# change) after the legacy ChArUco vote matcher — its sole consumer —
+# was retired; see the CHANGELOG Breaking section for details.
+version = "2.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true
