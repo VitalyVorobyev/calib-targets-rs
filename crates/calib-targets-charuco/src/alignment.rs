@@ -5,7 +5,7 @@
 //! board coordinates; the corner-mapping stage consumes it to assign each
 //! chessboard inner corner its OpenCV-compatible ChArUco ID.
 
-use calib_targets_core::{GridAlignment, GridCoords};
+use calib_targets_core::{Coord, GridAlignment};
 use serde::{Deserialize, Serialize};
 
 /// Alignment result between detected markers and a board specification.
@@ -31,7 +31,7 @@ impl CharucoAlignment {
 
     /// Map grid coordinates `(i, j)` into board coordinates.
     #[inline]
-    pub fn map(&self, i: i32, j: i32) -> GridCoords {
+    pub fn map(&self, i: i32, j: i32) -> Coord {
         self.alignment.map(i, j)
     }
 }

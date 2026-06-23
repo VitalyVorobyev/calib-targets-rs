@@ -1,8 +1,7 @@
 use nalgebra::Point2;
+use projective_grid::Coord;
 use projective_grid::LocalAxis as NextLocalAxis;
 use serde::{Deserialize, Serialize};
-
-pub use crate::grid_alignment::GridCoords;
 
 /// Local estimate of one undirected grid axis at a detected corner.
 ///
@@ -119,8 +118,8 @@ pub struct LabeledCorner {
     /// Pixel position.
     pub position: Point2<f32>,
 
-    /// Optional integer grid coordinates (i, j).
-    pub grid: Option<GridCoords>,
+    /// Optional integer grid coordinates `(u, v)`.
+    pub grid: Option<Coord>,
 
     /// Optional logical ID (e.g. ChArUco or marker-board ID).
     pub id: Option<u32>,
@@ -152,9 +151,9 @@ impl LabeledCorner {
         }
     }
 
-    /// Attach integer grid coordinates `(i, j)`.
+    /// Attach integer grid coordinates `(u, v)`.
     #[must_use]
-    pub fn with_grid(mut self, grid: GridCoords) -> Self {
+    pub fn with_grid(mut self, grid: Coord) -> Self {
         self.grid = Some(grid);
         self
     }

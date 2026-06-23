@@ -41,7 +41,7 @@ use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{
     AdvancedTuning, ChessboardCorner, DetectorParams as ChessboardDetectorParams,
 };
-use calib_targets::core::{GridAlignment, GridCoords, LabeledCorner};
+use calib_targets::core::{Coord, GridAlignment, LabeledCorner};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
     CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardParams,
@@ -820,10 +820,12 @@ pub(crate) fn point_to_ffi_xy(x: f32, y: f32) -> ct_point2f_t {
     ct_point2f_t { x, y }
 }
 
-pub(crate) fn grid_coords_to_ffi(grid: GridCoords) -> ct_grid_coords_t {
+pub(crate) fn grid_coords_to_ffi(grid: Coord) -> ct_grid_coords_t {
+    // The C ABI keeps its historical `{ i, j }` field names (ffi 2.0.0, no
+    // further ABI churn); the Rust→C mapping is `Coord::u → i`, `Coord::v → j`.
     ct_grid_coords_t {
-        i: grid.i,
-        j: grid.j,
+        i: grid.u,
+        j: grid.v,
     }
 }
 
@@ -891,8 +893,8 @@ pub(crate) fn marker_detection_to_ffi(marker: &MarkerDetection) -> ct_marker_det
     ct_marker_detection_t {
         id: marker.id,
         grid_cell: ct_grid_coords_t {
-            i: marker.gc.i,
-            j: marker.gc.j,
+            i: marker.gc.u,
+            j: marker.gc.v,
         },
         rotation: marker.rotation,
         hamming: marker.hamming,

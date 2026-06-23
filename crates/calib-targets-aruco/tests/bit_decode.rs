@@ -12,7 +12,7 @@
 use calib_targets_aruco::{
     builtins, decode_marker_in_cell, scan_decode_markers, MarkerCell, Matcher, ScanDecodeConfig,
 };
-use calib_targets_core::{GrayImage, GrayImageView, GridCoords};
+use calib_targets_core::{Coord, GrayImage, GrayImageView};
 use nalgebra::Point2;
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ fn make_marker_image(code: u64, bits: usize, border: usize, cell_px: usize) -> G
 
 fn identity_cell(img_side: f32) -> MarkerCell {
     MarkerCell {
-        gc: GridCoords { i: 0, j: 0 },
+        gc: Coord::new(0, 0),
         corners_img: [
             Point2::new(0.0, 0.0),
             Point2::new(img_side, 0.0),

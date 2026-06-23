@@ -1,5 +1,5 @@
 use calib_targets_core::{
-    estimate_homography_rect_to_img, sample_bilinear_u8, GrayImage, GrayImageView, GridCoords,
+    estimate_homography_rect_to_img, sample_bilinear_u8, Coord, GrayImage, GrayImageView,
     Homography, LabeledCorner,
 };
 use std::collections::HashMap;
@@ -122,8 +122,8 @@ impl RectifiedMeshView {
 fn build_corners_to_pix_map(
     corners: &[LabeledCorner],
     inliers: &[usize],
-) -> HashMap<GridCoords, Point2<f32>> {
-    let mut map: HashMap<GridCoords, Point2<f32>> = HashMap::new();
+) -> HashMap<Coord, Point2<f32>> {
+    let mut map: HashMap<Coord, Point2<f32>> = HashMap::new();
     for &idx in inliers {
         if let Some(c) = corners.get(idx) {
             if let Some(g) = c.grid {
@@ -146,7 +146,7 @@ pub fn rectify_mesh_from_grid(
     inliers: &[usize],
     px_per_square: f32,
 ) -> Result<RectifiedMeshView, MeshWarpError> {
-    // 1) Build map: (i,j) -> image point
+    // 1) Build map: (u,v) -> image point
     let map = build_corners_to_pix_map(corners, inliers);
     if map.len() < 4 {
         return Err(MeshWarpError::NotEnoughLabeledCorners);
@@ -156,10 +156,10 @@ pub fn rectify_mesh_from_grid(
     let (mut min_i, mut min_j) = (i32::MAX, i32::MAX);
     let (mut max_i, mut max_j) = (i32::MIN, i32::MIN);
     for g in map.keys() {
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
-        max_i = max_i.max(g.i);
-        max_j = max_j.max(g.j);
+        min_i = min_i.min(g.u);
+        min_j = min_j.min(g.v);
+        max_i = max_i.max(g.u);
+        max_j = max_j.max(g.v);
     }
 
     // Need at least 2x2 corners => at least 1x1 cell
@@ -200,13 +200,10 @@ pub fn rectify_mesh_from_grid(
             let i0 = min_i + ci as i32;
             let j0 = min_j + cj as i32;
 
-            let g00 = GridCoords { i: i0, j: j0 };
-            let g10 = GridCoords { i: i0 + 1, j: j0 };
-            let g01 = GridCoords { i: i0, j: j0 + 1 };
-            let g11 = GridCoords {
-                i: i0 + 1,
-                j: j0 + 1,
-            };
+            let g00 = Coord::new(i0, j0);
+            let g10 = Coord::new(i0 + 1, j0);
+            let g01 = Coord::new(i0, j0 + 1);
+            let g11 = Coord::new(i0 + 1, j0 + 1);
 
             let Some(p00) = map.get(&g00).copied() else {
                 continue;

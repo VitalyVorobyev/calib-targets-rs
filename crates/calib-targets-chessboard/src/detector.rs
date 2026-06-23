@@ -173,7 +173,7 @@ mod tests {
         let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d
             .corners
             .iter()
-            .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
+            .map(|c| ((c.grid.u, c.grid.v), (c.position.x, c.position.y)))
             .collect();
         let p00 = by_ij.get(&(0, 0)).copied().expect("(0,0) labelled");
         let p10 = by_ij.get(&(1, 0)).copied().expect("(1,0) labelled");

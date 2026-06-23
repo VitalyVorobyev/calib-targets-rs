@@ -1,7 +1,7 @@
 //! Board specification and layout helpers for ChArUco.
 
 use calib_targets_aruco::Dictionary;
-use calib_targets_core::GridCoords;
+use calib_targets_core::Coord;
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -98,7 +98,7 @@ pub enum CharucoBoardError {
 #[derive(Clone, Debug)]
 pub struct CharucoBoard {
     spec: CharucoBoardSpec,
-    marker_positions: Vec<GridCoords>,
+    marker_positions: Vec<Coord>,
     /// Reverse lookup: board square `(i, j)` → marker id. Keyed as
     /// `j * cols + i` so `None` ⇒ no marker at that square (a black square
     /// in the OpenCV layout).
@@ -136,11 +136,11 @@ impl CharucoBoard {
 
         let mut id_at_square = vec![None; (spec.rows as usize) * (spec.cols as usize)];
         for (id, bc) in marker_positions.iter().enumerate() {
-            if bc.i < 0 || bc.j < 0 {
+            if bc.u < 0 || bc.v < 0 {
                 continue;
             }
-            let i = bc.i as usize;
-            let j = bc.j as usize;
+            let i = bc.u as usize;
+            let j = bc.v as usize;
             if i >= spec.cols as usize || j >= spec.rows as usize {
                 continue;
             }
@@ -174,7 +174,7 @@ impl CharucoBoard {
 
     /// Mapping from marker id -> board cell (square) coordinates.
     #[inline]
-    pub fn marker_position(&self, id: u32) -> Option<GridCoords> {
+    pub fn marker_position(&self, id: u32) -> Option<Coord> {
         self.marker_positions.get(id as usize).cloned()
     }
 
@@ -184,8 +184,8 @@ impl CharucoBoard {
     pub fn marker_cell(&self, marker_id: i32) -> Option<(usize, usize)> {
         let id = u32::try_from(marker_id).ok()?;
         let bc = self.marker_position(id)?;
-        let sx = usize::try_from(bc.i).ok()?;
-        let sy = usize::try_from(bc.j).ok()?;
+        let sx = usize::try_from(bc.u).ok()?;
+        let sy = usize::try_from(bc.v).ok()?;
         Some((sx, sy))
     }
 
@@ -214,12 +214,12 @@ impl CharucoBoard {
     /// Returns `None` for out-of-range `bc` and for squares where the board
     /// layout places no marker (e.g. black squares in the OpenCV layout).
     #[inline]
-    pub fn marker_id_at(&self, bc: GridCoords) -> Option<u32> {
-        if bc.i < 0 || bc.j < 0 {
+    pub fn marker_id_at(&self, bc: Coord) -> Option<u32> {
+        if bc.u < 0 || bc.v < 0 {
             return None;
         }
-        let i = bc.i as usize;
-        let j = bc.j as usize;
+        let i = bc.u as usize;
+        let j = bc.v as usize;
         if i >= self.spec.cols as usize || j >= self.spec.rows as usize {
             return None;
         }
@@ -227,7 +227,7 @@ impl CharucoBoard {
     }
 
     /// Iterate all marker `(id, position)` pairs for this board.
-    pub fn iter_marker_positions(&self) -> impl Iterator<Item = (u32, GridCoords)> + '_ {
+    pub fn iter_marker_positions(&self) -> impl Iterator<Item = (u32, Coord)> + '_ {
         self.marker_positions
             .iter()
             .enumerate()
@@ -316,13 +316,13 @@ fn marker_surrounding_charuco_corners_for_cell(
     Some([tl, tr, br, bl])
 }
 
-fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<GridCoords> {
+fn open_cv_charuco_marker_positions(rows: u32, cols: u32) -> Vec<Coord> {
     let mut out = Vec::new();
     for j in 0..(rows as i32) {
         for i in 0..(cols as i32) {
             // OpenCV: top-left square is black => white squares have (i+j) odd.
             if ((i + j) & 1) == 1 {
-                out.push(GridCoords { i, j });
+                out.push(Coord::new(i, j));
             }
         }
     }

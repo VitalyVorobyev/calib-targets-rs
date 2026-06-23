@@ -77,10 +77,10 @@ fn assert_no_duplicate_labels(detection: &ChessboardDetection, context: &str) {
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     for lc in &detection.corners {
         assert!(
-            seen.insert((lc.grid.i, lc.grid.j)),
+            seen.insert((lc.grid.u, lc.grid.v)),
             "{context}: duplicate (i, j) = ({}, {}) — precision contract violated",
-            lc.grid.i,
-            lc.grid.j
+            lc.grid.u,
+            lc.grid.v
         );
     }
 }
@@ -89,8 +89,8 @@ fn assert_grid_rebased_to_origin(detection: &ChessboardDetection, context: &str)
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
     for lc in &detection.corners {
-        min_i = min_i.min(lc.grid.i);
-        min_j = min_j.min(lc.grid.j);
+        min_i = min_i.min(lc.grid.u);
+        min_j = min_j.min(lc.grid.v);
     }
     assert_eq!(
         (min_i, min_j),
@@ -108,7 +108,7 @@ fn assert_origin_top_left(detection: &ChessboardDetection, context: &str) {
     let labelled: HashMap<(i32, i32), (f32, f32)> = detection
         .corners
         .iter()
-        .map(|lc| ((lc.grid.i, lc.grid.j), (lc.position.x, lc.position.y)))
+        .map(|lc| ((lc.grid.u, lc.grid.v), (lc.position.x, lc.position.y)))
         .collect();
     if labelled.len() < 4 {
         // Too sparse for a direction test; the rebase check alone is
@@ -259,7 +259,7 @@ fn audit_structural(detection: &ChessboardDetection) -> (usize, usize, usize) {
     let by_grid: HashMap<(i32, i32), (f32, f32)> = detection
         .corners
         .iter()
-        .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
+        .map(|c| ((c.grid.u, c.grid.v), (c.position.x, c.position.y)))
         .collect();
     let mut lens: Vec<f32> = Vec::new();
     for (&(i, j), &(x, y)) in &by_grid {
@@ -351,8 +351,8 @@ fn small3_topological_default_suppresses_weak_frontier() {
         assert!(
             strength >= floor,
             "small3: emitted corner ({}, {}) has strength {strength:.1} below the floor {floor}",
-            c.grid.i,
-            c.grid.j
+            c.grid.u,
+            c.grid.v
         );
     }
 

@@ -10,20 +10,51 @@ Corners4 = tuple[Point2, Point2, Point2, Point2]
 
 
 @dataclass(slots=True)
-class GridCoords:
+class Coord:
+    """Canonical integer grid coordinate ``(u, v)``.
+
+    Mirrors the Rust ``projective_grid::Coord``: ``u`` is the grid's first
+    axis (right), ``v`` the second (down). Serializes as ``{"u", "v"}``.
+    """
+
+    u: int
+    v: int
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import coord_to_dict
+
+        return coord_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Coord:
+        from ._convert_out import coord_from_dict
+
+        return coord_from_dict(data)
+
+
+@dataclass(slots=True)
+class CellCoords:
+    """Marker-board cell index ``(i, j)``.
+
+    Distinct from :class:`Coord`: this is the top-left corner index of a
+    marker-board square, mirroring the Rust marker ``CellCoords``. It keeps
+    its ``{"i", "j"}`` serialization (it is *not* part of the grid-coordinate
+    migration).
+    """
+
     i: int
     j: int
 
     def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_coords_to_dict
+        from ._convert_out import cell_coords_to_dict
 
-        return grid_coords_to_dict(self)
+        return cell_coords_to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridCoords:
-        from ._convert_out import grid_coords_from_dict
+    def from_dict(cls, data: dict[str, Any]) -> CellCoords:
+        from ._convert_out import cell_coords_from_dict
 
-        return grid_coords_from_dict(data)
+        return cell_coords_from_dict(data)
 
 
 @dataclass(slots=True)
@@ -82,7 +113,7 @@ class GridAlignment:
 @dataclass(slots=True)
 class LabeledCorner:
     position: Point2
-    grid: GridCoords | None
+    grid: Coord | None
     id: int | None
     target_position: Point2 | None
     score: float
@@ -205,7 +236,7 @@ class ChessboardDebug:
 class ChessboardCorner:
     """A single labelled chessboard corner.
 
-    `position` is the sub-pixel image position. `grid` is the `(i, j)`
+    `position` is the sub-pixel image position. `grid` is the `(u, v)`
     grid label — a chessboard corner is always labelled, so this is
     non-optional. `input_index` maps the corner back to its index in the
     caller's raw `Corner` array (useful for ChArUco alignment and similar
@@ -213,7 +244,7 @@ class ChessboardCorner:
     """
 
     position: Point2
-    grid: GridCoords
+    grid: Coord
     input_index: int
     score: float
 
@@ -257,7 +288,7 @@ class ChessboardDetectionResult:
 @dataclass(slots=True)
 class MarkerDetection:
     id: int
-    gc: GridCoords
+    gc: Coord
     rotation: int
     hamming: int
     score: float
@@ -282,7 +313,7 @@ class MarkerDetection:
 @dataclass(slots=True)
 class CircleCandidate:
     center_img: Point2
-    cell: GridCoords
+    cell: CellCoords
     polarity: CirclePolarity
     score: float
     contrast: float
@@ -301,7 +332,7 @@ class CircleCandidate:
 
 @dataclass(slots=True)
 class MarkerCircleExpectation:
-    cell: GridCoords
+    cell: CellCoords
     polarity: CirclePolarity
 
     def to_dict(self) -> dict[str, Any]:
@@ -338,7 +369,7 @@ class CircleMatch:
 @dataclass(slots=True)
 class CharucoCorner:
     position: Point2
-    grid: GridCoords
+    grid: Coord
     id: int
     target_position: Point2
     score: float
@@ -386,7 +417,7 @@ class CharucoDetectionResult:
 @dataclass(slots=True)
 class MarkerBoardCorner:
     position: Point2
-    grid: GridCoords
+    grid: Coord
     id: int | None
     target_position: Point2 | None
     score: float
@@ -496,7 +527,7 @@ class PuzzleBoardDecodeInfo:
 @dataclass(slots=True)
 class PuzzleBoardCorner:
     position: Point2
-    grid: GridCoords
+    grid: Coord
     id: int
     target_position: Point2
     score: float
@@ -545,7 +576,8 @@ class PuzzleBoardDetectionResult:
 __all__ = [
     "Point2",
     "Corners4",
-    "GridCoords",
+    "Coord",
+    "CellCoords",
     "CellOffset",
     "GridTransform",
     "GridAlignment",

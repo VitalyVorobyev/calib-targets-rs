@@ -111,8 +111,8 @@ function extractOverlayCorners(
     if (!c) return null;
     const x = Array.isArray(c.position) ? c.position[0] : c.x;
     const y = Array.isArray(c.position) ? c.position[1] : c.y;
-    const i = c.grid?.i ?? 0;
-    const j = c.grid?.j ?? 0;
+    const i = c.grid?.u ?? 0;
+    const j = c.grid?.v ?? 0;
     return { x, y, i, j, id: c.id ?? null, score: c.score };
   }
   if (mode === "corners") {

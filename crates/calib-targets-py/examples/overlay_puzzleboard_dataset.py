@@ -126,8 +126,8 @@ def draw_success(
         if grid is None:
             continue
         labelled.append({
-            "mi": int(grid["i"]),
-            "mj": int(grid["j"]),
+            "mi": int(grid["u"]),
+            "mj": int(grid["v"]),
             "x": float(c["position"][0]),
             "y": float(c["position"][1]),
             "id": c.get("id"),
@@ -202,8 +202,8 @@ def draw_failure(
             if grid is None:
                 continue
             labelled.append({
-                "i": int(grid["i"]),
-                "j": int(grid["j"]),
+                "i": int(grid["u"]),
+                "j": int(grid["v"]),
                 "x": float(c["position"][0]),
                 "y": float(c["position"][1]),
             })

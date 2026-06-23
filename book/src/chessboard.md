@@ -119,7 +119,7 @@ ChessCorner[]
  →                          (gap fill + line extrapolation), weak-cluster rescue,
  →                          merge_components_local
  →  5. final_geometry_check MANDATORY precision pass; can only DROP corners
- →  6. output               LabelledGrid::normalize + GridCoords adaptation
+ →  6. output               LabelledGrid::normalize (Coord copied straight out)
  → Output: ChessboardDetection (one per component) or None
 ```
 
@@ -214,9 +214,10 @@ The detection is refused if survivors fall below `min_labeled_corners`.
 
 Build a `projective_grid::LabelledGrid` from the surviving labelled set and
 call [`LabelledGrid::normalize()`](algo_recovery_validation.md) (rebase
-min → `(0, 0)`; canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)`
-sort — all owned by projective-grid), then adapt the normalized lattice
-`Coord{u,v}` to the workspace `GridCoords{i,j}`.
+min → `(0, 0)`; canonicalise so `+u ≈ +x`, `+v ≈ +y`; stable `(v, u)`
+sort — all owned by projective-grid). The normalized lattice `Coord{u,v}`
+is the workspace's canonical grid-coordinate type, so it is copied straight
+onto each output corner with no adaptation step.
 
 ---
 
@@ -390,8 +391,8 @@ fn detect(corners: &[ChessCorner]) {
         for c in &d.corners {
             // `grid` is non-optional; `input_index` points back into `corners`.
             println!(
-                "(i, j) = ({}, {}) at ({:.1}, {:.1})  [input #{}]",
-                c.grid.i, c.grid.j, c.position.x, c.position.y, c.input_index
+                "(u, v) = ({}, {}) at ({:.1}, {:.1})  [input #{}]",
+                c.grid.u, c.grid.v, c.position.x, c.position.y, c.input_index
             );
         }
     }

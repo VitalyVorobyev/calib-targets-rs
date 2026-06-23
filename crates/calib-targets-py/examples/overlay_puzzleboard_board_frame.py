@@ -113,8 +113,8 @@ def snap_summary(frame: dict[str, Any]) -> dict[str, Any]:
         scores.append(float(c.get("score", 0.0)))
         g = c.get("grid")
         if g is not None:
-            mis.append(int(g["i"]))
-            mjs.append(int(g["j"]))
+            mis.append(int(g["u"]))
+            mjs.append(int(g["v"]))
     return {
         "ok": True,
         "xs": np.asarray(xs, dtype=np.float64),

@@ -47,9 +47,11 @@ export interface GeneratedTargetBundle {
 /** `nalgebra::Point2<f32>` serialises as a 2-tuple. */
 export type Point2 = [number, number];
 
-export interface GridCoords {
-  i: number;
-  j: number;
+/** Canonical integer grid coordinate `(u, v)` (Rust `Coord`). `u` is the
+ * grid's first axis (right), `v` the second (down). */
+export interface Coord {
+  u: number;
+  v: number;
 }
 
 export interface GridTransform {
@@ -91,8 +93,8 @@ export type TargetKind =
 
 export interface LabeledCorner {
   position: Point2;
-  /** Integer `(i, j)` grid label, rebased so the bounding-box minimum is `(0, 0)`. */
-  grid: GridCoords | null;
+  /** Integer `(u, v)` grid label, rebased so the bounding-box minimum is `(0, 0)`. */
+  grid: Coord | null;
   /** Logical target ID (ChArUco marker-referenced corner, PuzzleBoard master ID). */
   id: number | null;
   /** Physical position in mm on the printed board, when known. */
@@ -114,8 +116,8 @@ export interface TargetDetection {
 export interface ChessboardCorner {
   /** Sub-pixel image position. */
   position: Point2;
-  /** Grid label `(i, j)` — always present for a chessboard corner. */
-  grid: GridCoords;
+  /** Grid label `(u, v)` — always present for a chessboard corner. */
+  grid: Coord;
   /** Index into the input `corners` slice that produced this corner. */
   input_index: number;
   /** Corner score (higher is better). */
@@ -132,7 +134,7 @@ export interface ChessboardDetectionResult {
 
 export interface MarkerDetection {
   id: number;
-  gc: GridCoords;
+  gc: Coord;
   rotation: number;
   hamming: number;
   score: number;
@@ -145,7 +147,7 @@ export interface MarkerDetection {
 
 export interface CharucoCorner {
   position: Point2;
-  grid: GridCoords;
+  grid: Coord;
   id: number;
   target_position: Point2;
   score: number;
@@ -160,7 +162,7 @@ export interface CharucoDetectionResult {
 
 export interface MarkerBoardCorner {
   position: Point2;
-  grid: GridCoords;
+  grid: Coord;
   id: number | null;
   target_position: Point2 | null;
   score: number;
@@ -195,7 +197,7 @@ export interface PuzzleBoardDecodeInfo {
 
 export interface PuzzleBoardCorner {
   position: Point2;
-  grid: GridCoords;
+  grid: Coord;
   id: number;
   target_position: Point2;
   score: number;
@@ -387,7 +389,7 @@ export interface CharucoParams {
 export type CirclePolarity = "white" | "black";
 
 export interface MarkerCircleSpec {
-  cell: GridCoords;
+  cell: CellCoords;
   polarity: CirclePolarity;
 }
 
@@ -508,7 +510,7 @@ export type RejectReason =
 
 /** Per-cell diagnostic record from the board matcher (Rust `CellDiag`). */
 export interface CellDiag {
-  gc: GridCoords;
+  gc: Coord;
   /** Four corners `[TL, TR, BR, BL]` in image pixels. */
   corners_img: [Point2, Point2, Point2, Point2];
   sampled: boolean;

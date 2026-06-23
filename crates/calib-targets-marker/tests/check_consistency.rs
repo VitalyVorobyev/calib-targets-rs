@@ -4,7 +4,7 @@
 //! board-canonical corner IDs. The generic grid crate should only receive
 //! image positions plus square-lattice coordinate hypotheses.
 
-use calib_targets_core::{grid_coords_to_next, GridCoords};
+use calib_targets_core::Coord;
 use calib_targets_marker::{MarkerBoardCorner, MarkerBoardDetectionResult};
 use nalgebra::Point2;
 use projective_grid::{
@@ -22,7 +22,7 @@ fn synthetic_marker_result() -> MarkerBoardDetectionResult {
     let mut corners = Vec::new();
     for j in 0..4 {
         for i in 0..5 {
-            let grid = GridCoords { i, j };
+            let grid = Coord::new(i, j);
             let id = (1_000 - (j * 5 + i)) as u32;
             let target = Point2::new(i as f32 * 12.0, j as f32 * 12.0);
             corners.push(
@@ -51,9 +51,7 @@ fn marker_board_corners_pass_check_consistency_without_ids() {
         .corners
         .iter()
         .enumerate()
-        .map(|(source_index, corner)| {
-            CoordinateHypothesis::unweighted(source_index, grid_coords_to_next(corner.grid))
-        })
+        .map(|(source_index, corner)| CoordinateHypothesis::unweighted(source_index, corner.grid))
         .collect();
 
     let request = ConsistencyRequest::new(

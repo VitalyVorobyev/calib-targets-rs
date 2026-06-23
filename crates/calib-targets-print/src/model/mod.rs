@@ -29,7 +29,7 @@ pub(crate) use puzzleboard::validate_puzzleboard_spec;
 
 use error::SCHEMA_VERSION_V1;
 
-use calib_targets_core::GridCoords;
+use calib_targets_core::Coord;
 use calib_targets_marker::MarkerBoardSpec;
 use calib_targets_puzzleboard::MASTER_COLS;
 use serde::{Deserialize, Serialize};
@@ -124,10 +124,7 @@ impl TargetSpec {
                                 (i as f64 + 1.0) * spec.square_size_mm,
                                 (j as f64 + 1.0) * spec.square_size_mm,
                             ],
-                            grid: Some(GridCoords {
-                                i: i as i32,
-                                j: j as i32,
-                            }),
+                            grid: Some(Coord::new(i as i32, j as i32)),
                             id: None,
                         });
                     }
@@ -149,10 +146,7 @@ impl TargetSpec {
                                 (i as f64 + 1.0) * spec.square_size_mm,
                                 (j as f64 + 1.0) * spec.square_size_mm,
                             ],
-                            grid: Some(GridCoords {
-                                i: i as i32,
-                                j: j as i32,
-                            }),
+                            grid: Some(Coord::new(i as i32, j as i32)),
                             id: Some(id),
                         });
                     }
@@ -170,10 +164,7 @@ impl TargetSpec {
                                 (i as f64 + 1.0) * spec.square_size_mm,
                                 (j as f64 + 1.0) * spec.square_size_mm,
                             ],
-                            grid: Some(GridCoords {
-                                i: i as i32,
-                                j: j as i32,
-                            }),
+                            grid: Some(Coord::new(i as i32, j as i32)),
                             id: None,
                         });
                     }
@@ -197,10 +188,7 @@ impl TargetSpec {
                                 (i as f64 + 1.0) * spec.square_size_mm,
                                 (j as f64 + 1.0) * spec.square_size_mm,
                             ],
-                            grid: Some(GridCoords {
-                                i: master_i as i32,
-                                j: master_j as i32,
-                            }),
+                            grid: Some(Coord::new(master_i as i32, master_j as i32)),
                             id: Some(id),
                         });
                     }
@@ -346,7 +334,7 @@ pub struct ResolvedTargetPoint {
     pub position_mm: [f64; 2],
     /// Integer `(i, j)` grid label of the point, when it has one.
     #[serde(default)]
-    pub grid: Option<GridCoords>,
+    pub grid: Option<Coord>,
     /// Logical ID of the point (e.g. ChArUco corner ID), when it has one.
     #[serde(default)]
     pub id: Option<u32>,
@@ -475,7 +463,7 @@ mod tests {
         let layout = doc.resolve_layout().expect("layout");
         assert_eq!(layout.points.len(), 24);
         assert_eq!(layout.points[0].id, Some(0));
-        assert_eq!(layout.points[0].grid, Some(GridCoords { i: 0, j: 0 }));
+        assert_eq!(layout.points[0].grid, Some(Coord::new(0, 0)));
     }
 
     #[test]

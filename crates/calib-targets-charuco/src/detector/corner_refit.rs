@@ -99,10 +99,10 @@ const GRID_CORNER_OFFSETS: [(i32, i32); 4] = [(0, 0), (1, 0), (1, 1), (0, 1)];
 #[inline]
 fn recover_gc0(marker: &MarkerDetection) -> (i32, i32) {
     match marker.rotation {
-        1 => (marker.gc.i - 1, marker.gc.j),
-        2 => (marker.gc.i - 1, marker.gc.j - 1),
-        3 => (marker.gc.i, marker.gc.j - 1),
-        _ => (marker.gc.i, marker.gc.j), // rotation 0 or unexpected
+        1 => (marker.gc.u - 1, marker.gc.v),
+        2 => (marker.gc.u - 1, marker.gc.v - 1),
+        3 => (marker.gc.u, marker.gc.v - 1),
+        _ => (marker.gc.u, marker.gc.v), // rotation 0 or unexpected
     }
 }
 
@@ -142,7 +142,7 @@ fn collect_board_to_image_correspondences(
             // Use charuco_object_xy for the board point so the coordinate
             // system matches corner.target_position used in the prediction.
             // Only inner corners (those with a ChArUco ID) are included.
-            let Some(charuco_id) = board.charuco_corner_id_from_board_corner(bc.i, bc.j) else {
+            let Some(charuco_id) = board.charuco_corner_id_from_board_corner(bc.u, bc.v) else {
                 continue;
             };
             let Some(board_pt) = board.charuco_object_xy(charuco_id) else {
@@ -342,12 +342,12 @@ mod tests {
     #[test]
     fn recover_gc0_rotation_0() {
         use calib_targets_aruco::MarkerDetection;
-        use calib_targets_core::GridCoords;
+        use calib_targets_core::Coord;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCoords { i: 3, j: 5 },
+            gc: Coord::new(3, 5),
             rotation: 0,
             hamming: 0,
             score: 1.0,
@@ -363,13 +363,13 @@ mod tests {
     #[test]
     fn recover_gc0_rotation_1() {
         use calib_targets_aruco::MarkerDetection;
-        use calib_targets_core::GridCoords;
+        use calib_targets_core::Coord;
         use nalgebra::Point2;
 
         // gc = gc0 + (1, 0) for rotation 1, so gc0 = gc - (1, 0)
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCoords { i: 4, j: 5 },
+            gc: Coord::new(4, 5),
             rotation: 1,
             hamming: 0,
             score: 1.0,
@@ -385,12 +385,12 @@ mod tests {
     #[test]
     fn recover_gc0_rotation_2() {
         use calib_targets_aruco::MarkerDetection;
-        use calib_targets_core::GridCoords;
+        use calib_targets_core::Coord;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCoords { i: 4, j: 6 },
+            gc: Coord::new(4, 6),
             rotation: 2,
             hamming: 0,
             score: 1.0,
@@ -406,12 +406,12 @@ mod tests {
     #[test]
     fn recover_gc0_rotation_3() {
         use calib_targets_aruco::MarkerDetection;
-        use calib_targets_core::GridCoords;
+        use calib_targets_core::Coord;
         use nalgebra::Point2;
 
         let marker = MarkerDetection {
             id: 0,
-            gc: GridCoords { i: 3, j: 6 },
+            gc: Coord::new(3, 6),
             rotation: 3,
             hamming: 0,
             score: 1.0,

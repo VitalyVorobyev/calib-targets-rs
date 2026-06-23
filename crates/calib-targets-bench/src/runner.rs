@@ -149,8 +149,8 @@ fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Opti
         .corners
         .iter()
         .map(|lc| BaselineCorner {
-            i: lc.grid.i,
-            j: lc.grid.j,
+            i: lc.grid.u,
+            j: lc.grid.v,
             x: lc.position.x,
             y: lc.position.y,
             id: None,

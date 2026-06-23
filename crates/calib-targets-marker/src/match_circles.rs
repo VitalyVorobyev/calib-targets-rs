@@ -166,7 +166,7 @@ pub(crate) fn estimate_grid_alignment(
         let mut counts: HashMap<[i32; 2], (f32, usize)> = HashMap::new();
         for p in &pairs {
             let r = transform.apply(p.sx, p.sy);
-            let translation = [p.ex - r.i, p.ey - r.j];
+            let translation = [p.ex - r.u, p.ey - r.v];
             let entry = counts.entry(translation).or_insert((0.0, 0));
             entry.0 += p.weight;
             entry.1 += 1;
@@ -292,8 +292,8 @@ mod tests {
             CircleMatch {
                 expected: MarkerCircleSpec {
                     cell: CellCoords {
-                        i: transform.apply(2, 3).i + translation[0],
-                        j: transform.apply(2, 3).j + translation[1],
+                        i: transform.apply(2, 3).u + translation[0],
+                        j: transform.apply(2, 3).v + translation[1],
                     },
                     polarity: CirclePolarity::White,
                 },
@@ -304,8 +304,8 @@ mod tests {
             CircleMatch {
                 expected: MarkerCircleSpec {
                     cell: CellCoords {
-                        i: transform.apply(5, 1).i + translation[0],
-                        j: transform.apply(5, 1).j + translation[1],
+                        i: transform.apply(5, 1).u + translation[0],
+                        j: transform.apply(5, 1).v + translation[1],
                     },
                     polarity: CirclePolarity::Black,
                 },
@@ -316,8 +316,8 @@ mod tests {
             CircleMatch {
                 expected: MarkerCircleSpec {
                     cell: CellCoords {
-                        i: transform.apply(-1, 4).i + translation[0],
-                        j: transform.apply(-1, 4).j + translation[1],
+                        i: transform.apply(-1, 4).u + translation[0],
+                        j: transform.apply(-1, 4).v + translation[1],
                     },
                     polarity: CirclePolarity::White,
                 },

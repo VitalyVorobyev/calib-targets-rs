@@ -9,14 +9,11 @@
 //! the stable sort all live in
 //! [`projective_grid::LabelledGrid::normalize`] — the single source of truth
 //! for grid-result normalization. This stage builds a `LabelledGrid` from the
-//! chessboard's labelled component, normalizes it, and adapts the normalized
-//! lattice `Coord{u,v}` back into the workspace's `GridCoords{i,j}` vocabulary
-//! (the `Coord → GridCoords` conversion stays a chessboard-internal adapter; see
-//! `calib-targets-core/src/grid_alignment.rs`). No normalization logic lives
-//! here.
+//! chessboard's labelled component, normalizes it, and copies the normalized
+//! lattice `Coord{u,v}` straight onto each output corner — `Coord` is the
+//! workspace's canonical grid-coordinate type, so no adapter is needed.
 
 use crate::corner::CornerAug;
-use calib_targets_core::GridCoords;
 use projective_grid::shared::grow::GrowResult;
 use projective_grid::{Coord, GridEntry, LabelledGrid, LatticeKind};
 
@@ -51,10 +48,7 @@ pub(crate) fn build_detection(
         let c = &corners[e.source_index];
         chessboard_corners.push(ChessboardCorner {
             position: e.image_position,
-            grid: GridCoords {
-                i: e.coord.u,
-                j: e.coord.v,
-            },
+            grid: e.coord,
             input_index: c.input_index,
             score: c.strength,
         });

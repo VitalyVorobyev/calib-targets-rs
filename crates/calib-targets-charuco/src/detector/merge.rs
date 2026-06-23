@@ -131,13 +131,13 @@ pub(crate) fn merge_charuco_results(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets_core::{GridAlignment, GridCoords, GridTransform};
+    use calib_targets_core::{Coord, GridAlignment, GridTransform};
     use nalgebra::Point2;
 
     fn corner(id: u32, x: f32, y: f32, score: f32) -> CharucoCorner {
         CharucoCorner::new(
             Point2::new(x, y),
-            GridCoords { i: id as i32, j: 0 },
+            Coord::new(id as i32, 0),
             id,
             Point2::new(id as f32, 0.0),
             score,
@@ -147,7 +147,7 @@ mod tests {
     fn marker(id: u32, score: f32) -> MarkerDetection {
         MarkerDetection {
             id,
-            gc: GridCoords { i: id as i32, j: 0 },
+            gc: Coord::new(id as i32, 0),
             rotation: 0,
             hamming: 0,
             score,

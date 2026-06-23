@@ -1,6 +1,6 @@
 //! Detector output types.
 
-use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 use serde::Serialize;
 
@@ -11,7 +11,7 @@ pub struct PuzzleBoardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// Absolute master-board corner coordinate.
-    pub grid: GridCoords,
+    pub grid: Coord,
     /// Absolute master-board corner ID.
     pub id: u32,
     /// Physical master-board position in millimetres.
@@ -24,7 +24,7 @@ impl PuzzleBoardCorner {
     /// Create a PuzzleBoard corner from its required fields.
     pub fn new(
         position: Point2<f32>,
-        grid: GridCoords,
+        grid: Coord,
         id: u32,
         target_position: Point2<f32>,
         score: f32,

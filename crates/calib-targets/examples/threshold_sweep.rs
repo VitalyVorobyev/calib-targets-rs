@@ -82,11 +82,11 @@ fn main() {
                     let mut max_j = i32::MIN;
                     let mut coords = std::collections::HashSet::new();
                     for c in &d.corners {
-                        min_i = min_i.min(c.grid.i);
-                        max_i = max_i.max(c.grid.i);
-                        min_j = min_j.min(c.grid.j);
-                        max_j = max_j.max(c.grid.j);
-                        coords.insert((c.grid.i, c.grid.j));
+                        min_i = min_i.min(c.grid.u);
+                        max_i = max_i.max(c.grid.u);
+                        min_j = min_j.min(c.grid.v);
+                        max_j = max_j.max(c.grid.v);
+                        coords.insert((c.grid.u, c.grid.v));
                     }
                     let mut h = 0usize;
                     if !coords.is_empty() {

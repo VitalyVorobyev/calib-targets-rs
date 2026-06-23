@@ -48,7 +48,22 @@ pub enum CellTopology {
 ///
 /// For square grids this is `(u, v) = (i, j)`. For hex grids this is axial
 /// `(u, v) = (q, r)`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+///
+/// This is the canonical integer grid-coordinate type for the whole
+/// calibration-target workspace; it serializes as a `{ "u", "v" }` object.
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 #[non_exhaustive]
 pub struct Coord {
     /// First lattice coordinate: square `i`, or hex axial `q`.

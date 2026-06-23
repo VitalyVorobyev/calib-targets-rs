@@ -190,8 +190,8 @@ def test_chessboard_advanced_payload_accepted_by_rust() -> None:
 
 def test_detect_charuco_roundtrip_exercises_marker_gc() -> None:
     """Regression guard: MarkerDetection.gc must deserialize from Rust's
-    native ``{"i": ..., "j": ...}`` dict output. Previously Python expected
-    ``{"gx", "gy"}`` and every charuco detection with markers blew up."""
+    native ``{"u": ..., "v": ...}`` dict output (``Coord``). Previously Python
+    expected ``{"gx", "gy"}`` and every charuco detection with markers blew up."""
     image = _load_gray("small2.png")
     params = _charuco_params_small2()
 
@@ -203,7 +203,7 @@ def test_detect_charuco_roundtrip_exercises_marker_gc() -> None:
     )
 
     first_marker_dict = result.markers[0].to_dict()
-    assert set(first_marker_dict["gc"].keys()) == {"i", "j"}
+    assert set(first_marker_dict["gc"].keys()) == {"u", "v"}
 
     _assert_roundtrip(result)
 
@@ -270,7 +270,7 @@ def test_detect_puzzleboard_best_roundtrip() -> None:
 def test_raw_charuco_dict_keys_match_python_schema() -> None:
     """Inspect the raw dict emitted by ``_core.detect_charuco`` (before
     ``from_dict`` runs) and check that every grid-coord-shaped field uses
-    ``{"i", "j"}`` keys — the shape Rust emits for ``GridCoords``. If a new
+    ``{"u", "v"}`` keys — the shape Rust emits for ``Coord``. If a new
     Rust struct ever switches to a different key convention, this test
     flags it before the Python wrapper crashes at runtime."""
     from calib_targets._convert_in import (
@@ -290,7 +290,7 @@ def test_raw_charuco_dict_keys_match_python_schema() -> None:
     markers = raw["markers"]
     assert len(markers) > 0, "need at least one marker to check gc keys"
     for m in markers:
-        assert set(m["gc"].keys()) == {"i", "j"}, (
+        assert set(m["gc"].keys()) == {"u", "v"}, (
             f"MarkerDetection.gc has unexpected keys: {set(m['gc'].keys())}"
         )
 
@@ -298,7 +298,7 @@ def test_raw_charuco_dict_keys_match_python_schema() -> None:
     for c in corners:
         grid = c["grid"]
         if grid is not None:
-            assert set(grid.keys()) == {"i", "j"}, (
+            assert set(grid.keys()) == {"u", "v"}, (
                 f"LabeledCorner.grid has unexpected keys: {set(grid.keys())}"
             )
 
@@ -330,7 +330,7 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
     assert "observed_edges" not in raw
 
     for corner in raw["corners"]:
-        assert set(corner["grid"].keys()) == {"i", "j"}
+        assert set(corner["grid"].keys()) == {"u", "v"}
 
 
 # ---------------------------------------------------------------------------

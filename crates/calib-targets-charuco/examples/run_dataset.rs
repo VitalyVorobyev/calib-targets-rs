@@ -464,7 +464,7 @@ impl DetectionSummary {
             .iter()
             .map(|c| CornerSummary {
                 id: Some(c.id),
-                grid: Some([c.grid.i, c.grid.j]),
+                grid: Some([c.grid.u, c.grid.v]),
                 position: [c.position.x, c.position.y],
                 target_position: Some([c.target_position.x, c.target_position.y]),
                 score: c.score,

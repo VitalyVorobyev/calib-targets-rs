@@ -3,7 +3,7 @@
 use crate::threshold::{compute_threshold_candidates, otsu_threshold_from_samples};
 use crate::Matcher;
 use calib_targets_core::{
-    cell_rect_corners_at, homography_from_4pt, GrayImageView, GridCoords, Homography,
+    cell_rect_corners_at, homography_from_4pt, Coord, GrayImageView, Homography,
 };
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -153,7 +153,7 @@ pub struct MarkerDetection {
     /// Dictionary ID of the decoded marker.
     pub id: u32,
     /// Square cell coordinates in grid coords.
-    pub gc: GridCoords,
+    pub gc: Coord,
     /// Rotation of the matched code, in 90° steps (`0..=3`), needed to
     /// align the observed bits with the dictionary entry.
     pub rotation: u8,
@@ -184,7 +184,7 @@ pub struct MarkerDetection {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerCell {
     /// Cell coordinates in grid space (top-left corner of the square).
-    pub gc: GridCoords,
+    pub gc: Coord,
     /// Corners of the square cell in image coordinates (TL, TR, BR, BL).
     pub corners_img: [Point2<f32>; 4],
 }
@@ -209,7 +209,7 @@ pub fn scan_decode_markers(
             else {
                 continue;
             };
-            let gc = GridCoords { i: sx, j: sy };
+            let gc = Coord::new(sx, sy);
             if let Some(det) = build_detection(gc, px_per_square, obs, matcher) {
                 out.push(det);
             }
@@ -245,7 +245,7 @@ pub fn scan_decode_markers_in_cells(
         return out;
     };
 
-    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
+    let cell_rect = cell_rect_corners_at(Coord::new(0, 0), px_per_square);
 
     for cell in cells {
         let Some(h) = homography_from_4pt(&cell_rect, &cell.corners_img) else {
@@ -255,8 +255,8 @@ pub fn scan_decode_markers_in_cells(
         let Some(obs) = obs else {
             log::debug!(
                 "cell ({},{}) failed decode (no threshold passed border score)",
-                cell.gc.i,
-                cell.gc.j,
+                cell.gc.u,
+                cell.gc.v,
             );
             continue;
         };
@@ -266,8 +266,8 @@ pub fn scan_decode_markers_in_cells(
         } else {
             log::debug!(
                 "cell ({},{}) passed threshold (border_score={:.3}) but no dict match (code={:#018x})",
-                cell.gc.i,
-                cell.gc.j,
+                cell.gc.u,
+                cell.gc.v,
                 obs.border_score,
                 obs.code,
             );
@@ -317,7 +317,7 @@ pub fn sample_cell(
     bits: usize,
 ) -> Option<CellSamples> {
     let grid = SampleGrid::new(cfg, bits, px_per_square)?;
-    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
+    let cell_rect = cell_rect_corners_at(Coord::new(0, 0), px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
 
     let mut mean_grid = Vec::with_capacity(grid.points.len());
@@ -388,7 +388,7 @@ pub fn decode_marker_in_cell(
         px_per_square,
         matcher,
     )?;
-    let cell_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
+    let cell_rect = cell_rect_corners_at(Coord::new(0, 0), px_per_square);
     let h = homography_from_4pt(&cell_rect, &cell.corners_img)?;
     let obs = decoder.decode_warped(image, &h)?;
     let mut det = build_detection(cell.gc, px_per_square, obs, matcher)?;
@@ -528,7 +528,7 @@ impl<'a> CellDecoder<'a> {
 }
 
 fn build_detection(
-    gc0: GridCoords,
+    gc0: Coord,
     px_per_square: f32,
     obs: MarkerObservation,
     matcher: &Matcher,
@@ -540,24 +540,15 @@ fn build_detection(
 
     let gc = match m.rotation {
         0 => gc0,
-        1 => GridCoords {
-            i: gc0.i + 1,
-            j: gc0.j,
-        },
-        2 => GridCoords {
-            i: gc0.i + 1,
-            j: gc0.j + 1,
-        },
-        3 => GridCoords {
-            i: gc0.i,
-            j: gc0.j + 1,
-        },
+        1 => Coord::new(gc0.u + 1, gc0.v),
+        2 => Coord::new(gc0.u + 1, gc0.v + 1),
+        3 => Coord::new(gc0.u, gc0.v + 1),
         _ => gc0,
     };
 
-    let corners_rect = cell_rect_corners_at(GridCoords { i: 0, j: 0 }, px_per_square);
-    let x0 = gc0.i as f32 * px_per_square;
-    let y0 = gc0.j as f32 * px_per_square;
+    let corners_rect = cell_rect_corners_at(Coord::new(0, 0), px_per_square);
+    let x0 = gc0.u as f32 * px_per_square;
+    let y0 = gc0.v as f32 * px_per_square;
     let corners = corners_rect.map(|p| Point2::new(p.x + x0, p.y + y0));
 
     Some(MarkerDetection {
@@ -924,7 +915,7 @@ mod tests {
 
         let s = img.width as f32;
         let cell = MarkerCell {
-            gc: GridCoords { i: 0, j: 0 },
+            gc: Coord::new(0, 0),
             corners_img: [
                 Point2::new(0.0, 0.0),
                 Point2::new(s, 0.0),
