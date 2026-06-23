@@ -50,7 +50,10 @@ jobs:
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 
       - name: test (all crates, default features)
-        run: cargo test --workspace --all-targets
+        # Not --all-targets: clippy --all-targets (above) already compile-checks
+        # benches/examples; running them here only adds codegen time, no extra
+        # tests. Matches the documented `cargo test --workspace` gate (CLAUDE.md).
+        run: cargo test --workspace
 
   wasm:
     runs-on: ubuntu-latest
