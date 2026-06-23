@@ -680,6 +680,35 @@ function DetectPanel({
 }) {
   const hasImage = imgData != null;
 
+  // The three "Detection params" knobs (min strength / min labels / max comps)
+  // live on a `ChessboardParams`, but every non-chessboard family nests its own
+  // copy under `params.chessboard` and `handleDetect` passes THAT, not `cbParams`.
+  // Route the control to whichever sub-config the active family actually uses so
+  // the tuning is never a silent no-op.
+  const sharedChess: ChessboardParams | null =
+    mode === "chessboard" ? cbParams
+    : mode === "charuco" ? charucoParams?.chessboard ?? null
+    : mode === "marker_board" ? markerParams?.chessboard ?? null
+    : mode === "puzzleboard" ? puzzleParams?.chessboard ?? null
+    : null;
+
+  const setSharedChess = (next: ChessboardParams) => {
+    switch (mode) {
+      case "chessboard":
+        setCbParams(next);
+        break;
+      case "charuco":
+        if (charucoParams) setCharucoParams({ ...charucoParams, chessboard: next });
+        break;
+      case "marker_board":
+        if (markerParams) setMarkerParams({ ...markerParams, chessboard: next });
+        break;
+      case "puzzleboard":
+        if (puzzleParams) setPuzzleParams({ ...puzzleParams, chessboard: next });
+        break;
+    }
+  };
+
   return (
     <>
       {/* Image source */}
@@ -785,32 +814,32 @@ function DetectPanel({
       )}
 
       {/* Core params */}
-      {mode !== "corners" && cbParams && (
+      {mode !== "corners" && sharedChess && (
         <div>
           <div className="label" style={{ marginBottom: "var(--s2)" }}>
             Detection params
-            <InfoTip text="These three params are shared across all detector families. Adjust if the detector misses corners on unusual images." />
+            <InfoTip text="These three knobs tune the corner + grid stage shared by every detector family. Adjust if the detector misses corners on unusual images." />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
             <NumberRow
               label="Min strength"
-              value={cbParams.min_corner_strength}
+              value={sharedChess.min_corner_strength}
               step={0.05}
-              onChange={(v) => setCbParams({ ...cbParams, min_corner_strength: v })}
+              onChange={(v) => setSharedChess({ ...sharedChess, min_corner_strength: v })}
             />
             <NumberRow
               label="Min labels"
-              value={cbParams.min_labeled_corners}
+              value={sharedChess.min_labeled_corners}
               step={1}
               integer
-              onChange={(v) => setCbParams({ ...cbParams, min_labeled_corners: v })}
+              onChange={(v) => setSharedChess({ ...sharedChess, min_labeled_corners: v })}
             />
             <NumberRow
               label="Max comps"
-              value={cbParams.max_components}
+              value={sharedChess.max_components}
               step={1}
               integer
-              onChange={(v) => setCbParams({ ...cbParams, max_components: v })}
+              onChange={(v) => setSharedChess({ ...sharedChess, max_components: v })}
             />
           </div>
         </div>
