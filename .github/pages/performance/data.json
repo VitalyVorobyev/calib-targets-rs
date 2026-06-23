@@ -2,7 +2,7 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.95.0",
-    "git_sha": "0174a45",
+    "git_sha": "7a8b245",
     "repeats": 100,
     "warmup": 10,
     "generated": "2026-06-23",
@@ -20,9 +20,9 @@
       "raw_corners": 267,
       "labelled": 99,
       "markers": 40,
-      "corner_detection_ms": 0.948,
-      "grid_build_ms": 0.543,
-      "decode_ms": 8.753,
+      "corner_detection_ms": 0.934,
+      "grid_build_ms": 0.537,
+      "decode_ms": 8.503,
       "note": "A ~0.4 MP ChArUco board (22\u00d722, DICT_4X4_250). The full detector runs corner detection, a chessboard grid build, then per-cell marker decode + board alignment \u2014 the decode stage dominates on a marker-dense board."
     },
     {
@@ -35,8 +35,8 @@
       "raw_corners": 77,
       "labelled": 77,
       "markers": null,
-      "corner_detection_ms": 1.118,
-      "grid_build_ms": 0.37,
+      "corner_detection_ms": 1.099,
+      "grid_build_ms": 0.357,
       "decode_ms": null,
       "note": "A plain 11\u00d77 inner-corner chessboard (no markers, so no decode stage). Corner detection is the bulk of the work; the owned grid build is a thin slice."
     },
@@ -50,9 +50,9 @@
       "raw_corners": 571,
       "labelled": 315,
       "markers": 132,
-      "corner_detection_ms": 5.545,
-      "grid_build_ms": 2.822,
-      "decode_ms": 24.537,
+      "corner_detection_ms": 5.442,
+      "grid_build_ms": 2.779,
+      "decode_ms": 23.966,
       "note": "A 3 MP ChArUco board (22\u00d722, DICT_4X4_1000). With over a hundred markers to sample and decode, the decode stage is several times the cost of corner detection \u2014 the regime where the owned decode path dominates. The published preview is downscaled to 1024 px wide; the detector runs on the full-resolution image."
     },
     {
@@ -65,10 +65,10 @@
       "raw_corners": 183,
       "labelled": 179,
       "markers": null,
-      "corner_detection_ms": 0.726,
-      "grid_build_ms": 1.035,
-      "decode_ms": 1.351,
-      "note": "A heavily radially-distorted PuzzleBoard. Its self-identifying edge-dot pattern now decodes against the 501x501 master via distortion-aware edge sampling (per-cell homography + cubic grid-line interpolation), where a raw chord-midpoint sample failed \u2014 so this renders as a full PuzzleBoard card: corner detection then grid build then edge-dot decode. The decode runs the multi-config sweep; the stage breakdown times the winning config."
+      "corner_detection_ms": 0.722,
+      "grid_build_ms": 1.012,
+      "decode_ms": 18.005,
+      "note": "A heavily radially-distorted PuzzleBoard. Its self-identifying edge-dot pattern now decodes against the 501x501 master via distortion-aware edge sampling (per-cell homography + cubic grid-line interpolation), where a raw chord-midpoint sample failed. The decode bar is the full multi-config detect_puzzleboard_best sweep \u2014 this frame only resolves on the 40% BER pass, so every preceding config is real work \u2014 making it the honest auto-detect latency, not a single decode."
     }
   ],
   "end_to_end": {
@@ -76,22 +76,22 @@
     "frames": [
       {
         "file": "testdata/mid.png",
-        "ms": 1.488,
+        "ms": 1.457,
         "note": "1024x576 Chessboard"
       },
       {
-        "file": "testdata/example2.png",
-        "ms": 3.113,
-        "note": "640x480 PuzzleBoard"
-      },
-      {
         "file": "testdata/small.png",
-        "ms": 10.244,
+        "ms": 9.974,
         "note": "720x540 ChArUco"
       },
       {
+        "file": "testdata/example2.png",
+        "ms": 19.739,
+        "note": "640x480 PuzzleBoard"
+      },
+      {
         "file": "testdata/large.png",
-        "ms": 32.904,
+        "ms": 32.187,
         "note": "2048x1536 ChArUco"
       }
     ]

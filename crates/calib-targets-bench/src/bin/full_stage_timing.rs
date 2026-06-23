@@ -26,9 +26,10 @@
 //!   ChArUco pipeline runs internally before decoding, so the isolated
 //!   measurement is representative.
 //! - `decode` — for ChArUco, marker sampling + decode + board alignment; for the
-//!   PuzzleBoard, the edge-dot sample + 501×501 master decode of the winning
-//!   sweep config. Derived as `full_detect − grid_build`. `null` for plain
-//!   chessboard cards (no decode stage).
+//!   PuzzleBoard, the edge-dot sample + 501×501 master decode across the full
+//!   `detect_puzzleboard_best` sweep (every config, as a user pays for it).
+//!   Derived as `full_detect − grid_build`. `null` for plain chessboard cards
+//!   (no decode stage).
 //!
 //! Honours `REPEATS` / `WARMUP` env vars (set by `scripts/gen-perf-data.sh`).
 
@@ -44,7 +45,9 @@ use calib_targets::chessboard::{
 };
 use calib_targets::core::{DetectorConfig, GrayImageView};
 use calib_targets::detect::detect_corners;
-use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::puzzleboard::{
+    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec,
+};
 use chess_corners::Threshold;
 use clap::Parser;
 use image::ImageReader;
@@ -74,9 +77,9 @@ enum Kind {
     /// ChArUco: a full board spec + the detector knobs the regression mirrors.
     Charuco(CharucoSpec),
     /// PuzzleBoard: self-identifying chessboard decoded against the 501×501
-    /// master via the edge-dot pattern. Timed through the multi-config sweep
-    /// (`detect_puzzleboard_best`), picking the winning config for the stage
-    /// breakdown.
+    /// master via the edge-dot pattern. Timed through the full multi-config
+    /// sweep (`detect_puzzleboard_best`) — the decode bar is the whole sweep,
+    /// not a single config.
     Puzzleboard(PuzzleboardSpec),
 }
 
@@ -378,66 +381,63 @@ fn measure_puzzleboard(
 ) -> Result<PuzzleboardMeasurement, Box<dyn Error>> {
     let board = PuzzleBoardSpec::new(spec.rows, spec.cols, spec.cell_size)?;
     let sweep = PuzzleBoardParams::sweep_for_board(&board);
+    let detectors = sweep
+        .iter()
+        .cloned()
+        .map(PuzzleBoardDetector::new)
+        .collect::<Result<Vec<_>, _>>()?;
 
-    // Pick the config `detect_puzzleboard_best` would select on this image
-    // (most corners, then highest mean confidence), then time that single
-    // config so the stage breakdown mirrors the ChArUco card exactly.
-    let mut best_idx = 0usize;
-    let mut best_key = (0usize, f32::MIN);
-    for (i, cfg) in sweep.iter().enumerate() {
-        let det = PuzzleBoardDetector::new(cfg.clone())?;
-        if let Ok(r) = det.detect(view, corners) {
-            let key = (r.corners.len(), r.decode.mean_confidence);
-            if key > best_key {
-                best_key = key;
-                best_idx = i;
-            }
-        }
-    }
-    let winning = sweep[best_idx].clone();
-
-    // `grid_build` measures the same chessboard grid stage the PuzzleBoard
-    // pipeline runs internally, with the winning config's chessboard params.
-    let chess_detector = ChessboardDetector::new(winning.chessboard.clone())?;
-    let detector = PuzzleBoardDetector::new(winning)?;
+    // `grid_build` measures one chessboard grid pass — the per-config grid stage
+    // the sweep repeats internally — with the first config's chessboard params.
+    let chess_detector = ChessboardDetector::new(sweep[0].chessboard.clone())?;
 
     for _ in 0..warmup {
         let _ = chess_detector.detect_all(corners);
-        let _ = detector.detect(view, corners);
+        let _ = best_sweep_decode(&detectors, view, corners);
     }
 
     let mut grid = Vec::with_capacity(repeats);
     let mut full = Vec::with_capacity(repeats);
-    let mut grid_labelled = 0;
     let mut labelled = 0;
     let mut bit_error_rate = 1.0f32;
+    let mut decoded = false;
     for _ in 0..repeats {
         let g_start = Instant::now();
-        let detections = chess_detector.detect_all(corners);
+        let _ = chess_detector.detect_all(corners);
         grid.push(elapsed_ms(g_start));
-        grid_labelled = best_component_corners(&detections);
 
+        // Time the full multi-config sweep exactly as `detect_puzzleboard_best`
+        // runs it: every config in order, keeping the best decode. On frames
+        // that need the 40% pass the earlier configs are real work, so this is
+        // the honest end-to-end PuzzleBoard latency, not just the winner.
         let f_start = Instant::now();
-        let res = detector.detect(view, corners);
+        let best = best_sweep_decode(&detectors, view, corners);
         full.push(elapsed_ms(f_start));
-        if let Ok(res) = res {
+        if let Some(res) = best {
+            decoded = true;
             labelled = res.corners.len();
             bit_error_rate = res.decode.bit_error_rate;
         }
     }
 
+    if !decoded {
+        return Err(format!(
+            "{}x{} PuzzleBoard: no sweep config decoded — refusing to publish a \
+             grid-only card as a PuzzleBoard (Gap 18 regression?)",
+            spec.rows, spec.cols
+        )
+        .into());
+    }
+
     let grid_build = p50(grid);
     let full_stat = p50(full);
-    // decode = full_detect − grid_build (corners are precomputed and passed in,
-    // so corner detection is not inside `detect`). Clamp at 0 for noise.
+    // decode = full_sweep − one grid_build. The sweep's per-config grid builds
+    // and every config's edge-dot decode land in this bar; the card note flags
+    // it as the full multi-config sweep cost.
     let decode = Stat {
         p50_ms: (full_stat.p50_ms - grid_build.p50_ms).max(0.0),
         mean_ms: (full_stat.mean_ms - grid_build.mean_ms).max(0.0),
     };
-
-    if labelled == 0 {
-        labelled = grid_labelled;
-    }
 
     Ok(PuzzleboardMeasurement {
         labelled,
@@ -445,6 +445,29 @@ fn measure_puzzleboard(
         grid_build,
         decode,
     })
+}
+
+/// Run every sweep config (corners precomputed) and return the best decode,
+/// matching `detect_puzzleboard_best`'s ranking (most corners, then mean
+/// confidence). `None` if no config decodes.
+fn best_sweep_decode(
+    detectors: &[PuzzleBoardDetector],
+    view: &GrayImageView<'_>,
+    corners: &[ChessCorner],
+) -> Option<PuzzleBoardDetectionResult> {
+    let mut best: Option<PuzzleBoardDetectionResult> = None;
+    for detector in detectors {
+        if let Ok(r) = detector.detect(view, corners) {
+            let better = best.as_ref().is_none_or(|b| {
+                (r.corners.len(), r.decode.mean_confidence)
+                    > (b.corners.len(), b.decode.mean_confidence)
+            });
+            if better {
+                best = Some(r);
+            }
+        }
+    }
+    best
 }
 
 fn measure_card(
