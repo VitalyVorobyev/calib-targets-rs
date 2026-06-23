@@ -43,6 +43,8 @@
   .card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px;
     padding: 20px 22px; margin-bottom: 16px; }
   .imgcard h3 { margin: 0 0 2px; font-size: 18px; }
+  .imgcard .preview { display: block; width: 100%; max-width: 100%; height: auto;
+    border-radius: 10px; border: 1px solid var(--edge); margin: 0 0 14px; background: var(--track); }
   .imgcard .file { color: var(--muted); font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   .imgcard .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; font-size: 12.5px; color: var(--muted); }
   .imgcard .meta b { color: var(--ink); font-weight: 600; }
@@ -63,14 +65,6 @@
   th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   td code, .file code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
-  .tag.ext { background: rgba(242,169,61,.16); color: var(--amber); }
-  .tag.own { background: rgba(91,157,255,.16); color: var(--blue); }
-  .pri { display: inline-block; width: 22px; height: 22px; border-radius: 6px; background: rgba(91,157,255,.18);
-    color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; line-height: 22px; }
-  .done { color: var(--green); font-weight: 600; }
-  .planned { color: var(--muted); }
-  svg { display: block; width: 100%; height: auto; }
   .foot { color: var(--muted); font-size: 12px; margin-top: 44px; border-top: 1px solid var(--edge); padding-top: 16px; }
   .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
   .err { color: var(--rose); }
@@ -88,13 +82,14 @@
   <div class="chips" id="chips"></div>
 
   <h2>Per-image stage breakdown</h2>
-  <div class="desc">Per-stage p50 from <code>topo_stage_timing</code>. <b>RingFit vs DiskFit</b> is shown only on
-    the corner-detection row — it is purely a <code>chess-corners</code> orientation method and every downstream
-    grid stage is orientation-agnostic. DiskFit roughly doubles corner detection, which is why RingFit is the default.</div>
+  <div class="desc">Per-stage p50 from <code>full_stage_timing</code>, which runs the <b>complete</b> detector on each
+    public image — ChArUco (corner detection → grid build → marker decode) for the two ArUco-marked boards, plain
+    chessboard (corner detection → grid build) for the two marker-free boards. Corners are detected once and reused,
+    so the grid/decode bars never re-count corner detection.</div>
   <div class="legend">
     <span><i class="sw" style="background:var(--amber)"></i> corner detection (external)</span>
     <span><i class="sw" style="background:var(--blue)"></i> grid build (owned)</span>
-    <span><i class="sw" style="background:var(--teal)"></i> decode (owned)</span>
+    <span><i class="sw" style="background:var(--teal)"></i> marker decode (owned, ChArUco only)</span>
   </div>
   <div id="imagecards"></div>
 
@@ -104,31 +99,13 @@
     <table id="e2e"><thead><tr><th>Frame</th><th></th><th class="num">p50 (ms)</th></tr></thead><tbody></tbody></table>
   </div>
 
-  <h2>Decode-sweep scaling — synthetic PuzzleBoard</h2>
-  <div class="card">
-    <p class="desc" id="sweep-desc"></p>
-    <div class="legend" id="sweep-legend"></div>
-    <div id="sweepchart"></div>
-  </div>
-
-  <h2>Optimization roadmap — correctness-first, no false-positive trade</h2>
-  <div class="card">
-    <table id="roadmap"><thead><tr><th style="width:28px"></th><th>Bottleneck</th><th>Evidence</th><th>Approach</th><th>Status</th></tr></thead><tbody></tbody></table>
-  </div>
-
   <div class="foot" id="foot"></div>
 </div>
 
 <script>
-const C = { amber: "#f2a93d", amberSoft: "rgba(242,169,61,.42)", blue: "#5b9dff", teal: "#33c6e3", green: "#3ddc84", muted: "#8294b0" };
+const C = { amber: "#f2a93d", blue: "#5b9dff", teal: "#33c6e3" };
 const fmt = (v, d = 3) => v == null ? "—" : v.toFixed(d);
 
-function el(t, a, txt) {
-  const e = document.createElementNS("http://www.w3.org/2000/svg", t);
-  for (const k in (a || {})) e.setAttribute(k, a[k]);
-  if (txt != null) e.textContent = txt;
-  return e;
-}
 function bar(label, fills, valueHtml, max) {
   const row = document.createElement("div"); row.className = "barrow";
   const bl = document.createElement("div"); bl.className = "bl"; bl.textContent = label;
@@ -136,8 +113,7 @@ function bar(label, fills, valueHtml, max) {
   fills.forEach(f => {
     const d = document.createElement("div"); d.className = "fill";
     d.style.width = Math.max(0.5, 100 * f.v / max) + "%"; d.style.background = f.color;
-    d.style.height = f.h || "100%"; d.style.position = "absolute";
-    if (f.top) { d.style.top = "0"; } else if (f.bottom) { d.style.bottom = "0"; } else { d.style.top = "0"; }
+    d.style.height = "100%"; d.style.position = "absolute"; d.style.top = "0";
     track.appendChild(d);
   });
   const bv = document.createElement("div"); bv.className = "bv"; bv.innerHTML = valueHtml;
@@ -146,36 +122,35 @@ function bar(label, fills, valueHtml, max) {
 
 function renderImageCard(img) {
   const card = document.createElement("div"); card.className = "card imgcard";
+
+  if (img.img) {
+    const fig = document.createElement("img"); fig.className = "preview";
+    fig.src = img.img; fig.alt = img.label; fig.loading = "lazy";
+    card.appendChild(fig);
+  }
+
   const h = document.createElement("h3");
   h.innerHTML = img.label + '<span class="kindtag">' + img.kind + "</span>";
   const file = document.createElement("div"); file.className = "file";
   file.innerHTML = "<code>" + img.file + "</code>";
   const meta = document.createElement("div"); meta.className = "meta";
-  meta.innerHTML = "<span><b>" + img.width + "×" + img.height + "</b> px</span>" +
+  let metaHtml = "<span><b>" + img.width + "×" + img.height + "</b> px</span>" +
     "<span><b>" + img.raw_corners + "</b> raw corners</span>" +
     "<span><b>" + img.labelled + "</b> labelled</span>";
+  if (img.markers != null) metaHtml += "<span><b>" + img.markers + "</b> markers</span>";
+  meta.innerHTML = metaHtml;
   card.append(h, file, meta);
 
-  // max across corner (ring/disk), grid stages, decode
-  const cd = img.corner_detection || {};
-  const cornerVals = [cd.ring_fit, cd.disk_fit].filter(v => v != null);
-  const stageMax = img.stages.length ? Math.max(...img.stages.map(s => s.ms)) : 0;
-  const max = Math.max(...cornerVals, stageMax, img.grid_total || 0, img.decode || 0) || 1;
-
-  // corner detection row: ring (top) + disk (bottom, soft)
-  const fills = [];
-  if (cd.ring_fit != null) fills.push({ v: cd.ring_fit, color: C.amber, h: "8px", top: true });
-  if (cd.disk_fit != null) fills.push({ v: cd.disk_fit, color: C.amberSoft, h: "8px", bottom: true });
-  let cval = '<span style="color:' + C.amber + '">' + fmt(cd.ring_fit) + "</span>";
-  if (cd.disk_fit != null) cval += ' <span class="mut">/ ' + fmt(cd.disk_fit) + "</span>";
-  card.appendChild(bar("corner detection", fills, cval, max));
-
-  // grid sub-stages (single value, blue)
-  const labels = (window._stageLabels || {});
-  img.stages.forEach(s => {
-    card.appendChild(bar(labels[s.name] || s.name, [{ v: s.ms, color: C.blue }], fmt(s.ms), max));
+  // Three full-detector stages, flat p50 fields (ms). Decode is ChArUco-only.
+  const stages = [
+    { label: "corner detection", v: img.corner_detection_ms, color: C.amber },
+    { label: "grid build", v: img.grid_build_ms, color: C.blue },
+    { label: "marker decode", v: img.decode_ms, color: C.teal },
+  ].filter(s => s.v != null);
+  const max = Math.max(...stages.map(s => s.v), 0) || 1;
+  stages.forEach(s => {
+    card.appendChild(bar(s.label, [{ v: s.v, color: s.color }], fmt(s.v), max));
   });
-  if (img.decode != null) card.appendChild(bar("decode", [{ v: img.decode, color: C.teal }], fmt(img.decode), max));
 
   if (img.note) {
     const n = document.createElement("p"); n.className = "desc";
@@ -185,50 +160,11 @@ function renderImageCard(img) {
   return card;
 }
 
-function sweepChart(sweep) {
-  const host = document.getElementById("sweepchart");
-  const xs = sweep.sizes;
-  const series = sweep.series;
-  const W = 880, H = 300, P = { l: 46, r: 16, t: 14, b: 40 };
-  const allY = series.flatMap(s => s.ms).filter(v => v != null);
-  const ymax = Math.max(...allY);
-  const xmin = Math.min(...xs), xmax = Math.max(...xs);
-  const X = v => P.l + (W - P.l - P.r) * (v - xmin) / (xmax - xmin);
-  const Y = v => H - P.b - (H - P.t - P.b) * v / ymax;
-  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
-  for (let i = 0; i <= 4; i++) {
-    const yv = ymax * i / 4;
-    svg.appendChild(el("line", { x1: P.l, y1: Y(yv), x2: W - P.r, y2: Y(yv), stroke: "#16223a" }));
-    svg.appendChild(el("text", { x: P.l - 8, y: Y(yv) + 4, "text-anchor": "end", fill: C.muted, "font-size": 11 }, yv.toFixed(0)));
-  }
-  xs.forEach(x => svg.appendChild(el("text", { x: X(x), y: H - 16, "text-anchor": "middle", fill: C.muted, "font-size": 11 }, x)));
-  svg.appendChild(el("text", { x: W / 2, y: H - 2, "text-anchor": "middle", fill: C.muted, "font-size": 11 }, "board size (cells per side)"));
-  svg.appendChild(el("text", { x: 12, y: 14, fill: C.muted, "font-size": 11 }, "ms"));
-  const palette = [C.amber, C.green, C.blue, C.teal];
-  series.forEach((s, si) => {
-    const col = s.color || palette[si % palette.length];
-    let d = "";
-    s.ms.forEach((v, i) => { if (v != null) d += (d ? "L" : "M") + X(xs[i]) + " " + Y(v); });
-    svg.appendChild(el("path", { d, fill: "none", stroke: col, "stroke-width": 2.5 }));
-    s.ms.forEach((v, i) => { if (v != null) svg.appendChild(el("circle", { cx: X(xs[i]), cy: Y(v), r: 3.5, fill: col })); });
-  });
-  host.appendChild(svg);
-  // legend
-  const leg = document.getElementById("sweep-legend");
-  series.forEach((s, si) => {
-    const col = s.color || palette[si % palette.length];
-    const sp = document.createElement("span");
-    sp.innerHTML = '<i class="sw" style="background:' + col + '"></i> ' + s.label;
-    leg.appendChild(sp);
-  });
-}
-
 function render(data) {
-  window._stageLabels = data.stage_labels || {};
   const m = data.meta;
   document.getElementById("chips").innerHTML = [
     ["", m.cpu], ["rustc", m.rustc], ["git", m.git_sha], ["date", m.generated],
-    ["topo_stage_timing", "×" + m.repeats + " reps"]
+    ["full_stage_timing", "×" + m.repeats + " reps"]
   ].map(([k, v]) => '<span class="chip">' + (k ? k + " " : "") + "<b>" + v + "</b></span>").join("");
 
   const ic = document.getElementById("imagecards");
@@ -243,21 +179,8 @@ function render(data) {
     e2e.appendChild(tr);
   });
 
-  document.getElementById("sweep-desc").textContent = data.sweep.desc;
-  sweepChart(data.sweep);
-
-  const rm = document.querySelector("#roadmap tbody");
-  data.roadmap.forEach(r => {
-    const tr = document.createElement("tr");
-    const tag = r.owner === "OWNED" ? '<span class="tag own">OWN</span>' : '<span class="tag ext">EXT</span>';
-    const status = r.status === "done" ? '<span class="done">✓ shipped</span>' : '<span class="planned">planned</span>';
-    tr.innerHTML = '<td><span class="pri">' + r.n + "</span></td>" +
-      "<td>" + r.title + " " + tag + "</td><td>" + r.evidence + "</td><td>" + r.approach + "</td><td>" + status + "</td>";
-    rm.appendChild(tr);
-  });
-
   document.getElementById("foot").innerHTML =
-    "All numbers are from public <code>testdata/</code> images or synthetic fixtures, measured with " +
+    "All numbers are from public <code>testdata/</code> images, measured with " +
     "<code>" + m.source + "</code> on " + m.cpu + ". Methodology and the general-purpose backlog live in " +
     "<code>docs/development/performance.md</code>.";
 }

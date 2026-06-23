@@ -447,6 +447,7 @@ dependencies = [
  "calib-targets",
  "calib-targets-chessboard",
  "calib-targets-core",
+ "chess-corners",
  "clap",
  "image",
  "nalgebra",
