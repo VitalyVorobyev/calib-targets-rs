@@ -34,8 +34,8 @@ use calib_targets_bench::{workspace_root, Engine};
 use calib_targets_bench::compare::{build_comparison, load_report, render_markdown};
 use calib_targets_bench::report::{bench_results_dir, save_report};
 use cli::{
-    load_chessboard_config, params_with, AblateArgs, BlessArgs, Cli, Cmd, CompareArgs, PreviewArgs,
-    RunArgs,
+    load_chessboard_config, AblateArgs, BlessArgs, Cli, Cmd, CompareArgs, PreviewArgs, RunArgs,
+    ALGORITHM_SLUG,
 };
 use diagnose::cmd_diagnose;
 use report::print_summary;
@@ -97,7 +97,7 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     let config_id = format!(
         "{}.{}.{}",
         args.engine.slug(),
-        args.algorithm.slug(),
+        ALGORITHM_SLUG,
         args.orientation_method.slug(),
     );
     let ctx = RunContext {
@@ -149,12 +149,12 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
     }
 
     let out_root = workspace_root().join(&args.out);
-    let params = params_with(args.algorithm);
+    let params = DetectorParams::default();
     let engine = Engine::from(args.engine);
     let config_slug = format!(
         "{}.{}.{}",
         args.engine.slug(),
-        args.algorithm.slug(),
+        ALGORITHM_SLUG,
         args.orientation_method.slug(),
     );
     let mut chess_cfg = default_chess_config();
@@ -376,7 +376,7 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
     let base_config_id = format!(
         "{}.{}.{}",
         args.engine.slug(),
-        args.algorithm.slug(),
+        ALGORITHM_SLUG,
         args.orientation_method.slug(),
     );
     let dataset_filter = args

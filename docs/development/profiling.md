@@ -105,7 +105,7 @@ wall-clock per span), enable `tracing` on the facade and set `RUST_LOG`:
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm topological --image testdata/large.png
+    --image testdata/large.png
 ```
 
 ## Capture matrix
