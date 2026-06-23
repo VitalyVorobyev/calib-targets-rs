@@ -160,16 +160,14 @@ handed. `aruco/src/scan.rs` (969 LOC) is one cohesive scanner.
 
 Grid is delegated to `chess`; markers are decoded by `aruco`. This crate owns the
 *alignment* (which marker sits where) and corner-ID assignment. **The board-level
-soft-LL matcher is the default** (`charuco detector/params.rs:306`,
-`use_board_level_matcher: true`); the legacy vote matcher is an off-by-default
-opt-in fallback. Deep dive:
+soft-LL matcher is the sole matcher** (`charuco detector/board_match.rs`); markers
+are re-emitted under the chosen hypothesis, so a returned marker can never disagree
+with its alignment. Deep dive:
 [`algorithms/charuco_concept.md`](../algorithms/charuco_concept.md).
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Board-level hypothesis matcher (soft-LL) | `charuco detector/board_match.rs::match_board_diag` | cells + image → markers + alignment | Dense (cell×id×rotation) soft-bit log-likelihood; enumerate D4×translation; pick max-score with margin gate. | ✅ **default** |
-| Legacy rotation+translation vote | `charuco alignment.rs::solve_alignment` | markers → alignment | Histogram dominant rotation, vote best translation by inliers. | ⚠️ opt-in fallback |
-| Inlier filter | `charuco detector/alignment_select.rs` | markers + alignment → inliers | Keep markers whose aligned position is a valid board cell. | ✅ |
+| Board-level hypothesis matcher (soft-LL) | `charuco detector/board_match.rs::match_board_diag` | cells + image → markers + alignment | Dense (cell×id×rotation) soft-bit log-likelihood; enumerate D4×translation; pick max-score with margin gate; re-emit markers under the chosen hypothesis. | ✅ **sole matcher** |
 | Marker-cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | corner map → 4-corner cells | Enumerate complete grid squares to decode. | ✅ |
 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | corners + image → refined | Per-corner ChESS re-detect to tighten the grid. | ✅ |
 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | corners + alignment → `CharucoCorner`s | Map grid→board coords, look up charuco id, dedup per cell. | ✅ |
@@ -229,7 +227,6 @@ path; `○` = available to it but not default; blank = unused by it.
 | Validation + wrong-label drops (§8) | ● | ●² | ●² | ●² | ● |
 | ArUco decode (§9) | | ● | | | |
 | ChArUco board-level matcher (§10) | | ● | | | |
-| ChArUco legacy vote matcher (§10) | | ○ | | | |
 | ChArUco corner-id + refit + linkage (§10) | | ● | | | |
 | PuzzleBoard edge decode + CRT (§11) | | | ● | | |
 | Circle scoring + matching (§12) | | | | ● | |

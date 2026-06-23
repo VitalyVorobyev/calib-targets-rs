@@ -11,11 +11,12 @@
 //!   `testdata/charuco_regression_baselines.json`. The `#[ignore]`-gated
 //!   full sweep is the same contract applied to all 120 frames.
 //! * `target_0.png` (under `privatedata/`) — 1 × 6-snap with 68 × 68
-//!   squares, 1.69 mm, dict `DICT_APRILTAG_36h10`. Cells are tiny; the
-//!   current matcher fails on it (documented recall = 0). The test only
-//!   verifies that detection returns an error rather than panicking;
-//!   Phase B of the board-level matcher is expected to flip these cases
-//!   to a non-trivial recall and will update the baseline JSON.
+//!   squares, 1.69 mm, dict `DICT_APRILTAG_36h10`. Cells are tiny; on the
+//!   topological builder the board-level matcher recovers a small,
+//!   self-consistent subset (≈ 3 markers / 20 corners at 3× upscale). The
+//!   test asserts the decode does not collapse to nothing and stays
+//!   self-consistent (`wrong_id == 0`); closing the dense/tiny-cell recall
+//!   gap is a deferred topological-decode improvement.
 
 use std::path::PathBuf;
 
@@ -113,7 +114,7 @@ fn smoke_flagship_snap_0_detects() {
 /// Run the full 120-frame flagship sweep on the (only) topological builder.
 /// Returns `(frames, detected, wrong_id_total)`, or `None` when the private
 /// dataset is absent.
-fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> {
+fn run_flagship_sweep() -> Option<(usize, usize, usize)> {
     let dir = flagship_dir();
     let board_path = flagship_board();
     if !dir.exists() || !board_path.exists() {
@@ -124,16 +125,8 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    params.use_board_level_matcher = use_board_matcher;
-    if use_board_matcher {
-        params.min_marker_inliers = 1;
-        params.min_secondary_marker_inliers = 1;
-    } else {
-        // `for_board` now defaults to the board matcher's low inlier floors;
-        // restore the legacy vote matcher's higher floors for this path.
-        params.min_marker_inliers = 8;
-        params.min_secondary_marker_inliers = 2;
-    }
+    params.min_marker_inliers = 1;
+    params.min_secondary_marker_inliers = 1;
     let detector = CharucoDetector::new(params).expect("detector");
 
     let mut frames = 0usize;
@@ -167,50 +160,21 @@ fn run_flagship_sweep(use_board_matcher: bool) -> Option<(usize, usize, usize)> 
 
 #[test]
 #[ignore = "full 120-frame flagship sweep; run with --ignored"]
-fn full_flagship_sweep_legacy_recall_contract() {
-    // The legacy rotation+translation vote matcher is a deprecated opt-in
-    // (`use_board_level_matcher = false`). On the topological builder (the only
-    // remaining builder after the seed-and-grow retirement) it detects ~96/120;
-    // the gold board-level matcher (`full_flagship_sweep_board_matcher_contract`)
-    // holds at >= 119/120 with wrong_id 0 on the *same* topological grid. The
-    // recall floor below is therefore re-baselined to a gross-regression
-    // tripwire for the deprecated path on the only-remaining builder (>= 90,
-    // measured 96, with margin for the vote thresholds' interaction with the
-    // topological corner set) — it is NOT a production gate, and it is NOT a
-    // grid regression signal. The wrong-id contract (<= 8) is deliberately left
-    // unchanged: a deprecated path may detect less, but it must not start
-    // mislabelling.
-    let Some((frames, detected, wrong_id_total)) = run_flagship_sweep(false) else {
-        return;
-    };
-    assert_eq!(frames, 120);
-    assert!(
-        detected >= 90,
-        "flagship legacy recall regression: detected {detected}/120 (expected ≥ 90) \
-         — deprecated vote matcher gross-regression tripwire on the topological grid"
-    );
-    assert!(
-        wrong_id_total <= 8,
-        "flagship legacy wrong-id regression: {wrong_id_total} > 8"
-    );
-}
-
-#[test]
-#[ignore = "full 120-frame flagship sweep; run with --ignored"]
 fn full_flagship_sweep_board_matcher_contract() {
-    // THE flagship board-level-matcher contract, on the topological builder
-    // (the only builder; ChArUco no longer pins seed-and-grow). The 2026-06-13
-    // head-to-head showed topological decode precision matches the historical
-    // seed-and-grow gold — zero self-consistency wrong-ids.
+    // THE flagship board-level-matcher contract (the sole matcher), on the
+    // topological builder (the only builder; ChArUco no longer pins
+    // seed-and-grow). The 2026-06-13 head-to-head showed topological decode
+    // precision matches the historical seed-and-grow gold — zero
+    // self-consistency wrong-ids.
     //
     // Recall floor is `>= 119`, not `== 120`: a deterministic lexicographic
-    // tie-break in `alignment::best_translation` fixed one `HashMap`
+    // tie-break in the multi-component merge fixed one `HashMap`
     // iteration-order site (three separate-process runs then gave 120/120/120),
     // but the full single-process `--ignored` suite still tips to 119 on at
     // least one more seed-dependent site in the topological→charuco path.
     // Precision is solid regardless (`wrong_id == 0`); the floor stays `>= 119`
     // until determinism is fully hardened.
-    let Some((frames, detected, wrong_id_total)) = run_flagship_sweep(true) else {
+    let Some((frames, detected, wrong_id_total)) = run_flagship_sweep() else {
         return;
     };
     assert_eq!(frames, 120);
@@ -245,29 +209,15 @@ fn smoke_apriltag_image_does_not_panic() {
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&snap, &chess_cfg);
 
-    // Legacy matcher path: the target_0 AprilTag board has 1.69 mm cells
-    // and even at 3× upscale the per-cell hard-threshold decode returns
-    // zero markers. Assert the detector errors out cleanly rather than
-    // panicking. `for_board` now defaults to the board matcher, so opt the
-    // legacy vote matcher in explicitly (with its higher inlier floors).
-    let mut params = CharucoParams::for_board(&spec);
-    params.use_board_level_matcher = false;
-    params.min_marker_inliers = 8;
-    params.min_secondary_marker_inliers = 2;
-    let detector = CharucoDetector::new(params.clone()).expect("detector");
     let view = GrayImageView {
         width: snap.width() as usize,
         height: snap.height() as usize,
         data: snap.as_raw(),
     };
-    assert!(
-        detector.detect(&view, &corners).is_err(),
-        "legacy matcher must fail on target_0 snap 0 (baseline contract)"
-    );
 
-    // Board-level matcher path: soft-bit log-likelihood with the default
-    // κ=36 slope recovers an alignment even when the hard decode returns
-    // nothing.
+    // Board-level matcher path (the sole matcher): soft-bit log-likelihood
+    // with the default κ=36 slope recovers an alignment even when a hard
+    // per-cell decode would return nothing.
     //
     // RECALL FLOOR re-baselined to the TOPOLOGICAL builder (the workspace
     // default; ChArUco no longer pins seed-and-grow). On this 68×68
@@ -281,7 +231,7 @@ fn smoke_apriltag_image_does_not_panic() {
     // topological-decode improvement, NOT a regression to guard against here;
     // this floor only asserts the decode does not collapse to nothing and stays
     // self-consistent.
-    params.use_board_level_matcher = true;
+    let mut params = CharucoParams::for_board(&spec);
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;
     let detector = CharucoDetector::new(params).expect("detector");
@@ -339,7 +289,6 @@ fn assert_reviewed_false_corners_rejected() {
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    params.use_board_level_matcher = true;
     params.min_marker_inliers = 1;
     params.min_secondary_marker_inliers = 1;
     let detector = CharucoDetector::new(params).expect("detector");

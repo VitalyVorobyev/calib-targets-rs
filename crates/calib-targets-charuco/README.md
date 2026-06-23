@@ -92,25 +92,24 @@ tool.
 | `DICT_ARUCO_MIP_36h12` | 6×6 payload | AprilTag-grade codes in an ArUco-style layout. |
 
 `CharucoBoardSpec::dictionary` must match the printed dictionary
-exactly. AprilTag families combined with the board-level matcher are
-typical for motion-blurred or distant captures; the smaller 4×4 ArUco
-families fit small boards with large per-marker pixel area.
+exactly. AprilTag families are typical for motion-blurred or distant
+captures; the smaller 4×4 ArUco families fit small boards with large
+per-marker pixel area.
 
-## Two matchers
+## Marker matching
 
-Controlled by `CharucoParams::use_board_level_matcher`:
+The detector uses a single **board-level matcher**: it scores each
+per-cell soft-bit log-likelihood against every candidate
+`(D4 rotation, integer translation)` board hypothesis, picks the
+maximum-likelihood placement, and accepts it only when the
+chosen-vs-runner-up margin clears `alignment_min_margin`. Precision is
+guaranteed by construction — markers are re-emitted under the chosen
+hypothesis, so a decoded marker can never disagree with the alignment it
+was matched against. The soft-bit formulation makes it robust on blurred,
+tiny-marker, and large-board inputs where a hard per-cell threshold
+decode would drop cells.
 
-- **Legacy (default)** — per-cell hard-threshold decode, rotation & offset
-  vote. Fast (~1.5 ms / 22×22 frame). Best on small boards with big,
-  in-focus markers.
-- **Board-level matcher** — per-cell soft-bit log-likelihood scored
-  against every candidate `(rotation, translation)` hypothesis. Slower
-  (4–50× legacy depending on dictionary) but massive recall win on
-  blurred, tiny-marker, or large-board inputs. Precision is guaranteed
-  by construction: markers are re-emitted under the chosen hypothesis.
-
-See the [book chapter][book-chapter] for matcher-selection guidance and
-full parameter documentation.
+See the [book chapter][book-chapter] for the full parameter documentation.
 
 ## Configuration highlights
 
@@ -123,15 +122,16 @@ Defaults from `for_board(&spec)` work for most targets.
 | Pixel sampling | `px_per_square` (default 60) | Rectified cell side in pixels. Drop to 40 if cells are small; raise to 80 for very fine markers. |
 | Grid validation | `grid_smoothness_threshold_rel`, `corner_validation_threshold_rel` | Smoothness / local-H residuals on refined corners. Loosen under lens distortion. |
 | Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold`, `max_hamming` | Marker sampling and dictionary-matching. |
-| Legacy alignment | `min_marker_inliers`, `min_secondary_marker_inliers` | Accept threshold for legacy matcher. |
-| Board-level matcher | `use_board_level_matcher`, `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) validated on the 120-frame regression set. |
+| Alignment accept | `min_marker_inliers`, `min_secondary_marker_inliers` | Downstream inlier floors (the board matcher is its own gate, so these stay low). |
+| Board-level matcher | `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) are tuned conservatively across the internal regression sets. |
 
 ## Tuning difficult cases
 
-- **Tiny markers (< ~8 px / bit)** — enable `use_board_level_matcher`; the
-  legacy matcher's hard-threshold decode fails at that scale.
-- **Motion blur or defocus** — board-level matcher; increase `max_hamming`
-  on the underlying [`Matcher`] to 2–3.
+- **Tiny markers (< ~8 px / bit)** — the soft-bit board-level matcher
+  handles these where a hard per-cell threshold decode would fail; raise
+  `px_per_square` so each marker bit gets more rectified pixels.
+- **Motion blur or defocus** — increase `max_hamming` to 2–3 to admit
+  noisier per-cell decodes into the score matrix.
 - **Uneven illumination** — `scan.multi_threshold = true` (default).
 - **Tight near-tie hypotheses** — lower `alignment_min_margin` to 0.02 for
   permissive detection, or raise to 0.10 for stricter precision.

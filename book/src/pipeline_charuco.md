@@ -20,7 +20,7 @@ about orientation.
 | 0 | chessboard grid detect | ChESS corners → `Vec<ChessDetection>` | `ChessDetector::detect_all` on the [topological builder](pipeline_chessboard.md). The `min_corner_strength` floor keeps marker-bit saddles out of the grid (below). |
 | 1 | grid smoothness pre-filter | grid corners + image → cleaned corners | Per-corner position vs midpoint-averaged neighbours; a deviation over `grid_smoothness_threshold_rel × px_per_square` triggers a local ChESS redetection or a drop. |
 | 2 | marker cell enumeration | corner map → `Vec<MarkerCell>` | Per cell, require all four corners `{(i,j),(i+1,j),(i+1,j+1),(i,j+1)}`; skip incomplete cells. |
-| 3 | marker decode + alignment | cells + image → markers + alignment | Decode each cell ([ArUco bit decode](algo_aruco_decode.md)), then solve the board→image transform. Two matchers: legacy hard-decode (rotation + translation vote) or the opt-in board-level soft-bit matcher with a margin gate. See [alignment](algo_charuco_alignment.md). |
+| 3 | marker decode + alignment | cells + image → markers + alignment | Score each cell's soft bits ([ArUco bit decode](algo_aruco_decode.md)) against every `(D4 rotation, integer translation)` board hypothesis, pick the maximum-likelihood placement, and accept it through a margin gate. See [alignment](algo_charuco_alignment.md). |
 | 4 | alignment validation | markers + spec → inliers | Require `≥ min_marker_inliers` (primary component) or `≥ min_secondary_marker_inliers` (subsequent). |
 | 5 | ChArUco corner mapping | corners + alignment → IDed corners | Map each board-spec inner-corner position through the alignment; only inner-cell intersections get IDs (not marker corners). |
 | 6 | corner validation | mapped corners + markers + image → validated corners | Check each corner against its marker-predicted seed; deviation over `corner_validation_threshold_rel × px_per_square` → marker-constrained redetect or drop. |
@@ -77,10 +77,10 @@ ChArUco config layers three surfaces:
   (default `0.75`; lower cautiously to `0.65` on blur), `multi_threshold`
   (default `true`), `inset_frac` (default `0.06`; raise when borders bleed
   into the bit grid). `marker_size_rel` must match the printed board.
-- **Alignment** — `min_marker_inliers` (default `8`), the opt-in
-  `use_board_level_matcher` and its `alignment_min_margin` /
-  `bit_likelihood_slope`, and `corner_validation_threshold_rel`
-  (default `0.08`).
+- **Alignment** — the board-level matcher's `alignment_min_margin` /
+  `bit_likelihood_slope`, the downstream `min_marker_inliers` /
+  `min_secondary_marker_inliers` floors (default `1` each — the matcher is
+  its own gate), and `corner_validation_threshold_rel` (default `0.08`).
 
 Board sampling scale is `px_per_square` (starts at 60 in `for_board`);
 adjust it first if the board appears at a very different pixel scale. For

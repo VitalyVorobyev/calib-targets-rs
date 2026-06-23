@@ -54,6 +54,17 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   experimental `OrientationSource::NeighbourEdges` path are removed with the
   engine.
 
+- **The legacy ChArUco vote matcher is retired; the board-level matcher is the
+  sole marker-to-board matcher.** The board-level matcher was already the
+  default, so detection behaviour is unchanged. The
+  `CharucoParams::use_board_level_matcher` field is removed (an unknown serde
+  key is now ignored on deserialization, with no behaviour change). The
+  rotation+translation vote solver is deleted; `CharucoAlignment` (the
+  alignment result the board-level matcher returns) is retained. The
+  `MatcherDiagKind` enum and the `ComponentDiagnostics.matcher` field are
+  removed, so the `matcher` key is dropped from the ChArUco diagnostics JSON —
+  the WASM diagnostics type and Python overlay are updated to match.
+
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The
   `diagnostics` module, the diagnostics type re-exports, and
@@ -87,10 +98,8 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Internal
 
-- The ChArUco legacy-vote alignment's dominant-rotation-only D4 selection is
-  recorded as a tracked gap (the default board-level matcher already enumerates
-  all rotations); the stale alignment TODO is removed. ArUco / ChArUco cell
-  corner enumeration is de-duplicated through `cell_rect_corners_at`.
+- ArUco / ChArUco cell corner enumeration is de-duplicated through
+  `cell_rect_corners_at`.
 
 ## 0.10.0
 
