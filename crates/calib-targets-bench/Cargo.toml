@@ -15,7 +15,10 @@ description = "Internal regression / performance harness for the chessboard grid
 calib-targets = { workspace = true, features = ["tracing", "diagnostics"] }
 calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 calib-targets-core = { workspace = true }
-clap = { workspace = true, features = ["derive"] }
+# `full_stage_timing` builds the regression-matching ChESS config directly
+# (`Threshold::Relative` + `with_chess`), which lives in the upstream crate.
+chess-corners = { workspace = true }
+clap = { workspace = true, features = ["derive", "env"] }
 image = { workspace = true }
 nalgebra = { workspace = true }
 # The grid-level bench engine drives the grid builder directly (bypassing the
@@ -34,6 +37,10 @@ path = "src/bin/bench/main.rs"
 [[bin]]
 name = "topo_stage_timing"
 path = "src/bin/topo_stage_timing.rs"
+
+[[bin]]
+name = "full_stage_timing"
+path = "src/bin/full_stage_timing.rs"
 
 [lints]
 workspace = true

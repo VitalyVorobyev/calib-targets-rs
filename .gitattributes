@@ -4,3 +4,7 @@
 *.bmp filter=lfs diff=lfs merge=lfs -text
 book/src/img/*.png filter=lfs diff=lfs merge=lfs -text
 testdata/*.png filter=lfs diff=lfs merge=lfs -text
+# Small published Pages previews: store inline (not LFS) so GitHub Pages
+# serves real image bytes directly from the rsynced site tree. Binary: no
+# LFS filter and no EOL normalization.
+.github/pages/performance/img/*.png -filter -diff -merge -text
