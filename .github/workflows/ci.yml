@@ -50,10 +50,13 @@ jobs:
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 
       - name: test (all crates, default features)
-        # Not --all-targets: clippy --all-targets (above) already compile-checks
-        # benches/examples; running them here only adds codegen time, no extra
-        # tests. Matches the documented `cargo test --workspace` gate (CLAUDE.md).
-        run: cargo test --workspace
+        # Keep --all-targets: besides lib/integration tests it RUNS the
+        # harness=false Criterion benches in test mode (one iteration), which
+        # exercise real detector paths (unwrap/expect) — smoke coverage that
+        # clippy --all-targets (lint-only) does not provide. The test job is
+        # fast despite this thanks to the [profile.test.package.*] opt-levels
+        # in the root Cargo.toml.
+        run: cargo test --workspace --all-targets
 
   wasm:
     runs-on: ubuntu-latest
