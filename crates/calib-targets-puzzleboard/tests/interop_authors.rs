@@ -36,7 +36,7 @@
 //! failed — the reference images vary widely in scale and quality.
 
 use calib_targets::detect::{self};
-use calib_targets::puzzleboard::{PuzzleBoardDetectionResult, PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_core::GRID_TRANSFORMS_D4;
 // Imports used only by the `diagnostics`-gated `diag_example0_edge_bits` test.
 #[cfg(feature = "diagnostics")]
@@ -95,89 +95,6 @@ fn load_ref_json(dir: &Path, index: usize) -> Option<RefJson> {
     }
     let text = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str(&text).ok()
-}
-
-fn detect_reference_image(
-    index: usize,
-    dir: &Path,
-) -> Option<(RefJson, PuzzleBoardDetectionResult)> {
-    let img_path = dir.join(format!("example{index}.png"));
-    if !img_path.exists() {
-        return None;
-    }
-    let ref_data = load_ref_json(dir, index)?;
-    if ref_data.decoded_corners.is_empty() {
-        return None;
-    }
-
-    let img = ImageReader::open(&img_path).ok()?.decode().ok()?.to_luma8();
-    let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
-    let sweep = PuzzleBoardParams::sweep_for_board(&board);
-    let result = detect::detect_puzzleboard_best(&img, &sweep).ok()?;
-    Some((ref_data, result))
-}
-
-fn assert_reference_consistency(
-    index: usize,
-    ref_data: &RefJson,
-    result: &PuzzleBoardDetectionResult,
-) {
-    let our_corners = &result.corners;
-    let ber = result.decode.bit_error_rate;
-    assert!(
-        our_corners.len() >= MIN_DECODED_CORNERS,
-        "example{index}: only {} corners (need at least {})",
-        our_corners.len(),
-        MIN_DECODED_CORNERS
-    );
-    assert!(
-        ber <= MAX_BER,
-        "example{index}: BER={ber:.3} exceeds threshold {MAX_BER:.3}"
-    );
-
-    let mut pairs: Vec<(i32, i32, i32, i32)> = Vec::new();
-    for lc in our_corners {
-        let grid = lc.grid;
-        let px = lc.position.x;
-        let py = lc.position.y;
-
-        let mut best_dist = f32::MAX;
-        let mut best_ref: Option<&RefCorner> = None;
-        for rc in &ref_data.decoded_corners {
-            let dx = px - rc.pixel_x as f32;
-            let dy = py - rc.pixel_y as f32;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < best_dist {
-                best_dist = dist;
-                best_ref = Some(rc);
-            }
-        }
-        if best_dist <= PIXEL_TOL {
-            let rc = best_ref.expect("best ref set");
-            pairs.push((grid.j, grid.i, rc.master_row, rc.master_col));
-        }
-    }
-
-    if pairs.len() < 3 {
-        return;
-    }
-
-    let found_transform = GRID_TRANSFORMS_D4.iter().any(|t| {
-        let deltas: Vec<(i32, i32)> = pairs
-            .iter()
-            .map(|(or, oc, rr, rc)| {
-                let nr = t.a * or + t.b * oc;
-                let nc = t.c * or + t.d * oc;
-                ((rr - nr).rem_euclid(501), (rc - nc).rem_euclid(501))
-            })
-            .collect();
-        deltas.iter().all(|d| d == &deltas[0])
-    });
-    assert!(
-        found_transform,
-        "example{index}: {} matched pairs are not consistent with any single D4 transform",
-        pairs.len()
-    );
 }
 
 fn run_one_image(index: usize, dir: &Path) {
@@ -342,21 +259,42 @@ fn run_one_image(index: usize, dir: &Path) {
     );
 }
 
+/// Examples 1/2/3 are heavily radially-distorted author frames. The
+/// distortion-aware edge sampling (Gap 18) lets their grid build, and they were
+/// briefly "recovered" by the 40 % BER hard pass — but that decode is
+/// *non-unique*: a distinct master origin matches the corrupted edge bits as
+/// well as (or within a bit or two of) the chosen one (measured margins 0–2 out
+/// of hundreds of edges). The bounded-distance uniqueness gate (Gap 19) now
+/// correctly DECLINES them: a non-unique decode is a wrong absolute label
+/// waiting to happen, and the detection contract forbids wrong labels far more
+/// strongly than misses. These frames are therefore detection *failures*, not
+/// decodes — the right behavior.
 #[test]
-fn author_examples_1_2_3_decode_when_reference_dataset_present() {
+fn author_examples_1_2_3_are_declined_as_non_unique() {
     let dir = testdata_dir();
     if !dir.exists() {
-        eprintln!(
-            "[skipped] author_examples_1_2_3_decode_when_reference_dataset_present: {:?} missing",
-            dir
-        );
+        eprintln!("[skipped] author_examples_1_2_3_are_declined_as_non_unique: {dir:?} missing");
         return;
     }
-
+    let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
+    let sweep = PuzzleBoardParams::sweep_for_board(&board);
     for index in [1usize, 2, 3] {
-        let (ref_data, result) = detect_reference_image(index, &dir)
-            .unwrap_or_else(|| panic!("example{index}: expected PuzzleBoard decode"));
-        assert_reference_consistency(index, &ref_data, &result);
+        let img_path = dir.join(format!("example{index}.png"));
+        if !img_path.exists() {
+            eprintln!("[skipped] example{index}.png missing");
+            continue;
+        }
+        let img = ImageReader::open(&img_path)
+            .expect("open")
+            .decode()
+            .expect("decode")
+            .to_luma8();
+        let result = detect::detect_puzzleboard_best(&img, &sweep);
+        assert!(
+            result.is_err(),
+            "example{index}: a non-unique distorted frame must be DECLINED by the \
+             uniqueness gate, but it decoded — possible false positive"
+        );
     }
 }
 

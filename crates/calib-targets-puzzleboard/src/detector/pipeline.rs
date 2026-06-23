@@ -241,6 +241,26 @@ impl PuzzleBoardDetector {
             return Err((e, diagnostics_on_fail(&observed)));
         }
 
+        // Limiting-dimension (bounded-distance) guard. The edge-count floor
+        // assumes a roughly-square window; a wide-but-short strip can meet it yet
+        // still alias because its thin axis carries too little code distance
+        // (measured: a 3-corner-tall strip at the 84-edge floor false-accepts at
+        // a low rate, while every window spanning ≥ `min_window` corners on both
+        // axes is empirically alias-free). Require both grid spans ≥ `min_window`.
+        if let Some((span_i, span_j)) = grid_span_dims(labeled) {
+            let need = self.params.decode.min_window;
+            if span_i < need || span_j < need {
+                return Err((
+                    PuzzleBoardDetectError::WindowTooThin {
+                        span_i,
+                        span_j,
+                        needed: need,
+                    },
+                    diagnostics_on_fail(&observed),
+                ));
+            }
+        }
+
         let filtered: Vec<PuzzleBoardObservedEdge> = observed
             .iter()
             .copied()
@@ -610,6 +630,31 @@ fn is_better_component_decode(
             cmp_higher(cand_decode.mean_confidence, curr_decode.mean_confidence).unwrap_or(false)
         }
     }
+}
+
+/// Grid-label span of a labelled corner set: `(span_i, span_j)` where each span
+/// is `max − min + 1` over the `(i, j)` labels (corners without a grid label are
+/// ignored). `None` when no corner carries a grid label. Used by the
+/// limiting-dimension (bounded-distance) decode guard.
+fn grid_span_dims(labeled: &[LabeledCorner]) -> Option<(u32, u32)> {
+    let mut min_i = i32::MAX;
+    let mut max_i = i32::MIN;
+    let mut min_j = i32::MAX;
+    let mut max_j = i32::MIN;
+    let mut any = false;
+    for c in labeled {
+        if let Some(g) = c.grid {
+            any = true;
+            min_i = min_i.min(g.i);
+            max_i = max_i.max(g.i);
+            min_j = min_j.min(g.j);
+            max_j = max_j.max(g.j);
+        }
+    }
+    if !any {
+        return None;
+    }
+    Some(((max_i - min_i + 1) as u32, (max_j - min_j + 1) as u32))
 }
 
 /// Extract the soft-LL knobs from a decode config into the decoder-level

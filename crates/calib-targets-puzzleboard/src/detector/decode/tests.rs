@@ -32,6 +32,84 @@ fn update_best_candidate_if_accepted(
     }
 }
 
+/// Brute-force matched-count top-2 over all `(transform, origin)` — the
+/// independent oracle for the uniqueness gate. Returns the global maximum
+/// matched count with its `(transform, master_row, master_col)`, and the highest
+/// matched count of any *distinct* origin.
+fn brute_matched_top2(
+    observed: &[PuzzleBoardObservedEdge],
+) -> Option<(u32, GridTransform, i32, i32, u32)> {
+    if observed.is_empty() {
+        return None;
+    }
+    let mut best: Option<(u32, GridTransform, i32, i32)> = None;
+    let mut all: Vec<(u32, GridTransform, i32, i32)> = Vec::new();
+    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+        let tf: Vec<(i32, i32, EdgeOrientation, u8)> = observed
+            .iter()
+            .map(|e| {
+                let lk = transform_edge_lookup(e, &transform);
+                (lk.lookup_row, lk.lookup_col, lk.orientation, e.bit)
+            })
+            .collect();
+        for mr in 0..MASTER_ROWS as i32 {
+            for mc in 0..MASTER_COLS as i32 {
+                let mut m = 0u32;
+                for &(lr, lc, orient, bit) in &tf {
+                    let exp = match orient {
+                        EdgeOrientation::Horizontal => horizontal_edge_bit(mr + lr, mc + lc),
+                        EdgeOrientation::Vertical => vertical_edge_bit(mr + lr, mc + lc),
+                    };
+                    if exp == bit {
+                        m += 1;
+                    }
+                }
+                all.push((m, transform, mr, mc));
+                if best.is_none_or(|(bm, _, _, _)| m > bm) {
+                    best = Some((m, transform, mr, mc));
+                }
+            }
+        }
+    }
+    let (bm, bt, br, bc) = best.unwrap();
+    let mut runner = 0u32;
+    for &(m, t, r, c) in &all {
+        if (t, r, c) != (bt, br, bc) {
+            runner = runner.max(m);
+        }
+    }
+    Some((bm, bt, br, bc, runner))
+}
+
+/// Re-gate a reference winner by the matched-count uniqueness predicate
+/// (`margin > k_winner`), using the independent brute-force top-2. Mirrors the
+/// production gate's accept/reject decision and matched-count runner-up
+/// (`score_runner_up`); the runner-up *origin* representative is the brute-force
+/// tie-break, which the soft equivalence check does not compare.
+fn gate_reference_winner(
+    observed: &[PuzzleBoardObservedEdge],
+    best: Option<DecodeOutcome>,
+) -> Option<DecodeOutcome> {
+    let mut winner = best?;
+    let (gbest, gt, gr, gc, grunner) = brute_matched_top2(observed)?;
+    let win_matched = winner.edges_matched as u32;
+    let is_global_best = winner.master_origin_row == gr
+        && winner.master_origin_col == gc
+        && winner.alignment.transform == gt;
+    let competitor = if is_global_best { grunner } else { gbest };
+    let margin = win_matched.saturating_sub(competitor);
+    let k_winner = (winner.edges_observed as u32).saturating_sub(win_matched);
+    if margin <= k_winner {
+        return None;
+    }
+    winner.score_runner_up = if is_global_best && grunner == 0 {
+        None
+    } else {
+        Some(competitor as f32)
+    };
+    Some(winner)
+}
+
 /// Reference (slow, O(501² × N)) implementation kept for correctness guards.
 ///
 /// Produces the same result as [`decode`] but iterates observations in the
@@ -115,7 +193,7 @@ fn decode_reference(
             }
         }
     }
-    best
+    gate_reference_winner(observed, best)
 }
 
 /// Reference (slow, O(501² × N)) soft-log-likelihood decoder, kept verbatim
@@ -275,7 +353,11 @@ fn decode_soft_reference(
     if best.bit_error_rate > max_bit_error_rate {
         return None;
     }
-    Some(best)
+    // Mirror production: the soft `alignment_min_margin` gate does not enforce
+    // origin uniqueness, so re-gate by the matched-count predicate. Preserves
+    // `score_margin` (the LL gap); overwrites `score_runner_up` with the
+    // matched-count competitor.
+    gate_reference_winner(observed, Some(best))
 }
 
 fn rotate_observed_edge_canonically(
@@ -1217,18 +1299,13 @@ fn assert_soft_equivalent(
                 ),
                 _ => panic!("{ctx}: score_runner_up Some/None mismatch"),
             }
-            assert_eq!(
-                f.runner_up_origin_row, r.runner_up_origin_row,
-                "{ctx}: runner_up_origin_row"
-            );
-            assert_eq!(
-                f.runner_up_origin_col, r.runner_up_origin_col,
-                "{ctx}: runner_up_origin_col"
-            );
-            assert_eq!(
-                f.runner_up_transform, r.runner_up_transform,
-                "{ctx}: runner_up_transform"
-            );
+            // The runner-up *origin / transform* are now matched-count uniqueness
+            // diagnostics whose representative is an implementation-defined
+            // tie-break (production uses the crossed-CRT representative; this
+            // oracle uses a row-major brute-force one). The accept/reject decision
+            // and the runner-up matched *count* (`score_runner_up`) are compared
+            // above; the representative origin is not part of the equivalence
+            // contract.
         }
         (f, r) => panic!("{ctx}: None/Some mismatch fast={f:?} ref={r:?}"),
     }
@@ -1325,4 +1402,195 @@ fn crt_inverse_round_trips_every_residue_pair() {
         }
     }
     assert_eq!(cols.len(), MASTER_COLS as usize, "mc inverse not bijective");
+}
+
+// --- Gap 19: bounded-distance uniqueness gate regressions -----------------
+
+/// Flip `k` bits at distinct positions chosen by a tiny seeded LCG.
+fn flip_k_bits(obs: &mut [PuzzleBoardObservedEdge], k: usize, seed: u64) {
+    let mut rng = Lcg::new(seed);
+    let n = obs.len();
+    if k == 0 || n == 0 {
+        return;
+    }
+    let mut idxs: Vec<usize> = (0..n).collect();
+    for i in 0..k.min(n) {
+        let j = i + (rng.below((n - i) as u32) as usize);
+        idxs.swap(i, j);
+        obs[idxs[i]].bit ^= 1;
+    }
+}
+
+/// Number of corners whose decoded master ID differs from the true `(pos_col+gi,
+/// pos_row+gj)` (mod master).
+fn wrong_corner_count(out: &DecodeOutcome, pos_row: i32, pos_col: i32, n: i32) -> usize {
+    let mut wrong = 0;
+    for gi in 0..n {
+        for gj in 0..n {
+            let g = out.alignment.map(gi, gj);
+            let mi = g.i.rem_euclid(MASTER_COLS as i32);
+            let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+            let ti = (pos_col + gi).rem_euclid(MASTER_COLS as i32);
+            let tj = (pos_row + gj).rem_euclid(MASTER_ROWS as i32);
+            if (mi, mj) != (ti, tj) {
+                wrong += 1;
+            }
+        }
+    }
+    wrong
+}
+
+/// (a) At the *safe* window (7×7, the production `min_window`), a corrupted
+/// fragment is either decoded correctly or DECLINED (`None`) — the uniqueness
+/// gate never ships a wrong absolute labeling. This is the decoder-level
+/// witness: heavy noise that makes a wrong origin competitive drives `margin ≤
+/// k_winner`, so the decode declines.
+///
+/// (The 4×4 window is deliberately *not* tested here: the master code has
+/// minimum Hamming distance `1` at 4×4 — a 1-bit-corrupted 4×4 fragment is
+/// frequently a *perfect* read of a different master location, which no
+/// acceptance test can distinguish from a true perfect read. Safety at small
+/// windows is provided by the pipeline's `min_window = 7` / limiting-dimension
+/// floor, validated separately, not by the window-agnostic decoder.)
+#[test]
+fn uniqueness_gate_declines_corrupted_safe_window() {
+    let mut accepted_correct = 0usize;
+    let mut declined = 0usize;
+    for &(pr, pc) in &[(2i32, 3i32), (5, 7), (33, 44), (100, 7)] {
+        // Sweep from light noise (decodes) to heavy noise (declines), spanning
+        // the gate's accept→decline transition on the 84-edge window.
+        for k in 1..=33usize {
+            for seed in 0..6u64 {
+                let mut obs = build_pipeline_style_observation(pr, pc, 7, 7);
+                flip_k_bits(
+                    &mut obs,
+                    k,
+                    0xC0DE_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
+                );
+                match decode(&obs, 0.40) {
+                    Some(out) => {
+                        assert_eq!(
+                            wrong_corner_count(&out, pr, pc, 7),
+                            0,
+                            "gate accepted a WRONG corrupted 7×7 decode (pr={pr} pc={pc} k={k} seed={seed})"
+                        );
+                        accepted_correct += 1;
+                    }
+                    None => declined += 1,
+                }
+            }
+        }
+    }
+    // Sanity: the regime is genuinely exercised on both sides (some decode, some
+    // decline) — otherwise the test would pass vacuously.
+    assert!(
+        declined > 0,
+        "expected some heavily-corrupted 7×7 fragments to decline"
+    );
+    assert!(
+        accepted_correct > 0,
+        "expected some 7×7 fragments to still decode correctly"
+    );
+}
+
+/// (b) A clean (noise-free) fragment at the safe window decodes correctly with a
+/// healthy uniqueness margin (margin > k_winner; here k_winner = 0 so any
+/// margin ≥ 1 passes). Exercises both the 7×7 floor and a larger window.
+#[test]
+fn uniqueness_gate_accepts_clean_window_with_margin() {
+    for &n in &[7i32, 8, 10] {
+        let obs = build_pipeline_style_observation(12, 37, n, n);
+        let out = decode(&obs, 0.40).expect("clean window must decode");
+        assert_eq!(
+            out.edges_matched, out.edges_observed,
+            "clean read matches all bits"
+        );
+        assert_eq!(out.master_origin_row, 12);
+        assert_eq!(out.master_origin_col, 37);
+        // k_winner = 0 (perfect read); margin = best - runner > 0.
+        let k_winner = out.edges_observed as f32 - out.edges_matched as f32;
+        assert!(
+            out.score_margin > k_winner,
+            "n={n}: margin {} must exceed k_winner {}",
+            out.score_margin,
+            k_winner
+        );
+        assert!(out.score_margin >= 1.0, "n={n}: clean unique margin ≥ 1");
+    }
+}
+
+/// (b') A clean 4×4 fragment (below the production min_window, but the decoder
+/// itself is window-agnostic) is still *uniquely* decodable and must decode:
+/// the gate honors the code's exact-uniqueness design at any size — the floor
+/// that rejects 4×4 lives in the pipeline (`min_window`/`required_edges`/
+/// limiting-dimension), not in the gate.
+#[test]
+fn uniqueness_gate_accepts_clean_4x4() {
+    let obs = build_pipeline_style_observation(8, 19, 4, 4);
+    let out = decode(&obs, 0.40).expect("clean 4×4 is unique and must decode");
+    assert_eq!(out.master_origin_row, 8);
+    assert_eq!(out.master_origin_col, 19);
+    assert_eq!(wrong_corner_count(&out, 8, 19, 4), 0);
+}
+
+/// (c) The soft n=8 witness from the Phase-A discovery: under heavy noise the
+/// soft-LL scorer alone accepted a wrong physical origin (true (125,16) →
+/// decoded a different origin, all corners wrong, passing `alignment_min_margin`).
+/// With the uniqueness gate now applied to the soft path, a heavily-corrupted
+/// 8×8 fragment must not ship a wrong labeling.
+#[test]
+fn soft_uniqueness_gate_declines_corrupted_8x8() {
+    let cfg = SoftLlConfig {
+        kappa: 12.0,
+        per_bit_floor: -6.0,
+        alignment_min_margin: 0.02,
+    };
+    // Sweep origins × heavy noise; any accepted soft decode must be correct.
+    for &(pr, pc) in &[(125i32, 16i32), (3, 4), (200, 90), (50, 300)] {
+        for k in 24..=30usize {
+            for seed in 0..4u64 {
+                let mut obs = build_pipeline_style_observation(pr, pc, 8, 8);
+                flip_k_bits(
+                    &mut obs,
+                    k,
+                    0x50F7_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
+                );
+                if let Some(out) = decode_soft(&obs, &cfg, 0.40) {
+                    assert_eq!(
+                        wrong_corner_count(&out, pr, pc, 8),
+                        0,
+                        "soft gate accepted a WRONG corrupted 8×8 decode (pr={pr} pc={pc} k={k} seed={seed})"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The uniqueness gate's accept/reject decision is identical on the optimized
+/// `decode` and the brute-force-gated `decode_reference` for corrupted small
+/// fragments (the regime where the gate actually fires).
+#[test]
+fn gate_decision_matches_reference_on_corrupted_fragments() {
+    for &n in &[4i32, 5, 6, 7] {
+        for k in 0..=4usize {
+            for seed in 0..4u64 {
+                let mut obs = build_pipeline_style_observation(7, 13, n, n);
+                flip_k_bits(
+                    &mut obs,
+                    k,
+                    0xBEEF_0000 ^ (n as u64) << 16 ^ (k as u64) << 8 ^ seed,
+                );
+                let fast = decode(&obs, 0.40);
+                let reference = decode_reference(&obs, 0.40);
+                assert_eq!(
+                    fast.is_some(),
+                    reference.is_some(),
+                    "gate accept/reject mismatch n={n} k={k} seed={seed}: fast={} ref={}",
+                    fast.is_some(),
+                    reference.is_some()
+                );
+            }
+        }
+    }
 }

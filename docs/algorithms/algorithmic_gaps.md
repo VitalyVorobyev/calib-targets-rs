@@ -195,32 +195,85 @@ hard-weighted scorer at the paper's 40% BER allowance to recover high-distortion
 fragments; `PuzzleBoardParams::for_board` (the single-config default) is
 unchanged.
 
-**Validation.** `example1/2/3` — previously among the six master-match failures
-— now decode (253/180/28 labelled corners), joining example0/4/5/6 for **7 of
-10**. The new `author_examples_1_2_3_decode_when_reference_dataset_present` test
-asserts the decoded `(i, j)` labels are consistent with the master positions
-under a single D4 transform (mod 501) — i.e. correct, not merely present. See
-Gap 19 for the residual precision caveat this pass introduces.
+**What stays / what was corrected (see Gap 19).** The distortion-aware edge
+*sampling* is a genuine improvement and remains. The 40% BER sweep pass also
+remains, but the claim that it "recovers" the distorted author examples did **not
+survive a precision audit**: those decodes (example0/1/2/3/8) are *non-unique* —
+a distinct master origin matches the distortion-corrupted edge bits as well as
+(or within one or two bits of) the chosen origin. They passed a D4-consistency
+check only because the tie-break happened to land on the reference origin. Under
+the bounded-distance uniqueness gate added in Gap 19 they are correctly **declined
+as detection failures** (a non-unique absolute decode is a wrong label waiting to
+happen). The clean, full author boards (example4/5/6) decode with enormous
+uniqueness margins and are unaffected. The grid still detects on the distorted
+frames; only the *decode* declines.
 
-### Gap 19 — 40% BER hard fallback has no uniqueness gate (OPEN)
+### Gap 19 — PuzzleBoard decode lacked an origin-uniqueness gate (RESOLVED)
 
-The high-distortion sweep pass added in Gap 18's fix decodes with the
-hard-weighted scorer at a 40% BER allowance and **no best-vs-runner-up margin
-gate** (`score_margin = ∞` on the hard path), unlike the soft scorer's
-`alignment_min_margin`. On a *full* board this is safe — wrong master origins
-sit near 50% BER, comfortably above the gate — and the author-set decode labels
-are D4-consistent. The residual risk is a *small fragment*: with few observed
-edges, 40% BER is a small absolute bit budget, so a wrong origin could pass. And
-because `detect_puzzleboard_best` selects on `(corners.len(), mean_confidence)`,
-such a fragment could in principle out-rank a correct decode.
+**Was.** Neither decode path enforced that the chosen master origin was
+*uniquely* the best-supported one. The hard-weighted path (including the 40% BER
+sweep pass) emitted `score_margin = ∞` and never computed a runner-up; the
+soft-LL default path gated on a normalized log-likelihood *score gap*
+(`alignment_min_margin`), which does not enforce origin uniqueness. A witness was
+constructed and confirmed: a small or distortion-corrupted fragment frequently
+has a *distinct* master origin (a different position and/or D4 transform) that
+matches the observed edge bits as well as — or within a bit of — the true origin.
+Shipping such a decode is a false positive (an unrecoverable wrong absolute
+label), even though every per-frame `(i, j)` is internally D4-consistent.
 
-No false positive has been observed: the author D4-consistency test passes, and
-the single-config `for_board` regression path is unaffected (the sweep / 40% pass
-is reachable only through `detect_puzzleboard_best`). Per the evidence-driven
-mandate, the next step is to **construct a witness** frame the 40% pass actually
-mislabels before changing the gate. Candidate guards once a witness exists:
-require a best-vs-runner-up BER margin on the hard path, or a minimum
-observed-edge count for the 40% pass. Deferred pending a witness.
+**Root cause — this is error-correcting-code decoding.** The master edge code is
+a De Bruijn torus whose minimum Hamming distance `d(w)` between a `w×w` window's
+codeword and its nearest neighbour (over all origins and all 8 D4 transforms)
+grows roughly quadratically with `w` but is only **1 at the 4×4 minimum window**
+(zero error-correction). So a single corrupted bit can turn a corrupted 4×4
+fragment into a *perfect* read of a different location. No acceptance test can
+make the 4×4 window safe; the safe window must be sized to the code's distance
+for the error budget (bounded-distance decoding).
+
+**Fix.**
+
+1. **Uniqueness gate (both paths).** Compute the matched-bit count of the closest
+   *distinct* competing origin (full-master via an exact crossed-CRT top-2;
+   fixed-board via the shift-scan top-2) and accept only when
+   `margin > k_winner`, where `margin = best_matched − runner_up_matched` and
+   `k_winner = edges_observed − best_matched` (the winner's own mismatch count).
+   Equivalently, the winner's net score (`matched − mismatched`) must strictly
+   exceed the runner-up's matched count. This is **parameter-free** (no magic
+   constant): a clean exact read (`k_winner = 0`) passes at any `margin ≥ 1`,
+   honoring the code's exact-uniqueness design at any size; a noisy-ambiguous read
+   (small `margin`, large `k_winner`) declines. The soft path applies the
+   identical matched-count predicate in addition to its score-gap gate (the soft
+   default was *separately* vulnerable — it false-accepted a wrong origin at every
+   window size in a high-trial sweep, a pre-existing defect in the production
+   default, now closed).
+2. **Bounded-distance floor.** `min_window` is raised to **7** (84 interior
+   edges): a 300k-trial sweep (random origins × random error patterns up to the
+   BER budget, per-corner ground-truth checked) finds 7×7 the smallest square
+   window with zero false-accepts under the gate at both 30% and 40% BER (5×5 and
+   6×6 still alias). A limiting-dimension guard additionally rejects wide-but-short
+   strips that meet the edge-count floor yet are too thin on one axis to carry the
+   code distance (a 3-corner-tall strip at the floor aliases at a low rate; every
+   window spanning ≥ `min_window` corners on *both* axes is alias-free in the
+   sweep).
+
+**Honest guarantee.** Safety is **empirical-with-defense-in-depth, not a
+worst-case guarantee**: at these BER budgets a worst-case bound would require
+`d(w) > 2·⌊BER·N⌋ ≈ 0.8·N`, far above the ~`N/4` the code actually provides, so a
+specifically-adversarial error pattern of weight ~`d/2` can still alias at any
+practical window. The `min_window` floor keeps *random* corruption below the
+aliasing regime, and the gate catches the residual near-aliases — validated to
+zero false-accepts across the high-trial sweep. The criterion is structural
+(scale-relative, dataset-independent); it is not fitted to any frame.
+
+**Effect on the author set.** example4/5/6 (clean, full boards) decode with huge
+uniqueness margins, unaffected. example0/1/2/3/8 (distorted or small) are
+*non-unique* and are now correctly declined as detection failures — the
+`author_examples_1_2_3_are_declined_as_non_unique` test pins this. The
+single-config `for_board` default path inherits the raised floor and the soft
+uniqueness gate (a deliberate, documented recall tradeoff on noisy/partial views:
+boards below the safe window become correct misses rather than risk a wrong
+label). The public regression and the private regression set hold at baseline
+with zero wrong labels.
 
 ---
 
