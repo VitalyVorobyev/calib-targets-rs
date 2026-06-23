@@ -167,6 +167,34 @@ opt-in legacy fallback. A proper fix (enumerate all four rotations in
 must be gated on the private ChArUco regression sweep before landing; it is
 deferred until that path needs attention.
 
+### Gap 18 — PuzzleBoard decode fails under heavy radial distortion (OPEN)
+
+Measured 2026-06-23 on the public `puzzleboard_reference/` author set
+(Stelldinger et al. CC0 oracle frames) via the `interop_authors` harness
+(`PuzzleBoardSpec::new(20, 20, 5.0)` + `sweep_for_board` +
+`detect_puzzleboard_best`): **4 of 10** frames decode (example0/4/5/6 — the
+last three at BER ≈ 0); the other six fail at the master-match stage.
+`example2.png` (flagged in `crates/calib-targets-bench/datasets.toml` as
+"visible radial distortion — Stage 6 refusal expected") returns *decoding
+failed: no position match above confidence threshold*.
+
+The chessboard **grid** still detects cleanly on these frames (the cross-tile
+pattern yields ChESS X-junctions at every intersection); only the edge-dot →
+501×501 master decode fails. Radial distortion shifts the sampled
+edge-midpoint dots off their nominal grid-relative positions enough to corrupt
+the bit reads below the soft-LL master-match confidence threshold. Consistent
+with precision-by-construction, the decoder **refuses** rather than mislabels.
+
+**Current handling.** The public performance report renders `example2.png` as
+a **chessboard** card (grid-only), not a PuzzleBoard card, because full decode
+does not succeed on it.
+
+**Candidate fix.** Decode in a distortion-corrected grid frame: fit a low-order
+radial model from the labelled chessboard grid (recovered cleanly), warp the
+edge-midpoint sample points through it, and re-read the bits — rather than
+sampling in the raw image frame. The grid is already trusted; the dots just
+need the same correction. Ties into the distortion-recall line below. Deferred.
+
 ---
 
 ## Architectural-direction summary
