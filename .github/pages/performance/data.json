@@ -2,12 +2,12 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.95.0",
-    "git_sha": "c8e361c",
-    "repeats": 20,
+    "git_sha": "0174a45",
+    "repeats": 100,
     "warmup": 10,
     "generated": "2026-06-23",
     "source": "scripts/gen-perf-data.sh",
-    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid/example2) on each image."
+    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for example2) on each image."
   },
   "images": [
     {
@@ -20,9 +20,9 @@
       "raw_corners": 267,
       "labelled": 99,
       "markers": 40,
-      "corner_detection_ms": 1.162,
-      "grid_build_ms": 0.6,
-      "decode_ms": 9.057,
+      "corner_detection_ms": 0.948,
+      "grid_build_ms": 0.543,
+      "decode_ms": 8.753,
       "note": "A ~0.4 MP ChArUco board (22\u00d722, DICT_4X4_250). The full detector runs corner detection, a chessboard grid build, then per-cell marker decode + board alignment \u2014 the decode stage dominates on a marker-dense board."
     },
     {
@@ -35,8 +35,8 @@
       "raw_corners": 77,
       "labelled": 77,
       "markers": null,
-      "corner_detection_ms": 1.226,
-      "grid_build_ms": 0.386,
+      "corner_detection_ms": 1.118,
+      "grid_build_ms": 0.37,
       "decode_ms": null,
       "note": "A plain 11\u00d77 inner-corner chessboard (no markers, so no decode stage). Corner detection is the bulk of the work; the owned grid build is a thin slice."
     },
@@ -50,25 +50,25 @@
       "raw_corners": 571,
       "labelled": 315,
       "markers": 132,
-      "corner_detection_ms": 6.105,
-      "grid_build_ms": 2.977,
-      "decode_ms": 25.275,
+      "corner_detection_ms": 5.545,
+      "grid_build_ms": 2.822,
+      "decode_ms": 24.537,
       "note": "A 3 MP ChArUco board (22\u00d722, DICT_4X4_1000). With over a hundred markers to sample and decode, the decode stage is several times the cost of corner detection \u2014 the regime where the owned decode path dominates. The published preview is downscaled to 1024 px wide; the detector runs on the full-resolution image."
     },
     {
-      "label": "Distorted board (chessboard grid)",
+      "label": "Distorted board (PuzzleBoard decode)",
       "file": "testdata/example2.png",
       "img": "./img/example2.png",
-      "kind": "Chessboard",
+      "kind": "PuzzleBoard",
       "width": 640,
       "height": 480,
       "raw_corners": 183,
       "labelled": 179,
       "markers": null,
-      "corner_detection_ms": 0.8,
-      "grid_build_ms": 1.095,
-      "decode_ms": null,
-      "note": "A heavily radially-distorted board: the self-identifying edge-dot decode fails under this much distortion, but the chessboard grid detects cleanly, so it is rendered as a chessboard card (grid build only, no decode). On this small frame the owned grid build slightly exceeds corner detection."
+      "corner_detection_ms": 0.726,
+      "grid_build_ms": 1.035,
+      "decode_ms": 1.351,
+      "note": "A heavily radially-distorted PuzzleBoard. Its self-identifying edge-dot pattern now decodes against the 501x501 master via distortion-aware edge sampling (per-cell homography + cubic grid-line interpolation), where a raw chord-midpoint sample failed \u2014 so this renders as a full PuzzleBoard card: corner detection then grid build then edge-dot decode. The decode runs the multi-config sweep; the stage breakdown times the winning config."
     }
   ],
   "end_to_end": {
@@ -76,22 +76,22 @@
     "frames": [
       {
         "file": "testdata/mid.png",
-        "ms": 1.612,
+        "ms": 1.488,
         "note": "1024x576 Chessboard"
       },
       {
         "file": "testdata/example2.png",
-        "ms": 1.895,
-        "note": "640x480 Chessboard"
+        "ms": 3.113,
+        "note": "640x480 PuzzleBoard"
       },
       {
         "file": "testdata/small.png",
-        "ms": 10.819,
+        "ms": 10.244,
         "note": "720x540 ChArUco"
       },
       {
         "file": "testdata/large.png",
-        "ms": 34.357,
+        "ms": 32.904,
         "note": "2048x1536 ChArUco"
       }
     ]

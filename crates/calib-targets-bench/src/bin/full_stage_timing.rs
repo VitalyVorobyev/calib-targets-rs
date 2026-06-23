@@ -9,10 +9,10 @@
 //!
 //! The four images are hard-coded on purpose: the output feeds the committed
 //! `.github/pages/performance/data.json`, which is published, so every input
-//! must stay public. Two cards are ChArUco (`small.png`, `large.png`) and two
-//! are plain chessboards (`mid.png`, `example2.png` — a heavily
-//! radially-distorted PuzzleBoard whose edge-dot decode fails (Gap 18) but
-//! whose chessboard grid detects cleanly).
+//! must stay public. Two cards are ChArUco (`small.png`, `large.png`), one is a
+//! plain chessboard (`mid.png`), and one is a PuzzleBoard (`example2.png` — a
+//! heavily radially-distorted board whose edge-dot pattern decodes against the
+//! 501×501 master since PR #61's distortion-aware sampling closed Gap 18).
 //!
 //! ## Stage decomposition
 //!
@@ -25,9 +25,10 @@
 //!   the `ChessDetector::new(params.chessboard).detect_all(corners)` call the
 //!   ChArUco pipeline runs internally before decoding, so the isolated
 //!   measurement is representative.
-//! - `decode` — ChArUco marker sampling + decode + board alignment, derived as
-//!   `full_charuco_detect − grid_build`. `null` for chessboard cards (no decode
-//!   stage).
+//! - `decode` — for ChArUco, marker sampling + decode + board alignment; for the
+//!   PuzzleBoard, the edge-dot sample + 501×501 master decode of the winning
+//!   sweep config. Derived as `full_detect − grid_build`. `null` for plain
+//!   chessboard cards (no decode stage).
 //!
 //! Honours `REPEATS` / `WARMUP` env vars (set by `scripts/gen-perf-data.sh`).
 
@@ -43,6 +44,7 @@ use calib_targets::chessboard::{
 };
 use calib_targets::core::{DetectorConfig, GrayImageView};
 use calib_targets::detect::detect_corners;
+use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::Threshold;
 use clap::Parser;
 use image::ImageReader;
@@ -71,6 +73,18 @@ enum Kind {
     Chessboard { min_corner_strength: f32 },
     /// ChArUco: a full board spec + the detector knobs the regression mirrors.
     Charuco(CharucoSpec),
+    /// PuzzleBoard: self-identifying chessboard decoded against the 501×501
+    /// master via the edge-dot pattern. Timed through the multi-config sweep
+    /// (`detect_puzzleboard_best`), picking the winning config for the stage
+    /// breakdown.
+    Puzzleboard(PuzzleboardSpec),
+}
+
+/// The PuzzleBoard spec for one card. `PuzzleBoardSpec::new(rows, cols, cell)`.
+struct PuzzleboardSpec {
+    rows: u32,
+    cols: u32,
+    cell_size: f32,
 }
 
 /// The ChArUco board + detector parameters for one card, mirroring the
@@ -131,16 +145,19 @@ fn cards() -> Vec<Card> {
                 min_marker_inliers: 64,
             }),
         },
-        // example2.png — a heavily radially-distorted PuzzleBoard. The edge-dot
-        // decode fails (Gap 18), but the chessboard grid detects cleanly, so it
-        // is rendered as a Chessboard card. `min_corner_strength = 0.5` is the
-        // marker-free floor (33.0 is the ChArUco-only floor that suppresses
-        // marker-bit saddles; this board has no markers).
+        // example2.png — a heavily radially-distorted PuzzleBoard. The grid
+        // detects cleanly and, since PR #61's distortion-aware edge sampling
+        // (Gap 18 resolved), the edge-dot pattern now decodes against the
+        // 501×501 master, so it is rendered as a full PuzzleBoard card. Spec
+        // mirrors the `interop_authors` author set: `PuzzleBoardSpec::new(20,
+        // 20, 5.0)`.
         Card {
             file: "testdata/example2.png",
-            kind: Kind::Chessboard {
-                min_corner_strength: 0.5,
-            },
+            kind: Kind::Puzzleboard(PuzzleboardSpec {
+                rows: 20,
+                cols: 20,
+                cell_size: 5.0,
+            }),
         },
     ]
 }
@@ -345,6 +362,91 @@ fn measure_charuco(
     })
 }
 
+struct PuzzleboardMeasurement {
+    labelled: usize,
+    bit_error_rate: f32,
+    grid_build: Stat,
+    decode: Stat,
+}
+
+fn measure_puzzleboard(
+    view: &GrayImageView<'_>,
+    corners: &[ChessCorner],
+    spec: &PuzzleboardSpec,
+    repeats: usize,
+    warmup: usize,
+) -> Result<PuzzleboardMeasurement, Box<dyn Error>> {
+    let board = PuzzleBoardSpec::new(spec.rows, spec.cols, spec.cell_size)?;
+    let sweep = PuzzleBoardParams::sweep_for_board(&board);
+
+    // Pick the config `detect_puzzleboard_best` would select on this image
+    // (most corners, then highest mean confidence), then time that single
+    // config so the stage breakdown mirrors the ChArUco card exactly.
+    let mut best_idx = 0usize;
+    let mut best_key = (0usize, f32::MIN);
+    for (i, cfg) in sweep.iter().enumerate() {
+        let det = PuzzleBoardDetector::new(cfg.clone())?;
+        if let Ok(r) = det.detect(view, corners) {
+            let key = (r.corners.len(), r.decode.mean_confidence);
+            if key > best_key {
+                best_key = key;
+                best_idx = i;
+            }
+        }
+    }
+    let winning = sweep[best_idx].clone();
+
+    // `grid_build` measures the same chessboard grid stage the PuzzleBoard
+    // pipeline runs internally, with the winning config's chessboard params.
+    let chess_detector = ChessboardDetector::new(winning.chessboard.clone())?;
+    let detector = PuzzleBoardDetector::new(winning)?;
+
+    for _ in 0..warmup {
+        let _ = chess_detector.detect_all(corners);
+        let _ = detector.detect(view, corners);
+    }
+
+    let mut grid = Vec::with_capacity(repeats);
+    let mut full = Vec::with_capacity(repeats);
+    let mut grid_labelled = 0;
+    let mut labelled = 0;
+    let mut bit_error_rate = 1.0f32;
+    for _ in 0..repeats {
+        let g_start = Instant::now();
+        let detections = chess_detector.detect_all(corners);
+        grid.push(elapsed_ms(g_start));
+        grid_labelled = best_component_corners(&detections);
+
+        let f_start = Instant::now();
+        let res = detector.detect(view, corners);
+        full.push(elapsed_ms(f_start));
+        if let Ok(res) = res {
+            labelled = res.corners.len();
+            bit_error_rate = res.decode.bit_error_rate;
+        }
+    }
+
+    let grid_build = p50(grid);
+    let full_stat = p50(full);
+    // decode = full_detect − grid_build (corners are precomputed and passed in,
+    // so corner detection is not inside `detect`). Clamp at 0 for noise.
+    let decode = Stat {
+        p50_ms: (full_stat.p50_ms - grid_build.p50_ms).max(0.0),
+        mean_ms: (full_stat.mean_ms - grid_build.mean_ms).max(0.0),
+    };
+
+    if labelled == 0 {
+        labelled = grid_labelled;
+    }
+
+    Ok(PuzzleboardMeasurement {
+        labelled,
+        bit_error_rate,
+        grid_build,
+        decode,
+    })
+}
+
 fn measure_card(
     card: &Card,
     chess_cfg: &DetectorConfig,
@@ -401,6 +503,27 @@ fn measure_card(
                 raw_corners,
                 labelled: m.labelled,
                 markers: Some(m.markers),
+                corner_detection,
+                grid_build: m.grid_build,
+                decode: Some(m.decode),
+            })
+        }
+        Kind::Puzzleboard(spec) => {
+            let m = measure_puzzleboard(&view, &corners, spec, repeats, warmup)?;
+            // Surface the decode quality on stderr (not part of the published
+            // JSON schema) so a regenerate can confirm the board still decodes.
+            eprintln!(
+                "  {} → PuzzleBoard decode: {} corners, BER {:.3}",
+                card.file, m.labelled, m.bit_error_rate
+            );
+            Ok(ImageReport {
+                image: card.file.to_owned(),
+                kind: "PuzzleBoard",
+                width: img.width(),
+                height: img.height(),
+                raw_corners,
+                labelled: m.labelled,
+                markers: None,
                 corner_detection,
                 grid_build: m.grid_build,
                 decode: Some(m.decode),

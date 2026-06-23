@@ -83,13 +83,14 @@
 
   <h2>Per-image stage breakdown</h2>
   <div class="desc">Per-stage p50 from <code>full_stage_timing</code>, which runs the <b>complete</b> detector on each
-    public image — ChArUco (corner detection → grid build → marker decode) for the two ArUco-marked boards, plain
-    chessboard (corner detection → grid build) for the two marker-free boards. Corners are detected once and reused,
-    so the grid/decode bars never re-count corner detection.</div>
+    public image — ChArUco (corner detection → grid build → marker decode) for the two ArUco-marked boards, a plain
+    chessboard (corner detection → grid build) for the marker-free board, and a PuzzleBoard (corner detection → grid
+    build → edge-dot decode) for the radially-distorted board. Corners are detected once and reused, so the
+    grid/decode bars never re-count corner detection.</div>
   <div class="legend">
     <span><i class="sw" style="background:var(--amber)"></i> corner detection (external)</span>
     <span><i class="sw" style="background:var(--blue)"></i> grid build (owned)</span>
-    <span><i class="sw" style="background:var(--teal)"></i> marker decode (owned, ChArUco only)</span>
+    <span><i class="sw" style="background:var(--teal)"></i> decode (owned — ArUco markers or PuzzleBoard edge dots)</span>
   </div>
   <div id="imagecards"></div>
 
@@ -141,11 +142,12 @@ function renderImageCard(img) {
   meta.innerHTML = metaHtml;
   card.append(h, file, meta);
 
-  // Three full-detector stages, flat p50 fields (ms). Decode is ChArUco-only.
+  // Three full-detector stages, flat p50 fields (ms). Decode is present on
+  // ChArUco (marker) and PuzzleBoard (edge-dot) cards, absent on plain chessboards.
   const stages = [
     { label: "corner detection", v: img.corner_detection_ms, color: C.amber },
     { label: "grid build", v: img.grid_build_ms, color: C.blue },
-    { label: "marker decode", v: img.decode_ms, color: C.teal },
+    { label: "decode", v: img.decode_ms, color: C.teal },
   ].filter(s => s.v != null);
   const max = Math.max(...stages.map(s => s.v), 0) || 1;
   stages.forEach(s => {
