@@ -3,7 +3,6 @@
 //! This module wires together chessboard detection, per-cell marker decoding,
 //! alignment to a known board definition, and ChArUco corner ID assignment.
 
-mod alignment_select;
 mod board_match;
 mod corner_mapping;
 mod corner_refit;
@@ -27,7 +26,5 @@ pub use error::CharucoDetectError;
 pub use params::CharucoParams;
 pub use pipeline::CharucoDetector;
 #[cfg(feature = "diagnostics")]
-pub use pipeline::{
-    CharucoDetectDiagnostics, ComponentDiagnostics, ComponentOutcome, MatcherDiagKind,
-};
+pub use pipeline::{CharucoDetectDiagnostics, ComponentDiagnostics, ComponentOutcome};
 pub use result::{CharucoCorner, CharucoDetectionResult};

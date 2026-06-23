@@ -54,6 +54,32 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   experimental `OrientationSource::NeighbourEdges` path are removed with the
   engine.
 
+- **The legacy ChArUco vote matcher is retired; the board-level matcher is the
+  sole marker-to-board matcher.** The board-level matcher was already the
+  default, so detection behaviour is unchanged. The
+  `CharucoParams::use_board_level_matcher` field is removed (an unknown serde
+  key is now ignored on deserialization, with no behaviour change). The
+  rotation+translation vote solver is deleted; `CharucoAlignment` (the
+  alignment result the board-level matcher returns) is retained. The
+  `MatcherDiagKind` enum and the `ComponentDiagnostics.matcher` field are
+  removed, so the `matcher` key is dropped from the ChArUco diagnostics JSON —
+  the WASM diagnostics type and Python overlay are updated to match.
+  `CharucoParams::max_hamming` is removed in the same change: it fed only the
+  retired hard-decode vote matcher and became a no-op once that matcher was
+  deleted (the board-level matcher uses soft-bit scoring and a margin gate, with
+  no Hamming cap). The Rust field, the WASM `CharucoParams` type entry, and the
+  Python `CharucoParams` dataclass field are removed; an unknown `max_hamming`
+  serde / config key is now ignored on deserialization.
+
+- **`calib-targets-ffi` is bumped to 2.0.0 — a struct-layout-breaking C ABI
+  change.** The `max_hamming` field is removed from
+  `ct_charuco_detector_params_t` (it only fed the retired ChArUco vote matcher),
+  so the struct layout, and therefore the ABI, change for C consumers. The
+  generated `calib_targets_ffi.h` no longer declares the field; recompile C/C++
+  consumers against the regenerated header and stop setting `max_hamming` on the
+  params struct. `ct_version_string()` and the CMake config-version now report
+  `2.0.0`.
+
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The
   `diagnostics` module, the diagnostics type re-exports, and
@@ -87,10 +113,8 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Internal
 
-- The ChArUco legacy-vote alignment's dominant-rotation-only D4 selection is
-  recorded as a tracked gap (the default board-level matcher already enumerates
-  all rotations); the stale alignment TODO is removed. ArUco / ChArUco cell
-  corner enumeration is de-duplicated through `cell_rect_corners_at`.
+- ArUco / ChArUco cell corner enumeration is de-duplicated through
+  `cell_rect_corners_at`.
 
 ## 0.10.0
 

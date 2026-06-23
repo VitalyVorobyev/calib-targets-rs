@@ -149,13 +149,11 @@ semver-exempt or not.
 ### <a id="d-6-a-superseded-legacy-fallback-and-private-dataset-specifics-in-source"></a>D-6 A superseded legacy fallback, and private-dataset specifics in source
 **Severity: P3.**
 
-- **Legacy matcher:** `charuco` ships two marker matchers. The board-level soft-LL
-  matcher (`detector/board_match.rs`) is the **default** (`params.rs:306`,
-  `use_board_level_matcher: true`); the legacy rotation+translation vote
-  (`alignment.rs` + `alignment_select.rs`, ~300 LOC) is an off-by-default documented
-  fallback. This is *mild* debt — a kept-for-safety fallback, not "the good one is
-  off" (an earlier inventory pass got this backwards; corrected here). Decide:
-  retire it, or keep it with a one-line "why we still ship this" rationale.
+- **Legacy matcher:** *resolved (C-7).* `charuco` previously shipped two marker
+  matchers; the legacy rotation+translation vote and its `use_board_level_matcher`
+  toggle have been retired, leaving the board-level soft-LL matcher
+  (`detector/board_match.rs`) as the sole matcher. `alignment.rs` now holds only the
+  `CharucoAlignment` result type.
 - **Hygiene:** `charuco detector/params.rs` default-constant comments cite concrete
   private-dataset board sizes and frame counts to justify tuned constants. Per
   [`private-dataset-policy.md`](../development/private-dataset-policy.md) concrete

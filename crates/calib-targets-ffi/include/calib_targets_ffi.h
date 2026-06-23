@@ -446,7 +446,6 @@ typedef struct ct_charuco_detector_params_t {
   struct ct_chessboard_params_t chessboard;
   struct ct_charuco_board_spec_t charuco;
   struct ct_scan_decode_config_t scan;
-  uint32_t max_hamming;
   size_t min_marker_inliers;
   float grid_smoothness_threshold_rel;
   float corner_validation_threshold_rel;

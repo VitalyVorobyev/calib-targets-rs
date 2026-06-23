@@ -48,7 +48,6 @@ struct Args {
     snaps: u32,
     snap_width: u32,
     snap_height: u32,
-    use_board_matcher: bool,
     emit_diag: bool,
     save_snaps: bool,
     bit_slope: Option<f32>,
@@ -64,7 +63,7 @@ fn usage_and_exit() -> ! {
     eprintln!(
         "usage: run_dataset --dataset <dir> --board <path> --out <dir> \
          [--upscale N] [--snaps N] [--snap-width N] [--snap-height N] \
-         [--use-board-matcher] [--emit-diag] [--save-snaps]"
+         [--emit-diag] [--save-snaps]"
     );
     std::process::exit(2);
 }
@@ -78,7 +77,6 @@ fn parse_args() -> Args {
     let mut snap_width = DEFAULT_SNAP_WIDTH;
     let mut snap_height = DEFAULT_SNAP_HEIGHT;
 
-    let mut use_board_matcher = false;
     let mut emit_diag = false;
     let mut save_snaps = false;
     let mut bit_slope: Option<f32> = None;
@@ -107,7 +105,6 @@ fn parse_args() -> Args {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(snap_height);
             }
-            "--use-board-matcher" => use_board_matcher = true,
             "--emit-diag" => emit_diag = true,
             "--save-snaps" => save_snaps = true,
             "--bit-slope" => bit_slope = it.next().and_then(|v| v.parse().ok()),
@@ -132,7 +129,6 @@ fn parse_args() -> Args {
         snaps,
         snap_width,
         snap_height,
-        use_board_matcher,
         emit_diag,
         save_snaps,
         bit_slope,
@@ -174,15 +170,9 @@ fn main() {
 
     let chess_cfg = default_chess_config();
     let mut params = CharucoParams::for_board(&spec);
-    params.use_board_level_matcher = args.use_board_matcher;
-    if args.use_board_matcher {
-        // The board-level matcher is its own inlier gate — don't add a
-        // second threshold on top. Set a floor of 1 so single-cell
-        // detections still land (matcher will reject them via the margin
-        // gate).
-        params.min_marker_inliers = 1;
-        params.min_secondary_marker_inliers = 1;
-    }
+    // The board-level matcher is its own inlier gate — `for_board` already
+    // sets the low (1 / 1) floors, so the matcher's margin gate is what
+    // decides accept/reject.
     if let Some(slope) = args.bit_slope {
         params.bit_likelihood_slope = slope;
     }
@@ -190,12 +180,7 @@ fn main() {
         params.alignment_min_margin = min_margin;
     }
     eprintln!(
-        "matcher: {}  algorithm: {}",
-        if args.use_board_matcher {
-            "board-level (soft-bit log-likelihood)"
-        } else {
-            "legacy (rotation + translation vote)"
-        },
+        "matcher: board-level (soft-bit log-likelihood)  algorithm: {}",
         algorithm_slug(),
     );
     let detector = CharucoDetector::new(params.clone()).expect("build detector");
@@ -622,7 +607,6 @@ impl Aggregate {
             raw_wrong_id_total: self.raw_wrong_id_total,
             runtime_mean_ms: self.total_ms_sum / frames,
             upscale: args.upscale,
-            use_board_matcher: args.use_board_matcher,
             algorithm: algorithm_slug(),
             board: *spec,
         }
@@ -639,7 +623,6 @@ struct SummaryReport {
     raw_wrong_id_total: usize,
     runtime_mean_ms: f32,
     upscale: u32,
-    use_board_matcher: bool,
     /// Grid-build algorithm slug (always `topological` — the sole builder).
     algorithm: &'static str,
     board: CharucoBoardSpec,

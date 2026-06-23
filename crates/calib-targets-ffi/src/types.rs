@@ -552,7 +552,6 @@ pub struct ct_charuco_detector_params_t {
     pub chessboard: ct_chessboard_params_t,
     pub charuco: ct_charuco_board_spec_t,
     pub scan: ct_scan_decode_config_t,
-    pub max_hamming: u32,
     pub min_marker_inliers: usize,
     pub grid_smoothness_threshold_rel: f32,
     pub corner_validation_threshold_rel: f32,

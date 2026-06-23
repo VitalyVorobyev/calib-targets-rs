@@ -161,7 +161,6 @@ fn charuco_config_small_png() -> ct_charuco_detector_config_t {
                 dedup_by_id: CT_TRUE,
                 multi_threshold: CT_TRUE,
             },
-            max_hamming: 2,
             min_marker_inliers: 12,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,

@@ -84,9 +84,7 @@ corner IDs. Entry: `charuco detector/pipeline.rs::CharucoDetector::detect`.
 | 1 | Chessboard grid | `charuco pipeline.rs` → `chess Detector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
 | 2 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | Per-corner ChESS refine (§10) | **Local** |
 | 3 | Cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | Marker-cell enumeration (§10) | **Local** |
-| 4a | **Decode + align (default)** | `charuco detector/board_match.rs::match_board_diag` | Board-level soft-LL matcher (§10) | **Local** (decode bits via `aruco`) |
-| 4b | Decode + align (fallback) | `charuco detector/alignment_select.rs` → `alignment.rs::solve_alignment` | Legacy rotation+translation vote (§10) | **Local**; **opt-in** (`use_board_level_matcher = false`) |
-| 5 | Inlier filter | `charuco detector/alignment_select.rs` | Inlier filter (§10) | **Local** |
+| 4 | **Decode + align** | `charuco detector/board_match.rs::match_board_diag` | Board-level soft-LL matcher (§10) — re-emits markers (its own inliers) under the chosen hypothesis | **Local** (decode bits via `aruco`) |
 | 6 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | Corner-ID assignment (§10) | **Local** |
 | 7 | Corner refit | `charuco detector/corner_validation.rs::validate_and_fix_corners` | Homography corner refit (§10) | **Mixed**: H fit **delegated** → `core estimate_homography_rect_to_img`; ROI re-detect local |
 | 8 | Output (+ merge) | `charuco detector/merge.rs::merge_charuco_results` | Multi-component merge (§10) | **Local** |

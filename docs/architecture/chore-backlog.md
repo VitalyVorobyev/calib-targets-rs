@@ -125,19 +125,19 @@ alias. ² Removes a `pub enum` — trivially breaking; deprecate one release fir
 - **Risk control:** assert the shared helper reproduces both current maps on a fixed
   detection before deleting the locals.
 
-## <a id="c-7"></a>C-7 · Retire or justify the legacy ChArUco matcher
+## <a id="c-7"></a>C-7 · Retire or justify the legacy ChArUco matcher — DONE
 **Severity P3 · Effort M · Risk Med · API semver**
 
-- **Problem:** [D-6](critique.md#d-6-a-superseded-legacy-fallback-and-private-dataset-specifics-in-source).
-  The board-level soft-LL matcher is the default; the legacy vote matcher
-  (`alignment.rs` + `alignment_select.rs`, ~300 LOC + the `use_board_level_matcher`
-  flag) is an off-by-default fallback.
-- **Fix:** **decision first** — does the legacy matcher ever beat the default on any
-  frame in the regression sets? If no → delete it (+ the flag/types, deprecated one
-  release). If yes → keep it but add a one-line "why we still ship this" rationale at
-  the flag definition.
-- **Blast radius:** `charuco` only.
-- **Risk control:** the data check *is* the gate; don't delete a fallback on a hunch.
+- **Outcome:** retired. The regression contracts showed the legacy vote matcher
+  produced wrong-ids and lower recall than the board-level soft-LL matcher (already
+  the default), so the decision was *delete*. The legacy vote solver
+  (`alignment.rs::solve_alignment` + `detector/alignment_select.rs`), the
+  `use_board_level_matcher` flag, and the `MatcherDiagKind` /
+  `ComponentDiagnostics.matcher` diagnostics were removed; `alignment.rs` now holds
+  only the `CharucoAlignment` result type, and the board-level matcher is the sole
+  matcher. Source-breaking (`0.x` consolidation); recorded in the CHANGELOG
+  `Unreleased` → `Breaking` section.
+- **Blast radius:** `charuco` (+ WASM type / Python overlay parity).
 
 ## <a id="c-8"></a>C-8 · Sanitize private-dataset specifics in source comments
 **Severity P3 · Effort S · Risk Low · API none**

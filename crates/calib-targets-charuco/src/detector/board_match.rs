@@ -3,9 +3,8 @@
 //! board hypotheses, pick the one that maximises the aggregate weighted
 //! score, and re-emit markers under that constraint.
 //!
-//! Invoked by [`crate::CharucoDetector`] when
-//! [`crate::CharucoParams::use_board_level_matcher`] is `true`; replaces the
-//! rotation-vote + translation-vote alignment from [`crate::alignment`].
+//! The sole marker-to-board matcher, invoked by [`crate::CharucoDetector`];
+//! produces the [`CharucoAlignment`] the corner-mapping stage consumes.
 
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;

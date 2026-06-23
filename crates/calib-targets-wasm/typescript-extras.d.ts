@@ -370,12 +370,10 @@ export interface CharucoParams {
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
   scan: ScanDecodeConfig;
-  max_hamming: number;
   min_marker_inliers: number;
   min_secondary_marker_inliers: number;
   grid_smoothness_threshold_rel: number;
   corner_validation_threshold_rel: number;
-  use_board_level_matcher: boolean;
   bit_likelihood_slope: number;
   per_bit_floor: number;
   alignment_min_margin: number;
@@ -538,9 +536,6 @@ export interface BoardMatchDiagnostics {
   bits_per_side: number;
 }
 
-/** Which marker-matching branch produced a component (Rust `MatcherDiagKind`). */
-export type MatcherDiagKind = "legacy" | "board_level";
-
 /** Final outcome of detecting one chessboard component (Rust `ComponentOutcome`). */
 export type ComponentOutcome =
   | {
@@ -557,7 +552,6 @@ export interface ComponentDiagnostics {
   index: number;
   chess_corner_count: number;
   candidate_cell_count: number;
-  matcher: MatcherDiagKind;
   board?: BoardMatchDiagnostics;
   outcome: ComponentOutcome;
 }

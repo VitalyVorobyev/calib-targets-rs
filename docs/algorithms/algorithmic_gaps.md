@@ -139,33 +139,21 @@ constant column drift — is strong and cheap), or marker-aware scoring once
 ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
 policy work, which needs the same local-geometry discrimination.
 
-### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (OPEN, low priority)
+### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (RESOLVED — legacy matcher retired)
 
-`alignment::solve_alignment` (the legacy rotation+translation **vote**
-matcher, used only when `CharucoParams::use_board_level_matcher` is `false`)
-picks a single D4 rotation up front via a score-weighted
-`dominant_rotation` histogram, then solves the best integer translation for
-that one rotation. It never evaluates the other three D4 rotations, so a
-frame whose true board rotation differs from the score-dominant marker
-rotation (e.g. a few high-score noise decodings biasing the histogram) can
-get the wrong rotation and lose inliers. The vestigial single-element
-`candidate` tuple in `solve_alignment` is the remnant of an earlier
-multi-candidate selector.
+**Was:** `alignment::solve_alignment` (the legacy rotation+translation
+**vote** matcher) picked a single D4 rotation up front via a score-weighted
+`dominant_rotation` histogram, then solved the best integer translation for
+that one rotation, never evaluating the other three rotations — so a frame
+whose true board rotation differed from the score-dominant marker rotation
+could get the wrong rotation and lose inliers.
 
-The stale `// TODO: just run solve_alignment on the full set of markers` at
-the former `select_and_refine_markers` call site was misleading: the full
-set *is* already passed to `solve_alignment` in one call — the real gap is
-the missing per-rotation enumeration, not a per-marker loop. The TODO has
-been removed in favour of this entry.
-
-**Why low priority:** the production default is the board-level soft-LL
-matcher (`use_board_level_matcher = true`), which already enumerates all
-(D4 rotation × integer translation) hypotheses and picks the
-maximum-likelihood one — so the dominant-rotation shortcut only affects the
-opt-in legacy fallback. A proper fix (enumerate all four rotations in
-`solve_alignment`, keep the max-inlier candidate) is small and contained but
-must be gated on the private ChArUco regression sweep before landing; it is
-deferred until that path needs attention.
+**Resolution:** the legacy vote matcher and its `use_board_level_matcher`
+toggle were retired; the board-level soft-LL matcher
+(`detector/board_match.rs`) is now the sole matcher, and it already
+enumerates all (D4 rotation × integer translation) hypotheses and picks the
+maximum-likelihood one. The dominant-rotation shortcut no longer exists, so
+this gap is closed by deletion rather than by patching the vote solver.
 
 ### Gap 18 — PuzzleBoard decode under heavy radial distortion (RESOLVED, PR #61, 2026-06-23)
 

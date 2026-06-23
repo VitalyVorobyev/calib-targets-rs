@@ -85,7 +85,6 @@ def main() -> int:
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(),
-        max_hamming=2,
         min_marker_inliers=4,
     )
     try:

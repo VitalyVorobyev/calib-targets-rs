@@ -13,5 +13,5 @@
 
 pub use crate::detector::{
     BoardMatchDiagnostics, CellBestMatch, CellDiag, CharucoDetectDiagnostics, ComponentDiagnostics,
-    ComponentOutcome, DiagHypothesis, MatcherDiagKind, RejectReason,
+    ComponentOutcome, DiagHypothesis, RejectReason,
 };

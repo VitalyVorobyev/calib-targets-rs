@@ -39,21 +39,18 @@ def main() -> None:
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(min_corner_strength=0.5),
-        max_hamming=2,
         min_marker_inliers=8,
     )
     loose = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(min_corner_strength=0.0),
-        max_hamming=2,
         min_marker_inliers=4,
     )
     tight = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
         chessboard=ct.ChessboardParams(min_corner_strength=1.0),
-        max_hamming=1,
         min_marker_inliers=8,
     )
 

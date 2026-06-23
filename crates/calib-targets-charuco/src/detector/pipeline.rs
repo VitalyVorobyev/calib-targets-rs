@@ -1,4 +1,3 @@
-use super::alignment_select::select_alignment;
 use super::board_match::{match_board_diag, BoardMatchConfig, BoardMatchDiagnostics};
 use super::corner_mapping::map_charuco_corners;
 use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig};
@@ -7,9 +6,7 @@ use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
 use super::params::to_chess_params;
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
-use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
-use calib_targets_aruco::{scan_decode_markers_in_cells, MarkerDetection, Matcher};
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
@@ -63,27 +60,12 @@ pub struct ComponentDiagnostics {
     pub chess_corner_count: usize,
     /// Number of candidate marker cells extracted from this component.
     pub candidate_cell_count: usize,
-    /// Which matcher branch produced this component. Callers get the
-    /// board-level diagnostics only when
-    /// [`CharucoParams::use_board_level_matcher`] is `true`.
-    pub matcher: MatcherDiagKind,
-    /// Board-level matcher diagnostics; populated only when the
-    /// board-level matcher ran (see `matcher`).
+    /// Board-level matcher diagnostics (per-cell scores, chosen/runner-up
+    /// hypotheses, margin, rejection reason).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub board: Option<BoardMatchDiagnostics>,
     /// Final detection outcome for this component.
     pub outcome: ComponentOutcome,
-}
-
-/// Which marker-matching branch produced a component's result.
-#[derive(Clone, Copy, Debug, serde::Serialize)]
-#[serde(rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum MatcherDiagKind {
-    /// The legacy per-marker alignment matcher.
-    Legacy,
-    /// The board-level coherent-hypothesis matcher.
-    BoardLevel,
 }
 
 /// Final outcome of detecting one chessboard component.
@@ -129,7 +111,6 @@ use tracing::instrument;
 pub struct CharucoDetector {
     board: CharucoBoard,
     params: CharucoParams,
-    matcher: Matcher,
 }
 
 impl CharucoDetector {
@@ -140,28 +121,9 @@ impl CharucoDetector {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
 
-        // Cap max_hamming at max_correction_bits when the dictionary declares a
-        // non-zero value.  AprilTag families report max_correction_bits == 0 in
-        // OpenCV metadata even though their minimum inter-code Hamming distance
-        // is large (e.g. 10 for 36h10), so we skip capping in that case and let
-        // the user control error tolerance directly.
-        let max_hamming = if board_cfg.dictionary.max_correction_bits() > 0 {
-            params
-                .max_hamming
-                .min(board_cfg.dictionary.max_correction_bits())
-        } else {
-            params.max_hamming
-        };
-        params.max_hamming = max_hamming;
-
-        let matcher = Matcher::new(board_cfg.dictionary, max_hamming);
         let board = CharucoBoard::new(board_cfg)?;
 
-        Ok(Self {
-            board,
-            params,
-            matcher,
-        })
+        Ok(Self { board, params })
     }
 
     /// Board definition used by the detector.
@@ -351,62 +313,27 @@ impl CharucoDetector {
         let candidate_cell_count = cells.len();
         let scan_cfg = self.params.scan.clone();
 
-        let use_board_level = self.params.use_board_level_matcher;
-        let mut board_diag: Option<BoardMatchDiagnostics> = None;
-
-        let matched = if use_board_level {
-            let board_cfg = BoardMatchConfig {
-                px_per_square: self.params.px_per_square,
-                bit_likelihood_slope: self.params.bit_likelihood_slope,
-                per_bit_floor: self.params.per_bit_floor,
-                alignment_min_margin: self.params.alignment_min_margin,
-                cell_weight_border_threshold: self.params.cell_weight_border_threshold,
-            };
-            let (matched, diag) =
-                match_board_diag(image, &cells, &self.board, &scan_cfg, &board_cfg);
-            board_diag = Some(diag);
-            match matched {
-                Some((markers, alignment)) => {
-                    let count = markers.len();
-                    Ok((markers, alignment, count, 0usize))
-                }
-                None => {
-                    warn!(
-                        "board-level matcher rejected: no hypothesis cleared the margin gate ({} candidate cells)",
-                        cells.len()
-                    );
-                    Err(CharucoDetectError::AlignmentFailed { inliers: 0 })
-                }
+        let board_cfg = BoardMatchConfig {
+            px_per_square: self.params.px_per_square,
+            bit_likelihood_slope: self.params.bit_likelihood_slope,
+            per_bit_floor: self.params.per_bit_floor,
+            alignment_min_margin: self.params.alignment_min_margin,
+            cell_weight_border_threshold: self.params.cell_weight_border_threshold,
+        };
+        let (matched_opt, diag) =
+            match_board_diag(image, &cells, &self.board, &scan_cfg, &board_cfg);
+        let board_diag: Option<BoardMatchDiagnostics> = Some(diag);
+        let matched = match matched_opt {
+            Some((markers, alignment)) => {
+                let count = markers.len();
+                Ok((markers, alignment, count, 0usize))
             }
-        } else {
-            let markers = scan_decode_markers_in_cells(
-                image,
-                &cells,
-                self.params.px_per_square,
-                &scan_cfg,
-                &self.matcher,
-            );
-            debug!("marker scan produced {} detections", markers.len());
-            if markers.is_empty() {
+            None => {
                 warn!(
-                    "marker scan failed: no markers decoded from {} candidate cells",
+                    "board-level matcher rejected: no hypothesis cleared the margin gate ({} candidate cells)",
                     cells.len()
                 );
-                Err(CharucoDetectError::NoMarkers)
-            } else {
-                let raw_count = markers.len();
-                let raw_snapshot = markers.clone();
-                match self.select_and_refine_markers(markers) {
-                    Some((markers, alignment)) => {
-                        let wrong_id =
-                            count_wrong_id_raw_markers(&self.board, &raw_snapshot, &alignment);
-                        Ok((markers, alignment, raw_count, wrong_id))
-                    }
-                    None => {
-                        warn!("marker-to-board alignment failed before producing any inliers");
-                        Err(CharucoDetectError::AlignmentFailed { inliers: 0 })
-                    }
-                }
+                Err(CharucoDetectError::AlignmentFailed { inliers: 0 })
             }
         };
 
@@ -415,11 +342,6 @@ impl CharucoDetector {
                 index: component_index,
                 chess_corner_count,
                 candidate_cell_count,
-                matcher: if use_board_level {
-                    MatcherDiagKind::BoardLevel
-                } else {
-                    MatcherDiagKind::Legacy
-                },
                 board,
                 outcome,
             }
@@ -512,43 +434,6 @@ impl CharucoDetector {
             comp_diag,
         )
     }
-
-    #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, markers),
-      fields(markers=markers.len())))]
-    fn select_and_refine_markers(
-        &self,
-        markers: Vec<MarkerDetection>,
-    ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
-        // The full marker set is solved in one pass by `select_alignment` →
-        // `solve_alignment`. The remaining limitation is dominant-rotation-only
-        // D4 selection in the legacy vote path; the default board-level matcher
-        // already enumerates all rotations.
-        let (markers, alignment) = select_alignment(&self.board, markers)?;
-
-        Some((markers, alignment))
-    }
-}
-
-/// Count raw marker decodings that map to a valid board position but
-/// disagree with the chosen alignment.
-///
-/// Decodings whose id does not correspond to any marker on this board are
-/// treated as dictionary noise and excluded from this count.
-fn count_wrong_id_raw_markers(
-    board: &CharucoBoard,
-    raw_markers: &[MarkerDetection],
-    alignment: &CharucoAlignment,
-) -> usize {
-    raw_markers
-        .iter()
-        .filter(|m| {
-            let Some(expected_bc) = board.marker_position(m.id) else {
-                return false; // pure dict noise — not counted as "wrong id"
-            };
-            let bc = alignment.map(m.gc.i, m.gc.j);
-            bc.i != expected_bc.i || bc.j != expected_bc.j
-        })
-        .count()
 }
 
 #[cfg(test)]

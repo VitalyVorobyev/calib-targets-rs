@@ -266,10 +266,9 @@ def header_text(diag: dict[str, Any]) -> str:
     reject = board.get("rejection")
     outcome = comp.get("outcome", {})
     status = outcome.get("status", "?")
-    matcher = comp.get("matcher", "?")
 
     lines = [
-        f"matcher={matcher}  status={status}  cells={comp.get('candidate_cell_count')}  "
+        f"status={status}  cells={comp.get('candidate_cell_count')}  "
         f"chess_corners={comp.get('chess_corner_count')}",
     ]
     if chosen:

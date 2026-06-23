@@ -33,9 +33,6 @@ pub struct CharucoParams {
     /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
     #[serde(default)]
     pub scan: ScanDecodeConfig,
-    /// Maximum Hamming distance for marker matching.
-    #[serde(default)]
-    pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
@@ -75,24 +72,9 @@ pub struct CharucoParams {
     /// Not serialised — reconstructed from defaults on deserialisation.
     #[serde(skip)]
     pub corner_redetect_params: ChessCornerParams,
-    /// Replace the per-marker hard-threshold decode + rotation/translation
-    /// vote alignment with a board-level soft-bit log-likelihood matcher
-    /// (see `docs/algorithms/charuco_concept.md`).
-    ///
-    /// When `true`, the detector computes a per-cell × per-marker-id score
-    /// matrix, enumerates (D4 rotation × integer translation) board
-    /// hypotheses, and picks the one that maximises Σᵢ wᵢ · sᵢ(m_{p_i(H)}).
-    ///
-    /// Default: `false` (legacy rotation + translation vote alignment).
-    /// Opt in by setting this to `true` when decoding difficult targets
-    /// such as small-cell AprilTag boards; on our internal regression set
-    /// the board-level matcher recovers frames the legacy vote drops and
-    /// removes the residual wrong-id labels.
-    #[serde(default = "default_use_board_level_matcher")]
-    pub use_board_level_matcher: bool,
-    /// Logistic slope κ used in the soft-bit log-likelihood when
-    /// [`Self::use_board_level_matcher`] is `true`. Larger = more confident
-    /// per bit; 8–16 is a reasonable range.
+    /// Logistic slope κ used in the board-level matcher's soft-bit
+    /// log-likelihood. Larger = more confident per bit; 8–16 is a
+    /// reasonable range.
     ///
     /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
     /// semver** and may be retuned, retyped, or removed between minor versions
@@ -144,8 +126,9 @@ fn default_px_per_square() -> f32 {
 }
 
 fn default_min_marker_inliers() -> usize {
-    // Board-appropriate floor (the board-level matcher is the default; see
-    // `default_use_board_level_matcher`). The legacy vote matcher wants 8.
+    // Board-appropriate floor for the board-level matcher, which is its own
+    // inlier gate (it accepts/rejects on the margin gate, so the downstream
+    // inlier floor stays low).
     1
 }
 
@@ -172,10 +155,6 @@ fn default_alignment_min_margin() -> f32 {
 
 fn default_cell_weight_border_threshold() -> f32 {
     0.5
-}
-
-fn default_use_board_level_matcher() -> bool {
-    true
 }
 
 /// Build the ChESS parameters used for local re-detection inside a small ROI.
@@ -278,32 +257,20 @@ impl CharucoParams {
             // blurry or unevenly-lit images.
             .with_min_border_score(0.75);
 
-        let max_hamming = board.dictionary.max_correction_bits().min(2);
-
         Self {
             px_per_square: 60.0,
             chessboard,
             board: *board,
             scan,
-            max_hamming,
-            // Board-level soft-LL matcher is the default (see
-            // `use_board_level_matcher` below): it is robust on partial /
-            // blurry views where the legacy rotation+translation vote needs
-            // many markers, so it takes board-appropriate low inlier floors
-            // (1 primary / 1 secondary, gated by `alignment_min_margin`).
-            // The legacy fallback wants the higher 8 / 2 floors; callers
-            // opting into it should raise these.
+            // The board-level soft-LL matcher is its own inlier gate (it
+            // accepts/rejects on the margin gate), so it is robust on partial /
+            // blurry views and takes board-appropriate low inlier floors
+            // (1 primary / 1 secondary).
             min_marker_inliers: 1,
             min_secondary_marker_inliers: 1,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
-            // Default to the board-level soft-LL matcher: across the internal
-            // regression sets it reaches full recall with zero
-            // self-consistency wrong-ids, vs the legacy vote matcher's lower
-            // recall and higher wrong-id noise. The legacy matcher stays a
-            // documented opt-in (`use_board_level_matcher = false`).
-            use_board_level_matcher: true,
             bit_likelihood_slope: default_bit_likelihood_slope(),
             per_bit_floor: default_per_bit_floor(),
             alignment_min_margin: default_alignment_min_margin(),

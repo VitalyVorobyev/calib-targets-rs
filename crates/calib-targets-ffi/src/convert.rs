@@ -527,8 +527,6 @@ pub(crate) fn convert_charuco_detector_params(
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
-    out.max_hamming = u8::try_from(params.max_hamming)
-        .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?;
     out.min_marker_inliers = params.min_marker_inliers;
     out.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
     out.corner_validation_threshold_rel = corner_validation_threshold_rel;

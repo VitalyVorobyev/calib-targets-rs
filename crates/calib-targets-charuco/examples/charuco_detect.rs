@@ -153,8 +153,8 @@ fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
 
 fn log_detector_params(params: &CharucoParams) {
     debug!(
-        "Detector params: px_per_square={:.1}, min_marker_inliers={}, max_hamming={}",
-        params.px_per_square, params.min_marker_inliers, params.max_hamming
+        "Detector params: px_per_square={:.1}, min_marker_inliers={}",
+        params.px_per_square, params.min_marker_inliers
     );
     let chessboard_tuning = params.chessboard.effective_tuning();
     debug!(

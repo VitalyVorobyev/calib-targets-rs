@@ -89,7 +89,7 @@ board = ct.CharucoBoardSpec(
 params = ct.CharucoParams(
     board=board, px_per_square=60.0,
     chessboard=ct.ChessboardParams(),
-    max_hamming=2, min_marker_inliers=4,
+    min_marker_inliers=4,
 )
 result = ct.detect_charuco(image, params=params)   # raises on failure
 print(len(result.corners), "corners,", len(result.markers), "markers")
