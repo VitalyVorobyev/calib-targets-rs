@@ -16,8 +16,9 @@ use crate::code_maps::{
 };
 
 use super::{
-    ll_pair, transform_edge_lookup, update_best_and_runner_up, DecodeOutcome, SoftLlConfig, H_COLS,
-    H_ROWS, V_COLS, V_ROWS,
+    apply_soft_uniqueness_gate, decode_fixed_board_with_runner_up, decode_with_runner_up, ll_pair,
+    transform_edge_lookup, update_best_and_runner_up, DecodeOutcome, SoftLlConfig, H_COLS, H_ROWS,
+    V_COLS, V_ROWS,
 };
 
 /// Finalize the winning hypothesis: populate `score_runner_up`,
@@ -231,7 +232,31 @@ pub(crate) fn decode_soft(
         }
     }
 
-    finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)
+    let winner = finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)?;
+    // Re-gate the soft winner by the matched-count uniqueness predicate. The
+    // soft-LL `alignment_min_margin` gate does not enforce origin uniqueness;
+    // the matched-count top-2 over the full master (the same candidate set the
+    // soft winner was drawn from) supplies the competitor.
+    //
+    // TODO(perf): this runs a second full O(8·501·N) precompute + crossed-CRT
+    // top-2 over the same observations the soft scan already processed. The soft
+    // scan already builds per-transform `h_match`/`v_match` count tables; the
+    // matched-count top-2 could be computed inline from those (reusing the hard
+    // `lex_max_classes` + cross-transform assembly) to avoid the second pass.
+    // Kept as a separate call here for a correct, obviously-equivalent gate; the
+    // decode runs in the low-ms range, so the doubling is acceptable until the
+    // PuzzleBoard decode shows up on a hot path.
+    let (hard_winner, best_matched, runner) = decode_with_runner_up(observed, max_bit_error_rate)?;
+    apply_soft_uniqueness_gate(
+        winner,
+        (
+            best_matched,
+            hard_winner.master_origin_row,
+            hard_winner.master_origin_col,
+            hard_winner.alignment.transform,
+            runner,
+        ),
+    )
 }
 
 /// Borrowed view over the six per-transform soft precompute tables.
@@ -467,5 +492,25 @@ pub(crate) fn decode_fixed_board_soft(
         }
     }
 
-    finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)
+    let winner = finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)?;
+    // Re-gate by matched-count uniqueness over the *fixed-board* candidate set
+    // (the declared board's shift scan), mirroring the full-master soft path.
+    let (hard_winner, best_matched, runner) = decode_fixed_board_with_runner_up(
+        observed,
+        spec_origin_row,
+        spec_origin_col,
+        rows,
+        cols,
+        max_bit_error_rate,
+    )?;
+    apply_soft_uniqueness_gate(
+        winner,
+        (
+            best_matched,
+            hard_winner.master_origin_row,
+            hard_winner.master_origin_col,
+            hard_winner.alignment.transform,
+            runner,
+        ),
+    )
 }

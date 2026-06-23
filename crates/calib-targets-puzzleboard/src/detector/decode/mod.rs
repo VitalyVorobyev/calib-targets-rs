@@ -46,7 +46,9 @@ mod soft;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use hard::{decode, decode_fixed_board};
+pub(crate) use hard::{
+    decode, decode_fixed_board, decode_fixed_board_with_runner_up, decode_with_runner_up,
+};
 pub(crate) use soft::{decode_fixed_board_soft, decode_soft};
 
 /// Cyclic-period sizes for the precompute tables.
@@ -81,6 +83,202 @@ fn crt_master_col(hb: usize, vb: usize) -> i32 {
 
 const MASTER_ROWS_I32: i32 = crate::board::MASTER_ROWS as i32;
 const MASTER_COLS_I32: i32 = crate::board::MASTER_COLS as i32;
+
+/// The parameter-free uniqueness predicate, shared by the hard and soft paths.
+///
+/// Accept iff `margin > k_winner`, where `margin = best_matched −
+/// runner_up_matched` and `k_winner = edges_observed − best_matched` (the
+/// winner's own mismatch count). Equivalently, the winner's net score
+/// (`matched − mismatched`) must strictly exceed the runner-up's matched count:
+/// `2·best_matched − runner_up_matched > edges_observed`.
+///
+/// `best_matched` is the winning origin's matched-bit count; `runner_up_matched`
+/// is the highest matched-bit count of any *distinct* competing origin (across
+/// all D4 transforms). `margin` is computed with saturating subtraction, so when
+/// a distinct origin out-matches the winner (`runner_up_matched ≥ best_matched`,
+/// which can happen when the soft-LL winner is not the maximum-matched origin)
+/// the margin is `0` and the decode is correctly rejected.
+///
+/// **Why this and not a `C·√N` magnitude threshold:** the master edge code has
+/// minimum Hamming distance `d(w)` that grows ~quadratically with window size
+/// but is only `1` at the `4×4` minimum window (zero error-correction). A
+/// magnitude threshold either rejects clean small *unique* patches (margin `1`,
+/// `k_winner = 0`) or accepts corrupted small *alias* patches (a 1-bit-corrupted
+/// `4×4` is frequently a perfect read of a *different* master location:
+/// `best_matched = N`, `k_winner = 0`, `margin = 1`, but wrong). `margin >
+/// k_winner` rejects the alias case (the perfect alias still only beats the true
+/// origin by `1`, while `k_winner = 0` demands the winner be *strictly* perfect
+/// *and* uniquely so) — but because `d(4) = 1`, no acceptance test can make the
+/// `4×4` window safe under noise, so the pipeline pairs this gate with a
+/// `min_window` sized to the code's distance for the BER budget (bounded-distance
+/// decoding). At those window sizes a worst-case guarantee is unachievable
+/// (`d` would need to exceed `2·⌊BER·N⌋ ≈ 0.8N`, far above the ~`N/4` the code
+/// provides), so safety is empirical-with-defense-in-depth: `min_window` keeps
+/// random corruption below the aliasing regime, and this gate catches the
+/// residual near-aliases.
+#[inline]
+fn passes_uniqueness_gate(
+    edges_observed: usize,
+    best_matched: u32,
+    runner_up_matched: u32,
+) -> bool {
+    let margin = best_matched.saturating_sub(runner_up_matched);
+    let k_winner = (edges_observed as u32).saturating_sub(best_matched);
+    margin > k_winner
+}
+
+/// Apply the parameter-free uniqueness gate to a hard-path winner.
+///
+/// `best_matched` is the winning origin's matched-bit count; `runner_up_matched`
+/// is the highest matched-bit count of any *distinct* competing origin (across
+/// all D4 transforms — D4-equivalent labelings of a fragment too small to break
+/// the symmetry legitimately compete here).
+///
+/// **Criterion (no magic constant):** accept iff
+///
+/// ```text
+///   margin > k_winner
+/// ```
+///
+/// where `margin = best_matched − runner_up_matched` and `k_winner =
+/// edges_observed − best_matched` is the winner's own mismatch count.
+/// Equivalently `2·best_matched − runner_up_matched > edges_observed`: the
+/// winner's *net* score (matched − mismatched) must strictly beat the
+/// runner-up's matched count.
+///
+/// The decode is trustworthy only when the best hypothesis is strictly closer
+/// to a *perfect* read than to its nearest competitor. This separates two
+/// distinct failure modes that a single-magnitude margin threshold conflates:
+///
+/// - A **clean exact** read (`k_winner = 0`) passes at any `margin ≥ 1`, so the
+///   board's exact-uniqueness design is honored at *any* fragment size down to
+///   the pipeline's `min_window` — even a 4×4 patch, whose true origin out-votes
+///   every alias by ≥1 bit, decodes.
+/// - A **noisy-ambiguous** read fails: when the observation is corrupted enough
+///   that a wrong origin matches nearly as many bits (`margin` small) *and* the
+///   winner itself mismatches many bits (`k_winner` large), the winner is not
+///   meaningfully closer to a perfect read than the competitor, and the decode
+///   declines (a miss). The witnessed false positive — a heavily distorted board
+///   where `margin = 0` while `k_winner` is large — is rejected here.
+///
+/// Rejection returns `None`, exactly like a BER-gate failure — a miss, never a
+/// wrong label; the detection contract forbids wrong labels far more strongly
+/// than misses. On acceptance the runner-up diagnostic fields are populated and
+/// `score_margin` carries the integer bit margin (`best_matched −
+/// runner_up_matched`) as `f32`; the winner's own origin / weighted score are
+/// left untouched.
+///
+/// The gate is mode-independent — it is a property of `(observed bits, winning
+/// origin)`, not of how the winner was scored — so the soft-LL path applies the
+/// identical predicate via [`passes_uniqueness_gate`] over its own
+/// matched-count runner-up (the soft `alignment_min_margin` score-gap does *not*
+/// enforce origin uniqueness; measured to false-accept at every window size).
+fn finalize_hard_winner(
+    mut winner: DecodeOutcome,
+    best_matched: u32,
+    runner_up: Option<HardRunnerUp>,
+) -> Option<DecodeOutcome> {
+    let runner_up_matched = runner_up.as_ref().map_or(0, |r| r.matched);
+    if !passes_uniqueness_gate(winner.edges_observed, best_matched, runner_up_matched) {
+        return None;
+    }
+    let margin = best_matched.saturating_sub(runner_up_matched);
+    match runner_up {
+        Some(r) => {
+            winner.score_runner_up = Some(r.matched as f32);
+            winner.score_margin = margin as f32;
+            winner.runner_up_origin_row = Some(r.master_row);
+            winner.runner_up_origin_col = Some(r.master_col);
+            winner.runner_up_transform = Some(r.transform);
+        }
+        None => {
+            // No competing origin at all (degenerate: a single observation, or
+            // a master with a unique total match). Margin is the full count.
+            winner.score_runner_up = None;
+            winner.score_margin = margin as f32;
+            winner.runner_up_origin_row = None;
+            winner.runner_up_origin_col = None;
+            winner.runner_up_transform = None;
+        }
+    }
+    Some(winner)
+}
+
+/// The closest competing origin to a hard-path winner: its matched-bit count
+/// and the master origin / transform that realizes it. Used to populate the
+/// winner's runner-up diagnostic fields and drive the uniqueness gate.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HardRunnerUp {
+    pub matched: u32,
+    pub master_row: i32,
+    pub master_col: i32,
+    pub transform: GridTransform,
+}
+
+/// Apply the matched-count uniqueness gate to a *soft-LL* winner.
+///
+/// The soft scorer ranks by summed log-likelihood, whose `alignment_min_margin`
+/// gate does **not** enforce origin uniqueness — measured to false-accept a
+/// wrong physical origin at every window size. This re-gates the soft winner by
+/// the same matched-count predicate the hard path uses ([`passes_uniqueness_gate`]).
+///
+/// `matched_top2` is the global matched-count top-2 over the *same* candidate
+/// set the soft winner was drawn from (full master or fixed-board shifts): the
+/// maximum-matched origin (with its identity and matched count) and the closest
+/// distinct competitor. The competitor count for the soft winner is:
+///
+/// - `runner.matched` when the soft winner *is* the maximum-matched origin, or
+/// - `best_matched` (the maximum) otherwise — a distinct origin out-matches the
+///   soft winner, which saturates the margin to `0` and rejects (correct: the
+///   soft winner is not even the best-supported origin).
+///
+/// On acceptance, the soft winner's runner-up diagnostic fields are overwritten
+/// with the matched-count competitor (so consumers see the uniqueness margin,
+/// not the soft-score gap), and `score_best` / `weighted_score` (the soft score)
+/// are preserved.
+fn apply_soft_uniqueness_gate(
+    mut winner: DecodeOutcome,
+    matched_top2: (u32, i32, i32, GridTransform, Option<HardRunnerUp>),
+) -> Option<DecodeOutcome> {
+    let (best_matched, best_row, best_col, best_transform, runner) = matched_top2;
+    let soft_matched = winner.edges_matched as u32;
+    let soft_is_global_best = winner.master_origin_row == best_row
+        && winner.master_origin_col == best_col
+        && winner.alignment.transform == best_transform;
+    let (competitor_matched, competitor) = if soft_is_global_best {
+        (runner.map_or(0, |r| r.matched), runner)
+    } else {
+        (
+            best_matched,
+            Some(HardRunnerUp {
+                matched: best_matched,
+                master_row: best_row,
+                master_col: best_col,
+                transform: best_transform,
+            }),
+        )
+    };
+    if !passes_uniqueness_gate(winner.edges_observed, soft_matched, competitor_matched) {
+        return None;
+    }
+    // Surface the matched-count uniqueness margin in the runner-up diagnostics
+    // (overwriting the soft-score-gap runner-up populated by the LL finalizer).
+    match competitor {
+        Some(c) => {
+            winner.score_runner_up = Some(c.matched as f32);
+            winner.runner_up_origin_row = Some(c.master_row);
+            winner.runner_up_origin_col = Some(c.master_col);
+            winner.runner_up_transform = Some(c.transform);
+        }
+        None => {
+            winner.score_runner_up = None;
+            winner.runner_up_origin_row = None;
+            winner.runner_up_origin_col = None;
+            winner.runner_up_transform = None;
+        }
+    }
+    Some(winner)
+}
 
 /// Tuning knobs for the soft-log-likelihood scorer. See [`soft::decode_soft`].
 #[derive(Clone, Copy, Debug)]
@@ -119,7 +317,11 @@ pub(crate) struct DecodeOutcome {
     pub runner_up_transform: Option<GridTransform>,
 }
 
-fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutcome) {
+/// Rank `candidate` against the current `best`, replacing it on a win.
+///
+/// Returns `true` when `candidate` became the new best (caller uses this to
+/// track which transform owns the winner for the uniqueness runner-up).
+fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutcome) -> bool {
     // Rank lexicographically by (edges_matched, weighted_score): a candidate
     // with strictly more matched bits always wins regardless of per-bit
     // confidence; weighted_score only breaks ties on equal match count.
@@ -134,6 +336,7 @@ fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutc
     if wins {
         *best = Some(candidate);
     }
+    wins
 }
 
 /// Per-observation `(ll_match, ll_mismatch)` contributions under the

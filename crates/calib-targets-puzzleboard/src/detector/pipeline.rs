@@ -8,7 +8,7 @@ use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner, TargetDetecti
 use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
-use crate::code_maps::PuzzleBoardObservedEdge;
+use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 use crate::detector::decode::{
     decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, SoftLlConfig,
 };
@@ -248,6 +248,31 @@ impl PuzzleBoardDetector {
             .collect();
         if let Err(e) = ensure_min_edges(filtered.len(), min_edges) {
             return Err((e, diagnostics_on_fail(&observed)));
+        }
+
+        // Limiting-dimension (bounded-distance) guard, applied to the
+        // *post-confidence-filter* observation set — the window the decoder
+        // actually decodes. The edge-count floor assumes a roughly-square window;
+        // a wide-but-short strip can meet it yet still alias because its thin axis
+        // carries too little code distance (measured: a 3-corner-tall strip at the
+        // 84-edge floor false-accepts at a low rate, while every window spanning
+        // ≥ `min_window` corners on both axes is empirically alias-free). A
+        // component that is wide overall can also collapse to a thin strip *after*
+        // the `min_bit_confidence` filter drops its low-confidence edges, so the
+        // span must be measured on `filtered`, not on the full labelled set.
+        // Require both corner spans ≥ `min_window`.
+        if let Some((span_i, span_j)) = observed_corner_span(&filtered) {
+            let need = self.params.decode.min_window;
+            if span_i < need || span_j < need {
+                return Err((
+                    PuzzleBoardDetectError::WindowTooThin {
+                        span_i,
+                        span_j,
+                        needed: need,
+                    },
+                    diagnostics_on_fail(&observed),
+                ));
+            }
         }
 
         let max_err = self.params.decode.max_bit_error_rate;
@@ -612,6 +637,41 @@ fn is_better_component_decode(
     }
 }
 
+/// Corner-grid span `(span_col, span_row)` actually covered by an observed-edge
+/// set, where each span is `max − min + 1` over the corner intersections the
+/// edges reference. An edge anchored at local `(col, row)` references the corner
+/// `(col, row)` plus its far endpoint — `(col + 1, row)` for a horizontal edge,
+/// `(col, row + 1)` for a vertical one. `None` for an empty set.
+///
+/// This must be computed on the set the decoder actually decodes (the
+/// post-confidence-filter observations), not the full labelled corner set: a
+/// component that is wide overall can collapse to a long thin high-confidence
+/// strip after the `min_bit_confidence` filter, and that strip is the window
+/// whose code distance the bounded-distance guard governs.
+fn observed_corner_span(edges: &[PuzzleBoardObservedEdge]) -> Option<(u32, u32)> {
+    let mut min_col = i32::MAX;
+    let mut max_col = i32::MIN;
+    let mut min_row = i32::MAX;
+    let mut max_row = i32::MIN;
+    for e in edges {
+        let (far_col, far_row) = match e.orientation {
+            EdgeOrientation::Horizontal => (e.col + 1, e.row),
+            EdgeOrientation::Vertical => (e.col, e.row + 1),
+        };
+        min_col = min_col.min(e.col).min(far_col);
+        max_col = max_col.max(e.col).max(far_col);
+        min_row = min_row.min(e.row).min(far_row);
+        max_row = max_row.max(e.row).max(far_row);
+    }
+    if edges.is_empty() {
+        return None;
+    }
+    Some((
+        (max_col - min_col + 1) as u32,
+        (max_row - min_row + 1) as u32,
+    ))
+}
+
 /// Extract the soft-LL knobs from a decode config into the decoder-level
 /// [`SoftLlConfig`] structure.
 fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
@@ -625,7 +685,229 @@ fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::board::{MASTER_COLS, MASTER_ROWS};
+    use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit};
     use calib_targets_core::GridAlignment;
+
+    /// Tiny seeded LCG (no external `rand`); shared by the guard regressions.
+    struct Lcg(u64);
+    impl Lcg {
+        fn new(seed: u64) -> Self {
+            Lcg(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1))
+        }
+        fn next_u32(&mut self) -> u32 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 32) as u32
+        }
+        fn below(&mut self, n: u32) -> u32 {
+            if n == 0 {
+                0
+            } else {
+                self.next_u32() % n
+            }
+        }
+    }
+
+    /// Build a `local_rows × local_cols` window of correct edges at the given
+    /// master origin. Edges whose anchor row is outside `[0, strip_rows)` get
+    /// `off_conf`; in-strip edges get confidence 1.0.
+    fn window_with_confidence_strip(
+        pos_row: i32,
+        pos_col: i32,
+        local_rows: i32,
+        local_cols: i32,
+        strip_rows: i32,
+        off_conf: f32,
+    ) -> Vec<PuzzleBoardObservedEdge> {
+        let mut out = Vec::new();
+        for r in 0..local_rows {
+            for c in 0..local_cols {
+                let conf = if r < strip_rows { 1.0 } else { off_conf };
+                if c + 1 < local_cols {
+                    out.push(PuzzleBoardObservedEdge {
+                        row: r,
+                        col: c,
+                        orientation: EdgeOrientation::Horizontal,
+                        bit: horizontal_edge_bit(pos_row + r - 1, pos_col + c),
+                        confidence: conf,
+                    });
+                }
+                if r + 1 < local_rows {
+                    out.push(PuzzleBoardObservedEdge {
+                        row: r,
+                        col: c,
+                        orientation: EdgeOrientation::Vertical,
+                        bit: vertical_edge_bit(pos_row + r, pos_col + c - 1),
+                        confidence: conf,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn wrong_corners(
+        out: &crate::detector::decode::DecodeOutcome,
+        pr: i32,
+        pc: i32,
+        rows: i32,
+        cols: i32,
+    ) -> usize {
+        let mut wrong = 0;
+        for gi in 0..cols {
+            for gj in 0..rows {
+                let g = out.alignment.map(gi, gj);
+                let mi = g.i.rem_euclid(MASTER_COLS as i32);
+                let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+                let ti = (pc + gi).rem_euclid(MASTER_COLS as i32);
+                let tj = (pr + gj).rem_euclid(MASTER_ROWS as i32);
+                if (mi, mj) != (ti, tj) {
+                    wrong += 1;
+                }
+            }
+        }
+        wrong
+    }
+
+    /// `observed_corner_span` measures the corner bbox, including each edge's far
+    /// endpoint (`col+1` for H, `row+1` for V).
+    #[test]
+    fn observed_corner_span_counts_far_endpoint() {
+        // A single horizontal edge at (col=4, row=2) spans corners (4,2)-(5,2).
+        let h = vec![PuzzleBoardObservedEdge {
+            row: 2,
+            col: 4,
+            orientation: EdgeOrientation::Horizontal,
+            bit: 0,
+            confidence: 1.0,
+        }];
+        assert_eq!(observed_corner_span(&h), Some((2, 1)));
+        // A single vertical edge spans (4,2)-(4,3).
+        let v = vec![PuzzleBoardObservedEdge {
+            row: 2,
+            col: 4,
+            orientation: EdgeOrientation::Vertical,
+            bit: 0,
+            confidence: 1.0,
+        }];
+        assert_eq!(observed_corner_span(&v), Some((1, 2)));
+        assert_eq!(observed_corner_span(&[]), None);
+    }
+
+    /// Regression for the post-filter thin-window hole: a window that is wide
+    /// overall but whose *surviving* high-confidence edges (after the
+    /// `min_bit_confidence` filter) form a thin strip must be measured on the
+    /// FILTERED set — the span must reflect the strip, not the wide pre-filter
+    /// extent. (The guard itself lives in `decode_component`, gated on
+    /// `observed_corner_span(&filtered)`.)
+    #[test]
+    fn post_filter_span_reflects_surviving_strip() {
+        let min_conf = 0.15f32;
+        let edges = window_with_confidence_strip(5, 7, 12, 12, 3, 0.0);
+        let pre = observed_corner_span(&edges).unwrap();
+        assert!(
+            pre.0 >= 7 && pre.1 >= 7,
+            "pre-filter span {pre:?} is wide on both axes"
+        );
+        let filtered: Vec<_> = edges
+            .iter()
+            .copied()
+            .filter(|e| e.confidence >= min_conf)
+            .collect();
+        let post = observed_corner_span(&filtered).unwrap();
+        assert!(
+            post.1 < 7,
+            "post-filter corner-row span {} must be thin (< min_window) so the guard fires",
+            post.1
+        );
+    }
+
+    /// The guard is load-bearing AND sufficient: the decoder DOES false-accept a
+    /// confidence-induced thin strip when handed it directly, and the
+    /// limiting-dimension span check rejects every such strip — so zero wrong
+    /// decodes slip past. Sweeps corrupted 3-corner-row strips.
+    #[test]
+    fn post_filter_thin_strip_guard_blocks_false_accepts() {
+        let min_window = 7u32;
+        let trials = 60_000usize;
+        let mut rng = Lcg::new(0xC0DE_F11E);
+        let mut decoder_fa_without_guard = 0usize;
+        let mut fa_past_guard = 0usize;
+        let mut guard_rejected = 0usize;
+        for _ in 0..trials {
+            let pr = rng.below(MASTER_ROWS) as i32;
+            let pc = rng.below(MASTER_COLS) as i32;
+            let mut strip = window_with_confidence_strip(pr, pc, 3, 12, 3, 1.0);
+            let n = strip.len();
+            let kmax = (0.40 * n as f32).floor() as usize;
+            let k = rng.below((kmax + 1) as u32) as usize;
+            let mut idxs: Vec<usize> = (0..n).collect();
+            for i in 0..k.min(n) {
+                let j = i + (rng.below((n - i) as u32) as usize);
+                idxs.swap(i, j);
+                strip[idxs[i]].bit ^= 1;
+            }
+            let span = observed_corner_span(&strip).unwrap();
+            let guard_rejects = span.0 < min_window || span.1 < min_window;
+            if guard_rejects {
+                guard_rejected += 1;
+            }
+            if let Some(out) = run_decode(&strip, 0.40) {
+                if wrong_corners(&out, pr, pc, 3, 12) > 0 {
+                    decoder_fa_without_guard += 1;
+                    if !guard_rejects {
+                        fa_past_guard += 1;
+                    }
+                }
+            }
+        }
+        // Every 3-corner-row strip has row-span 3 < 7 → the guard rejects all.
+        assert_eq!(guard_rejected, trials, "guard must reject every thin strip");
+        // The hole was real: the decoder false-accepts these strips without it.
+        assert!(
+            decoder_fa_without_guard > 0,
+            "decoder should false-accept thin strips without the guard (got 0 — test not exercising the hole)"
+        );
+        // ...and zero slip past the guard.
+        assert_eq!(
+            fa_past_guard, 0,
+            "no wrong decode may pass the post-filter guard"
+        );
+    }
+
+    /// A legitimate full board with *scattered* low-confidence drops still spans
+    /// ≥ `min_window` on both axes after filtering, so the guard must NOT fire
+    /// (no spurious rejection).
+    #[test]
+    fn scattered_lowconf_does_not_trip_guard() {
+        let min_conf = 0.15f32;
+        let min_window = 7u32;
+        let mut rng = Lcg::new(0x5CA7_7E12);
+        for _ in 0..3000 {
+            let mut edges = window_with_confidence_strip(3, 4, 9, 9, 9, 1.0);
+            for e in edges.iter_mut() {
+                if rng.below(100) < 30 {
+                    e.confidence = 0.05;
+                }
+            }
+            let filtered: Vec<_> = edges
+                .iter()
+                .copied()
+                .filter(|e| e.confidence >= min_conf)
+                .collect();
+            if filtered.is_empty() {
+                continue;
+            }
+            let span = observed_corner_span(&filtered).unwrap();
+            assert!(
+                span.0 >= min_window && span.1 >= min_window,
+                "scattered low-confidence drops wrongly thinned the window to {span:?}"
+            );
+        }
+    }
 
     /// Build a `ComponentDecode` whose result summary and diagnostics carry
     /// the values `is_better_component_decode` reads. `detection`/`alignment`

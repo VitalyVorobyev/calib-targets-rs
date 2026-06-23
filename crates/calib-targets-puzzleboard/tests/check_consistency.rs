@@ -49,14 +49,18 @@ fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8
 /// hypothesis set under a square lattice without rejecting anything.
 #[test]
 fn puzzleboard_corners_pass_check_consistency_square_lattice() {
-    // 1) Render a small synthetic puzzleboard. Small dimensions are
-    //    enough to exercise the contract; we don't need a large board
-    //    to test the conversion + fit shape.
-    let spec = PuzzleBoardTargetSpec::new(8, 8, 12.0);
+    // 1) Render a synthetic puzzleboard. The board must be large enough that the
+    //    detector's decodable interior window clears the bounded-distance floor
+    //    (`min_window = 7` → 84 interior edges; Gap 19): the ChESS detector drops
+    //    the outermost corner ring, so a board of `w×w` squares yields roughly a
+    //    `(w-2)×(w-2)` decodable corner grid. A 10×10 board leaves an ~8×8
+    //    interior, comfortably above the 7×7 floor, while still being small
+    //    enough to exercise the conversion + fit shape.
+    let spec = PuzzleBoardTargetSpec::new(10, 10, 12.0);
     let mut doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(spec.clone()));
     doc.page.size = PageSize::Custom {
-        width_mm: 160.0,
-        height_mm: 160.0,
+        width_mm: 200.0,
+        height_mm: 200.0,
     };
     doc.page.margin_mm = 5.0;
     doc.render.png_dpi = 300;

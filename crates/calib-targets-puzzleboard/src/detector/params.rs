@@ -71,8 +71,16 @@ pub enum PuzzleBoardScoringMode {
 pub struct PuzzleBoardDecodeConfig {
     /// Minimum window size (in squares) required to attempt a decode.
     ///
-    /// The paper guarantees 3×3 = 99.33 % unique and 4×4 = 100 % unique.
-    /// Default is 4 for calibration use.
+    /// The paper's "4×4 = 100 % unique" holds only for a *noise-free* read: the
+    /// master edge code has minimum Hamming distance `1` at a 4×4 window (zero
+    /// error-correction), so a single corrupted bit can turn a corrupted 4×4
+    /// fragment into a perfect read of a *different* master location — a false
+    /// positive. The code's minimum distance grows with window size; an empirical
+    /// 300k-trial sweep (random origins × error patterns up to the BER budget)
+    /// finds the smallest window with zero false-accepts under the uniqueness
+    /// gate to be **7×7 (84 interior edges)** at both 30 % and 40 % BER. The
+    /// default is therefore 7 (bounded-distance decoding); smaller boards become
+    /// correct detection *misses* rather than risk a wrong absolute label.
     #[serde(default = "default_min_window")]
     pub min_window: u32,
     /// Per-bit confidence floor — bits below this are treated as unknown.
@@ -136,7 +144,10 @@ pub struct PuzzleBoardDecodeConfig {
 }
 
 fn default_min_window() -> u32 {
-    4
+    // 7×7 (84 interior edges) — the smallest window the master code can decode
+    // with zero empirical false-accepts under the uniqueness gate at ≤40 % BER
+    // (bounded-distance decoding; see `min_window` field docs and Gap 19).
+    7
 }
 fn default_min_bit_confidence() -> f32 {
     0.15
