@@ -10,11 +10,11 @@ use std::collections::HashSet;
 use nalgebra::{Matrix3, Point2, Projective2, Vector3};
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, GridError, LatticeKind,
-    LocalAxis, OrientedFeature, PointFeature, RejectionReason, SquareAlgorithm,
+    LocalAxis, OrientedFeature, PointFeature, RejectionReason,
 };
 
 fn topological_params() -> DetectionParams {
-    DetectionParams::default().with_algorithm(SquareAlgorithm::Topological)
+    DetectionParams::default()
 }
 
 fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
@@ -222,7 +222,6 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
         // far end of the perspective doesn't trip the upper bound.
         .with_edge_length_max_rel(3.5);
     let params = DetectionParams::default()
-        .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)
         // Bump the residual threshold: the projective fit is global
         // and the warped 5×5 corners spread residuals out.

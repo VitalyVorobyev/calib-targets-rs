@@ -72,18 +72,17 @@ that downstream consumers read uniformly.
 The strategy recovers the **full** pattern with zero wrong labels — there is no
 "denser" quality. Detection is binary per pattern.
 
-`SquareAlgorithm` is a single-variant `#[non_exhaustive]` enum (only
-`Topological`), kept as a reserved seam so a future alternative builder can be
-added without a breaking change. The historical **SeedAndGrow** strategy — a
-self-consistent 4-corner seed plus BFS predict-and-attach with fill / extend
-boosters — was retired once the topological builder matched or beat it on every
-shipping path, including the marker-bit-heavy ChArUco scenes it was once kept
-for. ChArUco's old marker-bit fragility (ChESS corners *inside* marker bits
-whose axes lock to the marker, not the grid) is now handled with a
-`min_corner_strength` floor that keeps the topological grid out of the marker
-interior; see `crates/calib-targets-charuco/docs/PIPELINE.md`. SeedAndGrow's
-geometry-only recovery schedule (`RecoverySchedule`) outlived the strategy and
-now powers the topological synthesized-axis path (see `ORIENTATION.md`).
+Topological is the sole grid builder; there is no algorithm choice in the
+request. The historical **SeedAndGrow** strategy — a self-consistent 4-corner
+seed plus BFS predict-and-attach with fill / extend boosters — was retired once
+the topological builder matched or beat it on every shipping path, including the
+marker-bit-heavy ChArUco scenes it was once kept for. ChArUco's old marker-bit
+fragility (ChESS corners *inside* marker bits whose axes lock to the marker, not
+the grid) is now handled with a `min_corner_strength` floor that keeps the
+topological grid out of the marker interior; see
+`crates/calib-targets-charuco/docs/PIPELINE.md`. SeedAndGrow's geometry-only
+recovery schedule (`RecoverySchedule`) outlived the strategy and now powers the
+topological synthesized-axis path (see `ORIENTATION.md`).
 
 ### Axis 3 — input-feature kind
 
@@ -195,8 +194,8 @@ src/
     mod.rs · merge.rs (D4/D6) · validate/ · fit.rs (fit is pub(crate))
     grow/ (mod·params·predict — SquareAttachPolicy contract) · grow_extend.rs
     extension/ · fill.rs · recovery.rs · positions_policy.rs (private) · angle.rs
-  detect.rs         facade: detect_grid / detect_grid_all, DetectionParams,
-                    SquareAlgorithm; routes Evidence kind → synthesis + strategy;
+  detect.rs         facade: detect_grid / detect_grid_all, DetectionParams;
+                    routes Evidence kind → synthesis + topological strategy;
                     runs strategy.build_components → shared merge/validate/fit
   check/            consistency check (caller-supplied hypotheses)
 ```

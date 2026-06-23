@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, OrientedFeature,
-    PointFeature, SquareAlgorithm, D6_TRANSFORMS,
+    PointFeature, D6_TRANSFORMS,
 };
 
 /// Axial hex node `(q, r)` model position with unit nearest-neighbour spacing.
@@ -68,7 +68,7 @@ fn request(features: &[PointFeature]) -> DetectionRequest<'_> {
         LatticeKind::Hex,
         Evidence::Positions(features),
         None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     )
 }
 
@@ -271,7 +271,7 @@ fn hex_oriented3_native_path() {
         LatticeKind::Hex,
         Evidence::Oriented3(&feats),
         None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
     let sol = detect_grid(req).expect("hex Oriented3 native");
     assert!(sol.grid.entries.len() >= 12);
@@ -349,7 +349,7 @@ fn hex_oriented1_and_oriented2_unsupported() {
         LatticeKind::Hex,
         Evidence::Oriented1(&o1),
         None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
     assert!(matches!(
         detect_grid(req1),
@@ -372,7 +372,7 @@ fn hex_oriented1_and_oriented2_unsupported() {
         LatticeKind::Hex,
         Evidence::Oriented2(&o2),
         None,
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
     assert!(matches!(
         detect_grid(req2),

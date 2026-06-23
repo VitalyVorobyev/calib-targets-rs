@@ -278,9 +278,12 @@ mod tests {
                 row("testdata/small0.png", 100),
             ],
         );
-        // Synthetic second-builder slug — AlgorithmReq/SquareAlgorithm reserve a seam for a future alternative builder; this exercises multi-algorithm aggregation.
+        // The B report carries a distinct algorithm-segment slug so the join
+        // produces a separately-labelled second row per family. Any two
+        // `bench run` reports with different `config_id` slugs aggregate this
+        // way; the slug here is a test fixture, not a shipping config.
         let b = report(
-            "pipeline.alt_builder.ring_fit.chess_axes",
+            "pipeline.builder_b.ring_fit.chess_axes",
             vec![
                 row("testdata/mid.png", 70),
                 row("testdata/large.png", 280),
@@ -303,7 +306,7 @@ mod tests {
         let charuco_b = cmp
             .rows
             .iter()
-            .find(|r| r.family == "charuco" && r.algorithm == "alt_builder")
+            .find(|r| r.family == "charuco" && r.algorithm == "builder_b")
             .unwrap();
         assert_eq!(charuco_b.snaps, 2);
         assert_eq!(charuco_b.zero_detection_snaps, 1);

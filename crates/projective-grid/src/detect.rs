@@ -28,31 +28,6 @@ pub use crate::shared::recovery_schedule::{RecoveryParams, RecoverySchedule};
 pub use crate::shared::validate::ValidationParams as ValidateParams;
 pub use crate::topological::TopologicalParams;
 
-/// Algorithm selector for `(LatticeKind::Square, Evidence::Oriented2)`.
-///
-/// The square grid is assembled by the [`Topological`](Self::Topological)
-/// axis-driven grid finder (the Shu/Brunton/Fiala 2009 image-free variant:
-/// Delaunay triangulation + axis-driven cell test + flood-fill + validate +
-/// fit). It is the only square assembler.
-///
-/// The enum is retained as a single-variant, `#[non_exhaustive]` type so the
-/// public request shape (`detect_grid` / `detect_grid_all` /
-/// [`DetectionParams::algorithm`]) stays stable across the seed-and-grow
-/// retirement and a future alternative builder can be added without a breaking
-/// change. The historical `SeedAndGrow` variant — a self-consistent 4-corner
-/// seed plus BFS grow — was removed once the topological builder matched or
-/// beat it on every shipping path. Its geometry-only recovery schedule
-/// ([`RecoverySchedule`]) survives the retirement and now powers the
-/// topological synthesized-axis path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-#[non_exhaustive]
-pub enum SquareAlgorithm {
-    /// Axis-driven topological grid finder + shared validate + fit; the only
-    /// square assembler.
-    #[default]
-    Topological,
-}
-
 /// Evidence supplied to a detection task.
 #[derive(Clone, Copy, Debug)]
 #[non_exhaustive]
@@ -105,10 +80,7 @@ impl Evidence<'_> {
 ///
 /// The single `max_residual_px` knob from the Phase-A shell sits alongside the
 /// topological assembler's sub-config, the shared post-detection validation
-/// tuning, and the post-recovery schedule. The
-/// [`algorithm`](Self::algorithm) selector is retained for request-shape
-/// stability; it currently has a single value
-/// ([`SquareAlgorithm::Topological`]).
+/// tuning, and the post-recovery schedule.
 ///
 /// The sub-config types (`TopologicalParams`, `ValidateParams`,
 /// `RecoveryParams`) include advanced-engine configs that do not implement
@@ -118,10 +90,6 @@ impl Evidence<'_> {
 pub struct DetectionParams {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
     pub max_residual_px: f32,
-    /// Algorithm picker for `(Square, Oriented2)`. Defaults to
-    /// [`SquareAlgorithm::Topological`] (the only square assembler); retained
-    /// for request-shape stability.
-    pub algorithm: SquareAlgorithm,
     /// Topological grid-finder tuning.
     pub topological: TopologicalParams,
     /// Post-detection validation tuning.
@@ -139,7 +107,6 @@ impl Default for DetectionParams {
     fn default() -> Self {
         Self {
             max_residual_px: 2.0,
-            algorithm: SquareAlgorithm::default(),
             topological: TopologicalParams::default(),
             validate: ValidateParams::default(),
             recovery: RecoverySchedule::default(),
@@ -155,13 +122,6 @@ impl DetectionParams {
             max_residual_px,
             ..Self::default()
         }
-    }
-
-    /// Builder-style override: pick the `(Square, Oriented2)` algorithm.
-    /// Default is [`SquareAlgorithm::Topological`] (the only square assembler).
-    pub fn with_algorithm(mut self, algorithm: SquareAlgorithm) -> Self {
-        self.algorithm = algorithm;
-        self
     }
 
     /// Builder-style override: replace the topological sub-config.
@@ -235,10 +195,10 @@ impl<'a> DetectionRequest<'a> {
 /// | `(Hex, Positions)` | supported — synthesize 3 axes, then hex topological |
 /// | `(Hex, Oriented1 / Oriented2)` | `UnsupportedCombination` |
 ///
-/// * `(Square, Oriented2)` — the [`SquareAlgorithm::Topological`] axis-driven
-///   SBF09 grid finder (Delaunay → quad-mesh → flood-fill → validate → fit)
-///   returns a labelled [`GridSolution`] with a fitted projective transform;
-///   downstream consumers stay agnostic.
+/// * `(Square, Oriented2)` — the axis-driven SBF09 topological grid finder
+///   (Delaunay → quad-mesh → flood-fill → validate → fit) returns a labelled
+///   [`GridSolution`] with a fitted projective transform; downstream consumers
+///   stay agnostic.
 /// * `(Square, Positions)` — orientation-free input. Each corner's two
 ///   local grid directions are synthesized from neighbour geometry
 ///   ([`crate::orient::synthesize_oriented2`]) and then fed to the topological
@@ -291,36 +251,28 @@ fn run_square_oriented2(
     request: &DetectionRequest<'_>,
     synthesized_axes: bool,
 ) -> Result<Vec<GridSolution>> {
-    match request.params.algorithm {
-        SquareAlgorithm::Topological => {
-            crate::topological::detect_square_oriented2_topological_all(
-                features,
-                request.dimensions,
-                &request.params,
-                synthesized_axes,
-            )
-        }
-    }
+    crate::topological::detect_square_oriented2_topological_all(
+        features,
+        request.dimensions,
+        &request.params,
+        synthesized_axes,
+    )
 }
 
 /// Dispatch hex triple-axis features (caller-supplied or synthesized) to the
 /// hex topological path.
 ///
-/// Hex detection is **topological-only**. The algorithm selector enum is named
-/// [`SquareAlgorithm`]; its sole [`Topological`](SquareAlgorithm::Topological)
-/// variant is the default-equivalent path here (see the support matrix on
+/// Hex detection is **topological-only** (see the support matrix on
 /// [`detect_grid`]).
 fn run_hex_oriented3(
     features: &[OrientedFeature<3>],
     request: &DetectionRequest<'_>,
 ) -> Result<Vec<GridSolution>> {
-    match request.params.algorithm {
-        SquareAlgorithm::Topological => crate::topological::detect_hex_oriented3_topological_all(
-            features,
-            request.dimensions,
-            &request.params,
-        ),
-    }
+    crate::topological::detect_hex_oriented3_topological_all(
+        features,
+        request.dimensions,
+        &request.params,
+    )
 }
 
 /// Multi-component variant of [`detect_grid`].
