@@ -8,7 +8,7 @@
 //! neighbors via midpoint averaging.  Corners that deviate significantly from
 //! the prediction are re-detected locally or snapped to the predicted position.
 
-use super::corner_validation::redetect_corner_in_roi;
+use super::corner_refit::redetect_corner_in_roi;
 use super::marker_sampling::CornerMap;
 use calib_targets_core::{square_predict_grid_position, GrayImageView, GridCoords};
 use chess_corners::low_level::ChessParams;

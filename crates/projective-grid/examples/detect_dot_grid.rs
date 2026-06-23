@@ -16,7 +16,6 @@
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-    SquareAlgorithm,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LatticeKind::Square,
         Evidence::Positions(&features),
         None, // grid dimensions unknown
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
 
     let solution = detect_grid(request)?;

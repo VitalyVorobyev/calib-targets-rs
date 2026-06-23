@@ -25,7 +25,7 @@ const MIN_EDGE_SHAPE_LABELS: usize = 40;
 ///   pass (line collinearity + local-H residual, attribution rules from
 ///   [`mod@projective_grid::shared::validate`]); **or**
 /// - the direct local wrong-label check
-///   ([`topological_wrong_label_drops`](projective_grid::shared::validate::recovery::topological_wrong_label_drops)),
+///   ([`topological_wrong_label_drops`](projective_grid::shared::validate::wrong_label_filters::topological_wrong_label_drops)),
 ///   which targets the dominant topological wrong-label classes — interior
 ///   skipped-corner edges and duplicate-pixel labels; **or**
 /// - the largest-cardinally-connected-component filter, which removes any
@@ -73,7 +73,7 @@ pub(crate) fn run_geometry_check(
     // dense enough grid to be meaningful, so it stays gated on the
     // chessboard's label count.
     let dense_enough = grow_res.labelled.len() >= MIN_EDGE_SHAPE_LABELS;
-    let result = pg_validate::recovery::drop_set(
+    let result = pg_validate::wrong_label_filters::drop_set(
         &grow_res.labelled,
         |idx| augs[idx].position,
         cell_size,

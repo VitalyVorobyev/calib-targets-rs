@@ -15,8 +15,7 @@
 //! the same functions rather than a second timed implementation.
 //!
 //! Production [`detect_all_topological`] now calls
-//! [`projective_grid::detect_grid_all`] with
-//! [`SquareAlgorithm::Topological`](projective_grid::SquareAlgorithm::Topological).
+//! [`projective_grid::detect_grid_all`], the sole square assembler.
 //! The facade runs the shared local-geometry component merge itself, so
 //! `report.solutions` arrives already merged. The adapter consumes those
 //! merged labelled components directly and feeds them to the chessboard's
@@ -68,7 +67,7 @@ use projective_grid::topological::trace::{
 };
 use projective_grid::{
     detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
-    LatticeKind, OrientedFeature, PointFeature, RecoverySchedule, SquareAlgorithm,
+    LatticeKind, OrientedFeature, PointFeature, RecoverySchedule,
     TopologicalParams as NextTopologicalParams,
 };
 use std::collections::HashMap;
@@ -109,7 +108,6 @@ fn detection_params_for_topological(
         .with_local_h_tol_rel(f32::INFINITY)
         .with_edge_length_band_rel(f32::INFINITY);
     NextDetectionParams::default()
-        .with_algorithm(SquareAlgorithm::Topological)
         .with_topological(topo)
         .with_validate(validate)
         .with_max_residual_px(f32::INFINITY)

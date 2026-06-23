@@ -12,8 +12,9 @@
 //!   candidate search, ambiguity resolution, and the per-edge cardinal gate.
 //! - [`grow_extend`] / [`extension`] / [`fill`] — boundary-extension and
 //!   interior-fill engines built on those primitives.
-//! - [`recovery`] — the [`RecoverySchedule`](recovery::RecoverySchedule)
-//!   fixed-point that composes extension + fill + revalidation + drop filters.
+//! - [`recovery_schedule`] — the
+//!   [`RecoverySchedule`](recovery_schedule::RecoverySchedule) fixed-point that
+//!   composes extension + fill + revalidation + drop filters.
 //!
 //! A crate-private geometry-first attach policy for synthesized-axis evidence
 //! backs the recovery schedule. The undirected-angle helpers it needs live in
@@ -39,6 +40,14 @@ pub mod fill;
 pub mod grow;
 pub mod grow_extend;
 mod positions_policy;
-pub mod recovery;
+pub mod recovery_schedule;
+
+/// Deprecated path alias for [`recovery_schedule`]. The module was renamed
+/// `recovery` → `recovery_schedule` in 0.10.0; this alias keeps external
+/// advanced-engine consumers that import
+/// `projective_grid::shared::recovery::{recover_components, local_pitch_of, …}`
+/// compiling. Remove after the 0.10.0 migration window.
+#[deprecated(since = "0.10.0", note = "renamed to `recovery_schedule`")]
+pub use recovery_schedule as recovery;
 
 pub(crate) use fit::{fit_component, FitComponentResult};

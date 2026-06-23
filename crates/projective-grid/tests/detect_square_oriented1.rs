@@ -23,7 +23,7 @@ use std::collections::HashMap;
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 /// Ground-truth `source_index → (i, j)` map.
@@ -157,22 +157,22 @@ fn h_perspective() -> Matrix3<f32> {
     )
 }
 
-fn detect_o1(feats: &[OrientedFeature<1>], algo: SquareAlgorithm) -> projective_grid::GridSolution {
+fn detect_o1(feats: &[OrientedFeature<1>]) -> projective_grid::GridSolution {
     detect_grid(DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented1(feats),
         None,
-        DetectionParams::default().with_algorithm(algo),
+        DetectionParams::default(),
     ))
     .expect("oriented1 detect")
 }
 
-fn detect_o2(feats: &[OrientedFeature<2>], algo: SquareAlgorithm) -> projective_grid::GridSolution {
+fn detect_o2(feats: &[OrientedFeature<2>]) -> projective_grid::GridSolution {
     detect_grid(DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(feats),
         None,
-        DetectionParams::default().with_algorithm(algo),
+        DetectionParams::default(),
     ))
     .expect("oriented2 detect")
 }
@@ -182,8 +182,8 @@ fn oriented1_topological_parity_and_zero_wrong() {
     let (pts, truth) = perspective_grid(8, 8, 28.0, 50.0, &h_perspective());
     let (o1, o2) = build_features(&pts, 8, 8);
 
-    let sol1 = detect_o1(&o1, SquareAlgorithm::Topological);
-    let sol2 = detect_o2(&o2, SquareAlgorithm::Topological);
+    let sol1 = detect_o1(&o1);
+    let sol2 = detect_o2(&o2);
 
     assert_labels_consistent_with_truth(&entries(&sol1), &truth, "oriented1 topological");
     assert_labels_consistent_with_truth(&entries(&sol2), &truth, "oriented2 topological");

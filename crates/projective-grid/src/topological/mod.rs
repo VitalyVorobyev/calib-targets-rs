@@ -301,10 +301,10 @@ pub(crate) fn detect_square_oriented2_topological_all(
             .iter()
             .map(|m| m.iter().map(|(c, &idx)| ((c.u, c.v), idx)).collect())
             .collect();
-        let local_pitch = crate::shared::recovery::local_pitch_of(&positions);
-        let recovered = crate::shared::recovery::recover_components(
+        let local_pitch = crate::shared::recovery_schedule::local_pitch_of(&positions);
+        let recovered = crate::shared::recovery_schedule::recover_components(
             ij_in,
-            crate::shared::recovery::RecoveryInputs {
+            crate::shared::recovery_schedule::RecoveryInputs {
                 features,
                 positions: &positions,
                 local_pitch: &local_pitch,
