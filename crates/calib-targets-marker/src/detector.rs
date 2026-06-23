@@ -4,8 +4,6 @@ use crate::diagnostics::MarkerBoardDiagnostics;
 use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
 use crate::types::{CircleMatch, MarkerBoardDetectionResult, MarkerBoardParams};
 
-use std::collections::HashMap;
-
 use nalgebra::Point2;
 
 use calib_targets_chessboard::ChessCorner;
@@ -13,7 +11,7 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardParamsError, Detector as ChessDetector,
 };
 use calib_targets_core::{
-    GrayImageView, GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind,
+    CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -230,6 +228,6 @@ fn relabel_as_marker(mut detection: TargetDetection) -> TargetDetection {
     detection
 }
 
-fn build_corner_map(det: &ChessboardDetection) -> HashMap<GridCoords, Point2<f32>> {
+fn build_corner_map(det: &ChessboardDetection) -> CornerMap {
     det.corners.iter().map(|c| (c.grid, c.position)).collect()
 }
