@@ -42,4 +42,12 @@ pub mod grow_extend;
 mod positions_policy;
 pub mod recovery_schedule;
 
+/// Deprecated path alias for [`recovery_schedule`]. The module was renamed
+/// `recovery` → `recovery_schedule` in 0.10.0; this alias keeps external
+/// advanced-engine consumers that import
+/// `projective_grid::shared::recovery::{recover_components, local_pitch_of, …}`
+/// compiling. Remove after the 0.10.0 migration window.
+#[deprecated(since = "0.10.0", note = "renamed to `recovery_schedule`")]
+pub use recovery_schedule as recovery;
+
 pub(crate) use fit::{fit_component, FitComponentResult};
