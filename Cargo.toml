@@ -105,3 +105,26 @@ inherits = "release"
 debug = "line-tables-only"
 split-debuginfo = "unpacked"
 strip = false
+
+# Compute-heavy unit tests — notably the puzzleboard decode fuzz / byte-identical
+# sweeps from the bounded-distance uniqueness work — run ~13x slower unoptimized
+# (the slowest single test measured 373s debug vs 28s optimized). Optimize only
+# the algorithm crates' own code in the test profile so `cargo test` is fast
+# WITHOUT weakening coverage: `opt-level` is the only change, so debug-assertions
+# and overflow-checks stay ON, and the heavy external deps are untouched (they
+# stay cached, no recompile). Bindings / studio / bench / facade are excluded —
+# their tests are not compute-bound.
+[profile.test.package.projective-grid]
+opt-level = 3
+[profile.test.package.calib-targets-core]
+opt-level = 3
+[profile.test.package.calib-targets-aruco]
+opt-level = 3
+[profile.test.package.calib-targets-chessboard]
+opt-level = 3
+[profile.test.package.calib-targets-charuco]
+opt-level = 3
+[profile.test.package.calib-targets-puzzleboard]
+opt-level = 3
+[profile.test.package.calib-targets-marker]
+opt-level = 3
