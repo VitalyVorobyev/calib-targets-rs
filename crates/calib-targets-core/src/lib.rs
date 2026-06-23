@@ -55,15 +55,19 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 // upstream surface would freeze it into this crate's semver contract.
 pub use chess::{DetectorConfig, OrientationMethod};
 pub use corner::{
-    axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, GridCoords, LabeledCorner,
-    TargetDetection, TargetKind,
+    axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection,
+    TargetKind,
 };
 pub use corner_map::{complete_cell_corners, corner_map_bounds, CornerMap};
 pub use grid_alignment::{
-    cell_rect_corners_at, grid_alignment_from_next, grid_alignment_to_next, grid_coords_from_next,
-    grid_coords_to_next, grid_transform_from_next, grid_transform_to_next, GridAlignment,
+    cell_rect_corners_at, grid_transform_from_next, grid_transform_to_next, GridAlignment,
     GridTransform, GRID_TRANSFORMS_D4,
 };
+
+/// The canonical integer grid-coordinate type `(u, v)` — `u` is the grid's
+/// first axis (right), `v` the second (down). Re-exported from
+/// [`projective_grid`] so the whole workspace names a single type.
+pub use projective_grid::Coord;
 
 #[cfg(feature = "tracing")]
 pub use logger::init_tracing;

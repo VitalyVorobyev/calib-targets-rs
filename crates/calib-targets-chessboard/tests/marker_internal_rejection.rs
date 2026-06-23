@@ -143,7 +143,7 @@ fn marker_internal_corners_never_labelled() {
         .iter()
         .flat_map(|d| d.corners.iter())
         .filter(|c| marker_set.contains(&c.input_index))
-        .map(|c| (c.input_index, (c.grid.i, c.grid.j)))
+        .map(|c| (c.input_index, (c.grid.u, c.grid.v)))
         .collect();
     assert!(
         labelled_markers.is_empty(),

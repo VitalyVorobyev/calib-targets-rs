@@ -5,7 +5,7 @@
 //! coordinate hypotheses.
 
 use calib_targets_charuco::{CharucoCorner, CharucoDetectionResult};
-use calib_targets_core::{grid_coords_to_next, GridAlignment, GridCoords, GRID_TRANSFORMS_D4};
+use calib_targets_core::{Coord, GridAlignment, GRID_TRANSFORMS_D4};
 use nalgebra::Point2;
 use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
@@ -22,7 +22,7 @@ fn synthetic_charuco_result() -> CharucoDetectionResult {
     let mut corners = Vec::new();
     for j in 0..5 {
         for i in 0..4 {
-            let grid = GridCoords { i, j };
+            let grid = Coord::new(i, j);
             let id = (500 - (j * 4 + i)) as u32;
             let target = Point2::new(i as f32 * 10.0, j as f32 * 10.0);
             corners.push(CharucoCorner::new(image_point(i, j), grid, id, target, 1.0));
@@ -54,9 +54,7 @@ fn charuco_corners_pass_check_consistency_without_corner_ids() {
         .corners
         .iter()
         .enumerate()
-        .map(|(source_index, corner)| {
-            CoordinateHypothesis::unweighted(source_index, grid_coords_to_next(corner.grid))
-        })
+        .map(|(source_index, corner)| CoordinateHypothesis::unweighted(source_index, corner.grid))
         .collect();
 
     let request = ConsistencyRequest::new(

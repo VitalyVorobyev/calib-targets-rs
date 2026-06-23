@@ -563,7 +563,7 @@ def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tupl
         pos = corner.get("position")
         if grid is None or pos is None:
             continue
-        by_grid[(int(grid["i"]), int(grid["j"]))] = (float(pos[0]), float(pos[1]))
+        by_grid[(int(grid["u"]), int(grid["v"]))] = (float(pos[0]), float(pos[1]))
     return by_grid
 
 

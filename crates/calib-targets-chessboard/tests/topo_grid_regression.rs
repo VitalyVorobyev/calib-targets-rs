@@ -127,11 +127,11 @@ fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize)
         let grid = corner.grid;
         assert!(
             labelled
-                .insert((grid.i, grid.j), (corner.position.x, corner.position.y))
+                .insert((grid.u, grid.v), (corner.position.x, corner.position.y))
                 .is_none(),
             "{context}: duplicate grid label ({}, {})",
-            grid.i,
-            grid.j
+            grid.u,
+            grid.v
         );
     }
 

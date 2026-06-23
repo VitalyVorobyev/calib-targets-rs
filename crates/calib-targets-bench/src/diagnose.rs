@@ -138,25 +138,25 @@ pub fn diagnose_topological(
             let min_i = detection
                 .corners
                 .iter()
-                .map(|c| c.grid.i)
+                .map(|c| c.grid.u)
                 .min()
                 .unwrap_or(0);
             let max_i = detection
                 .corners
                 .iter()
-                .map(|c| c.grid.i)
+                .map(|c| c.grid.u)
                 .max()
                 .unwrap_or(0);
             let min_j = detection
                 .corners
                 .iter()
-                .map(|c| c.grid.j)
+                .map(|c| c.grid.v)
                 .min()
                 .unwrap_or(0);
             let max_j = detection
                 .corners
                 .iter()
-                .map(|c| c.grid.j)
+                .map(|c| c.grid.v)
                 .max()
                 .unwrap_or(0);
             ComponentSummary {

@@ -11,8 +11,9 @@
   plus a 1σ angular uncertainty. A corner carries two of these as
   `axes: [AxisEstimate; 2]`; there is no single-orientation field
   (`Corner::orientation` was removed workspace-wide).
-- `GridCoords`: integer grid indices `(i, j)` in board space, with `i`
-  right and `j` down.
+- `Coord`: integer grid indices `(u, v)` in board space, with `u`
+  right and `v` down. Re-exported from `projective-grid`; it is the
+  single canonical grid-coordinate type across the workspace.
 - `LabeledCorner`: a detected corner with optional grid coordinates and
   logical ID — `position`, `grid`, `id`, `target_position`, `score`.
 - The raw per-corner *input* type is detector-specific and lives in the

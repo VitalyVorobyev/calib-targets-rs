@@ -9,7 +9,7 @@
 //! the prediction are re-detected locally or snapped to the predicted position.
 
 use super::corner_refit::redetect_corner_in_roi;
-use calib_targets_core::{square_predict_grid_position, CornerMap, GrayImageView, GridCoords};
+use calib_targets_core::{square_predict_grid_position, Coord, CornerMap, GrayImageView};
 use chess_corners::low_level::ChessParams;
 use log::debug;
 use nalgebra::Point2;
@@ -43,9 +43,9 @@ pub(crate) fn smooth_grid_corners(
         .min(px_per_square * 0.5) as i32;
 
     // Collect flagged corners (don't mutate during iteration).
-    let mut flagged: Vec<(GridCoords, Point2<f32>)> = Vec::new();
+    let mut flagged: Vec<(Coord, Point2<f32>)> = Vec::new();
 
-    let keys: Vec<GridCoords> = corner_map.keys().copied().collect();
+    let keys: Vec<Coord> = corner_map.keys().copied().collect();
     for gc in &keys {
         let pos = corner_map[gc];
 
@@ -72,14 +72,14 @@ pub(crate) fn smooth_grid_corners(
             Some(new_pos) => {
                 debug!(
                     "grid smoothness: re-detected corner ({},{}) at ({:.1},{:.1}) -> ({:.1},{:.1})",
-                    gc.i, gc.j, corner_map[&gc].x, corner_map[&gc].y, new_pos.x, new_pos.y
+                    gc.u, gc.v, corner_map[&gc].x, corner_map[&gc].y, new_pos.x, new_pos.y
                 );
                 corner_map.insert(gc, new_pos);
             }
             None => {
                 debug!(
                     "grid smoothness: snapped corner ({},{}) to predicted ({:.1},{:.1})",
-                    gc.i, gc.j, predicted.x, predicted.y
+                    gc.u, gc.v, predicted.x, predicted.y
                 );
                 corner_map.insert(gc, predicted);
             }
@@ -97,7 +97,7 @@ mod tests {
         for j in 0..rows {
             for i in 0..cols {
                 map.insert(
-                    GridCoords { i, j },
+                    Coord::new(i, j),
                     Point2::new(i as f32 * spacing, j as f32 * spacing),
                 );
             }
@@ -110,7 +110,7 @@ mod tests {
         let spacing = 60.0;
         let mut map = make_grid(3, 3, spacing);
         // Displace center corner by 15% of spacing
-        let center = GridCoords { i: 1, j: 1 };
+        let center = Coord::new(1, 1);
         map.insert(center, Point2::new(spacing + 9.0, spacing + 9.0));
 
         // With a dummy 1x1 image, redetect fails — corner should be
@@ -163,7 +163,7 @@ mod tests {
             let scale = 1.0 + 0.02 * j as f32;
             for i in 0..5 {
                 map.insert(
-                    GridCoords { i, j },
+                    Coord::new(i, j),
                     Point2::new(i as f32 * spacing * scale, j as f32 * spacing * scale),
                 );
             }
@@ -188,7 +188,7 @@ mod tests {
         let spacing = 60.0;
         let mut map = make_grid(1, 3, spacing); // single row: (0,0), (1,0), (2,0)
                                                 // Displace middle corner
-        let middle = GridCoords { i: 1, j: 0 };
+        let middle = Coord::new(1, 0);
         map.insert(middle, Point2::new(spacing + 12.0, 12.0));
 
         let dummy_image = GrayImageView {
@@ -212,8 +212,8 @@ mod tests {
         let spacing = 60.0;
         let mut map = CornerMap::new();
         // Only two corners, no complete pairs
-        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        map.insert(GridCoords { i: 2, j: 2 }, Point2::new(120.0, 120.0));
+        map.insert(Coord::new(0, 0), Point2::new(0.0, 0.0));
+        map.insert(Coord::new(2, 2), Point2::new(120.0, 120.0));
 
         let dummy_image = GrayImageView {
             data: &[128],

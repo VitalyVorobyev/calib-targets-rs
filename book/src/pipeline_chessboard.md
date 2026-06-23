@@ -28,10 +28,10 @@ stage map (mirror of the crate `docs/PIPELINE.md`):
 | 3 | `topological_grid` | oriented features + cluster centres → labelled components | The [topological grid finder](algo_topological_grid.md) (`detect_grid_all`); its own post-build validation / residual / recovery are disabled — the chessboard owns those downstream. |
 | 4 | `recover_components` | merged components → boosted, re-merged grid | Per-component cell-size estimate, then the [recovery boosters](algo_recovery_validation.md) (interior gap fill + line extrapolation with a per-axis directional edge scale), optional weak-cluster rescue, then `merge_components_local`. Every addition re-runs the axis / parity / edge-slot-swap invariants. |
 | 5 | `final_geometry_check` | labelled set → drop list + refuse flag | **Mandatory, can only DROP.** The shared [`drop_set`](algo_recovery_validation.md) precision pass: line collinearity + local-H residual + the topological wrong-label checks (skipped-corner edges, duplicate-pixel labels, frontier line-spacing smoothness) + the largest-component filter. Refuses if survivors `< min_labeled_corners`. |
-| 6 | `output` | surviving set → `ChessboardDetection` | Build a `LabelledGrid` and call [`normalize()`](algo_recovery_validation.md) (rebase min → `(0, 0)`; canonicalise `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)` sort), then adapt the lattice `Coord{u,v}` to the workspace `GridCoords{i,j}`. |
+| 6 | `output` | surviving set → `ChessboardDetection` | Build a `LabelledGrid` and call [`normalize()`](algo_recovery_validation.md) (rebase min → `(0, 0)`; canonicalise `+u ≈ +x`, `+v ≈ +y`; stable `(v, u)` sort). The lattice `Coord{u,v}` is the canonical grid-coordinate type, so it is copied straight onto each output corner. |
 
-> **Note on the output shape.** `ChessboardDetection` stays
-> `GridCoords`-based and unchanged; what moved is *where* normalization
+> **Note on the output shape.** `ChessboardDetection` is `Coord{u,v}`-based;
+> what moved is *where* normalization
 > lives — the rebase + canonicalise + sort algorithm is now owned by
 > `projective_grid::LabelledGrid::normalize`, with the output stage merely
 > calling it.

@@ -343,7 +343,7 @@ def _sample_chessboard_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
-                "grid": {"i": 0, "j": 1},
+                "grid": {"u": 0, "v": 1},
                 "input_index": 0,
                 "score": 0.9,
             }
@@ -357,7 +357,7 @@ def _sample_charuco_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
-                "grid": {"i": 0, "j": 1},
+                "grid": {"u": 0, "v": 1},
                 "id": 4,
                 "target_position": [1.0, 2.0],
                 "score": 0.95,
@@ -366,7 +366,7 @@ def _sample_charuco_result() -> dict:
         "markers": [
             {
                 "id": 1,
-                "gc": {"i": 2, "j": 3},
+                "gc": {"u": 2, "v": 3},
                 "rotation": 0,
                 "hamming": 0,
                 "score": 1.0,
@@ -389,7 +389,7 @@ def _sample_marker_board_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
-                "grid": {"i": 0, "j": 1},
+                "grid": {"u": 0, "v": 1},
                 "id": None,
                 "target_position": None,
                 "score": 0.9,
@@ -407,7 +407,7 @@ def _sample_puzzleboard_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
-                "grid": {"i": 4, "j": 5},
+                "grid": {"u": 4, "v": 5},
                 "id": 2509,
                 "target_position": [4.0, 5.0],
                 "score": 0.9,

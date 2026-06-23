@@ -4,7 +4,7 @@ use std::cmp::Ordering;
 
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
-use calib_targets_core::{GrayImageView, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
@@ -323,8 +323,8 @@ impl PuzzleBoardDetector {
             let Some(grid) = lc.grid else {
                 continue;
             };
-            let raw = decoded.alignment.map(grid.i, grid.j);
-            let (raw_i, raw_j) = (raw.i, raw.j);
+            let raw = decoded.alignment.map(grid.u, grid.v);
+            let (raw_i, raw_j) = (raw.u, raw.v);
             // Invariant: master coords must be wrapped into [0, 501) so that
             // `target_position == Point2::new((id % 501) * cell, (id / 501) * cell)`
             // holds for every LabeledCorner regardless of which D4 transform was
@@ -336,10 +336,7 @@ impl PuzzleBoardDetector {
             let target = master_target_position(master_i, master_j, self.params.board.cell_size);
             out_corners.push(
                 LabeledCorner::new(lc.position, lc.score)
-                    .with_grid(GridCoords {
-                        i: master_i,
-                        j: master_j,
-                    })
+                    .with_grid(Coord::new(master_i, master_j))
                     .with_id(id)
                     .with_target_position(target),
             );
@@ -397,10 +394,10 @@ impl PuzzleBoardDetector {
         // Build a (i, j) → &LabeledCorner map once for O(1) neighbour lookups.
         let grid_map: std::collections::HashMap<(i32, i32), &LabeledCorner> = corners
             .iter()
-            .filter_map(|c| c.grid.map(|g| ((g.i, g.j), c)))
+            .filter_map(|c| c.grid.map(|g| ((g.u, g.v), c)))
             .collect();
 
-        // Convention: `GridCoords.i` = column, `.j` = row.
+        // Convention: `Coord.u` = column, `.v` = row.
         //
         // Edge-coordinate convention (matches PStelldinger/PuzzleBoard authors' convention):
         //
@@ -426,8 +423,8 @@ impl PuzzleBoardDetector {
             let Some(grid) = lc.grid else {
                 continue;
             };
-            let r = grid.j;
-            let c = grid.i;
+            let r = grid.v;
+            let c = grid.u;
 
             // Rightward horizontal edge. Records at local (r, c).
             if let Some(right) = corner_at_map(&grid_map, c + 1, r) {
@@ -760,8 +757,8 @@ mod tests {
         for gi in 0..cols {
             for gj in 0..rows {
                 let g = out.alignment.map(gi, gj);
-                let mi = g.i.rem_euclid(MASTER_COLS as i32);
-                let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+                let mi = g.u.rem_euclid(MASTER_COLS as i32);
+                let mj = g.v.rem_euclid(MASTER_ROWS as i32);
                 let ti = (pc + gi).rem_euclid(MASTER_COLS as i32);
                 let tj = (pr + gj).rem_euclid(MASTER_ROWS as i32);
                 if (mi, mj) != (ti, tj) {

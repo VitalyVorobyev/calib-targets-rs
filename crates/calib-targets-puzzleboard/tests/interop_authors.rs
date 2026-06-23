@@ -198,8 +198,8 @@ fn run_one_image(index: usize, dir: &Path) {
             continue;
         }
         let rc = best_ref.unwrap();
-        // grid.i = master_col, grid.j = master_row.
-        pairs.push((grid.j, grid.i, rc.master_row, rc.master_col));
+        // grid.u = master_col, grid.v = master_row.
+        pairs.push((grid.v, grid.u, rc.master_row, rc.master_col));
     }
 
     if pairs.len() < 3 {
@@ -551,7 +551,7 @@ fn diag_example0_edge_bits() {
         let g = c.grid;
         println!(
             "  master=({},{}) px=({:.1},{:.1})",
-            g.j, g.i, c.position.x, c.position.y
+            g.v, g.u, c.position.x, c.position.y
         );
     }
 

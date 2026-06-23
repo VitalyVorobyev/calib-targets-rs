@@ -108,8 +108,8 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     for lc in &result.corners {
         let grid = lc.grid;
         // Master coords must lie within the board.
-        assert!(grid.i >= 0 && grid.i < 501);
-        assert!(grid.j >= 0 && grid.j < 501);
+        assert!(grid.u >= 0 && grid.u < 501);
+        assert!(grid.v >= 0 && grid.v < 501);
     }
 
     // 6) Alignment must satisfy: every master-label pair (I, J) is consistent
@@ -119,7 +119,7 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     let labelled: Vec<_> = result
         .corners
         .iter()
-        .map(|c| (c.grid.i, c.grid.j))
+        .map(|c| (c.grid.u, c.grid.v))
         .collect();
     assert!(labelled.len() >= 4, "need at least 4 corners for check");
     // All labelled corners share the same alignment so their pairwise master

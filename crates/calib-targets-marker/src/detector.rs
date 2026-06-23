@@ -131,8 +131,8 @@ impl MarkerBoardDetector {
             };
             let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
             m.offset_cells = Some(crate::coords::CellOffset {
-                di: m.expected.cell.i - r.i,
-                dj: m.expected.cell.j - r.j,
+                di: m.expected.cell.i - r.u,
+                dj: m.expected.cell.j - r.v,
             });
         }
 
@@ -158,9 +158,9 @@ impl MarkerBoardDetector {
         if let Some(alignment) = alignment {
             for corner in &mut detection.corners {
                 if let Some(grid) = &mut corner.grid {
-                    let g = alignment.map(grid.i, grid.j);
-                    grid.i = g.i;
-                    grid.j = g.j;
+                    let g = alignment.map(grid.u, grid.v);
+                    grid.u = g.u;
+                    grid.v = g.v;
                 }
             }
 
@@ -172,16 +172,16 @@ impl MarkerBoardDetector {
                     let Some(grid) = corner.grid else {
                         continue;
                     };
-                    if grid.i < 0 || grid.j < 0 || grid.i >= cols || grid.j >= rows {
+                    if grid.u < 0 || grid.v < 0 || grid.u >= cols || grid.v >= rows {
                         continue;
                     }
-                    let id = (grid.j as u32)
+                    let id = (grid.v as u32)
                         .checked_mul(self.params.layout.cols)
-                        .and_then(|base| base.checked_add(grid.i as u32));
+                        .and_then(|base| base.checked_add(grid.u as u32));
                     corner.id = id;
                     if let Some(size) = cell_size.filter(|s| s.is_finite() && *s > 0.0) {
                         corner.target_position =
-                            Some(Point2::new(grid.i as f32 * size, grid.j as f32 * size));
+                            Some(Point2::new(grid.u as f32 * size, grid.v as f32 * size));
                     }
                 }
 
@@ -191,7 +191,7 @@ impl MarkerBoardDetector {
                     // `set_grid_coords_from_chess` call before this sort.
                     let ga = a.grid.unwrap();
                     let gb = b.grid.unwrap();
-                    (ga.j, ga.i).cmp(&(gb.j, gb.i))
+                    (ga.v, ga.u).cmp(&(gb.v, gb.u))
                 });
             }
         }

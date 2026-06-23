@@ -145,7 +145,7 @@ fn assert_rejects_false_labels() {
             let labels: HashSet<(i32, i32)> = detection
                 .corners
                 .iter()
-                .map(|corner| (corner.grid.i, corner.grid.j))
+                .map(|corner| (corner.grid.u, corner.grid.v))
                 .collect();
             for &coord in false_coords {
                 assert!(

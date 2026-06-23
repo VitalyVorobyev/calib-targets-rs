@@ -413,8 +413,8 @@ fn transform_edge_lookup(
     };
     let p0 = t.apply(p0_i, p0_j);
     let p1 = t.apply(p1_i, p1_j);
-    let (p0_col, p0_row) = (p0.i, p0.j);
-    let (p1_col, p1_row) = (p1.i, p1.j);
+    let (p0_col, p0_row) = (p0.u, p0.v);
+    let (p1_col, p1_row) = (p1.u, p1.v);
     let orientation = if p0_row == p1_row {
         EdgeOrientation::Horizontal
     } else {

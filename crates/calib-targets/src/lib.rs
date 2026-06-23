@@ -57,7 +57,7 @@ pub use calib_targets_print as printable;
 pub use calib_targets_puzzleboard as puzzleboard;
 
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
+pub use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
 
 #[cfg(feature = "image")]
 pub mod detect;

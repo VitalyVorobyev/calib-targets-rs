@@ -61,7 +61,7 @@ pub fn rectify_from_chessboard_result(
 
     for c in &detection.corners {
         img_pts.push(Point2::new(c.position.x, c.position.y));
-        grid.push((c.grid.i, c.grid.j));
+        grid.push((c.grid.u, c.grid.v));
     }
     if img_pts.len() < 4 {
         return Err(RectifyError::NotEnoughPoints);

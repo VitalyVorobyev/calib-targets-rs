@@ -122,7 +122,7 @@ def detection_components(image: np.ndarray, variant: Variant) -> list[ct.Chessbo
 
 
 def labels_for(result: ct.ChessboardDetectionResult) -> list[tuple[int, int]]:
-    return [(corner.grid.i, corner.grid.j) for corner in result.corners]
+    return [(corner.grid.u, corner.grid.v) for corner in result.corners]
 
 
 def hole_count(labels: list[tuple[int, int]]) -> int:
@@ -160,7 +160,7 @@ def invariant_report(result: ct.ChessboardDetectionResult | None) -> dict[str, b
     else:
         origin_rebased = True
 
-    by_label = {(corner.grid.i, corner.grid.j): corner.position for corner in corners}
+    by_label = {(corner.grid.u, corner.grid.v): corner.position for corner in corners}
     dx: list[float] = []
     dy: list[float] = []
     for (i, j), (x, y) in by_label.items():

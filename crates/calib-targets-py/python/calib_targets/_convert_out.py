@@ -11,10 +11,11 @@ from .results import (
     ChessboardCorner,
     ChessboardDebug,
     ChessboardDetectionResult,
+    CellCoords,
     CircleCandidate,
     CircleMatch,
+    Coord,
     GridAlignment,
-    GridCoords,
     GridGraphDebug,
     GridGraphNeighbor,
     GridGraphNode,
@@ -168,14 +169,24 @@ def _optional_point2(value: Any, ctx: str) -> Point2 | None:
 # -------------------- basic structs --------------------
 
 
-def grid_coords_to_dict(value: GridCoords) -> dict[str, Any]:
+def coord_to_dict(value: Coord) -> dict[str, Any]:
+    return {"u": int(value.u), "v": int(value.v)}
+
+
+def coord_from_dict(data: Mapping[str, Any]) -> Coord:
+    obj = _ensure_mapping(data, "Coord")
+    _validate_keys(obj, allowed={"u", "v"}, required={"u", "v"}, ctx="Coord")
+    return Coord(u=_to_int(obj["u"], "Coord.u"), v=_to_int(obj["v"], "Coord.v"))
+
+
+def cell_coords_to_dict(value: CellCoords) -> dict[str, Any]:
     return {"i": int(value.i), "j": int(value.j)}
 
 
-def grid_coords_from_dict(data: Mapping[str, Any]) -> GridCoords:
-    obj = _ensure_mapping(data, "GridCoords")
-    _validate_keys(obj, allowed={"i", "j"}, required={"i", "j"}, ctx="GridCoords")
-    return GridCoords(i=_to_int(obj["i"], "GridCoords.i"), j=_to_int(obj["j"], "GridCoords.j"))
+def cell_coords_from_dict(data: Mapping[str, Any]) -> CellCoords:
+    obj = _ensure_mapping(data, "CellCoords")
+    _validate_keys(obj, allowed={"i", "j"}, required={"i", "j"}, ctx="CellCoords")
+    return CellCoords(i=_to_int(obj["i"], "CellCoords.i"), j=_to_int(obj["j"], "CellCoords.j"))
 
 
 def cell_offset_to_dict(value: CellOffset) -> dict[str, Any]:
@@ -249,7 +260,7 @@ def grid_alignment_from_dict(data: Mapping[str, Any]) -> GridAlignment:
 def labeled_corner_to_dict(value: LabeledCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
-        "grid": grid_coords_to_dict(value.grid) if value.grid is not None else None,
+        "grid": coord_to_dict(value.grid) if value.grid is not None else None,
         "id": int(value.id) if value.id is not None else None,
         "target_position": _point2_to_list(value.target_position)
         if value.target_position is not None
@@ -270,7 +281,7 @@ def labeled_corner_from_dict(data: Mapping[str, Any]) -> LabeledCorner:
     id_value = obj["id"]
     return LabeledCorner(
         position=_to_point2(obj["position"], "LabeledCorner.position"),
-        grid=grid_coords_from_dict(grid_value) if grid_value is not None else None,
+        grid=coord_from_dict(grid_value) if grid_value is not None else None,
         id=_to_int(id_value, "LabeledCorner.id") if id_value is not None else None,
         target_position=_optional_point2(
             obj["target_position"], "LabeledCorner.target_position"
@@ -414,7 +425,7 @@ def chessboard_debug_from_dict(data: Mapping[str, Any]) -> ChessboardDebug:
 def chessboard_corner_to_dict(value: ChessboardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
-        "grid": grid_coords_to_dict(value.grid),
+        "grid": coord_to_dict(value.grid),
         "input_index": int(value.input_index),
         "score": float(value.score),
     }
@@ -432,7 +443,7 @@ def chessboard_corner_from_dict(data: Mapping[str, Any]) -> ChessboardCorner:
     )
     return ChessboardCorner(
         position=_to_point2(obj["position"], "ChessboardCorner.position"),
-        grid=grid_coords_from_dict(obj["grid"]),
+        grid=coord_from_dict(obj["grid"]),
         input_index=_to_int(obj["input_index"], "ChessboardCorner.input_index"),
         score=_to_float(obj["score"], "ChessboardCorner.score"),
     )
@@ -479,7 +490,7 @@ def chessboard_detection_result_from_dict(
 def marker_detection_to_dict(value: MarkerDetection) -> dict[str, Any]:
     return {
         "id": int(value.id),
-        "gc": grid_coords_to_dict(value.gc),
+        "gc": coord_to_dict(value.gc),
         "rotation": int(value.rotation),
         "hamming": int(value.hamming),
         "score": float(value.score),
@@ -526,7 +537,7 @@ def marker_detection_from_dict(data: Mapping[str, Any]) -> MarkerDetection:
     corners_img_raw = obj["corners_img"]
     return MarkerDetection(
         id=_to_int(obj["id"], "MarkerDetection.id"),
-        gc=grid_coords_from_dict(obj["gc"]),
+        gc=coord_from_dict(obj["gc"]),
         rotation=_to_int(obj["rotation"], "MarkerDetection.rotation"),
         hamming=_to_int(obj["hamming"], "MarkerDetection.hamming"),
         score=_to_float(obj["score"], "MarkerDetection.score"),
@@ -543,7 +554,7 @@ def marker_detection_from_dict(data: Mapping[str, Any]) -> MarkerDetection:
 def circle_candidate_to_dict(value: CircleCandidate) -> dict[str, Any]:
     return {
         "center_img": _point2_to_list(value.center_img),
-        "cell": grid_coords_to_dict(value.cell),
+        "cell": cell_coords_to_dict(value.cell),
         "polarity": value.polarity.value,
         "score": float(value.score),
         "contrast": float(value.contrast),
@@ -560,7 +571,7 @@ def circle_candidate_from_dict(data: Mapping[str, Any]) -> CircleCandidate:
     )
     return CircleCandidate(
         center_img=_to_point2(obj["center_img"], "CircleCandidate.center_img"),
-        cell=grid_coords_from_dict(obj["cell"]),
+        cell=cell_coords_from_dict(obj["cell"]),
         polarity=_to_circle_polarity(obj["polarity"], "CircleCandidate.polarity"),
         score=_to_float(obj["score"], "CircleCandidate.score"),
         contrast=_to_float(obj["contrast"], "CircleCandidate.contrast"),
@@ -569,7 +580,7 @@ def circle_candidate_from_dict(data: Mapping[str, Any]) -> CircleCandidate:
 
 def marker_circle_expectation_to_dict(value: MarkerCircleExpectation) -> dict[str, Any]:
     return {
-        "cell": grid_coords_to_dict(value.cell),
+        "cell": cell_coords_to_dict(value.cell),
         "polarity": value.polarity.value,
     }
 
@@ -583,7 +594,7 @@ def marker_circle_expectation_from_dict(data: Mapping[str, Any]) -> MarkerCircle
         ctx="MarkerCircleExpectation",
     )
     return MarkerCircleExpectation(
-        cell=grid_coords_from_dict(obj["cell"]),
+        cell=cell_coords_from_dict(obj["cell"]),
         polarity=_to_circle_polarity(obj["polarity"], "MarkerCircleExpectation.polarity"),
     )
 
@@ -629,7 +640,7 @@ def circle_match_from_dict(data: Mapping[str, Any]) -> CircleMatch:
 def charuco_corner_to_dict(value: CharucoCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
-        "grid": grid_coords_to_dict(value.grid),
+        "grid": coord_to_dict(value.grid),
         "id": int(value.id),
         "target_position": _point2_to_list(value.target_position),
         "score": float(value.score),
@@ -646,7 +657,7 @@ def charuco_corner_from_dict(data: Mapping[str, Any]) -> CharucoCorner:
     )
     return CharucoCorner(
         position=_to_point2(obj["position"], "CharucoCorner.position"),
-        grid=grid_coords_from_dict(obj["grid"]),
+        grid=coord_from_dict(obj["grid"]),
         id=_to_int(obj["id"], "CharucoCorner.id"),
         target_position=_to_point2(obj["target_position"], "CharucoCorner.target_position"),
         score=_to_float(obj["score"], "CharucoCorner.score"),
@@ -685,7 +696,7 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
 def marker_board_corner_to_dict(value: MarkerBoardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
-        "grid": grid_coords_to_dict(value.grid),
+        "grid": coord_to_dict(value.grid),
         "id": int(value.id) if value.id is not None else None,
         "target_position": _point2_to_list(value.target_position)
         if value.target_position is not None
@@ -706,7 +717,7 @@ def marker_board_corner_from_dict(data: Mapping[str, Any]) -> MarkerBoardCorner:
     target_position = obj["target_position"]
     return MarkerBoardCorner(
         position=_to_point2(obj["position"], "MarkerBoardCorner.position"),
-        grid=grid_coords_from_dict(obj["grid"]),
+        grid=coord_from_dict(obj["grid"]),
         id=_to_int(id_value, "MarkerBoardCorner.id") if id_value is not None else None,
         target_position=_to_point2(target_position, "MarkerBoardCorner.target_position")
         if target_position is not None
@@ -833,7 +844,7 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
 def puzzleboard_corner_to_dict(value: PuzzleBoardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
-        "grid": grid_coords_to_dict(value.grid),
+        "grid": coord_to_dict(value.grid),
         "id": int(value.id),
         "target_position": _point2_to_list(value.target_position),
         "score": float(value.score),
@@ -850,7 +861,7 @@ def puzzleboard_corner_from_dict(data: Mapping[str, Any]) -> PuzzleBoardCorner:
     )
     return PuzzleBoardCorner(
         position=_to_point2(obj["position"], "PuzzleBoardCorner.position"),
-        grid=grid_coords_from_dict(obj["grid"]),
+        grid=coord_from_dict(obj["grid"]),
         id=_to_int(obj["id"], "PuzzleBoardCorner.id"),
         target_position=_to_point2(obj["target_position"], "PuzzleBoardCorner.target_position"),
         score=_to_float(obj["score"], "PuzzleBoardCorner.score"),
@@ -886,8 +897,10 @@ def puzzleboard_detection_result_from_dict(
 
 
 __all__ = [
-    "grid_coords_to_dict",
-    "grid_coords_from_dict",
+    "coord_to_dict",
+    "coord_from_dict",
+    "cell_coords_to_dict",
+    "cell_coords_from_dict",
     "cell_offset_to_dict",
     "cell_offset_from_dict",
     "grid_transform_to_dict",

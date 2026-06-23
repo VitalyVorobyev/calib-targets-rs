@@ -1,6 +1,6 @@
 use calib_targets_aruco::MarkerCell;
 use calib_targets_core::{
-    complete_cell_corners, corner_map_bounds, CornerMap, GridCoords, LabeledCorner,
+    complete_cell_corners, corner_map_bounds, Coord, CornerMap, LabeledCorner,
 };
 
 #[cfg(feature = "tracing")]
@@ -41,7 +41,7 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
                 continue;
             };
             out.push(MarkerCell {
-                gc: GridCoords { i, j },
+                gc: Coord::new(i, j),
                 corners_img,
             });
         }
@@ -58,29 +58,23 @@ mod tests {
     #[test]
     fn build_corner_map_filters_inliers() {
         let corners = vec![
-            LabeledCorner::new(Point2::new(1.0, 2.0), 0.5).with_grid(GridCoords { i: 0, j: 0 }),
+            LabeledCorner::new(Point2::new(1.0, 2.0), 0.5).with_grid(Coord::new(0, 0)),
             LabeledCorner::new(Point2::new(3.0, 4.0), 0.5),
-            LabeledCorner::new(Point2::new(5.0, 6.0), 0.5).with_grid(GridCoords { i: 1, j: 0 }),
+            LabeledCorner::new(Point2::new(5.0, 6.0), 0.5).with_grid(Coord::new(1, 0)),
         ];
 
         let map = build_corner_map(&corners, &[0, 2]);
         assert_eq!(map.len(), 2);
-        assert_eq!(
-            map.get(&GridCoords { i: 0, j: 0 }),
-            Some(&Point2::new(1.0, 2.0))
-        );
-        assert_eq!(
-            map.get(&GridCoords { i: 1, j: 0 }),
-            Some(&Point2::new(5.0, 6.0))
-        );
+        assert_eq!(map.get(&Coord::new(0, 0)), Some(&Point2::new(1.0, 2.0)));
+        assert_eq!(map.get(&Coord::new(1, 0)), Some(&Point2::new(5.0, 6.0)));
     }
 
     #[test]
     fn build_marker_cells_skips_incomplete_cells() {
         let mut map = CornerMap::new();
-        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 0 }, Point2::new(1.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 1 }, Point2::new(1.0, 1.0));
+        map.insert(Coord::new(0, 0), Point2::new(0.0, 0.0));
+        map.insert(Coord::new(1, 0), Point2::new(1.0, 0.0));
+        map.insert(Coord::new(1, 1), Point2::new(1.0, 1.0));
 
         let cells = build_marker_cells(&map);
         assert!(cells.is_empty());
@@ -93,10 +87,10 @@ mod tests {
         let p10 = Point2::new(1.0, 0.0);
         let p11 = Point2::new(1.0, 1.0);
         let p01 = Point2::new(0.0, 1.0);
-        map.insert(GridCoords { i: 0, j: 0 }, p00);
-        map.insert(GridCoords { i: 1, j: 0 }, p10);
-        map.insert(GridCoords { i: 1, j: 1 }, p11);
-        map.insert(GridCoords { i: 0, j: 1 }, p01);
+        map.insert(Coord::new(0, 0), p00);
+        map.insert(Coord::new(1, 0), p10);
+        map.insert(Coord::new(1, 1), p11);
+        map.insert(Coord::new(0, 1), p01);
 
         let cells = build_marker_cells(&map);
         assert_eq!(cells.len(), 1);

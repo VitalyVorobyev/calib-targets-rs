@@ -29,6 +29,28 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Breaking
 
+- **`GridCoords` is removed; `projective_grid::Coord` (`{ u, v }`) is the single
+  canonical grid-coordinate type.** The workspace-local `GridCoords { i, j }`
+  type and its re-exports (from `calib-targets-core` and the `calib-targets`
+  facade) are deleted with no deprecated alias. `Coord` is now re-exported from
+  `calib-targets-core` and the facade in its place, and every output struct that
+  carried a grid label (`LabeledCorner.grid`, `ChessboardCorner.grid`,
+  `CharucoCorner.grid`, `MarkerBoardCorner.grid`, `PuzzleBoardCorner.grid`,
+  `MarkerDetection.gc`, `ResolvedTargetPoint.grid`) now carries a `Coord`. The
+  test-only conversion shims `grid_coords_to_next` / `grid_coords_from_next` /
+  `grid_alignment_to_next` / `grid_alignment_from_next` are removed. The axis
+  convention is preserved exactly: the old `i` (grid-right / first axis) is
+  `Coord::u`, and the old `j` (grid-down / second axis) is `Coord::v`.
+  - **Report JSON keys change `{ "i", "j" }` → `{ "u", "v" }`** for every
+    grid-coordinate field (`grid`, `gc`). The marker-board cell index
+    (`MarkerCircleSpec.cell`, Rust `CellCoords`) is unaffected and keeps its
+    `{ "i", "j" }` shape. The Python and TypeScript/WASM binding types are
+    updated to match (`Coord` with `u`/`v` for grid coordinates; `CellCoords`
+    retained for the marker cell).
+  - **The FFI C ABI is unchanged.** `ct_grid_coords_t` keeps its historical
+    `{ i, j }` C field names and struct layout (no churn after the ffi 2.0.0
+    release); the Rust→C conversion maps `Coord::u → i` and `Coord::v → j`.
+
 - **`calib_targets_chessboard::Detector::new` is now fallible**
   (`-> Result<Self, ChessboardParamsError>`), validating the configuration up
   front; the previous infallible `new` + `try_new` pair and the internal

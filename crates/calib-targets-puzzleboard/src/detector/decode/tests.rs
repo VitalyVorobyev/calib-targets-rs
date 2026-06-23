@@ -370,8 +370,8 @@ fn rotate_observed_edge_canonically(
     };
     let p0 = t.apply(p0_i, p0_j);
     let p1 = t.apply(p1_i, p1_j);
-    let (p0_col, p0_row) = (p0.i, p0.j);
-    let (p1_col, p1_row) = (p1.i, p1.j);
+    let (p0_col, p0_row) = (p0.u, p0.v);
+    let (p1_col, p1_row) = (p1.u, p1.v);
     let orientation = if p0_row == p1_row {
         EdgeOrientation::Horizontal
     } else {
@@ -991,8 +991,8 @@ fn assert_fixed_board_target_position_is_d4_invariant(
     for gi in 0..n_corners {
         for gj in 0..n_corners {
             let g = reference.alignment.map(gi, gj);
-            let mi = g.i.rem_euclid(MASTER_COLS as i32);
-            let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+            let mi = g.u.rem_euclid(MASTER_COLS as i32);
+            let mj = g.v.rem_euclid(MASTER_ROWS as i32);
             reference_targets.insert((gi, gj), (mi, mj));
         }
     }
@@ -1026,11 +1026,11 @@ fn assert_fixed_board_target_position_is_d4_invariant(
         for gi in 0..n_corners {
             for gj in 0..n_corners {
                 let nr = rot.apply(gi, gj);
-                let rebased_i = nr.i - min_col;
-                let rebased_j = nr.j - min_row;
+                let rebased_i = nr.u - min_col;
+                let rebased_j = nr.v - min_row;
                 let g = result.alignment.map(rebased_i, rebased_j);
-                let mi = g.i.rem_euclid(MASTER_COLS as i32);
-                let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+                let mi = g.u.rem_euclid(MASTER_COLS as i32);
+                let mj = g.v.rem_euclid(MASTER_ROWS as i32);
                 let reference_xy = reference_targets[&(gi, gj)];
                 if (mi, mj) != reference_xy {
                     mismatches.push((gi, gj, (mi, mj), reference_xy));
@@ -1428,8 +1428,8 @@ fn wrong_corner_count(out: &DecodeOutcome, pos_row: i32, pos_col: i32, n: i32) -
     for gi in 0..n {
         for gj in 0..n {
             let g = out.alignment.map(gi, gj);
-            let mi = g.i.rem_euclid(MASTER_COLS as i32);
-            let mj = g.j.rem_euclid(MASTER_ROWS as i32);
+            let mi = g.u.rem_euclid(MASTER_COLS as i32);
+            let mj = g.v.rem_euclid(MASTER_ROWS as i32);
             let ti = (pos_col + gi).rem_euclid(MASTER_COLS as i32);
             let tj = (pos_row + gj).rem_euclid(MASTER_ROWS as i32);
             if (mi, mj) != (ti, tj) {

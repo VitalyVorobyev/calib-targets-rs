@@ -1,5 +1,5 @@
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 use serde::Serialize;
 
@@ -10,7 +10,7 @@ pub struct CharucoCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// ChArUco board corner coordinate.
-    pub grid: GridCoords,
+    pub grid: Coord,
     /// ChArUco logical corner ID.
     pub id: u32,
     /// Physical board-space position in millimetres.
@@ -23,7 +23,7 @@ impl CharucoCorner {
     /// Create a ChArUco corner from its required fields.
     pub fn new(
         position: Point2<f32>,
-        grid: GridCoords,
+        grid: Coord,
         id: u32,
         target_position: Point2<f32>,
         score: f32,

@@ -349,8 +349,8 @@ async fn detect_board_family(
                         .corners
                         .iter()
                         .map(|c| BaselineCorner {
-                            i: c.grid.i,
-                            j: c.grid.j,
+                            i: c.grid.u,
+                            j: c.grid.v,
                             x: c.position.x,
                             y: c.position.y,
                             id: Some(c.id),
@@ -388,8 +388,8 @@ async fn detect_board_family(
                         .corners
                         .iter()
                         .map(|c| BaselineCorner {
-                            i: c.grid.i,
-                            j: c.grid.j,
+                            i: c.grid.u,
+                            j: c.grid.v,
                             x: c.position.x,
                             y: c.position.y,
                             id: Some(c.id),

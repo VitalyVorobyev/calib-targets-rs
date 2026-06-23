@@ -1,6 +1,6 @@
 //! Grid → image corner maps and complete-cell enumeration.
 //!
-//! A [`CornerMap`] associates integer grid intersections ([`GridCoords`]) with
+//! A [`CornerMap`] associates integer grid intersections ([`Coord`]) with
 //! their sub-pixel image positions. The marker and ChArUco detectors both warp
 //! the unit square cells of such a map to read out circles / ArUco bits, so the
 //! per-cell corner lookup — and the canonical **TL, TR, BR, BL** quad order it
@@ -10,41 +10,41 @@ use std::collections::HashMap;
 
 use nalgebra::Point2;
 
-use crate::corner::GridCoords;
+use crate::Coord;
 
 /// A grid → image corner map: integer grid intersections to their sub-pixel
 /// image positions. The shared currency of the marker / ChArUco square-cell
 /// warp paths.
-pub type CornerMap = HashMap<GridCoords, Point2<f32>>;
+pub type CornerMap = HashMap<Coord, Point2<f32>>;
 
-/// Inclusive grid-coordinate bounds `(min_i, min_j, max_i, max_j)` over a
+/// Inclusive grid-coordinate bounds `(min_u, min_v, max_u, max_v)` over a
 /// corner map's keys, or `None` when the map is empty.
 ///
 /// Callers derive their own cell-index scan range from these corner bounds: the
-/// complete cells of the map span lower-left corners `min_i ..= max_i - 1` by
-/// `min_j ..= max_j - 1`.
+/// complete cells of the map span lower-left corners `min_u ..= max_u - 1` by
+/// `min_v ..= max_v - 1`.
 pub fn corner_map_bounds(map: &CornerMap) -> Option<(i32, i32, i32, i32)> {
     let mut keys = map.keys();
     let first = keys.next()?;
-    let (mut min_i, mut min_j, mut max_i, mut max_j) = (first.i, first.j, first.i, first.j);
+    let (mut min_u, mut min_v, mut max_u, mut max_v) = (first.u, first.v, first.u, first.v);
     for g in keys {
-        min_i = min_i.min(g.i);
-        min_j = min_j.min(g.j);
-        max_i = max_i.max(g.i);
-        max_j = max_j.max(g.j);
+        min_u = min_u.min(g.u);
+        min_v = min_v.min(g.v);
+        max_u = max_u.max(g.u);
+        max_v = max_v.max(g.v);
     }
-    Some((min_i, min_j, max_i, max_j))
+    Some((min_u, min_v, max_u, max_v))
 }
 
 /// The four image corners of the unit cell whose top-left intersection is grid
-/// `(i, j)`, in **TL, TR, BR, BL** order (clockwise — the canonical quad order
+/// `(u, v)`, in **TL, TR, BR, BL** order (clockwise — the canonical quad order
 /// used for every homography fit in the workspace). Returns `None` if any of
 /// the cell's four grid intersections is absent from the map.
-pub fn complete_cell_corners(map: &CornerMap, i: i32, j: i32) -> Option<[Point2<f32>; 4]> {
-    let tl = *map.get(&GridCoords { i, j })?;
-    let tr = *map.get(&GridCoords { i: i + 1, j })?;
-    let br = *map.get(&GridCoords { i: i + 1, j: j + 1 })?;
-    let bl = *map.get(&GridCoords { i, j: j + 1 })?;
+pub fn complete_cell_corners(map: &CornerMap, u: i32, v: i32) -> Option<[Point2<f32>; 4]> {
+    let tl = *map.get(&Coord::new(u, v))?;
+    let tr = *map.get(&Coord::new(u + 1, v))?;
+    let br = *map.get(&Coord::new(u + 1, v + 1))?;
+    let bl = *map.get(&Coord::new(u, v + 1))?;
     Some([tl, tr, br, bl])
 }
 
@@ -56,10 +56,10 @@ mod tests {
     /// grid `(0, 0)`.
     fn unit_grid() -> CornerMap {
         let mut map = CornerMap::new();
-        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 0 }, Point2::new(10.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 1 }, Point2::new(10.0, 10.0));
-        map.insert(GridCoords { i: 0, j: 1 }, Point2::new(0.0, 10.0));
+        map.insert(Coord::new(0, 0), Point2::new(0.0, 0.0));
+        map.insert(Coord::new(1, 0), Point2::new(10.0, 0.0));
+        map.insert(Coord::new(1, 1), Point2::new(10.0, 10.0));
+        map.insert(Coord::new(0, 1), Point2::new(0.0, 10.0));
         map
     }
 
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn bounds_span_all_keys() {
         let mut map = unit_grid();
-        map.insert(GridCoords { i: 3, j: -2 }, Point2::new(1.0, 1.0));
+        map.insert(Coord::new(3, -2), Point2::new(1.0, 1.0));
         assert_eq!(corner_map_bounds(&map), Some((0, -2, 3, 1)));
     }
 
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn incomplete_cell_is_none() {
         let mut map = unit_grid();
-        map.remove(&GridCoords { i: 1, j: 1 }); // drop BR
+        map.remove(&Coord::new(1, 1)); // drop BR
         assert_eq!(complete_cell_corners(&map, 0, 0), None);
     }
 }

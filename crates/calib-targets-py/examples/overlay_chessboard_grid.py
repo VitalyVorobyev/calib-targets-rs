@@ -182,8 +182,8 @@ def draw_grid_overlay(
             if grid is None:
                 continue
             labelled.append({
-                "i": int(grid["i"]),
-                "j": int(grid["j"]),
+                "i": int(grid["u"]),
+                "j": int(grid["v"]),
                 "x": float(lc["position"][0]),
                 "y": float(lc["position"][1]),
             })

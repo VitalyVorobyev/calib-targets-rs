@@ -241,8 +241,8 @@ def main() -> None:
                 py = float(c["position"][1]) / px_divisor
                 bx = float(tp[0]) * unit_scale
                 by = float(tp[1]) * unit_scale
-                gi = int(grid["i"])
-                gj = int(grid["j"])
+                gi = int(grid["u"])
+                gj = int(grid["v"])
                 mi = int(gi)
                 mj = int(gj)
                 writer.writerow([

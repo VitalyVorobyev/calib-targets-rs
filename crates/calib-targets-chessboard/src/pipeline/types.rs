@@ -5,7 +5,7 @@
 //! returned by the mandatory final geometry check. No pipeline logic lives
 //! here — see the sibling stage modules for the stage bodies.
 
-use calib_targets_core::GridCoords;
+use calib_targets_core::Coord;
 
 use nalgebra::Point2;
 use serde::Serialize;
@@ -18,8 +18,8 @@ use serde::Serialize;
 pub struct ChessboardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
-    /// Grid label (i, j). A chessboard corner is always labelled — non-optional.
-    pub grid: GridCoords,
+    /// Grid label `(u, v)`. A chessboard corner is always labelled — non-optional.
+    pub grid: Coord,
     /// Index into the detector's input `&[ChessCorner]` slice that produced this corner.
     pub input_index: usize,
     /// Corner score.
@@ -28,7 +28,7 @@ pub struct ChessboardCorner {
 
 impl ChessboardCorner {
     /// Create a corner from its position, grid label, input provenance, and score.
-    pub fn new(position: Point2<f32>, grid: GridCoords, input_index: usize, score: f32) -> Self {
+    pub fn new(position: Point2<f32>, grid: Coord, input_index: usize, score: f32) -> Self {
         Self {
             position,
             grid,

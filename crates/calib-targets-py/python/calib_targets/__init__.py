@@ -82,6 +82,7 @@ from .enums import (
     TargetKind,
 )
 from .results import (
+    CellCoords,
     CellOffset,
     CharucoCorner,
     CharucoDetectionResult,
@@ -90,9 +91,9 @@ from .results import (
     ChessboardDetectionResult,
     CircleCandidate,
     CircleMatch,
+    Coord,
     Corners4,
     GridAlignment,
-    GridCoords,
     GridGraphDebug,
     GridGraphNeighbor,
     GridGraphNode,
@@ -188,7 +189,8 @@ __all__ = [
     "marker_board_document",
     "Point2",
     "Corners4",
-    "GridCoords",
+    "Coord",
+    "CellCoords",
     "CellOffset",
     "GridTransform",
     "GridAlignment",

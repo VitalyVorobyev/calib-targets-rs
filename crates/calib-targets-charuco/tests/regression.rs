@@ -217,8 +217,8 @@ fn detects_plain_chessboard_on_mid_png() {
     let mut max_i = 0;
     let mut max_j = 0;
     for c in &res.corners {
-        max_i = max_i.max(c.grid.i);
-        max_j = max_j.max(c.grid.j);
+        max_i = max_i.max(c.grid.u);
+        max_j = max_j.max(c.grid.v);
     }
 
     assert_eq!(max_i + 1, 11, "expected 11 inner-corner columns");

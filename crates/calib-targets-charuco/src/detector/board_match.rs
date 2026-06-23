@@ -10,7 +10,7 @@ use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::{rotate_code_u64, sample_cell, CellSamples, MarkerCell, MarkerDetection};
 use calib_targets_core::{
-    cell_rect_corners_at, log_sigmoid, GrayImageView, GridAlignment, GridCoords, GridTransform,
+    cell_rect_corners_at, log_sigmoid, Coord, GrayImageView, GridAlignment, GridTransform,
     GRID_TRANSFORMS_D4,
 };
 use serde::Serialize;
@@ -72,7 +72,7 @@ pub struct BoardMatchDiagnostics {
 #[non_exhaustive]
 pub struct CellDiag {
     /// The cell's `(i, j)` grid coordinate.
-    pub gc: GridCoords,
+    pub gc: Coord,
     /// The cell's four corners `[TL, TR, BR, BL]` in image pixels.
     pub corners_img: [[f32; 2]; 4],
     /// `true` when the cell was sampled (it had all four corners).
@@ -304,9 +304,9 @@ fn enumerate_hypotheses(
 
     for rot_idx in 0..4u8 {
         let transform = GRID_TRANSFORMS_D4[rot_idx as usize];
-        let mapped: Vec<GridCoords> = cells
+        let mapped: Vec<Coord> = cells
             .iter()
-            .map(|c| transform.apply(c.gc.i, c.gc.j))
+            .map(|c| transform.apply(c.gc.u, c.gc.v))
             .collect();
         let Some((tx_lo, tx_hi, ty_lo, ty_hi)) = translation_window(&mapped, cols, rows) else {
             continue;
@@ -401,9 +401,9 @@ fn fill_expected_from_board(
     let dict = board.spec().dictionary;
 
     for (ci, cell) in diag.cells.iter_mut().enumerate() {
-        let bc = alignment.map(cell.gc.i, cell.gc.j);
-        cell.mapped_bc = Some([bc.i, bc.j]);
-        if bc.i < 0 || bc.j < 0 || bc.i >= cols || bc.j >= rows {
+        let bc = alignment.map(cell.gc.u, cell.gc.v);
+        cell.mapped_bc = Some([bc.u, bc.v]);
+        if bc.u < 0 || bc.v < 0 || bc.u >= cols || bc.v >= rows {
             continue;
         }
         let Some(id) = board.marker_id_at(bc) else {
@@ -553,16 +553,16 @@ fn cell_weight(s: &CellSamples, cfg: &BoardMatchConfig) -> f32 {
     ratio.clamp(0.0, 1.0)
 }
 
-fn translation_window(mapped: &[GridCoords], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {
+fn translation_window(mapped: &[Coord], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {
     let mut min_x = i32::MAX;
     let mut max_x = i32::MIN;
     let mut min_y = i32::MAX;
     let mut max_y = i32::MIN;
     for g in mapped {
-        min_x = min_x.min(g.i);
-        max_x = max_x.max(g.i);
-        min_y = min_y.min(g.j);
-        max_y = max_y.max(g.j);
+        min_x = min_x.min(g.u);
+        max_x = max_x.max(g.u);
+        min_y = min_y.min(g.v);
+        max_y = max_y.max(g.v);
     }
     if min_x == i32::MAX {
         return None;
@@ -580,17 +580,14 @@ fn translation_window(mapped: &[GridCoords], cols: i32, rows: i32) -> Option<(i3
 fn score_hypothesis(
     board: &CharucoBoard,
     matrix: &ScoreMatrix,
-    mapped: &[GridCoords],
+    mapped: &[Coord],
     translation: [i32; 2],
     rot: u8,
 ) -> (f32, usize) {
     let mut total = 0.0f32;
     let mut contributing = 0usize;
     for (ci, g) in mapped.iter().enumerate() {
-        let bc = GridCoords {
-            i: g.i + translation[0],
-            j: g.j + translation[1],
-        };
+        let bc = Coord::new(g.u + translation[0], g.v + translation[1]);
         let Some(expected_id) = board.marker_id_at(bc) else {
             continue;
         };
@@ -622,7 +619,7 @@ fn emit_markers(
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
     for (ci, cell) in cells.iter().enumerate() {
-        let bc = alignment.map(cell.gc.i, cell.gc.j);
+        let bc = alignment.map(cell.gc.u, cell.gc.v);
         let Some(expected_id) = board.marker_id_at(bc) else {
             continue;
         };
@@ -682,21 +679,12 @@ fn rotation_index_for(transform: &GridTransform) -> u8 {
     0
 }
 
-fn rotate_gc_top_left(gc0: GridCoords, rot: u8) -> GridCoords {
+fn rotate_gc_top_left(gc0: Coord, rot: u8) -> Coord {
     match rot & 3 {
         0 => gc0,
-        1 => GridCoords {
-            i: gc0.i + 1,
-            j: gc0.j,
-        },
-        2 => GridCoords {
-            i: gc0.i + 1,
-            j: gc0.j + 1,
-        },
-        3 => GridCoords {
-            i: gc0.i,
-            j: gc0.j + 1,
-        },
+        1 => Coord::new(gc0.u + 1, gc0.v),
+        2 => Coord::new(gc0.u + 1, gc0.v + 1),
+        3 => Coord::new(gc0.u, gc0.v + 1),
         _ => gc0,
     }
 }
@@ -716,18 +704,14 @@ mod tests {
 
     #[test]
     fn translation_window_clamps_to_board() {
-        let mapped = [
-            GridCoords { i: 0, j: 0 },
-            GridCoords { i: 1, j: 1 },
-            GridCoords { i: 2, j: 2 },
-        ];
+        let mapped = [Coord::new(0, 0), Coord::new(1, 1), Coord::new(2, 2)];
         let win = translation_window(&mapped, 5, 5).unwrap();
         assert_eq!(win, (0, 2, 0, 2));
     }
 
     #[test]
     fn translation_window_rejects_oversize() {
-        let mapped = [GridCoords { i: 0, j: 0 }, GridCoords { i: 10, j: 10 }];
+        let mapped = [Coord::new(0, 0), Coord::new(10, 10)];
         assert!(translation_window(&mapped, 5, 5).is_none());
     }
 }

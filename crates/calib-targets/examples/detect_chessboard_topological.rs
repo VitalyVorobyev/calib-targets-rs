@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for corner in &result.corners {
         println!(
             "{}\t{}\t{:.2}\t{:.2}",
-            corner.grid.i, corner.grid.j, corner.position.x, corner.position.y
+            corner.grid.u, corner.grid.v, corner.position.x, corner.position.y
         );
     }
 

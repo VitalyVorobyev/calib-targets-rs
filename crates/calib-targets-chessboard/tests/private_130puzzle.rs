@@ -125,13 +125,13 @@ fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {
         );
         let grid = corner.grid;
         assert!(
-            seen.insert((grid.i, grid.j)),
+            seen.insert((grid.u, grid.v)),
             "{context}: duplicate grid label ({}, {})",
-            grid.i,
-            grid.j
+            grid.u,
+            grid.v
         );
-        min_i = min_i.min(grid.i);
-        min_j = min_j.min(grid.j);
+        min_i = min_i.min(grid.u);
+        min_j = min_j.min(grid.v);
     }
     assert_eq!(
         (min_i, min_j),
@@ -155,7 +155,7 @@ fn audit_wrong_label_edges(detection: &ChessboardDetection) -> (usize, usize) {
     let by_grid: std::collections::HashMap<(i32, i32), (f32, f32)> = detection
         .corners
         .iter()
-        .map(|c| ((c.grid.i, c.grid.j), (c.position.x, c.position.y)))
+        .map(|c| ((c.grid.u, c.grid.v), (c.position.x, c.position.y)))
         .collect();
     let mut lens: Vec<f32> = Vec::new();
     for (&(i, j), &(x, y)) in &by_grid {

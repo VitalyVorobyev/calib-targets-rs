@@ -1,6 +1,6 @@
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
-use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
 use std::collections::HashMap;
 
 pub(crate) fn map_charuco_corners(
@@ -8,14 +8,14 @@ pub(crate) fn map_charuco_corners(
     chessboard: &TargetDetection,
     alignment: &CharucoAlignment,
 ) -> TargetDetection {
-    let mut by_grid: HashMap<GridCoords, LabeledCorner> = HashMap::new();
+    let mut by_grid: HashMap<Coord, LabeledCorner> = HashMap::new();
 
     for corner in &chessboard.corners {
         let Some(grid) = corner.grid else {
             continue;
         };
-        let bc = alignment.map(grid.i, grid.j);
-        let Some(id) = board.charuco_corner_id_from_board_corner(bc.i, bc.j) else {
+        let bc = alignment.map(grid.u, grid.v);
+        let Some(id) = board.charuco_corner_id_from_board_corner(bc.u, bc.v) else {
             continue;
         };
         let Some(grid) = grid_from_charuco_id(board, id) else {
@@ -47,7 +47,7 @@ pub(crate) fn map_charuco_corners(
     TargetDetection::new(TargetKind::Charuco, corners)
 }
 
-fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
+fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<Coord> {
     let inner_cols = board.expected_inner_cols();
     let inner_rows = board.expected_inner_rows();
     let total = inner_cols.checked_mul(inner_rows)?;
@@ -56,7 +56,7 @@ fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<GridCoords> {
     }
     let i = (id % inner_cols) as i32 + 1;
     let j = (id / inner_cols) as i32 + 1;
-    Some(GridCoords { i, j })
+    Some(Coord::new(i, j))
 }
 
 #[cfg(test)]
@@ -100,21 +100,15 @@ mod tests {
         let corner_id: u32 = 43;
         assert_eq!(
             grid_from_charuco_id(&board, corner_id),
-            Some(GridCoords { i: 2, j: 3 })
+            Some(Coord::new(2, 3))
         );
     }
 
     #[test]
     fn grid_from_charuco_id_row_major() {
         let board = build_board();
-        assert_eq!(
-            grid_from_charuco_id(&board, 0),
-            Some(GridCoords { i: 1, j: 1 })
-        );
-        assert_eq!(
-            grid_from_charuco_id(&board, 3),
-            Some(GridCoords { i: 1, j: 2 })
-        );
+        assert_eq!(grid_from_charuco_id(&board, 0), Some(Coord::new(1, 1)));
+        assert_eq!(grid_from_charuco_id(&board, 3), Some(Coord::new(1, 2)));
     }
 
     #[test]
@@ -127,8 +121,8 @@ mod tests {
         let chessboard = TargetDetection::new(
             TargetKind::Chessboard,
             vec![
-                LabeledCorner::new(Point2::new(1.0, 1.0), 0.2).with_grid(GridCoords { i: 1, j: 1 }),
-                LabeledCorner::new(Point2::new(2.0, 2.0), 0.9).with_grid(GridCoords { i: 1, j: 1 }),
+                LabeledCorner::new(Point2::new(1.0, 1.0), 0.2).with_grid(Coord::new(1, 1)),
+                LabeledCorner::new(Point2::new(2.0, 2.0), 0.9).with_grid(Coord::new(1, 1)),
             ],
         );
 
@@ -138,7 +132,7 @@ mod tests {
         assert_eq!(corner.position, Point2::new(2.0, 2.0));
         assert_eq!(corner.score, 0.9);
         assert_eq!(corner.id, Some(0));
-        assert_eq!(corner.grid, Some(GridCoords { i: 1, j: 1 }));
+        assert_eq!(corner.grid, Some(Coord::new(1, 1)));
         assert_eq!(corner.target_position, board.charuco_object_xy(0));
     }
 }

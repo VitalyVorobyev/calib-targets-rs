@@ -93,7 +93,7 @@ pub(crate) fn top_k_by_polarity(
 mod tests {
     use super::*;
     use crate::circle_score::CircleScoreParams;
-    use calib_targets_core::{GrayImageView, GridCoords};
+    use calib_targets_core::{Coord, GrayImageView};
     use nalgebra::Point2;
 
     fn dummy_image() -> GrayImageView<'static> {
@@ -116,8 +116,8 @@ mod tests {
     fn detect_circles_insufficient_corners_returns_empty() {
         let img = dummy_image();
         let mut map = CornerMap::new();
-        map.insert(GridCoords { i: 0, j: 0 }, Point2::new(0.0, 0.0));
-        map.insert(GridCoords { i: 1, j: 0 }, Point2::new(1.0, 0.0));
+        map.insert(Coord::new(0, 0), Point2::new(0.0, 0.0));
+        map.insert(Coord::new(1, 0), Point2::new(1.0, 0.0));
 
         let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
         assert!(out.is_empty());

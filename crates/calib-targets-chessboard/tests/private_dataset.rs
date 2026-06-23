@@ -56,7 +56,7 @@ fn extract_snap(image: &image::GrayImage, snap_idx: u32) -> image::GrayImage {
 fn assert_no_duplicate_labels(detection: &ChessboardDetection, context: &str) {
     let mut seen: HashSet<(i32, i32)> = HashSet::new();
     for lc in &detection.corners {
-        let (i, j) = (lc.grid.i, lc.grid.j);
+        let (i, j) = (lc.grid.u, lc.grid.v);
         assert!(
             seen.insert((i, j)),
             "{context}: duplicate (i, j) = ({i}, {j}) — precision contract violated"
@@ -68,8 +68,8 @@ fn assert_grid_rebased_to_origin(detection: &ChessboardDetection, context: &str)
     let mut min_i = i32::MAX;
     let mut min_j = i32::MAX;
     for lc in &detection.corners {
-        min_i = min_i.min(lc.grid.i);
-        min_j = min_j.min(lc.grid.j);
+        min_i = min_i.min(lc.grid.u);
+        min_j = min_j.min(lc.grid.v);
     }
     assert_eq!(
         (min_i, min_j),

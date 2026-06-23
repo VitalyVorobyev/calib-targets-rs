@@ -84,15 +84,15 @@ fn main() {
     println!("detected a chessboard");
     println!("  labelled corners : {}", labelled.len());
 
-    // Each `ChessboardCorner` carries a non-optional `grid: GridCoords`,
+    // Each `ChessboardCorner` carries a non-optional `grid: Coord`,
     // the pixel `position`, an `input_index` back-reference into the
     // input `corners` slice, and a `score`. Print the first few
-    // `(i, j) -> pixel` rows.
-    println!("\nfirst labelled corners ((i, j) -> pixel  [input_index]):");
+    // `(u, v) -> pixel` rows.
+    println!("\nfirst labelled corners ((u, v) -> pixel  [input_index]):");
     for lc in labelled.iter().take(8) {
         println!(
-            "  (i={:>2}, j={:>2})  ->  ({:7.2}, {:7.2})  [{}]",
-            lc.grid.i, lc.grid.j, lc.position.x, lc.position.y, lc.input_index
+            "  (u={:>2}, v={:>2})  ->  ({:7.2}, {:7.2})  [{}]",
+            lc.grid.u, lc.grid.v, lc.position.x, lc.position.y, lc.input_index
         );
     }
     if labelled.len() > 8 {

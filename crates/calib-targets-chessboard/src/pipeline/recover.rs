@@ -203,7 +203,7 @@ fn mark_labelled(augs: &mut [CornerAug], labelled: &LabelledComponent) {
 
 fn transform_label(t: GridTransform, ij: (i32, i32), delta: (i32, i32)) -> (i32, i32) {
     let mapped = t.apply(ij.0, ij.1);
-    (mapped.i + delta.0, mapped.j + delta.1)
+    (mapped.u + delta.0, mapped.v + delta.1)
 }
 
 fn shared_corner_alignment(
@@ -221,7 +221,7 @@ fn shared_corner_alignment(
                 continue;
             };
             let mapped = t.apply(ij_src.0, ij_src.1);
-            let delta = (ij_dst.0 - mapped.i, ij_dst.1 - mapped.j);
+            let delta = (ij_dst.0 - mapped.u, ij_dst.1 - mapped.v);
             *votes.entry(delta).or_default() += 1;
         }
         for (delta, overlap) in votes {

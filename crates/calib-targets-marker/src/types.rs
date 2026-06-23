@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{GridAlignment, GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
 use crate::circle_score::{CirclePolarity, CircleScoreParams};
@@ -265,7 +265,7 @@ pub struct MarkerBoardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// Corner coordinate in the returned grid frame.
-    pub grid: GridCoords,
+    pub grid: Coord,
     /// Board-canonical corner ID, available when circle alignment succeeded.
     pub id: Option<u32>,
     /// Physical board-space position, available when alignment and cell size are known.
@@ -277,7 +277,7 @@ pub struct MarkerBoardCorner {
 
 impl MarkerBoardCorner {
     /// Create a marker-board corner from its required fields.
-    pub fn new(position: Point2<f32>, grid: GridCoords, score: f32) -> Self {
+    pub fn new(position: Point2<f32>, grid: Coord, score: f32) -> Self {
         Self {
             position,
             grid,

@@ -13,7 +13,7 @@ chess = ct.detect_chessboard(
 if chess is not None:
     _corners: list[ct.ChessboardCorner] = chess.corners
     if _corners:
-        _grid: ct.GridCoords = _corners[0].grid
+        _grid: ct.Coord = _corners[0].grid
 
 board = ct.CharucoBoardSpec(
     rows=3,

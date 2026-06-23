@@ -9,7 +9,7 @@
 //! library code itself is not modified — this is a test-only integration.
 
 use calib_targets_chessboard::ChessCorner as TargetCorner;
-use calib_targets_core::{grid_coords_to_next, GrayImageView};
+use calib_targets_core::GrayImageView;
 use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec};
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
@@ -118,7 +118,7 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
         .corners
         .iter()
         .enumerate()
-        .map(|(i, c)| CoordinateHypothesis::new(i, grid_coords_to_next(c.grid), None))
+        .map(|(i, c)| CoordinateHypothesis::new(i, c.grid, None))
         .collect();
 
     // 4) Run the new contract on this evidence. At 300 DPI with a 12 mm
