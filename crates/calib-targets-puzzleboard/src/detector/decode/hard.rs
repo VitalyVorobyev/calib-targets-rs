@@ -5,7 +5,7 @@
 //! full 501 × 501 master via the cyclic-period precompute; [`decode_fixed_board`]
 //! constrains the sweep to a declared board's own bit pattern.
 
-use calib_targets_core::{GridAlignment, GRID_TRANSFORMS_D4};
+use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{
@@ -13,8 +13,19 @@ use crate::code_maps::{
 };
 
 use super::{
-    transform_edge_lookup, update_best_candidate, DecodeOutcome, H_COLS, H_ROWS, V_COLS, V_ROWS,
+    crt_master_col, crt_master_row, transform_edge_lookup, update_best_candidate, DecodeOutcome,
+    H_COLS, H_ROWS, V_COLS, V_ROWS,
 };
+
+/// Hard upper bound on `|optimalH| × |optimalV|` before the separated argmax
+/// search falls back to a direct table scan. The master code is a De
+/// Bruijn-style torus, so a clean (or near-clean) observation set decodes to a
+/// single optimum and this product is `1`. The cap only guards pathological
+/// inputs (e.g. an empty or all-tied observation set) where the optimal class
+/// set degenerates to many cells; the fallback then costs exactly what the
+/// original `O(501²)` scan did for that transform, so worst-case runtime never
+/// regresses.
+const SEPARATION_PRODUCT_CAP: usize = 1024;
 
 /// Match observations directly against the declared board's own bit pattern.
 ///
@@ -188,6 +199,19 @@ pub(crate) fn decode_fixed_board(
     best
 }
 
+/// Hard-weighted decoder over the full 501 × 501 master.
+///
+/// For each D4 transform we precompute, per cyclic class, the match count and
+/// confidence-weight tables in `O(501 × N)`. The `501²` origin scan is then
+/// collapsed to `O(501)` via an exact crossed-CRT separation: because
+/// `501 = 3·167` with `gcd(3, 167) = 1`, the per-origin score
+/// `(count, weight) = (H[ha,hb] + V[va,vb])` splits into two independent
+/// tables whose lexicographic argmax can be combined directly (the count
+/// primary key is an integer, so the argmax sets are exact and the separation
+/// is byte-safe — unlike the pure-`f32` soft path, see
+/// [`super::soft::decode_soft`]). A pathological all-tied input falls back to a
+/// direct table scan for the affected transform so worst-case cost never
+/// regresses past the original.
 pub(crate) fn decode(
     observed: &[PuzzleBoardObservedEdge],
     max_bit_error_rate: f32,
@@ -289,59 +313,214 @@ pub(crate) fn decode(
             }
         }
 
-        // Scan all 501² origins using the precomputed tables.
-        for master_row in 0..MASTER_ROWS as i32 {
-            let ha = (master_row % H_ROWS as i32) as usize;
-            let va = (master_row % V_ROWS as i32) as usize;
-            for master_col in 0..MASTER_COLS as i32 {
-                let hb = (master_col % H_COLS as i32) as usize;
-                let vb = (master_col % V_COLS as i32) as usize;
+        // Collapse the O(501²) origin scan to O(501) via the crossed-CRT
+        // separation. The per-origin score is the sum of two *independent*
+        // table terms — the H term depends only on `(ha, hb)` and the V term
+        // only on `(va, vb)`, and (because `501 = 3·167`, `gcd(3, 167) = 1`)
+        // the four residues `(va, ha, hb, vb)` are mutually independent and
+        // each ranges over its full domain. The lexicographic argmax of the
+        // sum therefore separates: it is exactly the product of the per-table
+        // lexicographic argmaxes (proved over the full table-value range — a
+        // candidate with strictly more matched bits in one table always wins,
+        // and on equal counts the weights add independently).
+        //
+        // Step 1: lexicographic max `(count, weight)` over each table and the
+        // set of classes achieving it.
+        let (mc_h, max_h_w, optimal_h) = lex_max_classes(&h_count, &h_match, H_COLS);
+        let (mc_v, max_v_w, optimal_v) = lex_max_classes(&v_count, &v_match, V_COLS);
 
-                let matched = (h_count[ha * H_COLS + hb] + v_count[va * V_COLS + vb]) as usize;
-                let weighted = h_match[ha * H_COLS + hb] + v_match[va * V_COLS + vb];
+        let best_matched = (mc_h + mc_v) as usize;
+        let best_weighted = max_h_w + max_v_w;
 
-                let bit_error_rate = if total == 0 {
-                    1.0
-                } else {
-                    (total - matched) as f32 / total as f32
+        // Step 2: BER early-reject. The joint optimum has the most matched bits
+        // of any origin under this transform, so if it fails the gate every
+        // other origin (with `matched ≤ best_matched`, hence higher BER) fails
+        // too — the transform contributes no candidate.
+        let bit_error_rate = if total == 0 {
+            1.0
+        } else {
+            (total - best_matched) as f32 / total as f32
+        };
+        if bit_error_rate > max_bit_error_rate {
+            continue;
+        }
+
+        // Step 3: worst-case guard. Real inputs decode uniquely (product == 1);
+        // only degenerate all-tied inputs blow this up. Fall back to a direct
+        // table scan for this transform only so cost never exceeds the original.
+        if optimal_h.len().saturating_mul(optimal_v.len()) > SEPARATION_PRODUCT_CAP {
+            let tables = TransformTables {
+                h_count: &h_count,
+                h_match: &h_match,
+                v_count: &v_count,
+                v_match: &v_match,
+            };
+            scan_transform_direct(
+                transform,
+                &tables,
+                total,
+                total_conf,
+                max_bit_error_rate,
+                &mut best,
+            );
+            continue;
+        }
+
+        // Step 4: find the row-major-min origin `(mr, mc)` over the joint
+        // optimal set. The original scan visits origins in (master_row, then
+        // master_col) order and keeps the FIRST candidate at the maximum
+        // (strict `>`), so the winning origin is the lexicographic minimum of
+        // `(mr, mc)` across `optimal_h × optimal_v`.
+        let mut best_origin: Option<(i32, i32)> = None;
+        for &(ha, hb) in &optimal_h {
+            for &(va, vb) in &optimal_v {
+                let mr = crt_master_row(va, ha);
+                let mc = crt_master_col(hb, vb);
+                let better = match best_origin {
+                    None => true,
+                    Some((br, bc)) => (mr, mc) < (br, bc),
                 };
-
-                // Early-reject before constructing the full candidate.
-                if bit_error_rate > max_bit_error_rate {
-                    continue;
+                if better {
+                    best_origin = Some((mr, mc));
                 }
-
-                let score = weighted / total_conf;
-                let mean_confidence = if matched == 0 {
-                    0.0
-                } else {
-                    weighted / matched as f32
-                };
-                let candidate = DecodeOutcome {
-                    alignment: GridAlignment {
-                        transform,
-                        // translation[0] is the i (col) offset, translation[1]
-                        // is the j (row) offset, so master_col goes first.
-                        translation: [master_col, master_row],
-                    },
-                    edges_matched: matched,
-                    edges_observed: total,
-                    weighted_score: score,
-                    bit_error_rate,
-                    mean_confidence,
-                    master_origin_row: master_row,
-                    master_origin_col: master_col,
-                    score_best: score,
-                    score_runner_up: None,
-                    score_margin: f32::INFINITY,
-                    runner_up_origin_row: None,
-                    runner_up_origin_col: None,
-                    runner_up_transform: None,
-                };
-                update_best_candidate(&mut best, candidate);
             }
         }
+        let (master_row, master_col) = best_origin.expect("optimal sets are non-empty");
+
+        // Every entry in the optimal product shares the same `(count, weight)`,
+        // so `best_weighted` is byte-identical to the original's
+        // `h_match[ha] + v_match[vb]` at the winning origin (same summands,
+        // same addition order).
+        let score = best_weighted / total_conf;
+        let mean_confidence = if best_matched == 0 {
+            0.0
+        } else {
+            best_weighted / best_matched as f32
+        };
+        let candidate = DecodeOutcome {
+            alignment: GridAlignment {
+                transform,
+                // translation[0] is the i (col) offset, translation[1]
+                // is the j (row) offset, so master_col goes first.
+                translation: [master_col, master_row],
+            },
+            edges_matched: best_matched,
+            edges_observed: total,
+            weighted_score: score,
+            bit_error_rate,
+            mean_confidence,
+            master_origin_row: master_row,
+            master_origin_col: master_col,
+            score_best: score,
+            score_runner_up: None,
+            score_margin: f32::INFINITY,
+            runner_up_origin_row: None,
+            runner_up_origin_col: None,
+            runner_up_transform: None,
+        };
+        update_best_candidate(&mut best, candidate);
     }
 
     best
+}
+
+/// Find the lexicographic-max `(count, weight)` over a precompute table and
+/// collect every class index `(a, b)` achieving exactly that pair.
+///
+/// Returns `(max_count, max_weight, classes)` where `classes` holds the
+/// `(a, b)` of each cell with `count == max_count && weight == max_weight`.
+/// `cols` is the table's column count (both tables happen to be length 501, so
+/// it cannot be inferred from the slice length — the H table is `H_ROWS ×
+/// H_COLS` and the V table is `V_ROWS × V_COLS`). The float comparison is exact
+/// `==` so the collected set matches the original scan's strict-`>` tie-break.
+fn lex_max_classes(count: &[u32], weight: &[f32], cols: usize) -> (u32, f32, Vec<(usize, usize)>) {
+    debug_assert_eq!(count.len(), weight.len());
+    // First pass: lexicographic max of (count, weight).
+    let mut max_count = 0u32;
+    let mut max_weight = f32::NEG_INFINITY;
+    for (i, &c) in count.iter().enumerate() {
+        let w = weight[i];
+        if c > max_count || (c == max_count && w > max_weight) {
+            max_count = c;
+            max_weight = w;
+        }
+    }
+    // Second pass: collect all classes achieving exactly that pair.
+    let mut classes = Vec::new();
+    for (i, &c) in count.iter().enumerate() {
+        if c == max_count && weight[i] == max_weight {
+            classes.push((i / cols, i % cols));
+        }
+    }
+    (max_count, max_weight, classes)
+}
+
+/// Borrowed view over the four per-transform precompute tables, bundled so the
+/// direct-scan fallback stays under the workspace argument limit.
+struct TransformTables<'a> {
+    h_count: &'a [u32],
+    h_match: &'a [f32],
+    v_count: &'a [u32],
+    v_match: &'a [f32],
+}
+
+/// Fallback direct scan over all 501² origins for a single transform, using
+/// the precomputed tables. Byte-identical to the original inner loop; only
+/// invoked when the separated optimal set is pathologically large.
+fn scan_transform_direct(
+    transform: GridTransform,
+    tables: &TransformTables<'_>,
+    total: usize,
+    total_conf: f32,
+    max_bit_error_rate: f32,
+    best: &mut Option<DecodeOutcome>,
+) {
+    for master_row in 0..MASTER_ROWS as i32 {
+        let ha = (master_row % H_ROWS as i32) as usize;
+        let va = (master_row % V_ROWS as i32) as usize;
+        for master_col in 0..MASTER_COLS as i32 {
+            let hb = (master_col % H_COLS as i32) as usize;
+            let vb = (master_col % V_COLS as i32) as usize;
+
+            let matched =
+                (tables.h_count[ha * H_COLS + hb] + tables.v_count[va * V_COLS + vb]) as usize;
+            let weighted = tables.h_match[ha * H_COLS + hb] + tables.v_match[va * V_COLS + vb];
+
+            let bit_error_rate = if total == 0 {
+                1.0
+            } else {
+                (total - matched) as f32 / total as f32
+            };
+            if bit_error_rate > max_bit_error_rate {
+                continue;
+            }
+
+            let score = weighted / total_conf;
+            let mean_confidence = if matched == 0 {
+                0.0
+            } else {
+                weighted / matched as f32
+            };
+            let candidate = DecodeOutcome {
+                alignment: GridAlignment {
+                    transform,
+                    translation: [master_col, master_row],
+                },
+                edges_matched: matched,
+                edges_observed: total,
+                weighted_score: score,
+                bit_error_rate,
+                mean_confidence,
+                master_origin_row: master_row,
+                master_origin_col: master_col,
+                score_best: score,
+                score_runner_up: None,
+                score_margin: f32::INFINITY,
+                runner_up_origin_row: None,
+                runner_up_origin_col: None,
+                runner_up_transform: None,
+            };
+            update_best_candidate(best, candidate);
+        }
+    }
 }

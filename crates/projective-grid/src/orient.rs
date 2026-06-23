@@ -4,7 +4,7 @@
 //! two local grid directions. When the caller has no per-corner orientation
 //! (`Evidence::Positions`: a dot grid, a circle grid, or a chessboard whose
 //! corners carry no axis estimate), this module recovers those two directions
-//! geometrically so the existing seed-and-grow / topological machinery runs
+//! geometrically so the topological machinery runs
 //! unchanged.
 //!
 //! # The perspective problem

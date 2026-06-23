@@ -467,6 +467,7 @@ dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
  "chess-corners",
+ "criterion",
  "env_logger",
  "image",
  "log",

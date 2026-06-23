@@ -60,7 +60,7 @@ jobs:
           echo '<meta http-equiv="refresh" content="0; url=calib_targets_core/index.html">' > target/doc/index.html
           mdbook build book
 
-      - name: Build playground (WASM + demo)
+      - name: Build demo (WASM + Vite)
         run: |
           ./scripts/build-wasm.sh
           cd demo
@@ -69,10 +69,14 @@ jobs:
 
       - name: Assemble Pages artifact
         run: |
-          mkdir -p public/api public/playground
-          rsync -a target/doc/ public/api/
-          rsync -a book/book/ public/
-          rsync -a demo/dist/ public/playground/
+          # Landing page (.github/pages/index.html) is the site root; it also
+          # carries img/ and the performance/ report. mdBook moves off the root
+          # into /book/ so the landing page can own /.
+          mkdir -p public/api public/book public/demo
+          rsync -a .github/pages/ public/
+          rsync -a target/doc/    public/api/
+          rsync -a book/book/     public/book/
+          rsync -a demo/dist/     public/demo/
 
       - name: Upload artifact for Pages
         uses: actions/upload-pages-artifact@v3

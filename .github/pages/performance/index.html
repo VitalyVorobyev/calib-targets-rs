@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>calib-targets-rs · Performance</title>
+<meta name="description" content="Per-image, per-stage detection timing for calib-targets-rs, measured on public sample boards." />
+<link rel="icon" type="image/svg+xml" href="../img/vv-logo.svg" />
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #060a14; --blue: #5b9dff; --amber: #f2a93d; --teal: #33c6e3;
+    --green: #3ddc84; --rose: #ff6b6b; --ink: #d8e3f2; --muted: #8294b0;
+    --card: #0b1426; --edge: #1b2740; --track: #0e1726;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background:
+      radial-gradient(1100px 700px at 14% -10%, rgba(91,157,255,.12), transparent 60%),
+      radial-gradient(1000px 720px at 102% 112%, rgba(242,169,61,.08), transparent 60%),
+      var(--bg);
+    color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 30px 24px 80px; }
+  a.back { color: var(--muted); text-decoration: none; font-size: 13px; }
+  a.back:hover { color: var(--blue); }
+  header.top { margin: 14px 0 6px; }
+  h1 {
+    font-size: 30px; margin: 0; letter-spacing: -.02em;
+    background: linear-gradient(96deg, var(--blue), #eef4fb 55%, var(--amber));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    display: inline-block;
+  }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 6px; max-width: 70ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 8px; }
+  .chip { background: var(--card); border: 1px solid var(--edge); border-radius: 999px;
+    padding: 5px 12px; font-size: 12.5px; color: var(--muted); }
+  .chip b { color: var(--ink); font-weight: 600; }
+  h2 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted);
+    margin: 44px 0 14px; font-weight: 700; }
+  .card { background: var(--card); border: 1px solid var(--edge); border-radius: 14px;
+    padding: 20px 22px; margin-bottom: 16px; }
+  .imgcard h3 { margin: 0 0 2px; font-size: 18px; }
+  .imgcard .file { color: var(--muted); font-size: 12.5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .imgcard .meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 14px; font-size: 12.5px; color: var(--muted); }
+  .imgcard .meta b { color: var(--ink); font-weight: 600; }
+  .kindtag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 6px;
+    background: rgba(91,157,255,.14); color: var(--blue); vertical-align: middle; margin-left: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .barrow { display: grid; grid-template-columns: 132px 1fr 118px; align-items: center; gap: 12px; margin: 6px 0; }
+  .barrow .bl { font-size: 12.5px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .track { background: var(--track); border-radius: 6px; height: 18px; position: relative; overflow: hidden;
+    border: 1px solid rgba(255,255,255,.04); }
+  .fill { height: 100%; border-radius: 6px; }
+  .barrow .bv { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--ink); text-align: right; }
+  .barrow .bv .mut { color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--edge); }
+  th { color: var(--muted); font-weight: 600; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td code, .file code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .tag { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 5px; }
+  .tag.ext { background: rgba(242,169,61,.16); color: var(--amber); }
+  .tag.own { background: rgba(91,157,255,.16); color: var(--blue); }
+  .pri { display: inline-block; width: 22px; height: 22px; border-radius: 6px; background: rgba(91,157,255,.18);
+    color: var(--blue); font-size: 12px; font-weight: 700; text-align: center; line-height: 22px; }
+  .done { color: var(--green); font-weight: 600; }
+  .planned { color: var(--muted); }
+  svg { display: block; width: 100%; height: auto; }
+  .foot { color: var(--muted); font-size: 12px; margin-top: 44px; border-top: 1px solid var(--edge); padding-top: 16px; }
+  .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+  .err { color: var(--rose); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="back" href="../">&larr; calib-targets-rs</a>
+  <header class="top">
+    <h1>Performance</h1>
+    <div class="sub">Where the milliseconds go, measured per image on public sample boards — not generic
+      aggregates. Cost is regime-dependent: corner detection dominates sparse boards, the owned grid build and
+      decode take over on dense ones.</div>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <h2>Per-image stage breakdown</h2>
+  <div class="desc">Per-stage p50 from <code>topo_stage_timing</code>. <b>RingFit vs DiskFit</b> is shown only on
+    the corner-detection row — it is purely a <code>chess-corners</code> orientation method and every downstream
+    grid stage is orientation-agnostic. DiskFit roughly doubles corner detection, which is why RingFit is the default.</div>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--amber)"></i> corner detection (external)</span>
+    <span><i class="sw" style="background:var(--blue)"></i> grid build (owned)</span>
+    <span><i class="sw" style="background:var(--teal)"></i> decode (owned)</span>
+  </div>
+  <div id="imagecards"></div>
+
+  <h2>End-to-end latency — public frames</h2>
+  <div class="card">
+    <p class="desc" id="e2e-desc"></p>
+    <table id="e2e"><thead><tr><th>Frame</th><th></th><th class="num">p50 (ms)</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <h2>Decode-sweep scaling — synthetic PuzzleBoard</h2>
+  <div class="card">
+    <p class="desc" id="sweep-desc"></p>
+    <div class="legend" id="sweep-legend"></div>
+    <div id="sweepchart"></div>
+  </div>
+
+  <h2>Optimization roadmap — correctness-first, no false-positive trade</h2>
+  <div class="card">
+    <table id="roadmap"><thead><tr><th style="width:28px"></th><th>Bottleneck</th><th>Evidence</th><th>Approach</th><th>Status</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="foot" id="foot"></div>
+</div>
+
+<script>
+const C = { amber: "#f2a93d", amberSoft: "rgba(242,169,61,.42)", blue: "#5b9dff", teal: "#33c6e3", green: "#3ddc84", muted: "#8294b0" };
+const fmt = (v, d = 3) => v == null ? "—" : v.toFixed(d);
+
+function el(t, a, txt) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", t);
+  for (const k in (a || {})) e.setAttribute(k, a[k]);
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+function bar(label, fills, valueHtml, max) {
+  const row = document.createElement("div"); row.className = "barrow";
+  const bl = document.createElement("div"); bl.className = "bl"; bl.textContent = label;
+  const track = document.createElement("div"); track.className = "track";
+  fills.forEach(f => {
+    const d = document.createElement("div"); d.className = "fill";
+    d.style.width = Math.max(0.5, 100 * f.v / max) + "%"; d.style.background = f.color;
+    d.style.height = f.h || "100%"; d.style.position = "absolute";
+    if (f.top) { d.style.top = "0"; } else if (f.bottom) { d.style.bottom = "0"; } else { d.style.top = "0"; }
+    track.appendChild(d);
+  });
+  const bv = document.createElement("div"); bv.className = "bv"; bv.innerHTML = valueHtml;
+  row.append(bl, track, bv); return row;
+}
+
+function renderImageCard(img) {
+  const card = document.createElement("div"); card.className = "card imgcard";
+  const h = document.createElement("h3");
+  h.innerHTML = img.label + '<span class="kindtag">' + img.kind + "</span>";
+  const file = document.createElement("div"); file.className = "file";
+  file.innerHTML = "<code>" + img.file + "</code>";
+  const meta = document.createElement("div"); meta.className = "meta";
+  meta.innerHTML = "<span><b>" + img.width + "×" + img.height + "</b> px</span>" +
+    "<span><b>" + img.raw_corners + "</b> raw corners</span>" +
+    "<span><b>" + img.labelled + "</b> labelled</span>";
+  card.append(h, file, meta);
+
+  // max across corner (ring/disk), grid stages, decode
+  const cd = img.corner_detection || {};
+  const cornerVals = [cd.ring_fit, cd.disk_fit].filter(v => v != null);
+  const stageMax = img.stages.length ? Math.max(...img.stages.map(s => s.ms)) : 0;
+  const max = Math.max(...cornerVals, stageMax, img.grid_total || 0, img.decode || 0) || 1;
+
+  // corner detection row: ring (top) + disk (bottom, soft)
+  const fills = [];
+  if (cd.ring_fit != null) fills.push({ v: cd.ring_fit, color: C.amber, h: "8px", top: true });
+  if (cd.disk_fit != null) fills.push({ v: cd.disk_fit, color: C.amberSoft, h: "8px", bottom: true });
+  let cval = '<span style="color:' + C.amber + '">' + fmt(cd.ring_fit) + "</span>";
+  if (cd.disk_fit != null) cval += ' <span class="mut">/ ' + fmt(cd.disk_fit) + "</span>";
+  card.appendChild(bar("corner detection", fills, cval, max));
+
+  // grid sub-stages (single value, blue)
+  const labels = (window._stageLabels || {});
+  img.stages.forEach(s => {
+    card.appendChild(bar(labels[s.name] || s.name, [{ v: s.ms, color: C.blue }], fmt(s.ms), max));
+  });
+  if (img.decode != null) card.appendChild(bar("decode", [{ v: img.decode, color: C.teal }], fmt(img.decode), max));
+
+  if (img.note) {
+    const n = document.createElement("p"); n.className = "desc";
+    n.style.margin = "12px 0 0"; n.style.borderTop = "1px solid var(--edge)"; n.style.paddingTop = "10px";
+    n.textContent = img.note; card.appendChild(n);
+  }
+  return card;
+}
+
+function sweepChart(sweep) {
+  const host = document.getElementById("sweepchart");
+  const xs = sweep.sizes;
+  const series = sweep.series;
+  const W = 880, H = 300, P = { l: 46, r: 16, t: 14, b: 40 };
+  const allY = series.flatMap(s => s.ms).filter(v => v != null);
+  const ymax = Math.max(...allY);
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  const X = v => P.l + (W - P.l - P.r) * (v - xmin) / (xmax - xmin);
+  const Y = v => H - P.b - (H - P.t - P.b) * v / ymax;
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  for (let i = 0; i <= 4; i++) {
+    const yv = ymax * i / 4;
+    svg.appendChild(el("line", { x1: P.l, y1: Y(yv), x2: W - P.r, y2: Y(yv), stroke: "#16223a" }));
+    svg.appendChild(el("text", { x: P.l - 8, y: Y(yv) + 4, "text-anchor": "end", fill: C.muted, "font-size": 11 }, yv.toFixed(0)));
+  }
+  xs.forEach(x => svg.appendChild(el("text", { x: X(x), y: H - 16, "text-anchor": "middle", fill: C.muted, "font-size": 11 }, x)));
+  svg.appendChild(el("text", { x: W / 2, y: H - 2, "text-anchor": "middle", fill: C.muted, "font-size": 11 }, "board size (cells per side)"));
+  svg.appendChild(el("text", { x: 12, y: 14, fill: C.muted, "font-size": 11 }, "ms"));
+  const palette = [C.amber, C.green, C.blue, C.teal];
+  series.forEach((s, si) => {
+    const col = s.color || palette[si % palette.length];
+    let d = "";
+    s.ms.forEach((v, i) => { if (v != null) d += (d ? "L" : "M") + X(xs[i]) + " " + Y(v); });
+    svg.appendChild(el("path", { d, fill: "none", stroke: col, "stroke-width": 2.5 }));
+    s.ms.forEach((v, i) => { if (v != null) svg.appendChild(el("circle", { cx: X(xs[i]), cy: Y(v), r: 3.5, fill: col })); });
+  });
+  host.appendChild(svg);
+  // legend
+  const leg = document.getElementById("sweep-legend");
+  series.forEach((s, si) => {
+    const col = s.color || palette[si % palette.length];
+    const sp = document.createElement("span");
+    sp.innerHTML = '<i class="sw" style="background:' + col + '"></i> ' + s.label;
+    leg.appendChild(sp);
+  });
+}
+
+function render(data) {
+  window._stageLabels = data.stage_labels || {};
+  const m = data.meta;
+  document.getElementById("chips").innerHTML = [
+    ["", m.cpu], ["rustc", m.rustc], ["git", m.git_sha], ["date", m.generated],
+    ["topo_stage_timing", "×" + m.repeats + " reps"]
+  ].map(([k, v]) => '<span class="chip">' + (k ? k + " " : "") + "<b>" + v + "</b></span>").join("");
+
+  const ic = document.getElementById("imagecards");
+  data.images.forEach(img => ic.appendChild(renderImageCard(img)));
+
+  document.getElementById("e2e-desc").textContent = data.end_to_end.desc;
+  const e2e = document.querySelector("#e2e tbody");
+  data.end_to_end.frames.forEach(f => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td><code>" + f.file + "</code></td><td class='mut' style='color:var(--muted)'>" +
+      (f.note || "") + "</td><td class='num'>" + f.ms.toFixed(2) + "</td>";
+    e2e.appendChild(tr);
+  });
+
+  document.getElementById("sweep-desc").textContent = data.sweep.desc;
+  sweepChart(data.sweep);
+
+  const rm = document.querySelector("#roadmap tbody");
+  data.roadmap.forEach(r => {
+    const tr = document.createElement("tr");
+    const tag = r.owner === "OWNED" ? '<span class="tag own">OWN</span>' : '<span class="tag ext">EXT</span>';
+    const status = r.status === "done" ? '<span class="done">✓ shipped</span>' : '<span class="planned">planned</span>';
+    tr.innerHTML = '<td><span class="pri">' + r.n + "</span></td>" +
+      "<td>" + r.title + " " + tag + "</td><td>" + r.evidence + "</td><td>" + r.approach + "</td><td>" + status + "</td>";
+    rm.appendChild(tr);
+  });
+
+  document.getElementById("foot").innerHTML =
+    "All numbers are from public <code>testdata/</code> images or synthetic fixtures, measured with " +
+    "<code>" + m.source + "</code> on " + m.cpu + ". Methodology and the general-purpose backlog live in " +
+    "<code>docs/development/performance.md</code>.";
+}
+
+fetch("./data.json").then(r => r.json()).then(render).catch(e => {
+  document.getElementById("imagecards").innerHTML =
+    '<div class="card err">Could not load data.json: ' + e + "</div>";
+});
+</script>
+</body>
+</html>

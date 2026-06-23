@@ -1,38 +1,32 @@
-# Profiling the projective-grid pipeline
+# Profiling the detection pipeline
 
-This page documents how to capture flamegraphs and per-span timing for the
-topological grid-build pipeline (`GraphBuildAlgorithm::Topological`) plus
-the shared `merge_components_local` post-stage.
+How to capture flamegraphs and per-span timing for the topological grid-build
+pipeline (`GraphBuildAlgorithm::Topological`), the shared
+`merge_components_local` post-stage, and the marker-decode sweeps.
 
-## TL;DR
+For the *ranked* output of these tools — the current bottleneck list and the
+optimization backlog — see [`performance.md`](performance.md).
+
+## One-command campaign
+
+`scripts/run-perf-campaign.sh` runs the whole matrix (end-to-end latency,
+per-stage breakdown, criterion micro-benches, flamegraphs) and lands every
+artifact under `bench_results/perf-campaign/` (gitignored):
 
 ```bash
-# 1. Install the profiler (macOS).
-cargo install samply
-
-# 2. Build a release binary with debug info.
-cargo build --profile profiling -p calib-targets-bench --bin bench
-
-# 3. Capture a flamegraph for one image.
-samply record -- ./target/profiling/bench run \
-    --algorithm topological \
-    --image testdata/large.png \
-    --target chessboard
-
-# 4. Capture per-span timing (info-level).
-RUST_LOG=info cargo run --profile profiling \
-    --features "calib-targets/tracing" \
-    -p calib-targets-bench --bin bench -- run \
-    --algorithm topological \
-    --image testdata/large.png \
-    --target chessboard
+bash scripts/run-perf-campaign.sh            # full campaign
+FLAME=0 bash scripts/run-perf-campaign.sh    # skip flamegraphs
+REPEATS=200 bash scripts/run-perf-campaign.sh
 ```
 
-## Profiles
+Private-dataset numbers stay in `bench_results/` only; `performance.md` carries
+general / public-image numbers (disclosure policy). The rest of this page
+documents the individual tools the script drives.
 
-The workspace defines a `profiling` Cargo profile that inherits from
-`release` but keeps line-table debug info. Use it for any flamegraph
-capture so symbols resolve in the viewer:
+## The `profiling` Cargo profile
+
+Use it for any flamegraph capture so symbols resolve in the viewer
+(`target/profiling/`):
 
 ```toml
 [profile.profiling]
@@ -42,77 +36,56 @@ split-debuginfo = "unpacked"
 strip = false
 ```
 
-`cargo build --profile profiling` produces binaries in `target/profiling/`.
-`cargo run --profile profiling` works the same way.
+## Flamegraphs — samply (macOS default)
 
-## Profiler choice — samply (macOS default)
-
-`samply` is the recommended profiler on macOS:
-
-- No `sudo`, no `dtrace`, no SIP issues.
-- Native to Apple Silicon.
-- Uploads the captured profile to `profile.firefox.com` for an interactive
-  flamegraph + call-tree view (no data leaves the local machine — the URL
-  encodes a server-side ID for *your* upload only, but you can use
-  `samply load profile.json` for fully-offline review instead).
-
-Install once:
+`samply` needs no `sudo`/`dtrace`, is native to Apple Silicon, and renders an
+interactive call-tree. The detection of a single frame is too short to sample,
+so point samply at a binary that *loops* the work — `topo_stage_timing` with a
+high `--repeats`, or a criterion bench run under `--profile-time`:
 
 ```bash
 cargo install samply
+cargo build --profile profiling -p calib-targets-bench --bins
+
+# Grid pipeline (loops the detector --repeats times).
+samply record --save-only --no-open -o /tmp/topo.json.gz -- \
+    ./target/profiling/topo_stage_timing \
+    --image-dir testdata/02-topo-grid --repeats 400 --warmup 10 \
+    --out /tmp/topo-stage.json
+
+# A criterion decode bench (runs purely for the profiler, no analysis).
+cargo bench -p calib-targets-puzzleboard --bench dataset_decode --no-run --profile profiling
+samply record --save-only --no-open -o /tmp/decode.json.gz -- \
+    ./target/profiling/deps/dataset_decode-<hash> --bench --profile-time 12 'decode'
+
+samply load /tmp/topo.json.gz   # offline viewer
 ```
 
-Capture and view:
+`run-perf-campaign.sh` automates all three captures (and resolves the bench
+binary path for you). Fallback profiler: `cargo install flamegraph` then
+`sudo cargo flamegraph --profile profiling -p calib-targets-bench --bin bench --
+run --image testdata/large.png` (uses `dtrace`; may be blocked by SIP).
+
+## Per-span timing — `topo_stage_timing`
+
+The bench crate compiles the `tracing` feature in unconditionally, so
+`topo_stage_timing` produces a 14-stage breakdown (corner-detect → input-adapt →
+axis-filter → triangulate → classify → merge → 3 quad filters → walk →
+component-merge → clustering → recovery → ordering) with p50/p95/mean/max and
+git/rustc/CPU metadata — no feature flag needed:
 
 ```bash
-samply record -- ./target/profiling/bench run \
-    --algorithm topological \
-    --image testdata/large.png \
-    --target chessboard
-# → opens the flamegraph in your browser when the run finishes.
+cargo run --release -p calib-targets-bench --bin topo_stage_timing -- \
+    --image-dir testdata/02-topo-grid \
+    --orientation-method ring-fit \
+    --repeats 100 --warmup 10 \
+    --out bench_results/topo-stage.ring_fit.json
 ```
 
-To save the raw profile (so it can be re-opened, attached to a PR
-description, or compared with a later run):
+The instrumented functions (kept in sync manually — update this table and the
+crate's `tracing` wiring together when adding a span):
 
-```bash
-samply record -o /tmp/topo-large.json.gz -- <command>
-samply load /tmp/topo-large.json.gz   # offline viewer
-```
-
-For longer runs prefix `samply record --` to whatever invocation you
-already use (criterion, an example, a unit test). The profiling profile
-applies to release-style builds; criterion uses release by default, so
-just rebuild with `--profile profiling` if you need symbols:
-
-```bash
-cargo bench -p projective-grid --no-run --profile profiling
-samply record -- ./target/profiling/deps/grow-<hash> --bench
-```
-
-## Profiler choice — cargo-flamegraph (fallback)
-
-`cargo-flamegraph` works too but uses `dtrace` on macOS, which usually
-needs `sudo` and may be blocked by SIP. Install with
-`cargo install flamegraph` and run:
-
-```bash
-sudo cargo flamegraph --profile profiling \
-    -p calib-targets-bench --bin bench -- \
-    run --algorithm topological --image testdata/large.png --target chessboard
-```
-
-This produces a `flamegraph.svg` next to your invocation directory. Move
-or rename it before the next run; otherwise it will be overwritten.
-
-## Tracing — per-span p50/p95 (continuous metrics)
-
-`projective-grid` and the four detector crates all expose an optional
-`tracing` Cargo feature. When enabled, the hot-path entry points are
-wrapped in `tracing::instrument` so every call produces an enter/exit
-event with field metadata:
-
-| Crate | Function | Span level | Fields |
+| Crate | Function | Level | Fields |
 |---|---|---|---|
 | `projective-grid` | `build_grid_topological` | info | `num_corners` |
 | `projective-grid` | `merge_components_local` | info | `num_components` |
@@ -125,53 +98,25 @@ event with field metadata:
 | `projective-grid` | `local_step::estimate_local_steps` | debug | `num_points` |
 | `calib-targets-chessboard` | `Detector::detect_*` and inner stages | info / debug | (existing) |
 
-Enable the feature on the bench harness or the facade crate and pick a
-log level via `RUST_LOG`:
+To stream raw span events instead (one enter/exit per call, `time.busy`
+wall-clock per span), enable `tracing` on the facade and set `RUST_LOG`:
 
 ```bash
-# Stage-level only (fast, ~one event per detection).
 RUST_LOG=info cargo run --profile profiling \
     --features "calib-targets/tracing" \
     -p calib-targets-bench --bin bench -- run \
-    --algorithm topological --image testdata/large.png --target chessboard
-
-# All substeps (more events; per-call detail).
-RUST_LOG=debug cargo run --profile profiling \
-    --features "calib-targets/tracing" \
-    -p calib-targets-bench --bin bench -- run \
-    --algorithm topological --image testdata/large.png --target chessboard
+    --algorithm topological --image testdata/large.png
 ```
 
-`init_tracing(false)` in `calib-targets-core` already configures
-`FmtSpan::CLOSE`, so each span closes with a `time.busy` field that gives
-you wall-clock per call. For batched p50/p95 numbers run a multi-image
-sweep through the bench harness and post-process the lines (one JSON
-event per span if you pass `init_tracing(true)`).
+## Capture matrix
 
-## Recommended profile capture matrix
+`run-perf-campaign.sh` covers these cells. Capture them manually only when
+narrowing a specific regression:
 
-For a full pre-optimization snapshot, capture `samply` flamegraphs and a
-tracing JSON dump for each `(image, algorithm)` cell:
-
-| Image | Resolution | Target | Algorithm |
+| Image | Resolution | Target | Tool |
 |---|---|---|---|
-| `testdata/mid.png` | 1024×576 (0.6 MP) | chessboard | topological |
-| `testdata/large.png` | 2048×1536 (3.1 MP) | chessboard | topological |
-| `testdata/puzzleboard_reference/example4.png` | 4032×3024 (12.2 MP) | puzzleboard | topological |
-
-Keep all output under `bench_results/flamegraphs/` (gitignored). Naming
-convention:
-
-```
-bench_results/flamegraphs/
-    <image_slug>.<algorithm>.flame.json.gz   # samply raw profile
-    <image_slug>.<algorithm>.tracing.log     # RUST_LOG output
-    REPORT.md                                # ranked findings (local-only)
-```
-
-## Updating this document
-
-The instrumented-functions table is a manual list — when adding spans to
-a new function, update both the table here and the corresponding crate's
-`tracing` feature wiring (the consumer-side `tracing` feature must
-propagate down to `projective-grid/tracing` via `calib-targets-core`).
+| `testdata/02-topo-grid/*` | ~1 MP chessboards | chessboard | `topo_stage_timing` (ring-fit **and** disk-fit) |
+| `testdata/mid.png` | 1024×576 | chessboard | samply flamegraph |
+| `testdata/large.png` | 2048×1536 | chessboard | samply flamegraph |
+| `puzzleboard_reference/example4.png` | 4032×3024 | puzzleboard | `dataset_decode` bench + flamegraph |
+| private charuco set | native | charuco | `charuco/dataset/decode` bench + flamegraph |

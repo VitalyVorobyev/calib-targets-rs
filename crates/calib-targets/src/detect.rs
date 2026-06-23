@@ -66,7 +66,7 @@ pub enum DetectError {
 /// paper-faithful default is `Threshold::Absolute(0.0)`, which is correct in
 /// principle (any strictly positive ChESS response is a corner candidate) but
 /// produces hundreds of weak responses on real-world images. Both the
-/// seed-and-grow chessboard detector and the topological grid pipeline are
+/// topological grid pipeline is
 /// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
 /// threshold `0.0` produces zero labelled corners while `15.0` recovers the
 /// full 30-corner component; on `testdata/small0.png` the labelled count

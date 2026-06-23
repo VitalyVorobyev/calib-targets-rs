@@ -168,8 +168,8 @@ pub enum RejectionReason {
     /// Feature was never labelled by the detection pipeline (e.g. noise
     /// outside the recovered lattice support).
     Unlabelled,
-    /// Feature was labelled by the seed-and-grow pass but dropped by the
-    /// post-grow validation stage (line collinearity, local-H residual,
+    /// Feature was labelled by the topological pass but dropped by the
+    /// post-build validation stage (line collinearity, local-H residual,
     /// or edge-length band).
     ValidationDropped,
 }

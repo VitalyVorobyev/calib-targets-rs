@@ -38,7 +38,7 @@
 //! * Otherwise (isolated local-H flag with no supporting evidence),
 //!   defer — no blacklist entry in this iteration.
 //!
-//! The caller is expected to re-run the seed/grow/validate loop after
+//! The caller is expected to re-run the topological recovery/validate loop after
 //! updating its blacklist.
 //!
 //! An optional **edge-shape gate** is available for final validation

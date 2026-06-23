@@ -13,8 +13,8 @@
 //! `pipeline::geometry_check` after the shared
 //! [`validate`](crate::shared::validate::validate) pass; the order and
 //! the flag-gated activation stay caller-side (they read the caller's
-//! tuning), but the geometry itself lives here so the topological and
-//! seed-and-grow strategies share one implementation.
+//! tuning), but the geometry itself lives here as the shared
+//! topological pipeline implementation.
 //!
 //! What does NOT belong here: the stage *orchestration* (which filter runs
 //! when, and the parity / axis recheck) — that is irreducibly coupled to the
@@ -111,7 +111,7 @@ const TOPO_FRONTIER_MAX_DEGREE: usize = 2;
 /// Direct local wrong-label edge detector for the topological grid
 /// builder.
 ///
-/// The seed-and-grow edge-shape gate cannot reach the dominant
+/// The historical seed-and-grow edge-shape gate could not reach the dominant
 /// topological wrong-label classes — interior skipped-corner edges (its
 /// overlong check is gated behind a collinear triple) and duplicate-pixel
 /// labels — so this targets them directly using only local geometry,

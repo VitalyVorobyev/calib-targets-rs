@@ -26,8 +26,8 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 | [`refactor-gates.md`](development/refactor-gates.md) | Standing per-phase validation gate for in-flight refactors. |
 | [`commands.md`](development/commands.md) | Complete build / example / bench / binding / CLI command reference. |
 | [`profiling.md`](development/profiling.md) | Flamegraph / per-span timing capture for the grid-build pipeline. |
+| [`performance.md`](development/performance.md) | Benchmark methodology, current bottleneck ranking, and the prioritized optimization backlog. |
 | [`subagent-workflow.md`](development/subagent-workflow.md) | Dispatching quick-/deep-implementer subagents during feature work. |
-| [`improvement-roadmap-2026-06.md`](development/improvement-roadmap-2026-06.md) | Studio-driven detection / parameter improvement roadmap. |
 
 ### `algorithms/` — algorithm deep-dives & design notes
 
@@ -35,7 +35,6 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 |---|---|
 | [`topological-grid-detection.md`](algorithms/topological-grid-detection.md) | Canonical stage-by-stage map for the sole grid builder (the book's `algo_topological_grid` summarises this). |
 | [`algorithmic_gaps.md`](algorithms/algorithmic_gaps.md) | Workspace-wide ledger of open/closed algorithmic gaps and known limitations. |
-| [`chess-corners-0.10-impact.md`](algorithms/chess-corners-0.10-impact.md) | The `chess-corners` 0.8 → 0.10 integration report; explains why RingFit stays the default. |
 | [`puzzle_detection_spec.md`](algorithms/puzzle_detection_spec.md) | PuzzleBoard soft-edge-decode + global-inference design. |
 | [`charuco_concept.md`](algorithms/charuco_concept.md) | ChArUco board-level hypothesis-scoring concept. |
 | [`diskfit-antipodal-sector.md`](algorithms/diskfit-antipodal-sector.md) | Upstream `chess-corners` DiskFit axis-slot inversion defect note. |

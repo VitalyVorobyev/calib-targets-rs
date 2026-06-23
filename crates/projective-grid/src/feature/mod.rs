@@ -5,11 +5,11 @@
 //! that information into coordinate hypotheses or caller-side filtering before
 //! using this crate.
 //!
-//! The detection surface is pinned to `f32`: the seed-and-grow and
-//! topological pipelines, the homography fit, and every downstream
-//! consumer (chessboard, puzzleboard, charuco) operate in single
-//! precision. The remaining generic-`F` surface in the crate is the
-//! pure-geometry [`crate::geometry`] module.
+//! The detection surface is pinned to `f32`: the topological pipeline,
+//! the homography fit, and every downstream consumer (chessboard,
+//! puzzleboard, charuco) operate in single precision. The remaining
+//! generic-`F` surface in the crate is the pure-geometry
+//! [`crate::geometry`] module.
 
 use nalgebra::Point2;
 

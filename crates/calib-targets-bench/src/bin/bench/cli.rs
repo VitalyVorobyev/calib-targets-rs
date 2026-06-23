@@ -97,7 +97,7 @@ pub(crate) struct CompareArgs {
     /// as given, then relative to `bench_results/`.
     #[arg(long)]
     pub(crate) a: String,
-    /// Second report JSON (the "B" column, e.g. the seed-and-grow run).
+    /// Second report JSON (the "B" column, e.g. a candidate run — a different config, revision, or orientation method).
     #[arg(long)]
     pub(crate) b: String,
     /// Output stem (relative to workspace root unless absolute). Defaults to

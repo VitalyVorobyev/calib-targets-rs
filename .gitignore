@@ -2,7 +2,9 @@ target
 .vscode
 *.pyc
 book/book
-public/
+# Root-only: the local `build-site.sh` / CI Pages build output. Scoped with a
+# leading slash so Vite source assets under `demo/public/` stay tracked.
+/public/
 tmpdata
 synthetic
 stereo

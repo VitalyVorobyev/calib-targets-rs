@@ -58,6 +58,30 @@ const H_COLS: usize = EDGE_MAP_B_COLS; // 3
 const V_ROWS: usize = EDGE_MAP_A_ROWS; // 3
 const V_COLS: usize = EDGE_MAP_A_COLS; // 167
 
+/// Recover a master row from its two CRT residues.
+///
+/// `mr = (334·va + 168·ha) mod 501` is the Chinese-Remainder inverse for the
+/// pair `(va, ha) = (mr % 3, mr % 167)`: it satisfies `mr % 3 == va` and
+/// `mr % 167 == ha`. Because `501 = 3·167` with `gcd(3, 167) = 1`, the map
+/// `mr ↔ (va, ha)` is a bijection over `[0, 501)`.
+#[inline]
+fn crt_master_row(va: usize, ha: usize) -> i32 {
+    (334 * va as i32 + 168 * ha as i32).rem_euclid(MASTER_ROWS_I32)
+}
+
+/// Recover a master col from its two CRT residues.
+///
+/// `mc = (334·hb + 168·vb) mod 501` is the Chinese-Remainder inverse for the
+/// pair `(hb, vb) = (mc % 3, mc % 167)`: it satisfies `mc % 3 == hb` and
+/// `mc % 167 == vb`. Bijective over `[0, 501)` by the same CRT argument.
+#[inline]
+fn crt_master_col(hb: usize, vb: usize) -> i32 {
+    (334 * hb as i32 + 168 * vb as i32).rem_euclid(MASTER_COLS_I32)
+}
+
+const MASTER_ROWS_I32: i32 = crate::board::MASTER_ROWS as i32;
+const MASTER_COLS_I32: i32 = crate::board::MASTER_COLS as i32;
+
 /// Tuning knobs for the soft-log-likelihood scorer. See [`soft::decode_soft`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SoftLlConfig {

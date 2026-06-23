@@ -118,6 +118,166 @@ fn decode_reference(
     best
 }
 
+/// Reference (slow, O(501² × N)) soft-log-likelihood decoder, kept verbatim
+/// from the pre-optimization `decode_soft` scan as a byte-exact oracle for the
+/// crossed-CRT separation. Inlines the `finalize_soft_winner` gate because that
+/// helper is private to the `soft` module.
+fn decode_soft_reference(
+    observed: &[PuzzleBoardObservedEdge],
+    cfg: &SoftLlConfig,
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
+    if observed.is_empty() {
+        return None;
+    }
+    let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
+    if total_conf <= 0.0 {
+        return None;
+    }
+    let total = observed.len();
+
+    let mut best: Option<DecodeOutcome> = None;
+    let mut runner_up: Option<DecodeOutcome> = None;
+
+    let mut h_ll = vec![0.0f32; H_ROWS * H_COLS];
+    let mut h_match = vec![0u32; H_ROWS * H_COLS];
+    let mut h_match_conf = vec![0.0f32; H_ROWS * H_COLS];
+    let mut v_ll = vec![0.0f32; V_ROWS * V_COLS];
+    let mut v_match = vec![0u32; V_ROWS * V_COLS];
+    let mut v_match_conf = vec![0.0f32; V_ROWS * V_COLS];
+
+    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+        let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
+            .iter()
+            .map(|e| {
+                let lookup = transform_edge_lookup(e, &transform);
+                (
+                    lookup.lookup_row,
+                    lookup.lookup_col,
+                    lookup.orientation,
+                    e.bit,
+                    e.confidence,
+                )
+            })
+            .collect();
+
+        h_ll.fill(0.0);
+        h_match.fill(0);
+        h_match_conf.fill(0.0);
+        v_ll.fill(0.0);
+        v_match.fill(0);
+        v_match_conf.fill(0.0);
+
+        for &(tr, tc, orient, bit, conf) in &transformed {
+            let (ll_match_val, ll_mismatch_val) = ll_pair(conf, cfg.kappa, cfg.per_bit_floor);
+            match orient {
+                EdgeOrientation::Horizontal => {
+                    for r in 0..H_ROWS {
+                        let a = (r as i32 - tr).rem_euclid(H_ROWS as i32) as usize;
+                        for c in 0..H_COLS {
+                            let b = (c as i32 - tc).rem_euclid(H_COLS as i32) as usize;
+                            let expected = horizontal_edge_bit(r as i32, c as i32);
+                            let idx = a * H_COLS + b;
+                            if expected == bit {
+                                h_ll[idx] += ll_match_val;
+                                h_match[idx] += 1;
+                                h_match_conf[idx] += conf;
+                            } else {
+                                h_ll[idx] += ll_mismatch_val;
+                            }
+                        }
+                    }
+                }
+                EdgeOrientation::Vertical => {
+                    for r in 0..V_ROWS {
+                        let a = (r as i32 - tr).rem_euclid(V_ROWS as i32) as usize;
+                        for c in 0..V_COLS {
+                            let b = (c as i32 - tc).rem_euclid(V_COLS as i32) as usize;
+                            let expected = vertical_edge_bit(r as i32, c as i32);
+                            let idx = a * V_COLS + b;
+                            if expected == bit {
+                                v_ll[idx] += ll_match_val;
+                                v_match[idx] += 1;
+                                v_match_conf[idx] += conf;
+                            } else {
+                                v_ll[idx] += ll_mismatch_val;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for master_row in 0..MASTER_ROWS as i32 {
+            let ha = (master_row % H_ROWS as i32) as usize;
+            let va = (master_row % V_ROWS as i32) as usize;
+            for master_col in 0..MASTER_COLS as i32 {
+                let hb = (master_col % H_COLS as i32) as usize;
+                let vb = (master_col % V_COLS as i32) as usize;
+
+                let ll_total = h_ll[ha * H_COLS + hb] + v_ll[va * V_COLS + vb];
+                let matched = (h_match[ha * H_COLS + hb] + v_match[va * V_COLS + vb]) as usize;
+                let match_conf_sum =
+                    h_match_conf[ha * H_COLS + hb] + v_match_conf[va * V_COLS + vb];
+
+                let bit_error_rate = (total - matched) as f32 / total as f32;
+                let mean_confidence = if matched == 0 {
+                    0.0
+                } else {
+                    match_conf_sum / matched as f32
+                };
+                let candidate = DecodeOutcome {
+                    alignment: GridAlignment {
+                        transform,
+                        translation: [master_col, master_row],
+                    },
+                    edges_matched: matched,
+                    edges_observed: total,
+                    weighted_score: ll_total / total as f32,
+                    bit_error_rate,
+                    mean_confidence,
+                    master_origin_row: master_row,
+                    master_origin_col: master_col,
+                    score_best: ll_total,
+                    score_runner_up: None,
+                    score_margin: 0.0,
+                    runner_up_origin_row: None,
+                    runner_up_origin_col: None,
+                    runner_up_transform: None,
+                };
+                update_best_and_runner_up(&mut best, &mut runner_up, candidate);
+            }
+        }
+    }
+
+    // Inlined `finalize_soft_winner`.
+    let mut best = best?;
+    let edges = best.edges_observed.max(1) as f32;
+    match runner_up {
+        Some(r) => {
+            best.score_runner_up = Some(r.score_best);
+            best.score_margin = (best.score_best - r.score_best) / edges;
+            best.runner_up_origin_row = Some(r.master_origin_row);
+            best.runner_up_origin_col = Some(r.master_origin_col);
+            best.runner_up_transform = Some(r.alignment.transform);
+        }
+        None => {
+            best.score_runner_up = None;
+            best.score_margin = f32::INFINITY;
+            best.runner_up_origin_row = None;
+            best.runner_up_origin_col = None;
+            best.runner_up_transform = None;
+        }
+    }
+    if best.score_margin < cfg.alignment_min_margin {
+        return None;
+    }
+    if best.bit_error_rate > max_bit_error_rate {
+        return None;
+    }
+    Some(best)
+}
+
 fn rotate_observed_edge_canonically(
     edge: &PuzzleBoardObservedEdge,
     t: &GridTransform,
@@ -824,4 +984,345 @@ fn decode_fixed_board_soft_target_position_is_d4_invariant() {
     assert_fixed_board_target_position_is_d4_invariant(|obs, spec_or, spec_oc, rows, cols| {
         decode_fixed_board_soft(obs, spec_or, spec_oc, rows, cols, &cfg, 0.30).expect("soft decode")
     });
+}
+
+// --- Differential tests: crossed-CRT separation vs O(501²) reference -------
+
+/// Tiny seeded LCG (no external `rand` dependency). Numerically-classic
+/// constants (Numerical Recipes); good enough for adversarial fuzz coverage.
+struct Lcg(u64);
+
+impl Lcg {
+    fn new(seed: u64) -> Self {
+        Lcg(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(1))
+    }
+    fn next_u32(&mut self) -> u32 {
+        self.0 = self
+            .0
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (self.0 >> 32) as u32
+    }
+    fn below(&mut self, n: u32) -> u32 {
+        if n == 0 {
+            0
+        } else {
+            self.next_u32() % n
+        }
+    }
+    /// One of a small palette of quantized confidences so ties are common.
+    fn conf(&mut self) -> f32 {
+        const PALETTE: [f32; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
+        PALETTE[self.below(PALETTE.len() as u32) as usize]
+    }
+}
+
+/// Build a randomized observation set: random count, coords, bits, confidences,
+/// orientations. Coordinates are kept in a modest range so cyclic wrap and
+/// genuine matches both occur.
+fn random_observation(rng: &mut Lcg) -> Vec<PuzzleBoardObservedEdge> {
+    let n = rng.below(40) as usize; // 0..=39 — includes empty + tiny sets.
+    (0..n)
+        .map(|_| {
+            let orientation = if rng.below(2) == 0 {
+                EdgeOrientation::Horizontal
+            } else {
+                EdgeOrientation::Vertical
+            };
+            PuzzleBoardObservedEdge {
+                row: rng.below(40) as i32 - 5,
+                col: rng.below(40) as i32 - 5,
+                orientation,
+                bit: (rng.below(2)) as u8,
+                confidence: rng.conf(),
+            }
+        })
+        .collect()
+}
+
+/// Assert two `DecodeOutcome`s are byte-identical across every field, with
+/// exact float `==` (the optimized and reference paths perform identical
+/// summations, so any divergence is a real bug, not rounding noise).
+fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
+    assert_eq!(
+        a.alignment.transform, b.alignment.transform,
+        "{ctx}: transform"
+    );
+    assert_eq!(
+        a.alignment.translation, b.alignment.translation,
+        "{ctx}: translation"
+    );
+    assert_eq!(a.edges_matched, b.edges_matched, "{ctx}: edges_matched");
+    assert_eq!(a.edges_observed, b.edges_observed, "{ctx}: edges_observed");
+    assert_eq!(
+        a.weighted_score.to_bits(),
+        b.weighted_score.to_bits(),
+        "{ctx}: weighted_score {} vs {}",
+        a.weighted_score,
+        b.weighted_score
+    );
+    assert_eq!(
+        a.bit_error_rate.to_bits(),
+        b.bit_error_rate.to_bits(),
+        "{ctx}: bit_error_rate"
+    );
+    assert_eq!(
+        a.mean_confidence.to_bits(),
+        b.mean_confidence.to_bits(),
+        "{ctx}: mean_confidence"
+    );
+    assert_eq!(
+        a.master_origin_row, b.master_origin_row,
+        "{ctx}: master_origin_row"
+    );
+    assert_eq!(
+        a.master_origin_col, b.master_origin_col,
+        "{ctx}: master_origin_col"
+    );
+    assert_eq!(
+        a.score_best.to_bits(),
+        b.score_best.to_bits(),
+        "{ctx}: score_best {} vs {}",
+        a.score_best,
+        b.score_best
+    );
+}
+
+/// Adversarial corpus designed to provoke ties and degenerate optimal sets.
+fn adversarial_corpus() -> Vec<(String, Vec<PuzzleBoardObservedEdge>)> {
+    let mut out: Vec<(String, Vec<PuzzleBoardObservedEdge>)> = Vec::new();
+    out.push(("empty".into(), Vec::new()));
+    // Single edge.
+    out.push((
+        "single_h".into(),
+        vec![PuzzleBoardObservedEdge {
+            row: 3,
+            col: 4,
+            orientation: EdgeOrientation::Horizontal,
+            bit: 1,
+            confidence: 1.0,
+        }],
+    ));
+    // All-same-bit, all-equal-confidence (maximal ties).
+    let all_equal: Vec<PuzzleBoardObservedEdge> = (0..12)
+        .map(|i| PuzzleBoardObservedEdge {
+            row: i % 4,
+            col: i / 4,
+            orientation: if i % 2 == 0 {
+                EdgeOrientation::Horizontal
+            } else {
+                EdgeOrientation::Vertical
+            },
+            bit: 0,
+            confidence: 1.0,
+        })
+        .collect();
+    out.push(("all_zero_bit_equal_conf".into(), all_equal));
+    // Zero confidence everywhere (total_conf == 0 → early return None).
+    out.push((
+        "all_zero_conf".into(),
+        vec![
+            PuzzleBoardObservedEdge {
+                row: 0,
+                col: 0,
+                orientation: EdgeOrientation::Horizontal,
+                bit: 1,
+                confidence: 0.0,
+            },
+            PuzzleBoardObservedEdge {
+                row: 1,
+                col: 0,
+                orientation: EdgeOrientation::Vertical,
+                bit: 0,
+                confidence: 0.0,
+            },
+        ],
+    ));
+    // A perfect observation (unique decode).
+    out.push((
+        "perfect_5x5".into(),
+        build_perfect_observation(12, 37, 5, 5),
+    ));
+    out
+}
+
+#[test]
+fn fast_decode_byte_identical_to_reference_fuzz() {
+    let mut rng = Lcg::new(0xDEAD_BEEF);
+    let bers = [0.01f32, 0.10, 0.30, 0.50, 1.0];
+    for trial in 0..120usize {
+        let obs = random_observation(&mut rng);
+        let ber = bers[trial % bers.len()];
+        let fast = decode(&obs, ber);
+        let reference = decode_reference(&obs, ber);
+        match (fast, reference) {
+            (None, None) => {}
+            (Some(f), Some(r)) => {
+                assert_outcome_byte_identical(&f, &r, &format!("hard trial {trial} ber {ber}"))
+            }
+            (f, r) => {
+                panic!("hard trial {trial} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
+            }
+        }
+    }
+}
+
+#[test]
+fn fast_decode_byte_identical_to_reference_adversarial() {
+    let bers = [0.01f32, 0.30, 0.50, 1.0];
+    for (name, obs) in adversarial_corpus() {
+        for &ber in &bers {
+            let fast = decode(&obs, ber);
+            let reference = decode_reference(&obs, ber);
+            match (fast, reference) {
+                (None, None) => {}
+                (Some(f), Some(r)) => {
+                    assert_outcome_byte_identical(&f, &r, &format!("hard adv {name} ber {ber}"))
+                }
+                (f, r) => {
+                    panic!("hard adv {name} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
+                }
+            }
+        }
+    }
+}
+
+/// Compare the soft winner's decoded fields and the margin-gate decision. The
+/// runner-up diagnostic fields are also asserted byte-identical because the
+/// optimized path replays candidates in the same scan order as the reference.
+fn assert_soft_equivalent(
+    fast: &Option<DecodeOutcome>,
+    reference: &Option<DecodeOutcome>,
+    ctx: &str,
+) {
+    match (fast, reference) {
+        (None, None) => {}
+        (Some(f), Some(r)) => {
+            // Winner identity + carried diagnostics.
+            assert_outcome_byte_identical(f, r, ctx);
+            // Margin gate inputs and outcome.
+            assert_eq!(
+                f.score_margin.to_bits(),
+                r.score_margin.to_bits(),
+                "{ctx}: score_margin {} vs {}",
+                f.score_margin,
+                r.score_margin
+            );
+            match (f.score_runner_up, r.score_runner_up) {
+                (None, None) => {}
+                (Some(fr), Some(rr)) => assert_eq!(
+                    fr.to_bits(),
+                    rr.to_bits(),
+                    "{ctx}: score_runner_up {fr} vs {rr}"
+                ),
+                _ => panic!("{ctx}: score_runner_up Some/None mismatch"),
+            }
+            assert_eq!(
+                f.runner_up_origin_row, r.runner_up_origin_row,
+                "{ctx}: runner_up_origin_row"
+            );
+            assert_eq!(
+                f.runner_up_origin_col, r.runner_up_origin_col,
+                "{ctx}: runner_up_origin_col"
+            );
+            assert_eq!(
+                f.runner_up_transform, r.runner_up_transform,
+                "{ctx}: runner_up_transform"
+            );
+        }
+        (f, r) => panic!("{ctx}: None/Some mismatch fast={f:?} ref={r:?}"),
+    }
+}
+
+#[test]
+fn soft_decode_byte_identical_to_reference_fuzz() {
+    let cfg = default_soft_cfg();
+    let mut rng = Lcg::new(0x1234_5678_9ABC_DEF0);
+    let bers = [0.10f32, 0.30, 0.50, 1.0];
+    for trial in 0..120usize {
+        let obs = random_observation(&mut rng);
+        let ber = bers[trial % bers.len()];
+        let fast = decode_soft(&obs, &cfg, ber);
+        let reference = decode_soft_reference(&obs, &cfg, ber);
+        assert_soft_equivalent(&fast, &reference, &format!("soft trial {trial} ber {ber}"));
+    }
+}
+
+#[test]
+fn soft_decode_byte_identical_to_reference_low_margin_gate() {
+    // Sweep the margin gate across a wide range so the pass/fail decision is
+    // exercised on both sides of the threshold for randomized inputs.
+    let mut rng = Lcg::new(0xCAFE_F00D_0BAD_BEEF);
+    let margins = [0.0f32, 0.001, 0.02, 0.1, 1.0, 1e9];
+    for trial in 0..180usize {
+        let obs = random_observation(&mut rng);
+        let mut cfg = default_soft_cfg();
+        cfg.alignment_min_margin = margins[trial % margins.len()];
+        let fast = decode_soft(&obs, &cfg, 0.50);
+        let reference = decode_soft_reference(&obs, &cfg, 0.50);
+        assert_soft_equivalent(
+            &fast,
+            &reference,
+            &format!(
+                "soft margin trial {trial} margin {}",
+                cfg.alignment_min_margin
+            ),
+        );
+    }
+}
+
+#[test]
+fn soft_decode_byte_identical_to_reference_adversarial() {
+    let cfg = default_soft_cfg();
+    let bers = [0.10f32, 0.30, 0.50, 1.0];
+    for (name, obs) in adversarial_corpus() {
+        for &ber in &bers {
+            let fast = decode_soft(&obs, &cfg, ber);
+            let reference = decode_soft_reference(&obs, &cfg, ber);
+            assert_soft_equivalent(&fast, &reference, &format!("soft adv {name} ber {ber}"));
+        }
+    }
+}
+
+#[test]
+fn crt_inverse_round_trips_every_residue_pair() {
+    // mr = (334·va + 168·ha) mod 501 must satisfy mr%3==va, mr%167==ha.
+    for va in 0..V_ROWS {
+        for ha in 0..H_ROWS {
+            let mr = crt_master_row(va, ha);
+            assert_eq!(mr.rem_euclid(3) as usize, va, "mr%3 for (va={va}, ha={ha})");
+            assert_eq!(
+                mr.rem_euclid(167) as usize,
+                ha,
+                "mr%167 for (va={va}, ha={ha})"
+            );
+        }
+    }
+    // mc = (334·hb + 168·vb) mod 501 must satisfy mc%3==hb, mc%167==vb.
+    for hb in 0..H_COLS {
+        for vb in 0..V_COLS {
+            let mc = crt_master_col(hb, vb);
+            assert_eq!(mc.rem_euclid(3) as usize, hb, "mc%3 for (hb={hb}, vb={vb})");
+            assert_eq!(
+                mc.rem_euclid(167) as usize,
+                vb,
+                "mc%167 for (hb={hb}, vb={vb})"
+            );
+        }
+    }
+    // Bijectivity: every master row/col is produced exactly once.
+    let mut rows = std::collections::HashSet::new();
+    for va in 0..V_ROWS {
+        for ha in 0..H_ROWS {
+            rows.insert(crt_master_row(va, ha));
+        }
+    }
+    assert_eq!(rows.len(), MASTER_ROWS as usize, "mr inverse not bijective");
+    let mut cols = std::collections::HashSet::new();
+    for hb in 0..H_COLS {
+        for vb in 0..V_COLS {
+            cols.insert(crt_master_col(hb, vb));
+        }
+    }
+    assert_eq!(cols.len(), MASTER_COLS as usize, "mc inverse not bijective");
 }

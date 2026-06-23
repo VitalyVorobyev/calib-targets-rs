@@ -1,0 +1,218 @@
+{
+  "meta": {
+    "cpu": "Apple M4 Pro",
+    "rustc": "1.95.0",
+    "git_sha": "df04057",
+    "repeats": 100,
+    "warmup": 10,
+    "generated": "2026-06-22",
+    "source": "scripts/gen-perf-data.sh",
+    "note": "Public testdata images and synthetic fixtures only. Per-stage numbers are p50 from topo_stage_timing; the decode sweep is the synthetic-board criterion bench."
+  },
+  "stage_labels": {
+    "corner_detection": "corner detection",
+    "triangulation": "triangulation",
+    "edge_classification": "edge classify",
+    "cell_size_filter": "cell-size filter",
+    "walk": "walk (label)",
+    "clustering": "clustering",
+    "recovery": "recovery",
+    "ordering": "ordering"
+  },
+  "images": [
+    {
+      "label": "Sparse chessboard",
+      "file": "testdata/02-topo-grid/GeminiChess1.png",
+      "kind": "Chessboard",
+      "width": 800,
+      "height": 436,
+      "raw_corners": 323,
+      "labelled": 52,
+      "corner_detection": {
+        "ring_fit": 1.055,
+        "disk_fit": 2.669
+      },
+      "grid_total": 0.354,
+      "decode": null,
+      "stages": [
+        {
+          "name": "ordering",
+          "ms": 0.16
+        },
+        {
+          "name": "recovery",
+          "ms": 0.043
+        },
+        {
+          "name": "clustering",
+          "ms": 0.023
+        },
+        {
+          "name": "walk",
+          "ms": 0.017
+        },
+        {
+          "name": "edge_classification",
+          "ms": 0.01
+        },
+        {
+          "name": "cell_size_filter",
+          "ms": 0.009
+        },
+        {
+          "name": "triangulation",
+          "ms": 0.006
+        }
+      ],
+      "note": "A small ~1 MP board: corner detection is ~75% of the whole pipeline, and DiskFit roughly doubles it. The owned grid build is a thin slice."
+    },
+    {
+      "label": "Dense board",
+      "file": "testdata/puzzleboard_reference/example6.png",
+      "kind": "PuzzleBoard",
+      "width": 4032,
+      "height": 3024,
+      "raw_corners": 20288,
+      "labelled": 2687,
+      "corner_detection": {
+        "ring_fit": 36.326,
+        "disk_fit": null
+      },
+      "grid_total": 27.498,
+      "decode": null,
+      "stages": [
+        {
+          "name": "ordering",
+          "ms": 8.974
+        },
+        {
+          "name": "recovery",
+          "ms": 7.459
+        },
+        {
+          "name": "clustering",
+          "ms": 1.995
+        },
+        {
+          "name": "walk",
+          "ms": 1.027
+        },
+        {
+          "name": "edge_classification",
+          "ms": 1.02
+        },
+        {
+          "name": "triangulation",
+          "ms": 0.733
+        },
+        {
+          "name": "cell_size_filter",
+          "ms": 0.621
+        }
+      ],
+      "note": "A 12 MP board with ~20k corners: the regime flips. The owned grid build is now 27.5 ms, dominated by ordering + recovery (both driven by the per-corner local-homography solve in the precision gate)."
+    }
+  ],
+  "end_to_end": {
+    "desc": "Full chessboard pipeline (corner detection + grid build, ring-fit), per public frame.",
+    "frames": [
+      {
+        "file": "testdata/02-topo-grid/GeminiChess1.png",
+        "ms": 1.412,
+        "note": "800x436"
+      },
+      {
+        "file": "testdata/mid.png",
+        "ms": 2.895,
+        "note": "1024x576 ChArUco"
+      },
+      {
+        "file": "testdata/large.png",
+        "ms": 14.236,
+        "note": "2048x1536 ChArUco \u2014 slowest public frame"
+      }
+    ]
+  },
+  "sweep": {
+    "desc": "PuzzleBoard master-edge-code decode on a synthetic board, by board size (cells per side). The full master sweep searches all 501x501 origins x 8 D4 transforms.",
+    "sizes": [
+      8,
+      10,
+      12,
+      13,
+      16,
+      20,
+      30
+    ],
+    "series": [
+      {
+        "key": "full_before",
+        "label": "full master sweep (before)",
+        "ms": [
+          3.732,
+          4.262,
+          4.897,
+          5.307,
+          6.657,
+          9.118,
+          17.98
+        ]
+      },
+      {
+        "key": "full_after",
+        "label": "full master sweep (after \u2014 O(8\u00b7501) scan)",
+        "ms": [
+          2.436,
+          2.937,
+          3.525,
+          3.937,
+          5.263,
+          7.591,
+          15.529
+        ]
+      }
+    ]
+  },
+  "roadmap": [
+    {
+      "n": 1,
+      "title": "Corner-detect config levers",
+      "owner": "EXTERNAL",
+      "evidence": "~75% on a 1 MP board; 14 ms at 3 MP; DiskFit ~2x",
+      "approach": "keep RingFit default; optional downscale / ROI for large frames",
+      "status": "planned"
+    },
+    {
+      "n": 2,
+      "title": "PuzzleBoard master-origin scan",
+      "owner": "OWNED",
+      "evidence": "fixed O(8x501^2) scan, dominant on small/mid boards",
+      "approach": "CRT-separable collapse to O(8x501) \u2014 byte-exact, deterministic",
+      "status": "done"
+    },
+    {
+      "n": 3,
+      "title": "ChArUco board-match decode",
+      "owner": "OWNED",
+      "evidence": "decode can exceed corner detection on dense boards",
+      "approach": "tighten the hypothesis enumeration window",
+      "status": "planned"
+    },
+    {
+      "n": 4,
+      "title": "Per-corner local-H solve (precision gate)",
+      "owner": "OWNED",
+      "evidence": "ordering + recovery own the dense-board grid build",
+      "approach": "memoize local-H bases across grow iterations (high risk: determinism + precision gate)",
+      "status": "planned"
+    },
+    {
+      "n": 5,
+      "title": "Orientation-free positions-only grid path",
+      "owner": "OWNED",
+      "evidence": "~8.5x the oriented path on synthetic grids",
+      "approach": "profile + cut the constant (correctness-neutral)",
+      "status": "planned"
+    }
+  ]
+}

@@ -276,10 +276,10 @@ fn fewer_than_three_features_errors() {
 }
 
 #[test]
-fn topological_default_off_seed_grow_used_by_default() {
-    // Phase C's default selector (SeedAndGrow) must remain unchanged so
-    // the Phase C integration test suite keeps passing without code
-    // changes. This test is a regression gate on that default.
+fn default_algorithm_is_topological() {
+    // `DetectionParams::default()` selects the `Topological` builder (the
+    // sole builder); this test is a regression gate that the default
+    // produces a full clean grid.
     let features = axis_aligned_features(5, 5, 20.0);
     let request = DetectionRequest::new(
         LatticeKind::Square,
@@ -287,6 +287,6 @@ fn topological_default_off_seed_grow_used_by_default() {
         None,
         DetectionParams::default(),
     );
-    let solution = detect_grid(request).expect("default (seed-and-grow) on clean 5x5");
+    let solution = detect_grid(request).expect("default (topological) on clean 5x5");
     assert_eq!(solution.grid.entries.len(), 25);
 }
