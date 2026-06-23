@@ -20,7 +20,7 @@ pub struct CharucoParams {
     /// so the topological cell test labels ChArUco grids cleanly, and the
     /// marker-decode stages downstream of grid construction are
     /// builder-agnostic. The decode is precision-clean on the topological grid
-    /// (zero self-consistency wrong-ids on the private flagship sweep).
+    /// (zero self-consistency wrong-ids across the internal regression sets).
     #[serde(default)]
     pub chessboard: DetectorParams,
     /// ChArUco board parameters
@@ -154,12 +154,11 @@ fn default_min_secondary_marker_inliers() -> usize {
 }
 
 fn default_bit_likelihood_slope() -> f32 {
-    // Empirically tuned on a 22×22 DICT_4X4_1000 private dataset and a
-    // 68×68 DICT_APRILTAG_36h10 (3× upscaled) private dataset:
-    // κ=36 is the minimum value that clears every frame on both datasets
-    // with zero self-consistency wrong-ids.
-    // Smaller κ compresses the per-bit logit and lets runner-up
-    // hypotheses nearly tie the top; larger κ does not change outcomes.
+    // Tuned on the internal ArUco and AprilTag regression sets to the
+    // minimum logistic slope that clears them with zero self-consistency
+    // wrong-ids. Smaller slopes compress the per-bit logit and let
+    // runner-up hypotheses nearly tie the top; larger slopes do not change
+    // outcomes.
     36.0
 }
 
@@ -250,11 +249,12 @@ impl CharucoParams {
         // (they pass the homography validation) and so survive into the
         // ChArUco product as biased corners — geometry alone cannot reject
         // them (the weak-frontier ceiling). Cutting weak corners *before*
-        // the grid grows keeps the grid out of the blur entirely, which on
-        // the private regression set clears every reviewed marker-bit false
-        // corner (zero product-false), and — because the marker cells are
-        // sampled from that grid — also *improves* marker decode (fewer
-        // spurious cells), recovering frames the looser floor lost. The cost
+        // the grid grows keeps the grid out of the blur entirely, which
+        // across the internal regression sets clears every reviewed
+        // marker-bit false corner (zero product-false), and — because the
+        // marker cells are sampled from that grid — also *improves* marker
+        // decode (fewer spurious cells), recovering frames the looser floor
+        // lost. The cost
         // is the weakest blurred-margin corners (least useful for
         // calibration). The board alignment is a *location* tool, never a
         // corner-drop gate, so this floor — not marker presence — is the
@@ -298,11 +298,11 @@ impl CharucoParams {
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
-            // Default to the board-level soft-LL matcher: on the internal
-            // 22×22 regression set it is 120/120 with zero self-consistency
-            // wrong-ids, vs the legacy vote matcher's lower recall and
-            // higher wrong-id noise. The legacy matcher stays a documented
-            // opt-in (`use_board_level_matcher = false`).
+            // Default to the board-level soft-LL matcher: across the internal
+            // regression sets it reaches full recall with zero
+            // self-consistency wrong-ids, vs the legacy vote matcher's lower
+            // recall and higher wrong-id noise. The legacy matcher stays a
+            // documented opt-in (`use_board_level_matcher = false`).
             use_board_level_matcher: true,
             bit_likelihood_slope: default_bit_likelihood_slope(),
             per_bit_floor: default_per_bit_floor(),

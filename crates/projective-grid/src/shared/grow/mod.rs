@@ -11,7 +11,7 @@
 //! These primitives back the boundary-extension and interior-fill engines
 //! ([`crate::shared::grow_extend`], [`crate::shared::extension`],
 //! [`crate::shared::fill`]) and the geometry-only recovery schedule
-//! ([`crate::shared::recovery`]). The chessboard crate composes the same
+//! ([`crate::shared::recovery_schedule`]). The chessboard crate composes the same
 //! primitives directly for its topological recovery path.
 //!
 //! The policy is asked four questions:

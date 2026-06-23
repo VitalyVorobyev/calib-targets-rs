@@ -12,8 +12,9 @@
 //!   candidate search, ambiguity resolution, and the per-edge cardinal gate.
 //! - [`grow_extend`] / [`extension`] / [`fill`] — boundary-extension and
 //!   interior-fill engines built on those primitives.
-//! - [`recovery`] — the [`RecoverySchedule`](recovery::RecoverySchedule)
-//!   fixed-point that composes extension + fill + revalidation + drop filters.
+//! - [`recovery_schedule`] — the
+//!   [`RecoverySchedule`](recovery_schedule::RecoverySchedule) fixed-point that
+//!   composes extension + fill + revalidation + drop filters.
 //!
 //! A crate-private geometry-first attach policy for synthesized-axis evidence
 //! backs the recovery schedule. The undirected-angle helpers it needs live in
@@ -39,6 +40,6 @@ pub mod fill;
 pub mod grow;
 pub mod grow_extend;
 mod positions_policy;
-pub mod recovery;
+pub mod recovery_schedule;
 
 pub(crate) use fit::{fit_component, FitComponentResult};

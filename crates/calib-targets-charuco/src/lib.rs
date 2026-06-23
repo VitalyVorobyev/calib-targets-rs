@@ -40,7 +40,7 @@ mod alignment;
 mod board;
 mod detector;
 mod io;
-mod validation;
+pub mod link_check;
 
 // Opt-in introspection surface, gated behind the `diagnostics` feature (default
 // off), consistent with `calib-targets-chessboard`.
@@ -56,9 +56,20 @@ pub use io::{
     load_board_spec_any, resolve_dictionary, BoardSpecLoadError, CharucoConfigError,
     CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
 };
-pub use validation::{
+pub use link_check::{
     validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,
     LinkViolationKind, MarkerCornerLink,
 };
+
+/// Deprecated alias for the [`link_check`] module.
+///
+/// The marker-corner linkage check module was renamed from `validation` to
+/// `link_check` to reflect its role (it checks marker↔corner *links*, distinct
+/// from the in-`detector` homography corner *refit*). The old
+/// `calib_targets_charuco::validation::*` path still resolves through this
+/// re-export; migrate to `calib_targets_charuco::link_check` (or the
+/// crate-root re-exports, which are unchanged).
+#[deprecated(since = "0.10.0", note = "renamed to `link_check`")]
+pub use crate::link_check as validation;
 
 pub use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

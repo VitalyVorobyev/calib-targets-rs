@@ -24,7 +24,7 @@ use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{GridSolution, RejectedFeature};
 
-pub use crate::shared::recovery::{RecoveryParams, RecoverySchedule};
+pub use crate::shared::recovery_schedule::{RecoveryParams, RecoverySchedule};
 pub use crate::shared::validate::ValidationParams as ValidateParams;
 pub use crate::topological::TopologicalParams;
 

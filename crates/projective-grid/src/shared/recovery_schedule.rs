@@ -32,7 +32,7 @@
 //!    pass (line collinearity + local-H residual) drops any corner the
 //!    extension / fill attached that does not cohere with its neighbourhood.
 //! 4. **drop filters** — the lattice-general filters in
-//!    [`crate::shared::validate::recovery`]: the topological wrong-label drops
+//!    [`crate::shared::validate::wrong_label_filters`]: the topological wrong-label drops
 //!    (overlong / off-axis / duplicate-pixel edges), then the
 //!    largest-cardinally-connected-component filter (a square detection is one
 //!    connected planar graph; any stranded sub-component is a false positive).
@@ -242,7 +242,7 @@ fn revalidate_and_filter(
     // deterministic input ordering) lives in the shared `drop_set` helper,
     // which the chessboard detector's final geometry check also routes
     // through; only the application to this `GrowResult` stays here.
-    let result = pg_validate::recovery::drop_set(
+    let result = pg_validate::wrong_label_filters::drop_set(
         &grow.labelled,
         |idx| positions[idx],
         cell_size,

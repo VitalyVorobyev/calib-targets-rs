@@ -59,8 +59,8 @@
 mod edge_shape;
 mod lines;
 mod local_h;
-pub mod recovery;
 mod step;
+pub mod wrong_label_filters;
 
 use nalgebra::Point2;
 use std::collections::{HashMap, HashSet};
