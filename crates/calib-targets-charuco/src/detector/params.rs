@@ -33,9 +33,6 @@ pub struct CharucoParams {
     /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
     #[serde(default)]
     pub scan: ScanDecodeConfig,
-    /// Maximum Hamming distance for marker matching.
-    #[serde(default)]
-    pub max_hamming: u8,
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
@@ -260,14 +257,11 @@ impl CharucoParams {
             // blurry or unevenly-lit images.
             .with_min_border_score(0.75);
 
-        let max_hamming = board.dictionary.max_correction_bits().min(2);
-
         Self {
             px_per_square: 60.0,
             chessboard,
             board: *board,
             scan,
-            max_hamming,
             // The board-level soft-LL matcher is its own inlier gate (it
             // accepts/rejects on the margin gate), so it is robust on partial /
             // blurry views and takes board-appropriate low inlier floors

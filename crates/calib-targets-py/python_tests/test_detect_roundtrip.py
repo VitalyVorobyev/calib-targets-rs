@@ -58,7 +58,6 @@ def _charuco_params_small2() -> ct.CharucoParams:
             min_border_score=0.45,
             dedup_by_id=True,
         ),
-        max_hamming=0,
         min_marker_inliers=8,
     )
 

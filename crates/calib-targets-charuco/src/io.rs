@@ -195,9 +195,9 @@ impl CharucoDetectConfig {
             params.chessboard = chessboard;
         }
         if let Some(aruco) = self.aruco.as_ref() {
-            if let Some(max_hamming) = aruco.max_hamming {
-                params.max_hamming = max_hamming;
-            }
+            // `ArucoScanConfig.max_hamming` is intentionally not mapped: the
+            // board-level matcher (the sole matcher) uses soft-bit scoring and
+            // a margin gate, with no Hamming cap. Only the scan overrides apply.
             aruco.apply_to_scan(&mut params.scan);
         }
         params

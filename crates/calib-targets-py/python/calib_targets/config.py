@@ -1129,7 +1129,6 @@ class CharucoParams:
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
-    max_hamming: int = 0
     min_marker_inliers: int = 3
     min_secondary_marker_inliers: int | None = None
     grid_smoothness_threshold_rel: float | None = None
@@ -1141,7 +1140,6 @@ class CharucoParams:
             "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
             "scan": self.scan.to_dict(),
-            "max_hamming": self.max_hamming,
             "min_marker_inliers": self.min_marker_inliers,
         }
         if self.min_secondary_marker_inliers is not None:
@@ -1168,7 +1166,8 @@ class CharucoParams:
                 else _charuco_chessboard_default()
             ),
             scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
-            max_hamming=data.get("max_hamming", 0),
+            # A legacy "max_hamming" key (the retired vote matcher's knob) is
+            # ignored if present.
             min_marker_inliers=data.get("min_marker_inliers", 3),
             min_secondary_marker_inliers=data.get("min_secondary_marker_inliers"),
             grid_smoothness_threshold_rel=data.get("grid_smoothness_threshold_rel"),

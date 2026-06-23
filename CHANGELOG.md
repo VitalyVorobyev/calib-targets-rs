@@ -64,6 +64,14 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   `MatcherDiagKind` enum and the `ComponentDiagnostics.matcher` field are
   removed, so the `matcher` key is dropped from the ChArUco diagnostics JSON —
   the WASM diagnostics type and Python overlay are updated to match.
+  `CharucoParams::max_hamming` is removed in the same change: it fed only the
+  retired hard-decode vote matcher and became a no-op once that matcher was
+  deleted (the board-level matcher uses soft-bit scoring and a margin gate, with
+  no Hamming cap). The Rust field, the WASM `CharucoParams` type entry, and the
+  Python `CharucoParams` dataclass field are removed; an unknown `max_hamming`
+  serde / config key is now ignored on deserialization. The C ABI
+  `ct_charuco_detector_params_t.max_hamming` field is **retained** (accepted but
+  ignored) to keep the published 1.0 FFI struct layout stable.
 
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The

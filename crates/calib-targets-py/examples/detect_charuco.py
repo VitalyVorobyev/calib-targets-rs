@@ -47,7 +47,6 @@ def main() -> None:
             min_border_score=0.85,
             dedup_by_id=True,
         ),
-        max_hamming=2,
         min_marker_inliers=8,
     )
 

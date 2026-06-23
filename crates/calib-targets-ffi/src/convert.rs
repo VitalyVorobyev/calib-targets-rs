@@ -527,8 +527,11 @@ pub(crate) fn convert_charuco_detector_params(
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
-    out.max_hamming = u8::try_from(params.max_hamming)
-        .map_err(|_| FfiError::config_error("charuco.max_hamming must fit into uint8_t"))?;
+    // `params.max_hamming` (the C `ct_charuco_detector_params_t.max_hamming`
+    // field) is accepted but ignored: it fed only the retired legacy ChArUco
+    // vote matcher. The board-level matcher (the sole matcher) uses soft-bit
+    // scoring with a margin gate and has no Hamming cap. The C ABI field is
+    // retained for 1.0 layout stability; it no longer maps to anything.
     out.min_marker_inliers = params.min_marker_inliers;
     out.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
     out.corner_validation_threshold_rel = corner_validation_threshold_rel;

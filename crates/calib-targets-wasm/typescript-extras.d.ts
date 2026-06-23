@@ -370,7 +370,6 @@ export interface CharucoParams {
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
   scan: ScanDecodeConfig;
-  max_hamming: number;
   min_marker_inliers: number;
   min_secondary_marker_inliers: number;
   grid_smoothness_threshold_rel: number;

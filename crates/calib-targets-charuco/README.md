@@ -121,7 +121,7 @@ Defaults from `for_board(&spec)` work for most targets.
 | Chessboard stage | `chessboard: DetectorParams` | Inherits from [`calib-targets-chessboard`]. Tune there first. |
 | Pixel sampling | `px_per_square` (default 60) | Rectified cell side in pixels. Drop to 40 if cells are small; raise to 80 for very fine markers. |
 | Grid validation | `grid_smoothness_threshold_rel`, `corner_validation_threshold_rel` | Smoothness / local-H residuals on refined corners. Loosen under lens distortion. |
-| Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold`, `max_hamming` | Marker sampling and dictionary-matching. |
+| Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold` | Marker cell sampling for the soft-bit score matrix. |
 | Alignment accept | `min_marker_inliers`, `min_secondary_marker_inliers` | Downstream inlier floors (the board matcher is its own gate, so these stay low). |
 | Board-level matcher | `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) are tuned conservatively across the internal regression sets. |
 
@@ -130,8 +130,13 @@ Defaults from `for_board(&spec)` work for most targets.
 - **Tiny markers (< ~8 px / bit)** — the soft-bit board-level matcher
   handles these where a hard per-cell threshold decode would fail; raise
   `px_per_square` so each marker bit gets more rectified pixels.
-- **Motion blur or defocus** — increase `max_hamming` to 2–3 to admit
-  noisier per-cell decodes into the score matrix.
+- **Motion blur or defocus** — there is no Hamming knob to "admit" noisier
+  cells: the soft-bit matcher already tolerates moderate per-bit noise
+  through its log-likelihood scoring, and the margin gate deliberately
+  *declines* a frame whose decode is too ambiguous rather than risk a wrong
+  ID (precision-first). If blur is costing you whole frames, attack it
+  upstream — raise `px_per_square`, upscale the input, or lower
+  `alignment_min_margin` slightly to accept lower-confidence alignments.
 - **Uneven illumination** — `scan.multi_threshold = true` (default).
 - **Tight near-tie hypotheses** — lower `alignment_min_margin` to 0.02 for
   permissive detection, or raise to 0.10 for stricter precision.

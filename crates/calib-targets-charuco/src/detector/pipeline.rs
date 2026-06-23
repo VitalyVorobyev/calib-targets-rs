@@ -121,20 +121,6 @@ impl CharucoDetector {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
 
-        // Cap max_hamming at max_correction_bits when the dictionary declares a
-        // non-zero value.  AprilTag families report max_correction_bits == 0 in
-        // OpenCV metadata even though their minimum inter-code Hamming distance
-        // is large (e.g. 10 for 36h10), so we skip capping in that case and let
-        // the user control error tolerance directly.
-        let max_hamming = if board_cfg.dictionary.max_correction_bits() > 0 {
-            params
-                .max_hamming
-                .min(board_cfg.dictionary.max_correction_bits())
-        } else {
-            params.max_hamming
-        };
-        params.max_hamming = max_hamming;
-
         let board = CharucoBoard::new(board_cfg)?;
 
         Ok(Self { board, params })
