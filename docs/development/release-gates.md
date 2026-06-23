@@ -35,5 +35,12 @@ mdbook build book
 `#[non_exhaustive]`) invalidates both the FFI header and Python typing stubs.
 Always regenerate both after such changes.
 
+**Architecture docs (hand-maintained, not generated).** When a change adds,
+removes, renames, or relocates an atomic algorithm, or alters a detector's pipeline
+stages or a crate's internal dependencies, update the matching files under
+[`../architecture/`](../architecture/README.md#keeping-this-current) in the same PR
+(algorithm atlas + pipeline maps for algorithm/stage changes; the layering doc for
+dependency changes). Spot-check ~10 `file.rs::fn` anchors before tagging.
+
 See [conventions.md](conventions.md#binding--cli-parity) for the binding /
 CLI / dict-key parity rules that these generated artifacts enforce.

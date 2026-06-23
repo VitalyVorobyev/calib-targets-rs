@@ -12,6 +12,20 @@ guides, and release history.
 
 ## Map
 
+### `architecture/` — start here: how the whole stack fits together
+A cross-cutting map of the detection stack — the algorithm atlas, per-detector
+pipeline maps, the crate-layering view, a critical review, and a ranked cleanup
+backlog. The best entry point when onboarding or auditing the detector crates.
+
+| File | What it covers |
+|---|---|
+| [`architecture/README.md`](architecture/README.md) | Entry map + the one-screen verdict + the keep-it-current rule. |
+| [`architecture/algorithm-atlas.md`](architecture/algorithm-atlas.md) | Every atomic algorithm + the algorithm×pipeline matrix. |
+| [`architecture/pipeline-maps.md`](architecture/pipeline-maps.md) | Each detector stage-by-stage (algorithm, local vs delegated). |
+| [`architecture/dependency-and-layering.md`](architecture/dependency-and-layering.md) | Crate DAG, layering, the library-only surface. |
+| [`architecture/critique.md`](architecture/critique.md) | Critical review: duplication/debt findings + the from-scratch verdict. |
+| [`architecture/chore-backlog.md`](architecture/chore-backlog.md) | Ranked, effort/risk-tagged consolidation backlog. |
+
 ### `development/` — developer guides
 The everyday gates and conventions. These are the guides linked from the
 project [`CLAUDE.md`](../.claude/CLAUDE.md).
