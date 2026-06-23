@@ -39,7 +39,7 @@
 //!   consumers (the chessboard detector) that compose the engine directly with
 //!   their own policies. [`shared`] hosts the geometry-only grid-growth
 //!   primitives ([`shared::grow`], [`shared::fill`], [`shared::extension`],
-//!   [`shared::grow_extend`]) and the [`shared::recovery`] schedule.
+//!   [`shared::grow_extend`]) and the [`shared::recovery_schedule`] schedule.
 //!   These are **semver-exempt pre-1.0**: items here may change shape between
 //!   minor releases as the engine is refactored. Depend on the facade unless
 //!   you are building a new detector on top of the engine.

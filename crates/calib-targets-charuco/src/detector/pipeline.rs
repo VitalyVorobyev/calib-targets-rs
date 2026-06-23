@@ -1,7 +1,7 @@
 use super::alignment_select::select_alignment;
 use super::board_match::{match_board_diag, BoardMatchConfig, BoardMatchDiagnostics};
 use super::corner_mapping::map_charuco_corners;
-use super::corner_validation::{validate_and_fix_corners, CornerValidationConfig};
+use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;

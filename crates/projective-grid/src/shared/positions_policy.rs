@@ -33,13 +33,13 @@
 //! The accept gate is *wide*, so the precision burden shifts onto the per-edge
 //! band, the search-radius prediction gate, and the post-convergence
 //! revalidation + drop filters ([`crate::shared::validate`] +
-//! [`crate::shared::validate::recovery`]). The recovery schedule that wraps
+//! [`crate::shared::validate::wrong_label_filters`]). The recovery schedule that wraps
 //! this policy runs the line-collinearity + local-H + topological wrong-label +
 //! largest-component filters on every sweep, so a geometrically-incoherent
 //! attach is dropped, not mislabelled.
 //!
 //! What does NOT belong here: any parity / axis-cluster vocabulary, or the
-//! recovery control flow ([`crate::shared::recovery`]).
+//! recovery control flow ([`crate::shared::recovery_schedule`]).
 //!
 //! **Tier:** advanced engine — semver-exempt pre-1.0.
 

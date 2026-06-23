@@ -6,7 +6,7 @@
 mod alignment_select;
 mod board_match;
 mod corner_mapping;
-mod corner_validation;
+mod corner_refit;
 mod error;
 mod grid_smoothness;
 mod marker_sampling;
