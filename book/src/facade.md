@@ -42,7 +42,8 @@ let result = detect::detect_charuco_best(&img, &configs);
 (default, high, low). `detect_charuco_best` tries each and returns the result
 with the most markers (then most corners).
 
-PuzzleBoard follows the same facade shape:
+PuzzleBoard follows the same facade shape. Its sweep also includes a
+hard-weighted fallback for high-distortion fragments:
 
 ```rust,no_run
 use calib_targets::detect;

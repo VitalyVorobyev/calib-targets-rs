@@ -1,7 +1,7 @@
 //! Detector parameters for PuzzleBoard.
 
 use crate::board::PuzzleBoardSpec;
-use crate::detector::PuzzleBoardDecodeConfig;
+use crate::detector::{PuzzleBoardDecodeConfig, PuzzleBoardScoringMode};
 use calib_targets_chessboard::DetectorParams;
 use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
@@ -72,12 +72,20 @@ impl PuzzleBoardParams {
         }
     }
 
-    /// Three-config sweep preset built on top of
+    /// Multi-config sweep preset built on top of
     /// [`DetectorParams::sweep_default`].
+    ///
+    /// The first pass keeps the default soft scorer and default BER gate.
+    /// The second pass repeats the same chessboard sweep with the legacy
+    /// hard-weighted scorer at the paper's 40% BER allowance, which recovers
+    /// high-distortion author-reference fragments while leaving
+    /// [`Self::for_board`] unchanged.
     pub fn sweep_for_board(board: &PuzzleBoardSpec) -> Vec<Self> {
         let base = Self::for_board(board);
-        DetectorParams::sweep_default()
-            .into_iter()
+        let chess_sweep = DetectorParams::sweep_default();
+        let mut configs: Vec<Self> = chess_sweep
+            .iter()
+            .cloned()
             .map(|mut chessboard| {
                 chessboard.min_corner_strength = base.chessboard.min_corner_strength;
                 Self {
@@ -85,6 +93,17 @@ impl PuzzleBoardParams {
                     ..base.clone()
                 }
             })
-            .collect()
+            .collect();
+        configs.extend(chess_sweep.into_iter().map(|mut chessboard| {
+            chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+            let mut params = Self {
+                chessboard,
+                ..base.clone()
+            };
+            params.decode.scoring_mode = PuzzleBoardScoringMode::HardWeighted;
+            params.decode.max_bit_error_rate = 0.40;
+            params
+        }));
+        configs
     }
 }

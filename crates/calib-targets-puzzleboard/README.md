@@ -79,7 +79,7 @@ promise than the result API.
 ## Configuration
 
 [`PuzzleBoardParams`] is `#[non_exhaustive]`. Use `for_board(spec)` for
-defaults or `sweep_for_board(spec)` for a 3-config preset.
+defaults or `sweep_for_board(spec)` for a multi-config preset.
 
 | Group | Key knobs | Effect |
 |---|---|---|
@@ -128,8 +128,8 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   is gated on the corners, not a separate threshold.
 - **Motion blur** — use `PuzzleBoardSearchMode::Full` and
   `PuzzleBoardParams::sweep_for_board(&spec)` via
-  `detect_puzzleboard_best`; the stronger-contrast config often recovers
-  blurred dots.
+  `detect_puzzleboard_best`; the sweep includes stricter/looser ChESS
+  thresholds plus a hard-weighted fallback at the paper's 40% BER allowance.
 - **Multi-camera sub-fragments** — keep `Full` mode; every camera
   decodes to the same master coordinates, so downstream calibration gets
   directly-comparable observations. If you're validating consistency on a

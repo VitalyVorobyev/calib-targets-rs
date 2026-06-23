@@ -74,7 +74,9 @@ The grid side is the standard chessboard `DetectorParams` (under
 
 For threshold-sensitive images use
 `PuzzleBoardParams::sweep_for_board(&spec)` with
-`detect_puzzleboard_best`. The naive hard-bit decoder already clears the
+`detect_puzzleboard_best`. The sweep tries the default soft scorer first,
+then a hard-weighted fallback at the paper's 40% BER allowance for
+high-distortion fragments. The naive hard-bit decoder already clears the
 precision/recall contract at zero wrong labels; do not rewrite to a
 coherent-hypothesis matcher without a demonstrated precision gap.
 
