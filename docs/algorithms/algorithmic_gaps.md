@@ -167,33 +167,60 @@ opt-in legacy fallback. A proper fix (enumerate all four rotations in
 must be gated on the private ChArUco regression sweep before landing; it is
 deferred until that path needs attention.
 
-### Gap 18 — PuzzleBoard decode fails under heavy radial distortion (OPEN)
+### Gap 18 — PuzzleBoard decode under heavy radial distortion (RESOLVED, PR #61, 2026-06-23)
 
-Measured 2026-06-23 on the public `puzzleboard_reference/` author set
-(Stelldinger et al. CC0 oracle frames) via the `interop_authors` harness
-(`PuzzleBoardSpec::new(20, 20, 5.0)` + `sweep_for_board` +
-`detect_puzzleboard_best`): **4 of 10** frames decode (example0/4/5/6 — the
-last three at BER ≈ 0); the other six fail at the master-match stage.
-`example2.png` (flagged in `crates/calib-targets-bench/datasets.toml` as
-"visible radial distortion — Stage 6 refusal expected") returns *decoding
-failed: no position match above confidence threshold*.
+**Was:** on the public `puzzleboard_reference/` author set (Stelldinger et al.
+CC0 oracle frames), only **4 of 10** frames decoded (example0/4/5/6); the other
+six failed at the master-match stage, and `example2.png` ("visible radial
+distortion") returned *decoding failed: no position match above confidence
+threshold*. The chessboard **grid** detected cleanly on all of them — only the
+edge-dot → 501×501 master decode failed, because radial distortion shifts the
+dot off the raw chord midpoint enough to corrupt the bit reads.
 
-The chessboard **grid** still detects cleanly on these frames (the cross-tile
-pattern yields ChESS X-junctions at every intersection); only the edge-dot →
-501×501 master decode fails. Radial distortion shifts the sampled
-edge-midpoint dots off their nominal grid-relative positions enough to corrupt
-the bit reads below the soft-LL master-match confidence threshold. Consistent
-with precision-by-construction, the decoder **refuses** rather than mislabels.
+**Fix that landed (PR #61).** Sample each edge bit at distortion-aware candidate
+centers instead of only the raw chord midpoint, keeping the highest-confidence
+reading (the midpoint is always retained as a fallback):
 
-**Current handling.** The public performance report renders `example2.png` as
-a **chessboard** card (grid-only), not a PuzzleBoard card, because full decode
-does not succeed on it.
+- the cell's shared-edge midpoint via the local unit-cell→quad homography of
+  each adjoining square (**perspective** correction), and
+- a cubic-Lagrange interpolation of the edge midpoint along the curved grid line
+  through the two flanking corners (`-1/16, 9/16, 9/16, -1/16` at t = ½ — a
+  curvature-continuity estimate, **lens** correction).
 
-**Candidate fix.** Decode in a distortion-corrected grid frame: fit a low-order
-radial model from the labelled chessboard grid (recovered cleanly), warp the
-edge-midpoint sample points through it, and re-read the bits — rather than
-sampling in the raw image frame. The grid is already trusted; the dots just
-need the same correction. Ties into the distortion-recall line below. Deferred.
+This realizes the original "decode in a distortion-corrected grid frame"
+candidate as a *local-geometry* equivalent: no explicit global radial model is
+needed; the already-trusted grid supplies the per-cell correction.
+`sweep_for_board` additionally appends a second pass using the legacy
+hard-weighted scorer at the paper's 40% BER allowance to recover high-distortion
+fragments; `PuzzleBoardParams::for_board` (the single-config default) is
+unchanged.
+
+**Validation.** `example1/2/3` — previously among the six master-match failures
+— now decode (253/180/28 labelled corners), joining example0/4/5/6 for **7 of
+10**. The new `author_examples_1_2_3_decode_when_reference_dataset_present` test
+asserts the decoded `(i, j)` labels are consistent with the master positions
+under a single D4 transform (mod 501) — i.e. correct, not merely present. See
+Gap 19 for the residual precision caveat this pass introduces.
+
+### Gap 19 — 40% BER hard fallback has no uniqueness gate (OPEN)
+
+The high-distortion sweep pass added in Gap 18's fix decodes with the
+hard-weighted scorer at a 40% BER allowance and **no best-vs-runner-up margin
+gate** (`score_margin = ∞` on the hard path), unlike the soft scorer's
+`alignment_min_margin`. On a *full* board this is safe — wrong master origins
+sit near 50% BER, comfortably above the gate — and the author-set decode labels
+are D4-consistent. The residual risk is a *small fragment*: with few observed
+edges, 40% BER is a small absolute bit budget, so a wrong origin could pass. And
+because `detect_puzzleboard_best` selects on `(corners.len(), mean_confidence)`,
+such a fragment could in principle out-rank a correct decode.
+
+No false positive has been observed: the author D4-consistency test passes, and
+the single-config `for_board` regression path is unaffected (the sweep / 40% pass
+is reachable only through `detect_puzzleboard_best`). Per the evidence-driven
+mandate, the next step is to **construct a witness** frame the 40% pass actually
+mislabels before changing the gate. Candidate guards once a witness exists:
+require a best-vs-runner-up BER margin on the hard path, or a minimum
+observed-edge count for the 40% pass. Deferred pending a witness.
 
 ---
 
