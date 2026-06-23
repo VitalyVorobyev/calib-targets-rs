@@ -9,8 +9,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::detect::{
-    detect_grid_all, DetectionParams, DetectionRequest, Evidence, SquareAlgorithm,
-    TopologicalParams,
+    detect_grid_all, DetectionParams, DetectionRequest, Evidence, TopologicalParams,
 };
 use crate::feature::OrientedFeature;
 use crate::lattice::LatticeKind;
@@ -145,7 +144,6 @@ pub fn build_grid_topological_trace(
         Evidence::Oriented2(features),
         None,
         DetectionParams::default()
-            .with_algorithm(SquareAlgorithm::Topological)
             .with_topological(params)
             .with_validate(validate)
             .with_max_residual_px(f32::INFINITY),

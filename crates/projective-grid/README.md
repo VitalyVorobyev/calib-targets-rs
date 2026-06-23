@@ -46,10 +46,10 @@ image and need corners first, run a corner detector and convert its output into
 [`PointFeature`] / [`OrientedFeature`] values before calling in.
 
 It recovers both **square** and **hexagonal** lattices. Both use the
-**topological** algorithm — the only square assembler in this crate. Hex runs
+**topological** assembler — the sole grid builder in this crate. Hex runs
 the same Delaunay back-half — its triangles are the unit cells directly, so
-there is no diagonal/quad-merge stage. Select the hex path with
-`algorithm = Topological` (which is also the only square value).
+there is no diagonal/quad-merge stage. The lattice family is selected by
+`LatticeKind` on the request; there is no further algorithm choice to make.
 
 ## Three kinds of evidence
 
@@ -95,8 +95,8 @@ caller-proposed labels against a projective fit.
 | `Oriented2` | ✅ (native, topological) | ❌ `UnsupportedCombination` |
 | `Oriented3` | ❌ `UnsupportedCombination` | ✅ (native, topological) |
 
-All square and hex paths use `algorithm = Topological` (the only value of
-`SquareAlgorithm`; the seed-and-grow variant was removed).
+All square and hex paths run the same topological assembler — the sole grid
+builder in the crate.
 
 ## Quickstart
 
@@ -109,7 +109,7 @@ the body of [`examples/hello_grid.rs`](examples/hello_grid.rs) —
 use nalgebra::Point2;
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -135,7 +135,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LatticeKind::Square,
         Evidence::Oriented2(&features),
         None, // grid dimensions unknown
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
 
     let solution = detect_grid(request)?;
@@ -152,18 +152,15 @@ sub-pixel fit residual.
 
 ## Algorithm (square)
 
-Square lattice detection uses [`SquareAlgorithm::Topological`] — the sole
-square assembler. It consumes [`Evidence::Oriented2`] (or synthesizes axes from
-`Positions` / `Oriented1`) and produces a [`GridSolution`]. Select it via
-[`DetectionParams::with_algorithm`] or rely on the default:
+Square lattice detection uses the **topological** assembler — the sole grid
+builder in the crate. It consumes [`Evidence::Oriented2`] (or synthesizes axes
+from `Positions` / `Oriented1`) and produces a [`GridSolution`]:
 
-- **[`SquareAlgorithm::Topological`]** — the Shu/Brunton/Fiala axis-driven grid
-  finder (Delaunay triangulation + a per-cell axis test). Image-free; recovers
-  dense grids and copes well with distortion. May return several components (see
-  [`detect_grid_all`]). This is the only value of `SquareAlgorithm`; the
-  historical `SeedAndGrow` variant was removed.
+- the Shu/Brunton/Fiala axis-driven grid finder (Delaunay triangulation + a
+  per-cell axis test). Image-free; recovers dense grids and copes well with
+  distortion. May return several components (see [`detect_grid_all`]).
 
-**Hex** also uses the topological algorithm. On a hex point lattice the Delaunay
+**Hex** also uses the topological assembler. On a hex point lattice the Delaunay
 triangles *are* the unit cells, so the diagonal/quad-merge stage is bypassed;
 the axial `(q, r)` walk and the projective fit back-half are shared with the
 square topological path.
@@ -202,8 +199,6 @@ Licensed under either of MIT or Apache-2.0 at your option.
 [`Evidence::Positions`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`Evidence::Oriented1`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
 [`Evidence::Oriented2`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
-[`DetectionParams::with_algorithm`]: https://docs.rs/projective-grid/latest/projective_grid/detect/struct.DetectionParams.html
-[`SquareAlgorithm::Topological`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.SquareAlgorithm.html
 [`detect_grid`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid.html
 [`detect_grid_all`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid_all.html
 [`check_consistency`]: https://docs.rs/projective-grid/latest/projective_grid/check/fn.check_consistency.html

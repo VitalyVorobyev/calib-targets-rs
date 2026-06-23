@@ -22,7 +22,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid_all, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 /// Deterministic xorshift64* LCG — used only to jitter fixture positions so
@@ -152,7 +152,7 @@ fn bench_detect_grid(c: &mut Criterion) {
                     LatticeKind::Square,
                     Evidence::Oriented2(feats),
                     None,
-                    DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+                    DetectionParams::default(),
                 );
                 detect_grid_all(req).unwrap()
             });
@@ -189,7 +189,7 @@ fn bench_detect_grid(c: &mut Criterion) {
                     LatticeKind::Hex,
                     Evidence::Positions(feats),
                     None,
-                    DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+                    DetectionParams::default(),
                 );
                 detect_grid_all(req).unwrap()
             });

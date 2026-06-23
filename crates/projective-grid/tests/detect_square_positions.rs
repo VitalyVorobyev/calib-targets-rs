@@ -16,7 +16,6 @@ use std::collections::{HashMap, HashSet};
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-    SquareAlgorithm,
 };
 
 /// Build position-only features for an axis-aligned `rows × cols` grid.
@@ -59,12 +58,12 @@ fn perspective_grid(
     (feats, truth)
 }
 
-fn request(features: &[PointFeature], algorithm: SquareAlgorithm) -> DetectionRequest<'_> {
+fn request(features: &[PointFeature]) -> DetectionRequest<'_> {
     DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Positions(features),
         None,
-        DetectionParams::default().with_algorithm(algorithm),
+        DetectionParams::default(),
     )
 }
 
@@ -138,8 +137,7 @@ fn perfect_grid_topological_fully_recovered_zero_wrong() {
         .enumerate()
         .map(|(idx, _)| (idx, ((idx as i32) % 7, (idx as i32) / 7)))
         .collect();
-    let sol = detect_grid(request(&feats, SquareAlgorithm::Topological))
-        .expect("topological on perfect 7x7 position grid");
+    let sol = detect_grid(request(&feats)).expect("topological on perfect 7x7 position grid");
     // Topological recovers the full quad-mesh interior; with the recovery
     // schedule on the synthesized-axis path the boundary fills in too. The
     // contract is zero wrong labels, not 100% recall.
@@ -179,15 +177,10 @@ fn perspective_grid_positions_is_deterministic() {
         sig
     };
 
-    let first = signature(
-        &detect_grid(request(&feats, SquareAlgorithm::Topological))
-            .expect("topological on perspective grid"),
-    );
+    let first = signature(&detect_grid(request(&feats)).expect("topological on perspective grid"));
     for run in 1..10 {
-        let again = signature(
-            &detect_grid(request(&feats, SquareAlgorithm::Topological))
-                .expect("topological on perspective grid"),
-        );
+        let again =
+            signature(&detect_grid(request(&feats)).expect("topological on perspective grid"));
         assert_eq!(
             first, again,
             "positions topological output differs on run {run} (non-determinism)"
@@ -203,8 +196,7 @@ fn perspective_grid_topological_zero_wrong_labels() {
         0.0011, 0.0007, 1.0,
     );
     let (feats, truth) = perspective_grid(8, 8, 28.0, 50.0, &h);
-    let sol = detect_grid(request(&feats, SquareAlgorithm::Topological))
-        .expect("topological on perspective grid");
+    let sol = detect_grid(request(&feats)).expect("topological on perspective grid");
     assert!(
         sol.grid.entries.len() >= 48,
         "recovered only {}/64 under perspective",
@@ -235,8 +227,7 @@ fn outliers_do_not_corrupt_labels() {
     {
         feats.push(PointFeature::new(base + k, Point2::new(x, y)));
     }
-    let sol = detect_grid(request(&feats, SquareAlgorithm::Topological))
-        .expect("topological with outliers");
+    let sol = detect_grid(request(&feats)).expect("topological with outliers");
     // Keep only labelled corners that belong to the true grid for the
     // consistency check; the contract is "no wrong label on a grid corner".
     let grid_entries: Vec<(usize, Coord)> = entries_with_truth(&sol)
@@ -255,8 +246,7 @@ fn outliers_do_not_corrupt_labels() {
 #[test]
 fn position_only_matches_oriented_on_clean_grid() {
     let feats = grid_positions(6, 6, 25.0, 60.0);
-    let pos_sol =
-        detect_grid(request(&feats, SquareAlgorithm::Topological)).expect("position-only detect");
+    let pos_sol = detect_grid(request(&feats)).expect("position-only detect");
     let pos_labels: HashSet<usize> = pos_sol
         .grid
         .entries

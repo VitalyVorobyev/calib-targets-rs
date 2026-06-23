@@ -64,7 +64,7 @@ pub use crate::cluster::{
 };
 pub use crate::detect::{
     detect_grid, detect_grid_all, DetectionParams, DetectionReport, DetectionRequest, Evidence,
-    RecoveryParams, RecoverySchedule, SquareAlgorithm, TopologicalParams,
+    RecoveryParams, RecoverySchedule, TopologicalParams,
 };
 pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};

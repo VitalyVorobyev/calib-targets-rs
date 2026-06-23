@@ -9,7 +9,7 @@ use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 use projective_grid::{
     detect_grid_all, DetectionParams, DetectionRequest, Evidence, GridSolution, LatticeKind,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 use crate::baseline::{BaselineCorner, BaselineImage};
@@ -171,7 +171,7 @@ fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Opti
 /// labelled component (one board per frame, matching the pipeline engine's
 /// best-detection semantics).
 fn run_grid_engine(_params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
-    let grid_params = DetectionParams::default().with_algorithm(SquareAlgorithm::Topological);
+    let grid_params = DetectionParams::default();
     let feats: Vec<OrientedFeature<2>> = corners
         .iter()
         .enumerate()

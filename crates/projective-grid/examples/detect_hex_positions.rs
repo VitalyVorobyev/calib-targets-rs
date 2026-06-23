@@ -10,9 +10,8 @@
 //! hex dot grid has no per-corner orientation), so `projective-grid` synthesizes
 //! each node's three local grid directions from neighbour geometry
 //! ([`projective_grid::synthesize_oriented3`]) and then runs the hex topological
-//! grid finder. Hex is **topological-only** (no seed-and-grow, no recovery
-//! schedule), so the algorithm selector must be
-//! [`SquareAlgorithm::Topological`].
+//! grid finder — the sole assembler. Hex is **topological-only** (no recovery
+//! schedule).
 //!
 //! We generate the nodes by projecting a perfect axial lattice through a
 //! homography with a real perspective term, so the three recovered grid
@@ -21,7 +20,6 @@
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-    SquareAlgorithm,
 };
 
 /// Axial hex node `(q, r)` model position with unit nearest-neighbour spacing.
@@ -64,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         LatticeKind::Hex,
         Evidence::Positions(&features),
         None, // grid dimensions unknown
-        DetectionParams::default().with_algorithm(SquareAlgorithm::Topological),
+        DetectionParams::default(),
     );
 
     let solution = detect_grid(request)?;
