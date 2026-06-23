@@ -1565,7 +1565,12 @@ class PuzzleBoardParams:
         loose.chessboard.chess.threshold = Threshold.absolute(8.0)
         tight = cls.from_dict(base.to_dict())
         tight.chessboard.chess.threshold = Threshold.absolute(25.0)
-        return [base, loose, tight]
+        soft = [base, loose, tight]
+        hard = [cls.from_dict(params.to_dict()) for params in soft]
+        for params in hard:
+            params.decode.scoring_mode = PuzzleBoardScoringMode.hard_weighted()
+            params.decode.max_bit_error_rate = 0.40
+        return [*soft, *hard]
 
     def to_dict(self) -> dict[str, Any]:
         return {

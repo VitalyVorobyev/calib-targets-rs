@@ -13,8 +13,8 @@ use crate::detector::decode::{
     decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, SoftLlConfig,
 };
 use crate::detector::edge_sampling::{
-    corner_at_map, local_cell_references, observed_horizontal_edge, observed_vertical_edge,
-    sample_edge_bit,
+    corner_at_map, horizontal_edge_sample_centers, local_cell_references, observed_horizontal_edge,
+    observed_vertical_edge, sample_edge_bit_with_candidates, vertical_edge_sample_centers,
 };
 use crate::detector::error::PuzzleBoardDetectError;
 use crate::detector::params::{
@@ -427,8 +427,33 @@ impl PuzzleBoardDetector {
                             bot_left.position,
                         ],
                     );
-                    let (bit, conf) =
-                        sample_edge_bit(image, lc.position, right.position, bright, dark, radius);
+                    let candidates = horizontal_edge_sample_centers(
+                        [
+                            top_left.position,
+                            top_right.position,
+                            right.position,
+                            lc.position,
+                        ],
+                        [
+                            lc.position,
+                            right.position,
+                            bot_right.position,
+                            bot_left.position,
+                        ],
+                        corner_at_map(&grid_map, c - 1, r).map(|p| p.position),
+                        lc.position,
+                        right.position,
+                        corner_at_map(&grid_map, c + 2, r).map(|p| p.position),
+                    );
+                    let (bit, conf) = sample_edge_bit_with_candidates(
+                        image,
+                        lc.position,
+                        right.position,
+                        &candidates,
+                        bright,
+                        dark,
+                        radius,
+                    );
                     out.push(observed_horizontal_edge(r, c, bit, conf));
                 }
             }
@@ -446,8 +471,23 @@ impl PuzzleBoardDetector {
                         [tl.position, lc.position, below.position, bl.position],
                         [lc.position, tr.position, br.position, below.position],
                     );
-                    let (bit, conf) =
-                        sample_edge_bit(image, lc.position, below.position, bright, dark, radius);
+                    let candidates = vertical_edge_sample_centers(
+                        [tl.position, lc.position, below.position, bl.position],
+                        [lc.position, tr.position, br.position, below.position],
+                        corner_at_map(&grid_map, c, r - 1).map(|p| p.position),
+                        lc.position,
+                        below.position,
+                        corner_at_map(&grid_map, c, r + 2).map(|p| p.position),
+                    );
+                    let (bit, conf) = sample_edge_bit_with_candidates(
+                        image,
+                        lc.position,
+                        below.position,
+                        &candidates,
+                        bright,
+                        dark,
+                        radius,
+                    );
                     out.push(observed_vertical_edge(r, c, bit, conf));
                 }
             }
