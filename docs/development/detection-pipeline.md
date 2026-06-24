@@ -26,8 +26,10 @@ been **removed** entirely; what to detect is selected by the `LatticeKind` +
 historical `SeedAndGrow` variant (a self-consistent 4-corner seed plus BFS grow
 with axis-coupled boosters) was retired once the topological builder matched or
 beat it on every shipping path, including ChArUco. The wire string
-`"seed_and_grow"` no longer deserializes; config loaders that previously
-accepted a `graph_build_algorithm` value now ignore it.
+`"seed_and_grow"` no longer deserializes, and the `graph_build_algorithm` key
+itself is now **rejected** — `DetectorParams` is `#[serde(deny_unknown_fields)]`,
+so a config that still carries the removed key fails to parse (see the
+`unknown_key_is_rejected` test). Drop the key from any config that still sets it.
 
 ### Marker-internal corners (formerly the ChArUco concern)
 
