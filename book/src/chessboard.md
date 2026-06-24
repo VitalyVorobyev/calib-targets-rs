@@ -175,7 +175,7 @@ only add recall, never a wrong label. Under `RingFit` it is a no-op.
 
 Hand the oriented features (positions + dual axes) and the cluster centres
 (as an axis hint) to the [topological grid finder](algo_topological_grid.md)
-(`detect_grid_all` with `SquareAlgorithm::Topological`): Delaunay
+(via `detect_grid_all` — the sole grid builder, no algorithm enum): Delaunay
 triangulation → axis-driven edge classification → triangle-pair → quad
 merge → flood-fill `(i, j)` walk → the facade's `merge_components_local`.
 The facade's *own* post-build validation / residual drop / recovery are

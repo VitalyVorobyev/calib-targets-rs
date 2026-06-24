@@ -1,7 +1,8 @@
 # Topological grid finder
 
 > Code: `projective_grid::topological`
-> (`detect_grid_all` with `SquareAlgorithm::Topological`). In-repo
+> (reached via `detect_grid_all` — the sole grid builder, selected by
+> `LatticeKind` + `Evidence`, with no algorithm enum). In-repo
 > deep-dive: `docs/algorithms/topological-grid-detection.md`.
 
 The topological grid finder is the **sole grid builder** in the

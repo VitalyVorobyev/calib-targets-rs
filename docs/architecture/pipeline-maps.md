@@ -38,7 +38,7 @@ The reference pipeline. Entry: `chess detector.rs::Detector::detect` →
 |---|---|---|---|---|
 | 1 | Prefilter | `chess pipeline/inputs.rs::topological_inputs` | ChESS strength/fit prefilter (§2) | **Local** |
 | 2 | Axis cluster | `chess pipeline/cluster.rs` | Global axis clustering (§3) | **Delegated** → `pg cluster_axes` |
-| 3 | Topological grid | `pg ...::detect_square_oriented2_topological_all` via `pipeline/mod.rs:112` | Delaunay → classify → quads → filter → walk (§4) | **Delegated** → `pg` (`SquareAlgorithm::Topological`, `RecoverySchedule::Off`) |
+| 3 | Topological grid | `pg ...::detect_square_oriented2_topological_all` via `pipeline/mod.rs:112` | Delaunay → classify → quads → filter → walk (§4) | **Delegated** → `pg` (sole grid builder; `RecoverySchedule::Off`) |
 | 4 | Merge + recover | `chess pipeline/recover.rs::recover_topological_components` | Geometric merge (§6) + shared-index merge (§6) + boosters fill (§7) | **Mixed**: `pg merge_components_local` + `pg fill_grid_holes`; merge-by-index + directional scale **local** |
 | 5 | Geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | Line collinearity + local-H + wrong-label drops + largest-component (§8) | **Delegated** → `pg shared::validate` |
 | 6 | Output | `chess pipeline/output.rs::build_detection` | Normalize + rebase to non-negative (§8) | **Delegated** → `pg LabelledGrid::normalize` |

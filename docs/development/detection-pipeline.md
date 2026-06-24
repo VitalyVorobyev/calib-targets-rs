@@ -16,17 +16,20 @@ integer labels → shared validate → shared fit. It carries no global cell-siz
 dependency, and the same `(i, j) → corner_idx` map flows to every downstream
 consumer.
 
+**Topological is the sole grid builder, so the request carries no algorithm
+choice.** The historical `projective_grid::SquareAlgorithm` and
 `calib_targets_chessboard::DetectorParams::graph_build_algorithm` (typed
-`GraphBuildAlgorithm`) and `projective_grid::SquareAlgorithm` are now
-**single-variant `#[non_exhaustive]` enums** with only `Topological`. They are
-**retained, not deleted** — reserved config seams so the schema stays stable and
-a future alternative builder can be added without a breaking change. The
+`GraphBuildAlgorithm`) selector enums — first collapsed to single-variant
+`#[non_exhaustive]` reserved seams when seed-and-grow was retired — have since
+been **removed** entirely; what to detect is selected by the `LatticeKind` +
+`Evidence` shape on the `DetectionRequest`, not by an algorithm enum. The
 historical `SeedAndGrow` variant (a self-consistent 4-corner seed plus BFS grow
 with axis-coupled boosters) was retired once the topological builder matched or
 beat it on every shipping path, including ChArUco. The wire string
-`"seed_and_grow"` no longer deserializes; config loaders that previously
-accepted it now resolve any legacy `graph_build_algorithm` value to
-`Topological`.
+`"seed_and_grow"` no longer deserializes, and the `graph_build_algorithm` key
+itself is now **rejected** — `DetectorParams` is `#[serde(deny_unknown_fields)]`,
+so a config that still carries the removed key fails to parse (see the
+`unknown_key_is_rejected` test). Drop the key from any config that still sets it.
 
 ### Marker-internal corners (formerly the ChArUco concern)
 
