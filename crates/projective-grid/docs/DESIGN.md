@@ -212,18 +212,98 @@ implementation are gone.
 
 ### Two public tiers
 
-The crate exposes two tiers (see the `lib.rs` module docs):
+The crate ships an intentional two-tier public API (see the `lib.rs` module
+docs for the canonical statement). Both tiers are supported; they differ in
+audience and in how fast the surface may move.
 
 - **Stable tier** — the crate-root facade re-exports (`detect_grid*`,
   `check_consistency`, the request / result / evidence / lattice types, the
-  `orient::synthesize_*` helpers). The supported surface for external callers.
-- **Advanced tier** — the `shared` and `topological` engine modules,
-  semver-exempt pre-1.0, for in-workspace consumers (the chessboard detector)
-  that compose the engine directly with their own policies. This includes the
-  grid-growth and recovery primitives under `shared` (grow / fill / extension /
-  recovery) the chessboard crate drives for its own recovery path. Items here
-  change shape as the engine is refactored; engine items with no external
-  consumer are `pub(crate)`.
+  `orient::synthesize_*` helpers, `cluster_axes`). The supported surface for an
+  ordinary caller who wants to detect a grid and read labels back; normal
+  semver guarantees apply.
+- **Advanced tier (composition API)** — the `shared`, `topological`, `lattice`,
+  `orient`, and `cluster` modules, exposed deliberately so a consumer with its
+  own per-pattern invariants can drive the engine under its own policy. The
+  in-workspace chessboard detector is the reference example, but the contract
+  is written for external consumers too. This is *intended product*, not a
+  private engine wearing a `pub` badge.
+
+  **The composition contract.** A consumer supplies a
+  `shared::grow::SquareAttachPolicy` — the seam between the geometry-only growth
+  machinery and the pattern's rules, answering `is_eligible` /
+  `required_label_at` / `accept_candidate` / `edge_ok` per candidate — and
+  drives the growth / recovery primitives under `shared` (`grow`, `fill`,
+  `extension`, `grow_extend`, and the `recovery_schedule::RecoverySchedule`
+  fixed-point tuned by `RecoveryParams`). After its front-half builds
+  integer-labelled components, it composes the lattice-parameterised
+  back-half: local-geometry merge (`shared::merge`), the structural-cue
+  `shared::validate` gate, and the projective fit. **Guarantee:** every stage
+  is *drop-only* with respect to labels — a corner whose geometry does not
+  cohere is removed, never relabelled — so the **zero-wrong-labels** precision
+  contract holds for a consumer that composes the engine under its own policy,
+  exactly as it does on the facade path.
+
+  **Stability.** This surface is *advanced, and may evolve*: its shape tracks
+  the engine's internal structure, so an item may change between minor releases
+  when the engine is refactored. That is a deliberate trade — slower-moving
+  contract in exchange for direct engine access — not a "this is really
+  private" disclaimer. Engine items with no external consumer stay
+  `pub(crate)`, keeping the advanced surface no wider than what a consumer
+  actually composes.
+
+### Core vs. extended surface
+
+Orthogonal to the stable/advanced split, the public surface divides into a
+**core** path that production exercises and an **extended** breadth that is
+intended external product but exercised only by this crate's own tests. The
+table is the greppable map; the rationale follows.
+
+| | Core (exercised in production) | Extended (library-only breadth) |
+|---|---|---|
+| Lattice | `Square` (`LatticeKind::Square`) | `Hex` (`LatticeKind::Hex`), `topological::hex*`, `D6_TRANSFORMS`, `HEX_AXIAL_OFFSETS` |
+| Evidence | `Evidence::Oriented2` (two local axes) | `Evidence::Positions` (0 axes) · `Evidence::Oriented1` (1 axis) · `Evidence::Oriented3` (hex-native) |
+| Axis synthesis | none (native two-axis input) | `orient::synthesize_*`, the per-corner double-angle 2-means |
+| Recovery | `RecoverySchedule::Off` on the native path | `shared::recovery_schedule` (the synthesized-axis recall path), `shared::positions_policy` |
+| Exercised by | every in-workspace detector (chessboard, ChArUco, puzzleboard, marker) — the most regression-tested surface | `projective-grid`'s own tests only |
+
+The **core** path — `(Square, Oriented2)` — is what every shipping detector
+runs: native two-axis corner evidence into the topological assembler, with the
+post-convergence recovery schedule off (the native path needs no synthesized-axis
+recall). It is precision-by-construction and the most heavily gated surface in
+the crate.
+
+The **extended** breadth is the rest of the design space the crate
+deliberately spans as a published library: the hex lattice family and the
+orientation-free / single-axis inputs that synthesize the missing axes from
+neighbour geometry (`orient::*`) and lean on the geometry-only recovery
+schedule (`shared::recovery_schedule`, `positions_policy`) to reach recall
+parity. This breadth is *intended product* — it is published precisely so a
+downstream user can detect a dot grid, a circle grid, or a hex target without
+re-deriving the machinery — but no in-workspace detector exercises it today, so
+it is covered by `projective-grid`'s own tests rather than the detector
+regression sets.
+
+#### Why this is documented, not feature-gated
+
+An alternative to documenting the boundary was to put the extended breadth
+behind compile-time features (`feature = "hex"`, `feature = "orientation-free"`)
+so an external user opts in and the default build compiles only the core
+spine. That was **deliberately deferred** in favour of the table above:
+
+- The benefit is *unmeasured*. The claimed wins are smaller compile time and a
+  narrower default surface, but neither has been quantified; the extended code
+  is a bounded fraction of the crate and gating it adds a CI feature-matrix
+  obligation (every combination must build) with no demonstrated payoff.
+- The cost is a *semver break on a published crate*. `projective-grid` is
+  published, so moving `Hex`, `Evidence::Positions`, the `orient::*` helpers,
+  and the recovery schedule behind off-by-default features would break every
+  downstream user who composes them today — a real cost against a speculative
+  benefit.
+
+The breadth is intended product and stays compiled in either way; making the
+core-vs-extended split *legible* (this section, and the `lib.rs` module docs)
+achieves the comprehension goal without the breaking change. Revisit the gate
+only if compile time or surface size becomes a measured, felt cost.
 
 ## Extending to hex (without copying machinery)
 

@@ -84,8 +84,9 @@ let solution = detect_grid(request)?;
 assert_eq!(solution.grid.entries.len(), 9);
 ```
 
-`DetectionParams::default()` carries a `max_residual_px` fit gate and
-selects `SquareAlgorithm::Topological` — the sole grid builder. It runs a
+`DetectionParams::default()` carries a `max_residual_px` fit gate and runs
+the topological grid builder — the sole builder, so there is no algorithm to
+select. It runs a
 Delaunay triangulation over the corner cloud, classifies edges by axis
 match, merges triangle pairs into cells, and floods integer coordinates
 across the mesh, then fits a projective transform. See the

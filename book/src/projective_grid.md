@@ -88,7 +88,7 @@ detect, and read the recovered labels. This is the body of
 use nalgebra::Point2;
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature, SquareAlgorithm,
+    OrientedFeature, PointFeature,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -149,18 +149,19 @@ features).
 
 ## The square algorithm: Topological
 
-Detection of `(Square, Oriented2)` uses the **`SquareAlgorithm::Topological`**
-algorithm — the sole grid builder for all square targets. It is the Shu /
-Brunton / Fiala 2009 axis-driven grid finder: a Delaunay triangulation over
-the corner cloud whose edges are classified by per-corner axis match, with
-triangle pairs merged into cells and integer coordinates flooded across the
-mesh. Image-free; recovers dense grids and copes well with distortion. May
-produce several components — see `detect_grid_all` below.
+Detection of `(Square, Oriented2)` uses the **topological** grid finder — the
+sole grid builder for all square targets. It is the Shu / Brunton / Fiala 2009
+axis-driven grid finder: a Delaunay triangulation over the corner cloud whose
+edges are classified by per-corner axis match, with triangle pairs merged into
+cells and integer coordinates flooded across the mesh. Image-free; recovers
+dense grids and copes well with distortion. May produce several components —
+see `detect_grid_all` below.
 
-There is only one square grid builder. `GraphBuildAlgorithm` (on
-`DetectorParams`) is a single-variant, `#[non_exhaustive]` enum
-(`Topological`) retained purely as a reserved config seam — there is no
-algorithm to choose.
+There is only one square grid builder, so the request carries **no algorithm
+choice**: what to detect is selected by the `LatticeKind` (`Square` / `Hex`)
+and the `Evidence` shape on the `DetectionRequest`, not by an algorithm enum.
+The historical single-variant `SquareAlgorithm` / `GraphBuildAlgorithm` seams
+were removed once seed-and-grow was retired.
 
 The algorithm shares the post-detection validation and projective fit across
 all target types, recovering the full pattern with zero wrong labels. The

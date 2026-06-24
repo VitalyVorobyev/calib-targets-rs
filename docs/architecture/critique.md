@@ -45,6 +45,15 @@ This is *not* a codebase that needs a rewrite. It needs **consolidation**.
 
 Severity: **P1** worth doing soon · **P2** worth doing · **P3** judgment / nice-to-have.
 
+> **Status (update):** the consolidation these findings drove is essentially
+> complete. D-1, D-2, D-3, D-4, and D-6 are **resolved** (backlog C-1/C-2/C-3/
+> C-4/C-6/C-7/C-8, all merged); D-5 is **resolved by documentation** — the
+> advanced tier is now an intentional, documented composition API with a
+> written contract (backlog C-5). The "what the breadth costs" feature-gate
+> (C-9) was **deliberately deferred** in favour of documenting the
+> core-vs-extended boundary. The original analysis is kept below for the record;
+> per-finding resolution notes are inline.
+
 ### <a id="d-1-homography-is-forked-verbatim"></a>D-1 Homography is forked verbatim
 **Severity: P1 · the top finding.**
 
@@ -113,7 +122,13 @@ disambiguate every time:
   [backlog C-3](chore-backlog.md#c-3), [C-6](chore-backlog.md#c-6).
 
 ### <a id="d-4-deadspeculative-seams-kept-for-later"></a>D-4 Dead/speculative seams kept "for later"
-**Severity: P3 · low cost, but pure comprehension drag.**
+**Severity: P3 · low cost, but pure comprehension drag. — RESOLVED (C-4).**
+
+> *Resolved:* the recommendation to delete was taken. `pg detect.rs::SquareAlgorithm`,
+> `chessboard`'s `GraphBuildAlgorithm`, the `with_algorithm` builder, and the
+> bench `AlgorithmReq` / `AlgorithmArg` seam are all removed; the topological
+> path is inlined and selection is `LatticeKind` + `Evidence`. The original
+> analysis (describing the seam as still present) is kept below for the record.
 
 - `pg detect.rs::SquareAlgorithm` is a **single-variant `#[non_exhaustive]` enum**
   (`Topological`). Every call site passes that one value; the
@@ -129,7 +144,17 @@ disambiguate every time:
   [backlog C-4](chore-backlog.md#c-4).
 
 ### <a id="d-5-the-advanced-tier-is-a-private-api-wearing-a-pub-badge"></a>D-5 The advanced tier is a private API wearing a `pub` badge
-**Severity: P2 · library-design clarity.**
+**Severity: P2 · library-design clarity. — RESOLVED by documentation (C-5).**
+
+> *Resolved (option a):* the advanced tier is now framed as an intentional,
+> documented **composition API**, not a "semver-exempt private engine". `pg
+> lib.rs` and `docs/DESIGN.md` write down the composition contract — a consumer
+> supplies a `shared::grow::SquareAttachPolicy`, drives the growth / recovery
+> primitives, and composes the shared back-half, with the drop-only
+> zero-wrong-labels guarantee carried over — and state plainly that the stable
+> facade tier carries normal semver while the advanced tier is "advanced, may
+> evolve" (a deliberate product trade, not a hedge). No public API surface
+> changed. The original analysis is kept below for the record.
 
 `pg lib.rs` exposes `pub mod shared` and `pub mod topological` as a "semver-exempt
 pre-1.0" advanced tier "for in-workspace consumers (the chessboard detector)"
@@ -203,6 +228,11 @@ detectors — I would keep the layering almost exactly (it is a clean DAG, the d
 layers are well-isolated, the grid spine is shared by embedding). What I would *not*
 reproduce is the accumulated debris. Six concrete changes turn the current stack into
 the one I'd design:
+
+> **Status:** changes 1–5 below are now **done** (backlog C-1…C-7); change 6 (gate
+> the breadth) was **deliberately deferred** in favour of documenting the
+> core-vs-extended boundary (C-9 → the C-5 docs PR). The list reads as the
+> as-designed end state rather than a to-do.
 
 1. **One source of truth for geometry.** Pure homography/projective DLT lives in the
    lowest crate (`pg`); `core` re-exports and adds image-domain helpers. Kill the
