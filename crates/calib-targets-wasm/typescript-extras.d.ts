@@ -367,7 +367,27 @@ export interface ScanDecodeConfig {
   multi_threshold: boolean;
 }
 
+/**
+ * Opt-in, **unstable** ChArUco board-level-matcher tuning knobs (Rust
+ * `CharucoAdvancedTuning`). Nested under {@link CharucoParams.advanced}. These
+ * knobs govern the soft-bit log-likelihood scoring and the hypothesis-
+ * acceptance margin; they are NOT covered by semver and may be retuned,
+ * retyped, or removed between minor versions — leave them unset unless tuning
+ * against a specific dataset with measured evidence.
+ */
+export interface CharucoAdvancedTuning {
+  /** Logistic slope κ for the soft-bit log-likelihood (larger = more confident per bit). */
+  bit_likelihood_slope: number;
+  /** Clip floor applied to each per-bit log-likelihood term before summing across bits. */
+  per_bit_floor: number;
+  /** Minimum `(best − runner-up) / |best|` margin required to accept a board hypothesis. */
+  alignment_min_margin: number;
+  /** Border-black fraction below which a cell's weight is attenuated in the board score. */
+  cell_weight_border_threshold: number;
+}
+
 export interface CharucoParams {
+  // --- stable core ---
   px_per_square: number;
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
@@ -376,10 +396,8 @@ export interface CharucoParams {
   min_secondary_marker_inliers: number;
   grid_smoothness_threshold_rel: number;
   corner_validation_threshold_rel: number;
-  bit_likelihood_slope: number;
-  per_bit_floor: number;
-  alignment_min_margin: number;
-  cell_weight_border_threshold: number;
+  // --- opt-in, unstable tuning (omitted when unset) ---
+  advanced?: CharucoAdvancedTuning;
 }
 
 // ---------------------------------------------------------------------------

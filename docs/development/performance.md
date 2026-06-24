@@ -55,7 +55,12 @@ boards:
   case.
 - **ChArUco board match.** Decode (the board-level marker matcher) runs in the
   low-millisecond range on sub-megapixel snaps — comparable to, and on some
-  frames exceeding, corner detection on the same image.
+  frames exceeding, corner detection on the same image. On a public 22×22 board
+  (`testdata/small2.png`, `DICT_4X4_1000`, ~240 markers) the board-level matcher
+  dropped from ≈11 ms to ≈0.9 ms — full `detect` ≈12 ms → ≈2 ms — by
+  precomputing a per-cell bit-log-likelihood table that removes the
+  `O(cells × markers × 4 × bits²)` `log_sigmoid` evaluations from the
+  hypothesis-scoring inner loop.
 
 ### Tier 3 — topological grid build (our code)
 

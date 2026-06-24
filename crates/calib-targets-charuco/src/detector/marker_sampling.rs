@@ -1,3 +1,12 @@
+//! Marker-cell extraction from labelled chessboard corners.
+//!
+//! Two stages feed the board matcher: [`build_corner_map`] turns the inlier
+//! labelled chessboard corners into a grid `(i, j)` -> image-position map, and
+//! [`build_marker_cells`] walks that map to emit the complete four-corner
+//! square cells (in canonical TL, TR, BR, BL order) the matcher samples. Cells
+//! missing any of their four corners are skipped, so every emitted
+//! [`MarkerCell`] has full geometry.
+
 use calib_targets_aruco::MarkerCell;
 use calib_targets_core::{
     complete_cell_corners, corner_map_bounds, Coord, CornerMap, LabeledCorner,

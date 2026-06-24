@@ -19,8 +19,7 @@ pub struct CharucoParams {
     /// [`CharucoParams::for_board`] keeps marker-bit saddles out of the grid,
     /// so the topological cell test labels ChArUco grids cleanly, and the
     /// marker-decode stages downstream of grid construction are
-    /// builder-agnostic. The decode is precision-clean on the topological grid
-    /// (zero self-consistency wrong-ids across the internal regression sets).
+    /// builder-agnostic.
     #[serde(default)]
     pub chessboard: DetectorParams,
     /// ChArUco board parameters
@@ -72,45 +71,67 @@ pub struct CharucoParams {
     /// Not serialised — reconstructed from defaults on deserialisation.
     #[serde(skip)]
     pub corner_redetect_params: ChessCornerParams,
+    /// Advanced board-level-matcher tuning knobs.
+    ///
+    /// **Unstable:** the fields of [`CharucoAdvancedTuning`] are **NOT covered
+    /// by semver** and may be retuned, retyped, or removed between minor
+    /// versions as the matcher evolves. Leave at [`Default`] unless tuning
+    /// against a specific dataset with evidence.
+    #[serde(default)]
+    pub advanced: CharucoAdvancedTuning,
+}
+
+/// Advanced, unstable tuning knobs for the board-level marker matcher.
+///
+/// These knobs govern the soft-bit log-likelihood scoring and the
+/// hypothesis-acceptance margin inside [`crate::CharucoDetector`]'s
+/// board-level matcher. They are split out of [`CharucoParams`] because
+/// they are matcher-implementation tuning rather than detector geometry.
+///
+/// **Unstable:** every field here is **NOT covered by semver** and may be
+/// retuned, retyped, or removed between minor versions as the matcher
+/// evolves. Leave the whole struct at [`Default`] unless you are tuning
+/// against a specific dataset with measured evidence.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct CharucoAdvancedTuning {
     /// Logistic slope κ used in the board-level matcher's soft-bit
     /// log-likelihood. Larger = more confident per bit; 8–16 is a
     /// reasonable range.
-    ///
-    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
-    /// semver** and may be retuned, retyped, or removed between minor versions
-    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Clip floor applied to each per-bit log-likelihood term before
     /// summing across bits, so a single wildly-wrong bit cannot dominate
     /// a cell score.
-    ///
-    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
-    /// semver** and may be retuned, retyped, or removed between minor versions
-    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
     /// Minimum `(best − runner-up) / |best|` margin required for the
     /// board-level matcher to accept a hypothesis. Below this, detection
     /// is rejected rather than mislabelled.
-    ///
-    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
-    /// semver** and may be retuned, retyped, or removed between minor versions
-    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
     /// Border-black fraction threshold below which a cell's weight is
     /// attenuated linearly toward 0 in the board-level score.
-    ///
-    /// **Unstable:** this board-level-matcher tuning knob is **NOT covered by
-    /// semver** and may be retuned, retyped, or removed between minor versions
-    /// as the matcher evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
     #[serde(default = "default_cell_weight_border_threshold")]
     pub cell_weight_border_threshold: f32,
+}
+
+impl Default for CharucoAdvancedTuning {
+    fn default() -> Self {
+        Self {
+            bit_likelihood_slope: default_bit_likelihood_slope(),
+            per_bit_floor: default_per_bit_floor(),
+            alignment_min_margin: default_alignment_min_margin(),
+            cell_weight_border_threshold: default_cell_weight_border_threshold(),
+        }
+    }
+}
+
+impl CharucoAdvancedTuning {
+    /// Build the advanced tuning knobs at their default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 fn default_grid_smoothness_threshold_rel() -> f32 {
@@ -137,11 +158,11 @@ fn default_min_secondary_marker_inliers() -> usize {
 }
 
 fn default_bit_likelihood_slope() -> f32 {
-    // Tuned on the internal ArUco and AprilTag regression sets to the
-    // minimum logistic slope that clears them with zero self-consistency
-    // wrong-ids. Smaller slopes compress the per-bit logit and let
-    // runner-up hypotheses nearly tie the top; larger slopes do not change
-    // outcomes.
+    // Logistic slope κ for the soft-bit log-likelihood: larger = more
+    // confident per bit. Too small a slope compresses the per-bit logit so
+    // that a runner-up board hypothesis can nearly tie the top one (a
+    // mislabel risk); beyond a moderate value the per-bit terms saturate and
+    // the outcome stops changing. This default sits in that saturated regime.
     36.0
 }
 
@@ -213,31 +234,26 @@ impl CharucoParams {
 
     /// Build a reasonable default configuration for the given board.
     ///
-    /// The chessboard detector is scale-invariant and discovers cell
-    /// size from the seed itself, so v1's `expected_rows` / `expected_cols`
-    /// / `completeness_threshold` / explicit `min_corners` gates are no
-    /// longer needed — ChArUco's marker-driven alignment is the geometry
-    /// gate.
+    /// The chessboard detector is scale-invariant and discovers cell size
+    /// from the seed itself, and ChArUco's marker-driven alignment is the
+    /// geometry gate, so no explicit expected-row / expected-column /
+    /// completeness / minimum-corner-count gates are required.
     pub fn for_board(board: &CharucoBoardSpec) -> Self {
         let mut chessboard = DetectorParams::default();
         // `DetectorParams::default()` already selects the topological builder,
         // which is the builder ChArUco runs on (see `CharucoParams::chessboard`).
         // Absolute ChESS-strength floor. In defocused regions the corner
-        // detector fires weakly on ArUco-marker bit saddles that align with
-        // a grid extrapolation; those false corners are grid-consistent
+        // detector fires weakly on ArUco-marker bit saddles that can align
+        // with a grid extrapolation; those false corners are grid-consistent
         // (they pass the homography validation) and so survive into the
         // ChArUco product as biased corners — geometry alone cannot reject
-        // them (the weak-frontier ceiling). Cutting weak corners *before*
-        // the grid grows keeps the grid out of the blur entirely, which
-        // across the internal regression sets clears every reviewed
-        // marker-bit false corner (zero product-false), and — because the
-        // marker cells are sampled from that grid — also *improves* marker
-        // decode (fewer spurious cells), recovering frames the looser floor
-        // lost. The cost
-        // is the weakest blurred-margin corners (least useful for
-        // calibration). The board alignment is a *location* tool, never a
-        // corner-drop gate, so this floor — not marker presence — is the
-        // precision lever.
+        // them. Cutting weak corners *before* the grid grows keeps the grid
+        // out of the blur entirely, and — because the marker cells are
+        // sampled from that grid — also reduces spurious marker cells, so it
+        // is the principled precision lever here. The cost is the weakest
+        // blurred-margin corners (least useful for calibration). The board
+        // alignment is a *location* tool, never a corner-drop gate, so this
+        // floor — not marker presence — is what removes the bias.
         chessboard.min_corner_strength = 33.0;
         // ChArUco has marker-ID and board-alignment validation after
         // chessboard grid recovery. Keep the chessboard component
@@ -271,10 +287,7 @@ impl CharucoParams {
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: default_redetect_params(),
-            bit_likelihood_slope: default_bit_likelihood_slope(),
-            per_bit_floor: default_per_bit_floor(),
-            alignment_min_margin: default_alignment_min_margin(),
-            cell_weight_border_threshold: default_cell_weight_border_threshold(),
+            advanced: CharucoAdvancedTuning::default(),
         }
     }
 }

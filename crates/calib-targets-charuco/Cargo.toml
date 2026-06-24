@@ -16,10 +16,16 @@ categories = ["computer-vision", "science"]
 default = []
 # Opt-in introspection surface: the `diagnostics` module, the diagnostics type
 # re-exports, and `CharucoDetector::detect_with_diagnostics`. OFF by default,
-# consistent with `calib-targets-chessboard`. The detector still captures the
-# diagnostics internally (the board-level matcher builds them as part of its
-# core return); the feature only controls whether they reach the public surface.
+# consistent with `calib-targets-chessboard`. The feature gates diagnostics
+# *computation*, not just visibility: with it off, the production `detect` path
+# (and the lean `match_board` matcher) allocate and compute zero diagnostics;
+# the diagnostic matcher and the diagnostics-collecting pipeline path are
+# compiled in only when the feature is on.
 diagnostics = []
+# Opt-in marker↔corner linkage validation (`link_check` module + its public
+# re-exports). OFF by default; it has no in-tree consumers but is intentional,
+# documented validation logic, preserved behind a gate rather than removed.
+link-check = []
 # The dataset harness / example renders per-component diagnostics overlays, so
 # it pulls in both the charuco and chessboard diagnostics surfaces.
 dataset = ["dep:env_logger", "diagnostics", "calib-targets-chessboard/diagnostics"]

@@ -271,7 +271,12 @@ impl CharucoBoard {
 }
 
 /// True if `(ix, iy)` is an internal intersection for a board with `squares_x` × `squares_y`.
-pub fn is_internal_intersection(squares_x: usize, squares_y: usize, ix: usize, iy: usize) -> bool {
+pub(crate) fn is_internal_intersection(
+    squares_x: usize,
+    squares_y: usize,
+    ix: usize,
+    iy: usize,
+) -> bool {
     squares_x >= 2
         && squares_y >= 2
         && (1..=squares_x - 1).contains(&ix)
@@ -279,7 +284,7 @@ pub fn is_internal_intersection(squares_x: usize, squares_y: usize, ix: usize, i
 }
 
 /// Row-major ChArUco corner id for an internal intersection `(ix, iy)`.
-pub fn charuco_corner_id(
+pub(crate) fn charuco_corner_id(
     squares_x: usize,
     squares_y: usize,
     ix: usize,
