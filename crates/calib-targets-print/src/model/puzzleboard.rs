@@ -15,7 +15,7 @@ pub(super) fn default_puzzleboard_dot_diameter_rel() -> f64 {
 ///
 /// A PuzzleBoard is a standard checkerboard of `rows × cols` squares with a
 /// small colour-coded dot at every interior edge midpoint. The dots encode
-/// one bit each (white = 0, black = 1) via the two cyclic sub-perfect maps
+/// one bit each (black = 0, white = 1) via the two cyclic sub-perfect maps
 /// shipped in `calib-targets-puzzleboard`. The printable board is a
 /// contiguous sub-rectangle of the 501×501 master pattern anchored at
 /// `(origin_row, origin_col)`.
