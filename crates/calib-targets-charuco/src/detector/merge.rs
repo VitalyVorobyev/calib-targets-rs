@@ -1,3 +1,18 @@
+//! Merge per-component ChArUco results into a single board detection.
+//!
+//! When the grid graph splits into several connected components, each is
+//! matched independently and then reconciled here. Components are grouped by
+//! their D4 alignment transform: because the markers fix the board's absolute
+//! placement, two components that resolve to the *same* transform are looking
+//! at the same physical board, while a different transform means a different
+//! placement (or a spurious match). The group with the most markers wins, and
+//! that group's corners and markers are **unioned** — each component covers a
+//! disjoint region of the board, so the union reassembles the whole board
+//! rather than discarding fragments; overlaps are deduplicated by id, keeping
+//! the higher-scoring entry. All grouping / tie-break choices key off the
+//! transform (and, for the alignment pick, the translation), so the merge is
+//! deterministic regardless of component or hash ordering.
+
 use super::pipeline::RawMarkerCounts;
 use super::{CharucoCorner, CharucoDetectionResult};
 use calib_targets_aruco::MarkerDetection;

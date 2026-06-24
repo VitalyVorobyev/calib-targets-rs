@@ -97,6 +97,11 @@ crate's `tracing` wiring together when adding a span):
 | `projective-grid` | `global_step::estimate_global_cell_size` | debug | `num_points` |
 | `projective-grid` | `local_step::estimate_local_steps` | debug | `num_points` |
 | `calib-targets-chessboard` | `Detector::detect_*` and inner stages | info / debug | (existing) |
+| `calib-targets-charuco` | `board_match::match_board` (decode total) | info | — |
+| `calib-targets-charuco` | `board_match::sample_cells` | info | — |
+| `calib-targets-charuco` | `board_match::build_score_matrix` | info | — |
+| `calib-targets-charuco` | `board_match::enumerate_hypotheses` | info | — |
+| `calib-targets-charuco` | `board_match::emit_markers` | info | — |
 
 To stream raw span events instead (one enter/exit per call, `time.busy`
 wall-clock per span), enable `tracing` on the facade and set `RUST_LOG`:
@@ -108,6 +113,26 @@ RUST_LOG=info cargo run --profile profiling \
     --image testdata/large.png
 ```
 
+## Per-span timing — `charuco_stage_timing`
+
+The ChArUco counterpart of `topo_stage_timing`. It installs the same per-span
+busy-time `tracing` layer, runs the production `detect` path over warmup + timed
+repeats on a public fixture (`testdata/small2.png` by default), and attributes
+the board-level matcher's wall time across its five internal spans
+(`match_board` is the decode total; `sample_cells`, `build_score_matrix`,
+`enumerate_hypotheses`, and `emit_markers` are reported as a percentage of it):
+
+```bash
+cargo run --release -p calib-targets-bench --bin charuco_stage_timing -- \
+    --image testdata/small2.png \
+    --config testdata/charuco_detect_config_small.json \
+    --repeats 50 --warmup 5 \
+    --out bench_results/charuco-stage.json
+```
+
+It measures only the production path, so the `diagnostics`-feature per-cell fills
+are not included. The JSON report is a local-only artifact.
+
 ## Capture matrix
 
 `run-perf-campaign.sh` covers these cells. Capture them manually only when
@@ -118,5 +143,6 @@ narrowing a specific regression:
 | `testdata/02-topo-grid/*` | ~1 MP chessboards | chessboard | `topo_stage_timing` (ring-fit **and** disk-fit) |
 | `testdata/mid.png` | 1024×576 | chessboard | samply flamegraph |
 | `testdata/large.png` | 2048×1536 | chessboard | samply flamegraph |
+| `testdata/small2.png` | 22×22 board | charuco | `charuco_stage_timing` (board-matcher span breakdown) |
 | `puzzleboard_reference/example4.png` | 4032×3024 | puzzleboard | `dataset_decode` bench + flamegraph |
 | private charuco set | native | charuco | `charuco/dataset/decode` bench + flamegraph |

@@ -39,6 +39,10 @@ name = "topo_stage_timing"
 path = "src/bin/topo_stage_timing.rs"
 
 [[bin]]
+name = "charuco_stage_timing"
+path = "src/bin/charuco_stage_timing.rs"
+
+[[bin]]
 name = "full_stage_timing"
 path = "src/bin/full_stage_timing.rs"
 

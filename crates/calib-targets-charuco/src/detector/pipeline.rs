@@ -1,4 +1,6 @@
-use super::board_match::{match_board_diag, BoardMatchConfig, BoardMatchDiagnostics};
+use super::board_match::{match_board, BoardMatchConfig};
+#[cfg(feature = "diagnostics")]
+use super::board_match::{match_board_diag, BoardMatchDiagnostics};
 use super::corner_mapping::map_charuco_corners;
 use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig};
 use super::grid_smoothness::smooth_grid_corners;
@@ -6,7 +8,9 @@ use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
 use super::params::to_chess_params;
 use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
+use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
+use calib_targets_aruco::MarkerDetection;
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
@@ -29,6 +33,7 @@ fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetectio
 ///
 /// One entry per chessboard connected component the detector tried to
 /// match; fail-early stages (no chessboard) produce an empty list.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Debug, Default, serde::Serialize)]
 #[non_exhaustive]
 pub struct CharucoDetectDiagnostics {
@@ -43,14 +48,14 @@ pub struct CharucoDetectDiagnostics {
     /// marker decodings rejected by the alignment stage.
     pub raw_marker_count: usize,
     /// Raw decodings whose id mapped to a valid board position that
-    /// **disagreed** with the chosen alignment. This is the
-    /// self-consistency wrong-id count used by the internal charuco
-    /// benchmark: it excludes pure dictionary-noise decodings whose id did
-    /// not correspond to any marker on this board.
+    /// **disagreed** with the chosen alignment — a self-consistency
+    /// wrong-id count. It excludes pure dictionary-noise decodings whose id
+    /// did not correspond to any marker on this board.
     pub raw_marker_wrong_id_count: usize,
 }
 
 /// Per-component diagnostics for one chessboard connected component.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Debug, serde::Serialize)]
 #[non_exhaustive]
 pub struct ComponentDiagnostics {
@@ -69,6 +74,7 @@ pub struct ComponentDiagnostics {
 }
 
 /// Final outcome of detecting one chessboard component.
+#[cfg(feature = "diagnostics")]
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 #[non_exhaustive]
@@ -97,10 +103,103 @@ pub enum ComponentOutcome {
 /// filtering. Threaded alongside each component's [`CharucoDetectionResult`]
 /// so [`merge_charuco_results`] can sum the winning group into
 /// [`CharucoDetectDiagnostics`].
+///
+/// These are cheap result-flavoured counters (no per-cell allocation), so
+/// they are always computed and threaded through the merge — the
+/// `diagnostics` feature only controls whether the merged totals are
+/// *recorded* onto the public diagnostics surface.
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct RawMarkerCounts {
     pub raw_marker_count: usize,
     pub raw_marker_wrong_id_count: usize,
+}
+
+/// Result of running the board-level matcher on one component, together with
+/// the per-component raw counts.
+struct ComponentMatch {
+    markers: Vec<MarkerDetection>,
+    alignment: CharucoAlignment,
+    raw_counts: RawMarkerCounts,
+}
+
+/// Identifying counts for one chessboard component, shared by the
+/// [`PipelineSink`] outcome hooks. Bundled into a struct so the hooks stay
+/// within the workspace argument-count limit.
+///
+/// The fields are diagnostics-only metadata (consumed solely by
+/// [`DiagCollector`]), so they are compiled in only with the `diagnostics`
+/// feature; on the production path the value is an empty marker the no-op
+/// hooks ignore.
+#[derive(Clone, Copy)]
+struct ComponentContext {
+    #[cfg(feature = "diagnostics")]
+    index: usize,
+    #[cfg(feature = "diagnostics")]
+    chess_corner_count: usize,
+    #[cfg(feature = "diagnostics")]
+    candidate_cell_count: usize,
+}
+
+/// Sink for per-component / per-frame pipeline diagnostics.
+///
+/// Mirrors the board matcher's `MatchSink` split: the production [`detect`]
+/// path uses the no-op [`NoPipelineDiag`] sink (all hooks inline away, so it
+/// builds no `ComponentDiagnostics` / `CharucoDetectDiagnostics`), while
+/// [`detect_with_diagnostics`] uses [`DiagCollector`], which runs the
+/// diagnostic matcher and accumulates the full record.
+///
+/// The sink owns *which* board matcher runs (`match_board` vs
+/// `match_board_diag`) so the production path never allocates a
+/// [`BoardMatchDiagnostics`]. Hook parameters are restricted to
+/// always-compiled types so the trait and the [`NoPipelineDiag`] impl compile
+/// with the feature off.
+trait PipelineSink {
+    /// Run the board-level matcher for one component. The sink decides whether
+    /// to capture per-cell board diagnostics; either way it returns the match
+    /// result the pipeline consumes.
+    fn run_match(
+        &mut self,
+        image: &GrayImageView<'_>,
+        cells: &[calib_targets_aruco::MarkerCell],
+        board: &CharucoBoard,
+        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        cfg: &BoardMatchConfig,
+    ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)>;
+
+    /// Record a component that failed, with the reason and its corner / cell
+    /// counts. `_reason` is materialised only by the diagnostics sink.
+    fn component_failed(&mut self, _ctx: ComponentContext, _reason: &CharucoDetectError) {}
+
+    /// Record a component that produced a detection.
+    fn component_ok(
+        &mut self,
+        _ctx: ComponentContext,
+        _markers: usize,
+        _charuco_corners: usize,
+        _raw_counts: RawMarkerCounts,
+    ) {
+    }
+
+    /// Record the merged frame-level raw counts (the sum over the winning
+    /// merge group).
+    fn record_frame_counts(&mut self, _raw_counts: RawMarkerCounts) {}
+}
+
+/// No-op pipeline sink for the production [`detect`] path. Runs the lean
+/// [`match_board`] and accumulates nothing.
+struct NoPipelineDiag;
+
+impl PipelineSink for NoPipelineDiag {
+    fn run_match(
+        &mut self,
+        image: &GrayImageView<'_>,
+        cells: &[calib_targets_aruco::MarkerCell],
+        board: &CharucoBoard,
+        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        cfg: &BoardMatchConfig,
+    ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
+        match_board(image, cells, board, scan_cfg, cfg)
+    }
 }
 
 #[cfg(feature = "tracing")]
@@ -143,13 +242,25 @@ impl CharucoDetector {
     /// When the grid graph contains multiple disconnected components, each
     /// qualifying component is processed independently and results with
     /// consistent alignments are merged.
+    ///
+    /// This is the hot path: it computes and allocates **zero** diagnostics.
+    // The link target exists only with the `diagnostics` feature; link it then,
+    // and fall back to a plain mention otherwise so feature-off docs resolve.
+    #[cfg_attr(
+        feature = "diagnostics",
+        doc = "For per-component evidence use [`CharucoDetector::detect_with_diagnostics`] (behind the `diagnostics` feature)."
+    )]
+    #[cfg_attr(
+        not(feature = "diagnostics"),
+        doc = "For per-component evidence enable the `diagnostics` feature and use `detect_with_diagnostics`."
+    )]
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<CharucoDetectionResult, CharucoDetectError> {
-        self.detect_inner(image, corners).0
+        self.detect_core(image, corners, &mut NoPipelineDiag)
     }
 
     /// Detect + return per-component diagnostics (matcher decisions, per-cell
@@ -167,19 +278,23 @@ impl CharucoDetector {
         Result<CharucoDetectionResult, CharucoDetectError>,
         CharucoDetectDiagnostics,
     ) {
-        self.detect_inner(image, corners)
+        let mut collector = DiagCollector::default();
+        let result = self.detect_core(image, corners, &mut collector);
+        (result, collector.diagnostics)
     }
 
-    fn detect_inner(
+    /// Shared detection core for both the production and diagnostics paths.
+    ///
+    /// Runs the chessboard stage, then drives every qualifying component
+    /// through [`CharucoDetector::detect_component`], merges the consistent
+    /// results, and routes all diagnostic capture through `sink`. The
+    /// production path passes [`NoPipelineDiag`] (every hook inlines away).
+    fn detect_core<S: PipelineSink>(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> (
-        Result<CharucoDetectionResult, CharucoDetectError>,
-        CharucoDetectDiagnostics,
-    ) {
-        let mut diagnostics = CharucoDetectDiagnostics::default();
-
+        sink: &mut S,
+    ) -> Result<CharucoDetectionResult, CharucoDetectError> {
         debug!(
             "starting ChArUco detection: image={}x{}, input_corners={}, board_inner={}x{}, px_per_square={:.1}, min_marker_inliers={}",
             image.width,
@@ -205,7 +320,7 @@ impl CharucoDetector {
             Ok(detector) => detector,
             Err(e) => {
                 warn!("chessboard configuration rejected: {e}");
-                return (Err(CharucoDetectError::UnsupportedAlgorithm), diagnostics);
+                return Err(CharucoDetectError::UnsupportedAlgorithm);
             }
         };
         let components = detector.detect_all(corners);
@@ -218,7 +333,7 @@ impl CharucoDetector {
                 self.params.chessboard.effective_tuning().cluster_tol_deg,
                 self.params.chessboard.max_components,
             );
-            return (Err(CharucoDetectError::ChessboardNotDetected), diagnostics);
+            return Err(CharucoDetectError::ChessboardNotDetected);
         }
 
         debug!(
@@ -238,8 +353,7 @@ impl CharucoDetector {
                 self.params.min_secondary_marker_inliers
             };
 
-            let (result, comp_diag) = self.detect_component(image, chessboard, min_inliers, i);
-            match result {
+            match self.detect_component(image, chessboard, min_inliers, i, sink) {
                 Ok((result, raw_counts)) => {
                     debug!(
                         "component {i}: {} corners, {} markers",
@@ -252,25 +366,22 @@ impl CharucoDetector {
                     debug!("component {i} failed: {e}");
                 }
             }
-            diagnostics.components.push(comp_diag);
         }
 
         if results.is_empty() {
-            return (Err(CharucoDetectError::NoMarkers), diagnostics);
+            return Err(CharucoDetectError::NoMarkers);
         }
 
-        // Single-component and merged paths agree: the raw counts carried
-        // into `diagnostics` are exactly those of the components that
-        // contributed to the returned result.
+        // Single-component and merged paths agree: the raw counts recorded on
+        // the frame are exactly those of the components that contributed to
+        // the returned result.
         let (merged, raw_counts) = if results.len() == 1 {
-            let (result, raw_counts) = results.into_iter().next().unwrap();
-            (result, raw_counts)
+            results.into_iter().next().unwrap()
         } else {
             merge_charuco_results(results)
         };
-        diagnostics.raw_marker_count = raw_counts.raw_marker_count;
-        diagnostics.raw_marker_wrong_id_count = raw_counts.raw_marker_wrong_id_count;
-        (Ok(merged), diagnostics)
+        sink.record_frame_counts(raw_counts);
+        Ok(merged)
     }
 
     /// Run the full charuco pipeline on a single chessboard component.
@@ -278,16 +389,16 @@ impl CharucoDetector {
     /// On success returns the component's [`CharucoDetectionResult`] paired
     /// with its [`RawMarkerCounts`] (raw pre-inlier-filter totals); the
     /// counts are merged into [`CharucoDetectDiagnostics`] by the caller.
-    fn detect_component(
+    /// All diagnostic capture is routed through `sink`, which also owns the
+    /// choice of board matcher.
+    fn detect_component<S: PipelineSink>(
         &self,
         image: &GrayImageView<'_>,
         chessboard: &ChessboardDetection,
         min_marker_inliers: usize,
         component_index: usize,
-    ) -> (
-        Result<(CharucoDetectionResult, RawMarkerCounts), CharucoDetectError>,
-        ComponentDiagnostics,
-    ) {
+        sink: &mut S,
+    ) -> Result<(CharucoDetectionResult, RawMarkerCounts), CharucoDetectError> {
         // Adapt the typed chessboard result into the generic
         // `TargetDetection` the corner-mapping / marker-sampling stages
         // expect. Every labelled corner is an inlier by construction.
@@ -304,59 +415,54 @@ impl CharucoDetector {
         );
         let cells = build_marker_cells(&corner_map);
         debug!(
-            "marker sampling inputs: corner_map_entries={}, complete_marker_cells={}",
+            "component {component_index}: marker sampling inputs: corner_map_entries={}, complete_marker_cells={}",
             corner_map.len(),
             cells.len()
         );
 
-        let chess_corner_count = chessboard.corners.len();
-        let candidate_cell_count = cells.len();
+        let ctx = ComponentContext {
+            #[cfg(feature = "diagnostics")]
+            index: component_index,
+            #[cfg(feature = "diagnostics")]
+            chess_corner_count: chessboard.corners.len(),
+            #[cfg(feature = "diagnostics")]
+            candidate_cell_count: cells.len(),
+        };
         let scan_cfg = self.params.scan.clone();
 
         let board_cfg = BoardMatchConfig {
             px_per_square: self.params.px_per_square,
-            bit_likelihood_slope: self.params.bit_likelihood_slope,
-            per_bit_floor: self.params.per_bit_floor,
-            alignment_min_margin: self.params.alignment_min_margin,
-            cell_weight_border_threshold: self.params.cell_weight_border_threshold,
+            bit_likelihood_slope: self.params.advanced.bit_likelihood_slope,
+            per_bit_floor: self.params.advanced.per_bit_floor,
+            alignment_min_margin: self.params.advanced.alignment_min_margin,
+            cell_weight_border_threshold: self.params.advanced.cell_weight_border_threshold,
         };
-        let (matched_opt, diag) =
-            match_board_diag(image, &cells, &self.board, &scan_cfg, &board_cfg);
-        let board_diag: Option<BoardMatchDiagnostics> = Some(diag);
-        let matched = match matched_opt {
+        let matched = sink.run_match(image, &cells, &self.board, &scan_cfg, &board_cfg);
+
+        let ComponentMatch {
+            markers,
+            alignment,
+            raw_counts,
+        } = match matched {
             Some((markers, alignment)) => {
                 let count = markers.len();
-                Ok((markers, alignment, count, 0usize))
+                ComponentMatch {
+                    markers,
+                    alignment,
+                    raw_counts: RawMarkerCounts {
+                        raw_marker_count: count,
+                        raw_marker_wrong_id_count: 0,
+                    },
+                }
             }
             None => {
                 warn!(
                     "board-level matcher rejected: no hypothesis cleared the margin gate ({} candidate cells)",
                     cells.len()
                 );
-                Err(CharucoDetectError::AlignmentFailed { inliers: 0 })
-            }
-        };
-
-        let make_comp_diag = |outcome: ComponentOutcome, board: Option<BoardMatchDiagnostics>| {
-            ComponentDiagnostics {
-                index: component_index,
-                chess_corner_count,
-                candidate_cell_count,
-                board,
-                outcome,
-            }
-        };
-
-        let (markers, alignment, raw_marker_count, raw_marker_wrong_id_count) = match matched {
-            Ok(tup) => tup,
-            Err(e) => {
-                let comp_diag = make_comp_diag(
-                    ComponentOutcome::Failed {
-                        reason: e.to_string(),
-                    },
-                    board_diag,
-                );
-                return (Err(e), comp_diag);
+                let err = CharucoDetectError::AlignmentFailed { inliers: 0 };
+                sink.component_failed(ctx, &err);
+                return Err(err);
             }
         };
 
@@ -377,13 +483,8 @@ impl CharucoDetector {
             let err = CharucoDetectError::AlignmentFailed {
                 inliers: alignment.marker_inliers.len(),
             };
-            let comp_diag = make_comp_diag(
-                ComponentOutcome::Failed {
-                    reason: err.to_string(),
-                },
-                board_diag,
-            );
-            return (Err(err), comp_diag);
+            sink.component_failed(ctx, &err);
+            return Err(err);
         }
 
         let detection = map_charuco_corners(&self.board, &chessboard, &alignment);
@@ -409,30 +510,80 @@ impl CharucoDetector {
             detection.corners.len()
         );
 
-        let comp_diag = make_comp_diag(
-            ComponentOutcome::Ok {
-                markers: markers.len(),
-                charuco_corners: detection.corners.len(),
-                raw_marker_count,
-                raw_marker_wrong_id_count,
-            },
-            board_diag,
-        );
+        sink.component_ok(ctx, markers.len(), detection.corners.len(), raw_counts);
 
-        (
-            Ok((
-                CharucoDetectionResult::from_target_detection(
-                    detection,
-                    markers,
-                    alignment.alignment,
-                ),
-                RawMarkerCounts {
-                    raw_marker_count,
-                    raw_marker_wrong_id_count,
-                },
-            )),
-            comp_diag,
-        )
+        Ok((
+            CharucoDetectionResult::from_target_detection(detection, markers, alignment.alignment),
+            raw_counts,
+        ))
+    }
+}
+
+/// Diagnostics-collecting pipeline sink. Runs [`match_board_diag`], captures
+/// the per-cell board diagnostics for the component currently being matched,
+/// and assembles the full [`CharucoDetectDiagnostics`].
+#[cfg(feature = "diagnostics")]
+#[derive(Default)]
+struct DiagCollector {
+    diagnostics: CharucoDetectDiagnostics,
+    /// Board-level diagnostics from the most recent [`PipelineSink::run_match`],
+    /// consumed by the next `component_ok` / `component_failed`.
+    pending_board: Option<BoardMatchDiagnostics>,
+}
+
+#[cfg(feature = "diagnostics")]
+impl PipelineSink for DiagCollector {
+    fn run_match(
+        &mut self,
+        image: &GrayImageView<'_>,
+        cells: &[calib_targets_aruco::MarkerCell],
+        board: &CharucoBoard,
+        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        cfg: &BoardMatchConfig,
+    ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
+        let (result, board_diag) = match_board_diag(image, cells, board, scan_cfg, cfg);
+        self.pending_board = Some(board_diag);
+        result
+    }
+
+    fn component_failed(&mut self, ctx: ComponentContext, reason: &CharucoDetectError) {
+        let board = self.pending_board.take();
+        self.diagnostics.components.push(ComponentDiagnostics {
+            index: ctx.index,
+            chess_corner_count: ctx.chess_corner_count,
+            candidate_cell_count: ctx.candidate_cell_count,
+            board,
+            outcome: ComponentOutcome::Failed {
+                reason: reason.to_string(),
+            },
+        });
+    }
+
+    fn component_ok(
+        &mut self,
+        ctx: ComponentContext,
+        markers: usize,
+        charuco_corners: usize,
+        raw_counts: RawMarkerCounts,
+    ) {
+        let board = self.pending_board.take();
+        self.diagnostics.components.push(ComponentDiagnostics {
+            index: ctx.index,
+            chess_corner_count: ctx.chess_corner_count,
+            candidate_cell_count: ctx.candidate_cell_count,
+            board,
+            outcome: ComponentOutcome::Ok {
+                markers,
+                charuco_corners,
+                raw_marker_count: raw_counts.raw_marker_count,
+                raw_marker_wrong_id_count: raw_counts.raw_marker_wrong_id_count,
+            },
+        });
+    }
+
+    fn record_frame_counts(&mut self, raw_counts: RawMarkerCounts) {
+        self.diagnostics.raw_marker_count = raw_counts.raw_marker_count;
+        self.diagnostics.raw_marker_wrong_id_count = raw_counts.raw_marker_wrong_id_count;
     }
 }
 

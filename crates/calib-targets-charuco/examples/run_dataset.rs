@@ -174,10 +174,10 @@ fn main() {
     // sets the low (1 / 1) floors, so the matcher's margin gate is what
     // decides accept/reject.
     if let Some(slope) = args.bit_slope {
-        params.bit_likelihood_slope = slope;
+        params.advanced.bit_likelihood_slope = slope;
     }
     if let Some(min_margin) = args.min_margin {
-        params.alignment_min_margin = min_margin;
+        params.advanced.alignment_min_margin = min_margin;
     }
     eprintln!(
         "matcher: board-level (soft-bit log-likelihood)  algorithm: {}",
@@ -475,7 +475,7 @@ impl DetectionSummary {
             .iter()
             .map(|m| MarkerSummary {
                 id: m.id,
-                gc: [m.gc.i, m.gc.j],
+                gc: [m.gc.u, m.gc.v],
                 rotation: m.rotation,
                 score: m.score,
                 corners_img: m.corners_img.map(|arr| {
