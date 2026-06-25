@@ -64,4 +64,8 @@ pub use diagnostics::{
 pub use io::{PuzzleBoardDetectConfig, PuzzleBoardDetectReport, PuzzleBoardIoError};
 pub use params::PuzzleBoardParams;
 
-pub use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+// Re-export the foreign types this crate's public API requires — the corner
+// input and the image view — so depending on calib-targets-puzzleboard alone is
+// sufficient (no direct calib-targets-chessboard / -core dependency needed).
+pub use calib_targets_chessboard::ChessCorner;
+pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_D4};

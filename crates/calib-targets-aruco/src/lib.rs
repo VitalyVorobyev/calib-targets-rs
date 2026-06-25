@@ -11,8 +11,9 @@
 //! ## Quickstart
 //!
 //! ```
-//! use calib_targets_aruco::{builtins, scan_decode_markers, Matcher, ScanDecodeConfig};
-//! use calib_targets_core::GrayImageView;
+//! use calib_targets_aruco::{
+//!     builtins, scan_decode_markers, GrayImageView, Matcher, ScanDecodeConfig,
+//! };
 //!
 //! let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
 //! let matcher = Matcher::new(dict, 1);
@@ -42,3 +43,8 @@ pub use scan::{
     decode_marker_in_cell, sample_cell, scan_decode_markers, scan_decode_markers_in_cells,
     ArucoScanConfig, CellSamples, MarkerCell, MarkerDetection, ScanDecodeConfig,
 };
+
+// Re-export the core image-view type this crate's scan API names, so depending
+// on calib-targets-aruco alone is sufficient (no direct calib-targets-core dep
+// required to name the input view).
+pub use calib_targets_core::GrayImageView;

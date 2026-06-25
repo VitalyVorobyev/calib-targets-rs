@@ -23,8 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.8"
-calib-targets-core = "0.8"
+calib-targets-puzzleboard = "0.10"
 ```
 
 ## Quickstart (facade)
@@ -103,9 +102,9 @@ defaults or `sweep_for_board(spec)` for a multi-config preset.
 - [`PuzzleBoardScoringMode::SoftLogLikelihood`] (default) — per-bit
   log-likelihood with a best-vs-runner-up margin gate. Recommended for
   real data and multi-view consistency checks.
-- [`PuzzleBoardScoringMode::HardWeighted`] — legacy hard match-count
-  ranking with a confidence-weighted tie-break. Kept for diagnostics and
-  backward-compatibility.
+- [`PuzzleBoardScoringMode::HardWeighted`] — hard match-count ranking with
+  a confidence-weighted tie-break. Simpler and faster than the soft scorer
+  and used as a sweep fallback, but less robust on noisy data.
 
 ```rust,no_run
 # use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode, PuzzleBoardSpec}};

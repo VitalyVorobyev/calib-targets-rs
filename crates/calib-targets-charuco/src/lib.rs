@@ -10,10 +10,10 @@
 //! ## Quickstart
 //!
 //! ```no_run
-//! use calib_targets_aruco::builtins;
-//! use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
-//! use calib_targets_chessboard::ChessCorner;
-//! use calib_targets_core::GrayImageView;
+//! use calib_targets_charuco::{
+//!     builtins, CharucoBoardSpec, CharucoDetector, CharucoParams, ChessCorner,
+//!     GrayImageView, MarkerLayout,
+//! };
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let board = CharucoBoardSpec::new(5, 7, 1.0, 0.7, builtins::DICT_4X4_50)
@@ -68,4 +68,10 @@ pub use link_check::{
     LinkViolationKind, MarkerCornerLink,
 };
 
-pub use calib_targets_core::{GridAlignment, GridTransform};
+// A consumer of this crate alone must be able to name every foreign type our
+// public API requires — the marker dictionary, the image view, and the corner
+// input — without depending on calib-targets-aruco / -core / -chessboard
+// directly.
+pub use calib_targets_aruco::{builtins, Dictionary};
+pub use calib_targets_chessboard::ChessCorner;
+pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform};

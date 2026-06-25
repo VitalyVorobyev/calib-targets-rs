@@ -23,19 +23,52 @@ and [alignment & refinement chapter][book-alignment].
 
 ```toml
 [dependencies]
-calib-targets-charuco = "0.8"
-calib-targets-core = "0.8"
-calib-targets-aruco = "0.8"
+calib-targets-charuco = "0.10"
 ```
 
 ## Quickstart
 
+Most users should reach for the facade crate [`calib-targets`][facade]: it runs
+ChESS corner detection for you and takes an `image::GrayImage` straight in.
+
+```toml
+[dependencies]
+calib-targets = "0.10"
+image = "0.25"
+```
+
 ```rust,no_run
-use calib_targets_aruco::builtins;
+use calib_targets::aruco::builtins;
+use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
+use calib_targets::detect;
+use image::ImageReader;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+
+    let board = CharucoBoardSpec::new(5, 7, 1.0, 0.70, builtins::DICT_4X4_50)
+        .with_marker_layout(MarkerLayout::OpenCvCharuco);
+    let params = CharucoParams::for_board(&board);
+
+    let result = detect::detect_charuco(&img, &params)?;
+    println!("detected {} corners", result.corners.len());
+    Ok(())
+}
+```
+
+### Using this crate directly
+
+Depend on `calib-targets-charuco` alone when you already have ChESS corners and
+want the detector without the image-loading layer. Every type the API needs —
+the marker `Dictionary`, the `GrayImageView`, and the `ChessCorner` input — is
+re-exported here, so no direct `calib-targets-aruco` / `calib-targets-core`
+dependency is required:
+
+```rust,no_run
 use calib_targets_charuco::{
-    CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout,
+    builtins, CharucoBoardSpec, CharucoDetector, CharucoParams, ChessCorner,
+    GrayImageView, MarkerLayout,
 };
-use calib_targets_core::{Corner, GrayImageView};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let board = CharucoBoardSpec::new(5, 7, 1.0, 0.70, builtins::DICT_4X4_50)
@@ -44,16 +77,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let pixels = vec![0u8; 32 * 32];
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
-    let corners: Vec<Corner> = Vec::new();
+    let corners: Vec<ChessCorner> = Vec::new();
 
     let _ = detector.detect(&view, &corners)?;
     Ok(())
 }
 ```
-
-Use [`calib_targets::detect::detect_charuco`] for an `image::GrayImage`-
-in, result-out helper; it runs corner detection, calls this detector, and
-returns the same `CharucoDetectionResult`.
 
 ## Inputs
 
@@ -123,7 +152,7 @@ Defaults from `for_board(&spec)` work for most targets.
 | Grid validation | `grid_smoothness_threshold_rel`, `corner_validation_threshold_rel` | Smoothness / local-H residuals on refined corners. Loosen under lens distortion. |
 | Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold` | Marker cell sampling for the soft-bit score matrix. |
 | Alignment accept | `min_marker_inliers`, `min_secondary_marker_inliers` | Downstream inlier floors (the board matcher is its own gate, so these stay low). |
-| Board-level matcher | `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) are tuned conservatively across the internal regression sets. |
+| Board-level matcher | `bit_likelihood_slope` (κ), `per_bit_floor`, `alignment_min_margin` | Soft-bit gate. Defaults (κ=36, margin=0.05) are chosen conservatively to favour precision over recall. |
 
 ## Tuning difficult cases
 

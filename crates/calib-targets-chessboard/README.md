@@ -33,7 +33,7 @@ fn detect_one(corners: &[ChessCorner]) {
         println!("labelled {} corners", d.corners.len());
         for c in &d.corners {
             // c.grid: (i, j) — always present; c.input_index: input-slice index.
-            let _ = (c.grid.i, c.grid.j, c.position, c.input_index, c.score);
+            let _ = (c.grid.u, c.grid.v, c.position, c.input_index, c.score);
         }
     }
 }
@@ -68,7 +68,7 @@ bounding box and sorted by `(j, i)`) plus a stable
 | Field | Meaning |
 |---|---|
 | `position: Point2<f32>` | Sub-pixel image position. |
-| `grid: GridCoords` | The `(i, j)` grid label. Non-optional — a chessboard corner is always labelled. |
+| `grid: Coord` | The `(u, v)` grid label (`u` right, `v` down). Non-optional — a chessboard corner is always labelled. |
 | `input_index: usize` | Index back into the caller's input `&[ChessCorner]` slice — used by ChArUco / marker-board alignment. |
 | `score: f32` | Corner score. |
 
