@@ -40,6 +40,20 @@ def p50(stat):
     return round(stat["p50_ms"], 3)
 
 
+def merge_comparison(raw_dir, data):
+    """Write the OpenCV comparison block from <raw_dir>/comparison.json, if
+    present. Guarded: a missing file leaves any existing block untouched (never
+    blanks it), so the pure-Rust refresh and the opencv refresh stay decoupled."""
+    path = os.path.join(raw_dir, "comparison.json")
+    if not os.path.exists(path):
+        return
+    comparison = load(path)
+    if not comparison.get("groups"):
+        print(f"WARNING: {path} has no groups — leaving comparison block as-is.")
+        return
+    data["comparison"] = comparison
+
+
 def main():
     raw_dir, data_path = sys.argv[1], sys.argv[2]
     data = load(data_path)
@@ -59,43 +73,50 @@ def main():
         data["meta"]["warmup"] = meta_src.get("warmup", data["meta"]["warmup"])
     data["meta"]["generated"] = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    # ---- per-image cards: refresh measured numbers, keep editorial fields ----
-    for card in data.get("images", []):
-        base = os.path.basename(card["file"])
-        m = measured.get(base)
-        if not m:
-            continue
-        card["kind"] = m.get("kind", card.get("kind"))
-        card["width"] = m.get("width", card.get("width"))
-        card["height"] = m.get("height", card.get("height"))
-        card["raw_corners"] = m.get("raw_corners", card.get("raw_corners"))
-        card["labelled"] = m.get("labelled", card.get("labelled"))
-        card["markers"] = m.get("markers")  # null for chessboard cards
-        card["corner_detection_ms"] = p50(m.get("corner_detection"))
-        card["grid_build_ms"] = p50(m.get("grid_build"))
-        card["decode_ms"] = p50(m.get("decode"))  # null for chessboard cards
+    # The per-image and end_to_end refresh is DESTRUCTIVE (it rebuilds the
+    # frames list), so it runs only when full.json was actually measured.
+    # A comparison-only refresh (gen-comparison-data.sh) leaves them untouched.
+    if measured:
+        # ---- per-image cards: refresh measured numbers, keep editorial fields --
+        for card in data.get("images", []):
+            base = os.path.basename(card["file"])
+            m = measured.get(base)
+            if not m:
+                continue
+            card["kind"] = m.get("kind", card.get("kind"))
+            card["width"] = m.get("width", card.get("width"))
+            card["height"] = m.get("height", card.get("height"))
+            card["raw_corners"] = m.get("raw_corners", card.get("raw_corners"))
+            card["labelled"] = m.get("labelled", card.get("labelled"))
+            card["markers"] = m.get("markers")  # null for chessboard cards
+            card["corner_detection_ms"] = p50(m.get("corner_detection"))
+            card["grid_build_ms"] = p50(m.get("grid_build"))
+            card["decode_ms"] = p50(m.get("decode"))  # null for chessboard cards
 
-    # ---- end-to-end table: per-frame total = sum of the measured stages ----
-    # Driven by the same full_stage_timing measurements as the cards, so the
-    # table can never drift from the per-stage breakdown above.
-    frames = []
-    for card in data.get("images", []):
-        m = measured.get(os.path.basename(card["file"]))
-        if not m:
-            continue
-        total = 0.0
-        for stage in ("corner_detection", "grid_build", "decode"):
-            s = m.get(stage)
-            if s:
-                total += s["p50_ms"]
-        kind = m.get("kind", card.get("kind", ""))
-        frames.append({
-            "file": card["file"],
-            "ms": round(total, 3),
-            "note": f"{m.get('width')}x{m.get('height')} {kind}",
-        })
-    frames.sort(key=lambda f: f["ms"])
-    data.setdefault("end_to_end", {})["frames"] = frames
+        # ---- end-to-end table: per-frame total = sum of measured stages ----
+        # Driven by the same full_stage_timing measurements as the cards, so the
+        # table can never drift from the per-stage breakdown above.
+        frames = []
+        for card in data.get("images", []):
+            m = measured.get(os.path.basename(card["file"]))
+            if not m:
+                continue
+            total = 0.0
+            for stage in ("corner_detection", "grid_build", "decode"):
+                s = m.get(stage)
+                if s:
+                    total += s["p50_ms"]
+            kind = m.get("kind", card.get("kind", ""))
+            frames.append({
+                "file": card["file"],
+                "ms": round(total, 3),
+                "note": f"{m.get('width')}x{m.get('height')} {kind}",
+            })
+        frames.sort(key=lambda f: f["ms"])
+        data.setdefault("end_to_end", {})["frames"] = frames
+
+    # ---- OpenCV comparison block (independent, partial-safe) ----------------
+    merge_comparison(raw_dir, data)
 
     with open(data_path, "w") as f:
         json.dump(data, f, indent=2)

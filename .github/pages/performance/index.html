@@ -101,12 +101,19 @@
     <table id="e2e"><thead><tr><th>Frame</th><th></th><th class="num">p50 (ms)</th></tr></thead><tbody></tbody></table>
   </div>
 
+  <div id="cmp-section">
+    <h2>OpenCV baseline — recall &amp; runtime</h2>
+    <p class="desc" id="cmp-caveat"></p>
+    <div id="comparison"></div>
+  </div>
+
   <div class="foot" id="foot"></div>
 </div>
 
 <script>
-const C = { amber: "#f2a93d", blue: "#5b9dff", teal: "#33c6e3" };
+const C = { amber: "#f2a93d", blue: "#5b9dff", teal: "#33c6e3", muted: "#8294b0" };
 const fmt = (v, d = 3) => v == null ? "—" : v.toFixed(d);
+const pct = v => v == null ? "—" : (100 * v).toFixed(1) + "%";
 
 function bar(label, fills, valueHtml, max) {
   const row = document.createElement("div"); row.className = "barrow";
@@ -163,6 +170,78 @@ function renderImageCard(img) {
   return card;
 }
 
+function renderComparisonGroup(g) {
+  const card = document.createElement("div"); card.className = "card imgcard";
+
+  if (g.img) {
+    const fig = document.createElement("img"); fig.className = "preview";
+    fig.src = g.img; fig.alt = g.kind + " comparison"; fig.loading = "lazy";
+    card.appendChild(fig);
+  }
+
+  const h = document.createElement("h3");
+  h.innerHTML = g.kind + ' baseline<span class="kindtag">' +
+    (g.mode === "recall" ? "recall" : "detected count") + "</span>";
+  const file = document.createElement("div"); file.className = "file";
+  file.innerHTML = "<code>" + g.image + "</code>";
+  const legend = document.createElement("div"); legend.className = "legend";
+  legend.innerHTML =
+    '<span><i class="sw" style="background:' + C.blue + '"></i> calib-targets (ours)</span>' +
+    '<span><i class="sw" style="background:' + C.muted + '"></i> OpenCV ' + (g.opencv.detector || "") + "</span>";
+  card.append(h, file, legend);
+
+  if (g.mode === "recall") {
+    const sub = document.createElement("p"); sub.className = "desc"; sub.style.margin = "8px 0";
+    sub.innerHTML = "Recall vs the known full board (<b>" + g.gt_corners + "</b> inner corners).";
+    card.appendChild(sub);
+    card.appendChild(bar("ours recall", [{ v: g.ours.recall, color: C.blue }],
+      pct(g.ours.recall) + ' <span class="mut" style="color:var(--muted)">' + g.ours.matched + "/" + g.gt_corners + "</span>", 1));
+    const ocv = g.opencv.success
+      ? pct(g.opencv.recall) + ' <span class="mut" style="color:var(--muted)">' + g.opencv.matched + "/" + g.gt_corners + "</span>"
+      : '<span class="err">no detection — ' + (g.opencv.note || "all-or-nothing") + "</span>";
+    card.appendChild(bar("OpenCV recall", [{ v: g.opencv.success ? g.opencv.recall : 0, color: C.muted }], ocv, 1));
+  } else {
+    const sub = document.createElement("p"); sub.className = "desc"; sub.style.margin = "8px 0";
+    sub.innerHTML = "Detected counts (partial view — no independent ground truth).";
+    card.appendChild(sub);
+    const cmax = Math.max(g.ours.markers, g.opencv.markers, g.ours.corners, g.opencv.corners, 1);
+    card.appendChild(bar("ours markers", [{ v: g.ours.markers, color: C.blue }], g.ours.markers, cmax));
+    card.appendChild(bar("OpenCV markers", [{ v: g.opencv.markers, color: C.muted }], g.opencv.markers, cmax));
+    card.appendChild(bar("ours corners", [{ v: g.ours.corners, color: C.blue }], g.ours.corners, cmax));
+    card.appendChild(bar("OpenCV corners", [{ v: g.opencv.corners, color: C.muted }], g.opencv.corners, cmax));
+  }
+
+  const rt = document.createElement("p"); rt.className = "desc"; rt.style.margin = "12px 0 4px";
+  rt.innerHTML = "Runtime p50 (ms) — ours native Rust, OpenCV native cv2.";
+  card.appendChild(rt);
+  const tmax = Math.max(g.ours.ms || 0, g.opencv.ms || 0, 0.01);
+  card.appendChild(bar("ours", [{ v: g.ours.ms || 0, color: C.blue }], fmt(g.ours.ms, 2), tmax));
+  card.appendChild(bar("OpenCV", [{ v: g.opencv.ms || 0, color: C.muted }], fmt(g.opencv.ms, 2), tmax));
+
+  if (g.corner_agreement != null) {
+    const ag = document.createElement("p"); ag.className = "desc";
+    ag.style.margin = "12px 0 0"; ag.style.borderTop = "1px solid var(--edge)"; ag.style.paddingTop = "10px";
+    ag.innerHTML = "Cross-detector position agreement within " + g.agreement_px + " px: <b>" +
+      pct(g.corner_agreement) + "</b>" +
+      (g.opencv.legacy_pattern != null ? " · OpenCV ChArUco pattern: <b>" + (g.opencv.legacy_pattern ? "legacy" : "standard") + "</b>" : "");
+    card.appendChild(ag);
+  }
+  return card;
+}
+
+function renderComparison(data) {
+  const cmp = data.comparison;
+  const section = document.getElementById("cmp-section");
+  if (!cmp || !Array.isArray(cmp.groups) || cmp.groups.length === 0) {
+    section.style.display = "none";
+    return;
+  }
+  document.getElementById("cmp-caveat").textContent =
+    (cmp.desc ? cmp.desc + " " : "") + (cmp.caveat || "");
+  const host = document.getElementById("comparison");
+  cmp.groups.forEach(g => host.appendChild(renderComparisonGroup(g)));
+}
+
 function render(data) {
   const m = data.meta;
   document.getElementById("chips").innerHTML = [
@@ -181,6 +260,8 @@ function render(data) {
       (f.note || "") + "</td><td class='num'>" + f.ms.toFixed(2) + "</td>";
     e2e.appendChild(tr);
   });
+
+  renderComparison(data);
 
   document.getElementById("foot").innerHTML =
     "All numbers are from public <code>testdata/</code> images, measured with " +
