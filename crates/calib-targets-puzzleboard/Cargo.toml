@@ -55,6 +55,13 @@ harness = false
 # gated behind `dataset` for the puzzleboard diagnostics + fixture harness.
 required-features = ["dataset"]
 
+[[bench]]
+name = "synthetic_decode"
+harness = false
+# Public counterpart to `dataset_decode`: times corner → chessboard → decode on
+# the committed photo-realistic synthetic fixtures (canonical-map renders). No
+# feature gate and no private data, so `cargo bench --workspace` runs it.
+
 [[bin]]
 name = "generate-puzzleboard-code-maps"
 path = "tools/generate_code_maps.rs"
