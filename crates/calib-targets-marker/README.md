@@ -19,38 +19,80 @@ Algorithm details: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-marker = "0.8"
-calib-targets-core = "0.8"
+calib-targets-marker = "0.10"
 ```
 
 ## Quickstart
 
-```rust
-use calib_targets_core::{Corner, GrayImageView};
-use calib_targets_marker::{
-    CellCoords, CirclePolarity, MarkerBoardDetector, MarkerBoardSpec, MarkerBoardParams,
-    MarkerCircleSpec,
+Most users should reach for the facade crate [`calib-targets`][facade]: it runs
+ChESS corner detection for you and takes an `image::GrayImage` straight in.
+
+```toml
+[dependencies]
+calib-targets = "0.10"
+image = "0.25"
+```
+
+```rust,no_run
+use calib_targets::detect;
+use calib_targets::marker::{
+    CellCoords, CirclePolarity, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 
-let layout = MarkerBoardSpec::new(
-    6,
-    8,
-    [
-        MarkerCircleSpec::new(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
-        MarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
-        MarkerCircleSpec::new(CellCoords { i: 2, j: 3 }, CirclePolarity::White),
-    ],
-)
-.with_cell_size(1.0);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let img = image::open("marker_board.png")?.to_luma8();
 
-let params = MarkerBoardParams::new(layout);
-let detector = MarkerBoardDetector::new(params);
+    let spec = MarkerBoardSpec::new(
+        6,
+        8,
+        [
+            MarkerCircleSpec::new(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+            MarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+            MarkerCircleSpec::new(CellCoords { i: 2, j: 3 }, CirclePolarity::White),
+        ],
+    )
+    .with_cell_size(1.0);
+    let params = MarkerBoardParams::new(spec);
 
-let pixels = vec![0u8; 32 * 32];
-let view = GrayImageView { width: 32, height: 32, data: &pixels };
-let corners: Vec<Corner> = Vec::new();
+    if let Some(result) = detect::detect_marker_board(&img, &params) {
+        println!("detected {} corners", result.corners.len());
+    }
+    Ok(())
+}
+```
 
-let _ = detector.detect_from_image_and_corners(&view, &corners);
+### Using this crate directly
+
+Depend on `calib-targets-marker` alone when you already have ChESS corners. The
+corner input (`ChessCorner`) and image view (`GrayImageView`) are re-exported
+here, so no direct `calib-targets-chessboard` / `calib-targets-core` dependency
+is required:
+
+```rust,no_run
+use calib_targets_marker::{
+    CellCoords, ChessCorner, CirclePolarity, GrayImageView, MarkerBoardDetector,
+    MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
+};
+
+fn main() {
+    let spec = MarkerBoardSpec::new(
+        6,
+        8,
+        [
+            MarkerCircleSpec::new(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+            MarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+            MarkerCircleSpec::new(CellCoords { i: 2, j: 3 }, CirclePolarity::White),
+        ],
+    )
+    .with_cell_size(1.0);
+    let detector = MarkerBoardDetector::new(MarkerBoardParams::new(spec));
+
+    let pixels = vec![0u8; 32 * 32];
+    let view = GrayImageView { width: 32, height: 32, data: &pixels };
+    let corners: Vec<ChessCorner> = Vec::new();
+
+    let _ = detector.detect_from_image_and_corners(&view, &corners);
+}
 ```
 
 ## Inputs

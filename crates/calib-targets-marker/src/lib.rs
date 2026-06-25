@@ -62,3 +62,10 @@ pub use types::{
     CircleMatch, CircleMatchParams, MarkerBoardCorner, MarkerBoardDetectionResult,
     MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
+
+// Re-export the foreign types this crate's public API requires — the corner
+// input, the image view, and the alignment result — so depending on
+// calib-targets-marker alone is sufficient (no direct calib-targets-chessboard
+// / -core dependency needed).
+pub use calib_targets_chessboard::ChessCorner;
+pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform};

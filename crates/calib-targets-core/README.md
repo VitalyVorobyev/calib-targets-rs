@@ -14,7 +14,7 @@ writing a new detector or consuming detection results without the facade.
 
 ```toml
 [dependencies]
-calib-targets-core = "0.8"
+calib-targets-core = "0.10"
 nalgebra = "0.34"
 ```
 
@@ -26,7 +26,7 @@ nalgebra = "0.34"
 | [`LabeledCorner`] | A detected corner with grid label: `position`, `grid: Option<(i, j)>`, `id`, `target_position`, `score`. The common detector output. |
 | [`TargetDetection`] | `{ kind: TargetKind, corners: Vec<LabeledCorner> }`. Uniform wrapper across all detector types. |
 | [`TargetKind`] | `Chessboard`, `ChArUco`, `PuzzleBoard`, `CheckerboardMarker`. Non-exhaustive. |
-| [`GridCoords`] | Integer `(i, j)` grid index, with `i` right, `j` down. Labels are always rebased so that the bounding-box minimum sits at `(0, 0)`. |
+| [`Coord`] | Integer lattice index `{ u, v }` (`u` right = grid column `i`, `v` down = grid row `j`). Labels are always rebased so that the bounding-box minimum sits at `(0, 0)`. |
 | [`GridAlignment`] / [`GridTransform`] | Dihedral-group D4 (8 transforms) aligning a detected grid to a board-fixed coordinate system. |
 
 ## Utilities
@@ -61,13 +61,13 @@ nalgebra = "0.34"
 ## Quickstart
 
 ```rust
-use calib_targets_core::{GridCoords, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
 // Public types are `#[non_exhaustive]`: build them with the named
 // constructor plus `with_*` setters, not a struct literal.
 let corner = LabeledCorner::new(Point2::new(10.0, 20.0), 1.0)
-    .with_grid(GridCoords::from((0, 0)));
+    .with_grid(Coord::new(0, 0));
 
 let detection = TargetDetection::new(TargetKind::Chessboard, vec![corner]);
 

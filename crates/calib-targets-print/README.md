@@ -14,7 +14,7 @@ Canonical user guide: [printable-targets book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-print = "0.8"
+calib-targets-print = "0.10"
 ```
 
 ## Quickstart
@@ -143,13 +143,8 @@ producers:
   text are intentionally absent — confirm with the producer whether
   they need the chrome or clear side and add downstream.
 
-The hand-rolled writer lives in [`render_dxf.rs`][writer-src] and is
-covered by a checked-in golden snapshot
-([`tests/golden/charuco_3x3_dict4x4_50.dxf`][golden]) plus unit tests
-for the Y-flip, polarity filter, and entity counts.
-
-[writer-src]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/calib-targets-print/src/render_dxf.rs
-[golden]: https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/crates/calib-targets-print/tests/golden/charuco_3x3_dict4x4_50.dxf
+The DXF output is deterministic and covered by a golden-snapshot
+regression test.
 
 ## Limitations
 

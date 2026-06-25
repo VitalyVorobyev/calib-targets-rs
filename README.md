@@ -46,16 +46,15 @@ Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.1
   then decode anchors / dots / circles in rectified cells". The heavy
   lifting lives in [`calib-targets-chessboard`] and
   [`projective-grid`][projective-grid-readme].
-- **Single grid pipeline, typed outputs.** The topological pipeline
-  (Shu / Brunton / Fiala 2009) is image-free Delaunay +
-  edge-classification + flood-fill labelling, used for all four target
-  families. `GraphBuildAlgorithm` still exists as a type but the
-  `SeedAndGrow` variant was removed; `Topological` is the sole variant.
+- **Single grid pipeline, typed outputs.** One image-free grid builder —
+  Delaunay triangulation followed by an axis-driven cell test — assembles
+  the lattice for all four target families, then each detector decodes its
+  own anchors / dots / circles in the rectified cells.
 - **Local invariants, not global warps.** Graph construction and
   validation work on local neighbourhoods, so moderate perspective and
   radial distortion degrade gracefully without an explicit distortion
-  model. Boundary extension uses per-candidate local-H over the K
-  nearest labels, tolerating stronger distortion.
+  model. Boundary extension fits a local homography around each candidate
+  corner, tolerating stronger distortion.
 - **Partial boards supported.** PuzzleBoard gives absolute IDs from a
   single visible fragment; ChArUco / marker boards label whatever is
   visible and the facade `detect_*_all` helpers return every connected
@@ -63,9 +62,8 @@ Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.1
 - **Consistency diagnostics built in.** PuzzleBoard surfaces the
   chosen search / scoring mode, observed edge evidence, and
   soft-decoder margins through its diagnostics channel. The chessboard
-  detector ends in a Stage 9 final-geometry check that drops gross
-  mislabels and isolated false positives before emitting any
-  `Detection`.
+  detector ends in a final-geometry check that drops gross mislabels and
+  isolated false positives before emitting any `Detection`.
 - **Multi-config sweeps.** `detect_*_best` tries three built-in presets
   and keeps the best result — no hand-tuning required for the common
   failure cases.
@@ -100,9 +98,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(det) => {
             println!("detected {} corners", det.corners.len());
             for c in &det.corners {
-                // position: sub-pixel (x, y) in pixels; grid: (i, j) lattice index
+                // position: sub-pixel (x, y) in pixels; grid: (u, v) lattice index
                 println!("  ({:.1}, {:.1}) -> grid ({}, {})",
-                    c.position.x, c.position.y, c.grid.i, c.grid.j);
+                    c.position.x, c.position.y, c.grid.u, c.grid.v);
             }
         }
         None => println!("no board detected"),
@@ -208,8 +206,8 @@ Each detector returns a typed result; its corners share a common vocabulary.
 A chessboard corner (`ChessboardCorner`) carries:
 
 - **`position`** — sub-pixel `(x, y)` in **pixels** (image origin top-left).
-- **`grid`** — integer lattice index `GridCoords { i, j }` (`i` increases
-  right, `j` down), rebased so the top-left visible corner is `(0, 0)`.
+- **`grid`** — integer lattice index `Coord { u, v }` (`u` increases
+  right, `v` down), rebased so the top-left visible corner is `(0, 0)`.
 - **`score`** — corner quality.
 
 ChArUco, PuzzleBoard, and marker corners add an `id` (a globally unique

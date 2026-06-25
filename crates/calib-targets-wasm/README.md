@@ -169,7 +169,7 @@ edges and soft-mode runner-up scoring evidence are returned by
 ```typescript
 {
   position: { x: number, y: number },          // sub-pixel image location
-  grid:     { i: number, j: number } | null,   // integer grid label, rebased to (0,0)
+  grid:     { u: number, v: number } | null,   // integer grid label, rebased to (0,0)
   id:       number | null,                     // ChArUco / PuzzleBoard ID
   target_position: { x: number, y: number } | null,  // mm on the printed board
   score:    number,
