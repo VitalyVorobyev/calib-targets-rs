@@ -2,10 +2,10 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.95.0",
-    "git_sha": "5aa15ca",
-    "repeats": 40,
-    "warmup": 5,
-    "generated": "2026-06-23",
+    "git_sha": "ce5882b",
+    "repeats": 100,
+    "warmup": 10,
+    "generated": "2026-06-25",
     "source": "scripts/gen-perf-data.sh",
     "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for example2) on each image."
   },
@@ -20,9 +20,9 @@
       "raw_corners": 267,
       "labelled": 99,
       "markers": 40,
-      "corner_detection_ms": 0.976,
-      "grid_build_ms": 0.584,
-      "decode_ms": 9.038,
+      "corner_detection_ms": 1.021,
+      "grid_build_ms": 0.561,
+      "decode_ms": 0.704,
       "note": "A ~0.4 MP ChArUco board (22\u00d722, DICT_4X4_250). The full detector runs corner detection, a chessboard grid build, then per-cell marker decode + board alignment \u2014 the decode stage dominates on a marker-dense board."
     },
     {
@@ -35,8 +35,8 @@
       "raw_corners": 77,
       "labelled": 77,
       "markers": null,
-      "corner_detection_ms": 1.213,
-      "grid_build_ms": 0.377,
+      "corner_detection_ms": 1.169,
+      "grid_build_ms": 0.386,
       "decode_ms": null,
       "note": "A plain 11\u00d77 inner-corner chessboard (no markers, so no decode stage). Corner detection is the bulk of the work; the owned grid build is a thin slice."
     },
@@ -50,9 +50,9 @@
       "raw_corners": 571,
       "labelled": 315,
       "markers": 132,
-      "corner_detection_ms": 5.967,
-      "grid_build_ms": 2.96,
-      "decode_ms": 25.128,
+      "corner_detection_ms": 5.928,
+      "grid_build_ms": 2.865,
+      "decode_ms": 2.083,
       "note": "A 3 MP ChArUco board (22\u00d722, DICT_4X4_1000). With over a hundred markers to sample and decode, the decode stage is several times the cost of corner detection \u2014 the regime where the owned decode path dominates. The published preview is downscaled to 1024 px wide; the detector runs on the full-resolution image."
     },
     {
@@ -65,8 +65,8 @@
       "raw_corners": 183,
       "labelled": 179,
       "markers": null,
-      "corner_detection_ms": 0.791,
-      "grid_build_ms": 1.081,
+      "corner_detection_ms": 0.777,
+      "grid_build_ms": 1.089,
       "decode_ms": null,
       "note": "A heavily radially-distorted board. The chessboard grid detects cleanly (~179 corners), but its self-identifying PuzzleBoard edge-dot pattern does not decode uniquely: the distortion corrupts enough edge bits that a wrong master origin matches as well as the right one, so the bounded-distance uniqueness gate correctly declines the decode (a non-unique absolute position is treated as a detection failure, never a wrong label). No public test frame decodes uniquely as a PuzzleBoard, so this card shows the grid-build cost only \u2014 there is no trustworthy decode stage to time here."
     }
@@ -76,23 +76,79 @@
     "frames": [
       {
         "file": "testdata/mid.png",
-        "ms": 1.59,
+        "ms": 1.556,
         "note": "1024x576 Chessboard"
       },
       {
         "file": "testdata/example2.png",
-        "ms": 1.872,
+        "ms": 1.866,
         "note": "640x480 Chessboard"
       },
       {
         "file": "testdata/small.png",
-        "ms": 10.598,
+        "ms": 2.286,
         "note": "720x540 ChArUco"
       },
       {
         "file": "testdata/large.png",
-        "ms": 34.055,
+        "ms": 10.876,
         "note": "2048x1536 ChArUco"
+      }
+    ]
+  },
+  "comparison": {
+    "schema": "calib-targets.opencv-comparison.v1",
+    "desc": "calib-targets vs OpenCV on recall and runtime, on the public report images. Runtime is each detector's native p50: OpenCV from cv2, ours from the Rust full_stage_timing measurement (corner detection + grid build + decode) \u2014 timing our detector through the Python binding would add marshalling overhead unrelated to detection.",
+    "caveat": "OpenCV chessboard detection is all-or-nothing and needs exact board dimensions (the success column shows it returned the full board). small.png is a partial ChArUco view with no independent ground truth, so its row is a detected-count comparison, not recall-vs-GT. Our detector is partial-tolerant and self-identifying.",
+    "tolerance_px": 2.0,
+    "repeats": 40,
+    "warmup": 5,
+    "opencv_version": "4.13.0",
+    "groups": [
+      {
+        "kind": "Chessboard",
+        "image": "testdata/mid.png",
+        "img": "./img/cmp_mid.png",
+        "mode": "recall",
+        "gt_corners": 77,
+        "ours": {
+          "recall": 1.0,
+          "matched": 77,
+          "success": true,
+          "ms": 1.555,
+          "ms_source": "full_stage_timing (native Rust)"
+        },
+        "opencv": {
+          "recall": 1.0,
+          "matched": 77,
+          "success": true,
+          "ms": 17.976,
+          "detector": "findChessboardCornersSB",
+          "note": ""
+        },
+        "agreement_px": 2.0,
+        "corner_agreement": 1.0
+      },
+      {
+        "kind": "ChArUco",
+        "image": "testdata/small.png",
+        "img": "./img/cmp_small.png",
+        "mode": "detected_count",
+        "ours": {
+          "markers": 40,
+          "corners": 99,
+          "ms": 2.286,
+          "ms_source": "full_stage_timing (native Rust)"
+        },
+        "opencv": {
+          "markers": 44,
+          "corners": 65,
+          "ms": 2.741,
+          "detector": "aruco.CharucoDetector",
+          "legacy_pattern": false
+        },
+        "agreement_px": 2.0,
+        "corner_agreement": 0.954
       }
     ]
   }

@@ -263,6 +263,40 @@ boards below the safe window become correct misses rather than risk a wrong
 label). The public regression and the private regression set hold at baseline
 with zero wrong labels.
 
+### Gap 20 — Author example photos are not a canonical-map decode oracle (RESOLVED, 2026-06-25)
+
+**Finding.** The upstream `puzzleboard_reference/` author example photos are
+**not a faithful render of the 501×501 master map we ship** (`map_a.bin` /
+`map_b.bin`), so they cannot serve as a decode oracle. Our shipped map matches
+the map the authors *recommend*; yet most author frames do not localize against
+it, and the ones that previously "decoded" did so only by tie-break luck on
+distortion-corrupted bits (the precision audit behind Gap 18/19). The
+parsimonious explanation, consistent with all the evidence, is that the example
+photos were rendered from a **different master-map revision** than the one the
+authors later recommend and we adopted. Either way the operational consequence
+is the same: a frame that fails to localize against the canonical map is *not* a
+detector regression, and chasing it would mean fitting to a non-canonical witness
+(forbidden by the no-fine-tuning-to-examples rule).
+
+**Resolution (PR following #70).** The authoritative public PuzzleBoard decode
+regression is now **synthetic images rendered directly from the canonical maps**:
+
+- Unit regression: `tests/synthetic_author_like.rs` — decodes deterministic
+  perspective/distortion/blur/noise/JPEG renders of `map_a`/`map_b`, asserting
+  BER, truth-corner agreement, and a single D4+translation relation (all three
+  scenarios decode at BER 0, identity). Generator + provenance:
+  `tools/synth_puzzleboard_photo.py`, `docs/SYNTHETIC_AUTHOR_LIKE.md`.
+- Performance regression: `benches/synthetic_decode.rs` — the public, ungated
+  photo-realistic decode bench (corner → chessboard → decode on the same
+  canonical-map fixtures), the public counterpart to the private
+  `dataset_decode` bench.
+
+The author photos are retained only as **visual references** and as the
+`author_examples_1_2_3_are_declined_as_non_unique` precision guard (still valid:
+a non-unique distorted frame must be declined). The previously `#[ignore]`d
+cross-decoder D4-parity test over the author oracle JSON is **unsound under a
+non-canonical map** and is demoted to a documented diagnostic, not a gate.
+
 ---
 
 ## Architectural-direction summary

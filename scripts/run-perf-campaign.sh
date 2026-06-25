@@ -64,11 +64,16 @@ for om in ring-fit disk-fit; do
 done
 
 # ---- 3. Criterion micro-benches (whole workspace) ----------------------
+# `--workspace` now includes the PUBLIC puzzleboard photo-decode bench
+# (`synthetic_decode`): corner → chessboard → decode on the committed
+# canonical-map synthetic fixtures. That is the public, reproducible
+# puzzleboard decode number (the author example photos use a different 501²
+# map and do not localize — see the crate's SYNTHETIC_AUTHOR_LIKE.md).
 log "criterion: cargo bench --workspace"
 cargo bench --workspace 2>&1 | tee "$OUT/criterion.txt"
-# The puzzleboard real-dataset decode bench is gated behind `dataset`, so
-# --workspace skips it; run it explicitly and append.
-log "criterion: puzzleboard dataset decode (--features dataset)"
+# The puzzleboard PRIVATE-dataset decode bench is gated behind `dataset`, so
+# --workspace skips it; run it explicitly and append (local-only numbers).
+log "criterion: puzzleboard dataset decode (--features dataset, private)"
 cargo bench -p calib-targets-puzzleboard --bench dataset_decode --features dataset \
   2>&1 | tee -a "$OUT/criterion.txt"
 

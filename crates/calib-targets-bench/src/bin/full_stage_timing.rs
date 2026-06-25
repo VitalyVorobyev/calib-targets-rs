@@ -45,9 +45,11 @@ use calib_targets::chessboard::{
 };
 use calib_targets::core::{DetectorConfig, GrayImageView};
 use calib_targets::detect::detect_corners;
+use calib_targets_bench::baseline::{BaselineCorner, BaselineImage};
+use calib_targets_bench::overlay::{render_report_overlay_on_gray, MarkerQuad};
 use chess_corners::Threshold;
 use clap::Parser;
-use image::ImageReader;
+use image::{GrayImage, ImageReader};
 use serde::Serialize;
 
 #[derive(Parser, Debug)]
@@ -65,6 +67,11 @@ struct Args {
     /// Warmup repeats per image (env `WARMUP` overrides the default).
     #[arg(long, env = "WARMUP", default_value_t = 5)]
     warmup: usize,
+    /// If set, write a detection overlay PNG per card into this directory
+    /// (`<basename>.png`). Used to refresh the committed report previews under
+    /// `.github/pages/performance/img/`.
+    #[arg(long)]
+    overlay_dir: Option<PathBuf>,
 }
 
 /// The detector a card exercises. Chessboard cards have no decode stage.
@@ -92,6 +99,10 @@ struct Card {
     /// `testdata/` path, relative to the workspace root.
     file: &'static str,
     kind: Kind,
+    /// Downscale factor for the published overlay preview (`1.0` = full size).
+    /// `large.png` ships at half size to keep the committed asset small; the
+    /// detector still runs on the full-resolution image.
+    preview_scale: f32,
 }
 
 /// The four public report images. Hard-coded — the output is published.
@@ -101,6 +112,7 @@ fn cards() -> Vec<Card> {
         // `detects_charuco_on_small_png` / `board_matcher_detects_small_png`.
         Card {
             file: "testdata/small.png",
+            preview_scale: 1.0,
             kind: Kind::Charuco(CharucoSpec {
                 rows: 22,
                 cols: 22,
@@ -115,6 +127,7 @@ fn cards() -> Vec<Card> {
         // `detects_plain_chessboard_on_mid_png` (min_corner_strength = 0.5).
         Card {
             file: "testdata/mid.png",
+            preview_scale: 1.0,
             kind: Kind::Chessboard {
                 min_corner_strength: 0.5,
             },
@@ -123,6 +136,9 @@ fn cards() -> Vec<Card> {
         // `board_matcher_detects_large_png` / `testdata/charuco_detect_config.json`.
         Card {
             file: "testdata/large.png",
+            // 3 MP frame — ship a half-size overlay preview (the detector still
+            // runs on the full-resolution image).
+            preview_scale: 0.5,
             kind: Kind::Charuco(CharucoSpec {
                 rows: 22,
                 cols: 22,
@@ -142,6 +158,7 @@ fn cards() -> Vec<Card> {
         // card — there is no trustworthy decode stage to time on this frame.
         Card {
             file: "testdata/example2.png",
+            preview_scale: 1.0,
             kind: Kind::Chessboard {
                 min_corner_strength: 33.0,
             },
@@ -232,6 +249,16 @@ fn elapsed_ms(start: Instant) -> f64 {
     start.elapsed().as_secs_f64() * 1000.0
 }
 
+/// Captured detection for the per-card overlay PNG: the base image, the
+/// labelled grid corners, the decoded marker quads (ChArUco), and the preview
+/// downscale factor.
+struct OverlayData {
+    base: GrayImage,
+    baseline: BaselineImage,
+    markers: Vec<MarkerQuad>,
+    preview_scale: f32,
+}
+
 /// Labelled-corner count of the best (largest) chessboard component, or 0.
 fn best_component_corners(detections: &[calib_targets::chessboard::ChessboardDetection]) -> usize {
     detections
@@ -241,12 +268,41 @@ fn best_component_corners(detections: &[calib_targets::chessboard::ChessboardDet
         .unwrap_or(0)
 }
 
+/// Build a [`BaselineImage`] from the best (largest) chessboard component, for
+/// the overlay. Mirrors `runner::run_pipeline_engine`'s corner mapping
+/// (`grid.u → i`, `grid.v → j`).
+fn baseline_from_chessboard(
+    detections: &[calib_targets::chessboard::ChessboardDetection],
+) -> BaselineImage {
+    let best = detections.iter().max_by_key(|d| d.corners.len());
+    let corners: Vec<BaselineCorner> = best
+        .map(|d| {
+            d.corners
+                .iter()
+                .map(|lc| BaselineCorner {
+                    i: lc.grid.u,
+                    j: lc.grid.v,
+                    x: lc.position.x,
+                    y: lc.position.y,
+                    id: None,
+                    score: lc.score,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    BaselineImage {
+        labelled_count: corners.len(),
+        cell_size_px: best.and_then(|d| d.cell_size).unwrap_or(0.0),
+        corners,
+    }
+}
+
 fn measure_chessboard(
     corners: &[ChessCorner],
     min_corner_strength: f32,
     repeats: usize,
     warmup: usize,
-) -> Result<(usize, Stat), Box<dyn Error>> {
+) -> Result<(usize, Stat, BaselineImage), Box<dyn Error>> {
     let mut params = ChessboardParams::default();
     params.min_corner_strength = min_corner_strength;
     let detector = ChessboardDetector::new(params)?;
@@ -255,14 +311,14 @@ fn measure_chessboard(
         let _ = detector.detect_all(corners);
     }
     let mut grid = Vec::with_capacity(repeats);
-    let mut labelled = 0;
     for _ in 0..repeats {
         let start = Instant::now();
-        let detections = detector.detect_all(corners);
+        let _ = detector.detect_all(corners);
         grid.push(elapsed_ms(start));
-        labelled = best_component_corners(&detections);
     }
-    Ok((labelled, p50(grid)))
+    // One more (untimed) detection to capture the best component for the overlay.
+    let baseline = baseline_from_chessboard(&detector.detect_all(corners));
+    Ok((baseline.labelled_count, p50(grid), baseline))
 }
 
 struct CharucoMeasurement {
@@ -270,6 +326,9 @@ struct CharucoMeasurement {
     markers: usize,
     grid_build: Stat,
     decode: Stat,
+    /// Captured for the overlay: labelled corners + decoded marker quads.
+    baseline: BaselineImage,
+    marker_quads: Vec<MarkerQuad>,
 }
 
 fn measure_charuco(
@@ -341,11 +400,62 @@ fn measure_charuco(
         labelled = grid_labelled;
     }
 
+    // One more (untimed) detection to capture corners + marker quads for the
+    // overlay (TL, TR, BR, BL order, in input-image pixels).
+    let (baseline, marker_quads) = match detector.detect(view, corners) {
+        Ok(res) => {
+            let corners_bl: Vec<BaselineCorner> = res
+                .corners
+                .iter()
+                .map(|c| BaselineCorner {
+                    i: c.grid.u,
+                    j: c.grid.v,
+                    x: c.position.x,
+                    y: c.position.y,
+                    id: Some(c.id),
+                    score: c.score,
+                })
+                .collect();
+            let quads: Vec<MarkerQuad> = res
+                .markers
+                .iter()
+                .filter_map(|m| {
+                    m.corners_img.map(|q| {
+                        [
+                            (q[0].x, q[0].y),
+                            (q[1].x, q[1].y),
+                            (q[2].x, q[2].y),
+                            (q[3].x, q[3].y),
+                        ]
+                    })
+                })
+                .collect();
+            (
+                BaselineImage {
+                    labelled_count: corners_bl.len(),
+                    cell_size_px: 0.0,
+                    corners: corners_bl,
+                },
+                quads,
+            )
+        }
+        Err(_) => (
+            BaselineImage {
+                labelled_count: 0,
+                cell_size_px: 0.0,
+                corners: Vec::new(),
+            },
+            Vec::new(),
+        ),
+    };
+
     Ok(CharucoMeasurement {
         labelled,
         markers,
         grid_build,
         decode,
+        baseline,
+        marker_quads,
     })
 }
 
@@ -354,63 +464,78 @@ fn measure_card(
     chess_cfg: &DetectorConfig,
     repeats: usize,
     warmup: usize,
-) -> Result<ImageReport, Box<dyn Error>> {
+) -> Result<(ImageReport, OverlayData), Box<dyn Error>> {
     let img = ImageReader::open(card.file)?.decode()?.to_luma8();
-    let view = GrayImageView {
-        width: img.width() as usize,
-        height: img.height() as usize,
-        data: img.as_raw(),
+
+    // `view` borrows `img`; confine it to this block so `img` can move into the
+    // returned `OverlayData` afterwards.
+    let (report, baseline, markers) = {
+        let view = GrayImageView {
+            width: img.width() as usize,
+            height: img.height() as usize,
+            data: img.as_raw(),
+        };
+
+        // ---- corner detection (shared by both kinds) ----
+        for _ in 0..warmup {
+            let _ = detect_corners(&img, chess_cfg);
+        }
+        let mut cd = Vec::with_capacity(repeats);
+        let mut corners: Vec<ChessCorner> = Vec::new();
+        for _ in 0..repeats {
+            let start = Instant::now();
+            corners = detect_corners(&img, chess_cfg);
+            cd.push(elapsed_ms(start));
+        }
+        let raw_corners = corners.len();
+        let corner_detection = p50(cd);
+
+        match &card.kind {
+            Kind::Chessboard {
+                min_corner_strength,
+            } => {
+                let (labelled, grid_build, baseline) =
+                    measure_chessboard(&corners, *min_corner_strength, repeats, warmup)?;
+                let report = ImageReport {
+                    image: card.file.to_owned(),
+                    kind: "Chessboard",
+                    width: img.width(),
+                    height: img.height(),
+                    raw_corners,
+                    labelled,
+                    markers: None,
+                    corner_detection,
+                    grid_build,
+                    decode: None,
+                };
+                (report, baseline, Vec::new())
+            }
+            Kind::Charuco(spec) => {
+                let m = measure_charuco(&view, &corners, spec, repeats, warmup)?;
+                let report = ImageReport {
+                    image: card.file.to_owned(),
+                    kind: "ChArUco",
+                    width: img.width(),
+                    height: img.height(),
+                    raw_corners,
+                    labelled: m.labelled,
+                    markers: Some(m.markers),
+                    corner_detection,
+                    grid_build: m.grid_build,
+                    decode: Some(m.decode),
+                };
+                (report, m.baseline, m.marker_quads)
+            }
+        }
     };
 
-    // ---- corner detection (shared by both kinds) ----
-    for _ in 0..warmup {
-        let _ = detect_corners(&img, chess_cfg);
-    }
-    let mut cd = Vec::with_capacity(repeats);
-    let mut corners: Vec<ChessCorner> = Vec::new();
-    for _ in 0..repeats {
-        let start = Instant::now();
-        corners = detect_corners(&img, chess_cfg);
-        cd.push(elapsed_ms(start));
-    }
-    let raw_corners = corners.len();
-    let corner_detection = p50(cd);
-
-    match &card.kind {
-        Kind::Chessboard {
-            min_corner_strength,
-        } => {
-            let (labelled, grid_build) =
-                measure_chessboard(&corners, *min_corner_strength, repeats, warmup)?;
-            Ok(ImageReport {
-                image: card.file.to_owned(),
-                kind: "Chessboard",
-                width: img.width(),
-                height: img.height(),
-                raw_corners,
-                labelled,
-                markers: None,
-                corner_detection,
-                grid_build,
-                decode: None,
-            })
-        }
-        Kind::Charuco(spec) => {
-            let m = measure_charuco(&view, &corners, spec, repeats, warmup)?;
-            Ok(ImageReport {
-                image: card.file.to_owned(),
-                kind: "ChArUco",
-                width: img.width(),
-                height: img.height(),
-                raw_corners,
-                labelled: m.labelled,
-                markers: Some(m.markers),
-                corner_detection,
-                grid_build: m.grid_build,
-                decode: Some(m.decode),
-            })
-        }
-    }
+    let overlay = OverlayData {
+        base: img,
+        baseline,
+        markers,
+        preview_scale: card.preview_scale,
+    };
+    Ok((report, overlay))
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -420,7 +545,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut images = Vec::new();
     for card in cards() {
         eprintln!("measuring {} ...", card.file);
-        images.push(measure_card(&card, &chess_cfg, args.repeats, args.warmup)?);
+        let (report, overlay) = measure_card(&card, &chess_cfg, args.repeats, args.warmup)?;
+
+        // Refresh the committed report preview as a detection overlay (corners +
+        // grid + decoded marker quads), downscaled per the card's preview_scale.
+        if let Some(dir) = &args.overlay_dir {
+            let stem = std::path::Path::new(&report.image)
+                .file_name()
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| PathBuf::from("overlay.png"));
+            let out = dir.join(stem);
+            render_report_overlay_on_gray(
+                &overlay.base,
+                Some(&overlay.baseline),
+                &overlay.markers,
+                overlay.preview_scale,
+                &out,
+            )?;
+            eprintln!("  overlay -> {}", out.display());
+        }
+
+        images.push(report);
     }
 
     let report = Report {

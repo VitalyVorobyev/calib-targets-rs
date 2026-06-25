@@ -10,6 +10,9 @@
 # It refreshes only the measured numbers in data.json (per-stage timings + the
 # raw/labelled/marker counts for the four report images); the editorial fields
 # (labels, notes, end_to_end prose) are preserved by scripts/gen_perf_data.py.
+# It ALSO regenerates the committed report previews under
+# .github/pages/performance/img/ as detection overlays (corners + grid + decoded
+# marker quads) via `full_stage_timing --overlay-dir`.
 #
 # Usage:
 #   bash scripts/gen-perf-data.sh
@@ -42,10 +45,14 @@ expected=()
 # chessboard for mid+example2. It emits corner_detection / grid_build / decode
 # p50s plus raw/labelled/marker counts.
 out="$RAW/full.json"
-log "full_stage_timing (four public report images)"
+log "full_stage_timing (four public report images + detection overlays)"
+# `--overlay-dir` refreshes the committed report previews as DETECTION OVERLAYS
+# (grid corners + edges + decoded ArUco marker quads; large.png at half size).
+# Those PNGs are committed published assets, like the data.json this feeds.
 cargo run --release -q -p calib-targets-bench --bin full_stage_timing -- \
   --repeats "$REPEATS" --warmup "$WARMUP" \
-  --out "$out"
+  --out "$out" \
+  --overlay-dir .github/pages/performance/img
 expected+=("$out")
 
 # ---- 2. Guard: never merge unless every measurement produced output --------

@@ -25,42 +25,86 @@ The criterion *corners / chessboard / decode* split is the key separator: it
 attributes cost to **external corner detection** vs **our grid build** vs **our
 marker decode**.
 
+The published report under `.github/pages/performance/` is refreshed by
+`scripts/gen-perf-data.sh`, which also regenerates the four committed preview
+PNGs (`img/{small,mid,large,example2}.png`) as **detection overlays** — grid
+corners + edges + decoded ArUco marker quads, drawn by `full_stage_timing
+--overlay-dir` from the same detection the card's numbers come from
+(`large.png` ships at half size). The OpenCV baseline comparison block is a
+separate, opencv-dependent refresh — see `scripts/gen-comparison-data.sh`.
+
+### OpenCV baseline comparison
+
+`scripts/gen-comparison-data.sh` adds a `comparison` block to the report
+(`tools/compare_opencv_baseline.py`, run from the binding venv with
+`opencv-python-headless`). It pits `calib-targets` against OpenCV on the two
+public report frames — `mid.png` (`findChessboardCornersSB`) and `small.png`
+(`aruco.CharucoDetector`) — on **recall** and **runtime**. Honesty rules baked
+into the harness:
+
+- **Runtime is each detector's native p50.** OpenCV is timed in `cv2`; ours is
+  read from the Rust `full_stage_timing` measurement in `data.json` — *not*
+  timed through the Python binding, whose result-marshalling adds ~10× overhead
+  unrelated to detection. So run `gen-perf-data.sh` before this.
+- **Recall only where it is well-defined.** `mid.png` is a full board (known
+  77 inner corners), so recall is matched/77 for each detector, and OpenCV's
+  all-or-nothing failure mode is shown explicitly. `small.png` is a partial
+  ChArUco view with no independent ground truth, so it is a *detected-count*
+  comparison (markers + corners), never dressed up as recall.
+- **OpenCV gets its best shot** (both ChArUco pattern conventions are tried;
+  the better is reported), so the comparison never sandbags it.
+
 ## Where the time goes
 
-Three tiers, in order of cost. The headline: **on a normally-sized chessboard
-the external ChESS corner detector dominates and our grid build is
-sub-millisecond — but on large boards and on the marker-decode targets, our own
-code becomes the larger cost.**
+Three tiers, in order of cost. The headline, **as of the ChArUco decode rewrite
+(PR #71)**: the external ChESS corner detector now dominates **every** public
+frame — including the ChArUco ones, where decode used to be the largest stage.
+The largest *owned* costs are the dense-board grid build and the PuzzleBoard
+501² sweep; the once-dominant ChArUco decode has dropped to a minor stage.
+
+Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
+100 reps — the same numbers the published report renders):
+
+| Frame | px | corner detect | grid build | decode | end-to-end |
+|---|---|---:|---:|---:|---:|
+| `mid.png` (chessboard) | 1024×576 | 1.17 | 0.39 | — | 1.56 |
+| `example2.png` (chessboard) | 640×480 | 0.78 | 1.09 | — | 1.87 |
+| `small.png` (ChArUco) | 720×540 | 1.02 | 0.56 | **0.70** | 2.29 |
+| `large.png` (ChArUco) | 2048×1536 | **5.93** | 2.87 | 2.08 | 10.88 |
+
+Corner detection is the single largest stage on every row; on the ChArUco frames
+decode (post-#71) is now *smaller* than both corner detection and grid build.
 
 ### Tier 1 — ChESS corner detection (external `chess-corners`)
 
-On the ~1 MP public chessboards, corner detection is **~85–90 % of end-to-end
-time** (≈1.6 ms ring-fit vs the ≈0.3 ms grid build); it scales with image area
-(`testdata/large.png`, 2048×1536, is the slowest public frame at ≈14 ms). The
-`disk-fit` orientation method roughly **doubles** corner-detection cost vs
-`ring-fit` (≈3.2 ms vs ≈1.6 ms) — the standing reason `RingFit` is the default.
+Corner detection is **the largest stage on every public frame** — ~65–75 % of a
+plain-chessboard end-to-end, and still the top stage on the ChArUco frames now
+that decode has shrunk. It scales with image area (`large.png`, 3 MP, ≈5.9 ms;
+the ~0.4–1 MP frames ≈0.8–1.2 ms). The `disk-fit` orientation method roughly
+**doubles** corner-detection cost vs `ring-fit` — the standing reason `RingFit`
+is the default.
 
 We *tune* this stage (resolution, ROI, orientation method) but do not own the
-implementation, so the levers are configuration, not code.
+implementation, so the levers are configuration, not code. It is the
+highest-leverage target precisely because it is now unambiguously the dominant
+cost across regimes.
 
 ### Tier 2 — marker-decode sweeps (our code)
 
-These are the largest **owned** costs and can exceed corner detection on big
-boards:
-
-- **PuzzleBoard master sweep.** The full-decode path grows with board size —
-  synthetic `puzzleboard/full` goes **3.7 ms (8×8) → 18 ms (30×30)** — matching
-  the `O(8 × 501² + N)` master-pattern sweep in `decode/hard.rs` / `soft.rs`.
-  The `KnownOrigin` fast path (`fixed_board`) avoids the sweep for the common
-  case.
-- **ChArUco board match.** Decode (the board-level marker matcher) runs in the
-  low-millisecond range on sub-megapixel snaps — comparable to, and on some
-  frames exceeding, corner detection on the same image. On a public 22×22 board
-  (`testdata/small2.png`, `DICT_4X4_1000`, ~240 markers) the board-level matcher
-  dropped from ≈11 ms to ≈0.9 ms — full `detect` ≈12 ms → ≈2 ms — by
-  precomputing a per-cell bit-log-likelihood table that removes the
+- **PuzzleBoard master sweep — the top remaining owned decode cost.** The
+  full-decode path grows with board size — synthetic `puzzleboard/full` goes
+  **3.7 ms (8×8) → 18 ms (30×30)** — matching the `O(8 × 501² + N)` master-pattern
+  sweep in `decode/hard.rs` / `soft.rs`. The `KnownOrigin` fast path
+  (`fixed_board`) avoids the sweep for the common case. The public
+  photo-realistic `synthetic_decode` bench (canonical-map renders) now measures
+  this end to end without private data.
+- **ChArUco board match — now a minor stage (PR #71 closed this).** Precomputing
+  a per-cell bit-log-likelihood table removed the
   `O(cells × markers × 4 × bits²)` `log_sigmoid` evaluations from the
-  hypothesis-scoring inner loop.
+  hypothesis-scoring inner loop: the board-level matcher dropped ~13×. On the
+  public report frames decode is now **0.70 ms (`small.png`)** and **2.08 ms
+  (`large.png`)** — below corner detection and grid build on both. It is no
+  longer a top owned cost and is **not** a current optimization target.
 
 ### Tier 3 — topological grid build (our code)
 
@@ -112,26 +156,35 @@ Two further caveats:
 
 ## Optimization backlog
 
-Prioritized by measured impact. **Every item is correctness-first: none may
-trade a false-positive risk for speed** — a wrong `(i, j)` label is
-unrecoverable for calibration (the asymmetric detection contract). Optimization
-work is *planned* here, not yet applied.
+Prioritized by measured impact, **re-ranked after PR #71** (ChArUco decode
+rewrite). **Every item is correctness-first: none may trade a false-positive
+risk for speed** — a wrong `(i, j)` label is unrecoverable for calibration (the
+asymmetric detection contract). Optimization work is *planned* here, not yet
+applied. With ChArUco decode now a minor stage, the two live owned candidates
+are the PuzzleBoard sweep and the dense-board grid build; the dominant cost
+across all regimes remains the external corner detector.
 
 1. **Corner-detection configuration levers (Tier 1, highest leverage).**
-   *Evidence:* ~85–90 % of end-to-end on 1 MP; `disk-fit` ≈2× `ring-fit`; ≈14 ms
-   on 3 MP. *Approach:* keep `RingFit` default; offer optional downscale for
-   large frames and ROI when a board prior exists. *Risk:* downscale trades
+   *Evidence (refreshed):* the single largest stage on *every* public frame —
+   ~65–75 % of a plain-chessboard end-to-end and still the top stage on the
+   ChArUco frames now that decode shrank; ≈5.9 ms on the 3 MP frame; `disk-fit`
+   ≈2× `ring-fit`. *Approach:* keep `RingFit` default; offer optional downscale
+   for large frames and ROI when a board prior exists. *Risk:* downscale trades
    corner-localization precision — validate recall/precision, never silently.
-2. **PuzzleBoard 501² sweep (Tier 2).** *Evidence:* `full` path 3.7→18 ms with
-   board size; the `O(8×501²)` loop in `decode/hard.rs`. *Approach:* the
-   documented `O(501×N)` precompute alternative; optionally `rayon` over the 8
-   D4 transforms. *Risk:* the workspace has **zero parallelism** in its own code
-   today and a past non-determinism bug traced to `HashMap` iteration order —
-   any parallelism must keep decode output bit-exact and deterministic.
-3. **ChArUco board-match decode (Tier 2).** *Evidence:* low-ms decode, can
-   exceed corner detection per frame. *Approach:* tighten the hypothesis
-   enumeration window / translation bounds. *Risk:* must not drop valid
-   alignments (a miss is acceptable; mislabel is not).
+2. **PuzzleBoard 501² sweep (Tier 2 — top remaining owned decode cost).**
+   *Evidence:* `full` path 3.7→18 ms with board size; the `O(8×501²)` loop in
+   `decode/hard.rs`; now measurable on public canonical-map photos via
+   `synthetic_decode`. *Approach:* the documented `O(501×N)` precompute
+   alternative; optionally `rayon` over the 8 D4 transforms. *Risk:* the
+   workspace has **zero parallelism** in its own code today and a past
+   non-determinism bug traced to `HashMap` iteration order — any parallelism must
+   keep decode output bit-exact and deterministic.
+3. **ChArUco board-match decode — CLOSED (PR #71).** The per-cell
+   bit-log-likelihood table removed the hypothesis-scoring inner loop's
+   `log_sigmoid` evaluations (~13× faster matcher). Public report decode is now
+   0.70 ms (`small.png`) / 2.08 ms (`large.png`) — below corner detection and
+   grid build. No further decode optimization is warranted; reopen only if a
+   future profile shows it back in the top tier.
 4. **Per-corner local-H solve in the precision gate (Tier 3, dense boards).**
    *Evidence:* `ordering` + `recovery` own 60 % of a 27.5 ms grid build on a
    12 MP board; both are dominated by the 8×8 LU in
