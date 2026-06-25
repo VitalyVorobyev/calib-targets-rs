@@ -22,8 +22,9 @@ calib-targets-aruco = "0.10"
 ## Quickstart
 
 ```rust
-use calib_targets_aruco::{builtins, scan_decode_markers, Matcher, ScanDecodeConfig};
-use calib_targets_core::GrayImageView;
+use calib_targets_aruco::{
+    builtins, scan_decode_markers, GrayImageView, Matcher, ScanDecodeConfig,
+};
 
 let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
 let matcher = Matcher::new(dict, 1);            // Hamming tolerance

@@ -74,7 +74,7 @@ use calib_targets_marker::{
     MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = MarkerBoardSpec::new(
         6,
         8,
@@ -85,13 +85,14 @@ fn main() {
         ],
     )
     .with_cell_size(1.0);
-    let detector = MarkerBoardDetector::new(MarkerBoardParams::new(spec));
+    let detector = MarkerBoardDetector::new(MarkerBoardParams::new(spec))?;
 
     let pixels = vec![0u8; 32 * 32];
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
     let corners: Vec<ChessCorner> = Vec::new();
 
     let _ = detector.detect_from_image_and_corners(&view, &corners);
+    Ok(())
 }
 ```
 
