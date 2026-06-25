@@ -47,7 +47,7 @@ mod soft;
 mod tests;
 
 pub(crate) use hard::{
-    decode, decode_fixed_board, decode_fixed_board_with_runner_up, decode_with_runner_up,
+    decode, decode_fixed_board, decode_fixed_board_with_runner_up, HardScan, TransformTables,
 };
 pub(crate) use soft::{decode_fixed_board_soft, decode_soft};
 

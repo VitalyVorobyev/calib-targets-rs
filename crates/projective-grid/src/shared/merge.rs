@@ -412,7 +412,15 @@ fn merge_components_local_with_transforms(
                 // Merge i into j (the larger component is j by ordering).
                 // For each label in i, transform to j's frame, insert if
                 // not already present (keeping j's value on conflict).
-                for (&ij, &idx_i) in working[i].clone().iter() {
+                //
+                // `i` is killed immediately below (`alive[i] = false`) and its
+                // map is never read again — the final collection filters dead
+                // components — so move it out with `mem::take` instead of
+                // cloning. Byte-exact: i's keys are unique within its own map,
+                // and `or_insert` keeps j's value on any i↔j collision
+                // regardless of iteration order, so the merged result is
+                // independent of the order i's pairs are drained.
+                for (ij, idx_i) in std::mem::take(&mut working[i]) {
                     let tij = apply_transform(t, ij);
                     let key = (tij.0 + delta.0, tij.1 + delta.1);
                     working[j].entry(key).or_insert(idx_i);

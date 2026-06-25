@@ -2,12 +2,12 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.95.0",
-    "git_sha": "ce5882b",
+    "git_sha": "a1fa933",
     "repeats": 100,
     "warmup": 10,
     "generated": "2026-06-25",
     "source": "scripts/gen-perf-data.sh",
-    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for example2) on each image."
+    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for author_like_oblique) on each image."
   },
   "images": [
     {
@@ -20,9 +20,9 @@
       "raw_corners": 267,
       "labelled": 99,
       "markers": 40,
-      "corner_detection_ms": 1.021,
-      "grid_build_ms": 0.561,
-      "decode_ms": 0.704,
+      "corner_detection_ms": 1.078,
+      "grid_build_ms": 0.559,
+      "decode_ms": 0.731,
       "note": "A ~0.4 MP ChArUco board (22\u00d722, DICT_4X4_250). The full detector runs corner detection, a chessboard grid build, then per-cell marker decode + board alignment \u2014 the decode stage dominates on a marker-dense board."
     },
     {
@@ -35,8 +35,8 @@
       "raw_corners": 77,
       "labelled": 77,
       "markers": null,
-      "corner_detection_ms": 1.169,
-      "grid_build_ms": 0.386,
+      "corner_detection_ms": 1.174,
+      "grid_build_ms": 0.382,
       "decode_ms": null,
       "note": "A plain 11\u00d77 inner-corner chessboard (no markers, so no decode stage). Corner detection is the bulk of the work; the owned grid build is a thin slice."
     },
@@ -50,25 +50,25 @@
       "raw_corners": 571,
       "labelled": 315,
       "markers": 132,
-      "corner_detection_ms": 5.928,
-      "grid_build_ms": 2.865,
-      "decode_ms": 2.083,
+      "corner_detection_ms": 6.445,
+      "grid_build_ms": 2.984,
+      "decode_ms": 2.128,
       "note": "A 3 MP ChArUco board (22\u00d722, DICT_4X4_1000). With over a hundred markers to sample and decode, the decode stage is several times the cost of corner detection \u2014 the regime where the owned decode path dominates. The published preview is downscaled to 1024 px wide; the detector runs on the full-resolution image."
     },
     {
-      "label": "Distorted board (grid only)",
-      "file": "testdata/example2.png",
-      "img": "./img/example2.png",
-      "kind": "Chessboard",
+      "label": "PuzzleBoard (synthetic photo)",
+      "file": "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
+      "img": "./img/author_like_oblique.png",
+      "kind": "PuzzleBoard",
       "width": 640,
       "height": 480,
-      "raw_corners": 183,
-      "labelled": 179,
+      "raw_corners": 361,
+      "labelled": 361,
       "markers": null,
-      "corner_detection_ms": 0.777,
-      "grid_build_ms": 1.089,
-      "decode_ms": null,
-      "note": "A heavily radially-distorted board. The chessboard grid detects cleanly (~179 corners), but its self-identifying PuzzleBoard edge-dot pattern does not decode uniquely: the distortion corrupts enough edge bits that a wrong master origin matches as well as the right one, so the bounded-distance uniqueness gate correctly declines the decode (a non-unique absolute position is treated as a detection failure, never a wrong label). No public test frame decodes uniquely as a PuzzleBoard, so this card shows the grid-build cost only \u2014 there is no trustworthy decode stage to time here."
+      "corner_detection_ms": 0.792,
+      "grid_build_ms": 2.037,
+      "decode_ms": 4.637,
+      "note": "A public photo-realistic synthetic PuzzleBoard (20\u00d720): a deterministic render from the canonical 501\u00d7501 master maps, warped with perspective, radial distortion, blur, noise and JPEG compression. Unlike the author example photos it decodes uniquely against the current master, so this card runs the full pipeline \u2014 corner detection, chessboard grid build, and a real edge-dot decode that sweeps the 501\u00d7501 master to recover every corner's absolute ID. The decode stage (the origin-independent soft master sweep) is the dominant owned cost on this frame."
     }
   ],
   "end_to_end": {
@@ -80,18 +80,18 @@
         "note": "1024x576 Chessboard"
       },
       {
-        "file": "testdata/example2.png",
-        "ms": 1.866,
-        "note": "640x480 Chessboard"
-      },
-      {
         "file": "testdata/small.png",
-        "ms": 2.286,
+        "ms": 2.368,
         "note": "720x540 ChArUco"
       },
       {
+        "file": "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
+        "ms": 7.465,
+        "note": "640x480 PuzzleBoard"
+      },
+      {
         "file": "testdata/large.png",
-        "ms": 10.876,
+        "ms": 11.558,
         "note": "2048x1536 ChArUco"
       }
     ]

@@ -84,10 +84,9 @@
   <h2>Per-image stage breakdown</h2>
   <div class="desc">Per-stage p50 from <code>full_stage_timing</code>, which runs the <b>complete</b> detector on each
     public image — ChArUco (corner detection → grid build → marker decode) for the two ArUco-marked boards, a plain
-    chessboard (corner detection → grid build) for the marker-free board, and a grid-only chessboard for the
-    radially-distorted board (its PuzzleBoard edge-dot decode is declined as non-unique under the distortion, so there
-    is no trustworthy decode stage to time). Corners are detected once and reused, so the grid/decode bars never
-    re-count corner detection.</div>
+    chessboard (corner detection → grid build) for the marker-free board, and a PuzzleBoard (corner detection → grid
+    build → edge-dot 501×501 master decode) for the self-identifying synthetic board, whose decode sweep dominates its
+    cost. Corners are detected once and reused, so the grid/decode bars never re-count corner detection.</div>
   <div class="legend">
     <span><i class="sw" style="background:var(--amber)"></i> corner detection (external)</span>
     <span><i class="sw" style="background:var(--blue)"></i> grid build (owned)</span>

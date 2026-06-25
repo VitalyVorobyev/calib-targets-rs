@@ -27,10 +27,10 @@ marker decode**.
 
 The published report under `.github/pages/performance/` is refreshed by
 `scripts/gen-perf-data.sh`, which also regenerates the four committed preview
-PNGs (`img/{small,mid,large,example2}.png`) as **detection overlays** — grid
-corners + edges + decoded ArUco marker quads, drawn by `full_stage_timing
---overlay-dir` from the same detection the card's numbers come from
-(`large.png` ships at half size). The OpenCV baseline comparison block is a
+PNGs (`img/{small,mid,large,author_like_oblique}.png`) as **detection
+overlays** — grid corners + edges, plus decoded ArUco marker quads on the
+ChArUco cards — drawn by `full_stage_timing --overlay-dir` from the same
+detection the card's numbers come from (`large.png` ships at half size). The OpenCV baseline comparison block is a
 separate, opencv-dependent refresh — see `scripts/gen-comparison-data.sh`.
 
 ### OpenCV baseline comparison
@@ -57,23 +57,29 @@ into the harness:
 ## Where the time goes
 
 Three tiers, in order of cost. The headline, **as of the ChArUco decode rewrite
-(PR #71)**: the external ChESS corner detector now dominates **every** public
-frame — including the ChArUco ones, where decode used to be the largest stage.
-The largest *owned* costs are the dense-board grid build and the PuzzleBoard
-501² sweep; the once-dominant ChArUco decode has dropped to a minor stage.
+(PR #71)**: the external ChESS corner detector dominates every chessboard and
+ChArUco frame — including the ChArUco ones, where decode used to be the largest
+stage. The one exception is the PuzzleBoard frame, whose full 501² master sweep
+is its dominant stage. The largest *owned* costs are that PuzzleBoard sweep and
+the dense-board grid build; the once-dominant ChArUco decode has dropped to a
+minor stage.
 
 Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
 100 reps — the same numbers the published report renders):
 
 | Frame | px | corner detect | grid build | decode | end-to-end |
 |---|---|---:|---:|---:|---:|
-| `mid.png` (chessboard) | 1024×576 | 1.17 | 0.39 | — | 1.56 |
-| `example2.png` (chessboard) | 640×480 | 0.78 | 1.09 | — | 1.87 |
-| `small.png` (ChArUco) | 720×540 | 1.02 | 0.56 | **0.70** | 2.29 |
-| `large.png` (ChArUco) | 2048×1536 | **5.93** | 2.87 | 2.08 | 10.88 |
+| `mid.png` (chessboard) | 1024×576 | **1.17** | 0.38 | — | 1.56 |
+| `small.png` (ChArUco) | 720×540 | **1.08** | 0.56 | 0.73 | 2.37 |
+| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.79 | 2.04 | **4.64** | 7.47 |
+| `large.png` (ChArUco) | 2048×1536 | **6.45** | 2.98 | 2.13 | 11.56 |
 
-Corner detection is the single largest stage on every row; on the ChArUco frames
-decode (post-#71) is now *smaller* than both corner detection and grid build.
+Corner detection is the largest stage on the chessboard and ChArUco rows; on the
+ChArUco frames decode (post-#71) is now *smaller* than both corner detection and
+grid build. The PuzzleBoard row is the exception: its full 501² master sweep
+makes decode the dominant stage — several times corner detection — and its
+oblique, corner-dense 640×480 frame also drives an outsized grid build for its
+size (see Tier 3).
 
 ### Tier 1 — ChESS corner detection (external `chess-corners`)
 
@@ -97,7 +103,11 @@ cost across regimes.
   sweep in `decode/hard.rs` / `soft.rs`. The `KnownOrigin` fast path
   (`fixed_board`) avoids the sweep for the common case. The public
   photo-realistic `synthetic_decode` bench (canonical-map renders) now measures
-  this end to end without private data.
+  this end to end without private data. The default soft full-master path no
+  longer runs the precompute twice: its matched-count uniqueness gate now reuses
+  the soft scan's own count/weight tables (via the shared `HardScan` accumulator)
+  instead of a second full `decode_with_runner_up` pass — byte-exact, and it cut
+  the report PuzzleBoard frame's decode from **6.3 ms to 4.6 ms (~27 %)**.
 - **ChArUco board match — now a minor stage (PR #71 closed this).** Precomputing
   a per-cell bit-log-likelihood table removed the
   `O(cells × markers × 4 × bits²)` `log_sigmoid` evaluations from the
@@ -143,12 +153,24 @@ labelled corner, re-run each grow iteration during recovery). This is the real
 owned hot spot — but it lives in determinism-contract-laden, false-positive-gate
 code, so it is *not* a safe place to micro-optimize (see backlog item 4).
 
+The same hot spot shows on the **public report PuzzleBoard frame** at a fraction
+of the resolution. `author_like_oblique.png` (640×480, 361 corners, *single
+component*): grid build ≈1.73 ms, of which `ordering` alone is ≈0.91 ms (**52 %**)
+and `recovery` ≈0.10 ms. The smaller `example2.png` (same 640×480, 180 corners):
+grid build ≈1.07 ms, `ordering` 0.48 ms (**45 %**), `recovery` 0.20 ms (19 %). So
+the local-H gate dominates grid build even on small distorted boards, not just
+12 MP frames — and because both frames are single-component,
+`merge_components_local` is ≈0 on them: the elevated grid build is the local-H
+solve, *not* the merge.
+
 Two further caveats:
 
 - **`merge_components_local`** reads as ≈0 above because these frames form one
-  component. Structurally it is `O(C² × 8 transforms)` with per-iteration
-  `HashMap` clones, so it grows on **multi-component** (distorted / occluded)
-  frames — which the single-component timing under-represents.
+  component. Structurally it is `O(C² × 8 transforms)`, so it grows on
+  **multi-component** (distorted / occluded) frames — which the single-component
+  timing under-represents. The per-merge full-`HashMap` clone in its fixed-point
+  loop has been removed (a `mem::take` of each just-killed component's map;
+  byte-exact, `bench check` green on both regression sets) — backlog item 5.
 - **Orientation-free grid build is ~8.5× the oriented path.** Synthetic
   `detect_grid_all`: `square_positions` (positions-only evidence) ≈4.5 ms vs
   `square_oriented2` ≈0.53 ms (and `hex_positions` ≈0.19 ms). The positions-only
@@ -174,33 +196,48 @@ across all regimes remains the external corner detector.
 2. **PuzzleBoard 501² sweep (Tier 2 — top remaining owned decode cost).**
    *Evidence:* `full` path 3.7→18 ms with board size; the `O(8×501²)` loop in
    `decode/hard.rs`; now measurable on public canonical-map photos via
-   `synthetic_decode`. *Approach:* the documented `O(501×N)` precompute
-   alternative; optionally `rayon` over the 8 D4 transforms. *Risk:* the
-   workspace has **zero parallelism** in its own code today and a past
-   non-determinism bug traced to `HashMap` iteration order — any parallelism must
-   keep decode output bit-exact and deterministic.
+   `synthetic_decode`. *Done:* the default **soft** full-master path's redundant
+   second precompute is fused away — the matched-count uniqueness gate now reuses
+   the soft scan's own count/weight tables through the shared `HardScan`
+   accumulator instead of a second `decode_with_runner_up` pass (byte-exact:
+   `*_byte_identical_to_reference_*` + uniqueness-gate suites green; report
+   PuzzleBoard decode 6.3→4.6 ms). *Remaining:* the `O(501×N)` precompute
+   alternative for the master walk itself; optional `rayon` over the 8 D4
+   transforms; and the same fusion for `decode_fixed_board_soft` (the fixed-board
+   shift-scan second pass, left untouched this round — different table shape, not
+   a free reuse). *Risk:* the workspace has **zero parallelism** in its own code
+   today and a past non-determinism bug traced to `HashMap` iteration order — any
+   parallelism must keep decode output bit-exact and deterministic.
 3. **ChArUco board-match decode — CLOSED (PR #71).** The per-cell
    bit-log-likelihood table removed the hypothesis-scoring inner loop's
    `log_sigmoid` evaluations (~13× faster matcher). Public report decode is now
    0.70 ms (`small.png`) / 2.08 ms (`large.png`) — below corner detection and
    grid build. No further decode optimization is warranted; reopen only if a
    future profile shows it back in the top tier.
-4. **Per-corner local-H solve in the precision gate (Tier 3, dense boards).**
-   *Evidence:* `ordering` + `recovery` own 60 % of a 27.5 ms grid build on a
-   12 MP board; both are dominated by the 8×8 LU in
-   `validate → local_h_residual`, re-run per grow iteration. *Approach (deferred,
-   TODO):* memoize the per-component local-H bases across grow iterations, or
-   reduce the number of validation re-runs — **not** a different solver (FP
-   drift). *Risk:* HIGH — this is the false-positive gate with documented
-   determinism contracts; any change must stay byte-exact on both regression
-   sets. A safe allocation-removal experiment in `pick_local_h_base` was tried
-   and measured **within noise** (the cost is the LU + neighbour lookups, not the
-   small-Vec allocations), so it was reverted — do not re-attempt allocation
-   tuning here without a flamegraph showing allocation as the dominant frame.
+4. **Per-corner local-H solve in the precision gate (Tier 3 — the top owned grid
+   cost across regimes).** *Evidence:* `ordering` + `recovery` own 60 % of a
+   27.5 ms grid build on a 12 MP board; `ordering` alone owns **45–52 %** of the
+   ~1–1.9 ms grid build on the small (640×480) public PuzzleBoard/distorted
+   frames. All are dominated by the 8×8 LU in `validate → local_h_residual`,
+   re-run per grow iteration. *Approach (deferred, TODO):* memoize the
+   per-component local-H bases across grow iterations, or reduce the number of
+   validation re-runs — **not** a different solver (FP drift). *Risk:* HIGH —
+   this is the false-positive gate with documented determinism contracts; any
+   change must stay byte-exact on both regression sets, so it is a dedicated
+   behaviour-gated PR, not a drive-by. A safe allocation-removal experiment in
+   `pick_local_h_base` was tried and measured **within noise** (the cost is the
+   LU + neighbour lookups, not the small-Vec allocations), so it was reverted —
+   do not re-attempt allocation tuning here without a flamegraph showing
+   allocation as the dominant frame.
 5. **`merge_components_local` `O(C²)` (multi-component frames).** *Evidence:* ≈0
-   on clean grids but `O(C²×8)` + per-iteration `HashMap` clones. *Approach:*
-   drop the per-iteration clones; prune the transform/component search. *Risk:*
-   preserve the `min(i,j) → (0,0)` rebase and never introduce a false merge.
+   on clean single-component grids but `O(C²×8)` on multi-component
+   (distorted / occluded) frames. *Done:* the per-merge full-`HashMap` clone in
+   the fixed-point loop is gone — replaced by a `mem::take` of each just-killed
+   component's map (byte-exact; `bench check` green with `pos=id=dup=0` on both
+   regression sets). *Remaining:* prune the transform/component search (changes
+   which candidates are considered → **not** byte-exact, needs a behaviour gate).
+   *Risk:* preserve the `min(i,j) → (0,0)` rebase and never introduce a false
+   merge.
 6. **Orientation-free positions-only grid path.** *Evidence:* `square_positions`
    ≈8.5× `square_oriented2` in `detect_grid_all`. *Approach:* profile the
    positions-only cell-test / clustering cost and cut the constant. *Risk:*

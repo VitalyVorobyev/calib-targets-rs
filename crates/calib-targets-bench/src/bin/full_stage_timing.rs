@@ -10,9 +10,10 @@
 //! The four images are hard-coded on purpose: the output feeds the committed
 //! `.github/pages/performance/data.json`, which is published, so every input
 //! must stay public. Two cards are ChArUco (`small.png`, `large.png`), one is a
-//! plain chessboard (`mid.png`), and one is a PuzzleBoard (`example2.png` — a
-//! heavily radially-distorted board whose edge-dot pattern decodes against the
-//! 501×501 master since PR #61's distortion-aware sampling closed Gap 18).
+//! plain chessboard (`mid.png`), and one is a PuzzleBoard
+//! (`author_like_oblique.png` — a public photo-realistic synthetic render from
+//! the canonical 501×501 maps that decodes uniquely against them, so the card
+//! exercises a real corner → grid → decode path).
 //!
 //! ## Stage decomposition
 //!
@@ -26,10 +27,12 @@
 //!   ChArUco pipeline runs internally before decoding, so the isolated
 //!   measurement is representative.
 //! - `decode` — for ChArUco, marker sampling + decode + board alignment; for the
-//!   PuzzleBoard, the edge-dot sample + 501×501 master decode across the full
-//!   `detect_puzzleboard_best` sweep (every config, as a user pays for it).
-//!   Derived as `full_detect − grid_build`. `null` for plain chessboard cards
-//!   (no decode stage).
+//!   PuzzleBoard, the edge-dot sample + 501×501 master sweep + alignment from a
+//!   single representative `PuzzleBoardParams::for_board` config (the same
+//!   default soft full-master decode the `synthetic_decode` bench times — one
+//!   config, not the multi-config `detect_puzzleboard_best` sweep, so corners
+//!   stay reused). Derived as `full_detect − grid_build`. `null` for plain
+//!   chessboard cards (no decode stage).
 //!
 //! Honours `REPEATS` / `WARMUP` env vars (set by `scripts/gen-perf-data.sh`).
 
@@ -45,6 +48,7 @@ use calib_targets::chessboard::{
 };
 use calib_targets::core::{DetectorConfig, GrayImageView};
 use calib_targets::detect::detect_corners;
+use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_bench::baseline::{BaselineCorner, BaselineImage};
 use calib_targets_bench::overlay::{render_report_overlay_on_gray, MarkerQuad};
 use chess_corners::Threshold;
@@ -80,6 +84,20 @@ enum Kind {
     Chessboard { min_corner_strength: f32 },
     /// ChArUco: a full board spec + the detector knobs the regression mirrors.
     Charuco(CharucoSpec),
+    /// PuzzleBoard: board geometry for a single representative decode config.
+    PuzzleBoard(PuzzleBoardSpecCard),
+}
+
+/// The PuzzleBoard board geometry for one card. The detector decodes against
+/// the full 501×501 master regardless of the declared origin (the default soft
+/// scorer is origin-independent); the origin is carried only so the spec
+/// validates and matches the fixture's manifest.
+struct PuzzleBoardSpecCard {
+    rows: u32,
+    cols: u32,
+    cell_size: f32,
+    origin_row: u32,
+    origin_col: u32,
 }
 
 /// The ChArUco board + detector parameters for one card, mirroring the
@@ -149,19 +167,26 @@ fn cards() -> Vec<Card> {
                 min_marker_inliers: 64,
             }),
         },
-        // example2.png — a heavily radially-distorted board. The chessboard grid
-        // detects cleanly (~179 corners), but the self-identifying edge-dot
-        // pattern does NOT decode uniquely: the distortion corrupts enough bits
-        // that a wrong master origin matches as well as the right one (margin 0),
-        // so the bounded-distance uniqueness gate (Gap 19) correctly declines the
-        // PuzzleBoard decode. It is therefore measured as a grid-only chessboard
-        // card — there is no trustworthy decode stage to time on this frame.
+        // author_like_oblique.png — a PUBLIC photo-realistic synthetic
+        // PuzzleBoard. It is a deterministic render from the canonical 501×501
+        // maps (perspective + radial distortion + blur/noise/vignette/JPEG), so
+        // unlike the author example photos it decodes uniquely against the
+        // current master. This card therefore exercises the full PuzzleBoard
+        // pipeline — corner detection, chessboard grid build, and a real
+        // edge-dot 501² master decode + alignment — with a non-empty decode
+        // stage. The 20×20/origin (18,219) geometry mirrors the fixture's
+        // manifest and the `synthetic_author_like` / `synthetic_decode`
+        // regressions.
         Card {
-            file: "testdata/example2.png",
+            file: "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
             preview_scale: 1.0,
-            kind: Kind::Chessboard {
-                min_corner_strength: 33.0,
-            },
+            kind: Kind::PuzzleBoard(PuzzleBoardSpecCard {
+                rows: 20,
+                cols: 20,
+                cell_size: 5.0,
+                origin_row: 18,
+                origin_col: 219,
+            }),
         },
     ]
 }
@@ -459,6 +484,105 @@ fn measure_charuco(
     })
 }
 
+struct PuzzleBoardMeasurement {
+    labelled: usize,
+    grid_build: Stat,
+    decode: Stat,
+    /// Captured for the overlay: labelled corners in absolute master coords.
+    baseline: BaselineImage,
+}
+
+fn measure_puzzleboard(
+    view: &GrayImageView<'_>,
+    corners: &[ChessCorner],
+    spec: &PuzzleBoardSpecCard,
+    repeats: usize,
+    warmup: usize,
+) -> Result<PuzzleBoardMeasurement, Box<dyn Error>> {
+    let board = PuzzleBoardSpec::with_origin(
+        spec.rows,
+        spec.cols,
+        spec.cell_size,
+        spec.origin_row,
+        spec.origin_col,
+    )?;
+    // A single representative config (default soft full-master decode), matching
+    // the `synthetic_decode` bench — not the multi-config `detect_puzzleboard_best`
+    // sweep, so corner detection stays out of the timed loop.
+    let params = PuzzleBoardParams::for_board(&board);
+
+    // `grid_build` measures exactly the grid stage the PuzzleBoard pipeline runs
+    // internally: `ChessDetector::new(params.chessboard).detect_all(corners)`.
+    let chess_detector = ChessboardDetector::new(params.chessboard.clone())?;
+    let detector = PuzzleBoardDetector::new(params)?;
+
+    for _ in 0..warmup {
+        let _ = chess_detector.detect_all(corners);
+        let _ = detector.detect(view, corners);
+    }
+
+    let mut grid = Vec::with_capacity(repeats);
+    let mut full = Vec::with_capacity(repeats);
+    let mut labelled = 0;
+    for _ in 0..repeats {
+        let g_start = Instant::now();
+        let _ = chess_detector.detect_all(corners);
+        grid.push(elapsed_ms(g_start));
+
+        let f_start = Instant::now();
+        let res = detector.detect(view, corners);
+        full.push(elapsed_ms(f_start));
+        if let Ok(res) = res {
+            labelled = res.corners.len();
+        }
+    }
+
+    let grid_build = p50(grid);
+    let full_stat = p50(full);
+    // decode = full_detect − grid_build (corners are precomputed and passed in).
+    // Clamp at 0 to guard against measurement noise when grid ≳ full.
+    let decode = Stat {
+        p50_ms: (full_stat.p50_ms - grid_build.p50_ms).max(0.0),
+        mean_ms: (full_stat.mean_ms - grid_build.mean_ms).max(0.0),
+    };
+
+    // One more (untimed) detection to capture the decoded corners for the
+    // overlay (absolute master coords; `grid.u → i`, `grid.v → j`).
+    let baseline = match detector.detect(view, corners) {
+        Ok(res) => {
+            let corners_bl: Vec<BaselineCorner> = res
+                .corners
+                .iter()
+                .map(|c| BaselineCorner {
+                    i: c.grid.u,
+                    j: c.grid.v,
+                    x: c.position.x,
+                    y: c.position.y,
+                    id: Some(c.id),
+                    score: c.score,
+                })
+                .collect();
+            BaselineImage {
+                labelled_count: corners_bl.len(),
+                cell_size_px: 0.0,
+                corners: corners_bl,
+            }
+        }
+        Err(_) => BaselineImage {
+            labelled_count: 0,
+            cell_size_px: 0.0,
+            corners: Vec::new(),
+        },
+    };
+
+    Ok(PuzzleBoardMeasurement {
+        labelled,
+        grid_build,
+        decode,
+        baseline,
+    })
+}
+
 fn measure_card(
     card: &Card,
     chess_cfg: &DetectorConfig,
@@ -525,6 +649,24 @@ fn measure_card(
                     decode: Some(m.decode),
                 };
                 (report, m.baseline, m.marker_quads)
+            }
+            Kind::PuzzleBoard(spec) => {
+                let m = measure_puzzleboard(&view, &corners, spec, repeats, warmup)?;
+                let report = ImageReport {
+                    image: card.file.to_owned(),
+                    kind: "PuzzleBoard",
+                    width: img.width(),
+                    height: img.height(),
+                    raw_corners,
+                    labelled: m.labelled,
+                    // No marker concept; decode quality (BER/edges) lives in the
+                    // data.json editorial note, not a fake marker count.
+                    markers: None,
+                    corner_detection,
+                    grid_build: m.grid_build,
+                    decode: Some(m.decode),
+                };
+                (report, m.baseline, Vec::new())
             }
         }
     };
