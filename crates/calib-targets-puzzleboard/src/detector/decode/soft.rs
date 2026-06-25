@@ -16,9 +16,9 @@ use crate::code_maps::{
 };
 
 use super::{
-    apply_soft_uniqueness_gate, decode_fixed_board_with_runner_up, decode_with_runner_up, ll_pair,
-    transform_edge_lookup, update_best_and_runner_up, DecodeOutcome, SoftLlConfig, H_COLS, H_ROWS,
-    V_COLS, V_ROWS,
+    apply_soft_uniqueness_gate, decode_fixed_board_with_runner_up, ll_pair, transform_edge_lookup,
+    update_best_and_runner_up, DecodeOutcome, HardScan, SoftLlConfig, TransformTables, H_COLS,
+    H_ROWS, V_COLS, V_ROWS,
 };
 
 /// Finalize the winning hypothesis: populate `score_runner_up`,
@@ -85,6 +85,12 @@ pub(crate) fn decode_soft(
     let mut best: Option<DecodeOutcome> = None;
     let mut runner_up: Option<DecodeOutcome> = None;
 
+    // Fused matched-count uniqueness scan. The soft per-transform precompute
+    // builds the same count / matched-weight tables the hard path needs, so we
+    // fold each transform into a shared `HardScan` here instead of re-running a
+    // second full precompute after the soft scan (see the gate call below).
+    let mut hard_scan = HardScan::new();
+
     // Scratch buffers: reused across D4 transforms. `h_ll` / `v_ll` hold the
     // sum of per-bit LL contributions. `h_match` / `v_match` track the hard
     // match count (diagnostic only — feeds `edges_matched` and the BER gate).
@@ -97,7 +103,7 @@ pub(crate) fn decode_soft(
     let mut v_match = vec![0u32; V_ROWS * V_COLS];
     let mut v_match_conf = vec![0.0f32; V_ROWS * V_COLS];
 
-    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+    for (transform_idx, transform) in GRID_TRANSFORMS_D4.iter().copied().enumerate() {
         let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
             .iter()
             .map(|e| {
@@ -230,6 +236,29 @@ pub(crate) fn decode_soft(
                 }
             }
         }
+
+        // Fold this transform's count / matched-weight tables into the shared
+        // matched-count scan while they are still populated (the `*.fill(...)`
+        // at the top of the next iteration clears them). The soft `h_match` /
+        // `v_match` count tables are byte-identical to the hard path's
+        // `h_count` / `v_count` (same `transform_edge_lookup`, observation
+        // order, and `rem_euclid` loop), and `h_match_conf` / `v_match_conf`
+        // to the hard `h_match` / `v_match` weight tables — so this reuses the
+        // soft precompute to drive the identical uniqueness gate.
+        let hard_tables = TransformTables {
+            h_count: &h_match,      // soft count table     == hard h_count
+            h_match: &h_match_conf, // soft matched-conf sum == hard h_match (weight)
+            v_count: &v_match,
+            v_match: &v_match_conf,
+        };
+        hard_scan.fold(
+            transform,
+            transform_idx,
+            &hard_tables,
+            total,
+            total_conf,
+            max_bit_error_rate,
+        );
     }
 
     let winner = finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)?;
@@ -238,15 +267,14 @@ pub(crate) fn decode_soft(
     // the matched-count top-2 over the full master (the same candidate set the
     // soft winner was drawn from) supplies the competitor.
     //
-    // TODO(perf): this runs a second full O(8·501·N) precompute + crossed-CRT
-    // top-2 over the same observations the soft scan already processed. The soft
-    // scan already builds per-transform `h_match`/`v_match` count tables; the
-    // matched-count top-2 could be computed inline from those (reusing the hard
-    // `lex_max_classes` + cross-transform assembly) to avoid the second pass.
-    // Kept as a separate call here for a correct, obviously-equivalent gate; the
-    // decode runs in the low-ms range, so the doubling is acceptable until the
-    // PuzzleBoard decode shows up on a hot path.
-    let (hard_winner, best_matched, runner) = decode_with_runner_up(observed, max_bit_error_rate)?;
+    // Fused (was a TODO(perf)): the matched-count top-2 is now folded inline
+    // from the soft scan's own per-transform count / matched-weight tables (see
+    // the `hard_scan.fold(...)` at the end of each transform iteration above),
+    // so the gate no longer re-runs a second full O(8·501·N) precompute over the
+    // same observations. `HardScan::finish` returns the byte-identical pre-gate
+    // triple a fresh `decode_with_runner_up(observed, max_bit_error_rate)` would
+    // (same tables, same crossed-CRT top-2 logic).
+    let (hard_winner, best_matched, runner) = hard_scan.finish()?;
     apply_soft_uniqueness_gate(
         winner,
         (

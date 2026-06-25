@@ -74,6 +74,11 @@ interface SampleEntry {
   url: string;
   /** The detection mode that matches this sample. */
   mode: DetectionMode;
+  /** Optional board geometry to seed when this sample is selected (rows × cols
+   *  of squares). Used for PuzzleBoard samples whose true size differs from the
+   *  default, so the board-geometry control reflects the actual board. */
+  rows?: number;
+  cols?: number;
 }
 
 const SAMPLES: SampleEntry[] = [
@@ -81,6 +86,10 @@ const SAMPLES: SampleEntry[] = [
   { label: "ChArUco",    url: "./samples/charuco.png",    mode: "charuco"    },
   { label: "Marker",     url: "./samples/markerboard.png",mode: "marker_board"},
   { label: "PuzzleBoard",url: "./samples/puzzleboard.png", mode: "puzzleboard"},
+  // Public photo-realistic synthetic PuzzleBoards (20×20) rendered from the
+  // canonical 501×501 master maps; they decode uniquely against it.
+  { label: "PuzzleBoard (oblique)",       url: "./samples/author_like_oblique.png",       mode: "puzzleboard", rows: 20, cols: 20 },
+  { label: "PuzzleBoard (foreshortened)", url: "./samples/author_like_foreshortened.png", mode: "puzzleboard", rows: 20, cols: 20 },
 ];
 
 // ---------------------------------------------------------------------------
@@ -272,6 +281,12 @@ export function Workspace({ ready }: WorkspaceProps) {
     (entry: SampleEntry) => {
       setSampleUrl(entry.url);
       setMode(entry.mode);
+      // Seed the board geometry for samples that declare it, so the
+      // board-geometry control matches the actual board (decode itself uses the
+      // origin-independent full-master sweep regardless).
+      if (entry.mode === "puzzleboard" && entry.rows && entry.cols) {
+        setPuzzleParams(defaultPuzzleBoardParams(entry.rows, entry.cols));
+      }
       setDetectionResult(null);
       setDetectionError(null);
       setTimeMs(null);

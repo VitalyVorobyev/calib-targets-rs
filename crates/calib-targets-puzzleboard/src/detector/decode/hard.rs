@@ -325,15 +325,7 @@ pub(crate) fn decode_with_runner_up(
     }
     let total = observed.len();
 
-    let mut best: Option<DecodeOutcome> = None;
-    // Index into `best` of the transform that currently owns the winner, and
-    // the per-transform `(best_count, within_runner)` summaries used to assemble
-    // the global runner-up after the scan. `within_runner` is the closest
-    // *distinct* competing origin within a single transform (a missing second
-    // level is `None`); the cross-transform competitor is the `best_count` of
-    // every *other* transform. See the runner-up assembly below the loop.
-    let mut winner_transform_idx: Option<usize> = None;
-    let mut transform_summaries: Vec<TransformSummary> = Vec::with_capacity(8);
+    let mut scan = HardScan::new();
 
     // Scratch buffers for the precompute tables — allocated once, cleared per transform.
     // h_match[a * H_COLS + b]: sum of confidences for horizontal lookups that match at class (a, b).
@@ -420,6 +412,80 @@ pub(crate) fn decode_with_runner_up(
             }
         }
 
+        // Fold this transform's tables into the shared accumulator (steps 1-4:
+        // crossed-CRT separation, BER reject, worst-case fallback, winner
+        // update). The soft full-master scan runs the identical `fold` over its
+        // own byte-identical tables, so both paths produce the same uniqueness
+        // top-2 from a single precompute.
+        let tables = TransformTables {
+            h_count: &h_count,
+            h_match: &h_match,
+            v_count: &v_count,
+            v_match: &v_match,
+        };
+        scan.fold(
+            transform,
+            transform_idx,
+            &tables,
+            total,
+            total_conf,
+            max_bit_error_rate,
+        );
+    }
+
+    scan.finish()
+}
+
+/// Shared accumulator for the *post-precompute* per-transform body of the
+/// hard-weighted full-master decode.
+///
+/// Both the hard path ([`decode_with_runner_up`]) and the soft full-master path
+/// ([`super::soft::decode_soft`]) build byte-identical per-transform precompute
+/// tables (matched-count + matched-confidence-weight), then run the identical
+/// crossed-CRT winner-selection + uniqueness top-2 logic on them. Factoring that
+/// logic here lets the soft scan reuse the tables it already builds instead of
+/// running a second full precompute pass purely for the uniqueness gate.
+///
+/// Call [`HardScan::fold`] once per D4 transform (with that transform's tables)
+/// and then [`HardScan::finish`] to obtain the pre-gate winner triple.
+pub(crate) struct HardScan {
+    best: Option<DecodeOutcome>,
+    // Index of the transform that currently owns the winner, and the
+    // per-transform `(best_count, within_runner)` summaries used to assemble the
+    // global runner-up after the scan. `within_runner` is the closest *distinct*
+    // competing origin within a single transform (a missing second level is
+    // `None`); the cross-transform competitor is the `best_count` of every
+    // *other* transform. See [`assemble_global_runner_up`].
+    winner_transform_idx: Option<usize>,
+    transform_summaries: Vec<TransformSummary>,
+}
+
+impl HardScan {
+    pub(crate) fn new() -> Self {
+        Self {
+            best: None,
+            winner_transform_idx: None,
+            transform_summaries: Vec::with_capacity(8),
+        }
+    }
+
+    /// Fold one D4 transform's precompute tables into the accumulator.
+    ///
+    /// `transform_idx` is the transform's position in `GRID_TRANSFORMS_D4` (used
+    /// to attribute the global winner for the runner-up assembly). `tables`
+    /// carries the matched-count (`h_count`/`v_count`) and matched-weight
+    /// (`h_match`/`v_match`) tables; `total = observed.len()` and `total_conf =
+    /// Σ confidence`. The body is the exact step-1..4 logic of the original hard
+    /// inner loop.
+    pub(crate) fn fold(
+        &mut self,
+        transform: GridTransform,
+        transform_idx: usize,
+        tables: &TransformTables<'_>,
+        total: usize,
+        total_conf: f32,
+        max_bit_error_rate: f32,
+    ) {
         // Collapse the O(501²) origin scan to O(501) via the crossed-CRT
         // separation. The per-origin score is the sum of two *independent*
         // table terms — the H term depends only on `(ha, hb)` and the V term
@@ -434,8 +500,8 @@ pub(crate) fn decode_with_runner_up(
         // Step 1: lexicographic max `(count, weight)` over each table, the set
         // of classes achieving it, and — for the uniqueness gate — the
         // second-distinct count level (largest count strictly below the max).
-        let h_tab = lex_max_classes(&h_count, &h_match, H_COLS);
-        let v_tab = lex_max_classes(&v_count, &v_match, V_COLS);
+        let h_tab = lex_max_classes(tables.h_count, tables.h_match, H_COLS);
+        let v_tab = lex_max_classes(tables.v_count, tables.v_match, V_COLS);
         let (mc_h, max_h_w, optimal_h) = (h_tab.max_count, h_tab.max_weight, &h_tab.classes);
         let (mc_v, max_v_w, optimal_v) = (v_tab.max_count, v_tab.max_weight, &v_tab.classes);
 
@@ -450,7 +516,10 @@ pub(crate) fn decode_with_runner_up(
         let best_origin = row_major_min_origin(optimal_h, optimal_v);
         let within_runner =
             within_transform_runner_up(transform, &h_tab, &v_tab, mc_h, mc_v, best_origin);
-        transform_summaries.push(TransformSummary {
+        // Pushed unconditionally, BEFORE the BER early-reject below: every
+        // transform's `best_count` competes for the uniqueness runner-up whether
+        // or not it clears the gate.
+        self.transform_summaries.push(TransformSummary {
             transform,
             best_count: best_matched as u32,
             best_origin,
@@ -468,30 +537,24 @@ pub(crate) fn decode_with_runner_up(
             (total - best_matched) as f32 / total as f32
         };
         if bit_error_rate > max_bit_error_rate {
-            continue;
+            return;
         }
 
         // Step 3: worst-case guard. Real inputs decode uniquely (product == 1);
         // only degenerate all-tied inputs blow this up. Fall back to a direct
         // table scan for this transform only so cost never exceeds the original.
         if optimal_h.len().saturating_mul(optimal_v.len()) > SEPARATION_PRODUCT_CAP {
-            let tables = TransformTables {
-                h_count: &h_count,
-                h_match: &h_match,
-                v_count: &v_count,
-                v_match: &v_match,
-            };
             if scan_transform_direct(
                 transform,
-                &tables,
+                tables,
                 total,
                 total_conf,
                 max_bit_error_rate,
-                &mut best,
+                &mut self.best,
             ) {
-                winner_transform_idx = Some(transform_idx);
+                self.winner_transform_idx = Some(transform_idx);
             }
-            continue;
+            return;
         }
 
         // Step 4: the winning origin is the row-major-min over the joint optimal
@@ -531,15 +594,21 @@ pub(crate) fn decode_with_runner_up(
             runner_up_origin_col: None,
             runner_up_transform: None,
         };
-        if update_best_candidate(&mut best, candidate) {
-            winner_transform_idx = Some(transform_idx);
+        if update_best_candidate(&mut self.best, candidate) {
+            self.winner_transform_idx = Some(transform_idx);
         }
     }
 
-    let winner = best?;
-    let runner_up = assemble_global_runner_up(&transform_summaries, winner_transform_idx);
-    let best_matched = winner.edges_matched as u32;
-    Some((winner, best_matched, runner_up))
+    /// Consume the accumulator and return the pre-gate winner triple: the
+    /// winning hypothesis, its matched-bit count, and the closest competing
+    /// origin (`None` if no winner cleared the BER gate).
+    pub(crate) fn finish(self) -> Option<(DecodeOutcome, u32, Option<HardRunnerUp>)> {
+        let winner = self.best?;
+        let runner_up =
+            assemble_global_runner_up(&self.transform_summaries, self.winner_transform_idx);
+        let best_matched = winner.edges_matched as u32;
+        Some((winner, best_matched, runner_up))
+    }
 }
 
 /// Per-transform summary needed to assemble the global uniqueness runner-up:
@@ -782,11 +851,20 @@ fn lex_max_classes(count: &[u32], weight: &[f32], cols: usize) -> LexMax {
 
 /// Borrowed view over the four per-transform precompute tables, bundled so the
 /// direct-scan fallback stays under the workspace argument limit.
-struct TransformTables<'a> {
-    h_count: &'a [u32],
-    h_match: &'a [f32],
-    v_count: &'a [u32],
-    v_match: &'a [f32],
+///
+/// `h_count` / `v_count` are the per-class matched-bit *counts* (`+= 1` on
+/// `expected == bit`); `h_match` / `v_match` are the summed confidence *weights*
+/// of matched observations (`+= conf`). The soft full-master scan
+/// ([`super::soft::decode_soft`]) builds byte-identical tables as a side effect
+/// (its `h_match`/`v_match` count tables and `h_match_conf`/`v_match_conf` weight
+/// tables — same `transform_edge_lookup`, observation order, and `rem_euclid`
+/// loop), so it feeds them straight into [`HardScan::fold`] to drive the
+/// matched-count uniqueness gate without a second precompute pass.
+pub(crate) struct TransformTables<'a> {
+    pub(crate) h_count: &'a [u32],
+    pub(crate) h_match: &'a [f32],
+    pub(crate) v_count: &'a [u32],
+    pub(crate) v_match: &'a [f32],
 }
 
 /// Fallback direct scan over all 501² origins for a single transform, using
