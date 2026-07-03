@@ -16,9 +16,11 @@
 use nalgebra::{Point2, Vector2};
 
 pub mod hex;
+pub mod predict;
 pub mod square;
 
 pub use hex::Hex;
+pub use predict::{predict_grid_position, PredictedPosition};
 pub use square::Square;
 
 /// How the topological pipeline turns Delaunay triangles into lattice cells.

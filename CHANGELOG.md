@@ -15,6 +15,17 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Added
 
+- **`projective_grid::predict_grid_position` / `PredictedPosition`** — the
+  neighbour-midpoint position predictor is back on the stable tier, as one
+  lattice-generic function (`lattice::predict`). It averages the midpoints of
+  the available opposite neighbour pairs (2 axis families on square, 3 on hex
+  axial) from a `HashMap<Coord, Point2<F>>`, returning `None` on the labelled
+  frontier — interpolation only, never extrapolation. This restores the
+  capability of the removed 0.9 `square_predict_grid_position` /
+  `hex_predict_grid_position` helpers (same midpoint-pair math, so downstream
+  smoothness gates keep their numerical behaviour) for consumers that run
+  local, homography-free outlier checks or seed searches for missed lattice
+  points; `n_axis_pairs` reports how constrained each prediction is.
 - **`Evidence::Oriented1`** — single-supplied-axis input is now a first-class
   evidence kind for `projective_grid::detect_grid`; the second axis is
   recovered from neighbour-chord geometry.
