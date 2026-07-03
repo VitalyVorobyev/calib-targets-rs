@@ -152,8 +152,9 @@ pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};
 pub use crate::float::Float;
 pub use crate::lattice::{
-    Coord, GridDimensions, GridTransform, Hex, Lattice, LatticeKind, Square, D4_TRANSFORMS,
-    D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
+    predict_grid_position, Coord, GridDimensions, GridTransform, Hex, Lattice, LatticeKind,
+    PredictedPosition, Square, D4_TRANSFORMS, D6_TRANSFORMS, HEX_AXIAL_OFFSETS,
+    SQUARE_CARDINAL_OFFSETS,
 };
 pub use crate::orient::{
     synthesize_oriented2, synthesize_oriented2_from_oriented1, synthesize_oriented3,
