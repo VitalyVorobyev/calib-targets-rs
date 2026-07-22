@@ -92,7 +92,11 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     };
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    // `DetectorConfig::orientation_method` is `Option<_>` since
+    // chess-corners 1.0 (`None` skips the axis fit). The bench always
+    // fits orientation; `--orientation-method` still selects only which
+    // fit to run.
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
 
     let config_id = format!(
         "{}.{}.{}",
@@ -158,7 +162,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
         args.orientation_method.slug(),
     );
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
     let mut wrote = 0usize;
     for entry in &entries {
         let abs = entry.absolute();
@@ -372,7 +376,7 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
     };
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
     let base_config_id = format!(
         "{}.{}.{}",
         args.engine.slug(),

@@ -195,8 +195,6 @@ mod tests {
                     sigma,
                 },
             ],
-            contrast: 10.0,
-            fit_rms: 1.0,
             strength,
         };
         let mut aug = CornerAug::from_chess_corner(input_index, &c);
@@ -369,8 +367,6 @@ mod plateau_peak_regression {
                             sigma: 0.008,
                         },
                     ],
-                    contrast: 136.0,
-                    fit_rms: 4.7,
                     strength: 612.0,
                 };
                 let mut aug = CornerAug::from_chess_corner(augs.len(), &c);

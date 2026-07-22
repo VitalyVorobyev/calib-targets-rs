@@ -96,8 +96,9 @@
     {
       "path": "testdata/puzzleboard_reference/example5.png",
       "require_detection": true,
-      "min_labelled": 2400,
-      "max_components": 2
+      "min_labelled": 2200,
+      "max_components": 2,
+      "note": "Floor lowered from 2400 (measured 2258) when the Stage-1 prefilter changed signal. chess-corners 1.0 removed the CornerDescriptor `contrast` / `fit_rms` fields, so the `fit_rms <= max_fit_rms_ratio * contrast` gate could no longer be computed by anyone; it was replaced by a per-axis 1-sigma admission gate derived from the topological builder`s own axis_align_tol_rad. The two signals are related but not identical, so this dense frame lands slightly lower. The change is precision-neutral: across the full 261-entry bench corpus no wrong-label counter (pos/id/dup/ov/col) increased on any entry, overlong_edges and collapsed_pairs stayed at 0, and the net labelled-corner delta was +64."
     },
     {
       "path": "testdata/puzzleboard_reference/example6.png",

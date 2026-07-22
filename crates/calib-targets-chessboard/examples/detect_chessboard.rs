@@ -51,8 +51,6 @@ fn synth_chessboard(cols: i32, rows: i32, pitch: f32) -> Vec<ChessCorner> {
                         sigma: 0.01,
                     },
                 ],
-                contrast: 10.0,
-                fit_rms: 1.0,
                 strength: 1.0,
             });
         }

@@ -10,7 +10,7 @@
 
 use super::corner_refit::redetect_corner_in_roi;
 use calib_targets_core::{square_predict_grid_position, Coord, CornerMap, GrayImageView};
-use chess_corners::low_level::ChessParams;
+use chess_corners_core::ChessParams;
 use log::debug;
 use nalgebra::Point2;
 

@@ -87,7 +87,7 @@ pub async fn create(
         ));
     }
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = req.orientation_method.into();
+    chess_cfg.orientation_method = Some(req.orientation_method.into());
     let config_id = format!(
         "{}.{:?}",
         match engine {

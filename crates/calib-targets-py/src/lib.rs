@@ -228,8 +228,6 @@ struct TopologicalCornerPayload {
     position: [f32; 2],
     axes: [::calib_targets::core::AxisEstimate; 2],
     strength: f32,
-    contrast: f32,
-    fit_rms: f32,
 }
 
 /// Detect a ChArUco board in a grayscale image.
@@ -372,8 +370,6 @@ fn trace_chessboard_topological(
                 position: [c.position.x, c.position.y],
                 axes: c.axes,
                 strength: c.strength,
-                contrast: c.contrast,
-                fit_rms: c.fit_rms,
             })
             .collect();
 

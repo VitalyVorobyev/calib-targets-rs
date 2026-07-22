@@ -3,8 +3,8 @@
 use crate::board::PuzzleBoardSpec;
 use crate::detector::{PuzzleBoardDecodeConfig, PuzzleBoardScoringMode};
 use calib_targets_chessboard::DetectorParams;
-use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
+use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
@@ -35,7 +35,13 @@ fn default_px_per_square() -> f32 {
 
 pub(crate) fn default_redetect_params() -> ChessCornerParams {
     let mut params = ChessCornerParams::default();
-    params.threshold_rel = 0.05;
+    // See the identical note in `calib-targets-charuco`'s
+    // `default_redetect_params`: the pre-1.0 `threshold_rel = 0.05` here was
+    // dead code, because 0.11's `ChessParams::default()` set
+    // `threshold_abs = Some(0.0)` and the absolute floor took priority over
+    // the relative fraction. `threshold = 0.0` is the behaviour-preserving
+    // translation onto 1.0's single absolute field.
+    params.threshold = 0.0;
     params.nms_radius = 2;
     params.min_cluster_size = 1;
     params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());

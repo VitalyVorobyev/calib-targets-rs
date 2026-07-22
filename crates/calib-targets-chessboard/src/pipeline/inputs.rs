@@ -29,15 +29,12 @@ fn axes_from(c: &ChessCorner) -> [AxisEstimate; 2] {
 
 fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
     let min_corner_strength = params.min_corner_strength;
-    let max_fit_rms_ratio = params.effective_tuning().max_fit_rms_ratio;
+    let max_axis_sigma = crate::pipeline::axis_admission_sigma(params);
     corners
         .iter()
         .map(|c| {
-            let strong = c.strength >= min_corner_strength;
-            let fit_ok = !max_fit_rms_ratio.is_finite()
-                || c.contrast <= 0.0
-                || c.fit_rms <= max_fit_rms_ratio * c.contrast;
-            strong && fit_ok
+            c.strength >= min_corner_strength
+                && c.axes[0].sigma.max(c.axes[1].sigma) <= max_axis_sigma
         })
         .collect()
 }

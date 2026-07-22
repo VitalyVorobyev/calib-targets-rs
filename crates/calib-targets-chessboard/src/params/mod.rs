@@ -298,7 +298,6 @@ mod tests {
         // None of the advanced knobs leaked to the top level.
         for leaked in [
             "cluster_tol_deg",
-            "max_fit_rms_ratio",
             "seed_edge_tol",
             "weak_cluster_tol_deg",
             "topological",

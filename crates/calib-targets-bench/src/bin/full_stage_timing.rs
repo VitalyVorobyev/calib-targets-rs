@@ -47,11 +47,10 @@ use calib_targets::chessboard::{
     ChessCorner, Detector as ChessboardDetector, DetectorParams as ChessboardParams,
 };
 use calib_targets::core::{DetectorConfig, GrayImageView};
-use calib_targets::detect::detect_corners;
+use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_bench::baseline::{BaselineCorner, BaselineImage};
 use calib_targets_bench::overlay::{render_report_overlay_on_gray, MarkerQuad};
-use chess_corners::Threshold;
 use clap::Parser;
 use image::{GrayImage, ImageReader};
 use serde::Serialize;
@@ -191,13 +190,22 @@ fn cards() -> Vec<Card> {
     ]
 }
 
-/// The ChESS configuration the regression tests use: a relative response
-/// threshold and a tight NMS radius. Reused for every card so the bench's raw
-/// corner counts match the regression suite's.
+/// The ChESS configuration used for every card, so the bench's raw corner
+/// counts match the regression suite's.
+///
+/// This was `Threshold::Relative(0.2)` (20% of the per-frame maximum
+/// response) plus an explicit NMS radius. chess-corners 1.0 removed relative
+/// thresholding for the ChESS strategy — `threshold` is now an absolute floor
+/// on the raw response, and only Radon reads it as a fraction. Rather than
+/// invent a per-frame absolute number to imitate the old adaptive cutoff,
+/// this now uses the workspace default (an absolute floor of 15.0), which is
+/// what the chessboard regression harness itself runs and therefore what the
+/// "match the regression suite" intent above actually calls for. Timings are
+/// not comparable across this change, since the accepted corner set differs.
 fn chess_config() -> DetectorConfig {
-    DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.2))
-        .with_chess(|c| c.nms_radius = 2)
+    // `nms_radius = 2` restates the upstream default, kept explicit so the
+    // harness does not silently follow a future upstream change.
+    default_chess_config().with_detection(|d| d.nms_radius = 2)
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]

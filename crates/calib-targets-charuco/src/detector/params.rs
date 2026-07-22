@@ -1,8 +1,8 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{AdvancedTuning, DetectorParams};
-use chess_corners::low_level::{ChessParams as ChessCornerParams, RefinerKind};
 use chess_corners::SaddlePointConfig;
+use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the ChArUco detector.
@@ -184,7 +184,17 @@ fn default_cell_weight_border_threshold() -> f32 {
 /// because we already know approximately where the true corner should be.
 pub(crate) fn default_redetect_params() -> ChessCornerParams {
     let mut params = ChessCornerParams::default();
-    params.threshold_rel = 0.05;
+    // `threshold = 0.0` is the paper contract ("keep every strictly-positive
+    // response"), which is what this ROI re-detection has always actually run
+    // at. Under chess-corners 0.11 this line read `threshold_rel = 0.05`, but
+    // that never took effect: 0.11 resolved the cutoff as
+    // `threshold_abs.unwrap_or(threshold_rel * max_response)` and
+    // `ChessParams::default()` set `threshold_abs = Some(0.0)`, so the
+    // absolute floor always won and the relative value was dead. 1.0 collapsed
+    // the pair into a single absolute `threshold`, so writing `0.0` here
+    // preserves the behaviour exactly rather than resurrecting a knob that was
+    // never live.
+    params.threshold = 0.0;
     params.nms_radius = 2;
     params.min_cluster_size = 1;
     params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
@@ -192,11 +202,11 @@ pub(crate) fn default_redetect_params() -> ChessCornerParams {
 }
 
 /// Convert a `ChessCornerParams` into the upstream
-/// `chess_corners::low_level::ChessParams`.
+/// `chess_corners_core::ChessParams`.
 ///
 /// Since `ChessCornerParams` is now a re-export of
-/// `chess_corners::low_level::ChessParams`, this is an identity-like operation.
-pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners::low_level::ChessParams {
+/// `chess_corners_core::ChessParams`, this is an identity-like operation.
+pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners_core::ChessParams {
     params.clone()
 }
 
@@ -299,7 +309,9 @@ mod tests {
     #[test]
     fn default_redetect_params_uses_saddle_point_refiner() {
         let params = default_redetect_params();
-        assert!((params.threshold_rel - 0.05).abs() < 1e-6);
+        // Absolute floor of 0.0 — the paper contract, and what this path has
+        // always effectively run at. See the note in `default_redetect_params`.
+        assert_eq!(params.threshold, 0.0);
         assert_eq!(params.nms_radius, 2);
         assert_eq!(params.min_cluster_size, 1);
         assert!(
@@ -311,13 +323,13 @@ mod tests {
 
     #[test]
     fn to_chess_params_is_identity() {
-        // Since ChessCornerParams IS chess_corners::low_level::ChessParams, to_chess_params
+        // Since ChessCornerParams IS chess_corners_core::ChessParams, to_chess_params
         // should round-trip perfectly.
         let mut params = ChessCornerParams::default();
-        params.threshold_rel = 0.3;
+        params.threshold = 0.3;
         params.nms_radius = 4;
         let converted = to_chess_params(&params);
-        assert!((converted.threshold_rel - 0.3).abs() < 1e-6);
+        assert!((converted.threshold - 0.3).abs() < 1e-6);
         assert_eq!(converted.nms_radius, 4);
     }
 }

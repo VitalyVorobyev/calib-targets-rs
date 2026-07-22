@@ -11,7 +11,7 @@ use calib_targets_charuco::{
 };
 use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_core::GrayImageView;
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig};
 use image::ImageReader;
 use nalgebra::Point2;
 
@@ -87,9 +87,14 @@ fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error
 }
 
 fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
-    let chess_cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.2))
-        .with_chess(|c| c.nms_radius = 2);
+    let chess_cfg = // chess-corners 1.0 made `threshold` a single absolute floor on the raw
+    // ChESS response (relative thresholding is Radon-only now). 15.0 is the
+    // workspace production default — see
+    // `calib_targets::detect::default_chess_config`. This crate's examples do
+    // not depend on the facade, so the value is restated rather than imported.
+    DetectorConfig::chess()
+        .with_threshold(15.0)
+        .with_detection(|d| d.nms_radius = 2);
     debug!(
         "Running ChESS corner scan with threshold={:?}",
         chess_cfg.threshold
@@ -113,18 +118,23 @@ fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
 fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
     Corner {
         position: Point2::new(c.x, c.y),
-        axes: [
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ],
-        contrast: c.contrast,
-        fit_rms: c.fit_rms,
+        // `axes` is `None` only when the upstream orientation fit is
+        // skipped; these fixtures always fit it.
+        axes: c
+            .axes
+            .map(|a| {
+                [
+                    calib_targets_core::AxisEstimate {
+                        angle: a[0].angle,
+                        sigma: a[0].sigma,
+                    },
+                    calib_targets_core::AxisEstimate {
+                        angle: a[1].angle,
+                        sigma: a[1].sigma,
+                    },
+                ]
+            })
+            .expect("orientation fit enabled"),
         strength: c.response,
     }
 }
@@ -158,9 +168,9 @@ fn log_detector_params(params: &CharucoParams) {
     );
     let chessboard_tuning = params.chessboard.effective_tuning();
     debug!(
-        "Chessboard params: min_corner_strength={:.3}, max_fit_rms_ratio={:.3}, cluster_tol_deg={:.1}, attach_search_rel={:.2}, max_components={}",
+        "Chessboard params: min_corner_strength={:.3}, max_axis_sigma_rad={:.3}, cluster_tol_deg={:.1}, attach_search_rel={:.2}, max_components={}",
         params.chessboard.min_corner_strength,
-        chessboard_tuning.max_fit_rms_ratio,
+        chessboard_tuning.topological.max_axis_sigma_rad,
         chessboard_tuning.cluster_tol_deg,
         chessboard_tuning.attach_search_rel,
         params.chessboard.max_components,

@@ -3,31 +3,37 @@
 //! verify every returned `LabeledCorner` is labelled with the expected
 //! master (I, J) coordinates.
 
+use calib_targets::detect::default_chess_config;
 use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_core::GrayImageView;
 use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec,
 };
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector};
 use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
     TargetCorner {
         position: Point2::new(c.x, c.y),
-        axes: [
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ],
-        contrast: c.contrast,
-        fit_rms: c.fit_rms,
+        // `axes` is `None` only when the upstream orientation fit is
+        // skipped; these fixtures always fit it.
+        axes: c
+            .axes
+            .map(|a| {
+                [
+                    calib_targets_core::AxisEstimate {
+                        angle: a[0].angle,
+                        sigma: a[0].sigma,
+                    },
+                    calib_targets_core::AxisEstimate {
+                        angle: a[1].angle,
+                        sigma: a[1].sigma,
+                    },
+                ]
+            })
+            .expect("orientation fit enabled"),
         strength: c.response,
     }
 }
@@ -54,9 +60,12 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
     // 2) Detect ChESS corners.
-    let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
-        .with_chess(|c| c.nms_radius = 3);
+    let cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
+    // strategy (`threshold` is now an absolute floor on the raw response;
+    // only Radon reads it as a fraction). Rather than invent an absolute
+    // number to imitate the old adaptive cutoff, use the workspace
+    // production default, so this exercises the config real callers get.
+    default_chess_config().with_detection(|d| d.nms_radius = 3);
     let mut detector = ChessDetector::new(cfg).expect("build ChESS detector");
     let descriptors = detector.detect(&gray).expect("ChESS detection");
     assert!(
@@ -154,9 +163,12 @@ fn fixed_board_agrees_with_full_on_whole_view() {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
-        .with_chess(|c| c.nms_radius = 3);
+    let cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
+    // strategy (`threshold` is now an absolute floor on the raw response;
+    // only Radon reads it as a fraction). Rather than invent an absolute
+    // number to imitate the old adaptive cutoff, use the workspace
+    // production default, so this exercises the config real callers get.
+    default_chess_config().with_detection(|d| d.nms_radius = 3);
     let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
     let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
@@ -225,9 +237,12 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
-        .with_chess(|c| c.nms_radius = 3);
+    let cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
+    // strategy (`threshold` is now an absolute floor on the raw response;
+    // only Radon reads it as a fraction). Rather than invent an absolute
+    // number to imitate the old adaptive cutoff, use the workspace
+    // production default, so this exercises the config real callers get.
+    default_chess_config().with_detection(|d| d.nms_radius = 3);
     let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
     let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let all_corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
@@ -386,9 +401,12 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         _ => panic!("unsupported rotation {rotation_deg}"),
     };
 
-    let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
-        .with_chess(|c| c.nms_radius = 3);
+    let cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
+    // strategy (`threshold` is now an absolute floor on the raw response;
+    // only Radon reads it as a fraction). Rather than invent an absolute
+    // number to imitate the old adaptive cutoff, use the workspace
+    // production default, so this exercises the config real callers get.
+    default_chess_config().with_detection(|d| d.nms_radius = 3);
     let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
 
     let board_spec = PuzzleBoardSpec::with_origin(

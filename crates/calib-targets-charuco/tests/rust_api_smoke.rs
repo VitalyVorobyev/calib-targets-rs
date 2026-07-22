@@ -33,7 +33,8 @@ edition = "2021"
 [dependencies]
 calib-targets-aruco = {{ path = '{}' }}
 calib-targets-charuco = {{ path = '{charuco_dir}' }}
-chess-corners = "0.11"
+chess-corners = "1.0"
+chess-corners-core = "1.0"
 "#,
             aruco_dir.display(),
         ),
@@ -45,8 +46,12 @@ chess-corners = "0.11"
 use calib_targets_charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 // Advanced ChESS tuning types come from `chess-corners` directly — the
 // workspace crates re-export only `DetectorConfig` + `OrientationMethod`.
-use chess_corners::low_level::{ChessParams, RefinerKind};
+// Since chess-corners 1.0 the low-level `ChessParams` / `RefinerKind` live on
+// the `chess-corners-core` crate root (the `chess_corners::low_level` module
+// is gone), so a downstream consumer that names them needs that dependency
+// directly — which is what this smoke test pins down.
 use chess_corners::SaddlePointConfig;
+use chess_corners_core::{ChessParams, RefinerKind};
 
 fn main() {
     let board = CharucoBoardSpec::new(5, 7, 20.0, 0.75, builtins::DICT_4X4_50)
@@ -54,15 +59,18 @@ fn main() {
 
     let mut params = CharucoParams::for_board(&board);
     let mut named = ChessParams::default();
-    named.threshold_rel = 0.05;
+    // Single absolute response floor now; the `threshold_rel` /
+    // `threshold_abs` pair is gone.
+    named.threshold = 0.05;
     named.min_cluster_size = 1;
-    named.refiner = RefinerKind::SaddlePoint(SaddlePointConfig {
-        radius: 3,
-        ..SaddlePointConfig::default()
-    });
+    // `SaddlePointConfig` is `#[non_exhaustive]` in 1.0, so struct-update
+    // syntax no longer compiles across the crate boundary.
+    let mut refiner_cfg = SaddlePointConfig::default();
+    refiner_cfg.radius = 3;
+    named.refiner = RefinerKind::SaddlePoint(refiner_cfg);
 
     params.corner_redetect_params = named;
-    params.corner_redetect_params.threshold_abs = Some(3.0);
+    params.corner_redetect_params.threshold = 3.0;
 }
 "#,
     );

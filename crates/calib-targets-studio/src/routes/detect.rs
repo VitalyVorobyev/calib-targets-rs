@@ -249,7 +249,7 @@ async fn detect_chessboard_family(
     let engine = Engine::from(req.engine);
     let params = effective_params(&req.params, engine)?;
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = req.orientation_method.into();
+    chess_cfg.orientation_method = Some(req.orientation_method.into());
 
     let outcome = tokio::task::spawn_blocking(move || {
         let img = load_entry_image(&abs)?;

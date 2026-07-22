@@ -101,10 +101,12 @@ fn catalogue() -> ParamSchema {
     use ParamKind::{Bool, Float, Int};
 
     let groups = vec![
-        ParamGroup {
-            id: "prefilter",
-            title: "Prefilter",
-        },
+        // NOTE: no "Prefilter" group. Its only field was
+        // `/advanced/max_fit_rms_ratio`, removed together with the upstream
+        // `contrast` / `fit_rms` descriptor fields it depended on. The
+        // remaining prefilter input, `min_corner_strength`, is a stable
+        // top-level param, not an `advanced` knob, so it is not in this
+        // catalogue. An empty group would render as a dead heading.
         ParamGroup {
             id: "cluster_axes",
             title: "Axis clustering",
@@ -136,15 +138,6 @@ fn catalogue() -> ParamSchema {
     ];
 
     let fields = vec![
-        // --- prefilter ------------------------------------------------------
-        field(
-            "/advanced/max_fit_rms_ratio",
-            "prefilter",
-            "Max fit RMS ratio",
-            "Drop ChESS corners whose fit RMS exceeds this ratio times their contrast. Higher admits weaker corners; ∞ disables the prefilter.",
-            Float,
-            None,
-        ),
         // --- cluster_axes ---------------------------------------------------
         field(
             "/advanced/num_bins",

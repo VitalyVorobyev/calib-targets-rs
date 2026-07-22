@@ -52,8 +52,6 @@ fn board_corner(x: f32, y: f32, parity: usize) -> ChessCorner {
     ChessCorner {
         position: Point2::new(x, y),
         axes,
-        contrast: 30.0,
-        fit_rms: 3.0,
         // Above the default `min_corner_strength` floor (33.0): this test
         // exercises the *geometric* cluster-gate rejection of markers, so
         // every corner must survive the strength pre-filter.
@@ -75,8 +73,6 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> ChessCorner {
     ChessCorner {
         position: Point2::new(x, y),
         axes,
-        contrast: 20.0,
-        fit_rms: 5.0,
         // Above the floor as well, so the markers reach the cluster gate
         // and are rejected by geometry (the 20° rotation), not silently
         // dropped by the strength pre-filter.

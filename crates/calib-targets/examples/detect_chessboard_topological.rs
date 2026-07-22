@@ -1,6 +1,5 @@
 use calib_targets::chessboard::DetectorParams;
 use calib_targets::detect;
-use chess_corners::Threshold;
 use image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -10,7 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
-    let chess_cfg = detect::default_chess_config().with_threshold(Threshold::Absolute(100.0));
+    let chess_cfg = detect::default_chess_config().with_threshold(100.0);
     let params = DetectorParams::topological();
 
     let Some(result) = detect::detect_chessboard(&img, &chess_cfg, &params) else {

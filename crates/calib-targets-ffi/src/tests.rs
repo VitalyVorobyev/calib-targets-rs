@@ -104,9 +104,7 @@ fn default_shared_chess_config() -> ct_chess_config_t {
     ct_chess_config_t {
         params: ct_chess_params_t {
             use_radius10: CT_FALSE,
-            descriptor_use_radius10: ct_optional_bool_t::none(),
-            threshold_rel: 0.2,
-            threshold_abs: ct_optional_f32_t::none(),
+            threshold: 15.0,
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: default_refiner(),
@@ -166,9 +164,7 @@ fn charuco_config_small_png() -> ct_charuco_detector_config_t {
             corner_validation_threshold_rel: 0.08,
             corner_redetect_params: ct_chess_params_t {
                 use_radius10: CT_FALSE,
-                descriptor_use_radius10: ct_optional_bool_t::none(),
-                threshold_rel: 0.05,
-                threshold_abs: ct_optional_f32_t::none(),
+                threshold: 15.0,
                 nms_radius: 2,
                 min_cluster_size: 1,
                 refiner: default_saddle_refiner(),
@@ -223,7 +219,9 @@ fn marker_board_config_crop_png() -> ct_marker_board_detector_config_t {
 
 fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
     let mut chess = default_shared_chess_config();
-    chess.params.threshold_rel = 0.15;
+    // Absolute floor now (chess-corners 1.0 dropped relative thresholding for
+    // the ChESS strategy); matches the workspace production default.
+    chess.params.threshold = 15.0;
     chess.params.nms_radius = 3;
     ct_puzzleboard_detector_config_t {
         chess,
@@ -251,9 +249,7 @@ fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
             },
             corner_redetect_params: ct_chess_params_t {
                 use_radius10: CT_FALSE,
-                descriptor_use_radius10: ct_optional_bool_t::none(),
-                threshold_rel: 0.05,
-                threshold_abs: ct_optional_f32_t::none(),
+                threshold: 15.0,
                 nms_radius: 2,
                 min_cluster_size: 1,
                 refiner: default_saddle_refiner(),

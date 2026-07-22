@@ -135,10 +135,6 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/enable_weak_cluster_rescue",
         ),
         // --- scalar thresholds ---------------------------------------------
-        with_pointer(
-            k("max_fit_rms_ratio", ScalarRel, None),
-            "/advanced/max_fit_rms_ratio",
-        ),
         with_pointer(k("num_bins", ScalarRel, None), "/advanced/num_bins"),
         with_pointer(
             k("max_iters_2means", ScalarRel, None),

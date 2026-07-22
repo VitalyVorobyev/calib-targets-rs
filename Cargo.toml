@@ -64,7 +64,15 @@ approx = "0.5"
 assert_cmd = "2"
 axum = "0.8"
 cbindgen = "0.29"
-chess-corners = "0.11"
+chess-corners = "1.0"
+# The low-level ChESS contract (`ChessParams`, `RefinerKind`, `ImageView`,
+# `Roi`, `Refiner`, `chess_response_u8_patch`,
+# `detect_corners_from_response_with_refiner`) moved out of the removed
+# `chess_corners::low_level` module and onto the `chess-corners-core` crate
+# root in 1.0, so the crates that drive the response/detect stages by hand
+# (charuco corner refit, puzzleboard + charuco redetect params, the FFI
+# config lowering) now depend on it directly.
+chess-corners-core = "1.0"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 delaunator = "1.0"

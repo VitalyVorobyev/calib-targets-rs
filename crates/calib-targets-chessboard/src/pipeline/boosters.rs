@@ -400,8 +400,6 @@ mod tests {
                     sigma: 0.01,
                 },
             ],
-            contrast: 10.0,
-            fit_rms: 1.0,
             strength: 1.0,
         };
         let mut aug = CornerAug::from_chess_corner(idx, &c);

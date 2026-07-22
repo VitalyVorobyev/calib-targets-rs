@@ -18,7 +18,7 @@ use calib_targets_print::{
     RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-use chess_corners::{Detector as ChessCornerDetector, Threshold};
+use chess_corners::Detector as ChessCornerDetector;
 use wasm_bindgen::prelude::*;
 
 use convert::adapt_chess_corner;
@@ -78,7 +78,7 @@ fn detect_corners_impl(
 /// override applied in `calib_targets::detect::default_chess_config` — see
 /// the rustdoc on that function for the rationale and sweep evidence.
 fn workspace_default_chess_cfg() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
+    DetectorConfig::chess().with_threshold(15.0)
 }
 
 /// Resolve a ChESS detector config, falling back to the workspace default

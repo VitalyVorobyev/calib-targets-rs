@@ -54,11 +54,11 @@ use calib_targets::puzzleboard::{
 // Advanced ChESS tuning types are imported from `chess-corners` directly —
 // the `calib-targets` facade re-exports only `DetectorConfig` +
 // `OrientationMethod`.
-use chess_corners::low_level::{ChessParams, PyramidParams, RefinerKind};
 use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, ChessRing, DescriptorRing, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, Threshold, UpscaleConfig,
+    CenterOfMassConfig, ChessRefiner, ChessRing, ForstnerConfig, MultiscaleConfig,
+    SaddlePointConfig, UpscaleConfig,
 };
+use chess_corners_core::{ChessParams, RefinerKind};
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
 
@@ -73,9 +73,9 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::CenterOfMass(CenterOfMassConfig {
-                radius: cfg.center_of_mass.radius,
-            }))
+            let mut out = CenterOfMassConfig::default();
+            out.radius = cfg.center_of_mass.radius;
+            Ok(RefinerKind::CenterOfMass(out))
         }
         CT_REFINER_KIND_FORSTNER => {
             if cfg.forstner.radius < 0 {
@@ -83,22 +83,18 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.forstner.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::Forstner(ForstnerConfig {
-                radius: cfg.forstner.radius,
-                min_trace: require_nonnegative(
-                    cfg.forstner.min_trace,
-                    "refiner.forstner.min_trace",
-                )?,
-                min_det: require_positive(cfg.forstner.min_det, "refiner.forstner.min_det")?,
-                max_condition_number: require_positive(
-                    cfg.forstner.max_condition_number,
-                    "refiner.forstner.max_condition_number",
-                )?,
-                max_offset: require_nonnegative(
-                    cfg.forstner.max_offset,
-                    "refiner.forstner.max_offset",
-                )?,
-            }))
+            let mut out = ForstnerConfig::default();
+            out.radius = cfg.forstner.radius;
+            out.min_trace =
+                require_nonnegative(cfg.forstner.min_trace, "refiner.forstner.min_trace")?;
+            out.min_det = require_positive(cfg.forstner.min_det, "refiner.forstner.min_det")?;
+            out.max_condition_number = require_positive(
+                cfg.forstner.max_condition_number,
+                "refiner.forstner.max_condition_number",
+            )?;
+            out.max_offset =
+                require_nonnegative(cfg.forstner.max_offset, "refiner.forstner.max_offset")?;
+            Ok(RefinerKind::Forstner(out))
         }
         CT_REFINER_KIND_SADDLE_POINT => {
             if cfg.saddle_point.radius < 0 {
@@ -106,21 +102,21 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.saddle_point.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::SaddlePoint(SaddlePointConfig {
-                radius: cfg.saddle_point.radius,
-                det_margin: require_nonnegative(
-                    cfg.saddle_point.det_margin,
-                    "refiner.saddle_point.det_margin",
-                )?,
-                max_offset: require_nonnegative(
-                    cfg.saddle_point.max_offset,
-                    "refiner.saddle_point.max_offset",
-                )?,
-                min_abs_det: require_positive(
-                    cfg.saddle_point.min_abs_det,
-                    "refiner.saddle_point.min_abs_det",
-                )?,
-            }))
+            let mut out = SaddlePointConfig::default();
+            out.radius = cfg.saddle_point.radius;
+            out.det_margin = require_nonnegative(
+                cfg.saddle_point.det_margin,
+                "refiner.saddle_point.det_margin",
+            )?;
+            out.max_offset = require_nonnegative(
+                cfg.saddle_point.max_offset,
+                "refiner.saddle_point.max_offset",
+            )?;
+            out.min_abs_det = require_positive(
+                cfg.saddle_point.min_abs_det,
+                "refiner.saddle_point.min_abs_det",
+            )?;
+            Ok(RefinerKind::SaddlePoint(out))
         }
         other => Err(FfiError::config_error(format!(
             "refiner.kind must be a valid ct_refiner_kind_t constant, got {other}"
@@ -129,27 +125,25 @@ pub(crate) fn convert_refiner_kind(
 }
 
 pub(crate) fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    // `ChessParams` (`chess_corners::low_level::ChessParams`) is `#[non_exhaustive]`,
+    // `ChessParams` (`chess_corners_core::ChessParams`) is `#[non_exhaustive]`,
     // so we must start from `default()` and patch individual fields.
     let mut out = ChessParams::default();
     out.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
-    out.descriptor_use_radius10 = optional_bool_to_option(
-        &params.descriptor_use_radius10,
-        "chess.params.descriptor_use_radius10",
-    )?;
-    out.threshold_rel = require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?;
-    out.threshold_abs =
-        match optional_f32_to_option(&params.threshold_abs, "chess.params.threshold_abs")? {
-            Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
-            None => None,
-        };
+    out.threshold = require_nonnegative(params.threshold, "chess.params.threshold")?;
     out.nms_radius = params.nms_radius;
     out.min_cluster_size = params.min_cluster_size;
     out.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
     Ok(out)
 }
 
-fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResult<PyramidParams> {
+/// Validate the C pyramid shape and lower it to the `(levels, min_size)` pair
+/// that `MultiscaleConfig::Pyramid` takes.
+///
+/// chess-corners 1.0 no longer re-exports a `PyramidParams` type (it moved to
+/// the `box-image-pyramid` crate and is not part of the facade surface), so
+/// the validated values are returned directly rather than through an
+/// intermediate struct. The C-visible shape is unchanged.
+fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResult<(u8, usize)> {
     if params.num_levels == 0 {
         return Err(FfiError::config_error(
             "chess.multiscale.pyramid.num_levels must be > 0",
@@ -160,13 +154,10 @@ fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResu
             "chess.multiscale.pyramid.min_size must be > 0",
         ));
     }
-    // `PyramidParams` is `#[non_exhaustive]`; use field assignment from default.
-    let mut out = PyramidParams::default();
-    out.num_levels = u8::try_from(params.num_levels).map_err(|_| {
+    let num_levels = u8::try_from(params.num_levels).map_err(|_| {
         FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
     })?;
-    out.min_size = params.min_size;
-    Ok(out)
+    Ok((num_levels, params.min_size))
 }
 
 fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConfig> {
@@ -186,31 +177,22 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
 
 pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<DetectorConfig> {
     let params = convert_chess_params(&config.params)?;
-    let multiscale_pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
+    let (pyramid_levels, pyramid_min_size) = convert_pyramid_params(&config.multiscale.pyramid)?;
     let merge_radius = require_nonnegative(
         config.multiscale.merge_radius,
         "chess.multiscale.merge_radius",
     )?;
     let upscale = convert_upscale_config(&config.upscale)?;
 
-    // Map the low-level `ChessParams` onto the new strategy-typed
-    // `DetectorConfig`. The flat C shape (`use_radius10`,
-    // `descriptor_use_radius10`, `nms_radius`, `min_cluster_size`,
-    // `refiner`, `threshold_abs/rel`) is translated into the ChESS
-    // strategy + the top-level `Threshold` enum.
-    let threshold = match params.threshold_abs {
-        Some(value) => Threshold::Absolute(value),
-        None => Threshold::Relative(params.threshold_rel),
-    };
+    // Map the low-level `ChessParams` onto the strategy-typed
+    // `DetectorConfig`. The flat C shape (`use_radius10`, `nms_radius`,
+    // `min_cluster_size`, `refiner`, `threshold`) is split across the ChESS
+    // strategy, the shared `DetectionParams`, and the top-level threshold.
+    let threshold = params.threshold;
     let ring = if params.use_radius10 {
         ChessRing::Broad
     } else {
         ChessRing::Canonical
-    };
-    let descriptor_ring = match params.descriptor_use_radius10 {
-        None => DescriptorRing::FollowDetector,
-        Some(false) => DescriptorRing::Canonical,
-        Some(true) => DescriptorRing::Broad,
     };
     let refiner = refiner_kind_to_chess_refiner(params.refiner);
     let nms_radius = params.nms_radius;
@@ -218,12 +200,12 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
 
     // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
     // detector skips the pyramid path entirely.
-    let multiscale = if multiscale_pyramid.num_levels <= 1 {
+    let multiscale = if pyramid_levels <= 1 {
         MultiscaleConfig::SingleScale
     } else {
         MultiscaleConfig::Pyramid {
-            levels: multiscale_pyramid.num_levels,
-            min_size: multiscale_pyramid.min_size,
+            levels: pyramid_levels,
+            min_size: pyramid_min_size,
             refinement_radius: config.multiscale.refinement_radius,
         }
     };
@@ -233,11 +215,14 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         .with_multiscale(multiscale)
         .with_upscale(upscale)
         .with_merge_radius(merge_radius)
+        // `nms_radius` / `min_cluster_size` moved off the per-strategy config
+        // and onto the shared `DetectionParams` in chess-corners 1.0.
+        .with_detection(|d| {
+            d.nms_radius = nms_radius;
+            d.min_cluster_size = min_cluster_size;
+        })
         .with_chess(|c| {
             c.ring = ring;
-            c.descriptor_ring = descriptor_ring;
-            c.nms_radius = nms_radius;
-            c.min_cluster_size = min_cluster_size;
             c.refiner = refiner;
         }))
 }
@@ -264,19 +249,6 @@ fn optional_f32_to_option(opt: &ct_optional_f32_t, field: &str) -> FfiResult<Opt
     match opt.has_value {
         CT_FALSE => Ok(None),
         CT_TRUE => Ok(Some(opt.value)),
-        other => Err(FfiError::invalid_argument(format!(
-            "{field}.has_value must be CT_FALSE or CT_TRUE, got {other}"
-        ))),
-    }
-}
-
-fn optional_bool_to_option(
-    opt: &crate::types::ct_optional_bool_t,
-    field: &str,
-) -> FfiResult<Option<bool>> {
-    match opt.has_value {
-        CT_FALSE => Ok(None),
-        CT_TRUE => Ok(Some(flag_to_bool(opt.value, &format!("{field}.value"))?)),
         other => Err(FfiError::invalid_argument(format!(
             "{field}.has_value must be CT_FALSE or CT_TRUE, got {other}"
         ))),
@@ -330,8 +302,6 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
         ));
     }
     let mut tuning = AdvancedTuning::default();
-    tuning.max_fit_rms_ratio =
-        require_finite(adv.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
     tuning.num_bins = adv.num_bins;
     tuning.max_iters_2means = adv.max_iters_2means;
     tuning.cluster_tol_deg =
@@ -384,7 +354,6 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
 fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
     let t = AdvancedTuning::default();
     ct_chessboard_advanced_t {
-        max_fit_rms_ratio: t.max_fit_rms_ratio,
         num_bins: t.num_bins,
         max_iters_2means: t.max_iters_2means,
         cluster_tol_deg: t.cluster_tol_deg,

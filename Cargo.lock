@@ -343,9 +343,9 @@ dependencies = [
 
 [[package]]
 name = "box-image-pyramid"
-version = "0.11.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c276dec39b2cd785b656a046611e2a568c9b29c381309e67b2238eca45a749e8"
+checksum = "0ac5f0d038e896e8fbbbb3d13c122bf426bfc95fc5842767070bde7e4751c38e"
 dependencies = [
  "rayon",
 ]
@@ -468,6 +468,7 @@ dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
  "chess-corners",
+ "chess-corners-core",
  "criterion",
  "env_logger",
  "image",
@@ -519,11 +520,12 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "2.0.0"
+version = "3.0.0"
 dependencies = [
  "calib-targets",
  "cbindgen",
  "chess-corners",
+ "chess-corners-core",
  "flate2",
  "image",
  "serde",
@@ -574,6 +576,7 @@ dependencies = [
  "calib-targets-core",
  "calib-targets-print",
  "chess-corners",
+ "chess-corners-core",
  "criterion",
  "env_logger",
  "image",
@@ -686,9 +689,9 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "chess-corners"
-version = "0.11.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2f37e99c9bb594553e04c51d375eeeb036577de197e22d02b620173519feabf"
+checksum = "27d9240ef787cd93edcb7dd73db4cdf069103b41a9b28806ecfb6aa804b4d9e8"
 dependencies = [
  "box-image-pyramid",
  "chess-corners-core",
@@ -701,9 +704,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "0.11.0"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8743fedd7808d42530bbcec6cce00ccd4bb59d24920bbe9ac7d76451aa0d639"
+checksum = "f7f1051bced6e978b1767106bb34eeaddfa837a1709592d2054fd733925fa310"
 dependencies = [
  "log",
  "rayon",
@@ -712,9 +715,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-ml"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d65cbf14f2af7d328a4d70a447921447c45a9ef865fe608096656c7a40e3a484"
+checksum = "666f09ab4022342ae9730f66afca9753e2c3281347d022b8607fdcd016fca107"
 dependencies = [
  "anyhow",
  "serde_json",

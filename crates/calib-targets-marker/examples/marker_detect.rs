@@ -3,7 +3,7 @@ use std::{env, fs, path::PathBuf};
 use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_core::GrayImageView;
 use calib_targets_marker::{MarkerBoardDetectConfig, MarkerBoardDetectReport};
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig};
 use image::ImageReader;
 use nalgebra::Point2;
 
@@ -80,27 +80,37 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn make_chess_config() -> DetectorConfig {
+    // chess-corners 1.0 made `threshold` a single absolute floor on the raw
+    // ChESS response (relative thresholding is Radon-only now). 15.0 is the
+    // workspace production default — see
+    // `calib_targets::detect::default_chess_config`. This crate's examples do
+    // not depend on the facade, so the value is restated rather than imported.
     DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.2))
-        .with_chess(|c| c.nms_radius = 2)
+        .with_threshold(15.0)
+        .with_detection(|d| d.nms_radius = 2)
 }
 
 fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
     raw.iter()
         .map(|c| TargetCorner {
             position: Point2::new(c.x, c.y),
-            axes: [
-                calib_targets_core::AxisEstimate {
-                    angle: c.axes[0].angle,
-                    sigma: c.axes[0].sigma,
-                },
-                calib_targets_core::AxisEstimate {
-                    angle: c.axes[1].angle,
-                    sigma: c.axes[1].sigma,
-                },
-            ],
-            contrast: c.contrast,
-            fit_rms: c.fit_rms,
+            // `axes` is `None` only when the upstream orientation fit is
+            // skipped; these fixtures always fit it.
+            axes: c
+                .axes
+                .map(|a| {
+                    [
+                        calib_targets_core::AxisEstimate {
+                            angle: a[0].angle,
+                            sigma: a[0].sigma,
+                        },
+                        calib_targets_core::AxisEstimate {
+                            angle: a[1].angle,
+                            sigma: a[1].sigma,
+                        },
+                    ]
+                })
+                .expect("orientation fit enabled"),
             strength: c.response,
         })
         .collect()

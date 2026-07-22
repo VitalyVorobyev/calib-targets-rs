@@ -65,7 +65,6 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
  * escape hatch for a specific failing input, not a stable contract.
  */
 typedef struct ct_chessboard_advanced_t {
-  float max_fit_rms_ratio;
   size_t num_bins;
   size_t max_iters_2means;
   float cluster_tol_deg;
@@ -125,22 +124,6 @@ typedef struct ct_chessboard_params_t {
 } ct_chessboard_params_t;
 
 /**
- * Optional boolean convention used by fixed ABI structs.
- */
-typedef struct ct_optional_bool_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_bool_t;
-
-/**
- * Optional `float` convention used by fixed ABI structs.
- */
-typedef struct ct_optional_f32_t {
-  uint32_t has_value;
-  float value;
-} ct_optional_f32_t;
-
-/**
  * Fixed refiner identifier type for ChESS subpixel refinement.
  */
 typedef uint32_t ct_refiner_kind_t;
@@ -185,12 +168,23 @@ typedef struct ct_refiner_config_t {
 
 /**
  * ChESS low-level detector parameters.
+ *
+ * ABI note (3.0.0): the former `threshold_rel` / `threshold_abs` pair is
+ * collapsed into a single absolute `threshold`, and `descriptor_use_radius10`
+ * is gone. Both follow chess-corners 1.0, which made the ChESS acceptance
+ * threshold a single absolute floor on the raw response and removed the
+ * separate descriptor ring entirely (descriptors always sample at the
+ * detector ring radius, which is what `descriptor_use_radius10 = unset`
+ * already meant).
  */
 typedef struct ct_chess_params_t {
   uint32_t use_radius10;
-  struct ct_optional_bool_t descriptor_use_radius10;
-  float threshold_rel;
-  struct ct_optional_f32_t threshold_abs;
+  /**
+   * Absolute floor on the raw ChESS response; a corner is kept when its
+   * response exceeds this value. `0.0` accepts every strictly-positive
+   * response (the paper's contract).
+   */
+  float threshold;
   uint32_t nms_radius;
   uint32_t min_cluster_size;
   struct ct_refiner_config_t refiner;
@@ -272,6 +266,14 @@ typedef struct ct_chessboard_detect_args_t {
    */
   const struct ct_gray_image_u8_t *image;
 } ct_chessboard_detect_args_t;
+
+/**
+ * Optional `float` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_f32_t {
+  uint32_t has_value;
+  float value;
+} ct_optional_f32_t;
 
 /**
  * Chessboard detection header.

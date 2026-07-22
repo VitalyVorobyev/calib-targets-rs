@@ -7,7 +7,7 @@
 //! detection. This module is gated on the `image` feature.
 
 use crate::{charuco, chessboard, core, marker, puzzleboard};
-use chess_corners::{Detector as ChessDetector, Threshold};
+use chess_corners::Detector as ChessDetector;
 use nalgebra::Point2;
 
 #[cfg(feature = "tracing")]
@@ -62,10 +62,11 @@ pub enum DetectError {
 /// Reasonable default settings for the `chess-corners` ChESS detector.
 ///
 /// Built on top of [`DetectorConfig::chess`] but overrides the acceptance
-/// threshold to [`Threshold::Absolute(15.0)`][Threshold::Absolute]. Upstream's
-/// paper-faithful default is `Threshold::Absolute(0.0)`, which is correct in
+/// threshold to `15.0`. Since `chess-corners` 1.0 the threshold is a single
+/// `f32` that the ChESS strategy reads as an absolute floor on the raw
+/// response; the paper-faithful contract is `0.0`, which is correct in
 /// principle (any strictly positive ChESS response is a corner candidate) but
-/// produces hundreds of weak responses on real-world images. Both the
+/// produces hundreds of weak responses on real-world images. The
 /// topological grid pipeline is
 /// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
 /// threshold `0.0` produces zero labelled corners while `15.0` recovers the
@@ -75,10 +76,15 @@ pub enum DetectError {
 /// cutoff was chosen by sweeping the public testdata regression set; see
 /// `crates/calib-targets/examples/threshold_sweep.rs`.
 ///
+/// Note this is *lower* than upstream's own 1.0 default of `30.0`. That is
+/// deliberate and unchanged in substance: the workspace has always overridden
+/// the upstream default, and the ChESS response scale did not change in 1.0,
+/// so `15.0` keeps producing exactly the corner set it did under 0.11.
+///
 /// Callers wanting the raw upstream behaviour can construct
 /// [`DetectorConfig::chess`] directly.
 pub fn default_chess_config() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
+    DetectorConfig::chess().with_threshold(15.0)
 }
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
@@ -469,20 +475,33 @@ pub fn detect_marker_board_from_gray_u8(
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> chessboard::ChessCorner {
+    // `CornerDescriptor::axes` is `None` when the upstream orientation fit was
+    // skipped (`DetectorConfig::without_orientation`). Every detection entry
+    // point in this crate leaves orientation enabled, so this is the
+    // defensive branch rather than the common one — but it must not fabricate
+    // a confident axis. `AxisEstimate::default()` is the workspace's existing
+    // no-information sentinel (`sigma = π`), which every axis-aware stage
+    // already treats as "skip this corner", so an orientation-free descriptor
+    // degrades to a bare position instead of poisoning the grid with a
+    // zero-sigma axis at angle 0.
+    let axes = c.axes.map_or_else(
+        || [core::AxisEstimate::default(); 2],
+        |axes| {
+            [
+                core::AxisEstimate {
+                    angle: axes[0].angle,
+                    sigma: axes[0].sigma,
+                },
+                core::AxisEstimate {
+                    angle: axes[1].angle,
+                    sigma: axes[1].sigma,
+                },
+            ]
+        },
+    );
     chessboard::ChessCorner {
         position: Point2::new(c.x, c.y),
-        axes: [
-            core::AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            core::AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ],
-        contrast: c.contrast,
-        fit_rms: c.fit_rms,
+        axes,
         strength: c.response,
     }
 }
@@ -494,12 +513,23 @@ mod tests {
 
     #[test]
     fn default_chess_config_overrides_threshold() {
-        // Workspace default deliberately overrides the upstream
-        // paper-contract (`Threshold::Absolute(0.0)`) with a small
-        // noise-floor cutoff tuned on the public testdata regression sweep
-        // — see the rustdoc on `default_chess_config`.
+        // Workspace default deliberately overrides the upstream contract
+        // (`threshold = 0.0`, "every strictly-positive response is a corner")
+        // with a small noise-floor cutoff tuned on the public testdata
+        // regression sweep — see the rustdoc on `default_chess_config`.
         let cfg = default_chess_config();
-        assert_eq!(cfg.threshold, Threshold::Absolute(15.0));
+        assert_eq!(cfg.threshold, 15.0);
+
+        // Guard the override against an upstream default drifting into it:
+        // chess-corners 1.0 raised its own ChESS default from 0.0 to 30.0, so
+        // an assertion of the form `cfg.threshold != DetectorConfig::chess()`
+        // is the part that actually has teeth.
+        assert_ne!(
+            cfg.threshold,
+            DetectorConfig::chess().threshold,
+            "workspace default must stay an explicit override, not silently \
+             inherit whatever upstream picks"
+        );
 
         // Strategy must still be the ChESS kernel pipeline (not Radon),
         // and the multiscale / upscale top-level fields must match the
@@ -511,6 +541,10 @@ mod tests {
         assert_eq!(cfg.merge_radius, baseline.merge_radius);
         assert_eq!(cfg.orientation_method, baseline.orientation_method);
 
+        // The shared detection knobs (`nms_radius` / `min_cluster_size` moved
+        // here from the per-strategy config in 1.0) stay at upstream defaults.
+        assert_eq!(cfg.detection, baseline.detection);
+
         // The nested ChESS strategy fields stay at upstream defaults so
         // the override is purely the acceptance threshold.
         let DetectionStrategy::Chess(chess) = cfg.strategy else {
@@ -520,9 +554,6 @@ mod tests {
             unreachable!("baseline preset is ChESS");
         };
         assert_eq!(chess.ring, chess_baseline.ring);
-        assert_eq!(chess.descriptor_ring, chess_baseline.descriptor_ring);
-        assert_eq!(chess.nms_radius, chess_baseline.nms_radius);
-        assert_eq!(chess.min_cluster_size, chess_baseline.min_cluster_size);
         assert_eq!(chess.refiner, chess_baseline.refiner);
     }
 }

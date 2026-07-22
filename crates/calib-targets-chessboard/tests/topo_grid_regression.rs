@@ -3,12 +3,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use calib_targets::detect::{default_chess_config, detect_corners, DetectorConfig};
+use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::{
     trace_topological, AdvancedTuning, ChessboardDetection, Detector, DetectorParams,
 };
-use chess_corners::Threshold;
-use image::imageops::FilterType;
 use image::{GrayImage, ImageReader};
 use serde::Deserialize;
 
@@ -33,8 +31,6 @@ struct ImageCase {
     #[serde(default)]
     topological: Option<Gate>,
     #[serde(default)]
-    low_res: Option<LowResGate>,
-    #[serde(default)]
     diagnostic_topological: Option<DiagnosticGate>,
 }
 
@@ -49,36 +45,12 @@ struct Gate {
 }
 
 #[derive(Debug, Deserialize)]
-struct LowResGate {
-    #[serde(default = "default_upscale")]
-    upscale: f32,
-    chess: LowResChessConfig,
-    min_labelled: usize,
-    #[serde(default)]
-    max_holes: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-struct LowResChessConfig {
-    #[serde(default = "default_threshold")]
-    threshold_value: f32,
-}
-
-#[derive(Debug, Deserialize)]
 struct DiagnosticGate {
     min_labeled_corners: usize,
     #[serde(default)]
     axis_align_tol_deg: Option<f32>,
     min_trace_components: usize,
     min_total_labelled: usize,
-}
-
-fn default_upscale() -> f32 {
-    1.0
-}
-
-fn default_threshold() -> f32 {
-    0.2
 }
 
 fn load_manifest() -> Manifest {
@@ -96,25 +68,8 @@ fn load_image(path: &Path) -> GrayImage {
         .to_luma8()
 }
 
-fn maybe_upscale(img: &GrayImage, scale: f32) -> GrayImage {
-    if (scale - 1.0).abs() < f32::EPSILON {
-        return img.clone();
-    }
-    assert!(scale.is_finite() && scale > 0.0, "invalid upscale {scale}");
-    let width = ((img.width() as f32) * scale).round().max(1.0) as u32;
-    let height = ((img.height() as f32) * scale).round().max(1.0) as u32;
-    image::imageops::resize(img, width, height, FilterType::Triangle)
-}
-
 fn topological_params() -> DetectorParams {
     DetectorParams::default()
-}
-
-fn run_detector(img: &GrayImage, chess_cfg: &DetectorConfig) -> Option<ChessboardDetection> {
-    let corners = detect_corners(img, chess_cfg);
-    Detector::new(topological_params())
-        .expect("valid detector params")
-        .detect(&corners)
 }
 
 fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize) {
@@ -214,28 +169,6 @@ fn topo_grid_manifest_gates_hold() {
                 .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
-        }
-        if let Some(gate) = &case.low_res {
-            let fed = maybe_upscale(&img, gate.upscale);
-            // Manifest `threshold_value` is the historical relative
-            // ChESS-response cutoff (set on top of the workspace default,
-            // which is now an absolute floor). Force the mode explicitly
-            // so the JSON keeps its original semantics.
-            let cfg = default_chess_config()
-                .with_threshold(Threshold::Relative(gate.chess.threshold_value));
-            let detection = run_detector(&fed, &cfg);
-            let context = format!("{} low_res", case.path);
-            let detection =
-                detection.unwrap_or_else(|| panic!("{context}: detector returned None"));
-            let (labelled, holes) = label_stats(&detection, &context);
-            assert!(
-                labelled >= gate.min_labelled,
-                "{context}: labelled={labelled} < {}",
-                gate.min_labelled
-            );
-            if let Some(max_holes) = gate.max_holes {
-                assert!(holes <= max_holes, "{context}: holes={holes} > {max_holes}");
-            }
         }
         if let Some(gate) = &case.diagnostic_topological {
             let mut params = topological_params();

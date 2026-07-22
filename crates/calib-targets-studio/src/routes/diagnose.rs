@@ -51,7 +51,7 @@ pub async fn diagnose(
         )));
     }
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = req.orientation_method.into();
+    chess_cfg.orientation_method = Some(req.orientation_method.into());
 
     let value = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiError> {
         let img = load_entry_image(&abs)?;

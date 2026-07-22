@@ -26,13 +26,15 @@ pub struct TolSummary {
 }
 
 /// Pre-filter survival funnel: how many input corners pass each successive
-/// gate (strength → fit quality → axis sigma).
+/// gate (strength → axis sigma).
+///
+/// The old middle stage — a `fit_rms <= max_fit_rms_ratio * contrast` gate —
+/// is gone along with the upstream fields that fed it. Corner-fit quality is
+/// now expressed once, by the calibrated per-axis sigma ceiling below.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct PrefilterCounts {
     /// Corners with `strength >= min_corner_strength`.
     pub survives_strength: usize,
-    /// Of those, corners that also pass the fit-RMS/contrast gate.
-    pub survives_fit: usize,
     /// Of those, corners with at least one axis under the sigma ceiling.
     pub survives_axis: usize,
 }
@@ -96,31 +98,23 @@ pub fn diagnose_topological(
         edge_length_max_rel: topo.edge_length_max_rel,
     };
 
-    // Pre-filter: at least one axis with sigma below threshold AND the
-    // standard chessboard strength + fit-quality gates.
+    // Pre-filter: the chessboard strength gate, then at least one axis with
+    // sigma below the topological builder's ceiling.
     let mut survives_strength = 0usize;
-    let mut survives_fit = 0usize;
     let mut survives_axis = 0usize;
     for c in corners {
         let strong = c.strength >= params.min_corner_strength;
-        let fit_ok = !tuning.max_fit_rms_ratio.is_finite()
-            || c.contrast <= 0.0
-            || c.fit_rms <= tuning.max_fit_rms_ratio * c.contrast;
         let axis_ok =
             c.axes[0].sigma < topo.max_axis_sigma_rad || c.axes[1].sigma < topo.max_axis_sigma_rad;
         if strong {
             survives_strength += 1;
         }
-        if strong && fit_ok {
-            survives_fit += 1;
-        }
-        if strong && fit_ok && axis_ok {
+        if strong && axis_ok {
             survives_axis += 1;
         }
     }
     let prefilter = PrefilterCounts {
         survives_strength,
-        survives_fit,
         survives_axis,
     };
 

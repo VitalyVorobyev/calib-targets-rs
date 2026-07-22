@@ -107,30 +107,6 @@ impl ct_optional_u32_t {
     }
 }
 
-/// Optional boolean convention used by fixed ABI structs.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ct_optional_bool_t {
-    pub has_value: u32,
-    pub value: u32,
-}
-
-impl ct_optional_bool_t {
-    pub const fn none() -> Self {
-        Self {
-            has_value: CT_FALSE,
-            value: CT_FALSE,
-        }
-    }
-
-    pub const fn some(value: bool) -> Self {
-        Self {
-            has_value: CT_TRUE,
-            value: if value { CT_TRUE } else { CT_FALSE },
-        }
-    }
-}
-
 /// Optional `float` convention used by fixed ABI structs.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -394,13 +370,22 @@ pub struct ct_refiner_config_t {
 }
 
 /// ChESS low-level detector parameters.
+///
+/// ABI note (3.0.0): the former `threshold_rel` / `threshold_abs` pair is
+/// collapsed into a single absolute `threshold`, and `descriptor_use_radius10`
+/// is gone. Both follow chess-corners 1.0, which made the ChESS acceptance
+/// threshold a single absolute floor on the raw response and removed the
+/// separate descriptor ring entirely (descriptors always sample at the
+/// detector ring radius, which is what `descriptor_use_radius10 = unset`
+/// already meant).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chess_params_t {
     pub use_radius10: u32,
-    pub descriptor_use_radius10: ct_optional_bool_t,
-    pub threshold_rel: f32,
-    pub threshold_abs: ct_optional_f32_t,
+    /// Absolute floor on the raw ChESS response; a corner is kept when its
+    /// response exceeds this value. `0.0` accepts every strictly-positive
+    /// response (the paper's contract).
+    pub threshold: f32,
     pub nms_radius: u32,
     pub min_cluster_size: u32,
     pub refiner: ct_refiner_config_t,
@@ -485,8 +470,12 @@ pub struct ct_chessboard_params_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_advanced_t {
-    // Pre-filter
-    pub max_fit_rms_ratio: f32,
+    // ABI note (3.0.0): the pre-filter section is gone. Its only knob,
+    // `max_fit_rms_ratio`, gated corners on the upstream `contrast` /
+    // `fit_rms` descriptor fields, which chess-corners 1.0 removed with no
+    // replacement. Corner-fit quality is now carried by the calibrated
+    // per-axis sigma ceiling (`topological.max_axis_sigma_rad`), and raw
+    // strength by the stable top-level `min_corner_strength`.
 
     // Cluster axes
     pub num_bins: usize,

@@ -60,11 +60,6 @@ pub struct AdvancedTuning {
     /// reunites the topological grid's connected components in label space.
     pub component_merge: LocalMergeParams,
 
-    // --- `prefilter` stage ---------------------------------------------------
-    /// Corners are dropped when `c.fit_rms > max_fit_rms_ratio * c.contrast`
-    /// (and `c.contrast > 0`). `f32::INFINITY` disables the filter.
-    pub max_fit_rms_ratio: f32,
-
     // --- `cluster_axes` stage -----------------------------------------------
     /// Number of histogram bins on `[0, π)` for axis-direction clustering.
     pub num_bins: usize,
@@ -166,8 +161,6 @@ impl Default for AdvancedTuning {
                 .with_opposing_edge_ratio_max(10.0)
                 .with_edge_length_band(0.0, 1.8),
             component_merge: LocalMergeParams::default(),
-
-            max_fit_rms_ratio: 0.5,
 
             num_bins: 90,
             max_iters_2means: 10,
