@@ -165,7 +165,7 @@ where
     // sparse-frontier fallback below, so dense interiors are unaffected.
     let global_reference = |di: i32, dj: i32| -> Option<f32> {
         let mut lens: Vec<f32> = Vec::new();
-        for (&(i, j), _) in labelled.iter() {
+        for &(i, j) in labelled.keys() {
             if let Some(&idx_b) = labelled.get(&(i + di, j + dj)) {
                 let idx_a = labelled[&(i, j)];
                 let l = (position_of(idx_b) - position_of(idx_a)).norm();

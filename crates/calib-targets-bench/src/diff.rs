@@ -97,7 +97,7 @@ impl BaselineDiff {
         }
 
         let mut diff = BaselineDiff::default();
-        for (_, bucket) in by_pos_run.iter() {
+        for bucket in by_pos_run.values() {
             if bucket.len() >= 2 {
                 let mut labels: Vec<[i32; 2]> = bucket.iter().map(|c| [c.i, c.j]).collect();
                 labels.sort();
