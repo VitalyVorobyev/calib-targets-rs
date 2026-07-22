@@ -96,13 +96,11 @@ def test_chess_config_default_matches_rust_shape() -> None:
         "strategy": {
             "chess": {
                 "ring": "canonical",
-                "descriptor_ring": "follow_detector",
-                "nms_radius": 2,
-                "min_cluster_size": 2,
                 "refiner": {"center_of_mass": {"radius": 2}},
             }
         },
-        "threshold": {"absolute": 15.0},
+        "threshold": 15.0,
+        "detection": {"nms_radius": 2, "min_cluster_size": 2},
         "multiscale": "single_scale",
         "upscale": "disabled",
         "orientation_method": "ring_fit",
@@ -112,26 +110,37 @@ def test_chess_config_default_matches_rust_shape() -> None:
     assert calib_targets.ChessConfig.from_dict(expected).to_dict() == expected
 
 
-def test_chess_config_threshold_constructors() -> None:
-    abs_cfg = calib_targets.ChessConfig(
-        threshold=calib_targets.Threshold.absolute(8.0)
-    )
-    assert abs_cfg.to_dict()["threshold"] == {"absolute": 8.0}
+def test_chess_config_threshold_is_a_bare_number() -> None:
+    cfg = calib_targets.ChessConfig(threshold=8.0)
+    assert cfg.to_dict()["threshold"] == 8.0
+    restored = calib_targets.ChessConfig.from_dict(cfg.to_dict())
+    assert restored.to_dict() == cfg.to_dict()
 
-    rel_cfg = calib_targets.ChessConfig(
-        threshold=calib_targets.Threshold.relative(0.15)
-    )
-    assert rel_cfg.to_dict()["threshold"] == {"relative": 0.15}
 
-    # Round-trip via dict preserves both threshold variants.
-    for cfg in (abs_cfg, rel_cfg):
-        restored = calib_targets.ChessConfig.from_dict(cfg.to_dict())
-        assert restored.to_dict() == cfg.to_dict()
+def test_pre_1_0_tagged_threshold_is_rejected() -> None:
+    """The old ``{"absolute": v}`` / ``{"relative": f}`` shape must not pass.
+
+    ChESS has no relative mode since chess-corners 1.0, so silently coercing
+    such a config would change how many corners it accepts without telling
+    the caller.
+    """
+    base = calib_targets.ChessConfig().to_dict()
+    for legacy in ({"absolute": 8.0}, {"relative": 0.15}):
+        with pytest.raises(ValueError, match="pre-1.0 tagged-enum shape"):
+            calib_targets.ChessConfig.from_dict({**base, "threshold": legacy})
+
+
+def test_detection_knobs_moved_off_the_strategy_payload() -> None:
+    """``nms_radius`` / ``min_cluster_size`` under ``strategy.chess`` must fail."""
+    with pytest.raises(ValueError, match="moved in chess-corners"):
+        calib_targets.ChessStrategyConfig.from_dict(
+            {"ring": "canonical", "nms_radius": 3}
+        )
 
 
 def test_chess_config_tagged_subtrees() -> None:
     cfg = calib_targets.ChessConfig(
-        threshold=calib_targets.Threshold.absolute(10.0),
+        threshold=10.0,
         multiscale=calib_targets.MultiscaleConfig.pyramid(levels=2, min_size=64),
         upscale=calib_targets.UpscaleConfig.fixed(2),
         orientation_method=calib_targets.OrientationMethod.DISK_FIT,
@@ -234,7 +243,6 @@ def test_chessboard_advanced_block_is_complete() -> None:
     assert set(advanced) == {
         "topological",
         "component_merge",
-        "max_fit_rms_ratio",
         "num_bins",
         "max_iters_2means",
         "cluster_tol_deg",

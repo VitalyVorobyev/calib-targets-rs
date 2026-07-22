@@ -204,7 +204,6 @@ export interface TopologicalDiagnosisWire {
   effective_tols: TolSummaryWire;
   prefilter: {
     survives_strength: number;
-    survives_fit: number;
     survives_axis: number;
   };
   components: { labelled: number; bbox: [number, number, number, number] }[];

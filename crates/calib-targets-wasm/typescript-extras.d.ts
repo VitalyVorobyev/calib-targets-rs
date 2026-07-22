@@ -80,8 +80,6 @@ export interface Corner {
   position: Point2;
   /** Two orthogonal grid axes (`axes[1] − axes[0] ≈ π/2`). */
   axes: [AxisEstimate, AxisEstimate];
-  contrast: number;
-  fit_rms: number;
   strength: number;
 }
 
@@ -213,9 +211,8 @@ export interface PuzzleBoardDetectionResult {
 // Parameters: ChESS corners
 // ---------------------------------------------------------------------------
 
-export type ThresholdMode = "relative" | "absolute";
-export type DetectorMode = "canonical" | "broad";
-export type DescriptorMode = "follow_detector" | "canonical" | "broad";
+export type ChessRing = "canonical" | "broad";
+export type OrientationMethod = "ring_fit" | "disk_fit";
 
 export interface RefinerConfig {
   kind: "center_of_mass" | "forstner" | "saddle_point";
@@ -240,19 +237,45 @@ export type UpscaleConfig =
   | { mode: "fixed"; factor: number }
   | { mode: "adaptive"; min_corners: number };
 
-export interface ChessConfig {
-  detector_mode: DetectorMode;
-  descriptor_mode: DescriptorMode;
-  threshold_mode: ThresholdMode;
-  threshold_value: number;
+export type MultiscaleConfig =
+  | "single_scale"
+  | {
+      pyramid: { levels: number; min_size: number; refinement_radius: number };
+    };
+
+/** Strategy payload nested under {@link ChessConfig.strategy}. */
+export interface ChessStrategyConfig {
+  ring: ChessRing;
+  refiner: RefinerConfig;
+}
+
+export type DetectionStrategy = { chess: ChessStrategyConfig };
+
+/** Shared NMS / peak-clustering thresholds, honoured by every strategy. */
+export interface DetectionParams {
   nms_radius: number;
   min_cluster_size: number;
-  refiner: RefinerConfig;
-  pyramid_levels: number;
-  pyramid_min_size: number;
-  refinement_radius: number;
-  merge_radius: number;
+}
+
+/**
+ * Mirrors the Rust `chess_corners::DetectorConfig` serde shape 1:1 — this is
+ * the exact JSON the WASM entry points accept.
+ */
+export interface ChessConfig {
+  strategy: DetectionStrategy;
+  /**
+   * Acceptance threshold. The ChESS strategy reads it as an absolute floor on
+   * the raw response; Radon reads it as a fraction of the per-frame maximum.
+   * A plain number since chess-corners 1.0 — there is no longer a tagged
+   * `{ absolute } | { relative }` form, and ChESS has no relative mode.
+   */
+  threshold: number;
+  detection: DetectionParams;
+  multiscale: MultiscaleConfig;
   upscale: UpscaleConfig;
+  /** `null` skips the per-corner axis fit; descriptors then carry no axes. */
+  orientation_method: OrientationMethod | null;
+  merge_radius: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +328,6 @@ export interface LocalMergeParams {
 export interface AdvancedTuning {
   topological: TopologicalParams;
   component_merge: LocalMergeParams;
-  max_fit_rms_ratio: number;
   num_bins: number;
   max_iters_2means: number;
   cluster_tol_deg: number;

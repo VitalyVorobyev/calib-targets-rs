@@ -71,19 +71,24 @@ def test_default_chess_config_accepted_by_rust() -> None:
 
 
 def test_custom_threshold_accepted_by_rust() -> None:
-    """Custom ``Threshold.absolute(...)`` round-trips through Rust."""
+    """A custom absolute threshold round-trips through Rust."""
     image = _load_gray("mid.png")
-    cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(8.0))
+    cfg = ct.ChessConfig(threshold=8.0)
     result = _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
     if result is None:
         pytest.skip("custom threshold detects nothing on testdata/mid.png")
     assert _corner_count(result) > 0
 
 
-def test_relative_threshold_accepted_by_rust() -> None:
-    """``Threshold.relative(...)`` round-trips through Rust."""
+def test_detection_params_accepted_by_rust() -> None:
+    """The shared ``detection`` block round-trips through Rust.
+
+    Replaces the old relative-threshold test: ChESS has no relative mode
+    since chess-corners 1.0, and `nms_radius` / `min_cluster_size` moved here
+    from the strategy payload, so this is the shape most at risk of drifting.
+    """
     image = _load_gray("mid.png")
-    cfg = ct.ChessConfig(threshold=ct.Threshold.relative(0.05))
+    cfg = ct.ChessConfig(detection=ct.DetectionParams(nms_radius=3))
     # Even when no chessboard is detected, the Rust serde layer accepts
     # the dict without raising — that's what we're verifying here.
     _core.detect_chessboard(image, chess_cfg=cfg.to_dict())

@@ -11,6 +11,7 @@ export type {
   CharucoBoardSpec,
   CharucoParams,
   ChessConfig,
+  ChessRing,
   ChessboardDetectionResult,
   ChessboardParams,
   CharucoDetectionResult,
@@ -20,8 +21,6 @@ export type {
   CirclePolarity,
   CircleScoreParams,
   Corner,
-  DescriptorMode,
-  DetectorMode,
   Coord,
   GridAlignment,
   GridTransform,
@@ -47,7 +46,6 @@ export type {
   ScanDecodeConfig,
   TargetDetection,
   TargetKind,
-  ThresholdMode,
   UpscaleConfig,
 } from "@vitavision/calib-targets";
 

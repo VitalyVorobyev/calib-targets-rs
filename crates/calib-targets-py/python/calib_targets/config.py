@@ -104,56 +104,6 @@ class SaddlePointConfig:
 
 
 @dataclass(slots=True)
-class Threshold:
-    """Detector acceptance threshold.
-
-    Mirrors ``chess_corners::Threshold`` — a tagged enum with two
-    variants, ``absolute(value)`` and ``relative(frac)``. The active
-    detector (ChESS or Radon) reads the same enum, so the configuration
-    cannot drift out of sync the way the old
-    ``(threshold_mode, threshold_value)`` pair could.
-
-    Construct via the classmethods, not the dataclass literal:
-
-    .. code-block:: python
-
-        cfg = ChessConfig(threshold=Threshold.absolute(15.0))
-        cfg = ChessConfig(threshold=Threshold.relative(0.15))
-    """
-
-    kind: str = "absolute"
-    value: float = 15.0
-
-    @classmethod
-    def absolute(cls, value: float) -> Threshold:
-        """Accept responses ``>= value`` in native detector score units."""
-        return cls(kind="absolute", value=float(value))
-
-    @classmethod
-    def relative(cls, frac: float) -> Threshold:
-        """Accept responses ``>= frac * max(response)`` in the current frame.
-
-        ``frac`` is a fraction in ``[0.0, 1.0]``.
-        """
-        return cls(kind="relative", value=float(frac))
-
-    def to_dict(self) -> dict[str, float]:
-        if self.kind not in ("absolute", "relative"):
-            raise ValueError(f"unknown Threshold kind: {self.kind!r}")
-        return {self.kind: self.value}
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> Threshold:
-        if "absolute" in data:
-            return cls.absolute(data["absolute"])
-        if "relative" in data:
-            return cls.relative(data["relative"])
-        raise ValueError(
-            f"Threshold dict must carry 'absolute' or 'relative'; got keys {list(data)!r}"
-        )
-
-
-@dataclass(slots=True)
 class MultiscaleConfig:
     """Coarse-to-fine pyramid configuration.
 
@@ -380,14 +330,6 @@ class ChessRing:
     BROAD = "broad"
 
 
-class DescriptorRing:
-    """Descriptor sampling ring selector (Rust unit-enum)."""
-
-    FOLLOW_DETECTOR = "follow_detector"
-    CANONICAL = "canonical"
-    BROAD = "broad"
-
-
 class OrientationMethod:
     """Orientation-fit method used when building corner descriptors."""
 
@@ -412,9 +354,6 @@ class ChessStrategyConfig:
     """
 
     ring: str = ChessRing.CANONICAL
-    descriptor_ring: str = DescriptorRing.FOLLOW_DETECTOR
-    nms_radius: int = 2
-    min_cluster_size: int = 2
     refiner: ChessRefiner = field(
         default_factory=lambda: ChessRefiner.center_of_mass()
     )
@@ -422,23 +361,39 @@ class ChessStrategyConfig:
     def to_dict(self) -> dict[str, Any]:
         return {
             "ring": self.ring,
-            "descriptor_ring": self.descriptor_ring,
-            "nms_radius": int(self.nms_radius),
-            "min_cluster_size": int(self.min_cluster_size),
             "refiner": self.refiner.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessStrategyConfig:
         d = cls()
+        _reject_moved_detection_keys(data)
         return cls(
             ring=data.get("ring", d.ring),
-            descriptor_ring=data.get("descriptor_ring", d.descriptor_ring),
-            nms_radius=int(data.get("nms_radius", d.nms_radius)),
-            min_cluster_size=int(data.get("min_cluster_size", d.min_cluster_size)),
             refiner=ChessRefiner.from_dict(
                 data.get("refiner", {"center_of_mass": {}})
             ),
+        )
+
+
+_MOVED_DETECTION_KEYS = frozenset({"nms_radius", "min_cluster_size"})
+
+
+def _reject_moved_detection_keys(data: dict[str, Any]) -> None:
+    """Fail loudly on knobs that moved out of the strategy payload.
+
+    ``nms_radius`` / ``min_cluster_size`` used to live here. chess-corners
+    1.0 moved them onto the shared :class:`DetectionParams`, honoured by both
+    strategies. Silently dropping them would leave a caller believing a tuning
+    change took effect when it did not.
+    """
+    moved = _MOVED_DETECTION_KEYS.intersection(data)
+    if moved:
+        raise ValueError(
+            f"ChessStrategyConfig received keys that moved in chess-corners "
+            f"1.0: {sorted(moved)!r}. They are now shared detection knobs — "
+            f"pass them as ChessConfig(detection=DetectionParams(...)) "
+            f"instead of nesting them under strategy.chess."
         )
 
 
@@ -574,6 +529,39 @@ class RefinerConfig:
 
 
 # ---------------------------------------------------------------------------
+# DetectionParams — shared NMS / clustering knobs (Rust ``DetectionParams``)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class DetectionParams:
+    """Shared non-maximum-suppression and peak-clustering thresholds.
+
+    Mirrors ``chess_corners::DetectionParams``. Both detector strategies
+    honour these. Before chess-corners 1.0 the two knobs were duplicated on
+    each strategy payload (``strategy.chess.nms_radius`` etc.); they now live
+    once, here, as a top-level ``detection`` object.
+    """
+
+    nms_radius: int = 2
+    min_cluster_size: int = 2
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "nms_radius": int(self.nms_radius),
+            "min_cluster_size": int(self.min_cluster_size),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DetectionParams:
+        d = cls()
+        return cls(
+            nms_radius=int(data.get("nms_radius", d.nms_radius)),
+            min_cluster_size=int(data.get("min_cluster_size", d.min_cluster_size)),
+        )
+
+
+# ---------------------------------------------------------------------------
 # Top-level ChessConfig — the Python name for Rust ``DetectorConfig``.
 # ---------------------------------------------------------------------------
 
@@ -584,11 +572,35 @@ _OLD_FLAT_FIELDS = frozenset(
         "descriptor_mode",
         "threshold_mode",
         "threshold_value",
+        "descriptor_ring",
         "pyramid_levels",
         "pyramid_min_size",
         "refinement_radius",
     }
 )
+
+
+def _threshold_from_wire(value: Any) -> float:
+    """Coerce the wire threshold to a float, rejecting the pre-1.0 enum shape.
+
+    Before chess-corners 1.0 the threshold was a tagged enum serialised as
+    ``{"absolute": v}`` / ``{"relative": f}``. Accepting such a dict silently
+    (e.g. by taking whichever value is present) would be wrong for
+    ``relative``: ChESS no longer *has* a relative mode, so there is no
+    faithful translation and any guess would quietly change how many corners
+    a stored config accepts.
+    """
+    if isinstance(value, dict):
+        raise ValueError(
+            "ChessConfig.threshold received the pre-1.0 tagged-enum shape "
+            f"({value!r}). chess-corners 1.0 made it a plain number: the "
+            "ChESS strategy reads it as an absolute floor on the raw "
+            "response, Radon as a fraction of the per-frame maximum. "
+            "Replace {'absolute': v} with v. There is no ChESS equivalent "
+            "of {'relative': f} — pick an absolute floor (the workspace "
+            "default is 15.0)."
+        )
+    return float(value)
 
 
 @dataclass(slots=True)
@@ -602,13 +614,16 @@ class ChessConfig:
 
     Defaults match
     ``calib_targets::detect::default_chess_config()`` — a single-scale
-    ChESS strategy with ``Threshold::Absolute(15.0)``, no upscaling,
-    ring-fit orientation, and a 3.0-pixel merge radius. The 15.0
-    absolute threshold is a small noise floor that keeps the
-    topological pipeline from drowning in weak responses (chosen by
-    sweeping the public
-    testdata regression set; see
-    ``crates/calib-targets/examples/threshold_sweep.rs``).
+    ChESS strategy with an absolute threshold of ``15.0``, no upscaling,
+    ring-fit orientation, and a 3.0-pixel merge radius. The threshold is
+    a small noise floor that keeps the topological pipeline from drowning
+    in weak responses (chosen by sweeping the public testdata regression
+    set; see ``crates/calib-targets/examples/threshold_sweep.rs``).
+
+    Since chess-corners 1.0 ``threshold`` is a plain number, not a tagged
+    enum: the ChESS strategy reads it as an absolute floor on the raw
+    response, Radon as a fraction of the per-frame maximum. There is no
+    longer a relative mode for ChESS.
 
     Pre-blur preprocessing is not carried on this struct; apply any
     Gaussian blur to the input image yourself (e.g. via
@@ -619,14 +634,14 @@ class ChessConfig:
 
     .. code-block:: python
 
-        # Default (Absolute(15.0)):
+        # Default (absolute 15.0):
         cfg = ChessConfig()
 
         # Lower threshold for blurry boards:
-        cfg = ChessConfig(threshold=Threshold.absolute(8.0))
+        cfg = ChessConfig(threshold=8.0)
 
-        # Or a relative fraction of the peak response:
-        cfg = ChessConfig(threshold=Threshold.relative(0.15))
+        # Loosen non-maximum suppression:
+        cfg = ChessConfig(detection=DetectionParams(nms_radius=3))
 
         # Coarse-to-fine multiscale for large frames:
         cfg = ChessConfig(multiscale=MultiscaleConfig.pyramid())
@@ -636,18 +651,22 @@ class ChessConfig:
     """
 
     strategy: DetectionStrategy = field(default_factory=DetectionStrategy.chess)
-    threshold: Threshold = field(default_factory=lambda: Threshold.absolute(15.0))
+    threshold: float = 15.0
+    detection: DetectionParams = field(default_factory=DetectionParams)
     multiscale: MultiscaleConfig = field(
         default_factory=lambda: MultiscaleConfig.single_scale()
     )
     upscale: UpscaleConfig = field(default_factory=lambda: UpscaleConfig.disabled())
-    orientation_method: str = OrientationMethod.RING_FIT
+    #: ``None`` skips the per-corner axis fit entirely (Rust
+    #: ``Option<OrientationMethod>``); every descriptor then carries no axes.
+    orientation_method: str | None = OrientationMethod.RING_FIT
     merge_radius: float = 3.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "strategy": self.strategy.to_dict(),
-            "threshold": self.threshold.to_dict(),
+            "threshold": float(self.threshold),
+            "detection": self.detection.to_dict(),
             "multiscale": self.multiscale.to_dict(),
             "upscale": self.upscale.to_dict(),
             "orientation_method": self.orientation_method,
@@ -663,14 +682,14 @@ class ChessConfig:
         # Catch the pre-0.10 flat shape explicitly so the user gets a clear
         # migration error instead of a baffling "missing 'strategy'".
         flat_hits = _OLD_FLAT_FIELDS.intersection(data)
-        new_hits = {"strategy", "threshold", "multiscale", "upscale"}.intersection(data)
+        new_hits = {"strategy", "multiscale", "upscale", "detection"}.intersection(data)
         if flat_hits and not new_hits:
             raise ValueError(
                 "ChessConfig.from_dict received the pre-0.10 flat shape "
                 f"(keys: {sorted(flat_hits)!r}). The chess-corners 0.10 "
                 "migration replaced these with a tagged-enum tree: pass "
-                "`Threshold.absolute(v)` / `Threshold.relative(f)` for the "
-                "threshold, `MultiscaleConfig.pyramid(...)` for pyramid "
+                "a plain number for the threshold, "
+                "`MultiscaleConfig.pyramid(...)` for pyramid "
                 "settings, `UpscaleConfig.fixed(k)` for pre-pipeline "
                 "upscaling, and `ChessRefiner.forstner(...)` etc. for the "
                 "refiner. See README and CHANGELOG."
@@ -680,7 +699,10 @@ class ChessConfig:
             strategy=DetectionStrategy.from_dict(
                 data.get("strategy", d.strategy.to_dict())
             ),
-            threshold=Threshold.from_dict(data.get("threshold", d.threshold.to_dict())),
+            threshold=_threshold_from_wire(data.get("threshold", d.threshold)),
+            detection=DetectionParams.from_dict(
+                data.get("detection", d.detection.to_dict())
+            ),
             multiscale=MultiscaleConfig.from_dict(
                 data.get("multiscale", d.multiscale.to_dict())
             ),
@@ -899,7 +921,6 @@ class LocalMergeParams:
 # ``AdvancedTuning`` has no serde defaults, so an omitted field fails to
 # deserialize with ``missing field ...``.
 _ADVANCED_SCALAR_FIELDS = (
-    "max_fit_rms_ratio",
     "num_bins",
     "max_iters_2means",
     "cluster_tol_deg",
@@ -965,7 +986,6 @@ class ChessboardParams:
     topological: TopologicalParams = field(default_factory=TopologicalParams)
     component_merge: LocalMergeParams = field(default_factory=LocalMergeParams)
     # prefilter
-    max_fit_rms_ratio: float = 0.5
     # cluster_axes
     num_bins: int = 90
     max_iters_2means: int = 10
@@ -1561,9 +1581,9 @@ class PuzzleBoardParams:
         # normalised range used pre-0.10.
         base = cls.for_board(board)
         loose = cls.from_dict(base.to_dict())
-        loose.chessboard.chess.threshold = Threshold.absolute(8.0)
+        loose.chessboard.chess.threshold = 8.0
         tight = cls.from_dict(base.to_dict())
-        tight.chessboard.chess.threshold = Threshold.absolute(25.0)
+        tight.chessboard.chess.threshold = 25.0
         soft = [base, loose, tight]
         hard = [cls.from_dict(params.to_dict()) for params in soft]
         for params in hard:
@@ -1596,14 +1616,13 @@ __all__ = [
     "CenterOfMassConfig",
     "ForstnerConfig",
     "SaddlePointConfig",
-    "Threshold",
     "MultiscaleConfig",
     "UpscaleConfig",
     "ChessRing",
-    "DescriptorRing",
     "OrientationMethod",
     "ChessRefiner",
     "ChessStrategyConfig",
+    "DetectionParams",
     "DetectionStrategy",
     "RefinerConfig",  # deprecated shim — forwards to ChessRefiner
     "ChessConfig",
