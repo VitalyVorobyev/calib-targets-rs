@@ -137,13 +137,25 @@ the full invariant-to-parameter mapping and
 
 ### Stage 1 — pre-filter
 
-`min_corner_strength` is a **stable** top-level field;
-`max_fit_rms_ratio` is an `advanced` knob.
+A corner's axes are admitted when `strength ≥ min_corner_strength` **and**
+`max(σ₀, σ₁) ≤ advanced.topological.axis_align_tol_rad`. Corners that fail
+either half are kept as *positions* (so corner indices stay stable) but carry
+no-information axes and cannot classify Delaunay edges.
 
 | Field | Default | Guidance |
 |---|---|---|
-| `min_corner_strength` | `0.0` | Raise to `0.3`–`0.5` on noisy scenes with many spurious saddles. Drops weak corners before clustering. |
-| `max_fit_rms_ratio` | `0.5` | ChESS `fit_rms` must be ≤ ratio × `contrast`. Raise to `0.8` when accepting softer corners; lower tightens the pre-filter. |
+| `min_corner_strength` | `33.0` | The only magnitude gate on the corner set. Lower it and marker-bit / noise saddles enter grid construction; raise it on scenes with many spurious saddles at the cost of recall on soft corners. |
+
+There is **no second pre-filter knob.** The axis half of the gate is derived
+from `axis_align_tol_rad` (default 15°, a Stage 3 tolerance) rather than
+configured separately: an axis whose own 1σ uncertainty is wider than the
+alignment window cannot answer the question the cell test poses, so it must
+not vote. Tying the two together is deliberate — loosening the cell test
+automatically loosens admission by exactly the same amount.
+
+> **Removed in 0.11.0.** `max_fit_rms_ratio` (`fit_rms ≤ ratio × contrast`) is
+> gone: chess-corners 1.0 no longer reports `contrast` or `fit_rms`. See the
+> [Migration Guide](migration.md).
 
 ### Stages 2-3 — grid-direction clustering
 

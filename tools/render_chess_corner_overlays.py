@@ -17,9 +17,8 @@ Examples:
 
     .venv/bin/python tools/render_chess_corner_overlays.py \
         testdata/02-topo-grid/GeminiChess2.png \
-        --threshold-kind relative \
-        --threshold 0.18 \
-        --variant-name rel018
+        --threshold 18 \
+        --variant-name thr18
 """
 
 from __future__ import annotations
@@ -57,14 +56,6 @@ def load_gray(path: Path, upscale: float) -> np.ndarray:
     return np.asarray(image, dtype=np.uint8)
 
 
-def threshold_config(kind: str, value: float) -> ct.Threshold:
-    if kind == "absolute":
-        return ct.Threshold.absolute(value)
-    if kind == "relative":
-        return ct.Threshold.relative(value)
-    raise ValueError(f"unsupported threshold kind: {kind}")
-
-
 def method_list(value: str) -> list[str]:
     if value == "both":
         return list(METHODS)
@@ -76,7 +67,7 @@ def method_list(value: str) -> list[str]:
 def trace_payload(
     image: np.ndarray,
     *,
-    threshold: ct.Threshold,
+    threshold: float,
     orientation_method: str,
     pre_blur_sigma_px: float,
 ) -> dict[str, Any]:
@@ -244,7 +235,7 @@ def save_side_by_side(
 
 def config_slug(args: argparse.Namespace) -> str:
     threshold = f"{args.threshold:g}".replace(".", "p")
-    parts = [f"{args.threshold_kind}{threshold}"]
+    parts = [f"thr{threshold}"]
     if args.pre_blur_sigma > 0.0:
         parts.append(f"blur{args.pre_blur_sigma:g}".replace(".", "p"))
     if args.upscale != 1.0:
@@ -255,7 +246,7 @@ def config_slug(args: argparse.Namespace) -> str:
 
 
 def render(args: argparse.Namespace) -> dict[str, Any]:
-    threshold = threshold_config(args.threshold_kind, args.threshold)
+    threshold = args.threshold
     methods = method_list(args.orientation_method)
     rows: list[dict[str, Any]] = []
     slug = config_slug(args)
@@ -311,7 +302,6 @@ def render(args: argparse.Namespace) -> dict[str, Any]:
         "schema": 1,
         "description": "Local ChESS corner and local-axis inspection overlays.",
         "params": {
-            "threshold_kind": args.threshold_kind,
             "threshold": args.threshold,
             "orientation_method": args.orientation_method,
             "pre_blur_sigma": args.pre_blur_sigma,
@@ -336,8 +326,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=Path("preview/topo-corner-inspection"))
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--variant-name", default=None)
+    # Since chess-corners 1.0 the ChESS threshold is a single absolute floor
+    # on the raw response; the relative mode is Radon-only.
     parser.add_argument("--threshold", type=float, default=100.0)
-    parser.add_argument("--threshold-kind", choices=["absolute", "relative"], default="absolute")
     parser.add_argument(
         "--orientation-method",
         choices=["ring_fit", "disk_fit", "both"],

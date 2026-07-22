@@ -89,9 +89,11 @@ def load_gray(path: Path) -> np.ndarray:
 
 def chess_cfg() -> "ct.ChessConfig":
     """ChESS corner config matching full_stage_timing's `chess_config()`."""
+    # chess-corners 1.0 removed relative thresholding for ChESS; `threshold`
+    # is the workspace default absolute floor, matching full_stage_timing.
     return ct.ChessConfig(
-        threshold=ct.Threshold.relative(0.2),
-        strategy=ct.DetectionStrategy.chess(ct.ChessStrategyConfig(nms_radius=2)),
+        threshold=15.0,
+        detection=ct.DetectionParams(nms_radius=2),
     )
 
 

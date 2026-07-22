@@ -64,8 +64,10 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 ### Release history
 - [`changelog/`](changelog/) — archived per-minor-version release notes
   (`0.1.x` … `0.9.x`), indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
-- [`migrations/0.10.0.md`](migrations/0.10.0.md) — the live 0.10.0 breaking-change
-  migration guide (pulled into the book via `{{#include}}`; **do not move/rename**).
+- [`migrations/`](migrations/) — breaking-change migration guides, newest first:
+  [`0.11.0.md`](migrations/0.11.0.md) (live) and [`0.10.0.md`](migrations/0.10.0.md).
+  Both are pulled into the book's Migration chapter via `{{#include}}`;
+  **do not move/rename**.
 
 ## Local-only (untracked) contents
 

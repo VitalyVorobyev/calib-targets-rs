@@ -63,7 +63,7 @@ bundle = ct.render_target_bundle(doc)
 image = np.asarray(Image.open(io.BytesIO(bundle.png_bytes)).convert("L"), dtype=np.uint8)
 
 # 3. Detect — prefer *_best for robustness.
-chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+chess_cfg = ct.ChessConfig(threshold=15.0)
 configs = [
     ct.ChessboardParams(),
     ct.ChessboardParams(min_labeled_corners=12),

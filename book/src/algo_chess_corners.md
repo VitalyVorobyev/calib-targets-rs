@@ -22,11 +22,17 @@ Each detected corner carries:
   orthogonal grid directions visible in the corner's immediate
   neighbourhood. Each `AxisEstimate` is an `angle ∈ [0, π)` plus a 1σ
   angular uncertainty (`sigma`).
-- **Quality scalars** — `strength` (the ChESS response magnitude),
-  `contrast` (local light/dark separation), and `fit_rms` (the residual
-  of the corner-model fit). These feed the prefilter: a corner is kept
-  when `strength ≥ min_corner_strength` **and**
-  `fit_rms ≤ max_fit_rms_ratio · contrast`.
+- **A quality scalar** — `strength`, the ChESS response magnitude.
+
+Together these are exactly what the prefilter reads. A corner's axes are
+admitted into grid construction when `strength ≥ min_corner_strength`
+**and** neither axis is more uncertain than the axis-alignment tolerance
+the grid builder will test it against
+(`max(σ₀, σ₁) ≤ topological.axis_align_tol_rad`) — see
+[the chessboard pipeline](pipeline_chessboard.md). Before 0.11.0 the
+second half of that rule was a fit-residual ratio
+(`fit_rms ≤ max_fit_rms_ratio · contrast`); `contrast` and `fit_rms` no
+longer exist upstream, and the σ-based rule is the direct replacement.
 
 In the workspace's shared types this corner is
 `calib_targets_core::AxisEstimate` carried on a detector-specific input

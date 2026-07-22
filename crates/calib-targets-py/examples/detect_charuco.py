@@ -21,10 +21,8 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     chess_cfg = ct.ChessConfig(
-        threshold=ct.Threshold.relative(0.2),
-        strategy=ct.DetectionStrategy.chess(
-            ct.ChessStrategyConfig(nms_radius=2),
-        ),
+        threshold=15.0,
+        detection=ct.DetectionParams(nms_radius=2),
     )
 
     board = ct.CharucoBoardSpec(
@@ -39,7 +37,7 @@ def main() -> None:
     params = ct.CharucoDetectorParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(min_corner_strength=0.5),
+        chessboard=ct.ChessboardParams(),
         scan=ct.ScanDecodeConfig(
             border_bits=1,
             inset_frac=0.06,

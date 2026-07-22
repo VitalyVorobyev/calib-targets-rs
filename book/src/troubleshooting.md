@@ -69,15 +69,16 @@ match trace_topological(&corners, &DetectorParams::default()) {
    check image resolution / contrast; override
    `calib_targets::detect::default_chess_config()` with a custom
    `DetectorConfig` if necessary — e.g.
-   `DetectorConfig::chess().with_threshold(Threshold::Absolute(8.0))` to
-   drop the noise floor, or `.with_threshold(Threshold::Relative(0.05))`
-   for a fraction of the per-frame peak response. The chess-corners 0.10
-   release replaced the legacy `(threshold_mode, threshold_value)` pair
-   with the tagged-enum `Threshold` shown above.
+   `DetectorConfig::chess().with_threshold(8.0)` to drop the noise floor
+   below the workspace default of `15.0`. Since chess-corners 1.0 the
+   threshold is a plain absolute response floor (`f32`); the `Threshold`
+   enum and its relative mode are gone — ChESS reads only an absolute
+   floor now.
 
-2. **Corners found but few `usable`?** The strength / fit prefilter or the
-   axis-usability gate is rejecting most corners. Lower
-   `min_corner_strength`, raise `max_fit_rms_ratio`, and check the axis
+2. **Corners found but few `usable`?** The prefilter is rejecting most
+   corners — either on `strength` or because their axes are too uncertain
+   to vote (`max(σ₀, σ₁) > axis_align_tol_rad`). Lower
+   `min_corner_strength`, and check the axis
    clustering tolerances (`cluster_tol_deg` default `12.0` → try `16.0`;
    `min_peak_weight_fraction` default `0.02` → try `0.01`). A perfectly
    rectilinear board with axes on the π-wrap boundary is handled by

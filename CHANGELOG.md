@@ -9,9 +9,23 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-This cycle continues the projective-grid generalization and a batched
-public-surface cleanup. The workspace is still `0.x`, so breaking changes are
-expected. Detection behaviour on the public benchmark is byte-identical.
+## 0.11.0
+
+This release is dominated by the migration to **`chess-corners` 1.0**, an
+upstream API freeze that removed or reshaped most of the corner front-end's
+public surface. Riding along with it: the projective-grid generalization, a
+batched public-surface cleanup, and the resolution of five RustSec
+advisories. The workspace is still `0.x`, so breaking changes are expected.
+
+The ChESS response kernel is unchanged between `chess-corners` 0.11.2 and
+1.0.0, so the migration itself is pure API reshaping with byte-identical
+detections. The **one** deliberate behavioural change is the chessboard
+pre-filter: `contrast` and `fit_rms` no longer exist upstream, so the
+fit-RMS admission rule was replaced by a gate on the axes' own reported
+angular uncertainty (see *Changed* below).
+
+See the [migration guide](docs/migrations/0.11.0.md) for before/after
+snippets across Rust, JSON, C, Python, and TypeScript.
 
 ### Added
 
@@ -39,6 +53,55 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   and ChArUco cell samplers.
 
 ### Breaking
+
+- **`chess-corners` 0.11 → 1.0.** The corner front-end froze its API, and the
+  removed surface reaches every layer of this workspace:
+
+  - **The ChESS threshold is a plain `f32`, not a tagged enum.** The
+    `Threshold` type is gone; the ChESS strategy reads a single absolute
+    floor on the raw response. `with_threshold(Threshold::Absolute(v))`
+    becomes `with_threshold(v)`, and the JSON shape
+    `{"threshold": {"absolute": 15.0}}` becomes `{"threshold": 15.0}`.
+    **There is no ChESS relative mode any more** — relative thresholding
+    survives only on the Radon strategy, so `Threshold::Relative(_)` on a
+    ChESS config has no mechanical translation; choose an absolute floor.
+    The workspace default is unchanged at `15.0`
+    (`calib_targets::detect::default_chess_config()`), which is now
+    explicitly *lower* than upstream's own new default of `30.0`.
+  - **The low-level `ChessParams` collapses `threshold_rel` +
+    `threshold_abs` into one `threshold`.** Pre-1.0 the floor resolved as
+    `threshold_abs.unwrap_or(threshold_rel * max_response)` with
+    `threshold_abs: Some(0.0)` by default — so code that defaulted a
+    `ChessParams` and set only `threshold_rel` was already running at an
+    absolute floor of `0.0`. Two workspace redetect paths were in exactly
+    that state; they map to `threshold = 0.0`, which is behaviour-preserving.
+  - **`nms_radius` / `min_cluster_size` moved out of the ChESS strategy
+    config** into a strategy-independent `detection` block:
+    `with_chess(|c| c.nms_radius = …)` → `with_detection(|d| d.nms_radius = …)`,
+    and the two JSON keys move from `strategy.chess` to a top-level
+    `detection` object. The low-level `ChessParams` keeps both fields.
+  - **`DescriptorRing` is removed.** The descriptor always follows the
+    detector ring radius, which is what the previous default
+    (`FollowDetector`) already did — no behaviour change at the default.
+  - **`chess_corners::low_level` / `unstable` are removed.** The contract
+    they exposed (`ChessParams`, `RefinerKind`, `ImageView`, `Roi`,
+    `Refiner`, `chess_response_u8_patch`,
+    `detect_corners_from_response_with_refiner`) now lives at the root of the
+    **`chess-corners-core`** crate, which is a new direct dependency of the
+    ChArUco, PuzzleBoard, and FFI crates. `PyramidParams` is not re-exported
+    by 1.0 (it moved to `box-image-pyramid`); construct
+    `MultiscaleConfig::Pyramid { levels, min_size, refinement_radius }`
+    directly.
+  - **`CornerDescriptor::axes` is now `Option<[AxisEstimate; 2]>`**, and
+    `contrast` / `fit_rms` are no longer reported. `None` maps to the
+    existing no-information sentinel (`AxisEstimate::default()`, `sigma = π`).
+
+- **`calib_targets_chessboard::ChessCorner` drops `contrast` and `fit_rms`,
+  and `AdvancedTuning::max_fit_rms_ratio` is removed.** They are unbacked
+  now that upstream stopped reporting the underlying scalars. Nothing
+  replaced the knob — see *Changed* for the derived gate that took over its
+  job. The removal propagates through the FFI (`ct_chessboard_advanced_t`),
+  Python (`ChessboardParams`), WASM, and Studio surfaces.
 
 - **`nalgebra` 0.34 → 0.35.** `nalgebra` types appear in the public API of
   `projective-grid` and `calib-targets-core` (`Point2<f32>`, `Matrix3<f32>`,
@@ -111,14 +174,21 @@ expected. Detection behaviour on the public benchmark is byte-identical.
   Python `CharucoParams` dataclass field are removed; an unknown `max_hamming`
   serde / config key is now ignored on deserialization.
 
-- **`calib-targets-ffi` is bumped to 2.0.0 — a struct-layout-breaking C ABI
-  change.** The `max_hamming` field is removed from
-  `ct_charuco_detector_params_t` (it only fed the retired ChArUco vote matcher),
-  so the struct layout, and therefore the ABI, change for C consumers. The
-  generated `calib_targets_ffi.h` no longer declares the field; recompile C/C++
-  consumers against the regenerated header and stop setting `max_hamming` on the
-  params struct. `ct_version_string()` and the CMake config-version now report
-  `2.0.0`.
+- **`calib-targets-ffi` is bumped to 3.0.0 — three struct-layout-breaking C
+  ABI changes.** Recompile C/C++ consumers against the regenerated
+  `calib_targets_ffi.h`; `ct_version_string()` and the CMake config-version
+  now report `3.0.0`.
+  1. `ct_chess_params_t` collapses `threshold_rel` (`float`) +
+     `threshold_abs` (`ct_optional_f32_t`) into a single absolute
+     `threshold` (`float`), and drops `descriptor_use_radius10`.
+  2. `ct_chessboard_advanced_t` drops `max_fit_rms_ratio` along with the rest
+     of the pre-filter section.
+  3. `ct_charuco_detector_params_t` drops `max_hamming` (it only fed the
+     retired ChArUco vote matcher).
+
+  The `ct_optional_bool_t` type is **removed entirely** — nothing declares an
+  optional boolean any more, so delete any local `none_bool()`-style helper.
+  `ct_grid_coords_t` is unchanged (see the `Coord` entry above).
 
 - **ChArUco and PuzzleBoard diagnostics moved behind an opt-in `diagnostics`
   cargo feature** (default off), matching `calib-targets-chessboard`. The
@@ -130,6 +200,37 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`DetectorParams.min_labeled_corners` / `max_components` are now defaulted on
   deserialization** (`8` / `3`), so partial and legacy configs that omit them
   deserialize again. Values and serialization are unchanged.
+
+### Changed
+
+- **The chessboard Stage 1 pre-filter admits axes on their reported
+  uncertainty instead of a fit residual.** With `contrast` and `fit_rms` gone
+  upstream, the rule `fit_rms ≤ max_fit_rms_ratio · contrast` is no longer
+  expressible. It is replaced by
+
+  ```text
+  strength ≥ min_corner_strength   AND   max(σ₀, σ₁) ≤ axis_align_tol_rad
+  ```
+
+  where `σ` is the per-axis 1σ angular uncertainty the corner already carries
+  and `axis_align_tol_rad` (default 15°) is the tolerance the topological
+  builder's cell test *already* applies to those same axes. The gate is
+  therefore **derived rather than fitted** — it introduces no new constant.
+  The argument is dimensional: an axis estimate whose own spread is wider
+  than the alignment window cannot answer the question the cell test poses of
+  it, so admitting it adds noise to edge classification rather than evidence.
+  Loosening the cell test now loosens admission by exactly the same amount.
+  (The builder's internal `max_axis_sigma_rad` is a much looser backstop, not
+  an admission gate, and is unrelated.)
+
+  This is the only place in 0.11.0 where detection output moves. Across the
+  regression corpus the change is recall-positive in aggregate and — the
+  property that actually matters — **no frame gained a wrong `(i, j)`
+  label**: the wrong-label, over-long-edge, and duplicate-pixel counters are
+  unchanged. Dense, high-corner-count boards are where the two criteria
+  disagree most and can end up with slightly fewer labelled corners than the
+  fit-RMS rule produced; a pinned minimum-corner expectation on such a board
+  is worth re-measuring.
 
 ### Security
 

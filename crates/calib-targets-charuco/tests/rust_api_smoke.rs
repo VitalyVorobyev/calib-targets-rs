@@ -29,6 +29,13 @@ fn downstream_can_name_and_modify_corner_redetect_params() {
 name = "workspace_owned_charuco_redetect"
 version = "0.1.0"
 edition = "2021"
+# Pin the workspace MSRV and opt into the MSRV-aware resolver so this
+# generated crate resolves the dependency versions a downstream consumer at
+# our stated MSRV would get. Without it the resolver picks the newest cached
+# version of every transitive dep, and a dep that raises its own rust-version
+# breaks this test for reasons unrelated to our API.
+rust-version = "1.88"
+resolver = "3"
 
 [dependencies]
 calib-targets-aruco = {{ path = '{}' }}

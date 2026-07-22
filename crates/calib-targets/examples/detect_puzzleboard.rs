@@ -33,11 +33,13 @@ fn run_config(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let cfg = PuzzleBoardDetectConfig::from_reader(file)?;
     let params = cfg.detector.clone();
-    // The chessboard detector no longer carries a nested ChESS config;
-    // any `cfg.chess_config` override would have to be applied via the
-    // standalone `detect::detect_corners` helper, not the params struct.
-    let _ = cfg.chess_config;
-    let result = run_image(&cfg.image_path, &params)?;
+    // The detector params carry no nested ChESS config, so an optional
+    // `chess_config` override is applied by running corner detection
+    // ourselves and feeding the corner cloud to the detector directly.
+    let result = match &cfg.chess_config {
+        Some(chess_cfg) => run_image_with_chess_config(&cfg.image_path, &params, chess_cfg)?,
+        None => run_image(&cfg.image_path, &params)?,
+    };
     if let Some(output_path) = cfg.output_path {
         let report = PuzzleBoardDetectReport::new(cfg.image_path, result);
         let file = std::fs::File::create(output_path)?;
@@ -53,7 +55,24 @@ fn run_image(
 ) -> Result<calib_targets::puzzleboard::PuzzleBoardDetectionResult, Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
     let result = detect::detect_puzzleboard(&img, params)?;
+    report(&result);
+    Ok(result)
+}
 
+fn run_image_with_chess_config(
+    path: &Path,
+    params: &PuzzleBoardParams,
+    chess_cfg: &chess_corners::DetectorConfig,
+) -> Result<calib_targets::puzzleboard::PuzzleBoardDetectionResult, Box<dyn std::error::Error>> {
+    let img = ImageReader::open(path)?.decode()?.to_luma8();
+    let corners = detect::detect_corners(&img, chess_cfg);
+    let detector = calib_targets::puzzleboard::PuzzleBoardDetector::new(params.clone())?;
+    let result = detector.detect(&detect::gray_view(&img), &corners)?;
+    report(&result);
+    Ok(result)
+}
+
+fn report(result: &calib_targets::puzzleboard::PuzzleBoardDetectionResult) {
     println!(
         "detected {} labelled corners (mean confidence = {:.3}, bit-error rate = {:.3})",
         result.corners.len(),
@@ -64,6 +83,4 @@ fn run_image(
         "master origin for local (0, 0): ({}, {})",
         result.decode.master_origin_row, result.decode.master_origin_col,
     );
-
-    Ok(result)
 }

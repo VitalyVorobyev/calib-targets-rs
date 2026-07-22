@@ -77,8 +77,10 @@ solely to produce labelled `(coord -> corner)` components.
 ChESS corners are converted into `projective-grid`'s image-free input:
 parallel vectors of pixel positions and `[AxisEstimate; 2]` per corner.
 A corner passes the prefilter when its strength clears
-`min_corner_strength` **and** its fit residual clears the fit-RMS gate
-(`fit_rms <= max_fit_rms_ratio * contrast`). Corners that fail the prefilter keep their
+`min_corner_strength` **and** neither of its axes is more uncertain than
+the alignment window the cell test will judge it against
+(`max(σ₀, σ₁) <= topological.axis_align_tol_rad`, via
+`pipeline::axis_admission_sigma`). Corners that fail the prefilter keep their
 pixel position but have their axes replaced with the no-information
 sentinel (`sigma = π`).
 
@@ -86,6 +88,18 @@ sentinel (`sigma = π`).
 allowed to vote on which edges are grid edges, but dropping it entirely
 would renumber the corner array and break trace/index stability. Keeping
 it as a position with dead axes satisfies both.
+
+*Why that threshold specifically:* the gate is derived from the tolerance it
+protects rather than being an independent constant. Stage 3's cell test asks
+"is this axis aligned to within `axis_align_tol_rad`?"; an estimate whose own
+1σ spread is wider than that window cannot answer the question, so admitting
+it injects noise into edge classification instead of evidence. Coupling the
+two means loosening the cell test loosens admission by exactly the same
+amount, and there is nothing separate to tune. Note the builder's internal
+`max_axis_sigma_rad` (0.6 rad) is a distinct, much looser backstop — it is not
+an admission gate. Before 0.11.0 this half of the prefilter was a
+fit-residual ratio (`fit_rms <= max_fit_rms_ratio * contrast`), which
+chess-corners 1.0 made inexpressible by removing both scalars.
 
 Separately,
 `calib_targets_chessboard::topological::recovery::clustered_augs` runs

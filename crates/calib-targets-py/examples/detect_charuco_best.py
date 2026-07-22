@@ -35,22 +35,25 @@ def main() -> None:
 
     # ChESS corner detection runs once in detect_charuco_best; the sweep
     # varies only ChArUco / chessboard-grid detector parameters.
+    # The corner-strength floor defaults to 33.0; the loose/tight variants
+    # bracket it to trade recall against the risk of marker-bit saddles
+    # entering grid construction.
     base = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(min_corner_strength=0.5),
+        chessboard=ct.ChessboardParams(),
         min_marker_inliers=8,
     )
     loose = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(min_corner_strength=0.0),
+        chessboard=ct.ChessboardParams(min_corner_strength=20.0),
         min_marker_inliers=4,
     )
     tight = ct.CharucoParams(
         board=board,
         px_per_square=60.0,
-        chessboard=ct.ChessboardParams(min_corner_strength=1.0),
+        chessboard=ct.ChessboardParams(min_corner_strength=50.0),
         min_marker_inliers=8,
     )
 

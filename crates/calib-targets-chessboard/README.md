@@ -50,7 +50,8 @@ fn detect_multi(corners: &[ChessCorner]) {
 ## Inputs
 
 - `&[ChessCorner]` — ChESS X-junction corners from `chess-corners`, with
-  `position`, `axes`, `strength`, `contrast`, `fit_rms` populated.
+  `position`, `axes` (each with a 1σ angular uncertainty), and `strength`
+  populated.
 - [`DetectorParams`] — a small stable core (graph-build algorithm,
   output gates, corner-strength floor) plus an opt-in, unstable
   [`AdvancedTuning`] sub-struct of per-stage knobs. Use
@@ -107,7 +108,6 @@ contract.
 
 | Group | Main knobs (on `AdvancedTuning`) | Effect |
 |---|---|---|
-| Pre-filter | `max_fit_rms_ratio` | Drop corners whose tanh-fit residual is too large relative to contrast. |
 | Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg`, `cluster_sigma_k`, `min_peak_weight_fraction` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
 | Recall boosters | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters` | Interior gap fill + line extrapolation onto empty cells, reusing the attachment invariants. Rarely need tuning. |
 | Geometry check | `geometry_check_line_tol_rel`, `geometry_check_local_h_tol_rel`, `line_min_members`, `enable_final_edge_shape_check` | Mandatory final precision gate: line collinearity + local-H residual + wrong-label check. |

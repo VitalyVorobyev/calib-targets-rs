@@ -142,9 +142,15 @@ the topological walk uses — and the final geometry check (Stage 5) only
 
 Mark corner `c` usable iff:
 
-- `c.strength ≥ min_corner_strength` (default `0.0`, off); **and**
-- `c.contrast ≤ 0`, or `c.fit_rms ≤ max_fit_rms_ratio × c.contrast`
-  (default `0.5`).
+- `c.strength ≥ min_corner_strength` (default `33.0`); **and**
+- `max(c.axes[0].sigma, c.axes[1].sigma) ≤ axis_align_tol_rad`
+  (default 15°, the Stage 3 axis-alignment tolerance).
+
+The second condition is *derived*, not a knob of its own: an axis whose 1σ
+uncertainty is wider than the window the cell test will judge it against
+carries no usable information for that test. It replaces the pre-0.11.0
+`fit_rms ≤ max_fit_rms_ratio × contrast` rule, which chess-corners 1.0 made
+inexpressible by removing both scalars.
 
 A corner that fails keeps its pixel position but has its axes replaced by
 the no-information sentinel (`sigma = π`), so it cannot vote on edges but
@@ -268,7 +274,7 @@ table.
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
-| No detection; trace shows few `usable` corners | Stage 1–2 (prefilter / clustering) | `min_corner_strength` ↓, `max_fit_rms_ratio` ↑, `min_peak_weight_fraction`, `peak_min_separation_deg` | Either the corners failed the prefilter or the two grid axes never separated. Most common on very-bad-light frames. |
+| No detection; trace shows few `usable` corners | Stage 1–2 (prefilter / clustering) | `min_corner_strength` ↓, `min_peak_weight_fraction`, `peak_min_separation_deg` | Either the corners failed the prefilter (weak response, or axes too uncertain to vote) or the two grid axes never separated. Most common on very-bad-light frames. |
 | No detection; trace shows usable corners but `NoComponents` | Stage 3 (topological grid) | Try `detect_chessboard_best` with `DetectorParams::sweep_default()` | No quad mesh assembled. Builder tolerances are internal; the sweep widens the upstream clustering / attachment tolerances. |
 | Detection has very few corners | Stage 4 (recover) | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | The grid walked but couldn't extend. Common on heavily distorted views. |
 | Many corners dropped (`GeometryCheckTrace.dropped` high) | Stage 5 (geometry check) | `geometry_check_local_h_tol_rel` | Invariants found outliers; inspect the per-reason `dropped_*` counters. |
@@ -305,8 +311,7 @@ shows the access path: top-level for the four stable knobs,
 | `graph_build_algorithm` | `Topological` | — | Grid builder algorithm. `Topological` is the only value; the field is a reserved config seam. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 5 | Minimum labelled corners to emit a `ChessboardDetection`. |
-| `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
-| `advanced.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
+| `min_corner_strength` | 33.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
 | `advanced.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
 | `advanced.cluster_tol_deg` | 12.0 | 2 | Per-axis tolerance from a cluster center. |
 | `advanced.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |

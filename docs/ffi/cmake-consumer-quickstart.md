@@ -132,20 +132,6 @@ blank grayscale image in memory, creates a chessboard detector, and treats
 
 namespace {
 
-ct_optional_bool_t none_bool() {
-  ct_optional_bool_t value{};
-  value.has_value = CT_FALSE;
-  value.value = CT_FALSE;
-  return value;
-}
-
-ct_optional_f32_t none_f32() {
-  ct_optional_f32_t value{};
-  value.has_value = CT_FALSE;
-  value.value = 0.0f;
-  return value;
-}
-
 ct_optional_u32_t some_u32(std::uint32_t value) {
   ct_optional_u32_t out{};
   out.has_value = CT_TRUE;
@@ -184,9 +170,12 @@ ct_chessboard_detector_config_t default_chessboard_config() {
   ct_chessboard_detector_config_t config{};
 
   config.chess.params.use_radius10 = CT_FALSE;
-  config.chess.params.descriptor_use_radius10 = none_bool();
-  config.chess.params.threshold_rel = 0.2f;
-  config.chess.params.threshold_abs = none_f32();
+  // ABI 3.0.0: one absolute ChESS response floor. The former
+  // `threshold_rel` / `threshold_abs` pair is gone (the relative mode had no
+  // effect once `threshold_abs` was set, which it was by default), as is
+  // `descriptor_use_radius10` — the descriptor always follows the detector
+  // ring radius now.
+  config.chess.params.threshold = 15.0f;
   config.chess.params.nms_radius = 2;
   config.chess.params.min_cluster_size = 2;
   config.chess.params.refiner = default_refiner();
@@ -195,7 +184,10 @@ ct_chessboard_detector_config_t default_chessboard_config() {
   config.chess.multiscale.refinement_radius = 3;
   config.chess.multiscale.merge_radius = 3.0f;
 
-  config.chessboard.min_corner_strength = 0.5f;
+  // The workspace production default. Since 0.11.0 this floor is the only
+  // magnitude gate on the corner set (the fit-RMS pre-filter is gone), so
+  // lowering it admits noise corners into grid construction.
+  config.chessboard.min_corner_strength = 33.0f;
   config.chessboard.min_corners = 20;
   config.chessboard.expected_rows = some_u32(7);
   config.chessboard.expected_cols = some_u32(11);

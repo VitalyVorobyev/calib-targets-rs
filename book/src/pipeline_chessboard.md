@@ -23,7 +23,7 @@ stage map (mirror of the crate `docs/PIPELINE.md`):
 
 | # | Stage | In → Out | What it does |
 |---|---|---|---|
-| 1 | `prefilter` | ChESS corners → usable-flagged corners | Keep a corner iff `strength ≥ min_corner_strength` **and** `fit_rms ≤ max_fit_rms_ratio · contrast`. Weak corners are kept as positions with no-information axes (so indices stay stable) but cannot vote. |
+| 1 | `prefilter` | ChESS corners → usable-flagged corners | Keep a corner iff `strength ≥ min_corner_strength` **and** `max(σ₀, σ₁) ≤ topological.axis_align_tol_rad`. Weak corners are kept as positions with no-information axes (so indices stay stable) but cannot vote. |
 | 2 | `cluster_axes` | strong corners' axes → `{Θ₀ ≤ Θ₁}` + per-corner slot label | The generic [axis clustering](algo_axis_clustering.md) (histogram + plateau peak picking + double-angle 2-means), then the **DiskFit slot-coherence repair** (below). |
 | 3 | `topological_grid` | oriented features + cluster centres → labelled components | The [topological grid finder](algo_topological_grid.md) (`detect_grid_all`); its own post-build validation / residual / recovery are disabled — the chessboard owns those downstream. |
 | 4 | `recover_components` | merged components → boosted, re-merged grid | Per-component cell-size estimate, then the [recovery boosters](algo_recovery_validation.md) (interior gap fill + line extrapolation with a per-axis directional edge scale), optional weak-cluster rescue, then `merge_components_local`. Every addition re-runs the axis / parity / edge-slot-swap invariants. |
@@ -35,6 +35,23 @@ stage map (mirror of the crate `docs/PIPELINE.md`):
 > lives — the rebase + canonicalise + sort algorithm is now owned by
 > `projective_grid::LabelledGrid::normalize`, with the output stage merely
 > calling it.
+
+### Why the prefilter reads σ (Stage 1)
+
+The axis half of the prefilter is **derived, not configured**: it reuses
+`advanced.topological.axis_align_tol_rad`, the tolerance the grid builder's
+cell test applies to those same axes. The argument is dimensional rather than
+empirical — an axis estimate whose own 1σ uncertainty exceeds the alignment
+window cannot answer the question the cell test asks of it, so letting it vote
+adds noise to the classification, not information. Because the gate *is* the
+tolerance it protects, the two cannot drift apart, and there is no separate
+constant to tune.
+
+This replaces the pre-0.11.0 fit-residual ratio
+(`fit_rms ≤ max_fit_rms_ratio · contrast`), which is not expressible on
+chess-corners 1.0 — `contrast` and `fit_rms` no longer exist. Note that the
+builder's own `max_axis_sigma_rad` is a *looser* backstop applied inside grid
+construction and is unrelated to admission.
 
 ## Key invariants
 
