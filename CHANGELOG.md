@@ -40,6 +40,13 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 
 ### Breaking
 
+- **`nalgebra` 0.34 → 0.35.** `nalgebra` types appear in the public API of
+  `projective-grid` and `calib-targets-core` (`Point2<f32>`, `Matrix3<f32>`,
+  `LabeledCorner.position`, …), so consumers must move to the same major
+  version to interoperate. No workspace source change was required and
+  detection output is byte-identical; the bump also drops the unmaintained
+  `paste` crate from the `nalgebra` → `simba` path (see *Security* below).
+
 - **`GridCoords` is removed; `projective_grid::Coord` (`{ u, v }`) is the single
   canonical grid-coordinate type.** The workspace-local `GridCoords { i, j }`
   type and its re-exports (from `calib-targets-core` and the `calib-targets`
@@ -123,6 +130,32 @@ expected. Detection behaviour on the public benchmark is byte-identical.
 - **`DetectorParams.min_labeled_corners` / `max_components` are now defaulted on
   deserialization** (`8` / `3`), so partial and legacy configs that omit them
   deserialize again. Values and serialization are unchanged.
+
+### Security
+
+- **Resolved four RustSec advisories.** `pyo3` 0.28 → 0.29 and `numpy` 0.28 →
+  0.29 clear RUSTSEC-2026-0176 (out-of-bounds read in `PyList` / `PyTuple`
+  iterator `nth`) and RUSTSEC-2026-0177 (missing `Sync` bound on
+  `PyCFunction::new_closure`); lockfile updates to `crossbeam-epoch` 0.9.20,
+  `anyhow` 1.0.104, and `memmap2` 0.9.11 clear RUSTSEC-2026-0204,
+  RUSTSEC-2026-0190, and RUSTSEC-2026-0186 respectively. None required a
+  source change, and detection output is unchanged.
+
+- **Supply-chain policy is now enforced pre-merge.** A root `deny.toml`
+  defines the advisory, licence, ban, and source policy, and a `supply-chain`
+  CI job runs `cargo deny check` on every pull request — previously advisories
+  were only caught by a weekly scheduled scan that filed an issue after the
+  fact. `deny.toml` is the single source of truth for policy exceptions; each
+  one is dated and states what would unblock its removal.
+
+  One documented exception remains: RUSTSEC-2024-0436 (`paste`, unmaintained,
+  informational, no patched release). It is unreachable from workspace code
+  and arrives as `paste ← rav1e ← ravif ← image` via `image`'s default-on
+  `avif` codec feature. Narrowing our own `image` features does not remove it,
+  because `chess-corners` also depends on `image` without
+  `default-features = false` and Cargo unifies features across the graph;
+  clearing it requires that upstream change, filed as
+  [chess-corners-rs#68](https://github.com/VitalyVorobyev/chess-corners-rs/issues/68).
 
 ### Fixed
 
