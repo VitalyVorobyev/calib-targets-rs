@@ -29,7 +29,7 @@ cd studio && bun run dev       # UI on the Vite port
 - **Image workspace** — interactive overlay canvas (zoom/pan, pixel-crisp
   magnification, hover tooltips with `(i, j)` / id / score), engine and
   algorithm switches with live re-detect, baseline diff highlights.
-- **Config editor** — stable `DetectorParams` + the full advanced-tuning
+- **Config editor** — stable `ChessboardParams` + the full advanced-tuning
   tree rendered from server defaults; named configs saved to the
   gitignored `studio_configs/` in the exact `--chessboard-config` format
   (interchangeable with the bench CLI).

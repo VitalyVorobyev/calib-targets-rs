@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use image::GenericImageView;
 
 const SNAP_WIDTH: u32 = 720;
@@ -127,7 +127,8 @@ fn assert_rejects_false_labels() {
     }
 
     let chess_cfg = default_chess_config();
-    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
+    let detector =
+        ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
 
     let mut detected = 0usize;
     for target_idx in 0..REVIEW_TARGETS {

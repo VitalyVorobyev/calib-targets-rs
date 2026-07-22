@@ -35,7 +35,7 @@ def test_detect_charuco_typed_params() -> None:
         result = calib_targets.detect_charuco(_image(), params=params)
     except RuntimeError:
         result = None
-    assert result is None or isinstance(result, calib_targets.CharucoDetectionResult)
+    assert result is None or isinstance(result, calib_targets.CharucoDetection)
 
 
 def test_detect_marker_board_typed_layout() -> None:
@@ -48,9 +48,9 @@ def test_detect_marker_board_typed_layout() -> None:
             calib_targets.MarkerCircleSpec(i=2, j=3, polarity=calib_targets.CirclePolarity.WHITE),
         ),
     )
-    params = calib_targets.MarkerBoardParams(layout=layout)
+    params = calib_targets.MarkerBoardParams(board=layout)
     result = calib_targets.detect_marker_board(_image(), params=params)
-    assert result is None or isinstance(result, calib_targets.MarkerBoardDetectionResult)
+    assert result is None or isinstance(result, calib_targets.MarkerBoardDetection)
 
 
 def test_detect_puzzleboard_typed_params() -> None:
@@ -60,7 +60,7 @@ def test_detect_puzzleboard_typed_params() -> None:
         result = calib_targets.detect_puzzleboard(_image(), params=params)
     except RuntimeError:
         result = None
-    assert result is None or isinstance(result, calib_targets.PuzzleBoardDetectionResult)
+    assert result is None or isinstance(result, calib_targets.PuzzleBoardDetection)
 
 
 def test_dict_inputs_are_rejected() -> None:
@@ -229,13 +229,13 @@ def test_chessboard_params_no_graph_build_algorithm() -> None:
         "advanced",
     }
 
-    # `for_topological` still works as an intention-revealing constructor.
-    preset = calib_targets.ChessboardParams.for_topological(min_labeled_corners=16)
+    # Overrides are forwarded through the plain constructor.
+    preset = calib_targets.ChessboardParams(min_labeled_corners=16)
     assert preset.min_labeled_corners == 16
 
 
 def test_chessboard_advanced_block_is_complete() -> None:
-    # The nested `advanced` block must carry every Rust `AdvancedTuning` field
+    # The nested `advanced` block must carry every Rust `ChessboardAdvancedTuning` field
     # (the Rust struct has no serde defaults; an omitted field fails to
     # deserialize). Pin the exact key set here so any Rust field add/rename is
     # caught at the binding boundary.
@@ -441,17 +441,17 @@ def test_result_roundtrip() -> None:
     assert calib_targets.ChessboardDetectionResult.from_dict(chess_raw).to_dict() == chess_raw
 
     charuco_raw = _sample_charuco_result()
-    assert calib_targets.CharucoDetectionResult.from_dict(charuco_raw).to_dict() == charuco_raw
+    assert calib_targets.CharucoDetection.from_dict(charuco_raw).to_dict() == charuco_raw
 
     marker_raw = _sample_marker_board_result()
     assert (
-        calib_targets.MarkerBoardDetectionResult.from_dict(marker_raw).to_dict()
+        calib_targets.MarkerBoardDetection.from_dict(marker_raw).to_dict()
         == marker_raw
     )
 
     puzzle_raw = _sample_puzzleboard_result()
     assert (
-        calib_targets.PuzzleBoardDetectionResult.from_dict(puzzle_raw).to_dict()
+        calib_targets.PuzzleBoardDetection.from_dict(puzzle_raw).to_dict()
         == puzzle_raw
     )
 

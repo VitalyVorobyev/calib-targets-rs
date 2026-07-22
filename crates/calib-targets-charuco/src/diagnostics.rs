@@ -5,7 +5,7 @@
 //! what the per-cell marker match looked like. They are produced by
 //! [`crate::CharucoDetector::detect_with_diagnostics`] and are intentionally
 //! kept separate from the result API ([`crate::CharucoDetector`],
-//! [`crate::CharucoDetectionResult`], [`crate::CharucoParams`]).
+//! [`crate::CharucoDetection`], [`crate::CharucoParams`]).
 //!
 //! This module carries a **looser stability promise** than the result API:
 //! diagnostic fields may be added or restructured in minor releases as the

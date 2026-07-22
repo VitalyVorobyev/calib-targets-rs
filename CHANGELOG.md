@@ -29,6 +29,14 @@ snippets across Rust, JSON, C, Python, and TypeScript.
 
 ### Added
 
+- **The `image` crate is re-exported as `calib_targets::image`** (behind the
+  default `image` feature). Import `image` types through the re-export instead
+  of adding a separate `image = "0.25"` dependency to guarantee your
+  `GrayImage` type matches the one the `detect_*` helpers accept — a version
+  mismatch otherwise produces a confusing "expected `GrayImage`, found
+  `GrayImage`" error. A direct `image` dependency still works; the re-export is
+  purely additive.
+
 - **Every detector's params struct carries its own ChESS corner front-end
   (`chess: DetectorConfig`).** `CharucoParams`, `PuzzleBoardParams`, and
   `MarkerBoardParams` gain a `chess` field defaulting to
@@ -47,12 +55,12 @@ snippets across Rust, JSON, C, Python, and TypeScript.
   to input pixels — unlike upscaling the image yourself, which leaves every
   corner in the upscaled frame for the caller to undo.
 
-  `detect_charuco_best` and `detect_marker_board_best` run one corner pass for
-  the whole sweep, so their configs must agree on `chess`; disagreement is
-  reported as the new `DetectError::InconsistentChessConfig` rather than
-  silently using the first. `detect_puzzleboard_best` already ran a full
-  detection per config, so it honours each config's `chess` independently and
-  can sweep corner front-ends.
+  All three target-detector sweep helpers — `detect_charuco_best`,
+  `detect_marker_board_best`, and `detect_puzzleboard_best` — honour each
+  config's own `chess` front-end and deduplicate corner detection across configs
+  that request the same one. A sweep may freely mix corner front-ends (e.g. a
+  single-scale config alongside an `UpscaleConfig::Fixed(2)` config), while a
+  sweep whose configs share `chess` still runs exactly one corner pass.
 
 - **`projective_grid::predict_grid_position` / `PredictedPosition`** — the
   neighbour-midpoint position predictor is back on the stable tier, as one
@@ -78,6 +86,32 @@ snippets across Rust, JSON, C, Python, and TypeScript.
   and ChArUco cell samplers.
 
 ### Breaking
+
+- **Every facade `detect_*` entry point returns `Result<_, DetectError>`.**
+  `detect_chessboard`, `detect_chessboard_best`, `detect_marker_board`, and
+  `detect_marker_board_best` previously returned `Option`, while the ChArUco and
+  PuzzleBoard helpers returned `Result` — so consuming more than one target type
+  meant switching control-flow shape for no user-visible reason. A board that is
+  simply not present is now reported as the new
+  `DetectError::NoDetection { target }` variant. The `_from_gray_u8` pair for
+  chessboard and marker additionally flattens from `Result<Option<_>, _>` to
+  `Result<_, _>`. `detect_chessboard_all` still returns `Vec`, and the
+  crate-level detectors (`ChessboardDetector::detect`,
+  `MarkerBoardDetector::detect`) still return `Option` — only the facade
+  unifies. Idiomatic bindings are behaviour-preserved: Python returns `None` on
+  a miss, WASM returns `null`, the C ABI keeps its existing "not found" status.
+
+- **`CharucoParams::for_board` and `PuzzleBoardParams::for_board` take the board
+  by value** (`for_board(spec)` instead of `for_board(&spec)`), matching
+  `MarkerBoardParams::for_board`. The rule is uniform: constructors that store
+  the board take it by value; `sweep_for_board(&spec)` presets, which clone into
+  N configs, keep taking it by reference. The board specs are `Copy`, so most
+  call sites just drop the `&`.
+
+- **`calib_targets::chessboard::AdvancedTuning` is renamed to
+  `ChessboardAdvancedTuning`**, matching the `CharucoAdvancedTuning` /
+  `PuzzleBoardAdvancedTuning` family. Pure rename: the serde key stays
+  `"advanced"` and the JSON shape is unchanged.
 
 - **`chess-corners` 0.11 → 1.0.** The corner front-end froze its API, and the
   removed surface reaches every layer of this workspace:
@@ -172,7 +206,7 @@ snippets across Rust, JSON, C, Python, and TypeScript.
     `{ i, j }` C field names and struct layout (no churn after the ffi 2.0.0
     release); the Rust→C conversion maps `Coord::u → i` and `Coord::v → j`.
 
-- **`calib_targets_chessboard::Detector::new` is now fallible**
+- **`calib_targets_chessboard::ChessboardDetector::new` is now fallible**
   (`-> Result<Self, ChessboardParamsError>`), validating the configuration up
   front; the previous infallible `new` + `try_new` pair and the internal
   debug-assert/empty-result fallback are removed. This mirrors the fallible
@@ -237,9 +271,195 @@ snippets across Rust, JSON, C, Python, and TypeScript.
   enabled; the facade `calib-targets/diagnostics` feature now forwards to all
   three detector crates.
 
-- **`DetectorParams.min_labeled_corners` / `max_components` are now defaulted on
+- **`ChessboardParams.min_labeled_corners` / `max_components` are now defaulted on
   deserialization** (`8` / `3`), so partial and legacy configs that omit them
   deserialize again. Values and serialization are unchanged.
+
+- **Naming-family rename across the four detector crates** (API revision
+  decision 1; see the [migration guide](docs/migrations/0.11.0.md#11-api-revision-s1-the-naming-family-rename)
+  for the full table and before/after snippets). No deprecated aliases.
+  - `calib-targets-chessboard`: `Detector` → `ChessboardDetector`,
+    `DetectorParams` → `ChessboardParams`.
+  - `calib-targets-charuco`: `CharucoDetectionResult` → `CharucoDetection`.
+  - `calib-targets-puzzleboard`: `PuzzleBoardDetectionResult` →
+    `PuzzleBoardDetection`.
+  - `calib-targets-marker`: `MarkerBoardDetectionResult` →
+    `MarkerBoardDetection`; `MarkerBoardParams.layout` field → `.board`
+    (serde key `"layout"` → `"board"`); `MarkerBoardParams::new(layout)` →
+    `MarkerBoardParams::for_board(board)` (uniform with
+    `CharucoParams::for_board` / `PuzzleBoardParams::for_board`);
+    `MarkerBoardDetector::detect_from_image_and_corners[_with_diagnostics]`
+    → `detect[_with_diagnostics]` (`detect_from_corners`
+    `[_with_diagnostics]`, the corners-only secondary path, is unchanged).
+
+- **Dead public-API items removed** (API revision decision 2; see the
+  [migration guide](docs/migrations/0.11.0.md#12-api-revision-s2-dead-item-removal)
+  for the full removed-items table and replacements). Every item had zero
+  real consumers, verified by a workspace-wide sweep.
+  - `PuzzleBoardParams.corner_redetect_params` is removed — the field was
+    never read by the detector; its C-ABI mirror
+    (`ct_puzzleboard_params_t.corner_redetect_params`) is removed too, and
+    the FFI header is regenerated. (ChArUco's `corner_redetect_params` is
+    unaffected — it is live there.)
+  - `calib-targets-core`'s five internal crate-bridge functions
+    (`homography_to_next`, `homography_from_next`, `axis_estimate_from_next`,
+    `grid_transform_to_next`, `grid_transform_from_next`) are removed; each
+    had zero consumers outside the crate's own round-trip tests.
+    `axis_estimate_to_next` is retained (used by the chessboard pipeline and
+    the bench harness).
+  - `calib-targets-core::{init_with_level, init_tracing}` and the `logger`
+    module are removed. Every consumer was an example; each now installs its
+    own `env_logger` / `tracing_subscriber` locally (or, where neither is a
+    dependency, drops the call — the `log`/`tracing` macros already used
+    throughout those examples degrade to no-ops without an installed
+    logger). The crate drops its now-unused `log`, `tracing`, and
+    `tracing-subscriber` dependencies; the `tracing` cargo feature is
+    unchanged.
+  - `calib_targets::detect::default_puzzleboard_params` is removed — inline
+    `PuzzleBoardParams::for_board(&PuzzleBoardSpec::new(rows, cols, 1.0)?)`
+    at the call site. The Python and WASM `default_puzzleboard_params`
+    bindings keep their existing behaviour.
+  - `ChessboardParams::topological()` is removed — it was already identical
+    to `default()` (`Topological` is the sole grid builder).
+  - `calib_targets_chessboard::detect_all_topological` is no longer
+    re-exported from the crate root (`pub(crate)` now); it had no external
+    callers. `ChessboardDetector::detect_all` is the public production path.
+    `trace_topological` is unaffected.
+
+- **Tuning knobs moved behind an opt-in `advanced` tier for ChArUco and
+  PuzzleBoard** (API revision decision 3; see the
+  [migration guide](docs/migrations/0.11.0.md#13-api-revision-s3-tuning-knobs-moved-to-advanced)).
+  This brings both configs onto the small-stable-core-plus-unstable-`advanced`
+  discipline the chessboard config already uses. **Detection is byte-identical
+  at default params** — the moved knobs keep their defaults and an unset
+  `advanced` behaves exactly like the advanced struct's `Default`.
+  - `CharucoParams.advanced` becomes `Option<Box<CharucoAdvancedTuning>>`
+    (`None` = defaults), set via `CharucoParams::with_advanced(...)` and read
+    via `effective_tuning()`. `grid_smoothness_threshold_rel`,
+    `corner_validation_threshold_rel`, and `min_secondary_marker_inliers` move
+    off the stable core into `CharucoAdvancedTuning`, serializing under the
+    nested `"advanced"` object.
+  - `CharucoParams.corner_redetect_params` becomes `pub(crate)` — it leaked the
+    upstream `chess_corners` parameter type and was `#[serde(skip)]`, so it was
+    never settable through JSON or the bindings. Its C-ABI mirror
+    (`ct_charuco_detector_params_t.corner_redetect_params`) is dropped and the
+    header regenerated; corner refit behaviour is unchanged.
+  - `PuzzleBoardDecodeConfig` gains
+    `advanced: Option<Box<PuzzleBoardAdvancedTuning>>`; the soft-scorer knobs
+    `bit_likelihood_slope` / `per_bit_floor` / `alignment_min_margin` move into
+    it (serializing under `decode.advanced`). The 5-argument positional
+    `PuzzleBoardDecodeConfig::new(...)` is removed — build with `Default` +
+    struct-update.
+  - C ABI: the ChArUco `grid_smoothness_threshold_rel` /
+    `corner_validation_threshold_rel` and the PuzzleBoard
+    `bit_likelihood_slope` / `per_bit_floor` / `alignment_min_margin` stay as
+    flat C fields; the conversion routes them into the new advanced locations
+    internally, so no C caller change is needed for those.
+
+- **Diagnostics are feature-gated uniformly across all four detectors**
+  (API revision decision 4; see the
+  [migration guide](docs/migrations/0.11.0.md#14-api-revision-s4-diagnostics-are-feature-gated-uniformly)).
+  `calib-targets-marker` gains an opt-in `diagnostics` cargo feature (default
+  off), matching `calib-targets-charuco` / `-puzzleboard`; without it,
+  `MarkerBoardDiagnostics` and `MarkerBoardDetector::detect_with_diagnostics`
+  are absent from the public API. `calib-targets-chessboard`'s
+  `trace_topological` moves behind the crate's existing (previously
+  code-gating-nothing) `diagnostics` feature. The facade
+  `calib-targets/diagnostics` feature now forwards to all four detector
+  crates. Python, WASM, and FFI already enable the facade feature (WASM also
+  enables each detector crate's feature directly) unconditionally, so this is
+  manifest-only for them.
+  - `MarkerBoardDetector::detect_from_corners` and
+    `detect_from_corners_with_diagnostics` are **removed** — zero consumers
+    workspace-wide; they duplicated `calib-targets-chessboard`'s image-free
+    detector for the corners-only case. Detect directly against
+    `calib-targets-chessboard` for that case.
+
+- **Example/CLI file-config types left the library API** (API revision
+  decision 5; see the
+  [migration guide](docs/migrations/0.11.0.md#15-api-revision-s5-examplecli-config-types-left-the-library-api)).
+  `calib-targets-charuco`, `calib-targets-puzzleboard`, and
+  `calib-targets-marker` each had a public `io` module holding a JSON config
+  type and a JSON report type (`image_path` / `output_path` fields, plus
+  params-construction logic duplicating `{X}Params::for_board`) that existed
+  only to drive that crate's own example or the `charuco_stage_timing` bench
+  harness from a JSON file — tooling, not part of the calibration-detection
+  contract.
+  - `CharucoDetectConfig`, `CharucoDetectReport`, `CharucoConfigError`,
+    `CharucoIoError` are removed from `calib-targets-charuco`'s public API;
+    trimmed private copies now live in the charuco crate's own
+    `examples/charuco_detect.rs` and in
+    `calib-targets-bench/src/charuco_config.rs` (used by
+    `charuco_stage_timing`).
+  - `PuzzleBoardDetectConfig`, `PuzzleBoardDetectReport`,
+    `PuzzleBoardIoError` are removed from `calib-targets-puzzleboard`'s
+    public API; a trimmed private copy now lives in
+    `calib-targets/examples/detect_puzzleboard.rs`.
+  - `MarkerBoardDetectConfig`, `MarkerBoardDetectReport`,
+    `MarkerBoardIoError` are removed from `calib-targets-marker`'s public
+    API; a trimmed private copy now lives in
+    `calib-targets-marker/examples/marker_detect.rs`.
+  - `resolve_dictionary` moves to `calib-targets-aruco`;
+    `calib-targets-charuco` re-exports it at its crate root, so existing
+    `calib_targets_charuco::resolve_dictionary` call sites are unaffected.
+  - `load_board_spec_any` / `BoardSpecLoadError` stay public — they are a
+    genuinely useful tolerant board-spec loader, not an example type — but
+    move from `calib-targets-charuco::io` to `calib-targets-charuco::board`
+    (still re-exported at the crate root).
+  - `calib_targets_core::io::{load_json, write_json, IoError}` — the generic
+    JSON helpers the removed types were built on — are unaffected and stay
+    public.
+  - py/wasm/studio never depended on any of the removed types (verified by a
+    workspace-wide consumer sweep); this step is a no-op for every binding.
+
+- **Unified multi-config sweep semantics** (API revision decision 6; see the
+  [migration guide](docs/migrations/0.11.0.md#16-api-revision-s6-unified-multi-config-sweep-semantics)).
+  `detect_charuco_best`, `detect_marker_board_best`, and
+  `detect_puzzleboard_best` converge on one contract: each now honours every
+  config's own `chess` front-end instead of forcing a single corner pass for the
+  whole sweep, so a sweep may mix front-ends (e.g. a default pass alongside an
+  `UpscaleConfig::Fixed(2)` pass). Corner detection runs once per *distinct*
+  `chess` front-end and is memoized across configs that request the same one, so
+  a same-`chess` sweep still pays for exactly one corner pass. Configs are tried
+  in their given order and per-helper scoring / tie-breaks are unchanged.
+  - `DetectError::InconsistentChessConfig` is **removed** — it existed only to
+    reject the mixed-front-end sweeps the helpers can now serve, leaking the
+    "one corner pass" implementation detail into the user-facing contract.
+    `detect_chessboard_best` is unchanged — it takes one explicit `chess_cfg`
+    for the whole sweep.
+  - The Python and WASM `detect_*_best` bindings delegate to these facade
+    helpers, so the browser and Python surfaces share the unified per-config
+    `chess` + deduplicated-corner-pass semantics (previously the WASM sweeps ran
+    one workspace-default corner pass and ignored each config's `chess`).
+
+- **Convention fixes: `#[non_exhaustive]`, result serde, a dead error variant,
+  and uniform `deny_unknown_fields`** (API revision decision 7; see the
+  [migration guide](docs/migrations/0.11.0.md#17-api-revision-s7--s8-convention-fixes-and-the-chess-config-rule)).
+  - `MarkerDetection`, `MarkerCell`, `CellSamples` (`calib-targets-aruco`),
+    `RectifiedView` (`calib-targets-core`), and `ChessCorner`
+    (`calib-targets-chessboard`) become `#[non_exhaustive]` and gain named
+    constructors (`MarkerDetection::new` + `with_scores`/`with_inverted`/
+    `with_corners_img`; `MarkerCell::new`; `CellSamples::new`;
+    `RectifiedView::new`; `ChessCorner::new`). Reading code is unaffected;
+    cross-crate literal construction moves to the constructor.
+  - `ChessboardDetection`/`ChessboardCorner`, `CharucoDetection`/`CharucoCorner`,
+    and `PuzzleBoardDetection`/`PuzzleBoardCorner`/`PuzzleBoardDecodeInfo` now
+    derive `Deserialize` in addition to `Serialize`, so a saved detection JSON
+    round-trips back into its typed struct (marker results already did). Purely
+    additive.
+  - `CharucoDetectError::UnsupportedAlgorithm` is **removed** — the chessboard
+    configuration validator accepts every configuration the public surface can
+    express, so the variant was unreachable. ChArUco errors stringify at every
+    binding boundary, so no binding surface or C header changed.
+  - `#[serde(deny_unknown_fields)]` is now uniform across the params/config
+    families: `CharucoParams`, `PuzzleBoardParams`, `PuzzleBoardDecodeConfig`,
+    `MarkerBoardParams`, `CircleScoreParams`, `CircleMatchParams`, and every
+    `advanced`-tuning block reject unknown keys (matching `ChessboardParams`,
+    which already did). A config file with a stray/misspelled key now fails to
+    load with a clear `unknown field` error instead of silently ignoring it;
+    first-party producers (Python config layer, Studio, checked-in fixtures)
+    already emit only valid keys. The aruco `ScanDecodeConfig` / `ArucoScanConfig`
+    keep their existing tolerance, as shared aruco surfaces.
 
 ### Changed
 

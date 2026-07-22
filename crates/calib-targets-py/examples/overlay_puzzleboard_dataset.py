@@ -248,12 +248,12 @@ def draw_overlay(
 
     if kind == "ok":
         # Outcome body nested under `content` or flattened depending on serde:
-        # our wrapper serializes Ok(Box<PuzzleBoardDetectionResult>) as
-        # `{ "kind": "ok", <PuzzleBoardDetectionResult fields...> }` because
+        # our wrapper serializes Ok(Box<PuzzleBoardDetection>) as
+        # `{ "kind": "ok", <PuzzleBoardDetection fields...> }` because
         # we used `#[serde(tag = "kind")]` on a tuple-struct variant — the
         # wrapped object fields are hoisted into the enum body. Handle both
         # shapes just in case.
-        # Current serde shape hoists the PuzzleBoardDetectionResult fields
+        # Current serde shape hoists the PuzzleBoardDetection fields
         # (corners / alignment / decode) directly into the `{ "kind": "ok", ... }`
         # body; older shapes nested them under `content`. Handle both.
         result = outcome.get("content", outcome)

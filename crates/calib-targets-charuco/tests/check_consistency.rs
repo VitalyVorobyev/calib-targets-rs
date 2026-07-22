@@ -4,7 +4,7 @@
 //! The generic grid crate receives only image positions plus square-lattice
 //! coordinate hypotheses.
 
-use calib_targets_charuco::{CharucoCorner, CharucoDetectionResult};
+use calib_targets_charuco::{CharucoCorner, CharucoDetection};
 use calib_targets_core::{Coord, GridAlignment, GRID_TRANSFORMS_D4};
 use nalgebra::Point2;
 use projective_grid::{
@@ -18,7 +18,7 @@ fn image_point(i: i32, j: i32) -> Point2<f32> {
     Point2::new(120.0 + 19.0 * i - 4.0 * j, 70.0 + 1.5 * i + 22.0 * j)
 }
 
-fn synthetic_charuco_result() -> CharucoDetectionResult {
+fn synthetic_charuco_result() -> CharucoDetection {
     let mut corners = Vec::new();
     for j in 0..5 {
         for i in 0..4 {
@@ -29,7 +29,7 @@ fn synthetic_charuco_result() -> CharucoDetectionResult {
         }
     }
     corners.rotate_left(7);
-    CharucoDetectionResult::new(
+    CharucoDetection::new(
         corners,
         Vec::new(),
         GridAlignment {

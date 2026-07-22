@@ -16,23 +16,30 @@ Book: <https://vitalyvorobyev.github.io/calib-targets-rs/>
 ## Install
 
 ```bash
-cargo add calib-targets image
+cargo add calib-targets
 ```
+
+The `image` crate is re-exported as `calib_targets::image` (it ships with
+the default `image` feature), so you do not need to add it separately.
+Importing through the re-export guarantees your `GrayImage` type is exactly
+the one the helpers accept — no version-drift `expected GrayImage, found
+GrayImage` surprises. A direct `cargo add image` dependency still works.
 
 ## Quickstart (chessboard)
 
 ```rust,no_run
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect;
-use image::ImageReader;
+use calib_targets::image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
     let chess_cfg = detect::default_chess_config();
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
 
-    if let Some(det) = detect::detect_chessboard(&img, &chess_cfg, &params) {
-        println!("labelled {} corners", det.corners.len());
+    match detect::detect_chessboard(&img, &chess_cfg, &params) {
+        Ok(det) => println!("labelled {} corners", det.corners.len()),
+        Err(err) => println!("no board: {err}"),
     }
     Ok(())
 }
@@ -41,11 +48,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Inputs (every helper)
 
 - `image::GrayImage` (or a `GrayImageView` on the detector traits).
-- A `*Params` config struct (`DetectorParams`, `CharucoParams`,
+- A `*Params` config struct (`ChessboardParams`, `CharucoParams`,
   `PuzzleBoardParams`, `MarkerBoardParams`). Use `::default()` for
-  chessboard, `::for_board(&spec)` when a layout is required.
+  chessboard, `::for_board(spec)` when a layout is required (constructors
+  that store the board take it by value; the `sweep_for_board(&spec)`
+  presets take it by reference).
 - For the `*_best` sweep helpers, a slice `&[Params]` — typically the
-  3-config preset `Params::sweep_default(&spec)`.
+  3-config preset `ChessboardParams::sweep_default()` for chessboards, or
+  `{Charuco,PuzzleBoard,MarkerBoard}Params::sweep_for_board(&spec)` for the
+  board detectors.
 
 ## Outputs
 
@@ -180,8 +191,8 @@ Canonical guide: [printable-target book chapter][printable-book].
 
 ## Migrating to the current release
 
-The chessboard detector's `DetectorParams` is split into a stable core of
-four fields plus an opt-in, unstable `advanced` block (`AdvancedTuning`);
+The chessboard detector's `ChessboardParams` is split into a stable core of
+four fields plus an opt-in, unstable `advanced` block (`ChessboardAdvancedTuning`);
 diagnostics moved behind a cargo feature; `cell_size` is back on
 `ChessboardDetection`; and the public config / result types are
 `#[non_exhaustive]` with named constructors. See the

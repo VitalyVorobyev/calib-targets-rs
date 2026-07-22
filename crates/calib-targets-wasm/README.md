@@ -61,7 +61,7 @@ plain JS object you can `JSON.stringify`.
 import { default_chess_config, default_chessboard_params, detect_chessboard_best } from "@vitavision/calib-targets";
 
 const chessCfg = default_chess_config();
-chessCfg.threshold = { absolute: 15.0 };
+chessCfg.threshold = 15.0;
 
 const base = default_chessboard_params();
 const configs = [
@@ -133,7 +133,7 @@ three target families (`render_chessboard_*`, `render_charuco_*`,
 import { default_marker_board_params, detect_marker_board } from "@vitavision/calib-targets";
 
 const params = default_marker_board_params();
-params.layout = {
+params.board = {
   rows: 6, cols: 8, cell_size: 1.0,
   circles: [
     { cell: { i: 2, j: 2 }, polarity: "white" },
@@ -181,14 +181,14 @@ edges and soft-mode runner-up scoring evidence are returned by
 | Function | Returns |
 |---|---|
 | `detect_corners(w, h, px, cfg)` | `Corner[]` |
-| `detect_chessboard(w, h, px, cfg, params)` | `ChessboardDetectionResult \| null` |
-| `detect_chessboard_best(w, h, px, cfg, configs)` | `ChessboardDetectionResult \| null` |
-| `detect_charuco(w, h, px, cfg, params)` | `CharucoDetectionResult` (throws on error) |
-| `detect_charuco_best(w, h, px, configs)` | `CharucoDetectionResult` (throws on all-fail) |
-| `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetectionResult` (throws on error) |
-| `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetectionResult` (throws on all-fail) |
-| `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetectionResult \| null` |
-| `detect_marker_board_best(w, h, px, configs)` | `MarkerBoardDetectionResult \| null` |
+| `detect_chessboard(w, h, px, cfg, params)` | `ChessboardDetection \| null` |
+| `detect_chessboard_best(w, h, px, cfg, configs)` | `ChessboardDetection \| null` |
+| `detect_charuco(w, h, px, cfg, params)` | `CharucoDetection` (throws on error) |
+| `detect_charuco_best(w, h, px, configs)` | `CharucoDetection` (throws on all-fail) |
+| `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetection` (throws on error) |
+| `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetection` (throws on all-fail) |
+| `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetection \| null` |
+| `detect_marker_board_best(w, h, px, configs)` | `MarkerBoardDetection \| null` |
 | `rgba_to_gray(rgba, w, h)` | `Uint8Array` (BT.601) |
 | `render_chessboard_png(inner_rows, inner_cols, square_mm, dpi)` | `Uint8Array` — encoded PNG |
 | `render_charuco_png(rows, cols, square_mm, marker_size_rel, dict_name, dpi)` | `Uint8Array` |
@@ -205,9 +205,10 @@ edges and soft-mode runner-up scoring evidence are returned by
 - Always prefer `detect_*_best` over `detect_*` — the 3-config sweep
   solves most common tuning needs without writing code.
 - For blurry / low-contrast inputs, lower the chess threshold in one
-  of the sweep configs — e.g. `chess.threshold = { absolute: 8.0 }`
-  in raw ChESS response units, or `chess.threshold = { relative: 0.05 }`
-  for a fraction of the per-frame peak response.
+  of the sweep configs — e.g. `chess.threshold = 8.0`. Since
+  chess-corners 1.x the threshold is a plain number: an absolute floor
+  on the raw ChESS response (there is no longer a tagged
+  `{ absolute } | { relative }` form).
 - For small markers (< 12 px across), resize the source canvas up before
   calling `detect_charuco*` — WASM does not upscale for you.
 - Open the [per-detector READMEs][facade] / the [book tuning chapter][tune]

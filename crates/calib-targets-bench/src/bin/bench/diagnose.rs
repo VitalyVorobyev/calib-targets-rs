@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use calib_targets::chessboard::AdvancedTuning;
+use calib_targets::chessboard::ChessboardAdvancedTuning;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
 use calib_targets_bench::diagnose::TopologicalDiagnosis;
@@ -103,7 +103,8 @@ fn diagnose_topological(
         }
     };
     if let Some(deg) = args.axis_align_tol_deg {
-        let mut advanced: AdvancedTuning = detector_params.effective_tuning().into_owned();
+        let mut advanced: ChessboardAdvancedTuning =
+            detector_params.effective_tuning().into_owned();
         advanced.topological.axis_align_tol_rad = deg.to_radians();
         detector_params = detector_params.with_advanced(advanced);
     }

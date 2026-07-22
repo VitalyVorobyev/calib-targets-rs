@@ -14,7 +14,7 @@
 //! deterministic regardless of component or hash ordering.
 
 use super::pipeline::RawMarkerCounts;
-use super::{CharucoCorner, CharucoDetectionResult};
+use super::{CharucoCorner, CharucoDetection};
 use calib_targets_aruco::MarkerDetection;
 use log::debug;
 use std::collections::HashMap;
@@ -30,8 +30,8 @@ use std::collections::HashMap;
 /// result; the returned counts are the sum over the winning group, so the
 /// caller can record them on [`super::CharucoDetectDiagnostics`].
 pub(crate) fn merge_charuco_results(
-    results: Vec<(CharucoDetectionResult, RawMarkerCounts)>,
-) -> (CharucoDetectionResult, RawMarkerCounts) {
+    results: Vec<(CharucoDetection, RawMarkerCounts)>,
+) -> (CharucoDetection, RawMarkerCounts) {
     debug_assert!(!results.is_empty());
     if results.len() == 1 {
         // INVARIANT: results is non-empty (guaranteed by debug_assert! above), so next() is Some.
@@ -39,8 +39,7 @@ pub(crate) fn merge_charuco_results(
     }
 
     // Group by D4 transform.
-    let mut groups: HashMap<[i32; 4], Vec<&(CharucoDetectionResult, RawMarkerCounts)>> =
-        HashMap::new();
+    let mut groups: HashMap<[i32; 4], Vec<&(CharucoDetection, RawMarkerCounts)>> = HashMap::new();
     for r in &results {
         let t = &r.0.alignment.transform;
         let key = [t.a, t.b, t.c, t.d];
@@ -138,7 +137,7 @@ pub(crate) fn merge_charuco_results(
     );
 
     (
-        CharucoDetectionResult::new(corners, markers, best_alignment),
+        CharucoDetection::new(corners, markers, best_alignment),
         raw_counts,
     )
 }
@@ -160,18 +159,15 @@ mod tests {
     }
 
     fn marker(id: u32, score: f32) -> MarkerDetection {
-        MarkerDetection {
+        MarkerDetection::new(
             id,
-            gc: Coord::new(id as i32, 0),
-            rotation: 0,
-            hamming: 0,
-            score,
-            border_score: 1.0,
-            code: 0,
-            inverted: false,
-            corners_rect: [Point2::new(0.0, 0.0); 4],
-            corners_img: None,
-        }
+            Coord::new(id as i32, 0),
+            0,
+            0,
+            0,
+            [Point2::new(0.0, 0.0); 4],
+        )
+        .with_scores(score, 1.0)
     }
 
     fn identity_alignment() -> GridAlignment {
@@ -184,10 +180,10 @@ mod tests {
     fn result(
         corners: Vec<CharucoCorner>,
         markers: Vec<MarkerDetection>,
-    ) -> (CharucoDetectionResult, RawMarkerCounts) {
+    ) -> (CharucoDetection, RawMarkerCounts) {
         let raw = markers.len();
         (
-            CharucoDetectionResult::new(corners, markers, identity_alignment()),
+            CharucoDetection::new(corners, markers, identity_alignment()),
             RawMarkerCounts {
                 raw_marker_count: raw,
                 raw_marker_wrong_id_count: 0,

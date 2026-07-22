@@ -24,7 +24,7 @@ def main() -> int:
 
     image = np.asarray(Image.open(args.image).convert("L"), dtype=np.uint8)
     chess_cfg = ct.ChessConfig(threshold=args.threshold)
-    params = ct.ChessboardParams.for_topological()
+    params = ct.ChessboardParams()
 
     result = ct.detect_chessboard(image, chess_cfg=chess_cfg, params=params)
     if result is None:

@@ -19,7 +19,7 @@
 //! is validated separately in `private_dataset.rs`. This test provides a
 //! fast synthetic gate that catches cluster-level regressions.
 
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 
@@ -49,14 +49,10 @@ fn board_corner(x: f32, y: f32, parity: usize) -> ChessCorner {
             },
         ]
     };
-    ChessCorner {
-        position: Point2::new(x, y),
-        axes,
-        // Above the default `min_corner_strength` floor (33.0): this test
-        // exercises the *geometric* cluster-gate rejection of markers, so
-        // every corner must survive the strength pre-filter.
-        strength: 100.0,
-    }
+    // Strength 100.0 is above the default `min_corner_strength` floor (33.0):
+    // this test exercises the *geometric* cluster-gate rejection of markers,
+    // so every corner must survive the strength pre-filter.
+    ChessCorner::new(Point2::new(x, y), axes, 100.0)
 }
 
 fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> ChessCorner {
@@ -70,14 +66,10 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> ChessCorner {
             sigma: 0.02,
         },
     ];
-    ChessCorner {
-        position: Point2::new(x, y),
-        axes,
-        // Above the floor as well, so the markers reach the cluster gate
-        // and are rejected by geometry (the 20° rotation), not silently
-        // dropped by the strength pre-filter.
-        strength: 50.0,
-    }
+    // Strength 50.0 is above the floor as well, so the markers reach the
+    // cluster gate and are rejected by geometry (the 20° rotation), not
+    // silently dropped by the strength pre-filter.
+    ChessCorner::new(Point2::new(x, y), axes, 50.0)
 }
 
 #[test]
@@ -130,7 +122,8 @@ fn marker_internal_corners_never_labelled() {
     // corner is ever mislabelled, which also holds when a board *is* recovered.
     // The real-image marker-rejection contract is the live charuco gate
     // `charuco::tests::private_dataset::flagship_rejects_reviewed_marker_bit_false_corners`.
-    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
+    let detector =
+        ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
     let components = detector.detect_all(&corners);
 
     // No marker-internal corner may appear in ANY recovered component.

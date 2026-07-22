@@ -17,7 +17,7 @@ use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
 use super::types::ChessboardDetection;
 use crate::corner::{CornerAug, CornerStage};
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 use projective_grid::shared::grow::GrowResult;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
@@ -144,7 +144,7 @@ fn estimate_grid_steps(
 )]
 pub(super) fn clustered_augs(
     corners: &[ChessCorner],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> (Vec<CornerAug>, Option<ClusterCenters>) {
     let min_corner_strength = params.min_corner_strength;
     // Same admission rule as the `topological_inputs` prefilter — a corner may
@@ -307,7 +307,7 @@ pub(super) fn recover_topological_components(
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Vec<LabelledComponent> {
     let mut boosted_components: Vec<LabelledComponent> = Vec::new();
     for component_labels in merged_components {
@@ -399,7 +399,7 @@ pub(super) fn build_topological_detections(
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Vec<ChessboardDetection> {
     let mut out: Vec<ChessboardDetection> = Vec::new();
     for labelled in final_components {

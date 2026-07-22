@@ -22,14 +22,14 @@ which constructor shape reads best.
   fixtures, bindings, downstream consumers) despite the literal-construction
   block. Pick the shape that reads best:
   - **Param structs** (detector configuration, e.g. `PuzzleBoardParams`,
-    `PuzzleBoardDecodeConfig`, `DetectorParams`): a `new` / `for_board` that
+    `PuzzleBoardDecodeConfig`, `ChessboardParams`): a `new` / `for_board` that
     takes the required fields; `Default` covers the tuning knobs.
   - **Diagnostic structs** (per-call evidence, e.g. `PuzzleBoardDecodeInfo`,
     `*Diagnostics`): a `new` taking all fields, or `Default` + setters when most
     fields are optional.
   - **Data-carrier / result structs** (e.g. `TargetDetection`, `LabeledCorner`,
-    `ChessboardDetection`/`ChessboardCorner`, `CharucoDetectionResult`,
-    `PuzzleBoardDetectionResult`, `MarkerBoardDetectionResult`): a `new` taking
+    `ChessboardDetection`/`ChessboardCorner`, `CharucoDetection`,
+    `PuzzleBoardDetection`, `MarkerBoardDetection`): a `new` taking
     the required fields. When several fields are optional, a minimal `new` plus
     `with_*` setters reads better than a wide positional `new` — `LabeledCorner`
     uses `new(position, score)` + `with_grid`/`with_id`/`with_target_position`.
@@ -76,7 +76,7 @@ the actual Rust dict.
 hand-mirrored from Rust rather than generated, each with a drift contract:
 
 - **WASM TypeScript typings** (`crates/calib-targets-wasm/typescript-extras.d.ts`)
-  mirror the serde shapes (incl. `AdvancedTuning`). Update them whenever a Rust
+  mirror the serde shapes (incl. `ChessboardAdvancedTuning`). Update them whenever a Rust
   serde field is added, renamed, or retyped.
 - **Studio param-schema catalogue**
   (`crates/calib-targets-studio/src/routes/params_schema.rs`, served at
@@ -84,7 +84,7 @@ hand-mirrored from Rust rather than generated, each with a drift contract:
   one-line tooltip distilled from the rustdoc, value-kind, gating) the Config
   tab renders. Its `every_advanced_leaf_has_metadata` test walks the
   materialised `advanced` tree and **fails if any knob lacks an entry** — so a
-  new `AdvancedTuning` field cannot ship un-described. When you add or rename an
+  new `ChessboardAdvancedTuning` field cannot ship un-described. When you add or rename an
   advanced knob, add/fix its catalogue entry (the test tells you exactly which).
 
 ## Local-only artifacts — never commit

@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use calib_targets::chessboard::{Detector, DetectorParams};
+use calib_targets::chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets::core::DetectorConfig;
 use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
 use clap::Parser;
@@ -308,7 +308,7 @@ fn span_ms(spans: &HashMap<&'static str, f64>, name: &'static str) -> f64 {
 fn measure_once(
     img: &image::GrayImage,
     chess_cfg: &DetectorConfig,
-    params: &DetectorParams,
+    params: &ChessboardParams,
     totals: &SpanTotals,
 ) -> (TimingSample, usize, usize, usize) {
     totals.clear();
@@ -318,7 +318,7 @@ fn measure_once(
     let corner_wall_ms = corner_start.elapsed().as_secs_f64() * 1000.0;
 
     let grid_start = Instant::now();
-    let detections = Detector::new(params.clone())
+    let detections = ChessboardDetector::new(params.clone())
         .expect("valid detector params")
         .detect_all(&corners);
     let grid_wall_ms = grid_start.elapsed().as_secs_f64() * 1000.0;
@@ -367,7 +367,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // fit to run.
     chess_cfg.orientation_method = Some(args.orientation_method.into());
 
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
 
     let mut images = Vec::new();
     for path in image_paths(&args.image_dir)? {

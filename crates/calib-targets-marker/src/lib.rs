@@ -16,7 +16,7 @@
 //!     MarkerCircleSpec,
 //! };
 //!
-//! let layout = MarkerBoardSpec::new(
+//! let board = MarkerBoardSpec::new(
 //!     6,
 //!     8,
 //!     [
@@ -27,7 +27,7 @@
 //! )
 //! .with_cell_size(1.0);
 //!
-//! let params = MarkerBoardParams::new(layout);
+//! let params = MarkerBoardParams::for_board(board);
 //! let detector = MarkerBoardDetector::new(params).expect("valid chessboard config");
 //!
 //! let pixels = vec![0u8; 32 * 32];
@@ -38,29 +38,37 @@
 //! };
 //! let corners: Vec<ChessCorner> = Vec::new();
 //!
-//! let _ = detector.detect_from_image_and_corners(&view, &corners);
+//! let _ = detector.detect(&view, &corners);
 //! ```
 #![deny(missing_docs)]
 
 mod circle_score;
 mod coords;
 mod detect;
-mod io;
 mod match_circles;
 mod types;
 
 mod detector;
 
+// Opt-in introspection surface, gated behind the `diagnostics` feature (default
+// off), mirroring `calib-targets-chessboard` / `-charuco` / `-puzzleboard`.
+// The diagnostics types are always compiled (the detector captures them
+// internally) but only reach the public surface — the `diagnostics` module,
+// the type re-export, and `MarkerBoardDetector::detect_with_diagnostics` —
+// when the feature is enabled.
+#[cfg(feature = "diagnostics")]
 pub mod diagnostics;
+#[cfg(not(feature = "diagnostics"))]
+pub(crate) mod diagnostics;
 
 pub use circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 pub use coords::{CellCoords, CellOffset};
 pub use detector::MarkerBoardDetector;
+#[cfg(feature = "diagnostics")]
 pub use diagnostics::MarkerBoardDiagnostics;
-pub use io::{MarkerBoardDetectConfig, MarkerBoardDetectReport, MarkerBoardIoError};
 pub use types::{
-    CircleMatch, CircleMatchParams, MarkerBoardCorner, MarkerBoardDetectionResult,
-    MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
+    CircleMatch, CircleMatchParams, MarkerBoardCorner, MarkerBoardDetection, MarkerBoardParams,
+    MarkerBoardSpec, MarkerCircleSpec,
 };
 
 // Re-export the foreign types this crate's public API requires — the corner

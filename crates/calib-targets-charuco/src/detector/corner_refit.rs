@@ -25,7 +25,7 @@
 //! ## Pipeline stage
 //!
 //! ```text
-//! map_charuco_corners() → [validate_and_fix_corners()] → CharucoDetectionResult
+//! map_charuco_corners() → [validate_and_fix_corners()] → CharucoDetection
 //! ```
 //!
 //! ## Inputs
@@ -345,18 +345,8 @@ mod tests {
         use calib_targets_core::Coord;
         use nalgebra::Point2;
 
-        let marker = MarkerDetection {
-            id: 0,
-            gc: Coord::new(3, 5),
-            rotation: 0,
-            hamming: 0,
-            score: 1.0,
-            border_score: 1.0,
-            code: 0,
-            inverted: false,
-            corners_rect: [Point2::new(0.0, 0.0); 4],
-            corners_img: None,
-        };
+        let marker = MarkerDetection::new(0, Coord::new(3, 5), 0, 0, 0, [Point2::new(0.0, 0.0); 4])
+            .with_scores(1.0, 1.0);
         assert_eq!(recover_gc0(&marker), (3, 5));
     }
 
@@ -367,18 +357,8 @@ mod tests {
         use nalgebra::Point2;
 
         // gc = gc0 + (1, 0) for rotation 1, so gc0 = gc - (1, 0)
-        let marker = MarkerDetection {
-            id: 0,
-            gc: Coord::new(4, 5),
-            rotation: 1,
-            hamming: 0,
-            score: 1.0,
-            border_score: 1.0,
-            code: 0,
-            inverted: false,
-            corners_rect: [Point2::new(0.0, 0.0); 4],
-            corners_img: None,
-        };
+        let marker = MarkerDetection::new(0, Coord::new(4, 5), 1, 0, 0, [Point2::new(0.0, 0.0); 4])
+            .with_scores(1.0, 1.0);
         assert_eq!(recover_gc0(&marker), (3, 5));
     }
 
@@ -388,18 +368,8 @@ mod tests {
         use calib_targets_core::Coord;
         use nalgebra::Point2;
 
-        let marker = MarkerDetection {
-            id: 0,
-            gc: Coord::new(4, 6),
-            rotation: 2,
-            hamming: 0,
-            score: 1.0,
-            border_score: 1.0,
-            code: 0,
-            inverted: false,
-            corners_rect: [Point2::new(0.0, 0.0); 4],
-            corners_img: None,
-        };
+        let marker = MarkerDetection::new(0, Coord::new(4, 6), 2, 0, 0, [Point2::new(0.0, 0.0); 4])
+            .with_scores(1.0, 1.0);
         assert_eq!(recover_gc0(&marker), (3, 5));
     }
 
@@ -409,18 +379,8 @@ mod tests {
         use calib_targets_core::Coord;
         use nalgebra::Point2;
 
-        let marker = MarkerDetection {
-            id: 0,
-            gc: Coord::new(3, 6),
-            rotation: 3,
-            hamming: 0,
-            score: 1.0,
-            border_score: 1.0,
-            code: 0,
-            inverted: false,
-            corners_rect: [Point2::new(0.0, 0.0); 4],
-            corners_img: None,
-        };
+        let marker = MarkerDetection::new(0, Coord::new(3, 6), 3, 0, 0, [Point2::new(0.0, 0.0); 4])
+            .with_scores(1.0, 1.0);
         assert_eq!(recover_gc0(&marker), (3, 5));
     }
 }

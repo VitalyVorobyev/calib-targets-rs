@@ -26,7 +26,7 @@
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
-//! let params = PuzzleBoardParams::for_board(&spec);
+//! let params = PuzzleBoardParams::for_board(spec);
 //! let detector = PuzzleBoardDetector::new(params)?;
 //! // Feed a real greyscale image and raw ChESS corners to `detector.detect(…)`.
 //! // See `examples/detect_puzzleboard.rs` for a working end-to-end example.
@@ -48,20 +48,19 @@ pub(crate) mod diagnostics;
 
 mod board;
 mod detector;
-mod io;
 mod params;
 
 pub use board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS};
 pub use detector::{
-    PuzzleBoardCorner, PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo, PuzzleBoardDetectError,
-    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
+    PuzzleBoardAdvancedTuning, PuzzleBoardCorner, PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo,
+    PuzzleBoardDetectError, PuzzleBoardDetection, PuzzleBoardDetector, PuzzleBoardScoringMode,
+    PuzzleBoardSearchMode,
 };
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
     PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics, PuzzleBoardObservedEdge,
 };
-pub use io::{PuzzleBoardDetectConfig, PuzzleBoardDetectReport, PuzzleBoardIoError};
 pub use params::PuzzleBoardParams;
 
 // Re-export the foreign types this crate's public API requires — the corner

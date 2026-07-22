@@ -21,6 +21,14 @@ categories = ["computer-vision", "science"]
 # build time. With the feature off, the serde value `{"refiner": "ml"}` does
 # not deserialize; every other refiner is unaffected.
 ml-refiner = ["chess-corners/ml-refiner"]
+default = []
+# Opt-in introspection surface: the `diagnostics` module, the diagnostics
+# type re-export, and `MarkerBoardDetector::detect_with_diagnostics`. OFF by
+# default, consistent with `calib-targets-chessboard` / `-charuco` /
+# `-puzzleboard`. The detector still computes the diagnostics evidence
+# internally (circle candidates/matches, per-corner provenance) — the
+# feature only controls whether it reaches the public surface.
+diagnostics = []
 tracing = ["calib-targets-core/tracing", "dep:tracing"]
 
 [dependencies]
@@ -31,7 +39,6 @@ serde = { workspace = true, features = ["derive"] }
 tracing = { workspace = true, optional = true }
 log.workspace = true
 serde_json.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 chess-corners = { workspace = true, features = ["rayon"] }

@@ -53,17 +53,20 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// the upstream default, and the ChESS response scale did not change in 1.0,
 /// so `15.0` keeps producing exactly the corner set it did under 0.11.
 ///
-/// This is the default value of the `chess` field on every detector's params
-/// struct ([`calib_targets_chessboard`]-driven detectors take it as an
-/// explicit argument instead), so overriding the corner front-end — a
-/// coarse-to-fine pyramid via `MultiscaleConfig::Pyramid`, or a pre-pipeline
-/// `UpscaleConfig::Fixed` for low-resolution boards — is a matter of
-/// replacing this value on the params struct.
+/// This is the default value of the `chess` field carried by the
+/// compound-target params structs — `CharucoParams`, `PuzzleBoardParams`, and
+/// `MarkerBoardParams` — whose facade image entry points own their corner pass;
+/// override the front-end by replacing `params.chess`. The plain chessboard
+/// path is the deliberate exception: `detect_chessboard(img, &chess_cfg,
+/// &params)` takes the corner config as an explicit argument alongside
+/// `ChessboardParams`, because the chessboard detector is a reusable
+/// corner-cloud consumer rather than a whole-image pipeline. Either way, a
+/// coarse-to-fine pyramid via `MultiscaleConfig::Pyramid` or a pre-pipeline
+/// `UpscaleConfig::Fixed` for low-resolution boards is a matter of replacing
+/// this config where the entry point reads it.
 ///
 /// Callers wanting the raw upstream behaviour can construct
 /// [`DetectorConfig::chess`] directly.
-///
-/// [`calib_targets_chessboard`]: https://docs.rs/calib-targets-chessboard
 pub fn default_chess_config() -> DetectorConfig {
     DetectorConfig::chess().with_threshold(WORKSPACE_CHESS_THRESHOLD)
 }

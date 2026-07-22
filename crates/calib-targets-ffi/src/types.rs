@@ -427,7 +427,7 @@ pub struct ct_chess_config_t {
 
 /// Chessboard detector parameters.
 ///
-/// Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+/// Mirrors `calib_targets::chessboard::ChessboardParams` field-for-field
 /// (flat shape — no nested graph / orientation-clustering sub-structs
 /// like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
 /// to populate a valid default-configured value rather than struct-
@@ -451,7 +451,7 @@ pub struct ct_chessboard_params_t {
     /// runs on its precision-by-construction default tuning.
     ///
     /// The advanced knobs are NOT covered by semver and may change between
-    /// minor versions — see `calib_targets::chessboard::AdvancedTuning`.
+    /// minor versions — see `calib_targets::chessboard::ChessboardAdvancedTuning`.
     /// Initialise from `ct_chessboard_params_default_values` before flipping
     /// this flag so the advanced fields start from valid defaults.
     pub has_advanced: u32,
@@ -462,7 +462,7 @@ pub struct ct_chessboard_params_t {
 
 /// Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
 ///
-/// Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
+/// Mirrors the subset of `calib_targets::chessboard::ChessboardAdvancedTuning` exposed
 /// over the C ABI. Only applied when
 /// [`ct_chessboard_params_t::has_advanced`] is `CT_TRUE`. These knobs are NOT
 /// covered by semver and may change between minor versions; treat them as an
@@ -544,7 +544,6 @@ pub struct ct_charuco_detector_params_t {
     pub min_marker_inliers: usize,
     pub grid_smoothness_threshold_rel: f32,
     pub corner_validation_threshold_rel: f32,
-    pub corner_redetect_params: ct_chess_params_t,
 }
 
 /// Full create-time configuration for the ChArUco detector handle.
@@ -591,7 +590,7 @@ pub struct ct_marker_board_layout_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_marker_board_params_t {
-    pub layout: ct_marker_board_layout_t,
+    pub board: ct_marker_board_layout_t,
     pub chessboard: ct_chessboard_params_t,
     pub circle_score: ct_circle_score_params_t,
     pub match_params: ct_circle_match_params_t,
@@ -634,7 +633,6 @@ pub struct ct_puzzleboard_params_t {
     pub chessboard: ct_chessboard_params_t,
     pub board: ct_puzzleboard_spec_t,
     pub decode: ct_puzzleboard_decode_config_t,
-    pub corner_redetect_params: ct_chess_params_t,
 }
 
 /// Full create-time configuration for the marker-board detector handle.

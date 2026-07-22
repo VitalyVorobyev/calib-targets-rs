@@ -33,14 +33,16 @@ image = ["dep:chess-corners", "dep:image"]
 cli = ["dep:clap"]
 # Opt-in detector introspection surface. Enables the per-detector
 # `detect_*_with_diagnostics` entry points + the `diagnostics` modules
-# (`DebugFrame`, `CharucoDetectDiagnostics`, `PuzzleBoardDiagnostics`). OFF by
-# default — the hot `detect_*` path never assembles them. Forwards to every
-# detector crate that exposes a `diagnostics` feature, so the surface is gated
-# uniformly across the workspace.
+# (`trace_topological`, `CharucoDetectDiagnostics`, `PuzzleBoardDiagnostics`,
+# `MarkerBoardDiagnostics`). OFF by default — the hot `detect_*` path never
+# assembles them. Forwards to every detector crate that exposes a
+# `diagnostics` feature, so the surface is gated uniformly across the
+# workspace.
 diagnostics = [
     "calib-targets-chessboard/diagnostics",
     "calib-targets-charuco/diagnostics",
     "calib-targets-puzzleboard/diagnostics",
+    "calib-targets-marker/diagnostics",
 ]
 tracing = [
     "dep:tracing",

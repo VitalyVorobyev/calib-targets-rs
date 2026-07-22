@@ -28,9 +28,9 @@ Only **`chessboard`** owns that spine (it is the sole in-workspace consumer of
 
 ---
 
-## 1. Chessboard — `chess Detector::detect` → `ChessboardDetection`
+## 1. Chessboard — `chess ChessboardDetector::detect` → `ChessboardDetection`
 
-The reference pipeline. Entry: `chess detector.rs::Detector::detect` →
+The reference pipeline. Entry: `chess detector.rs::ChessboardDetector::detect` →
 `chess pipeline/mod.rs::detect_all_topological`. Canonical stage table:
 [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/PIPELINE.md).
 
@@ -51,7 +51,7 @@ This is why `pg`'s recovery *schedule* (`run_schedule`) and `extension` modules 
 Auxiliary (not on the detection path, but public): `chess mesh_warp.rs` +
 `chess rectified_view.rs` produce rectified views for downstream calibration tooling.
 
-## 2. PuzzleBoard — `puzzle PuzzleBoardDetector::detect` → `PuzzleBoardDetectionResult`
+## 2. PuzzleBoard — `puzzle PuzzleBoardDetector::detect` → `PuzzleBoardDetection`
 
 Self-identifying chessboard: a binary dot at each interior edge midpoint encodes an
 absolute position on a 501×501 master. Entry:
@@ -60,51 +60,51 @@ on `pg` — the grid arrives via the embedded `chess` detector.
 
 | # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
 |---|---|---|---|---|
-| 1 | Chessboard grid | `puzzle pipeline.rs` → `chess Detector::detect_all` | Full chess spine (§1) | **Delegated** → `chess` |
+| 1 | Chessboard grid | `puzzle detector/pipeline.rs` → `chess ChessboardDetector::detect_all` | Full chess spine (§1) | **Delegated** → `chess` |
 | 2 | Edge sampling | `puzzle detector/pipeline.rs::sample_all_edges` | Edge-bit sampling + cell-reference estimation (§11) | **Local** |
-| 3 | Edge filter | `puzzle pipeline.rs` (confidence gate) | min-confidence threshold | **Local** |
-| 4 | Decode select | `puzzle pipeline.rs` | choose hard/soft × full/fixed-board | **Local** |
-| 5 | Decode | `puzzle decode/hard.rs::decode` · `decode/soft.rs::decode_soft` (+ fixed variants) | Hard-weighted / soft-LL decode + master-origin scan (§11) | **Local** |
-| 6 | CRT origin recovery | `puzzle decode/mod.rs::crt_master_row` / `crt_master_col` | CRT master row/col (§11) | **Local** |
-| 7 | Corner-ID assignment | `puzzle pipeline.rs::master_ij_to_id` / `wrap_master` | Master-ID encode + wrap (§11) | **Local** |
-| 8 | Component ranking | `puzzle pipeline.rs::is_better_component_decode` | Component decode ranking (§11) | **Local** |
+| 3 | Edge filter | `puzzle detector/pipeline.rs` (confidence gate) | min-confidence threshold | **Local** |
+| 4 | Decode select | `puzzle detector/pipeline.rs` | choose hard/soft × full/fixed-board | **Local** |
+| 5 | Decode | `puzzle detector/decode/hard.rs::decode` · `detector/decode/soft.rs::decode_soft` (+ fixed variants) | Hard-weighted / soft-LL decode + master-origin scan (§11) | **Local** |
+| 6 | CRT origin recovery | `puzzle detector/decode/mod.rs::crt_master_row` / `crt_master_col` | CRT master row/col (§11) | **Local** |
+| 7 | Corner-ID assignment | `puzzle detector/pipeline.rs::master_ij_to_id` / `wrap_master` | Master-ID encode + wrap (§11) | **Local** |
+| 8 | Component ranking | `puzzle detector/pipeline.rs::is_better_component_decode` | Component decode ranking (§11) | **Local** |
 
 **Notes.** Steps 5–8 are pure decode — no grid logic reimplemented. The four decode
 paths (hard/soft × full/fixed) are a *multiplex over one algorithm family*, not four
 algorithms. See the [decoder-precision note](algorithm-atlas.md) and the standing
 decision not to rewrite the decoder absent a precision gap.
 
-## 3. ChArUco — `charuco CharucoDetector::detect` → `CharucoDetectionResult`
+## 3. ChArUco — `charuco CharucoDetector::detect` → `CharucoDetection`
 
 Grid-first fusion: chessboard grid + per-cell ArUco decode + board-level alignment +
 corner IDs. Entry: `charuco detector/pipeline.rs::CharucoDetector::detect`.
 
 | # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
 |---|---|---|---|---|
-| 1 | Chessboard grid | `charuco pipeline.rs` → `chess Detector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
+| 1 | Chessboard grid | `charuco pipeline.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
 | 2 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | Per-corner ChESS refine (§10) | **Local** |
 | 3 | Cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | Marker-cell enumeration (§10) | **Local** |
-| 4 | **Decode + align** | `charuco detector/board_match.rs::match_board_diag` | Board-level soft-LL matcher (§10) — re-emits markers (its own inliers) under the chosen hypothesis | **Local** (decode bits via `aruco`) |
+| 4 | **Decode + align** | `charuco detector/board_match/diagnostics.rs::match_board_diag` | Board-level soft-LL matcher (§10) — re-emits markers (its own inliers) under the chosen hypothesis | **Local** (decode bits via `aruco`) |
 | 6 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | Corner-ID assignment (§10) | **Local** |
-| 7 | Corner refit | `charuco detector/corner_validation.rs::validate_and_fix_corners` | Homography corner refit (§10) | **Mixed**: H fit **delegated** → `core estimate_homography_rect_to_img`; ROI re-detect local |
+| 7 | Corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | Homography corner refit (§10) | **Mixed**: H fit **delegated** → `core estimate_homography_rect_to_img`; ROI re-detect local |
 | 8 | Output (+ merge) | `charuco detector/merge.rs::merge_charuco_results` | Multi-component merge (§10) | **Local** |
 
-**Public, off-path:** `charuco validation.rs::validate_marker_corner_links` lets a
+**Public, off-path:** `charuco link_check.rs::validate_marker_corner_links` lets a
 caller validate a finished result against the board spec — distinct from the internal
-stage-7 `corner_validation` (see [critique §D-3](critique.md#d-3-two-validations-two-corner-maps)).
+stage-7 `corner_refit` (see [critique §D-3](critique.md#d-3-two-validations-two-corner-maps)).
 
 **Default matters:** stage **4a** is the default (`detector/params.rs:306`). 4b is a
 documented fallback, not the default — the atlas and critique correct an earlier
 mis-reading on this point.
 
-## 4. Marker board — `marker MarkerBoardDetector::detect_*` → `MarkerBoardDetectionResult`
+## 4. Marker board — `marker MarkerBoardDetector::detect` → `MarkerBoardDetection`
 
 Checkerboard + 3 circles; circles anchor the pose, chessboard corners are the grid
 truth. Entry: `marker detector.rs::MarkerBoardDetector`.
 
 | # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
 |---|---|---|---|---|
-| 1 | Chessboard grid | `marker detector.rs` → `chess Detector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
+| 1 | Chessboard grid | `marker detector.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
 | 2 | Corner map | `marker detector.rs::build_corner_map` | grid→pixel map | **Local** (duplicate of charuco's; see [critique §D-3](critique.md#d-3-two-validations-two-corner-maps)) |
 | 3 | Circle scoring | `marker detect.rs::detect_circles_via_square_warp` → `circle_score.rs::score_circle_in_square` | Circle scoring + detection (§12) | **Local** |
 | 4 | Circle matching | `marker match_circles.rs::match_expected_circles` | Circle matching (§12) | **Local** |

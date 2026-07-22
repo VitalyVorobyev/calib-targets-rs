@@ -15,7 +15,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector, ChessboardParams};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
 
@@ -26,7 +26,7 @@ const NUM_TARGETS: u32 = 20;
 const UPSCALE: u32 = 2;
 
 /// Topological-pipeline any-detection floor on the 120-snap sweep. A
-/// "detection" is any frame where `Detector::detect()` returns `Some(_)`
+/// "detection" is any frame where `ChessboardDetector::detect()` returns `Some(_)`
 /// whose grid labels satisfy the workspace invariants (no duplicates, finite
 /// positions, origin rebased). Ratchets up phase by phase per
 /// `.claude/plans/we-changed-topological-grid-eager-valiant.md`.
@@ -110,8 +110,8 @@ fn load_snap(target_idx: u32, snap_idx: u32) -> GrayImage {
     )
 }
 
-fn default_topological_detector() -> Detector {
-    Detector::new(DetectorParams::default()).expect("valid detector params")
+fn default_topological_detector() -> ChessboardDetector {
+    ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params")
 }
 
 fn assert_detection_invariants(detection: &ChessboardDetection, context: &str) {

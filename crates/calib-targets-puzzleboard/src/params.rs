@@ -2,15 +2,14 @@
 
 use crate::board::PuzzleBoardSpec;
 use crate::detector::{PuzzleBoardDecodeConfig, PuzzleBoardScoringMode};
-use calib_targets_chessboard::DetectorParams;
+use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
-use chess_corners::SaddlePointConfig;
-use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for the PuzzleBoard detector.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PuzzleBoardParams {
     /// ChESS corner front-end configuration for the main detection pass.
     ///
@@ -19,6 +18,12 @@ pub struct PuzzleBoardParams {
     /// to pre-upscale low-resolution boards (`UpscaleConfig::Fixed`) whose
     /// corners would otherwise fall inside the ChESS ring margin. Corner
     /// positions are always reported in input-image pixels regardless.
+    ///
+    /// The facade's whole-image entry points (`detect_puzzleboard` /
+    /// `detect_puzzleboard_best`) run this front-end over the input image to
+    /// produce the corner cloud. [`PuzzleBoardDetector::detect`](crate::PuzzleBoardDetector::detect)
+    /// consumes an already-detected `&[ChessCorner]` and never re-runs corner
+    /// detection, so this field is read only on the image entry points.
     #[serde(default = "default_chess_config")]
     pub chess: DetectorConfig,
     /// Pixels per board square in the rectified sampling space.
@@ -26,36 +31,16 @@ pub struct PuzzleBoardParams {
     pub px_per_square: f32,
     /// Chessboard detection parameters.
     #[serde(default)]
-    pub chessboard: DetectorParams,
+    pub chessboard: ChessboardParams,
     /// Board geometry.
     pub board: PuzzleBoardSpec,
     /// Decoding knobs.
     #[serde(default)]
     pub decode: PuzzleBoardDecodeConfig,
-    /// ChESS detector parameters used for local re-detection of suspicious corners.
-    ///
-    /// Not serialised — reconstructed from defaults on deserialisation.
-    #[serde(skip, default = "default_redetect_params")]
-    pub corner_redetect_params: ChessCornerParams,
 }
 
 fn default_px_per_square() -> f32 {
     60.0
-}
-
-pub(crate) fn default_redetect_params() -> ChessCornerParams {
-    let mut params = ChessCornerParams::default();
-    // See the identical note in `calib-targets-charuco`'s
-    // `default_redetect_params`: the pre-1.0 `threshold_rel = 0.05` here was
-    // dead code, because 0.11's `ChessParams::default()` set
-    // `threshold_abs = Some(0.0)` and the absolute floor took priority over
-    // the relative fraction. `threshold = 0.0` is the behaviour-preserving
-    // translation onto 1.0's single absolute field.
-    params.threshold = 0.0;
-    params.nms_radius = 2;
-    params.min_cluster_size = 1;
-    params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
-    params
 }
 
 impl PuzzleBoardParams {
@@ -68,29 +53,28 @@ impl PuzzleBoardParams {
     /// gate are likewise dropped: the PuzzleBoard decoder runs over each
     /// returned chessboard component and the master-pattern decode itself
     /// is the geometry gate.
-    pub fn for_board(board: &PuzzleBoardSpec) -> Self {
-        let mut chessboard = DetectorParams::default();
+    pub fn for_board(board: PuzzleBoardSpec) -> Self {
+        let mut chessboard = ChessboardParams::default();
         // Align with the chessboard/ChArUco corner-strength floor (33): a
         // defocused board edge fires the ChESS detector weakly (strength
         // ≈ 15–30 vs a sharp board's ≈ 90+), and such corners — while
         // grid-consistent in position — pollute the blurred-region frontier
         // with false labels. The PuzzleBoard decoder is robust to the
         // missing weak corners but not to the wrong ones, so the floor is a
-        // net win. (`DetectorParams::default()` already sets 33; kept
+        // net win. (`ChessboardParams::default()` already sets 33; kept
         // explicit here to document the PuzzleBoard intent.)
         chessboard.min_corner_strength = 33.0;
         Self {
             chess: default_chess_config(),
             px_per_square: 60.0,
             chessboard,
-            board: *board,
+            board,
             decode: PuzzleBoardDecodeConfig::default(),
-            corner_redetect_params: default_redetect_params(),
         }
     }
 
     /// Multi-config sweep preset built on top of
-    /// [`DetectorParams::sweep_default`].
+    /// [`ChessboardParams::sweep_default`].
     ///
     /// The first pass keeps the default soft scorer and default BER gate.
     /// The second pass repeats the same chessboard sweep with the legacy
@@ -98,8 +82,8 @@ impl PuzzleBoardParams {
     /// high-distortion author-reference fragments while leaving
     /// [`Self::for_board`] unchanged.
     pub fn sweep_for_board(board: &PuzzleBoardSpec) -> Vec<Self> {
-        let base = Self::for_board(board);
-        let chess_sweep = DetectorParams::sweep_default();
+        let base = Self::for_board(*board);
+        let chess_sweep = ChessboardParams::sweep_default();
         let mut configs: Vec<Self> = chess_sweep
             .iter()
             .cloned()

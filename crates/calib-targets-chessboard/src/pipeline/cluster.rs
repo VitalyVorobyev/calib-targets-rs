@@ -25,7 +25,7 @@
 //!   - The per-corner `stage` / `label` fields, mutated in place.
 
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 use projective_grid::cluster::{
     self as pg, AxisAssignment, AxisFeature, AxisObservation, ClusterParams,
 };
@@ -74,7 +74,7 @@ pub use projective_grid::cluster::AxisClusterDebug as ClusterDebug;
 
 /// Build the [`ClusterParams`] the generic clusterer consumes from the
 /// chessboard tuning.
-fn cluster_params(params: &DetectorParams) -> ClusterParams {
+fn cluster_params(params: &ChessboardParams) -> ClusterParams {
     let tuning = params.effective_tuning();
     ClusterParams::new(
         tuning.num_bins,
@@ -117,7 +117,10 @@ fn collect_strong_features(corners: &[CornerAug]) -> (Vec<AxisFeature>, Vec<usiz
 ///
 /// Thin wrapper over [`cluster_axes_debug`]; callers wanting the
 /// histogram + peak seeds should call `cluster_axes_debug` directly.
-pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Option<ClusterCenters> {
+pub fn cluster_axes(
+    corners: &mut [CornerAug],
+    params: &ChessboardParams,
+) -> Option<ClusterCenters> {
     cluster_axes_debug(corners, params).0
 }
 
@@ -131,7 +134,7 @@ pub fn cluster_axes(corners: &mut [CornerAug], params: &DetectorParams) -> Optio
 )]
 pub fn cluster_axes_debug(
     corners: &mut [CornerAug],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> (Option<ClusterCenters>, ClusterDebug) {
     let cluster_params = cluster_params(params);
     let (features, indices) = collect_strong_features(corners);
@@ -240,7 +243,7 @@ mod tests {
             ));
         }
 
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         let centers = cluster_axes(&mut corners, &params).expect("centers");
         // Expect peaks near 30° and 120° (Θ₀ < Θ₁ sort), with the
         // tightness of the jitter.
@@ -273,7 +276,7 @@ mod tests {
             // Parity-1: axes[0] at 90°, axes[1] at 180°→0°.
             corners.push(make_corner(30 + i, i as f32, 1.0, 90.0, 0.01, 1.0));
         }
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         cluster_axes(&mut corners, &params).expect("centers");
 
         // Half Canonical, half Swapped.
@@ -302,7 +305,7 @@ mod tests {
         // cluster center within 12°).
         corners.push(make_corner(99, 0.0, 0.0, 25.0, 0.01, 1.0));
 
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         cluster_axes(&mut corners, &params).expect("centers");
 
         let last = corners.last().expect("corners is non-empty");
@@ -318,7 +321,7 @@ mod tests {
     #[test]
     fn empty_input_returns_none() {
         let mut corners: Vec<CornerAug> = Vec::new();
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         assert!(cluster_axes(&mut corners, &params).is_none());
     }
 }
@@ -374,7 +377,7 @@ mod plateau_peak_regression {
                 augs.push(aug);
             }
         }
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         let centers =
             cluster_axes(&mut augs, &params).expect("near-π plateau must still yield two peaks");
         // Centers should settle at ≈0 and ≈π/2 after 2-means.

@@ -31,12 +31,11 @@ use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner {
-        position: Point2::new(c.x, c.y),
+    TargetCorner::new(
+        Point2::new(c.x, c.y),
         // `axes` is `None` only when the upstream orientation fit is
         // skipped; these fixtures always fit it.
-        axes: c
-            .axes
+        c.axes
             .map(|a| {
                 [
                     calib_targets_core::AxisEstimate {
@@ -50,8 +49,8 @@ fn adapt(c: &CornerDescriptor) -> TargetCorner {
                 ]
             })
             .expect("orientation fit enabled"),
-        strength: c.response,
-    }
+        c.response,
+    )
 }
 
 fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8>> {
@@ -98,7 +97,7 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
         spec.origin_col,
     )
     .expect("board");
-    let mut params = PuzzleBoardParams::for_board(&board_spec);
+    let mut params = PuzzleBoardParams::for_board(board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
     params.decode.scoring_mode = mode;
     let detector = PuzzleBoardDetector::new(params).expect("detector");

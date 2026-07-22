@@ -22,7 +22,7 @@ use crate::snaps::resolve_label;
 pub struct DiagnoseRequest {
     /// Snap label (`path` or `path#k`).
     pub label: String,
-    /// Partial `DetectorParams` override (CLI merge semantics).
+    /// Partial `ChessboardParams` override (CLI merge semantics).
     #[serde(default)]
     pub params: serde_json::Value,
     /// ChESS axis-fit method (default: ring_fit).

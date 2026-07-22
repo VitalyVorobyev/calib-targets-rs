@@ -14,7 +14,7 @@ writing a new detector or consuming detection results without the facade.
 
 ```toml
 [dependencies]
-calib-targets-core = "0.10"
+calib-targets-core = "0.11"
 nalgebra = "0.34"
 ```
 
@@ -40,7 +40,7 @@ nalgebra = "0.34"
   histogram clustering used by the chessboard detector.
 - [`ChessConfig`] + friends — shared ChESS corner-detector configuration
   struct, consumed by every higher-level detector through
-  `DetectorParams::chess`.
+  `ChessboardParams::chess`.
 
 ## Coordinate conventions
 

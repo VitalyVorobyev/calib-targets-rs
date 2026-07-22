@@ -55,15 +55,15 @@ fn make_marker_image(code: u64, bits: usize, border: usize, cell_px: usize) -> G
 }
 
 fn identity_cell(img_side: f32) -> MarkerCell {
-    MarkerCell {
-        gc: Coord::new(0, 0),
-        corners_img: [
+    MarkerCell::new(
+        Coord::new(0, 0),
+        [
             Point2::new(0.0, 0.0),
             Point2::new(img_side, 0.0),
             Point2::new(img_side, img_side),
             Point2::new(0.0, img_side),
         ],
-    }
+    )
 }
 
 fn default_cfg() -> ScanDecodeConfig {

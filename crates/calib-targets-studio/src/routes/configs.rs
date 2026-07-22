@@ -1,4 +1,4 @@
-//! Named detector-config CRUD. Configs are raw partial-`DetectorParams`
+//! Named detector-config CRUD. Configs are raw partial-`ChessboardParams`
 //! JSON files in the gitignored `<workspace_root>/studio_configs/` directory
 //! — the same format the bench CLI's `--chessboard-config` accepts, so a
 //! config saved in the studio works verbatim on the command line.
@@ -9,7 +9,7 @@ use std::time::UNIX_EPOCH;
 use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::Json;
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets_bench::config::merge_detector_params;
 use serde::{Deserialize, Serialize};
 
@@ -102,7 +102,7 @@ pub struct DefaultsQuery {
 /// fully materialised *effective* chessboard grid params for the chosen target
 /// family (stable params + every `advanced` knob), so the UI never hardcodes
 /// Rust values. With no `family` (or `chessboard`) this is the bare
-/// [`DetectorParams::default`]; `charuco` / `puzzleboard` return the chessboard
+/// [`ChessboardParams::default`]; `charuco` / `puzzleboard` return the chessboard
 /// sub-params their `for_board` constructors pin (the family-specific
 /// strength floor and edge-shape gating), which is what actually
 /// runs for those families.
@@ -110,18 +110,18 @@ pub async fn defaults(Query(q): Query<DefaultsQuery>) -> Result<Json<serde_json:
     // The chessboard sub-params each `for_board` pins are board-independent
     // constants, so a minimal representative spec yields the same effective
     // grid params the real board would.
-    let chess: DetectorParams = match q.family.as_deref() {
-        None | Some("") | Some("chessboard") => DetectorParams::default(),
+    let chess: ChessboardParams = match q.family.as_deref() {
+        None | Some("") | Some("chessboard") => ChessboardParams::default(),
         Some("charuco") => {
             let dict = calib_targets::aruco::builtins::builtin_dictionary("DICT_4X4_50")
                 .ok_or_else(|| ApiError::Internal("missing builtin ArUco dictionary".into()))?;
             let spec = calib_targets::charuco::CharucoBoardSpec::new(5, 5, 1.0, 0.7, dict);
-            calib_targets::charuco::CharucoParams::for_board(&spec).chessboard
+            calib_targets::charuco::CharucoParams::for_board(spec).chessboard
         }
         Some("puzzleboard") => {
             let spec = calib_targets::puzzleboard::PuzzleBoardSpec::with_origin(5, 5, 1.0, 0, 0)
                 .map_err(|e| ApiError::Internal(e.to_string()))?;
-            calib_targets::puzzleboard::PuzzleBoardParams::for_board(&spec).chessboard
+            calib_targets::puzzleboard::PuzzleBoardParams::for_board(spec).chessboard
         }
         Some(other) => {
             return Err(ApiError::BadRequest(format!(
@@ -155,7 +155,7 @@ pub async fn put(
     let path = config_path(&name)?;
     if !body.is_object() {
         return Err(ApiError::BadRequest(
-            "config body must be a JSON object of DetectorParams overrides".into(),
+            "config body must be a JSON object of ChessboardParams overrides".into(),
         ));
     }
     // Reject overrides that do not merge into valid params.
@@ -185,14 +185,14 @@ mod tests {
     /// This is what the Config-tab editor receives and the UI clones to seed
     /// an advanced override.
     fn materialised_defaults() -> serde_json::Value {
-        let chess = DetectorParams::default();
+        let chess = ChessboardParams::default();
         let advanced = chess.effective_tuning().into_owned();
-        serde_json::to_value(chess.with_advanced(advanced)).expect("serialize DetectorParams")
+        serde_json::to_value(chess.with_advanced(advanced)).expect("serialize ChessboardParams")
     }
 
     /// The materialised `_defaults` value round-trips through the server's
     /// merge path (`merge_detector_params`) under the strict
-    /// `deny_unknown_fields` + all-required-key `DetectorParams` contract. This
+    /// `deny_unknown_fields` + all-required-key `ChessboardParams` contract. This
     /// is the round-trip the studio actually exercises when a user opens the
     /// editor and re-applies the shown defaults; it must not carry any removed
     /// key (e.g. `graph_build_algorithm`) nor omit a required one.
@@ -200,7 +200,7 @@ mod tests {
     fn materialised_defaults_merge_into_valid_params() {
         let value = materialised_defaults();
         merge_detector_params(&value)
-            .expect("materialised _defaults must merge into valid DetectorParams");
+            .expect("materialised _defaults must merge into valid ChessboardParams");
     }
 
     /// A UI-style partial override that sets one stable field plus the

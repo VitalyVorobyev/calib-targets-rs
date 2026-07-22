@@ -32,7 +32,7 @@
 //! # Quickstart
 //!
 //! ```rust
-//! use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+//! use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 //! use calib_targets_core::AxisEstimate;
 //! use nalgebra::Point2;
 //!
@@ -47,19 +47,19 @@
 //!         } else {
 //!             (0.0, std::f32::consts::FRAC_PI_2)
 //!         };
-//!         corners.push(ChessCorner {
-//!             position: Point2::new(i as f32 * 20.0 + 50.0, j as f32 * 20.0 + 50.0),
-//!             axes: [
+//!         corners.push(ChessCorner::new(
+//!             Point2::new(i as f32 * 20.0 + 50.0, j as f32 * 20.0 + 50.0),
+//!             [
 //!                 AxisEstimate { angle: a0, sigma: 0.01 },
 //!                 AxisEstimate { angle: a1, sigma: 0.01 },
 //!             ],
 //!             // Above the default `min_corner_strength` floor (33.0).
-//!             strength: 100.0,
-//!         });
+//!             100.0,
+//!         ));
 //!     }
 //! }
 //!
-//! let det = Detector::new(DetectorParams::default()).expect("default params are valid");
+//! let det = ChessboardDetector::new(ChessboardParams::default()).expect("default params are valid");
 //! let detection = det.detect(&corners).expect("clean 7×7 grid detects");
 //! assert_eq!(detection.corners.len(), 49);
 //! ```
@@ -84,8 +84,9 @@ mod rectified_view;
 
 // --- Public contract ---------------------------------------------------
 pub use corner::ChessCorner;
-pub use detector::{ChessboardCorner, ChessboardDetection, Detector};
+pub use detector::{ChessboardCorner, ChessboardDetection, ChessboardDetector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
-pub use params::{AdvancedTuning, ChessboardParamsError, DetectorParams};
-pub use pipeline::{detect_all_topological, trace_topological};
+pub use params::{ChessboardAdvancedTuning, ChessboardParams, ChessboardParamsError};
+#[cfg(feature = "diagnostics")]
+pub use pipeline::trace_topological;
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};

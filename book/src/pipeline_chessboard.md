@@ -87,7 +87,7 @@ essentially perfect, so it can only add recall, never a wrong label. Under
 
 ## Multi-component dispatch
 
-`Detector::detect_all` is the multi-board entry point: it returns several
+`ChessboardDetector::detect_all` is the multi-board entry point: it returns several
 `ChessboardDetection`s (up to `max_components`) when one image contains
 physically distinct grids. Within a single image, the topological facade
 already merges connected components, so a single physical board split into
@@ -112,13 +112,13 @@ final-check `GeometryCheckTrace` drop counters, then consult:
 
 ## Tuning
 
-`DetectorParams` splits into a **stable core** (`graph_build_algorithm`
+`ChessboardParams` splits into a **stable core** (`graph_build_algorithm`
 [single-variant], `min_labeled_corners`, `max_components`,
 `min_corner_strength`) plus an opt-in, **non-semver** `advanced`
-(`AdvancedTuning`) block of per-stage knobs. Leave `advanced` unset unless
+(`ChessboardAdvancedTuning`) block of per-stage knobs. Leave `advanced` unset unless
 a specific input fails and you have evidence for the change. For
 challenging images use `detect_chessboard_best` with
-`DetectorParams::sweep_default()` (three configs varying only
+`ChessboardParams::sweep_default()` (three configs varying only
 recall-affecting tolerances; all preserve the precision invariants). The
 full knob table is in [Tuning the Detector](tuning.md) and the
 [chessboard crate chapter](chessboard.md).

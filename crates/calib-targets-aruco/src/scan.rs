@@ -148,6 +148,10 @@ impl ArucoScanConfig {
 }
 
 /// One decoded marker detection.
+///
+/// `#[non_exhaustive]`: construct with [`MarkerDetection::new`] plus the
+/// `with_*` builders for the optional decode-quality and image-frame fields.
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerDetection {
     /// Dictionary ID of the decoded marker.
@@ -180,13 +184,81 @@ pub struct MarkerDetection {
     pub corners_img: Option<[Point2<f32>; 4]>,
 }
 
+impl MarkerDetection {
+    /// Create a marker detection from its identity and rectified-frame geometry.
+    ///
+    /// The marker carries dictionary `id` at grid cell `gc`, matched by rotating
+    /// the observed `code` through `rotation` 90° steps to reach a `hamming`-distance
+    /// hit; `corners_rect` are the cell's four corners (TL, TR, BR, BL) in the
+    /// rectified sampling frame. The decode-confidence scores default to `0.0`,
+    /// `inverted` to `false`, and the image-frame corners to `None` — attach them
+    /// with [`with_scores`](Self::with_scores), [`with_inverted`](Self::with_inverted),
+    /// and [`with_corners_img`](Self::with_corners_img).
+    pub fn new(
+        id: u32,
+        gc: Coord,
+        rotation: u8,
+        hamming: u8,
+        code: u64,
+        corners_rect: [Point2<f32>; 4],
+    ) -> Self {
+        Self {
+            id,
+            gc,
+            rotation,
+            hamming,
+            score: 0.0,
+            border_score: 0.0,
+            code,
+            inverted: false,
+            corners_rect,
+            corners_img: None,
+        }
+    }
+
+    /// Attach the decode-confidence scores: the overall `score` and the
+    /// border-pattern confidence `border_score`, each in `[0, 1]`.
+    #[must_use]
+    pub fn with_scores(mut self, score: f32, border_score: f32) -> Self {
+        self.score = score;
+        self.border_score = border_score;
+        self
+    }
+
+    /// Record whether the decoder inverted polarity to maximise the border score.
+    #[must_use]
+    pub fn with_inverted(mut self, inverted: bool) -> Self {
+        self.inverted = inverted;
+        self
+    }
+
+    /// Attach the cell's four corners in input-image pixels, for drawing
+    /// overlays on the original frame.
+    #[must_use]
+    pub fn with_corners_img(mut self, corners_img: [Point2<f32>; 4]) -> Self {
+        self.corners_img = Some(corners_img);
+        self
+    }
+}
+
 /// One square cell with its image-space corners.
+///
+/// `#[non_exhaustive]`: construct with [`MarkerCell::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerCell {
     /// Cell coordinates in grid space (top-left corner of the square).
     pub gc: Coord,
     /// Corners of the square cell in image coordinates (TL, TR, BR, BL).
     pub corners_img: [Point2<f32>; 4],
+}
+
+impl MarkerCell {
+    /// Create a cell at grid coordinate `gc` from its four image-space corners
+    /// (TL, TR, BR, BL).
+    pub fn new(gc: Coord, corners_img: [Point2<f32>; 4]) -> Self {
+        Self { gc, corners_img }
+    }
 }
 
 /// Scan all square cells `(sx,sy)` in `0..cells_x × 0..cells_y`, read + decode markers.
@@ -286,6 +358,9 @@ pub fn scan_decode_markers_in_cells(
 /// Produced by [`sample_cell`]; callers (e.g. the ChArUco board-level
 /// matcher) use it to compute arbitrary score functions against expected
 /// marker templates without re-running the homography warp.
+///
+/// `#[non_exhaustive]`: construct with [`CellSamples::new`].
+#[non_exhaustive]
 #[derive(Clone, Debug)]
 pub struct CellSamples {
     /// Number of cells per side in the sampled grid: `bits + 2 * border_bits`.
@@ -302,6 +377,27 @@ pub struct CellSamples {
     /// in `[0, 1]`. `1.0` means every border sample is black. Useful as a
     /// confidence weight.
     pub border_black_fraction: f32,
+}
+
+impl CellSamples {
+    /// Create a per-cell intensity sample grid from its fields.
+    pub fn new(
+        cells_per_side: usize,
+        bits_per_side: usize,
+        border_bits: usize,
+        mean_grid: Vec<u8>,
+        otsu_threshold: u8,
+        border_black_fraction: f32,
+    ) -> Self {
+        Self {
+            cells_per_side,
+            bits_per_side,
+            border_bits,
+            mean_grid,
+            otsu_threshold,
+            border_black_fraction,
+        }
+    }
 }
 
 /// Sample a rectified per-cell intensity grid from an image using a cell
@@ -364,14 +460,14 @@ pub fn sample_cell(
         border_black as f32 / border_total as f32
     };
 
-    Some(CellSamples {
-        cells_per_side: cells,
-        bits_per_side: bits,
-        border_bits: border,
+    Some(CellSamples::new(
+        cells,
+        bits,
+        border,
         mean_grid,
-        otsu_threshold: otsu,
+        otsu,
         border_black_fraction,
-    })
+    ))
 }
 
 /// Decode a single marker from one square cell in image space.
@@ -551,18 +647,11 @@ fn build_detection(
     let y0 = gc0.v as f32 * px_per_square;
     let corners = corners_rect.map(|p| Point2::new(p.x + x0, p.y + y0));
 
-    Some(MarkerDetection {
-        id: m.id,
-        gc,
-        rotation: m.rotation,
-        hamming: m.hamming,
-        score,
-        border_score: obs.border_score,
-        code: obs.code,
-        inverted: obs.inverted,
-        corners_rect: corners,
-        corners_img: None,
-    })
+    Some(
+        MarkerDetection::new(m.id, gc, m.rotation, m.hamming, obs.code, corners)
+            .with_scores(score, obs.border_score)
+            .with_inverted(obs.inverted),
+    )
 }
 
 fn decode_rectified_cell(
@@ -914,15 +1003,15 @@ mod tests {
         };
 
         let s = img.width as f32;
-        let cell = MarkerCell {
-            gc: Coord::new(0, 0),
-            corners_img: [
+        let cell = MarkerCell::new(
+            Coord::new(0, 0),
+            [
                 Point2::new(0.0, 0.0),
                 Point2::new(s, 0.0),
                 Point2::new(s, s),
                 Point2::new(0.0, s),
             ],
-        };
+        );
 
         let det = decode_marker_in_cell(&view, &cell, s, &cfg, &matcher).expect("decode marker");
         assert_eq!(det.id, 0);

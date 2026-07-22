@@ -1,20 +1,18 @@
-//! Projective homography: image-warp and `nalgebra::Projective2` bridges over
-//! the workspace's single-source homography estimator.
+//! Projective homography: image-warp bridge over the workspace's
+//! single-source homography estimator.
 //!
 //! The [`Homography`] type, [`HomographyQuality`] metrics, and the
 //! Hartley-normalised DLT estimators live in the lowest crate,
 //! [`projective_grid::geometry`], so the algorithm has exactly one
 //! implementation. This module re-exports them and adds only the pieces that
-//! need core-level image types ([`warp_perspective_gray`]) or the
-//! `nalgebra::Projective2` representation used by the grid-alignment bridge
-//! ([`homography_to_next`] / [`homography_from_next`]).
+//! need core-level image types ([`warp_perspective_gray`]).
 //!
 //! Homographies map source-frame points to destination-frame points as
 //! `p_dst ~ H * p_src`. Detector code uses this for rectified-grid to
 //! image-frame mappings; residuals are measured in image pixels.
 
 use crate::{sample_bilinear_u8, GrayImage, GrayImageView};
-use nalgebra::{Point2, Projective2};
+use nalgebra::Point2;
 
 // Single source of truth for the homography type, quality metrics, and the
 // Hartley-normalised DLT estimators: defined in `projective_grid::geometry` and
@@ -26,19 +24,6 @@ pub use projective_grid::geometry::{
     estimate_homography as estimate_homography_rect_to_img, estimate_homography_with_quality,
     homography_from_4pt, homography_from_4pt_with_quality, Homography, HomographyQuality,
 };
-
-/// Convert [`Homography`] into the next crate's projective transform
-/// representation. The underlying 3×3 matrix is copied directly.
-#[inline]
-pub fn homography_to_next(h: Homography<f32>) -> Projective2<f32> {
-    Projective2::from_matrix_unchecked(h.h)
-}
-
-/// Project a [`Projective2<f32>`] back into [`Homography`].
-#[inline]
-pub fn homography_from_next(h: Projective2<f32>) -> Homography<f32> {
-    Homography::new(h.into_inner())
-}
 
 /// Warp into a rectified image: for each destination pixel center, map to
 /// source image coordinates via `H_img_from_rect` and bilinear-sample.
@@ -107,21 +92,6 @@ mod tests {
             Point2::new(80.0, 90.0),
         ] {
             assert_close(estimated.apply(p), ground_truth.apply(p), 1e-3);
-        }
-    }
-
-    /// Core-specific: the `nalgebra::Projective2` bridge round-trips the matrix
-    /// exactly (this pair lives in core because it needs `Projective2`).
-    #[test]
-    fn projective2_bridge_round_trips() {
-        let h = Homography::new(Matrix3::new(
-            1.2, 0.1, 5.0, -0.05, 0.9, 3.0, 0.001, 0.0005, 1.0,
-        ));
-        let bridged = homography_from_next(homography_to_next(h));
-        for r in 0..3 {
-            for c in 0..3 {
-                assert_eq!(bridged.h[(r, c)], h.h[(r, c)]);
-            }
         }
     }
 }

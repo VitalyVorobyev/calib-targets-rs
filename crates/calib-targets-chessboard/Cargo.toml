@@ -22,10 +22,12 @@ categories = ["computer-vision", "science"]
 # not deserialize; every other refiner is unaffected.
 ml-refiner = ["chess-corners/ml-refiner"]
 default = []
-# Reserved opt-in introspection seam. The rich per-stage `DebugFrame` surface
-# was retired with the seed-and-grow builder; the topological builder exposes
-# `trace_topological` on the always-on surface instead. The flag is retained
-# (gating no extra code today) so dependent crates' feature wiring stays valid.
+# Opt-in introspection surface: `trace_topological`, the topological grid
+# builder's compact serializable trace of the final labelled components. OFF
+# by default, consistent with `calib-targets-charuco` / `-puzzleboard` /
+# `-marker`. The rich per-stage `DebugFrame` surface was retired with the
+# seed-and-grow builder; `trace_topological` is the topological builder's
+# sole diagnostic entry point.
 diagnostics = []
 dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
@@ -61,6 +63,12 @@ harness = false
 [[bench]]
 name = "dataset_chessboard"
 harness = false
+
+# Exercises `trace_topological`, which lives behind the opt-in `diagnostics`
+# feature.
+[[test]]
+name = "topo_grid_regression"
+required-features = ["diagnostics"]
 
 [package.metadata.docs.rs]
 all-features = true

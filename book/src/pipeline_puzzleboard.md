@@ -58,8 +58,10 @@ than the full master.
 
 ## Tuning
 
-The grid side is the standard chessboard `DetectorParams` (under
-`params.chessboard`); the decode side is `params.decode`:
+The ChESS corner front-end is `params.chess` (a `DetectorConfig`, consumed
+by the facade's whole-image entry points); the grid side is the standard
+chessboard `ChessboardParams` (under `params.chessboard`); the decode side
+is `params.decode`:
 
 - **`min_bit_confidence`** (default `0.5`) — the confidence floor for an
   edge bit to count. Lower on blurry boards; too low admits noise bits.

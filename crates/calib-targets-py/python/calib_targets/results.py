@@ -387,7 +387,7 @@ class CharucoCorner:
 
 
 @dataclass(slots=True)
-class CharucoDetectionResult:
+class CharucoDetection:
     corners: list[CharucoCorner]
     markers: list[MarkerDetection]
     alignment: GridAlignment
@@ -408,7 +408,7 @@ class CharucoDetectionResult:
         return charuco_detection_result_to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> CharucoDetectionResult:
+    def from_dict(cls, data: dict[str, Any]) -> CharucoDetection:
         from ._convert_out import charuco_detection_result_from_dict
 
         return charuco_detection_result_from_dict(data)
@@ -435,7 +435,7 @@ class MarkerBoardCorner:
 
 
 @dataclass(slots=True)
-class MarkerBoardDetectionResult:
+class MarkerBoardDetection:
     """Marker-board detection result.
 
     Carries only the facts a consumer needs to *use* a marker-board
@@ -465,7 +465,7 @@ class MarkerBoardDetectionResult:
         return marker_board_detection_result_to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardDetectionResult:
+    def from_dict(cls, data: dict[str, Any]) -> MarkerBoardDetection:
         from ._convert_out import marker_board_detection_result_from_dict
 
         return marker_board_detection_result_from_dict(data)
@@ -545,7 +545,7 @@ class PuzzleBoardCorner:
 
 
 @dataclass(slots=True)
-class PuzzleBoardDetectionResult:
+class PuzzleBoardDetection:
     corners: list[PuzzleBoardCorner]
     alignment: GridAlignment
     decode: PuzzleBoardDecodeInfo
@@ -566,7 +566,7 @@ class PuzzleBoardDetectionResult:
         return puzzleboard_detection_result_to_dict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDetectionResult:
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDetection:
         from ._convert_out import puzzleboard_detection_result_from_dict
 
         return puzzleboard_detection_result_from_dict(data)
@@ -595,12 +595,12 @@ __all__ = [
     "MarkerCircleExpectation",
     "CircleMatch",
     "CharucoCorner",
-    "CharucoDetectionResult",
+    "CharucoDetection",
     "MarkerBoardCorner",
-    "MarkerBoardDetectionResult",
+    "MarkerBoardDetection",
     "PuzzleBoardObservedEdge",
     "ObservedEdge",  # backward-compatible alias
     "PuzzleBoardCorner",
     "PuzzleBoardDecodeInfo",
-    "PuzzleBoardDetectionResult",
+    "PuzzleBoardDetection",
 ]

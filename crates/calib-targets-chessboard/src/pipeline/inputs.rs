@@ -4,7 +4,7 @@ use crate::corner::ChessCorner;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 
 /// Corner data passed from `calib-targets-chessboard` into `projective-grid`.
 pub(super) struct TopologicalInputs {
@@ -27,7 +27,7 @@ fn axes_from(c: &ChessCorner) -> [AxisEstimate; 2] {
     ]
 }
 
-fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
+fn prefilter(corners: &[ChessCorner], params: &ChessboardParams) -> Vec<bool> {
     let min_corner_strength = params.min_corner_strength;
     let max_axis_sigma = crate::pipeline::axis_admission_sigma(params);
     corners
@@ -56,7 +56,7 @@ fn prefilter(corners: &[ChessCorner], params: &DetectorParams) -> Vec<bool> {
 )]
 pub(super) fn topological_inputs(
     corners: &[ChessCorner],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> TopologicalInputs {
     let mask = prefilter(corners, params);
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();

@@ -9,15 +9,17 @@
 //!
 //! ```no_run
 //! use calib_targets::detect;
-//! use calib_targets::chessboard::DetectorParams;
+//! use calib_targets::chessboard::ChessboardParams;
 //! use image::ImageReader;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-//! let params = DetectorParams::default();
+//! let params = ChessboardParams::default();
 //!
-//! let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
-//! println!("detected: {}", result.is_some());
+//! match detect::detect_chessboard(&img, &detect::default_chess_config(), &params) {
+//!     Ok(detection) => println!("detected {} corners", detection.corners.len()),
+//!     Err(err) => println!("no board: {err}"),
+//! }
 //! # Ok(())
 //! # }
 //! ```
@@ -29,7 +31,7 @@
 //! repository for setup, the `detect_*` APIs, and printable-target generation.
 //! Config inputs accept typed Python classes; `detect_charuco` requires
 //! `params` with `params.board`. For marker boards, `target_position` is
-//! populated only when `params.layout.cell_size` is provided and alignment
+//! populated only when `params.board.cell_size` is provided and alignment
 //! succeeds.
 //!
 //! ## API map
@@ -44,8 +46,14 @@
 //!
 //! ## Performance
 //!
-//! Benchmarks are coming. The goal is to be the fastest detector in this class
-//! while maintaining high sensitivity and accuracy.
+//! The detectors share a single image-free grid builder (Delaunay
+//! triangulation plus a local axis-driven cell test) that operates on local
+//! neighbourhoods, so cost scales with the detected corner count rather than
+//! raw image resolution and degrades gracefully under perspective and radial
+//! distortion. Corner detection dominates the runtime on sparse boards; grid
+//! assembly and marker / dot decoding dominate on dense ones. Each detector
+//! crate ships Criterion benchmarks (`cargo bench`), so you can measure the
+//! regime that matters for your inputs on your own hardware.
 #![deny(missing_docs)]
 
 pub use calib_targets_aruco as aruco;
@@ -58,6 +66,16 @@ pub use calib_targets_puzzleboard as puzzleboard;
 
 pub use calib_targets_chessboard::ChessCorner;
 pub use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
+
+/// Re-export of the [`image`] crate the [`detect`] helpers accept.
+///
+/// Reach for `image` through `calib_targets::image` instead of adding a
+/// separate `image = "0.25"` dependency: it guarantees your `GrayImage` type
+/// is the exact one these helpers take, so the two versions cannot drift apart
+/// and produce a confusing "expected `GrayImage`, found `GrayImage`" mismatch.
+/// A direct dependency still works — this is purely additive.
+#[cfg(feature = "image")]
+pub use ::image;
 
 #[cfg(feature = "image")]
 pub mod detect;

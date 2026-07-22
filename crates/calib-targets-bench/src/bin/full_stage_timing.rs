@@ -43,9 +43,7 @@ use std::time::Instant;
 
 use calib_targets::aruco::builtins;
 use calib_targets::charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
-use calib_targets::chessboard::{
-    ChessCorner, Detector as ChessboardDetector, DetectorParams as ChessboardParams,
-};
+use calib_targets::chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use calib_targets::core::{DetectorConfig, GrayImageView};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
@@ -382,7 +380,7 @@ fn measure_charuco(
     )
     .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
-    let mut params = CharucoParams::for_board(&board);
+    let mut params = CharucoParams::for_board(board);
     params.px_per_square = spec.px_per_square;
     params.min_marker_inliers = spec.min_marker_inliers;
 
@@ -517,7 +515,7 @@ fn measure_puzzleboard(
     // A single representative config (default soft full-master decode), matching
     // the `synthetic_decode` bench — not the multi-config `detect_puzzleboard_best`
     // sweep, so corner detection stays out of the timed loop.
-    let params = PuzzleBoardParams::for_board(&board);
+    let params = PuzzleBoardParams::for_board(board);
 
     // `grid_build` measures exactly the grid stage the PuzzleBoard pipeline runs
     // internally: `ChessDetector::new(params.chessboard).detect_all(corners)`.

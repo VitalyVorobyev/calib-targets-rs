@@ -29,9 +29,5 @@ pub fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
             ]
         },
     );
-    ChessCorner {
-        position: Point2::new(c.x, c.y),
-        axes,
-        strength: c.response,
-    }
+    ChessCorner::new(Point2::new(c.x, c.y), axes, c.response)
 }

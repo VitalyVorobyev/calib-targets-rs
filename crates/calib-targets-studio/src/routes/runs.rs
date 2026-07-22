@@ -56,7 +56,7 @@ pub struct RunRequest {
     /// set, overrides the kind filter so the run covers exactly that dataset.
     #[serde(default)]
     pub group: Option<String>,
-    /// Partial `DetectorParams` override (CLI merge semantics).
+    /// Partial `ChessboardParams` override (CLI merge semantics).
     #[serde(default)]
     pub params: serde_json::Value,
     /// Detection engine (default: pipeline).

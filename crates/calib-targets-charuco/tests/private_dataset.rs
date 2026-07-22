@@ -85,7 +85,7 @@ fn smoke_flagship_snap_0_detects() {
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&snap, &chess_cfg);
 
-    let params = CharucoParams::for_board(&spec);
+    let params = CharucoParams::for_board(spec);
     let detector = CharucoDetector::new(params).expect("detector");
     let view = GrayImageView {
         width: snap.width() as usize,
@@ -124,9 +124,10 @@ fn run_flagship_sweep() -> Option<(usize, usize, usize)> {
 
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
-    let mut params = CharucoParams::for_board(&spec);
+    let mut params = CharucoParams::for_board(spec);
     params.min_marker_inliers = 1;
-    params.min_secondary_marker_inliers = 1;
+    // `min_secondary_marker_inliers` is now an advanced knob; its default (1)
+    // already matches what this test wants, so no override is needed.
     let detector = CharucoDetector::new(params).expect("detector");
 
     let mut frames = 0usize;
@@ -231,9 +232,10 @@ fn smoke_apriltag_image_does_not_panic() {
     // topological-decode improvement, NOT a regression to guard against here;
     // this floor only asserts the decode does not collapse to nothing and stays
     // self-consistent.
-    let mut params = CharucoParams::for_board(&spec);
+    let mut params = CharucoParams::for_board(spec);
     params.min_marker_inliers = 1;
-    params.min_secondary_marker_inliers = 1;
+    // `min_secondary_marker_inliers` is now an advanced knob; its default (1)
+    // already matches what this test wants, so no override is needed.
     let detector = CharucoDetector::new(params).expect("detector");
     let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
     let result = result.expect("board-level matcher must detect target_0 snap 0");
@@ -288,9 +290,10 @@ fn assert_reviewed_false_corners_rejected() {
     }
     let spec = load_board_spec_any(&board_path).expect("load board");
     let chess_cfg = default_chess_config();
-    let mut params = CharucoParams::for_board(&spec);
+    let mut params = CharucoParams::for_board(spec);
     params.min_marker_inliers = 1;
-    params.min_secondary_marker_inliers = 1;
+    // `min_secondary_marker_inliers` is now an advanced knob; its default (1)
+    // already matches what this test wants, so no override is needed.
     let detector = CharucoDetector::new(params).expect("detector");
 
     for &(target_idx, snap_idx, falses) in REVIEWED_FALSE_PX {

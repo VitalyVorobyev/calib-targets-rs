@@ -912,13 +912,13 @@ class LocalMergeParams:
 # Names of the advanced (opt-in, unstable) scalar tuning knobs that the Python
 # ``ChessboardParams`` dataclass carries flat for ergonomics but serialises
 # under the nested ``"advanced"`` block (matching Rust's
-# ``DetectorParams.advanced: Option<Box<AdvancedTuning>>``). The two advanced
+# ``DetectorParams.advanced: Option<Box<ChessboardAdvancedTuning>>``). The two advanced
 # struct knobs (``topological`` / ``component_merge``) are emitted separately.
 # The three stable fields (``min_labeled_corners`` / ``max_components`` /
 # ``min_corner_strength``) stay at the top level. The order here matches the
-# Rust ``AdvancedTuning`` field declaration order. Every field of the Rust
+# Rust ``ChessboardAdvancedTuning`` field declaration order. Every field of the Rust
 # struct MUST appear (either here or as one of the two struct knobs): the Rust
-# ``AdvancedTuning`` has no serde defaults, so an omitted field fails to
+# ``ChessboardAdvancedTuning`` has no serde defaults, so an omitted field fails to
 # deserialize with ``missing field ...``.
 _ADVANCED_SCALAR_FIELDS = (
     "num_bins",
@@ -947,7 +947,7 @@ _ADVANCED_SCALAR_FIELDS = (
 class ChessboardParams:
     """Chessboard detection parameters.
 
-    Mirrors ``calib_targets_chessboard::DetectorParams``. The fields are kept
+    Mirrors ``calib_targets_chessboard::ChessboardParams``. The fields are kept
     flat on this dataclass for ergonomics, but on the wire they split into a
     **stable core** plus an opt-in, unstable ``advanced`` block — matching the
     Rust struct, where the advanced knobs live behind
@@ -964,7 +964,7 @@ class ChessboardParams:
     their defaults unless a specific input fails.
 
     The serialized ``"advanced"`` block is always **complete**: the Rust
-    ``AdvancedTuning`` has no serde defaults, so every knob must be present.
+    ``ChessboardAdvancedTuning`` has no serde defaults, so every knob must be present.
     :meth:`to_dict` emits every field of the Rust struct.
 
     The ChESS corner detector config is *not* embedded here — the Rust facade
@@ -1010,16 +1010,6 @@ class ChessboardParams:
     enable_final_edge_shape_check: bool = True
     # --- Python-side convenience carrier (NOT part of the wire shape) -------
     chess: ChessConfig = field(default_factory=ChessConfig)
-
-    @classmethod
-    def for_topological(cls, **overrides: Any) -> ChessboardParams:
-        """Return default chessboard params.
-
-        The detector ships a single (topological) grid builder, so this is
-        equivalent to ``ChessboardParams(**overrides)``; it is retained as an
-        intention-revealing constructor. ``overrides`` are forwarded verbatim.
-        """
-        return cls(**overrides)
 
     def _advanced_to_dict(self) -> dict[str, Any]:
         advanced: dict[str, Any] = {
@@ -1151,9 +1141,28 @@ class CharucoParams:
     chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
     min_marker_inliers: int = 3
+    # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
+    # These knobs live in Rust's ``CharucoAdvancedTuning`` behind
+    # ``CharucoParams.advanced``. They are kept flat on this dataclass for
+    # ergonomics but serialise under the nested ``"advanced"`` block. ``None``
+    # means "leave at the Rust default", so only the knobs the caller set are
+    # emitted (Rust's ``CharucoAdvancedTuning`` has serde defaults, so a
+    # partial ``advanced`` object is valid).
     min_secondary_marker_inliers: int | None = None
     grid_smoothness_threshold_rel: float | None = None
     corner_validation_threshold_rel: float | None = None
+
+    def _advanced_to_dict(self) -> dict[str, Any]:
+        advanced: dict[str, Any] = {}
+        if self.min_secondary_marker_inliers is not None:
+            advanced["min_secondary_marker_inliers"] = self.min_secondary_marker_inliers
+        if self.grid_smoothness_threshold_rel is not None:
+            advanced["grid_smoothness_threshold_rel"] = self.grid_smoothness_threshold_rel
+        if self.corner_validation_threshold_rel is not None:
+            advanced["corner_validation_threshold_rel"] = (
+                self.corner_validation_threshold_rel
+            )
+        return advanced
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -1164,12 +1173,9 @@ class CharucoParams:
             "scan": self.scan.to_dict(),
             "min_marker_inliers": self.min_marker_inliers,
         }
-        if self.min_secondary_marker_inliers is not None:
-            d["min_secondary_marker_inliers"] = self.min_secondary_marker_inliers
-        if self.grid_smoothness_threshold_rel is not None:
-            d["grid_smoothness_threshold_rel"] = self.grid_smoothness_threshold_rel
-        if self.corner_validation_threshold_rel is not None:
-            d["corner_validation_threshold_rel"] = self.corner_validation_threshold_rel
+        advanced = self._advanced_to_dict()
+        if advanced:
+            d["advanced"] = advanced
         return d
 
     @classmethod
@@ -1179,6 +1185,12 @@ class CharucoParams:
         board_data = data.get("board") or data.get("charuco")
         if board_data is None:
             raise ValueError("CharucoParams requires 'board' field")
+        # The moved knobs live under "advanced" (current shape). Tolerate a
+        # flat top-level layout too, so configs written before the
+        # stable/advanced split keep deserialising.
+        advanced = data.get("advanced")
+        if not isinstance(advanced, dict):
+            advanced = data
         return cls(
             board=CharucoBoardSpec.from_dict(board_data),
             chess=(
@@ -1194,9 +1206,11 @@ class CharucoParams:
             # A legacy "max_hamming" key (the retired vote matcher's knob) is
             # ignored if present.
             min_marker_inliers=data.get("min_marker_inliers", 3),
-            min_secondary_marker_inliers=data.get("min_secondary_marker_inliers"),
-            grid_smoothness_threshold_rel=data.get("grid_smoothness_threshold_rel"),
-            corner_validation_threshold_rel=data.get("corner_validation_threshold_rel"),
+            min_secondary_marker_inliers=advanced.get("min_secondary_marker_inliers"),
+            grid_smoothness_threshold_rel=advanced.get("grid_smoothness_threshold_rel"),
+            corner_validation_threshold_rel=advanced.get(
+                "corner_validation_threshold_rel"
+            ),
         )
 
 
@@ -1347,7 +1361,7 @@ class CircleMatchParams:
 class MarkerBoardParams:
     """Marker board detection parameters. Grid graph is inside ``chessboard``."""
 
-    layout: MarkerBoardSpec = field(default_factory=MarkerBoardSpec)
+    board: MarkerBoardSpec = field(default_factory=MarkerBoardSpec)
     chess: ChessConfig = field(default_factory=ChessConfig)
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
     circle_score: CircleScoreParams = field(default_factory=CircleScoreParams)
@@ -1356,7 +1370,7 @@ class MarkerBoardParams:
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
-            "layout": self.layout.to_dict(),
+            "board": self.board.to_dict(),
             "chess": self.chess.to_dict(),
             "chessboard": self.chessboard.to_dict(),
             "circle_score": self.circle_score.to_dict(),
@@ -1370,7 +1384,7 @@ class MarkerBoardParams:
     def from_dict(cls, data: dict[str, Any]) -> MarkerBoardParams:
         roi = data.get("roi_cells")
         return cls(
-            layout=MarkerBoardSpec.from_dict(data.get("layout", {})),
+            board=MarkerBoardSpec.from_dict(data.get("board", {})),
             chess=(ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
             circle_score=CircleScoreParams.from_dict(data.get("circle_score", {})),
@@ -1506,6 +1520,11 @@ class PuzzleBoardDecodeConfig:
     scoring_mode: PuzzleBoardScoringMode = field(
         default_factory=PuzzleBoardScoringMode.soft_log_likelihood
     )
+    # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
+    # These soft-scorer knobs live in Rust's ``PuzzleBoardAdvancedTuning``
+    # behind ``PuzzleBoardDecodeConfig.advanced``. They are kept flat on this
+    # dataclass for ergonomics but serialise under the nested ``"advanced"``
+    # block.
     bit_likelihood_slope: float = 12.0
     per_bit_floor: float = -6.0
     alignment_min_margin: float = 0.02
@@ -1519,14 +1538,22 @@ class PuzzleBoardDecodeConfig:
             "sample_radius_rel": self.sample_radius_rel,
             "search_mode": self.search_mode.to_dict(),
             "scoring_mode": self.scoring_mode.to_dict(),
-            "bit_likelihood_slope": self.bit_likelihood_slope,
-            "per_bit_floor": self.per_bit_floor,
-            "alignment_min_margin": self.alignment_min_margin,
+            "advanced": {
+                "bit_likelihood_slope": self.bit_likelihood_slope,
+                "per_bit_floor": self.per_bit_floor,
+                "alignment_min_margin": self.alignment_min_margin,
+            },
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardDecodeConfig:
         d = cls()
+        # Soft-LL knobs live under "advanced" (current shape). Tolerate a flat
+        # top-level layout too, so configs written before the stable/advanced
+        # split keep deserialising.
+        advanced = data.get("advanced")
+        if not isinstance(advanced, dict):
+            advanced = data
         return cls(
             min_window=int(data.get("min_window", d.min_window)),
             min_bit_confidence=float(
@@ -1544,11 +1571,11 @@ class PuzzleBoardDecodeConfig:
                 data.get("scoring_mode", {"kind": "soft_log_likelihood"})
             ),
             bit_likelihood_slope=float(
-                data.get("bit_likelihood_slope", d.bit_likelihood_slope)
+                advanced.get("bit_likelihood_slope", d.bit_likelihood_slope)
             ),
-            per_bit_floor=float(data.get("per_bit_floor", d.per_bit_floor)),
+            per_bit_floor=float(advanced.get("per_bit_floor", d.per_bit_floor)),
             alignment_min_margin=float(
-                data.get("alignment_min_margin", d.alignment_min_margin)
+                advanced.get("alignment_min_margin", d.alignment_min_margin)
             ),
         )
 

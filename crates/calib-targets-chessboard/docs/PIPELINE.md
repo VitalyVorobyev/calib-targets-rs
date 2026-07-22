@@ -2,7 +2,7 @@
 
 Concise stage-by-stage map of `calib-targets-chessboard`'s detector.
 Each row in the stage table lists the stage's input, decision predicate,
-output, dominant failure modes, and the `AdvancedTuning` knobs that
+output, dominant failure modes, and the `ChessboardAdvancedTuning` knobs that
 govern it. This is the working reference for diagnosing a detector
 failure on a real image — start here before reading source.
 
@@ -42,8 +42,8 @@ future validation can be added without a breaking change.
 `DetectorParams` fields (`graph_build_algorithm`, `min_labeled_corners`,
 `max_components`, `min_corner_strength`) are part of the public config
 contract. All per-stage knobs live behind the opt-in, **non-semver**
-`DetectorParams::advanced` (`AdvancedTuning`); when unset, every knob
-holds its default. The Knobs column below names `AdvancedTuning` fields
+`DetectorParams::advanced` (`ChessboardAdvancedTuning`); when unset, every knob
+holds its default. The Knobs column below names `ChessboardAdvancedTuning` fields
 unless prefixed `params.` (a stable top-level field).
 
 ---

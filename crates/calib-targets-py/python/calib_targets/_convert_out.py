@@ -7,7 +7,7 @@ from .enums import CirclePolarity, TargetKind
 from .results import (
     CellOffset,
     CharucoCorner,
-    CharucoDetectionResult,
+    CharucoDetection,
     ChessboardCorner,
     ChessboardDebug,
     ChessboardDetectionResult,
@@ -22,7 +22,7 @@ from .results import (
     GridTransform,
     LabeledCorner,
     MarkerBoardCorner,
-    MarkerBoardDetectionResult,
+    MarkerBoardDetection,
     MarkerCircleExpectation,
     MarkerDetection,
     OrientationHistogram,
@@ -30,7 +30,7 @@ from .results import (
     Point2,
     PuzzleBoardCorner,
     PuzzleBoardDecodeInfo,
-    PuzzleBoardDetectionResult,
+    PuzzleBoardDetection,
     TargetDetection,
 )
 
@@ -664,7 +664,7 @@ def charuco_corner_from_dict(data: Mapping[str, Any]) -> CharucoCorner:
     )
 
 
-def charuco_detection_result_to_dict(value: CharucoDetectionResult) -> dict[str, Any]:
+def charuco_detection_result_to_dict(value: CharucoDetection) -> dict[str, Any]:
     return {
         "corners": [charuco_corner_to_dict(item) for item in value.corners],
         "markers": [marker_detection_to_dict(item) for item in value.markers],
@@ -672,8 +672,8 @@ def charuco_detection_result_to_dict(value: CharucoDetectionResult) -> dict[str,
     }
 
 
-def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetectionResult:
-    obj = _ensure_mapping(data, "CharucoDetectionResult")
+def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetection:
+    obj = _ensure_mapping(data, "CharucoDetection")
     _validate_keys(
         obj,
         allowed={
@@ -682,11 +682,11 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
             "alignment",
         },
         required={"corners", "markers", "alignment"},
-        ctx="CharucoDetectionResult",
+        ctx="CharucoDetection",
     )
-    corners = _to_sequence(obj["corners"], "CharucoDetectionResult.corners")
-    markers = _to_sequence(obj["markers"], "CharucoDetectionResult.markers")
-    return CharucoDetectionResult(
+    corners = _to_sequence(obj["corners"], "CharucoDetection.corners")
+    markers = _to_sequence(obj["markers"], "CharucoDetection.markers")
+    return CharucoDetection(
         corners=[charuco_corner_from_dict(item) for item in corners],
         markers=[marker_detection_from_dict(item) for item in markers],
         alignment=grid_alignment_from_dict(obj["alignment"]),
@@ -727,7 +727,7 @@ def marker_board_corner_from_dict(data: Mapping[str, Any]) -> MarkerBoardCorner:
 
 
 def marker_board_detection_result_to_dict(
-    value: MarkerBoardDetectionResult,
+    value: MarkerBoardDetection,
 ) -> dict[str, Any]:
     return {
         "corners": [marker_board_corner_to_dict(item) for item in value.corners],
@@ -739,17 +739,17 @@ def marker_board_detection_result_to_dict(
 
 def marker_board_detection_result_from_dict(
     data: Mapping[str, Any],
-) -> MarkerBoardDetectionResult:
-    obj = _ensure_mapping(data, "MarkerBoardDetectionResult")
+) -> MarkerBoardDetection:
+    obj = _ensure_mapping(data, "MarkerBoardDetection")
     _validate_keys(
         obj,
         allowed={"corners", "alignment"},
         required={"corners", "alignment"},
-        ctx="MarkerBoardDetectionResult",
+        ctx="MarkerBoardDetection",
     )
-    corners = _to_sequence(obj["corners"], "MarkerBoardDetectionResult.corners")
+    corners = _to_sequence(obj["corners"], "MarkerBoardDetection.corners")
     alignment = obj["alignment"]
-    return MarkerBoardDetectionResult(
+    return MarkerBoardDetection(
         corners=[marker_board_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(alignment) if alignment is not None else None,
     )
@@ -869,7 +869,7 @@ def puzzleboard_corner_from_dict(data: Mapping[str, Any]) -> PuzzleBoardCorner:
 
 
 def puzzleboard_detection_result_to_dict(
-    value: PuzzleBoardDetectionResult,
+    value: PuzzleBoardDetection,
 ) -> dict[str, Any]:
     return {
         "corners": [puzzleboard_corner_to_dict(item) for item in value.corners],
@@ -880,16 +880,16 @@ def puzzleboard_detection_result_to_dict(
 
 def puzzleboard_detection_result_from_dict(
     data: Mapping[str, Any],
-) -> PuzzleBoardDetectionResult:
-    obj = _ensure_mapping(data, "PuzzleBoardDetectionResult")
+) -> PuzzleBoardDetection:
+    obj = _ensure_mapping(data, "PuzzleBoardDetection")
     _validate_keys(
         obj,
         allowed={"corners", "alignment", "decode"},
         required={"corners", "alignment", "decode"},
-        ctx="PuzzleBoardDetectionResult",
+        ctx="PuzzleBoardDetection",
     )
-    corners = _to_sequence(obj["corners"], "PuzzleBoardDetectionResult.corners")
-    return PuzzleBoardDetectionResult(
+    corners = _to_sequence(obj["corners"], "PuzzleBoardDetection.corners")
+    return PuzzleBoardDetection(
         corners=[puzzleboard_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(obj["alignment"]),
         decode=puzzleboard_decode_info_from_dict(obj["decode"]),

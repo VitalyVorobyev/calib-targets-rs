@@ -69,7 +69,7 @@ in two places.
 - **Why it exists:** `core → projective-grid` in the DAG, so `pg` (below `core`)
   cannot reuse `core`'s solver without a cycle. It forked instead.
 - **Who uses which:** *every detector* uses `core`'s copy (`charuco
-  corner_validation.rs`, `chess rectified_view.rs` + `mesh_warp.rs`); only `pg`'s own
+  corner_refit.rs`, `chess rectified_view.rs` + `mesh_warp.rs`); only `pg`'s own
   `shared::fit` uses `pg`'s copy.
 - **Why it's debt, not duplication-by-design:** two hand-maintained copies of a DLT
   *will* drift (one gets a conditioning fix, the other doesn't), and that drift is
@@ -177,7 +177,7 @@ semver-exempt or not.
 - **Legacy matcher:** *resolved (C-7).* `charuco` previously shipped two marker
   matchers; the legacy rotation+translation vote and its `use_board_level_matcher`
   toggle have been retired, leaving the board-level soft-LL matcher
-  (`detector/board_match.rs`) as the sole matcher. `alignment.rs` now holds only the
+  (`detector/board_match/`) as the sole matcher. `alignment.rs` now holds only the
   `CharucoAlignment` result type.
 - **Hygiene:** `charuco detector/params.rs` default-constant comments cite concrete
   private-dataset board sizes and frame counts to justify tuned constants. Per
@@ -195,7 +195,7 @@ semver-exempt or not.
   if a second responsibility lands in any of them, split then.
 - **Param-struct surface:** `chess params/` (~583 LOC across `mod.rs` +
   `advanced.rs`) is large but deliberately split into a 3-knob stable core and an
-  opt-in `#[non_exhaustive]` `AdvancedTuning`. Acceptable; just keep new knobs out of
+  opt-in `#[non_exhaustive]` `ChessboardAdvancedTuning`. Acceptable; just keep new knobs out of
   the stable struct.
 
 ---

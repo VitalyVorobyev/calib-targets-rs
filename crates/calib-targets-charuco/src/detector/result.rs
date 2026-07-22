@@ -1,15 +1,17 @@
 use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A labelled ChArUco inner corner.
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// ChArUco board corner coordinate.
+    ///
+    /// `u` runs along grid `i` (rightward), `v` along grid `j` (downward).
     pub grid: Coord,
     /// ChArUco logical corner ID.
     pub id: u32,
@@ -58,10 +60,10 @@ impl CharucoCorner {
 
 /// Output of a ChArUco detection run.
 ///
-/// `#[non_exhaustive]`: construct with [`CharucoDetectionResult::new`].
+/// `#[non_exhaustive]`: construct with [`CharucoDetection::new`].
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
-pub struct CharucoDetectionResult {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CharucoDetection {
     /// Labelled ChArUco inner corners.
     pub corners: Vec<CharucoCorner>,
     /// Marker detections that are consistent with [`Self::alignment`] (inliers
@@ -71,7 +73,7 @@ pub struct CharucoDetectionResult {
     pub alignment: GridAlignment,
 }
 
-impl CharucoDetectionResult {
+impl CharucoDetection {
     /// Create a result from its typed corners, inlier markers, and alignment.
     pub fn new(
         corners: Vec<CharucoCorner>,

@@ -7,12 +7,12 @@ use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
 use super::params::to_chess_params;
-use super::{CharucoDetectError, CharucoDetectionResult, CharucoParams};
+use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::MarkerDetection;
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
+use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use log::{debug, warn};
 
@@ -42,7 +42,7 @@ pub struct CharucoDetectDiagnostics {
     pub components: Vec<ComponentDiagnostics>,
     /// Total number of markers decoded out of candidate cells, **before**
     /// alignment-based inlier filtering, summed across the components that
-    /// contributed to the returned [`CharucoDetectionResult`].
+    /// contributed to the returned [`CharucoDetection`].
     ///
     /// `raw_marker_count - result.markers.len()` is the number of raw
     /// marker decodings rejected by the alignment stage.
@@ -100,7 +100,7 @@ pub enum ComponentOutcome {
 }
 
 /// Per-component raw marker counts captured before alignment-based inlier
-/// filtering. Threaded alongside each component's [`CharucoDetectionResult`]
+/// filtering. Threaded alongside each component's [`CharucoDetection`]
 /// so [`merge_charuco_results`] can sum the winning group into
 /// [`CharucoDetectDiagnostics`].
 ///
@@ -259,7 +259,7 @@ impl CharucoDetector {
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> Result<CharucoDetectionResult, CharucoDetectError> {
+    ) -> Result<CharucoDetection, CharucoDetectError> {
         self.detect_core(image, corners, &mut NoPipelineDiag)
     }
 
@@ -275,7 +275,7 @@ impl CharucoDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> (
-        Result<CharucoDetectionResult, CharucoDetectError>,
+        Result<CharucoDetection, CharucoDetectError>,
         CharucoDetectDiagnostics,
     ) {
         let mut collector = DiagCollector::default();
@@ -294,7 +294,7 @@ impl CharucoDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
         sink: &mut S,
-    ) -> Result<CharucoDetectionResult, CharucoDetectError> {
+    ) -> Result<CharucoDetection, CharucoDetectError> {
         debug!(
             "starting ChArUco detection: image={}x{}, input_corners={}, board_inner={}x{}, px_per_square={:.1}, min_marker_inliers={}",
             image.width,
@@ -310,17 +310,19 @@ impl CharucoDetector {
         // marker-bit saddles out of the grid, and the marker-decode stages
         // downstream of grid construction are builder-agnostic).
         //
-        // The chessboard detector still validates its own configuration; the
-        // only combination it rejects is an orientation-source / graph-builder
-        // mismatch (an orientation source ChArUco never sets, but a caller
-        // could construct on the embedded `chessboard` field). Surface it as a
-        // typed error rather than panicking.
+        // `ChessboardParams::validate` (called by `ChessboardDetector::new`)
+        // accepts every configuration the public surface can express, so the
+        // `Err` arm below is currently unreachable. It is kept total — mapping
+        // onto `ChessboardNotDetected` rather than unwrapping — so that if the
+        // chessboard detector ever adds a real validation, a rejected
+        // `chessboard` configuration surfaces as a typed detection failure here
+        // instead of a panic.
         let chess_params = self.params.chessboard.clone();
         let detector = match ChessDetector::new(chess_params) {
             Ok(detector) => detector,
             Err(e) => {
                 warn!("chessboard configuration rejected: {e}");
-                return Err(CharucoDetectError::UnsupportedAlgorithm);
+                return Err(CharucoDetectError::ChessboardNotDetected);
             }
         };
         let components = detector.detect_all(corners);
@@ -345,12 +347,16 @@ impl CharucoDetector {
                 .collect::<Vec<_>>()
         );
 
-        let mut results: Vec<(CharucoDetectionResult, RawMarkerCounts)> = Vec::new();
+        // Secondary-component inlier floor is an advanced (opt-in) knob; bind
+        // the effective tuning once for the whole component loop.
+        let min_secondary_marker_inliers =
+            self.params.effective_tuning().min_secondary_marker_inliers;
+        let mut results: Vec<(CharucoDetection, RawMarkerCounts)> = Vec::new();
         for (i, chessboard) in components.iter().enumerate() {
             let min_inliers = if i == 0 {
                 self.params.min_marker_inliers
             } else {
-                self.params.min_secondary_marker_inliers
+                min_secondary_marker_inliers
             };
 
             match self.detect_component(image, chessboard, min_inliers, i, sink) {
@@ -386,7 +392,7 @@ impl CharucoDetector {
 
     /// Run the full charuco pipeline on a single chessboard component.
     ///
-    /// On success returns the component's [`CharucoDetectionResult`] paired
+    /// On success returns the component's [`CharucoDetection`] paired
     /// with its [`RawMarkerCounts`] (raw pre-inlier-filter totals); the
     /// counts are merged into [`CharucoDetectDiagnostics`] by the caller.
     /// All diagnostic capture is routed through `sink`, which also owns the
@@ -398,10 +404,14 @@ impl CharucoDetector {
         min_marker_inliers: usize,
         component_index: usize,
         sink: &mut S,
-    ) -> Result<(CharucoDetectionResult, RawMarkerCounts), CharucoDetectError> {
+    ) -> Result<(CharucoDetection, RawMarkerCounts), CharucoDetectError> {
         // Adapt the typed chessboard result into the generic
         // `TargetDetection` the corner-mapping / marker-sampling stages
         // expect. Every labelled corner is an inlier by construction.
+        // Bind the advanced (opt-in, unstable) tuning once; the grid-smoothness
+        // gate, the board-level matcher knobs, and the corner-validation gate
+        // all read off it below.
+        let tuning = self.params.effective_tuning();
         let chessboard = chessboard_detection_to_target(chessboard);
         let inliers: Vec<usize> = (0..chessboard.corners.len()).collect();
         let mut corner_map = build_corner_map(&chessboard.corners, &inliers);
@@ -410,7 +420,7 @@ impl CharucoDetector {
             &mut corner_map,
             image,
             self.params.px_per_square,
-            self.params.grid_smoothness_threshold_rel,
+            tuning.grid_smoothness_threshold_rel,
             &corner_redetect_params,
         );
         let cells = build_marker_cells(&corner_map);
@@ -432,10 +442,10 @@ impl CharucoDetector {
 
         let board_cfg = BoardMatchConfig {
             px_per_square: self.params.px_per_square,
-            bit_likelihood_slope: self.params.advanced.bit_likelihood_slope,
-            per_bit_floor: self.params.advanced.per_bit_floor,
-            alignment_min_margin: self.params.advanced.alignment_min_margin,
-            cell_weight_border_threshold: self.params.advanced.cell_weight_border_threshold,
+            bit_likelihood_slope: tuning.bit_likelihood_slope,
+            per_bit_floor: tuning.per_bit_floor,
+            alignment_min_margin: tuning.alignment_min_margin,
+            cell_weight_border_threshold: tuning.cell_weight_border_threshold,
         };
         let matched = sink.run_match(image, &cells, &self.board, &scan_cfg, &board_cfg);
 
@@ -501,7 +511,7 @@ impl CharucoDetector {
             image,
             &CornerValidationConfig {
                 px_per_square: self.params.px_per_square,
-                threshold_rel: self.params.corner_validation_threshold_rel,
+                threshold_rel: tuning.corner_validation_threshold_rel,
                 chess_params: &corner_redetect_params,
             },
         );
@@ -513,7 +523,7 @@ impl CharucoDetector {
         sink.component_ok(ctx, markers.len(), detection.corners.len(), raw_counts);
 
         Ok((
-            CharucoDetectionResult::from_target_detection(detection, markers, alignment.alignment),
+            CharucoDetection::from_target_detection(detection, markers, alignment.alignment),
             raw_counts,
         ))
     }
@@ -601,7 +611,7 @@ mod tests {
     /// `for_board` produces a valid detector config.
     #[test]
     fn for_board_builds_detector() {
-        let params = CharucoParams::for_board(&test_board());
+        let params = CharucoParams::for_board(test_board());
         CharucoDetector::new(params).expect("detector must build from for_board params");
     }
 
@@ -618,7 +628,7 @@ mod tests {
     /// it up front).
     #[test]
     fn detector_reaches_chessboard_stage() {
-        let params = CharucoParams::for_board(&test_board());
+        let params = CharucoParams::for_board(test_board());
         let detector = CharucoDetector::new(params).expect("detector");
         let buf = [0u8; 16];
         let image = GrayImageView {

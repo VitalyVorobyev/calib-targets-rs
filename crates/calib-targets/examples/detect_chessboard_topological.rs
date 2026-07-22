@@ -1,4 +1,4 @@
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect;
 use image::ImageReader;
 
@@ -10,11 +10,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
     let chess_cfg = detect::default_chess_config().with_threshold(100.0);
-    let params = DetectorParams::topological();
+    let params = ChessboardParams::default();
 
-    let Some(result) = detect::detect_chessboard(&img, &chess_cfg, &params) else {
-        println!("no board detected");
-        return Ok(());
+    let result = match detect::detect_chessboard(&img, &chess_cfg, &params) {
+        Ok(result) => result,
+        Err(err) => {
+            println!("no board detected: {err}");
+            return Ok(());
+        }
     };
 
     println!("detected {} labelled corners", result.corners.len());

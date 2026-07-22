@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::{
-    trace_topological, AdvancedTuning, ChessboardDetection, Detector, DetectorParams,
+    trace_topological, ChessboardAdvancedTuning, ChessboardDetection, ChessboardDetector,
+    ChessboardParams,
 };
 use image::{GrayImage, ImageReader};
 use serde::Deserialize;
@@ -68,8 +69,8 @@ fn load_image(path: &Path) -> GrayImage {
         .to_luma8()
 }
 
-fn topological_params() -> DetectorParams {
-    DetectorParams::default()
+fn topological_params() -> ChessboardParams {
+    ChessboardParams::default()
 }
 
 fn label_stats(detection: &ChessboardDetection, context: &str) -> (usize, usize) {
@@ -165,7 +166,7 @@ fn topo_grid_manifest_gates_hold() {
         let default_corners = detect_corners(&img, &default_cfg);
 
         if let Some(gate) = &case.topological {
-            let detection = Detector::new(topological_params())
+            let detection = ChessboardDetector::new(topological_params())
                 .expect("valid detector params")
                 .detect(&default_corners);
             assert_gate(case, "topological", gate, detection);
@@ -174,7 +175,7 @@ fn topo_grid_manifest_gates_hold() {
             let mut params = topological_params();
             params.min_labeled_corners = gate.min_labeled_corners;
             if let Some(deg) = gate.axis_align_tol_deg {
-                let mut advanced: AdvancedTuning = params.effective_tuning().into_owned();
+                let mut advanced: ChessboardAdvancedTuning = params.effective_tuning().into_owned();
                 advanced.topological.axis_align_tol_rad = deg.to_radians();
                 params = params.with_advanced(advanced);
             }

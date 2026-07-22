@@ -9,7 +9,7 @@
 
 use std::path::Path;
 
-use calib_targets::chessboard::{Detector, DetectorParams};
+use calib_targets::chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets::detect::{default_chess_config, detect_corners};
 use image::imageops::FilterType;
 
@@ -70,8 +70,8 @@ fn main() {
         for &t in THRESHOLDS {
             let cfg = default_chess_config().with_threshold(t);
             let corners = detect_corners(&img, &cfg);
-            let params = DetectorParams::default();
-            let detector = Detector::new(params).expect("valid detector params");
+            let params = ChessboardParams::default();
+            let detector = ChessboardDetector::new(params).expect("valid detector params");
             let detection = detector.detect(&corners);
             let (labelled, holes) = match &detection {
                 Some(d) => {

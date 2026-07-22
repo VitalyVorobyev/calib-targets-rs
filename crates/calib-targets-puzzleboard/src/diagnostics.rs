@@ -6,7 +6,7 @@
 //! hypothesis. They are produced by
 //! [`crate::PuzzleBoardDetector::detect_with_diagnostics`] and are
 //! intentionally kept separate from the result API
-//! ([`crate::PuzzleBoardDetectionResult`], [`crate::PuzzleBoardDecodeInfo`]).
+//! ([`crate::PuzzleBoardDetection`], [`crate::PuzzleBoardDecodeInfo`]).
 //!
 //! A consumer that only needs to *use* a PuzzleBoard detection wants the
 //! labelled corners, the alignment, and the compact
@@ -28,7 +28,7 @@ pub use crate::code_maps::PuzzleBoardObservedEdge;
 /// Winner-vs-runner-up scoring evidence for the chosen decode hypothesis.
 ///
 /// Populated for the component whose decode produced the returned
-/// [`crate::PuzzleBoardDetectionResult`]. The runner-up fields are only
+/// [`crate::PuzzleBoardDetection`]. The runner-up fields are only
 /// meaningful under [`PuzzleBoardScoringMode::SoftLogLikelihood`]; under
 /// [`PuzzleBoardScoringMode::HardWeighted`] the soft-only fields are `None`.
 #[non_exhaustive]

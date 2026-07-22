@@ -25,10 +25,10 @@ Algorithm deep-dive: [book chapter][book-chapter].
 ## Quickstart
 
 ```rust,ignore
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 
 fn detect_one(corners: &[ChessCorner]) {
-    let det = Detector::new(DetectorParams::default());
+    let det = ChessboardDetector::new(ChessboardParams::default());
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());
         for c in &d.corners {
@@ -40,7 +40,7 @@ fn detect_one(corners: &[ChessCorner]) {
 
 // Multi-component (e.g. ChArUco markers split the grid into islands):
 fn detect_multi(corners: &[ChessCorner]) {
-    let det = Detector::new(DetectorParams::default());
+    let det = ChessboardDetector::new(ChessboardParams::default());
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!("component {k}: {} corners", comp.corners.len());
     }
@@ -52,15 +52,15 @@ fn detect_multi(corners: &[ChessCorner]) {
 - `&[ChessCorner]` — ChESS X-junction corners from `chess-corners`, with
   `position`, `axes` (each with a 1σ angular uncertainty), and `strength`
   populated.
-- [`DetectorParams`] — a small stable core (graph-build algorithm,
+- [`ChessboardParams`] — a small stable core (graph-build algorithm,
   output gates, corner-strength floor) plus an opt-in, unstable
-  [`AdvancedTuning`] sub-struct of per-stage knobs. Use
-  `DetectorParams::default()` for a single config or
-  `DetectorParams::sweep_default()` for the 3-config sweep preset.
+  [`ChessboardAdvancedTuning`] sub-struct of per-stage knobs. Use
+  `ChessboardParams::default()` for a single config or
+  `ChessboardParams::sweep_default()` for the 3-config sweep preset.
 
 ## Outputs
 
-`Detector::detect` returns `Option<ChessboardDetection>` — the labelled
+`ChessboardDetector::detect` returns `Option<ChessboardDetection>` — the labelled
 corner set (`corners: Vec<ChessboardCorner>`, rebased to a non-negative
 bounding box and sorted by `(j, i)`) plus a stable
 `cell_size: Option<f32>` carrying the seed-derived grid pitch in pixels
@@ -84,9 +84,9 @@ the cell size is also carried on the result (`ChessboardDetection::cell_size`).
 
 ## Configuration
 
-[`DetectorParams`] is a small **stable core** of four knobs plus an
-opt-in, unstable [`AdvancedTuning`] sub-struct
-([`DetectorParams::advanced`]) holding the per-stage tuning knobs for
+[`ChessboardParams`] is a small **stable core** of four knobs plus an
+opt-in, unstable [`ChessboardAdvancedTuning`] sub-struct
+([`ChessboardParams::advanced`]) holding the per-stage tuning knobs for
 the live topological pipeline. Defaults are chosen to post the precision
 contract above; tune only when a specific input fails.
 
@@ -99,14 +99,14 @@ The stable core — the knobs a calibration consumer has a basis to set:
 | `max_components` | Cap the number of disconnected pieces returned by `detect_all`. |
 | `min_corner_strength` | Drop weak ChESS corners before clustering (`0.0` = off). |
 
-Everything else is a per-stage tuning knob on [`AdvancedTuning`],
-attached via `DetectorParams::with_advanced(...)` — grouped by pipeline
+Everything else is a per-stage tuning knob on [`ChessboardAdvancedTuning`],
+attached via `ChessboardParams::with_advanced(...)` — grouped by pipeline
 stage, all left at `Default` unless an input fails and you have evidence
 for the change. **These knobs are not covered by semver** and may change
 between minor versions; treat them as an escape hatch, not a stable
 contract.
 
-| Group | Main knobs (on `AdvancedTuning`) | Effect |
+| Group | Main knobs (on `ChessboardAdvancedTuning`) | Effect |
 |---|---|---|
 | Clustering | `num_bins`, `peak_min_separation_deg`, `cluster_tol_deg`, `cluster_sigma_k`, `min_peak_weight_fraction` | Axis-angle histogram + 2-means refinement. Widen tolerances for rotated-camera or strongly perspective boards. |
 | Recall boosters | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters` | Interior gap fill + line extrapolation onto empty cells, reusing the attachment invariants. Rarely need tuning. |
@@ -128,7 +128,7 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
   detector. Tune the upstream ChESS corner detector (its
   `chess-corners` `DetectorConfig` — e.g. lower the corner-response
   threshold, enable a multiscale pyramid for large frames), then try
-  `DetectorParams::sweep_default()` which varies clustering/attachment
+  `ChessboardParams::sweep_default()` which varies clustering/attachment
   tolerances on this crate's side.
 - **Strong perspective / tilted view** — widen `cluster_tol_deg` and
   `attach_axis_tol_deg` by a few degrees; grow may refuse otherwise-valid

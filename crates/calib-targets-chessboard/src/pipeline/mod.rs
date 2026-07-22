@@ -10,9 +10,10 @@
 //!   [`ChessboardDetection`](crate::ChessboardDetection) type.
 //!
 //! The production path intentionally remains one path. Diagnostics use
-//! [`trace_topological`] for the same `projective-grid` topological
-//! detector path; benchmark reports use the optional `tracing` feature to time
-//! the same functions rather than a second timed implementation.
+//! `trace_topological` (behind the opt-in `diagnostics` feature) for the same
+//! `projective-grid` topological detector path; benchmark reports use the
+//! optional `tracing` feature to time the same functions rather than a
+//! second timed implementation.
 //!
 //! Production [`detect_all_topological`] now calls
 //! [`projective_grid::detect_grid_all`], the sole square assembler.
@@ -31,13 +32,13 @@
 //! merged components — and hence production output — are byte-identical to
 //! the prior chessboard-side merge.
 //!
-//! [`trace_topological`] uses the same `projective-grid` production
+//! `trace_topological` uses the same `projective-grid` production
 //! detector path and returns a compact serializable trace of the final
 //! labelled components.
 //!
 //! # Submodules
 //!
-//! [`crate::detector::Detector`] runs the topological grid builder here;
+//! [`crate::detector::ChessboardDetector`] runs the topological grid builder here;
 //! the post-build stages and the result types it consumes live in this
 //! subtree:
 //!
@@ -62,6 +63,7 @@ mod types;
 use crate::corner::ChessCorner;
 use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
 use projective_grid::detect::ValidateParams as NextValidateParams;
+#[cfg(feature = "diagnostics")]
 use projective_grid::topological::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
@@ -72,7 +74,7 @@ use projective_grid::{
 };
 use std::collections::HashMap;
 
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 
 use self::cluster::ClusterCenters;
 use self::inputs::topological_inputs;
@@ -110,7 +112,7 @@ pub use types::{ChessboardCorner, ChessboardDetection};
 /// This gate is the chessboard's stricter admission rule and is applied first.
 ///
 /// [`max_axis_sigma_rad`]: projective_grid::TopologicalParams::max_axis_sigma_rad
-pub(super) fn axis_admission_sigma(params: &DetectorParams) -> f32 {
+pub(super) fn axis_admission_sigma(params: &ChessboardParams) -> f32 {
     params.effective_tuning().topological.axis_align_tol_rad
 }
 
@@ -183,9 +185,9 @@ fn build_oriented_features(
         fields(num_corners = corners.len()),
     )
 )]
-pub fn detect_all_topological(
+pub(crate) fn detect_all_topological(
     corners: &[ChessCorner],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Vec<ChessboardDetection> {
     if corners.is_empty() {
         return Vec::new();
@@ -279,12 +281,16 @@ pub fn detect_all_topological(
     )
 }
 
-/// Run the same topological input adaptation as [`detect_all_topological`],
-/// but return a compact topological trace instead of detections.
+/// Run the same topological input adaptation as `detect_all_topological`
+/// (the crate-internal production orchestrator), but return a compact
+/// topological trace instead of detections.
 ///
 /// Corners that fail the chessboard strength / fit pre-filter are passed to
 /// `projective-grid` with no-information axes, matching the production
 /// topological dispatch path.
+///
+/// Available only with the `diagnostics` feature enabled.
+#[cfg(feature = "diagnostics")]
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
@@ -295,7 +301,7 @@ pub fn detect_all_topological(
 )]
 pub fn trace_topological(
     corners: &[ChessCorner],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
     // Mirror the production path: trace the single `Oriented2` evidence path
     // built from the ChESS axes carried by each corner. This keeps the

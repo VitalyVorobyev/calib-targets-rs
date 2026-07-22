@@ -6,7 +6,7 @@ The overlay marks:
 - Every labelled corner as a small filled dot tagged with its master id.
 
 Note: as of 0.9.0 the raw per-edge bit observations moved off
-``PuzzleBoardDetectionResult`` onto the Rust ``PuzzleBoardDiagnostics``
+``PuzzleBoardDetection`` onto the Rust ``PuzzleBoardDiagnostics``
 channel, which the Python ``puzzleboard`` binding does not expose. The
 edge-bit ring overlay this example used to draw therefore cannot be fed
 from Python and has been dropped.

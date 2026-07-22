@@ -31,4 +31,4 @@ pub use params::{CharucoAdvancedTuning, CharucoParams};
 pub use pipeline::CharucoDetector;
 #[cfg(feature = "diagnostics")]
 pub use pipeline::{CharucoDetectDiagnostics, ComponentDiagnostics, ComponentOutcome};
-pub use result::{CharucoCorner, CharucoDetectionResult};
+pub use result::{CharucoCorner, CharucoDetection};

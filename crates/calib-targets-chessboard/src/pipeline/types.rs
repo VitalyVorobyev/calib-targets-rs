@@ -8,17 +8,23 @@
 use calib_targets_core::Coord;
 
 use nalgebra::Point2;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A single labelled chessboard corner.
 ///
+/// Not to be confused with [`ChessCorner`](crate::ChessCorner): this is the
+/// labelled grid corner the detector *returns*, not the raw ChESS feature fed
+/// into it.
+///
 /// `#[non_exhaustive]`: construct with [`ChessboardCorner::new`].
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChessboardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// Grid label `(u, v)`. A chessboard corner is always labelled — non-optional.
+    ///
+    /// `u` runs along grid `i` (rightward), `v` along grid `j` (downward).
     pub grid: Coord,
     /// Index into the detector's input `&[ChessCorner]` slice that produced this corner.
     pub input_index: usize,
@@ -42,7 +48,7 @@ impl ChessboardCorner {
 ///
 /// `#[non_exhaustive]`: construct with [`ChessboardDetection::new`].
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChessboardDetection {
     /// The labelled corners.
     pub corners: Vec<ChessboardCorner>,

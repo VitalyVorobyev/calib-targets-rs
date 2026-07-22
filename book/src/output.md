@@ -25,9 +25,9 @@ field.
 | Variant | Produced by |
 |---|---|
 | `TargetKind::Chessboard` | `ChessboardDetection::target_detection()` |
-| `TargetKind::Charuco` | `CharucoDetectionResult::target_detection()` |
-| `TargetKind::PuzzleBoard` | `PuzzleBoardDetectionResult::target_detection()` |
-| `TargetKind::CheckerboardMarker` | `MarkerBoardDetectionResult::target_detection()` |
+| `TargetKind::Charuco` | `CharucoDetection::target_detection()` |
+| `TargetKind::PuzzleBoard` | `PuzzleBoardDetection::target_detection()` |
+| `TargetKind::CheckerboardMarker` | `MarkerBoardDetection::target_detection()` |
 
 In the shared carrier, `corners` is a `Vec<LabeledCorner>` ordered
 differently per target type:
@@ -90,7 +90,7 @@ is given in mm).
 | Chessboard | **Never** (no physical size in `ChessboardParams`) |
 | ChArUco | Always when `board.cell_size > 0` and alignment succeeds |
 | PuzzleBoard | Always when decode succeeds |
-| Marker board | Only when `layout.cell_size > 0` and alignment succeeds |
+| Marker board | Only when `board.cell_size > 0` and alignment succeeds |
 
 Use `target_position` directly as the object-space point for camera calibration (pass
 alongside the corresponding `position` as the image-space point).
@@ -117,12 +117,12 @@ scores below that threshold will not appear in the output.
 
 ---
 
-## ChArUco-Specific: `CharucoDetectionResult`
+## ChArUco-Specific: `CharucoDetection`
 
-`detect_charuco` returns `CharucoDetectionResult` rather than a bare `TargetDetection`:
+`detect_charuco` returns `CharucoDetection` rather than a bare `TargetDetection`:
 
 ```rust,no_run
-pub struct CharucoDetectionResult {
+pub struct CharucoDetection {
     pub corners:   Vec<CharucoCorner>,
     pub markers:   Vec<MarkerDetection>,
     pub alignment: GridAlignment,

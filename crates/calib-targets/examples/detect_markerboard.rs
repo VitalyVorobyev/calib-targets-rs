@@ -4,12 +4,9 @@ use calib_targets::marker::{
 };
 use image::ImageReader;
 
-#[cfg(feature = "tracing")]
-use calib_targets_core::init_tracing;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
-    init_tracing(false);
+    init_tracing_subscriber();
 
     let Some(path) = std::env::args().nth(1) else {
         eprintln!("Usage: detect_markerboard <image_path>");
@@ -18,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
-    let layout = MarkerBoardSpec::new(
+    let board = MarkerBoardSpec::new(
         22,
         22,
         [
@@ -29,9 +26,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_cell_size(1.0);
 
-    let params = MarkerBoardParams::new(layout);
+    let params = MarkerBoardParams::for_board(board);
     let result = detect::detect_marker_board(&img, &params);
-    println!("detected: {}", result.is_some());
+    println!("detected: {}", result.is_ok());
 
     Ok(())
+}
+
+/// Install a minimal `tracing` subscriber reading `RUST_LOG` (default
+/// `info`). Examples no longer depend on the removed
+/// `calib_targets_core::init_tracing` helper.
+#[cfg(feature = "tracing")]
+fn init_tracing_subscriber() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }

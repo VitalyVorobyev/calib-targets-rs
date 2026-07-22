@@ -1,10 +1,10 @@
 //! Built-in detector presets. Unlike the named configs under
 //! `studio_configs/` (user-saved, gitignored), these are hardcoded,
-//! committed `DetectorParams` overrides surfaced in the Detect tab so the
+//! committed `ChessboardParams` overrides surfaced in the Detect tab so the
 //! common starting points (the topological grid build and the per-family
 //! ChESS strength floors) are one click away without leaving the workspace.
 //!
-//! Each preset's `params` is a partial-`DetectorParams` override object in
+//! Each preset's `params` is a partial-`ChessboardParams` override object in
 //! the same top-level-key merge format the Detect tab's draft and the bench
 //! CLI's `--chessboard-config` accept.
 
@@ -21,7 +21,7 @@ pub struct Preset {
     pub name: String,
     /// One-line human description of what the preset selects and when to use it.
     pub description: String,
-    /// Partial-`DetectorParams` override applied verbatim to the Detect draft.
+    /// Partial-`ChessboardParams` override applied verbatim to the Detect draft.
     pub params: serde_json::Value,
 }
 
@@ -37,7 +37,7 @@ impl Preset {
 
 /// The committed preset catalogue. Board family (chessboard / charuco /
 /// puzzleboard) is still chosen via the Detect tab's family selector — these
-/// presets only carry `DetectorParams` overrides.
+/// presets only carry `ChessboardParams` overrides.
 fn catalogue() -> Vec<Preset> {
     vec![
         Preset::new(
@@ -68,7 +68,7 @@ mod tests {
         for preset in catalogue() {
             merge_detector_params(&preset.params).unwrap_or_else(|e| {
                 panic!(
-                    "preset {} does not merge into valid DetectorParams: {e}",
+                    "preset {} does not merge into valid ChessboardParams: {e}",
                     preset.name
                 )
             });

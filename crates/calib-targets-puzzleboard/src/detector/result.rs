@@ -2,15 +2,17 @@
 
 use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A decoded PuzzleBoard corner in master-board coordinates.
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PuzzleBoardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// Absolute master-board corner coordinate.
+    ///
+    /// `u` runs along grid `i` (rightward), `v` along grid `j` (downward).
     pub grid: Coord,
     /// Absolute master-board corner ID.
     pub id: u32,
@@ -69,7 +71,7 @@ impl PuzzleBoardCorner {
     doc = "[`crate::PuzzleBoardDetector::detect_with_diagnostics`]."
 )]
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PuzzleBoardDecodeInfo {
     /// Total number of observed edges that contributed to the decode.
     pub edges_observed: usize,
@@ -87,10 +89,10 @@ pub struct PuzzleBoardDecodeInfo {
 
 /// Full result of a PuzzleBoard detection call.
 ///
-/// `#[non_exhaustive]`: construct with [`PuzzleBoardDetectionResult::new`].
+/// `#[non_exhaustive]`: construct with [`PuzzleBoardDetection::new`].
 #[non_exhaustive]
-#[derive(Clone, Debug, Serialize)]
-pub struct PuzzleBoardDetectionResult {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PuzzleBoardDetection {
     /// Labelled corners in absolute master-board coordinates.
     pub corners: Vec<PuzzleBoardCorner>,
     /// Alignment from the detected local grid into master-board coordinates.
@@ -99,7 +101,7 @@ pub struct PuzzleBoardDetectionResult {
     pub decode: PuzzleBoardDecodeInfo,
 }
 
-impl PuzzleBoardDetectionResult {
+impl PuzzleBoardDetection {
     /// Create a result from its typed corners, alignment, and decode summary.
     pub fn new(
         corners: Vec<PuzzleBoardCorner>,

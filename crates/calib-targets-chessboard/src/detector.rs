@@ -1,6 +1,6 @@
-//! Detector entry points.
+//! ChessboardDetector entry points.
 //!
-//! [`Detector`] is a thin facade over the topological grid builder in
+//! [`ChessboardDetector`] is a thin facade over the topological grid builder in
 //! [`crate::pipeline`]: each `detect*` method runs
 //! [`detect_all_topological`] and shapes the result. The labelled grid is
 //! produced by `projective-grid`'s topological square-grid finder; the
@@ -10,7 +10,7 @@
 //! Stage names follow the canonical pipeline enumeration in the
 //! crate-level docs (`crate::`).
 
-use crate::params::{ChessboardParamsError, DetectorParams};
+use crate::params::{ChessboardParams, ChessboardParamsError};
 use crate::pipeline;
 use crate::pipeline::detect_all_topological;
 
@@ -20,12 +20,12 @@ use crate::corner::ChessCorner;
 pub use pipeline::{ChessboardCorner, ChessboardDetection};
 
 /// Top-level detector.
-pub struct Detector {
+pub struct ChessboardDetector {
     /// The parameters every `detect*` call on this detector runs with.
-    pub params: DetectorParams,
+    pub params: ChessboardParams,
 }
 
-impl Detector {
+impl ChessboardDetector {
     /// Construct a detector with the given parameters, validating the
     /// configuration up front.
     ///
@@ -35,8 +35,8 @@ impl Detector {
     /// `Result` is retained so the binding layer wraps a single `Result`
     /// surface uniformly across the sibling detectors (`CharucoDetector`,
     /// `PuzzleBoardDetector`) and so a future validation can be added without a
-    /// breaking change. See [`DetectorParams::validate`].
-    pub fn new(params: DetectorParams) -> Result<Self, ChessboardParamsError> {
+    /// breaking change. See [`ChessboardParams::validate`].
+    pub fn new(params: ChessboardParams) -> Result<Self, ChessboardParamsError> {
         params.validate()?;
         Ok(Self { params })
     }
@@ -62,7 +62,7 @@ impl Detector {
     /// its own locally-rebased `(i, j)` labels; alignment to a global frame
     /// is the caller's responsibility (ChArUco's marker decoding does this).
     ///
-    /// Capped by [`DetectorParams::max_components`].
+    /// Capped by [`ChessboardParams::max_components`].
     ///
     /// Does NOT support scenes with multiple separate physical boards — one
     /// target per frame is the contract.
@@ -131,7 +131,8 @@ mod tests {
     #[test]
     fn end_to_end_clean_grid() {
         let corners = clean_grid(7, 7, 20.0);
-        let det = Detector::new(DetectorParams::default()).expect("default params valid");
+        let det =
+            ChessboardDetector::new(ChessboardParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         assert_eq!(d.corners.len(), 49);
     }
@@ -143,7 +144,8 @@ mod tests {
     fn detect_populates_cell_size() {
         let s = 20.0_f32;
         let corners = clean_grid(7, 7, s);
-        let det = Detector::new(DetectorParams::default()).expect("default params valid");
+        let det =
+            ChessboardDetector::new(ChessboardParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         let cell = d.cell_size.expect("cell_size populated on detect() path");
         assert!(
@@ -154,7 +156,8 @@ mod tests {
 
     #[test]
     fn rejects_when_too_few_corners() {
-        let det = Detector::new(DetectorParams::default()).expect("default params valid");
+        let det =
+            ChessboardDetector::new(ChessboardParams::default()).expect("default params valid");
         assert!(det.detect(&[]).is_none());
     }
 
@@ -165,7 +168,8 @@ mod tests {
         // builder picks, `build_detection` must canonicalize so
         // (0, 0) lands at the smallest (x, y) corner.
         let corners = clean_grid(7, 7, 20.0);
-        let det = Detector::new(DetectorParams::default()).expect("default params valid");
+        let det =
+            ChessboardDetector::new(ChessboardParams::default()).expect("default params valid");
         let d = det.detect(&corners).expect("detection");
         // Locate (0, 0) and the two neighbors.
         let by_ij: std::collections::HashMap<(i32, i32), (f32, f32)> = d

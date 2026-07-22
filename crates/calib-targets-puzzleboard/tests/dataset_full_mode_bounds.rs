@@ -31,7 +31,7 @@ use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_puzzleboard::{
-    PuzzleBoardDetectionResult, PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardScoringMode,
+    PuzzleBoardDetection, PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardScoringMode,
     PuzzleBoardSearchMode, PuzzleBoardSpec,
 };
 use image::imageops::FilterType;
@@ -88,10 +88,10 @@ fn detect_one(
     image: &GrayImage,
     search_mode: PuzzleBoardSearchMode,
     scoring_mode: PuzzleBoardScoringMode,
-) -> Option<PuzzleBoardDetectionResult> {
+) -> Option<PuzzleBoardDetection> {
     let spec =
         PuzzleBoardSpec::with_origin(BOARD_ROWS, BOARD_COLS, BOARD_CELL_MM, 0, 0).expect("spec");
-    let mut params = PuzzleBoardParams::for_board(&spec);
+    let mut params = PuzzleBoardParams::for_board(spec);
     params.decode.search_mode = search_mode;
     params.decode.scoring_mode = scoring_mode;
     let detector = PuzzleBoardDetector::new(params).expect("detector");

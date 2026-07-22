@@ -54,7 +54,7 @@ fn render_puzzleboard_gray(rows: u32, cols: u32, px_per_cell: u32) -> GrayImage 
 
 fn params_for(rows: u32, cols: u32) -> PuzzleBoardParams {
     let spec = PuzzleBoardSpec::with_origin(rows, cols, 12.0, 0, 0).expect("spec");
-    PuzzleBoardParams::for_board(&spec)
+    PuzzleBoardParams::for_board(spec)
 }
 
 fn bench_full(c: &mut Criterion) {

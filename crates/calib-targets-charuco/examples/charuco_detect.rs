@@ -3,39 +3,164 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(not(feature = "tracing"))]
-use std::str::FromStr;
-
+use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
 use calib_targets_charuco::{
-    CharucoDetectConfig, CharucoDetectError, CharucoDetectReport, CharucoDetector, CharucoParams,
+    CharucoBoardSpec, CharucoDetectError, CharucoDetection, CharucoDetector, CharucoParams,
 };
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_core::GrayImageView;
+use calib_targets_chessboard::ChessboardParams;
+use calib_targets_core::io::{self, IoError};
+use calib_targets_core::{GrayImageView, GridAlignment, TargetDetection};
 use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig};
 use image::ImageReader;
 use nalgebra::Point2;
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "tracing"))]
-use log::{debug, info, warn, LevelFilter};
+use log::{debug, info, warn};
 #[cfg(feature = "tracing")]
 use tracing::{debug, info, warn};
 
-#[cfg(feature = "tracing")]
-use calib_targets_core::init_tracing;
-#[cfg(not(feature = "tracing"))]
-use calib_targets_core::init_with_level;
+fn default_px_per_square() -> f32 {
+    60.0
+}
+
+/// Config for this example, loaded from a checked-in JSON fixture
+/// (`testdata/charuco_detect_config*.json`). This struct is example-local:
+/// the library used to expose a similar type from `calib_targets_charuco`,
+/// but example/CLI file-configs are tooling, not part of the crate's public
+/// API — see `docs/migrations/0.11.0.md` (API revision S5).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CharucoDetectConfig {
+    /// Path to the input image to run detection on.
+    image_path: String,
+    /// The ChArUco board specification to detect.
+    board: CharucoBoardSpec,
+    /// Optional path for the detection report.
+    #[serde(default)]
+    output_path: Option<String>,
+    /// Optional path to write a global-homography rectified image.
+    #[serde(default)]
+    rectified_path: Option<String>,
+    /// Optional path to write a per-cell-mesh rectified image.
+    #[serde(default)]
+    mesh_rectified_path: Option<String>,
+    /// Rectified-image resolution in pixels per board square.
+    #[serde(default = "default_px_per_square")]
+    px_per_square: f32,
+    /// Optional override for the minimum marker-inlier count.
+    #[serde(default)]
+    min_marker_inliers: Option<usize>,
+    /// Optional override for the underlying chessboard detector params.
+    #[serde(default)]
+    chessboard: Option<ChessboardParams>,
+    /// Optional ArUco scan-config overrides.
+    #[serde(default)]
+    aruco: Option<ArucoScanConfig>,
+}
+
+impl CharucoDetectConfig {
+    /// Load a JSON config from disk.
+    fn load_json(path: impl AsRef<Path>) -> Result<Self, IoError> {
+        io::load_json(path)
+    }
+
+    /// Resolve the output report path.
+    fn output_path(&self) -> PathBuf {
+        self.output_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("charuco_detect_report.json"))
+    }
+
+    /// Build detector parameters, applying overrides from the config.
+    fn build_params(&self) -> CharucoParams {
+        let mut params = CharucoParams::for_board(self.board);
+        params.px_per_square = self.px_per_square;
+        if let Some(min_marker_inliers) = self.min_marker_inliers {
+            params.min_marker_inliers = min_marker_inliers;
+        }
+        if let Some(chessboard) = self.chessboard.clone() {
+            params.chessboard = chessboard;
+        }
+        if let Some(aruco) = self.aruco.as_ref() {
+            // `ArucoScanConfig.max_hamming` is intentionally not mapped: the
+            // board-level matcher (the sole matcher) uses soft-bit scoring and
+            // a margin gate, with no Hamming cap. Only the scan overrides apply.
+            aruco.apply_to_scan(&mut params.scan);
+        }
+        params
+    }
+}
+
+/// Detection report for serialization. Example-local for the same reason as
+/// [`CharucoDetectConfig`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CharucoDetectReport {
+    /// Path of the image detection was run on.
+    image_path: String,
+    /// Path of the JSON config that produced this report.
+    config_path: String,
+    /// The board specification detection was run against.
+    board: CharucoBoardSpec,
+    /// Number of raw ChESS corners detected before board detection.
+    num_raw_corners: usize,
+    /// The raw ChESS corners detected in the image.
+    raw_corners: Vec<Corner>,
+    /// The detected ChArUco board, when detection succeeded.
+    #[serde(default)]
+    detection: Option<TargetDetection>,
+    /// The decoded inlier markers, when detection succeeded.
+    #[serde(default)]
+    markers: Option<Vec<MarkerDetection>>,
+    /// Grid alignment to the board, when it could be resolved.
+    #[serde(default)]
+    alignment: Option<GridAlignment>,
+    /// Human-readable error message, when detection failed.
+    #[serde(default)]
+    error: Option<String>,
+}
+
+impl CharucoDetectReport {
+    /// Build a base report from the input config and raw corners.
+    fn new(cfg: &CharucoDetectConfig, config_path: &Path, raw_corners: Vec<Corner>) -> Self {
+        Self {
+            image_path: cfg.image_path.clone(),
+            config_path: config_path.to_string_lossy().into_owned(),
+            board: cfg.board,
+            num_raw_corners: raw_corners.len(),
+            raw_corners,
+            detection: None,
+            markers: None,
+            alignment: None,
+            error: None,
+        }
+    }
+
+    /// Populate report fields from a successful detection.
+    fn set_detection(&mut self, res: CharucoDetection) {
+        self.detection = Some(res.target_detection());
+        self.markers = Some(res.markers);
+        self.alignment = Some(res.alignment);
+        self.error = None;
+    }
+
+    /// Record a detection error.
+    fn set_error(&mut self, err: CharucoDetectError) {
+        self.error = Some(err.to_string());
+    }
+
+    /// Write this report to disk as pretty JSON.
+    fn write_json(&self, path: impl AsRef<Path>) -> Result<(), IoError> {
+        io::write_json(self, path)
+    }
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(not(feature = "tracing"))]
-    let log_level = LevelFilter::from_str("debug").unwrap_or(LevelFilter::Info);
-    #[cfg(not(feature = "tracing"))]
-    init_with_level(log_level)?;
-    #[cfg(not(feature = "tracing"))]
-    info!("Logger initialized");
-
-    #[cfg(feature = "tracing")]
-    init_tracing(false);
-
+    // No logger/subscriber is installed here: neither `env_logger` nor
+    // `tracing-subscriber` is a dependency of this crate's examples, so the
+    // `log`/`tracing` macros below are no-ops unless the caller installs
+    // their own logger. Detection output does not depend on logging.
     let config_path = parse_config_path();
     info!("Loading ChArUco config from {}", config_path.display());
     let cfg = CharucoDetectConfig::load_json(&config_path)?;
@@ -116,12 +241,11 @@ fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
-    Corner {
-        position: Point2::new(c.x, c.y),
+    Corner::new(
+        Point2::new(c.x, c.y),
         // `axes` is `None` only when the upstream orientation fit is
         // skipped; these fixtures always fit it.
-        axes: c
-            .axes
+        c.axes
             .map(|a| {
                 [
                     calib_targets_core::AxisEstimate {
@@ -135,8 +259,8 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
                 ]
             })
             .expect("orientation fit enabled"),
-        strength: c.response,
-    }
+        c.response,
+    )
 }
 
 fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {
@@ -239,7 +363,7 @@ fn log_corner_stats(corners: &[Corner], _params: &CharucoParams) {
     );
 }
 
-fn log_detection_success(res: &calib_targets_charuco::CharucoDetectionResult) {
+fn log_detection_success(res: &calib_targets_charuco::CharucoDetection) {
     info!(
         "Detection succeeded: {} ChArUco corners, {} markers, alignment {:?} + {:?}",
         res.corners.len(),

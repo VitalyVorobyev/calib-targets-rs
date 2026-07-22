@@ -21,10 +21,10 @@ from .config import (
     PuzzleBoardParams,
 )
 from .results import (
-    CharucoDetectionResult,
+    CharucoDetection,
     ChessboardDetectionResult,
-    MarkerBoardDetectionResult,
-    PuzzleBoardDetectionResult,
+    MarkerBoardDetection,
+    PuzzleBoardDetection,
 )
 
 
@@ -104,7 +104,7 @@ def detect_charuco(
     *,
     chess_cfg: ChessConfig | None = None,
     params: CharucoDetectorParams,
-) -> CharucoDetectionResult:
+) -> CharucoDetection:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, CharucoDetectorParams)
@@ -114,7 +114,7 @@ def detect_charuco(
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=charuco_detector_params_to_payload(params),
     )
-    return CharucoDetectionResult.from_dict(raw)
+    return CharucoDetection.from_dict(raw)
 
 
 def detect_marker_board(
@@ -122,7 +122,7 @@ def detect_marker_board(
     *,
     chess_cfg: ChessConfig | None = None,
     params: MarkerBoardParams | None = None,
-) -> MarkerBoardDetectionResult | None:
+) -> MarkerBoardDetection | None:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     if params is not None:
@@ -135,7 +135,7 @@ def detect_marker_board(
     )
     if raw is None:
         return None
-    return MarkerBoardDetectionResult.from_dict(raw)
+    return MarkerBoardDetection.from_dict(raw)
 
 
 def detect_charuco_with_diagnostics(
@@ -147,7 +147,7 @@ def detect_charuco_with_diagnostics(
     """Detect a ChArUco board and additionally return the diagnostics channel.
 
     Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``.  ``result`` is
-    the ``CharucoDetectionResult`` dict (or ``None`` when detection failed);
+    the ``CharucoDetection`` dict (or ``None`` when detection failed);
     ``diagnostics`` is the raw ``CharucoDetectDiagnostics`` payload, produced
     even on a failed frame.
 
@@ -177,7 +177,7 @@ def detect_marker_board_with_diagnostics(
     Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``.  Both keys are
     ``None`` when no board is found — the marker-board diagnostics channel
     yields evidence only on a successful detection.  ``result`` is the
-    ``MarkerBoardDetectionResult`` dict; ``diagnostics`` is the raw
+    ``MarkerBoardDetection`` dict; ``diagnostics`` is the raw
     ``MarkerBoardDiagnostics`` payload.
 
     The ``diagnostics`` payload is intentionally schemaless on the Python side
@@ -200,7 +200,7 @@ def detect_puzzleboard(
     *,
     chess_cfg: ChessConfig | None = None,
     params: PuzzleBoardParams,
-) -> PuzzleBoardDetectionResult:
+) -> PuzzleBoardDetection:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, PuzzleBoardParams)
@@ -210,7 +210,7 @@ def detect_puzzleboard(
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=puzzleboard_params_to_payload(params),
     )
-    return PuzzleBoardDetectionResult.from_dict(raw)
+    return PuzzleBoardDetection.from_dict(raw)
 
 
 def detect_puzzleboard_with_diagnostics(
@@ -222,7 +222,7 @@ def detect_puzzleboard_with_diagnostics(
     """Detect a PuzzleBoard and additionally return the diagnostics channel.
 
     Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``.  ``result`` is
-    the ``PuzzleBoardDetectionResult`` dict (or ``None`` when detection
+    the ``PuzzleBoardDetection`` dict (or ``None`` when detection
     failed); ``diagnostics`` is the raw ``PuzzleBoardDiagnostics`` payload (raw
     pre-alignment per-edge bit observations and winner-vs-runner-up scoring
     evidence), produced even on a failed decode.
@@ -268,7 +268,7 @@ def detect_chessboard_best(
 def detect_charuco_best(
     image: npt.NDArray[np.uint8],
     configs: list[CharucoDetectorParams],
-) -> CharucoDetectionResult:
+) -> CharucoDetection:
     """Try multiple ChArUco configs, return the best result (most markers, then corners)."""
     payloads = []
     for i, cfg in enumerate(configs):
@@ -276,13 +276,13 @@ def detect_charuco_best(
         payloads.append(cfg.to_dict())
 
     raw = _core.detect_charuco_best(image, payloads)
-    return CharucoDetectionResult.from_dict(raw)
+    return CharucoDetection.from_dict(raw)
 
 
 def detect_marker_board_best(
     image: npt.NDArray[np.uint8],
     configs: list[MarkerBoardParams],
-) -> MarkerBoardDetectionResult | None:
+) -> MarkerBoardDetection | None:
     """Try multiple marker board configs, return the best result (most corners)."""
     payloads = []
     for i, cfg in enumerate(configs):
@@ -292,13 +292,13 @@ def detect_marker_board_best(
     raw = _core.detect_marker_board_best(image, payloads)
     if raw is None:
         return None
-    return MarkerBoardDetectionResult.from_dict(raw)
+    return MarkerBoardDetection.from_dict(raw)
 
 
 def detect_puzzleboard_best(
     image: npt.NDArray[np.uint8],
     configs: list[PuzzleBoardParams],
-) -> PuzzleBoardDetectionResult:
+) -> PuzzleBoardDetection:
     """Try multiple PuzzleBoard configs, return the best result."""
     payloads = []
     for i, cfg in enumerate(configs):
@@ -306,7 +306,7 @@ def detect_puzzleboard_best(
         payloads.append(cfg.to_dict())
 
     raw = _core.detect_puzzleboard_best(image, payloads)
-    return PuzzleBoardDetectionResult.from_dict(raw)
+    return PuzzleBoardDetection.from_dict(raw)
 
 
 def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:

@@ -13,7 +13,7 @@ Hover over any corner to see its metadata in the toolbar. The matplotlib
 pan/zoom buttons let you drill into noisy regions.
 
 Note: the per-edge bit-ring overlay was dropped in 0.9.0. The raw
-observed-edge dump moved off `PuzzleBoardDetectionResult` onto the Rust
+observed-edge dump moved off `PuzzleBoardDetection` onto the Rust
 `PuzzleBoardDiagnostics` channel, which neither the `run_dataset.rs` JSON
 report nor the Python `puzzleboard` binding exposes — so the edge circles
 can no longer be fed. The corner overlay and decode summary remain.
@@ -158,7 +158,7 @@ def detection_from_live_run(
         chess_cfg=None,
         params=params.to_dict(),
     )
-    # The raw dict is exactly PuzzleBoardDetectionResult as serialised by serde.
+    # The raw dict is exactly PuzzleBoardDetection as serialised by serde.
     # `observed_edges` is no longer part of the result (moved to the Rust
     # `PuzzleBoardDiagnostics` channel in 0.9.0), so the overlay shows
     # corners and the decode summary only.

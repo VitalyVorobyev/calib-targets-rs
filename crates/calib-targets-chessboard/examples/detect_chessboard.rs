@@ -19,7 +19,7 @@
 //! cargo run -p calib-targets-chessboard --example detect_chessboard
 //! ```
 
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use std::f32::consts::FRAC_PI_2;
@@ -39,9 +39,9 @@ fn synth_chessboard(cols: i32, rows: i32, pitch: f32) -> Vec<ChessCorner> {
             } else {
                 (0.0, FRAC_PI_2)
             };
-            corners.push(ChessCorner {
-                position: Point2::new(i as f32 * pitch + 80.0, j as f32 * pitch + 60.0),
-                axes: [
+            corners.push(ChessCorner::new(
+                Point2::new(i as f32 * pitch + 80.0, j as f32 * pitch + 60.0),
+                [
                     AxisEstimate {
                         angle: a0,
                         sigma: 0.01,
@@ -51,8 +51,8 @@ fn synth_chessboard(cols: i32, rows: i32, pitch: f32) -> Vec<ChessCorner> {
                         sigma: 0.01,
                     },
                 ],
-                strength: 1.0,
-            });
+                1.0,
+            ));
         }
     }
     corners
@@ -69,9 +69,10 @@ fn main() {
     );
 
     // ---- 2. Run the detector ------------------------------------------
-    // `Detector::detect` returns `Option<ChessboardDetection>` — `None`
+    // `ChessboardDetector::detect` returns `Option<ChessboardDetection>` — `None`
     // means no board passed the precision-by-construction invariant stack.
-    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
+    let detector =
+        ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
     let Some(detection) = detector.detect(&corners) else {
         eprintln!("no chessboard detected");
         return;

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets::chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use calib_targets::detect::{detect_corners, DetectorConfig};
 use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
@@ -18,7 +18,7 @@ use crate::dataset::DatasetEntry;
 /// Which detection engine the bench drives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Engine {
-    /// Full chessboard production pipeline ([`Detector::detect`]): clustering,
+    /// Full chessboard production pipeline ([`ChessboardDetector::detect`]): clustering,
     /// topological grid build + recovery boosters + geometry check.
     Pipeline,
     /// Raw [`detect_grid_all`] on the corner cloud, bypassing the chessboard
@@ -61,7 +61,7 @@ pub struct RunOutcome {
 pub fn run_entry(
     image_path: &Path,
     entry: &DatasetEntry,
-    params: &DetectorParams,
+    params: &ChessboardParams,
     chess_cfg: &DetectorConfig,
     engine: Engine,
 ) -> Result<Vec<RunOutcome>, std::io::Error> {
@@ -104,7 +104,7 @@ pub fn run_snap(
     img: &GrayImage,
     entry: &DatasetEntry,
     k: u32,
-    params: &DetectorParams,
+    params: &ChessboardParams,
     chess_cfg: &DetectorConfig,
     engine: Engine,
 ) -> Result<RunOutcome, std::io::Error> {
@@ -142,8 +142,13 @@ fn upscale_snap(snap: GrayImage, upscale: u32) -> GrayImage {
 }
 
 /// Full chessboard production pipeline → [`BaselineImage`].
-fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
-    let d = Detector::new(params.clone()).ok()?.detect(corners)?;
+fn run_pipeline_engine(
+    params: &ChessboardParams,
+    corners: &[ChessCorner],
+) -> Option<BaselineImage> {
+    let d = ChessboardDetector::new(params.clone())
+        .ok()?
+        .detect(corners)?;
     let cell_size_px = d.cell_size.unwrap_or(0.0);
     let mut out: Vec<BaselineCorner> = d
         .corners
@@ -170,7 +175,7 @@ fn run_pipeline_engine(params: &DetectorParams, corners: &[ChessCorner]) -> Opti
 /// [`Evidence::Oriented2`] over the corner cloud and returns the largest
 /// labelled component (one board per frame, matching the pipeline engine's
 /// best-detection semantics).
-fn run_grid_engine(_params: &DetectorParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
+fn run_grid_engine(_params: &ChessboardParams, corners: &[ChessCorner]) -> Option<BaselineImage> {
     let grid_params = DetectionParams::default();
     let feats: Vec<OrientedFeature<2>> = corners
         .iter()

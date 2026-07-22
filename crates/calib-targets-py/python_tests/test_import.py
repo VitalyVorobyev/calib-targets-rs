@@ -24,10 +24,10 @@ def test_import_and_smoke() -> None:
         result = calib_targets.detect_charuco(image, params=params)
     except RuntimeError:
         result = None
-    assert result is None or isinstance(result, calib_targets.CharucoDetectionResult)
+    assert result is None or isinstance(result, calib_targets.CharucoDetection)
 
     result = calib_targets.detect_marker_board(image)
-    assert result is None or isinstance(result, calib_targets.MarkerBoardDetectionResult)
+    assert result is None or isinstance(result, calib_targets.MarkerBoardDetection)
 
 
 def test_module_exports() -> None:

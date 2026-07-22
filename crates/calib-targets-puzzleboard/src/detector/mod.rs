@@ -8,6 +8,9 @@ mod pipeline;
 mod result;
 
 pub use error::PuzzleBoardDetectError;
-pub use params::{PuzzleBoardDecodeConfig, PuzzleBoardScoringMode, PuzzleBoardSearchMode};
+pub use params::{
+    PuzzleBoardAdvancedTuning, PuzzleBoardDecodeConfig, PuzzleBoardScoringMode,
+    PuzzleBoardSearchMode,
+};
 pub use pipeline::PuzzleBoardDetector;
-pub use result::{PuzzleBoardCorner, PuzzleBoardDecodeInfo, PuzzleBoardDetectionResult};
+pub use result::{PuzzleBoardCorner, PuzzleBoardDecodeInfo, PuzzleBoardDetection};

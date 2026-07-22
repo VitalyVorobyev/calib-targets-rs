@@ -22,12 +22,11 @@ use projective_grid::{
 };
 
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner {
-        position: Point2::new(c.x, c.y),
+    TargetCorner::new(
+        Point2::new(c.x, c.y),
         // `axes` is `None` only when the upstream orientation fit is
         // skipped; these fixtures always fit it.
-        axes: c
-            .axes
+        c.axes
             .map(|a| {
                 [
                     calib_targets_core::AxisEstimate {
@@ -41,8 +40,8 @@ fn adapt(c: &CornerDescriptor) -> TargetCorner {
                 ]
             })
             .expect("orientation fit enabled"),
-        strength: c.response,
-    }
+        c.response,
+    )
 }
 
 fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8>> {
@@ -93,7 +92,7 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
         spec.origin_col,
     )
     .expect("board");
-    let params = PuzzleBoardParams::for_board(&board_spec);
+    let params = PuzzleBoardParams::for_board(board_spec);
     let detector = PuzzleBoardDetector::new(params).expect("detector");
     let view = GrayImageView {
         width: gray.width() as usize,

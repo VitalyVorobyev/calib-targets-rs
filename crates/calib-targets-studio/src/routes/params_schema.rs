@@ -1,10 +1,10 @@
 //! Param-schema catalogue: human-facing metadata (section, label, help,
-//! value-kind, gating) for every editable `AdvancedTuning` knob, served to the
+//! value-kind, gating) for every editable `ChessboardAdvancedTuning` knob, served to the
 //! Studio Config tab so the advanced-params form renders grouped, labelled,
 //! tooltipped fields instead of raw snake_case JSON keys.
 //!
 //! This is a **hand-maintained mirror** of
-//! [`AdvancedTuning`](calib_targets::chessboard) — the same drift contract as
+//! [`ChessboardAdvancedTuning`](calib_targets::chessboard) — the same drift contract as
 //! the WASM typings (`crates/calib-targets-wasm/typescript-extras.d.ts`). The
 //! `every_advanced_leaf_has_metadata` test walks the materialised
 //! `advanced` tree (the exact JSON `/api/configs/_defaults` returns) and fails
@@ -12,7 +12,7 @@
 //! cannot silently render unlabelled. `help` is **distilled** from each field's
 //! rustdoc — a one-line tooltip, not the verbatim multi-paragraph rationale.
 //!
-//! Pointers are RFC-6901 JSON pointers into the materialised `DetectorParams`
+//! Pointers are RFC-6901 JSON pointers into the materialised `ChessboardParams`
 //! (`/advanced/<name>`, `/advanced/topological/<name>`,
 //! `/advanced/component_merge/<name>`) — the same pointer space the bench
 //! ablation catalogue (`calib_targets_bench::ablate`) uses. The stable
@@ -44,7 +44,7 @@ pub struct ParamGroup {
 }
 
 /// Metadata for one editable knob, keyed by its JSON pointer into the
-/// materialised `DetectorParams`.
+/// materialised `ChessboardParams`.
 #[derive(Serialize)]
 pub struct ParamField {
     /// RFC-6901 JSON pointer into the materialised params (e.g.
@@ -93,7 +93,7 @@ const fn field(
 }
 
 /// The committed advanced-param schema. One entry per editable scalar knob of
-/// `AdvancedTuning` (its nested `topological` / `component_merge` leaves
+/// `ChessboardAdvancedTuning` (its nested `topological` / `component_merge` leaves
 /// included); the non-scalar `topological.axis_cluster_centers`
 /// (`Option<[f32; 2]>`, default `null`) is intentionally omitted — it has no
 /// scalar widget and falls through to the frontend's raw-key fallback.
@@ -406,15 +406,15 @@ pub async fn schema() -> Json<ParamSchema> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use calib_targets::chessboard::DetectorParams;
+    use calib_targets::chessboard::ChessboardParams;
     use std::collections::HashSet;
 
     /// Materialise the exact JSON `/api/configs/_defaults` (no family) returns:
     /// the bare chessboard defaults with the full `advanced` block present.
     fn materialised_defaults() -> serde_json::Value {
-        let chess = DetectorParams::default();
+        let chess = ChessboardParams::default();
         let advanced = chess.effective_tuning().into_owned();
-        serde_json::to_value(chess.with_advanced(advanced)).expect("serialize DetectorParams")
+        serde_json::to_value(chess.with_advanced(advanced)).expect("serialize ChessboardParams")
     }
 
     /// Collect the JSON pointers of every form-editable scalar leaf (bool /
@@ -450,7 +450,7 @@ mod tests {
 
     /// Every editable scalar leaf has a catalogue entry, and the catalogue has
     /// no stale entries. This is the C4 drift contract: adding a knob to
-    /// `AdvancedTuning` turns this test red until its metadata is supplied.
+    /// `ChessboardAdvancedTuning` turns this test red until its metadata is supplied.
     #[test]
     fn every_advanced_leaf_has_metadata() {
         let defaults = materialised_defaults();

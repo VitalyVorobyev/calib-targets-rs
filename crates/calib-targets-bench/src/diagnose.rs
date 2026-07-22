@@ -7,11 +7,11 @@
 
 use std::collections::HashSet;
 
-use calib_targets::chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets::chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use serde::Serialize;
 
 /// The effective topological tolerances a diagnosis ran with (radians /
-/// relative units, straight from the resolved `AdvancedTuning`).
+/// relative units, straight from the resolved `ChessboardAdvancedTuning`).
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct TolSummary {
     /// Maximum angular deviation between an edge and a cluster axis for the
@@ -86,7 +86,7 @@ pub struct TopologicalDiagnosis {
 /// Run the production topological detector path on `corners` and compute a
 /// [`TopologicalDiagnosis`]. `params` is used as-is.
 pub fn diagnose_topological(
-    params: &DetectorParams,
+    params: &ChessboardParams,
     corners: &[ChessCorner],
 ) -> TopologicalDiagnosis {
     let tuning = params.effective_tuning();
@@ -118,7 +118,7 @@ pub fn diagnose_topological(
         survives_axis,
     };
 
-    let detections = Detector::new(params.clone())
+    let detections = ChessboardDetector::new(params.clone())
         .expect("valid detector params")
         .detect_all(corners);
     let labelled_corner_set: HashSet<usize> = detections

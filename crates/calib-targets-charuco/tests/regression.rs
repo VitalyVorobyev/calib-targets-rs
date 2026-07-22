@@ -2,9 +2,7 @@ use calib_targets::detect::default_chess_config;
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_chessboard::ChessCorner as TargetCorner;
-use calib_targets_chessboard::{
-    Detector as ChessboardDetector, DetectorParams as ChessboardParams,
-};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::GrayImageView;
 use chess_corners::{CornerDescriptor, Detector as ChessDetector};
 use image::ImageReader;
@@ -31,12 +29,11 @@ fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
 }
 
 fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner {
-        position: Point2::new(c.x, c.y),
+    TargetCorner::new(
+        Point2::new(c.x, c.y),
         // `axes` is `None` only when the upstream orientation fit is
         // skipped; these fixtures always fit it.
-        axes: c
-            .axes
+        c.axes
             .map(|a| {
                 [
                     calib_targets_core::AxisEstimate {
@@ -50,11 +47,11 @@ fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
                 ]
             })
             .expect("orientation fit enabled"),
-        strength: c.response,
-    }
+        c.response,
+    )
 }
 
-fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetectionResult, max_id: u32) {
+fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetection, max_id: u32) {
     let mut ids: Vec<u32> = res.corners.iter().map(|c| c.id).collect();
     ids.sort_unstable();
     ids.dedup();
@@ -105,13 +102,14 @@ fn run_public_charuco(case: &PublicCase) {
     let board = CharucoBoardSpec::new(rows, cols, cell_size, 0.75, dict)
         .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
-    let mut params = CharucoParams::for_board(&board);
+    let mut params = CharucoParams::for_board(board);
     params.px_per_square = 60.0;
     // The board-level matcher is its own inlier gate — keep the downstream
     // min_marker_inliers low so the matcher's margin gate is what decides
     // accept/reject.
     params.min_marker_inliers = 1;
-    params.min_secondary_marker_inliers = 1;
+    // `min_secondary_marker_inliers` is now an advanced knob; its default (1)
+    // already matches what this test wants, so no override is needed.
 
     let detector = CharucoDetector::new(params).expect("detector");
     let src_view = GrayImageView {
@@ -193,7 +191,7 @@ fn detects_charuco_on_small_png() {
     let board = CharucoBoardSpec::new(22, 22, 5.2, 0.75, dict)
         .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
-    let mut params = CharucoParams::for_board(&board);
+    let mut params = CharucoParams::for_board(board);
     params.px_per_square = 60.0;
     params.min_marker_inliers = 12;
 

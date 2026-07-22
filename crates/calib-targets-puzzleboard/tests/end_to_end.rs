@@ -15,12 +15,11 @@ use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner {
-        position: Point2::new(c.x, c.y),
+    TargetCorner::new(
+        Point2::new(c.x, c.y),
         // `axes` is `None` only when the upstream orientation fit is
         // skipped; these fixtures always fit it.
-        axes: c
-            .axes
+        c.axes
             .map(|a| {
                 [
                     calib_targets_core::AxisEstimate {
@@ -34,8 +33,8 @@ fn adapt(c: &CornerDescriptor) -> TargetCorner {
                 ]
             })
             .expect("orientation fit enabled"),
-        strength: c.response,
-    }
+        c.response,
+    )
 }
 
 fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8>> {
@@ -83,7 +82,7 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
         spec.origin_col,
     )
     .expect("board");
-    let params = PuzzleBoardParams::for_board(&board_spec);
+    let params = PuzzleBoardParams::for_board(board_spec);
     println!(
         "detected {} ChESS corners on a {}x{} image",
         descriptors.len(),
@@ -188,7 +187,7 @@ fn fixed_board_agrees_with_full_on_whole_view() {
         data: gray.as_raw(),
     };
 
-    let params_full = PuzzleBoardParams::for_board(&board_spec);
+    let params_full = PuzzleBoardParams::for_board(board_spec);
     let full = PuzzleBoardDetector::new(params_full.clone())
         .expect("detector")
         .detect(&view, &corners)
@@ -260,7 +259,7 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
         spec.origin_col,
     )
     .expect("board");
-    let mut params = PuzzleBoardParams::for_board(&board_spec);
+    let mut params = PuzzleBoardParams::for_board(board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
     // chessboard detector is scale-invariant and has no expected_rows /
     // expected_cols / min_corners gates; the smallest meaningful detection
@@ -417,7 +416,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         spec.origin_col,
     )
     .expect("board");
-    let mut params = PuzzleBoardParams::for_board(&board_spec);
+    let mut params = PuzzleBoardParams::for_board(board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
     let detector = PuzzleBoardDetector::new(params).expect("detector");
 

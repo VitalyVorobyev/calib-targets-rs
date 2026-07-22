@@ -3,7 +3,7 @@
 
 use axum::extract::State;
 use axum::Json;
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect::{default_chess_config, OrientationMethod};
 use calib_targets_bench::baseline::{Baseline, BaselineCorner, BaselineImage};
 use calib_targets_bench::config::merge_detector_params;
@@ -119,7 +119,7 @@ pub struct DetectRequest {
     /// Detection engine (default: pipeline). Chessboard only.
     #[serde(default)]
     pub engine: EngineReq,
-    /// Partial [`DetectorParams`] override (same merge semantics as the
+    /// Partial [`ChessboardParams`] override (same merge semantics as the
     /// bench CLI's `--chessboard-config`). Empty object = defaults. For
     /// charuco / puzzleboard the override merges over the board-tuned
     /// `for_board` chessboard params instead of the plain defaults.
@@ -182,15 +182,15 @@ pub struct DetectResponse {
     pub info: Option<serde_json::Value>,
 }
 
-/// Resolve and validate the effective [`DetectorParams`] from a partial
+/// Resolve and validate the effective [`ChessboardParams`] from a partial
 /// override object. Pipeline-engine params go through
-/// [`DetectorParams::validate`] (which enforces the topological cell
+/// [`ChessboardParams::validate`] (which enforces the topological cell
 /// test constraints); the grid engine accepts all orientation-source
 /// combinations, matching the bench CLI.
 pub fn effective_params(
     params: &serde_json::Value,
     engine: Engine,
-) -> Result<DetectorParams, ApiError> {
+) -> Result<ChessboardParams, ApiError> {
     let merged = merge_detector_params(params)
         .map_err(|e| ApiError::BadRequest(format!("invalid params: {e}")))?;
     if engine == Engine::Pipeline {
@@ -201,13 +201,13 @@ pub fn effective_params(
     Ok(merged)
 }
 
-/// Merge a partial override object over an arbitrary base [`DetectorParams`]
+/// Merge a partial override object over an arbitrary base [`ChessboardParams`]
 /// (top-level key semantics, like [`merge_detector_params`] but with a
 /// board-tuned base instead of the plain defaults).
 fn merge_params_over(
-    base: &DetectorParams,
+    base: &ChessboardParams,
     overrides: &serde_json::Value,
-) -> Result<DetectorParams, ApiError> {
+) -> Result<ChessboardParams, ApiError> {
     let mut value = serde_json::to_value(base).map_err(|e| ApiError::Internal(e.to_string()))?;
     if let (Some(base_obj), Some(over_obj)) = (value.as_object_mut(), overrides.as_object()) {
         for (k, v) in over_obj {
@@ -337,11 +337,11 @@ async fn detect_board_family(
                         calib_targets::detect::detect_charuco_best(&fed, &configs)
                             .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     } else {
-                        let mut cparams = calib_targets::charuco::CharucoParams::for_board(&spec);
+                        let mut cparams = calib_targets::charuco::CharucoParams::for_board(spec);
                         cparams.chessboard =
                             merge_params_over(&cparams.chessboard, &params_override)?;
                         // The charuco grid runs on the topological default (`for_board`);
-                        // DetectorParams overrides flow straight through.
+                        // ChessboardParams overrides flow straight through.
                         calib_targets::detect::detect_charuco(&fed, &cparams)
                             .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     };
@@ -378,7 +378,7 @@ async fn detect_board_family(
                             .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     } else {
                         let mut pparams =
-                            calib_targets::puzzleboard::PuzzleBoardParams::for_board(&spec);
+                            calib_targets::puzzleboard::PuzzleBoardParams::for_board(spec);
                         pparams.chessboard =
                             merge_params_over(&pparams.chessboard, &params_override)?;
                         calib_targets::detect::detect_puzzleboard(&fed, &pparams)

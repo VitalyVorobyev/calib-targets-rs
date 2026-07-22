@@ -96,7 +96,7 @@ crate's `tracing` wiring together when adding a span):
 | `projective-grid` | `topological::walk::label_components` | debug | `num_quads` |
 | `projective-grid` | `global_step::estimate_global_cell_size` | debug | `num_points` |
 | `projective-grid` | `local_step::estimate_local_steps` | debug | `num_points` |
-| `calib-targets-chessboard` | `Detector::detect_*` and inner stages | info / debug | (existing) |
+| `calib-targets-chessboard` | `ChessboardDetector::detect_*` and inner stages | info / debug | (existing) |
 | `calib-targets-charuco` | `board_match::match_board` (decode total) | info | — |
 | `calib-targets-charuco` | `board_match::sample_cells` | info | — |
 | `calib-targets-charuco` | `board_match::build_score_matrix` | info | — |

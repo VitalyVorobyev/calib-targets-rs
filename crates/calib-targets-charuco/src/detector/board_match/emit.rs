@@ -48,18 +48,12 @@ pub(super) fn emit_markers(
         // place and draw the cell in the rectified frame.
         let corners_rect = cell_rect_corners_at(cell.gc, px_per_square);
 
-        let m = MarkerDetection {
-            id: expected_id,
-            gc,
-            rotation: rot,
-            hamming: 0,
-            score: sigmoid01(s / samples_bit_count(samp) as f32),
-            border_score: samp.border_black_fraction,
-            code: observed_code,
-            inverted: false,
-            corners_rect,
-            corners_img: Some(cell.corners_img),
-        };
+        let m = MarkerDetection::new(expected_id, gc, rot, 0, observed_code, corners_rect)
+            .with_scores(
+                sigmoid01(s / samples_bit_count(samp) as f32),
+                samp.border_black_fraction,
+            )
+            .with_corners_img(cell.corners_img);
         out.push(m);
     }
     out

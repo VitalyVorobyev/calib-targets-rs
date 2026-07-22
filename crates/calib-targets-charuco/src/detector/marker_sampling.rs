@@ -49,10 +49,7 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
             let Some(corners_img) = complete_cell_corners(map, i, j) else {
                 continue;
             };
-            out.push(MarkerCell {
-                gc: Coord::new(i, j),
-                corners_img,
-            });
+            out.push(MarkerCell::new(Coord::new(i, j), corners_img));
         }
     }
 

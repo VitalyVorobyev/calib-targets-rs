@@ -14,9 +14,9 @@ Before tuning anything, confirm you are starting from the library defaults:
 
 ```rust,no_run
 use calib_targets::detect::detect_chessboard;
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 
-let params = DetectorParams::default();
+let params = ChessboardParams::default();
 ```
 
 For ChArUco:
@@ -25,18 +25,18 @@ For ChArUco:
 use calib_targets::charuco::CharucoParams;
 # let board = todo!();
 
-let params = CharucoParams::for_board(&board);
+let params = CharucoParams::for_board(board);
 ```
 
 The chessboard detector's ChESS corner config is **not** carried inside
-`DetectorParams` — it's a separate argument via
+`ChessboardParams` — it's a separate argument via
 `calib_targets::detect::default_chess_config()` (used automatically by
 the `detect_chessboard*` facade helpers). If you need to override it,
 call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
 directly and pass the resulting corner cloud into
-`calib_targets::chessboard::Detector::new(params).detect(&corners)`.
+`calib_targets::chessboard::ChessboardDetector::new(params).detect(&corners)`.
 
-For ChArUco, `CharucoParams.chessboard` is a `DetectorParams`: a stable
+For ChArUco, `CharucoParams.chessboard` is a `ChessboardParams`: a stable
 core of four fields plus an opt-in `advanced` block (see the per-parameter
 reference below). Board sampling scale is controlled separately by
 `CharucoParams::for_board`, which starts with `px_per_square = 60`.
@@ -53,19 +53,19 @@ result:
 
 ```rust,no_run
 use calib_targets::detect::{detect_chessboard_best, detect_charuco_best};
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::charuco::CharucoParams;
 # let img: image::GrayImage = todo!();
 # let board = todo!();
 
-let chess_configs = DetectorParams::sweep_default();
+let chess_configs = ChessboardParams::sweep_default();
 let chess_result = detect_chessboard_best(&img, &chess_configs);
 
 let charuco_configs = CharucoParams::sweep_for_board(&board);
 let charuco_result = detect_charuco_best(&img, &charuco_configs);
 ```
 
-`DetectorParams::sweep_default()` returns three configs: default +
+`ChessboardParams::sweep_default()` returns three configs: default +
 tighter + looser on `cluster_tol_deg`, `attach_axis_tol_deg`, and
 related tolerances. All three preserve the detector's precision-
 by-construction invariants; only recall-affecting tolerances are
@@ -73,11 +73,11 @@ varied.
 
 For PuzzleBoard, use `PuzzleBoardParams::sweep_for_board(&spec)`.
 
-Multi-component detection (via `Detector::detect_all` / the facade
+Multi-component detection (via `ChessboardDetector::detect_all` / the facade
 `detect_chessboard_all`) recovers fragmented grids where markers break
 contiguity — each disconnected piece comes back as its own
 `Detection` with its own locally-rebased `(i, j)` labels. Capped by
-`DetectorParams::max_components` (default 3).
+`ChessboardParams::max_components` (default 3).
 
 ---
 
@@ -85,12 +85,12 @@ contiguity — each disconnected piece comes back as its own
 
 `min_corner_strength`, `min_labeled_corners`, and `max_components` are
 stable top-level fields; every other chessboard knob below is an
-`advanced` knob set via `DetectorParams::with_advanced(...)`. ChArUco /
+`advanced` knob set via `ChessboardParams::with_advanced(...)`. ChArUco /
 PuzzleBoard `decode.*` knobs sit on their own config structs.
 
 | Symptom | Parameter to adjust |
 |---|---|
-| `detect_chessboard` returns `None` | `min_corner_strength` ↓, `cluster_tol_deg` ↑, `min_peak_weight_fraction` ↓, or try `detect_chessboard_best` |
+| `detect_chessboard` returns `Err(NoDetection)` | `min_corner_strength` ↓, `cluster_tol_deg` ↑, `min_peak_weight_fraction` ↓, or try `detect_chessboard_best` |
 | Partial board, many holes | `attach_search_rel` ↑, `attach_axis_tol_deg` ↑ |
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
 | Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `geometry_check_local_h_tol_rel` ↑ |
@@ -101,32 +101,32 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 
 ---
 
-## Per-parameter reference: `chessboard::DetectorParams`
+## Per-parameter reference: `chessboard::ChessboardParams`
 
-`DetectorParams` is a `#[non_exhaustive]` struct split into two surfaces:
+`ChessboardParams` is a `#[non_exhaustive]` struct split into two surfaces:
 
 - a **stable core** of four fields covered by semver —
   `graph_build_algorithm` (single-variant, `Topological`; retained as a
   reserved config seam), `min_labeled_corners`, `max_components`, and
   `min_corner_strength` (see [Output gates](#output-gates) and Stage 1
   below);
-- an opt-in **`advanced`** sub-struct (`Option<Box<AdvancedTuning>>`)
-  holding the ~40 per-stage knobs. `AdvancedTuning` is **NOT covered by
+- an opt-in **`advanced`** sub-struct (`Option<Box<ChessboardAdvancedTuning>>`)
+  holding the ~40 per-stage knobs. `ChessboardAdvancedTuning` is **NOT covered by
   semver** — leave it unset unless a specific input fails and you have
   evidence for the change.
 
-Attach overrides with `DetectorParams::with_advanced(tuning)` and read the
-effective tuning with `effective_tuning()`. `AdvancedTuning` is
-`#[non_exhaustive]`, so build it from `AdvancedTuning::default()` and
+Attach overrides with `ChessboardParams::with_advanced(tuning)` and read the
+effective tuning with `effective_tuning()`. `ChessboardAdvancedTuning` is
+`#[non_exhaustive]`, so build it from `ChessboardAdvancedTuning::default()` and
 mutate the knobs you need:
 
 ```rust,no_run
-use calib_targets::chessboard::{AdvancedTuning, DetectorParams};
+use calib_targets::chessboard::{ChessboardAdvancedTuning, ChessboardParams};
 
-let mut advanced = AdvancedTuning::default();
+let mut advanced = ChessboardAdvancedTuning::default();
 advanced.cluster_tol_deg = 16.0;
 advanced.attach_search_rel = 0.5;
-let params = DetectorParams::default().with_advanced(advanced);
+let params = ChessboardParams::default().with_advanced(advanced);
 ```
 
 All knobs in the Stage 2-8 tables below are **advanced** knobs set on the
@@ -170,7 +170,7 @@ automatically loosens admission by exactly the same amount.
 
 Seed-finding tolerances are internal to the topological grid builder and
 are not exposed as public tuning knobs. If seeding consistently fails, use
-`detect_chessboard_best` with `DetectorParams::sweep_default()` which
+`detect_chessboard_best` with `ChessboardParams::sweep_default()` which
 varies the upstream clustering and attachment tolerances.
 
 ### Stage 6 — grow
@@ -254,7 +254,8 @@ Verify against the printed board or the JSON spec used to generate it.
 2. If **no corners** are found: loosen `min_corner_strength`, check
    image resolution and contrast.
 3. If **corners found but no grid** (`detect_chessboard` returns
-   `None`): run `calib_targets_chessboard::trace_topological` —
+   `Err(NoDetection)`): run `calib_targets_chessboard::trace_topological` (gated behind
+   the chessboard crate's off-by-default `diagnostics` feature) —
    few `usable` corners means the prefilter / clustering is too tight (try
    lowering `min_corner_strength` or the advanced
    `min_peak_weight_fraction`), `Err(NoComponents)` means the topological

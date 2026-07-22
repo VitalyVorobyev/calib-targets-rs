@@ -22,7 +22,7 @@ upstream ChESS corner detector; every detector depends on it. Internal edges onl
  L4  print → core, aruco, charuco, marker, puzzleboard
      calib-targets (facade) → all detectors + print
                 ▲
- L5  ffi → facade      py → facade      wasm → all detectors + print
+ L5  ffi → facade      py → facade      wasm → facade + all detectors + print
      bench → facade, chessboard, core, projective-grid      studio → facade, bench, chessboard
 ```
 
@@ -43,7 +43,7 @@ which is a *consequence* of the layering.
 | `calib-targets-marker` | L3 | core, chessboard | Checkerboard + 3-circle board. |
 | `calib-targets-print` | L4 | core, aruco, charuco, marker, puzzleboard | Printable-target generation (not a detector). |
 | `calib-targets` | L4 | all detectors + print | Facade + CLI. |
-| `ffi` / `py` / `wasm` | L5 | facade / all detectors | Bindings (C ABI, PyO3, wasm). |
+| `ffi` / `py` / `wasm` | L5 | facade (wasm also: all detectors + print) | Bindings (C ABI, PyO3, wasm). |
 | `bench` / `studio` | L5 | facade, chessboard, core, projective-grid | Harness + GUI (local tooling). |
 
 **Atlas scope** ([Algorithm Atlas](algorithm-atlas.md)) is L0–L3: the crates that

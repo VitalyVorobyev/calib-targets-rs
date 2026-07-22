@@ -37,7 +37,7 @@ def main() -> None:
     )
 
     params = ct.MarkerBoardParams(
-        layout=layout,
+        board=layout,
         chessboard=ct.ChessboardParams(),
         circle_score=ct.CircleScoreParams(
             patch_size=64,

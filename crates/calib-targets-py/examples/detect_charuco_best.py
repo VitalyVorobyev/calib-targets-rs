@@ -33,8 +33,11 @@ def main() -> None:
         marker_layout=ct.MarkerLayout.OPENCV_CHARUCO,
     )
 
-    # ChESS corner detection runs once in detect_charuco_best; the sweep
-    # varies only ChArUco / chessboard-grid detector parameters.
+    # These three configs share the default ChESS front-end, so
+    # detect_charuco_best runs corner detection once and reuses it; the sweep
+    # varies only ChArUco / chessboard-grid detector parameters. (A sweep whose
+    # configs set different `chess` front-ends would run one corner pass per
+    # distinct front-end -- corner detection is deduplicated, not global.)
     # The corner-strength floor defaults to 33.0; the loose/tight variants
     # bracket it to trade recall against the risk of marker-bit saddles
     # entering grid construction.

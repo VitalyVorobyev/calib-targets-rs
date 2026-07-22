@@ -277,10 +277,7 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
     let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
-    let Some(detection) = detector
-        .detector
-        .detect_from_image_and_corners(&view, &corners)
-    else {
+    let Some(detection) = detector.detector.detect(&view, &corners) else {
         // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
         unsafe {
             write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
@@ -512,9 +509,7 @@ pub(super) unsafe fn marker_board_detector_detect_diagnostics_impl(
 
     // The marker-board diagnostics channel only yields evidence on a successful
     // detection; a failed detection is reported as `CT_STATUS_NOT_FOUND`.
-    let Some((_result, diagnostics)) = detector
-        .detector
-        .detect_from_image_and_corners_with_diagnostics(&view, &corners)
+    let Some((_result, diagnostics)) = detector.detector.detect_with_diagnostics(&view, &corners)
     else {
         return Err(FfiError::not_found("marker board not detected"));
     };

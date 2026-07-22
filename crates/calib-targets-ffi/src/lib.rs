@@ -40,7 +40,7 @@ use crate::convert::{
 use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiError, FfiResult};
 
 use calib_targets::charuco::CharucoDetector;
-use calib_targets::chessboard::Detector as ChessboardDetector;
+use calib_targets::chessboard::ChessboardDetector;
 use calib_targets::core::GrayImageView;
 use calib_targets::detect::{self, DetectorConfig};
 use calib_targets::marker::MarkerBoardDetector;

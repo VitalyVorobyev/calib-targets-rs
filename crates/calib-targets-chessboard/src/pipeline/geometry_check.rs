@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use super::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 use projective_grid::shared::grow::GrowResult;
 
 use super::types::GeometryCheckTrace;
@@ -40,7 +40,7 @@ pub(crate) fn run_geometry_check(
     _centers: ClusterCenters,
     cell_size: f32,
     blacklist: &mut HashSet<usize>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> GeometryCheckTrace {
     use projective_grid::shared::validate as pg_validate;
 
