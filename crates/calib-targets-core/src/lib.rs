@@ -53,7 +53,7 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 // orientation knob. Advanced ChESS tuning types are imported from the
 // `chess-corners` crate directly, where they belong — re-exporting the whole
 // upstream surface would freeze it into this crate's semver contract.
-pub use chess::{DetectorConfig, OrientationMethod};
+pub use chess::{default_chess_config, DetectorConfig, OrientationMethod};
 pub use corner::{
     axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection,
     TargetKind,

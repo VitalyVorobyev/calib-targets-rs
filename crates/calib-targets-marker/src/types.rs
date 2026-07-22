@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
 use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{
+    default_chess_config, Coord, DetectorConfig, GridAlignment, LabeledCorner, TargetDetection,
+    TargetKind,
+};
 use nalgebra::Point2;
 
 use crate::circle_score::{CirclePolarity, CircleScoreParams};
@@ -115,6 +118,15 @@ impl Default for CircleMatchParams {
 pub struct MarkerBoardParams {
     /// The fixed marker-board layout to detect.
     pub layout: MarkerBoardSpec,
+    /// ChESS corner front-end configuration.
+    ///
+    /// Defaults to [`default_chess_config`]. Override it to run the corner
+    /// pass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or
+    /// to pre-upscale low-resolution boards (`UpscaleConfig::Fixed`) whose
+    /// corners would otherwise fall inside the ChESS ring margin. Corner
+    /// positions are always reported in input-image pixels regardless.
+    #[serde(default = "default_chess_config")]
+    pub chess: DetectorConfig,
     /// Chessboard-detector parameters for the underlying corner-grid step.
     #[serde(default = "default_marker_chessboard_params")]
     pub chessboard: DetectorParams,
@@ -137,6 +149,7 @@ impl MarkerBoardParams {
         // circles supply the geometry constraint.
         Self {
             layout,
+            chess: default_chess_config(),
             chessboard: default_marker_chessboard_params(),
             circle_score: CircleScoreParams::default(),
             match_params: CircleMatchParams::default(),

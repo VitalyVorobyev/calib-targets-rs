@@ -74,11 +74,12 @@ fn detect_corners_impl(
         .collect()
 }
 
-/// Build the workspace-default ChESS detector config. Mirrors the threshold
-/// override applied in `calib_targets::detect::default_chess_config` — see
-/// the rustdoc on that function for the rationale and sweep evidence.
+/// The workspace-default ChESS detector config.
+///
+/// Delegates to `calib_targets_core::default_chess_config` rather than
+/// restating the threshold override, so the value has one definition.
 fn workspace_default_chess_cfg() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(15.0)
+    calib_targets_core::default_chess_config()
 }
 
 /// Resolve a ChESS detector config, falling back to the workspace default
@@ -89,6 +90,15 @@ fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<DetectorConfig, JsError> {
     } else {
         Ok(workspace_default_chess_cfg())
     }
+}
+
+/// Apply an explicit `chess_cfg` argument over a params struct's own `chess`
+/// field, leaving it untouched when JS supplies `undefined` / `null`.
+fn apply_chess_cfg_override(dst: &mut DetectorConfig, chess_cfg: JsValue) -> Result<(), JsError> {
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        *dst = from_js(chess_cfg)?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -614,8 +624,9 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    apply_chess_cfg_override(&mut charuco_params.chess, chess_cfg)?;
+    let chess = charuco_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -644,8 +655,9 @@ pub fn detect_marker_board(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mb_params: MarkerBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut mb_params: MarkerBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
+    let chess = mb_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
@@ -675,8 +687,9 @@ pub fn detect_puzzleboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let puzzle_params: PuzzleBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut puzzle_params.chess, chess_cfg)?;
+    let chess = puzzle_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -714,8 +727,9 @@ pub fn detect_charuco_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    apply_chess_cfg_override(&mut charuco_params.chess, chess_cfg)?;
+    let chess = charuco_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -744,8 +758,9 @@ pub fn detect_marker_board_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mb_params: MarkerBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut mb_params: MarkerBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
+    let chess = mb_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
@@ -777,8 +792,9 @@ pub fn detect_puzzleboard_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let puzzle_params: PuzzleBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut puzzle_params.chess, chess_cfg)?;
+    let chess = puzzle_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =

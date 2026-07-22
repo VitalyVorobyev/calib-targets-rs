@@ -4,9 +4,16 @@
 #
 #     cargo deny check
 #
-# This complements `cargo audit`: `audit` answers "is anything in the
-# lockfile subject to a RustSec advisory", `deny` additionally enforces
-# licence policy, duplicate-version hygiene, and source allow-listing.
+# This is the gate, not `cargo audit`, and the difference matters. `audit`
+# scans `Cargo.lock`, which by design records every *optional* dependency
+# whether or not any enabled feature actually pulls it in. `deny` resolves
+# real features first, so it reports what we actually compile. Concretely:
+# `cargo audit` still warns about `paste` via `rav1e ← ravif ← image`, but
+# that edge only exists behind `image`'s `avif` feature, which nothing in
+# this workspace enables — `cargo tree -i paste` is empty and `paste` is not
+# built. `deny` sees this correctly; `audit` cannot. `deny` additionally
+# enforces licence policy, duplicate-version hygiene, and source
+# allow-listing.
 #
 # Policy note: an entry in `advisories.ignore` is a *documented, dated
 # exception*, never a way to silence a finding we could fix. Every entry
@@ -18,29 +25,12 @@ all-features = true
 [advisories]
 version = 2
 yanked = "deny"
-ignore = [
-    # RUSTSEC-2024-0436 — `paste` is unmaintained (informational only; no
-    # known vulnerability, no patched release exists).
-    #
-    # Not reachable from any code this workspace writes. It arrives as:
-    #
-    #     paste <- rav1e <- ravif <- image (feature "avif")
-    #
-    # `image`'s "avif" feature is pulled in by `image/default` ->
-    # "default-formats". We set `default-features = true` on our own `image`
-    # dependency, but narrowing that alone does NOT drop the edge: the
-    # `chess-corners` crate also depends on `image` without
-    # `default-features = false`, and Cargo unifies features across the
-    # graph. Verified with `cargo tree -i ravif -e features`.
-    #
-    # Unblocked by an upstream one-liner in chess-corners: depend on `image`
-    # with `default-features = false` plus an explicit codec list. Filed as
-    # VitalyVorobyev/chess-corners-rs#68. Once that ships, bump chess-corners,
-    # mirror `default-features = false` on our own `image` dependency (BOTH are
-    # required — feature unification means narrowing either one alone leaves
-    # the edge), then delete this ignore and close #35.
-    "RUSTSEC-2024-0436",
-]
+# No exceptions are currently in force. RUSTSEC-2024-0436 (`paste`,
+# unmaintained) was ignored here until chess-corners 1.1 stopped enabling
+# `image/default`; with that plus `default-features = false` on our own
+# `image` dependency, the AVIF encoder — and with it `rav1e`/`paste` — is out
+# of the graph entirely. See the `image` entry in the root `Cargo.toml`.
+ignore = []
 
 [licenses]
 version = 2
@@ -58,11 +48,6 @@ allow = [
     "MPL-2.0",
     "CDLA-Permissive-2.0",
     "BSL-1.0",
-    # NCSA (University of Illinois/NCSA Open Source License) — permissive,
-    # OSI-approved, BSD-like. Reaches the graph only as
-    # `libfuzzer-sys <- rav1e <- ravif <- image (feature "avif")`, the same
-    # AVIF-encoder chain described in `advisories.ignore` above.
-    "NCSA",
 ]
 confidence-threshold = 0.8
 

@@ -57,35 +57,46 @@ pub enum DetectError {
     /// PuzzleBoard detection failed.
     #[error(transparent)]
     PuzzleBoardDetect(#[from] puzzleboard::PuzzleBoardDetectError),
+
+    /// A multi-config sweep was handed configs that disagree on `chess`.
+    ///
+    /// The `detect_*_best` helpers run ChESS corner detection **once** and
+    /// reuse the corner cloud across every config in the sweep, so the sweep
+    /// has no way to honour more than one corner front-end. Sweep the
+    /// target-detector parameters, and if you need to compare corner
+    /// front-ends, call the single-config entry point once per
+    /// [`DetectorConfig`].
+    #[error(
+        "sweep configs disagree on the `chess` corner front-end; corner \
+         detection runs once per sweep, so every config must request the same \
+         DetectorConfig"
+    )]
+    InconsistentChessConfig,
 }
 
-/// Reasonable default settings for the `chess-corners` ChESS detector.
+/// Resolve the one ChESS config a `detect_*_best` sweep may use.
 ///
-/// Built on top of [`DetectorConfig::chess`] but overrides the acceptance
-/// threshold to `15.0`. Since `chess-corners` 1.0 the threshold is a single
-/// `f32` that the ChESS strategy reads as an absolute floor on the raw
-/// response; the paper-faithful contract is `0.0`, which is correct in
-/// principle (any strictly positive ChESS response is a corner candidate) but
-/// produces hundreds of weak responses on real-world images. The
-/// topological grid pipeline is
-/// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
-/// threshold `0.0` produces zero labelled corners while `15.0` recovers the
-/// full 30-corner component; on `testdata/small0.png` the labelled count
-/// rises from 78 to 129; and on the `02-topo-grid/` synthetic suite the
-/// topological pipeline only clears every recall gate at `≥ 15.0`. The
-/// cutoff was chosen by sweeping the public testdata regression set; see
-/// `crates/calib-targets/examples/threshold_sweep.rs`.
-///
-/// Note this is *lower* than upstream's own 1.0 default of `30.0`. That is
-/// deliberate and unchanged in substance: the workspace has always overridden
-/// the upstream default, and the ChESS response scale did not change in 1.0,
-/// so `15.0` keeps producing exactly the corner set it did under 0.11.
-///
-/// Callers wanting the raw upstream behaviour can construct
-/// [`DetectorConfig::chess`] directly.
-pub fn default_chess_config() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(15.0)
+/// Returns [`DetectError::InconsistentChessConfig`] if the configs disagree.
+/// An empty sweep resolves to the workspace default; the callers below then
+/// return their own "no config produced a result" outcome.
+fn sweep_chess_config(
+    configs: impl IntoIterator<Item = DetectorConfig>,
+) -> Result<DetectorConfig, DetectError> {
+    let mut it = configs.into_iter();
+    let Some(first) = it.next() else {
+        return Ok(default_chess_config());
+    };
+    if it.any(|cfg| cfg != first) {
+        return Err(DetectError::InconsistentChessConfig);
+    }
+    Ok(first)
 }
+
+// `default_chess_config` is defined in `calib-targets-core` so every
+// detector's params struct can default its `chess` field without depending
+// on this facade; it is re-exported here because
+// `calib_targets::detect::default_chess_config` is the documented path.
+pub use calib_targets_core::default_chess_config;
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
 pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
@@ -218,7 +229,7 @@ pub fn detect_charuco(
     img: &::image::GrayImage,
     params: &charuco::CharucoParams,
 ) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let corners = detect_corners_default(img);
+    let corners = detect_corners(img, &params.chess);
     let detector = charuco::CharucoDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
@@ -242,7 +253,7 @@ pub fn detect_puzzleboard(
     img: &::image::GrayImage,
     params: &puzzleboard::PuzzleBoardParams,
 ) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
-    let corners = detect_corners_default(img);
+    let corners = detect_corners(img, &params.chess);
     let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
@@ -272,7 +283,7 @@ pub fn detect_marker_board(
     img: &::image::GrayImage,
     params: &marker::MarkerBoardParams,
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners_default(img);
+    let corners = detect_corners(img, &params.chess);
     let detector = marker::MarkerBoardDetector::new(params.clone()).ok()?;
     detector.detect_from_image_and_corners(&gray_view(img), &corners)
 }
@@ -311,7 +322,8 @@ pub fn detect_charuco_best(
     let mut best: Option<charuco::CharucoDetectionResult> = None;
     let mut last_err = None;
 
-    let corners = detect_corners_default(img);
+    let chess_cfg = sweep_chess_config(configs.iter().map(|p| p.chess))?;
+    let corners = detect_corners(img, &chess_cfg);
     for params in configs {
         let detector = match charuco::CharucoDetector::new(params.clone()) {
             Ok(d) => d,
@@ -344,6 +356,15 @@ pub fn detect_charuco_best(
 
 /// Try multiple PuzzleBoard parameter configs. Picks the configuration that
 /// labels the most corners with the highest mean decode confidence.
+///
+/// Unlike [`detect_charuco_best`] and [`detect_marker_board_best`], this
+/// sweep runs a **full detection per config**, corner pass included, so each
+/// config's [`PuzzleBoardParams::chess`] is honoured independently and the
+/// configs need not agree on it. That costs one ChESS pass per config; it is
+/// what makes sweeping corner front-ends (e.g. single-scale vs
+/// `UpscaleConfig::Fixed(2)`) possible here.
+///
+/// [`PuzzleBoardParams::chess`]: puzzleboard::PuzzleBoardParams::chess
 pub fn detect_puzzleboard_best(
     img: &::image::GrayImage,
     configs: &[puzzleboard::PuzzleBoardParams],
@@ -380,7 +401,8 @@ pub fn detect_marker_board_best(
     img: &::image::GrayImage,
     configs: &[marker::MarkerBoardParams],
 ) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners_default(img);
+    let chess_cfg = sweep_chess_config(configs.iter().map(|p| p.chess)).ok()?;
+    let corners = detect_corners(img, &chess_cfg);
     configs
         .iter()
         .filter_map(|params| {
@@ -503,57 +525,5 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> chessboard::ChessC
         position: Point2::new(c.x, c.y),
         axes,
         strength: c.response,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chess_corners::DetectionStrategy;
-
-    #[test]
-    fn default_chess_config_overrides_threshold() {
-        // Workspace default deliberately overrides the upstream contract
-        // (`threshold = 0.0`, "every strictly-positive response is a corner")
-        // with a small noise-floor cutoff tuned on the public testdata
-        // regression sweep — see the rustdoc on `default_chess_config`.
-        let cfg = default_chess_config();
-        assert_eq!(cfg.threshold, 15.0);
-
-        // Guard the override against an upstream default drifting into it:
-        // chess-corners 1.0 raised its own ChESS default from 0.0 to 30.0, so
-        // an assertion of the form `cfg.threshold != DetectorConfig::chess()`
-        // is the part that actually has teeth.
-        assert_ne!(
-            cfg.threshold,
-            DetectorConfig::chess().threshold,
-            "workspace default must stay an explicit override, not silently \
-             inherit whatever upstream picks"
-        );
-
-        // Strategy must still be the ChESS kernel pipeline (not Radon),
-        // and the multiscale / upscale top-level fields must match the
-        // single-scale ChESS preset.
-        assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
-        let baseline = DetectorConfig::chess();
-        assert_eq!(cfg.multiscale, baseline.multiscale);
-        assert_eq!(cfg.upscale, baseline.upscale);
-        assert_eq!(cfg.merge_radius, baseline.merge_radius);
-        assert_eq!(cfg.orientation_method, baseline.orientation_method);
-
-        // The shared detection knobs (`nms_radius` / `min_cluster_size` moved
-        // here from the per-strategy config in 1.0) stay at upstream defaults.
-        assert_eq!(cfg.detection, baseline.detection);
-
-        // The nested ChESS strategy fields stay at upstream defaults so
-        // the override is purely the acceptance threshold.
-        let DetectionStrategy::Chess(chess) = cfg.strategy else {
-            unreachable!("matched above");
-        };
-        let DetectionStrategy::Chess(chess_baseline) = baseline.strategy else {
-            unreachable!("baseline preset is ChESS");
-        };
-        assert_eq!(chess.ring, chess_baseline.ring);
-        assert_eq!(chess.refiner, chess_baseline.refiner);
     }
 }

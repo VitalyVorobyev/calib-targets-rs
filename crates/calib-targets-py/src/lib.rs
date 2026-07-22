@@ -155,6 +155,28 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
 // Config extraction
 // ---------------------------------------------------------------------------
 
+/// Apply an explicit `chess_cfg=` argument over a params struct's own
+/// `chess` field.
+///
+/// The ChArUco / PuzzleBoard / marker-board entry points accept both: the
+/// `chess` key travels with the serialized params, while `chess_cfg=` is a
+/// per-call override. An absent (or `None`) argument leaves the params' own
+/// value in place, so the two can never silently disagree — whichever is used
+/// is the one the corner pass runs with.
+fn apply_chess_cfg_override(
+    dst: &mut DetectorConfig,
+    obj: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(obj) = obj else {
+        return Ok(());
+    };
+    if obj.is_none() {
+        return Ok(());
+    }
+    *dst = from_py_json(obj, "chess_cfg")?;
+    Ok(())
+}
+
 fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig> {
     let Some(obj) = obj else {
         return Ok(detect::default_chess_config());
@@ -249,10 +271,10 @@ fn detect_charuco(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = charuco_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = charuco_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = charuco::CharucoDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });
@@ -428,11 +450,11 @@ fn detect_marker_board(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let params = marker_board_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = marker_board_params_from_py(params)?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         marker::MarkerBoardDetector::new(params.clone())
             .ok()
             .and_then(|d| d.detect_from_image_and_corners(&detect::gray_view(&img), &corners))
@@ -466,11 +488,11 @@ fn detect_puzzleboard(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = puzzleboard_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });
@@ -500,11 +522,11 @@ fn detect_charuco_with_diagnostics(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = charuco_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = charuco_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = charuco::CharucoDetector::new(params.clone()).map_err(|e| e.to_string())?;
         let (result, diagnostics) =
             detector.detect_with_diagnostics(&detect::gray_view(&img), &corners);
@@ -542,11 +564,11 @@ fn detect_marker_board_with_diagnostics(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = marker_board_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = marker_board_params_from_py(params)?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector =
             marker::MarkerBoardDetector::new(params.clone()).map_err(|e| e.to_string())?;
         match detector
@@ -586,11 +608,11 @@ fn detect_puzzleboard_with_diagnostics(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = puzzleboard_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector =
             puzzleboard::PuzzleBoardDetector::new(params.clone()).map_err(|e| e.to_string())?;
         let (result, diagnostics) =

@@ -1146,6 +1146,7 @@ class CharucoParams:
     """ChArUco detector parameters. ``board`` is required."""
 
     board: CharucoBoardSpec
+    chess: ChessConfig = field(default_factory=ChessConfig)
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
@@ -1157,6 +1158,7 @@ class CharucoParams:
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "board": self.board.to_dict(),
+            "chess": self.chess.to_dict(),
             "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
             "scan": self.scan.to_dict(),
@@ -1179,6 +1181,9 @@ class CharucoParams:
             raise ValueError("CharucoParams requires 'board' field")
         return cls(
             board=CharucoBoardSpec.from_dict(board_data),
+            chess=(
+                ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()
+            ),
             px_per_square=data.get("px_per_square", d_px),
             chessboard=(
                 ChessboardParams.from_dict(data["chessboard"])
@@ -1343,6 +1348,7 @@ class MarkerBoardParams:
     """Marker board detection parameters. Grid graph is inside ``chessboard``."""
 
     layout: MarkerBoardSpec = field(default_factory=MarkerBoardSpec)
+    chess: ChessConfig = field(default_factory=ChessConfig)
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
     circle_score: CircleScoreParams = field(default_factory=CircleScoreParams)
     match_params: CircleMatchParams = field(default_factory=CircleMatchParams)
@@ -1351,6 +1357,7 @@ class MarkerBoardParams:
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "layout": self.layout.to_dict(),
+            "chess": self.chess.to_dict(),
             "chessboard": self.chessboard.to_dict(),
             "circle_score": self.circle_score.to_dict(),
             "match_params": self.match_params.to_dict(),
@@ -1364,6 +1371,7 @@ class MarkerBoardParams:
         roi = data.get("roi_cells")
         return cls(
             layout=MarkerBoardSpec.from_dict(data.get("layout", {})),
+            chess=(ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
             circle_score=CircleScoreParams.from_dict(data.get("circle_score", {})),
             match_params=CircleMatchParams.from_dict(data.get("match_params", {})),
@@ -1554,6 +1562,7 @@ class PuzzleBoardParams:
     """PuzzleBoard detector parameters. ``board`` is required."""
 
     board: PuzzleBoardSpec
+    chess: ChessConfig = field(default_factory=ChessConfig)
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
     decode: PuzzleBoardDecodeConfig = field(default_factory=PuzzleBoardDecodeConfig)
@@ -1567,7 +1576,11 @@ class PuzzleBoardParams:
         # pattern tends to produce a lot of weak spurious corners that
         # we can drop before clustering.
         chessboard = ChessboardParams()
-        chessboard.min_corner_strength = 0.1
+        # Match the Rust `PuzzleBoardParams::for_board` floor (33.0): weakly
+        # firing corners in defocused regions are grid-consistent in position
+        # but pollute the frontier with false labels, and the decoder tolerates
+        # missing corners far better than wrong ones.
+        chessboard.min_corner_strength = 33.0
         _ = board  # board dims no longer constrain chessboard params
         return cls(board=board, px_per_square=60.0, chessboard=chessboard)
 
@@ -1581,9 +1594,9 @@ class PuzzleBoardParams:
         # normalised range used pre-0.10.
         base = cls.for_board(board)
         loose = cls.from_dict(base.to_dict())
-        loose.chessboard.chess.threshold = 8.0
+        loose.chess.threshold = 8.0
         tight = cls.from_dict(base.to_dict())
-        tight.chessboard.chess.threshold = 25.0
+        tight.chess.threshold = 25.0
         soft = [base, loose, tight]
         hard = [cls.from_dict(params.to_dict()) for params in soft]
         for params in hard:
@@ -1593,6 +1606,7 @@ class PuzzleBoardParams:
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "chess": self.chess.to_dict(),
             "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
             "board": self.board.to_dict(),
@@ -1605,6 +1619,7 @@ class PuzzleBoardParams:
             raise ValueError("PuzzleBoardParams requires 'board' field")
         return cls(
             board=PuzzleBoardSpec.from_dict(data["board"]),
+            chess=(ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()),
             px_per_square=float(data.get("px_per_square", 60.0)),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
             decode=PuzzleBoardDecodeConfig.from_dict(data.get("decode", {})),

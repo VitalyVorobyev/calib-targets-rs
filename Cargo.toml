@@ -64,7 +64,7 @@ approx = "0.5"
 assert_cmd = "2"
 axum = "0.8"
 cbindgen = "0.29"
-chess-corners = "1.0"
+chess-corners = "1.1"
 # The low-level ChESS contract (`ChessParams`, `RefinerKind`, `ImageView`,
 # `Roi`, `Refiner`, `chess_response_u8_patch`,
 # `detect_corners_from_response_with_refiner`) moved out of the removed
@@ -72,13 +72,39 @@ chess-corners = "1.0"
 # root in 1.0, so the crates that drive the response/detect stages by hand
 # (charuco corner refit, puzzleboard + charuco redetect params, the FFI
 # config lowering) now depend on it directly.
-chess-corners-core = "1.0"
+chess-corners-core = "1.1"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 delaunator = "1.0"
 env_logger = "0.11"
 flate2 = "1"
-image = { version = "0.25", default-features = true }
+# `image`'s default feature set is `rayon` + `default-formats`, and
+# `default-formats` includes `avif` — the AVIF *encoder* (`ravif` → `rav1e` →
+# the unmaintained `paste`, RUSTSEC-2024-0436). Nothing in this workspace
+# encodes AVIF: we read calibration frames and write PNG. So we take the
+# default set minus `avif` and keep every decoder a user might plausibly feed
+# the CLI. (AVIF *decoding* is a separate `avif-native` feature that was never
+# on by default, so no input format is lost.) This only clears `paste` in
+# combination with the matching upstream change in chess-corners 1.1 — Cargo
+# unifies features across the graph, so either crate enabling `image/default`
+# re-enables the encoder for everyone.
+image = { version = "0.25", default-features = false, features = [
+    "rayon",
+    "bmp",
+    "dds",
+    "exr",
+    "ff",
+    "gif",
+    "hdr",
+    "ico",
+    "jpeg",
+    "png",
+    "pnm",
+    "qoi",
+    "tga",
+    "tiff",
+    "webp",
+] }
 kiddo = "5"
 log = "0.4"
 nalgebra = "0.35"

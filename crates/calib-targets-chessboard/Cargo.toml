@@ -13,6 +13,14 @@ keywords = ["calibration", "computer-vision", "chessboard", "detection", "grid"]
 categories = ["computer-vision", "science"]
 
 [features]
+# Opt-in ONNX-backed subpixel refiner (`ChessRefiner::Ml`, upstream's
+# `chess-corners/ml-refiner`). OFF by default: it drags the `tract` ONNX
+# runtime into the build — which took the WASM bundle from ~0.85 MB to ~10 MB
+# while nothing in this workspace ever selects the ML refiner — and on
+# `wasm32-unknown-unknown` its transitive `getrandom` needs a backend chosen at
+# build time. With the feature off, the serde value `{"refiner": "ml"}` does
+# not deserialize; every other refiner is unaffected.
+ml-refiner = ["chess-corners/ml-refiner"]
 default = []
 # Reserved opt-in introspection seam. The rich per-stage `DebugFrame` surface
 # was retired with the seed-and-grow builder; the topological builder exposes
@@ -36,7 +44,7 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 approx.workspace = true
 calib-targets = { path = "../calib-targets" }
-chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
+chess-corners = { workspace = true, features = ["rayon"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true

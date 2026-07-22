@@ -1,6 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{AdvancedTuning, DetectorParams};
+use calib_targets_core::{default_chess_config, DetectorConfig};
 use chess_corners::SaddlePointConfig;
 use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,20 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CharucoParams {
+    /// ChESS corner front-end configuration for the main detection pass.
+    ///
+    /// Defaults to [`default_chess_config`]. Override it to run the corner
+    /// pass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or
+    /// to pre-upscale low-resolution board crops (`UpscaleConfig::Fixed`)
+    /// whose corners would otherwise fall inside the ChESS ring margin —
+    /// the common failure mode on small ChArUco cutouts. Corner positions are
+    /// always reported in input-image pixels regardless.
+    ///
+    /// This is the *main* pass. The separate
+    /// [`corner_redetect_params`](Self::corner_redetect_params) drives the
+    /// local re-detection of individual suspicious corners.
+    #[serde(default = "default_chess_config")]
+    pub chess: DetectorConfig,
     /// Pixels per board square in the canonical sampling space.
     #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
@@ -284,6 +299,7 @@ impl CharucoParams {
             .with_min_border_score(0.75);
 
         Self {
+            chess: default_chess_config(),
             px_per_square: 60.0,
             chessboard,
             board: *board,

@@ -3,6 +3,7 @@
 use crate::board::PuzzleBoardSpec;
 use crate::detector::{PuzzleBoardDecodeConfig, PuzzleBoardScoringMode};
 use calib_targets_chessboard::DetectorParams;
+use calib_targets_core::{default_chess_config, DetectorConfig};
 use chess_corners::SaddlePointConfig;
 use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,15 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PuzzleBoardParams {
+    /// ChESS corner front-end configuration for the main detection pass.
+    ///
+    /// Defaults to [`default_chess_config`]. Override it to run the corner
+    /// pass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or
+    /// to pre-upscale low-resolution boards (`UpscaleConfig::Fixed`) whose
+    /// corners would otherwise fall inside the ChESS ring margin. Corner
+    /// positions are always reported in input-image pixels regardless.
+    #[serde(default = "default_chess_config")]
+    pub chess: DetectorConfig,
     /// Pixels per board square in the rectified sampling space.
     #[serde(default = "default_px_per_square")]
     pub px_per_square: f32,
@@ -70,6 +80,7 @@ impl PuzzleBoardParams {
         // explicit here to document the PuzzleBoard intent.)
         chessboard.min_corner_strength = 33.0;
         Self {
+            chess: default_chess_config(),
             px_per_square: 60.0,
             chessboard,
             board: *board,

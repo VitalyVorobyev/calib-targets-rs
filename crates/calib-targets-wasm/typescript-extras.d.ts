@@ -410,6 +410,16 @@ export interface CharucoAdvancedTuning {
 
 export interface CharucoParams {
   // --- stable core ---
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
   px_per_square: number;
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
@@ -456,6 +466,17 @@ export interface CircleMatchParams {
 
 export interface MarkerBoardParams {
   layout: MarkerBoardLayout;
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
+
   chessboard: ChessboardParams;
   circle_score: CircleScoreParams;
   match_params: CircleMatchParams;
@@ -495,6 +516,16 @@ export interface PuzzleBoardDecodeConfig {
 }
 
 export interface PuzzleBoardParams {
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
   px_per_square: number;
   chessboard: ChessboardParams;
   board: PuzzleBoardSpec;

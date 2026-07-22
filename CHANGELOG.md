@@ -29,6 +29,31 @@ snippets across Rust, JSON, C, Python, and TypeScript.
 
 ### Added
 
+- **Every detector's params struct carries its own ChESS corner front-end
+  (`chess: DetectorConfig`).** `CharucoParams`, `PuzzleBoardParams`, and
+  `MarkerBoardParams` gain a `chess` field defaulting to
+  `default_chess_config()`. Previously the facade helpers
+  `detect_charuco` / `detect_puzzleboard` / `detect_marker_board` hardcoded
+  `detect_corners_default(img)`, so the coarse-to-fine
+  `MultiscaleConfig::Pyramid` and the pre-pipeline `UpscaleConfig::Fixed`
+  stages were reachable for chessboard detection only — an asymmetry, not a
+  decision (the C ABI and the Python bindings had both already grown their own
+  way to pass one). Overriding the corner pass is now a matter of setting one
+  field, and it travels with the serialized config through JSON, Python, the C
+  ABI, and TypeScript.
+
+  `UpscaleConfig::Fixed` is the knob for low-resolution boards whose corners
+  land inside the ChESS ring margin, and it rescales output coordinates back
+  to input pixels — unlike upscaling the image yourself, which leaves every
+  corner in the upscaled frame for the caller to undo.
+
+  `detect_charuco_best` and `detect_marker_board_best` run one corner pass for
+  the whole sweep, so their configs must agree on `chess`; disagreement is
+  reported as the new `DetectError::InconsistentChessConfig` rather than
+  silently using the first. `detect_puzzleboard_best` already ran a full
+  detection per config, so it honours each config's `chess` independently and
+  can sweep corner front-ends.
+
 - **`projective_grid::predict_grid_position` / `PredictedPosition`** — the
   neighbour-midpoint position predictor is back on the stable tier, as one
   lattice-generic function (`lattice::predict`). It averages the midpoints of
@@ -102,6 +127,21 @@ snippets across Rust, JSON, C, Python, and TypeScript.
   replaced the knob — see *Changed* for the derived gate that took over its
   job. The removal propagates through the FFI (`ct_chessboard_advanced_t`),
   Python (`ChessboardParams`), WASM, and Studio surfaces.
+
+- **The ONNX-backed ML refiner is now opt-in (`ml-refiner` cargo feature,
+  off by default).** Every crate previously enabled `chess-corners/ml-refiner`
+  unconditionally, which linked the `tract` ONNX runtime into every build —
+  taking the published WASM bundle from ~0.85 MB to ~10 MB — while nothing in
+  this workspace ever selects `ChessRefiner::Ml`. It also broke the
+  `wasm32-unknown-unknown` build outright once `chess-corners` 1.1 moved to
+  `tract` 0.23, whose transitive `getrandom` 0.4 requires a backend chosen at
+  build time. With the feature off the WASM bundle is ~1.5 MB.
+
+  Turn it back on with `features = ["ml-refiner"]` on `calib-targets` (or on
+  any individual detector crate; the Python bindings expose the same feature).
+  While it is off, the serde value `{"refiner": "ml"}` does not deserialize —
+  it is rejected, never silently downgraded. Every other refiner
+  (`center_of_mass`, `forstner`, `saddle_point`) is unaffected.
 
 - **`nalgebra` 0.34 → 0.35.** `nalgebra` types appear in the public API of
   `projective-grid` and `calib-targets-core` (`Point2<f32>`, `Matrix3<f32>`,
@@ -251,12 +291,24 @@ snippets across Rust, JSON, C, Python, and TypeScript.
 
   One documented exception remains: RUSTSEC-2024-0436 (`paste`, unmaintained,
   informational, no patched release). It is unreachable from workspace code
-  and arrives as `paste ← rav1e ← ravif ← image` via `image`'s default-on
-  `avif` codec feature. Narrowing our own `image` features does not remove it,
-  because `chess-corners` also depends on `image` without
-  `default-features = false` and Cargo unifies features across the graph;
-  clearing it requires that upstream change, filed as
-  [chess-corners-rs#68](https://github.com/VitalyVorobyev/chess-corners-rs/issues/68).
+  and arrived as `paste ← rav1e ← ravif ← image` via `image`'s default-on
+  `avif` codec feature.
+
+  **Now resolved.** Narrowing our own `image` features was not enough on its
+  own, because `chess-corners` also depended on `image` without
+  `default-features = false` and Cargo unifies features across the graph. With
+  the upstream change shipped in `chess-corners` 1.1
+  ([chess-corners-rs#68](https://github.com/VitalyVorobyev/chess-corners-rs/issues/68))
+  plus `default-features = false` on our own `image` dependency, the AVIF
+  *encoder* is out of the graph and `paste` is no longer compiled. No input
+  format is lost: AVIF *decoding* is a separate `avif-native` feature that was
+  never on by default, and nothing here encodes AVIF.
+
+  Note `cargo audit` still reports the advisory. It scans `Cargo.lock`, which
+  by design lists every *optional* dependency whether or not a feature enables
+  it, so it cannot tell the edge is dead; `cargo tree -i paste` is empty.
+  `cargo deny` resolves features first and reports what is actually built,
+  which is why it — not `cargo audit` — is the CI gate.
 
 ### Fixed
 

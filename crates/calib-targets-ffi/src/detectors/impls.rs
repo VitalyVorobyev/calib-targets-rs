@@ -67,8 +67,12 @@ pub(super) unsafe fn charuco_detector_create_impl(
     // SAFETY: `out_detector` is a valid writable pointer for the duration of the call.
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = CharucoDetector::new(convert_charuco_detector_params(&config.detector)?)
-        .map_err(map_charuco_create_error)?;
+    // Keep the handle's corner front-end and the params' own `chess` field in
+    // lockstep: `config.chess` is the single C-level source of truth, and
+    // `CharucoParams::chess` must not silently disagree with it.
+    let mut params = convert_charuco_detector_params(&config.detector)?;
+    params.chess = chess;
+    let detector = CharucoDetector::new(params).map_err(map_charuco_create_error)?;
     let handle = Box::new(ct_charuco_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
@@ -84,8 +88,12 @@ pub(super) unsafe fn marker_board_detector_create_impl(
     // SAFETY: `out_detector` is a valid writable pointer for the duration of the call.
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = MarkerBoardDetector::new(convert_marker_board_params(&config.detector)?)
-        .map_err(|e| FfiError::config_error(e.to_string()))?;
+    // See the note in `charuco_detector_create_impl`: `config.chess` is the
+    // single C-level source of truth for the corner front-end.
+    let mut params = convert_marker_board_params(&config.detector)?;
+    params.chess = chess;
+    let detector =
+        MarkerBoardDetector::new(params).map_err(|e| FfiError::config_error(e.to_string()))?;
     let handle = Box::new(ct_marker_board_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
@@ -101,8 +109,11 @@ pub(super) unsafe fn puzzleboard_detector_create_impl(
     // SAFETY: `out_detector` is a valid writable pointer for the duration of the call.
     let out_detector = unsafe { require_mut_ref(out_detector, "out_detector")? };
     let chess = convert_chess_config(&config.chess)?;
-    let detector = PuzzleBoardDetector::new(convert_puzzleboard_params(&config.detector)?)
-        .map_err(map_puzzleboard_create_error)?;
+    // See the note in `charuco_detector_create_impl`: `config.chess` is the
+    // single C-level source of truth for the corner front-end.
+    let mut params = convert_puzzleboard_params(&config.detector)?;
+    params.chess = chess;
+    let detector = PuzzleBoardDetector::new(params).map_err(map_puzzleboard_create_error)?;
     let handle = Box::new(ct_puzzleboard_detector_t { chess, detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
