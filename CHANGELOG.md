@@ -9,6 +9,25 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.11.1
+
+Metadata-only patch: no code or behaviour changes.
+
+### Fixed
+
+- **MSRV corrected to 1.91.** The declared `rust-version = "1.88"` had gone
+  stale: `chess-corners` 1.1 requires rustc 1.91, so 0.11.0 could not actually
+  be built on 1.88–1.90 despite its metadata claiming otherwise (Cargo does
+  not cross-check `rust-version` against dependencies). The workspace now
+  declares 1.91 — the same floor as `chess-corners` — and CI gained an `msrv`
+  job that builds with 1.91 on every PR so the claim cannot rot silently
+  again.
+- **Dropped the unused `fixed` dependency.** `kiddo`'s default features pull
+  in fixed-point axis support that no crate here uses (all k-d trees are
+  `f32`); the workspace now depends on `kiddo` with
+  `default-features = false, features = ["tracing"]`. This also removes the
+  one transitive that would otherwise have forced the MSRV to 1.93.
+
 ## 0.11.0
 
 This release is dominated by the migration to **`chess-corners` 1.0**, an

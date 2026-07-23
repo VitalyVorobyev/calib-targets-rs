@@ -232,5 +232,5 @@ generated data stay out of Git. Stage files individually; never `git add -A` in
 a directory that may contain them. Details in
 [`docs/development/conventions.md`](../docs/development/conventions.md#local-only-artifacts--never-commit).
 
-**MSRV:** workspace sets `rust-version = "1.88"`. Toolchain pinned to `stable`
+**MSRV:** workspace sets `rust-version = "1.91"`. Toolchain pinned to `stable`
 in `rust-toolchain.toml`.
