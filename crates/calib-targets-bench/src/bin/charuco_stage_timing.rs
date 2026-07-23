@@ -20,8 +20,9 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use calib_targets::charuco::{CharucoDetectConfig, CharucoDetector};
+use calib_targets::charuco::CharucoDetector;
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
+use calib_targets_bench::charuco_config::CharucoDetectConfig;
 use clap::Parser;
 use image::ImageReader;
 use serde::Serialize;

@@ -156,3 +156,32 @@ jobs:
 
       - name: mypy smoke check
         run: mypy crates/calib-targets-py/python_tests/typecheck_smoke.py
+
+  # Supply-chain gate. The scheduled `audit.yml` workflow still runs weekly and
+  # files an issue for newly-published advisories against the existing
+  # lockfile; this job is the *pre-merge* half, so a PR that introduces a
+  # vulnerable, unmaintained, wrongly-licensed, or unvendored dependency fails
+  # review instead of surfacing days later.
+  #
+  # `cargo deny check` covers advisories (same RustSec database as
+  # `cargo audit`) *plus* licences, bans, and sources, and it is the only one
+  # of the two that reads `deny.toml`. Running `cargo audit` here as well
+  # would mean maintaining a second, separate ignore list that could silently
+  # drift from `deny.toml`, so `deny.toml` is the single source of truth for
+  # policy and documented exceptions.
+  supply-chain:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny
+        run: cargo deny check

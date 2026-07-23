@@ -56,7 +56,7 @@ pub struct RunRequest {
     /// set, overrides the kind filter so the run covers exactly that dataset.
     #[serde(default)]
     pub group: Option<String>,
-    /// Partial `DetectorParams` override (CLI merge semantics).
+    /// Partial `ChessboardParams` override (CLI merge semantics).
     #[serde(default)]
     pub params: serde_json::Value,
     /// Detection engine (default: pipeline).
@@ -87,7 +87,7 @@ pub async fn create(
         ));
     }
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = req.orientation_method.into();
+    chess_cfg.orientation_method = Some(req.orientation_method.into());
     let config_id = format!(
         "{}.{:?}",
         match engine {

@@ -27,8 +27,8 @@ Every detector shares the same first three steps:
    helpers in `calib_targets::detect` accept either.
 2. **Corner front-end** — the [ChESS X-junction](algo_chess_corners.md)
    detector via the `chess-corners` crate produces a raw corner cloud
-   (sub-pixel position + two undirected axes + strength / contrast /
-   fit_rms). The workspace default is
+   (sub-pixel position + two undirected axes, each with a 1σ angular
+   uncertainty + a `strength` response magnitude). The workspace default is
    `calib_targets::detect::default_chess_config()`.
 3. **Grid recovery** — every target then runs the *same* grid stack:
    [axis clustering](algo_axis_clustering.md) → the

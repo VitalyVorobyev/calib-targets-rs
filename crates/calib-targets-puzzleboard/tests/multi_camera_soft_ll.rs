@@ -20,32 +20,37 @@ use calib_targets_core::GrayImageView;
 type PerViewOrigin = Option<(i32, i32)>;
 type TargetPositionMap = HashMap<(i32, i32), (f32, f32)>;
 type SixViewResult = (Vec<PerViewOrigin>, Vec<TargetPositionMap>);
+use calib_targets::detect::default_chess_config;
 use calib_targets_print::{PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec};
 use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
     PuzzleBoardSpec,
 };
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig, Threshold};
+use chess_corners::{CornerDescriptor, Detector as ChessDetector};
 use image::{ImageBuffer, Luma};
 use nalgebra::Point2;
 
 fn adapt(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner {
-        position: Point2::new(c.x, c.y),
-        axes: [
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            calib_targets_core::AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ],
-        contrast: c.contrast,
-        fit_rms: c.fit_rms,
-        strength: c.response,
-    }
+    TargetCorner::new(
+        Point2::new(c.x, c.y),
+        // `axes` is `None` only when the upstream orientation fit is
+        // skipped; these fixtures always fit it.
+        c.axes
+            .map(|a| {
+                [
+                    calib_targets_core::AxisEstimate {
+                        angle: a[0].angle,
+                        sigma: a[0].sigma,
+                    },
+                    calib_targets_core::AxisEstimate {
+                        angle: a[1].angle,
+                        sigma: a[1].sigma,
+                    },
+                ]
+            })
+            .expect("orientation fit enabled"),
+        c.response,
+    )
 }
 
 fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8>> {
@@ -69,9 +74,12 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
     let bundle = calib_targets_print::render_target_bundle(&doc).expect("render");
     let gray = render_png_to_gray_image(&bundle.png_bytes);
 
-    let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
-        .with_chess(|c| c.nms_radius = 3);
+    let cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
+    // strategy (`threshold` is now an absolute floor on the raw response;
+    // only Radon reads it as a fraction). Rather than invent an absolute
+    // number to imitate the old adaptive cutoff, use the workspace
+    // production default, so this exercises the config real callers get.
+    default_chess_config().with_detection(|d| d.nms_radius = 3);
     let mut chess_detector = ChessDetector::new(cfg).expect("build ChESS detector");
     let descriptors = chess_detector.detect(&gray).expect("ChESS detection");
     let all_corners: Vec<TargetCorner> = descriptors.iter().map(adapt).collect();
@@ -89,7 +97,7 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
         spec.origin_col,
     )
     .expect("board");
-    let mut params = PuzzleBoardParams::for_board(&board_spec);
+    let mut params = PuzzleBoardParams::for_board(board_spec);
     params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
     params.decode.scoring_mode = mode;
     let detector = PuzzleBoardDetector::new(params).expect("detector");

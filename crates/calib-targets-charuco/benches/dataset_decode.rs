@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_charuco::{load_board_spec_any, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector as ChessDetector, ChessboardParams};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::{GenericImageView, GrayImage};
 
@@ -68,9 +68,9 @@ fn bench_all(c: &mut Criterion) {
     };
 
     let cfg = default_chess_config();
-    let chess_params = DetectorParams::default();
+    let chess_params = ChessboardParams::default();
     // `for_board` defaults to the production board-level matcher.
-    let charuco_params = CharucoParams::for_board(&spec);
+    let charuco_params = CharucoParams::for_board(spec);
 
     let fixtures: Vec<(String, GrayImage, Vec<Corner>)> = FIXTURES
         .iter()

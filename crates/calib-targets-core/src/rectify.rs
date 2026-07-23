@@ -3,6 +3,9 @@ use nalgebra::Point2;
 
 /// A rectified (fronto-parallel) view of a detected board, plus the
 /// mapping back to the original image.
+///
+/// `#[non_exhaustive]`: construct with [`RectifiedView::new`].
+#[non_exhaustive]
 pub struct RectifiedView {
     /// The rectified grayscale image.
     pub rect: GrayImage,
@@ -14,6 +17,26 @@ pub struct RectifiedView {
     pub cells_y: usize,
     /// Maps rectified coordinates back into the original image.
     pub rect_to_img: RectToImgMapper,
+}
+
+impl RectifiedView {
+    /// Create a rectified view from its image, cell geometry, and the
+    /// rectified-to-image mapping.
+    pub fn new(
+        rect: GrayImage,
+        px_per_square: f32,
+        cells_x: usize,
+        cells_y: usize,
+        rect_to_img: RectToImgMapper,
+    ) -> Self {
+        Self {
+            rect,
+            px_per_square,
+            cells_x,
+            cells_y,
+            rect_to_img,
+        }
+    }
 }
 
 /// Mapping from rectified-image coordinates back to original-image

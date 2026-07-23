@@ -21,7 +21,7 @@
 
 use super::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use projective_grid::shared::fill::{fill_grid_holes, FillParams};
@@ -55,7 +55,7 @@ pub(crate) fn apply_boosters_with_directional_edge_scale(
     centers: ClusterCenters,
     cell_size: f32,
     blacklist: &HashSet<usize>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> BoosterResult {
     apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, true)
 }
@@ -66,7 +66,7 @@ fn apply_boosters_impl(
     centers: ClusterCenters,
     cell_size: f32,
     blacklist: &HashSet<usize>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
     use_directional_edge_scale: bool,
 ) -> BoosterResult {
     let positions: Vec<Point2<f32>> = corners.iter().map(|c| c.position).collect();
@@ -400,8 +400,6 @@ mod tests {
                     sigma: 0.01,
                 },
             ],
-            contrast: 10.0,
-            fit_rms: 1.0,
             strength: 1.0,
         };
         let mut aug = CornerAug::from_chess_corner(idx, &c);
@@ -438,7 +436,7 @@ mod tests {
             }
         }
 
-        let params = DetectorParams::default();
+        let params = ChessboardParams::default();
         let centers = cluster_axes(&mut corners, &params).expect("centers");
         let mut grow = GrowResult {
             labelled: Default::default(),

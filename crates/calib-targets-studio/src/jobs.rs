@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect::DetectorConfig;
 use calib_targets_bench::baseline::Baseline;
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
@@ -94,7 +94,7 @@ pub struct RunSpec {
     /// Entries to process (already filtered + availability-checked).
     pub entries: Vec<DatasetEntry>,
     /// Effective detector params.
-    pub params: DetectorParams,
+    pub params: ChessboardParams,
     /// ChESS corner-detector config (orientation method applied).
     pub chess_cfg: DetectorConfig,
     /// Detection engine.

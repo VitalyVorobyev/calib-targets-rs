@@ -155,6 +155,28 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
 // Config extraction
 // ---------------------------------------------------------------------------
 
+/// Apply an explicit `chess_cfg=` argument over a params struct's own
+/// `chess` field.
+///
+/// The ChArUco / PuzzleBoard / marker-board entry points accept both: the
+/// `chess` key travels with the serialized params, while `chess_cfg=` is a
+/// per-call override. An absent (or `None`) argument leaves the params' own
+/// value in place, so the two can never silently disagree — whichever is used
+/// is the one the corner pass runs with.
+fn apply_chess_cfg_override(
+    dst: &mut DetectorConfig,
+    obj: Option<&Bound<'_, PyAny>>,
+) -> PyResult<()> {
+    let Some(obj) = obj else {
+        return Ok(());
+    };
+    if obj.is_none() {
+        return Ok(());
+    }
+    *dst = from_py_json(obj, "chess_cfg")?;
+    Ok(())
+}
+
 fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig> {
     let Some(obj) = obj else {
         return Ok(detect::default_chess_config());
@@ -167,12 +189,12 @@ fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig>
 
 fn chessboard_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
-) -> PyResult<chessboard::DetectorParams> {
+) -> PyResult<chessboard::ChessboardParams> {
     let Some(obj) = obj else {
-        return Ok(chessboard::DetectorParams::default());
+        return Ok(chessboard::ChessboardParams::default());
     };
     if obj.is_none() {
-        return Ok(chessboard::DetectorParams::default());
+        return Ok(chessboard::ChessboardParams::default());
     }
     from_py_json(obj, "params")
 }
@@ -228,8 +250,6 @@ struct TopologicalCornerPayload {
     position: [f32; 2],
     axes: [::calib_targets::core::AxisEstimate; 2],
     strength: f32,
-    contrast: f32,
-    fit_rms: f32,
 }
 
 /// Detect a ChArUco board in a grayscale image.
@@ -251,10 +271,10 @@ fn detect_charuco(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = charuco_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = charuco_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = charuco::CharucoDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });
@@ -288,7 +308,7 @@ fn detect_chessboard(
 
     let result = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone())
+        chessboard::ChessboardDetector::new(params.clone())
             .ok()
             .and_then(|d| d.detect(&corners))
     });
@@ -332,7 +352,7 @@ fn detect_chessboard_all(
 
     let results = py.detach(move || {
         let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::Detector::new(params.clone())
+        chessboard::ChessboardDetector::new(params.clone())
             .map(|d| d.detect_all(&corners))
             .unwrap_or_default()
     });
@@ -372,13 +392,11 @@ fn trace_chessboard_topological(
                 position: [c.position.x, c.position.y],
                 axes: c.axes,
                 strength: c.strength,
-                contrast: c.contrast,
-                fit_rms: c.fit_rms,
             })
             .collect();
 
         let trace_result = chessboard::trace_topological(&corners, &params);
-        let detections = chessboard::Detector::new(params.clone())
+        let detections = chessboard::ChessboardDetector::new(params.clone())
             .map(|d| d.detect_all(&corners))
             .unwrap_or_default();
 
@@ -432,14 +450,14 @@ fn detect_marker_board(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
-    let params = marker_board_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = marker_board_params_from_py(params)?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         marker::MarkerBoardDetector::new(params.clone())
             .ok()
-            .and_then(|d| d.detect_from_image_and_corners(&detect::gray_view(&img), &corners))
+            .and_then(|d| d.detect(&detect::gray_view(&img), &corners))
     });
     match result {
         Some(res) => {
@@ -470,11 +488,11 @@ fn detect_puzzleboard(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = puzzleboard_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || -> Result<_, detect::DetectError> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
         Ok(detector.detect(&detect::gray_view(&img), &corners)?)
     });
@@ -488,7 +506,7 @@ fn detect_puzzleboard(
 ///
 /// Runs the same detection as `detect_charuco` but returns a dict
 /// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `CharucoDetectionResult` dict (or `None` when detection fails);
+/// `CharucoDetection` dict (or `None` when detection fails);
 /// `diagnostics` is the raw `CharucoDetectDiagnostics` payload (per-component
 /// matcher decisions, per-cell scores, chosen/runner-up hypotheses, rejection
 /// reasons). Diagnostics are produced even on a failed frame.
@@ -504,11 +522,11 @@ fn detect_charuco_with_diagnostics(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = charuco_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = charuco_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector = charuco::CharucoDetector::new(params.clone()).map_err(|e| e.to_string())?;
         let (result, diagnostics) =
             detector.detect_with_diagnostics(&detect::gray_view(&img), &corners);
@@ -529,7 +547,7 @@ fn detect_charuco_with_diagnostics(
 ///
 /// Runs the same detection as `detect_marker_board` but returns a dict
 /// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `MarkerBoardDetectionResult` dict; `diagnostics` is the raw
+/// `MarkerBoardDetection` dict; `diagnostics` is the raw
 /// `MarkerBoardDiagnostics` payload (scored circle candidates, circle
 /// matches, per-corner provenance, alignment-inlier count). Both are
 /// `None` when no board is found — the marker-board diagnostics channel
@@ -546,16 +564,14 @@ fn detect_marker_board_with_diagnostics(
     params: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = marker_board_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = marker_board_params_from_py(params)?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector =
             marker::MarkerBoardDetector::new(params.clone()).map_err(|e| e.to_string())?;
-        match detector
-            .detect_from_image_and_corners_with_diagnostics(&detect::gray_view(&img), &corners)
-        {
+        match detector.detect_with_diagnostics(&detect::gray_view(&img), &corners) {
             Some((result, diagnostics)) => Ok(serde_json::json!({
                 "result": serde_json::to_value(result).map_err(|e| e.to_string())?,
                 "diagnostics": serde_json::to_value(diagnostics).map_err(|e| e.to_string())?,
@@ -574,7 +590,7 @@ fn detect_marker_board_with_diagnostics(
 ///
 /// Runs the same detection as `detect_puzzleboard` but returns a dict
 /// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `PuzzleBoardDetectionResult` dict (or `None` when detection fails);
+/// `PuzzleBoardDetection` dict (or `None` when detection fails);
 /// `diagnostics` is the raw `PuzzleBoardDiagnostics` payload (raw
 /// pre-alignment per-edge bit observations and winner-vs-runner-up scoring
 /// evidence). Diagnostics are produced even on a failed decode.
@@ -590,11 +606,11 @@ fn detect_puzzleboard_with_diagnostics(
     params: &Bound<'_, PyAny>,
 ) -> PyResult<Py<PyAny>> {
     let img = gray_image_from_py(image)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
+    let mut params = puzzleboard_params_from_py(Some(params))?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
+        let corners = detect::detect_corners(&img, &params.chess);
         let detector =
             puzzleboard::PuzzleBoardDetector::new(params.clone()).map_err(|e| e.to_string())?;
         let (result, diagnostics) =
@@ -640,7 +656,7 @@ fn detect_chessboard_best(
         .map_err(|_| value_error("configs must be a list"))?;
     let mut params_vec = Vec::with_capacity(list.len());
     for item in list.iter() {
-        params_vec.push(from_py_json::<chessboard::DetectorParams>(
+        params_vec.push(from_py_json::<chessboard::ChessboardParams>(
             &item,
             "configs[]",
         )?);
@@ -649,12 +665,15 @@ fn detect_chessboard_best(
 
     let result = py.detach(move || detect::detect_chessboard_best(&img, &chess_cfg, &params_vec));
     match result {
-        Some(res) => {
+        Ok(res) => {
             let json = serde_json::to_value(res)
                 .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
             Ok(Some(json_to_py(py, &json)?))
         }
-        None => Ok(None),
+        // A miss is reported to Python as `None`, exactly as before the facade
+        // unified on `Result`; any other error is a genuine failure and raises.
+        Err(detect::DetectError::NoDetection { .. }) => Ok(None),
+        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
     }
 }
 
@@ -720,12 +739,15 @@ fn detect_marker_board_best(
 
     let result = py.detach(move || detect::detect_marker_board_best(&img, &params_vec));
     match result {
-        Some(res) => {
+        Ok(res) => {
             let json = serde_json::to_value(res)
                 .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
             Ok(Some(json_to_py(py, &json)?))
         }
-        None => Ok(None),
+        // A miss is reported to Python as `None`, exactly as before the facade
+        // unified on `Result`; any other error is a genuine failure and raises.
+        Err(detect::DetectError::NoDetection { .. }) => Ok(None),
+        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
     }
 }
 
@@ -768,8 +790,9 @@ fn detect_puzzleboard_best(
 #[pyfunction]
 #[pyo3(signature = (rows, cols))]
 fn default_puzzleboard_params(py: Python<'_>, rows: u32, cols: u32) -> PyResult<Py<PyAny>> {
-    let params = detect::default_puzzleboard_params(rows, cols)
+    let spec = puzzleboard::PuzzleBoardSpec::new(rows, cols, 1.0)
         .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let params = puzzleboard::PuzzleBoardParams::for_board(spec);
     let json =
         serde_json::to_value(params).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)

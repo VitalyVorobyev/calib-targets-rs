@@ -37,15 +37,15 @@ Minimal chessboard detection:
 
 ```rust,no_run
 use calib_targets::detect;
-use calib_targets::chessboard::DetectorParams;
-use image::ImageReader;
+use calib_targets::chessboard::ChessboardParams;
+use calib_targets::image::ImageReader; // re-exported; version always matches
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
 
-    let result = detect::detect_chessboard(&img, &params);
-    println!("detected: {}", result.is_some());
+    let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
+    println!("detected: {}", result.is_ok());
     Ok(())
 }
 ```
@@ -66,6 +66,6 @@ dataclass-first: config inputs are typed models and detector results are typed
 dataclasses with `to_dict()`/`from_dict(...)` helpers for JSON interoperability.
 `detect_charuco` requires `params` and the board lives in `params.board`.
 For marker boards, `target_position` is populated only when
-`params.layout.cell_size` is set and alignment succeeds.
+`params.board.cell_size` is set and alignment succeeds.
 
 MSRV: Rust 1.88 (stable).

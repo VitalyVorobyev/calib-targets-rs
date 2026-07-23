@@ -64,7 +64,6 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
   const funnel = [
     ["input", d.input_count],
     ["strength", d.prefilter.survives_strength],
-    ["fit", d.prefilter.survives_fit],
     ["axis σ", d.prefilter.survives_axis],
   ] as const;
   const labelled = d.labelled_indices.length;

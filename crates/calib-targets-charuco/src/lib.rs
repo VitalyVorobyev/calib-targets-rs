@@ -19,7 +19,7 @@
 //! let board = CharucoBoardSpec::new(5, 7, 1.0, 0.7, builtins::DICT_4X4_50)
 //!     .with_marker_layout(MarkerLayout::OpenCvCharuco);
 //!
-//! let params = CharucoParams::for_board(&board);
+//! let params = CharucoParams::for_board(board);
 //! let detector = CharucoDetector::new(params)?;
 //!
 //! let pixels = vec![0u8; 32 * 32];
@@ -39,7 +39,6 @@
 mod alignment;
 mod board;
 mod detector;
-mod io;
 
 // Opt-in marker↔corner linkage validation, gated behind the `link-check`
 // feature (default off). It has no in-tree consumers, but is intentional,
@@ -53,14 +52,13 @@ pub mod link_check;
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 
-pub use board::{CharucoBoard, CharucoBoardError, CharucoBoardSpec, MarkerLayout};
-pub use detector::{
-    CharucoAdvancedTuning, CharucoCorner, CharucoDetectError, CharucoDetectionResult,
-    CharucoDetector, CharucoParams,
+pub use board::{
+    load_board_spec_any, BoardSpecLoadError, CharucoBoard, CharucoBoardError, CharucoBoardSpec,
+    MarkerLayout,
 };
-pub use io::{
-    load_board_spec_any, resolve_dictionary, BoardSpecLoadError, CharucoConfigError,
-    CharucoDetectConfig, CharucoDetectReport, CharucoIoError,
+pub use detector::{
+    CharucoAdvancedTuning, CharucoCorner, CharucoDetectError, CharucoDetection, CharucoDetector,
+    CharucoParams,
 };
 #[cfg(feature = "link-check")]
 pub use link_check::{
@@ -72,6 +70,6 @@ pub use link_check::{
 // public API requires — the marker dictionary, the image view, and the corner
 // input — without depending on calib-targets-aruco / -core / -chessboard
 // directly.
-pub use calib_targets_aruco::{builtins, Dictionary};
+pub use calib_targets_aruco::{builtins, resolve_dictionary, Dictionary};
 pub use calib_targets_chessboard::ChessCorner;
 pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform};

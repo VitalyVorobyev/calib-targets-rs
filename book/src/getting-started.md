@@ -197,14 +197,19 @@ for c in corners:
 ```toml
 # Cargo.toml
 [dependencies]
-calib-targets = "0.10"
-image = "0.25"
+calib-targets = "0.11"
 ```
+
+The `image` crate ships with `calib-targets` (default `image` feature) and is
+re-exported as `calib_targets::image`, so you do not need a separate `image`
+dependency — importing through the re-export keeps your `GrayImage` type
+version-matched to the helpers. (A direct `image = "0.25"` dependency still
+works.)
 
 ```rust,no_run
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::detect;
-use image::ImageReader;
+use calib_targets::image::ImageReader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("frame.png")?.decode()?.to_luma8();
@@ -218,7 +223,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
-    let params = CharucoParams::for_board(&board);
+    let params = CharucoParams::for_board(board);
 
     let result = detect::detect_charuco(&img, &params)?;
     println!(

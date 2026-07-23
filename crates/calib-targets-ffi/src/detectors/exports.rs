@@ -195,7 +195,7 @@ pub struct ct_chessboard_detect_all_buffers_t {
 // ─── Chessboard exported functions ────────────────────────────────────────────
 
 /// Return a `ct_chessboard_params_t` populated from
-/// `DetectorParams::default()`. Exposed as a C symbol so callers don't
+/// `ChessboardParams::default()`. Exposed as a C symbol so callers don't
 /// need to hand-fill 30+ fields.
 /// # Safety
 /// `out` must be a valid, properly aligned pointer to a writable
@@ -274,7 +274,7 @@ pub unsafe extern "C" fn ct_chessboard_detector_detect(
 /// Run end-to-end multi-component chessboard detection on a grayscale image.
 ///
 /// Returns every same-board component the detector recovers, up to
-/// `DetectorParams::max_components`. The `corners_buf` buffer receives
+/// `ChessboardParams::max_components`. The `corners_buf` buffer receives
 /// all corners from all components concatenated; use
 /// `result[i].corners_len` to slice each component's contribution.
 ///

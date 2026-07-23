@@ -6,16 +6,31 @@ use serde::{Deserialize, Serialize};
 
 /// Canonical 2D corner consumed by the chessboard detector.
 ///
+/// Not to be confused with [`ChessboardCorner`](crate::ChessboardCorner): this
+/// is the raw ChESS feature fed *into* the detector, not the labelled grid
+/// corner it returns.
+///
 /// Carries the per-corner data the pipeline needs to admit or reject the
 /// corner during clustering, seed selection, grow, and post-grow validation:
 /// pixel position, the two local grid-axis directions with per-axis 1σ
-/// uncertainty, the ChESS detector's response (`strength`), the tanh-fit
-/// `contrast` amplitude, and the tanh-fit residual (`fit_rms`).
+/// uncertainty, and the ChESS detector's response (`strength`).
 ///
 /// Callers constructing corners from `chess_corners::CornerDescriptor` typically
 /// go through the workspace facade's adapter; callers handing the detector a
 /// pre-built corner cloud (tests, custom upstreams) construct `ChessCorner`
 /// directly.
+///
+/// The former `contrast` and `fit_rms` fields are gone. They mirrored
+/// `CornerDescriptor` fields that `chess-corners` 1.0 removed, having declared
+/// `response` the single detection-strength contract and `axes[i].sigma` the
+/// per-axis confidence. Nothing downstream can reconstruct them, so the
+/// `fit_rms ≤ max_fit_rms_ratio · contrast` prefilter they fed was retired
+/// with them; [`Self::strength`] and the per-axis sigmas now carry the whole
+/// corner-quality signal.
+///
+/// `#[non_exhaustive]`: construct with [`ChessCorner::new`] (or
+/// [`ChessCorner::from_position`] for a position-only test fixture).
+#[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ChessCorner {
     /// Corner position in pixel coordinates.
@@ -24,18 +39,26 @@ pub struct ChessCorner {
     /// Default-constructed axes carry `sigma = π` ("no information") and
     /// cause the corner to be skipped by every axis-aware stage.
     pub axes: [AxisEstimate; 2],
-    /// Bright/dark amplitude `|A|` (≥ 0, gray levels) from the upstream
-    /// two-axis tanh fit. Independent from [`Self::strength`].
-    pub contrast: f32,
-    /// RMS residual of the two-axis intensity fit (gray levels). Lower is
-    /// a tighter match to an ideal chessboard corner.
-    pub fit_rms: f32,
     /// Corner detector response (raw ChESS response at the detected peak).
     /// Positive values are corner candidates.
     pub strength: f32,
 }
 
 impl ChessCorner {
+    /// Construct a fully-specified [`ChessCorner`] from its pixel position, the
+    /// two local grid-axis estimates, and the ChESS detector `strength`.
+    ///
+    /// This is the constructor a custom corner-cloud upstream uses; the
+    /// workspace facade's adapter for `chess_corners::CornerDescriptor` also
+    /// routes through it.
+    pub fn new(position: Point2<f32>, axes: [AxisEstimate; 2], strength: f32) -> Self {
+        Self {
+            position,
+            axes,
+            strength,
+        }
+    }
+
     /// Construct a [`ChessCorner`] from a position. All other fields default
     /// to the no-information sentinel — primarily useful for test fixtures.
     pub fn from_position(position: Point2<f32>) -> Self {
@@ -140,10 +163,6 @@ pub struct CornerAug {
     pub axes: [AxisEstimate; 2],
     /// ChESS strength (copied at construction).
     pub strength: f32,
-    /// Upstream contrast amplitude.
-    pub contrast: f32,
-    /// Upstream tanh-fit RMS.
-    pub fit_rms: f32,
     /// Stage cursor — starts at `Raw`.
     pub stage: CornerStage,
     /// Cluster label assigned in `cluster_axes` (`None` while `stage`
@@ -159,8 +178,6 @@ impl CornerAug {
             position: c.position,
             axes: c.axes,
             strength: c.strength,
-            contrast: c.contrast,
-            fit_rms: c.fit_rms,
             stage: CornerStage::Raw,
             label: None,
         }

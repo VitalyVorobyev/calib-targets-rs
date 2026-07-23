@@ -21,7 +21,7 @@ use std::process::ExitCode;
 
 use std::collections::BTreeMap;
 
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect::default_chess_config;
 use calib_targets_bench::ablate::{render_ablation_markdown, run_ablation, AblationOpts};
 use calib_targets_bench::baseline::Baseline;
@@ -92,7 +92,11 @@ fn cmd_run(args: RunArgs, fail_on_diff: bool) -> ExitCode {
     };
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    // `DetectorConfig::orientation_method` is `Option<_>` since
+    // chess-corners 1.0 (`None` skips the axis fit). The bench always
+    // fits orientation; `--orientation-method` still selects only which
+    // fit to run.
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
 
     let config_id = format!(
         "{}.{}.{}",
@@ -149,7 +153,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
     }
 
     let out_root = workspace_root().join(&args.out);
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     let engine = Engine::from(args.engine);
     let config_slug = format!(
         "{}.{}.{}",
@@ -158,7 +162,7 @@ fn cmd_preview(args: PreviewArgs) -> ExitCode {
         args.orientation_method.slug(),
     );
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
     let mut wrote = 0usize;
     for entry in &entries {
         let abs = entry.absolute();
@@ -228,7 +232,7 @@ fn cmd_bless(args: BlessArgs) -> ExitCode {
 
     let mut public = Baseline::load_or_empty(ImageKind::Public);
     let mut private = Baseline::load_or_empty(ImageKind::Private);
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     let chess_cfg = default_chess_config();
     let mut blessed = 0usize;
     for entry in &entries {
@@ -372,7 +376,7 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
     };
     let engine = Engine::from(args.engine);
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
     let base_config_id = format!(
         "{}.{}.{}",
         args.engine.slug(),
@@ -413,7 +417,7 @@ fn cmd_ablate(args: AblateArgs) -> ExitCode {
         engine,
         baselines: &baselines,
     };
-    let run = |params: &DetectorParams, config_id: String| {
+    let run = |params: &ChessboardParams, config_id: String| {
         run_report_for_params(&entries, params, &ctx, config_id)
     };
 

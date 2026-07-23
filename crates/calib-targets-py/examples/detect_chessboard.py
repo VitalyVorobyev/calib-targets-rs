@@ -28,16 +28,15 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     # ChESS-detector configuration (Rust: chess_corners::DetectorConfig).
-    # The default is single-scale ChESS + Threshold::Absolute(15.0). Drop
-    # the threshold for blurry inputs; raise for clean ones.
+    # The default is single-scale ChESS with an absolute response floor of
+    # 15.0. Drop the threshold for blurry inputs; raise for clean ones.
     chess_cfg = ct.ChessConfig(
-        threshold=ct.Threshold.absolute(15.0),
+        threshold=15.0,
     )
 
-    # Chessboard grid / labelling pipeline. Sticks to the workspace
-    # defaults except for a small pre-filter on corner strength.
+    # Chessboard grid / labelling pipeline: workspace defaults, with only the
+    # output gate tightened.
     params = ct.ChessboardParams(
-        min_corner_strength=0.0,
         min_labeled_corners=16,
     )
 

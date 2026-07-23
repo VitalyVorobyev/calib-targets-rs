@@ -151,27 +151,6 @@ inline bool load_binary_pgm(const char *path, GrayImageBuffer *out) {
   return true;
 }
 
-inline ct_optional_u32_t some_u32(std::uint32_t value) {
-  ct_optional_u32_t out{};
-  out.has_value = CT_TRUE;
-  out.value = value;
-  return out;
-}
-
-inline ct_optional_bool_t none_bool() {
-  ct_optional_bool_t out{};
-  out.has_value = CT_FALSE;
-  out.value = CT_FALSE;
-  return out;
-}
-
-inline ct_optional_f32_t none_f32() {
-  ct_optional_f32_t out{};
-  out.has_value = CT_FALSE;
-  out.value = 0.0f;
-  return out;
-}
-
 inline ct_refiner_config_t default_refiner() {
   ct_refiner_config_t config{};
   config.kind = CT_REFINER_KIND_CENTER_OF_MASS;
@@ -191,9 +170,9 @@ inline ct_refiner_config_t default_refiner() {
 inline ct_chess_config_t default_shared_chess_config() {
   ct_chess_config_t config{};
   config.params.use_radius10 = CT_FALSE;
-  config.params.descriptor_use_radius10 = none_bool();
-  config.params.threshold_rel = 0.2f;
-  config.params.threshold_abs = none_f32();
+  // ABI 3.0.0: single absolute response floor (was threshold_rel +
+  // threshold_abs); 15.0 is the workspace production default.
+  config.params.threshold = 15.0f;
   config.params.nms_radius = 2;
   config.params.min_cluster_size = 2;
   config.params.refiner = default_refiner();

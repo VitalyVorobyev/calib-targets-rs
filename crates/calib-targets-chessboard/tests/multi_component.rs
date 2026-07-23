@@ -2,7 +2,7 @@
 //!
 //! Builds two disconnected 3×3 chessboard pieces (same physical board,
 //! same cell size, separated by a gap larger than the attach-search
-//! window) and asserts that `Detector::detect_all` returns both
+//! window) and asserts that `ChessboardDetector::detect_all` returns both
 //! components as independent `ChessboardDetection`s.
 //!
 //! This exercises the ChArUco use case where markers break the chessboard
@@ -12,7 +12,7 @@
 //!
 //! Multi-physical-board scenes are explicitly out of scope.
 
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
 use std::collections::HashSet;
@@ -23,9 +23,11 @@ fn corner(x: f32, y: f32, parity: usize) -> ChessCorner {
     } else {
         (std::f32::consts::FRAC_PI_2, 0.0_f32)
     };
-    ChessCorner {
-        position: Point2::new(x, y),
-        axes: [
+    // Strength 100.0 is above the default `min_corner_strength` floor (33.0)
+    // so the synthetic boards survive the strength pre-filter.
+    ChessCorner::new(
+        Point2::new(x, y),
+        [
             AxisEstimate {
                 angle: a0,
                 sigma: 0.02,
@@ -35,12 +37,8 @@ fn corner(x: f32, y: f32, parity: usize) -> ChessCorner {
                 sigma: 0.02,
             },
         ],
-        contrast: 30.0,
-        fit_rms: 1.0,
-        // Above the default `min_corner_strength` floor (33.0) so the
-        // synthetic boards survive the strength pre-filter.
-        strength: 100.0,
-    }
+        100.0,
+    )
 }
 
 fn build_3x3(x0: f32, y0: f32, spacing: f32) -> Vec<ChessCorner> {
@@ -65,7 +63,8 @@ fn detects_two_components_of_the_same_board() {
     // window (default 0.35 × cell_size ≈ 7 px) cannot bridge the gap.
     corners.extend(build_3x3(200.0, 50.0, spacing));
 
-    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
+    let detector =
+        ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
     let detections = detector.detect_all(&corners);
 
     assert_eq!(
@@ -113,7 +112,8 @@ fn detects_two_components_of_the_same_board() {
 #[test]
 fn single_component_scene_still_returns_one() {
     let corners = build_3x3(50.0, 50.0, 20.0);
-    let detector = Detector::new(DetectorParams::default()).expect("valid detector params");
+    let detector =
+        ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
     let detections = detector.detect_all(&corners);
     assert_eq!(detections.len(), 1);
     assert_eq!(detections[0].corners.len(), 9);

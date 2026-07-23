@@ -7,7 +7,7 @@
 //! have unambiguous ground-truth master coordinates.
 
 use calib_targets::detect;
-use calib_targets::puzzleboard::PuzzleBoardDetectionResult;
+use calib_targets::puzzleboard::PuzzleBoardDetection;
 use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_core::GRID_TRANSFORMS_D4;
 use image::{GrayImage, ImageReader, Rgb, RgbImage};
@@ -123,7 +123,7 @@ fn write_overlay(
     out_dir: &Path,
     scenario: &Scenario,
     image: &GrayImage,
-    result: &PuzzleBoardDetectionResult,
+    result: &PuzzleBoardDetection,
 ) {
     std::fs::create_dir_all(out_dir).expect("create overlay dir");
     let mut rgb = RgbImage::from_fn(image.width(), image.height(), |x, y| {

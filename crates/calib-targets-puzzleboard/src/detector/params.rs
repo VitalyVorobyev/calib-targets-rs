@@ -1,6 +1,7 @@
 //! Knobs for the decoding stage and associated validation helpers.
 
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 use crate::detector::error::PuzzleBoardDetectError;
 
@@ -68,6 +69,7 @@ pub enum PuzzleBoardScoringMode {
 /// Tuning parameters for the decoding stage.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PuzzleBoardDecodeConfig {
     /// Minimum window size (in squares) required to attempt a decode.
     ///
@@ -108,39 +110,68 @@ pub struct PuzzleBoardDecodeConfig {
     /// to [`PuzzleBoardScoringMode::SoftLogLikelihood`].
     #[serde(default)]
     pub scoring_mode: PuzzleBoardScoringMode,
+    /// Opt-in, **unstable** soft-scorer tuning knobs. Leave unset (`None`)
+    /// unless a specific input fails and you have evidence for the change;
+    /// `None` behaves exactly like [`PuzzleBoardAdvancedTuning::default()`].
+    /// Set via [`with_advanced`](Self::with_advanced). See
+    /// [`PuzzleBoardAdvancedTuning`] — its fields are NOT covered by semver.
+    ///
+    /// Serialized under a nested `"advanced"` object when `Some`, and omitted
+    /// entirely when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advanced: Option<Box<PuzzleBoardAdvancedTuning>>,
+}
+
+/// Advanced, unstable soft-log-likelihood tuning knobs for the PuzzleBoard
+/// decoder.
+///
+/// These knobs govern the per-bit soft-scoring and the hypothesis-acceptance
+/// margin used under [`PuzzleBoardScoringMode::SoftLogLikelihood`]. They are
+/// split out of [`PuzzleBoardDecodeConfig`] because they are
+/// decode-scorer-implementation tuning rather than the small stable decode
+/// core a consumer has a basis to set.
+///
+/// **Unstable:** every field here is **NOT covered by semver** and may be
+/// retuned, retyped, or removed between minor versions as the decoder
+/// evolves. Leave the whole struct at [`Default`] unless you are tuning
+/// against a specific dataset with measured evidence.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PuzzleBoardAdvancedTuning {
     /// Soft-LL logit slope: `logit = bit_likelihood_slope × confidence` at a
     /// clean match. Higher values produce sharper soft-match/soft-mismatch
-    /// separation. Only used under
-    /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
-    ///
-    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
-    /// and may be retuned, retyped, or removed between minor versions as the
-    /// decoder evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
+    /// separation.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Lower bound applied to each per-bit `log_sigmoid` contribution.
     /// Prevents a single catastrophically wrong bit from dominating the
-    /// hypothesis score. Only used under
-    /// [`PuzzleBoardScoringMode::SoftLogLikelihood`].
-    ///
-    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
-    /// and may be retuned, retyped, or removed between minor versions as the
-    /// decoder evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
+    /// hypothesis score.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
     /// Minimum per-observation score gap between the winning hypothesis and
     /// the runner-up. Detections below this gate are rejected with
     /// [`crate::detector::error::PuzzleBoardDetectError::DecodeFailed`].
-    /// Only used under [`PuzzleBoardScoringMode::SoftLogLikelihood`].
-    ///
-    /// **Unstable:** this soft-scorer tuning knob is **NOT covered by semver**
-    /// and may be retuned, retyped, or removed between minor versions as the
-    /// decoder evolves. Leave it at [`Default`] unless tuning against a
-    /// specific dataset with evidence.
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
+}
+
+impl Default for PuzzleBoardAdvancedTuning {
+    fn default() -> Self {
+        Self {
+            bit_likelihood_slope: default_bit_likelihood_slope(),
+            per_bit_floor: default_per_bit_floor(),
+            alignment_min_margin: default_alignment_min_margin(),
+        }
+    }
+}
+
+impl PuzzleBoardAdvancedTuning {
+    /// Build the advanced soft-scorer tuning knobs at their default values.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
 }
 
 fn default_min_window() -> u32 {
@@ -181,44 +212,36 @@ impl Default for PuzzleBoardDecodeConfig {
             sample_radius_rel: default_sample_radius_rel(),
             search_mode: PuzzleBoardSearchMode::default(),
             scoring_mode: PuzzleBoardScoringMode::default(),
-            bit_likelihood_slope: default_bit_likelihood_slope(),
-            per_bit_floor: default_per_bit_floor(),
-            alignment_min_margin: default_alignment_min_margin(),
+            advanced: None,
         }
     }
 }
 
 impl PuzzleBoardDecodeConfig {
-    /// Construct with explicit values for every field except `search_mode`,
-    /// `scoring_mode`, and the soft-LL knobs, which default to
-    /// [`PuzzleBoardSearchMode::Full`] / [`PuzzleBoardScoringMode::SoftLogLikelihood`]
-    /// and the canonical soft-LL tuning.
+    /// Attach a [`PuzzleBoardAdvancedTuning`] override and return the updated
+    /// config.
     ///
-    /// To use a different search or scoring mode, assign the field after
-    /// construction:
-    /// ```ignore
-    /// let mut cfg = PuzzleBoardDecodeConfig::new(...);
-    /// cfg.search_mode = PuzzleBoardSearchMode::FixedBoard;
-    /// cfg.scoring_mode = PuzzleBoardScoringMode::HardWeighted;
-    /// ```
-    pub fn new(
-        min_window: u32,
-        min_bit_confidence: f32,
-        max_bit_error_rate: f32,
-        search_all_components: bool,
-        sample_radius_rel: f32,
-    ) -> Self {
-        Self {
-            min_window,
-            min_bit_confidence,
-            max_bit_error_rate,
-            search_all_components,
-            sample_radius_rel,
-            search_mode: PuzzleBoardSearchMode::default(),
-            scoring_mode: PuzzleBoardScoringMode::default(),
-            bit_likelihood_slope: default_bit_likelihood_slope(),
-            per_bit_floor: default_per_bit_floor(),
-            alignment_min_margin: default_alignment_min_margin(),
+    /// The advanced knobs are NOT covered by semver — see
+    /// [`PuzzleBoardAdvancedTuning`]. Leaving them unset (the default) keeps
+    /// the decoder on the canonical soft-LL tuning.
+    #[must_use]
+    pub fn with_advanced(mut self, tuning: PuzzleBoardAdvancedTuning) -> Self {
+        self.advanced = Some(Box::new(tuning));
+        self
+    }
+
+    /// The advanced soft-scorer tuning the decoder will actually use.
+    ///
+    /// Returns [`Cow::Borrowed`] when [`advanced`](Self::advanced) is set, and
+    /// an owned [`PuzzleBoardAdvancedTuning::default()`] otherwise. Decode
+    /// stages bind this once and read fields off it, so the default case
+    /// allocates a single struct (no per-knob branching) and the configured
+    /// case borrows without copying.
+    #[must_use]
+    pub fn effective_tuning(&self) -> Cow<'_, PuzzleBoardAdvancedTuning> {
+        match &self.advanced {
+            Some(tuning) => Cow::Borrowed(tuning.as_ref()),
+            None => Cow::Owned(PuzzleBoardAdvancedTuning::default()),
         }
     }
 }
@@ -263,5 +286,67 @@ mod tests {
                 needed: 24
             }
         ));
+    }
+
+    #[test]
+    fn default_config_serializes_without_advanced_key() {
+        // The default decode config leaves `advanced` unset, so the moved
+        // soft-LL knobs MUST NOT appear at the top level and there MUST be no
+        // `"advanced"` key.
+        let value = serde_json::to_value(PuzzleBoardDecodeConfig::default()).unwrap();
+        let obj = value.as_object().expect("config serializes to an object");
+        assert!(
+            !obj.contains_key("advanced"),
+            "default must omit `advanced`"
+        );
+        for leaked in [
+            "bit_likelihood_slope",
+            "per_bit_floor",
+            "alignment_min_margin",
+        ] {
+            assert!(
+                !obj.contains_key(leaked),
+                "advanced knob `{leaked}` leaked to the top level"
+            );
+        }
+    }
+
+    #[test]
+    fn effective_tuning_default_matches_advanced_default() {
+        // `effective_tuning()` with `advanced: None` MUST be byte-identical to
+        // `PuzzleBoardAdvancedTuning::default()` — the behaviour-preservation
+        // contract for the opt-in split.
+        let cfg = PuzzleBoardDecodeConfig::default();
+        assert!(cfg.advanced.is_none());
+        let effective = cfg.effective_tuning();
+        let expected = PuzzleBoardAdvancedTuning::default();
+        assert_eq!(
+            serde_json::to_value(effective.as_ref()).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+        assert_eq!(effective.bit_likelihood_slope, 12.0);
+        assert_eq!(effective.per_bit_floor, -6.0);
+        assert_eq!(effective.alignment_min_margin, 0.02);
+    }
+
+    #[test]
+    fn with_advanced_serializes_nested_block_and_round_trips() {
+        let tuning = PuzzleBoardAdvancedTuning {
+            bit_likelihood_slope: 15.0,
+            ..Default::default()
+        };
+        let cfg = PuzzleBoardDecodeConfig::default().with_advanced(tuning);
+        let value = serde_json::to_value(&cfg).unwrap();
+        let obj = value.as_object().unwrap();
+        let advanced = obj
+            .get("advanced")
+            .and_then(|v| v.as_object())
+            .expect("expected a nested `advanced` object");
+        assert_eq!(advanced["bit_likelihood_slope"], 15.0);
+        assert!(!obj.contains_key("bit_likelihood_slope"));
+
+        let restored: PuzzleBoardDecodeConfig = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&restored).unwrap(), value);
+        assert_eq!(restored.effective_tuning().bit_likelihood_slope, 15.0);
     }
 }

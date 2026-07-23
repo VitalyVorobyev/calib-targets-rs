@@ -18,7 +18,7 @@ consumer.
 
 **Topological is the sole grid builder, so the request carries no algorithm
 choice.** The historical `projective_grid::SquareAlgorithm` and
-`calib_targets_chessboard::DetectorParams::graph_build_algorithm` (typed
+`calib_targets_chessboard::ChessboardParams::graph_build_algorithm` (typed
 `GraphBuildAlgorithm`) selector enums — first collapsed to single-variant
 `#[non_exhaustive]` reserved seams when seed-and-grow was retired — have since
 been **removed** entirely; what to detect is selected by the `LatticeKind` +
@@ -27,7 +27,7 @@ historical `SeedAndGrow` variant (a self-consistent 4-corner seed plus BFS grow
 with axis-coupled boosters) was retired once the topological builder matched or
 beat it on every shipping path, including ChArUco. The wire string
 `"seed_and_grow"` no longer deserializes, and the `graph_build_algorithm` key
-itself is now **rejected** — `DetectorParams` is `#[serde(deny_unknown_fields)]`,
+itself is now **rejected** — `ChessboardParams` is `#[serde(deny_unknown_fields)]`,
 so a config that still carries the removed key fails to parse (see the
 `unknown_key_is_rejected` test). Drop the key from any config that still sets it.
 
@@ -56,8 +56,8 @@ map and `docs/algorithms/algorithmic_gaps.md` for the remaining open items.
 on the topological builder's per-component walk output and uses local geometry
 only — no global homography, so it tolerates heavy radial distortion that would
 break a global fit. The chessboard crate's historical `enable_component_merge`
-flag is now backed by this shared implementation via
-`DetectorParams::component_merge: LocalMergeParams`.
+flag is now backed by this shared implementation via the advanced-tuning knob
+`ChessboardParams::advanced` → `ChessboardAdvancedTuning::component_merge: LocalMergeParams`.
 
 ### Orientation source
 

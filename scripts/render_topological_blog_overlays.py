@@ -622,12 +622,8 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         edge_length_max_rel=args.edge_length_max_rel,
     )
     trace_params = ct.ChessboardParams(topological=topo)
-    if args.chess_threshold_kind == "absolute":
-        threshold = ct.Threshold.absolute(args.chess_threshold)
-    else:
-        threshold = ct.Threshold.relative(args.chess_threshold)
     chess_cfg = ct.ChessConfig(
-        threshold=threshold,
+        threshold=args.chess_threshold,
         orientation_method=args.orientation_method,
     )
     payload = ct.trace_chessboard_topological(
@@ -707,8 +703,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
     parser.add_argument("--variant-name", default=None, help="Optional suffix for output image directories.")
+    # Since chess-corners 1.0 the ChESS threshold is a single absolute floor
+    # on the raw response; the relative mode is Radon-only.
     parser.add_argument("--chess-threshold", type=float, default=100.0)
-    parser.add_argument("--chess-threshold-kind", choices=["absolute", "relative"], default="absolute")
     parser.add_argument("--orientation-method", choices=["ring_fit", "disk_fit"], default="ring_fit")
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
@@ -738,7 +735,6 @@ def main() -> None:
         "out_dir": str(args.out_dir),
         "params": {
             "chess_threshold": args.chess_threshold,
-            "chess_threshold_kind": args.chess_threshold_kind,
             "orientation_method": args.orientation_method,
             "pre_blur_sigma": args.pre_blur_sigma,
             "upscale": args.upscale,

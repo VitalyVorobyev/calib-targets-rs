@@ -14,6 +14,12 @@ cargo test --workspace --all-features
 # 2. Doc warnings (broken intra-doc links, name collisions)
 cargo doc --workspace --no-deps  # must produce zero warnings
 
+# 2b. Supply chain: RustSec advisories, licences, bans, sources.
+# Policy and every documented exception live in the root `deny.toml` —
+# that file is the single source of truth. `cargo audit` reads a *different*
+# config, so do not add a second ignore list there; use `cargo deny`.
+cargo deny check
+
 # 3. Generated FFI header (stale after any change to FFI-visible types/enums)
 cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 

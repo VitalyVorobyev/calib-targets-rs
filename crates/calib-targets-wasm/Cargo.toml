@@ -13,6 +13,15 @@ description = "WebAssembly bindings for calib-targets calibration target detecto
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# The facade crate provides the unified `detect_*_best` sweep helpers (per-
+# config `chess` front-end + memoized corner-pass dedup). The `_best` WASM
+# entry points delegate to it so the browser gets the same sweep semantics as
+# the native / Python surfaces. A direct path dep (like the sibling detector
+# crates' facade dev-deps) rather than `workspace = true`, so `cli`/`clap` can
+# be dropped via `default-features = false` — `image` is the only feature the
+# WASM bindings need, and the workspace entry does not declare
+# `default-features` for the override to inherit from.
+calib-targets = { path = "../calib-targets", default-features = false, features = ["image"] }
 calib-targets-core = { workspace = true }
 # The WASM bindings expose the `*_with_diagnostics` entry points, so they
 # enable each detector's `diagnostics` feature unconditionally (the bindings
@@ -20,7 +29,7 @@ calib-targets-core = { workspace = true }
 calib-targets-chessboard = { workspace = true, features = ["diagnostics"] }
 calib-targets-charuco = { workspace = true, features = ["diagnostics"] }
 calib-targets-aruco = { workspace = true }
-calib-targets-marker = { workspace = true }
+calib-targets-marker = { workspace = true, features = ["diagnostics"] }
 calib-targets-print = { workspace = true }
 calib-targets-puzzleboard = { workspace = true, features = ["diagnostics"] }
 chess-corners = { workspace = true }

@@ -17,7 +17,7 @@ use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
 use super::types::ChessboardDetection;
 use crate::corner::{CornerAug, CornerStage};
-use crate::params::DetectorParams;
+use crate::params::ChessboardParams;
 use projective_grid::shared::grow::GrowResult;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
@@ -144,20 +144,22 @@ fn estimate_grid_steps(
 )]
 pub(super) fn clustered_augs(
     corners: &[ChessCorner],
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> (Vec<CornerAug>, Option<ClusterCenters>) {
     let min_corner_strength = params.min_corner_strength;
-    let max_fit_rms_ratio = params.effective_tuning().max_fit_rms_ratio;
+    // Same admission rule as the `topological_inputs` prefilter — a corner may
+    // only vote in axis clustering if its axis is determined at least as
+    // precisely as the alignment tolerance it will be tested against. See
+    // `super::axis_admission_sigma`.
+    let max_axis_sigma = super::axis_admission_sigma(params);
     let mut augs: Vec<CornerAug> = corners
         .iter()
         .enumerate()
         .map(|(i, c)| {
             let mut aug = CornerAug::from_chess_corner(i, c);
-            let strong = c.strength >= min_corner_strength;
-            let fit_ok = !max_fit_rms_ratio.is_finite()
-                || c.contrast <= 0.0
-                || c.fit_rms <= max_fit_rms_ratio * c.contrast;
-            if strong && fit_ok {
+            if c.strength >= min_corner_strength
+                && c.axes[0].sigma.max(c.axes[1].sigma) <= max_axis_sigma
+            {
                 aug.stage = CornerStage::Strong;
             }
             aug
@@ -305,7 +307,7 @@ pub(super) fn recover_topological_components(
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Vec<LabelledComponent> {
     let mut boosted_components: Vec<LabelledComponent> = Vec::new();
     for component_labels in merged_components {
@@ -397,7 +399,7 @@ pub(super) fn build_topological_detections(
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
-    params: &DetectorParams,
+    params: &ChessboardParams,
 ) -> Vec<ChessboardDetection> {
     let mut out: Vec<ChessboardDetection> = Vec::new();
     for labelled in final_components {

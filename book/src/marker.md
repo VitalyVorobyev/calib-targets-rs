@@ -21,8 +21,8 @@
 
 - `MarkerBoardDetector`: main entry point.
 - `MarkerBoardSpec`: rows/cols plus the three expected circles (cell coordinate + polarity).
-- `MarkerBoardParams`: layout + chessboard params + circle score + match settings.
-- `MarkerBoardDetectionResult`:
+- `MarkerBoardParams`: board layout + chessboard params + circle score + match settings.
+- `MarkerBoardDetection`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
   - `alignment`: optional `GridAlignment` from detected grid coords to board coords.
 - `MarkerBoardDiagnostics` (opt-in, from the `*_with_diagnostics` entry points):
@@ -41,8 +41,8 @@
 
 `MarkerBoardParams` configures detection:
 
-- `layout`: the `MarkerBoardSpec` to detect.
-- `chessboard`: `DetectorParams` for the underlying corner-grid step. The
+- `board`: the `MarkerBoardSpec` to detect.
+- `chessboard`: `ChessboardParams` for the underlying corner-grid step. The
   chessboard detector is scale-invariant, so the v1 `expected_rows/cols`
   and `completeness_threshold` knobs no longer apply — the marker circles
   supply the geometry constraint.

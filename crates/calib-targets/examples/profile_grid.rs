@@ -17,12 +17,9 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect;
 use image::ImageReader;
-
-#[cfg(feature = "tracing")]
-use calib_targets_core::init_tracing;
 
 #[derive(Debug)]
 struct Args {
@@ -87,12 +84,12 @@ fn parse_args() -> Result<Args, String> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "tracing")]
-    init_tracing(false);
+    init_tracing_subscriber();
 
     let args = parse_args().map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     let img = ImageReader::open(&args.image)?.decode()?.to_luma8();
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     let chess_cfg = detect::default_chess_config();
 
     eprintln!(
@@ -113,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let result = detect::detect_chessboard(&img, &chess_cfg, &params);
         let dt = t0.elapsed().as_secs_f64() * 1e3;
         elapsed_ms.push(dt);
-        let count = result.as_ref().map(|d| d.corners.len()).unwrap_or(0);
+        let count = result.as_ref().ok().map(|d| d.corners.len()).unwrap_or(0);
         last_corner_count = count;
         eprintln!("iter {i}: {dt:.2} ms, {count} corners");
     }
@@ -136,4 +133,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+/// Install a minimal `tracing` subscriber reading `RUST_LOG` (default
+/// `info`). Examples no longer depend on the removed
+/// `calib_targets_core::init_tracing` helper.
+#[cfg(feature = "tracing")]
+fn init_tracing_subscriber() {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }

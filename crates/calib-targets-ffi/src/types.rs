@@ -107,30 +107,6 @@ impl ct_optional_u32_t {
     }
 }
 
-/// Optional boolean convention used by fixed ABI structs.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct ct_optional_bool_t {
-    pub has_value: u32,
-    pub value: u32,
-}
-
-impl ct_optional_bool_t {
-    pub const fn none() -> Self {
-        Self {
-            has_value: CT_FALSE,
-            value: CT_FALSE,
-        }
-    }
-
-    pub const fn some(value: bool) -> Self {
-        Self {
-            has_value: CT_TRUE,
-            value: if value { CT_TRUE } else { CT_FALSE },
-        }
-    }
-}
-
 /// Optional `float` convention used by fixed ABI structs.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -394,13 +370,22 @@ pub struct ct_refiner_config_t {
 }
 
 /// ChESS low-level detector parameters.
+///
+/// ABI note (3.0.0): the former `threshold_rel` / `threshold_abs` pair is
+/// collapsed into a single absolute `threshold`, and `descriptor_use_radius10`
+/// is gone. Both follow chess-corners 1.0, which made the ChESS acceptance
+/// threshold a single absolute floor on the raw response and removed the
+/// separate descriptor ring entirely (descriptors always sample at the
+/// detector ring radius, which is what `descriptor_use_radius10 = unset`
+/// already meant).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chess_params_t {
     pub use_radius10: u32,
-    pub descriptor_use_radius10: ct_optional_bool_t,
-    pub threshold_rel: f32,
-    pub threshold_abs: ct_optional_f32_t,
+    /// Absolute floor on the raw ChESS response; a corner is kept when its
+    /// response exceeds this value. `0.0` accepts every strictly-positive
+    /// response (the paper's contract).
+    pub threshold: f32,
     pub nms_radius: u32,
     pub min_cluster_size: u32,
     pub refiner: ct_refiner_config_t,
@@ -442,7 +427,7 @@ pub struct ct_chess_config_t {
 
 /// Chessboard detector parameters.
 ///
-/// Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+/// Mirrors `calib_targets::chessboard::ChessboardParams` field-for-field
 /// (flat shape — no nested graph / orientation-clustering sub-structs
 /// like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
 /// to populate a valid default-configured value rather than struct-
@@ -466,7 +451,7 @@ pub struct ct_chessboard_params_t {
     /// runs on its precision-by-construction default tuning.
     ///
     /// The advanced knobs are NOT covered by semver and may change between
-    /// minor versions — see `calib_targets::chessboard::AdvancedTuning`.
+    /// minor versions — see `calib_targets::chessboard::ChessboardAdvancedTuning`.
     /// Initialise from `ct_chessboard_params_default_values` before flipping
     /// this flag so the advanced fields start from valid defaults.
     pub has_advanced: u32,
@@ -477,7 +462,7 @@ pub struct ct_chessboard_params_t {
 
 /// Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
 ///
-/// Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
+/// Mirrors the subset of `calib_targets::chessboard::ChessboardAdvancedTuning` exposed
 /// over the C ABI. Only applied when
 /// [`ct_chessboard_params_t::has_advanced`] is `CT_TRUE`. These knobs are NOT
 /// covered by semver and may change between minor versions; treat them as an
@@ -485,8 +470,12 @@ pub struct ct_chessboard_params_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chessboard_advanced_t {
-    // Pre-filter
-    pub max_fit_rms_ratio: f32,
+    // ABI note (3.0.0): the pre-filter section is gone. Its only knob,
+    // `max_fit_rms_ratio`, gated corners on the upstream `contrast` /
+    // `fit_rms` descriptor fields, which chess-corners 1.0 removed with no
+    // replacement. Corner-fit quality is now carried by the calibrated
+    // per-axis sigma ceiling (`topological.max_axis_sigma_rad`), and raw
+    // strength by the stable top-level `min_corner_strength`.
 
     // Cluster axes
     pub num_bins: usize,
@@ -555,7 +544,6 @@ pub struct ct_charuco_detector_params_t {
     pub min_marker_inliers: usize,
     pub grid_smoothness_threshold_rel: f32,
     pub corner_validation_threshold_rel: f32,
-    pub corner_redetect_params: ct_chess_params_t,
 }
 
 /// Full create-time configuration for the ChArUco detector handle.
@@ -602,7 +590,7 @@ pub struct ct_marker_board_layout_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_marker_board_params_t {
-    pub layout: ct_marker_board_layout_t,
+    pub board: ct_marker_board_layout_t,
     pub chessboard: ct_chessboard_params_t,
     pub circle_score: ct_circle_score_params_t,
     pub match_params: ct_circle_match_params_t,
@@ -645,7 +633,6 @@ pub struct ct_puzzleboard_params_t {
     pub chessboard: ct_chessboard_params_t,
     pub board: ct_puzzleboard_spec_t,
     pub decode: ct_puzzleboard_decode_config_t,
-    pub corner_redetect_params: ct_chess_params_t,
 }
 
 /// Full create-time configuration for the marker-board detector handle.

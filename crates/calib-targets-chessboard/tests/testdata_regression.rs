@@ -18,15 +18,15 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{ChessboardDetection, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector, ChessboardParams};
 use serde::Deserialize;
 
 /// These gates are a recall ratchet over the topological builder (the only
 /// builder, the workspace default). It handles the full diverse set here
 /// (plain chessboard, ChArUco, puzzle); tighten the per-image numbers as the
 /// detector improves, never loosen them silently.
-fn ratchet_params() -> DetectorParams {
-    DetectorParams::default()
+fn ratchet_params() -> ChessboardParams {
+    ChessboardParams::default()
 }
 
 fn workspace_root() -> PathBuf {
@@ -67,7 +67,7 @@ fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
         .to_luma8();
     let chess_cfg = default_chess_config();
     let corners = detect_corners(&img, &chess_cfg);
-    let detector = Detector::new(ratchet_params()).expect("valid detector params");
+    let detector = ChessboardDetector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
     let components = detector.detect_all(&corners).len();
     (detection, components)
@@ -329,9 +329,9 @@ fn small3_topological_default_suppresses_weak_frontier() {
     let corners = detect_corners(&img, &chess_cfg);
 
     // Defaults: topological builder + the min_corner_strength = 33 floor.
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     let floor = params.min_corner_strength;
-    let detector = Detector::new(params).expect("valid detector params");
+    let detector = ChessboardDetector::new(params).expect("valid detector params");
     let detection = detector
         .detect(&corners)
         .expect("small3.png must detect on the topological default");

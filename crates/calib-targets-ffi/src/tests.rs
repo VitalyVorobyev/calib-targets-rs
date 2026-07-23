@@ -80,33 +80,11 @@ fn default_refiner() -> ct_refiner_config_t {
     }
 }
 
-fn default_saddle_refiner() -> ct_refiner_config_t {
-    ct_refiner_config_t {
-        kind: CT_REFINER_KIND_SADDLE_POINT,
-        center_of_mass: ct_center_of_mass_config_t { radius: 2 },
-        forstner: ct_forstner_config_t {
-            radius: 2,
-            min_trace: 25.0,
-            min_det: 1e-3,
-            max_condition_number: 50.0,
-            max_offset: 1.5,
-        },
-        saddle_point: ct_saddle_point_config_t {
-            radius: 2,
-            det_margin: 1e-3,
-            max_offset: 1.5,
-            min_abs_det: 1e-4,
-        },
-    }
-}
-
 fn default_shared_chess_config() -> ct_chess_config_t {
     ct_chess_config_t {
         params: ct_chess_params_t {
             use_radius10: CT_FALSE,
-            descriptor_use_radius10: ct_optional_bool_t::none(),
-            threshold_rel: 0.2,
-            threshold_abs: ct_optional_f32_t::none(),
+            threshold: 15.0,
             nms_radius: 2,
             min_cluster_size: 2,
             refiner: default_refiner(),
@@ -164,15 +142,6 @@ fn charuco_config_small_png() -> ct_charuco_detector_config_t {
             min_marker_inliers: 12,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
-            corner_redetect_params: ct_chess_params_t {
-                use_radius10: CT_FALSE,
-                descriptor_use_radius10: ct_optional_bool_t::none(),
-                threshold_rel: 0.05,
-                threshold_abs: ct_optional_f32_t::none(),
-                nms_radius: 2,
-                min_cluster_size: 1,
-                refiner: default_saddle_refiner(),
-            },
         },
     }
 }
@@ -181,7 +150,7 @@ fn marker_board_config_crop_png() -> ct_marker_board_detector_config_t {
     ct_marker_board_detector_config_t {
         chess: default_shared_chess_config(),
         detector: ct_marker_board_params_t {
-            layout: ct_marker_board_layout_t {
+            board: ct_marker_board_layout_t {
                 rows: 22,
                 cols: 22,
                 cell_size: ct_optional_f32_t::none(),
@@ -223,7 +192,9 @@ fn marker_board_config_crop_png() -> ct_marker_board_detector_config_t {
 
 fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
     let mut chess = default_shared_chess_config();
-    chess.params.threshold_rel = 0.15;
+    // Absolute floor now (chess-corners 1.0 dropped relative thresholding for
+    // the ChESS strategy); matches the workspace production default.
+    chess.params.threshold = 15.0;
     chess.params.nms_radius = 3;
     ct_puzzleboard_detector_config_t {
         chess,
@@ -248,15 +219,6 @@ fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
                 bit_likelihood_slope: 12.0,
                 per_bit_floor: -6.0,
                 alignment_min_margin: 0.02,
-            },
-            corner_redetect_params: ct_chess_params_t {
-                use_radius10: CT_FALSE,
-                descriptor_use_radius10: ct_optional_bool_t::none(),
-                threshold_rel: 0.05,
-                threshold_abs: ct_optional_f32_t::none(),
-                nms_radius: 2,
-                min_cluster_size: 1,
-                refiner: default_saddle_refiner(),
             },
         },
     }
@@ -626,9 +588,10 @@ fn puzzleboard_decode_config_converts_new_modes_and_soft_fields() {
         converted.scoring_mode,
         calib_targets::puzzleboard::PuzzleBoardScoringMode::HardWeighted
     );
-    assert_eq!(converted.bit_likelihood_slope, 9.0);
-    assert_eq!(converted.per_bit_floor, -4.5);
-    assert_eq!(converted.alignment_min_margin, 0.0);
+    let tuning = converted.effective_tuning();
+    assert_eq!(tuning.bit_likelihood_slope, 9.0);
+    assert_eq!(tuning.per_bit_floor, -4.5);
+    assert_eq!(tuning.alignment_min_margin, 0.0);
 }
 
 #[test]
@@ -655,9 +618,10 @@ fn puzzleboard_decode_config_defaults_omitted_soft_fields_for_legacy_callers() {
         converted.scoring_mode,
         calib_targets::puzzleboard::PuzzleBoardScoringMode::SoftLogLikelihood
     );
-    assert_eq!(converted.bit_likelihood_slope, 12.0);
-    assert_eq!(converted.per_bit_floor, -6.0);
-    assert_eq!(converted.alignment_min_margin, 0.02);
+    let tuning = converted.effective_tuning();
+    assert_eq!(tuning.bit_likelihood_slope, 12.0);
+    assert_eq!(tuning.per_bit_floor, -6.0);
+    assert_eq!(tuning.alignment_min_margin, 0.02);
 }
 
 #[test]
@@ -680,9 +644,10 @@ fn puzzleboard_decode_config_allows_zero_slope_in_hard_mode() {
         converted.scoring_mode,
         calib_targets::puzzleboard::PuzzleBoardScoringMode::HardWeighted
     );
-    assert_eq!(converted.bit_likelihood_slope, 12.0);
-    assert_eq!(converted.per_bit_floor, 0.0);
-    assert_eq!(converted.alignment_min_margin, 0.0);
+    let tuning = converted.effective_tuning();
+    assert_eq!(tuning.bit_likelihood_slope, 12.0);
+    assert_eq!(tuning.per_bit_floor, 0.0);
+    assert_eq!(tuning.alignment_min_margin, 0.0);
 }
 
 #[test]

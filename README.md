@@ -32,8 +32,9 @@ per target, with a shared corner vocabulary.
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
-Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.10.0.md)
-([book chapter][migration]).
+Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.11.0.md)
+([book chapter][migration]); the [0.10.0 guide](docs/migrations/0.10.0.md) is kept
+for consumers upgrading across two releases.
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/
 [api]: https://vitalyvorobyev.github.io/calib-targets-rs/api/
@@ -57,8 +58,8 @@ Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.1
   corner, tolerating stronger distortion.
 - **Partial boards supported.** PuzzleBoard gives absolute IDs from a
   single visible fragment; ChArUco / marker boards label whatever is
-  visible and the facade `detect_*_all` helpers return every connected
-  component.
+  visible; and for plain chessboards `detect_chessboard_all` returns
+  every connected component when occlusion splits the board.
 - **Consistency diagnostics built in.** PuzzleBoard surfaces the
   chosen search / scoring mode, observed edge evidence, and
   soft-decoder margins through its diagnostics channel. The chessboard
@@ -80,7 +81,7 @@ cargo add calib-targets image
 ```
 
 ```rust,no_run
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect;
 use image::ImageReader;
 
@@ -91,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detection = detect::detect_chessboard(
         &img,
         &detect::default_chess_config(),
-        &DetectorParams::default(),
+        &ChessboardParams::default(),
     );
 
     match detection {
@@ -112,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 If detection is unreliable on a hard image (steep angle, blur, glare), reach
 for the sweep helper instead of hand-tuning. `detect_chessboard_best` runs
 several parameter presets and keeps the richest result;
-`DetectorParams::sweep_default()` supplies three that bracket the
+`ChessboardParams::sweep_default()` supplies three that bracket the
 robustness/precision trade-off (balanced, tighter for clean boards, looser
 for distorted views):
 
@@ -120,7 +121,7 @@ for distorted views):
 let detection = detect::detect_chessboard_best(
     &img,
     &detect::default_chess_config(),
-    &DetectorParams::sweep_default(),
+    &ChessboardParams::sweep_default(),
 );
 ```
 

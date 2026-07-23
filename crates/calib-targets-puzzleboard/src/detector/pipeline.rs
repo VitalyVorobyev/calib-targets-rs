@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{ChessboardDetection, Detector as ChessDetector};
+use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
 use calib_targets_core::{Coord, GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
@@ -21,7 +21,7 @@ use crate::detector::params::{
     ensure_min_edges, required_edges, PuzzleBoardDecodeConfig, PuzzleBoardScoringMode,
     PuzzleBoardSearchMode,
 };
-use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetectionResult};
+use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetection};
 use crate::diagnostics::{PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics};
 use crate::params::PuzzleBoardParams;
 
@@ -29,7 +29,7 @@ use crate::params::PuzzleBoardParams;
 /// diagnostics captured for it. Used internally to carry both through
 /// best-component selection before the diagnostics are split off.
 struct ComponentDecode {
-    result: PuzzleBoardDetectionResult,
+    result: PuzzleBoardDetection,
     diagnostics: PuzzleBoardDiagnostics,
 }
 
@@ -100,7 +100,7 @@ impl PuzzleBoardDetector {
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError> {
+    ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
         self.detect_inner(image, corners).0
     }
 
@@ -121,7 +121,7 @@ impl PuzzleBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> (
-        Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError>,
+        Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
         PuzzleBoardDiagnostics,
     ) {
         self.detect_inner(image, corners)
@@ -132,7 +132,7 @@ impl PuzzleBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> (
-        Result<PuzzleBoardDetectionResult, PuzzleBoardDetectError>,
+        Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
         PuzzleBoardDiagnostics,
     ) {
         let chess_results = self.chessboard.detect_all(corners);
@@ -370,7 +370,7 @@ impl PuzzleBoardDetector {
         };
 
         Ok(ComponentDecode {
-            result: PuzzleBoardDetectionResult::from_target_detection(
+            result: PuzzleBoardDetection::from_target_detection(
                 detection,
                 decoded.alignment,
                 decode_info,
@@ -672,10 +672,11 @@ fn observed_corner_span(edges: &[PuzzleBoardObservedEdge]) -> Option<(u32, u32)>
 /// Extract the soft-LL knobs from a decode config into the decoder-level
 /// [`SoftLlConfig`] structure.
 fn soft_cfg_from(cfg: &PuzzleBoardDecodeConfig) -> SoftLlConfig {
+    let tuning = cfg.effective_tuning();
     SoftLlConfig {
-        kappa: cfg.bit_likelihood_slope,
-        per_bit_floor: cfg.per_bit_floor,
-        alignment_min_margin: cfg.alignment_min_margin,
+        kappa: tuning.bit_likelihood_slope,
+        per_bit_floor: tuning.per_bit_floor,
+        alignment_min_margin: tuning.alignment_min_margin,
     }
 }
 
@@ -914,7 +915,7 @@ mod tests {
         diagnostics_decode: PuzzleBoardDecodeDiagnostics,
     ) -> ComponentDecode {
         ComponentDecode {
-            result: PuzzleBoardDetectionResult::new(Vec::new(), GridAlignment::IDENTITY, decode),
+            result: PuzzleBoardDetection::new(Vec::new(), GridAlignment::IDENTITY, decode),
             diagnostics: PuzzleBoardDiagnostics {
                 observed_edges: Vec::new(),
                 decode: diagnostics_decode,

@@ -23,8 +23,8 @@ def main() -> int:
     args = parser.parse_args()
 
     image = np.asarray(Image.open(args.image).convert("L"), dtype=np.uint8)
-    chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(args.threshold))
-    params = ct.ChessboardParams.for_topological()
+    chess_cfg = ct.ChessConfig(threshold=args.threshold)
+    params = ct.ChessboardParams()
 
     result = ct.detect_chessboard(image, chess_cfg=chess_cfg, params=params)
     if result is None:

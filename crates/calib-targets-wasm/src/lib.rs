@@ -9,7 +9,7 @@ mod gray;
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector as ChessDetector, ChessboardParams};
 use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams};
 use calib_targets_print::{
@@ -18,7 +18,7 @@ use calib_targets_print::{
     RenderOptions, TargetSpec,
 };
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
-use chess_corners::{Detector as ChessCornerDetector, Threshold};
+use chess_corners::Detector as ChessCornerDetector;
 use wasm_bindgen::prelude::*;
 
 use convert::adapt_chess_corner;
@@ -74,11 +74,12 @@ fn detect_corners_impl(
         .collect()
 }
 
-/// Build the workspace-default ChESS detector config. Mirrors the threshold
-/// override applied in `calib_targets::detect::default_chess_config` — see
-/// the rustdoc on that function for the rationale and sweep evidence.
+/// The workspace-default ChESS detector config.
+///
+/// Delegates to `calib_targets_core::default_chess_config` rather than
+/// restating the threshold override, so the value has one definition.
 fn workspace_default_chess_cfg() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
+    calib_targets_core::default_chess_config()
 }
 
 /// Resolve a ChESS detector config, falling back to the workspace default
@@ -91,6 +92,15 @@ fn resolve_chess_cfg(chess_cfg: JsValue) -> Result<DetectorConfig, JsError> {
     }
 }
 
+/// Apply an explicit `chess_cfg` argument over a params struct's own `chess`
+/// field, leaving it untouched when JS supplies `undefined` / `null`.
+fn apply_chess_cfg_override(dst: &mut DetectorConfig, chess_cfg: JsValue) -> Result<(), JsError> {
+    if !chess_cfg.is_undefined() && !chess_cfg.is_null() {
+        *dst = from_js(chess_cfg)?;
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Default configs (exported so the JS side can populate UI with defaults)
 // ---------------------------------------------------------------------------
@@ -101,10 +111,10 @@ pub fn default_chess_config() -> Result<JsValue, JsError> {
     to_js(&workspace_default_chess_cfg())
 }
 
-/// Return the default `DetectorParams` as a JS object.
+/// Return the default `ChessboardParams` as a JS object.
 #[wasm_bindgen]
 pub fn default_chessboard_params() -> Result<JsValue, JsError> {
-    to_js(&DetectorParams::default())
+    to_js(&ChessboardParams::default())
 }
 
 /// Return the default `MarkerBoardParams` (with a minimal placeholder layout) as a JS object.
@@ -121,7 +131,7 @@ pub fn default_marker_board_params() -> Result<JsValue, JsError> {
 #[wasm_bindgen]
 pub fn default_puzzleboard_params(rows: u32, cols: u32) -> Result<JsValue, JsError> {
     let spec = PuzzleBoardSpec::new(rows, cols, 1.0).map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&PuzzleBoardParams::for_board(&spec))
+    to_js(&PuzzleBoardParams::for_board(spec))
 }
 
 /// Return default `CharucoParams` for the given board geometry.
@@ -138,7 +148,7 @@ pub fn default_charuco_params(
     dictionary_name: &str,
 ) -> Result<JsValue, JsError> {
     let spec = charuco_board_spec(rows, cols, marker_size_rel, dictionary_name)?;
-    to_js(&CharucoParams::for_board(&spec))
+    to_js(&CharucoParams::for_board(spec))
 }
 
 /// List the names of every built-in ArUco / AprilTag dictionary.
@@ -154,12 +164,12 @@ pub fn list_aruco_dictionaries() -> Result<JsValue, JsError> {
 // Multi-config sweep presets
 // ---------------------------------------------------------------------------
 
-/// Return the 3-config chessboard sweep preset (`DetectorParams::sweep_default()`).
+/// Return the 3-config chessboard sweep preset (`ChessboardParams::sweep_default()`).
 ///
 /// Pass the array directly to [`detect_chessboard_best`].
 #[wasm_bindgen]
 pub fn chessboard_sweep_default() -> Result<JsValue, JsError> {
-    to_js(&DetectorParams::sweep_default())
+    to_js(&ChessboardParams::sweep_default())
 }
 
 /// Return the ChArUco sweep preset for a given board (`CharucoParams::sweep_for_board(&spec)`).
@@ -552,7 +562,7 @@ pub fn detect_corners(
 
 /// Detect a chessboard grid in a grayscale image.
 ///
-/// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found.
+/// Returns a `ChessboardDetection` JS object, or `null` if no board found.
 /// If `chess_cfg` is provided, it overrides `params.chess`.
 #[wasm_bindgen]
 pub fn detect_chessboard(
@@ -563,7 +573,7 @@ pub fn detect_chessboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cb_params: DetectorParams = from_js(params)?;
+    let cb_params: ChessboardParams = from_js(params)?;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -577,7 +587,7 @@ pub fn detect_chessboard(
 /// Like `detect_chessboard` but returns every same-board component the detector
 /// recovers (up to `params.max_components`), rather than just the first one.
 ///
-/// Returns a JS array of `ChessboardDetectionResult` objects (may be empty).
+/// Returns a JS array of `ChessboardDetection` objects (may be empty).
 /// If `chess_cfg` is provided, it overrides `params.chess`.
 #[wasm_bindgen]
 pub fn detect_chessboard_all(
@@ -588,7 +598,7 @@ pub fn detect_chessboard_all(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let cb_params: DetectorParams = from_js(params)?;
+    let cb_params: ChessboardParams = from_js(params)?;
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
@@ -603,8 +613,8 @@ pub fn detect_chessboard_all(
 
 /// Detect a ChArUco board in a grayscale image.
 ///
-/// Returns a `CharucoDetectionResult` JS object. Throws on error.
-/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
+/// Returns a `CharucoDetection` JS object. Throws on error.
+/// If `chess_cfg` is provided, it overrides `params.chess`.
 #[wasm_bindgen]
 pub fn detect_charuco(
     width: u32,
@@ -614,8 +624,9 @@ pub fn detect_charuco(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    apply_chess_cfg_override(&mut charuco_params.chess, chess_cfg)?;
+    let chess = charuco_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -633,8 +644,8 @@ pub fn detect_charuco(
 
 /// Detect a checkerboard+circles marker board in a grayscale image.
 ///
-/// Returns a `MarkerBoardDetectionResult` JS object, or `null` if not found.
-/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
+/// Returns a `MarkerBoardDetection` JS object, or `null` if not found.
+/// If `chess_cfg` is provided, it overrides `params.chess`.
 #[wasm_bindgen]
 pub fn detect_marker_board(
     width: u32,
@@ -644,13 +655,14 @@ pub fn detect_marker_board(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mb_params: MarkerBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut mb_params: MarkerBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
+    let chess = mb_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
-    let result = detector.detect_from_image_and_corners(&view, &corners);
+    let result = detector.detect(&view, &corners);
     to_js(&result)
 }
 
@@ -660,8 +672,8 @@ pub fn detect_marker_board(
 
 /// Detect a PuzzleBoard in a grayscale image.
 ///
-/// Returns a `PuzzleBoardDetectionResult` JS object. Throws on error.
-/// If `chess_cfg` is provided, it overrides `params.chessboard.chess`.
+/// Returns a `PuzzleBoardDetection` JS object. Throws on error.
+/// If `chess_cfg` is provided, it overrides `params.chess`.
 ///
 /// The returned `decode` block carries the compact decode summary.
 /// Soft-mode runner-up scoring evidence is available from
@@ -675,8 +687,9 @@ pub fn detect_puzzleboard(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let puzzle_params: PuzzleBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut puzzle_params.chess, chess_cfg)?;
+    let chess = puzzle_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -702,7 +715,7 @@ pub fn detect_puzzleboard(
 /// Detect a ChArUco board and additionally return the diagnostics channel.
 ///
 /// Returns a `{ result, diagnostics }` object. `result` is a
-/// `CharucoDetectionResult` (or `null` when detection fails);
+/// `CharucoDetection` (or `null` when detection fails);
 /// `diagnostics` is the `CharucoDetectDiagnostics` payload — produced even
 /// on a failed frame so callers can render the failure mode.
 #[wasm_bindgen]
@@ -714,8 +727,9 @@ pub fn detect_charuco_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
+    apply_chess_cfg_override(&mut charuco_params.chess, chess_cfg)?;
+    let chess = charuco_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -731,7 +745,7 @@ pub fn detect_charuco_with_diagnostics(
 /// Detect a marker board and additionally return the diagnostics channel.
 ///
 /// Returns a `{ result, diagnostics }` object. `result` is a
-/// `MarkerBoardDetectionResult` (or `null` when no board is found).
+/// `MarkerBoardDetection` (or `null` when no board is found).
 /// `diagnostics` is the `MarkerBoardDiagnostics` payload, or `null` when
 /// detection fails — the marker-board diagnostics channel only yields
 /// evidence on a successful detection.
@@ -744,13 +758,14 @@ pub fn detect_marker_board_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let mb_params: MarkerBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut mb_params: MarkerBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
+    let chess = mb_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let view = make_view(pixels, width, height);
-    match detector.detect_from_image_and_corners_with_diagnostics(&view, &corners) {
+    match detector.detect_with_diagnostics(&view, &corners) {
         Some((result, diagnostics)) => to_js(&serde_json::json!({
             "result": result,
             "diagnostics": diagnostics,
@@ -765,7 +780,7 @@ pub fn detect_marker_board_with_diagnostics(
 /// Detect a PuzzleBoard and additionally return the diagnostics channel.
 ///
 /// Returns a `{ result, diagnostics }` object. `result` is a
-/// `PuzzleBoardDetectionResult` (or `null` when detection fails);
+/// `PuzzleBoardDetection` (or `null` when detection fails);
 /// `diagnostics` is the `PuzzleBoardDiagnostics` payload — produced even on
 /// a failed decode so callers can render the sampled edge observations.
 #[wasm_bindgen]
@@ -777,8 +792,9 @@ pub fn detect_puzzleboard_with_diagnostics(
     params: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let puzzle_params: PuzzleBoardParams = from_js(params)?;
-    let chess = resolve_chess_cfg(chess_cfg)?;
+    let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
+    apply_chess_cfg_override(&mut puzzle_params.chess, chess_cfg)?;
+    let chess = puzzle_params.chess;
 
     let corners = detect_corners_impl(pixels, width, height, &chess);
     let detector =
@@ -795,12 +811,23 @@ pub fn detect_puzzleboard_with_diagnostics(
 // Multi-config sweep detection
 // ---------------------------------------------------------------------------
 
+// Each `detect_*_best` deserialises its JS config array into `Vec<{X}Params>`,
+// decodes the image once, and delegates to the matching
+// `calib_targets::detect::detect_*_best` facade helper. The facade honours
+// each config's own `chess` front-end and memoises the corner pass across
+// configs that share one, so the browser gets the same unified sweep
+// semantics as the native and Python surfaces (rather than a single
+// workspace-default corner pass).
+
 /// Try multiple chessboard parameter configs, return the best result (most corners).
 ///
-/// Returns a `ChessboardDetectionResult` JS object, or `null` if no board found
+/// Returns a `ChessboardDetection` JS object, or `null` if no board found
 /// with any config.
-/// If `chess_cfg` is provided, it is used for corner detection across every
-/// sweep config; otherwise the workspace-default ChESS settings are used.
+///
+/// The chessboard detector is a corner-cloud consumer, so its front-end is
+/// passed explicitly: `chess_cfg` (when provided) is used for corner detection
+/// across every sweep config; otherwise the workspace-default ChESS settings
+/// are used.
 #[wasm_bindgen]
 pub fn detect_chessboard_best(
     width: u32,
@@ -810,23 +837,23 @@ pub fn detect_chessboard_best(
     configs: JsValue,
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
-    let configs: Vec<DetectorParams> = from_js(configs)?;
-
-    // The sweep configs only vary chessboard-detector tuning, not the
-    // ChESS corner detector; resolve one ChESS config and reuse the
-    // detected corners across every sweep config.
+    let configs: Vec<ChessboardParams> = from_js(configs)?;
     let chess = resolve_chess_cfg(chess_cfg)?;
-    let corners = detect_corners_impl(pixels, width, height, &chess);
-
-    let best = configs
-        .iter()
-        .filter_map(|params| ChessDetector::new(params.clone()).ok()?.detect(&corners))
-        .max_by_key(|d| d.corners.len());
+    let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    // The facade now returns `Result`; a miss (`DetectError::NoDetection`)
+    // maps back to `null`, exactly as this entry point returned before.
+    let best = calib_targets::detect::detect_chessboard_best(&img, &chess, &configs).ok();
     to_js(&best)
 }
 
 /// Try multiple ChArUco parameter configs, return the best result
 /// (most markers, then most corners). Throws if all configs fail.
+///
+/// Each config carries its own `chess` front-end (`params.chess`); the corner
+/// pass is deduplicated across configs that share one, so a sweep may freely
+/// mix front-ends (e.g. a default pass alongside an upscaled pass) without
+/// paying for a redundant corner pass when they agree.
 #[wasm_bindgen]
 pub fn detect_charuco_best(
     width: u32,
@@ -836,48 +863,20 @@ pub fn detect_charuco_best(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let configs: Vec<CharucoParams> = from_js(configs)?;
-    let mut best: Option<calib_targets_charuco::CharucoDetectionResult> = None;
-    let mut last_err = None;
-
-    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
-    let corners = detect_corners_impl(pixels, width, height, &chess);
-    for params in &configs {
-        let detector = match CharucoDetector::new(params.clone()) {
-            Ok(d) => d,
-            Err(e) => {
-                last_err = Some(e.to_string());
-                continue;
-            }
-        };
-        let view = make_view(pixels, width, height);
-        match detector.detect(&view, &corners) {
-            Ok(result) => {
-                let dominated = best.as_ref().is_some_and(|b| {
-                    (b.markers.len(), b.corners.len())
-                        >= (result.markers.len(), result.corners.len())
-                });
-                if !dominated {
-                    best = Some(result);
-                }
-            }
-            Err(e) => {
-                last_err = Some(e.to_string());
-            }
-        }
-    }
-
-    match best {
-        Some(result) => to_js(&result),
-        None => Err(JsError::new(
-            &last_err.unwrap_or_else(|| "no markers detected".to_string()),
-        )),
-    }
+    let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    let result = calib_targets::detect::detect_charuco_best(&img, &configs)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    to_js(&result)
 }
 
 /// Try multiple marker board parameter configs, return the best result (most corners).
 ///
-/// Returns a `MarkerBoardDetectionResult` JS object, or `null` if no board found
+/// Returns a `MarkerBoardDetection` JS object, or `null` if no board found
 /// with any config.
+///
+/// Each config carries its own `chess` front-end (`params.chess`); the corner
+/// pass is deduplicated across configs that share one.
 #[wasm_bindgen]
 pub fn detect_marker_board_best(
     width: u32,
@@ -887,24 +886,20 @@ pub fn detect_marker_board_best(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let configs: Vec<MarkerBoardParams> = from_js(configs)?;
-
-    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
-    let corners = detect_corners_impl(pixels, width, height, &chess);
-    let best = configs
-        .iter()
-        .filter_map(|params| {
-            let detector = MarkerBoardDetector::new(params.clone()).ok()?;
-            let view = make_view(pixels, width, height);
-            detector.detect_from_image_and_corners(&view, &corners)
-        })
-        .max_by_key(|r| r.corners.len());
+    let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    // The facade now returns `Result`; a miss (`DetectError::NoDetection`)
+    // maps back to `null`, exactly as this entry point returned before.
+    let best = calib_targets::detect::detect_marker_board_best(&img, &configs).ok();
     to_js(&best)
 }
 
 /// Try multiple PuzzleBoard parameter configs, return the best result
 /// (most labelled corners, then mean bit confidence). Throws if all configs fail.
 ///
-/// Each config may choose its own `decode.search_mode` / `decode.scoring_mode`.
+/// Each config carries its own `chess` front-end (`params.chess`, deduplicated
+/// across shared front-ends) and may choose its own `decode.search_mode` /
+/// `decode.scoring_mode`.
 #[wasm_bindgen]
 pub fn detect_puzzleboard_best(
     width: u32,
@@ -914,42 +909,9 @@ pub fn detect_puzzleboard_best(
 ) -> Result<JsValue, JsError> {
     validate_gray(pixels, width, height)?;
     let configs: Vec<PuzzleBoardParams> = from_js(configs)?;
-
-    let mut best: Option<calib_targets_puzzleboard::PuzzleBoardDetectionResult> = None;
-    let mut last_err = None;
-
-    let chess = resolve_chess_cfg(JsValue::UNDEFINED)?;
-    let corners = detect_corners_impl(pixels, width, height, &chess);
-    for params in &configs {
-        let detector = match PuzzleBoardDetector::new(params.clone()) {
-            Ok(d) => d,
-            Err(e) => {
-                last_err = Some(e.to_string());
-                continue;
-            }
-        };
-        let view = make_view(pixels, width, height);
-        match detector.detect(&view, &corners) {
-            Ok(result) => {
-                let dominated = best.as_ref().is_some_and(|b| {
-                    let new_key = (result.corners.len(), result.decode.mean_confidence);
-                    let old_key = (b.corners.len(), b.decode.mean_confidence);
-                    old_key.0 > new_key.0 || (old_key.0 == new_key.0 && old_key.1 >= new_key.1)
-                });
-                if !dominated {
-                    best = Some(result);
-                }
-            }
-            Err(e) => {
-                last_err = Some(e.to_string());
-            }
-        }
-    }
-
-    match best {
-        Some(result) => to_js(&result),
-        None => Err(JsError::new(
-            &last_err.unwrap_or_else(|| "puzzleboard not detected".to_string()),
-        )),
-    }
+    let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    let result = calib_targets::detect::detect_puzzleboard_best(&img, &configs)
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    to_js(&result)
 }

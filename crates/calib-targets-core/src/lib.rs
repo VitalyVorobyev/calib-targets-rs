@@ -32,15 +32,13 @@ mod grid_smoothness;
 mod homography;
 mod image;
 pub mod io;
-mod logger;
 mod rectify;
 
 pub use bit_likelihood::log_sigmoid;
 pub use grid_smoothness::square_predict_grid_position;
 pub use homography::{
     estimate_homography_rect_to_img, estimate_homography_with_quality, homography_from_4pt,
-    homography_from_4pt_with_quality, homography_from_next, homography_to_next,
-    warp_perspective_gray, Homography, HomographyQuality,
+    homography_from_4pt_with_quality, warp_perspective_gray, Homography, HomographyQuality,
 };
 pub use image::{
     sample_bilinear, sample_bilinear_fast, sample_bilinear_u8, GrayImage, GrayImageView,
@@ -53,23 +51,12 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 // orientation knob. Advanced ChESS tuning types are imported from the
 // `chess-corners` crate directly, where they belong — re-exporting the whole
 // upstream surface would freeze it into this crate's semver contract.
-pub use chess::{DetectorConfig, OrientationMethod};
-pub use corner::{
-    axis_estimate_from_next, axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection,
-    TargetKind,
-};
+pub use chess::{default_chess_config, DetectorConfig, OrientationMethod};
+pub use corner::{axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection, TargetKind};
 pub use corner_map::{complete_cell_corners, corner_map_bounds, CornerMap};
-pub use grid_alignment::{
-    cell_rect_corners_at, grid_transform_from_next, grid_transform_to_next, GridAlignment,
-    GridTransform, GRID_TRANSFORMS_D4,
-};
+pub use grid_alignment::{cell_rect_corners_at, GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
 
 /// The canonical integer grid-coordinate type `(u, v)` — `u` is the grid's
 /// first axis (right), `v` the second (down). Re-exported from
 /// [`projective_grid`] so the whole workspace names a single type.
 pub use projective_grid::Coord;
-
-#[cfg(feature = "tracing")]
-pub use logger::init_tracing;
-
-pub use logger::init_with_level;

@@ -2,12 +2,36 @@
 //!
 //! Each `detect_*` helper runs the `chess-corners` ChESS corner detector over
 //! an image (or raw grayscale buffer) and then runs the matching target
-//! detector, returning the detector's own result type. The `detect_*_best`
-//! variants additionally sweep multiple parameter presets and keep the richest
-//! detection. This module is gated on the `image` feature.
+//! detector. Every helper returns `Result<{X}Detection, DetectError>`: a board
+//! that is simply not present is reported as [`DetectError::NoDetection`]
+//! rather than a bare `None`, so consuming several target types shares one
+//! `?`/`match` control-flow shape. The `detect_*_best` variants additionally
+//! sweep multiple parameter presets and keep the richest detection. This module
+//! is gated on the `image` feature.
+//!
+//! # Where the corner front-end config lives
+//!
+//! The corner (ChESS) front-end is configured differently for the two shapes of
+//! target, and it is worth knowing which before you reach for a helper:
+//!
+//! - **ChArUco, PuzzleBoard, and marker boards** are whole-image pipelines that
+//!   own their corner pass. Set the front-end on the params bundle you pass:
+//!   `params.chess` (see [`CharucoParams::chess`](charuco::CharucoParams::chess),
+//!   [`PuzzleBoardParams::chess`](puzzleboard::PuzzleBoardParams::chess),
+//!   [`MarkerBoardParams::chess`](marker::MarkerBoardParams::chess)). There is
+//!   no separate front-end argument for these entry points.
+//! - **Plain chessboards** are corner-cloud consumers, so
+//!   [`detect_chessboard`] takes the front-end explicitly:
+//!   `detect_chessboard(img, &chess_cfg, &params)`. Pass
+//!   [`default_chess_config`] unless you have a reason to override it.
+//!
+//! The asymmetry is deliberate: the chessboard detector is reusable on any
+//! corner cloud (custom upstreams, pre-detected corners), so the facade keeps
+//! its corner config separable; a compound target always owns its full image
+//! pipeline, so bundling the front-end into its params is the ergonomic choice.
 
 use crate::{charuco, chessboard, core, marker, puzzleboard};
-use chess_corners::{Detector as ChessDetector, Threshold};
+use chess_corners::Detector as ChessDetector;
 use nalgebra::Point2;
 
 #[cfg(feature = "tracing")]
@@ -57,29 +81,77 @@ pub enum DetectError {
     /// PuzzleBoard detection failed.
     #[error(transparent)]
     PuzzleBoardDetect(#[from] puzzleboard::PuzzleBoardDetectError),
+
+    /// Invalid chessboard or marker-board detector parameters.
+    ///
+    /// Both [`chessboard::ChessboardDetector::new`] and
+    /// [`marker::MarkerBoardDetector::new`] validate their
+    /// [`chessboard::ChessboardParams`] and surface this on a bad value.
+    #[error(transparent)]
+    ChessboardParams(#[from] chessboard::ChessboardParamsError),
+
+    /// No board of the requested target kind was found in the image.
+    ///
+    /// The chessboard and marker-board detectors report "nothing here" at the
+    /// corner-cloud level — their crate-level `detect` returns `None`. The
+    /// facade lifts that into this variant so every `detect_*` entry point
+    /// shares one `Result` control-flow shape. A miss is expected and
+    /// recoverable: match this variant to treat it like `None`.
+    #[error("no {} was detected in the image", target_label(.target))]
+    NoDetection {
+        /// Which target's detector came up empty.
+        target: core::TargetKind,
+    },
 }
 
-/// Reasonable default settings for the `chess-corners` ChESS detector.
-///
-/// Built on top of [`DetectorConfig::chess`] but overrides the acceptance
-/// threshold to [`Threshold::Absolute(15.0)`][Threshold::Absolute]. Upstream's
-/// paper-faithful default is `Threshold::Absolute(0.0)`, which is correct in
-/// principle (any strictly positive ChESS response is a corner candidate) but
-/// produces hundreds of weak responses on real-world images. Both the
-/// topological grid pipeline is
-/// sensitive to that noise floor: on `testdata/puzzleboard_reference/example3.png`,
-/// threshold `0.0` produces zero labelled corners while `15.0` recovers the
-/// full 30-corner component; on `testdata/small0.png` the labelled count
-/// rises from 78 to 129; and on the `02-topo-grid/` synthetic suite the
-/// topological pipeline only clears every recall gate at `≥ 15.0`. The
-/// cutoff was chosen by sweeping the public testdata regression set; see
-/// `crates/calib-targets/examples/threshold_sweep.rs`.
-///
-/// Callers wanting the raw upstream behaviour can construct
-/// [`DetectorConfig::chess`] directly.
-pub fn default_chess_config() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(Threshold::Absolute(15.0))
+/// Human-readable label for a target kind, used by
+/// [`DetectError::NoDetection`]'s message.
+fn target_label(target: &core::TargetKind) -> &'static str {
+    match target {
+        core::TargetKind::Chessboard => "chessboard",
+        core::TargetKind::Charuco => "ChArUco board",
+        core::TargetKind::CheckerboardMarker => "marker board",
+        core::TargetKind::PuzzleBoard => "PuzzleBoard",
+        _ => "calibration target",
+    }
 }
+
+/// Return the ChESS corners for `chess_cfg`, running the corner pass exactly
+/// once per distinct [`DetectorConfig`] within a single sweep.
+///
+/// The `detect_*_best` helpers honour each config's own `chess` front-end but
+/// must not pay for a corner pass per config when several configs share one.
+/// They iterate the configs in the caller's original order — reordering would
+/// change tie-break outcomes — and consult this memoized cache, so corner
+/// detection is deduplicated across configs that request the same front-end
+/// while every distinct front-end still gets its own pass.
+///
+/// [`DetectorConfig`] is `Copy + PartialEq` but not hashable (it carries `f32`
+/// fields), so a linear scan over the handful of entries a sweep produces is
+/// the right structure. The lookup is index-based (`position` then index) so
+/// the immutable borrow of a cached entry never overlaps the `push` of a new
+/// one.
+fn cached_corners<'cache>(
+    img: &::image::GrayImage,
+    chess_cfg: &DetectorConfig,
+    cache: &'cache mut Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)>,
+) -> &'cache [chessboard::ChessCorner] {
+    let idx = match cache.iter().position(|(cfg, _)| cfg == chess_cfg) {
+        Some(idx) => idx,
+        None => {
+            let corners = detect_corners(img, chess_cfg);
+            cache.push((*chess_cfg, corners));
+            cache.len() - 1
+        }
+    };
+    &cache[idx].1
+}
+
+// `default_chess_config` is defined in `calib-targets-core` so every
+// detector's params struct can default its `chess` field without depending
+// on this facade; it is re-exported here because
+// `calib_targets::detect::default_chess_config` is the documented path.
+pub use calib_targets_core::default_chess_config;
 
 /// Convert an `image::GrayImage` into the lightweight `calib-targets-core` view type.
 pub fn gray_view(img: &::image::GrayImage) -> core::GrayImageView<'_> {
@@ -142,7 +214,7 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::Chess
 ///
 /// This is the primary chessboard entry point. It runs ChESS corner
 /// detection with the supplied [`DetectorConfig`] and then runs the
-/// chessboard detector with the supplied [`chessboard::DetectorParams`];
+/// chessboard detector with the supplied [`chessboard::ChessboardParams`];
 /// corner positions are returned in the input image frame. Callers that
 /// do not need to tune the ChESS detector pass [`default_chess_config`]
 /// by reference (`&default_chess_config()`).
@@ -165,15 +237,17 @@ pub fn detect_corners_default(img: &::image::GrayImage) -> Vec<chessboard::Chess
 pub fn detect_chessboard(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
-    params: &chessboard::DetectorParams,
-) -> Option<chessboard::ChessboardDetection> {
+    params: &chessboard::ChessboardParams,
+) -> Result<chessboard::ChessboardDetection, DetectError> {
     let corners = detect_corners(img, chess_cfg);
-    let detector = chessboard::Detector::new(params.clone()).ok()?;
-    detector.detect(&corners)
+    let detector = chessboard::ChessboardDetector::new(params.clone())?;
+    detector.detect(&corners).ok_or(DetectError::NoDetection {
+        target: core::TargetKind::Chessboard,
+    })
 }
 
 /// Multi-component variant of [`detect_chessboard`]: returns every same-board
-/// component the detector recovers (capped by [`chessboard::DetectorParams::max_components`]).
+/// component the detector recovers (capped by [`chessboard::ChessboardParams::max_components`]).
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -185,10 +259,10 @@ pub fn detect_chessboard(
 pub fn detect_chessboard_all(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
-    params: &chessboard::DetectorParams,
+    params: &chessboard::ChessboardParams,
 ) -> Vec<chessboard::ChessboardDetection> {
     let corners = detect_corners(img, chess_cfg);
-    let Ok(detector) = chessboard::Detector::new(params.clone()) else {
+    let Ok(detector) = chessboard::ChessboardDetector::new(params.clone()) else {
         return Vec::new();
     };
     detector.detect_all(&corners)
@@ -211,8 +285,8 @@ pub fn detect_chessboard_all(
 pub fn detect_charuco(
     img: &::image::GrayImage,
     params: &charuco::CharucoParams,
-) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let corners = detect_corners_default(img);
+) -> Result<charuco::CharucoDetection, DetectError> {
+    let corners = detect_corners(img, &params.chess);
     let detector = charuco::CharucoDetector::new(params.clone())?;
     Ok(detector.detect(&gray_view(img), &corners)?)
 }
@@ -235,25 +309,29 @@ pub fn detect_charuco(
 pub fn detect_puzzleboard(
     img: &::image::GrayImage,
     params: &puzzleboard::PuzzleBoardParams,
-) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
-    let corners = detect_corners_default(img);
-    let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
-    Ok(detector.detect(&gray_view(img), &corners)?)
+) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
+    let corners = detect_corners(img, &params.chess);
+    detect_puzzleboard_with_corners(img, params, &corners)
 }
 
-/// Build a reasonable default PuzzleBoard parameter set for a
-/// `rows × cols` board (square counts).
-pub fn default_puzzleboard_params(
-    rows: u32,
-    cols: u32,
-) -> Result<puzzleboard::PuzzleBoardParams, DetectError> {
-    let spec = puzzleboard::PuzzleBoardSpec::new(rows, cols, 1.0)?;
-    Ok(puzzleboard::PuzzleBoardParams::for_board(&spec))
+/// Run the PuzzleBoard detector on a pre-detected corner cloud.
+///
+/// The single-config [`detect_puzzleboard`] and the sweep
+/// [`detect_puzzleboard_best`] share this path; the only difference is where
+/// the corners come from (a fresh pass vs. the sweep's per-front-end cache).
+fn detect_puzzleboard_with_corners(
+    img: &::image::GrayImage,
+    params: &puzzleboard::PuzzleBoardParams,
+    corners: &[chessboard::ChessCorner],
+) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
+    let detector = puzzleboard::PuzzleBoardDetector::new(params.clone())?;
+    Ok(detector.detect(&gray_view(img), corners)?)
 }
 
 /// Run the checkerboard+circles marker board detector end-to-end.
 ///
-/// Corner detection uses `params.chessboard.chess`.
+/// Corner detection uses [`params.chess`](marker::MarkerBoardParams::chess) —
+/// a marker board is a whole-image pipeline that owns its corner pass.
 #[cfg_attr(
     feature = "tracing",
     instrument(
@@ -265,10 +343,14 @@ pub fn default_puzzleboard_params(
 pub fn detect_marker_board(
     img: &::image::GrayImage,
     params: &marker::MarkerBoardParams,
-) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners_default(img);
-    let detector = marker::MarkerBoardDetector::new(params.clone()).ok()?;
-    detector.detect_from_image_and_corners(&gray_view(img), &corners)
+) -> Result<marker::MarkerBoardDetection, DetectError> {
+    let corners = detect_corners(img, &params.chess);
+    let detector = marker::MarkerBoardDetector::new(params.clone())?;
+    detector
+        .detect(&gray_view(img), &corners)
+        .ok_or(DetectError::NoDetection {
+            target: core::TargetKind::CheckerboardMarker,
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -283,29 +365,41 @@ pub fn detect_marker_board(
 pub fn detect_chessboard_best(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
-    param_configs: &[chessboard::DetectorParams],
-) -> Option<chessboard::ChessboardDetection> {
+    param_configs: &[chessboard::ChessboardParams],
+) -> Result<chessboard::ChessboardDetection, DetectError> {
     let corners = detect_corners(img, chess_cfg);
     param_configs
         .iter()
         .filter_map(|params| {
-            chessboard::Detector::new(params.clone())
+            chessboard::ChessboardDetector::new(params.clone())
                 .ok()?
                 .detect(&corners)
         })
         .max_by_key(|d| d.corners.len())
+        .ok_or(DetectError::NoDetection {
+            target: core::TargetKind::Chessboard,
+        })
 }
 
 /// Try multiple ChArUco parameter configs, return the best result
 /// (most markers, then most corners).
+///
+/// Each config's own [`CharucoParams::chess`] front-end is honoured; corner
+/// detection is deduplicated across configs that share one, so configs may
+/// freely mix front-ends (e.g. a default pass alongside an
+/// `UpscaleConfig::Fixed(2)` pass) without paying for a redundant corner pass
+/// when they agree. Configs are tried in the given order; on ties the first
+/// best result wins.
+///
+/// [`CharucoParams::chess`]: charuco::CharucoParams::chess
 pub fn detect_charuco_best(
     img: &::image::GrayImage,
     configs: &[charuco::CharucoParams],
-) -> Result<charuco::CharucoDetectionResult, DetectError> {
-    let mut best: Option<charuco::CharucoDetectionResult> = None;
+) -> Result<charuco::CharucoDetection, DetectError> {
+    let mut best: Option<charuco::CharucoDetection> = None;
     let mut last_err = None;
+    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
 
-    let corners = detect_corners_default(img);
     for params in configs {
         let detector = match charuco::CharucoDetector::new(params.clone()) {
             Ok(d) => d,
@@ -314,7 +408,8 @@ pub fn detect_charuco_best(
                 continue;
             }
         };
-        match detector.detect(&gray_view(img), &corners) {
+        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        match detector.detect(&gray_view(img), corners) {
             Ok(result) => {
                 let dominated = best
                     .as_ref()
@@ -338,14 +433,27 @@ pub fn detect_charuco_best(
 
 /// Try multiple PuzzleBoard parameter configs. Picks the configuration that
 /// labels the most corners with the highest mean decode confidence.
+///
+/// Each config's own [`PuzzleBoardParams::chess`] front-end is honoured, so a
+/// sweep may mix corner front-ends (e.g. a single-scale pass alongside an
+/// `UpscaleConfig::Fixed(2)` pass — as [`PuzzleBoardParams::sweep_for_board`]
+/// does). Corner detection is deduplicated across configs that share a front-
+/// end, so the common all-same-`chess` sweep pays for exactly one corner pass.
+/// Configs are tried in the given order; a later config replaces the current
+/// best only when it is strictly better, so the first best result wins ties.
+///
+/// [`PuzzleBoardParams::chess`]: puzzleboard::PuzzleBoardParams::chess
+/// [`PuzzleBoardParams::sweep_for_board`]: puzzleboard::PuzzleBoardParams::sweep_for_board
 pub fn detect_puzzleboard_best(
     img: &::image::GrayImage,
     configs: &[puzzleboard::PuzzleBoardParams],
-) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
-    let mut best: Option<puzzleboard::PuzzleBoardDetectionResult> = None;
+) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
+    let mut best: Option<puzzleboard::PuzzleBoardDetection> = None;
     let mut last_err: Option<DetectError> = None;
+    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
     for params in configs {
-        match detect_puzzleboard(img, params) {
+        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        match detect_puzzleboard_with_corners(img, params, corners) {
             Ok(r) => {
                 let better = match &best {
                     None => true,
@@ -370,22 +478,45 @@ pub fn detect_puzzleboard_best(
 }
 
 /// Try multiple marker board parameter configs, return the best result (most corners).
+///
+/// Each config's own [`MarkerBoardParams::chess`] front-end is honoured; corner
+/// detection is deduplicated across configs that share one, so configs may mix
+/// front-ends without triggering a redundant corner pass when they agree.
+/// Configs are tried in the given order and, matching the previous
+/// `max_by_key` behaviour, the **last** config attaining the maximum corner
+/// count wins ties.
+///
+/// [`MarkerBoardParams::chess`]: marker::MarkerBoardParams::chess
 pub fn detect_marker_board_best(
     img: &::image::GrayImage,
     configs: &[marker::MarkerBoardParams],
-) -> Option<marker::MarkerBoardDetectionResult> {
-    let corners = detect_corners_default(img);
-    configs
-        .iter()
-        .filter_map(|params| {
-            let detector = marker::MarkerBoardDetector::new(params.clone()).ok()?;
-            detector.detect_from_image_and_corners(&gray_view(img), &corners)
-        })
-        .max_by_key(|r| r.corners.len())
+) -> Result<marker::MarkerBoardDetection, DetectError> {
+    let mut best: Option<marker::MarkerBoardDetection> = None;
+    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    for params in configs {
+        let Ok(detector) = marker::MarkerBoardDetector::new(params.clone()) else {
+            continue;
+        };
+        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        let Some(result) = detector.detect(&gray_view(img), corners) else {
+            continue;
+        };
+        // Replicate `Iterator::max_by_key`, which keeps the *last* maximum on
+        // ties: replace whenever the new count is >= the incumbent's.
+        let replace = best
+            .as_ref()
+            .is_none_or(|b| result.corners.len() >= b.corners.len());
+        if replace {
+            best = Some(result);
+        }
+    }
+    best.ok_or(DetectError::NoDetection {
+        target: core::TargetKind::CheckerboardMarker,
+    })
 }
 
 /// Scoring key for ChArUco results: (marker count, corner count).
-fn charuco_score(r: &charuco::CharucoDetectionResult) -> (usize, usize) {
+fn charuco_score(r: &charuco::CharucoDetection) -> (usize, usize) {
     (r.markers.len(), r.corners.len())
 }
 
@@ -416,17 +547,18 @@ pub fn gray_image_from_slice(
 /// Raw-buffer variant of [`detect_chessboard`]: runs the chessboard detector
 /// from a raw grayscale byte buffer.
 ///
-/// `pixels` must have length `width * height`. Returns `Ok(None)` when no board is found,
-/// or `Err` when the buffer dimensions are invalid.
+/// `pixels` must have length `width * height`. Returns
+/// `Err(DetectError::NoDetection { .. })` when no board is found, or `Err` with
+/// an `InvalidGray*` variant when the buffer dimensions are invalid.
 pub fn detect_chessboard_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
     chess_cfg: &DetectorConfig,
-    params: &chessboard::DetectorParams,
-) -> Result<Option<chessboard::ChessboardDetection>, DetectError> {
+    params: &chessboard::ChessboardParams,
+) -> Result<chessboard::ChessboardDetection, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_chessboard(&img, chess_cfg, params))
+    detect_chessboard(&img, chess_cfg, params)
 }
 
 /// Run the ChArUco detector from a raw grayscale byte buffer.
@@ -438,7 +570,7 @@ pub fn detect_charuco_from_gray_u8(
     height: u32,
     pixels: &[u8],
     params: &charuco::CharucoParams,
-) -> Result<charuco::CharucoDetectionResult, DetectError> {
+) -> Result<charuco::CharucoDetection, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
     detect_charuco(&img, params)
 }
@@ -449,80 +581,50 @@ pub fn detect_puzzleboard_from_gray_u8(
     height: u32,
     pixels: &[u8],
     params: &puzzleboard::PuzzleBoardParams,
-) -> Result<puzzleboard::PuzzleBoardDetectionResult, DetectError> {
+) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
     detect_puzzleboard(&img, params)
 }
 
 /// Run the checkerboard+circles marker board detector from a raw grayscale byte buffer.
 ///
-/// `pixels` must have length `width * height`. Returns `Ok(None)` when no board is found,
-/// or `Err` when the buffer dimensions are invalid.
+/// `pixels` must have length `width * height`. Returns
+/// `Err(DetectError::NoDetection { .. })` when no board is found, or `Err` with
+/// an `InvalidGray*` variant when the buffer dimensions are invalid.
 pub fn detect_marker_board_from_gray_u8(
     width: u32,
     height: u32,
     pixels: &[u8],
     params: &marker::MarkerBoardParams,
-) -> Result<Option<marker::MarkerBoardDetectionResult>, DetectError> {
+) -> Result<marker::MarkerBoardDetection, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
-    Ok(detect_marker_board(&img, params))
+    detect_marker_board(&img, params)
 }
 
 fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> chessboard::ChessCorner {
-    chessboard::ChessCorner {
-        position: Point2::new(c.x, c.y),
-        axes: [
-            core::AxisEstimate {
-                angle: c.axes[0].angle,
-                sigma: c.axes[0].sigma,
-            },
-            core::AxisEstimate {
-                angle: c.axes[1].angle,
-                sigma: c.axes[1].sigma,
-            },
-        ],
-        contrast: c.contrast,
-        fit_rms: c.fit_rms,
-        strength: c.response,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use chess_corners::DetectionStrategy;
-
-    #[test]
-    fn default_chess_config_overrides_threshold() {
-        // Workspace default deliberately overrides the upstream
-        // paper-contract (`Threshold::Absolute(0.0)`) with a small
-        // noise-floor cutoff tuned on the public testdata regression sweep
-        // — see the rustdoc on `default_chess_config`.
-        let cfg = default_chess_config();
-        assert_eq!(cfg.threshold, Threshold::Absolute(15.0));
-
-        // Strategy must still be the ChESS kernel pipeline (not Radon),
-        // and the multiscale / upscale top-level fields must match the
-        // single-scale ChESS preset.
-        assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
-        let baseline = DetectorConfig::chess();
-        assert_eq!(cfg.multiscale, baseline.multiscale);
-        assert_eq!(cfg.upscale, baseline.upscale);
-        assert_eq!(cfg.merge_radius, baseline.merge_radius);
-        assert_eq!(cfg.orientation_method, baseline.orientation_method);
-
-        // The nested ChESS strategy fields stay at upstream defaults so
-        // the override is purely the acceptance threshold.
-        let DetectionStrategy::Chess(chess) = cfg.strategy else {
-            unreachable!("matched above");
-        };
-        let DetectionStrategy::Chess(chess_baseline) = baseline.strategy else {
-            unreachable!("baseline preset is ChESS");
-        };
-        assert_eq!(chess.ring, chess_baseline.ring);
-        assert_eq!(chess.descriptor_ring, chess_baseline.descriptor_ring);
-        assert_eq!(chess.nms_radius, chess_baseline.nms_radius);
-        assert_eq!(chess.min_cluster_size, chess_baseline.min_cluster_size);
-        assert_eq!(chess.refiner, chess_baseline.refiner);
-    }
+    // `CornerDescriptor::axes` is `None` when the upstream orientation fit was
+    // skipped (`DetectorConfig::without_orientation`). Every detection entry
+    // point in this crate leaves orientation enabled, so this is the
+    // defensive branch rather than the common one — but it must not fabricate
+    // a confident axis. `AxisEstimate::default()` is the workspace's existing
+    // no-information sentinel (`sigma = π`), which every axis-aware stage
+    // already treats as "skip this corner", so an orientation-free descriptor
+    // degrades to a bare position instead of poisoning the grid with a
+    // zero-sigma axis at angle 0.
+    let axes = c.axes.map_or_else(
+        || [core::AxisEstimate::default(); 2],
+        |axes| {
+            [
+                core::AxisEstimate {
+                    angle: axes[0].angle,
+                    sigma: axes[0].sigma,
+                },
+                core::AxisEstimate {
+                    angle: axes[1].angle,
+                    sigma: axes[1].sigma,
+                },
+            ]
+        },
+    );
+    chessboard::ChessCorner::new(Point2::new(c.x, c.y), axes, c.response)
 }

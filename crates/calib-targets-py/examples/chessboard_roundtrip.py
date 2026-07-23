@@ -67,7 +67,7 @@ def main() -> int:
 
     # 3. Detect with a small multi-config sweep. detect_chessboard_best picks
     #    the config that labels the most corners.
-    chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+    chess_cfg = ct.ChessConfig(threshold=15.0)
     configs = [
         ct.ChessboardParams(),
         ct.ChessboardParams(min_labeled_corners=12),

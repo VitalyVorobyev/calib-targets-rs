@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use calib_targets::chessboard::AdvancedTuning;
+use calib_targets::chessboard::ChessboardAdvancedTuning;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
 use calib_targets_bench::diagnose::TopologicalDiagnosis;
@@ -70,7 +70,11 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     };
 
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = args.orientation_method.into();
+    // `DetectorConfig::orientation_method` is `Option<_>` since
+    // chess-corners 1.0 (`None` skips the axis fit). The bench always
+    // fits orientation; `--orientation-method` still selects only which
+    // fit to run.
+    chess_cfg.orientation_method = Some(args.orientation_method.into());
     let corners = detect_corners(&upscaled, &chess_cfg);
     // The topological builder is the only builder; always run its diagnosis.
     let _ = (sub_idx, base_path);
@@ -99,7 +103,8 @@ fn diagnose_topological(
         }
     };
     if let Some(deg) = args.axis_align_tol_deg {
-        let mut advanced: AdvancedTuning = detector_params.effective_tuning().into_owned();
+        let mut advanced: ChessboardAdvancedTuning =
+            detector_params.effective_tuning().into_owned();
         advanced.topological.axis_align_tol_rad = deg.to_radians();
         detector_params = detector_params.with_advanced(advanced);
     }
@@ -119,11 +124,10 @@ fn diagnose_topological(
         tols.edge_length_max_rel,
     );
     println!(
-        "  pre-filter: strength→{} fit→{} axis→{} (lost {} on axis sigma alone)",
+        "  pre-filter: strength→{} axis→{} (lost {} on axis sigma alone)",
         diagnosis.prefilter.survives_strength,
-        diagnosis.prefilter.survives_fit,
         diagnosis.prefilter.survives_axis,
-        diagnosis.prefilter.survives_fit - diagnosis.prefilter.survives_axis,
+        diagnosis.prefilter.survives_strength - diagnosis.prefilter.survives_axis,
     );
     println!(
         "  production components: {}  labelled corners (unique across components): {} / {} input",

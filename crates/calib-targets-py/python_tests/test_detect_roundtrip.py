@@ -64,7 +64,7 @@ def _charuco_params_small2() -> ct.CharucoParams:
 
 def _marker_board_params() -> ct.MarkerBoardParams:
     return ct.MarkerBoardParams(
-        layout=ct.MarkerBoardSpec(
+        board=ct.MarkerBoardSpec(
             rows=22,
             cols=22,
             circles=(
@@ -94,8 +94,8 @@ def _puzzleboard_params() -> ct.PuzzleBoardParams:
     params = ct.PuzzleBoardParams.for_board(
         ct.PuzzleBoardSpec(rows=10, cols=10, cell_size=12.0, origin_row=0, origin_col=0)
     )
-    params.chessboard.chess.threshold = ct.Threshold.absolute(15.0)
-    params.chessboard.chess.strategy.chess_config.nms_radius = 3
+    params.chessboard.chess.threshold = 15.0
+    params.chessboard.chess.detection.nms_radius = 3
     return params
 
 
@@ -196,7 +196,7 @@ def test_detect_charuco_roundtrip_exercises_marker_gc() -> None:
     params = _charuco_params_small2()
 
     result = ct.detect_charuco(image, params=params)
-    assert isinstance(result, ct.CharucoDetectionResult)
+    assert isinstance(result, ct.CharucoDetection)
     assert len(result.markers) > 0, (
         "charuco detection produced zero markers — the MarkerDetection.gc "
         "deserialization path is not being exercised by this test"
@@ -212,7 +212,7 @@ def test_detect_charuco_best_roundtrip() -> None:
     image = _load_gray("small2.png")
     params = _charuco_params_small2()
     result = ct.detect_charuco_best(image, [params])
-    assert isinstance(result, ct.CharucoDetectionResult)
+    assert isinstance(result, ct.CharucoDetection)
     _assert_roundtrip(result)
 
 
@@ -248,7 +248,7 @@ def test_detect_puzzleboard_roundtrip() -> None:
     image = _load_gray("puzzleboard_small.png")
     params = _puzzleboard_params()
     result = ct.detect_puzzleboard(image, params=params)
-    assert isinstance(result, ct.PuzzleBoardDetectionResult)
+    assert isinstance(result, ct.PuzzleBoardDetection)
     assert len(result.corners) > 0
     assert result.decode.edges_observed > 0
     _assert_roundtrip(result)
@@ -258,7 +258,7 @@ def test_detect_puzzleboard_best_roundtrip() -> None:
     image = _load_gray("puzzleboard_small.png")
     params = _puzzleboard_params()
     result = ct.detect_puzzleboard_best(image, [params])
-    assert isinstance(result, ct.PuzzleBoardDetectionResult)
+    assert isinstance(result, ct.PuzzleBoardDetection)
     _assert_roundtrip(result)
 
 
@@ -380,7 +380,7 @@ def test_detect_marker_board_with_diagnostics_shape() -> None:
     }.issubset(diag.keys())
     assert payload["result"] is not None
     # `result` deserializes through the typed wrapper.
-    ct.MarkerBoardDetectionResult.from_dict(payload["result"])
+    ct.MarkerBoardDetection.from_dict(payload["result"])
 
 
 def test_detect_puzzleboard_with_diagnostics_shape() -> None:
@@ -395,4 +395,4 @@ def test_detect_puzzleboard_with_diagnostics_shape() -> None:
     assert {"observed_edges", "decode"}.issubset(diag.keys())
     assert isinstance(diag["observed_edges"], list)
     if payload["result"] is not None:
-        ct.PuzzleBoardDetectionResult.from_dict(payload["result"])
+        ct.PuzzleBoardDetection.from_dict(payload["result"])

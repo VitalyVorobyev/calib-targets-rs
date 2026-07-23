@@ -42,15 +42,6 @@ pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis {
     NextLocalAxis::new(a.angle, Some(a.sigma))
 }
 
-/// Project a [`NextLocalAxis`] back into the legacy shape.
-#[inline]
-pub fn axis_estimate_from_next(a: NextLocalAxis) -> AxisEstimate {
-    AxisEstimate {
-        angle: a.angle_rad,
-        sigma: a.sigma_rad.unwrap_or(std::f32::consts::PI),
-    }
-}
-
 #[cfg(test)]
 mod axis_tests {
     use super::*;
@@ -70,21 +61,14 @@ mod axis_tests {
     }
 
     #[test]
-    fn axis_round_trips_through_next() {
+    fn to_next_carries_angle_and_sigma() {
         let axis = AxisEstimate {
             angle: 0.75,
             sigma: 0.02,
         };
-        assert_eq!(axis_estimate_from_next(axis_estimate_to_next(axis)), axis);
-
-        let no_sigma = NextLocalAxis::new(0.5, None);
-        assert_eq!(
-            axis_estimate_from_next(no_sigma),
-            AxisEstimate {
-                angle: 0.5,
-                sigma: std::f32::consts::PI
-            }
-        );
+        let next = axis_estimate_to_next(axis);
+        assert_eq!(next.angle_rad, 0.75);
+        assert_eq!(next.sigma_rad, Some(0.02));
     }
 }
 

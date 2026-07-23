@@ -35,7 +35,7 @@ pub(crate) enum Cmd {
     /// Join two existing `run` JSON reports into a per-family comparison
     /// table (markdown + JSON). Re-runs nothing; reads + writes bench_results/.
     Compare(CompareArgs),
-    /// Per-knob `AdvancedTuning` ablation: toggle each tuning knob one at a
+    /// Per-knob `ChessboardAdvancedTuning` ablation: toggle each tuning knob one at a
     /// time over the dataset and emit a recall/precision/speed delta table
     /// (markdown + JSON) to bench_results/. Local-only output.
     Ablate(AblateArgs),
@@ -59,7 +59,7 @@ pub(crate) struct AblateArgs {
     /// Override chess-corners' axis-fit method.
     #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
     pub(crate) orientation_method: OrientationMethodArg,
-    /// Optional JSON file with a partial `DetectorParams` that seeds the
+    /// Optional JSON file with a partial `ChessboardParams` that seeds the
     /// baseline (the ablation perturbs each knob relative to this base).
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
@@ -115,10 +115,10 @@ pub(crate) struct DiagnoseArgs {
     /// in distorted regions at the cost of precision).
     #[arg(long)]
     pub(crate) axis_align_tol_deg: Option<f32>,
-    /// Optional JSON file with a serialised `DetectorParams` to override
+    /// Optional JSON file with a serialised `ChessboardParams` to override
     /// the topological defaults. Use for parameter sweeps without
     /// recompilation. Unspecified fields fall back to defaults via the
-    /// `DetectorParams` `#[serde(default = ...)]` attributes.
+    /// `ChessboardParams` `#[serde(default = ...)]` attributes.
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
@@ -142,7 +142,7 @@ pub(crate) struct RunArgs {
     /// coexist.
     #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
     pub(crate) engine: EngineArg,
-    /// Optional JSON file with a serialised partial `DetectorParams` that
+    /// Optional JSON file with a serialised partial `ChessboardParams` that
     /// overrides the detector defaults. Same semantics as the diagnose
     /// subcommand's `--chessboard-config` flag.
     #[arg(long)]
@@ -216,7 +216,7 @@ pub(crate) const ALGORITHM_SLUG: &str = "topological";
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 pub(crate) enum EngineArg {
-    /// Full chessboard production pipeline (`Detector::detect`).
+    /// Full chessboard production pipeline (`ChessboardDetector::detect`).
     Pipeline,
     /// Raw projective-grid grid builder — the orientation-source head-to-head.
     Grid,

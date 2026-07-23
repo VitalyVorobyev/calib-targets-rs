@@ -1,4 +1,4 @@
-// Detector-config editor: stable DetectorParams fields, an optional
+// Detector-config editor: stable ChessboardParams fields, an optional
 // fully-materialised `advanced` tuning section rendered dynamically from
 // the server's /api/configs/_defaults JSON (no hardcoded Rust defaults),
 // and a named-config library backed by studio_configs/.

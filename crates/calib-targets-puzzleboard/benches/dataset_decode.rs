@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector as ChessDetector, ChessboardParams};
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;
@@ -70,11 +70,11 @@ fn load_snap(target_idx: u32, snap_idx: u32, upscale: u32) -> Option<GrayImage> 
 
 fn bench_all(c: &mut Criterion) {
     let cfg = default_chess_config();
-    let chess_params = DetectorParams::default();
+    let chess_params = ChessboardParams::default();
     let upscale = 2u32;
     let spec = PuzzleBoardSpec::with_origin(BOARD_ROWS, BOARD_COLS, BOARD_CELL_MM, 0, 0)
         .expect("build spec");
-    let puzzle_params: PuzzleBoardParams = PuzzleBoardParams::for_board(&spec);
+    let puzzle_params: PuzzleBoardParams = PuzzleBoardParams::for_board(spec);
 
     let fixtures: Vec<(String, GrayImage, Vec<Corner>)> = FIXTURES
         .iter()

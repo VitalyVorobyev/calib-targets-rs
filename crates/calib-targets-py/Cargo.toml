@@ -15,12 +15,19 @@ name = "calib_targets"
 crate-type = ["cdylib"]
 doc = false
 
+[features]
+# Opt-in ONNX-backed subpixel refiner; see the note in `calib-targets`.
+# OFF by default so the wheel does not carry the `tract` ONNX runtime.
+# With it off, a `ChessRefiner(kind="ml")` config is rejected at
+# deserialization rather than silently downgraded.
+ml-refiner = ["chess-corners/ml-refiner", "calib-targets/ml-refiner"]
+
 [dependencies]
 # The Python bindings expose the full detector surface, including the
 # chessboard `*_with_diagnostics` entry points, so they enable `diagnostics`
 # unconditionally (the bindings have no Cargo feature of their own).
 calib-targets = { workspace = true, features = ["image", "diagnostics"] }
-chess-corners = { workspace = true, features = ["rayon", "ml-refiner"] }
+chess-corners = { workspace = true, features = ["rayon"] }
 image.workspace = true
 numpy.workspace = true
 pyo3 = { workspace = true, features = ["extension-module", "abi3-py310"] }

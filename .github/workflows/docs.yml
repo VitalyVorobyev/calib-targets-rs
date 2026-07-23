@@ -3,8 +3,18 @@ name: Publish Rust Docs
 on:
   push:
     branches: [ main ]
-    tags: [ '*' ]        # also publish on tag push
-  workflow_dispatch:     # allow manual trigger
+  workflow_dispatch:     # allow manual trigger / republish
+
+# NOTE: deliberately NOT triggered on tag pushes. Release tags (`vX.Y.Z`,
+# `wasm-vX.Y.Z`) are always cut from a commit that is already on `main`, so
+# the `main` push has published byte-identical docs moments earlier. Firing
+# on tags as well meant a release pushed 2-3 refs at the same commit within
+# seconds, producing concurrent GitHub Pages deployments; the `concurrency`
+# group below serialises the *workflow runs*, but the Pages API still
+# rejected the redundant deployments ("Deployment failed, try again later"),
+# which is exactly how the v0.10.1 release failed on both `main` and
+# `wasm-v0.10.1`. Publishing from `main` alone removes the race by
+# construction. Use `workflow_dispatch` to republish on demand.
 
 permissions:
   contents: read

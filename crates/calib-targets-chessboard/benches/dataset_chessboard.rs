@@ -3,7 +3,7 @@
 //!
 //! Phase-2 companion to `dataset_corners.rs`. Amortizes ChESS corner
 //! detection into setup and measures only the hot-path
-//! `Detector::detect(&corners)` on a spread of snaps. Skips
+//! `ChessboardDetector::detect(&corners)` on a spread of snaps. Skips
 //! silently when the private dataset is absent; override the default
 //! path with `CALIB_PUZZLE_PRIVATE_DATASET`.
 //!
@@ -16,7 +16,7 @@ use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
@@ -62,7 +62,7 @@ fn load_snap(target_idx: u32, snap_idx: u32, upscale: u32) -> Option<GrayImage> 
 
 fn bench_grid(c: &mut Criterion) {
     let mut group = c.benchmark_group("chessboard/dataset/upscale2");
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     let cfg = default_chess_config();
     let upscale = 2u32;
     let mut loaded_any = false;
@@ -81,7 +81,8 @@ fn bench_grid(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             &corners,
             |b, corners| {
-                let detector = Detector::new(params.clone()).expect("valid detector params");
+                let detector =
+                    ChessboardDetector::new(params.clone()).expect("valid detector params");
                 b.iter(|| {
                     let detection = detector.detect(corners);
                     criterion::black_box(detection)

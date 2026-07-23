@@ -21,10 +21,8 @@ def main() -> None:
     image = load_gray(sys.argv[1])
 
     chess_cfg = ct.ChessConfig(
-        threshold=ct.Threshold.relative(0.2),
-        strategy=ct.DetectionStrategy.chess(
-            ct.ChessStrategyConfig(nms_radius=2),
-        ),
+        threshold=15.0,
+        detection=ct.DetectionParams(nms_radius=2),
     )
 
     layout = ct.MarkerBoardLayout(
@@ -39,8 +37,8 @@ def main() -> None:
     )
 
     params = ct.MarkerBoardParams(
-        layout=layout,
-        chessboard=ct.ChessboardParams(min_corner_strength=0.0),
+        board=layout,
+        chessboard=ct.ChessboardParams(),
         circle_score=ct.CircleScoreParams(
             patch_size=64,
             diameter_frac=0.5,

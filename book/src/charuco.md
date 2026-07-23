@@ -29,7 +29,7 @@
 ## Detector
 
 - `CharucoParams::for_board` provides a reasonable default configuration.
-- `CharucoDetector::detect` returns a `CharucoDetectionResult` with:
+- `CharucoDetector::detect` returns a `CharucoDetection` with:
   - `detection`: labeled corners with ChArUco IDs, filtered to marker-supported corners.
   - `markers`: decoded marker detections in rectified grid coordinates (with optional `corners_img`).
   - `alignment`: grid alignment from detected grid coordinates into board coordinates.

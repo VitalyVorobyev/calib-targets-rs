@@ -1,4 +1,4 @@
-//! Per-knob ablation of the chessboard detector's `AdvancedTuning` knobs.
+//! Per-knob ablation of the chessboard detector's `ChessboardAdvancedTuning` knobs.
 //!
 //! Toggles each tuning knob one at a time over a fixed dataset and reports the
 //! per-knob delta in recall, precision (baseline-free structural signals), and
@@ -7,17 +7,17 @@
 //! worst single-frame swing: the recovery boosters each rescue corners on one
 //! specific hard image, which leaves the median flat, so the per-image term is
 //! what keeps such a knob from a false `no-effect`. The output table is the
-//! evidence the `AdvancedTuning` prune (roadmap item C2) needs: a `no-effect`
+//! evidence the `ChessboardAdvancedTuning` prune (roadmap item C2) needs: a `no-effect`
 //! knob whose effect is not merely gated behind a dormant stage is a prune
 //! candidate.
 //!
 //! # Override mechanism
 //!
-//! Each variation is a full, **materialised** [`DetectorParams`] JSON value
+//! Each variation is a full, **materialised** [`ChessboardParams`] JSON value
 //! (every `advanced` knob present) with exactly one leaf mutated via a JSON
 //! pointer, fed through [`merge_detector_params`]. Materialising first is
 //! essential: [`merge_detector_params`] replaces whole top-level keys, and a
-//! bare [`DetectorParams::default`] serialises with **no** `advanced` key, so
+//! bare [`ChessboardParams::default`] serialises with **no** `advanced` key, so
 //! a single-leaf override built from a non-materialised base would silently
 //! depend on every other knob's serde default. The baseline run goes through
 //! the identical merge path, so baseline and variations differ in exactly the
@@ -25,7 +25,7 @@
 //!
 //! # Scope
 //!
-//! The catalogue covers the flat `AdvancedTuning` knobs plus a representative
+//! The catalogue covers the flat `ChessboardAdvancedTuning` knobs plus a representative
 //! set of the nested `topological` / `component_merge` sub-knobs. The
 //! `topological.*` rows are only meaningful on a topological run (the default);
 //! ablating a field that has no effect under the topological builder reads
@@ -34,7 +34,7 @@
 
 use std::path::{Path, PathBuf};
 
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use serde::Serialize;
 use serde_json::Value;
 
@@ -52,7 +52,7 @@ enum Perturbation {
 }
 
 /// One tunable knob, addressed by its JSON pointer into a materialised
-/// [`DetectorParams`] value.
+/// [`ChessboardParams`] value.
 #[derive(Clone, Copy, Debug)]
 struct KnobSpec {
     /// Catalogue key / display label (the pointer tail).
@@ -94,7 +94,7 @@ fn direction_slug(d: Direction) -> &'static str {
 struct Variation {
     knob: String,
     direction: Direction,
-    /// Materialised [`DetectorParams`] JSON with exactly one leaf mutated.
+    /// Materialised [`ChessboardParams`] JSON with exactly one leaf mutated.
     override_value: Value,
     gated_by: Option<&'static str>,
 }
@@ -135,10 +135,6 @@ fn knob_catalogue() -> Vec<KnobSpec> {
             "/advanced/enable_weak_cluster_rescue",
         ),
         // --- scalar thresholds ---------------------------------------------
-        with_pointer(
-            k("max_fit_rms_ratio", ScalarRel, None),
-            "/advanced/max_fit_rms_ratio",
-        ),
         with_pointer(k("num_bins", ScalarRel, None), "/advanced/num_bins"),
         with_pointer(
             k("max_iters_2means", ScalarRel, None),
@@ -548,12 +544,12 @@ pub struct AblationOpts {
 /// caller supplies it so this module stays decoupled from dataset plumbing.
 /// The baseline and every variation go through the same merge + run path.
 pub fn run_ablation<F>(
-    base_params: &DetectorParams,
+    base_params: &ChessboardParams,
     opts: &AblationOpts,
     run: F,
 ) -> std::io::Result<AblationReport>
 where
-    F: Fn(&DetectorParams, String) -> RunReport,
+    F: Fn(&ChessboardParams, String) -> RunReport,
 {
     let catalogue = filtered_catalogue(opts);
 
@@ -636,7 +632,7 @@ fn dump_report(dir: &Path, label: &str, report: &RunReport) -> std::io::Result<(
 pub fn render_ablation_markdown(report: &AblationReport) -> String {
     use std::fmt::Write;
     let mut s = String::new();
-    let _ = writeln!(s, "# AdvancedTuning per-knob ablation");
+    let _ = writeln!(s, "# ChessboardAdvancedTuning per-knob ablation");
     let _ = writeln!(s);
     let _ = writeln!(
         s,
@@ -710,7 +706,7 @@ mod tests {
 
     /// Materialised default params as a JSON value (the campaign base).
     fn base_value() -> Value {
-        let p = DetectorParams::default();
+        let p = ChessboardParams::default();
         let m = p.clone().with_advanced(p.effective_tuning().into_owned());
         serde_json::to_value(&m).unwrap()
     }
@@ -992,7 +988,7 @@ mod tests {
             }],
         };
         let md = render_ablation_markdown(&report);
-        assert!(md.contains("AdvancedTuning per-knob ablation"));
+        assert!(md.contains("ChessboardAdvancedTuning per-knob ablation"));
         assert!(md.contains("Δlbl·worst-img"));
         // Row carries the dataset-median delta then the worst-image cell.
         assert!(md.contains("| cluster_tol_deg | down | -4 | -4 @small3.png |"));

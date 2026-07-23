@@ -124,7 +124,7 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 | Directional edge scale | `chess pipeline/recover.rs::directional_edge_lengths` | component + positions → per-axis medians | Anisotropy-tolerant edge-length gate for boosters. | ✅ (chess-local) |
 | Local-H boundary extension | `pg shared/extension/local.rs::extend_via_local_homography` | candidate + K-nearest → attached | Per-candidate local homography, project + revalidate. | 📚 |
 | Global-H extension fallback | `pg shared/extension/global.rs::extend_via_global_homography` | candidates + global H → attached | Manifold-fit fallback when local fails. | 📚 |
-| Recovery schedule | `pg shared/recovery.rs::run_schedule` | labelled + params → recovered (fixed point) | Iterate extend→fill→validate→drop until stable. Opt-in via `RecoverySchedule`. | 📚 |
+| Recovery schedule | `pg shared/recovery_schedule.rs::run_schedule` | labelled + params → recovered (fixed point) | Iterate extend→fill→validate→drop until stable. Opt-in via `RecoverySchedule`. | 📚 |
 
 ## 8. Validation & wrong-label filters
 
@@ -134,11 +134,11 @@ relabelled), upholding the "no false positives" contract.
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
 | Validation pipeline | `pg shared/validate/mod.rs::validate` | labelled + params → rejections | Compose the checks below into one pass. | ✅ |
-| Line collinearity | `pg shared/validate/lines.rs::check_line_collinearity` | labelled → rejected idx | Flag 3-point grid-line sets failing collinearity. | ✅ |
-| Per-corner local-H residual | `pg shared/validate/local_h.rs::validate_local_homographies` | labelled → rejected idx | Fit local H from K nearest, reject high relative residual. | ✅ |
-| Wrong-label edge drops | `pg shared/validate/recovery.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
-| Frontier-kink smoothness | `pg shared/validate/recovery.rs` (frontier filter) | labelled + lines → dropped | Second-order line-spacing kink past the true boundary (Gap-15 fix). | ✅ |
-| Largest-component filter | `pg shared/validate/recovery.rs::largest_cardinally_connected_component` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
+| Line collinearity | `pg shared/validate/lines.rs::line_collinearity_flags` | labelled → rejected idx | Flag 3-point grid-line sets failing collinearity. | ✅ |
+| Per-corner local-H residual | `pg shared/validate/local_h.rs::local_h_residual` | labelled → rejected idx | Fit local H from K nearest, reject high relative residual. | ✅ |
+| Wrong-label edge drops | `pg shared/validate/wrong_label_filters.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
+| Frontier-kink smoothness | `pg shared/validate/wrong_label_filters.rs` (frontier filter) | labelled + lines → dropped | Second-order line-spacing kink past the true boundary (Gap-15 fix). | ✅ |
+| Largest-component filter | `pg shared/validate/wrong_label_filters.rs::largest_component_filter` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
 | Chessboard geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | labelled → validated | Sequence the pg validators on the chess output. | ✅ |
 | Output normalize / rebase | `chess pipeline/output.rs::build_detection` + `pg result.rs::LabelledGrid::normalize` | labelled → `ChessboardDetection` | Rebase to non-negative, canonicalise image-axis orientation. | ✅ |
 | Post-build consistency check | `pg check/mod.rs::check_consistency` | solution → report | Standalone post-detection validation (public task). | 📚 |
@@ -160,19 +160,19 @@ handed. `aruco/src/scan.rs` (969 LOC) is one cohesive scanner.
 
 Grid is delegated to `chess`; markers are decoded by `aruco`. This crate owns the
 *alignment* (which marker sits where) and corner-ID assignment. **The board-level
-soft-LL matcher is the sole matcher** (`charuco detector/board_match.rs`); markers
+soft-LL matcher is the sole matcher** (`charuco detector/board_match/`); markers
 are re-emitted under the chosen hypothesis, so a returned marker can never disagree
 with its alignment. Deep dive:
 [`algorithms/charuco_concept.md`](../algorithms/charuco_concept.md).
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Board-level hypothesis matcher (soft-LL) | `charuco detector/board_match.rs::match_board_diag` | cells + image → markers + alignment | Dense (cell×id×rotation) soft-bit log-likelihood; enumerate D4×translation; pick max-score with margin gate; re-emit markers under the chosen hypothesis. | ✅ **sole matcher** |
+| Board-level hypothesis matcher (soft-LL) | `charuco detector/board_match/diagnostics.rs::match_board_diag` | cells + image → markers + alignment | Dense (cell×id×rotation) soft-bit log-likelihood; enumerate D4×translation; pick max-score with margin gate; re-emit markers under the chosen hypothesis. | ✅ **sole matcher** |
 | Marker-cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | corner map → 4-corner cells | Enumerate complete grid squares to decode. | ✅ |
 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | corners + image → refined | Per-corner ChESS re-detect to tighten the grid. | ✅ |
 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | corners + alignment → `CharucoCorner`s | Map grid→board coords, look up charuco id, dedup per cell. | ✅ |
-| Homography corner refit | `charuco detector/corner_validation.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via ChESS ROI. | ✅ |
-| Marker-corner linkage check | `charuco validation.rs::validate_marker_corner_links` | reported links + spec → violations | **Public** post-hoc check that a result matches the board definition. | ✅ (API) |
+| Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via ChESS ROI. | ✅ |
+| Marker-corner linkage check | `charuco link_check.rs::validate_marker_corner_links` | reported links + spec → violations | **Public** post-hoc check that a result matches the board definition. | ✅ (API) |
 | Multi-component merge | `charuco detector/merge.rs::merge_charuco_results` | per-component results → union | Dedup + union across grid components. | ✅ |
 
 ## 11. PuzzleBoard decode

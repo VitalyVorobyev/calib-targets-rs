@@ -29,7 +29,7 @@ use std::time::Instant;
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_charuco::{
     diagnostics::CharucoDetectDiagnostics, load_board_spec_any, CharucoBoardSpec,
-    CharucoDetectError, CharucoDetectionResult, CharucoDetector, CharucoParams,
+    CharucoDetectError, CharucoDetection, CharucoDetector, CharucoParams,
 };
 use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_core::GrayImageView;
@@ -169,15 +169,19 @@ fn main() {
     );
 
     let chess_cfg = default_chess_config();
-    let mut params = CharucoParams::for_board(&spec);
+    let mut params = CharucoParams::for_board(spec);
     // The board-level matcher is its own inlier gate — `for_board` already
     // sets the low (1 / 1) floors, so the matcher's margin gate is what
     // decides accept/reject.
-    if let Some(slope) = args.bit_slope {
-        params.advanced.bit_likelihood_slope = slope;
-    }
-    if let Some(min_margin) = args.min_margin {
-        params.advanced.alignment_min_margin = min_margin;
+    if args.bit_slope.is_some() || args.min_margin.is_some() {
+        let mut advanced = params.effective_tuning().into_owned();
+        if let Some(slope) = args.bit_slope {
+            advanced.bit_likelihood_slope = slope;
+        }
+        if let Some(min_margin) = args.min_margin {
+            advanced.alignment_min_margin = min_margin;
+        }
+        params = params.with_advanced(advanced);
     }
     eprintln!(
         "matcher: board-level (soft-bit log-likelihood)  algorithm: {}",
@@ -458,7 +462,7 @@ struct MarkerSummary {
 }
 
 impl DetectionSummary {
-    fn from_result(res: &CharucoDetectionResult) -> Self {
+    fn from_result(res: &CharucoDetection) -> Self {
         let corners = res
             .corners
             .iter()
@@ -504,7 +508,7 @@ impl DetectionSummary {
 
 fn detection_report_from_result(
     board: CharucoBoardSpec,
-    res: &CharucoDetectionResult,
+    res: &CharucoDetection,
     diagnostics: &CharucoDetectDiagnostics,
 ) -> CompactDetection {
     CompactDetection {

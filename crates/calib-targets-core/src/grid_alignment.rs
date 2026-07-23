@@ -7,9 +7,7 @@
 //! linear part plus an integer translation. The axis convention is fixed:
 //! `u` is the grid's first axis (right), `v` is the second axis (down).
 
-use projective_grid::lattice::LatticeKind;
 use projective_grid::Coord;
-use projective_grid::GridTransform as NextGridTransform;
 use serde::{Deserialize, Serialize};
 
 /// Integer 2D grid transform (a 2×2 matrix) for aligning detected grids to a
@@ -173,26 +171,6 @@ pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
     },
 ];
 
-/// Convert the legacy `GridTransform` into a tagged square-lattice transform
-/// for [`projective_grid`] consumers.
-#[inline]
-pub fn grid_transform_to_next(t: GridTransform) -> NextGridTransform {
-    NextGridTransform::new(LatticeKind::Square, [[t.a, t.b], [t.c, t.d]], [0, 0])
-}
-
-/// Project a [`NextGridTransform`] back to the legacy 2×2 shape, dropping
-/// the lattice tag and any non-zero offset.
-#[inline]
-pub fn grid_transform_from_next(t: NextGridTransform) -> GridTransform {
-    let m = t.matrix;
-    GridTransform {
-        a: m[0][0],
-        b: m[0][1],
-        c: m[1][0],
-        d: m[1][1],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,15 +207,5 @@ mod tests {
         assert_eq!(q, Coord::new(8, -6));
         let inv = align.inverse().expect("D4 alignment is invertible");
         assert_eq!(inv.map(q.u, q.v), p);
-    }
-
-    #[test]
-    fn transform_round_trips_through_next() {
-        for (idx, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
-            let next = grid_transform_to_next(*t);
-            assert_eq!(next.source_kind, LatticeKind::Square);
-            assert_eq!(next.offset, [0, 0]);
-            assert_eq!(grid_transform_from_next(next), *t, "D4[{idx}] round-trip");
-        }
     }
 }

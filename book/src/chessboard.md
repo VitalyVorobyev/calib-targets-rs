@@ -142,9 +142,15 @@ the topological walk uses — and the final geometry check (Stage 5) only
 
 Mark corner `c` usable iff:
 
-- `c.strength ≥ min_corner_strength` (default `0.0`, off); **and**
-- `c.contrast ≤ 0`, or `c.fit_rms ≤ max_fit_rms_ratio × c.contrast`
-  (default `0.5`).
+- `c.strength ≥ min_corner_strength` (default `33.0`); **and**
+- `max(c.axes[0].sigma, c.axes[1].sigma) ≤ axis_align_tol_rad`
+  (default 15°, the Stage 3 axis-alignment tolerance).
+
+The second condition is *derived*, not a knob of its own: an axis whose 1σ
+uncertainty is wider than the window the cell test will judge it against
+carries no usable information for that test. It replaces the pre-0.11.0
+`fit_rms ≤ max_fit_rms_ratio × contrast` rule, which chess-corners 1.0 made
+inexpressible by removing both scalars.
 
 A corner that fails keeps its pixel position but has its axes replaced by
 the no-information sentinel (`sigma = π`), so it cannot vote on edges but
@@ -250,7 +256,7 @@ single-orientation dependence that the workspace already discarded
 (`Corner::orientation` was removed entirely).
 
 **Multi-component scenes are first-class.** The same precision contract
-applies to `Detector::detect_all`, which peels off disconnected components
+applies to `ChessboardDetector::detect_all`, which peels off disconnected components
 of the same physical board (the typical ChArUco case where markers
 interrupt grid contiguity). Each component is rebased to its own `(0, 0)`
 origin; alignment to a global frame is the caller's job.
@@ -268,8 +274,8 @@ table.
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
-| No detection; trace shows few `usable` corners | Stage 1–2 (prefilter / clustering) | `min_corner_strength` ↓, `max_fit_rms_ratio` ↑, `min_peak_weight_fraction`, `peak_min_separation_deg` | Either the corners failed the prefilter or the two grid axes never separated. Most common on very-bad-light frames. |
-| No detection; trace shows usable corners but `NoComponents` | Stage 3 (topological grid) | Try `detect_chessboard_best` with `DetectorParams::sweep_default()` | No quad mesh assembled. Builder tolerances are internal; the sweep widens the upstream clustering / attachment tolerances. |
+| No detection; trace shows few `usable` corners | Stage 1–2 (prefilter / clustering) | `min_corner_strength` ↓, `min_peak_weight_fraction`, `peak_min_separation_deg` | Either the corners failed the prefilter (weak response, or axes too uncertain to vote) or the two grid axes never separated. Most common on very-bad-light frames. |
+| No detection; trace shows usable corners but `NoComponents` | Stage 3 (topological grid) | Try `detect_chessboard_best` with `ChessboardParams::sweep_default()` | No quad mesh assembled. Builder tolerances are internal; the sweep widens the upstream clustering / attachment tolerances. |
 | Detection has very few corners | Stage 4 (recover) | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | The grid walked but couldn't extend. Common on heavily distorted views. |
 | Many corners dropped (`GeometryCheckTrace.dropped` high) | Stage 5 (geometry check) | `geometry_check_local_h_tol_rel` | Invariants found outliers; inspect the per-reason `dropped_*` counters. |
 | Wrong `(i, j)` labels emitted | **never** | — | If you ever see this, file a bug. The precision contract has been violated. |
@@ -282,20 +288,20 @@ converges.
 
 ## 6. Parameters
 
-`DetectorParams` is `#[non_exhaustive]` and splits into a small **stable
+`ChessboardParams` is `#[non_exhaustive]` and splits into a small **stable
 core** — `graph_build_algorithm` (single-variant `Topological`; retained as a
 reserved config seam), `min_labeled_corners`, `max_components`,
-`min_corner_strength` — plus an opt-in, unstable `AdvancedTuning` sub-struct
-(`DetectorParams::advanced`) holding the per-stage tuning knobs. Build with
+`min_corner_strength` — plus an opt-in, unstable `ChessboardAdvancedTuning` sub-struct
+(`ChessboardParams::advanced`) holding the per-stage tuning knobs. Build with
 `Default::default()` and overwrite the stable fields, attach advanced
-overrides with `DetectorParams::with_advanced(...)`, or call
-`DetectorParams::sweep_default()` for a 3-config preset (default, tighter,
+overrides with `ChessboardParams::with_advanced(...)`, or call
+`ChessboardParams::sweep_default()` for a 3-config preset (default, tighter,
 looser) suitable for `detect_chessboard_best`-style sweeps.
 
 `advanced` is `Option`-wrapped and serialized as a nested `"advanced"`
 object — it is **not** flattened, and is omitted entirely when unset (in
 which case detection runs on the defaults). The four stable knobs stay
-top-level JSON keys. **`AdvancedTuning`'s fields are not covered by
+top-level JSON keys. **`ChessboardAdvancedTuning`'s fields are not covered by
 semver** and may change between minor versions. The `Field` column below
 shows the access path: top-level for the four stable knobs,
 `advanced.<knob>` for the rest.
@@ -305,8 +311,7 @@ shows the access path: top-level for the four stable knobs,
 | `graph_build_algorithm` | `Topological` | — | Grid builder algorithm. `Topological` is the only value; the field is a reserved config seam. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 5 | Minimum labelled corners to emit a `ChessboardDetection`. |
-| `min_corner_strength` | 0.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
-| `advanced.max_fit_rms_ratio` | 0.5 | 1 | Drop if `fit_rms > k × contrast`. ∞ disables. |
+| `min_corner_strength` | 33.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |
 | `advanced.num_bins` | 90 | 2 | Axis-direction histogram bins on `[0, π)`. |
 | `advanced.cluster_tol_deg` | 12.0 | 2 | Per-axis tolerance from a cluster center. |
 | `advanced.peak_min_separation_deg` | 60.0 | 2 | Minimum separation between the two peaks. |
@@ -321,8 +326,8 @@ shows the access path: top-level for the four stable knobs,
 | `advanced.enable_weak_cluster_rescue` | true | 4 | Toggle for the weak-cluster rescue booster. |
 | `advanced.weak_cluster_tol_deg` | 18.0 | 4 | Loosened cluster tolerance for rescue candidates. |
 
-The `advanced.` rows above are part of `AdvancedTuning`, which is opt-in
-and **not covered by semver**. (`AdvancedTuning` carries more per-stage
+The `advanced.` rows above are part of `ChessboardAdvancedTuning`, which is opt-in
+and **not covered by semver**. (`ChessboardAdvancedTuning` carries more per-stage
 knobs than shown — see `crates/calib-targets-chessboard/src/params/`.)
 
 All spatial tolerances are **multiplicative** with respect to the cell
@@ -372,15 +377,15 @@ The stable `cell_size` (the grid pitch in px) is carried on
 ## 8. Quickstart
 
 ```rust,ignore
-use calib_targets_chessboard::{ChessCorner, Detector, DetectorParams};
+use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 
 fn detect(corners: &[ChessCorner]) {
-    let params = DetectorParams::default();
-    // `Detector::new` validates params and is fallible: it returns
+    let params = ChessboardParams::default();
+    // `ChessboardDetector::new` validates params and is fallible: it returns
     // `Err(ChessboardParamsError)` for an invalid combination. No combination
     // the public surface can express is rejected today; the fallible signature
     // is a reserved seam for future validations.
-    let det = Detector::new(params).expect("valid params");
+    let det = ChessboardDetector::new(params).expect("valid params");
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());
         // `cell_size` (the seed-derived grid pitch in px) is populated on the
@@ -399,7 +404,7 @@ fn detect(corners: &[ChessCorner]) {
 }
 
 fn detect_multi(corners: &[ChessCorner]) {
-    let det = Detector::new(DetectorParams::default()).expect("valid params");
+    let det = ChessboardDetector::new(ChessboardParams::default()).expect("valid params");
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!("component {k}: {} corners", comp.corners.len());
     }

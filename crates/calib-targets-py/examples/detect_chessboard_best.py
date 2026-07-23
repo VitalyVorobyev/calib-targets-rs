@@ -25,7 +25,7 @@ def main() -> None:
 
     # ChESS corner detection runs once; the sweep varies only the
     # chessboard-grid detector parameters.
-    chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+    chess_cfg = ct.ChessConfig(threshold=15.0)
     base = ct.ChessboardParams()
     permissive = ct.ChessboardParams(min_labeled_corners=12)
     single = ct.ChessboardParams(max_components=1)

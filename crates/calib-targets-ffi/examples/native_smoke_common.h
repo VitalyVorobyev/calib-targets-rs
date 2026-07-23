@@ -156,13 +156,6 @@ static ct_optional_u32_t ct_native_some_u32(uint32_t value) {
   return out;
 }
 
-static ct_optional_bool_t ct_native_none_bool(void) {
-  ct_optional_bool_t out;
-  out.has_value = CT_FALSE;
-  out.value = CT_FALSE;
-  return out;
-}
-
 static ct_optional_f32_t ct_native_none_f32(void) {
   ct_optional_f32_t out;
   out.has_value = CT_FALSE;
@@ -191,9 +184,9 @@ static ct_chess_config_t ct_native_default_shared_chess_config(void) {
   ct_chess_config_t config;
   memset(&config, 0, sizeof(config));
   config.params.use_radius10 = CT_FALSE;
-  config.params.descriptor_use_radius10 = ct_native_none_bool();
-  config.params.threshold_rel = 0.2f;
-  config.params.threshold_abs = ct_native_none_f32();
+  /* ABI 3.0.0: single absolute response floor (was threshold_rel +
+     threshold_abs); 15.0 is the workspace production default. */
+  config.params.threshold = 15.0f;
   config.params.nms_radius = 2;
   config.params.min_cluster_size = 2;
   config.params.refiner = ct_native_default_refiner();

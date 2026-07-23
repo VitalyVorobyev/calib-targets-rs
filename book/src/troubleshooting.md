@@ -35,10 +35,11 @@ the binary, not in a parent process.
 
 ---
 
-## `detect_chessboard` returns `None`
+## `detect_chessboard` reports no board
 
-The detector has no single error variant — a `None` return means some
-stage failed. To diagnose, run the chessboard crate's serializable
+The facade `detect_chessboard` returns `Err(DetectError::NoDetection)` when
+no board is found — a miss carries no specific cause, only that some stage
+declined to emit a detection. To diagnose, run the chessboard crate's serializable
 topological trace, `calib_targets_chessboard::trace_topological`,
 which is layered over the production path (so it reflects what `detect()`
 actually does) and reports per-corner usability plus the labelled
@@ -46,11 +47,11 @@ components:
 
 ```rust,ignore
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{trace_topological, DetectorParams};
+use calib_targets_chessboard::{trace_topological, ChessboardParams};
 # let img: image::GrayImage = todo!();
 
 let corners = detect_corners(&img, &default_chess_config());
-match trace_topological(&corners, &DetectorParams::default()) {
+match trace_topological(&corners, &ChessboardParams::default()) {
     Ok(trace) => {
         let usable = trace.corners.iter().filter(|c| c.usable).count();
         println!("corners_in: {}", trace.diagnostics.corners_in);
@@ -62,6 +63,11 @@ match trace_topological(&corners, &DetectorParams::default()) {
 }
 ```
 
+> `trace_topological` (and the `TopologicalTrace` type) are gated behind the
+> chessboard crate's **off-by-default `diagnostics` feature**. Enable it with
+> `calib-targets-chessboard`'s `diagnostics` feature — or the facade's
+> `diagnostics` feature — to call it; the hot `detect_*` path builds no trace.
+
 **Checklist:**
 
 1. **No ChESS corners found?** `corners.is_empty()` (and
@@ -69,15 +75,16 @@ match trace_topological(&corners, &DetectorParams::default()) {
    check image resolution / contrast; override
    `calib_targets::detect::default_chess_config()` with a custom
    `DetectorConfig` if necessary — e.g.
-   `DetectorConfig::chess().with_threshold(Threshold::Absolute(8.0))` to
-   drop the noise floor, or `.with_threshold(Threshold::Relative(0.05))`
-   for a fraction of the per-frame peak response. The chess-corners 0.10
-   release replaced the legacy `(threshold_mode, threshold_value)` pair
-   with the tagged-enum `Threshold` shown above.
+   `DetectorConfig::chess().with_threshold(8.0)` to drop the noise floor
+   below the workspace default of `15.0`. Since chess-corners 1.0 the
+   threshold is a plain absolute response floor (`f32`); the `Threshold`
+   enum and its relative mode are gone — ChESS reads only an absolute
+   floor now.
 
-2. **Corners found but few `usable`?** The strength / fit prefilter or the
-   axis-usability gate is rejecting most corners. Lower
-   `min_corner_strength`, raise `max_fit_rms_ratio`, and check the axis
+2. **Corners found but few `usable`?** The prefilter is rejecting most
+   corners — either on `strength` or because their axes are too uncertain
+   to vote (`max(σ₀, σ₁) > axis_align_tol_rad`). Lower
+   `min_corner_strength`, and check the axis
    clustering tolerances (`cluster_tol_deg` default `12.0` → try `16.0`;
    `min_peak_weight_fraction` default `0.02` → try `0.01`). A perfectly
    rectilinear board with axes on the π-wrap boundary is handled by
@@ -85,10 +92,10 @@ match trace_topological(&corners, &DetectorParams::default()) {
 
 3. **Usable corners but `Err(NoComponents)`?** The topological builder
    assembled no quad mesh. Try `detect_chessboard_best` with
-   `DetectorParams::sweep_default()` (widens the clustering and attachment
+   `ChessboardParams::sweep_default()` (widens the clustering and attachment
    tolerances).
 
-4. **Components found but `detect_chessboard` still `None`?** The final
+4. **Components found but `detect_chessboard` still reports no board?** The final
    geometry check refused the detection (survivors below
    `min_labeled_corners`) or only tiny components survived. Try a wider
    config via `detect_chessboard_best`; if the scene legitimately holds
@@ -165,7 +172,7 @@ specification in a geometrically consistent way.
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
 | Specular reflections on board | Pre-process with local contrast normalisation (CLAHE); if pre-processing is off the table, lower `min_peak_weight_fraction` so clustering can cope with the reduced corner count |
-| Grid components found but detection `None` | Use `detect_chessboard_best`; inspect the `trace_topological` components and the final-check `GeometryCheckTrace.dropped_*` counters |
+| Grid components found but detection returns `Err(NoDetection)` | Use `detect_chessboard_best`; inspect the `trace_topological` components and the final-check `GeometryCheckTrace.dropped_*` counters |
 
 ---
 

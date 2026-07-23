@@ -14,7 +14,7 @@ Canonical user guide: [printable-targets book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-print = "0.10"
+calib-targets-print = "0.11"
 ```
 
 ## Quickstart

@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use calib_targets_chessboard::DetectorParams;
-use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_chessboard::ChessboardParams;
+use calib_targets_core::{
+    default_chess_config, Coord, DetectorConfig, GridAlignment, LabeledCorner, TargetDetection,
+    TargetKind,
+};
 use nalgebra::Point2;
 
 use crate::circle_score::{CirclePolarity, CircleScoreParams};
@@ -90,6 +93,7 @@ impl Default for MarkerBoardSpec {
 /// Circle matching settings.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CircleMatchParams {
     /// Keep only the top-N candidates per polarity before matching.
     pub max_candidates_per_polarity: usize,
@@ -112,12 +116,28 @@ impl Default for CircleMatchParams {
 /// Parameters for marker-board detection.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MarkerBoardParams {
     /// The fixed marker-board layout to detect.
-    pub layout: MarkerBoardSpec,
+    pub board: MarkerBoardSpec,
+    /// ChESS corner front-end configuration for the main detection pass.
+    ///
+    /// Defaults to [`default_chess_config`]. Override it to run the corner
+    /// pass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or
+    /// to pre-upscale low-resolution boards (`UpscaleConfig::Fixed`) whose
+    /// corners would otherwise fall inside the ChESS ring margin. Corner
+    /// positions are always reported in input-image pixels regardless.
+    ///
+    /// The facade's whole-image entry points (`detect_marker_board` /
+    /// `detect_marker_board_best`) run this front-end over the input image to
+    /// produce the corner cloud. [`MarkerBoardDetector::detect`](crate::MarkerBoardDetector::detect)
+    /// consumes an already-detected `&[ChessCorner]` and never re-runs corner
+    /// detection, so this field is read only on the image entry points.
+    #[serde(default = "default_chess_config")]
+    pub chess: DetectorConfig,
     /// Chessboard-detector parameters for the underlying corner-grid step.
     #[serde(default = "default_marker_chessboard_params")]
-    pub chessboard: DetectorParams,
+    pub chessboard: ChessboardParams,
     /// Per-cell circular-marker scoring parameters.
     #[serde(default)]
     pub circle_score: CircleScoreParams,
@@ -130,13 +150,15 @@ pub struct MarkerBoardParams {
 }
 
 impl MarkerBoardParams {
-    /// Construct parameters for the given layout with all tuning at defaults.
-    pub fn new(layout: MarkerBoardSpec) -> Self {
+    /// Construct parameters for the given board layout with all tuning at
+    /// defaults.
+    pub fn for_board(board: MarkerBoardSpec) -> Self {
         // chessboard detector is scale-invariant — `expected_rows/cols`
         // and `completeness_threshold` from v1 no longer apply. The marker
         // circles supply the geometry constraint.
         Self {
-            layout,
+            board,
+            chess: default_chess_config(),
             chessboard: default_marker_chessboard_params(),
             circle_score: CircleScoreParams::default(),
             match_params: CircleMatchParams::default(),
@@ -147,12 +169,12 @@ impl MarkerBoardParams {
 
 impl Default for MarkerBoardParams {
     fn default() -> Self {
-        Self::new(MarkerBoardSpec::default())
+        Self::for_board(MarkerBoardSpec::default())
     }
 }
 
-fn default_marker_chessboard_params() -> DetectorParams {
-    DetectorParams::default()
+fn default_marker_chessboard_params() -> ChessboardParams {
+    ChessboardParams::default()
 }
 
 /// Result of matching expected circles to detected candidates.
@@ -205,14 +227,17 @@ impl CircleMatch {
 /// detection: the labelled corners and the optional grid alignment. The
 /// evidence about *how* the board was found — scored circle hypotheses,
 /// expected-to-detected circle pairings, per-corner provenance, and the
-/// alignment-inlier count — lives in
-/// [`crate::diagnostics::MarkerBoardDiagnostics`], obtained via the
-/// detector's `*_with_diagnostics` entry points.
+/// alignment-inlier count — lives in the opt-in diagnostics channel.
+#[cfg_attr(
+    feature = "diagnostics",
+    doc = "See [`crate::diagnostics::MarkerBoardDiagnostics`], obtained via",
+    doc = "[`crate::MarkerBoardDetector::detect_with_diagnostics`]."
+)]
 ///
-/// `#[non_exhaustive]`: construct with [`MarkerBoardDetectionResult::new`].
+/// `#[non_exhaustive]`: construct with [`MarkerBoardDetection::new`].
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MarkerBoardDetectionResult {
+pub struct MarkerBoardDetection {
     /// Labelled checkerboard corners.
     pub corners: Vec<MarkerBoardCorner>,
     /// Grid alignment to the known board layout; `None` when alignment
@@ -220,7 +245,7 @@ pub struct MarkerBoardDetectionResult {
     pub alignment: Option<GridAlignment>,
 }
 
-impl MarkerBoardDetectionResult {
+impl MarkerBoardDetection {
     /// Create a result from its typed corners and optional grid alignment.
     pub fn new(corners: Vec<MarkerBoardCorner>, alignment: Option<GridAlignment>) -> Self {
         Self { corners, alignment }
@@ -265,6 +290,8 @@ pub struct MarkerBoardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
     /// Corner coordinate in the returned grid frame.
+    ///
+    /// `u` runs along grid `i` (rightward), `v` along grid `j` (downward).
     pub grid: Coord,
     /// Board-canonical corner ID, available when circle alignment succeeded.
     pub id: Option<u32>,

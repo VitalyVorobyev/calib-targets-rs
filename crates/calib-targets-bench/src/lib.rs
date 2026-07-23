@@ -16,6 +16,7 @@
 
 pub mod ablate;
 pub mod baseline;
+pub mod charuco_config;
 pub mod compare;
 pub mod config;
 pub mod dataset;

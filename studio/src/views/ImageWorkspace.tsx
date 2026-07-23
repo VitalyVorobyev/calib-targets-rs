@@ -1,5 +1,5 @@
 // Image workspace: interactive overlay canvas + a tabbed side panel
-// (Detect — stats / run options / layers; Config — full DetectorParams
+// (Detect — stats / run options / layers; Config — full ChessboardParams
 // editor with named configs; Diagnose — per-stage pipeline introspection;
 // Baseline — structured diff vs the pinned baseline). Param edits
 // re-detect automatically (debounced).

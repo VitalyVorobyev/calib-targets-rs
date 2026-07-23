@@ -63,7 +63,7 @@ bundle = ct.render_target_bundle(doc)
 image = np.asarray(Image.open(io.BytesIO(bundle.png_bytes)).convert("L"), dtype=np.uint8)
 
 # 3. Detect — prefer *_best for robustness.
-chess_cfg = ct.ChessConfig(threshold=ct.Threshold.absolute(15.0))
+chess_cfg = ct.ChessConfig(threshold=15.0)
 configs = [
     ct.ChessboardParams(),
     ct.ChessboardParams(min_labeled_corners=12),
@@ -105,10 +105,13 @@ circles = (
     ct.MarkerCircleSpec(i=4, j=2, polarity=ct.CirclePolarity.BLACK),
     ct.MarkerCircleSpec(i=4, j=3, polarity=ct.CirclePolarity.WHITE),
 )
-layout = ct.MarkerBoardLayout(rows=6, cols=8, cell_size=1.0, circles=circles)
-params = ct.MarkerBoardParams(layout=layout, chessboard=ct.ChessboardParams())
+board = ct.MarkerBoardSpec(rows=6, cols=8, cell_size=1.0, circles=circles)
+params = ct.MarkerBoardParams(board=board, chessboard=ct.ChessboardParams())
 result = ct.detect_marker_board(image, params=params)
 ```
+
+`MarkerBoardSpec` is also exported under its previous name `MarkerBoardLayout`
+(a backward-compatible alias that stays live this release).
 
 Runnable: [`examples/markerboard_roundtrip.py`](examples/markerboard_roundtrip.py).
 

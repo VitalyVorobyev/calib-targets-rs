@@ -69,7 +69,7 @@ a config carrying a legacy value is re-pinned to `Topological` on load.
 
 ChArUco config layers three surfaces:
 
-- **Chessboard grid** — `CharucoParams.chessboard` is a `DetectorParams`
+- **Chessboard grid** — `CharucoParams.chessboard` is a `ChessboardParams`
   (stable core + opt-in `advanced`). `for_board` pre-sets the
   marker-scene-safe `min_corner_strength` floor; do not lower it on marker
   boards.

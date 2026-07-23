@@ -22,7 +22,7 @@ use crate::snaps::resolve_label;
 pub struct DiagnoseRequest {
     /// Snap label (`path` or `path#k`).
     pub label: String,
-    /// Partial `DetectorParams` override (CLI merge semantics).
+    /// Partial `ChessboardParams` override (CLI merge semantics).
     #[serde(default)]
     pub params: serde_json::Value,
     /// ChESS axis-fit method (default: ring_fit).
@@ -51,7 +51,7 @@ pub async fn diagnose(
         )));
     }
     let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = req.orientation_method.into();
+    chess_cfg.orientation_method = Some(req.orientation_method.into());
 
     let value = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiError> {
         let img = load_entry_image(&abs)?;

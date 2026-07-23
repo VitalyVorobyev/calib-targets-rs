@@ -1,4 +1,4 @@
-//! Run a single [`DetectorParams`] config over a set of dataset entries and
+//! Run a single [`ChessboardParams`] config over a set of dataset entries and
 //! fold the per-image outcomes into a [`RunReport`].
 //!
 //! This is the shared core of `bench run` and `bench ablate`: both must
@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use calib_targets::chessboard::DetectorParams;
+use calib_targets::chessboard::ChessboardParams;
 use calib_targets::detect::DetectorConfig;
 
 use crate::baseline::Baseline;
@@ -39,7 +39,7 @@ pub struct RunContext<'a> {
 /// stamped onto the returned report verbatim.
 pub fn run_report_for_params(
     entries: &[&DatasetEntry],
-    params: &DetectorParams,
+    params: &ChessboardParams,
     ctx: &RunContext<'_>,
     config_id: String,
 ) -> RunReport {

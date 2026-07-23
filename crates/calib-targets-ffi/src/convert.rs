@@ -39,7 +39,7 @@ use calib_targets::aruco::ScanDecodeConfig;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{
-    AdvancedTuning, ChessboardCorner, DetectorParams as ChessboardDetectorParams,
+    ChessboardAdvancedTuning, ChessboardCorner, ChessboardParams as ChessboardDetectorParams,
 };
 use calib_targets::core::{Coord, GridAlignment, LabeledCorner};
 use calib_targets::detect::DetectorConfig;
@@ -54,11 +54,11 @@ use calib_targets::puzzleboard::{
 // Advanced ChESS tuning types are imported from `chess-corners` directly —
 // the `calib-targets` facade re-exports only `DetectorConfig` +
 // `OrientationMethod`.
-use chess_corners::low_level::{ChessParams, PyramidParams, RefinerKind};
 use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, ChessRing, DescriptorRing, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, Threshold, UpscaleConfig,
+    CenterOfMassConfig, ChessRefiner, ChessRing, ForstnerConfig, MultiscaleConfig,
+    SaddlePointConfig, UpscaleConfig,
 };
+use chess_corners_core::{ChessParams, RefinerKind};
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
 
@@ -73,9 +73,9 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::CenterOfMass(CenterOfMassConfig {
-                radius: cfg.center_of_mass.radius,
-            }))
+            let mut out = CenterOfMassConfig::default();
+            out.radius = cfg.center_of_mass.radius;
+            Ok(RefinerKind::CenterOfMass(out))
         }
         CT_REFINER_KIND_FORSTNER => {
             if cfg.forstner.radius < 0 {
@@ -83,22 +83,18 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.forstner.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::Forstner(ForstnerConfig {
-                radius: cfg.forstner.radius,
-                min_trace: require_nonnegative(
-                    cfg.forstner.min_trace,
-                    "refiner.forstner.min_trace",
-                )?,
-                min_det: require_positive(cfg.forstner.min_det, "refiner.forstner.min_det")?,
-                max_condition_number: require_positive(
-                    cfg.forstner.max_condition_number,
-                    "refiner.forstner.max_condition_number",
-                )?,
-                max_offset: require_nonnegative(
-                    cfg.forstner.max_offset,
-                    "refiner.forstner.max_offset",
-                )?,
-            }))
+            let mut out = ForstnerConfig::default();
+            out.radius = cfg.forstner.radius;
+            out.min_trace =
+                require_nonnegative(cfg.forstner.min_trace, "refiner.forstner.min_trace")?;
+            out.min_det = require_positive(cfg.forstner.min_det, "refiner.forstner.min_det")?;
+            out.max_condition_number = require_positive(
+                cfg.forstner.max_condition_number,
+                "refiner.forstner.max_condition_number",
+            )?;
+            out.max_offset =
+                require_nonnegative(cfg.forstner.max_offset, "refiner.forstner.max_offset")?;
+            Ok(RefinerKind::Forstner(out))
         }
         CT_REFINER_KIND_SADDLE_POINT => {
             if cfg.saddle_point.radius < 0 {
@@ -106,21 +102,21 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.saddle_point.radius must be >= 0",
                 ));
             }
-            Ok(RefinerKind::SaddlePoint(SaddlePointConfig {
-                radius: cfg.saddle_point.radius,
-                det_margin: require_nonnegative(
-                    cfg.saddle_point.det_margin,
-                    "refiner.saddle_point.det_margin",
-                )?,
-                max_offset: require_nonnegative(
-                    cfg.saddle_point.max_offset,
-                    "refiner.saddle_point.max_offset",
-                )?,
-                min_abs_det: require_positive(
-                    cfg.saddle_point.min_abs_det,
-                    "refiner.saddle_point.min_abs_det",
-                )?,
-            }))
+            let mut out = SaddlePointConfig::default();
+            out.radius = cfg.saddle_point.radius;
+            out.det_margin = require_nonnegative(
+                cfg.saddle_point.det_margin,
+                "refiner.saddle_point.det_margin",
+            )?;
+            out.max_offset = require_nonnegative(
+                cfg.saddle_point.max_offset,
+                "refiner.saddle_point.max_offset",
+            )?;
+            out.min_abs_det = require_positive(
+                cfg.saddle_point.min_abs_det,
+                "refiner.saddle_point.min_abs_det",
+            )?;
+            Ok(RefinerKind::SaddlePoint(out))
         }
         other => Err(FfiError::config_error(format!(
             "refiner.kind must be a valid ct_refiner_kind_t constant, got {other}"
@@ -129,27 +125,25 @@ pub(crate) fn convert_refiner_kind(
 }
 
 pub(crate) fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    // `ChessParams` (`chess_corners::low_level::ChessParams`) is `#[non_exhaustive]`,
+    // `ChessParams` (`chess_corners_core::ChessParams`) is `#[non_exhaustive]`,
     // so we must start from `default()` and patch individual fields.
     let mut out = ChessParams::default();
     out.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
-    out.descriptor_use_radius10 = optional_bool_to_option(
-        &params.descriptor_use_radius10,
-        "chess.params.descriptor_use_radius10",
-    )?;
-    out.threshold_rel = require_nonnegative(params.threshold_rel, "chess.params.threshold_rel")?;
-    out.threshold_abs =
-        match optional_f32_to_option(&params.threshold_abs, "chess.params.threshold_abs")? {
-            Some(value) => Some(require_nonnegative(value, "chess.params.threshold_abs")?),
-            None => None,
-        };
+    out.threshold = require_nonnegative(params.threshold, "chess.params.threshold")?;
     out.nms_radius = params.nms_radius;
     out.min_cluster_size = params.min_cluster_size;
     out.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
     Ok(out)
 }
 
-fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResult<PyramidParams> {
+/// Validate the C pyramid shape and lower it to the `(levels, min_size)` pair
+/// that `MultiscaleConfig::Pyramid` takes.
+///
+/// chess-corners 1.0 no longer re-exports a `PyramidParams` type (it moved to
+/// the `box-image-pyramid` crate and is not part of the facade surface), so
+/// the validated values are returned directly rather than through an
+/// intermediate struct. The C-visible shape is unchanged.
+fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResult<(u8, usize)> {
     if params.num_levels == 0 {
         return Err(FfiError::config_error(
             "chess.multiscale.pyramid.num_levels must be > 0",
@@ -160,13 +154,10 @@ fn convert_pyramid_params(params: &crate::types::ct_pyramid_params_t) -> FfiResu
             "chess.multiscale.pyramid.min_size must be > 0",
         ));
     }
-    // `PyramidParams` is `#[non_exhaustive]`; use field assignment from default.
-    let mut out = PyramidParams::default();
-    out.num_levels = u8::try_from(params.num_levels).map_err(|_| {
+    let num_levels = u8::try_from(params.num_levels).map_err(|_| {
         FfiError::config_error("chess.multiscale.pyramid.num_levels must fit into uint8_t")
     })?;
-    out.min_size = params.min_size;
-    Ok(out)
+    Ok((num_levels, params.min_size))
 }
 
 fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConfig> {
@@ -186,31 +177,22 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
 
 pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<DetectorConfig> {
     let params = convert_chess_params(&config.params)?;
-    let multiscale_pyramid = convert_pyramid_params(&config.multiscale.pyramid)?;
+    let (pyramid_levels, pyramid_min_size) = convert_pyramid_params(&config.multiscale.pyramid)?;
     let merge_radius = require_nonnegative(
         config.multiscale.merge_radius,
         "chess.multiscale.merge_radius",
     )?;
     let upscale = convert_upscale_config(&config.upscale)?;
 
-    // Map the low-level `ChessParams` onto the new strategy-typed
-    // `DetectorConfig`. The flat C shape (`use_radius10`,
-    // `descriptor_use_radius10`, `nms_radius`, `min_cluster_size`,
-    // `refiner`, `threshold_abs/rel`) is translated into the ChESS
-    // strategy + the top-level `Threshold` enum.
-    let threshold = match params.threshold_abs {
-        Some(value) => Threshold::Absolute(value),
-        None => Threshold::Relative(params.threshold_rel),
-    };
+    // Map the low-level `ChessParams` onto the strategy-typed
+    // `DetectorConfig`. The flat C shape (`use_radius10`, `nms_radius`,
+    // `min_cluster_size`, `refiner`, `threshold`) is split across the ChESS
+    // strategy, the shared `DetectionParams`, and the top-level threshold.
+    let threshold = params.threshold;
     let ring = if params.use_radius10 {
         ChessRing::Broad
     } else {
         ChessRing::Canonical
-    };
-    let descriptor_ring = match params.descriptor_use_radius10 {
-        None => DescriptorRing::FollowDetector,
-        Some(false) => DescriptorRing::Canonical,
-        Some(true) => DescriptorRing::Broad,
     };
     let refiner = refiner_kind_to_chess_refiner(params.refiner);
     let nms_radius = params.nms_radius;
@@ -218,12 +200,12 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
 
     // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
     // detector skips the pyramid path entirely.
-    let multiscale = if multiscale_pyramid.num_levels <= 1 {
+    let multiscale = if pyramid_levels <= 1 {
         MultiscaleConfig::SingleScale
     } else {
         MultiscaleConfig::Pyramid {
-            levels: multiscale_pyramid.num_levels,
-            min_size: multiscale_pyramid.min_size,
+            levels: pyramid_levels,
+            min_size: pyramid_min_size,
             refinement_radius: config.multiscale.refinement_radius,
         }
     };
@@ -233,11 +215,14 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         .with_multiscale(multiscale)
         .with_upscale(upscale)
         .with_merge_radius(merge_radius)
+        // `nms_radius` / `min_cluster_size` moved off the per-strategy config
+        // and onto the shared `DetectionParams` in chess-corners 1.0.
+        .with_detection(|d| {
+            d.nms_radius = nms_radius;
+            d.min_cluster_size = min_cluster_size;
+        })
         .with_chess(|c| {
             c.ring = ring;
-            c.descriptor_ring = descriptor_ring;
-            c.nms_radius = nms_radius;
-            c.min_cluster_size = min_cluster_size;
             c.refiner = refiner;
         }))
 }
@@ -270,19 +255,6 @@ fn optional_f32_to_option(opt: &ct_optional_f32_t, field: &str) -> FfiResult<Opt
     }
 }
 
-fn optional_bool_to_option(
-    opt: &crate::types::ct_optional_bool_t,
-    field: &str,
-) -> FfiResult<Option<bool>> {
-    match opt.has_value {
-        CT_FALSE => Ok(None),
-        CT_TRUE => Ok(Some(flag_to_bool(opt.value, &format!("{field}.value"))?)),
-        other => Err(FfiError::invalid_argument(format!(
-            "{field}.has_value must be CT_FALSE or CT_TRUE, got {other}"
-        ))),
-    }
-}
-
 // ─── Chessboard params ──────────────────────────────────────────────────────
 
 pub(crate) fn convert_chessboard_params(
@@ -293,7 +265,7 @@ pub(crate) fn convert_chessboard_params(
             "chessboard.max_components must be > 0",
         ));
     }
-    // `DetectorParams` is `#[non_exhaustive]`; start from `Default`
+    // `ChessboardParams` is `#[non_exhaustive]`; start from `Default`
     // and overwrite every stable field we expose over the ABI. New fields
     // added in future Rust releases keep their defaults until the
     // C ABI explicitly surfaces them.
@@ -312,10 +284,12 @@ pub(crate) fn convert_chessboard_params(
     Ok(out)
 }
 
-/// Translate the opt-in advanced C payload into an [`AdvancedTuning`],
-/// validating each knob. Starts from [`AdvancedTuning::default`] so any knob
+/// Translate the opt-in advanced C payload into a [`ChessboardAdvancedTuning`],
+/// validating each knob. Starts from [`ChessboardAdvancedTuning::default`] so any knob
 /// the C ABI does not surface keeps its default.
-fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<AdvancedTuning> {
+fn convert_chessboard_advanced(
+    adv: &ct_chessboard_advanced_t,
+) -> FfiResult<ChessboardAdvancedTuning> {
     if adv.num_bins < 4 {
         return Err(FfiError::config_error("chessboard.num_bins must be >= 4"));
     }
@@ -329,9 +303,7 @@ fn convert_chessboard_advanced(adv: &ct_chessboard_advanced_t) -> FfiResult<Adva
             "chessboard.line_min_members must be >= 2",
         ));
     }
-    let mut tuning = AdvancedTuning::default();
-    tuning.max_fit_rms_ratio =
-        require_finite(adv.max_fit_rms_ratio, "chessboard.max_fit_rms_ratio")?;
+    let mut tuning = ChessboardAdvancedTuning::default();
     tuning.num_bins = adv.num_bins;
     tuning.max_iters_2means = adv.max_iters_2means;
     tuning.cluster_tol_deg =
@@ -374,7 +346,7 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
         max_components: d.max_components,
         // `advanced` is opt-in: default to clear so the detector keeps its
         // default tuning. The nested payload is still populated from
-        // `AdvancedTuning::default()` so callers can flip `has_advanced` and
+        // `ChessboardAdvancedTuning::default()` so callers can flip `has_advanced` and
         // adjust individual knobs from valid starting values.
         has_advanced: CT_FALSE,
         advanced: chessboard_advanced_default_values(),
@@ -382,9 +354,8 @@ pub(crate) fn chessboard_params_default_values() -> ct_chessboard_params_t {
 }
 
 fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
-    let t = AdvancedTuning::default();
+    let t = ChessboardAdvancedTuning::default();
     ct_chessboard_advanced_t {
-        max_fit_rms_ratio: t.max_fit_rms_ratio,
         num_bins: t.num_bins,
         max_iters_2means: t.max_iters_2means,
         cluster_tol_deg: t.cluster_tol_deg,
@@ -522,15 +493,22 @@ pub(crate) fn convert_charuco_detector_params(
     // such as the board-level matcher knobs — don't break the C ABI) and
     // overwrite only the fields that the C side exposes today.
     let board_spec = convert_charuco_board_spec(&params.charuco)?;
-    let mut out = CharucoParams::for_board(&board_spec);
+    let mut out = CharucoParams::for_board(board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.board = board_spec;
     out.scan = convert_scan_decode_config(&params.scan)?;
     out.min_marker_inliers = params.min_marker_inliers;
-    out.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
-    out.corner_validation_threshold_rel = corner_validation_threshold_rel;
-    out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
+    // `grid_smoothness_threshold_rel` / `corner_validation_threshold_rel` are
+    // kept as flat C fields but now live in `CharucoAdvancedTuning` on the Rust
+    // side. Route them into the advanced tier, seeding every other advanced
+    // knob from its default (the C ABI does not expose the rest). The
+    // `corner_redetect_params` field is no longer part of the C ABI — the Rust
+    // field is internal and reconstructed from `for_board` defaults above.
+    let mut advanced = out.effective_tuning().into_owned();
+    advanced.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
+    advanced.corner_validation_threshold_rel = corner_validation_threshold_rel;
+    out = out.with_advanced(advanced);
     Ok(out)
 }
 
@@ -642,8 +620,8 @@ pub(crate) fn convert_marker_board_params(
     params: &ct_marker_board_params_t,
 ) -> FfiResult<MarkerBoardParams> {
     let has_roi_cells = flag_to_bool(params.has_roi_cells, "marker.has_roi_cells")?;
-    let layout = convert_marker_board_layout(&params.layout)?;
-    let mut out = MarkerBoardParams::new(layout);
+    let layout = convert_marker_board_layout(&params.board)?;
+    let mut out = MarkerBoardParams::for_board(layout);
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.circle_score = convert_circle_score_params(&params.circle_score)?;
     out.match_params = convert_circle_match_params(&params.match_params)?;
@@ -729,48 +707,51 @@ pub(crate) fn convert_puzzleboard_decode_config(
             "puzzleboard.decode.min_window must be >= 3",
         ));
     }
-    let mut out = PuzzleBoardDecodeConfig::new(
-        params.min_window,
-        require_fraction(
-            params.min_bit_confidence,
-            "puzzleboard.decode.min_bit_confidence",
-        )?,
-        require_fraction(
-            params.max_bit_error_rate,
-            "puzzleboard.decode.max_bit_error_rate",
-        )?,
-        flag_to_bool(
-            params.search_all_components,
-            "puzzleboard.decode.search_all_components",
-        )?,
-        require_positive(
-            params.sample_radius_rel,
-            "puzzleboard.decode.sample_radius_rel",
-        )?,
-    );
+    let mut out = PuzzleBoardDecodeConfig::default();
+    out.min_window = params.min_window;
+    out.min_bit_confidence = require_fraction(
+        params.min_bit_confidence,
+        "puzzleboard.decode.min_bit_confidence",
+    )?;
+    out.max_bit_error_rate = require_fraction(
+        params.max_bit_error_rate,
+        "puzzleboard.decode.max_bit_error_rate",
+    )?;
+    out.search_all_components = flag_to_bool(
+        params.search_all_components,
+        "puzzleboard.decode.search_all_components",
+    )?;
+    out.sample_radius_rel = require_positive(
+        params.sample_radius_rel,
+        "puzzleboard.decode.sample_radius_rel",
+    )?;
     out.search_mode =
         convert_puzzleboard_search_mode(params.search_mode, "puzzleboard.decode.search_mode")?;
     out.scoring_mode =
         convert_puzzleboard_scoring_mode(params.scoring_mode, "puzzleboard.decode.scoring_mode")?;
     let scoring_mode_omitted = params.scoring_mode == 0;
-    // Keep the Rust defaults seeded by `PuzzleBoardDecodeConfig::new()` when
-    // a legacy C caller leaves newly-added soft-LL fields zeroed.
+    // The soft-LL knobs are kept as flat C fields but now live in
+    // `PuzzleBoardAdvancedTuning`. Seed the advanced tier from its default and
+    // overwrite only what the C caller set; keep the Rust defaults when a
+    // legacy C caller leaves the newly-added soft-LL fields zeroed.
+    let mut advanced = out.effective_tuning().into_owned();
     if params.bit_likelihood_slope != 0.0 {
-        out.bit_likelihood_slope = require_positive(
+        advanced.bit_likelihood_slope = require_positive(
             params.bit_likelihood_slope,
             "puzzleboard.decode.bit_likelihood_slope",
         )?;
     }
     if !(scoring_mode_omitted && params.per_bit_floor == 0.0) {
-        out.per_bit_floor =
+        advanced.per_bit_floor =
             require_finite(params.per_bit_floor, "puzzleboard.decode.per_bit_floor")?;
     }
     if !(scoring_mode_omitted && params.alignment_min_margin == 0.0) {
-        out.alignment_min_margin = require_nonnegative(
+        advanced.alignment_min_margin = require_nonnegative(
             params.alignment_min_margin,
             "puzzleboard.decode.alignment_min_margin",
         )?;
     }
+    out = out.with_advanced(advanced);
     Ok(out)
 }
 
@@ -778,11 +759,10 @@ pub(crate) fn convert_puzzleboard_params(
     params: &ct_puzzleboard_params_t,
 ) -> FfiResult<PuzzleBoardParams> {
     let board = convert_puzzleboard_spec(&params.board)?;
-    let mut out = PuzzleBoardParams::for_board(&board);
+    let mut out = PuzzleBoardParams::for_board(board);
     out.px_per_square = require_positive(params.px_per_square, "puzzleboard.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.decode = convert_puzzleboard_decode_config(&params.decode)?;
-    out.corner_redetect_params = convert_chess_params(&params.corner_redetect_params)?;
     Ok(out)
 }
 

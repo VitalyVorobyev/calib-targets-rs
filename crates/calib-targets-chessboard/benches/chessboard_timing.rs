@@ -8,7 +8,7 @@
 //! - `target_11 snap 2` — a near-failure frame (heavy blur + distortion).
 //! - `target_19 snap 5` — a representative mid-set frame.
 //!
-//! The bench measures ONLY the `Detector::detect(&corners)` step — ChESS
+//! The bench measures ONLY the `ChessboardDetector::detect(&corners)` step — ChESS
 //! corner detection is amortized into the setup phase so we measure the
 //! grid-assembly pipeline in isolation.
 //!
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::GenericImageView;
 
@@ -62,7 +62,7 @@ fn load_snap_corners(target_idx: u32, snap_idx: u32) -> Option<Vec<Corner>> {
 
 fn bench_detection(c: &mut Criterion) {
     let mut group = c.benchmark_group("chessboard/detect");
-    let params = DetectorParams::default();
+    let params = ChessboardParams::default();
     for (t, s, label) in FIXTURES {
         let Some(corners) = load_snap_corners(*t, *s) else {
             eprintln!("skipping {label}: target_{t}.png missing — run benches from repo root");
@@ -72,7 +72,8 @@ fn bench_detection(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             &corners,
             |b, corners| {
-                let detector = Detector::new(params.clone()).expect("valid detector params");
+                let detector =
+                    ChessboardDetector::new(params.clone()).expect("valid detector params");
                 b.iter(|| {
                     let det = detector.detect(corners);
                     criterion::black_box(det)

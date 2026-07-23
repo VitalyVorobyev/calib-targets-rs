@@ -80,13 +80,13 @@ export type EngineReq = "pipeline" | "grid";
 export type OrientationMethodReq = "ring_fit" | "disk_fit";
 
 /**
- * Partial DetectorParams override (top-level-key merge over defaults).
+ * Partial ChessboardParams override (top-level-key merge over defaults).
  *
- * Mirrors `calib_targets_chessboard::DetectorParams`, which is
+ * Mirrors `calib_targets_chessboard::ChessboardParams`, which is
  * `#[serde(deny_unknown_fields)]`: only these keys are accepted, and any
  * other (unknown or removed) key is rejected by the server's merge.
  * `advanced`, when present, must be the *complete*
- * `AdvancedTuning` block (every field required) — the UI seeds it from the
+ * `ChessboardAdvancedTuning` block (every field required) — the UI seeds it from the
  * fully-materialised `/api/configs/_defaults` response.
  */
 export interface DetectorParamsOverride {
@@ -204,7 +204,6 @@ export interface TopologicalDiagnosisWire {
   effective_tols: TolSummaryWire;
   prefilter: {
     survives_strength: number;
-    survives_fit: number;
     survives_axis: number;
   };
   components: { labelled: number; bbox: [number, number, number, number] }[];

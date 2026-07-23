@@ -80,8 +80,6 @@ export interface Corner {
   position: Point2;
   /** Two orthogonal grid axes (`axes[1] − axes[0] ≈ π/2`). */
   axes: [AxisEstimate, AxisEstimate];
-  contrast: number;
-  fit_rms: number;
   strength: number;
 }
 
@@ -125,7 +123,7 @@ export interface ChessboardCorner {
 }
 
 /** Result of chessboard detection (Rust `ChessboardDetection`). */
-export interface ChessboardDetectionResult {
+export interface ChessboardDetection {
   /** The labelled corners. */
   corners: ChessboardCorner[];
   /** Grid pitch in pixels; `null` only on results built without a seed. */
@@ -153,7 +151,7 @@ export interface CharucoCorner {
   score: number;
 }
 
-export interface CharucoDetectionResult {
+export interface CharucoDetection {
   corners: CharucoCorner[];
   /** Markers consistent with `alignment` (inliers of the chosen hypothesis). */
   markers: MarkerDetection[];
@@ -168,7 +166,7 @@ export interface MarkerBoardCorner {
   score: number;
 }
 
-export interface MarkerBoardDetectionResult {
+export interface MarkerBoardDetection {
   corners: MarkerBoardCorner[];
   alignment: GridAlignment | null;
 }
@@ -203,7 +201,7 @@ export interface PuzzleBoardCorner {
   score: number;
 }
 
-export interface PuzzleBoardDetectionResult {
+export interface PuzzleBoardDetection {
   corners: PuzzleBoardCorner[];
   alignment: GridAlignment;
   decode: PuzzleBoardDecodeInfo;
@@ -213,9 +211,8 @@ export interface PuzzleBoardDetectionResult {
 // Parameters: ChESS corners
 // ---------------------------------------------------------------------------
 
-export type ThresholdMode = "relative" | "absolute";
-export type DetectorMode = "canonical" | "broad";
-export type DescriptorMode = "follow_detector" | "canonical" | "broad";
+export type ChessRing = "canonical" | "broad";
+export type OrientationMethod = "ring_fit" | "disk_fit";
 
 export interface RefinerConfig {
   kind: "center_of_mass" | "forstner" | "saddle_point";
@@ -240,31 +237,57 @@ export type UpscaleConfig =
   | { mode: "fixed"; factor: number }
   | { mode: "adaptive"; min_corners: number };
 
-export interface ChessConfig {
-  detector_mode: DetectorMode;
-  descriptor_mode: DescriptorMode;
-  threshold_mode: ThresholdMode;
-  threshold_value: number;
+export type MultiscaleConfig =
+  | "single_scale"
+  | {
+      pyramid: { levels: number; min_size: number; refinement_radius: number };
+    };
+
+/** Strategy payload nested under {@link ChessConfig.strategy}. */
+export interface ChessStrategyConfig {
+  ring: ChessRing;
+  refiner: RefinerConfig;
+}
+
+export type DetectionStrategy = { chess: ChessStrategyConfig };
+
+/** Shared NMS / peak-clustering thresholds, honoured by every strategy. */
+export interface DetectionParams {
   nms_radius: number;
   min_cluster_size: number;
-  refiner: RefinerConfig;
-  pyramid_levels: number;
-  pyramid_min_size: number;
-  refinement_radius: number;
-  merge_radius: number;
+}
+
+/**
+ * Mirrors the Rust `chess_corners::DetectorConfig` serde shape 1:1 — this is
+ * the exact JSON the WASM entry points accept.
+ */
+export interface ChessConfig {
+  strategy: DetectionStrategy;
+  /**
+   * Acceptance threshold. The ChESS strategy reads it as an absolute floor on
+   * the raw response; Radon reads it as a fraction of the per-frame maximum.
+   * A plain number since chess-corners 1.0 — there is no longer a tagged
+   * `{ absolute } | { relative }` form, and ChESS has no relative mode.
+   */
+  threshold: number;
+  detection: DetectionParams;
+  multiscale: MultiscaleConfig;
   upscale: UpscaleConfig;
+  /** `null` skips the per-corner axis fit; descriptors then carry no axes. */
+  orientation_method: OrientationMethod | null;
+  merge_radius: number;
 }
 
 // ---------------------------------------------------------------------------
 // Parameters: chessboard detector
 //
-// The Rust `DetectorParams` carries a small stable core plus an opt-in,
-// unstable `AdvancedTuning` sub-struct. `advanced` is `Option`-wrapped and
+// The Rust `ChessboardParams` carries a small stable core plus an opt-in,
+// unstable `ChessboardAdvancedTuning` sub-struct. `advanced` is `Option`-wrapped and
 // serialized as a NESTED `"advanced"` object (it is NOT flattened). When
 // omitted, detection runs on the default tuning. The three stable keys
 // (`min_labeled_corners`, `max_components`, `min_corner_strength`) are covered
-// by semver; the `AdvancedTuning` knobs are NOT and may change between minor
-// versions. The Rust `DetectorParams` uses `#[serde(deny_unknown_fields)]`, so
+// by semver; the `ChessboardAdvancedTuning` knobs are NOT and may change between minor
+// versions. The Rust `ChessboardParams` uses `#[serde(deny_unknown_fields)]`, so
 // any key outside the stable core / nested `advanced` block is rejected.
 // ---------------------------------------------------------------------------
 
@@ -298,14 +321,13 @@ export interface LocalMergeParams {
 
 /**
  * Opt-in, **unstable** per-stage chessboard tuning knobs (Rust
- * `AdvancedTuning`). Nested under {@link ChessboardParams.advanced}. These
+ * `ChessboardAdvancedTuning`). Nested under {@link ChessboardParams.advanced}. These
  * knobs are NOT covered by semver and may be renamed, retyped, or removed
  * between minor versions — leave them unset unless a specific input fails.
  */
-export interface AdvancedTuning {
+export interface ChessboardAdvancedTuning {
   topological: TopologicalParams;
   component_merge: LocalMergeParams;
-  max_fit_rms_ratio: number;
   num_bins: number;
   max_iters_2means: number;
   cluster_tol_deg: number;
@@ -329,7 +351,7 @@ export interface AdvancedTuning {
 
 /**
  * Chessboard detector parameters — the serialized shape of the Rust
- * `DetectorParams`. The four stable keys below are the semver-covered core;
+ * `ChessboardParams`. The four stable keys below are the semver-covered core;
  * the optional `advanced` block holds the unstable per-stage tuning knobs and
  * is omitted from the wire format unless set.
  */
@@ -339,7 +361,7 @@ export interface ChessboardParams {
   max_components: number;
   min_corner_strength: number;
   // --- opt-in, unstable tuning (omitted when unset) ---
-  advanced?: AdvancedTuning;
+  advanced?: ChessboardAdvancedTuning;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,34 +390,50 @@ export interface ScanDecodeConfig {
 }
 
 /**
- * Opt-in, **unstable** ChArUco board-level-matcher tuning knobs (Rust
- * `CharucoAdvancedTuning`). Nested under {@link CharucoParams.advanced}. These
- * knobs govern the soft-bit log-likelihood scoring and the hypothesis-
- * acceptance margin; they are NOT covered by semver and may be retuned,
- * retyped, or removed between minor versions — leave them unset unless tuning
- * against a specific dataset with measured evidence.
+ * Opt-in, **unstable** ChArUco tuning knobs (Rust `CharucoAdvancedTuning`).
+ * Nested under {@link CharucoParams.advanced}. These knobs govern the soft-bit
+ * log-likelihood scoring and hypothesis-acceptance margin of the board-level
+ * matcher, plus the grid-smoothness / marker-constrained corner-validation
+ * gates and the secondary-component inlier floor. They are NOT covered by
+ * semver and may be retuned, retyped, or removed between minor versions —
+ * leave them unset unless tuning against a specific dataset with measured
+ * evidence. Every field is optional: an omitted knob falls back to its Rust
+ * default.
  */
 export interface CharucoAdvancedTuning {
   /** Logistic slope κ for the soft-bit log-likelihood (larger = more confident per bit). */
-  bit_likelihood_slope: number;
+  bit_likelihood_slope?: number;
   /** Clip floor applied to each per-bit log-likelihood term before summing across bits. */
-  per_bit_floor: number;
+  per_bit_floor?: number;
   /** Minimum `(best − runner-up) / |best|` margin required to accept a board hypothesis. */
-  alignment_min_margin: number;
+  alignment_min_margin?: number;
   /** Border-black fraction below which a cell's weight is attenuated in the board score. */
-  cell_weight_border_threshold: number;
+  cell_weight_border_threshold?: number;
+  /** Relative threshold for the local grid-smoothness pre-filter (× `px_per_square`). */
+  grid_smoothness_threshold_rel?: number;
+  /** Relative threshold for marker-constrained corner validation (× `px_per_square`). */
+  corner_validation_threshold_rel?: number;
+  /** Minimum marker inliers for secondary (non-largest) components. */
+  min_secondary_marker_inliers?: number;
 }
 
 export interface CharucoParams {
   // --- stable core ---
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
   px_per_square: number;
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
   scan: ScanDecodeConfig;
   min_marker_inliers: number;
-  min_secondary_marker_inliers: number;
-  grid_smoothness_threshold_rel: number;
-  corner_validation_threshold_rel: number;
   // --- opt-in, unstable tuning (omitted when unset) ---
   advanced?: CharucoAdvancedTuning;
 }
@@ -411,10 +449,13 @@ export interface MarkerCircleSpec {
   polarity: CirclePolarity;
 }
 
-export interface MarkerBoardLayout {
+/** Fixed marker-board layout (Rust `MarkerBoardSpec`). */
+export interface MarkerBoardSpec {
   rows: number;
   cols: number;
-  circles: MarkerCircleSpec[];
+  /** Optional square size in world units; enables `target_position` on corners. */
+  cell_size?: number;
+  circles: [MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec];
 }
 
 export interface CircleScoreParams {
@@ -433,10 +474,23 @@ export interface CircleMatchParams {
 }
 
 export interface MarkerBoardParams {
-  layout: MarkerBoardLayout;
+  board: MarkerBoardSpec;
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
+
   chessboard: ChessboardParams;
   circle_score: CircleScoreParams;
   match_params: CircleMatchParams;
+  /** Optional ROI in cell coords to restrict circle search: `[i0, j0, i1, j1]`. */
+  roi_cells?: [number, number, number, number];
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +513,23 @@ export type PuzzleBoardScoringMode =
   | { kind: "hard_weighted" }
   | { kind: "soft_log_likelihood" };
 
+/**
+ * Opt-in, **unstable** PuzzleBoard soft-log-likelihood tuning knobs (Rust
+ * `PuzzleBoardAdvancedTuning`). Nested under
+ * {@link PuzzleBoardDecodeConfig.advanced}. Only used under the
+ * `soft_log_likelihood` scoring mode. NOT covered by semver — leave unset
+ * unless tuning against a specific dataset with measured evidence. Every field
+ * is optional: an omitted knob falls back to its Rust default.
+ */
+export interface PuzzleBoardAdvancedTuning {
+  /** Soft-LL logit slope: `logit = bit_likelihood_slope × confidence` at a clean match. */
+  bit_likelihood_slope?: number;
+  /** Lower bound applied to each per-bit `log_sigmoid` contribution. */
+  per_bit_floor?: number;
+  /** Minimum winner-vs-runner-up score gap required to accept a decode. */
+  alignment_min_margin?: number;
+}
+
 export interface PuzzleBoardDecodeConfig {
   min_window: number;
   min_bit_confidence: number;
@@ -467,12 +538,21 @@ export interface PuzzleBoardDecodeConfig {
   sample_radius_rel: number;
   search_mode: PuzzleBoardSearchMode;
   scoring_mode: PuzzleBoardScoringMode;
-  bit_likelihood_slope: number;
-  per_bit_floor: number;
-  alignment_min_margin: number;
+  // --- opt-in, unstable tuning (omitted when unset) ---
+  advanced?: PuzzleBoardAdvancedTuning;
 }
 
 export interface PuzzleBoardParams {
+  /**
+   * ChESS corner front-end for the main detection pass.
+   *
+   * Defaults to the workspace default config. Set
+   * `multiscale: { pyramid: … }` for coarse-to-fine detection on large
+   * frames, or `upscale: { fixed: 2 }` for low-resolution boards whose
+   * corners fall inside the ChESS ring margin. A `chess_cfg` argument passed
+   * to a `detect_*` call overrides this field.
+   */
+  chess: ChessConfig;
   px_per_square: number;
   chessboard: ChessboardParams;
   board: PuzzleBoardSpec;

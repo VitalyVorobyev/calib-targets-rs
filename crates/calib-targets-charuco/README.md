@@ -23,7 +23,7 @@ and [alignment & refinement chapter][book-alignment].
 
 ```toml
 [dependencies]
-calib-targets-charuco = "0.10"
+calib-targets-charuco = "0.11"
 ```
 
 ## Quickstart
@@ -33,7 +33,7 @@ ChESS corner detection for you and takes an `image::GrayImage` straight in.
 
 ```toml
 [dependencies]
-calib-targets = "0.10"
+calib-targets = "0.11"
 image = "0.25"
 ```
 
@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let board = CharucoBoardSpec::new(5, 7, 1.0, 0.70, builtins::DICT_4X4_50)
         .with_marker_layout(MarkerLayout::OpenCvCharuco);
-    let params = CharucoParams::for_board(&board);
+    let params = CharucoParams::for_board(board);
 
     let result = detect::detect_charuco(&img, &params)?;
     println!("detected {} corners", result.corners.len());
@@ -73,7 +73,7 @@ use calib_targets_charuco::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let board = CharucoBoardSpec::new(5, 7, 1.0, 0.70, builtins::DICT_4X4_50)
         .with_marker_layout(MarkerLayout::OpenCvCharuco);
-    let detector = CharucoDetector::new(CharucoParams::for_board(&board))?;
+    let detector = CharucoDetector::new(CharucoParams::for_board(board))?;
 
     let pixels = vec![0u8; 32 * 32];
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
@@ -91,18 +91,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
   for you).
 - [`CharucoBoardSpec`] — board layout: `rows`, `cols`, `cell_size`,
   `marker_size_rel`, `dictionary` (ArUco / AprilTag), `marker_layout`.
-- [`CharucoParams`] — detector tuning. Use `CharucoParams::for_board(&spec)`
-  for defaults, or `CharucoParams::sweep_default(&spec)` for a 3-config
-  sweep.
+- [`CharucoParams`] — detector tuning. Use `CharucoParams::for_board(spec)`
+  for defaults, or `CharucoParams::sweep_for_board(&spec)` for a 3-config
+  sweep. Opt-in, unstable per-stage tuning lives in an `advanced`
+  (`CharucoAdvancedTuning`) block attached via
+  `CharucoParams::with_advanced(...)`; leave it unset unless a specific
+  dataset needs it.
 
 ## Outputs
 
-`detector.detect(...)` returns `CharucoDetectionResult`:
+`detector.detect(...)` returns `CharucoDetection`:
 
 | Field | Meaning |
 |---|---|
 | `corners: Vec<CharucoCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` (rebased to `(0, 0)`), `id` (ChArUco logical corner ID), `target_position` (mm in board space), and `score`. |
-| `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `grid_coords`, `rotation`, `hamming`, and rectified/image corners. |
+| `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `gc` (grid coordinate), `rotation`, `hamming`, and rectified/image corners. |
 | `alignment: GridAlignment` | D4 rotation + translation mapping chessboard `(i, j)` to the board's canonical ID space. |
 
 Use `detector.detect_with_diagnostics(...)` for per-component rejection
@@ -143,11 +146,11 @@ See the [book chapter][book-chapter] for the full parameter documentation.
 ## Configuration highlights
 
 [`CharucoParams`] is `#[non_exhaustive]`; fields are grouped by stage.
-Defaults from `for_board(&spec)` work for most targets.
+Defaults from `for_board(spec)` work for most targets.
 
 | Group | Key knobs | Effect |
 |---|---|---|
-| Chessboard stage | `chessboard: DetectorParams` | Inherits from [`calib-targets-chessboard`]. Tune there first. |
+| Chessboard stage | `chessboard: ChessboardParams` | Inherits from [`calib-targets-chessboard`]. Tune there first. |
 | Pixel sampling | `px_per_square` (default 60) | Rectified cell side in pixels. Drop to 40 if cells are small; raise to 80 for very fine markers. |
 | Grid validation | `grid_smoothness_threshold_rel`, `corner_validation_threshold_rel` | Smoothness / local-H residuals on refined corners. Loosen under lens distortion. |
 | Per-cell decode | `scan.marker_size_rel`, `scan.inset_frac`, `scan.multi_threshold` | Marker cell sampling for the soft-bit score matrix. |

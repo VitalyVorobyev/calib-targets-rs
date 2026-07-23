@@ -177,3 +177,14 @@ impl<'de> Deserialize<'de> for Dictionary {
             .ok_or_else(|| D::Error::custom(format!("unknown dictionary {name}")))
     }
 }
+
+/// Resolve a dictionary name tolerating both the prefixed (`DICT_4X4_1000`)
+/// and un-prefixed (`4X4_1000`, `APRILTAG_36h10`) spellings used in
+/// different tooling JSON files.
+pub fn resolve_dictionary(name: &str) -> Option<Dictionary> {
+    if let Some(d) = crate::builtins::builtin_dictionary(name) {
+        return Some(d);
+    }
+    let prefixed = format!("DICT_{name}");
+    crate::builtins::builtin_dictionary(&prefixed)
+}

@@ -41,19 +41,19 @@ detector uses `detect` (single best component), not `detect_all`.
 | No / too few circle candidates | Stage 1 | Circles absent, wrong polarity (e.g. white circle on white cell), or low contrast. Adjust `circle_score` (`min_contrast`, `diameter_frac`); check `roi_cells` is not excluding them. |
 | Candidates found, no matches | Stage 2 | Candidates outside `max_distance_cells`, or polarity mismatch vs the spec. Verify the three `MarkerCircleSpec` cells + polarities against the printed board. |
 | Alignment `None` (too few inliers) | Stage 3 | Fewer than the required consistent matches, or circles on the board boundary giving an unreliable pose. Lower `min_offset_inliers` only if you genuinely see fewer circles. |
-| Grid found but `target_position` empty | output | `layout.cell_size` is unset (or alignment failed) — `target_position` is only populated when both hold. |
+| Grid found but `target_position` empty | output | `board.cell_size` is unset (or alignment failed) — `target_position` is only populated when both hold. |
 | Wrong anchored IDs | **never** | A wrong chessboard `(i, j)` would cause this — file a bug at the chessboard layer. |
 
 ## Tuning
 
-`MarkerBoardParams` is layout + chessboard params + circle scoring +
+`MarkerBoardParams` is board layout + chessboard params + circle scoring +
 matching:
 
-- **`layout`** — the `MarkerBoardSpec` (rows, cols, the three
+- **`board`** — the `MarkerBoardSpec` (rows, cols, the three
   `MarkerCircleSpec` cells + polarities, optional `cell_size`). The marker
   circles supply the geometry constraint, so the v1 `expected_rows/cols`
   and `completeness_threshold` no longer apply.
-- **`chessboard`** — a `DetectorParams` for the underlying grid step.
+- **`chessboard`** — a `ChessboardParams` for the underlying grid step.
 - **`circle_score`** (`CircleScoreParams`) — `patch_size`,
   `diameter_frac`, `ring_thickness_frac`, `ring_radius_mul`,
   `min_contrast`, `samples`, `center_search_px`.

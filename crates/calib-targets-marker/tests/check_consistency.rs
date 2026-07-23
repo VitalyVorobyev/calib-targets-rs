@@ -5,7 +5,7 @@
 //! image positions plus square-lattice coordinate hypotheses.
 
 use calib_targets_core::Coord;
-use calib_targets_marker::{MarkerBoardCorner, MarkerBoardDetectionResult};
+use calib_targets_marker::{MarkerBoardCorner, MarkerBoardDetection};
 use nalgebra::Point2;
 use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
@@ -18,7 +18,7 @@ fn image_point(i: i32, j: i32) -> Point2<f32> {
     Point2::new(80.0 + 21.0 * i + 3.0 * j, 45.0 + 2.0 * i + 18.0 * j)
 }
 
-fn synthetic_marker_result() -> MarkerBoardDetectionResult {
+fn synthetic_marker_result() -> MarkerBoardDetection {
     let mut corners = Vec::new();
     for j in 0..4 {
         for i in 0..5 {
@@ -33,7 +33,7 @@ fn synthetic_marker_result() -> MarkerBoardDetectionResult {
         }
     }
     corners.reverse();
-    MarkerBoardDetectionResult::new(corners, None)
+    MarkerBoardDetection::new(corners, None)
 }
 
 #[test]

@@ -23,7 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.10"
+calib-targets-puzzleboard = "0.11"
 ```
 
 ## Quickstart (facade)
@@ -34,7 +34,7 @@ use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec}};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = image::open("puzzleboard.png")?.to_luma8();
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
-    let params = PuzzleBoardParams::for_board(&spec);
+    let params = PuzzleBoardParams::for_board(spec);
     let result = detect::detect_puzzleboard(&img, &params)?;
     println!("{} corners with absolute IDs", result.corners.len());
     Ok(())
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Outputs
 
-`PuzzleBoardDetectionResult`:
+`PuzzleBoardDetection`:
 
 | Field | Meaning |
 |---|---|
@@ -82,8 +82,12 @@ defaults or `sweep_for_board(spec)` for a multi-config preset.
 
 | Group | Key knobs | Effect |
 |---|---|---|
-| Chessboard stage | `chessboard: DetectorParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
+| Chessboard stage | `chessboard: ChessboardParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
 | Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, and minimum visible patch size. |
+
+The `soft_log_likelihood` scorer's unstable tuning knobs live in an opt-in
+`decode.advanced` (`PuzzleBoardAdvancedTuning`) block; leave it unset unless
+tuning against a specific dataset with measured evidence.
 
 ### Search modes
 
@@ -110,7 +114,7 @@ defaults or `sweep_for_board(spec)` for a multi-config preset.
 # use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode, PuzzleBoardSpec}};
 # fn demo() -> Result<(), Box<dyn std::error::Error>> {
 let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
-let mut params = PuzzleBoardParams::for_board(&spec);
+let mut params = PuzzleBoardParams::for_board(spec);
 params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
 params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 # Ok(()) }
@@ -122,9 +126,9 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   4×4 square fragment). Lower to 3 only if coverage is guaranteed
   reliable; anything below 4×4 risks ambiguous fragments.
 - **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
-  (e.g. `Threshold::Absolute(8.0)` in place of the workspace default
-  `Threshold::Absolute(15.0)`) so more corners survive; edge-bit sampling
-  is gated on the corners, not a separate threshold.
+  (e.g. `8.0` in place of the workspace default `15.0`) so more corners
+  survive; edge-bit sampling is gated on the corners, not a separate
+  threshold.
 - **Motion blur** — use `PuzzleBoardSearchMode::Full` and
   `PuzzleBoardParams::sweep_for_board(&spec)` via
   `detect_puzzleboard_best`; the sweep includes stricter/looser ChESS

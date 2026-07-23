@@ -58,14 +58,13 @@ typedef struct ct_puzzleboard_detector_t ct_puzzleboard_detector_t;
 /**
  * Opt-in, **unstable** per-stage tuning knobs for the chessboard detector.
  *
- * Mirrors the subset of `calib_targets::chessboard::AdvancedTuning` exposed
+ * Mirrors the subset of `calib_targets::chessboard::ChessboardAdvancedTuning` exposed
  * over the C ABI. Only applied when
  * [`ct_chessboard_params_t::has_advanced`] is `CT_TRUE`. These knobs are NOT
  * covered by semver and may change between minor versions; treat them as an
  * escape hatch for a specific failing input, not a stable contract.
  */
 typedef struct ct_chessboard_advanced_t {
-  float max_fit_rms_ratio;
   size_t num_bins;
   size_t max_iters_2means;
   float cluster_tol_deg;
@@ -85,7 +84,7 @@ typedef struct ct_chessboard_advanced_t {
 /**
  * Chessboard detector parameters.
  *
- * Mirrors `calib_targets::chessboard::DetectorParams` field-for-field
+ * Mirrors `calib_targets::chessboard::ChessboardParams` field-for-field
  * (flat shape — no nested graph / orientation-clustering sub-structs
  * like the pre-v0.7.0 ABI). Use `ct_chessboard_params_init_default`
  * to populate a valid default-configured value rather than struct-
@@ -112,7 +111,7 @@ typedef struct ct_chessboard_params_t {
    * runs on its precision-by-construction default tuning.
    *
    * The advanced knobs are NOT covered by semver and may change between
-   * minor versions — see `calib_targets::chessboard::AdvancedTuning`.
+   * minor versions — see `calib_targets::chessboard::ChessboardAdvancedTuning`.
    * Initialise from `ct_chessboard_params_default_values` before flipping
    * this flag so the advanced fields start from valid defaults.
    */
@@ -123,22 +122,6 @@ typedef struct ct_chessboard_params_t {
    */
   struct ct_chessboard_advanced_t advanced;
 } ct_chessboard_params_t;
-
-/**
- * Optional boolean convention used by fixed ABI structs.
- */
-typedef struct ct_optional_bool_t {
-  uint32_t has_value;
-  uint32_t value;
-} ct_optional_bool_t;
-
-/**
- * Optional `float` convention used by fixed ABI structs.
- */
-typedef struct ct_optional_f32_t {
-  uint32_t has_value;
-  float value;
-} ct_optional_f32_t;
 
 /**
  * Fixed refiner identifier type for ChESS subpixel refinement.
@@ -185,12 +168,23 @@ typedef struct ct_refiner_config_t {
 
 /**
  * ChESS low-level detector parameters.
+ *
+ * ABI note (3.0.0): the former `threshold_rel` / `threshold_abs` pair is
+ * collapsed into a single absolute `threshold`, and `descriptor_use_radius10`
+ * is gone. Both follow chess-corners 1.0, which made the ChESS acceptance
+ * threshold a single absolute floor on the raw response and removed the
+ * separate descriptor ring entirely (descriptors always sample at the
+ * detector ring radius, which is what `descriptor_use_radius10 = unset`
+ * already meant).
  */
 typedef struct ct_chess_params_t {
   uint32_t use_radius10;
-  struct ct_optional_bool_t descriptor_use_radius10;
-  float threshold_rel;
-  struct ct_optional_f32_t threshold_abs;
+  /**
+   * Absolute floor on the raw ChESS response; a corner is kept when its
+   * response exceeds this value. `0.0` accepts every strictly-positive
+   * response (the paper's contract).
+   */
+  float threshold;
   uint32_t nms_radius;
   uint32_t min_cluster_size;
   struct ct_refiner_config_t refiner;
@@ -272,6 +266,14 @@ typedef struct ct_chessboard_detect_args_t {
    */
   const struct ct_gray_image_u8_t *image;
 } ct_chessboard_detect_args_t;
+
+/**
+ * Optional `float` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_f32_t {
+  uint32_t has_value;
+  float value;
+} ct_optional_f32_t;
 
 /**
  * Chessboard detection header.
@@ -449,7 +451,6 @@ typedef struct ct_charuco_detector_params_t {
   size_t min_marker_inliers;
   float grid_smoothness_threshold_rel;
   float corner_validation_threshold_rel;
-  struct ct_chess_params_t corner_redetect_params;
 } ct_charuco_detector_params_t;
 
 /**
@@ -638,7 +639,7 @@ typedef struct ct_circle_match_params_t {
  * Marker-board detector parameters.
  */
 typedef struct ct_marker_board_params_t {
-  struct ct_marker_board_layout_t layout;
+  struct ct_marker_board_layout_t board;
   struct ct_chessboard_params_t chessboard;
   struct ct_circle_score_params_t circle_score;
   struct ct_circle_match_params_t match_params;
@@ -758,7 +759,6 @@ typedef struct ct_puzzleboard_params_t {
   struct ct_chessboard_params_t chessboard;
   struct ct_puzzleboard_spec_t board;
   struct ct_puzzleboard_decode_config_t decode;
-  struct ct_chess_params_t corner_redetect_params;
 } ct_puzzleboard_params_t;
 
 /**
@@ -935,7 +935,7 @@ enum ct_status_t ct_last_error_message(char *out_utf8, size_t out_capacity, size
 
 /**
  * Return a `ct_chessboard_params_t` populated from
- * `DetectorParams::default()`. Exposed as a C symbol so callers don't
+ * `ChessboardParams::default()`. Exposed as a C symbol so callers don't
  * need to hand-fill 30+ fields.
  * # Safety
  * `out` must be a valid, properly aligned pointer to a writable
@@ -991,7 +991,7 @@ enum ct_status_t ct_chessboard_detector_detect(const struct ct_chessboard_detect
  * Run end-to-end multi-component chessboard detection on a grayscale image.
  *
  * Returns every same-board component the detector recovers, up to
- * `DetectorParams::max_components`. The `corners_buf` buffer receives
+ * `ChessboardParams::max_components`. The `corners_buf` buffer receives
  * all corners from all components concatenated; use
  * `result[i].corners_len` to slice each component's contribution.
  *

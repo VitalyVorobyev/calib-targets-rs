@@ -812,10 +812,10 @@ function DetectPanel({
       {mode === "marker_board" && markerParams && (
         <BoardGeometry
           title="Board geometry"
-          rows={markerParams.layout.rows}
-          cols={markerParams.layout.cols}
-          onRows={(v) => setMarkerParams({ ...markerParams, layout: { ...markerParams.layout, rows: v } })}
-          onCols={(v) => setMarkerParams({ ...markerParams, layout: { ...markerParams.layout, cols: v } })}
+          rows={markerParams.board.rows}
+          cols={markerParams.board.cols}
+          onRows={(v) => setMarkerParams({ ...markerParams, board: { ...markerParams.board, rows: v } })}
+          onCols={(v) => setMarkerParams({ ...markerParams, board: { ...markerParams.board, cols: v } })}
         />
       )}
       {mode === "puzzleboard" && puzzleParams && (

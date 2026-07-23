@@ -6,8 +6,13 @@ name = "calib-targets-ffi"
 # (breaking change vs the 0.8 surface). v2.0.0 drops a now-dead field
 # from `ct_charuco_detector_params_t` (a struct-layout-breaking ABI
 # change) after the legacy ChArUco vote matcher — its sole consumer —
-# was retired; see the CHANGELOG Breaking section for details.
-version = "2.0.0"
+# was retired; see the CHANGELOG Breaking section for details. v3.0.0
+# follows the chess-corners 1.0 migration: `ct_chess_params_t` collapses
+# `threshold_rel` + `threshold_abs` into one absolute `threshold` and drops
+# `descriptor_use_radius10`, `ct_chessboard_advanced_t` drops
+# `max_fit_rms_ratio`, and the now-unused `ct_optional_bool_t` type is
+# removed — three struct-layout-breaking changes.
+version = "3.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true
@@ -36,6 +41,7 @@ generate-header = ["dep:cbindgen"]
 calib-targets = { workspace = true, features = ["image", "diagnostics"] }
 cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
+chess-corners-core.workspace = true
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true

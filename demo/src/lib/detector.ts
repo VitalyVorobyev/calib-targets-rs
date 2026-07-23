@@ -33,10 +33,10 @@ import type {
   MarkerBoardParams,
   PuzzleBoardParams,
   Corner,
-  ChessboardDetectionResult,
-  CharucoDetectionResult,
-  MarkerBoardDetectionResult,
-  PuzzleBoardDetectionResult,
+  ChessboardDetection,
+  CharucoDetection,
+  MarkerBoardDetection,
+  PuzzleBoardDetection,
 } from "@vitavision/calib-targets";
 
 let initialized = false;
@@ -199,14 +199,14 @@ export function detectChessboard(
   height: number,
   chessCfg: ChessConfig,
   params: ChessboardParams,
-): ChessboardDetectionResult | null {
+): ChessboardDetection | null {
   return _detect_chessboard(
     width,
     height,
     gray,
     chessCfg,
     params,
-  ) as ChessboardDetectionResult | null;
+  ) as ChessboardDetection | null;
 }
 
 export function detectCharuco(
@@ -215,14 +215,14 @@ export function detectCharuco(
   height: number,
   chessCfg: ChessConfig,
   params: CharucoParams,
-): CharucoDetectionResult {
+): CharucoDetection {
   return _detect_charuco(
     width,
     height,
     gray,
     chessCfg,
     params,
-  ) as CharucoDetectionResult;
+  ) as CharucoDetection;
 }
 
 export function detectMarkerBoard(
@@ -231,14 +231,14 @@ export function detectMarkerBoard(
   height: number,
   chessCfg: ChessConfig,
   params: MarkerBoardParams,
-): MarkerBoardDetectionResult | null {
+): MarkerBoardDetection | null {
   return _detect_marker_board(
     width,
     height,
     gray,
     chessCfg,
     params,
-  ) as MarkerBoardDetectionResult | null;
+  ) as MarkerBoardDetection | null;
 }
 
 export function detectPuzzleBoard(
@@ -247,14 +247,14 @@ export function detectPuzzleBoard(
   height: number,
   chessCfg: ChessConfig,
   params: PuzzleBoardParams,
-): PuzzleBoardDetectionResult {
+): PuzzleBoardDetection {
   return _detect_puzzleboard(
     width,
     height,
     gray,
     chessCfg,
     params,
-  ) as PuzzleBoardDetectionResult;
+  ) as PuzzleBoardDetection;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,14 +267,14 @@ export function detectChessboardBest(
   height: number,
   chessCfg: ChessConfig,
   configs: ChessboardParams[],
-): ChessboardDetectionResult | null {
+): ChessboardDetection | null {
   return _detect_chessboard_best(
     width,
     height,
     gray,
     chessCfg,
     configs,
-  ) as ChessboardDetectionResult | null;
+  ) as ChessboardDetection | null;
 }
 
 export function detectCharucoBest(
@@ -282,13 +282,13 @@ export function detectCharucoBest(
   width: number,
   height: number,
   configs: CharucoParams[],
-): CharucoDetectionResult {
+): CharucoDetection {
   return _detect_charuco_best(
     width,
     height,
     gray,
     configs,
-  ) as CharucoDetectionResult;
+  ) as CharucoDetection;
 }
 
 export function detectMarkerBoardBest(
@@ -296,13 +296,13 @@ export function detectMarkerBoardBest(
   width: number,
   height: number,
   configs: MarkerBoardParams[],
-): MarkerBoardDetectionResult | null {
+): MarkerBoardDetection | null {
   return _detect_marker_board_best(
     width,
     height,
     gray,
     configs,
-  ) as MarkerBoardDetectionResult | null;
+  ) as MarkerBoardDetection | null;
 }
 
 export function detectPuzzleBoardBest(
@@ -310,11 +310,11 @@ export function detectPuzzleBoardBest(
   width: number,
   height: number,
   configs: PuzzleBoardParams[],
-): PuzzleBoardDetectionResult {
+): PuzzleBoardDetection {
   return _detect_puzzleboard_best(
     width,
     height,
     gray,
     configs,
-  ) as PuzzleBoardDetectionResult;
+  ) as PuzzleBoardDetection;
 }

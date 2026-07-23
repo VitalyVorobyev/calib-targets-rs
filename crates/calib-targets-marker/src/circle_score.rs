@@ -31,6 +31,7 @@ pub enum CirclePolarity {
 /// at [`Default`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CircleScoreParams {
     /// Canonical patch size (square), e.g. 64
     pub patch_size: usize,

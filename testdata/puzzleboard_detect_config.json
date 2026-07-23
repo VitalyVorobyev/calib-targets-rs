@@ -1,31 +1,19 @@
 {
   "image_path": "testdata/puzzleboard_small.png",
   "chess_config": {
-    "threshold_value": 0.15,
-    "nms_radius": 3
+    "strategy": { "chess": { "ring": "canonical", "refiner": { "center_of_mass": { "radius": 2 } } } },
+    "threshold": 15.0,
+    "detection": { "nms_radius": 3, "min_cluster_size": 2 },
+    "multiscale": "single_scale",
+    "upscale": "disabled",
+    "orientation_method": "ring_fit",
+    "merge_radius": 3.0
   },
   "detector": {
     "chessboard": {
-      "min_corner_strength": 0.1,
-      "min_corners": 20,
-      "expected_rows": 9,
-      "expected_cols": 9,
-      "completeness_threshold": 0.02,
-      "use_orientation_clustering": true,
-      "orientation_clustering_params": {
-        "num_bins": 90,
-        "max_iters": 10,
-        "peak_min_separation_deg": 10.0,
-        "outlier_threshold_deg": 30.0,
-        "min_peak_weight_fraction": 0.05,
-        "use_weights": true
-      },
-      "graph": {
-        "min_spacing_pix": 8.0,
-        "max_spacing_pix": 600.0,
-        "k_neighbors": 8,
-        "orientation_tolerance_deg": 22.5
-      }
+      "min_labeled_corners": 8,
+      "max_components": 3,
+      "min_corner_strength": 33.0
     },
     "board": {
       "rows": 10,

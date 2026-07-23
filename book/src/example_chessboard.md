@@ -18,7 +18,7 @@ cargo run --release -p calib-targets --example detect_chessboard -- testdata/mid
 The example:
 
 1. Decodes the image with `image::open(...).to_luma8()`.
-2. Calls `calib_targets::detect::detect_chessboard(&img, &DetectorParams::default())`.
+2. Calls `calib_targets::detect::detect_chessboard(&img, &ChessboardParams::default())`.
 3. Prints the detected `Detection` — labelled corner count, cell
    size, the two grid-direction angles, and every `(i, j) →
    pixel_position` pair.
@@ -44,7 +44,9 @@ labelled connected components (`(u, v) -> source_index`), and summary
 counters; the final-check drop accounting lives in the pipeline's
 `GeometryCheckTrace`. See
 [The Chessboard Detector §7](chessboard.md#7-debugging-via-the-topological-trace)
-for the field-by-field walkthrough.
+for the field-by-field walkthrough. Both `trace_topological` and the
+`TopologicalTrace` type are gated behind the chessboard crate's
+off-by-default `diagnostics` feature.
 
 The `crates/calib-targets-py/examples/overlay_chessboard.py` script draws
 labelled corners in gold with their `(i, j)` text, grid edges,
@@ -60,21 +62,21 @@ If you need control over the ChESS corner front-end (e.g., custom
 
 ```rust,no_run
 use calib_targets::detect::{default_chess_config, detect_corners};
-use calib_targets_chessboard::{Detector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use image::ImageReader;
 
 let img = ImageReader::open("board.png").unwrap().decode().unwrap().to_luma8();
 let chess_cfg = default_chess_config();
 let corners = detect_corners(&img, &chess_cfg);
 
-let params = DetectorParams::default();
-let detector = Detector::new(params);
+let params = ChessboardParams::default();
+let detector = ChessboardDetector::new(params);
 
 if let Some(detection) = detector.detect(&corners) {
     println!("{} labelled corners", detection.corners.len());
 }
 ```
 
-`Detector::detect_all(&corners)` returns every same-board component
+`ChessboardDetector::detect_all(&corners)` returns every same-board component
 found in the scene (see the [chessboard chapter](chessboard.md) for
 the multi-component contract).

@@ -87,7 +87,7 @@ def main() -> int:
         circles=circles,
     )
     params = ct.MarkerBoardParams(
-        layout=layout,
+        board=layout,
         chessboard=ct.ChessboardParams(),
     )
     result = ct.detect_marker_board(image, params=params)

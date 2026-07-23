@@ -24,10 +24,17 @@ fn downstream_can_name_and_configure_chess_config() {
 name = "chess_config_downstream"
 version = "0.1.0"
 edition = "2021"
+# Pin the workspace MSRV and opt into the MSRV-aware resolver so this
+# generated crate resolves the dependency versions a downstream consumer at
+# our stated MSRV would get. Without it the resolver picks the newest cached
+# version of every transitive dep, and a dep that raises its own rust-version
+# breaks this test for reasons unrelated to our API.
+rust-version = "1.88"
+resolver = "3"
 
 [dependencies]
 calib-targets = {{ path = '{crate_dir}' }}
-chess-corners = "0.11"
+chess-corners = "1.0"
 image = "0.25"
 "#
         ),
@@ -38,9 +45,7 @@ image = "0.25"
         r#"use calib_targets::detect::{self, DetectorConfig};
 // Advanced ChESS tuning types come from `chess-corners` directly — the
 // `calib-targets` facade re-exports only `DetectorConfig` + `OrientationMethod`.
-use chess_corners::{
-    ChessRefiner, ChessRing, DescriptorRing, DetectionStrategy, MultiscaleConfig, Threshold,
-};
+use chess_corners::{ChessRefiner, ChessRing, DetectionStrategy, MultiscaleConfig};
 
 fn main() {
     // `DetectorConfig` is `#[non_exhaustive]` (re-exported from
@@ -48,13 +53,16 @@ fn main() {
     // mutate the fields they care about; struct literal syntax is
     // intentionally forbidden.
     let _named_default: DetectorConfig = detect::default_chess_config();
+    // Since chess-corners 1.0 the threshold is a bare `f32` (an absolute
+    // response floor for the ChESS strategy), and `nms_radius` /
+    // `min_cluster_size` live on the shared `DetectionParams` rather than on
+    // the per-strategy `ChessConfig`.
     let cfg = DetectorConfig::chess()
-        .with_threshold(Threshold::Relative(0.15))
+        .with_threshold(15.0)
         .with_multiscale(MultiscaleConfig::pyramid(2, 64, 3))
+        .with_detection(|d| d.min_cluster_size = 1)
         .with_chess(|c| {
             c.ring = ChessRing::Broad;
-            c.descriptor_ring = DescriptorRing::Canonical;
-            c.min_cluster_size = 1;
             c.refiner = ChessRefiner::saddle_point();
         });
     assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));

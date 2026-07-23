@@ -28,7 +28,7 @@ use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::ChessCorner as Corner;
-use calib_targets_chessboard::{Detector as ChessDetector, DetectorParams};
+use calib_targets_chessboard::{ChessboardDetector as ChessDetector, ChessboardParams};
 use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::GrayImage;
@@ -69,7 +69,7 @@ fn load_image(name: &str) -> Option<GrayImage> {
 
 fn bench_all(c: &mut Criterion) {
     let cfg = default_chess_config();
-    let chess_params = DetectorParams::default();
+    let chess_params = ChessboardParams::default();
 
     let Some(manifest) = load_manifest() else {
         eprintln!(
@@ -94,7 +94,7 @@ fn bench_all(c: &mut Criterion) {
                 s.origin_col,
             )
             .ok()?;
-            let params = PuzzleBoardParams::for_board(&spec);
+            let params = PuzzleBoardParams::for_board(spec);
             Some((s.name.clone(), img, corners, params))
         })
         .collect();
