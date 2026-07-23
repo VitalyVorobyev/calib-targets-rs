@@ -64,11 +64,18 @@ Guidelines:
 - Prefer feature flags over adding many tiny crates when the boundary is not clear.
 
 ## MSRV (minimum supported Rust version)
-MSRV is currently **unspecified**.
-- If you set one, add it to:
-  - workspace `Cargo.toml`: `rust-version = "..."` (and/or per-crate)
-  - `rust-toolchain.toml` to pin toolchain in CI/dev
-- Until MSRV is defined, prefer stable Rust features and avoid nightly-only APIs.
+MSRV is **1.91**, declared as `rust-version = "1.91"` in the workspace
+`Cargo.toml` and enforced by the `msrv` CI job (which builds the whole
+workspace with 1.91 on every PR).
+- `rust-toolchain.toml` deliberately stays on `stable`, NOT the MSRV: CI's
+  fmt/clippy legs run on stable, so local development must lint with the same
+  compiler or local clippy silently misses lints CI enforces. The MSRV job —
+  not the dev toolchain — is what guards against using post-MSRV APIs.
+- When raising the MSRV, update in lockstep: `rust-version` in `Cargo.toml`,
+  the `msrv` job's toolchain in `.github/workflows/ci.yml`, the README badge,
+  `book/src/intro.md`, and this section. Cargo does not cross-check
+  `rust-version` against dependencies' floors, so bump ours whenever a
+  dependency (e.g. `chess-corners`) raises its own.
 
 ## How to make changes
 - Keep diffs small and focused.
