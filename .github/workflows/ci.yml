@@ -58,6 +58,34 @@ jobs:
         # in the root Cargo.toml.
         run: cargo test --workspace --all-targets
 
+  msrv:
+    # Verify the declared MSRV (`rust-version` in the root Cargo.toml) actually
+    # builds. Cargo never cross-checks `rust-version` against dependencies'
+    # own floors, so the declaration rots silently when an upstream bumps
+    # theirs — exactly how 1.88 went stale once chess-corners 1.1 moved to
+    # 1.91. `cargo check --workspace` mirrors what a consumer building on the
+    # MSRV toolchain compiles. Keep the version here in sync with
+    # `rust-version` in Cargo.toml.
+    runs-on: ubuntu-latest
+    env:
+      # rust-toolchain.toml pins `stable`; RUSTUP_TOOLCHAIN outranks it.
+      RUSTUP_TOOLCHAIN: "1.91"
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91"
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: check (MSRV)
+        run: cargo check --workspace
+
   wasm:
     runs-on: ubuntu-latest
     steps:

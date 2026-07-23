@@ -32,13 +32,13 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.11.0"
+version = "0.11.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
 homepage = "https://vitalyvorobyev.github.io/calib-targets-rs/"
 documentation = "https://vitalyvorobyev.github.io/calib-targets-rs/api"
-rust-version = "1.88"
+rust-version = "1.91"
 
 [workspace.lints.clippy]
 # Re-introducing `#[allow(clippy::too_many_arguments)]` to silence the
@@ -105,7 +105,7 @@ image = { version = "0.25", default-features = false, features = [
     "tiff",
     "webp",
 ] }
-kiddo = "5"
+kiddo = { version = "5", default-features = false, features = ["tracing"] }
 log = "0.4"
 nalgebra = "0.35"
 numpy = "0.29"

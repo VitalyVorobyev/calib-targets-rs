@@ -68,4 +68,4 @@ dataclasses with `to_dict()`/`from_dict(...)` helpers for JSON interoperability.
 For marker boards, `target_position` is populated only when
 `params.board.cell_size` is set and alignment succeeds.
 
-MSRV: Rust 1.88 (stable).
+MSRV: Rust 1.91 (stable).
