@@ -9,7 +9,20 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-## 0.11.1
+## 0.11.2
+
+Dependency-cleanup patch: no public API or behaviour changes.
+
+### Changed
+
+- **Migrated to `chess-corners` 1.2 and dropped the direct
+  `chess-corners-core` dependency.** The ChArUco local corner re-detection
+  and the FFI config lowering previously hand-composed low-level
+  `chess-corners-core` primitives (patch response + origin-offset image view
+  + refiner plumbing); they now drive the facade's single-scale ROI entry
+  point (`Detector::detect_u8_roi`, new in `chess-corners` 1.2). One fewer
+  direct dependency, one strategy-lowering site upstream, identical
+  detection results (full regression suites pass unchanged).
 
 Metadata-only patch: no code or behaviour changes.
 

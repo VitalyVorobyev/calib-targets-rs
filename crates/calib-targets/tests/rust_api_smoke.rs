@@ -29,7 +29,7 @@ edition = "2021"
 # our stated MSRV would get. Without it the resolver picks the newest cached
 # version of every transitive dep, and a dep that raises its own rust-version
 # breaks this test for reasons unrelated to our API.
-rust-version = "1.88"
+rust-version = "1.91"
 resolver = "3"
 
 [dependencies]

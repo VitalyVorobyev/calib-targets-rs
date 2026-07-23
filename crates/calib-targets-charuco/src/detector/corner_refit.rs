@@ -48,10 +48,7 @@ use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
     estimate_homography_rect_to_img, GrayImageView, LabeledCorner, TargetDetection, TargetKind,
 };
-use chess_corners_core::{
-    chess_response_u8_patch, detect_corners_from_response_with_refiner, ChessParams, ImageView,
-    Refiner, Roi,
-};
+use chess_corners::{Detector, Roi};
 use nalgebra::Point2;
 
 // ---------------------------------------------------------------------------
@@ -60,8 +57,8 @@ use nalgebra::Point2;
 
 /// Configuration for the corner validation stage.
 ///
-/// Groups the three tuning parameters so that `validate_and_fix_corners` stays
-/// within the argument-count limit.
+/// Groups the validation thresholds and the re-detection engine so that
+/// `validate_and_fix_corners` stays within the argument-count limit.
 pub(crate) struct CornerValidationConfig<'a> {
     /// Side length of one board square in pixels (used to scale thresholds).
     pub px_per_square: f32,
@@ -69,8 +66,11 @@ pub(crate) struct CornerValidationConfig<'a> {
     /// expressed as a fraction of `px_per_square`.  Set to `f32::INFINITY`
     /// to disable validation entirely.
     pub threshold_rel: f32,
-    /// ChESS detector parameters used for local re-detection.
-    pub chess_params: &'a ChessParams,
+    /// Re-detection engine for suspected false corners. Built once per detect
+    /// call from [`CharucoParams::corner_redetect_params`](crate::CharucoParams)
+    /// and threaded as `&mut` so its internal scratch buffers are reused across
+    /// corners and both validation stages.
+    pub detector: &'a mut Detector,
 }
 
 // ---------------------------------------------------------------------------
@@ -158,8 +158,10 @@ fn collect_board_to_image_correspondences(
 
 /// Run a local ChESS detection in a window centred on `seed`.
 ///
-/// Uses `chess_response_u8_patch` on the full image restricted to a patch of
-/// half-width `roi_half_px`, then runs NMS + subpixel refinement.
+/// Drives the facade's single-scale ROI detector
+/// ([`Detector::detect_u8_roi`]) over a window of half-width `roi_half_px`
+/// around `seed`, clamped to the image bounds. The detector reports corners
+/// already in the full-image pixel frame.
 ///
 /// Returns the image-space position of the strongest corner found within
 /// `roi_half_px` of the seed, or `None` if no corner is found.
@@ -167,7 +169,7 @@ pub(crate) fn redetect_corner_in_roi(
     image: &GrayImageView<'_>,
     seed: Point2<f32>,
     roi_half_px: i32,
-    chess_params: &ChessParams,
+    detector: &mut Detector,
 ) -> Option<Point2<f32>> {
     // Compute ROI in integer image coords, clamped to image bounds.
     let x0 = ((seed.x as i32) - roi_half_px).max(0) as usize;
@@ -179,56 +181,33 @@ pub(crate) fn redetect_corner_in_roi(
         return None;
     }
 
-    // Compute ChESS response only inside the ROI.
-    let patch_resp = chess_response_u8_patch(
-        image.data,
-        image.width,
-        image.height,
-        chess_params,
-        Roi::new(x0, y0, x1, y1)?,
-    );
+    let roi = Roi::new(x0, y0, x1, y1)?;
+    // The ROI path is single-scale and reports positions in the full-image
+    // frame. Its only error modes are a dimension mismatch or an unsupported
+    // (ML) refiner, neither of which the internal redetect config can hit, so
+    // treat any error as "no corner found".
+    let corners = detector
+        .detect_u8_roi(image.data, image.width as u32, image.height as u32, roi)
+        .ok()?;
 
-    if patch_resp.width() == 0 || patch_resp.height() == 0 {
-        return None;
-    }
-
-    // Build an ImageView with origin = (x0, y0) so the refiner reads the
-    // correct global pixels even though the response map has local coords.
-    let refine_view = ImageView::with_origin(
-        image.width,
-        image.height,
-        image.data,
-        [x0 as i32, y0 as i32],
-    )?;
-
-    let mut refiner = Refiner::from_kind(chess_params.refiner.clone());
-    let raw_corners = detect_corners_from_response_with_refiner(
-        &patch_resp,
-        chess_params,
-        Some(refine_view),
-        &mut refiner,
-    );
-
-    // Shift patch-local coordinates back to global image coordinates and pick
-    // the strongest corner that is within roi_half_px of the seed.
+    // Pick the strongest corner within roi_half_px of the seed.
     let seed_x = seed.x;
     let seed_y = seed.y;
     let max_dist2 = (roi_half_px as f32) * (roi_half_px as f32);
 
-    raw_corners
+    corners
         .into_iter()
-        .map(|c| {
-            let gx = c.x + x0 as f32;
-            let gy = c.y + y0 as f32;
-            (c.strength, gx, gy)
-        })
-        .filter(|&(_s, gx, gy)| {
-            let dx = gx - seed_x;
-            let dy = gy - seed_y;
+        .filter(|c| {
+            let dx = c.x - seed_x;
+            let dy = c.y - seed_y;
             dx * dx + dy * dy <= max_dist2
         })
-        .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
-        .map(|(_s, gx, gy)| Point2::new(gx, gy))
+        .max_by(|a, b| {
+            a.response
+                .partial_cmp(&b.response)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .map(|c| Point2::new(c.x, c.y))
 }
 
 // ---------------------------------------------------------------------------
@@ -259,7 +238,7 @@ pub(crate) fn validate_and_fix_corners(
     markers: &[MarkerDetection],
     alignment: &CharucoAlignment,
     image: &GrayImageView<'_>,
-    cfg: &CornerValidationConfig<'_>,
+    cfg: CornerValidationConfig<'_>,
 ) -> TargetDetection {
     // Fast path: validation disabled or no markers to consult.
     if cfg.threshold_rel.is_infinite() || markers.is_empty() {
@@ -315,7 +294,7 @@ pub(crate) fn validate_and_fix_corners(
         }
 
         // Corner is a candidate false positive — attempt local re-detection.
-        match redetect_corner_in_roi(image, seed, roi_half_px, cfg.chess_params) {
+        match redetect_corner_in_roi(image, seed, roi_half_px, cfg.detector) {
             Some(new_pos) => {
                 // Replace the false position with the re-detected one.
                 let mut fixed = corner;

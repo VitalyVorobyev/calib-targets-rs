@@ -6,7 +6,6 @@ use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
-use super::params::to_chess_params;
 use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
@@ -14,6 +13,7 @@ use calib_targets_aruco::MarkerDetection;
 use calib_targets_chessboard::ChessCorner;
 use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
+use chess_corners::Detector;
 use log::{debug, warn};
 
 /// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
@@ -351,6 +351,12 @@ impl CharucoDetector {
         // the effective tuning once for the whole component loop.
         let min_secondary_marker_inliers =
             self.params.effective_tuning().min_secondary_marker_inliers;
+        // Build the local corner re-detection engine once per detect call and
+        // reuse it across every component and both validation stages, so its
+        // internal scratch buffers are allocated a single time. The config is
+        // an internal constant (`default_redetect_params`) and always valid.
+        let mut redetector = Detector::new(self.params.corner_redetect_params)
+            .expect("internal corner-redetect config is always valid");
         let mut results: Vec<(CharucoDetection, RawMarkerCounts)> = Vec::new();
         for (i, chessboard) in components.iter().enumerate() {
             let min_inliers = if i == 0 {
@@ -359,7 +365,7 @@ impl CharucoDetector {
                 min_secondary_marker_inliers
             };
 
-            match self.detect_component(image, chessboard, min_inliers, i, sink) {
+            match self.detect_component(image, chessboard, min_inliers, i, &mut redetector, sink) {
                 Ok((result, raw_counts)) => {
                     debug!(
                         "component {i}: {} corners, {} markers",
@@ -403,6 +409,7 @@ impl CharucoDetector {
         chessboard: &ChessboardDetection,
         min_marker_inliers: usize,
         component_index: usize,
+        redetector: &mut Detector,
         sink: &mut S,
     ) -> Result<(CharucoDetection, RawMarkerCounts), CharucoDetectError> {
         // Adapt the typed chessboard result into the generic
@@ -415,13 +422,12 @@ impl CharucoDetector {
         let chessboard = chessboard_detection_to_target(chessboard);
         let inliers: Vec<usize> = (0..chessboard.corners.len()).collect();
         let mut corner_map = build_corner_map(&chessboard.corners, &inliers);
-        let corner_redetect_params = to_chess_params(&self.params.corner_redetect_params);
         smooth_grid_corners(
             &mut corner_map,
             image,
             self.params.px_per_square,
             tuning.grid_smoothness_threshold_rel,
-            &corner_redetect_params,
+            redetector,
         );
         let cells = build_marker_cells(&corner_map);
         debug!(
@@ -509,10 +515,10 @@ impl CharucoDetector {
             &markers,
             &alignment,
             image,
-            &CornerValidationConfig {
+            CornerValidationConfig {
                 px_per_square: self.params.px_per_square,
                 threshold_rel: tuning.corner_validation_threshold_rel,
-                chess_params: &corner_redetect_params,
+                detector: redetector,
             },
         );
         debug!(
