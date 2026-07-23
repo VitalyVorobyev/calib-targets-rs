@@ -41,7 +41,6 @@ generate-header = ["dep:cbindgen"]
 calib-targets = { workspace = true, features = ["image", "diagnostics"] }
 cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
-chess-corners-core.workspace = true
 flate2.workspace = true
 serde.workspace = true
 serde_json.workspace = true

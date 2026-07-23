@@ -2,8 +2,7 @@ use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::{ChessboardAdvancedTuning, ChessboardParams};
 use calib_targets_core::{default_chess_config, DetectorConfig};
-use chess_corners::SaddlePointConfig;
-use chess_corners_core::{ChessParams as ChessCornerParams, RefinerKind};
+use chess_corners::{ChessRefiner, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -57,18 +56,18 @@ pub struct CharucoParams {
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
-    /// ChESS detector parameters used for local corner re-detection.
+    /// ChESS detector configuration used for local corner re-detection.
     ///
-    /// When validation identifies a false corner, these parameters control
-    /// the ChESS response computation and subpixel refinement in a small
-    /// patch centred on the marker-predicted seed position.
+    /// When validation identifies a false corner, this config drives a
+    /// single-scale ROI detection ([`chess_corners::Detector::detect_u8_roi`])
+    /// in a small window centred on the marker-predicted seed position.
     ///
     /// Internal (`pub(crate)`): the field carries the upstream `chess_corners`
-    /// parameter type and is `#[serde(skip)]`, so JSON / binding consumers
+    /// [`DetectorConfig`] and is `#[serde(skip)]`, so JSON / binding consumers
     /// could never set it — it is reconstructed from defaults on every
     /// deserialisation and is not part of the public configuration surface.
     #[serde(skip)]
-    pub(crate) corner_redetect_params: ChessCornerParams,
+    pub(crate) corner_redetect_params: DetectorConfig,
     /// Opt-in, **unstable** board-level-matcher and corner-validation tuning
     /// knobs. Leave unset (`None`) unless a specific input fails and you have
     /// evidence for the change; `None` behaves exactly like
@@ -213,36 +212,23 @@ fn default_cell_weight_border_threshold() -> f32 {
     0.5
 }
 
-/// Build the ChESS parameters used for local re-detection inside a small ROI.
+/// Build the ChESS config used for local re-detection inside a small ROI.
 ///
 /// Lower threshold and looser cluster requirement compared to the global scan,
 /// because we already know approximately where the true corner should be.
-pub(crate) fn default_redetect_params() -> ChessCornerParams {
-    let mut params = ChessCornerParams::default();
-    // `threshold = 0.0` is the paper contract ("keep every strictly-positive
-    // response"), which is what this ROI re-detection has always actually run
-    // at. Under chess-corners 0.11 this line read `threshold_rel = 0.05`, but
-    // that never took effect: 0.11 resolved the cutoff as
-    // `threshold_abs.unwrap_or(threshold_rel * max_response)` and
-    // `ChessParams::default()` set `threshold_abs = Some(0.0)`, so the
-    // absolute floor always won and the relative value was dead. 1.0 collapsed
-    // the pair into a single absolute `threshold`, so writing `0.0` here
-    // preserves the behaviour exactly rather than resurrecting a knob that was
-    // never live.
-    params.threshold = 0.0;
-    params.nms_radius = 2;
-    params.min_cluster_size = 1;
-    params.refiner = RefinerKind::SaddlePoint(SaddlePointConfig::default());
-    params
-}
-
-/// Convert a `ChessCornerParams` into the upstream
-/// `chess_corners_core::ChessParams`.
-///
-/// Since `ChessCornerParams` is now a re-export of
-/// `chess_corners_core::ChessParams`, this is an identity-like operation.
-pub(crate) fn to_chess_params(params: &ChessCornerParams) -> chess_corners_core::ChessParams {
-    params.clone()
+/// `threshold = 0.0` keeps every strictly-positive response. Orientation is
+/// skipped ([`without_orientation`](DetectorConfig::without_orientation)): the
+/// re-detection consumes only the refined corner position, so the per-corner
+/// axis fit would be wasted work — preserving the old hand-rolled path's cost.
+pub(crate) fn default_redetect_params() -> DetectorConfig {
+    DetectorConfig::chess()
+        .with_threshold(0.0)
+        .with_detection(|d| {
+            d.nms_radius = 2;
+            d.min_cluster_size = 1;
+        })
+        .with_chess(|c| c.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()))
+        .without_orientation()
 }
 
 impl CharucoParams {
@@ -372,29 +358,23 @@ mod tests {
 
     #[test]
     fn default_redetect_params_uses_saddle_point_refiner() {
-        let params = default_redetect_params();
+        let cfg = default_redetect_params();
         // Absolute floor of 0.0 — the paper contract, and what this path has
         // always effectively run at. See the note in `default_redetect_params`.
-        assert_eq!(params.threshold, 0.0);
-        assert_eq!(params.nms_radius, 2);
-        assert_eq!(params.min_cluster_size, 1);
+        assert_eq!(cfg.threshold, 0.0);
+        assert_eq!(cfg.detection.nms_radius, 2);
+        assert_eq!(cfg.detection.min_cluster_size, 1);
+        // Orientation is skipped: the re-detection uses only the refined
+        // position, so the per-corner axis fit would be wasted cost.
+        assert!(cfg.orientation_method.is_none());
+        let chess_corners::DetectionStrategy::Chess(chess) = cfg.strategy else {
+            panic!("expected the ChESS strategy, got {:?}", cfg.strategy);
+        };
         assert!(
-            matches!(params.refiner, RefinerKind::SaddlePoint(_)),
+            matches!(chess.refiner, ChessRefiner::SaddlePoint(_)),
             "expected SaddlePoint refiner, got {:?}",
-            params.refiner,
+            chess.refiner,
         );
-    }
-
-    #[test]
-    fn to_chess_params_is_identity() {
-        // Since ChessCornerParams IS chess_corners_core::ChessParams, to_chess_params
-        // should round-trip perfectly.
-        let mut params = ChessCornerParams::default();
-        params.threshold = 0.3;
-        params.nms_radius = 4;
-        let converted = to_chess_params(&params);
-        assert!((converted.threshold - 0.3).abs() < 1e-6);
-        assert_eq!(converted.nms_radius, 4);
     }
 
     #[test]

@@ -10,7 +10,7 @@
 
 use super::corner_refit::redetect_corner_in_roi;
 use calib_targets_core::{square_predict_grid_position, Coord, CornerMap, GrayImageView};
-use chess_corners_core::ChessParams;
+use chess_corners::Detector;
 use log::debug;
 use nalgebra::Point2;
 
@@ -29,7 +29,7 @@ pub(crate) fn smooth_grid_corners(
     image: &GrayImageView<'_>,
     px_per_square: f32,
     threshold_rel: f32,
-    chess_params: &ChessParams,
+    detector: &mut Detector,
 ) {
     if threshold_rel.is_infinite() || corner_map.len() < 3 {
         return;
@@ -68,7 +68,7 @@ pub(crate) fn smooth_grid_corners(
     }
 
     for (gc, predicted) in flagged {
-        match redetect_corner_in_roi(image, predicted, roi_half_px, chess_params) {
+        match redetect_corner_in_roi(image, predicted, roi_half_px, detector) {
             Some(new_pos) => {
                 debug!(
                     "grid smoothness: re-detected corner ({},{}) at ({:.1},{:.1}) -> ({:.1},{:.1})",
@@ -120,9 +120,10 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let params = ChessParams::default();
+        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
+            .expect("valid redetect config");
 
-        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &params);
+        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
         // All 9 corners should remain.
         assert_eq!(map.len(), 9);
@@ -143,9 +144,10 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let params = ChessParams::default();
+        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
+            .expect("valid redetect config");
 
-        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &params);
+        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
         // All corners should remain unchanged.
         assert_eq!(map.len(), 9);
@@ -175,9 +177,10 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let params = ChessParams::default();
+        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
+            .expect("valid redetect config");
 
-        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &params);
+        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
         // No corners should be removed.
         assert_eq!(map.len(), orig_len);
@@ -196,9 +199,10 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let params = ChessParams::default();
+        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
+            .expect("valid redetect config");
 
-        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &params);
+        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
         // Middle should be snapped to predicted position, not removed.
         assert_eq!(map.len(), 3);
@@ -220,9 +224,10 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let params = ChessParams::default();
+        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
+            .expect("valid redetect config");
 
-        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &params);
+        smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
         // Both corners should remain (no pairs to predict from).
         assert_eq!(map.len(), 2);

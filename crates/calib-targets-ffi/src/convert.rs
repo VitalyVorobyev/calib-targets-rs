@@ -10,7 +10,7 @@
 
 use crate::error::{FfiError, FfiResult};
 use crate::types::{
-    ct_charuco_board_spec_t, ct_charuco_detector_params_t, ct_chess_config_t, ct_chess_params_t,
+    ct_charuco_board_spec_t, ct_charuco_detector_params_t, ct_chess_config_t,
     ct_chessboard_advanced_t, ct_chessboard_corner_t, ct_chessboard_params_t,
     ct_circle_match_params_t, ct_circle_polarity_t, ct_circle_score_params_t, ct_dictionary_id_t,
     ct_grid_alignment_t, ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t,
@@ -58,14 +58,13 @@ use chess_corners::{
     CenterOfMassConfig, ChessRefiner, ChessRing, ForstnerConfig, MultiscaleConfig,
     SaddlePointConfig, UpscaleConfig,
 };
-use chess_corners_core::{ChessParams, RefinerKind};
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
 
 pub(crate) fn convert_refiner_kind(
     value: crate::types::ct_refiner_kind_t,
     cfg: &crate::types::ct_refiner_config_t,
-) -> FfiResult<RefinerKind> {
+) -> FfiResult<ChessRefiner> {
     match value {
         CT_REFINER_KIND_CENTER_OF_MASS => {
             if cfg.center_of_mass.radius < 0 {
@@ -75,7 +74,7 @@ pub(crate) fn convert_refiner_kind(
             }
             let mut out = CenterOfMassConfig::default();
             out.radius = cfg.center_of_mass.radius;
-            Ok(RefinerKind::CenterOfMass(out))
+            Ok(ChessRefiner::CenterOfMass(out))
         }
         CT_REFINER_KIND_FORSTNER => {
             if cfg.forstner.radius < 0 {
@@ -94,7 +93,7 @@ pub(crate) fn convert_refiner_kind(
             )?;
             out.max_offset =
                 require_nonnegative(cfg.forstner.max_offset, "refiner.forstner.max_offset")?;
-            Ok(RefinerKind::Forstner(out))
+            Ok(ChessRefiner::Forstner(out))
         }
         CT_REFINER_KIND_SADDLE_POINT => {
             if cfg.saddle_point.radius < 0 {
@@ -116,24 +115,12 @@ pub(crate) fn convert_refiner_kind(
                 cfg.saddle_point.min_abs_det,
                 "refiner.saddle_point.min_abs_det",
             )?;
-            Ok(RefinerKind::SaddlePoint(out))
+            Ok(ChessRefiner::SaddlePoint(out))
         }
         other => Err(FfiError::config_error(format!(
             "refiner.kind must be a valid ct_refiner_kind_t constant, got {other}"
         ))),
     }
-}
-
-pub(crate) fn convert_chess_params(params: &ct_chess_params_t) -> FfiResult<ChessParams> {
-    // `ChessParams` (`chess_corners_core::ChessParams`) is `#[non_exhaustive]`,
-    // so we must start from `default()` and patch individual fields.
-    let mut out = ChessParams::default();
-    out.use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
-    out.threshold = require_nonnegative(params.threshold, "chess.params.threshold")?;
-    out.nms_radius = params.nms_radius;
-    out.min_cluster_size = params.min_cluster_size;
-    out.refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
-    Ok(out)
 }
 
 /// Validate the C pyramid shape and lower it to the `(levels, min_size)` pair
@@ -176,27 +163,28 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
 }
 
 pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<DetectorConfig> {
-    let params = convert_chess_params(&config.params)?;
+    // Lower the flat C `ct_chess_params_t` directly onto the strategy-typed
+    // `DetectorConfig`. The flat shape (`use_radius10`, `threshold`,
+    // `nms_radius`, `min_cluster_size`, `refiner`) is split across the ChESS
+    // strategy, the shared `DetectionParams`, and the top-level threshold.
+    let params = &config.params;
+    let use_radius10 = flag_to_bool(params.use_radius10, "chess.params.use_radius10")?;
+    let threshold = require_nonnegative(params.threshold, "chess.params.threshold")?;
+    let nms_radius = params.nms_radius;
+    let min_cluster_size = params.min_cluster_size;
+    let refiner = convert_refiner_kind(params.refiner.kind, &params.refiner)?;
+    let ring = if use_radius10 {
+        ChessRing::Broad
+    } else {
+        ChessRing::Canonical
+    };
+
     let (pyramid_levels, pyramid_min_size) = convert_pyramid_params(&config.multiscale.pyramid)?;
     let merge_radius = require_nonnegative(
         config.multiscale.merge_radius,
         "chess.multiscale.merge_radius",
     )?;
     let upscale = convert_upscale_config(&config.upscale)?;
-
-    // Map the low-level `ChessParams` onto the strategy-typed
-    // `DetectorConfig`. The flat C shape (`use_radius10`, `nms_radius`,
-    // `min_cluster_size`, `refiner`, `threshold`) is split across the ChESS
-    // strategy, the shared `DetectionParams`, and the top-level threshold.
-    let threshold = params.threshold;
-    let ring = if params.use_radius10 {
-        ChessRing::Broad
-    } else {
-        ChessRing::Canonical
-    };
-    let refiner = refiner_kind_to_chess_refiner(params.refiner);
-    let nms_radius = params.nms_radius;
-    let min_cluster_size = params.min_cluster_size;
 
     // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
     // detector skips the pyramid path entirely.
@@ -215,8 +203,7 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         .with_multiscale(multiscale)
         .with_upscale(upscale)
         .with_merge_radius(merge_radius)
-        // `nms_radius` / `min_cluster_size` moved off the per-strategy config
-        // and onto the shared `DetectionParams` in chess-corners 1.0.
+        // `nms_radius` / `min_cluster_size` live on the shared `DetectionParams`.
         .with_detection(|d| {
             d.nms_radius = nms_radius;
             d.min_cluster_size = min_cluster_size;
@@ -225,22 +212,6 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
             c.ring = ring;
             c.refiner = refiner;
         }))
-}
-
-/// Translate a low-level [`RefinerKind`] back into the facade-level
-/// [`ChessRefiner`] enum used by [`DetectorConfig`]. ChESS callers only
-/// surface the three image-patch refiners (the Radon-peak refiner is for
-/// the Radon strategy); fall back to the default `CenterOfMass` for any
-/// future / Radon-specific variant.
-fn refiner_kind_to_chess_refiner(kind: RefinerKind) -> ChessRefiner {
-    match kind {
-        RefinerKind::CenterOfMass(cfg) => ChessRefiner::CenterOfMass(cfg),
-        RefinerKind::Forstner(cfg) => ChessRefiner::Forstner(cfg),
-        RefinerKind::SaddlePoint(cfg) => ChessRefiner::SaddlePoint(cfg),
-        // RefinerKind is `#[non_exhaustive]`; Radon-only / future variants
-        // fall through to the library default for the ChESS strategy.
-        _ => ChessRefiner::default(),
-    }
 }
 
 // ─── Optional wrappers ──────────────────────────────────────────────────────
