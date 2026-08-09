@@ -71,20 +71,16 @@ delaunator = "1.0"
 env_logger = "0.11"
 flate2 = "1"
 # `image`'s default feature set is `rayon` + `default-formats`, and
-# `default-formats` includes `avif` — the AVIF *encoder* (`ravif` → `rav1e` →
-# the unmaintained `paste`, RUSTSEC-2024-0436). Nothing in this workspace
-# encodes AVIF: we read calibration frames and write PNG. So we take the
-# default set minus `avif` and keep every decoder a user might plausibly feed
-# the CLI. (AVIF *decoding* is a separate `avif-native` feature that was never
-# on by default, so no input format is lost.) This only clears `paste` in
-# combination with the matching upstream change in chess-corners 1.1 — Cargo
-# unifies features across the graph, so either crate enabling `image/default`
-# re-enables the encoder for everyone.
+# `default-formats` includes two paths to the unmaintained `paste` crate
+# (RUSTSEC-2024-0436): AVIF encoding (`ravif` → `rav1e`) and OpenEXR
+# (`exr` → `pulp`). Nothing in this workspace reads or writes either format,
+# and no fixture uses them. Keep defaults disabled and opt into the formats the
+# detector stack actually supports. AVIF decoding (`avif-native`) is a separate
+# feature and was never enabled.
 image = { version = "0.25", default-features = false, features = [
     "rayon",
     "bmp",
     "dds",
-    "exr",
     "ff",
     "gif",
     "hdr",

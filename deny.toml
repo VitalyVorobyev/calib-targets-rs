@@ -5,15 +5,12 @@
 #     cargo deny check
 #
 # This is the gate, not `cargo audit`, and the difference matters. `audit`
-# scans `Cargo.lock`, which by design records every *optional* dependency
-# whether or not any enabled feature actually pulls it in. `deny` resolves
-# real features first, so it reports what we actually compile. Concretely:
-# `cargo audit` still warns about `paste` via `rav1e ← ravif ← image`, but
-# that edge only exists behind `image`'s `avif` feature, which nothing in
-# this workspace enables — `cargo tree -i paste` is empty and `paste` is not
-# built. `deny` sees this correctly; `audit` cannot. `deny` additionally
-# enforces licence policy, duplicate-version hygiene, and source
-# allow-listing.
+# scans `Cargo.lock`, which by design records optional dependencies even when
+# their features are disabled. `deny` resolves the enabled feature graph first,
+# so it reports what we actually compile. `paste` can still appear in the lock
+# through `image`'s disabled AVIF dependency, but `cargo tree -i paste` must be
+# empty. `deny` additionally enforces licence policy, duplicate-version
+# hygiene, and source allow-listing.
 #
 # Policy note: an entry in `advisories.ignore` is a *documented, dated
 # exception*, never a way to silence a finding we could fix. Every entry
@@ -26,10 +23,10 @@ all-features = true
 version = 2
 yanked = "deny"
 # No exceptions are currently in force. RUSTSEC-2024-0436 (`paste`,
-# unmaintained) was ignored here until chess-corners 1.1 stopped enabling
-# `image/default`; with that plus `default-features = false` on our own
-# `image` dependency, the AVIF encoder — and with it `rav1e`/`paste` — is out
-# of the graph entirely. See the `image` entry in the root `Cargo.toml`.
+# unmaintained) has no exception. `image` defaults stay disabled and both
+# feature paths that currently pull it in — AVIF (`rav1e`) and OpenEXR
+# (`exr` → `pulp`) — are disabled. See the `image` entry in the root
+# `Cargo.toml`.
 ignore = []
 
 [licenses]
