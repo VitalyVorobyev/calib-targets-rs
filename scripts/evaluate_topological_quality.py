@@ -200,8 +200,11 @@ def draw_ground_truth(image_path: Path, truth: dict[str, Any], out_path: Path) -
 
 
 def draw_contact_sheet(image_root: Path, truths: list[dict[str, Any]], out_path: Path) -> None:
-    figure, axes = plt.subplots(2, 2, figsize=(16, 10), dpi=140)
-    for axis, truth in zip(axes.flat, truths):
+    columns = min(2, max(1, len(truths)))
+    rows = max(1, math.ceil(len(truths) / columns))
+    figure, axes = plt.subplots(rows, columns, figsize=(8 * columns, 5 * rows), dpi=140, squeeze=False)
+    flat_axes = list(axes.flat)
+    for axis, truth in zip(flat_axes, truths):
         image = Image.open(image_root / truth["image"]).convert("L")
         axis.imshow(image, cmap="gray", vmin=0, vmax=255)
         for point in truth["points"]:
@@ -209,6 +212,8 @@ def draw_contact_sheet(image_root: Path, truths: list[dict[str, Any]], out_path:
             axis.scatter([point["position"][0]], [point["position"][1]], s=9, facecolors=color, edgecolors=color, linewidths=0.6)
         visible = sum(point["status"] == "visible" for point in truth["points"])
         axis.set_title(f'{truth["image"]} — visible {visible}, excluded {len(truth["points"]) - visible}', fontsize=9)
+        axis.axis("off")
+    for axis in flat_axes[len(truths):]:
         axis.axis("off")
     figure.tight_layout(pad=0.6)
     figure.savefig(out_path, bbox_inches="tight", pad_inches=0.05)
@@ -220,6 +225,7 @@ def main() -> None:
     parser.add_argument("--trace-dir", type=Path, required=True)
     parser.add_argument("--image-root", type=Path, required=True)
     parser.add_argument("--ground-truth", type=Path, required=True)
+    parser.add_argument("--images", nargs="*", type=Path, default=None)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--tolerance-px", type=float, default=3.0)
     parser.add_argument(
@@ -233,8 +239,14 @@ def main() -> None:
         parser.error("--detection-scale must be finite and positive")
     ground_truth = json.loads(args.ground_truth.read_text(encoding="utf-8"))
     image_root = args.image_root
+    selected = {path.name for path in args.images} if args.images else None
+    truths = [
+        truth
+        for truth in ground_truth["images"]
+        if selected is None or truth["image"] in selected
+    ]
     reports = []
-    for truth in ground_truth["images"]:
+    for truth in truths:
         image_path = image_root / truth["image"]
         image_bytes = image_path.read_bytes()
         actual_sha256 = hashlib.sha256(image_bytes).hexdigest()
@@ -256,8 +268,12 @@ def main() -> None:
         final = final_components(payload, args.detection_scale)
         generic_sources, recovered_sources, final_sources = map(source_set, (generic, recovered, final))
         reported_additions = set(payload["chessboard_stages"]["recovery_additions"])
+        axis_additions = set(payload["chessboard_stages"].get("axis_aware_recovery_additions", []))
+        geometry_additions = set(payload["chessboard_stages"].get("geometry_only_recovery_additions", []))
         reported_drops = set(payload["chessboard_stages"]["final_drops"])
         assert reported_additions == recovered_sources - generic_sources
+        assert reported_additions == axis_additions | geometry_additions
+        assert not axis_additions & geometry_additions
         assert reported_drops == recovered_sources - final_sources
         generic_fits = [component.get("fit") for component in payload["trace"]["final_components"]]
         reports.append({
@@ -267,6 +283,8 @@ def main() -> None:
             "final_public": evaluate(final, truth, args.tolerance_px),
             "stage_attribution": {
                 "recovery_additions": sorted(reported_additions),
+                "axis_aware_recovery_additions": sorted(axis_additions),
+                "geometry_only_recovery_additions": sorted(geometry_additions),
                 "final_drops_or_refusal": sorted(reported_drops),
             },
             "generic_fit_residuals": generic_fits,
@@ -282,31 +300,36 @@ def main() -> None:
         )
     measured_stages = ("generic_projective_grid", "after_chessboard_recovery", "final_public")
     wrong = sum(item[stage]["wrong_labels"] for item in reports for stage in measured_stages)
+    false_labelled = sum(
+        item[stage]["false_labelled_features"] for item in reports for stage in measured_stages
+    )
     canonical_failures = [
         item["image"]
         for item in reports
         if not item["final_public"]["canonical_primary"]
     ]
     report = {
-        "schema": 2,
+        "schema": 3,
         "coordinate_frame": "native image pixels: origin top-left, x right, y down; ground-truth grid u right, v down",
         "detection_scale": args.detection_scale,
         "matching": f"one-to-one native-resolution pixel matching within {args.tolerance_px}px, then best D4 + integer translation per component",
         "acceptance": {
             "wrong_labels_must_equal": 0,
             "observed_wrong_labels": wrong,
+            "false_labelled_features_must_equal": 0,
+            "observed_false_labelled_features": false_labelled,
             "final_canonical_primary_required": True,
             "canonical_failures": canonical_failures,
-            "passed": wrong == 0 and not canonical_failures,
+            "passed": wrong == 0 and false_labelled == 0 and not canonical_failures,
         },
         "images": reports,
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    draw_contact_sheet(image_root, ground_truth["images"], args.trace_dir / "ground-truth-contact-sheet.png")
-    if wrong or canonical_failures:
+    draw_contact_sheet(image_root, truths, args.trace_dir / "ground-truth-contact-sheet.png")
+    if wrong or false_labelled or canonical_failures:
         raise SystemExit(
-            f"quality gate failed: {wrong} wrong labels, "
+            f"quality gate failed: {wrong} wrong labels, {false_labelled} false-labelled features, "
             f"canonical failures={canonical_failures}"
         )
     print(f"wrote {args.out}")

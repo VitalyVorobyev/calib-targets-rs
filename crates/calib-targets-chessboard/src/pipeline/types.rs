@@ -164,6 +164,10 @@ pub struct ChessboardStageTrace {
     pub recovered_components: Vec<Vec<ChessboardLabelTrace>>,
     /// Corner indices absent from the generic result and present after recovery.
     pub recovery_additions: Vec<usize>,
+    /// Net checkpoint additions attributable to the ordinary axis-aware booster.
+    pub axis_aware_recovery_additions: Vec<usize>,
+    /// Net checkpoint additions attributable to the conservative geometry-only fallback.
+    pub geometry_only_recovery_additions: Vec<usize>,
     /// Recovered corner indices removed or refused by the final geometry gate.
     pub final_drops: Vec<usize>,
 }

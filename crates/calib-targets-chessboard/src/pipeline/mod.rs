@@ -82,7 +82,7 @@ use self::recover::{build_topological_detections, clustered_augs, recover_topolo
 
 type LabelledComponent = HashMap<(i32, i32), usize>;
 type LabelledComponents = Vec<LabelledComponent>;
-type FinishedTopological = (Vec<ChessboardDetection>, Option<LabelledComponents>);
+type FinishedTopological = (Vec<ChessboardDetection>, Option<recover::RecoveryOutcome>);
 
 #[cfg(feature = "diagnostics")]
 pub use types::{ChessboardClusterTrace, ChessboardFeatureTrace};
@@ -228,7 +228,7 @@ fn finish_topological(
     );
     let captured = capture_recovered.then(|| recovered.clone());
     let detections = build_topological_detections(
-        recovered,
+        recovered.components,
         &prepared.inputs.positions,
         &prepared.base_augs,
         prepared.clustered_centers,
@@ -394,6 +394,7 @@ pub fn trace_topological_detection(
     let (detections, recovered) = finish_topological(generic_components, &prepared, params, true);
     let recovered = recovered.unwrap_or_default();
     let recovered_indices: std::collections::HashSet<usize> = recovered
+        .components
         .iter()
         .flat_map(|component| component.values().copied())
         .collect();
@@ -406,12 +407,27 @@ pub fn trace_topological_detection(
         .copied()
         .collect();
     recovery_additions.sort_unstable();
+    // A booster may rediscover a corner in a parity-aligned component even
+    // though that corner was already present in another generic component.
+    // Diagnostics describe net checkpoint changes, so retain only additions
+    // absent from the generic union and surviving the post-recovery merge.
+    let net_recovery_additions = |indices: &[usize]| {
+        indices
+            .iter()
+            .copied()
+            .filter(|index| recovered_indices.contains(index) && !generic_indices.contains(index))
+            .collect::<Vec<_>>()
+    };
+    let axis_aware_recovery_additions = net_recovery_additions(&recovered.axis_aware_additions);
+    let geometry_only_recovery_additions =
+        net_recovery_additions(&recovered.geometry_only_additions);
     let mut final_drops: Vec<usize> = recovered_indices
         .difference(&final_indices)
         .copied()
         .collect();
     final_drops.sort_unstable();
     let recovered_components = recovered
+        .components
         .into_iter()
         .map(|component| {
             let mut labels: Vec<ChessboardLabelTrace> = component
@@ -428,6 +444,8 @@ pub fn trace_topological_detection(
             features: feature_trace,
             recovered_components,
             recovery_additions,
+            axis_aware_recovery_additions,
+            geometry_only_recovery_additions,
             final_drops,
         },
         detections,

@@ -1,7 +1,8 @@
 //! Detection task facade.
 //!
-//! The working implementations target the square lattice with any of the three
-//! input-feature kinds. [`Evidence::Oriented2`] is the native shape, assembled
+//! Square supports its three applicable input-feature kinds; hex supports
+//! position-only, single-family, and native three-family evidence.
+//! [`Evidence::Oriented2`] is the native square shape, assembled
 //! by the axis-driven topological grid finder (Delaunay → quad-mesh →
 //! flood-fill → validate → fit). [`Evidence::Positions`] (orientation-free) and
 //! [`Evidence::Oriented1`] (single-axis) are synthesized up to the Oriented2
@@ -24,7 +25,7 @@ use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{GridDetection, GridSolution};
 use std::collections::HashSet;
 
-use crate::shared::recovery_schedule::RecoverySchedule;
+use crate::shared::recovery_schedule::{RecoverySchedule, SquareAxisProvenance};
 use crate::shared::validate::ValidationParams;
 use crate::topological::TopologicalParams;
 
@@ -34,9 +35,9 @@ use crate::topological::TopologicalParams;
 pub enum Evidence<'a> {
     /// Position-only point features.
     Positions(&'a [PointFeature]),
-    /// Point features with one local lattice direction. Supported for
-    /// `Square`: the orthogonal direction is synthesized from neighbour
-    /// geometry ([`crate::expert::orientation::synthesize_oriented2_from_oriented1`]).
+    /// Point features with one measured local lattice family. Square
+    /// synthesizes one missing direction; hex internally synthesizes two while
+    /// preserving the measured angle and uncertainty.
     Oriented1(&'a [OrientedFeature<1>]),
     /// Point features with two local lattice directions — the native square
     /// input shape consumed by both algorithms.
@@ -44,8 +45,7 @@ pub enum Evidence<'a> {
     /// Point features with three local lattice directions. **Hex-native
     /// evidence**: a hexagonal lattice has three axis families, and a feature
     /// detector that recovers all three feeds them here. The hex detection
-    /// path is the intended consumer; until a detector consumes it this stays
-    /// [`GridError::UnsupportedCombination`].
+    /// path consumes the axes as an unordered local set.
     Oriented3(&'a [OrientedFeature<3>]),
 }
 
@@ -230,7 +230,8 @@ impl<'a> DetectionRequest<'a> {
 /// | `(Square, Oriented3)` | `UnsupportedCombination` |
 /// | `(Hex, Oriented3)` | supported — topological only |
 /// | `(Hex, Positions)` | supported — synthesize 3 axes, then hex topological |
-/// | `(Hex, Oriented1 / Oriented2)` | `UnsupportedCombination` |
+/// | `(Hex, Oriented1)` | supported — keep trusted family, synthesize 2 axes |
+/// | `(Hex, Oriented2)` | `UnsupportedCombination` |
 ///
 /// * `(Square, Oriented2)` — the axis-driven SBF09 topological grid finder
 ///   (Delaunay → quad-mesh → flood-fill → validate → fit) returns a labelled
@@ -249,8 +250,6 @@ impl<'a> DetectionRequest<'a> {
 ///   [`OrientedFeature<2>`] then runs the topological assembler, exactly as for
 ///   `(Square, Positions)`. Use this for detectors that recover one dominant
 ///   edge orientation per feature but not the orthogonal one.
-/// * Every other combination — typed [`GridError::UnsupportedCombination`].
-///
 /// * `(Hex, Oriented3)` — hex-native triple-axis evidence. Runs the hex
 ///   topological grid finder (Delaunay triangles *are* the unit cells; no
 ///   diagonal class, no triangle-pair merge; axial `(q, r)` flood-fill walk).
@@ -259,9 +258,12 @@ impl<'a> DetectionRequest<'a> {
 ///   directions are synthesized from neighbour geometry
 ///   ([`crate::expert::orientation::synthesize_oriented3`]) and then fed to the hex
 ///   topological path, mirroring the `(Square, Positions)` seam.
+/// * `(Hex, Oriented1)` — one measured axis representing the same physical
+///   hex family at every feature. The measured observation is preserved and
+///   the two missing local directions are inferred from neighbour geometry.
 ///
 /// `(Square, Oriented3)` (square does not consume triple-axis evidence) and
-/// `(Hex, Oriented1)` / `(Hex, Oriented2)` (hex currently needs three axis families)
+/// `(Hex, Oriented2)` (no unambiguous physical-family contract)
 /// stay `UnsupportedCombination` — no working algorithm exists for those slots.
 ///
 /// **Multi-component results.** The topological assembler can produce more
@@ -285,13 +287,13 @@ pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridDetection> {
 fn run_square_oriented2(
     features: &[OrientedFeature<2>],
     request: &DetectionRequest<'_>,
-    synthesized_axes: bool,
+    axis_provenance: SquareAxisProvenance,
 ) -> Result<Vec<GridSolution>> {
     crate::topological::detect_square_oriented2_all(
         features,
         request.dimensions(),
         request.params(),
-        synthesized_axes,
+        axis_provenance,
     )
 }
 
@@ -336,7 +338,7 @@ pub(crate) fn detect_grid_all_internal(request: DetectionRequest<'_>) -> Result<
         (LatticeKind::Square, Evidence::Oriented2(features)) => {
             // Native two-axis evidence: no synthesis, so the recovery schedule
             // stays off under `RecoverySchedule::Auto` (byte-compat).
-            run_square_oriented2(features, &request, false)?
+            run_square_oriented2(features, &request, SquareAxisProvenance::FullyMeasured)?
         }
         (LatticeKind::Square, Evidence::Positions(features)) => {
             // Orientation-free input: recover each corner's two local grid
@@ -345,7 +347,11 @@ pub(crate) fn detect_grid_all_internal(request: DetectionRequest<'_>) -> Result<
             // synthesized axes feed either path unchanged. The axes are
             // synthesized, so `Auto` enables the recovery schedule.
             let oriented = crate::orient::synthesize_oriented2(features);
-            run_square_oriented2(&oriented, &request, true)?
+            run_square_oriented2(
+                &oriented,
+                &request,
+                SquareAxisProvenance::IncludesSynthesized,
+            )?
         }
         (LatticeKind::Square, Evidence::Oriented1(features)) => {
             // Single-axis input: keep the supplied axis and recover the second
@@ -353,7 +359,11 @@ pub(crate) fn detect_grid_all_internal(request: DetectionRequest<'_>) -> Result<
             // square strategy. Same Oriented2 back-half as the Positions path;
             // the second axis is synthesized, so `Auto` enables recovery.
             let oriented = crate::orient::synthesize_oriented2_from_oriented1(features);
-            run_square_oriented2(&oriented, &request, true)?
+            run_square_oriented2(
+                &oriented,
+                &request,
+                SquareAxisProvenance::IncludesSynthesized,
+            )?
         }
         (LatticeKind::Hex, Evidence::Oriented3(features)) => {
             // Hex-native triple-axis evidence. Hex detection is
@@ -365,6 +375,10 @@ pub(crate) fn detect_grid_all_internal(request: DetectionRequest<'_>) -> Result<
             // directions from neighbour geometry, then run the hex topological
             // path. Mirrors the `(Square, Positions)` synthesis seam.
             let oriented = crate::orient::synthesize_oriented3(features);
+            run_hex_oriented3(&oriented, &request)?
+        }
+        (LatticeKind::Hex, Evidence::Oriented1(features)) => {
+            let oriented = crate::orient::synthesize_oriented3_from_oriented1(features);
             run_hex_oriented3(&oriented, &request)?
         }
         _ => {

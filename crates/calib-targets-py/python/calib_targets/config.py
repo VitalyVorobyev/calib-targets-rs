@@ -935,6 +935,8 @@ _ADVANCED_SCALAR_FIELDS = (
     "enable_weak_cluster_rescue",
     "weak_cluster_tol_deg",
     "max_booster_iters",
+    "enable_geometry_only_recovery",
+    "geometry_recovery_tol_rel",
     "geometry_check_line_tol_rel",
     "geometry_check_local_h_tol_rel",
     "line_min_members",
@@ -1002,6 +1004,8 @@ class ChessboardParams:
     enable_weak_cluster_rescue: bool = True
     weak_cluster_tol_deg: float = 18.0
     max_booster_iters: int = 5
+    enable_geometry_only_recovery: bool = True
+    geometry_recovery_tol_rel: float = 0.15
     # mandatory final geometry check
     geometry_check_line_tol_rel: float = 0.45
     geometry_check_local_h_tol_rel: float = 0.6

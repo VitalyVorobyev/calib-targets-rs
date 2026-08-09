@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::detect::{validate_request, DetectionParams, DetectionRequest, Evidence};
 use crate::feature::OrientedFeature;
 use crate::lattice::{GridDimensions, LatticeKind};
+use crate::shared::recovery_schedule::SquareAxisProvenance;
 use crate::topological::classify::EdgeClass;
 use crate::topological::square_detector::{
     detect_square_oriented2_all_observed, SquarePipelineTrace,
@@ -215,11 +216,16 @@ pub fn build_grid_topological_trace(
     })?;
     let topological_params = params.tuning().topological;
     let mut raw = SquarePipelineTrace::default();
-    let solutions =
-        detect_square_oriented2_all_observed(features, dimensions, &params, false, Some(&mut raw))
-            .map_err(|error| TopologicalTraceError::DetectionFailed {
-                message: error.to_string(),
-            })?;
+    let solutions = detect_square_oriented2_all_observed(
+        features,
+        dimensions,
+        &params,
+        SquareAxisProvenance::FullyMeasured,
+        Some(&mut raw),
+    )
+    .map_err(|error| TopologicalTraceError::DetectionFailed {
+        message: error.to_string(),
+    })?;
 
     let corners = features
         .iter()

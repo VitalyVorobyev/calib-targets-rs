@@ -1,0 +1,88 @@
+name: Publish projective-grid (crates.io)
+
+on:
+  push:
+    tags:
+      - "projective-grid-v*"
+
+concurrency:
+  group: publish-projective-grid-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish projective-grid
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: write
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify tag and crate version
+        shell: bash
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#projective-grid-v}"
+
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Expected tag projective-grid-v<semver>, got: $TAG"
+            exit 1
+          fi
+
+          CRATE_VERSION="$(cargo metadata --format-version 1 --no-deps \
+            | jq -r '.packages[] | select(.name=="projective-grid") | .version')"
+
+          echo "tag version:   $VERSION"
+          echo "crate version: $CRATE_VERSION"
+          test "$CRATE_VERSION" = "$VERSION"
+
+          python3 scripts/projective_grid_release_notes.py "$VERSION" \
+            --output "$RUNNER_TEMP/projective-grid-release-notes.md"
+
+      - name: Test package
+        run: cargo test -p projective-grid --all-features --locked
+
+      - name: Package dry run
+        run: cargo publish -p projective-grid --dry-run --locked
+
+      - name: Authenticate to crates.io via Trusted Publishing (OIDC)
+        id: cratesio
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish package
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.cratesio.outputs.token }}
+        shell: bash
+        run: |
+          log="$(mktemp)"
+          trap 'rm -f "$log"' EXIT
+          if cargo publish -p projective-grid --locked 2>&1 | tee "$log"; then
+            exit 0
+          fi
+          if grep -qE 'crate version .* is already uploaded' "$log"; then
+            echo "projective-grid: version already uploaded; continuing to GitHub Release."
+            exit 0
+          fi
+          exit 1
+
+      - name: Create GitHub release from crate changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#projective-grid-v}"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" \
+              --title "projective-grid $VERSION" \
+              --notes-file "$RUNNER_TEMP/projective-grid-release-notes.md"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "projective-grid $VERSION" \
+              --notes-file "$RUNNER_TEMP/projective-grid-release-notes.md"
+          fi

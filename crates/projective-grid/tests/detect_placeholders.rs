@@ -34,12 +34,13 @@ fn assert_unsupported(request: DetectionRequest<'_>, lattice: LatticeKind, evide
 // `hex_oriented_detection_is_typed_unsupported` were removed with the
 // seed-and-grow retirement: they only asserted "unsupported" because the
 // historical default algorithm was `SeedAndGrow`, which had no hex path. With
-// the topological default, `(Hex, Positions)` and `(Hex, Oriented3)` are the
+// the topological default, `(Hex, Positions)`, `(Hex, Oriented1)`, and
+// `(Hex, Oriented3)` are the
 // supported hex paths and route to the real hex topological detector (they
 // return `InsufficientEvidence` / `DegenerateGeometry` on degenerate input,
 // not `UnsupportedCombination`). The hex success path is covered by
 // `tests/detect_hex_positions.rs`; the remaining genuine hex-unsupported cases
-// — `(Hex, Oriented1)` / `(Hex, Oriented2)` — are covered there too.
+// — `(Hex, Oriented2)` — is covered there too.
 
 #[test]
 fn square_oriented3_detection_is_typed_unsupported() {

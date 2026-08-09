@@ -6,7 +6,8 @@ on:
   workflow_dispatch:     # allow manual trigger / republish
 
 # NOTE: deliberately NOT triggered on tag pushes. Release tags (`vX.Y.Z`,
-# `wasm-vX.Y.Z`) are always cut from a commit that is already on `main`, so
+# `projective-grid-vX.Y.Z`, `wasm-vX.Y.Z`) are always cut from a commit that is
+# already on `main`, so
 # the `main` push has published byte-identical docs moments earlier. Firing
 # on tags as well meant a release pushed 2-3 refs at the same commit within
 # seconds, producing concurrent GitHub Pages deployments; the `concurrency`

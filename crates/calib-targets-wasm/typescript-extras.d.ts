@@ -339,19 +339,23 @@ export interface ChessboardAdvancedTuning {
   attach_ambiguity_factor: number;
   step_tol: number;
   edge_axis_tol_deg: number;
-  line_min_members: number;
-  validate_step_aware: boolean;
-  geometry_check_line_tol_rel: number;
-  geometry_check_local_h_tol_rel: number;
-  enable_final_edge_shape_check: boolean;
   enable_weak_cluster_rescue: boolean;
   weak_cluster_tol_deg: number;
   max_booster_iters: number;
+  /** Enable the narrow L-support recovery for admitted corners with unusable axes. */
+  enable_geometry_only_recovery: boolean;
+  /** Geometry-only prediction/search tolerance relative to local cell size. */
+  geometry_recovery_tol_rel: number;
+  geometry_check_line_tol_rel: number;
+  geometry_check_local_h_tol_rel: number;
+  line_min_members: number;
+  validate_step_aware: boolean;
+  enable_final_edge_shape_check: boolean;
 }
 
 /**
  * Chessboard detector parameters — the serialized shape of the Rust
- * `ChessboardParams`. The four stable keys below are the semver-covered core;
+ * `ChessboardParams`. The three stable keys below are the semver-covered core;
  * the optional `advanced` block holds the unstable per-stage tuning knobs and
  * is omitted from the wire format unless set.
  */

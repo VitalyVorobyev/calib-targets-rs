@@ -5,9 +5,10 @@
 //! triangles *are* the unit cells — there is no diagonal class and the
 //! triangle-pair-to-quad merge ([`super::quads`]) is bypassed
 //! ([`crate::lattice::CellTopology::TriangleIsCell`]). A triangle qualifies as a
-//! hex cell when all three of its edges align with a grid-axis family at both
-//! endpoints and the three edges use three *distinct* families (an equilateral-
-//! ish triangle in the lattice, not a sliver).
+//! hex cell when every edge aligns with a local axis at both endpoints and the
+//! two incident edges use distinct local axes at every vertex (an equilateral-
+//! ish triangle in the lattice, not a sliver). Axis arrays are treated as sets;
+//! their slot order need not agree between features.
 //!
 //! The walk labels axial `(q, r)` coordinates by flood fill, exactly mirroring
 //! the square quad walk but on triangles: seed one triangle with three
@@ -139,10 +140,10 @@ fn ordered(a: usize, b: usize) -> (usize, usize) {
 
 /// Classify Delaunay triangles as hex cells.
 ///
-/// A triangle is kept when each of its three edges aligns (at both endpoints)
-/// with a grid-axis family within `align_tol_rad`, and the three edges use
-/// three *distinct* families. This rejects slivers (two edges on the same
-/// family) and triangles spanning a missing node.
+/// A triangle is kept when each edge aligns at both endpoints within
+/// `align_tol_rad`, and the two incident edges at every vertex match distinct
+/// members of that vertex's local axis set. This rejects slivers without
+/// imposing a hidden cross-feature slot identity.
 pub(super) fn classify_hex_cells(
     positions: &[Point2<f32>],
     axes: &[HexAxisCache],
@@ -162,7 +163,7 @@ pub(super) fn classify_hex_cells(
         if v[0] == v[1] || v[1] == v[2] || v[2] == v[0] {
             continue;
         }
-        let mut families = [usize::MAX; 3];
+        let mut families = [(usize::MAX, usize::MAX); 3];
         let mut ok = true;
         for (k, &(a, b)) in [(v[0], v[1]), (v[1], v[2]), (v[2], v[0])]
             .iter()
@@ -174,8 +175,8 @@ pub(super) fn classify_hex_cells(
             let fa = nearest_family(theta, &axes[a], align_tol_rad);
             let fb = nearest_family(theta, &axes[b], align_tol_rad);
             match (fa, fb) {
-                (Some(family_a), Some(family_b)) if family_a == family_b => {
-                    families[k] = family_a;
+                (Some(family_a), Some(family_b)) => {
+                    families[k] = (family_a, family_b);
                 }
                 _ => {
                     ok = false;
@@ -186,9 +187,12 @@ pub(super) fn classify_hex_cells(
         if !ok {
             continue;
         }
-        // The three edges must use three distinct families (equilateral-ish
-        // cell). Two edges on the same family is a sliver / off-cell triangle.
-        if families[0] == families[1] || families[1] == families[2] || families[0] == families[2] {
+        // Edge order is (v0,v1), (v1,v2), (v2,v0). Compare slots only at the
+        // same vertex; slot permutations between vertices are immaterial.
+        let distinct_at_v0 = families[0].0 != families[2].1;
+        let distinct_at_v1 = families[0].1 != families[1].0;
+        let distinct_at_v2 = families[1].1 != families[2].0;
+        if !(distinct_at_v0 && distinct_at_v1 && distinct_at_v2) {
             continue;
         }
         out.push(Triangle { vertices: v });
@@ -431,6 +435,27 @@ mod tests {
         // must recover the interior ones (boundary slivers from the convex hull
         // are rejected). Expect a healthy majority.
         assert!(cells.len() >= 12, "kept only {} hex cells", cells.len());
+    }
+
+    #[test]
+    fn classify_treats_axis_slots_as_an_unordered_set() {
+        let (mut feats, _) = hex_patch(2, 30.0);
+        for (index, feature) in feats.iter_mut().enumerate() {
+            feature.axes = match index % 3 {
+                0 => [feature.axes[1], feature.axes[2], feature.axes[0]],
+                1 => [feature.axes[2], feature.axes[0], feature.axes[1]],
+                _ => feature.axes,
+            };
+        }
+        let positions: Vec<Point2<f32>> = feats.iter().map(|f| f.point.position).collect();
+        let caches = build_hex_axis_caches(&feats, 0.6);
+        let triangulation = super::super::delaunay::triangulate(&positions);
+        let cells = classify_hex_cells(&positions, &caches, &triangulation, 15.0_f32.to_radians());
+        assert!(
+            cells.len() >= 12,
+            "kept only {} permuted cells",
+            cells.len()
+        );
     }
 
     #[test]

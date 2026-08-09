@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 images = [
   "testdata/02-topo-grid/GeminiChess1.png",
   "testdata/02-topo-grid/GeminiChess2.png",
@@ -8,12 +8,12 @@ images = [
 
 [output]
 overlays = "preview/perf-review/02-topo-grid"
-performance = "bench_results/perf-review/02-topo-grid/timing.json"
+runs = "bench_results/perf-review/02-topo-grid/runs"
 determinism = "bench_results/perf-review/02-topo-grid/determinism-report.json"
+report = "bench_results/perf-review/02-topo-grid/report/index.html"
 
 [corner]
 threshold = 100.0
-orientation_method = "ring_fit"
 pre_blur_sigma = 0.0
 upscale = 1.0
 
@@ -22,7 +22,7 @@ min_corner_strength = 0.0
 min_labeled_corners = 8
 max_components = 3
 
-# Expert-only stage tuning. Delete this table to use detector defaults.
+# Expert-only stage tuning. Delete either table to use detector defaults.
 [expert.topological]
 axis_align_tol_deg = 15.0
 max_axis_sigma_deg = 34.37747
@@ -32,12 +32,32 @@ cluster_axis_tol_deg = 16.0
 edge_length_min_rel = 0.0
 edge_length_max_rel = 1.8
 
+[expert.recovery]
+geometry_recovery_tol_rel = 0.15
+
 [performance]
 warmups = 5
 repeats = 50
 
+# Optional. Remove this table when running images without manual truth; the
+# HTML report will still contain timings and overlays and mark them unscored.
 [quality]
 image_root = "testdata/02-topo-grid"
 ground_truth = "bench_results/perf-review/02-topo-grid/ground-truth.json"
-report = "bench_results/perf-review/02-topo-grid/quality-report.json"
 matching_tolerance_px = 3.0
+
+[[variants]]
+id = "ring"
+primary = true
+orientation_method = "ring_fit"
+enable_geometry_only_recovery = true
+
+[[variants]]
+id = "ring-without-geometry-recovery"
+orientation_method = "ring_fit"
+enable_geometry_only_recovery = false
+
+[[variants]]
+id = "disk"
+orientation_method = "disk_fit"
+enable_geometry_only_recovery = true

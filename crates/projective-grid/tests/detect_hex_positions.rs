@@ -11,8 +11,8 @@
 //! off-lattice clutter). All randomness is a seeded xorshift LCG so runs are
 //! reproducible; there is no `rand` dependency.
 //!
-//! The headline assertion is the same as the square positions suite: **zero
-//! wrong `(q, r)` labels**. Hex labels are defined only up to the 12 D6
+//! Every named fixture gates **zero wrong `(q, r)` labels**; this is regression
+//! evidence, not a universal production guarantee. Hex labels are defined only up to the 12 D6
 //! automorphisms composed with a lattice translation, so the consistency check
 //! mods out that automorphism (see `assert_labels_consistent_with_truth`).
 //! Recall floors are measured-minus-margin so tuning drift stays green while a
@@ -23,7 +23,8 @@ use std::collections::HashMap;
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::expert::lattice::D6_TRANSFORMS;
 use projective_grid::{
-    detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature,
+    detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, LocalAxis, OrientedFeature,
+    PointFeature,
 };
 
 /// Axial hex node `(q, r)` model position with unit nearest-neighbour spacing.
@@ -61,6 +62,45 @@ fn hex_patch(
         truth.insert(idx, (q, r));
     }
     (feats, truth)
+}
+
+fn hex_oriented1_patch(
+    radius: i32,
+    spacing: f32,
+    origin: f32,
+    h: &Matrix3<f32>,
+    axis_noise_rad: f32,
+) -> (Vec<OrientedFeature<1>>, HashMap<usize, (i32, i32)>) {
+    let mut features = Vec::new();
+    let mut truth = HashMap::new();
+    let mut rng = Lcg::new(0xA11CE551);
+    for (index, (q, r)) in hex_coords(radius).into_iter().enumerate() {
+        let model = hex_model(q, r);
+        let here_model = Vector3::new(model.x * spacing + origin, model.y * spacing + origin, 1.0);
+        let next_model = Vector3::new(
+            (model.x + 1.0) * spacing + origin,
+            model.y * spacing + origin,
+            1.0,
+        );
+        let here_h = h * here_model;
+        let next_h = h * next_model;
+        let here = Point2::new(here_h.x / here_h.z, here_h.y / here_h.z);
+        let next = Point2::new(next_h.x / next_h.z, next_h.y / next_h.z);
+        let seam_shift = if index % 2 == 0 {
+            std::f32::consts::PI
+        } else {
+            0.0
+        };
+        let angle = (next.y - here.y).atan2(next.x - here.x)
+            + seam_shift
+            + axis_noise_rad * rng.next_centered();
+        features.push(OrientedFeature::<1>::new(
+            PointFeature::new(index, here),
+            [LocalAxis::new(angle, Some(axis_noise_rad.max(0.01)))],
+        ));
+        truth.insert(index, (q, r));
+    }
+    (features, truth)
 }
 
 fn request(features: &[PointFeature]) -> DetectionRequest<'_> {
@@ -232,10 +272,11 @@ fn hex_with_off_lattice_clutter_zero_wrong() {
         ));
     }
     let sol = detect_grid(request(&feats)).expect("hex topological with clutter");
-    let grid_entries: Vec<(usize, Coord)> = entries_with_truth(&sol)
-        .into_iter()
-        .filter(|(src, _)| truth.contains_key(src))
-        .collect();
+    let grid_entries = entries_with_truth(&sol);
+    assert!(
+        grid_entries.iter().all(|(src, _)| truth.contains_key(src)),
+        "off-lattice clutter received a grid label"
+    );
     assert!(
         grid_entries.len() >= 24,
         "recovered only {} true hex nodes with clutter present",
@@ -266,6 +307,98 @@ fn hex_oriented3_native_path() {
     let sol = detect_grid(req).expect("hex Oriented3 native");
     assert!(sol.grid().entries().len() >= 12);
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "native Oriented3 hex");
+}
+
+#[test]
+fn hex_oriented1_preserves_trusted_family_under_perspective() {
+    let h = Matrix3::new(
+        0.98, 0.14, 0.0, //
+        -0.04, 1.03, 0.0, //
+        0.000_55, 0.000_35, 1.0,
+    );
+    let (features, truth) = hex_oriented1_patch(4, 28.0, 200.0, &h, 0.0);
+    let request = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented1(&features));
+    let solution = detect_grid(request).expect("hex Oriented1 under perspective");
+    assert!(
+        solution.grid().entries().len() >= 24,
+        "recovered only {} Oriented1 nodes",
+        solution.grid().entries().len()
+    );
+    assert_labels_consistent_with_truth(
+        &entries_with_truth(&solution),
+        &truth,
+        "perspective Oriented1 hex",
+    );
+}
+
+#[test]
+fn hex_oriented1_noise_dropout_shuffle_is_deterministic() {
+    let h = Matrix3::new(
+        1.02, 0.08, 0.0, //
+        0.03, 0.97, 0.0, //
+        0.000_4, 0.000_3, 1.0,
+    );
+    let (all, truth_all) = hex_oriented1_patch(4, 30.0, 200.0, &h, 0.04);
+    let mut features: Vec<_> = all
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| index % 9 != 4)
+        .map(|(_, feature)| feature)
+        .collect();
+    let mut position_noise = Lcg::new(0x5107_1015);
+    for feature in &mut features {
+        feature.point.position.x += 0.5 * position_noise.next_centered();
+        feature.point.position.y += 0.5 * position_noise.next_centered();
+    }
+    features.reverse();
+    let truth: HashMap<usize, (i32, i32)> = features
+        .iter()
+        .map(|feature| {
+            (
+                feature.point.source_index,
+                truth_all[&feature.point.source_index],
+            )
+        })
+        .collect();
+    let detect = || {
+        detect_grid(DetectionRequest::new(
+            LatticeKind::Hex,
+            Evidence::Oriented1(&features),
+        ))
+        .expect("noisy shuffled Oriented1 hex")
+    };
+    let first = detect();
+    assert!(first.grid().entries().len() >= 18);
+    assert_labels_consistent_with_truth(
+        &entries_with_truth(&first),
+        &truth,
+        "noisy shuffled Oriented1 hex",
+    );
+    assert_eq!(entries_with_truth(&first), entries_with_truth(&detect()));
+}
+
+#[test]
+fn hex_oriented1_rejects_near_and_far_off_lattice_clutter() {
+    let (mut features, truth) = hex_oriented1_patch(4, 30.0, 200.0, &Matrix3::identity(), 0.0);
+    let first_clutter = features.len();
+    for (dx, dy) in [(7.0, 5.0), (-11.0, 8.0), (340.0, -280.0)] {
+        let source_index = features.len();
+        features.push(OrientedFeature::<1>::new(
+            PointFeature::new(source_index, Point2::new(200.0 + dx, 200.0 + dy)),
+            [LocalAxis::new(0.0, Some(0.02))],
+        ));
+    }
+    let solution = detect_grid(DetectionRequest::new(
+        LatticeKind::Hex,
+        Evidence::Oriented1(&features),
+    ))
+    .expect("Oriented1 hex with clutter");
+    let entries = entries_with_truth(&solution);
+    assert!(
+        entries.iter().all(|(source, _)| *source < first_clutter),
+        "off-lattice Oriented1 clutter received a label"
+    );
+    assert_labels_consistent_with_truth(&entries, &truth, "Oriented1 clutter hex");
 }
 
 /// D6-symmetry property test: under random in-plane rotations the recovered
@@ -319,10 +452,10 @@ fn hex_detection_is_deterministic() {
     }
 }
 
-/// Negative: `(Hex, Oriented1)` and `(Hex, Oriented2)` are unsupported (hex
-/// needs three axis families).
+/// Negative: `(Hex, Oriented2)` remains unsupported because two supplied
+/// directions do not identify which physical family is missing.
 #[test]
-fn hex_oriented1_and_oriented2_unsupported() {
+fn hex_oriented2_is_unsupported() {
     let pts: Vec<PointFeature> = hex_coords(2)
         .into_iter()
         .enumerate()
@@ -331,16 +464,6 @@ fn hex_oriented1_and_oriented2_unsupported() {
             PointFeature::new(idx, Point2::new(m.x * 30.0 + 100.0, m.y * 30.0 + 100.0))
         })
         .collect();
-    let o1: Vec<OrientedFeature<1>> = pts
-        .iter()
-        .map(|p| OrientedFeature::<1>::new(*p, [projective_grid::LocalAxis::new(0.0, None)]))
-        .collect();
-    let req1 = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented1(&o1));
-    assert!(matches!(
-        detect_grid(req1),
-        Err(projective_grid::GridError::UnsupportedCombination { .. })
-    ));
-
     let o2: Vec<OrientedFeature<2>> = pts
         .iter()
         .map(|p| {

@@ -257,6 +257,8 @@ def test_chessboard_advanced_block_is_complete() -> None:
         "enable_weak_cluster_rescue",
         "weak_cluster_tol_deg",
         "max_booster_iters",
+        "enable_geometry_only_recovery",
+        "geometry_recovery_tol_rel",
         "geometry_check_line_tol_rel",
         "geometry_check_local_h_tol_rel",
         "line_min_members",

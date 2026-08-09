@@ -11,7 +11,7 @@ use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
 use projective_grid::expert::component::{merge_components_local, ComponentInput};
 
-use super::boosters::apply_boosters_with_directional_edge_scale;
+use super::boosters::{apply_boosters_with_directional_edge_scale, apply_geometry_only_recovery};
 use super::cluster::{cluster_axes, ClusterCenters};
 use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
@@ -21,6 +21,13 @@ use crate::params::ChessboardParams;
 use projective_grid::expert::attachment::GrowResult;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct RecoveryOutcome {
+    pub(super) components: Vec<LabelledComponent>,
+    pub(super) axis_aware_additions: Vec<usize>,
+    pub(super) geometry_only_additions: Vec<usize>,
+}
 
 /// Cardinal edge lengths (pixels) along the labelled `i` and `j` axes,
 /// returned as two separate per-axis lists.
@@ -308,8 +315,10 @@ pub(super) fn recover_topological_components(
     base_augs: &[CornerAug],
     clustered_centers: Option<ClusterCenters>,
     params: &ChessboardParams,
-) -> Vec<LabelledComponent> {
+) -> RecoveryOutcome {
     let mut boosted_components: Vec<LabelledComponent> = Vec::new();
+    let mut axis_aware_additions = HashSet::new();
+    let mut geometry_only_additions = HashSet::new();
     for component_labels in merged_components {
         let blacklist = HashSet::new();
         let mut labelled = component_labels.clone();
@@ -341,6 +350,7 @@ pub(super) fn recover_topological_components(
         grow.by_corner = grow.labelled.iter().map(|(&k, &v)| (v, k)).collect();
 
         if clustered_centers.is_some() && cell_size > 0.0 {
+            let before: HashSet<usize> = grow.labelled.values().copied().collect();
             let recovery_cell_size =
                 estimate_recovery_cell_size_from_labels(&grow.labelled, positions);
             let _ = apply_boosters_with_directional_edge_scale(
@@ -350,6 +360,27 @@ pub(super) fn recover_topological_components(
                 recovery_cell_size.max(cell_size),
                 &blacklist,
                 params,
+            );
+            axis_aware_additions.extend(
+                grow.labelled
+                    .values()
+                    .copied()
+                    .filter(|index| !before.contains(index)),
+            );
+
+            let before_geometry: HashSet<usize> = grow.labelled.values().copied().collect();
+            let _ = apply_geometry_only_recovery(
+                &mut augs,
+                &mut grow,
+                recovery_cell_size.max(cell_size),
+                &blacklist,
+                params,
+            );
+            geometry_only_additions.extend(
+                grow.labelled
+                    .values()
+                    .copied()
+                    .filter(|index| !before_geometry.contains(index)),
             );
         }
 
@@ -364,7 +395,7 @@ pub(super) fn recover_topological_components(
         tuning.component_merge.min_overlap.max(2),
     );
     if boosted_components.is_empty() {
-        return Vec::new();
+        return RecoveryOutcome::default();
     }
 
     let boosted_views: Vec<ComponentInput<'_>> = boosted_components
@@ -382,7 +413,15 @@ pub(super) fn recover_topological_components(
     )
     .entered();
 
-    merge_components_local(&boosted_views, &tuning.component_merge).components
+    let mut axis_aware_additions: Vec<usize> = axis_aware_additions.into_iter().collect();
+    axis_aware_additions.sort_unstable();
+    let mut geometry_only_additions: Vec<usize> = geometry_only_additions.into_iter().collect();
+    geometry_only_additions.sort_unstable();
+    RecoveryOutcome {
+        components: merge_components_local(&boosted_views, &tuning.component_merge).components,
+        axis_aware_additions,
+        geometry_only_additions,
+    }
 }
 
 #[cfg_attr(

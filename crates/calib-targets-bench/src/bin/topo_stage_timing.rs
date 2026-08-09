@@ -19,7 +19,9 @@ use tracing_subscriber::Layer;
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum, PartialEq, Eq)]
 enum OrientationMethodArg {
+    #[value(name = "ring_fit", alias = "ring-fit")]
     RingFit,
+    #[value(name = "disk_fit", alias = "disk-fit")]
     DiskFit,
 }
 
@@ -92,6 +94,9 @@ struct Args {
     /// Maximum accepted local-axis sigma in degrees.
     #[arg(long, default_value_t = 34.377_47)]
     max_axis_sigma_deg: f32,
+    /// Global modulo-pi axis-cluster admission tolerance in degrees.
+    #[arg(long, default_value_t = 16.0)]
+    cluster_axis_tol_deg: f32,
     /// Maximum ratio between opposing quad edges.
     #[arg(long, default_value_t = 10.0)]
     opposing_edge_ratio_max: f32,
@@ -104,6 +109,12 @@ struct Args {
     /// Minimum quads retained per connected component.
     #[arg(long, default_value_t = 1)]
     min_quads_per_component: usize,
+    /// Enable the conservative geometry-only recovery pass.
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    enable_geometry_only_recovery: bool,
+    /// Geometry-only candidate tolerance relative to local cell size.
+    #[arg(long, default_value_t = 0.15)]
+    geometry_recovery_tol_rel: f32,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize)]
@@ -124,6 +135,7 @@ struct TimingSample {
     assembly_ms: f64,
     clustering_ms: f64,
     recovery_ms: f64,
+    geometry_only_recovery_ms: f64,
     final_geometry_gate_ms: f64,
     output_assembly_ms: f64,
     chessboard_postprocessing_ms: f64,
@@ -157,6 +169,7 @@ struct StageSummary {
     assembly: SummaryStats,
     clustering: SummaryStats,
     recovery: SummaryStats,
+    geometry_only_recovery: SummaryStats,
     final_geometry_gate: SummaryStats,
     output_assembly: SummaryStats,
     chessboard_postprocessing: SummaryStats,
@@ -198,10 +211,13 @@ struct Metadata {
     pre_blur_sigma: f32,
     axis_align_tol_deg: f32,
     max_axis_sigma_deg: f32,
+    cluster_axis_tol_deg: f32,
     opposing_edge_ratio_max: f32,
     edge_length_min_rel: f32,
     edge_length_max_rel: f32,
     min_quads_per_component: usize,
+    enable_geometry_only_recovery: bool,
+    geometry_recovery_tol_rel: f32,
 }
 
 #[derive(Debug, Serialize)]
@@ -364,6 +380,7 @@ fn summarize_samples(samples: &[TimingSample]) -> StageSummary {
         assembly: summarize(values(|s| s.assembly_ms)),
         clustering: summarize(values(|s| s.clustering_ms)),
         recovery: summarize(values(|s| s.recovery_ms)),
+        geometry_only_recovery: summarize(values(|s| s.geometry_only_recovery_ms)),
         final_geometry_gate: summarize(values(|s| s.final_geometry_gate_ms)),
         output_assembly: summarize(values(|s| s.output_assembly_ms)),
         chessboard_postprocessing: summarize(values(|s| s.chessboard_postprocessing_ms)),
@@ -402,6 +419,7 @@ fn measure_once(
         .max()
         .unwrap_or(0);
     let recovery_ms = span_ms(&spans, "recover_topological_components");
+    let geometry_only_recovery_ms = span_ms(&spans, "chessboard_geometry_only_recovery");
     let output_assembly_ms = span_ms(&spans, "build_topological_detections");
     let sample = TimingSample {
         corner_detection_ms: span_ms(&spans, "detect_corners").max(corner_wall_ms),
@@ -420,6 +438,7 @@ fn measure_once(
         assembly_ms: span_ms(&spans, "topological_assembly"),
         clustering_ms: span_ms(&spans, "topological_clustered_augs"),
         recovery_ms,
+        geometry_only_recovery_ms,
         final_geometry_gate_ms: span_ms(&spans, "chessboard_final_geometry_gate"),
         output_assembly_ms,
         chessboard_postprocessing_ms: recovery_ms + output_assembly_ms,
@@ -445,6 +464,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if !args.pre_blur_sigma.is_finite() || args.pre_blur_sigma < 0.0 {
         return Err("--pre-blur-sigma must be finite and non-negative".into());
     }
+    if !args.geometry_recovery_tol_rel.is_finite() || args.geometry_recovery_tol_rel <= 0.0 {
+        return Err("--geometry-recovery-tol-rel must be finite and positive".into());
+    }
 
     let totals = Arc::new(SpanTotals::default());
     let subscriber = Registry::default().with(TimingLayer {
@@ -463,12 +485,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut topological = projective_grid::expert::TopologicalParams::default();
     topological.axis_align_tol_rad = args.axis_align_tol_deg.to_radians();
     topological.max_axis_sigma_rad = args.max_axis_sigma_deg.to_radians();
+    topological.cluster_axis_tol_rad = args.cluster_axis_tol_deg.to_radians();
     topological.opposing_edge_ratio_max = args.opposing_edge_ratio_max;
     topological.edge_length_min_rel = args.edge_length_min_rel;
     topological.edge_length_max_rel = args.edge_length_max_rel;
     topological.min_quads_per_component = args.min_quads_per_component;
     let mut advanced = ChessboardAdvancedTuning::default();
     advanced.topological = topological;
+    advanced.enable_geometry_only_recovery = args.enable_geometry_only_recovery;
+    advanced.geometry_recovery_tol_rel = args.geometry_recovery_tol_rel;
     let mut params = ChessboardParams::default();
     params.min_corner_strength = args.min_corner_strength;
     params.min_labeled_corners = args.min_labeled_corners;
@@ -563,10 +588,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             pre_blur_sigma: args.pre_blur_sigma,
             axis_align_tol_deg: args.axis_align_tol_deg,
             max_axis_sigma_deg: args.max_axis_sigma_deg,
+            cluster_axis_tol_deg: args.cluster_axis_tol_deg,
             opposing_edge_ratio_max: args.opposing_edge_ratio_max,
             edge_length_min_rel: args.edge_length_min_rel,
             edge_length_max_rel: args.edge_length_max_rel,
             min_quads_per_component: args.min_quads_per_component,
+            enable_geometry_only_recovery: args.enable_geometry_only_recovery,
+            geometry_recovery_tol_rel: args.geometry_recovery_tol_rel,
         },
         images,
     };

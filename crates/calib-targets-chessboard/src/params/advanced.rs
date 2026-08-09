@@ -111,6 +111,21 @@ pub struct ChessboardAdvancedTuning {
     /// Cap on the outer booster loop.
     pub max_booster_iters: u32,
 
+    /// Enable a final, geometry-only rescue for strong corners whose measured
+    /// axes failed clustering.
+    ///
+    /// This pass is deliberately narrower than the axis-aware booster: it
+    /// requires an L-shaped set of three already-labelled neighbours and does
+    /// not let recovered corners support further recovery. It exists for the
+    /// case where the image-space corner position is reliable but the local
+    /// orientation fit is not.
+    #[serde(default = "default_enable_geometry_only_recovery")]
+    pub enable_geometry_only_recovery: bool,
+    /// Maximum geometry-only prediction residual and candidate-search radius,
+    /// as a fraction of the local cell size.
+    #[serde(default = "default_geometry_recovery_tol_rel")]
+    pub geometry_recovery_tol_rel: f32,
+
     // --- mandatory final geometry check -------------------------------------
     /// Line-collinearity tolerance (fraction of cell_size) for the MANDATORY
     /// final geometry check that runs before any detection is emitted. Loose
@@ -186,6 +201,8 @@ impl Default for ChessboardAdvancedTuning {
             enable_weak_cluster_rescue: true,
             weak_cluster_tol_deg: 18.0,
             max_booster_iters: 5,
+            enable_geometry_only_recovery: default_enable_geometry_only_recovery(),
+            geometry_recovery_tol_rel: default_geometry_recovery_tol_rel(),
 
             geometry_check_line_tol_rel: 0.45,
             geometry_check_local_h_tol_rel: 0.6,
@@ -194,4 +211,12 @@ impl Default for ChessboardAdvancedTuning {
             enable_final_edge_shape_check: true,
         }
     }
+}
+
+const fn default_enable_geometry_only_recovery() -> bool {
+    true
+}
+
+const fn default_geometry_recovery_tol_rel() -> f32 {
+    0.15
 }

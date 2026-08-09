@@ -307,6 +307,20 @@ mod tests {
     }
 
     #[test]
+    fn legacy_advanced_config_defaults_geometry_recovery_fields() {
+        let params = ChessboardParams::default().with_advanced(ChessboardAdvancedTuning::default());
+        let mut value = serde_json::to_value(params).unwrap();
+        let advanced = value["advanced"].as_object_mut().unwrap();
+        advanced.remove("enable_geometry_only_recovery");
+        advanced.remove("geometry_recovery_tol_rel");
+
+        let restored: ChessboardParams = serde_json::from_value(value).unwrap();
+        let tuning = restored.advanced.expect("advanced block");
+        assert!(tuning.enable_geometry_only_recovery);
+        assert_eq!(tuning.geometry_recovery_tol_rel, 0.15);
+    }
+
+    #[test]
     fn min_corner_strength_is_top_level_and_stable() {
         let params = ChessboardParams {
             min_corner_strength: 0.5,

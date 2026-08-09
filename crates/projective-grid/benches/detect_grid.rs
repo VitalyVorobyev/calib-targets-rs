@@ -7,6 +7,8 @@
 //!   axes are synthesized from neighbour geometry before the algorithm runs.
 //! - `(Hex, Positions)` — orientation-free hexagonal input; three axis
 //!   families synthesized, then the hex topological path runs.
+//! - `(Hex, Oriented1)` — one trusted physical family plus two synthesized
+//!   directions, then the same hex topological path.
 //!
 //! Fixtures are deterministic: a seeded xorshift LCG drives the position
 //! jitter so there is no `rand` dependency and run-to-run numbers are
@@ -138,6 +140,28 @@ fn hex_positions(radius: i32, spacing: f32, jitter: f32) -> Vec<PointFeature> {
     out
 }
 
+fn hex_oriented1(radius: i32, spacing: f32) -> Vec<OrientedFeature<1>> {
+    let h = perspective();
+    let sqrt3_2 = 3.0_f32.sqrt() * 0.5;
+    let mut out = Vec::new();
+    let mut index = 0usize;
+    for q in -radius..=radius {
+        for r in (-radius).max(-q - radius)..=radius.min(-q + radius) {
+            let x = (q as f32 + 0.5 * r as f32) * spacing + 200.0;
+            let y = sqrt3_2 * r as f32 * spacing + 200.0;
+            let here = project(&h, x, y);
+            let along_trusted_family = project(&h, x + spacing, y);
+            let angle = (along_trusted_family.y - here.y).atan2(along_trusted_family.x - here.x);
+            out.push(OrientedFeature::<1>::new(
+                PointFeature::new(index, here),
+                [LocalAxis::new(angle, Some(0.02))],
+            ));
+            index += 1;
+        }
+    }
+    out
+}
+
 fn bench_detect_grid(c: &mut Criterion) {
     let mut group = c.benchmark_group("detect_grid_all");
 
@@ -186,6 +210,28 @@ fn bench_detect_grid(c: &mut Criterion) {
             b.iter(|| detect_grid_all(request.clone()).unwrap());
         },
     );
+
+    let hex1 = hex_oriented1(6, 22.0);
+    group.bench_with_input(
+        BenchmarkId::new("hex_oriented1", "topological"),
+        &hex1,
+        |b, features| {
+            let request = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented1(features));
+            b.iter(|| detect_grid_all(request.clone()).unwrap());
+        },
+    );
+    for radius in [3_i32, 9] {
+        let fixture = hex_oriented1(radius, 22.0);
+        group.bench_with_input(
+            BenchmarkId::new("hex_oriented1_radius", radius),
+            &fixture,
+            |b, features| {
+                let request =
+                    DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented1(features));
+                b.iter(|| detect_grid_all(request.clone()).unwrap());
+            },
+        );
+    }
 
     group.finish();
 }

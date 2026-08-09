@@ -70,6 +70,19 @@ use crate::shared::grow::{GrowParams, GrowResult, SquareAttachPolicy};
 use crate::shared::grow_extend::extend_from_labelled;
 use crate::shared::validate::{self as pg_validate, ValidationParams};
 
+/// Provenance relevant to the default square recovery policy.
+///
+/// This stays internal: callers select an [`Evidence`](crate::detect::Evidence)
+/// kind, while the facade records whether the Oriented2 evidence reaching the
+/// square detector was supplied natively or contains synthesized axes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SquareAxisProvenance {
+    /// Both square axis families were supplied by the caller.
+    FullyMeasured,
+    /// At least one square axis family was synthesized by the facade.
+    IncludesSynthesized,
+}
+
 /// Tuning for the geometry-only recovery schedule.
 ///
 /// Defaults are conservative: a single fixed-point sweep of extension + fill
@@ -138,12 +151,17 @@ pub enum RecoverySchedule {
 }
 
 impl RecoverySchedule {
-    /// Resolve the schedule for a concrete dispatch: `Auto` becomes the default
-    /// recovery params when `synthesized_axes` is set, otherwise off. `Off`
-    /// stays off; `On(p)` always runs with `p`.
-    pub(crate) fn resolve(&self, synthesized_axes: bool) -> Option<RecoveryParams> {
+    /// Resolve the schedule for a concrete square-evidence provenance.
+    ///
+    /// `Auto` enables recovery only when the facade synthesized at least one
+    /// axis family. `Off` stays off; `On(p)` always runs with `p`.
+    pub(crate) fn resolve(&self, axis_provenance: SquareAxisProvenance) -> Option<RecoveryParams> {
         match self {
-            RecoverySchedule::Auto if synthesized_axes => Some(RecoveryParams::default()),
+            RecoverySchedule::Auto
+                if axis_provenance == SquareAxisProvenance::IncludesSynthesized =>
+            {
+                Some(RecoveryParams::default())
+            }
             RecoverySchedule::Auto => None,
             RecoverySchedule::Off => None,
             RecoverySchedule::On(p) => Some(p.clone()),

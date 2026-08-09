@@ -57,21 +57,23 @@ How much you know about each point's orientation picks the [`Evidence`] variant.
 The square variants share one back-half — the less-oriented kinds synthesize the
 missing axes from neighbour geometry and then run the same strategy — so they
 produce the same [`GridDetection`] shape. The same evidence ladder applies to
-hex (`Positions` synthesizes three axis families;
+hex (`Positions` synthesizes three axis families; `Oriented1` keeps its measured
+family and estimates the other two;
 [`Evidence::Oriented3`] supplies them directly):
 
 - **Unoriented — [`Evidence::Positions`]** (`&[PointFeature]`). Just points: a
   dot grid, a circle grid, or corners with no axis estimate. Both local grid
-  directions are recovered per point from neighbour chords (folded modulo π, so
-  the estimate is perspective-invariant and never assumes the axes are 90°
-  apart). Works when the lattice is the dominant local structure; if your
+  directions are recovered per point from neighbour chords folded modulo π.
+  The synthesis does not assume the axes are 90° apart, but nearest-neighbour
+  selection itself is not projectively invariant. It works when the lattice is
+  the dominant, moderately projected local structure; if your
   point cloud carries dense sub-lattice clutter (e.g. marker-glyph corners
   between the true grid points), neighbour statistics cannot recover the
   axes — supply measured orientations (`Oriented1`/`Oriented2`) instead.
 - **Single-axis — [`Evidence::Oriented1`]** (`&[OrientedFeature<1>]`). One
-  trusted direction per point (e.g. a detector that recovers a dominant edge
-  orientation but not the orthogonal one). The supplied axis is kept; the second
-  is synthesized from neighbours.
+  trusted physical family per point (e.g. a detector that recovers a dominant
+  edge orientation). The supplied angle and sigma are kept. Square estimates
+  one missing family; hex estimates two from six-neighbour chord evidence.
 - **Dual-axis — [`Evidence::Oriented2`]** (`&[OrientedFeature<2>]`). Two local
   grid directions per point — the native shape, e.g. ChESS-style corner axes.
   No synthesis; the strongest input.
@@ -90,12 +92,23 @@ they are deliberately not a detection evidence variant.
 | Evidence | Square | Hex |
 |---|---|---|
 | `Positions` | ✅ (synthesize 2 axes) | ✅ (synthesize 3 axes, topological) |
-| `Oriented1` | ✅ (synthesize 2nd axis) | ❌ `UnsupportedCombination` |
+| `Oriented1` | ✅ (synthesize 2nd axis) | ✅ (keep measured family, synthesize 2) |
 | `Oriented2` | ✅ (native, topological) | ❌ `UnsupportedCombination` |
 | `Oriented3` | ❌ `UnsupportedCombination` | ✅ (native, topological) |
 
 All square and hex paths run the same topological assembler — the sole grid
 builder in the crate.
+
+### Readiness
+
+The support matrix says which combinations are implemented, not that every
+combination has equal field evidence. `(Square, Oriented2)`—including the
+in-workspace chessboard detector—is the mature path. Square `Positions` and
+`Oriented1` are evidence-limited. Hex `Positions`, `Oriented1`, and `Oriented3`
+are experimental: deterministic synthetic affine/perspective, noise, dropout,
+shuffle, seam, and clutter fixtures cover their current contract, but no
+real-image campaign has established production recall or precision. Treat
+missing detections as expected and validate labels for the target domain.
 
 ## Quickstart
 
@@ -166,10 +179,9 @@ square topological path.
 
 **Inputs** are wrapped in an [`Evidence`] enum — see *Three kinds of evidence*
 above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are
-supported; for hex lattices `Positions` and `Oriented3` are supported on the
-topological path. The other combinations (`(Square, Oriented3)`,
-`(Hex, Oriented1/Oriented2)`) return
-`UnsupportedCombination`.
+supported; for hex lattices `Positions`, `Oriented1`, and `Oriented3` are
+supported on the topological path. The remaining combinations
+`(Square, Oriented3)` and `(Hex, Oriented2)` return `UnsupportedCombination`.
 
 **Output** is a [`GridDetection`]. Its fitted transform is mandatory on
 success; rejected evidence is available only after enabling the `diagnostics`
@@ -184,7 +196,8 @@ feature, through the `projective_grid::diagnostics` entry points:
 
 Algorithm deep-dive and conceptual background:
 [book chapter](https://vitalyvorobyev.github.io/calib-targets-rs/projective_grid.html).
-Upgrading from 0.11: [1.0 migration guide](MIGRATION-1.0.md).
+Release posture and remaining stabilization work: [road to 1.0](ROADMAP-1.0.md).
+Version history and release notes: [changelog](CHANGELOG.md).
 
 ## License
 

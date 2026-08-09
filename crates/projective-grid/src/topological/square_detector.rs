@@ -42,6 +42,7 @@ use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
 };
 use crate::shared::merge::{merge_components_local, ComponentInput, LocalMergeParams};
+use crate::shared::recovery_schedule::SquareAxisProvenance;
 use crate::shared::validate as pg_validate;
 
 use super::axis::{build_axis_caches, AxisCache};
@@ -241,16 +242,16 @@ pub(crate) fn detect_square_oriented2_all(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
-    synthesized_axes: bool,
+    axis_provenance: SquareAxisProvenance,
 ) -> Result<Vec<GridSolution>> {
-    detect_square_oriented2_all_observed(features, dimensions, params, synthesized_axes, None)
+    detect_square_oriented2_all_observed(features, dimensions, params, axis_provenance, None)
 }
 
 pub(super) fn detect_square_oriented2_all_observed(
     features: &[OrientedFeature<2>],
     dimensions: Option<GridDimensions>,
     params: &DetectionParams,
-    synthesized_axes: bool,
+    axis_provenance: SquareAxisProvenance,
     trace: Option<&mut SquarePipelineTrace>,
 ) -> Result<Vec<GridSolution>> {
     let tuning = params.tuning();
@@ -259,10 +260,11 @@ pub(super) fn detect_square_oriented2_all_observed(
         components: merged,
     } = assemble_square_oriented2_components_observed(features, &tuning.topological, trace)?;
 
-    // Geometry-only recovery schedule for the synthesized-axis path (enabled
-    // under `RecoverySchedule::Auto` when `synthesized_axes`). Disabled for the
-    // chessboard topological adapter, which owns its pattern-specific recovery.
-    let merged = if let Some(rec_params) = tuning.recovery.resolve(synthesized_axes) {
+    // Geometry-only recovery schedule for facade-synthesized axes. The native
+    // Oriented2 path stays off under `RecoverySchedule::Auto`; explicit `On`
+    // still applies to either provenance. The chessboard adapter selects `Off`
+    // because it owns its pattern-specific recovery downstream.
+    let merged = if let Some(rec_params) = tuning.recovery.resolve(axis_provenance) {
         let ij_in: Vec<std::collections::HashMap<(i32, i32), usize>> = merged
             .iter()
             .map(|m| m.iter().map(|(c, &idx)| ((c.u, c.v), idx)).collect())
@@ -991,7 +993,13 @@ mod tests {
     fn clean_5x5_grid_is_fully_labelled() {
         let features = axis_aligned_features(5, 5, 20.0);
         let params = DetectionParams::default();
-        let mut solutions = detect_square_oriented2_all(&features, None, &params, false).unwrap();
+        let mut solutions = detect_square_oriented2_all(
+            &features,
+            None,
+            &params,
+            SquareAxisProvenance::FullyMeasured,
+        )
+        .unwrap();
         assert_eq!(solutions.len(), 1);
         let solution = solutions.remove(0);
         assert_eq!(solution.detection.grid().entries().len(), 25);
@@ -1003,7 +1011,13 @@ mod tests {
     fn fewer_than_three_features_errors() {
         let features = axis_aligned_features(1, 2, 20.0);
         let params = DetectionParams::default();
-        let err = detect_square_oriented2_all(&features, None, &params, false).unwrap_err();
+        let err = detect_square_oriented2_all(
+            &features,
+            None,
+            &params,
+            SquareAxisProvenance::FullyMeasured,
+        )
+        .unwrap_err();
         assert_eq!(err, GridError::InsufficientEvidence);
     }
 
@@ -1031,7 +1045,13 @@ mod tests {
                 .with_axis_cluster_centers([0.0, std::f32::consts::FRAC_PI_2]),
         );
         let params_on = DetectionParams::default().with_advanced(tuning);
-        let mut sol_on = detect_square_oriented2_all(&features, None, &params_on, false).unwrap();
+        let mut sol_on = detect_square_oriented2_all(
+            &features,
+            None,
+            &params_on,
+            SquareAxisProvenance::FullyMeasured,
+        )
+        .unwrap();
         assert_eq!(sol_on.len(), 1);
         let primary = sol_on.remove(0);
         assert_eq!(
@@ -1041,7 +1061,13 @@ mod tests {
         );
 
         let params_off = DetectionParams::default();
-        let mut sol_off = detect_square_oriented2_all(&features, None, &params_off, false).unwrap();
+        let mut sol_off = detect_square_oriented2_all(
+            &features,
+            None,
+            &params_off,
+            SquareAxisProvenance::FullyMeasured,
+        )
+        .unwrap();
         assert_eq!(sol_off.len(), 1);
         let primary_off = sol_off.remove(0);
         assert_eq!(primary_off.detection.grid().entries().len(), 25);

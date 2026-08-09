@@ -10,7 +10,7 @@ Default output layout:
     preview/topo-grid-overlays/<image-stem>/00-input.png
     preview/topo-grid-overlays/<image-stem>/01-corners-axes.png
     ...
-    preview/topo-grid-overlays/<image-stem>/14-final-grid.png
+    preview/topo-grid-overlays/<image-stem>/15-final-grid.png
     preview/topo-grid-overlays/manifest.json
 """
 
@@ -47,8 +47,9 @@ STAGES = [
     "10-scale-filter.png",
     "11-walk-components.png",
     "12-generic-merge-fit.png",
-    "13-chessboard-recovery.png",
-    "14-final-grid.png",
+    "13-chessboard-axis-recovery.png",
+    "14-chessboard-geometry-recovery.png",
+    "15-final-grid.png",
 ]
 
 EDGE_COLORS = {
@@ -70,6 +71,15 @@ COMPONENT_COLORS = [
     ("#66a61e", "#e6ab02"),
     ("#a6761d", "#666666"),
 ]
+
+
+def parse_bool(value: str) -> bool:
+    lowered = value.lower()
+    if lowered in {"true", "1", "yes"}:
+        return True
+    if lowered in {"false", "0", "no"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true or false")
 
 
 def load_gray(
@@ -427,12 +437,20 @@ def draw_components(ax: plt.Axes, payload: dict[str, Any], stage: str) -> None:
         )
 
 
-def draw_recovered(ax: plt.Axes, payload: dict[str, Any]) -> None:
+def draw_recovered(
+    ax: plt.Axes,
+    payload: dict[str, Any],
+    *,
+    addition_key: str,
+    exclude_key: str | None = None,
+) -> None:
     draw_usable_context(ax, payload)
     stages = payload.get("chessboard_stages") or {}
-    additions = set(int(index) for index in stages.get("recovery_additions", []))
+    additions = set(int(index) for index in stages.get(addition_key, []))
+    excluded = set(int(index) for index in stages.get(exclude_key, [])) if exclude_key else set()
     for index, labels in enumerate(stages.get("recovered_components", [])):
         color_i, color_j = COMPONENT_COLORS[index % len(COMPONENT_COLORS)]
+        labels = [label for label in labels if int(label["corner_index"]) not in excluded]
         draw_grid_labels(ax, payload, labels, color_i, color_j, f"r{index}:")
     pos = corner_positions(payload)
     for index in additions:
@@ -524,6 +542,8 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         min_labeled_corners=args.min_labeled_corners,
         max_components=args.max_components,
         topological=topo,
+        enable_geometry_only_recovery=args.enable_geometry_only_recovery,
+        geometry_recovery_tol_rel=args.geometry_recovery_tol_rel,
     )
     chess_cfg = ct.ChessConfig(
         threshold=args.chess_threshold,
@@ -535,7 +555,7 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         params=trace_params,
     )
 
-    stem = f"{path.stem}-{args.variant_name}" if args.variant_name else path.stem
+    stem = path.stem
     stem_dir = out_dir / stem
     if stem_dir.exists():
         for previous_stage in stem_dir.glob("[0-9][0-9]-*.png"):
@@ -606,8 +626,28 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     save_overlay(image, stem_dir / STAGES[10], f"{path.name}: component-scale quad filter", lambda ax: draw_quads(ax, payload, "scale_quads"))
     save_overlay(image, stem_dir / STAGES[11], f"{path.name}: topological walk components", lambda ax: draw_components(ax, payload, "walk_components"))
     save_overlay(image, stem_dir / STAGES[12], f"{path.name}: generic merge + fit", lambda ax: draw_components(ax, payload, "final_components"))
-    save_overlay(image, stem_dir / STAGES[13], f"{path.name}: chessboard recovery", lambda ax: draw_recovered(ax, payload))
-    save_overlay(image, stem_dir / STAGES[14], f"{path.name}: final public detection", lambda ax: draw_final(ax, payload))
+    save_overlay(
+        image,
+        stem_dir / STAGES[13],
+        f"{path.name}: axis-aware chessboard recovery",
+        lambda ax: draw_recovered(
+            ax,
+            payload,
+            addition_key="axis_aware_recovery_additions",
+            exclude_key="geometry_only_recovery_additions",
+        ),
+    )
+    save_overlay(
+        image,
+        stem_dir / STAGES[14],
+        f"{path.name}: geometry-only chessboard recovery",
+        lambda ax: draw_recovered(
+            ax,
+            payload,
+            addition_key="geometry_only_recovery_additions",
+        ),
+    )
+    save_overlay(image, stem_dir / STAGES[15], f"{path.name}: final public detection", lambda ax: draw_final(ax, payload))
 
     trace = payload.get("trace")
     diagnostics = trace.get("diagnostics") if trace else {}
@@ -650,6 +690,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cluster-axis-tol-deg", type=float, default=16.0)
     parser.add_argument("--edge-length-min-rel", type=float, default=0.0)
     parser.add_argument("--edge-length-max-rel", type=float, default=1.8)
+    parser.add_argument(
+        "--enable-geometry-only-recovery",
+        type=parse_bool,
+        default=True,
+    )
+    parser.add_argument("--geometry-recovery-tol-rel", type=float, default=0.15)
     return parser.parse_args()
 
 
@@ -684,6 +730,8 @@ def main() -> None:
             "cluster_axis_tol_deg": args.cluster_axis_tol_deg,
             "edge_length_min_rel": args.edge_length_min_rel,
             "edge_length_max_rel": args.edge_length_max_rel,
+            "enable_geometry_only_recovery": args.enable_geometry_only_recovery,
+            "geometry_recovery_tol_rel": args.geometry_recovery_tol_rel,
         },
         "images": rows,
     }

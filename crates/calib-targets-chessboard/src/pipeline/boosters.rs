@@ -61,6 +61,190 @@ pub(crate) fn apply_boosters_with_directional_edge_scale(
     apply_boosters_impl(corners, grow, centers, cell_size, blacklist, params, true)
 }
 
+/// Recover strong, cluster-rejected corners from an already stable labelled
+/// grid using position geometry only.
+///
+/// A candidate must be supported by an L-shaped triplet of labels: two
+/// perpendicular cardinal neighbours plus their shared diagonal. This gives
+/// an independent parallelogram prediction for the missing point and an
+/// expected vector for both incident edges. The support set is snapshotted
+/// before the pass, so a recovered corner can never trigger a recovery chain.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        name = "chessboard_geometry_only_recovery",
+        level = "debug",
+        skip_all,
+        fields(num_labels = grow.labelled.len()),
+    )
+)]
+pub(crate) fn apply_geometry_only_recovery(
+    corners: &mut [CornerAug],
+    grow: &mut GrowResult,
+    cell_size: f32,
+    blacklist: &HashSet<usize>,
+    params: &ChessboardParams,
+) -> BoosterResult {
+    let tuning = params.effective_tuning();
+    if !tuning.enable_geometry_only_recovery
+        || !tuning.geometry_recovery_tol_rel.is_finite()
+        || tuning.geometry_recovery_tol_rel <= 0.0
+        || !cell_size.is_finite()
+        || cell_size <= 0.0
+    {
+        return BoosterResult::default();
+    }
+
+    let positions: Vec<Point2<f32>> = corners.iter().map(|corner| corner.position).collect();
+    let trusted_indices: HashSet<usize> = grow.labelled.values().copied().collect();
+    let validator = GeometryOnlyFillValidator {
+        corners,
+        blacklist,
+        trusted_indices: &trusted_indices,
+        cell_size,
+        tolerance_rel: tuning.geometry_recovery_tol_rel,
+        step_tol: tuning.step_tol,
+    };
+    let fill_params = FillParams::new(
+        tuning.geometry_recovery_tol_rel,
+        tuning.attach_ambiguity_factor,
+        1,
+    );
+    let stats = fill_grid_holes(&positions, grow, cell_size, &fill_params, &validator);
+
+    for (index, &corner_idx) in stats.attached_indices.iter().enumerate() {
+        corners[corner_idx].stage = CornerStage::Labeled {
+            at: stats.attached_cells[index],
+            local_h_residual_px: None,
+        };
+    }
+
+    BoosterResult {
+        added: stats.added,
+        holes_untouched: 0,
+    }
+}
+
+struct GeometryOnlyFillValidator<'a> {
+    corners: &'a [CornerAug],
+    blacklist: &'a HashSet<usize>,
+    trusted_indices: &'a HashSet<usize>,
+    cell_size: f32,
+    tolerance_rel: f32,
+    step_tol: f32,
+}
+
+impl SquareAttachPolicy for GeometryOnlyFillValidator<'_> {
+    fn is_eligible(&self, idx: usize) -> bool {
+        !self.blacklist.contains(&idx)
+            && matches!(self.corners[idx].stage, CornerStage::NoCluster { .. })
+    }
+
+    fn required_label_at(&self, _i: i32, _j: i32) -> Option<u8> {
+        None
+    }
+
+    fn label_of(&self, _idx: usize) -> Option<u8> {
+        None
+    }
+
+    fn accept_candidate(
+        &self,
+        idx: usize,
+        at: (i32, i32),
+        prediction: Point2<f32>,
+        neighbours: &[LabelledNeighbour],
+    ) -> Admit {
+        let candidate = self.corners[idx].position;
+        let tolerance_px = self.tolerance_rel * self.cell_size;
+        if (candidate - prediction).norm() > tolerance_px {
+            return Admit::Reject;
+        }
+        if l_supports_candidate(
+            candidate,
+            at,
+            neighbours,
+            self.trusted_indices,
+            tolerance_px,
+            self.step_tol,
+        ) {
+            Admit::Accept
+        } else {
+            Admit::Reject
+        }
+    }
+}
+
+fn l_supports_candidate(
+    candidate: Point2<f32>,
+    at: (i32, i32),
+    neighbours: &[LabelledNeighbour],
+    trusted_indices: &HashSet<usize>,
+    tolerance_px: f32,
+    step_tol: f32,
+) -> bool {
+    let by_offset: HashMap<(i32, i32), &LabelledNeighbour> = neighbours
+        .iter()
+        .filter(|neighbour| trusted_indices.contains(&neighbour.idx))
+        .map(|neighbour| ((neighbour.at.0 - at.0, neighbour.at.1 - at.1), neighbour))
+        .collect();
+    let cardinal = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+    let present_cardinal = cardinal
+        .iter()
+        .filter(|direction| by_offset.contains_key(direction))
+        .count();
+    if present_cardinal < 2 {
+        return false;
+    }
+
+    let mut supported_cardinal = HashSet::new();
+    let mut has_l = false;
+    for &u in &[(1, 0), (-1, 0)] {
+        let Some(along_u) = by_offset.get(&u) else {
+            continue;
+        };
+        for &v in &[(0, 1), (0, -1)] {
+            let (Some(along_v), Some(diagonal)) =
+                (by_offset.get(&v), by_offset.get(&(u.0 + v.0, u.1 + v.1)))
+            else {
+                continue;
+            };
+            let predicted = along_u.position + (along_v.position - diagonal.position);
+            if (candidate - predicted).norm() > tolerance_px {
+                continue;
+            }
+            let actual_u = along_u.position - candidate;
+            let actual_v = along_v.position - candidate;
+            let expected_u = diagonal.position - along_v.position;
+            let expected_v = diagonal.position - along_u.position;
+            if vector_step_matches(actual_u, expected_u, step_tol, tolerance_px)
+                && vector_step_matches(actual_v, expected_v, step_tol, tolerance_px)
+            {
+                has_l = true;
+                supported_cardinal.insert(u);
+                supported_cardinal.insert(v);
+            }
+        }
+    }
+    has_l && supported_cardinal.len() == present_cardinal
+}
+
+fn vector_step_matches(
+    actual: nalgebra::Vector2<f32>,
+    expected: nalgebra::Vector2<f32>,
+    step_tol: f32,
+    tolerance_px: f32,
+) -> bool {
+    let expected_len = expected.norm();
+    if expected_len <= f32::EPSILON {
+        return false;
+    }
+    let actual_len = actual.norm();
+    actual_len >= (1.0 - step_tol) * expected_len
+        && actual_len <= (1.0 + step_tol) * expected_len
+        && (actual - expected).norm() <= tolerance_px
+}
+
 fn apply_boosters_impl(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,
@@ -478,5 +662,71 @@ mod tests {
             assert!(grow.labelled.contains_key(&(i as i32, 0)));
             assert!(grow.labelled.contains_key(&(i as i32, 4)));
         }
+    }
+
+    #[test]
+    fn geometry_only_recovery_requires_l_support_and_ignores_bad_axes() {
+        let axis_u = 0.0_f32;
+        let axis_v = std::f32::consts::FRAC_PI_2;
+        let mut corners = vec![
+            make_corner(0, 100.0, 100.0, axis_u, axis_v, ClusterLabel::Canonical),
+            make_corner(1, 120.0, 100.0, axis_u, axis_v, ClusterLabel::Swapped),
+            make_corner(2, 100.0, 120.0, axis_u, axis_v, ClusterLabel::Swapped),
+            make_corner(3, 120.0, 120.0, axis_u, axis_v, ClusterLabel::Canonical),
+        ];
+        // The missing top-left feature has a good position but unusable local
+        // orientation. The other three labels form the required L support.
+        corners[0].axes = [
+            AxisEstimate {
+                angle: 0.70,
+                sigma: 0.05,
+            },
+            AxisEstimate {
+                angle: 1.20,
+                sigma: 0.05,
+            },
+        ];
+        corners[0].stage = CornerStage::NoCluster { max_d_deg: 40.0 };
+
+        let mut grow = GrowResult {
+            labelled: [((1, 0), 1), ((0, 1), 2), ((1, 1), 3)]
+                .into_iter()
+                .collect(),
+            by_corner: [(1, (1, 0)), (2, (0, 1)), (3, (1, 1))]
+                .into_iter()
+                .collect(),
+            ambiguous: Default::default(),
+            holes: Default::default(),
+            axis_i: nalgebra::Vector2::new(1.0, 0.0),
+            axis_j: nalgebra::Vector2::new(0.0, 1.0),
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
+        };
+        let result = apply_geometry_only_recovery(
+            &mut corners,
+            &mut grow,
+            20.0,
+            &HashSet::new(),
+            &ChessboardParams::default(),
+        );
+        assert_eq!(result.added, 1);
+        assert_eq!(grow.labelled.get(&(0, 0)), Some(&0));
+
+        // Removing the diagonal destroys the independent parallelogram
+        // support, so the same candidate must remain unlabelled.
+        grow.labelled.remove(&(0, 0));
+        grow.by_corner.remove(&0);
+        grow.labelled.remove(&(1, 1));
+        grow.by_corner.remove(&3);
+        corners[0].stage = CornerStage::NoCluster { max_d_deg: 40.0 };
+        let result = apply_geometry_only_recovery(
+            &mut corners,
+            &mut grow,
+            20.0,
+            &HashSet::new(),
+            &ChessboardParams::default(),
+        );
+        assert_eq!(result.added, 0);
+        assert!(!grow.by_corner.contains_key(&0));
     }
 }
