@@ -25,12 +25,13 @@ use crate::shared::fit_component;
 use crate::shared::merge::{ComponentInput, LocalMergeParams};
 use crate::shared::FitComponentResult;
 
-use super::{hex, triangulate_usable, ComponentOutput, MIN_USABLE_FOR_DELAUNAY};
+use super::hex;
+use super::square_detector::{triangulate_usable, ComponentOutput, MIN_USABLE_FOR_DELAUNAY};
 
 /// Multi-component axis-driven topological grid detector for
 /// `(Hex, Oriented3)`.
 ///
-/// Mirrors [`super::detect_square_oriented2_topological_all`] but on a hex
+/// Mirrors [`super::detect_square_oriented2_all`] but on a hex
 /// point lattice: the Delaunay triangles *are* the unit cells (no diagonal
 /// class, no triangle-pair-to-quad merge), so classification keeps triangles
 /// whose three edges align with three distinct axis families, and the walk
@@ -49,7 +50,7 @@ pub(crate) fn detect_hex_oriented3_topological_all(
     if features.len() < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
     }
-    let topo = &params.topological;
+    let topo = &params.tuning().topological;
     let caches = hex::build_hex_axis_caches(features, topo.max_axis_sigma_rad);
     let usable: Vec<bool> = caches
         .iter()
@@ -210,6 +211,7 @@ fn build_hex_component_solution(
     Some(ComponentOutput {
         entries: entries_out,
         fit,
+        dimensions: None,
         rejected,
         kept_source_indices,
         validation_drop_source_indices: HashSet::new(),
@@ -279,20 +281,27 @@ fn assemble_hex_solutions(
             ));
         }
     }
+    global_unlabelled.sort_by_key(|rejected| rejected.source_index);
 
     let mut solutions: Vec<GridSolution> = Vec::with_capacity(component_outputs.len());
     for (idx, out) in component_outputs.into_iter().enumerate() {
         let ComponentOutput {
             entries,
             fit,
+            dimensions: normalized_dimensions,
             mut rejected,
             ..
         } = out;
         if idx == 0 {
             rejected.extend(global_unlabelled.iter().copied());
         }
-        let grid = LabelledGrid::new(LatticeKind::Hex, entries, dimensions);
-        solutions.push(GridSolution::new(grid, Some(fit), rejected));
+        rejected.sort_by_key(|item| item.source_index);
+        let grid = LabelledGrid::new(
+            LatticeKind::Hex,
+            entries,
+            normalized_dimensions.or(dimensions),
+        );
+        solutions.push(GridSolution::new(grid, fit, rejected));
     }
     solutions
 }

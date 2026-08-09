@@ -50,7 +50,8 @@ pub struct PredictedPosition<F: Float> {
 ///
 /// ```
 /// use nalgebra::Point2;
-/// use projective_grid::{predict_grid_position, Coord, LatticeKind};
+/// use projective_grid::{Coord, LatticeKind};
+/// use projective_grid::expert::lattice::predict_grid_position;
 /// use std::collections::HashMap;
 ///
 /// let mut labelled: HashMap<Coord, Point2<f32>> = HashMap::new();

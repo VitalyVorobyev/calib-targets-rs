@@ -295,6 +295,22 @@ fn catalogue() -> ParamSchema {
             Int,
             Some("/advanced/enable_weak_cluster_rescue"),
         ),
+        field(
+            "/advanced/enable_geometry_only_recovery",
+            "boosters",
+            "Enable geometry-only recovery",
+            "Recover an admitted cluster-rejected corner only from unique L-shaped grid support.",
+            Bool,
+            None,
+        ),
+        field(
+            "/advanced/geometry_recovery_tol_rel",
+            "boosters",
+            "Geometry recovery tolerance",
+            "Prediction residual and search radius for geometry-only recovery, as a fraction of local cell size.",
+            Float,
+            Some("/advanced/enable_geometry_only_recovery"),
+        ),
         // --- topological (nested) ------------------------------------------
         field(
             "/advanced/topological/axis_align_tol_rad",

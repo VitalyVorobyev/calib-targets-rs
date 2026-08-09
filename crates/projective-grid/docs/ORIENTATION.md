@@ -2,8 +2,9 @@
 
 `projective-grid` accepts features with three local axes (`Oriented3`,
 hex-native), two (`Oriented2`), one (`Oriented1`), or none (`Positions`).
-Orientation is an **optional cue** that sharpens seeding and edge
-classification — it is never required. The
+Orientation is an **optional input cue**: missing families can be estimated
+from neighbour chords before classification. This synthesis is itself an
+assumption about local point-cloud structure, not equivalent evidence. The
 *universal* cue is the grid structure itself: rows are lines, columns are
 lines, and local homographies are consistent. That structural cue already
 drives the shared `validate` stage and needs zero orientation.
@@ -23,30 +24,30 @@ runs the existing two-axis topological strategy unchanged:
 - `Evidence::Positions` → `orient::synthesize_oriented2` recovers **both** local
   grid directions per point (square); `orient::synthesize_oriented3` recovers
   **all three** hex axis families.
-- `Evidence::Oriented1` → `orient::synthesize_oriented2_from_oriented1` keeps the
-  supplied axis (anchored) and recovers the **second** (square only).
+- `Evidence::Oriented1` → square uses
+  `orient::synthesize_oriented2_from_oriented1`; hex uses the internal
+  three-family counterpart. Both preserve the supplied angle and sigma as one
+  anchored physical family and estimate only the missing family/families.
 - `Evidence::Oriented2` → used directly (square).
 - `Evidence::Oriented3` → used directly (hex). Three axis families, consumed by
   the hex topological path.
 
-The synthesis is perspective-invariant: it folds neighbour-chord angles modulo
-π (collinear `±u` neighbours are antipodal, so they collapse to one direction
-*exactly* under any homography) and runs a per-corner undirected
+The synthesis folds neighbour-chord angles modulo π (collinear `±u` neighbours
+are antipodal, so they collapse to one direction) and runs a per-corner undirected
 `(cos 2θ, sin 2θ)` `k`-means seeded from a global `k`-mode prior (`k = 2` for
 square via 4 nearest neighbours, `k = 3` for hex via 6 nearest neighbours). It
 assumes **no** fixed inter-axis angle, so the recovered directions track the
-local projected grid. A corner whose synthesized axes are wrong is rejected by
-the downstream geometry gates — it becomes a *missing* corner, never a
-*mislabelled* one.
+local projected grid when the selected neighbours actually belong to those
+families. Nearest-neighbour selection is not projectively invariant, and
+clutter or severe perspective can corrupt the modes. Downstream gates reduce
+that risk but do not prove that every surviving label is correct.
 
-> Recall: zero wrong labels holds for all three kinds, and the synthesized
-> square paths reach **recall parity** with the two-axis path. The gap that a
-> hard axis-voucher would leave under strong perspective is closed by the
-> geometry-first attach policy used inside the recovery engine
-> (`shared::positions_policy`) plus the post-convergence recovery schedule
-> (`shared::recovery`); the topological strategy is a first-class
-> orientation-free path. Parity is measured per-image and gated — see
-> `docs/development/detection-pipeline.md`.
+> Readiness: `(Square, Oriented2)` is mature and covered by real-image
+> detector campaigns. Square `Positions` / `Oriented1` remain
+> evidence-limited. Hex `Positions` / `Oriented1` / `Oriented3` are
+> experimental until a real-image campaign measures both wrong labels and
+> recall. The synthetic fixtures are regression evidence, not a production
+> readiness claim.
 
 The up-front synthesis above is the **entry seam** (it lets the topological
 strategy run unchanged on synthesized axes). On top of it, the recovery engine
@@ -87,8 +88,8 @@ The shipped orientation-free attach policy is the crate-private
    geometrically-coherent attach, so a wrong axis costs a *missing* corner, not
    a mislabel.
 2. **Recovery.** The geometry-only recovery schedule (`shared::recovery`:
-   extension → fill → revalidate → drop filters) wraps the policy and pushes
-   recall to parity with the oriented path.
+   extension → fill → revalidate → drop filters) wraps the policy and can
+   recover labels missed by the synthesized-axis front-half.
 
 Validate and the shared back-half are untouched. A fully axis-free chord
 fallback (geometric nearest + most-orthogonal chord) remains a possible future
@@ -115,13 +116,14 @@ Topological reads axes in three places, all in generic code:
 Everything downstream of classification (cell merge, label walk, the
 degree/parallelogram/edge-band filters, fit) is already axis-free.
 
-### Orientation-free Topological
+### A fully geometric classifier (design option, not shipped)
 
-The classifier's job is, per Delaunay triangle, to split the three edges into
+The current `Positions` path still synthesizes axes. A future classifier could,
+per Delaunay triangle, split the three edges into
 {two grid sides, one diagonal}. On a regular grid each cell's two triangles
 share the cell **diagonal**, which is the **longest** edge (≈ √2 · cell vs
 1 · cell), and the two grid sides are the two shorter, near-orthogonal edges.
-So a purely **geometric** classifier substitutes for the axis test:
+So a purely **geometric** classifier could substitute for the axis test:
 
 - Per triangle, mark the longest edge `Diagonal` and the other two `Grid`,
   gated by: the two short edges' length ratio ≈ 1, the long/short ratio ≈ √2,
@@ -148,8 +150,7 @@ grid-direction centres is **shared math** in this crate
 (`projective_grid::cluster`, re-exported as `cluster_axes` with
 `AxisClusterCenters` / `AxisAssignment`). What stays **chessboard-crate code**
 is the *parity semantics* on top of those centres — mapping the
-canonical/swapped axis assignment onto the two-colour `(i, j)` parity and the
-slot-coherence repair (`calib-targets-chessboard/src/cluster/slot_coherence.rs`).
+canonical/swapped axis assignment onto the two-colour `(i, j)` parity.
 A dot grid has no parity, so the consumer simply skips the parity mapping and
 uses the cluster centres (if any) as a soft prior — there is nothing
 parity-specific in this crate to remove.

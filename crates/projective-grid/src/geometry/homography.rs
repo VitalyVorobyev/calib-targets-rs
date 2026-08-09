@@ -32,7 +32,7 @@ pub struct Homography<F: Float = f32> {
 /// single absolute threshold is not portable across image scales. Use this
 /// struct for inspection and relative comparison, not as a production
 /// degeneracy gate. For production gating prefer a pixel-unit re-projection
-/// residual (as the [`extension`](crate::shared::extension) module does).
+/// residual, as the detector's extension stage does.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct HomographyQuality<F: Float = f32> {

@@ -71,7 +71,7 @@ pub(crate) fn fit_component(
             residual_max = residual;
         }
         let source_index = features[idx].point.source_index;
-        if residual > params.max_residual_px {
+        if residual > params.max_residual_px() {
             over_threshold.push(RejectedFeature::new(
                 source_index,
                 Some(coord),

@@ -41,13 +41,13 @@ fn clean_square_coordinate_hypotheses_pass() {
         ConsistencyParams::new(0.01),
     );
     let report = check_consistency(request).unwrap();
-    assert!(report.passed);
-    assert_eq!(report.solution.grid.entries.len(), 9);
+    assert!(report.passed());
+    assert_eq!(report.grid().entries().len(), 9);
     assert_eq!(
-        report.solution.grid.bbox,
+        report.grid().bbox(),
         Some((Coord::new(0, 0), Coord::new(2, 2)))
     );
-    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-3);
+    assert!(report.fit().residuals.max_px < 1e-3);
 }
 
 #[test]
@@ -76,9 +76,9 @@ fn clean_hex_coordinate_hypotheses_pass() {
         ConsistencyParams::new(0.01),
     ))
     .unwrap();
-    assert!(report.passed);
-    assert!(report.solution.rejected.is_empty());
-    assert!(report.solution.fit.unwrap().residuals.max_px < 1e-3);
+    assert!(report.passed());
+    assert!(report.rejected().is_empty());
+    assert!(report.fit().residuals.max_px < 1e-3);
 }
 
 #[test]
@@ -94,7 +94,7 @@ fn shuffled_feature_order_uses_source_indices() {
         ConsistencyParams::new(0.01),
     ))
     .unwrap();
-    assert!(report.passed);
+    assert!(report.passed());
 }
 
 #[test]
@@ -110,8 +110,8 @@ fn wrong_coordinate_hypothesis_is_rejected_by_residual() {
         ConsistencyParams::new(1.0),
     ))
     .unwrap();
-    assert!(!report.passed);
-    assert!(!report.solution.rejected.is_empty());
+    assert!(!report.passed());
+    assert!(!report.rejected().is_empty());
 }
 
 #[test]

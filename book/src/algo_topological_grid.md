@@ -1,8 +1,8 @@
 # Topological grid finder
 
-> Code: `projective_grid::topological`
-> (reached via `detect_grid_all` — the sole grid builder, selected by
-> `LatticeKind` + `Evidence`, with no algorithm enum). In-repo
+> Code: `crates/projective-grid/src/topological/`
+> (reached through `detect_grid_all`, or through the curated
+> `expert::square` component seam for pattern-specific builders). In-repo
 > deep-dive: `docs/algorithms/topological-grid-detection.md`.
 
 The topological grid finder is the **sole grid builder** in the
@@ -18,12 +18,9 @@ paper's image-color cell test replaced by an **axis-alignment test** so
 the core stays image-free and tolerant of perspective and radial
 distortion.
 
-> **Historical note.** An earlier `SeedAndGrow` builder once coexisted
-> with this one behind a `GraphBuildAlgorithm` selector. It has been
-> **removed**; `GraphBuildAlgorithm` is now a single-variant,
-> `#[non_exhaustive]` enum (`Topological`) retained only so the config
-> schema stays stable if a future alternative builder is added. There is
-> no algorithm choice to make.
+> **Historical note.** An earlier `SeedAndGrow` builder once coexisted with
+> this one. It and the algorithm selector have been removed; there is no
+> algorithm choice in the current public configuration.
 
 ## Vocabulary
 
@@ -42,7 +39,7 @@ distortion.
 ## Stages
 
 The generic, image-free core runs these stages (full source under
-`crates/projective-grid/src/detect/square/topological/`):
+`crates/projective-grid/src/topological/`):
 
 1. **Axis cache + usability prefilter.** Precompute each feature's two
    axis angles and an *informative* flag per slot (an axis is informative
@@ -80,13 +77,17 @@ The generic, image-free core runs these stages (full source under
    clockwise, and labels propagate across shared edges. A component is
    dropped if two quads ever disagree on a corner's label. Each
    component's `(i, j)` bbox is rebased so its minimum is `(0, 0)`.
-7. **Per-component validation + projective fit (generic).** A
-   pattern-agnostic geometry gate (line collinearity, local-homography
-   residual, edge-length band) plus a projective fit with a residual gate.
-   **The chessboard wrapper disables this stage** (pushes its tolerances
-   to `+∞`) because it owns its own mandatory geometry check downstream;
-   the core is asked only for labelled components.
-8. **Orchestration.** Component solutions are sorted by labelled-corner
+7. **Generic component merge.** Disconnected walk patches are reunited in
+   label space using local geometry and cell scale, without relying on a
+   global homography.
+8. **Public validation + projective fit, or detector-builder handoff.** The
+   ordinary facade canonicalizes labels, runs pattern-agnostic line/local-H
+   validation, and fits the mandatory projective transform. Pattern-specific
+   builders may instead stop after component merge through
+   `expert::square::assemble_oriented2_components`; the chessboard takes this
+   branch so parity/recovery see the original axis-slot frame and then applies
+   its own mandatory geometry check.
+9. **Orchestration.** Component detections are sorted by labelled-corner
    count (ties broken by smallest source index, for determinism). Every
    unplaced feature is collected into a global rejected/unlabelled set.
    `detect_grid` returns the largest component; `detect_grid_all` returns
@@ -142,4 +143,4 @@ chessboard wrapper adds parity discipline in
   chessboard-specific component merge, parity alignment, recall boosters,
   and mandatory precision pass that run *after* this core.
 - [The Grid Model](projective_grid.md) — the public detection surface
-  (`Evidence`, `detect_grid` / `detect_grid_all`, `GridSolution`).
+  (`Evidence`, `detect_grid` / `detect_grid_all`, `GridDetection`).

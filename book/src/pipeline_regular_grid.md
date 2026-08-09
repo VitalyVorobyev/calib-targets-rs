@@ -21,7 +21,7 @@ OrientedFeature<2>[]  (positions + two undirected axes each)
  →  axis clustering        recover global directions {Θ₀, Θ₁}   (optional hint)
  →  topological grid       Delaunay → classify → quads → walk    (the builder)
  →  validation + fit       line / local-H / residual gate
- →  GridSolution           labelled (i, j) component(s) + projective fit
+ →  GridDetection          labelled (i, j) component(s) + projective fit
 ```
 
 1. **Axis clustering (optional).** If the caller can supply the two global
@@ -38,8 +38,9 @@ OrientedFeature<2>[]  (positions + two undirected axes each)
    gate. For the bare grid crate this stage is *active* (it is the
    precision gate); the chessboard wrapper disables it and substitutes its
    own mandatory geometry check.
-4. **Output.** A `GridSolution` per component — `grid: LabelledGrid`,
-   `fit: Option<LatticeFit>`, `rejected: Vec<RejectedFeature>`.
+4. **Output.** A `GridDetection` per component: an accepted `LabelledGrid`
+   plus a mandatory `LatticeFit`. Rejections and stage snapshots are an
+   opt-in diagnostics contract.
 
 ## Public surface
 
@@ -50,7 +51,7 @@ synthesize the missing axes up front. `detect_grid` returns the largest
 component; `detect_grid_all` returns all of them. A separate
 `check_consistency` entry point scores *pre-labelled* features against a
 single projective fit. The full surface — `DetectionRequest`,
-`GridSolution`, `RejectedFeature`, and the worked example — is documented
+`GridDetection`, the diagnostics seam, and the worked example — is documented
 in [The Grid Model](projective_grid.md) and the
 [Regular Grid Detection example](example_regular_grid.md).
 
@@ -74,15 +75,16 @@ directly, with the projective-fit back-half shared.
 
 ## Tuning
 
-For the bare grid crate, tuning is `DetectionParams`:
+For ordinary callers, `DetectionParams` intentionally has one stable knob:
 
 - **`max_residual_px`** — the fit residual gate. Raise on genuinely
   distorted captures; it is the precision lever, so prefer the smallest
   value that still recovers the grid.
-- **`topological` sub-config** — the axis / quad / cell-size-band
-  tolerances of the [topological finder](algo_topological_grid.md).
-- **`validate` sub-config** — the line / local-H tolerances of the active
-  validation stage.
+
+Stage-specific topological, validation, and recovery controls are available
+only by attaching `projective_grid::expert::DetectionTuning`. This keeps the
+default configuration compact while preserving an explicit seam for detector
+builders and reproducible evidence campaigns.
 
 When this pipeline runs *inside* a target detector, these knobs are mostly
 set by the wrapper (the chessboard wrapper disables the validate stage and

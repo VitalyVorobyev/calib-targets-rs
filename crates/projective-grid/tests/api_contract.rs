@@ -1,7 +1,8 @@
 use nalgebra::Point2;
+use projective_grid::expert::lattice::{D4_TRANSFORMS, D6_TRANSFORMS};
 use projective_grid::{
     Coord, CoordinateHypothesis, GridDimensions, LatticeKind, LocalAxis, OrientedFeature,
-    PointFeature, D4_TRANSFORMS, D6_TRANSFORMS,
+    PointFeature,
 };
 
 #[test]

@@ -9,8 +9,8 @@ use std::collections::HashSet;
 
 use nalgebra::Point2;
 use projective_grid::{
-    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature,
+    detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, LocalAxis, OrientedFeature,
+    PointFeature,
 };
 
 fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
@@ -54,25 +54,21 @@ fn assert_all_labels_in_box(coords: &HashSet<Coord>, max_u: i32, max_v: i32) {
 #[test]
 fn perfect_5x5_grid_is_fully_labelled() {
     let features = axis_aligned_features(5, 5, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let solution = detect_grid(request).expect("detect_grid on perfect 5x5 grid");
 
-    assert_eq!(solution.grid.lattice, LatticeKind::Square);
-    assert_eq!(solution.grid.entries.len(), 25);
-    assert_eq!(solution.rejected.len(), 0);
-
-    let coords: HashSet<Coord> = solution.grid.entries.iter().map(|e| e.coord).collect();
+    assert_eq!(solution.grid().lattice(), LatticeKind::Square);
+    assert_eq!(solution.grid().entries().len(), 25);
+    let coords: HashSet<Coord> = solution.grid().entries().iter().map(|e| e.coord).collect();
     assert_all_labels_in_box(&coords, 4, 4);
 
-    let fit = solution.grid.bbox.expect("bbox present on non-empty grid");
+    let fit = solution
+        .grid()
+        .bbox()
+        .expect("bbox present on non-empty grid");
     assert_eq!(fit, (Coord::new(0, 0), Coord::new(4, 4)));
 
-    let fit = solution.fit.expect("fit present on success");
+    let fit = solution.fit();
     assert!(
         fit.residuals.max_px < 0.01,
         "max residual {} too high on perfect grid",
@@ -109,21 +105,16 @@ fn perturbed_5x5_grid_recovers_at_least_24_of_25() {
         feature.axes[1] = LocalAxis::new(feature.axes[1].angle_rad + da1, None);
     }
 
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let solution = detect_grid(request).expect("detect_grid on perturbed 5x5 grid");
 
-    let labelled = solution.grid.entries.len();
+    let labelled = solution.grid().entries().len();
     assert!(
         labelled >= 24,
         "expected >= 24/25 labelled on perturbed grid, got {labelled}",
     );
 
-    let fit = solution.fit.expect("fit present on success");
+    let fit = solution.fit();
     assert!(
         fit.residuals.max_px < 1.0,
         "max residual {} too high on perturbed grid",
@@ -131,7 +122,7 @@ fn perturbed_5x5_grid_recovers_at_least_24_of_25() {
     );
 
     // Labels remain non-negative after rebase.
-    for entry in &solution.grid.entries {
+    for entry in solution.grid().entries() {
         assert!(
             entry.coord.u >= 0 && entry.coord.v >= 0,
             "{:?}",
@@ -151,7 +142,7 @@ fn extra_noise_features_are_not_absorbed_into_the_primary_grid() {
     // Note on multi-component assembly: four of these five outliers (the bbox
     // corners) themselves form a self-consistent 600 px square with axis-
     // aligned local axes, so the multi-component pipeline may assemble them
-    // into their *own* secondary `GridSolution`. That is by design (the
+    // into their *own* secondary `GridDetection`. That is by design (the
     // assembler builds every component it can) and it never corrupts the
     // primary grid — `detect_grid` returns the largest component, which is the
     // true 25-corner lattice. The precision contract is "no wrong label inside
@@ -176,25 +167,20 @@ fn extra_noise_features_are_not_absorbed_into_the_primary_grid() {
         features.push(OrientedFeature::new(point, axes));
     }
 
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let solution = detect_grid(request).expect("detect_grid on noise-augmented grid");
 
     // The primary component is exactly the 25 true corners.
     assert_eq!(
-        solution.grid.entries.len(),
+        solution.grid().entries().len(),
         25,
         "expected exactly 25 grid labels in the primary component"
     );
 
     // No outlier source index leaked into the primary grid.
     let labelled_sources: HashSet<usize> = solution
-        .grid
-        .entries
+        .grid()
+        .entries()
         .iter()
         .map(|e| e.source_index)
         .collect();
@@ -207,14 +193,14 @@ fn extra_noise_features_are_not_absorbed_into_the_primary_grid() {
     }
 
     // The 25 true corners fill the full rebased (0, 0)..(4, 4) box.
-    let coords: HashSet<Coord> = solution.grid.entries.iter().map(|e| e.coord).collect();
+    let coords: HashSet<Coord> = solution.grid().entries().iter().map(|e| e.coord).collect();
     assert_all_labels_in_box(&coords, 4, 4);
     assert_eq!(
-        solution.grid.bbox,
+        solution.grid().bbox(),
         Some((Coord::new(0, 0), Coord::new(4, 4)))
     );
 
-    let fit = solution.fit.expect("fit present");
+    let fit = solution.fit();
     assert!(fit.residuals.max_px < 0.01, "{}", fit.residuals.max_px);
 }
 
@@ -249,18 +235,13 @@ fn noise_features_inside_grid_support_are_not_labelled() {
         features.push(OrientedFeature::new(point, axes));
     }
 
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let solution = detect_grid(request).expect("detect_grid on cell-centre noise");
 
     // Headline precision contract: no noise feature carries a lattice label.
     let labelled_source_indices: HashSet<usize> = solution
-        .grid
-        .entries
+        .grid()
+        .entries()
         .iter()
         .map(|e| e.source_index)
         .collect();
@@ -276,7 +257,7 @@ fn noise_features_inside_grid_support_are_not_labelled() {
     // recall stays high: the topological assembler keeps the large majority of
     // the 25 corners (measured 22/25 with four interior noise points). A miss
     // is acceptable; a wrong label is not.
-    let labelled = solution.grid.entries.len();
+    let labelled = solution.grid().entries().len();
     assert!(
         labelled >= 22,
         "expected >= 22/25 true grid labels with interior noise, got {labelled}"
@@ -288,7 +269,7 @@ fn noise_features_inside_grid_support_are_not_labelled() {
         );
     }
 
-    let fit = solution.fit.expect("fit present");
+    let fit = solution.fit();
     assert!(fit.residuals.max_px < 0.01, "{}", fit.residuals.max_px);
 }
 
@@ -298,12 +279,7 @@ fn too_few_features_returns_insufficient_evidence() {
     // triangulate; below that it short-circuits with `InsufficientEvidence`
     // (a typed couldn't-detect error, never a panic or a false grid).
     let features = axis_aligned_features(1, 2, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let err = detect_grid(request).unwrap_err();
     assert_eq!(err, projective_grid::GridError::InsufficientEvidence);
 }
@@ -314,12 +290,7 @@ fn degenerate_collinear_features_return_a_typed_error() {
     // grid; the assembler returns a typed `DegenerateGeometry` couldn't-detect
     // error rather than a panic or a false grid.
     let features = axis_aligned_features(1, 3, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let err = detect_grid(request).unwrap_err();
     assert_eq!(err, projective_grid::GridError::DegenerateGeometry);
 }

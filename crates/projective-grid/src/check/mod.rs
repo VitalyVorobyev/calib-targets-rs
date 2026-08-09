@@ -9,8 +9,8 @@ use crate::feature::{CoordinateHypothesis, PointFeature};
 use crate::geometry::{apply_projective, estimate_projective};
 use crate::lattice::{GridDimensions, LatticeKind};
 use crate::result::{
-    ConsistencyReport, GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature,
-    RejectionReason, ResidualSummary,
+    ConsistencyReport, GridEntry, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
+    ResidualSummary,
 };
 
 /// Parameters for coordinate-hypothesis consistency checks.
@@ -129,8 +129,7 @@ pub fn check_consistency(request: ConsistencyRequest<'_>) -> Result<ConsistencyR
     let fit = LatticeFit::new(model_to_image, residuals);
     let grid = LabelledGrid::new(request.lattice, entries, request.dimensions);
     let passed = rejected.is_empty();
-    let solution = GridSolution::new(grid, Some(fit), rejected);
-    Ok(ConsistencyReport::new(passed, solution))
+    Ok(ConsistencyReport::new(passed, grid, fit, rejected))
 }
 
 fn validate_features(features: &[PointFeature]) -> Result<HashMap<usize, Point2<f32>>> {

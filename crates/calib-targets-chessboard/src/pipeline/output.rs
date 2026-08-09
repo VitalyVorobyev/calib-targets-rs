@@ -7,15 +7,16 @@
 //!
 //! The non-negative rebase, the image-axis orientation canonicalization, and
 //! the stable sort all live in
-//! [`projective_grid::LabelledGrid::normalize`] — the single source of truth
-//! for grid-result normalization. This stage builds a `LabelledGrid` from the
-//! chessboard's labelled component, normalizes it, and copies the normalized
+//! [`projective_grid::expert::lattice::normalize_square_entries`] — the single
+//! source of truth for grid-result normalization. This stage builds grid
+//! entries from the chessboard's labelled component, normalizes them, and copies the normalized
 //! lattice `Coord{u,v}` straight onto each output corner — `Coord` is the
 //! workspace's canonical grid-coordinate type, so no adapter is needed.
 
 use crate::corner::CornerAug;
-use projective_grid::shared::grow::GrowResult;
-use projective_grid::{Coord, GridEntry, LabelledGrid, LatticeKind};
+use projective_grid::expert::attachment::GrowResult;
+use projective_grid::expert::lattice::normalize_square_entries;
+use projective_grid::{Coord, GridEntry};
 
 use super::types::{ChessboardCorner, ChessboardDetection};
 
@@ -38,13 +39,10 @@ pub(crate) fn build_detection(
             GridEntry::new(Coord::new(i, j), c_idx, corners[c_idx].position, None)
         })
         .collect();
-    let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
-    // Rebase to non-negative + canonicalize so +i ≈ +x and +j ≈ +y + stable
-    // (j, i) sort — all owned by projective-grid.
-    grid.normalize();
+    let entries = normalize_square_entries(entries);
 
-    let mut chessboard_corners: Vec<ChessboardCorner> = Vec::with_capacity(grid.entries.len());
-    for e in &grid.entries {
+    let mut chessboard_corners: Vec<ChessboardCorner> = Vec::with_capacity(entries.len());
+    for e in &entries {
         let c = &corners[e.source_index];
         chessboard_corners.push(ChessboardCorner {
             position: e.image_position,

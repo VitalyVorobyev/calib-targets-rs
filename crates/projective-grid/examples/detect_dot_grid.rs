@@ -14,9 +14,7 @@
 //! term, so the recovered grid directions are genuinely non-orthogonal.
 
 use nalgebra::{Matrix3, Point2, Vector3};
-use projective_grid::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-};
+use projective_grid::{detect_grid, DetectionRequest, Evidence, LatticeKind, PointFeature};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // A homography with a perspective term: the lattice converges toward two
@@ -48,28 +46,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Orientation-free request. The topological strategy is the recommended
     // orientation-free path: it recovers a dense quad mesh from positions alone.
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Positions(&features),
-        None, // grid dimensions unknown
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Positions(&features));
 
     let solution = detect_grid(request)?;
 
     println!(
         "input dots: {}   labelled: {}   fit max residual: {:.4} px",
         features.len(),
-        solution.grid.entries.len(),
-        solution
-            .fit
-            .as_ref()
-            .map(|f| f.residuals.max_px)
-            .unwrap_or(f32::NAN),
+        solution.grid().entries().len(),
+        solution.fit().residuals.max_px,
     );
     println!();
     println!("detected (i, j)  <-  feature  (true (i, j))");
-    let mut entries = solution.grid.entries.clone();
+    let mut entries = solution.grid().entries().to_vec();
     entries.sort_by_key(|e| (e.coord.v, e.coord.u));
     for e in &entries {
         let (ti, tj) = truth[e.source_index];

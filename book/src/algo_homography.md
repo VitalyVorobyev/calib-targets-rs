@@ -8,8 +8,8 @@ A planar calibration target maps to the image through a single projective
 transform (a homography) — up to lens distortion. Several stages need to
 *fit* that transform: the [recovery & validation](algo_recovery_validation.md)
 local-H residual check fits a 4-point homography per corner, and the final
-lattice fit recovers the model-plane-to-image transform reported in
-`GridSolution::fit`. This page describes that fit.
+lattice fit recovers the model-plane-to-image transform reported by
+`GridDetection::fit()`. This page describes that fit.
 
 ## The fit
 
@@ -71,7 +71,7 @@ distortion-tolerant precision checks are what protect the labels.
 
 - [Recovery & validation](algo_recovery_validation.md) — the consumer of
   both the 4-point local-H predictions and the final fit.
-- [The Grid Model](projective_grid.md) — `GridSolution::fit` and the
+- [The Grid Model](projective_grid.md) — `GridDetection::fit()` and the
   `LatticeFit` / `ResidualSummary` output shapes.
 - [calib-targets-core](core.md) — the core `Homography` /
   `RectifiedView` rectification helpers built on the same DLT.

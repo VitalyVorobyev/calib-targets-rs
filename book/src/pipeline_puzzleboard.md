@@ -32,8 +32,7 @@ prefilter, [axis clustering](algo_axis_clustering.md), the
 [topological grid walk](algo_topological_grid.md), booster-driven
 [component recovery, and the mandatory final geometry
 check](algo_recovery_validation.md). PuzzleBoard already defaulted to the
-topological builder, which is now the only builder; `graph_build_algorithm`
-is a single-variant reserved seam.
+topological builder, which is the only builder and has no selector field.
 
 ## The partial-view guarantee
 

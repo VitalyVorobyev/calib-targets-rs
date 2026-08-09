@@ -22,8 +22,8 @@ use std::collections::HashMap;
 
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
-    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature,
+    detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, LocalAxis, OrientedFeature,
+    PointFeature,
 };
 
 /// Ground-truth `source_index → (i, j)` map.
@@ -141,9 +141,9 @@ fn assert_labels_consistent_with_truth(entries: &[(usize, Coord)], truth: &Truth
     );
 }
 
-fn entries(sol: &projective_grid::GridSolution) -> Vec<(usize, Coord)> {
-    sol.grid
-        .entries
+fn entries(sol: &projective_grid::GridDetection) -> Vec<(usize, Coord)> {
+    sol.grid()
+        .entries()
         .iter()
         .map(|e| (e.source_index, e.coord))
         .collect()
@@ -157,22 +157,18 @@ fn h_perspective() -> Matrix3<f32> {
     )
 }
 
-fn detect_o1(feats: &[OrientedFeature<1>]) -> projective_grid::GridSolution {
+fn detect_o1(feats: &[OrientedFeature<1>]) -> projective_grid::GridDetection {
     detect_grid(DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented1(feats),
-        None,
-        DetectionParams::default(),
     ))
     .expect("oriented1 detect")
 }
 
-fn detect_o2(feats: &[OrientedFeature<2>]) -> projective_grid::GridSolution {
+fn detect_o2(feats: &[OrientedFeature<2>]) -> projective_grid::GridDetection {
     detect_grid(DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(feats),
-        None,
-        DetectionParams::default(),
     ))
     .expect("oriented2 detect")
 }
@@ -192,8 +188,8 @@ fn oriented1_topological_parity_and_zero_wrong() {
     // majority of the grid. The two-axis path is the upper bound; the
     // synthesized second axis is weaker at boundaries (Phase 3 closes the
     // remaining gap). Zero wrong labels is the hard contract (asserted above).
-    let n1 = sol1.grid.entries.len();
-    let n2 = sol2.grid.entries.len();
+    let n1 = sol1.grid().entries().len();
+    let n2 = sol2.grid().entries().len();
     assert!(n2 >= n1, "oriented2 should be the upper bound: {n2} < {n1}");
     // Phase 3 wired the synthesized-axis topological path through the post-merge
     // recovery schedule; it now recovers the full grid (measured 64/64). Floor

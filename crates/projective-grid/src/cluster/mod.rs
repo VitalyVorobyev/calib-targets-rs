@@ -55,8 +55,8 @@ use std::f32::consts::PI;
 use serde::Serialize;
 
 pub use circular::{
-    angle_to_bin, angular_dist_pi, bin_to_angle, pick_two_peaks, refine_2means_double_angle,
-    smooth_circular_5, wrap_pi, AngleVote, PeakPickOptions,
+    angle_to_bin, angular_dist_pi, pick_two_peaks, refine_2means_double_angle, smooth_circular_5,
+    wrap_pi, AngleVote, PeakPickOptions,
 };
 
 /// One undirected local lattice-axis estimate feeding the clustering
@@ -409,70 +409,6 @@ pub fn assign_axes(
     } else {
         AxisAssignment::None { max_d_rad: max_d }
     }
-}
-
-/// Refit cluster centres from a labelled subset's axes only.
-///
-/// For each feature in `axes`, pick the slot assignment (canonical /
-/// swapped) that minimises the cost under `old_centers` — same tie-break
-/// as [`assign_axes`] — to decide which of its two axes belongs to slot 0
-/// vs slot 1. Accumulate `(cos 2θ, sin 2θ)` per slot (undirected circular
-/// mean), halve the atan2, wrap to `[0, π)`, and order so `θ0 ≤ θ1`.
-///
-/// Returns `None` if `axes.len() < min_samples` (the caller should keep
-/// the original centres).
-pub fn refit_centers(
-    axes: &[[AxisObservation; 2]],
-    old_centers: AxisClusterCenters,
-    min_samples: usize,
-) -> Option<AxisClusterCenters> {
-    if axes.len() < min_samples {
-        return None;
-    }
-    let mut s0_re = 0.0_f32;
-    let mut s0_im = 0.0_f32;
-    let mut s1_re = 0.0_f32;
-    let mut s1_im = 0.0_f32;
-    for pair in axes {
-        let a0 = wrap_pi(pair[0].angle);
-        let a1 = wrap_pi(pair[1].angle);
-        let d_a0_t0 = angular_dist_pi(a0, old_centers.theta0);
-        let d_a0_t1 = angular_dist_pi(a0, old_centers.theta1);
-        let d_a1_t0 = angular_dist_pi(a1, old_centers.theta0);
-        let d_a1_t1 = angular_dist_pi(a1, old_centers.theta1);
-        let canon_cost = d_a0_t0 + d_a1_t1;
-        let swap_cost = d_a0_t1 + d_a1_t0;
-        let (a_to_t0, a_to_t1) = if canon_cost <= swap_cost {
-            (a0, a1)
-        } else {
-            (a1, a0)
-        };
-        s0_re += (2.0 * a_to_t0).cos();
-        s0_im += (2.0 * a_to_t0).sin();
-        s1_re += (2.0 * a_to_t1).cos();
-        s1_im += (2.0 * a_to_t1).sin();
-    }
-    let mut t0 = 0.5 * s0_im.atan2(s0_re);
-    let mut t1 = 0.5 * s1_im.atan2(s1_re);
-    while t0 < 0.0 {
-        t0 += PI;
-    }
-    while t0 >= PI {
-        t0 -= PI;
-    }
-    while t1 < 0.0 {
-        t1 += PI;
-    }
-    while t1 >= PI {
-        t1 -= PI;
-    }
-    if t0 > t1 {
-        std::mem::swap(&mut t0, &mut t1);
-    }
-    Some(AxisClusterCenters {
-        theta0: t0,
-        theta1: t1,
-    })
 }
 
 #[cfg(test)]

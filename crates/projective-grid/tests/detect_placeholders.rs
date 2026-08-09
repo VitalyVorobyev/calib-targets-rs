@@ -1,16 +1,14 @@
 use nalgebra::Point2;
 use projective_grid::{
-    detect_grid, Coord, CoordinateHypothesis, DetectionParams, DetectionRequest, Evidence,
-    EvidenceKind, GridError, GridTask, LatticeKind, LocalAxis, OrientedFeature, PointFeature,
+    detect_grid, DetectionRequest, Evidence, EvidenceKind, GridError, GridTask, LatticeKind,
+    LocalAxis, OrientedFeature, PointFeature,
 };
 
 fn point(idx: usize) -> PointFeature {
     PointFeature::new(idx, Point2::new(idx as f32, 0.0))
 }
 
-fn assert_unsupported(request: DetectionRequest<'_>, evidence: EvidenceKind) {
-    // Capture `lattice` before the request is consumed by `detect_grid`.
-    let lattice = request.lattice;
+fn assert_unsupported(request: DetectionRequest<'_>, lattice: LatticeKind, evidence: EvidenceKind) {
     let err = detect_grid(request).unwrap_err();
     assert_eq!(
         err,
@@ -36,12 +34,13 @@ fn assert_unsupported(request: DetectionRequest<'_>, evidence: EvidenceKind) {
 // `hex_oriented_detection_is_typed_unsupported` were removed with the
 // seed-and-grow retirement: they only asserted "unsupported" because the
 // historical default algorithm was `SeedAndGrow`, which had no hex path. With
-// the topological default, `(Hex, Positions)` and `(Hex, Oriented3)` are the
+// the topological default, `(Hex, Positions)`, `(Hex, Oriented1)`, and
+// `(Hex, Oriented3)` are the
 // supported hex paths and route to the real hex topological detector (they
 // return `InsufficientEvidence` / `DegenerateGeometry` on degenerate input,
 // not `UnsupportedCombination`). The hex success path is covered by
 // `tests/detect_hex_positions.rs`; the remaining genuine hex-unsupported cases
-// — `(Hex, Oriented1)` / `(Hex, Oriented2)` — are covered there too.
+// — `(Hex, Oriented2)` — is covered there too.
 
 #[test]
 fn square_oriented3_detection_is_typed_unsupported() {
@@ -58,30 +57,6 @@ fn square_oriented3_detection_is_typed_unsupported() {
             [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
         ),
     ];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented3(&features),
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::Oriented3);
-}
-
-#[test]
-fn coordinate_hypothesis_detection_is_typed_unsupported() {
-    let features = [point(0), point(1), point(2), point(3)];
-    let hypotheses = [
-        CoordinateHypothesis::new(0, Coord::new(0, 0), None),
-        CoordinateHypothesis::new(1, Coord::new(1, 0), None),
-    ];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::CoordinateHypotheses {
-            features: &features,
-            hypotheses: &hypotheses,
-        },
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::CoordinateHypotheses);
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented3(&features));
+    assert_unsupported(request, LatticeKind::Square, EvidenceKind::Oriented3);
 }

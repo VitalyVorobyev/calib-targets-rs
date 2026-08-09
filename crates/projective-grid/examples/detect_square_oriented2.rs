@@ -3,7 +3,7 @@ use projective_grid::{
     OrientedFeature, PointFeature,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn generate_features() -> Vec<OrientedFeature<2>> {
     let mut features = Vec::new();
     for v in 0..5 {
         for u in 0..5 {
@@ -19,15 +19,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ));
         }
     }
+    features
+}
 
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let features = generate_features();
     let params = DetectionParams::default();
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params,
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(params);
     let solution = detect_grid(request)?;
-    println!("labelled corners: {}", solution.grid.entries.len());
+    println!("labelled corners: {}", solution.grid().entries().len());
     Ok(())
 }

@@ -18,9 +18,7 @@
 //! directions are genuinely not 60° apart.
 
 use nalgebra::{Matrix3, Point2, Vector3};
-use projective_grid::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-};
+use projective_grid::{detect_grid, DetectionRequest, Evidence, LatticeKind, PointFeature};
 
 /// Axial hex node `(q, r)` model position with unit nearest-neighbour spacing.
 fn hex_model(q: i32, r: i32) -> Point2<f32> {
@@ -58,28 +56,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Orientation-free hex request. Hex detection is topological-only.
-    let request = DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Positions(&features),
-        None, // grid dimensions unknown
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Hex, Evidence::Positions(&features));
 
     let solution = detect_grid(request)?;
 
     println!(
         "input nodes: {}   labelled: {}   fit max residual: {:.4} px",
         features.len(),
-        solution.grid.entries.len(),
-        solution
-            .fit
-            .as_ref()
-            .map(|f| f.residuals.max_px)
-            .unwrap_or(f32::NAN),
+        solution.grid().entries().len(),
+        solution.fit().residuals.max_px,
     );
     println!();
     println!("detected (q, r)  <-  feature  (true (q, r))");
-    let mut entries = solution.grid.entries.clone();
+    let mut entries = solution.grid().entries().to_vec();
     entries.sort_by_key(|e| (e.coord.v, e.coord.u));
     for e in &entries {
         let (tq, tr) = truth[e.source_index];

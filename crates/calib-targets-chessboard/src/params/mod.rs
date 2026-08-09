@@ -63,7 +63,7 @@ impl std::error::Error for ChessboardParamsError {}
 /// The grid `(i, j) → corner` labelling is built with the **topological** grid
 /// finder: a Delaunay triangulation plus an axis-driven cell test (the
 /// image-free variant of the SBF09 grid finder; see
-/// [`projective_grid::TopologicalParams`]). It has a low setup cost, no global
+/// [`projective_grid::expert::TopologicalParams`]). It has a low setup cost, no global
 /// cell-size dependency, high recall on the clean-chessboard regression set,
 /// and tolerates severe radial distortion and low view angles well.
 ///
@@ -304,6 +304,20 @@ mod tests {
         let restored: ChessboardParams = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(serde_json::to_value(&restored).unwrap(), value);
         assert!(restored.advanced.is_some());
+    }
+
+    #[test]
+    fn legacy_advanced_config_defaults_geometry_recovery_fields() {
+        let params = ChessboardParams::default().with_advanced(ChessboardAdvancedTuning::default());
+        let mut value = serde_json::to_value(params).unwrap();
+        let advanced = value["advanced"].as_object_mut().unwrap();
+        advanced.remove("enable_geometry_only_recovery");
+        advanced.remove("geometry_recovery_tol_rel");
+
+        let restored: ChessboardParams = serde_json::from_value(value).unwrap();
+        let tuning = restored.advanced.expect("advanced block");
+        assert!(tuning.enable_geometry_only_recovery);
+        assert_eq!(tuning.geometry_recovery_tol_rel, 0.15);
     }
 
     #[test]

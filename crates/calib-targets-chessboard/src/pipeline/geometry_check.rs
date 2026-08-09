@@ -10,7 +10,7 @@ use std::collections::HashSet;
 use super::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
 use crate::params::ChessboardParams;
-use projective_grid::shared::grow::GrowResult;
+use projective_grid::expert::attachment::GrowResult;
 
 use super::types::GeometryCheckTrace;
 
@@ -21,11 +21,10 @@ const MIN_EDGE_SHAPE_LABELS: usize = 40;
 /// relabel.
 ///
 /// Drops any labelled corner that fails:
-/// - the shared [`validate`](projective_grid::shared::validate::validate)
-///   pass (line collinearity + local-H residual, attribution rules from
-///   [`mod@projective_grid::shared::validate`]); **or**
+/// - the shared [`validate`](projective_grid::expert::validation::validate)
+///   pass (line collinearity + local-H residual); **or**
 /// - the direct local wrong-label check
-///   ([`topological_wrong_label_drops`](projective_grid::shared::validate::wrong_label_filters::topological_wrong_label_drops)),
+///   (through the curated projective-grid validation seam),
 ///   which targets the dominant topological wrong-label classes — interior
 ///   skipped-corner edges and duplicate-pixel labels; **or**
 /// - the largest-cardinally-connected-component filter, which removes any
@@ -34,6 +33,15 @@ const MIN_EDGE_SHAPE_LABELS: usize = 40;
 /// `detection_refused` is set when the surviving labelled count
 /// drops below `min_labeled_corners` — the caller MUST then return
 /// `None` for the detection rather than ship a half-broken grid.
+#[cfg_attr(
+    feature = "tracing",
+    tracing::instrument(
+        name = "chessboard_final_geometry_gate",
+        level = "debug",
+        skip_all,
+        fields(num_labels = grow_res.labelled.len()),
+    )
+)]
 pub(crate) fn run_geometry_check(
     augs: &mut [CornerAug],
     grow_res: &mut GrowResult,
@@ -42,7 +50,7 @@ pub(crate) fn run_geometry_check(
     blacklist: &mut HashSet<usize>,
     params: &ChessboardParams,
 ) -> GeometryCheckTrace {
-    use projective_grid::shared::validate as pg_validate;
+    use projective_grid::expert::validation as pg_validate;
 
     let tuning = params.effective_tuning();
 

@@ -141,27 +141,18 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
     let report = check_consistency(request).expect("check_consistency");
 
     assert!(
-        report.passed,
+        report.passed(),
         "consistency check did not pass: max_residual_px={}, rejected_count={}",
-        report
-            .solution
-            .fit
-            .as_ref()
-            .map(|f| f.residuals.max_px)
-            .unwrap_or(f32::NAN),
-        report.solution.rejected.len(),
+        report.fit().residuals.max_px,
+        report.rejected().len(),
     );
     assert!(
-        report.solution.rejected.is_empty(),
+        report.rejected().is_empty(),
         "expected no rejected hypotheses, got {} rejections",
-        report.solution.rejected.len()
+        report.rejected().len()
     );
 
-    let fit = report
-        .solution
-        .fit
-        .as_ref()
-        .expect("consistency check should produce a fit on accepted input");
+    let fit = report.fit();
     // 1.5 px sits comfortably above the ~0.5-0.8 px sub-pixel jitter we
     // see from chess-corners on the 300 DPI synthetic render but well
     // below one puzzleboard cell (~142 px at 12 mm / 300 DPI), so any
@@ -178,7 +169,7 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
     // to a corner in the puzzleboard result — the contract preserves
     // caller-owned indices through the fit.
     let n = result.corners.len();
-    for entry in &report.solution.grid.entries {
+    for entry in report.grid().entries() {
         assert!(
             entry.source_index < n,
             "source_index {} out of range (n={})",

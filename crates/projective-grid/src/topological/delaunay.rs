@@ -7,7 +7,7 @@
 //! internal type buys numerical robustness for near-degenerate inputs.
 //!
 //! All items here are crate-internal; the `topological` module's
-//! [`super::detect_square_oriented2_topological_all`] orchestrator owns the
+//! [`super::detect_square_oriented2_all`] orchestrator owns the
 //! public surface.
 
 use nalgebra::Point2;

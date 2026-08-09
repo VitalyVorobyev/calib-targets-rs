@@ -27,11 +27,12 @@
 //! up as two distinct clusters in `[0, π)`, separated by whatever angle the
 //! local perspective dictates.
 //!
-//! A second fact makes the neighbour set reliable: for a grid cell the axis
+//! Under moderate projection, a second fact often makes the neighbour set useful: for a grid cell the axis
 //! step is shorter than the diagonal step (`√(a² + b²) > max(a, b)`), and mild
 //! perspective scales both by roughly the same local factor, so a corner's
-//! **four nearest neighbours are its four axis neighbours** (`±u`, `±v`). The
-//! estimate uses those.
+//! four nearest neighbours are typically its four axis neighbours (`±u`,
+//! `±v`). Severe projective compression, dropout, or clutter can violate that
+//! ordering; nearest-neighbour selection is not projectively invariant.
 //!
 //! # Algorithm
 //!
@@ -50,11 +51,11 @@
 //!
 //! # Precision contract
 //!
-//! A corner whose synthesized axes are wrong is rejected downstream by the
-//! seed / attach geometry gates (axis-alignment, edge-length, residual) — it
-//! becomes a *missing* corner, never a *mislabelled* one. That is the correct
-//! trade for the workspace precision contract: a missing corner is acceptable,
-//! a wrong `(i, j)` label is not.
+//! Downstream axis, length, and fit gates are deliberately conservative, but
+//! they do not prove a synthesized family or label correct. Callers should
+//! validate precision and recall on their target domain; synthesized-axis
+//! paths are currently evidence-limited/experimental as documented in the
+//! crate README.
 //!
 //! # Undirected circular statistics
 //!
@@ -98,8 +99,8 @@ const REFINE_ITERS: usize = 4;
 /// and position plus the recovered axes. The two axes are **not** constrained
 /// to be orthogonal — they track the local projected grid directions.
 ///
-/// The result is consumed by the topological assembler ([`crate::topological`])
-/// exactly like caller-supplied oriented features.
+/// The result is consumed by the internal topological assembler exactly like
+/// caller-supplied oriented features.
 pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>> {
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.position).collect();
     let n = positions.len();
@@ -146,21 +147,18 @@ pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>
 /// detector that recovers a single dominant edge orientation but not the
 /// orthogonal one). This recovers the missing direction from neighbour
 /// geometry — the same perspective-invariant fold-mod-π / undirected-2-means
-/// machinery as [`synthesize_oriented2`] — but anchors one cluster at the
+/// fold-mod-π / undirected-2-means machinery as [`synthesize_oriented2`] — but anchors one cluster at the
 /// supplied axis instead of seeding both from the global modes. The supplied
 /// axis is trusted as evidence and is *not* moved; only the second cluster is
 /// recovered from the chords that fall closer to it than to the supplied axis.
 ///
-/// The result is consumed by the topological assembler ([`crate::topological`])
-/// exactly like caller-supplied [`OrientedFeature<2>`] — the wiring in
-/// [`crate::detect`] funnels `Oriented1` through this synthesis and then runs
-/// the chosen square strategy, mirroring the `Positions` path.
+/// The result is consumed by the internal topological assembler exactly like
+/// caller-supplied [`OrientedFeature<2>`]. The public detection facade funnels
+/// `Oriented1` through this synthesis and then runs the square pipeline,
+/// mirroring the `Positions` path.
 ///
-/// # Precision contract
-///
-/// Identical to [`synthesize_oriented2`]: a corner whose recovered second axis
-/// is wrong is rejected by the downstream geometry gates and becomes a
-/// *missing* corner, never a *mislabelled* one.
+/// The synthesized path is evidence-limited; downstream gates are conservative
+/// but do not constitute a universal wrong-label guarantee.
 pub fn synthesize_oriented2_from_oriented1(
     features: &[OrientedFeature<1>],
 ) -> Vec<OrientedFeature<2>> {
@@ -236,11 +234,9 @@ pub fn synthesize_oriented2_from_oriented1(
 ///    The three centers are the corner's three local grid directions, with no
 ///    inter-axis-angle constraint so they track the local perspective.
 ///
-/// # Precision contract
-///
-/// Identical to [`synthesize_oriented2`]: a corner whose synthesized axes are
-/// wrong is rejected by the downstream geometry gates and becomes a *missing*
-/// corner, never a *mislabelled* one.
+/// This hex path is experimental pending a real-image campaign. Its synthetic
+/// regression fixtures cover geometry, noise, dropout, shuffle, modulo-π
+/// seams, and clutter, but do not establish production readiness.
 pub fn synthesize_oriented3(features: &[PointFeature]) -> Vec<OrientedFeature<3>> {
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.position).collect();
     let n = positions.len();
@@ -275,6 +271,127 @@ pub fn synthesize_oriented3(features: &[PointFeature]) -> Vec<OrientedFeature<3>
             OrientedFeature::<3>::new(*feat, ordered_axes3(axes))
         })
         .collect()
+}
+
+/// Expand one trusted physical hex-axis family into the three local axis
+/// observations consumed by the hex topological classifier.
+///
+/// The measured axis is copied byte-for-byte into slot zero. The other two
+/// directions are inferred from six-neighbour chords with the measured axis
+/// held fixed during modulo-π clustering. Their circular RMS spread becomes
+/// `sigma_rad`; an unsupported cluster receives `π` uncertainty and is
+/// therefore ignored by the downstream informative-axis gate.
+pub(crate) fn synthesize_oriented3_from_oriented1(
+    features: &[OrientedFeature<1>],
+) -> Vec<OrientedFeature<3>> {
+    let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
+    if positions.len() < 4 {
+        return features
+            .iter()
+            .map(|feature| {
+                OrientedFeature::<3>::new(
+                    feature.point,
+                    [
+                        feature.axes[0],
+                        LocalAxis::new(0.0, Some(std::f32::consts::PI)),
+                        LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(std::f32::consts::PI)),
+                    ],
+                )
+            })
+            .collect();
+    }
+
+    let mut tree: KdTree<f32, 2> = KdTree::new();
+    for (index, position) in positions.iter().enumerate() {
+        tree.add(&[position.x, position.y], index as u64);
+    }
+    let per_corner: Vec<Vec<(f32, f32)>> = (0..positions.len())
+        .map(|index| nearest_folded_chords_k(&tree, &positions, index, K_HEX_NEIGHBOURS))
+        .collect();
+    let globals = global_k_modes::<3>(&per_corner);
+
+    features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| {
+            let known = fold_pi(feature.axes[0].angle_rad);
+            let seeds = free_mode_seeds(globals, known);
+            let mut free = refine_free_axes_from_known(&per_corner[index], known, seeds);
+            free.sort_by(|a, b| a.0.total_cmp(&b.0));
+            OrientedFeature::<3>::new(
+                feature.point,
+                [
+                    feature.axes[0],
+                    LocalAxis::new(free[0].0, Some(free[0].1)),
+                    LocalAxis::new(free[1].0, Some(free[1].1)),
+                ],
+            )
+        })
+        .collect()
+}
+
+fn free_mode_seeds(globals: [f32; 3], known: f32) -> [f32; 2] {
+    let mut ranked = globals.map(|angle| (dist_pi(angle, known), angle));
+    ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.total_cmp(&b.1)));
+    [ranked[0].1, ranked[1].1]
+}
+
+fn refine_free_axes_from_known(
+    folded: &[(f32, f32)],
+    known: f32,
+    seeds: [f32; 2],
+) -> [(f32, f32); 2] {
+    let mut centers = seeds;
+    for _ in 0..REFINE_ITERS {
+        let mut accumulators = [UndirectedMean::default(); 2];
+        for &(angle, weight) in folded {
+            let distances = [
+                dist_pi(angle, known),
+                dist_pi(angle, centers[0]),
+                dist_pi(angle, centers[1]),
+            ];
+            let best = (1..3)
+                .min_by(|&a, &b| distances[a].total_cmp(&distances[b]))
+                .unwrap_or(1);
+            if distances[best] < distances[0] {
+                accumulators[best - 1].push(angle, weight);
+            }
+        }
+        for slot in 0..2 {
+            centers[slot] = accumulators[slot].mean().unwrap_or(centers[slot]);
+        }
+    }
+
+    let mut squared = [0.0_f32; 2];
+    let mut weights = [0.0_f32; 2];
+    let mut counts = [0_usize; 2];
+    for &(angle, weight) in folded {
+        let distances = [
+            dist_pi(angle, known),
+            dist_pi(angle, centers[0]),
+            dist_pi(angle, centers[1]),
+        ];
+        let best = (1..3)
+            .min_by(|&a, &b| distances[a].total_cmp(&distances[b]))
+            .unwrap_or(1);
+        if distances[best] < distances[0] {
+            squared[best - 1] += weight * distances[best] * distances[best];
+            weights[best - 1] += weight;
+            counts[best - 1] += 1;
+        }
+    }
+    let separated = dist_pi(centers[0], centers[1]) >= MODE_MIN_SEPARATION;
+    [0, 1].map(|slot| {
+        // A single chord has zero sample spread but no corroboration. Treat it
+        // as uninformative, just like an empty/collapsed cluster, rather than
+        // fabricating high-confidence direction evidence.
+        let sigma = if separated && counts[slot] >= 2 && weights[slot] > 0.0 {
+            (squared[slot] / weights[slot]).sqrt()
+        } else {
+            std::f32::consts::PI
+        };
+        (centers[slot], sigma)
+    })
 }
 
 /// Recover the second grid direction with the first cluster *pinned* at the
@@ -1071,6 +1188,47 @@ mod tests {
         let got = synthesize_oriented3(&one);
         assert_eq!(got.len(), 1);
         assert!(got[0].axes.iter().all(|a| a.angle_rad.is_finite()));
+    }
+
+    #[test]
+    fn hex_oriented1_preserves_measured_observation_exactly() {
+        let (points, _) = hex_features(3, 24.0, &Matrix3::identity());
+        let features: Vec<_> = points
+            .iter()
+            .enumerate()
+            .map(|(index, point)| {
+                let angle = if index % 2 == 0 {
+                    std::f32::consts::PI + 0.013
+                } else {
+                    0.013
+                };
+                OrientedFeature::<1>::new(*point, [LocalAxis::new(angle, Some(0.037))])
+            })
+            .collect();
+        let synthesized = synthesize_oriented3_from_oriented1(&features);
+        for (input, output) in features.iter().zip(&synthesized) {
+            assert_eq!(
+                output.axes[0].angle_rad.to_bits(),
+                input.axes[0].angle_rad.to_bits()
+            );
+            assert_eq!(
+                output.axes[0].sigma_rad.map(f32::to_bits),
+                input.axes[0].sigma_rad.map(f32::to_bits)
+            );
+        }
+    }
+
+    #[test]
+    fn hex_oriented1_does_not_trust_uncorroborated_synthetic_families() {
+        let feature = OrientedFeature::<1>::new(
+            PointFeature::new(7, Point2::new(1.0, 2.0)),
+            [LocalAxis::new(0.2, Some(0.03))],
+        );
+        let synthesized = synthesize_oriented3_from_oriented1(&[feature]);
+        assert_eq!(synthesized[0].axes[0].sigma_rad, Some(0.03));
+        assert!(synthesized[0].axes[1..]
+            .iter()
+            .all(|axis| axis.sigma_rad == Some(std::f32::consts::PI)));
     }
 
     /// Helper: run `synthesize_oriented3` and collect just the axis arrays.

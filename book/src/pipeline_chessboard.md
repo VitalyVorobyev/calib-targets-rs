@@ -24,8 +24,8 @@ stage map (mirror of the crate `docs/PIPELINE.md`):
 | # | Stage | In → Out | What it does |
 |---|---|---|---|
 | 1 | `prefilter` | ChESS corners → usable-flagged corners | Keep a corner iff `strength ≥ min_corner_strength` **and** `max(σ₀, σ₁) ≤ topological.axis_align_tol_rad`. Weak corners are kept as positions with no-information axes (so indices stay stable) but cannot vote. |
-| 2 | `cluster_axes` | strong corners' axes → `{Θ₀ ≤ Θ₁}` + per-corner slot label | The generic [axis clustering](algo_axis_clustering.md) (histogram + plateau peak picking + double-angle 2-means), then the **DiskFit slot-coherence repair** (below). |
-| 3 | `topological_grid` | oriented features + cluster centres → labelled components | The [topological grid finder](algo_topological_grid.md) (`detect_grid_all`); its own post-build validation / residual / recovery are disabled — the chessboard owns those downstream. |
+| 2 | `cluster_axes` | strong corners' axes → `{Θ₀ ≤ Θ₁}` + per-corner slot label | The generic [axis clustering](algo_axis_clustering.md): histogram + plateau peak picking + double-angle 2-means. |
+| 3 | `topological_grid` | oriented features + cluster centres → labelled components | The [topological grid finder](algo_topological_grid.md) through `expert::square::assemble_oriented2_components`; this builder seam stops after generic component merge and preserves the axis-slot frame for chessboard parity/recovery. |
 | 4 | `recover_components` | merged components → boosted, re-merged grid | Per-component cell-size estimate, then the [recovery boosters](algo_recovery_validation.md) (interior gap fill + line extrapolation with a per-axis directional edge scale), optional weak-cluster rescue, then `merge_components_local`. Every addition re-runs the axis / parity / edge-slot-swap invariants. |
 | 5 | `final_geometry_check` | labelled set → drop list + refuse flag | **Mandatory, can only DROP.** The shared [`drop_set`](algo_recovery_validation.md) precision pass: line collinearity + local-H residual + the topological wrong-label checks (skipped-corner edges, duplicate-pixel labels, frontier line-spacing smoothness) + the largest-component filter. Refuses if survivors `< min_labeled_corners`. |
 | 6 | `output` | surviving set → `ChessboardDetection` | Build a `LabelledGrid` and call [`normalize()`](algo_recovery_validation.md) (rebase min → `(0, 0)`; canonicalise `+u ≈ +x`, `+v ≈ +y`; stable `(v, u)` sort). The lattice `Coord{u,v}` is the canonical grid-coordinate type, so it is copied straight onto each output corner. |
@@ -73,18 +73,6 @@ miss recoverable but a false positive impossible:
 - **Non-negative labels.** Output rebases the labelled bbox minimum to
   `(0, 0)`.
 
-## DiskFit slot-coherence repair (Stage 2)
-
-The [ChESS](algo_chess_corners.md) detector's `DiskFit` mode can uniformly
-pick the wrong antipodal dark sector, reversing a corner's
-`(axes[0], axes[1])` ordering and breaking the parity invariant globally.
-A live recall safety-net (`slot_coherence`) detects this with a
-gross-imbalance gate, BFS-2-colours the clustered corners at cell spacing,
-and swaps the two `AxisEstimate` slots of whichever corners disagree. A
-bipartite-quality gate aborts the pass unless the 2-colouring is
-essentially perfect, so it can only add recall, never a wrong label. Under
-`RingFit` the split is already ~50/50 and the pass is a no-op.
-
 ## Multi-component dispatch
 
 `ChessboardDetector::detect_all` is the multi-board entry point: it returns several
@@ -112,8 +100,7 @@ final-check `GeometryCheckTrace` drop counters, then consult:
 
 ## Tuning
 
-`ChessboardParams` splits into a **stable core** (`graph_build_algorithm`
-[single-variant], `min_labeled_corners`, `max_components`,
+`ChessboardParams` splits into a **stable core** (`min_labeled_corners`, `max_components`,
 `min_corner_strength`) plus an opt-in, **non-semver** `advanced`
 (`ChessboardAdvancedTuning`) block of per-stage knobs. Leave `advanced` unset unless
 a specific input fails and you have evidence for the change. For
