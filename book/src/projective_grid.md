@@ -64,13 +64,11 @@ neighbour geometry up front and then run the same strategy:
 | `Oriented1` | `&[OrientedFeature<1>]` | ✅ synthesize 2nd axis | ❌ `UnsupportedCombination` |
 | `Oriented2` | `&[OrientedFeature<2>]` | ✅ native (topological) | ❌ `UnsupportedCombination` |
 | `Oriented3` | `&[OrientedFeature<3>]` | ❌ `UnsupportedCombination` | ✅ native (topological) |
-| `CoordinateHypotheses` | features + hypotheses | use `check_consistency` instead | — |
 
 Each feature carries a `PointFeature` (position + caller-owned
 `source_index`) plus `N` undirected `LocalAxis` directions (`N = 0` for
 `Positions`). Any unsupported `(lattice, evidence)` combination — for
-example `(Square, Oriented3)`, `(Hex, Oriented1/Oriented2)`, or
-`CoordinateHypotheses` for detection — returns a typed
+example `(Square, Oriented3)` or `(Hex, Oriented1/Oriented2)` — returns a typed
 `GridError::UnsupportedCombination { task, lattice, evidence }`, never a
 guessed answer.
 
@@ -116,18 +114,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Wrap as Oriented2 evidence and ask for a square lattice. Grid
-    // dimensions are unknown (`None`); the detector infers the extent.
+    // Wrap as Oriented2 evidence and ask for a square lattice.
     let request = DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
     );
 
     // `detect_grid` returns the largest recovered component.
-    let solution = detect_grid(request)?;
-    for entry in &solution.grid.entries {
+    let detection = detect_grid(request)?;
+    for entry in detection.grid().entries() {
         // coord.u = i, coord.v = j; source_index maps back to the input.
         println!(
             "(i={}, j={}) <- feature {}",
@@ -180,11 +175,9 @@ precision gate.
 ### Single vs. multi-component results
 
 `detect_grid` returns the **largest** recovered component as one
-`GridSolution`. When the lattice is split into islands (for example by
+`GridDetection`. When the lattice is split into islands (for example by
 occlusion) and the secondary components matter, call `detect_grid_all`:
-it returns a `DetectionReport` whose `solutions` vector holds one
-`GridSolution` per qualifying component, ordered by labelled-count
-descending. The topological path may yield several components.
+it returns a `Vec<GridDetection>` ordered by labelled-count descending.
 
 ---
 
@@ -201,25 +194,21 @@ native `Oriented2` shape each element is an `OrientedFeature<2>`:
   uncertainty). Axes are *undirected*: `θ` and `θ + π` denote the same
   direction.
 
-`DetectionRequest::new(lattice, evidence, dimensions, params)` bundles
-the lattice family, the evidence, optional known `GridDimensions`, and
-a `DetectionParams`. `DetectionParams` carries `max_residual_px` (the
-fit residual gate) and the algorithm selector (always `Topological`),
-with a `topological` sub-config and a shared `validate` sub-config;
-`Default` covers all the tuning knobs and the builder-style `with_*`
-methods override individual fields.
+`DetectionRequest::new(lattice, evidence)` is the ordinary entry point.
+Optional `GridDimensions` and stable parameters use the named
+`with_dimensions` / `with_params` builders. Stage-specific controls live in
+the opt-in `projective_grid::expert::DetectionTuning` namespace.
 
 ---
 
 ## Outputs
 
-A successful detection is a `GridSolution`:
+A successful detection is a `GridDetection`:
 
 | Field | Meaning |
 |---|---|
-| `grid: LabelledGrid` | The labelled component: `entries` (one per placed feature), the `lattice` family, an inclusive coordinate `bbox`, and the optional caller-supplied `dimensions`. |
-| `fit: Option<LatticeFit>` | The fitted model-plane-to-image projective transform plus a `residuals: ResidualSummary` (`count`, `mean_px`, `max_px`). |
-| `rejected: Vec<RejectedFeature>` | Features this component could not place. |
+| `grid()` | Accepted entries, lattice family, inclusive bbox, and optional dimensions. |
+| `fit()` | Mandatory model-plane-to-image transform and residual summary. |
 
 Each `GridEntry` carries:
 
@@ -231,17 +220,9 @@ Each `GridEntry` carries:
 - `residual_px: Option<f32>` — reprojection residual in pixels, present
   when a fit was computed.
 
-Each `RejectedFeature` carries the `source_index`, an optional
-`coord`, an optional `residual_px`, and a `RejectionReason`:
-`Unlabelled` (never placed — e.g. noise outside the recovered lattice),
-`ValidationDropped` (placed by the topological pass but dropped by
-post-detection validation: line collinearity, local-homography residual,
-or edge-length band), or `ResidualTooHigh` (reprojection residual
-exceeded `max_residual_px`).
-
-For multi-component runs, `detect_grid_all` returns a `DetectionReport`
-with the per-component `solutions` vector plus a top-level `rejected`
-slot.
+Rejected features and exact stage traces are intentionally separate from the
+ordinary result. Detector builders and evidence campaigns enable the
+`diagnostics` feature and use `projective_grid::diagnostics::detect_grid*`.
 
 ---
 
@@ -254,15 +235,13 @@ projective fit instead of recovering them from scratch. Build a
 params)` from position-only `PointFeature`s and a parallel slice of
 `CoordinateHypothesis` (each pairing a `source_index` with a proposed
 `Coord`), with a `ConsistencyParams` whose `max_residual_px` sets the
-acceptance threshold. The returned `ConsistencyReport` has `passed`
-(true when every residual clears the threshold), the full `solution`
-(labels, fit, and any over-residual `rejected` entries), and a
-`max_residual_px()` convenience accessor. `check_square_consistency` in
+acceptance threshold. The returned `ConsistencyReport` exposes `passed()`,
+`grid()`, `fit()`, `rejected()`, and `max_residual_px()`.
+`check_square_consistency` in
 the examples directory is the runnable version.
 
-This is also the one entry point that consumes coordinate hypotheses;
-`Evidence::CoordinateHypotheses` exists for symmetry in the detection
-enum but `detect_grid` does not yet act on it.
+This is the only entry point that consumes coordinate hypotheses; detection's
+`Evidence` enum does not include an unsupported placeholder variant.
 
 ---
 

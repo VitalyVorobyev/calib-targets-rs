@@ -55,11 +55,9 @@ Every detector shares the same first three steps:
 
 ## One builder, everywhere
 
-There is no grid-builder choice to make. `GraphBuildAlgorithm` is a
-single-variant, `#[non_exhaustive]` enum (`Topological`) retained only as
-a reserved config seam; the topological grid finder is the sole builder
-for every target, including ChArUco. A config that carries a legacy value
-is re-pinned to `Topological` on load.
+There is no grid-builder choice or selector to configure: the topological grid
+finder is the sole builder for every target, including ChArUco. Legacy config
+keys for removed builder selectors are rejected as unknown fields.
 
 ## Output types
 

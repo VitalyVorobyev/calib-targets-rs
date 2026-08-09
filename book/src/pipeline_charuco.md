@@ -50,8 +50,8 @@ detector to marker scenes:
   chessboard component recall-oriented because the marker-ID and
   board-alignment validation downstream is its precision gate.
 
-`chessboard.graph_build_algorithm` is the single-variant topological seam;
-a config carrying a legacy value is re-pinned to `Topological` on load.
+There is no chessboard grid-builder selector; legacy selector keys are rejected
+as unknown configuration fields.
 
 ## Failure modes
 

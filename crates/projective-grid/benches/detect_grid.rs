@@ -21,8 +21,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use nalgebra::{Matrix3, Point2, Vector3};
 use projective_grid::{
-    detect_grid_all, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
-    OrientedFeature, PointFeature,
+    detect_grid_all, DetectionRequest, Evidence, LatticeKind, LocalAxis, OrientedFeature,
+    PointFeature,
 };
 
 /// Deterministic xorshift64* LCG — used only to jitter fixture positions so
@@ -147,17 +147,22 @@ fn bench_detect_grid(c: &mut Criterion) {
         BenchmarkId::new("square_oriented2", "topological"),
         &sq2,
         |b, feats| {
-            b.iter(|| {
-                let req = DetectionRequest::new(
-                    LatticeKind::Square,
-                    Evidence::Oriented2(feats),
-                    None,
-                    DetectionParams::default(),
-                );
-                detect_grid_all(req).unwrap()
-            });
+            let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(feats));
+            b.iter(|| detect_grid_all(request.clone()).unwrap());
         },
     );
+    for size in [8_i32, 32] {
+        let fixture = square_oriented2(size, size, 22.0);
+        group.bench_with_input(
+            BenchmarkId::new("square_oriented2_size", format!("{size}x{size}")),
+            &fixture,
+            |b, features| {
+                let request =
+                    DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(features));
+                b.iter(|| detect_grid_all(request.clone()).unwrap());
+            },
+        );
+    }
 
     // (Square, Positions) — orientation-free, default (topological) assembler
     // with the geometry-only recovery schedule on the synthesized-axis path.
@@ -166,15 +171,8 @@ fn bench_detect_grid(c: &mut Criterion) {
         BenchmarkId::new("square_positions", "topological"),
         &sqp,
         |b, feats| {
-            b.iter(|| {
-                let req = DetectionRequest::new(
-                    LatticeKind::Square,
-                    Evidence::Positions(feats),
-                    None,
-                    DetectionParams::default(),
-                );
-                detect_grid_all(req).unwrap()
-            });
+            let request = DetectionRequest::new(LatticeKind::Square, Evidence::Positions(feats));
+            b.iter(|| detect_grid_all(request.clone()).unwrap());
         },
     );
 
@@ -184,15 +182,8 @@ fn bench_detect_grid(c: &mut Criterion) {
         BenchmarkId::new("hex_positions", "topological"),
         &hexp,
         |b, feats| {
-            b.iter(|| {
-                let req = DetectionRequest::new(
-                    LatticeKind::Hex,
-                    Evidence::Positions(feats),
-                    None,
-                    DetectionParams::default(),
-                );
-                detect_grid_all(req).unwrap()
-            });
+            let request = DetectionRequest::new(LatticeKind::Hex, Evidence::Positions(feats));
+            b.iter(|| detect_grid_all(request.clone()).unwrap());
         },
     );
 

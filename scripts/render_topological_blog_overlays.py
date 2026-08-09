@@ -10,7 +10,7 @@ Default output layout:
     preview/topo-grid-overlays/<image-stem>/00-input.png
     preview/topo-grid-overlays/<image-stem>/01-corners-axes.png
     ...
-    preview/topo-grid-overlays/<image-stem>/09-final-recovered-grid.png
+    preview/topo-grid-overlays/<image-stem>/14-final-grid.png
     preview/topo-grid-overlays/manifest.json
 """
 
@@ -26,7 +26,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.tri as mtri
 import numpy as np
 from matplotlib.lines import Line2D
 from PIL import Image, ImageFilter
@@ -37,14 +36,19 @@ import calib_targets as ct
 STAGES = [
     "00-input.png",
     "01-corners-axes.png",
-    "02-usable-corners.png",
-    "03-delaunay-edge-kinds.png",
-    "04-mergeable-triangles.png",
-    "05-raw-quads.png",
-    "06-topology-filter.png",
-    "07-geometry-filter.png",
-    "08-walk-components.png",
-    "09-final-recovered-grid.png",
+    "02-strength-sigma-admission.png",
+    "03-cluster-assignments.png",
+    "04-projective-grid-usable.png",
+    "05-delaunay-edge-kinds.png",
+    "06-mergeable-triangles.png",
+    "07-raw-quads.png",
+    "08-topology-filter.png",
+    "09-geometry-filter.png",
+    "10-scale-filter.png",
+    "11-walk-components.png",
+    "12-generic-merge-fit.png",
+    "13-chessboard-recovery.png",
+    "14-final-grid.png",
 ]
 
 EDGE_COLORS = {
@@ -156,6 +160,51 @@ def usable_indices(payload: dict[str, Any]) -> set[int]:
     return {int(c["index"]) for c in trace["corners"] if c.get("usable")}
 
 
+def feature_stage(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    stages = payload.get("chessboard_stages") or {}
+    return stages.get("features", [])
+
+
+def draw_admission(ax: plt.Axes, payload: dict[str, Any]) -> None:
+    pos = corner_positions(payload)
+    for feature in feature_stage(payload):
+        index = int(feature["corner_index"])
+        if index not in pos:
+            continue
+        if feature["prefilter_admitted"]:
+            color = "#2ca25f"
+        elif not feature["strength_admitted"]:
+            color = "#fdae6b"
+        else:
+            color = "#de2d26"
+        x, y = pos[index]
+        ax.scatter([x], [y], s=18, c=color, edgecolors="black", linewidths=0.25, zorder=4)
+
+
+def draw_clusters(ax: plt.Axes, payload: dict[str, Any]) -> None:
+    pos = corner_positions(payload)
+    colors = {
+        "canonical": "#00bcd4",
+        "swapped": "#e7298a",
+        "rejected": "#7570b3",
+        "not_admitted": "#bdbdbd",
+    }
+    for feature in feature_stage(payload):
+        index = int(feature["corner_index"])
+        if index not in pos:
+            continue
+        x, y = pos[index]
+        ax.scatter(
+            [x],
+            [y],
+            s=18,
+            c=colors[feature["cluster"]],
+            edgecolors="black",
+            linewidths=0.25,
+            zorder=4,
+        )
+
+
 def draw_usable(
     ax: plt.Axes,
     payload: dict[str, Any],
@@ -195,177 +244,26 @@ def draw_usable_context(ax: plt.Axes, payload: dict[str, Any]) -> None:
         ax.scatter(xs, ys, s=8, c="#bdbdbd", edgecolors="none", alpha=0.45, zorder=2)
 
 
-def angular_dist_pi(a: float, b: float) -> float:
-    """Undirected angular distance on [0, pi)."""
-    d = abs((a - b) % math.pi)
-    return min(d, math.pi - d)
+def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
+    # The Rust trace intentionally exports directed half-edges. Drawing both
+    # directions preserves the exact classification even if adjacent triangle
+    # inference assigns different classes at a shared edge.
+    return [
+        (int(edge["start"]), int(edge["end"]), edge["class"])
+        for edge in trace.get("edges", [])
+    ]
 
 
-def classify_python_edge(
-    payload: dict[str, Any],
-    a: int,
-    b: int,
-    pos: dict[int, tuple[float, float]],
-) -> str:
-    """Illustrative edge classifier for Python-side blog overlays.
-
-    The production labels still come from Rust. This classifier reconstructs
-    enough stage structure for figures when the Rust trace intentionally
-    exports only compact component labels.
-    """
-    trace = payload.get("trace") or {}
-    params = trace.get("params") or {}
-    tol = float(params.get("axis_align_tol_rad", math.radians(15.0)))
-    max_sigma = float(params.get("max_axis_sigma_rad", 0.6))
-    x0, y0 = pos[a]
-    x1, y1 = pos[b]
-    theta = math.atan2(y1 - y0, x1 - x0) % math.pi
-    corners = {int(c["index"]): c for c in payload.get("corners", [])}
-
-    def endpoint_axis_ok(idx: int) -> bool:
-        corner = corners.get(idx)
-        if corner is None:
-            return False
-        for axis in corner.get("axes", []):
-            sigma = float(axis.get("sigma", math.pi))
-            if sigma <= max_sigma and angular_dist_pi(theta, float(axis["angle"])) <= tol:
-                return True
-        return False
-
-    if endpoint_axis_ok(a) and endpoint_axis_ok(b):
-        return "grid"
-
-    centers = params.get("axis_cluster_centers") or []
-    if len(centers) >= 2:
-        c0, c1 = sorted(float(c) % math.pi for c in centers[:2])
-        diagonal0 = ((c0 + c1) * 0.5) % math.pi
-        diagonal1 = (diagonal0 + math.pi * 0.5) % math.pi
-        if min(angular_dist_pi(theta, diagonal0), angular_dist_pi(theta, diagonal1)) <= tol:
-            return "diagonal"
-    return "spurious"
-
-
-def triangle_class(edge_kinds: list[str]) -> str:
-    grid = edge_kinds.count("grid")
-    diagonal = edge_kinds.count("diagonal")
-    if "spurious" in edge_kinds:
+def triangle_class(edge_classes: list[str]) -> str:
+    grid = edge_classes.count("grid")
+    diagonal = edge_classes.count("diagonal")
+    if "spurious" in edge_classes:
         return "has_spurious"
     if grid == 2 and diagonal == 1:
         return "mergeable"
     if grid == 3:
         return "all_grid"
     return "multi_diagonal"
-
-
-def order_quad_vertices(vertices: list[int], pos: dict[int, tuple[float, float]]) -> list[int]:
-    cx = sum(pos[v][0] for v in vertices) / len(vertices)
-    cy = sum(pos[v][1] for v in vertices) / len(vertices)
-    return sorted(vertices, key=lambda v: math.atan2(pos[v][1] - cy, pos[v][0] - cx))
-
-
-def max_opposing_edge_ratio(vertices: list[int], pos: dict[int, tuple[float, float]]) -> float:
-    lengths = []
-    for a, b in zip(vertices, vertices[1:] + vertices[:1]):
-        x0, y0 = pos[a]
-        x1, y1 = pos[b]
-        lengths.append(math.hypot(x1 - x0, y1 - y0))
-    ratios = []
-    for k in (0, 1):
-        lo = min(lengths[k], lengths[k + 2])
-        hi = max(lengths[k], lengths[k + 2])
-        ratios.append(float("inf") if lo <= 1e-6 else hi / lo)
-    return max(ratios)
-
-
-def augment_trace_with_python_graph(payload: dict[str, Any]) -> None:
-    """Add Python-side Delaunay/quad scaffolding when Rust exports compact trace.
-
-    This is for figures only. The final recovered grid remains the Rust
-    topological/chessboard adapter output stored in `payload["detections"]`.
-    """
-    trace = payload.get("trace")
-    if trace is None or "triangles" in trace:
-        return
-    pos = corner_positions(payload)
-    usable = sorted(idx for idx in usable_indices(payload) if idx in pos)
-    if len(usable) < 3:
-        trace["triangles"] = []
-        trace["quads"] = []
-        return
-
-    xs = [pos[idx][0] for idx in usable]
-    ys = [pos[idx][1] for idx in usable]
-    triangulation = mtri.Triangulation(xs, ys)
-    triangles: list[dict[str, Any]] = []
-    for tri in triangulation.triangles:
-        vertices = [usable[int(k)] for k in tri]
-        edge_kinds = [
-            classify_python_edge(payload, vertices[k], vertices[(k + 1) % 3], pos)
-            for k in range(3)
-        ]
-        triangles.append(
-            {
-                "vertices": vertices,
-                "edge_kinds": edge_kinds,
-                "class": triangle_class(edge_kinds),
-            }
-        )
-
-    edge_to_triangles: dict[tuple[int, int], list[int]] = {}
-    for ti, tri in enumerate(triangles):
-        vertices = tri["vertices"]
-        for k, kind in enumerate(tri["edge_kinds"]):
-            if kind != "diagonal":
-                continue
-            a = vertices[k]
-            b = vertices[(k + 1) % 3]
-            key = (a, b) if a < b else (b, a)
-            edge_to_triangles.setdefault(key, []).append(ti)
-
-    params = trace.get("params") or {}
-    max_ratio = float(params.get("opposing_edge_ratio_max", 10.0))
-    quads: list[dict[str, Any]] = []
-    seen_quads: set[tuple[int, ...]] = set()
-    for triangle_ids in edge_to_triangles.values():
-        if len(triangle_ids) != 2:
-            continue
-        a, b = (triangles[triangle_ids[0]], triangles[triangle_ids[1]])
-        if a["class"] != "mergeable" or b["class"] != "mergeable":
-            continue
-        vertices = sorted(set(a["vertices"]) | set(b["vertices"]))
-        if len(vertices) != 4:
-            continue
-        key = tuple(vertices)
-        if key in seen_quads:
-            continue
-        seen_quads.add(key)
-        ordered = order_quad_vertices(vertices, pos)
-        ratio = max_opposing_edge_ratio(ordered, pos)
-        geometry_pass = ratio <= max_ratio
-        quads.append(
-            {
-                "vertices": ordered,
-                "topology_pass": True,
-                "kept": geometry_pass,
-                "python_reconstructed": True,
-            }
-        )
-
-    trace["triangles"] = triangles
-    trace["quads"] = quads
-    trace["python_reconstructed_graph"] = True
-
-
-def unique_edges(trace: dict[str, Any]) -> list[tuple[int, int, str]]:
-    seen: dict[tuple[int, int], str] = {}
-    for tri in trace.get("triangles", []):
-        vertices = tri["vertices"]
-        for k, kind in enumerate(tri["edge_kinds"]):
-            a = vertices[k]
-            b = vertices[(k + 1) % 3]
-            key = (a, b) if a < b else (b, a)
-            seen.setdefault(key, kind)
-    return [(a, b, kind) for (a, b), kind in seen.items()]
 
 
 def annotate_compact_trace(ax: plt.Axes, text: str) -> None:
@@ -425,43 +323,29 @@ def draw_triangles(ax: plt.Axes, payload: dict[str, Any]) -> None:
         pts = [pos[v] for v in tri["vertices"] if v in pos]
         if len(pts) != 3:
             continue
-        color = TRI_COLORS[tri["class"]]
+        kind = triangle_class(tri["edge_classes"])
+        color = TRI_COLORS[kind]
         xs, ys = zip(*(pts + [pts[0]]))
-        alpha = 0.18 if tri["class"] == "mergeable" else 0.07
+        alpha = 0.18 if kind == "mergeable" else 0.07
         ax.fill(xs, ys, color=color, alpha=alpha)
         ax.plot(xs, ys, color=color, lw=0.45, alpha=0.45)
     draw_usable_context(ax, payload)
 
 
-def draw_quads(ax: plt.Axes, payload: dict[str, Any], mode: str) -> None:
+def draw_quads(ax: plt.Axes, payload: dict[str, Any], stage: str) -> None:
     trace = payload.get("trace")
     if trace is None:
         draw_usable(ax, payload)
         return
-    if "quads" not in trace:
-        draw_usable_context(ax, payload)
-        annotate_compact_trace(ax, "compact trace: quad candidates not exported")
-        return
     pos = corner_positions(payload)
     draw_usable_context(ax, payload)
-    for quad in trace["quads"]:
+    for quad in trace.get(stage, []):
         pts = [pos[v] for v in quad["vertices"] if v in pos]
         if len(pts) != 4:
             continue
         xs, ys = zip(*(pts + [pts[0]]))
-        if mode == "raw":
-            color, alpha, lw = "#2b8cbe", 0.95, 0.8
-        elif mode == "topology":
-            color = "#2ca25f" if quad["topology_pass"] else "#de2d26"
-            alpha, lw = 0.9, 0.85
-        else:
-            if quad["kept"]:
-                color = "#2ca25f"
-            elif quad["topology_pass"]:
-                color = "#fdae6b"
-            else:
-                color = "#de2d26"
-            alpha, lw = 0.9, 0.85
+        color = "#2b8cbe" if stage == "raw_quads" else "#2ca25f"
+        alpha, lw = 0.95, 0.85
         ax.plot(xs, ys, color=color, lw=lw, alpha=alpha)
         ax.scatter(xs[:-1], ys[:-1], s=16, c=color, edgecolors="black", linewidths=0.2, zorder=4)
 
@@ -471,7 +355,7 @@ def component_labels_from_trace(payload: dict[str, Any]) -> list[dict[str, Any]]
     if trace is None:
         return []
     labels: list[dict[str, Any]] = []
-    for comp in trace["components"]:
+    for comp in trace["final_components"]:
         labels.extend(comp["labels"])
     return labels
 
@@ -489,7 +373,7 @@ def draw_grid_labels(
     for entry in labels:
         i = int(entry.get("i", entry.get("u")))
         j = int(entry.get("j", entry.get("v")))
-        idx = int(entry.get("corner_idx", entry.get("source_index")))
+        idx = int(entry.get("corner_index", entry.get("feature_index", entry.get("source_index"))))
         by_grid[(i, j)] = idx
     for (i, j), idx in by_grid.items():
         if idx not in pos:
@@ -517,7 +401,7 @@ def draw_grid_labels(
         )
 
 
-def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
+def draw_components(ax: plt.Axes, payload: dict[str, Any], stage: str) -> None:
     """Stage 8: per-component projective-grid walk labels.
 
     Renders every labelled component produced by `build_grid_topological`
@@ -530,7 +414,7 @@ def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
     if trace is None:
         return
     draw_usable_context(ax, payload)
-    for comp in trace["components"]:
+    for comp in trace[stage]:
         index = int(comp["index"])
         color_i, color_j = COMPONENT_COLORS[index % len(COMPONENT_COLORS)]
         draw_grid_labels(
@@ -541,6 +425,20 @@ def draw_walk(ax: plt.Axes, payload: dict[str, Any]) -> None:
             color_j=color_j,
             label_prefix=f"c{index}:",
         )
+
+
+def draw_recovered(ax: plt.Axes, payload: dict[str, Any]) -> None:
+    draw_usable_context(ax, payload)
+    stages = payload.get("chessboard_stages") or {}
+    additions = set(int(index) for index in stages.get("recovery_additions", []))
+    for index, labels in enumerate(stages.get("recovered_components", [])):
+        color_i, color_j = COMPONENT_COLORS[index % len(COMPONENT_COLORS)]
+        draw_grid_labels(ax, payload, labels, color_i, color_j, f"r{index}:")
+    pos = corner_positions(payload)
+    for index in additions:
+        if index in pos:
+            x, y = pos[index]
+            ax.scatter([x], [y], s=45, facecolors="none", edgecolors="#ff4081", linewidths=1.2, zorder=6)
 
 
 def detection_grid_points(payload: dict[str, Any]) -> dict[tuple[int, int], tuple[float, float]]:
@@ -621,7 +519,12 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         edge_length_min_rel=args.edge_length_min_rel,
         edge_length_max_rel=args.edge_length_max_rel,
     )
-    trace_params = ct.ChessboardParams(topological=topo)
+    trace_params = ct.ChessboardParams(
+        min_corner_strength=args.min_corner_strength,
+        min_labeled_corners=args.min_labeled_corners,
+        max_components=args.max_components,
+        topological=topo,
+    )
     chess_cfg = ct.ChessConfig(
         threshold=args.chess_threshold,
         orientation_method=args.orientation_method,
@@ -631,13 +534,14 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
         chess_cfg=chess_cfg,
         params=trace_params,
     )
-    augment_trace_with_python_graph(payload)
 
     stem = f"{path.stem}-{args.variant_name}" if args.variant_name else path.stem
     stem_dir = out_dir / stem
     if stem_dir.exists():
-        for stale in stem_dir.glob("*.png"):
-            stale.unlink()
+        for previous_stage in stem_dir.glob("[0-9][0-9]-*.png"):
+            previous_stage.unlink()
+    stem_dir.mkdir(parents=True, exist_ok=True)
+    (stem_dir / "trace.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     save_input(image, stem_dir / STAGES[0])
     save_overlay(
         image,
@@ -652,32 +556,58 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
     save_overlay(
         image,
         stem_dir / STAGES[2],
-        f"{path.name}: axis-sigma usable filter",
-        lambda ax: draw_usable(ax, payload),
+        f"{path.name}: ChESS strength + axis-sigma admission",
+        lambda ax: draw_admission(ax, payload),
         [
-            Line2D([0], [0], marker="o", color="#2ca25f", lw=0, label="usable"),
-            Line2D([0], [0], marker="o", color="#de2d26", lw=0, label="not used"),
+            Line2D([0], [0], marker="o", color="#2ca25f", lw=0, label="admitted"),
+            Line2D([0], [0], marker="o", color="#fdae6b", lw=0, label="strength fail"),
+            Line2D([0], [0], marker="o", color="#de2d26", lw=0, label="sigma fail"),
         ],
     )
     save_overlay(
         image,
         stem_dir / STAGES[3],
+        f"{path.name}: axis-cluster assignments",
+        lambda ax: draw_clusters(ax, payload),
+        [
+            Line2D([0], [0], marker="o", color="#00bcd4", lw=0, label="canonical slots"),
+            Line2D([0], [0], marker="o", color="#e7298a", lw=0, label="swapped slots"),
+            Line2D([0], [0], marker="o", color="#7570b3", lw=0, label="cluster rejected"),
+            Line2D([0], [0], marker="o", color="#bdbdbd", lw=0, label="not admitted"),
+        ],
+    )
+    save_overlay(
+        image,
+        stem_dir / STAGES[4],
+        f"{path.name}: Projective Grid usable set",
+        lambda ax: draw_usable(ax, payload),
+        [
+            Line2D([0], [0], marker="o", color="#2ca25f", lw=0, label="usable"),
+            Line2D([0], [0], marker="o", color="#de2d26", lw=0, label="not usable"),
+        ],
+    )
+    save_overlay(
+        image,
+        stem_dir / STAGES[5],
         f"{path.name}: Delaunay edge classification",
         lambda ax: draw_delaunay(ax, payload),
         [Line2D([0], [0], color=c, lw=2, label=k) for k, c in EDGE_COLORS.items()],
     )
     save_overlay(
         image,
-        stem_dir / STAGES[4],
+        stem_dir / STAGES[6],
         f"{path.name}: triangle composition",
         lambda ax: draw_triangles(ax, payload),
         [Line2D([0], [0], color=c, lw=2, label=k) for k, c in TRI_COLORS.items()],
     )
-    save_overlay(image, stem_dir / STAGES[5], f"{path.name}: raw merged quads", lambda ax: draw_quads(ax, payload, "raw"))
-    save_overlay(image, stem_dir / STAGES[6], f"{path.name}: topological quad filter", lambda ax: draw_quads(ax, payload, "topology"))
-    save_overlay(image, stem_dir / STAGES[7], f"{path.name}: geometry quad filter", lambda ax: draw_quads(ax, payload, "geometry"))
-    save_overlay(image, stem_dir / STAGES[8], f"{path.name}: topological walk components", lambda ax: draw_walk(ax, payload))
-    save_overlay(image, stem_dir / STAGES[9], f"{path.name}: final recovered detection", lambda ax: draw_final(ax, payload))
+    save_overlay(image, stem_dir / STAGES[7], f"{path.name}: raw merged quads", lambda ax: draw_quads(ax, payload, "raw_quads"))
+    save_overlay(image, stem_dir / STAGES[8], f"{path.name}: topological quad filter", lambda ax: draw_quads(ax, payload, "topology_quads"))
+    save_overlay(image, stem_dir / STAGES[9], f"{path.name}: geometry quad filter", lambda ax: draw_quads(ax, payload, "geometry_quads"))
+    save_overlay(image, stem_dir / STAGES[10], f"{path.name}: component-scale quad filter", lambda ax: draw_quads(ax, payload, "scale_quads"))
+    save_overlay(image, stem_dir / STAGES[11], f"{path.name}: topological walk components", lambda ax: draw_components(ax, payload, "walk_components"))
+    save_overlay(image, stem_dir / STAGES[12], f"{path.name}: generic merge + fit", lambda ax: draw_components(ax, payload, "final_components"))
+    save_overlay(image, stem_dir / STAGES[13], f"{path.name}: chessboard recovery", lambda ax: draw_recovered(ax, payload))
+    save_overlay(image, stem_dir / STAGES[14], f"{path.name}: final public detection", lambda ax: draw_final(ax, payload))
 
     trace = payload.get("trace")
     diagnostics = trace.get("diagnostics") if trace else {}
@@ -699,6 +629,7 @@ def render_image(path: Path, out_dir: Path, args: argparse.Namespace) -> dict[st
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-dir", type=Path, default=Path("testdata/02-topo-grid"))
+    parser.add_argument("--images", nargs="*", type=Path, help="Explicit image paths; overrides --image-dir.")
     parser.add_argument("--out-dir", type=Path, default=Path("preview/topo-grid-overlays"))
     parser.add_argument("--manifest-name", default="manifest.json")
     parser.add_argument("--only", nargs="*", default=None, help="Optional image stems or filenames to render.")
@@ -706,6 +637,9 @@ def parse_args() -> argparse.Namespace:
     # Since chess-corners 1.0 the ChESS threshold is a single absolute floor
     # on the raw response; the relative mode is Radon-only.
     parser.add_argument("--chess-threshold", type=float, default=100.0)
+    parser.add_argument("--min-corner-strength", type=float, default=0.0)
+    parser.add_argument("--min-labeled-corners", type=int, default=8)
+    parser.add_argument("--max-components", type=int, default=3)
     parser.add_argument("--orientation-method", choices=["ring_fit", "disk_fit"], default="ring_fit")
     parser.add_argument("--pre-blur-sigma", type=float, default=0.0)
     parser.add_argument("--upscale", type=float, default=1.0)
@@ -722,7 +656,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     wanted = set(args.only or [])
-    images = sorted(p for p in args.image_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg"})
+    images = list(args.images or [])
+    if not images:
+        images = sorted(p for p in args.image_dir.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg"})
     if wanted:
         images = [p for p in images if p.name in wanted or p.stem in wanted]
     if not images:
@@ -735,6 +671,9 @@ def main() -> None:
         "out_dir": str(args.out_dir),
         "params": {
             "chess_threshold": args.chess_threshold,
+            "min_corner_strength": args.min_corner_strength,
+            "min_labeled_corners": args.min_labeled_corners,
+            "max_components": args.max_components,
             "orientation_method": args.orientation_method,
             "pre_blur_sigma": args.pre_blur_sigma,
             "upscale": args.upscale,

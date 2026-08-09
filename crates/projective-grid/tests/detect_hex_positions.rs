@@ -21,9 +21,9 @@
 use std::collections::HashMap;
 
 use nalgebra::{Matrix3, Point2, Vector3};
+use projective_grid::expert::lattice::D6_TRANSFORMS;
 use projective_grid::{
-    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, OrientedFeature,
-    PointFeature, D6_TRANSFORMS,
+    detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, OrientedFeature, PointFeature,
 };
 
 /// Axial hex node `(q, r)` model position with unit nearest-neighbour spacing.
@@ -64,12 +64,7 @@ fn hex_patch(
 }
 
 fn request(features: &[PointFeature]) -> DetectionRequest<'_> {
-    DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Positions(features),
-        None,
-        DetectionParams::default(),
-    )
+    DetectionRequest::new(LatticeKind::Hex, Evidence::Positions(features))
 }
 
 /// A detection's labels are *precision-correct* against ground truth iff there
@@ -109,9 +104,9 @@ fn assert_labels_consistent_with_truth(
     );
 }
 
-fn entries_with_truth(sol: &projective_grid::GridSolution) -> Vec<(usize, Coord)> {
-    sol.grid
-        .entries
+fn entries_with_truth(sol: &projective_grid::GridDetection) -> Vec<(usize, Coord)> {
+    sol.grid()
+        .entries()
         .iter()
         .map(|e| (e.source_index, e.coord))
         .collect()
@@ -139,12 +134,12 @@ fn perfect_hex_patch_recovered_zero_wrong() {
     // Interior nodes recover; convex-hull boundary slivers may drop. Contract
     // is zero wrong labels, with a solid recall floor.
     assert!(
-        sol.grid.entries.len() >= (n * 3) / 5,
+        sol.grid().entries().len() >= (n * 3) / 5,
         "recovered only {}/{n} hex nodes on a perfect patch",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "perfect hex");
-    assert_eq!(sol.grid.lattice, LatticeKind::Hex);
+    assert_eq!(sol.grid().lattice(), LatticeKind::Hex);
 }
 
 #[test]
@@ -159,9 +154,9 @@ fn perspective_hex_patch_zero_wrong() {
     let (feats, truth) = hex_patch(4, 28.0, 200.0, &h);
     let sol = detect_grid(request(&feats)).expect("hex topological under perspective");
     assert!(
-        sol.grid.entries.len() >= 24,
+        sol.grid().entries().len() >= 24,
         "recovered only {} hex nodes under perspective",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "perspective hex");
 }
@@ -181,9 +176,9 @@ fn hex_with_position_noise_zero_wrong() {
     }
     let sol = detect_grid(request(&feats)).expect("hex topological under noise");
     assert!(
-        sol.grid.entries.len() >= 24,
+        sol.grid().entries().len() >= 24,
         "recovered only {} hex nodes under noise",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "noisy hex");
 }
@@ -208,9 +203,9 @@ fn hex_with_dropouts_zero_wrong() {
     // so recall drops; the contract is zero wrong labels (missing is fine).
     // Floor is measured (17) minus margin.
     assert!(
-        sol.grid.entries.len() >= 15,
+        sol.grid().entries().len() >= 15,
         "recovered only {} hex nodes with dropouts",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "dropout hex");
 }
@@ -267,14 +262,9 @@ fn hex_oriented3_native_path() {
         feats.push(OrientedFeature::<3>::new(p, axes));
         truth.insert(idx, (q, r));
     }
-    let req = DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Oriented3(&feats),
-        None,
-        DetectionParams::default(),
-    );
+    let req = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented3(&feats));
     let sol = detect_grid(req).expect("hex Oriented3 native");
-    assert!(sol.grid.entries.len() >= 12);
+    assert!(sol.grid().entries().len() >= 12);
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "native Oriented3 hex");
 }
 
@@ -290,9 +280,9 @@ fn hex_d6_symmetry_property_under_rotation() {
         let sol =
             detect_grid(request(&feats)).unwrap_or_else(|e| panic!("hex detect at {deg}°: {e:?}"));
         assert!(
-            sol.grid.entries.len() >= 12,
+            sol.grid().entries().len() >= 12,
             "{deg}°: recovered only {}",
-            sol.grid.entries.len()
+            sol.grid().entries().len()
         );
         assert_labels_consistent_with_truth(
             &entries_with_truth(&sol),
@@ -312,10 +302,10 @@ fn hex_detection_is_deterministic() {
         0.0005, 0.0003, 1.0,
     );
     let (feats, _truth) = hex_patch(4, 28.0, 200.0, &h);
-    let signature = |sol: &projective_grid::GridSolution| -> Vec<(usize, i32, i32)> {
+    let signature = |sol: &projective_grid::GridDetection| -> Vec<(usize, i32, i32)> {
         let mut sig: Vec<(usize, i32, i32)> = sol
-            .grid
-            .entries
+            .grid()
+            .entries()
             .iter()
             .map(|e| (e.source_index, e.coord.u, e.coord.v))
             .collect();
@@ -345,12 +335,7 @@ fn hex_oriented1_and_oriented2_unsupported() {
         .iter()
         .map(|p| OrientedFeature::<1>::new(*p, [projective_grid::LocalAxis::new(0.0, None)]))
         .collect();
-    let req1 = DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Oriented1(&o1),
-        None,
-        DetectionParams::default(),
-    );
+    let req1 = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented1(&o1));
     assert!(matches!(
         detect_grid(req1),
         Err(projective_grid::GridError::UnsupportedCombination { .. })
@@ -368,12 +353,7 @@ fn hex_oriented1_and_oriented2_unsupported() {
             )
         })
         .collect();
-    let req2 = DetectionRequest::new(
-        LatticeKind::Hex,
-        Evidence::Oriented2(&o2),
-        None,
-        DetectionParams::default(),
-    );
+    let req2 = DetectionRequest::new(LatticeKind::Hex, Evidence::Oriented2(&o2));
     assert!(matches!(
         detect_grid(req2),
         Err(projective_grid::GridError::UnsupportedCombination { .. })

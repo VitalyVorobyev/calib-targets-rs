@@ -63,9 +63,9 @@ fn marker_board_corners_pass_check_consistency_without_ids() {
     );
     let report = check_consistency(request).expect("marker-board consistency check");
 
-    assert!(report.passed, "rejected={:?}", report.solution.rejected);
-    assert!(report.solution.rejected.is_empty());
-    let fit = report.solution.fit.as_ref().expect("fit");
+    assert!(report.passed(), "rejected={:?}", report.rejected());
+    assert!(report.rejected().is_empty());
+    let fit = report.fit();
     assert_eq!(fit.residuals.count, result.corners.len());
     assert!(
         fit.residuals.max_px < 0.01,

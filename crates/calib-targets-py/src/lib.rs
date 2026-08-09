@@ -395,10 +395,7 @@ fn trace_chessboard_topological(
             })
             .collect();
 
-        let trace_result = chessboard::trace_topological(&corners, &params);
-        let detections = chessboard::ChessboardDetector::new(params.clone())
-            .map(|d| d.detect_all(&corners))
-            .unwrap_or_default();
+        let trace_result = chessboard::trace_topological_detection(&corners, &params);
 
         let mut payload = serde_json::json!({
             "schema": 1,
@@ -407,7 +404,6 @@ fn trace_chessboard_topological(
                 "height": height,
             },
             "corners": corner_payload,
-            "detections": detections,
         });
         let obj = payload
             .as_object_mut()
@@ -416,12 +412,22 @@ fn trace_chessboard_topological(
             Ok(trace) => {
                 obj.insert(
                     "trace".to_string(),
-                    serde_json::to_value(trace).map_err(|e| e.to_string())?,
+                    serde_json::to_value(&trace.projective_grid).map_err(|e| e.to_string())?,
+                );
+                obj.insert(
+                    "chessboard_stages".to_string(),
+                    serde_json::to_value(&trace.chessboard).map_err(|e| e.to_string())?,
+                );
+                obj.insert(
+                    "detections".to_string(),
+                    serde_json::to_value(&trace.detections).map_err(|e| e.to_string())?,
                 );
                 obj.insert("error".to_string(), Value::Null);
             }
             Err(err) => {
                 obj.insert("trace".to_string(), Value::Null);
+                obj.insert("chessboard_stages".to_string(), Value::Null);
+                obj.insert("detections".to_string(), Value::Array(Vec::new()));
                 obj.insert("error".to_string(), Value::String(err.to_string()));
             }
         }

@@ -14,9 +14,7 @@
 use std::collections::{HashMap, HashSet};
 
 use nalgebra::{Matrix3, Point2, Vector3};
-use projective_grid::{
-    detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, LatticeKind, PointFeature,
-};
+use projective_grid::{detect_grid, Coord, DetectionRequest, Evidence, LatticeKind, PointFeature};
 
 /// Build position-only features for an axis-aligned `rows × cols` grid.
 fn grid_positions(rows: i32, cols: i32, s: f32, origin: f32) -> Vec<PointFeature> {
@@ -59,12 +57,7 @@ fn perspective_grid(
 }
 
 fn request(features: &[PointFeature]) -> DetectionRequest<'_> {
-    DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Positions(features),
-        None,
-        DetectionParams::default(),
-    )
+    DetectionRequest::new(LatticeKind::Square, Evidence::Positions(features))
 }
 
 /// A detection's labels are *precision-correct* against ground truth iff there
@@ -121,9 +114,9 @@ fn assert_labels_consistent_with_truth(
     );
 }
 
-fn entries_with_truth(sol: &projective_grid::GridSolution) -> Vec<(usize, Coord)> {
-    sol.grid
-        .entries
+fn entries_with_truth(sol: &projective_grid::GridDetection) -> Vec<(usize, Coord)> {
+    sol.grid()
+        .entries()
         .iter()
         .map(|e| (e.source_index, e.coord))
         .collect()
@@ -142,9 +135,9 @@ fn perfect_grid_topological_fully_recovered_zero_wrong() {
     // schedule on the synthesized-axis path the boundary fills in too. The
     // contract is zero wrong labels, not 100% recall.
     assert!(
-        sol.grid.entries.len() >= 36,
+        sol.grid().entries().len() >= 36,
         "topological recovered only {}/49",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(&entries_with_truth(&sol), &truth, "perfect Topological");
 }
@@ -166,10 +159,10 @@ fn perspective_grid_positions_is_deterministic() {
     );
     let (feats, _truth) = perspective_grid(8, 8, 28.0, 50.0, &h);
 
-    let signature = |sol: &projective_grid::GridSolution| -> Vec<(usize, i32, i32)> {
+    let signature = |sol: &projective_grid::GridDetection| -> Vec<(usize, i32, i32)> {
         let mut sig: Vec<(usize, i32, i32)> = sol
-            .grid
-            .entries
+            .grid()
+            .entries()
             .iter()
             .map(|e| (e.source_index, e.coord.u, e.coord.v))
             .collect();
@@ -198,9 +191,9 @@ fn perspective_grid_topological_zero_wrong_labels() {
     let (feats, truth) = perspective_grid(8, 8, 28.0, 50.0, &h);
     let sol = detect_grid(request(&feats)).expect("topological on perspective grid");
     assert!(
-        sol.grid.entries.len() >= 48,
+        sol.grid().entries().len() >= 48,
         "recovered only {}/64 under perspective",
-        sol.grid.entries.len()
+        sol.grid().entries().len()
     );
     assert_labels_consistent_with_truth(
         &entries_with_truth(&sol),
@@ -248,8 +241,8 @@ fn position_only_matches_oriented_on_clean_grid() {
     let feats = grid_positions(6, 6, 25.0, 60.0);
     let pos_sol = detect_grid(request(&feats)).expect("position-only detect");
     let pos_labels: HashSet<usize> = pos_sol
-        .grid
-        .entries
+        .grid()
+        .entries()
         .iter()
         .map(|e| e.source_index)
         .collect();

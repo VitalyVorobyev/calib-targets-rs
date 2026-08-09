@@ -22,7 +22,7 @@
 //! |-------|------------------------|----------------|
 //! | 1     | `prefilter`            | Drop corners failing strength / fit-quality / axes-validity gates. |
 //! | 2     | `cluster_axes`         | Recover the two global grid-direction centres `{Θ₀, Θ₁}` via histogram + 2-means; label each corner as canonical or swapped. |
-//! | 3     | `topological_grid`     | Delaunay + axis-driven cell test → connected labelled `(i, j)` components ([`projective_grid::detect_grid_all`]). |
+//! | 3     | `topological_grid`     | Delaunay + axis-driven cell test → merged labelled `(i, j)` components ([`projective_grid::expert::square::assemble_oriented2_components`]). |
 //! | 4     | `recover_components`   | Per-component recall boosters (interior gap fill + line extrapolation with a directional edge scale) + shared component merge. |
 //! | 5     | `final_geometry_check` | Mandatory precision gate: line collinearity + local-H residual + direct wrong-label check + largest cardinal component. Can only drop corners; never adds. |
 //! | 6     | `output`               | Labelled grid → canonicalised, non-negative-rebased [`ChessboardDetection`]. |
@@ -88,5 +88,8 @@ pub use detector::{ChessboardCorner, ChessboardDetection, ChessboardDetector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{ChessboardAdvancedTuning, ChessboardParams, ChessboardParamsError};
 #[cfg(feature = "diagnostics")]
-pub use pipeline::trace_topological;
+pub use pipeline::{
+    trace_topological, trace_topological_detection, ChessboardClusterTrace, ChessboardFeatureTrace,
+    ChessboardLabelTrace, ChessboardStageTrace, ChessboardTopologicalTrace,
+};
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};

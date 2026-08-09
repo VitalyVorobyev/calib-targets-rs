@@ -24,8 +24,8 @@
 //! global cell size) — the pipeline is scale-invariant once `s` is known. All
 //! angular tolerances are absolute degrees.
 
-use projective_grid::shared::merge::LocalMergeParams;
-use projective_grid::TopologicalParams;
+use projective_grid::expert::component::LocalMergeParams;
+use projective_grid::expert::TopologicalParams;
 use serde::{Deserialize, Serialize};
 
 /// Advanced, **unstable** per-stage tuning knobs for the chessboard detector.

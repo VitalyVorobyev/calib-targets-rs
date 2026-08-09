@@ -45,18 +45,18 @@ impl GridEntry {
 #[non_exhaustive]
 pub struct LabelledGrid {
     /// Lattice family of this grid.
-    pub lattice: LatticeKind,
+    lattice: LatticeKind,
     /// Labelled feature entries.
-    pub entries: Vec<GridEntry>,
+    entries: Vec<GridEntry>,
     /// Inclusive coordinate bounding box, if the grid is non-empty.
-    pub bbox: Option<(Coord, Coord)>,
+    bbox: Option<(Coord, Coord)>,
     /// Optional known dimensions supplied by the caller.
-    pub dimensions: Option<GridDimensions>,
+    dimensions: Option<GridDimensions>,
 }
 
 impl LabelledGrid {
     /// Construct a labelled grid.
-    pub fn new(
+    pub(crate) fn new(
         lattice: LatticeKind,
         entries: Vec<GridEntry>,
         dimensions: Option<GridDimensions>,
@@ -68,6 +68,36 @@ impl LabelledGrid {
             bbox,
             dimensions,
         }
+    }
+
+    /// Lattice family represented by this grid.
+    pub fn lattice(&self) -> LatticeKind {
+        self.lattice
+    }
+
+    /// Canonically ordered labelled feature entries.
+    pub fn entries(&self) -> &[GridEntry] {
+        &self.entries
+    }
+
+    pub(crate) fn into_entries(self) -> Vec<GridEntry> {
+        self.entries
+    }
+
+    /// Inclusive coordinate bounding box.
+    pub fn bbox(&self) -> Option<(Coord, Coord)> {
+        self.bbox
+    }
+
+    /// Caller-supplied maximum feature-position dimensions, in the canonical frame.
+    pub fn dimensions(&self) -> Option<GridDimensions> {
+        self.dimensions
+    }
+
+    pub(crate) fn normalized_square_entries(entries: Vec<GridEntry>) -> Vec<GridEntry> {
+        let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
+        grid.normalize();
+        grid.into_entries()
     }
 
     /// Linear-scan lookup of the labelled entry with the given source index.
@@ -100,7 +130,7 @@ impl LabelledGrid {
     /// at their output stage. It operates only on the labelled grid, so any
     /// [`LatticeFit`] computed against the *pre*-normalization labels is no
     /// longer valid afterwards — normalize before fitting, or refit.
-    pub fn normalize(&mut self) {
+    pub(crate) fn normalize(&mut self) {
         rebase_entries_to_origin(&mut self.entries);
         let swapped = canonicalize_to_image_axes(&mut self.entries);
         if swapped {
@@ -205,37 +235,45 @@ impl RejectedFeature {
     }
 }
 
-/// Shared successful solution shape for grid tasks.
+/// Successful grid detection.
+///
+/// A successful value always contains a finite projective fit. Rejected input
+/// features and intermediate hypotheses belong to the diagnostics channel.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct GridSolution {
-    /// Labelled grid entries.
-    pub grid: LabelledGrid,
-    /// Lattice fit, when the task computed one.
-    pub fit: Option<LatticeFit>,
-    /// Features rejected by task gates.
-    pub rejected: Vec<RejectedFeature>,
+pub struct GridDetection {
+    grid: LabelledGrid,
+    fit: LatticeFit,
+}
+
+impl GridDetection {
+    pub(crate) fn new(grid: LabelledGrid, fit: LatticeFit) -> Self {
+        Self { grid, fit }
+    }
+
+    /// Canonical labelled grid.
+    pub fn grid(&self) -> &LabelledGrid {
+        &self.grid
+    }
+
+    /// Mandatory model-to-image projective fit.
+    pub fn fit(&self) -> &LatticeFit {
+        &self.fit
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct GridSolution {
+    pub(crate) detection: GridDetection,
+    pub(crate) rejected: Vec<RejectedFeature>,
 }
 
 impl GridSolution {
-    /// Construct a grid solution.
-    pub fn new(
-        grid: LabelledGrid,
-        fit: Option<LatticeFit>,
-        rejected: Vec<RejectedFeature>,
-    ) -> Self {
+    pub(crate) fn new(grid: LabelledGrid, fit: LatticeFit, rejected: Vec<RejectedFeature>) -> Self {
         Self {
-            grid,
-            fit,
+            detection: GridDetection::new(grid, fit),
             rejected,
         }
-    }
-
-    /// Linear-scan lookup of the rejection record for the given source index, if any.
-    pub fn rejected_for(&self, source_index: usize) -> Option<&RejectedFeature> {
-        self.rejected
-            .iter()
-            .find(|r| r.source_index == source_index)
     }
 }
 
@@ -244,21 +282,52 @@ impl GridSolution {
 #[non_exhaustive]
 pub struct ConsistencyReport {
     /// `true` when all residuals satisfy the configured threshold.
-    pub passed: bool,
-    /// Labelled solution and residual diagnostics.
-    pub solution: GridSolution,
+    passed: bool,
+    grid: LabelledGrid,
+    fit: LatticeFit,
+    rejected: Vec<RejectedFeature>,
 }
 
 impl ConsistencyReport {
     /// Construct a consistency report.
-    pub fn new(passed: bool, solution: GridSolution) -> Self {
-        Self { passed, solution }
+    pub(crate) fn new(
+        passed: bool,
+        grid: LabelledGrid,
+        fit: LatticeFit,
+        rejected: Vec<RejectedFeature>,
+    ) -> Self {
+        Self {
+            passed,
+            grid,
+            fit,
+            rejected,
+        }
+    }
+
+    /// Whether every hypothesis satisfied the configured residual gate.
+    pub fn passed(&self) -> bool {
+        self.passed
+    }
+
+    /// Labelled hypotheses and per-entry residuals.
+    pub fn grid(&self) -> &LabelledGrid {
+        &self.grid
+    }
+
+    /// Model-to-image projective fit over all hypotheses.
+    pub fn fit(&self) -> &LatticeFit {
+        &self.fit
+    }
+
+    /// Hypotheses that exceeded the residual threshold.
+    pub fn rejected(&self) -> &[RejectedFeature] {
+        &self.rejected
     }
 
     /// Convenience accessor for the maximum residual in pixels from the fitted lattice,
     /// when one was computed.
-    pub fn max_residual_px(&self) -> Option<f32> {
-        Some(self.solution.fit.as_ref()?.residuals.max_px)
+    pub fn max_residual_px(&self) -> f32 {
+        self.fit.residuals.max_px
     }
 }
 
@@ -400,20 +469,11 @@ mod tests {
     }
 
     #[test]
-    fn max_residual_px_none_when_fit_absent() {
-        let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
-        let solution = GridSolution::new(grid, None, vec![]);
-        let report = ConsistencyReport::new(true, solution);
-        assert_eq!(report.max_residual_px(), None);
-    }
-
-    #[test]
-    fn max_residual_px_some_when_fit_present() {
+    fn consistency_report_exposes_mandatory_fit() {
         let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
         let fit = make_identity_fit();
-        let solution = GridSolution::new(grid, Some(fit), vec![]);
-        let report = ConsistencyReport::new(true, solution);
-        assert_eq!(report.max_residual_px(), Some(1.0_f32));
+        let report = ConsistencyReport::new(true, grid, fit, vec![]);
+        assert_eq!(report.max_residual_px(), 1.0_f32);
     }
 
     #[test]
@@ -538,12 +598,11 @@ mod tests {
     }
 
     #[test]
-    fn grid_solution_rejected_for_present_and_absent() {
+    fn consistency_report_exposes_rejections() {
         let rejected =
             RejectedFeature::new(5, None, Some(3.0_f32), RejectionReason::ResidualTooHigh);
         let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
-        let solution = GridSolution::new(grid, None, vec![rejected]);
-        assert!(solution.rejected_for(5).is_some());
-        assert!(solution.rejected_for(0).is_none());
+        let report = ConsistencyReport::new(true, grid, make_identity_fit(), vec![rejected]);
+        assert_eq!(report.rejected()[0].source_index, 5);
     }
 }

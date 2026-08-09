@@ -26,8 +26,6 @@ pub enum EvidenceKind {
     Oriented2,
     /// Features with three local axes.
     Oriented3,
-    /// Caller-supplied coordinate hypotheses.
-    CoordinateHypotheses,
 }
 
 /// User-facing failure modes for projective-grid tasks.

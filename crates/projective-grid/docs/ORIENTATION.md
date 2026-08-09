@@ -148,8 +148,7 @@ grid-direction centres is **shared math** in this crate
 (`projective_grid::cluster`, re-exported as `cluster_axes` with
 `AxisClusterCenters` / `AxisAssignment`). What stays **chessboard-crate code**
 is the *parity semantics* on top of those centres — mapping the
-canonical/swapped axis assignment onto the two-colour `(i, j)` parity and the
-slot-coherence repair (`calib-targets-chessboard/src/cluster/slot_coherence.rs`).
+canonical/swapped axis assignment onto the two-colour `(i, j)` parity.
 A dot grid has no parity, so the consumer simply skips the parity mapping and
 uses the cluster centres (if any) as a soft prior — there is nothing
 parity-specific in this crate to remove.

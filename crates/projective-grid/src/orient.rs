@@ -98,8 +98,8 @@ const REFINE_ITERS: usize = 4;
 /// and position plus the recovered axes. The two axes are **not** constrained
 /// to be orthogonal — they track the local projected grid directions.
 ///
-/// The result is consumed by the topological assembler ([`crate::topological`])
-/// exactly like caller-supplied oriented features.
+/// The result is consumed by the internal topological assembler exactly like
+/// caller-supplied oriented features.
 pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>> {
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.position).collect();
     let n = positions.len();
@@ -151,10 +151,10 @@ pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>
 /// axis is trusted as evidence and is *not* moved; only the second cluster is
 /// recovered from the chords that fall closer to it than to the supplied axis.
 ///
-/// The result is consumed by the topological assembler ([`crate::topological`])
-/// exactly like caller-supplied [`OrientedFeature<2>`] — the wiring in
-/// [`crate::detect`] funnels `Oriented1` through this synthesis and then runs
-/// the chosen square strategy, mirroring the `Positions` path.
+/// The result is consumed by the internal topological assembler exactly like
+/// caller-supplied [`OrientedFeature<2>`]. The public detection facade funnels
+/// `Oriented1` through this synthesis and then runs the square pipeline,
+/// mirroring the `Positions` path.
 ///
 /// # Precision contract
 ///

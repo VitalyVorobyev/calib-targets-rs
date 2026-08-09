@@ -1,14 +1,14 @@
-//! Chessboard adapter over [`projective_grid::cluster`].
+//! Chessboard adapter over the projective-grid expert orientation seam.
 //!
 //! The generic axis-clustering math — circular histogram + smoothing +
 //! plateau-aware peak picking + double-angle 2-means recovering the two
 //! global grid-direction centres `(Θ₀, Θ₁)` from per-feature dual-axis
-//! estimates — lives in [`projective_grid::cluster`]. This module is the
+//! estimates — lives in [`projective_grid::expert::orientation`]. This module is the
 //! chessboard-specific glue around it: it selects which corners vote
 //! (the `Strong`-stage corners), maps each `CornerAug`'s two
 //! [`calib_targets_core::AxisEstimate`]s into
-//! [`projective_grid::cluster::AxisFeature`]s, and translates the generic
-//! [`projective_grid::cluster::AxisAssignment`] back onto the chessboard
+//! generic axis features, and translates the generic axis assignment back onto
+//! the chessboard
 //! [`ClusterLabel`](crate::corner::ClusterLabel) / [`CornerStage`]
 //! vocabulary ([`map_assignment`]).
 //!
@@ -26,7 +26,7 @@
 
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::ChessboardParams;
-use projective_grid::cluster::{
+use projective_grid::expert::orientation::{
     self as pg, AxisAssignment, AxisFeature, AxisObservation, ClusterParams,
 };
 
@@ -60,17 +60,17 @@ fn map_assignment(assign: AxisAssignment) -> AxisCluster {
 // (the single source of truth). Re-export them under their short local names
 // so this module and the sibling `boosters` module keep their
 // `{angular_dist_pi, wrap_pi}` imports.
-pub(crate) use projective_grid::cluster::{angular_dist_pi, wrap_pi};
+pub(crate) use projective_grid::expert::orientation::{angular_dist_pi, wrap_pi};
 
 /// Two grid-direction centres in `[0, π)` with `theta0 ≤ theta1`.
 ///
-/// Re-export of `projective_grid::cluster::AxisClusterCenters`; the
+/// Re-export of the generic projective-grid cluster centres; the
 /// chessboard pipeline keeps the shorter local name.
-pub use projective_grid::cluster::AxisClusterCenters as ClusterCenters;
+pub use projective_grid::expert::orientation::AxisClusterCenters as ClusterCenters;
 
 /// Stage-3 introspection captured during a single `cluster_axes_debug`
-/// run. Re-export of `projective_grid::cluster::AxisClusterDebug`.
-pub use projective_grid::cluster::AxisClusterDebug as ClusterDebug;
+/// run. Re-export of the generic projective-grid cluster diagnostics.
+pub use projective_grid::expert::orientation::AxisClusterDebug as ClusterDebug;
 
 /// Build the [`ClusterParams`] the generic clusterer consumes from the
 /// chessboard tuning.

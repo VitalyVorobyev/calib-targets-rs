@@ -32,7 +32,7 @@ pub use square::Square;
 /// * On a **square** lattice a unit cell is a quad, which the Delaunay
 ///   triangulation splits into two triangles sharing the cell **diagonal**.
 ///   The pipeline classifies that diagonal, then merges the triangle pair back
-///   into one quad ([`crate::topological`] `quads.rs`).
+///   into one quad in the internal topological pipeline.
 /// * On a **hex** point lattice (one feature per lattice node) the Delaunay
 ///   triangles **are** the unit cells — three mutually-adjacent nodes form an
 ///   equilateral-ish triangle, and there is no diagonal class. The triangle-pair
@@ -81,18 +81,23 @@ impl Coord {
     }
 }
 
-/// Optional known grid dimensions.
+/// Known maximum grid extent, counted in observable feature positions.
+///
+/// For a square chessboard this is the number of corner intersections, not
+/// the number of black/white cells. A partially visible detection may span
+/// fewer positions, but a returned coordinate span never exceeds these
+/// bounds after canonical orientation is chosen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub struct GridDimensions {
-    /// Number of cells or feature positions along the first lattice axis.
+    /// Maximum number of feature positions along the first lattice axis.
     pub width: usize,
-    /// Number of cells or feature positions along the second lattice axis.
+    /// Maximum number of feature positions along the second lattice axis.
     pub height: usize,
 }
 
 impl GridDimensions {
-    /// Construct known grid dimensions.
+    /// Construct maximum feature-position dimensions.
     pub const fn new(width: usize, height: usize) -> Self {
         Self { width, height }
     }
@@ -116,8 +121,8 @@ impl LatticeKind {
     /// model plane.
     ///
     /// This dispatches to the [`Lattice::model_point`] of the family impl, so
-    /// callers holding only a [`LatticeKind`] (e.g. `shared::fit`,
-    /// [`crate::check`]) need not name the concrete family type.
+    /// callers holding only a [`LatticeKind`] need not name the concrete family
+    /// type.
     pub fn model_point(self, coord: Coord) -> Point2<f32> {
         match self {
             Self::Square => Square.model_point(coord),

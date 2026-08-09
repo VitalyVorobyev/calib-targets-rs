@@ -56,7 +56,7 @@ there is no diagonal/quad-merge stage. The lattice family is selected by
 How much you know about each point's orientation picks the [`Evidence`] variant.
 The square variants share one back-half — the less-oriented kinds synthesize the
 missing axes from neighbour geometry and then run the same strategy — so they
-produce the same [`GridSolution`] shape. The same evidence ladder applies to
+produce the same [`GridDetection`] shape. The same evidence ladder applies to
 hex (`Positions` synthesizes three axis families;
 [`Evidence::Oriented3`] supplies them directly):
 
@@ -81,10 +81,9 @@ hex (`Positions` synthesizes three axis families;
   detector that recovers all three feeds them here. `(Square, Oriented3)`
   stays `UnsupportedCombination` (square has only two families).
 
-`Evidence::CoordinateHypotheses` (a decode-feedback roadmap slot) returns
-`UnsupportedCombination` for detection. Coordinate hypotheses *are* consumable
-through the separate [`check_consistency`] entry point, which scores
-caller-proposed labels against a projective fit.
+Coordinate hypotheses are consumed by the separate [`check_consistency`]
+entry point, which scores caller-proposed labels against a projective fit;
+they are deliberately not a detection evidence variant.
 
 ### Evidence × lattice support matrix
 
@@ -108,7 +107,7 @@ the body of [`examples/hello_grid.rs`](examples/hello_grid.rs) —
 ```rust
 use nalgebra::Point2;
 use projective_grid::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,
+    detect_grid, DetectionRequest, Evidence, LatticeKind, LocalAxis,
     OrientedFeature, PointFeature,
 };
 
@@ -134,12 +133,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = DetectionRequest::new(
         LatticeKind::Square,
         Evidence::Oriented2(&features),
-        None, // grid dimensions unknown
-        DetectionParams::default(),
     );
 
-    let solution = detect_grid(request)?;
-    for entry in &solution.grid.entries {
+    let detection = detect_grid(request)?;
+    for entry in detection.grid().entries() {
         // coord.u = i, coord.v = j; source_index maps back to the input slice.
         println!("(i={}, j={}) <- feature {}", entry.coord.u, entry.coord.v, entry.source_index);
     }
@@ -154,7 +151,7 @@ sub-pixel fit residual.
 
 Square lattice detection uses the **topological** assembler — the sole grid
 builder in the crate. It consumes [`Evidence::Oriented2`] (or synthesizes axes
-from `Positions` / `Oriented1`) and produces a [`GridSolution`]:
+from `Positions` / `Oriented1`) and produces a [`GridDetection`]:
 
 - the Shu/Brunton/Fiala axis-driven grid finder (Delaunay triangulation + a
   per-cell axis test). Image-free; recovers dense grids and copes well with
@@ -171,37 +168,37 @@ square topological path.
 above. For square lattices `Positions`, `Oriented1`, and `Oriented2` are
 supported; for hex lattices `Positions` and `Oriented3` are supported on the
 topological path. The other combinations (`(Square, Oriented3)`,
-`(Hex, Oriented1/Oriented2)`, and `CoordinateHypotheses` for detection) return
+`(Hex, Oriented1/Oriented2)`) return
 `UnsupportedCombination`.
 
-**Output** is a [`GridSolution`]:
+**Output** is a [`GridDetection`]. Its fitted transform is mandatory on
+success; rejected evidence is available only after enabling the `diagnostics`
+feature, through the `projective_grid::diagnostics` entry points:
 
 | Field | Meaning |
 |---|---|
-| `grid.entries: Vec<GridEntry>` | One labelled feature each. A [`GridEntry`] carries `coord` (the `(i, j)` label, rebased so the labelled bounding box starts at `(0, 0)`), `source_index` (back into your input slice), `image_position`, and `residual_px` (reprojection residual when a fit was computed). |
-| `fit: Option<LatticeFit>` | The fitted model-plane-to-image projective transform plus a residual summary (`count`, `mean_px`, `max_px`). |
-| `rejected: Vec<RejectedFeature>` | Features the detector could not place, each with a [`RejectionReason`] (`Unlabelled`, `ValidationDropped`, or `ResidualTooHigh`). |
+| `grid()` | Canonically ordered labelled features. Each [`GridEntry`] carries `coord`, `source_index`, `image_position`, and its fit residual. |
+| `fit()` | The mandatory model-plane-to-image projective transform plus `count`, `mean_px`, and `max_px`. |
 
 ## Learn more
 
 Algorithm deep-dive and conceptual background:
 [book chapter](https://vitalyvorobyev.github.io/calib-targets-rs/projective_grid.html).
+Upgrading from 0.11: [1.0 migration guide](MIGRATION-1.0.md).
 
 ## License
 
 Licensed under either of MIT or Apache-2.0 at your option.
 
-[`Float`]: https://docs.rs/projective-grid/latest/projective_grid/trait.Float.html
-[`PointFeature`]: https://docs.rs/projective-grid/latest/projective_grid/feature/struct.PointFeature.html
-[`OrientedFeature`]: https://docs.rs/projective-grid/latest/projective_grid/feature/struct.OrientedFeature.html
-[`LocalAxis`]: https://docs.rs/projective-grid/latest/projective_grid/feature/struct.LocalAxis.html
-[`Evidence`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
-[`Evidence::Positions`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
-[`Evidence::Oriented1`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
-[`Evidence::Oriented2`]: https://docs.rs/projective-grid/latest/projective_grid/detect/enum.Evidence.html
-[`detect_grid`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid.html
-[`detect_grid_all`]: https://docs.rs/projective-grid/latest/projective_grid/detect/fn.detect_grid_all.html
-[`check_consistency`]: https://docs.rs/projective-grid/latest/projective_grid/check/fn.check_consistency.html
-[`GridSolution`]: https://docs.rs/projective-grid/latest/projective_grid/result/struct.GridSolution.html
-[`GridEntry`]: https://docs.rs/projective-grid/latest/projective_grid/result/struct.GridEntry.html
-[`RejectionReason`]: https://docs.rs/projective-grid/latest/projective_grid/result/enum.RejectionReason.html
+[`PointFeature`]: https://docs.rs/projective-grid/latest/projective_grid/struct.PointFeature.html
+[`OrientedFeature`]: https://docs.rs/projective-grid/latest/projective_grid/struct.OrientedFeature.html
+[`LocalAxis`]: https://docs.rs/projective-grid/latest/projective_grid/struct.LocalAxis.html
+[`Evidence`]: https://docs.rs/projective-grid/latest/projective_grid/enum.Evidence.html
+[`Evidence::Positions`]: https://docs.rs/projective-grid/latest/projective_grid/enum.Evidence.html
+[`Evidence::Oriented1`]: https://docs.rs/projective-grid/latest/projective_grid/enum.Evidence.html
+[`Evidence::Oriented2`]: https://docs.rs/projective-grid/latest/projective_grid/enum.Evidence.html
+[`detect_grid`]: https://docs.rs/projective-grid/latest/projective_grid/fn.detect_grid.html
+[`detect_grid_all`]: https://docs.rs/projective-grid/latest/projective_grid/fn.detect_grid_all.html
+[`check_consistency`]: https://docs.rs/projective-grid/latest/projective_grid/fn.check_consistency.html
+[`GridDetection`]: https://docs.rs/projective-grid/latest/projective_grid/struct.GridDetection.html
+[`GridEntry`]: https://docs.rs/projective-grid/latest/projective_grid/struct.GridEntry.html

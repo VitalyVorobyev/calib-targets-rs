@@ -1,191 +1,357 @@
-//! Serializable trace for the square topological detector.
+//! Exact, serializable observations of the production square pipeline.
 //!
-//! This diagnostic entry point is intentionally layered over the production
-//! [`crate::detect_grid_all`] facade so timing and recovery stay aligned with
-//! the detector path. It records the stable facts downstream diagnostics need:
-//! input corner usability, final labelled components, and summary counts.
+//! Every stage below is captured while the normal Rust implementation runs.
+//! No Delaunay edge, quad, component, or label is reconstructed downstream.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::detect::{
-    detect_grid_all, DetectionParams, DetectionRequest, Evidence, TopologicalParams,
-};
+use crate::detect::{validate_request, DetectionParams, DetectionRequest, Evidence};
 use crate::feature::OrientedFeature;
-use crate::lattice::LatticeKind;
+use crate::lattice::{GridDimensions, LatticeKind};
+use crate::topological::classify::EdgeClass;
+use crate::topological::square_detector::{
+    detect_square_oriented2_all_observed, SquarePipelineTrace,
+};
+use crate::topological::TopologicalParams;
 
-/// One input corner as seen by the topological trace.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
+/// One input feature and its exact admission decision.
 pub struct TopologicalCornerTrace {
-    /// Index of this feature in the supplied slice.
+    /// Position in the evidence slice.
     pub index: usize,
-    /// Caller-owned source index.
+    /// Caller-owned stable identifier.
     pub source_index: usize,
-    /// Corner position `[x, y]` in image pixels.
+    /// Pixel-center coordinates `[x, y]` in the input image frame.
     pub position: [f32; 2],
-    /// Local axis angles in radians.
+    /// Two undirected local axes, in radians modulo π.
     pub axis_angles_rad: [f32; 2],
-    /// Local axis uncertainties in radians. `None` means no uncertainty was supplied.
+    /// Optional one-sigma uncertainties for the two axes.
     pub axis_sigmas_rad: [Option<f32>; 2],
-    /// Whether the feature survived the topological sigma/axis prefilter.
+    /// Whether the feature entered Delaunay triangulation.
     pub usable: bool,
 }
 
-/// One final `(u, v) -> source_index` label.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[non_exhaustive]
-pub struct TopologicalLabelTrace {
-    /// First square-grid coordinate.
-    pub u: i32,
-    /// Second square-grid coordinate.
-    pub v: i32,
-    /// Source index of the labelled input feature.
-    pub source_index: usize,
+/// Production classification of a directed Delaunay half-edge.
+pub enum TopologicalEdgeClass {
+    /// Accepted as a lattice edge by both endpoints.
+    Grid,
+    /// Inferred to cross one square cell.
+    Diagonal,
+    /// Neither an accepted lattice edge nor an inferred diagonal.
+    Spurious,
 }
 
-impl TopologicalLabelTrace {
-    /// Build a label trace entry mapping grid `(u, v)` to a source index.
-    pub fn new(u: i32, v: i32, source_index: usize) -> Self {
-        Self { u, v, source_index }
+impl From<EdgeClass> for TopologicalEdgeClass {
+    fn from(value: EdgeClass) -> Self {
+        match value {
+            EdgeClass::Grid => Self::Grid,
+            EdgeClass::Diagonal => Self::Diagonal,
+            EdgeClass::Spurious => Self::Spurious,
+        }
     }
 }
 
-/// One connected labelled component.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct TopologicalComponentTrace {
-    /// Index of this component within the result.
-    pub index: usize,
-    /// The component's labels, sorted by `(v, u, source_index)`.
-    pub labels: Vec<TopologicalLabelTrace>,
+/// One directed Delaunay half-edge.
+pub struct TopologicalEdgeTrace {
+    /// Start feature-slice index.
+    pub start: usize,
+    /// End feature-slice index.
+    pub end: usize,
+    /// Edge class used by quad assembly.
+    pub class: TopologicalEdgeClass,
 }
 
-/// Summary counters for the topological trace.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
+/// One Delaunay triangle with its three directed edge classes.
+pub struct TopologicalTriangleTrace {
+    /// Feature-slice indices in Delaunay order.
+    pub vertices: [usize; 3],
+    /// Classes matching `(0→1, 1→2, 2→0)`.
+    pub edge_classes: [TopologicalEdgeClass; 3],
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
+/// One square-cell hypothesis at a named filter checkpoint.
+pub struct TopologicalQuadTrace {
+    /// Feature-slice indices in TL–TR–BR–BL winding.
+    pub vertices: [usize; 4],
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
+/// One lattice label with both internal and caller-owned provenance.
+pub struct TopologicalLabelTrace {
+    /// First square-lattice coordinate, increasing image-right after normalization.
+    pub u: i32,
+    /// Second square-lattice coordinate, increasing image-down after normalization.
+    pub v: i32,
+    /// Index into the supplied feature slice.
+    pub feature_index: usize,
+    /// Caller-owned source identifier.
+    pub source_index: usize,
+    /// Model-to-image residual at fitted checkpoints.
+    pub residual_px: Option<f32>,
+}
+
+/// Projective-fit residual summary for one final generic component.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct TopologicalFitTrace {
+    /// Number of fitted labels.
+    pub count: usize,
+    /// Mean residual in image pixels.
+    pub mean_px: f32,
+    /// Maximum residual in image pixels.
+    pub max_px: f32,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
+/// One labelled component at a pipeline checkpoint.
+pub struct TopologicalComponentTrace {
+    /// Deterministic component position within this checkpoint.
+    pub index: usize,
+    /// Labels sorted by `(v, u, feature_index)`.
+    pub labels: Vec<TopologicalLabelTrace>,
+    /// Fit summary when this checkpoint has already been fitted.
+    pub fit: Option<TopologicalFitTrace>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
 #[non_exhaustive]
+/// Exact item counts for consistency checks between trace stages.
 pub struct TopologicalTraceDiagnostics {
-    /// Number of input features.
+    /// Number of supplied features.
     pub corners_in: usize,
-    /// Number of features that survived the axis usability filter.
+    /// Number admitted to Delaunay triangulation.
     pub corners_used: usize,
-    /// Number of labelled components returned by production detection.
-    pub components: usize,
-    /// Total number of labelled entries across all components.
-    pub labels: usize,
+    /// Number of Delaunay triangles.
+    pub triangles: usize,
+    /// Number of triangle-pair quad hypotheses.
+    pub raw_quads: usize,
+    /// Quads surviving the mesh-degree filter.
+    pub topology_quads: usize,
+    /// Quads surviving the opposing-edge geometry filter.
+    pub geometry_quads: usize,
+    /// Quads surviving the component-scale filter.
+    pub scale_quads: usize,
+    /// Connected components produced by the quad walk.
+    pub walk_components: usize,
+    /// Components after generic label-space merge.
+    pub merged_components: usize,
+    /// Components after validation and projective fit.
+    pub final_components: usize,
+    /// Total labels across final generic detections.
+    pub final_labels: usize,
 }
 
-/// Full topological trace.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[non_exhaustive]
+/// Complete exact trace of one production square-detector execution.
 pub struct TopologicalTrace {
-    /// Parameters used by the topological stage.
+    /// Version of this diagnostics-only serialization schema.
+    pub schema_version: u32,
+    /// Effective topological tuning used by the execution.
     pub params: TopologicalParams,
-    /// Every input corner with its usable flag.
+    /// Input feature evidence and admission decisions.
     pub corners: Vec<TopologicalCornerTrace>,
-    /// Labelled connected components.
-    pub components: Vec<TopologicalComponentTrace>,
-    /// Per-stage summary counters.
+    /// Directed half-edges in triangle order.
+    pub edges: Vec<TopologicalEdgeTrace>,
+    /// Delaunay triangles and the classes consumed by quad assembly.
+    pub triangles: Vec<TopologicalTriangleTrace>,
+    /// All triangle-pair quad hypotheses.
+    pub raw_quads: Vec<TopologicalQuadTrace>,
+    /// Quads after the topology filter.
+    pub topology_quads: Vec<TopologicalQuadTrace>,
+    /// Quads after the geometry filter.
+    pub geometry_quads: Vec<TopologicalQuadTrace>,
+    /// Quads after the component-scale filter.
+    pub scale_quads: Vec<TopologicalQuadTrace>,
+    /// Components directly after walking the filtered quad mesh.
+    pub walk_components: Vec<TopologicalComponentTrace>,
+    /// Components after generic label-space merge.
+    pub merged_components: Vec<TopologicalComponentTrace>,
+    /// Normalized components after validation and projective fit.
+    pub final_components: Vec<TopologicalComponentTrace>,
+    /// Redundant counts used to validate exported evidence.
     pub diagnostics: TopologicalTraceDiagnostics,
 }
 
-/// Errors emitted by [`build_grid_topological_trace`].
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
+/// Failure to produce an exact topological trace.
 pub enum TopologicalTraceError {
-    /// Fewer than three usable corners survived the topological prefilter.
-    #[error("not enough usable corners ({usable}) for Delaunay triangulation")]
-    NotEnoughCorners {
-        /// Number of usable corners.
-        usable: usize,
+    /// The production detector rejected the evidence or geometry.
+    #[error("topological detection failed: {message}")]
+    DetectionFailed {
+        /// Human-readable underlying detector error.
+        message: String,
     },
-    /// Production detection did not return a labelled component.
-    #[error("topological detection produced no labelled components")]
-    NoComponents,
 }
 
-/// Build a trace for the production square topological detector.
+/// Run the square detector once and capture its exact stage outputs.
 pub fn build_grid_topological_trace(
     features: &[OrientedFeature<2>],
-    params: TopologicalParams,
+    dimensions: Option<GridDimensions>,
+    params: DetectionParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
-    let corners: Vec<TopologicalCornerTrace> = features
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(features))
+        .with_params(params.clone());
+    let request = match dimensions {
+        Some(dimensions) => request.with_dimensions(dimensions),
+        None => request,
+    };
+    validate_request(&request).map_err(|error| TopologicalTraceError::DetectionFailed {
+        message: error.to_string(),
+    })?;
+    let topological_params = params.tuning().topological;
+    let mut raw = SquarePipelineTrace::default();
+    let solutions =
+        detect_square_oriented2_all_observed(features, dimensions, &params, false, Some(&mut raw))
+            .map_err(|error| TopologicalTraceError::DetectionFailed {
+                message: error.to_string(),
+            })?;
+
+    let corners = features
         .iter()
         .enumerate()
-        .map(|(index, feature)| {
-            let usable = feature.axes.iter().any(|axis| {
-                axis.sigma_rad
-                    .map(|s| s < params.max_axis_sigma_rad)
-                    .unwrap_or(true)
-            });
-            TopologicalCornerTrace {
-                index,
-                source_index: feature.point.source_index,
-                position: [feature.point.position.x, feature.point.position.y],
-                axis_angles_rad: [feature.axes[0].angle_rad, feature.axes[1].angle_rad],
-                axis_sigmas_rad: [feature.axes[0].sigma_rad, feature.axes[1].sigma_rad],
-                usable,
-            }
+        .map(|(index, feature)| TopologicalCornerTrace {
+            index,
+            source_index: feature.point.source_index,
+            position: [feature.point.position.x, feature.point.position.y],
+            axis_angles_rad: [feature.axes[0].angle_rad, feature.axes[1].angle_rad],
+            axis_sigmas_rad: [feature.axes[0].sigma_rad, feature.axes[1].sigma_rad],
+            usable: raw.usable[index],
         })
         .collect();
-    let corners_used = corners.iter().filter(|c| c.usable).count();
-    if corners_used < 3 {
-        return Err(TopologicalTraceError::NotEnoughCorners {
-            usable: corners_used,
-        });
-    }
-
-    let validate = crate::detect::ValidateParams::default()
-        .with_line_tol_rel(f32::INFINITY)
-        .with_local_h_tol_rel(f32::INFINITY)
-        .with_edge_length_band_rel(f32::INFINITY);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(features),
-        None,
-        DetectionParams::default()
-            .with_topological(params)
-            .with_validate(validate)
-            .with_max_residual_px(f32::INFINITY),
-    );
-    let report = detect_grid_all(request).map_err(|_| TopologicalTraceError::NoComponents)?;
-    if report.solutions.is_empty() {
-        return Err(TopologicalTraceError::NoComponents);
-    }
-
-    let components: Vec<TopologicalComponentTrace> = report
-        .solutions
+    let edges: Vec<TopologicalEdgeTrace> = raw
+        .edges
+        .iter()
+        .map(|&(start, end, class)| TopologicalEdgeTrace {
+            start,
+            end,
+            class: class.into(),
+        })
+        .collect();
+    let triangles = raw
+        .triangles
         .iter()
         .enumerate()
-        .map(|(index, solution)| {
-            let mut labels: Vec<TopologicalLabelTrace> = solution
-                .grid
-                .entries
+        .map(|(index, &vertices)| TopologicalTriangleTrace {
+            vertices,
+            edge_classes: [
+                edges[3 * index].class,
+                edges[3 * index + 1].class,
+                edges[3 * index + 2].class,
+            ],
+        })
+        .collect();
+    let raw_quads = quads(&raw.raw_quads);
+    let topology_quads = quads(&raw.topology_quads);
+    let geometry_quads = quads(&raw.geometry_quads);
+    let scale_quads = quads(&raw.scale_quads);
+    let walk_components = components(&raw.walk_components, features);
+    let merged_components = components(&raw.merged_components, features);
+    let feature_index_by_source: HashMap<usize, usize> = features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.point.source_index, index))
+        .collect();
+    let final_components: Vec<TopologicalComponentTrace> = solutions
+        .iter()
+        .enumerate()
+        .map(|(index, solution)| TopologicalComponentTrace {
+            index,
+            labels: solution
+                .detection
+                .grid()
+                .entries()
                 .iter()
                 .map(|entry| TopologicalLabelTrace {
                     u: entry.coord.u,
                     v: entry.coord.v,
+                    feature_index: feature_index_by_source[&entry.source_index],
                     source_index: entry.source_index,
+                    residual_px: entry.residual_px,
                 })
-                .collect();
-            labels.sort_by_key(|label| (label.v, label.u, label.source_index));
-            TopologicalComponentTrace { index, labels }
+                .collect(),
+            fit: Some(TopologicalFitTrace {
+                count: solution.detection.fit().residuals.count,
+                mean_px: solution.detection.fit().residuals.mean_px,
+                max_px: solution.detection.fit().residuals.max_px,
+            }),
         })
         .collect();
-    let labels = components
-        .iter()
-        .map(|component| component.labels.len())
-        .sum();
     let diagnostics = TopologicalTraceDiagnostics {
         corners_in: features.len(),
-        corners_used,
-        components: components.len(),
-        labels,
+        corners_used: raw.usable.iter().filter(|&&usable| usable).count(),
+        triangles: raw.triangles.len(),
+        raw_quads: raw.raw_quads.len(),
+        topology_quads: raw.topology_quads.len(),
+        geometry_quads: raw.geometry_quads.len(),
+        scale_quads: raw.scale_quads.len(),
+        walk_components: raw.walk_components.len(),
+        merged_components: raw.merged_components.len(),
+        final_components: final_components.len(),
+        final_labels: final_components
+            .iter()
+            .map(|component| component.labels.len())
+            .sum(),
     };
     Ok(TopologicalTrace {
-        params,
+        schema_version: 1,
+        params: topological_params,
         corners,
-        components,
+        edges,
+        triangles,
+        raw_quads,
+        topology_quads,
+        geometry_quads,
+        scale_quads,
+        walk_components,
+        merged_components,
+        final_components,
         diagnostics,
     })
+}
+
+fn quads(items: &[[usize; 4]]) -> Vec<TopologicalQuadTrace> {
+    items
+        .iter()
+        .copied()
+        .map(|vertices| TopologicalQuadTrace { vertices })
+        .collect()
+}
+
+fn components(
+    items: &[Vec<(crate::Coord, usize)>],
+    features: &[OrientedFeature<2>],
+) -> Vec<TopologicalComponentTrace> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(index, labels)| TopologicalComponentTrace {
+            index,
+            labels: labels
+                .iter()
+                .map(|&(coord, feature_index)| TopologicalLabelTrace {
+                    u: coord.u,
+                    v: coord.v,
+                    feature_index,
+                    source_index: features[feature_index].point.source_index,
+                    residual_px: None,
+                })
+                .collect(),
+            fit: None,
+        })
+        .collect()
 }

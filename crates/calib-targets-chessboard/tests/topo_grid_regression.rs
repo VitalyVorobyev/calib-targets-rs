@@ -181,12 +181,12 @@ fn topo_grid_manifest_gates_hold() {
             }
             let trace = trace_topological(&default_corners, &params)
                 .unwrap_or_else(|e| panic!("{} diagnostic trace: {e}", case.path));
-            let total_labelled: usize = trace.components.iter().map(|c| c.labels.len()).sum();
+            let total_labelled: usize = trace.final_components.iter().map(|c| c.labels.len()).sum();
             assert!(
-                trace.components.len() >= gate.min_trace_components,
+                trace.final_components.len() >= gate.min_trace_components,
                 "{} diagnostic trace components={} < {}",
                 case.path,
-                trace.components.len(),
+                trace.final_components.len(),
                 gate.min_trace_components
             );
             assert!(

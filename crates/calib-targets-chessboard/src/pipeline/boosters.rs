@@ -6,7 +6,7 @@
 //!
 //! The structural skeleton (cell enumeration, KD-tree, per-cell
 //! attachment ladder, fixed-point iteration) lives in
-//! [`projective_grid::shared::fill::fill_grid_holes`]; this module
+//! [`projective_grid::expert::fill::fill_grid_holes`]; this module
 //! wraps it with a chessboard-specific [`SquareAttachPolicy`] that adds:
 //!
 //! - **Weak-cluster rescue**: admit `NoCluster` corners whose
@@ -24,9 +24,10 @@ use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::ChessboardParams;
 use calib_targets_core::AxisEstimate;
 use nalgebra::Point2;
-use projective_grid::shared::fill::{fill_grid_holes, FillParams};
-use projective_grid::shared::grow::GrowResult;
-use projective_grid::shared::grow::{Admit, FillEdgeCtx, LabelledNeighbour, SquareAttachPolicy};
+use projective_grid::expert::attachment::{
+    Admit, FillEdgeCtx, GrowResult, LabelledNeighbour, SquareAttachPolicy,
+};
+use projective_grid::expert::fill::{fill_grid_holes, FillParams};
 use std::collections::{HashMap, HashSet};
 
 /// Diagnostic returned by the recall-booster stage.

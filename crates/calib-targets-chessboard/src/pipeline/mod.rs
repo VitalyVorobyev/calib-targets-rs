@@ -4,7 +4,8 @@
 //!
 //! - `projective-grid`, which is image-free and labels connected
 //!   quad-mesh components from oriented features (positions + per-corner
-//!   axis hints) via [`detect_grid_all`](projective_grid::detect_grid_all);
+//!   axis hints) via
+//!   [`assemble_oriented2_components`](projective_grid::expert::square::assemble_oriented2_components);
 //! - `calib-targets-chessboard`, which owns ChESS corner filtering, recall
 //!   boosters, final canonicalisation, and the public
 //!   [`ChessboardDetection`](crate::ChessboardDetection) type.
@@ -15,16 +16,12 @@
 //! optional `tracing` feature to time the same functions rather than a
 //! second timed implementation.
 //!
-//! Production [`detect_all_topological`] now calls
-//! [`projective_grid::detect_grid_all`], the sole square assembler.
-//! The facade runs the shared local-geometry component merge itself, so
-//! `report.solutions` arrives already merged. The adapter consumes those
-//! merged labelled components directly and feeds them to the chessboard's
-//! own recovery pipeline (boosters, post-recovery merge, geometry check).
-//! Validation and over-residual drops in the facade are disabled
-//! (tolerances pushed to `+inf`) because the chessboard owns its own
-//! validation downstream; the facade is asked solely to produce labelled
-//! `(coord -> source_index)` components and to reunite them in label space.
+//! Production [`detect_all_topological`] calls the curated projective-grid
+//! detector-builder seam. It stops after the shared local-geometry component
+//! merge and preserves the walk's axis-slot frame, then feeds those components
+//! to the chessboard's own recovery and validation pipeline. Ordinary
+//! `projective-grid` callers continue through fit and public coordinate
+//! normalization instead.
 //!
 //! The facade merge runs with `LocalMergeParams::default()`. The
 //! chessboard's `tuning.component_merge` is `LocalMergeParams::default()`
@@ -32,9 +29,9 @@
 //! merged components — and hence production output — are byte-identical to
 //! the prior chessboard-side merge.
 //!
-//! `trace_topological` uses the same `projective-grid` production
-//! detector path and returns a compact serializable trace of the final
-//! labelled components.
+//! `trace_topological_detection` observes every generic stage and continues
+//! that same result through recovery and the public output; it never runs a
+//! parallel reconstruction.
 //!
 //! # Submodules
 //!
@@ -60,33 +57,44 @@ mod output;
 mod recover;
 mod types;
 
-use crate::corner::ChessCorner;
-use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
-use projective_grid::detect::ValidateParams as NextValidateParams;
+use crate::corner::{ChessCorner, CornerAug};
 #[cfg(feature = "diagnostics")]
-use projective_grid::topological::trace::{
+use crate::corner::{ClusterLabel, CornerStage};
+use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
+#[cfg(feature = "diagnostics")]
+use projective_grid::diagnostics::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
-use projective_grid::{
-    detect_grid_all, DetectionParams as NextDetectionParams, DetectionRequest, Evidence,
-    LatticeKind, OrientedFeature, PointFeature, RecoverySchedule,
+use projective_grid::expert::square::assemble_oriented2_components;
+use projective_grid::expert::validation::ValidationParams as NextValidateParams;
+use projective_grid::expert::{
+    DetectionTuning as NextDetectionTuning, RecoverySchedule,
     TopologicalParams as NextTopologicalParams,
 };
+use projective_grid::{DetectionParams as NextDetectionParams, OrientedFeature, PointFeature};
 use std::collections::HashMap;
 
 use crate::params::ChessboardParams;
 
 use self::cluster::ClusterCenters;
-use self::inputs::topological_inputs;
+use self::inputs::{topological_inputs, TopologicalInputs};
 use self::recover::{build_topological_detections, clustered_augs, recover_topological_components};
 
+type LabelledComponent = HashMap<(i32, i32), usize>;
+type LabelledComponents = Vec<LabelledComponent>;
+type FinishedTopological = (Vec<ChessboardDetection>, Option<LabelledComponents>);
+
+#[cfg(feature = "diagnostics")]
+pub use types::{ChessboardClusterTrace, ChessboardFeatureTrace};
 pub use types::{ChessboardCorner, ChessboardDetection};
+#[cfg(feature = "diagnostics")]
+pub use types::{ChessboardLabelTrace, ChessboardStageTrace, ChessboardTopologicalTrace};
 
 /// Largest 1σ axis uncertainty (radians) at which a corner is still allowed to
 /// take part in the axis-driven grid stages.
 ///
 /// This is *derived*, not tuned: it is exactly the topological builder's own
-/// [`axis_align_tol_rad`](projective_grid::TopologicalParams::axis_align_tol_rad),
+/// [`axis_align_tol_rad`](projective_grid::expert::TopologicalParams::axis_align_tol_rad),
 /// the angular window inside which an edge counts as aligned with a corner's
 /// axis. A corner whose own axis direction is less certain than that window
 /// cannot answer the question the cell test asks of it — the classification it
@@ -111,7 +119,7 @@ pub use types::{ChessboardCorner, ChessboardDetection};
 /// inside `projective-grid` and shared with non-chessboard lattice callers.
 /// This gate is the chessboard's stricter admission rule and is applied first.
 ///
-/// [`max_axis_sigma_rad`]: projective_grid::TopologicalParams::max_axis_sigma_rad
+/// [`max_axis_sigma_rad`]: projective_grid::expert::TopologicalParams::max_axis_sigma_rad
 pub(super) fn axis_admission_sigma(params: &ChessboardParams) -> f32 {
     params.effective_tuning().topological.axis_align_tol_rad
 }
@@ -125,13 +133,7 @@ pub(super) fn axis_admission_sigma(params: &ChessboardParams) -> f32 {
 /// chessboard owns its own geometry check downstream — the migration
 /// must preserve the labelled components produced by the topological
 /// graph builder.
-fn detection_params_for_topological(
-    topological: &NextTopologicalParams,
-    clustered_centers: Option<ClusterCenters>,
-) -> NextDetectionParams {
-    let mut topo = *topological;
-    topo.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
-
+fn detection_params_for_topological(topological: NextTopologicalParams) -> NextDetectionParams {
     // ChESS axes are accurate enough that the walk alone reaches full recall,
     // and the chessboard owns its own validation + booster recovery downstream.
     // Disable the facade's post-grow validation, post-fit residual drop, and
@@ -141,13 +143,14 @@ fn detection_params_for_topological(
     // downstream stages.
     let validate = NextValidateParams::default()
         .with_line_tol_rel(f32::INFINITY)
-        .with_local_h_tol_rel(f32::INFINITY)
-        .with_edge_length_band_rel(f32::INFINITY);
+        .with_local_h_tol_rel(f32::INFINITY);
+    let advanced = NextDetectionTuning::default()
+        .with_topological(topological)
+        .with_validation(validate)
+        .with_recovery(RecoverySchedule::Off);
     NextDetectionParams::default()
-        .with_topological(topo)
-        .with_validate(validate)
+        .with_advanced(advanced)
         .with_max_residual_px(f32::INFINITY)
-        .with_recovery(RecoverySchedule::Off)
 }
 
 /// Build the new-crate oriented-feature slice from the chessboard's
@@ -175,6 +178,65 @@ fn build_oriented_features(
         .collect()
 }
 
+struct PreparedTopological {
+    inputs: TopologicalInputs,
+    base_augs: Vec<CornerAug>,
+    clustered_centers: Option<ClusterCenters>,
+    features: Vec<OrientedFeature<2>>,
+    component_params: NextTopologicalParams,
+    grid_params: NextDetectionParams,
+}
+
+fn prepare_topological(
+    corners: &[ChessCorner],
+    params: &ChessboardParams,
+) -> Option<PreparedTopological> {
+    if corners.is_empty() {
+        return None;
+    }
+    let (base_augs, clustered_centers) = clustered_augs(corners, params);
+    let inputs = topological_inputs(corners, params);
+    if inputs.usable_count < params.min_labeled_corners {
+        return None;
+    }
+    let mut component_params = params.effective_tuning().topological;
+    component_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
+    let grid_params = detection_params_for_topological(component_params);
+    let features = build_oriented_features(&inputs.positions, &inputs.axes);
+    Some(PreparedTopological {
+        inputs,
+        base_augs,
+        clustered_centers,
+        features,
+        component_params,
+        grid_params,
+    })
+}
+
+fn finish_topological(
+    merged_components: LabelledComponents,
+    prepared: &PreparedTopological,
+    params: &ChessboardParams,
+    capture_recovered: bool,
+) -> FinishedTopological {
+    let recovered = recover_topological_components(
+        &merged_components,
+        &prepared.inputs.positions,
+        &prepared.base_augs,
+        prepared.clustered_centers,
+        params,
+    );
+    let captured = capture_recovered.then(|| recovered.clone());
+    let detections = build_topological_detections(
+        recovered,
+        &prepared.inputs.positions,
+        &prepared.base_augs,
+        prepared.clustered_centers,
+        params,
+    );
+    (detections, captured)
+}
+
 /// Run the topological pipeline and return one [`ChessboardDetection`] per
 /// surviving labelled component.
 #[cfg_attr(
@@ -189,9 +251,9 @@ pub(crate) fn detect_all_topological(
     corners: &[ChessCorner],
     params: &ChessboardParams,
 ) -> Vec<ChessboardDetection> {
-    if corners.is_empty() {
+    let Some(prepared) = prepare_topological(corners, params) else {
         return Vec::new();
-    }
+    };
 
     // The topological builder consumes the per-corner ChESS axis estimates
     // carried by each `ChessCorner` directly: clustering, Delaunay admission,
@@ -200,16 +262,7 @@ pub(crate) fn detect_all_topological(
     // Hoist clustering: compute centers once up front to gate Delaunay
     // admission and reuse the same `(augs, centers)` pair for booster
     // recovery (no re-clustering), avoiding spurious-edge admissions.
-    let (base_augs, clustered_centers) = clustered_augs(corners, params);
-
-    let inputs = topological_inputs(corners, params);
-    if inputs.usable_count < params.min_labeled_corners {
-        return Vec::new();
-    }
-
-    let tuning = params.effective_tuning();
-
-    // Build the new-crate input shape. `tuning.topological` carries
+    // Build the projective-grid input shape. `tuning.topological` carries
     // the chessboard tuning field names; `detection_params_for_topological` translates
     // them into `projective-grid`'s sub-config layout.
     //
@@ -218,67 +271,44 @@ pub(crate) fn detect_all_topological(
     // `tuning.cluster_tol_deg` (12°) — the tighter literal value
     // regresses recovery on foreshortened boards (e.g. Gemini2).
     //
-    // The facade's recovery + post-fit residual drop are disabled here (the
-    // chessboard owns its own validation + booster recovery downstream); see
-    // `detection_params_for_topological`.
-    let next_params = detection_params_for_topological(&tuning.topological, clustered_centers);
-    // The grid builder consumes `Evidence::Oriented2` built from the
-    // ChESS-derived `inputs.axes` over the `inputs.positions` point cloud.
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
-    let report = detect_grid_all(DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&next_features),
-        None,
-        next_params,
-    ));
-    let report = match report {
-        Ok(r) => r,
-        // `InsufficientEvidence` / `DegenerateGeometry` /
-        // `UnsupportedCombination` all collapse to "no components". The
-        // topological path maps these cases to "no components".
-        Err(_) => return Vec::new(),
-    };
-    if report.solutions.is_empty() {
+    // The expert assembly seam stops at component merge because the chessboard
+    // owns pattern-specific validation and booster recovery downstream.
+    let components =
+        match assemble_oriented2_components(&prepared.features, &prepared.component_params) {
+            Ok(components) => components,
+            // `InsufficientEvidence` / `DegenerateGeometry` /
+            // `UnsupportedCombination` all collapse to "no components". The
+            // topological path maps these cases to "no components".
+            Err(_) => return Vec::new(),
+        };
+    if components.is_empty() {
         return Vec::new();
     }
 
-    // `projective_grid::detect_grid_all` runs the local-geometry
-    // component merge inside the topological facade itself, so
-    // `report.solutions` already arrives merged.
-    // The adapter therefore consumes the facade-merged components directly:
+    // The projective-grid expert seam runs the local-geometry component merge,
+    // so the returned components already arrive merged. The adapter consumes
+    // them directly:
     // the previous chessboard-side `merge_components_local` call would have
     // double-merged and produced measured false attachments. Both merges
     // moved together in one commit; the facade merge runs with
     // `LocalMergeParams::default()`, which equals the chessboard's
     // `tuning.component_merge` for every shipping config (the field is never
     // overridden), so production output is byte-identical.
-    let merged_components: Vec<HashMap<(i32, i32), usize>> = report
-        .solutions
+    let merged_components: LabelledComponents = components
         .iter()
-        .map(|sol| {
-            sol.grid
-                .entries
+        .map(|component| {
+            component
+                .entries()
                 .iter()
-                .map(|e| ((e.coord.u, e.coord.v), e.source_index))
+                .map(|entry| {
+                    let coord = entry.coord();
+                    ((coord.u, coord.v), entry.source_index())
+                })
                 .collect()
         })
         .collect();
 
-    let final_components = recover_topological_components(
-        &merged_components,
-        &inputs.positions,
-        &base_augs,
-        clustered_centers,
-        params,
-    );
-
-    build_topological_detections(
-        final_components,
-        &inputs.positions,
-        &base_augs,
-        clustered_centers,
-        params,
-    )
+    finish_topological(merged_components, &prepared, params, false).0
 }
 
 /// Run the same topological input adaptation as `detect_all_topological`
@@ -303,13 +333,103 @@ pub fn trace_topological(
     corners: &[ChessCorner],
     params: &ChessboardParams,
 ) -> Result<TopologicalTrace, TopologicalTraceError> {
-    // Mirror the production path: trace the single `Oriented2` evidence path
-    // built from the ChESS axes carried by each corner. This keeps the
-    // diagnostic trace consistent with production.
-    let inputs = topological_inputs(corners, params);
-    let (_augs, clustered_centers) = clustered_augs(corners, params);
-    let mut topo_params = params.effective_tuning().topological;
-    topo_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
-    let next_features = build_oriented_features(&inputs.positions, &inputs.axes);
-    build_grid_topological_trace(&next_features, topo_params)
+    trace_topological_detection(corners, params).map(|trace| trace.projective_grid)
+}
+
+/// Run one exact generic-grid trace and continue that same result through the
+/// chessboard recovery and final geometry gate.
+#[cfg(feature = "diagnostics")]
+pub fn trace_topological_detection(
+    corners: &[ChessCorner],
+    params: &ChessboardParams,
+) -> Result<ChessboardTopologicalTrace, TopologicalTraceError> {
+    let prepared = prepare_topological(corners, params).ok_or_else(|| {
+        TopologicalTraceError::DetectionFailed {
+            message: "chessboard admission produced too few usable corners".to_owned(),
+        }
+    })?;
+    let grid_trace =
+        build_grid_topological_trace(&prepared.features, None, prepared.grid_params.clone())?;
+    let generic_components: LabelledComponents = grid_trace
+        .merged_components
+        .iter()
+        .map(|component| {
+            component
+                .labels
+                .iter()
+                .map(|label| ((label.u, label.v), label.feature_index))
+                .collect()
+        })
+        .collect();
+    let generic_indices: std::collections::HashSet<usize> = generic_components
+        .iter()
+        .flat_map(|component| component.values().copied())
+        .collect();
+    let max_axis_sigma = axis_admission_sigma(params);
+    let feature_trace: Vec<ChessboardFeatureTrace> = corners
+        .iter()
+        .zip(prepared.base_augs.iter())
+        .enumerate()
+        .map(|(corner_index, (corner, aug))| {
+            let strength_admitted = corner.strength >= params.min_corner_strength;
+            let sigma_admitted = corner.axes[0].sigma.max(corner.axes[1].sigma) <= max_axis_sigma;
+            let prefilter_admitted = strength_admitted && sigma_admitted;
+            let cluster = match (&aug.stage, aug.label) {
+                (_, Some(ClusterLabel::Canonical)) => ChessboardClusterTrace::Canonical,
+                (_, Some(ClusterLabel::Swapped)) => ChessboardClusterTrace::Swapped,
+                (CornerStage::NoCluster { .. }, None) | (CornerStage::Strong, None) => {
+                    ChessboardClusterTrace::Rejected
+                }
+                _ => ChessboardClusterTrace::NotAdmitted,
+            };
+            ChessboardFeatureTrace {
+                corner_index,
+                strength_admitted,
+                sigma_admitted,
+                prefilter_admitted,
+                cluster,
+            }
+        })
+        .collect();
+    let (detections, recovered) = finish_topological(generic_components, &prepared, params, true);
+    let recovered = recovered.unwrap_or_default();
+    let recovered_indices: std::collections::HashSet<usize> = recovered
+        .iter()
+        .flat_map(|component| component.values().copied())
+        .collect();
+    let final_indices: std::collections::HashSet<usize> = detections
+        .iter()
+        .flat_map(|detection| detection.corners.iter().map(|corner| corner.input_index))
+        .collect();
+    let mut recovery_additions: Vec<usize> = recovered_indices
+        .difference(&generic_indices)
+        .copied()
+        .collect();
+    recovery_additions.sort_unstable();
+    let mut final_drops: Vec<usize> = recovered_indices
+        .difference(&final_indices)
+        .copied()
+        .collect();
+    final_drops.sort_unstable();
+    let recovered_components = recovered
+        .into_iter()
+        .map(|component| {
+            let mut labels: Vec<ChessboardLabelTrace> = component
+                .into_iter()
+                .map(|((u, v), corner_index)| ChessboardLabelTrace { u, v, corner_index })
+                .collect();
+            labels.sort_by_key(|label| (label.v, label.u, label.corner_index));
+            labels
+        })
+        .collect();
+    Ok(ChessboardTopologicalTrace {
+        projective_grid: grid_trace,
+        chessboard: ChessboardStageTrace {
+            features: feature_trace,
+            recovered_components,
+            recovery_additions,
+            final_drops,
+        },
+        detections,
+    })
 }

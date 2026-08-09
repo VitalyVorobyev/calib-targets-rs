@@ -59,20 +59,23 @@ parity, recall, and geometry logic on the way out.
 | 3. Triangle-pair to quad merge | `projective-grid` | Generic cell assembly |
 | 4. Quad filtering | `projective-grid` | Generic degeneracy / scale gates |
 | 5. Topological walk (flood-fill `(i, j)`) | `projective-grid` | Generic labelling |
-| 6. Per-component validation + projective fit | `projective-grid` | Generic geometry check (disabled by the chessboard wrapper — see below) |
-| 7. Orchestration (sort, build rejected set) | `projective-grid` | Generic multi-component bookkeeping |
-| Component merge + parity align + boosters + final geometry check | `calib-targets-chessboard` | Needs parity, `CornerAug`, and the chessboard booster stack |
+| 6. Generic component merge | `projective-grid` | Reunites disconnected patches using target-agnostic local geometry |
+| 7a. Public validation + projective fit | `projective-grid` | Ordinary facade path: canonical labels, generic geometry checks, mandatory fit |
+| 7b. Detector-builder handoff | `projective-grid::expert::square` | Pattern-specific path: merged axis-slot components, before generic validation/fit |
+| 8. Public orchestration (sort, diagnostics attribution) | `projective-grid` | Generic multi-component bookkeeping |
+| Parity align + boosters + final geometry check | `calib-targets-chessboard` | Needs parity, `CornerAug`, and the chessboard booster stack |
 
-The chessboard wrapper **disables** the generic validation and residual
-gates (Stage 6) by pushing their tolerances to infinity, because it owns
-its own mandatory geometry check downstream. The generic core is asked
-solely to produce labelled `(coord -> corner)` components.
+The chessboard wrapper takes branch 7b through
+`expert::square::assemble_oriented2_components`. It does not run a generic fit
+and does not canonicalize the axis slots before chessboard parity/recovery;
+ordinary `detect_grid*` callers take branch 7a. Both branches execute the same
+topology and component merge—there is no duplicated chessboard grid builder.
 
 ## Steps
 
 ### Chessboard input adaptation (chessboard-specific)
 
-`calib_targets_chessboard::topological::inputs::topological_inputs`
+`calib-targets-chessboard/src/pipeline/inputs.rs::topological_inputs`
 
 ChESS corners are converted into `projective-grid`'s image-free input:
 parallel vectors of pixel positions and `[AxisEstimate; 2]` per corner.
@@ -102,7 +105,7 @@ fit-residual ratio (`fit_rms <= max_fit_rms_ratio * contrast`), which
 chess-corners 1.0 made inexpressible by removing both scalars.
 
 Separately,
-`calib_targets_chessboard::topological::recovery::clustered_augs` runs
+`calib-targets-chessboard/src/pipeline/recover.rs::clustered_augs` runs
 the chessboard's orientation clustering once, up front. The resulting two
 global grid-direction centers are handed to the generic core as
 `TopologicalParams::axis_cluster_centers`, and the same `(augs, centers)`
@@ -110,9 +113,9 @@ pair is reused later for booster recovery so clustering is not repeated.
 
 ### Step 0 — Axis cache + usability prefilter (generic)
 
-`projective_grid::detect::square::topological::axis::build_axis_caches`,
-then `build_usable_mask` and `axes_pass_cluster_gate` in
-`.../topological/mod.rs`
+`projective-grid/src/topological/axis.rs::build_axis_caches`, then
+`build_usable_mask` and `axes_pass_cluster_gate` in
+`topological/square_detector.rs`
 
 Each feature's two axis angles and a per-slot **informative** flag are
 precomputed once. An axis is informative when its `sigma` is `None`
@@ -130,8 +133,8 @@ direction before they ever reach the triangulation.
 
 ### Step 1 — Delaunay triangulation (generic)
 
-`projective_grid::detect::square::topological::delaunay::triangulate`,
-driven by `triangulate_usable` in `.../topological/mod.rs`
+`projective-grid/src/topological/delaunay.rs::triangulate`, driven by
+`triangulate_usable` in `topological/square_detector.rs`
 
 Only the usable features are triangulated; the resulting triangle vertex
 indices are remapped back into the global feature index space so every
@@ -145,7 +148,7 @@ markers.
 
 ### Step 2 — Edge classification: Grid / Diagonal / Spurious (generic)
 
-`projective_grid::detect::square::topological::classify::classify_all_edges`
+`projective-grid/src/topological/classify.rs::classify_all_edges`
 
 This is the image-free replacement for the paper's color cell test, and
 the heart of the method. For each directed Delaunay half-edge from corner
@@ -171,7 +174,7 @@ chessboard wrapper adds the parity discipline later.
 
 ### Step 3 — Triangle-pair to quad merge (generic)
 
-`projective_grid::detect::square::topological::quads::merge_triangle_pairs`
+`projective-grid/src/topological/quads.rs::merge_triangle_pairs`
 
 Delaunay arbitrarily splits each lattice cell into two triangles along a
 diagonal. This step reverses that: a triangle with exactly one Diagonal
@@ -188,7 +191,7 @@ geometric test — consistent with the paper's topology-first principle.
 
 ### Step 4 — Quad filtering (generic)
 
-`projective_grid::detect::square::topological::filter::filter_quads`
+`projective-grid/src/topological/filter.rs::filter_quads`
 
 Three gates, in order:
 
@@ -214,7 +217,7 @@ opposing pairs scale together.
 
 ### Step 5 — Topological walk: flood-fill `(i, j)` (generic)
 
-`projective_grid::detect::square::topological::walk::label_components`
+`projective-grid/src/topological/walk.rs::label_components`
 
 Each connected quad-mesh component is labelled independently. A seed quad
 gets the canonical labels `(0,0), (1,0), (1,1), (0,1)` clockwise. Labels
@@ -229,41 +232,52 @@ are consistent by construction rather than by local geometric guessing.
 Rebasing satisfies the workspace's hard "non-negative grid labels"
 invariant.
 
-### Step 6 — Per-component validation + projective fit (generic)
+### Step 6 — Generic component merge
 
-`build_component_solution` and `fit_and_residuals` in
-`.../topological/mod.rs`, calling the shared
-`projective_grid::validate::square::validate`
+`merge_walk_components` in `topological/square_detector.rs`, calling the
+shared `merge_components_local` implementation
 
-For each component the shared post-grow validation runs three
-pattern-agnostic checks — row/column line collinearity, per-corner local
-homography residual, and per-edge length band — and blacklists outliers.
-A projective transform is then fitted from grid coordinates to pixels;
+Disconnected quad-walk patches are aligned and merged using local position and
+cell-scale agreement. The merge deliberately does not use the global
+projective fit, so mild radial distortion does not prevent compatible patches
+from joining.
+
+### Step 7a — Public validation + projective fit
+
+`build_component_solution` and `run_fit_with_residual_drop` in
+`topological/square_detector.rs`, calling the shared validation and fit kernels
+
+For each component the shared post-grow validation runs row/column line
+collinearity and per-corner local-homography checks; its optional edge-shape
+gate is disabled by default. The labels are canonicalized to image axes before
+a projective transform is fitted from grid coordinates to pixels;
 corners whose reprojection residual exceeds `max_residual_px` are dropped
 and the transform is refit once.
 
 *Why:* an independent geometric gate over the labelled set, catching
 gross mislabels that survived the topological merge.
 
-> **Chessboard wrapper note.** When the chessboard path drives this core,
-> it sets `line_tol`, `local_h_tol`, `edge_length_band`, and
-> `max_residual_px` to infinity
-> (`calib_targets_chessboard::topological::detection_params_for_topological`),
-> disabling this entire step. The chessboard owns its own mandatory
-> geometry check downstream, so the core is asked only for labelled
-> components.
+### Step 7b — Detector-builder handoff
 
-### Step 7 — Orchestration (generic)
+`projective_grid::expert::square::assemble_oriented2_components`
 
-`detect_square_oriented2_topological_all` in `.../topological/mod.rs`,
-reached through `projective_grid::detect_grid_all`
+Pattern-specific detectors may stop immediately after Step 6. The returned
+components retain the walk's axis-slot frame and stable caller source indices;
+they deliberately have no generic fit or public-frame promise. The chessboard
+uses this seam because parity alignment and its recovery policy interpret those
+axis slots before applying their own final geometry gate.
+
+### Step 8 — Orchestration (generic)
+
+`detect_square_oriented2_all` in `topological/square_detector.rs`, reached
+through `projective_grid::detect_grid_all` on the ordinary facade branch
 
 Component solutions are sorted by labelled-corner count descending (ties
 broken by smallest source index, for determinism). Every feature that no
 component admitted is collected into a global rejected/unlabelled set and
-attached to the largest solution, so single-component callers see a
-complete picture. `detect_grid` returns only the largest component;
-`detect_grid_all` returns all of them.
+attached to the largest diagnostics record. Ordinary `GridDetection` values
+contain only accepted labels and their mandatory fit. `detect_grid` returns
+only the largest component; `detect_grid_all` returns all of them.
 
 *Why:* the topological path can legitimately yield several disconnected
 grids (e.g. one board split by occlusion); the orchestrator preserves
@@ -278,25 +292,22 @@ grid.
 `detect_all_topological` in
 `calib_targets_chessboard::topological`
 
-The generic core stops at labelled components. The chessboard wrapper
-then:
+The shared topology branch stops at merged labelled components. The chessboard
+wrapper then:
 
-1. Runs a first **local-geometry component merge**
-   (`projective_grid::detect::advanced::square::component_merge::merge_components_local`)
-   — local geometry only, no global homography, so it tolerates radial
-   distortion that would break a global fit.
-2. Re-clusters the labelled corners' axes and **parity-aligns** the
+1. Reuses the orientation clusters computed during input preparation and
+   **parity-aligns** the
    topological labels against the chessboard parity convention
    (`(i + j) % 2`) — the chessboard-specific discipline the generic
    classifier deliberately omits.
-3. Marks the component and runs the **recall boosters**
+2. Marks the component and runs the **recall boosters**
    (`calib_targets_chessboard::boosters::apply_boosters_with_directional_edge_scale`)
    — interior gap fill and line extrapolation — under the same axis /
    parity / edge gates the topological walk uses. Boosters use the larger
    directional median as their edge scale, while the final reported
    `cell_size` stays on the conservative all-edge median.
-4. Merges boosted components by shared corner identity, runs a **second**
-   local component merge, then **canonicalises** each surviving component:
+3. Merges boosted components by shared corner identity, runs a local geometry
+   component merge, then **canonicalises** each surviving component:
    a mandatory geometry check
    (`run_geometry_check`), rebase to non-negative labels, axis-orientation
    canonicalisation, and sort. Detections are ordered by labelled count
@@ -308,6 +319,26 @@ stay out of the generic crate. The geometry check can only *drop*
 labelled corners — it never adds wrong labels — preserving the
 chessboard precision contract (wrong `(i, j)` labels are unrecoverable;
 missing corners are acceptable).
+
+## Reproducible diagnostics and performance
+
+`scripts/topological_campaign.py` is the supported local evidence driver. A
+single TOML file (`scripts/topological_campaign.toml`) selects explicit input
+images, the ordinary ChESS/chessboard settings, an optional nested expert
+topological block, and warmup/repeat counts. Run:
+
+```text
+.venv/bin/python scripts/topological_campaign.py all
+```
+
+The overlay trace observes the same Rust execution that continues through
+chessboard recovery and the final public output. The renderer does not
+triangulate, classify, merge, or fit in Python. `trace.json` beside every image
+contains exact stage state; the quality report evaluates the generic and final
+checkpoints independently with one-to-one 3 px matching followed by the best
+D4 plus integer-translation label alignment. The release timing report records
+p50/p95/mean/max together with the CPU, compiler, Git revision, dirty-tree
+digest, and every named pipeline span.
 
 ## Known limits
 

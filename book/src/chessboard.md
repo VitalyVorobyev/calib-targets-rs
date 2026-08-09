@@ -169,24 +169,15 @@ on `(cos 2θ, sin 2θ)`), and label each corner `Canonical` (axes[0] matches
 > when votes straddle the 0°/π seam. Doubling the angle wraps both halves
 > together; the inverse halving gives a stable mean.
 
-The **DiskFit slot-coherence repair** (`slot_coherence.rs`) then runs: when
-the upstream detector's `DiskFit` mode uniformly reverses a corner's
-`(axes[0], axes[1])` ordering, a gross-imbalance gate fires, the clustered
-corners are BFS-2-coloured at cell spacing, and the two `AxisEstimate`
-slots of the disagreeing corners are swapped. A bipartite-quality gate
-aborts the pass unless the 2-colouring is essentially perfect, so it can
-only add recall, never a wrong label. Under `RingFit` it is a no-op.
-
 ### Stage 3 — Topological grid (`mod.rs` → `projective-grid`)
 
 Hand the oriented features (positions + dual axes) and the cluster centres
 (as an axis hint) to the [topological grid finder](algo_topological_grid.md)
-(via `detect_grid_all` — the sole grid builder, no algorithm enum): Delaunay
+(via `expert::square::assemble_oriented2_components`): Delaunay
 triangulation → axis-driven edge classification → triangle-pair → quad
 merge → flood-fill `(i, j)` walk → the facade's `merge_components_local`.
-The facade's *own* post-build validation / residual drop / recovery are
-disabled here (tolerances at `+∞`, recovery `Off`) — the chessboard owns
-those downstream.
+The expert seam stops at that merge and preserves the topology axis-slot
+frame; chessboard parity/recovery and its final validation run downstream.
 
 ### Stage 4 — Recover components (`recover.rs` + `boosters.rs`)
 
@@ -289,8 +280,7 @@ converges.
 ## 6. Parameters
 
 `ChessboardParams` is `#[non_exhaustive]` and splits into a small **stable
-core** — `graph_build_algorithm` (single-variant `Topological`; retained as a
-reserved config seam), `min_labeled_corners`, `max_components`,
+core** — `min_labeled_corners`, `max_components`,
 `min_corner_strength` — plus an opt-in, unstable `ChessboardAdvancedTuning` sub-struct
 (`ChessboardParams::advanced`) holding the per-stage tuning knobs. Build with
 `Default::default()` and overwrite the stable fields, attach advanced
@@ -300,15 +290,14 @@ looser) suitable for `detect_chessboard_best`-style sweeps.
 
 `advanced` is `Option`-wrapped and serialized as a nested `"advanced"`
 object — it is **not** flattened, and is omitted entirely when unset (in
-which case detection runs on the defaults). The four stable knobs stay
+which case detection runs on the defaults). The three stable knobs stay
 top-level JSON keys. **`ChessboardAdvancedTuning`'s fields are not covered by
 semver** and may change between minor versions. The `Field` column below
-shows the access path: top-level for the four stable knobs,
+shows the access path: top-level for the three stable knobs,
 `advanced.<knob>` for the rest.
 
 | Field | Default | Stage | Purpose |
 |---|---|---|---|
-| `graph_build_algorithm` | `Topological` | — | Grid builder algorithm. `Topological` is the only value; the field is a reserved config seam. |
 | `max_components` | 3 | — | Cap for `detect_all`. |
 | `min_labeled_corners` | 8 | 5 | Minimum labelled corners to emit a `ChessboardDetection`. |
 | `min_corner_strength` | 33.0 | 1 | Minimum ChESS strength. 0 disables. (Stable.) |

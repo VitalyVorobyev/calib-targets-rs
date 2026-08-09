@@ -8,7 +8,7 @@ use calib_targets::detect::{detect_corners, DetectorConfig};
 use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 use projective_grid::{
-    detect_grid_all, DetectionParams, DetectionRequest, Evidence, GridSolution, LatticeKind,
+    detect_grid_all, DetectionParams, DetectionRequest, Evidence, GridDetection, LatticeKind,
     OrientedFeature, PointFeature,
 };
 
@@ -190,32 +190,29 @@ fn run_grid_engine(_params: &ChessboardParams, corners: &[ChessCorner]) -> Optio
             )
         })
         .collect();
-    let report = detect_grid_all(DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&feats),
-        None,
-        grid_params,
-    ));
-    let best = report
+    let detections = detect_grid_all(
+        DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&feats))
+            .with_params(grid_params),
+    );
+    let best = detections
         .ok()?
-        .solutions
         .into_iter()
-        .max_by_key(|s| s.grid.entries.len())?;
-    if best.grid.entries.is_empty() {
+        .max_by_key(|detection| detection.grid().entries().len())?;
+    if best.grid().entries().is_empty() {
         return None;
     }
     Some(grid_solution_to_baseline(&best))
 }
 
-/// Adapt a `projective-grid` [`GridSolution`] into the bench's
+/// Adapt a `projective-grid` [`GridDetection`] into the bench's
 /// [`BaselineImage`] shape so overlays + the wrong-label audit reuse unchanged.
 /// `image_position` is the pixel-center position; `(coord.u, coord.v)` are the
 /// lattice labels. The grid engine carries no per-corner score or cell size, so
 /// both are left at `0.0` (the head-to-head metric is `labelled_count`).
-fn grid_solution_to_baseline(sol: &GridSolution) -> BaselineImage {
+fn grid_solution_to_baseline(sol: &GridDetection) -> BaselineImage {
     let mut out: Vec<BaselineCorner> = sol
-        .grid
-        .entries
+        .grid()
+        .entries()
         .iter()
         .map(|e| BaselineCorner {
             i: e.coord.u,

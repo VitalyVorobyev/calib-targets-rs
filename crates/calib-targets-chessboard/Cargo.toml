@@ -28,7 +28,7 @@ default = []
 # `-marker`. The rich per-stage `DebugFrame` surface was retired with the
 # seed-and-grow builder; `trace_topological` is the topological builder's
 # sole diagnostic entry point.
-diagnostics = []
+diagnostics = ["projective-grid/diagnostics"]
 dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 

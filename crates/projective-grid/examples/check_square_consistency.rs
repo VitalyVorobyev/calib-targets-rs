@@ -29,6 +29,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ConsistencyParams::default(),
     );
     let report = check_consistency(request)?;
-    println!("passed: {}", report.passed);
+    println!("passed: {}", report.passed());
     Ok(())
 }

@@ -1,16 +1,14 @@
 use nalgebra::Point2;
 use projective_grid::{
-    detect_grid, Coord, CoordinateHypothesis, DetectionParams, DetectionRequest, Evidence,
-    EvidenceKind, GridError, GridTask, LatticeKind, LocalAxis, OrientedFeature, PointFeature,
+    detect_grid, DetectionRequest, Evidence, EvidenceKind, GridError, GridTask, LatticeKind,
+    LocalAxis, OrientedFeature, PointFeature,
 };
 
 fn point(idx: usize) -> PointFeature {
     PointFeature::new(idx, Point2::new(idx as f32, 0.0))
 }
 
-fn assert_unsupported(request: DetectionRequest<'_>, evidence: EvidenceKind) {
-    // Capture `lattice` before the request is consumed by `detect_grid`.
-    let lattice = request.lattice;
+fn assert_unsupported(request: DetectionRequest<'_>, lattice: LatticeKind, evidence: EvidenceKind) {
     let err = detect_grid(request).unwrap_err();
     assert_eq!(
         err,
@@ -58,30 +56,6 @@ fn square_oriented3_detection_is_typed_unsupported() {
             [axis, LocalAxis::new(1.0, None), LocalAxis::new(2.0, None)],
         ),
     ];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented3(&features),
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::Oriented3);
-}
-
-#[test]
-fn coordinate_hypothesis_detection_is_typed_unsupported() {
-    let features = [point(0), point(1), point(2), point(3)];
-    let hypotheses = [
-        CoordinateHypothesis::new(0, Coord::new(0, 0), None),
-        CoordinateHypothesis::new(1, Coord::new(1, 0), None),
-    ];
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::CoordinateHypotheses {
-            features: &features,
-            hypotheses: &hypotheses,
-        },
-        None,
-        DetectionParams::default(),
-    );
-    assert_unsupported(request, EvidenceKind::CoordinateHypotheses);
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented3(&features));
+    assert_unsupported(request, LatticeKind::Square, EvidenceKind::Oriented3);
 }

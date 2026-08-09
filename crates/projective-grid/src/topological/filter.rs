@@ -23,6 +23,15 @@ use nalgebra::Point2;
 use super::quads::Quad;
 use super::walk::{build_edge_index, connected_components};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FilterStage {
+    Topology,
+    Geometry,
+    CellScale,
+}
+
+type FilterObserver<'a> = dyn FnMut(FilterStage, &[Quad]) + 'a;
+
 #[inline]
 fn edge_len(positions: &[Point2<f32>], u: usize, v: usize) -> f32 {
     let pu = positions[u];
@@ -94,6 +103,26 @@ pub(super) fn filter_quads(
     edge_length_min_rel: f32,
     edge_length_max_rel: f32,
 ) -> Vec<Quad> {
+    filter_quads_observed(
+        quads,
+        positions,
+        opposing_edge_ratio_max,
+        edge_length_min_rel,
+        edge_length_max_rel,
+        None,
+    )
+}
+
+/// Run the production filters while optionally observing each exact output.
+/// The callback is diagnostics-only; no stage logic is duplicated.
+pub(super) fn filter_quads_observed(
+    quads: Vec<Quad>,
+    positions: &[Point2<f32>],
+    opposing_edge_ratio_max: f32,
+    edge_length_min_rel: f32,
+    edge_length_max_rel: f32,
+    mut observer: Option<&mut FilterObserver<'_>>,
+) -> Vec<Quad> {
     let degree = quad_degrees(&quads);
 
     #[cfg(feature = "tracing")]
@@ -104,6 +133,9 @@ pub(super) fn filter_quads(
     };
     #[cfg(not(feature = "tracing"))]
     let topology_filtered = apply_topological_quad_filter(quads, &degree);
+    if let Some(observer) = observer.as_mut() {
+        observer(FilterStage::Topology, &topology_filtered);
+    }
 
     #[cfg(feature = "tracing")]
     let geometry_filtered = {
@@ -117,9 +149,12 @@ pub(super) fn filter_quads(
     #[cfg(not(feature = "tracing"))]
     let geometry_filtered =
         apply_geometry_quad_filter(topology_filtered, positions, opposing_edge_ratio_max);
+    if let Some(observer) = observer.as_mut() {
+        observer(FilterStage::Geometry, &geometry_filtered);
+    }
 
     #[cfg(feature = "tracing")]
-    {
+    let scale_filtered = {
         let _span = tracing::debug_span!(
             "cell_size_quad_filter",
             num_quads_in = geometry_filtered.len()
@@ -131,14 +166,18 @@ pub(super) fn filter_quads(
             edge_length_min_rel,
             edge_length_max_rel,
         )
-    }
+    };
     #[cfg(not(feature = "tracing"))]
-    apply_per_component_cell_size_filter(
+    let scale_filtered = apply_per_component_cell_size_filter(
         geometry_filtered,
         positions,
         edge_length_min_rel,
         edge_length_max_rel,
-    )
+    );
+    if let Some(observer) = observer.as_mut() {
+        observer(FilterStage::CellScale, &scale_filtered);
+    }
+    scale_filtered
 }
 
 fn apply_topological_quad_filter(quads: Vec<Quad>, degree: &HashMap<usize, u32>) -> Vec<Quad> {

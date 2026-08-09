@@ -105,9 +105,8 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 
 `ChessboardParams` is a `#[non_exhaustive]` struct split into two surfaces:
 
-- a **stable core** of four fields covered by semver —
-  `graph_build_algorithm` (single-variant, `Topological`; retained as a
-  reserved config seam), `min_labeled_corners`, `max_components`, and
+- a **stable core** of three fields covered by semver —
+  `min_labeled_corners`, `max_components`, and
   `min_corner_strength` (see [Output gates](#output-gates) and Stage 1
   below);
 - an opt-in **`advanced`** sub-struct (`Option<Box<ChessboardAdvancedTuning>>`)

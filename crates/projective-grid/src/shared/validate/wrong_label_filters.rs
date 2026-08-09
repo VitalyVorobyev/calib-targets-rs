@@ -367,7 +367,8 @@ where
 /// maps a labelled corner index to its detector response strength. The
 /// returned set is the indices this pass newly peels (a subset disjoint
 /// from `already_dropped`).
-pub fn weak_leaf_peel<F>(
+#[cfg(test)]
+fn weak_leaf_peel<F>(
     labelled: &HashMap<(i32, i32), usize>,
     strength_of: F,
     already_dropped: &HashSet<usize>,
@@ -527,10 +528,9 @@ pub struct DropSet {
 /// Over a labelled `(i, j) → index` map, computes the union of:
 /// 1. line-collinearity + local-H residual outliers
 ///    ([`validate`](crate::shared::validate::validate));
-/// 2. topological wrong-label drops ([`topological_wrong_label_drops`]) when
-///    `apply_wrong_label_drops`;
-/// 3. the non-largest cardinally-connected component sweep
-///    ([`largest_component_filter`]) when `apply_largest_component`, computed
+/// 2. topological wrong-label drops when `apply_wrong_label_drops`;
+/// 3. the non-largest cardinally-connected component sweep when
+///    `apply_largest_component`, computed
 ///    over the union of (1)+(2) so a drop that splits a component removes the
 ///    orphaned half.
 ///

@@ -110,3 +110,72 @@ pub struct GeometryCheckTrace {
     /// surviving labelled count fell below `min_labeled_corners`.
     pub detection_refused: bool,
 }
+
+/// One exact label at a chessboard-specific diagnostics checkpoint.
+#[cfg(feature = "diagnostics")]
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct ChessboardLabelTrace {
+    /// First grid coordinate.
+    pub u: i32,
+    /// Second grid coordinate.
+    pub v: i32,
+    /// Index into the ChESS corner slice.
+    pub corner_index: usize,
+}
+
+/// Axis-cluster outcome for one ChESS corner at the input checkpoint.
+#[cfg(feature = "diagnostics")]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChessboardClusterTrace {
+    /// The corner failed strength or sigma admission and did not vote.
+    NotAdmitted,
+    /// The first axis slot matched the first global cluster center.
+    Canonical,
+    /// The second axis slot matched the first global cluster center.
+    Swapped,
+    /// The corner was admitted but neither assignment passed cluster tolerance.
+    Rejected,
+}
+
+/// Exact chessboard admission and clustering state for one input corner.
+#[cfg(feature = "diagnostics")]
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct ChessboardFeatureTrace {
+    /// Index into the ChESS corner slice.
+    pub corner_index: usize,
+    /// Whether the ChESS response passed `min_corner_strength`.
+    pub strength_admitted: bool,
+    /// Whether both axis uncertainties passed the derived sigma gate.
+    pub sigma_admitted: bool,
+    /// Whether both admission predicates passed.
+    pub prefilter_admitted: bool,
+    /// Exact clustering outcome after admission.
+    pub cluster: ChessboardClusterTrace,
+}
+
+/// Net chessboard-specific changes after generic projective-grid detection.
+#[cfg(feature = "diagnostics")]
+#[derive(Clone, Debug, Serialize)]
+pub struct ChessboardStageTrace {
+    /// Per-corner strength/sigma admission and cluster assignment.
+    pub features: Vec<ChessboardFeatureTrace>,
+    /// Components after chessboard recovery and its component merge.
+    pub recovered_components: Vec<Vec<ChessboardLabelTrace>>,
+    /// Corner indices absent from the generic result and present after recovery.
+    pub recovery_additions: Vec<usize>,
+    /// Recovered corner indices removed or refused by the final geometry gate.
+    pub final_drops: Vec<usize>,
+}
+
+/// Exact generic trace and the chessboard-specific continuation from one run.
+#[cfg(feature = "diagnostics")]
+#[derive(Clone, Debug, Serialize)]
+pub struct ChessboardTopologicalTrace {
+    /// Exact stages produced by `projective-grid`.
+    pub projective_grid: projective_grid::diagnostics::trace::TopologicalTrace,
+    /// Net recovery and final-gate changes.
+    pub chessboard: ChessboardStageTrace,
+    /// Public detections emitted by this same execution.
+    pub detections: Vec<ChessboardDetection>,
+}

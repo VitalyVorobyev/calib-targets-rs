@@ -49,12 +49,15 @@
 //!    immediately, so a corner index can only be claimed by one cell.
 
 mod common;
-pub mod global;
+#[cfg(test)]
+mod global;
 pub mod local;
 
+#[cfg(test)]
 pub use global::extend_via_global_homography;
 pub use local::extend_via_local_homography;
 
+#[cfg(test)]
 use crate::geometry::HomographyQuality;
 
 /// Parameters shared between [`ExtensionParams`] (global-H extension)
@@ -95,6 +98,7 @@ impl Default for ExtensionCommonParams {
 /// Tuning knobs for [`extend_via_global_homography`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
+#[cfg(test)]
 pub struct ExtensionParams {
     /// Shared knobs — search radius, ambiguity, iteration cap, residual
     /// gate. See [`ExtensionCommonParams`].
@@ -108,6 +112,7 @@ pub struct ExtensionParams {
     pub max_median_residual_rel: f32,
 }
 
+#[cfg(test)]
 impl Default for ExtensionParams {
     fn default() -> Self {
         Self {
@@ -167,6 +172,7 @@ pub struct ExtensionStats {
     /// Number of extension iterations actually run (≤ the configured cap).
     pub iterations: usize,
     /// `None` when the H wasn't fit (too few labels or solver failure).
+    #[cfg(test)]
     pub h_quality: Option<HomographyQuality<f32>>,
     /// `None` when the H wasn't fit. Pixel units.
     pub h_residual_median_px: Option<f32>,

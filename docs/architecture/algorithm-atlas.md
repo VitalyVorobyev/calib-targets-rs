@@ -82,7 +82,7 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Triangle-pair → quad | `pg topological/quads.rs` | triangles + classified edges → quads | Merge diagonal-sharing pairs into grid cells. | ✅ |
 | Quad filter | `pg topological/filter.rs::apply_topological_quad_filter` | quads + degrees → filtered quads | Reject degree>4, extreme parallelograms, out-of-band cell sizes. | ✅ |
 | Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + seed → `(i,j)→index` per component | Flood-fill integer labels, rebase min→(0,0). | ✅ |
-| Square orchestrator | `pg topological/mod.rs::detect_square_oriented2_topological_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
+| Square orchestrator | `pg topological/mod.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
 | Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + seed → axial labels | Axial flood-fill with parallelogram completion (no quad merge). | 📚 |
 | Hex orchestrator | `pg topological/hex_detect.rs::detect_hex_oriented3_topological_all` | features → labelled hex components | Hex analogue of the square orchestrator + D6 merge. | 📚 |

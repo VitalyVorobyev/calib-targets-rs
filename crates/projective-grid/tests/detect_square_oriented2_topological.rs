@@ -8,9 +8,10 @@
 use std::collections::HashSet;
 
 use nalgebra::{Matrix3, Point2, Projective2, Vector3};
+use projective_grid::expert::{DetectionTuning, TopologicalParams};
 use projective_grid::{
     detect_grid, Coord, DetectionParams, DetectionRequest, Evidence, GridError, LatticeKind,
-    LocalAxis, OrientedFeature, PointFeature, RejectionReason,
+    LocalAxis, OrientedFeature, PointFeature,
 };
 
 fn topological_params() -> DetectionParams {
@@ -40,27 +41,27 @@ fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>
 #[test]
 fn clean_5x5_grid_is_fully_labelled() {
     let features = axis_aligned_features(5, 5, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        topological_params(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(topological_params());
     let solution = detect_grid(request).expect("detect_grid (topological) on clean 5x5");
 
-    assert_eq!(solution.grid.lattice, LatticeKind::Square);
-    assert_eq!(solution.grid.entries.len(), 25, "all 25 features labelled");
+    assert_eq!(solution.grid().lattice(), LatticeKind::Square);
+    assert_eq!(
+        solution.grid().entries().len(),
+        25,
+        "all 25 features labelled"
+    );
 
-    let coords: HashSet<Coord> = solution.grid.entries.iter().map(|e| e.coord).collect();
+    let coords: HashSet<Coord> = solution.grid().entries().iter().map(|e| e.coord).collect();
     for u in 0..5 {
         for v in 0..5 {
             assert!(coords.contains(&Coord::new(u, v)), "missing coord {u},{v}");
         }
     }
-    let bbox = solution.grid.bbox.expect("non-empty grid has bbox");
+    let bbox = solution.grid().bbox().expect("non-empty grid has bbox");
     assert_eq!(bbox, (Coord::new(0, 0), Coord::new(4, 4)));
 
-    let fit = solution.fit.expect("fit present");
+    let fit = solution.fit();
     assert!(
         fit.residuals.max_px < 0.01,
         "max residual {} too high on clean grid",
@@ -92,28 +93,24 @@ fn perturbed_5x5_grid_recovers_at_least_24_of_25() {
         feature.axes[1] = LocalAxis::new(feature.axes[1].angle_rad + da1, Some(0.05));
     }
 
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        topological_params(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(topological_params());
     let solution = detect_grid(request).expect("detect_grid (topological) on perturbed 5x5");
 
-    let labelled = solution.grid.entries.len();
+    let labelled = solution.grid().entries().len();
     assert!(
         labelled >= 24,
         "expected >= 24/25 labelled on perturbed grid, got {labelled}",
     );
 
-    let fit = solution.fit.expect("fit present");
+    let fit = solution.fit();
     assert!(
         fit.residuals.max_px < 1.5,
         "max residual {} too high on perturbed grid",
         fit.residuals.max_px,
     );
 
-    for entry in &solution.grid.entries {
+    for entry in solution.grid().entries() {
         assert!(
             entry.coord.u >= 0 && entry.coord.v >= 0,
             "labels must be non-negative, got {:?}",
@@ -123,6 +120,7 @@ fn perturbed_5x5_grid_recovers_at_least_24_of_25() {
 }
 
 #[test]
+#[cfg(feature = "diagnostics")]
 fn extra_noise_features_with_no_info_axes_are_rejected() {
     // 25 grid features at canonical positions + 5 noisers carrying the
     // "no information" sentinel axes (`sigma_rad = Some(π)`). Under the
@@ -148,26 +146,26 @@ fn extra_noise_features_with_no_info_axes_are_rejected() {
         features.push(OrientedFeature::new(point, axes));
     }
 
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        topological_params(),
-    );
-    let solution = detect_grid(request).expect("detect_grid (topological) on noise-augmented");
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(topological_params());
+    let (solution, diagnostics) = projective_grid::diagnostics::detect_grid(request)
+        .expect("detect_grid (topological) on noise-augmented");
 
     assert_eq!(
-        solution.grid.entries.len(),
+        solution.grid().entries().len(),
         25,
         "expected exactly 25 grid labels",
     );
     assert_eq!(
-        solution.rejected.len(),
+        diagnostics.rejected().len(),
         5,
         "expected 5 rejected noise features",
     );
-    for r in &solution.rejected {
-        assert_eq!(r.reason, RejectionReason::Unlabelled);
+    for rejected in diagnostics.rejected() {
+        assert_eq!(
+            rejected.reason,
+            projective_grid::diagnostics::RejectionReason::Unlabelled
+        );
     }
 }
 
@@ -217,24 +215,20 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
         }
     }
 
-    let topo = projective_grid::TopologicalParams::default()
+    let topo = TopologicalParams::default()
         // Loosen the per-cell length-ratio gate so the foreshortened
         // far end of the perspective doesn't trip the upper bound.
         .with_edge_length_max_rel(3.5);
     let params = DetectionParams::default()
-        .with_topological(topo)
+        .with_advanced(DetectionTuning::default().with_topological(topo))
         // Bump the residual threshold: the projective fit is global
         // and the warped 5×5 corners spread residuals out.
         .with_max_residual_px(5.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        params,
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(params);
     let solution = detect_grid(request).expect("detect_grid (topological) on perspective grid");
 
-    let labelled = solution.grid.entries.len();
+    let labelled = solution.grid().entries().len();
     // Phase D success signal: the axis-driven classifier should
     // handle the perspective warp essentially perfectly. The brief's
     // target was ≥ 22/25 (a length-based classifier would do markedly
@@ -245,14 +239,14 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
         "expected >= 22/25 labelled on perspective-warped grid, got {labelled}",
     );
 
-    let fit = solution.fit.expect("fit present");
+    let fit = solution.fit();
     assert!(
         fit.residuals.max_px < 1.0,
         "max residual {} too high on perspective grid",
         fit.residuals.max_px,
     );
 
-    for entry in &solution.grid.entries {
+    for entry in solution.grid().entries() {
         assert!(
             entry.coord.u >= 0 && entry.coord.v >= 0,
             "labels must be non-negative, got {:?}",
@@ -264,12 +258,8 @@ fn perspective_warped_5x5_grid_recovers_at_least_22_of_25() {
 #[test]
 fn fewer_than_three_features_errors() {
     let features = axis_aligned_features(1, 2, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        topological_params(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(topological_params());
     let err = detect_grid(request).unwrap_err();
     assert_eq!(err, GridError::InsufficientEvidence);
 }
@@ -280,12 +270,7 @@ fn default_algorithm_is_topological() {
     // sole builder); this test is a regression gate that the default
     // produces a full clean grid.
     let features = axis_aligned_features(5, 5, 20.0);
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None,
-        DetectionParams::default(),
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features));
     let solution = detect_grid(request).expect("default (topological) on clean 5x5");
-    assert_eq!(solution.grid.entries.len(), 25);
+    assert_eq!(solution.grid().entries().len(), 25);
 }

@@ -64,12 +64,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // for a `Square` lattice, leave the grid dimensions unknown (`None`), and
     // use the default topological assembler.
     let params = DetectionParams::default();
-    let request = DetectionRequest::new(
-        LatticeKind::Square,
-        Evidence::Oriented2(&features),
-        None, // grid dimensions unknown; the detector infers extent
-        params,
-    );
+    let request = DetectionRequest::new(LatticeKind::Square, Evidence::Oriented2(&features))
+        .with_params(params);
 
     // --- Step 3: detect the grid ---------------------------------------------
     //
@@ -86,9 +82,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Labels are rebased so the labelled bounding box starts at (0, 0).
     println!(
         "recovered {} labelled features:",
-        solution.grid.entries.len()
+        solution.grid().entries().len()
     );
-    for entry in &solution.grid.entries {
+    for entry in solution.grid().entries() {
         let residual = entry
             .residual_px
             .map(|r| format!("{r:.3} px"))
@@ -104,15 +100,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // The fitted projective transform and its residual summary live on
-    // `solution.fit`; features the detector could not place land in
-    // `solution.rejected`.
-    if let Some(fit) = &solution.fit {
-        println!(
-            "fit: max residual {:.3} px over {} features",
-            fit.residuals.max_px, fit.residuals.count,
-        );
-    }
+    let fit = solution.fit();
+    println!(
+        "fit: max residual {:.3} px over {} features",
+        fit.residuals.max_px, fit.residuals.count,
+    );
 
     Ok(())
 }

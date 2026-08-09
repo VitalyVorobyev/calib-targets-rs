@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::shared::merge::{merge_components_local, ComponentInput};
+use projective_grid::expert::component::{merge_components_local, ComponentInput};
 
 use super::boosters::apply_boosters_with_directional_edge_scale;
 use super::cluster::{cluster_axes, ClusterCenters};
@@ -18,7 +18,7 @@ use super::output::build_detection;
 use super::types::ChessboardDetection;
 use crate::corner::{CornerAug, CornerStage};
 use crate::params::ChessboardParams;
-use projective_grid::shared::grow::GrowResult;
+use projective_grid::expert::attachment::GrowResult;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
 
@@ -252,7 +252,7 @@ fn shared_corner_alignment(
 /// Merge labelled components that share corner **indices**, in label space.
 ///
 /// This is a distinct, complementary pass to the geometric
-/// [`merge_components_local`](projective_grid::shared::merge::merge_components_local)
+/// [`merge_components_local`](projective_grid::expert::component::merge_components_local)
 /// that runs right after it in [`recover_topological_components`]: this pass
 /// aligns two components by an *exact shared-corner-index* correspondence under
 /// a D4 relabelling (a corner that appears in both components pins the

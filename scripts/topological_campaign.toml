@@ -1,0 +1,43 @@
+schema = 1
+images = [
+  "testdata/02-topo-grid/GeminiChess1.png",
+  "testdata/02-topo-grid/GeminiChess2.png",
+  "testdata/02-topo-grid/GeminiChess3.png",
+  "testdata/02-topo-grid/gptchess1.png",
+]
+
+[output]
+overlays = "preview/perf-review/02-topo-grid"
+performance = "bench_results/perf-review/02-topo-grid/timing.json"
+determinism = "bench_results/perf-review/02-topo-grid/determinism-report.json"
+
+[corner]
+threshold = 100.0
+orientation_method = "ring_fit"
+pre_blur_sigma = 0.0
+upscale = 1.0
+
+[chessboard]
+min_corner_strength = 0.0
+min_labeled_corners = 8
+max_components = 3
+
+# Expert-only stage tuning. Delete this table to use detector defaults.
+[expert.topological]
+axis_align_tol_deg = 15.0
+max_axis_sigma_deg = 34.37747
+opposing_edge_ratio_max = 10.0
+min_quads_per_component = 1
+cluster_axis_tol_deg = 16.0
+edge_length_min_rel = 0.0
+edge_length_max_rel = 1.8
+
+[performance]
+warmups = 5
+repeats = 50
+
+[quality]
+image_root = "testdata/02-topo-grid"
+ground_truth = "bench_results/perf-review/02-topo-grid/ground-truth.json"
+report = "bench_results/perf-review/02-topo-grid/quality-report.json"
+matching_tolerance_px = 3.0

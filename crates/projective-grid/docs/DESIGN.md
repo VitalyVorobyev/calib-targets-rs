@@ -60,7 +60,7 @@ below.
 
 ### Axis 2 — strategy
 
-One strategy recovers the grid: **Topological**. It produces a `GridSolution`
+One strategy recovers the grid: **Topological**. It produces a `GridDetection`
 that downstream consumers read uniformly.
 
 | | Topological |
@@ -102,9 +102,6 @@ missing axes from neighbour geometry (`orient::synthesize_oriented2`,
   lattice has three axis families). Consumed by the hex topological path;
   `(Square, Oriented3)` returns `UnsupportedCombination`.
 
-(`CoordinateHypotheses` is a decode-feedback roadmap slot and returns
-`UnsupportedCombination` for detection.)
-
 Orientation is an **optional cue**, not a requirement. The *universal* cue is
 the grid structure itself — rows are lines, columns are lines, local
 homographies are consistent — which needs no orientation at all. Orientation,
@@ -129,7 +126,8 @@ patches of grid. Everything after that is **shared** and lattice-parameterised:
 detect_grid_all(request):
     components = strategy.build_components(features, classifier)
     merged     = shared::merge(components, lattice)     // reunite split patches
-    validated  = shared::validate(merged, lattice)      // drop outliers
+    canonical  = result::normalize(merged)              // stable public frame
+    validated  = shared::validate(canonical, lattice)   // drop outliers
     solutions  = shared::fit(validated, lattice)        // homography + residuals
 ```
 
@@ -139,10 +137,15 @@ detect_grid_all(request):
   its per-component walk output; the chessboard adapter carries no private merge
   call.
 - `validate` is the structural-cue gate: row/column collinearity
-  ("lines are lines") + per-corner local-homography residual + edge-length
-  band. It is **orientation-free**.
+  ("lines are lines") + per-corner local-homography residual, with an optional
+  edge-shape gate. It is **orientation-free**.
 - `fit` estimates the model-plane → image projective transform and reports
   per-corner residuals.
+
+Pattern-specific target detectors may branch after `merged` via
+`expert::square::assemble_oriented2_components`. That seam preserves the
+topological axis-slot frame and intentionally does not promise the public
+canonical frame or a fit; the chessboard uses it before parity-aware recovery.
 
 Orientation enters **only** inside `build_components`, via the **classifier**
 (Topological: edge Grid/Diagonal/Spurious). Lattice enters **only** via the
@@ -152,7 +155,7 @@ Orientation enters **only** inside `build_components`, via the **classifier**
 
 The **detection surface** is pinned to concrete `f32`: `feature`
 (`PointFeature`, `LocalAxis`, `OrientedFeature<N>`, `CoordinateHypothesis`),
-`detect` (`DetectionParams`, `DetectionRequest`, `Evidence`, `GridSolution`,
+`detect` (`DetectionParams`, `DetectionRequest`, `Evidence`, `GridDetection`,
 the `Square` topological strategy and the shared back-half), and the whole
 `topological` engine plus the shared grid-growth machinery (grow, fill,
 extension, recovery, validate) carry no `F: Float` type parameter. Only the

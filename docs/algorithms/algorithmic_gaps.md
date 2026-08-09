@@ -14,7 +14,7 @@ pipeline reference — those live with the code that owns them:
 - **`docs/algorithms/topological-grid-detection.md`** (repo root) — canonical
   stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
-  stage map for the `GraphBuildAlgorithm::Topological` pipeline,
+  stage map for the chessboard topological pipeline,
   including the chessboard-side topological input adapter and recovery
   layer.
 
@@ -46,11 +46,10 @@ wrong `(i, j)` poisons calibration; a missing `(i, j)` does not.
 Every algorithm in the crate is biased toward dropping rather than
 mislabelling.
 
-The sole labelling pipeline exposed via
-`calib_targets_chessboard::GraphBuildAlgorithm` is:
+The sole labelling pipeline is:
 
 - **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
-  (`topological::detect_square_oriented2_topological_all`) with an
+  (`topological::detect_square_oriented2_all`) with an
   axis-driven cell test that replaces the paper's image-color sampling
   so `projective-grid` stays standalone. Used for all four target
   families. The `SeedAndGrow` variant was removed.
@@ -138,164 +137,6 @@ component level (the measured signature — one corner breaking an otherwise
 constant column drift — is strong and cheap), or marker-aware scoring once
 ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
 policy work, which needs the same local-geometry discrimination.
-
-### Gap 13 — Legacy ChArUco vote alignment commits to the dominant rotation (RESOLVED — legacy matcher retired)
-
-**Was:** `alignment::solve_alignment` (the legacy rotation+translation
-**vote** matcher) picked a single D4 rotation up front via a score-weighted
-`dominant_rotation` histogram, then solved the best integer translation for
-that one rotation, never evaluating the other three rotations — so a frame
-whose true board rotation differed from the score-dominant marker rotation
-could get the wrong rotation and lose inliers.
-
-**Resolution:** the legacy vote matcher and its `use_board_level_matcher`
-toggle were retired; the board-level soft-LL matcher
-(`detector/board_match.rs`) is now the sole matcher, and it already
-enumerates all (D4 rotation × integer translation) hypotheses and picks the
-maximum-likelihood one. The dominant-rotation shortcut no longer exists, so
-this gap is closed by deletion rather than by patching the vote solver.
-
-### Gap 18 — PuzzleBoard decode under heavy radial distortion (RESOLVED, PR #61, 2026-06-23)
-
-**Was:** on the public `puzzleboard_reference/` author set (Stelldinger et al.
-CC0 oracle frames), only **4 of 10** frames decoded (example0/4/5/6); the other
-six failed at the master-match stage, and `example2.png` ("visible radial
-distortion") returned *decoding failed: no position match above confidence
-threshold*. The chessboard **grid** detected cleanly on all of them — only the
-edge-dot → 501×501 master decode failed, because radial distortion shifts the
-dot off the raw chord midpoint enough to corrupt the bit reads.
-
-**Fix that landed (PR #61).** Sample each edge bit at distortion-aware candidate
-centers instead of only the raw chord midpoint, keeping the highest-confidence
-reading (the midpoint is always retained as a fallback):
-
-- the cell's shared-edge midpoint via the local unit-cell→quad homography of
-  each adjoining square (**perspective** correction), and
-- a cubic-Lagrange interpolation of the edge midpoint along the curved grid line
-  through the two flanking corners (`-1/16, 9/16, 9/16, -1/16` at t = ½ — a
-  curvature-continuity estimate, **lens** correction).
-
-This realizes the original "decode in a distortion-corrected grid frame"
-candidate as a *local-geometry* equivalent: no explicit global radial model is
-needed; the already-trusted grid supplies the per-cell correction.
-`sweep_for_board` additionally appends a second pass using the legacy
-hard-weighted scorer at the paper's 40% BER allowance to recover high-distortion
-fragments; `PuzzleBoardParams::for_board` (the single-config default) is
-unchanged.
-
-**What stays / what was corrected (see Gap 19).** The distortion-aware edge
-*sampling* is a genuine improvement and remains. The 40% BER sweep pass also
-remains, but the claim that it "recovers" the distorted author examples did **not
-survive a precision audit**: those decodes (example0/1/2/3/8) are *non-unique* —
-a distinct master origin matches the distortion-corrupted edge bits as well as
-(or within one or two bits of) the chosen origin. They passed a D4-consistency
-check only because the tie-break happened to land on the reference origin. Under
-the bounded-distance uniqueness gate added in Gap 19 they are correctly **declined
-as detection failures** (a non-unique absolute decode is a wrong label waiting to
-happen). The clean, full author boards (example4/5/6) decode with enormous
-uniqueness margins and are unaffected. The grid still detects on the distorted
-frames; only the *decode* declines.
-
-### Gap 19 — PuzzleBoard decode lacked an origin-uniqueness gate (RESOLVED)
-
-**Was.** Neither decode path enforced that the chosen master origin was
-*uniquely* the best-supported one. The hard-weighted path (including the 40% BER
-sweep pass) emitted `score_margin = ∞` and never computed a runner-up; the
-soft-LL default path gated on a normalized log-likelihood *score gap*
-(`alignment_min_margin`), which does not enforce origin uniqueness. A witness was
-constructed and confirmed: a small or distortion-corrupted fragment frequently
-has a *distinct* master origin (a different position and/or D4 transform) that
-matches the observed edge bits as well as — or within a bit of — the true origin.
-Shipping such a decode is a false positive (an unrecoverable wrong absolute
-label), even though every per-frame `(i, j)` is internally D4-consistent.
-
-**Root cause — this is error-correcting-code decoding.** The master edge code is
-a De Bruijn torus whose minimum Hamming distance `d(w)` between a `w×w` window's
-codeword and its nearest neighbour (over all origins and all 8 D4 transforms)
-grows roughly quadratically with `w` but is only **1 at the 4×4 minimum window**
-(zero error-correction). So a single corrupted bit can turn a corrupted 4×4
-fragment into a *perfect* read of a different location. No acceptance test can
-make the 4×4 window safe; the safe window must be sized to the code's distance
-for the error budget (bounded-distance decoding).
-
-**Fix.**
-
-1. **Uniqueness gate (both paths).** Compute the matched-bit count of the closest
-   *distinct* competing origin (full-master via an exact crossed-CRT top-2;
-   fixed-board via the shift-scan top-2) and accept only when
-   `margin > k_winner`, where `margin = best_matched − runner_up_matched` and
-   `k_winner = edges_observed − best_matched` (the winner's own mismatch count).
-   Equivalently, the winner's net score (`matched − mismatched`) must strictly
-   exceed the runner-up's matched count. This is **parameter-free** (no magic
-   constant): a clean exact read (`k_winner = 0`) passes at any `margin ≥ 1`,
-   honoring the code's exact-uniqueness design at any size; a noisy-ambiguous read
-   (small `margin`, large `k_winner`) declines. The soft path applies the
-   identical matched-count predicate in addition to its score-gap gate (the soft
-   default was *separately* vulnerable — it false-accepted a wrong origin at every
-   window size in a high-trial sweep, a pre-existing defect in the production
-   default, now closed).
-2. **Bounded-distance floor.** `min_window` is raised to **7** (84 interior
-   edges): a 300k-trial sweep (random origins × random error patterns up to the
-   BER budget, per-corner ground-truth checked) finds 7×7 the smallest square
-   window with zero false-accepts under the gate at both 30% and 40% BER (5×5 and
-   6×6 still alias). A limiting-dimension guard additionally rejects wide-but-short
-   strips that meet the edge-count floor yet are too thin on one axis to carry the
-   code distance (a 3-corner-tall strip at the floor aliases at a low rate; every
-   window spanning ≥ `min_window` corners on *both* axes is alias-free in the
-   sweep).
-
-**Honest guarantee.** Safety is **empirical-with-defense-in-depth, not a
-worst-case guarantee**: at these BER budgets a worst-case bound would require
-`d(w) > 2·⌊BER·N⌋ ≈ 0.8·N`, far above the ~`N/4` the code actually provides, so a
-specifically-adversarial error pattern of weight ~`d/2` can still alias at any
-practical window. The `min_window` floor keeps *random* corruption below the
-aliasing regime, and the gate catches the residual near-aliases — validated to
-zero false-accepts across the high-trial sweep. The criterion is structural
-(scale-relative, dataset-independent); it is not fitted to any frame.
-
-**Effect on the author set.** example4/5/6 (clean, full boards) decode with huge
-uniqueness margins, unaffected. example0/1/2/3/8 (distorted or small) are
-*non-unique* and are now correctly declined as detection failures — the
-`author_examples_1_2_3_are_declined_as_non_unique` test pins this. The
-single-config `for_board` default path inherits the raised floor and the soft
-uniqueness gate (a deliberate, documented recall tradeoff on noisy/partial views:
-boards below the safe window become correct misses rather than risk a wrong
-label). The public regression and the private regression set hold at baseline
-with zero wrong labels.
-
-### Gap 20 — Author example photos are not a canonical-map decode oracle (RESOLVED, 2026-06-25)
-
-**Finding.** The upstream `puzzleboard_reference/` author example photos are
-**not a faithful render of the 501×501 master map we ship** (`map_a.bin` /
-`map_b.bin`), so they cannot serve as a decode oracle. Our shipped map matches
-the map the authors *recommend*; yet most author frames do not localize against
-it, and the ones that previously "decoded" did so only by tie-break luck on
-distortion-corrupted bits (the precision audit behind Gap 18/19). The
-parsimonious explanation, consistent with all the evidence, is that the example
-photos were rendered from a **different master-map revision** than the one the
-authors later recommend and we adopted. Either way the operational consequence
-is the same: a frame that fails to localize against the canonical map is *not* a
-detector regression, and chasing it would mean fitting to a non-canonical witness
-(forbidden by the no-fine-tuning-to-examples rule).
-
-**Resolution (PR following #70).** The authoritative public PuzzleBoard decode
-regression is now **synthetic images rendered directly from the canonical maps**:
-
-- Unit regression: `tests/synthetic_author_like.rs` — decodes deterministic
-  perspective/distortion/blur/noise/JPEG renders of `map_a`/`map_b`, asserting
-  BER, truth-corner agreement, and a single D4+translation relation (all three
-  scenarios decode at BER 0, identity). Generator + provenance:
-  `tools/synth_puzzleboard_photo.py`, `docs/SYNTHETIC_AUTHOR_LIKE.md`.
-- Performance regression: `benches/synthetic_decode.rs` — the public, ungated
-  photo-realistic decode bench (corner → chessboard → decode on the same
-  canonical-map fixtures), the public counterpart to the private
-  `dataset_decode` bench.
-
-The author photos are retained only as **visual references** and as the
-`author_examples_1_2_3_are_declined_as_non_unique` precision guard (still valid:
-a non-unique distorted frame must be declined). The previously `#[ignore]`d
-cross-decoder D4-parity test over the author oracle JSON is **unsound under a
-non-canonical map** and is demoted to a documented diagnostic, not a gate.
 
 ---
 

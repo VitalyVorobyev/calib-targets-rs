@@ -3,7 +3,7 @@
 //!
 //! The [`Homography`] type, [`HomographyQuality`] metrics, and the
 //! Hartley-normalised DLT estimators live in the lowest crate,
-//! [`projective_grid::geometry`], so the algorithm has exactly one
+//! [`projective_grid::expert::geometry`], so the algorithm has exactly one
 //! implementation. This module re-exports them and adds only the pieces that
 //! need core-level image types ([`warp_perspective_gray`]).
 //!
@@ -20,7 +20,7 @@ use nalgebra::Point2;
 // `estimate_homography_rect_to_img` is core's descriptive alias for the generic
 // `estimate_homography` — source points are the rectified board, destination
 // points are image pixels, so the returned `H` maps board → image.
-pub use projective_grid::geometry::{
+pub use projective_grid::expert::geometry::{
     estimate_homography as estimate_homography_rect_to_img, estimate_homography_with_quality,
     homography_from_4pt, homography_from_4pt_with_quality, Homography, HomographyQuality,
 };

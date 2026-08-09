@@ -63,7 +63,7 @@ impl std::error::Error for ChessboardParamsError {}
 /// The grid `(i, j) → corner` labelling is built with the **topological** grid
 /// finder: a Delaunay triangulation plus an axis-driven cell test (the
 /// image-free variant of the SBF09 grid finder; see
-/// [`projective_grid::TopologicalParams`]). It has a low setup cost, no global
+/// [`projective_grid::expert::TopologicalParams`]). It has a low setup cost, no global
 /// cell-size dependency, high recall on the clean-chessboard regression set,
 /// and tolerates severe radial distortion and low view angles well.
 ///

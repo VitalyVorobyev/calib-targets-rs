@@ -5,28 +5,28 @@
 //! by the axis-driven topological grid finder (Delaunay → quad-mesh →
 //! flood-fill → validate → fit). [`Evidence::Positions`] (orientation-free) and
 //! [`Evidence::Oriented1`] (single-axis) are synthesized up to the Oriented2
-//! shape ([`crate::orient`]) and then run the same assembler, with the
-//! geometry-only [`RecoverySchedule`] enabled to recover the recall the
+//! shape through the expert orientation utilities and then run the same
+//! assembler, with the geometry-only recovery schedule enabled to recover the recall the
 //! synthesized-axis frontier would otherwise leave on the table — so all three
 //! square input kinds share one back-half. All produce the same
-//! [`GridSolution`] shape.
+//! [`GridDetection`] shape.
 //!
-//! The remaining combinations — [`Evidence::Oriented3`],
-//! [`Evidence::CoordinateHypotheses`], and every `(Hex, *)` variant — are
-//! typed [`GridError::UnsupportedCombination`] placeholders (see the support
-//! matrix on [`detect_grid`]).
+//! Unsupported lattice/evidence pairs return a typed
+//! [`GridError::UnsupportedCombination`] (see the support matrix on
+//! [`detect_grid`]).
 //!
 //! The detection surface is pinned to `f32`. The generic-`F` surface that
 //! remains in the crate is the pure-geometry [`crate::geometry`] module.
 
 use crate::error::{EvidenceKind, GridError, GridTask, Result};
-use crate::feature::{CoordinateHypothesis, OrientedFeature, PointFeature};
+use crate::feature::{OrientedFeature, PointFeature};
 use crate::lattice::{GridDimensions, LatticeKind};
-use crate::result::{GridSolution, RejectedFeature};
+use crate::result::{GridDetection, GridSolution};
+use std::collections::HashSet;
 
-pub use crate::shared::recovery_schedule::{RecoveryParams, RecoverySchedule};
-pub use crate::shared::validate::ValidationParams as ValidateParams;
-pub use crate::topological::TopologicalParams;
+use crate::shared::recovery_schedule::RecoverySchedule;
+use crate::shared::validate::ValidationParams;
+use crate::topological::TopologicalParams;
 
 /// Evidence supplied to a detection task.
 #[derive(Clone, Copy, Debug)]
@@ -36,7 +36,7 @@ pub enum Evidence<'a> {
     Positions(&'a [PointFeature]),
     /// Point features with one local lattice direction. Supported for
     /// `Square`: the orthogonal direction is synthesized from neighbour
-    /// geometry ([`crate::orient::synthesize_oriented2_from_oriented1`]).
+    /// geometry ([`crate::expert::orientation::synthesize_oriented2_from_oriented1`]).
     Oriented1(&'a [OrientedFeature<1>]),
     /// Point features with two local lattice directions — the native square
     /// input shape consumed by both algorithms.
@@ -47,20 +47,6 @@ pub enum Evidence<'a> {
     /// path is the intended consumer; until a detector consumes it this stays
     /// [`GridError::UnsupportedCombination`].
     Oriented3(&'a [OrientedFeature<3>]),
-    /// Point features plus caller-supplied coordinate hypotheses. **Roadmap
-    /// slot** for decode-feedback labelling: a caller that has partially
-    /// decoded marker / ring IDs supplies them as `(source_index, coord)`
-    /// hypotheses to bias or seed the labelling. No detection algorithm
-    /// consumes hypotheses yet, so this stays
-    /// [`GridError::UnsupportedCombination`]; the
-    /// [`check_consistency`](crate::check::check_consistency) task is the only
-    /// current consumer of [`crate::feature::CoordinateHypothesis`].
-    CoordinateHypotheses {
-        /// Position-only features.
-        features: &'a [PointFeature],
-        /// Proposed coordinate labels.
-        hypotheses: &'a [CoordinateHypothesis],
-    },
 }
 
 impl Evidence<'_> {
@@ -71,45 +57,28 @@ impl Evidence<'_> {
             Self::Oriented1(_) => EvidenceKind::Oriented1,
             Self::Oriented2(_) => EvidenceKind::Oriented2,
             Self::Oriented3(_) => EvidenceKind::Oriented3,
-            Self::CoordinateHypotheses { .. } => EvidenceKind::CoordinateHypotheses,
         }
     }
 }
 
-/// Detection parameters.
+/// Detection parameters for ordinary callers.
 ///
-/// The single `max_residual_px` knob from the Phase-A shell sits alongside the
-/// topological assembler's sub-config, the shared post-detection validation
-/// tuning, and the post-recovery schedule.
-///
-/// The sub-config types (`TopologicalParams`, `ValidateParams`,
-/// `RecoveryParams`) include advanced-engine configs that do not implement
-/// `PartialEq`, so neither does `DetectionParams`.
+/// Defaults are the recommended production configuration. The only stable
+/// user-facing knob is the maximum lattice-fit residual. Stage-specific
+/// controls live in [`crate::expert::DetectionTuning`] and are opt-in.
 #[derive(Clone, Debug)]
 #[non_exhaustive]
 pub struct DetectionParams {
     /// Residual threshold in image pixels for algorithms that fit a lattice.
-    pub max_residual_px: f32,
-    /// Topological grid-finder tuning.
-    pub topological: TopologicalParams,
-    /// Post-detection validation tuning.
-    pub validate: ValidateParams,
-    /// Post-convergence recovery schedule. Defaults to
-    /// [`RecoverySchedule::Auto`]: the facade runs the geometry-only recovery
-    /// schedule for the synthesized-axis paths (`Evidence::Positions` /
-    /// `Evidence::Oriented1`) and skips it for native `Evidence::Oriented2`.
-    /// Callers that own a downstream recovery stage set this to
-    /// [`RecoverySchedule::Off`].
-    pub recovery: RecoverySchedule,
+    max_residual_px: f32,
+    advanced: Option<Box<DetectionTuning>>,
 }
 
 impl Default for DetectionParams {
     fn default() -> Self {
         Self {
             max_residual_px: 2.0,
-            topological: TopologicalParams::default(),
-            validate: ValidateParams::default(),
-            recovery: RecoverySchedule::default(),
+            advanced: None,
         }
     }
 }
@@ -124,27 +93,71 @@ impl DetectionParams {
         }
     }
 
-    /// Builder-style override: replace the topological sub-config.
-    pub fn with_topological(mut self, topological: TopologicalParams) -> Self {
-        self.topological = topological;
-        self
-    }
-
-    /// Builder-style override: replace the validate sub-config.
-    pub fn with_validate(mut self, validate: ValidateParams) -> Self {
-        self.validate = validate;
-        self
-    }
-
     /// Builder-style override: replace the max residual threshold.
+    #[must_use]
     pub fn with_max_residual_px(mut self, max_residual_px: f32) -> Self {
         self.max_residual_px = max_residual_px;
         self
     }
 
-    /// Builder-style override: set the post-convergence recovery schedule.
-    pub fn with_recovery(mut self, recovery: RecoverySchedule) -> Self {
-        self.recovery = recovery;
+    /// Attach opt-in expert tuning.
+    ///
+    /// Ordinary callers should leave this unset. The expert field set follows
+    /// algorithm stages and is intentionally less stable than this facade.
+    #[must_use]
+    pub fn with_advanced(mut self, tuning: DetectionTuning) -> Self {
+        self.advanced = Some(Box::new(tuning));
+        self
+    }
+
+    /// Maximum accepted model-to-image residual, in image pixels.
+    pub fn max_residual_px(&self) -> f32 {
+        self.max_residual_px
+    }
+
+    pub(crate) fn tuning(&self) -> &DetectionTuning {
+        self.advanced.as_deref().unwrap_or(&DEFAULT_TUNING)
+    }
+}
+
+static DEFAULT_TUNING: std::sync::LazyLock<DetectionTuning> =
+    std::sync::LazyLock::new(DetectionTuning::default);
+
+/// Expert-only, stage-specific detection tuning.
+///
+/// This type is re-exported from [`crate::expert`]. Its fields are useful for
+/// detector builders and diagnostic campaigns, but are intentionally absent
+/// from the ordinary [`DetectionParams`] workflow.
+#[derive(Clone, Debug, Default)]
+#[non_exhaustive]
+pub struct DetectionTuning {
+    /// Topological grid-finder tuning.
+    pub topological: TopologicalParams,
+    /// Post-detection structural validation tuning.
+    pub validation: ValidationParams,
+    /// Post-convergence recovery policy.
+    pub recovery: RecoverySchedule,
+}
+
+impl DetectionTuning {
+    /// Replace topological grid-finder tuning.
+    #[must_use]
+    pub fn with_topological(mut self, value: TopologicalParams) -> Self {
+        self.topological = value;
+        self
+    }
+
+    /// Replace structural validation tuning.
+    #[must_use]
+    pub fn with_validation(mut self, value: ValidationParams) -> Self {
+        self.validation = value;
+        self
+    }
+
+    /// Replace the post-convergence recovery policy.
+    #[must_use]
+    pub fn with_recovery(mut self, value: RecoverySchedule) -> Self {
+        self.recovery = value;
         self
     }
 }
@@ -154,29 +167,54 @@ impl DetectionParams {
 #[non_exhaustive]
 pub struct DetectionRequest<'a> {
     /// Lattice family to recover.
-    pub lattice: LatticeKind,
+    lattice: LatticeKind,
     /// Evidence available to the detector.
-    pub evidence: Evidence<'a>,
+    evidence: Evidence<'a>,
     /// Optional known grid dimensions.
-    pub dimensions: Option<GridDimensions>,
+    dimensions: Option<GridDimensions>,
     /// Detection parameters.
-    pub params: DetectionParams,
+    params: DetectionParams,
 }
 
 impl<'a> DetectionRequest<'a> {
-    /// Construct a detection request.
-    pub fn new(
-        lattice: LatticeKind,
-        evidence: Evidence<'a>,
-        dimensions: Option<GridDimensions>,
-        params: DetectionParams,
-    ) -> Self {
+    /// Construct a request with production defaults and no positional optionals.
+    pub fn new(lattice: LatticeKind, evidence: Evidence<'a>) -> Self {
         Self {
             lattice,
             evidence,
-            dimensions,
-            params,
+            dimensions: None,
+            params: DetectionParams::default(),
         }
+    }
+
+    /// Constrain the maximum feature-coordinate span of a detected grid.
+    #[must_use]
+    pub fn with_dimensions(mut self, dimensions: GridDimensions) -> Self {
+        self.dimensions = Some(dimensions);
+        self
+    }
+
+    /// Replace the default detection parameters.
+    #[must_use]
+    pub fn with_params(mut self, params: DetectionParams) -> Self {
+        self.params = params;
+        self
+    }
+
+    pub(crate) fn lattice(&self) -> LatticeKind {
+        self.lattice
+    }
+
+    pub(crate) fn evidence(&self) -> Evidence<'a> {
+        self.evidence
+    }
+
+    pub(crate) fn dimensions(&self) -> Option<GridDimensions> {
+        self.dimensions
+    }
+
+    pub(crate) fn params(&self) -> &DetectionParams {
+        &self.params
     }
 }
 
@@ -190,25 +228,24 @@ impl<'a> DetectionRequest<'a> {
 /// | `(Square, Oriented1)` | supported — synthesize 2nd axis, then Oriented2 |
 /// | `(Square, Positions)` | supported — synthesize both axes, then Oriented2 |
 /// | `(Square, Oriented3)` | `UnsupportedCombination` |
-/// | `(Square, CoordinateHypotheses)` | `UnsupportedCombination` (roadmap) |
 /// | `(Hex, Oriented3)` | supported — topological only |
 /// | `(Hex, Positions)` | supported — synthesize 3 axes, then hex topological |
 /// | `(Hex, Oriented1 / Oriented2)` | `UnsupportedCombination` |
 ///
 /// * `(Square, Oriented2)` — the axis-driven SBF09 topological grid finder
 ///   (Delaunay → quad-mesh → flood-fill → validate → fit) returns a labelled
-///   [`GridSolution`] with a fitted projective transform; downstream consumers
+///   [`GridDetection`] with a fitted projective transform; downstream consumers
 ///   stay agnostic.
 /// * `(Square, Positions)` — orientation-free input. Each corner's two
 ///   local grid directions are synthesized from neighbour geometry
-///   ([`crate::orient::synthesize_oriented2`]) and then fed to the topological
+///   ([`crate::expert::orientation::synthesize_oriented2`]) and then fed to the topological
 ///   assembler, exactly as for `(Square, Oriented2)` — with the geometry-only
 ///   [`RecoverySchedule`] enabled to recover the synthesized-axis recall.
 ///   Use this for dot / circle grids and for chessboards whose corners carry
 ///   no axis estimate.
 /// * `(Square, Oriented1)` — single-axis input. The supplied axis is kept
 ///   and the orthogonal grid direction is recovered from neighbour geometry
-///   ([`crate::orient::synthesize_oriented2_from_oriented1`]); the resulting
+///   ([`crate::expert::orientation::synthesize_oriented2_from_oriented1`]); the resulting
 ///   [`OrientedFeature<2>`] then runs the topological assembler, exactly as for
 ///   `(Square, Positions)`. Use this for detectors that recover one dominant
 ///   edge orientation per feature but not the orthogonal one.
@@ -220,12 +257,11 @@ impl<'a> DetectionRequest<'a> {
 ///   Hex is **topological-only** with **no recovery schedule**.
 /// * `(Hex, Positions)` — orientation-free hex input. The three local grid
 ///   directions are synthesized from neighbour geometry
-///   ([`crate::orient::synthesize_oriented3`]) and then fed to the hex
+///   ([`crate::expert::orientation::synthesize_oriented3`]) and then fed to the hex
 ///   topological path, mirroring the `(Square, Positions)` seam.
 ///
-/// `(Square, Oriented3)` (square does not consume triple-axis evidence),
-/// `(Square, CoordinateHypotheses)` (a decode-feedback roadmap slot), and
-/// `(Hex, Oriented1)` / `(Hex, Oriented2)` (hex needs three axis families)
+/// `(Square, Oriented3)` (square does not consume triple-axis evidence) and
+/// `(Hex, Oriented1)` / `(Hex, Oriented2)` (hex currently needs three axis families)
 /// stay `UnsupportedCombination` — no working algorithm exists for those slots.
 ///
 /// **Multi-component results.** The topological assembler can produce more
@@ -233,12 +269,12 @@ impl<'a> DetectionRequest<'a> {
 /// then runs local component merge). This entry point returns the largest
 /// component only. Use [`detect_grid_all`] when secondary components must be
 /// preserved with their own `(u, v)` labels.
-pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridSolution> {
-    let mut report = detect_grid_all(request)?;
-    if report.solutions.is_empty() {
+pub fn detect_grid(request: DetectionRequest<'_>) -> Result<GridDetection> {
+    let mut detections = detect_grid_all(request)?;
+    if detections.is_empty() {
         Err(GridError::InsufficientEvidence)
     } else {
-        Ok(report.solutions.remove(0))
+        Ok(detections.remove(0))
     }
 }
 
@@ -251,10 +287,10 @@ fn run_square_oriented2(
     request: &DetectionRequest<'_>,
     synthesized_axes: bool,
 ) -> Result<Vec<GridSolution>> {
-    crate::topological::detect_square_oriented2_topological_all(
+    crate::topological::detect_square_oriented2_all(
         features,
-        request.dimensions,
-        &request.params,
+        request.dimensions(),
+        request.params(),
         synthesized_axes,
     )
 }
@@ -270,28 +306,33 @@ fn run_hex_oriented3(
 ) -> Result<Vec<GridSolution>> {
     crate::topological::detect_hex_oriented3_topological_all(
         features,
-        request.dimensions,
-        &request.params,
+        request.dimensions(),
+        request.params(),
     )
 }
 
 /// Multi-component variant of [`detect_grid`].
 ///
-/// Returns a [`DetectionReport`] with one [`GridSolution`] per
+/// Returns one [`GridDetection`] per
 /// qualifying connected component, ordered by labelled-count
 /// descending (ties broken by smallest labelled `source_index`). The
 /// topological assembler may return several solutions.
 ///
-/// Features that no component admitted are surfaced in the *first*
-/// solution's `rejected` vector (the same shape callers of
-/// [`detect_grid`] saw historically). Per-component validation drops
-/// and over-residual entries stay attached to their owning component's
-/// `rejected` vector.
+/// Rejected features and stage-level evidence belong to the opt-in
+/// `diagnostics` feature, not to this mandatory-result contract.
 ///
 /// The same `UnsupportedCombination` matrix applies as for
 /// [`detect_grid`].
-pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport> {
-    let solutions = match (request.lattice, request.evidence) {
+pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<Vec<GridDetection>> {
+    Ok(detect_grid_all_internal(request)?
+        .into_iter()
+        .map(|solution| solution.detection)
+        .collect())
+}
+
+pub(crate) fn detect_grid_all_internal(request: DetectionRequest<'_>) -> Result<Vec<GridSolution>> {
+    validate_request(&request)?;
+    let solutions = match (request.lattice(), request.evidence()) {
         (LatticeKind::Square, Evidence::Oriented2(features)) => {
             // Native two-axis evidence: no synthesis, so the recovery schedule
             // stays off under `RecoverySchedule::Auto` (byte-compat).
@@ -329,42 +370,117 @@ pub fn detect_grid_all(request: DetectionRequest<'_>) -> Result<DetectionReport>
         _ => {
             return Err(GridError::UnsupportedCombination {
                 task: GridTask::Detection,
-                lattice: request.lattice,
-                evidence: request.evidence.kind(),
+                lattice: request.lattice(),
+                evidence: request.evidence().kind(),
             })
         }
     };
-    Ok(DetectionReport::new(solutions, Vec::new()))
+    Ok(solutions)
 }
 
-/// Multi-component detection result returned by [`detect_grid_all`].
-///
-/// `solutions` is ordered by labelled-count descending; the first
-/// entry is the same `GridSolution` a single-component
-/// [`detect_grid`] caller historically received. `rejected` is a
-/// crate-level slot reserved for features that no component admitted
-/// when the orchestrator (rather than a particular component) is the
-/// authoritative source of that information. It is left empty for the
-/// topological assembler — the per-component rejected vectors already
-/// cover the wire shape.
-#[derive(Clone, Debug)]
-#[non_exhaustive]
-pub struct DetectionReport {
-    /// Per-component labelled solutions, ordered by component size
-    /// descending.
-    pub solutions: Vec<GridSolution>,
-    /// Features that no component admitted, scoped to the orchestrator
-    /// (not a particular component). Currently empty for the topological
-    /// assembler — see the struct-level docs.
-    pub rejected: Vec<RejectedFeature>,
-}
-
-impl DetectionReport {
-    /// Construct a detection report.
-    pub fn new(solutions: Vec<GridSolution>, rejected: Vec<RejectedFeature>) -> Self {
-        Self {
-            solutions,
-            rejected,
+pub(crate) fn validate_request(request: &DetectionRequest<'_>) -> Result<()> {
+    if let Some(dimensions) = request.dimensions() {
+        if dimensions.width == 0 || dimensions.height == 0 {
+            return Err(GridError::InconsistentInput(
+                "grid dimensions count feature positions and must be non-zero".to_owned(),
+            ));
         }
     }
+
+    let residual = request.params().max_residual_px();
+    if residual.is_nan() || residual < 0.0 {
+        return Err(GridError::InconsistentInput(
+            "max_residual_px must be non-negative or +infinity".to_owned(),
+        ));
+    }
+    validate_tuning(request.params().tuning())?;
+
+    match request.evidence() {
+        Evidence::Positions(features) => validate_points(features.iter()),
+        Evidence::Oriented1(features) => validate_oriented(features),
+        Evidence::Oriented2(features) => validate_oriented(features),
+        Evidence::Oriented3(features) => validate_oriented(features),
+    }
+}
+
+fn validate_points<'a>(points: impl Iterator<Item = &'a PointFeature>) -> Result<()> {
+    let mut source_indices = HashSet::new();
+    for point in points {
+        if !point.position.x.is_finite() || !point.position.y.is_finite() {
+            return Err(GridError::InconsistentInput(format!(
+                "feature {} has a non-finite image position",
+                point.source_index
+            )));
+        }
+        if !source_indices.insert(point.source_index) {
+            return Err(GridError::InconsistentInput(format!(
+                "duplicate feature source_index {}",
+                point.source_index
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_oriented<const N: usize>(features: &[OrientedFeature<N>]) -> Result<()> {
+    validate_points(features.iter().map(|feature| &feature.point))?;
+    for feature in features {
+        for (slot, axis) in feature.axes.iter().enumerate() {
+            if !axis.angle_rad.is_finite() {
+                return Err(GridError::InconsistentInput(format!(
+                    "feature {} axis {slot} has a non-finite angle",
+                    feature.point.source_index
+                )));
+            }
+            if axis
+                .sigma_rad
+                .is_some_and(|sigma| !sigma.is_finite() || sigma < 0.0)
+            {
+                return Err(GridError::InconsistentInput(format!(
+                    "feature {} axis {slot} has an invalid sigma",
+                    feature.point.source_index
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_tuning(tuning: &DetectionTuning) -> Result<()> {
+    let topo = &tuning.topological;
+    let finite_positive = |value: f32| value.is_finite() && value > 0.0;
+    if !finite_positive(topo.axis_align_tol_rad)
+        || !finite_positive(topo.max_axis_sigma_rad)
+        || !finite_positive(topo.cluster_axis_tol_rad)
+        || !topo.opposing_edge_ratio_max.is_finite()
+        || topo.opposing_edge_ratio_max < 1.0
+        || !topo.edge_length_min_rel.is_finite()
+        || topo.edge_length_min_rel < 0.0
+        || topo.edge_length_max_rel.is_nan()
+        || topo.edge_length_max_rel <= 0.0
+        || topo.edge_length_min_rel > topo.edge_length_max_rel
+        || topo.min_corners_for_component < 4
+        || topo.min_quads_per_component == 0
+        || topo
+            .axis_cluster_centers
+            .is_some_and(|centers| centers.iter().any(|center| !center.is_finite()))
+    {
+        return Err(GridError::InconsistentInput(
+            "invalid expert topological tuning".to_owned(),
+        ));
+    }
+
+    let validation = &tuning.validation;
+    let non_negative_or_inf = |value: f32| !value.is_nan() && value >= 0.0;
+    if !non_negative_or_inf(validation.line_tol_rel)
+        || validation.line_min_members < 2
+        || !non_negative_or_inf(validation.local_h_tol_rel)
+        || !validation.step_deviation_thresh_rel.is_finite()
+        || validation.step_deviation_thresh_rel < 0.0
+    {
+        return Err(GridError::InconsistentInput(
+            "invalid expert validation tuning".to_owned(),
+        ));
+    }
+    Ok(())
 }

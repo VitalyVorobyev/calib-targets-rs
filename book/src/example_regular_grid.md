@@ -25,7 +25,7 @@ board photographed at a slight angle.
 ### 1. Build oriented features
 
 `projective-grid` knows nothing about images — for the square detector
-it works on `OrientedFeature<F, 2>` values: a position plus two
+it works on `OrientedFeature<2>` values: a position plus two
 roughly-orthogonal local axis directions. The example builds a `3×3`
 grid by hand. In a real application these positions and axes would come
 from a corner detector, a blob detector with a local-orientation
@@ -39,7 +39,7 @@ stable, caller-owned `source_index`) with two `LocalAxis` directions
 use nalgebra::Point2;
 use projective_grid::{LocalAxis, OrientedFeature, PointFeature};
 
-let mut features: Vec<OrientedFeature<f32, 2>> = Vec::new();
+let mut features: Vec<OrientedFeature<2>> = Vec::new();
 for j in 0..3 {
     for i in 0..3 {
         // Image-frame position (origin top-left, x right, y down).
@@ -67,21 +67,17 @@ for j in 0..3 {
 
 Wrap the features as `Evidence::Oriented2`, bundle them into a
 `DetectionRequest` for a `Square` lattice, and call `detect_grid`. Grid
-dimensions are unknown (`None`); the detector infers the extent.
+dimensions are omitted; the detector infers the extent.
 
 ```rust
-use projective_grid::{
-    detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind,
-};
+use projective_grid::{detect_grid, DetectionRequest, Evidence, LatticeKind};
 
 let request = DetectionRequest::new(
     LatticeKind::Square,
     Evidence::Oriented2(&features),
-    None, // grid dimensions unknown; the detector infers the extent
-    DetectionParams::default(),
 );
-let solution = detect_grid(request)?;
-assert_eq!(solution.grid.entries.len(), 9);
+let detection = detect_grid(request)?;
+assert_eq!(detection.grid().entries().len(), 9);
 ```
 
 `DetectionParams::default()` carries a `max_residual_px` fit gate and runs
@@ -95,15 +91,13 @@ full method.
 
 ### 3. Handle the `Result`
 
-Detection returns `Result<GridSolution, GridError>`. `GridError` is
+Detection returns `Result<GridDetection, GridError>`. `GridError` is
 `#[non_exhaustive]`, so callers always need a wildcard arm. The
 variants worth matching:
 
 - `UnsupportedCombination { task, lattice, evidence }` — the requested
-  `(lattice, evidence)` pair has no algorithm yet. Today only
-  `(Square, Oriented2)` is solved; everything else (a `Hex` lattice, or
-  `Positions` / `Oriented1` / `Oriented3` evidence) returns this rather
-  than a guessed answer.
+  `(lattice, evidence)` pair has no algorithm. The unsupported cells are
+  `(Square, Oriented3)` and `(Hex, Oriented1/Oriented2)`.
 - `InsufficientEvidence` — too few features to assemble a `2×2` seed.
 - `DegenerateGeometry` — coincident or collinear points; no usable
   lattice spread.
@@ -112,31 +106,31 @@ variants worth matching:
 
 ### 4. Read the result
 
-A successful detection is a `GridSolution`:
+A successful detection is a `GridDetection`:
 
-- `grid: LabelledGrid` — the recovered component. `grid.entries` is one
-  `GridEntry` per placed feature; `grid.bbox` is the inclusive
-  coordinate bounding box; `grid.dimensions` echoes any caller-supplied
+- `grid(): &LabelledGrid` — the recovered component. `entries()` is one
+  `GridEntry` per placed feature; `bbox()` is the inclusive
+  coordinate bounding box; `dimensions()` echoes any caller-supplied
   `GridDimensions`.
-- `fit: Option<LatticeFit>` — the fitted model-plane-to-image
+- `fit(): &LatticeFit` — the mandatory fitted model-plane-to-image
   projective transform (`model_to_image`) plus a residual summary
   (`residuals.count`, `residuals.mean_px`, `residuals.max_px`).
-- `rejected: Vec<RejectedFeature>` — features this component could not
-  place, each with a `RejectionReason` (`Unlabelled`,
-  `ValidationDropped`, or `ResidualTooHigh`).
+
+Rejected features and exact stage snapshots are available separately through
+the opt-in `diagnostics` feature, so they do not expand the mandatory result.
 
 Each `GridEntry` carries:
 
 - `coord: Coord` — the `(i, j)` label as `coord.u` / `coord.v`, rebased
   so the labelled bounding box starts at `(0, 0)`.
 - `source_index: usize` — back into the input slice.
-- `image_position: Point2<F>` — the feature's image-frame pixel-center
+- `image_position: Point2<f32>` — the feature's image-frame pixel-center
   position.
-- `residual_px: Option<F>` — reprojection residual in pixels, present
+- `residual_px: Option<f32>` — reprojection residual in pixels, present
   when a fit was computed.
 
 ```rust
-for entry in &solution.grid.entries {
+for entry in detection.grid().entries() {
     // coord.u = i, coord.v = j; source_index maps back to the input.
     println!(
         "(i={}, j={}) <- feature {} at ({:.1}, {:.1})",
@@ -157,8 +151,7 @@ sub-pixel fit residual.
 ## Going further
 
 - **Multiple components** — `detect_grid_all` returns a
-  `DetectionReport` whose `solutions` vector holds one `GridSolution`
-  per recovered component, ordered by labelled count descending. Use it
+  `Vec<GridDetection>`, ordered by labelled count descending. Use it
   when the lattice fragments into islands (for example by occlusion)
   and the secondary components matter. The topological algorithm may
   yield several components.
