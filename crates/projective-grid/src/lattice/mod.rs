@@ -104,8 +104,9 @@ impl GridDimensions {
 }
 
 /// Supported lattice families.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
+#[serde(rename_all = "snake_case")]
 pub enum LatticeKind {
     /// Orthogonal square lattice.
     Square,
@@ -242,39 +243,98 @@ pub trait Lattice: Copy + private::Sealed {
     fn cell_topology(self) -> CellTopology;
 }
 
-/// A lattice-coordinate symmetry transform: `out = matrix * coord + offset`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+/// An affine integer lattice-coordinate transform:
+/// `destination = matrix * source + translation`.
+///
+/// The source and destination coordinates belong to the same [`LatticeKind`].
+/// Pure D4/D6 symmetry transforms have zero translation; target-detector
+/// alignments use the same type with a board-frame translation. This type
+/// contains no image-space or pixel-space coordinates.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[non_exhaustive]
 pub struct GridTransform {
-    /// Lattice family this transform belongs to.
-    pub source_kind: LatticeKind,
-    /// Row-major 2x2 integer linear part.
-    pub matrix: [[i32; 2]; 2],
-    /// Integer offset applied after the linear part.
-    pub offset: [i32; 2],
+    lattice: LatticeKind,
+    matrix: [[i32; 2]; 2],
+    translation: [i32; 2],
 }
 
 impl GridTransform {
-    /// Construct a lattice transform from raw components.
-    pub const fn new(source_kind: LatticeKind, matrix: [[i32; 2]; 2], offset: [i32; 2]) -> Self {
+    /// The identity transform for a square lattice.
+    ///
+    /// Prefer [`Self::identity`] when the lattice family is dynamic. This
+    /// constant exists for the workspace's square-target result defaults.
+    pub const IDENTITY: Self = Self::identity(LatticeKind::Square);
+
+    /// Construct a lattice transform from its family, row-major linear part,
+    /// and destination-frame translation.
+    pub const fn new(lattice: LatticeKind, matrix: [[i32; 2]; 2], translation: [i32; 2]) -> Self {
         Self {
-            source_kind,
+            lattice,
             matrix,
-            offset,
+            translation,
+        }
+    }
+
+    /// Construct the identity transform for `lattice`.
+    pub const fn identity(lattice: LatticeKind) -> Self {
+        Self::new(lattice, [[1, 0], [0, 1]], [0, 0])
+    }
+
+    /// Lattice family of both the source and destination coordinates.
+    pub const fn lattice(self) -> LatticeKind {
+        self.lattice
+    }
+
+    /// Row-major 2x2 integer linear part.
+    pub const fn matrix(self) -> [[i32; 2]; 2] {
+        self.matrix
+    }
+
+    /// Destination-frame translation applied after the linear part.
+    pub const fn translation(self) -> [i32; 2] {
+        self.translation
+    }
+
+    /// Return this transform with a replacement destination-frame translation.
+    pub const fn with_translation(self, translation: [i32; 2]) -> Self {
+        Self {
+            translation,
+            ..self
         }
     }
 
     /// Apply this transform to a coordinate.
     pub fn apply(self, coord: Coord) -> Coord {
         Coord {
-            u: self.matrix[0][0] * coord.u + self.matrix[0][1] * coord.v + self.offset[0],
-            v: self.matrix[1][0] * coord.u + self.matrix[1][1] * coord.v + self.offset[1],
+            u: self.matrix[0][0] * coord.u + self.matrix[0][1] * coord.v + self.translation[0],
+            v: self.matrix[1][0] * coord.u + self.matrix[1][1] * coord.v + self.translation[1],
         }
     }
 
     /// Determinant of the linear part.
     pub const fn determinant(self) -> i32 {
         self.matrix[0][0] * self.matrix[1][1] - self.matrix[0][1] * self.matrix[1][0]
+    }
+
+    /// Invert this transform when its linear part is unimodular
+    /// (`determinant == ±1`).
+    ///
+    /// Returns `None` for a non-bijective integer transform. The inverse maps
+    /// destination-frame coordinates back into the original source frame.
+    pub fn inverse(self) -> Option<Self> {
+        let det = self.determinant();
+        if det != 1 && det != -1 {
+            return None;
+        }
+        let matrix = [
+            [self.matrix[1][1] / det, -self.matrix[0][1] / det],
+            [-self.matrix[1][0] / det, self.matrix[0][0] / det],
+        ];
+        let translation = [
+            -(matrix[0][0] * self.translation[0] + matrix[0][1] * self.translation[1]),
+            -(matrix[1][0] * self.translation[0] + matrix[1][1] * self.translation[1]),
+        ];
+        Some(Self::new(self.lattice, matrix, translation))
     }
 }
 
@@ -330,11 +390,45 @@ mod tests {
 
     #[test]
     fn d4_table_is_complete() {
-        let set: HashSet<_> = D4_TRANSFORMS.iter().map(|t| t.matrix).collect();
+        let set: HashSet<_> = D4_TRANSFORMS.iter().map(|t| t.matrix()).collect();
         assert_eq!(set.len(), 8);
         assert!(D4_TRANSFORMS
             .iter()
-            .all(|t| t.source_kind == LatticeKind::Square && t.determinant().abs() == 1));
+            .all(|t| t.lattice() == LatticeKind::Square && t.determinant().abs() == 1));
+    }
+
+    #[test]
+    fn affine_inverse_round_trips_coordinates() {
+        let transform = D4_TRANSFORMS[3].with_translation([7, -11]);
+        let inverse = transform.inverse().expect("D4 transform is unimodular");
+        let source = Coord::new(-5, 13);
+        assert_eq!(inverse.apply(transform.apply(source)), source);
+        assert_eq!(transform.apply(inverse.apply(source)), source);
+        assert_eq!(inverse.lattice(), LatticeKind::Square);
+    }
+
+    #[test]
+    fn non_unimodular_transform_has_no_integer_inverse() {
+        let transform = GridTransform::new(LatticeKind::Square, [[2, 0], [0, 1]], [0, 0]);
+        assert_eq!(transform.inverse(), None);
+    }
+
+    #[test]
+    fn affine_transform_has_one_canonical_serde_shape() {
+        let transform = D4_TRANSFORMS[1].with_translation([3, -4]);
+        let json = serde_json::to_value(transform).expect("serialize transform");
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "lattice": "square",
+                "matrix": [[0, -1], [1, 0]],
+                "translation": [3, -4]
+            })
+        );
+        assert_eq!(
+            serde_json::from_value::<GridTransform>(json).expect("deserialize transform"),
+            transform
+        );
     }
 
     #[test]
@@ -381,10 +475,10 @@ mod tests {
 
     #[test]
     fn d6_table_is_complete() {
-        let set: HashSet<_> = D6_TRANSFORMS.iter().map(|t| t.matrix).collect();
+        let set: HashSet<_> = D6_TRANSFORMS.iter().map(|t| t.matrix()).collect();
         assert_eq!(set.len(), 12);
         assert!(D6_TRANSFORMS
             .iter()
-            .all(|t| t.source_kind == LatticeKind::Hex && t.determinant().abs() == 1));
+            .all(|t| t.lattice() == LatticeKind::Hex && t.determinant().abs() == 1));
     }
 }

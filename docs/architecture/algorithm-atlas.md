@@ -43,13 +43,14 @@ The numerical bedrock: homography / projective fits and warps.
 | 4-point homography | `pg geometry/homography.rs::homography_from_4pt` | 4 src + 4 dst → `Homography<F>` | Direct 8×8 LU solve on normalized points. | ✅ |
 | Homography quality | `pg geometry/homography.rs::HomographyQuality::from_homography` | `Homography` → (cond, det, σ) | SVD condition number + determinant; **diagnostic only, scale-dependent**. | ✅ |
 | 8-DOF projective DLT | `pg geometry/mod.rs::estimate_projective` | src/dst → `Projective2<F>` | Generic-`F` plain DLT (no Hartley); used where a `Projective2` is wanted. | ✅ |
-| **Image-aware DLT homography (N≥4)** | `core homography.rs::estimate_homography_rect_to_img` | src/dst → `Homography` | **Byte-for-byte the same DLT as `pg`'s** + image-domain extras. See [duplication finding D-1](critique.md#d-1-homography-is-forked-verbatim). | ✅ (detectors) |
+| Core homography alias (N≥4) | `core homography.rs::estimate_homography_rect_to_img` | src/dst → `Homography` | Re-export of the canonical `pg` normalized DLT under the detector-facing frame name. | ✅ (single implementation) |
 | Perspective warp (gray) | `core homography.rs::warp_perspective_gray` | image + H + size → rectified image | Per-output-pixel inverse-map + bilinear sample. | ✅ |
-| `Homography`↔`Projective2` bridge | `core homography.rs::homography_to_next` / `homography_from_next` | one matrix type ↔ the other | Migration shim between core's `Homography` and pg's `Projective2`. | ✅ (debt) |
-| Grid-line curvature predict | `core grid_smoothness.rs::square_predict_grid_position` | model pt + params → predicted px | Second-order spacing prediction under smooth distortion. | ✅ |
+| Grid-position prediction | `pg lattice/predict.rs::predict_grid_position` | labelled neighbours + lattice → predicted position | Average opposite-neighbour midpoints across the lattice's axis families. | ✅ (canonical) |
+| Square prediction compatibility alias | `core grid_smoothness.rs::square_predict_grid_position` | labelled neighbours → predicted position | Thin square-lattice wrapper over the canonical `pg` predictor. | ✅ (no duplicate logic) |
 
-Deep dive: homography conventions are documented inline in both files; the
-duplication is analysed in [`critique.md` §D-1](critique.md#d-1-homography-is-forked-verbatim).
+Deep dive: homography conventions are documented in the canonical `pg`
+implementation and the image-aware core adapter. The resolved historical
+duplication is recorded in [`critique.md` §D-1](critique.md#d-1-homography-is-forked-verbatim).
 
 ## 2. Corner ingestion & feature prep
 

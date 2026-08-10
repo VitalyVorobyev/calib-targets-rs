@@ -368,8 +368,8 @@ fn log_detection_success(res: &calib_targets_charuco::CharucoDetection) {
         "Detection succeeded: {} ChArUco corners, {} markers, alignment {:?} + {:?}",
         res.corners.len(),
         res.markers.len(),
-        res.alignment.transform,
-        res.alignment.translation
+        res.alignment.matrix(),
+        res.alignment.translation()
     );
 }
 

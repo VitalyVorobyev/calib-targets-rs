@@ -23,6 +23,6 @@ impl CharucoAlignment {
     /// Map grid coordinates `(i, j)` into board coordinates.
     #[inline]
     pub fn map(&self, i: i32, j: i32) -> Coord {
-        self.alignment.map(i, j)
+        self.alignment.apply(Coord::new(i, j))
     }
 }

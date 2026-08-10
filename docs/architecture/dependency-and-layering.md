@@ -29,13 +29,13 @@ upstream ChESS corner detector; every detector depends on it. Internal edges onl
 It is a **clean acyclic graph with no cycles** — the crate boundaries are
 sound. This matters for the [critique](critique.md): nearly every problem found is
 *within* a crate (duplication, naming, dead seams), **not** in the dependency
-structure. The lone exception is the [homography fork](#why-projective-grid-is-big-and-duplicated),
-which is a *consequence* of the layering.
+structure. The former homography fork was a *consequence* of the layering and
+is now resolved by placing the implementation in the lowest crate.
 
 | Crate | Layer | Internal prod deps | Role |
 |---|---|---|---|
 | `projective-grid` | L0 | *(none)* | Generic grid recovery; **published standalone**. |
-| `calib-targets-core` | L1 | projective-grid | Shared types (`Corner`, `LabeledCorner`, image views), homography, the legacy `GridCoords` model + adapters. |
+| `calib-targets-core` | L1 | projective-grid | Shared detector/image types, image-aware homography utilities, and curated re-exports of canonical grid algebra. |
 | `calib-targets-aruco` | L2 | core | ArUco/AprilTag dictionaries + decode codec. |
 | `calib-targets-chessboard` | L2 | core, projective-grid | The base detector; **the only in-workspace detector that drives `projective-grid`**. |
 | `calib-targets-charuco` | L3 | core, chessboard, aruco | ChArUco fusion. |
@@ -106,20 +106,16 @@ The maintenance cost it carries is real and is reflected in the
 [critique](critique.md#what-the-breadth-costs) — but the cost is accepted, not a
 bug to fix.
 
-## <a id="why-projective-grid-is-big-and-duplicated"></a>Why `projective-grid` is big — and duplicated
+## <a id="why-projective-grid-is-big-and-duplicated"></a>Why `projective-grid` is broad, but no longer duplicated
 
 Two structural facts, both downstream of the layering:
 
 1. **Breadth (intended).** L0 ships two lattice families × three evidence kinds ×
    an optional recovery schedule. Only `(Square, Oriented2)` is on a workspace
    detector path; the rest is external library scope.
-2. **The homography fork (debt).** L0 needs a homography for its internal fit, but
-   it sits *below* `core`, so it **cannot** call `core`'s homography (that would be
-   a cycle, `core → pg → core`). The result:
-   `pg geometry/homography.rs::estimate_homography` is a **verbatim copy** of
-   `core homography.rs::estimate_homography_rect_to_img` (identical Hartley-DLT
-   body; differs only in the `Float` vs `RealField` bound and a name). Every
-   *detector* calls `core`'s copy; only `pg`'s internal `shared::fit` calls `pg`'s.
-   The fix direction is fixed by the DAG: the canonical home for the pure DLT is the
-   lowest crate (`pg`), with `core` re-exporting + adding its image-domain extras.
-   Full analysis: [critique §D-1](critique.md#d-1-homography-is-forked-verbatim).
+2. **Low-level ownership (resolved).** L0 owns the canonical normalized DLT,
+   grid-position predictor, modulo-π helpers, D4/D6 tables, `Coord`, and affine
+   `GridTransform`. `core` re-exports or wraps those primitives and adds only
+   image-domain operations. This direction follows the DAG and avoids both a
+   dependency cycle and parallel numerical implementations. Historical analysis:
+   [critique §D-1](critique.md#d-1-homography-is-forked-verbatim).

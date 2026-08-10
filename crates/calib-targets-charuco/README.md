@@ -23,7 +23,7 @@ and [alignment & refinement chapter][book-alignment].
 
 ```toml
 [dependencies]
-calib-targets-charuco = "0.11"
+calib-targets-charuco = "0.12"
 ```
 
 ## Quickstart
@@ -33,7 +33,7 @@ ChESS corner detection for you and takes an `image::GrayImage` straight in.
 
 ```toml
 [dependencies]
-calib-targets = "0.11"
+calib-targets = "0.12"
 image = "0.25"
 ```
 
@@ -106,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 |---|---|
 | `corners: Vec<CharucoCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` (rebased to `(0, 0)`), `id` (ChArUco logical corner ID), `target_position` (mm in board space), and `score`. |
 | `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `gc` (grid coordinate), `rotation`, `hamming`, and rectified/image corners. |
-| `alignment: GridAlignment` | D4 rotation + translation mapping chessboard `(i, j)` to the board's canonical ID space. |
+| `alignment: GridAlignment` | Semantic alias for the canonical affine `GridTransform`, mapping chessboard `(i, j)` to the board's canonical ID space. |
 
 Use `detector.detect_with_diagnostics(...)` for per-component rejection
 reasons, per-cell sample scores, hypothesis margins, expected-vs-found

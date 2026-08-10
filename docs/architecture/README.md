@@ -17,7 +17,8 @@ level** — the dependency graph is a clean DAG, the four detectors share one gr
 spine by *embedding* `chessboard` (not by copy-paste), and the decode layers
 (`aruco`, `puzzle`, `marker`) are cohesive and duplication-free. What makes it *feel*
 tangled is **debt, not design**: a homography solver forked verbatim between `core`
-and `projective-grid`, a half-finished `GridCoords → Coord` coordinate migration
+and `projective-grid`, the now-completed `GridCoords → Coord` and affine
+`GridTransform` consolidation
 frozen behind `*_to_next` shims, a few same-named-but-different modules (`recovery`
 ×2, "validation" ×2), and one dead single-variant enum. The big crate
 (`projective-grid`, 3× the next) is big mostly on purpose — it is a **published

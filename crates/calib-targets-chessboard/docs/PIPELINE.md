@@ -125,7 +125,7 @@ crate keeps the ChESS glue and slot-parity semantics.
   mandatory geometry-check **orchestration** (the drop filters
   themselves live in `shared::validate`; the chessboard sequences them),
   the output adapter (`output.rs`) that maps the normalized lattice
-  `Coord{u,v}` back to the workspace `GridCoords{i,j}` — the rebase +
+  canonical `Coord{u,v}` into the workspace result — the rebase +
   canonicalise + sort *algorithm* itself now lives in
   `projective_grid::LabelledGrid::normalize` — and the multi-component
   dispatch.

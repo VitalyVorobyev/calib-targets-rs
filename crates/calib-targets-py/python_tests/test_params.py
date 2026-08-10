@@ -388,7 +388,8 @@ def _sample_charuco_result() -> dict:
             }
         ],
         "alignment": {
-            "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
+            "lattice": "square",
+            "matrix": [[1, 0], [0, 1]],
             "translation": [0, 0],
         },
     }
@@ -406,7 +407,8 @@ def _sample_marker_board_result() -> dict:
             }
         ],
         "alignment": {
-            "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
+            "lattice": "square",
+            "matrix": [[1, 0], [0, 1]],
             "translation": [1, 2],
         },
     }
@@ -424,7 +426,8 @@ def _sample_puzzleboard_result() -> dict:
             }
         ],
         "alignment": {
-            "transform": {"a": 1, "b": 0, "c": 0, "d": 1},
+            "lattice": "square",
+            "matrix": [[1, 0], [0, 1]],
             "translation": [4, 5],
         },
         "decode": {
@@ -463,3 +466,14 @@ def test_result_from_dict_rejects_unknown_keys() -> None:
     bad["unknown"] = 123
     with pytest.raises(ValueError):
         calib_targets.ChessboardDetectionResult.from_dict(bad)
+
+
+def test_grid_transform_rejects_unknown_lattice() -> None:
+    with pytest.raises(ValueError, match="square.*hex"):
+        calib_targets.GridTransform.from_dict(
+            {
+                "lattice": "triangular",
+                "matrix": [[1, 0], [0, 1]],
+                "translation": [0, 0],
+            }
+        )

@@ -1,6 +1,6 @@
 # Road to `projective-grid` 1.0
 
-The crate remains on the independent `0.12.x` line. The ordinary facade is
+The crate remains on the independent `0.13.x` line. The ordinary facade is
 already the intended shape:
 
 ```rust
@@ -18,9 +18,12 @@ Before 1.0:
 3. complete a public-API and semver audit against the latest published 0.x;
 4. publish and exercise a release candidate.
 
-The 0.11 → 0.12 change replaces positional optional arguments with named
-request builders and separates ordinary results, diagnostics, and expert
-tuning. Workspace callers are already migrated.
+The 0.13 release makes `expert::lattice::GridTransform` the single affine
+integer-grid transform for lattice symmetries and target alignments. It also
+keeps reusable prediction and homography primitives under the `expert`
+composition seam rather than duplicating them at the ordinary crate root.
+Workspace callers are already migrated; see the workspace 0.12 migration
+guide for before/after imports and serialized shapes.
 
 ## Independent releases
 

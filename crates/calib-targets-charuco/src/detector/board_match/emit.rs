@@ -23,11 +23,11 @@ pub(super) fn emit_markers(
 ) -> Vec<MarkerDetection> {
     let mut out = Vec::new();
     for (ci, cell) in cells.iter().enumerate() {
-        let bc = alignment.map(cell.gc.u, cell.gc.v);
+        let bc = alignment.apply(cell.gc);
         let Some(expected_id) = board.marker_id_at(bc) else {
             continue;
         };
-        let rot = rotation_index_for(&alignment.transform);
+        let rot = rotation_index_for(alignment);
         let s = matrix.score(ci, expected_id, rot);
         if !s.is_finite() {
             continue;

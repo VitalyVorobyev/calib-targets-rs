@@ -19,7 +19,7 @@ Algorithm details: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-marker = "0.11"
+calib-targets-marker = "0.12"
 ```
 
 ## Quickstart
@@ -29,7 +29,7 @@ ChESS corner detection for you and takes an `image::GrayImage` straight in.
 
 ```toml
 [dependencies]
-calib-targets = "0.11"
+calib-targets = "0.12"
 image = "0.25"
 ```
 
@@ -116,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Field | Meaning |
 |---|---|
 | `corners: Vec<MarkerBoardCorner>` | Labelled inner corners, `(i, j)` grid, optional `id`, optional `target_position` in mm, and `score`. |
-| `alignment: Option<GridAlignment>` | D4 rotation + offset aligning chessboard `(i, j)` to the layout's canonical frame. Full image+corner detection returns `None` if the three circles cannot be placed. |
+| `alignment: Option<GridAlignment>` | Optional canonical affine `GridTransform` (under the semantic alias) aligning chessboard `(i, j)` to the layout frame. Full image+corner detection returns `None` if the three circles cannot be placed. |
 
 The detection *evidence* — every scored `circle_candidates` hypothesis,
 the `circle_matches` pairing each expected circle to a detected one, the

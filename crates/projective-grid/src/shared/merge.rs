@@ -44,17 +44,19 @@ use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
-use crate::lattice::{Coord, GridTransform, LatticeKind};
+use crate::lattice::{Coord, GridTransform, LatticeKind, D4_TRANSFORMS};
 
+// Preserve the historical square-facade tie-break order while deriving every
+// transform from the canonical lattice table.
 const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [-1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[1, 0], [0, -1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, 1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [-1, 0]], [0, 0]),
+    D4_TRANSFORMS[0],
+    D4_TRANSFORMS[3],
+    D4_TRANSFORMS[2],
+    D4_TRANSFORMS[1],
+    D4_TRANSFORMS[4],
+    D4_TRANSFORMS[5],
+    D4_TRANSFORMS[6],
+    D4_TRANSFORMS[7],
 ];
 
 /// Tuning knobs for [`merge_components_local`].

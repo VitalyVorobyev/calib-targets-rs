@@ -5,7 +5,7 @@
 //! coordinate hypotheses.
 
 use calib_targets_charuco::{CharucoCorner, CharucoDetection};
-use calib_targets_core::{Coord, GridAlignment, GRID_TRANSFORMS_D4};
+use calib_targets_core::{Coord, GRID_TRANSFORMS_D4};
 use nalgebra::Point2;
 use projective_grid::{
     check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
@@ -29,14 +29,7 @@ fn synthetic_charuco_result() -> CharucoDetection {
         }
     }
     corners.rotate_left(7);
-    CharucoDetection::new(
-        corners,
-        Vec::new(),
-        GridAlignment {
-            transform: GRID_TRANSFORMS_D4[0],
-            translation: [0, 0],
-        },
-    )
+    CharucoDetection::new(corners, Vec::new(), GRID_TRANSFORMS_D4[0])
 }
 
 #[test]

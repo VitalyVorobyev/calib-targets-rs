@@ -57,11 +57,12 @@ fn load_manifest(dir: &Path) -> Manifest {
 
 fn d4_consistent(pairs: &[(i32, i32, i32, i32)]) -> Option<(usize, i32, i32)> {
     for (idx, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
+        let matrix = t.matrix();
         let deltas: Vec<(i32, i32)> = pairs
             .iter()
             .map(|&(our_row, our_col, truth_row, truth_col)| {
-                let mapped_row = t.a * our_row + t.b * our_col;
-                let mapped_col = t.c * our_row + t.d * our_col;
+                let mapped_row = matrix[0][0] * our_row + matrix[0][1] * our_col;
+                let mapped_col = matrix[1][0] * our_row + matrix[1][1] * our_col;
                 (
                     (truth_row - mapped_row).rem_euclid(501),
                     (truth_col - mapped_col).rem_euclid(501),

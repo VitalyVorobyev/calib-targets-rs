@@ -22,6 +22,8 @@
 
 use nalgebra::Point2;
 
+use crate::cluster::angular_dist_pi;
+
 use super::axis::AxisCache;
 use super::delaunay::Triangulation;
 
@@ -57,16 +59,7 @@ struct GridEdgeMatch {
 /// undirected). The result is the geodesic distance on the half-circle.
 #[inline]
 fn axis_diff(theta: f32, alpha: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    let half_pi = pi / 2.0;
-    let mut d = (theta - alpha) % pi;
-    if d < 0.0 {
-        d += pi;
-    }
-    if d > half_pi {
-        d = pi - d;
-    }
-    d
+    angular_dist_pi(theta, alpha)
 }
 
 /// Nearest informative grid axis to `theta` at this corner.

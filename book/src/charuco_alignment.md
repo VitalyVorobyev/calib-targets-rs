@@ -10,4 +10,4 @@
 
 ## Inlier filtering
 
-After alignment is chosen, the detector keeps only inlier markers and assigns ChArUco corner IDs based on the aligned grid coordinates. The final `alignment` in the result is a `GridAlignment` that maps detected grid coordinates into board coordinates.
+After alignment is chosen, the detector keeps only inlier markers and assigns ChArUco corner IDs based on the aligned grid coordinates. The final `alignment` uses the semantic `GridAlignment` alias for the canonical affine `GridTransform`; it maps detected grid coordinates into board coordinates with one matrix plus translation.

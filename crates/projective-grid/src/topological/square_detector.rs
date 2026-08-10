@@ -34,6 +34,7 @@ use std::collections::{HashMap, HashSet};
 
 use nalgebra::Point2;
 
+use crate::cluster::angular_dist_pi;
 use crate::detect::DetectionParams;
 use crate::error::{GridError, Result};
 use crate::feature::OrientedFeature;
@@ -871,25 +872,6 @@ fn axes_pass_cluster_gate(
         }
     }
     false
-}
-
-/// Smallest angular distance on the circle with period π. Result in
-/// `[0, π/2]`. The topological cluster gate is the only consumer in this
-/// crate, so the helper is local.
-#[inline]
-fn angular_dist_pi(a: f32, b: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    // `(diff % π + π) % π` keeps the result in `[0, π)` for any sign
-    // of `diff`. Bare `%` in Rust is the truncated remainder, so the
-    // double `+ π) % π` is necessary.
-    let diff_raw = (a - b) % pi;
-    let positive = (diff_raw + pi) % pi;
-    let complement = pi - positive;
-    if positive < complement {
-        positive
-    } else {
-        complement
-    }
 }
 
 /// Triangulate only the usable features and remap triangle vertex

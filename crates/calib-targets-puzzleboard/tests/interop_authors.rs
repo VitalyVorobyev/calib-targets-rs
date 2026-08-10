@@ -229,25 +229,26 @@ fn run_one_image(index: usize, dir: &Path) {
     // constant (mod 501) across all matched pairs.
     let mut found_transform: Option<(usize, i32, i32, i32, i32)> = None;
     for (ti, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
+        let matrix = t.matrix();
         let deltas: Vec<(i32, i32)> = pairs
             .iter()
             .map(|(or, oc, rr, rc)| {
                 // D4(our) treats (row, col) as 2D: new_row = a*row + b*col, new_col = c*row + d*col.
-                let nr = t.a * or + t.b * oc;
-                let nc = t.c * or + t.d * oc;
+                let nr = matrix[0][0] * or + matrix[0][1] * oc;
+                let nc = matrix[1][0] * or + matrix[1][1] * oc;
                 ((rr - nr).rem_euclid(501), (rc - nc).rem_euclid(501))
             })
             .collect();
         if deltas.iter().all(|d| d == &deltas[0]) {
-            found_transform = Some((ti, t.a, t.b, t.c, t.d));
+            found_transform = Some((ti, matrix[0][0], matrix[0][1], matrix[1][0], matrix[1][1]));
             println!(
                 "  pixel-matched pairs: {} — consistent under D4[{ti}] \
                  (a={}, b={}, c={}, d={}), offset=(row,col)={:?}",
                 pairs.len(),
-                t.a,
-                t.b,
-                t.c,
-                t.d,
+                matrix[0][0],
+                matrix[0][1],
+                matrix[1][0],
+                matrix[1][1],
                 deltas[0]
             );
             break;
@@ -398,12 +399,13 @@ fn diag_example0_edge_bits() {
         "Decode BER={:.3}, edges={}/{}",
         r.decode.bit_error_rate, r.decode.edges_matched, r.decode.edges_observed
     );
+    let alignment_matrix = r.alignment.matrix();
     println!(
         "Alignment transform: a={} b={} c={} d={}",
-        r.alignment.transform.a,
-        r.alignment.transform.b,
-        r.alignment.transform.c,
-        r.alignment.transform.d
+        alignment_matrix[0][0],
+        alignment_matrix[0][1],
+        alignment_matrix[1][0],
+        alignment_matrix[1][1]
     );
 
     let edges = &diag.observed_edges;
@@ -471,16 +473,17 @@ fn diag_example0_edge_bits() {
     // Try with found origin's transform applied, checking all 8 D4 transforms at true origin
     println!("\nBER at true origin for all 8 D4 transforms:");
     for (ti, &t) in GRID_TRANSFORMS_D4.iter().enumerate() {
+        let matrix = t.matrix();
         let mut m = 0usize;
         for e in edges.iter() {
-            let tr = t.a * e.row + t.b * e.col;
-            let tc = t.c * e.row + t.d * e.col;
-            let eff_h = if t.b.abs() > t.d.abs() {
+            let tr = matrix[0][0] * e.row + matrix[0][1] * e.col;
+            let tc = matrix[1][0] * e.row + matrix[1][1] * e.col;
+            let eff_h = if matrix[0][1].abs() > matrix[1][1].abs() {
                 EdgeOrientation::Vertical
             } else {
                 EdgeOrientation::Horizontal
             };
-            let eff_v = if t.c.abs() > t.a.abs() {
+            let eff_v = if matrix[1][0].abs() > matrix[0][0].abs() {
                 EdgeOrientation::Horizontal
             } else {
                 EdgeOrientation::Vertical
@@ -504,28 +507,28 @@ fn diag_example0_edge_bits() {
         }
         println!(
             "  D4[{ti}] a={} b={} c={} d={}: {m}/{n} matched, BER={:.3}",
-            t.a,
-            t.b,
-            t.c,
-            t.d,
+            matrix[0][0],
+            matrix[0][1],
+            matrix[1][0],
+            matrix[1][1],
             (n - m) as f32 / n as f32
         );
     }
 
-    // Now try with the correct transform applied (inverse of alignment.transform)
-    let t = r.alignment.transform;
+    // Now try with the correct linear transform applied (without translation).
+    let matrix = r.alignment.matrix();
     let mut matched_true_t = 0usize;
     for e in edges.iter() {
         // Apply the found transform to the edge coords
-        let tr = t.a * e.row + t.b * e.col;
-        let tc = t.c * e.row + t.d * e.col;
+        let tr = matrix[0][0] * e.row + matrix[0][1] * e.col;
+        let tc = matrix[1][0] * e.row + matrix[1][1] * e.col;
         // Compute effective orientation after transform
-        let eff_orient_h = if t.b.abs() > t.d.abs() {
+        let eff_orient_h = if matrix[0][1].abs() > matrix[1][1].abs() {
             EdgeOrientation::Vertical
         } else {
             EdgeOrientation::Horizontal
         };
-        let eff_orient_v = if t.c.abs() > t.a.abs() {
+        let eff_orient_v = if matrix[1][0].abs() > matrix[0][0].abs() {
             EdgeOrientation::Horizontal
         } else {
             EdgeOrientation::Vertical

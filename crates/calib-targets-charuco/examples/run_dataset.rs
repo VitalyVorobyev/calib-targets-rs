@@ -492,16 +492,12 @@ impl DetectionSummary {
                 }),
             })
             .collect();
+        let matrix = res.alignment.matrix();
         Self {
             corners,
             markers,
-            alignment_transform: [
-                res.alignment.transform.a,
-                res.alignment.transform.b,
-                res.alignment.transform.c,
-                res.alignment.transform.d,
-            ],
-            alignment_translation: res.alignment.translation,
+            alignment_transform: [matrix[0][0], matrix[0][1], matrix[1][0], matrix[1][1]],
+            alignment_translation: res.alignment.translation(),
         }
     }
 }
@@ -511,19 +507,15 @@ fn detection_report_from_result(
     res: &CharucoDetection,
     diagnostics: &CharucoDetectDiagnostics,
 ) -> CompactDetection {
+    let matrix = res.alignment.matrix();
     CompactDetection {
         board,
         corners: res.corners.len(),
         markers: res.markers.len(),
         raw_marker_count: diagnostics.raw_marker_count,
         raw_marker_wrong_id_count: diagnostics.raw_marker_wrong_id_count,
-        alignment_transform: [
-            res.alignment.transform.a,
-            res.alignment.transform.b,
-            res.alignment.transform.c,
-            res.alignment.transform.d,
-        ],
-        alignment_translation: res.alignment.translation,
+        alignment_transform: [matrix[0][0], matrix[0][1], matrix[1][0], matrix[1][1]],
+        alignment_translation: res.alignment.translation(),
     }
 }
 

@@ -10,6 +10,7 @@ use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
 use projective_grid::expert::component::{merge_components_local, ComponentInput};
+use projective_grid::Coord;
 
 use super::boosters::{apply_boosters_with_directional_edge_scale, apply_geometry_only_recovery};
 use super::cluster::{cluster_axes, ClusterCenters};
@@ -211,7 +212,7 @@ fn mark_labelled(augs: &mut [CornerAug], labelled: &LabelledComponent) {
 }
 
 fn transform_label(t: GridTransform, ij: (i32, i32), delta: (i32, i32)) -> (i32, i32) {
-    let mapped = t.apply(ij.0, ij.1);
+    let mapped = t.apply(Coord::new(ij.0, ij.1));
     (mapped.u + delta.0, mapped.v + delta.1)
 }
 
@@ -229,7 +230,7 @@ fn shared_corner_alignment(
             let Some(&ij_dst) = dst_by_corner.get(&idx) else {
                 continue;
             };
-            let mapped = t.apply(ij_src.0, ij_src.1);
+            let mapped = t.apply(Coord::new(ij_src.0, ij_src.1));
             let delta = (ij_dst.0 - mapped.u, ij_dst.1 - mapped.v);
             *votes.entry(delta).or_default() += 1;
         }

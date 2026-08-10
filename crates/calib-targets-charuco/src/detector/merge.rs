@@ -39,10 +39,10 @@ pub(crate) fn merge_charuco_results(
     }
 
     // Group by D4 transform.
-    let mut groups: HashMap<[i32; 4], Vec<&(CharucoDetection, RawMarkerCounts)>> = HashMap::new();
+    let mut groups: HashMap<[[i32; 2]; 2], Vec<&(CharucoDetection, RawMarkerCounts)>> =
+        HashMap::new();
     for r in &results {
-        let t = &r.0.alignment.transform;
-        let key = [t.a, t.b, t.c, t.d];
+        let key = r.0.alignment.matrix();
         groups.entry(key).or_default().push(r);
     }
 
@@ -107,10 +107,11 @@ pub(crate) fn merge_charuco_results(
     let best_alignment = best_group
         .iter()
         .max_by(|a, b| {
-            a.0.markers
-                .len()
-                .cmp(&b.0.markers.len())
-                .then_with(|| b.0.alignment.translation.cmp(&a.0.alignment.translation))
+            a.0.markers.len().cmp(&b.0.markers.len()).then_with(|| {
+                b.0.alignment
+                    .translation()
+                    .cmp(&a.0.alignment.translation())
+            })
         })
         .unwrap()
         .0
@@ -171,10 +172,7 @@ mod tests {
     }
 
     fn identity_alignment() -> GridAlignment {
-        GridAlignment {
-            transform: GridTransform::IDENTITY,
-            translation: [0, 0],
-        }
+        GridTransform::IDENTITY
     }
 
     fn result(

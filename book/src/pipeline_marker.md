@@ -19,7 +19,7 @@ marker IDs, this anchors with a single 3-point pose.
 | 0 | chessboard grid detect | ChESS corners → `ChessDetection` | `ChessDetector::detect` — **single best component** (multi-component is not supported here). |
 | 1 | circle candidate detection | corner map + image → `Vec<CircleCandidate>` | For each complete 4-corner cell, warp the cell to a square patch, find the centroid + radius of a bright/dark disk, and keep the top `max_candidates_per_polarity` per polarity. |
 | 2 | expected-circle matching | candidates + spec → `Vec<CircleMatch>` | For each of the 3 expected circles, find the nearest candidate within `max_distance_cells` (optional), matching by polarity. |
-| 3 | grid alignment estimation | matches → `GridAlignment` + inliers | Fit a dihedral transform + translation in `(i, j)`-space from the matched 3-circle layout; require `≥ min_offset_inliers` consistent matches. |
+| 3 | grid alignment estimation | matches → affine `GridTransform` + inliers | Fit a dihedral matrix + translation in `(i, j)`-space from the matched 3-circle layout; `GridAlignment` is only its semantic alias. Require `≥ min_offset_inliers` consistent matches. |
 | 4 | per-corner offset mapping | matches + alignment → offsets | Apply the alignment transform to each candidate cell coord; compute the delta from expected. |
 | 5 | emit detection | grid + circles + alignment → result | Emit typed marker-board corners (optional IDs / `target_position`); circle evidence is returned through `MarkerBoardDiagnostics`. |
 

@@ -67,6 +67,7 @@
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
+use crate::cluster::{angular_dist_pi as dist_pi, wrap_pi as fold_pi};
 use crate::feature::{LocalAxis, OrientedFeature, PointFeature};
 
 /// Nearest neighbours used to estimate one corner's local grid directions.
@@ -681,28 +682,6 @@ impl UndirectedMean {
         }
         Some(fold_pi(0.5 * self.sum_sin.atan2(self.sum_cos)))
     }
-}
-
-/// Smallest undirected angular distance modulo π, in `[0, π/2]`.
-#[inline]
-fn dist_pi(a: f32, b: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    let d = (a - b).abs() % pi;
-    d.min(pi - d)
-}
-
-/// Fold an angle into `[0, π)`.
-#[inline]
-fn fold_pi(theta: f32) -> f32 {
-    let pi = std::f32::consts::PI;
-    let mut t = theta % pi;
-    if t < 0.0 {
-        t += pi;
-    }
-    if t >= pi {
-        t -= pi;
-    }
-    t
 }
 
 /// Circular box-smooth (mod the histogram length) with a ±2-bin window.

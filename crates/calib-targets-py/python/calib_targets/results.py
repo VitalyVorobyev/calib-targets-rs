@@ -76,10 +76,15 @@ class CellOffset:
 
 @dataclass(slots=True)
 class GridTransform:
-    a: int
-    b: int
-    c: int
-    d: int
+    """Affine integer-grid transform shared by every detector.
+
+    Applies ``matrix @ (u, v) + translation``. ``lattice`` is currently
+    ``"square"`` for calibration-target alignments.
+    """
+
+    lattice: str
+    matrix: tuple[tuple[int, int], tuple[int, int]]
+    translation: tuple[int, int]
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import grid_transform_to_dict
@@ -92,22 +97,8 @@ class GridTransform:
 
         return grid_transform_from_dict(data)
 
-
-@dataclass(slots=True)
-class GridAlignment:
-    transform: GridTransform
-    translation: tuple[int, int]
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_alignment_to_dict
-
-        return grid_alignment_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridAlignment:
-        from ._convert_out import grid_alignment_from_dict
-
-        return grid_alignment_from_dict(data)
+# Semantic compatibility name: an alignment is the same affine transform.
+GridAlignment = GridTransform
 
 
 @dataclass(slots=True)

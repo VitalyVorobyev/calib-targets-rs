@@ -32,6 +32,14 @@ fitting a locally-planar lattice to a laser-dot cloud, extracting a
 grid from a scanned document, or building a new detector for a pattern
 the workspace doesn't yet ship.
 
+The crate root contains the ordinary detection facade. Detector builders use
+the curated composition paths
+`projective_grid::expert::lattice::{predict_grid_position, GridTransform}` and
+`projective_grid::expert::geometry::estimate_homography`; `Coord` and
+`LatticeKind` remain at the root. `GridTransform` is the single affine
+integer-grid mapping (`matrix * coordinate + translation`) shared by lattice
+symmetries and target alignments. It never acts on image pixels.
+
 ---
 
 ## The model

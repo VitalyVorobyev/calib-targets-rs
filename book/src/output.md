@@ -125,7 +125,7 @@ scores below that threshold will not appear in the output.
 pub struct CharucoDetection {
     pub corners:   Vec<CharucoCorner>,
     pub markers:   Vec<MarkerDetection>,
-    pub alignment: GridAlignment,
+    pub alignment: GridAlignment, // alias of the canonical GridTransform
 }
 ```
 

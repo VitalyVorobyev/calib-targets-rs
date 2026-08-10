@@ -5,7 +5,7 @@
 //! full 501 × 501 master via the cyclic-period precompute; [`decode_fixed_board`]
 //! constrains the sweep to a declared board's own bit pattern.
 
-use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{
@@ -216,7 +216,7 @@ pub(crate) fn decode_fixed_board_with_runner_up(
                             prev.edges_matched as u32,
                             prev.master_origin_row,
                             prev.master_origin_col,
-                            prev.alignment.transform,
+                            prev.alignment.with_translation([0, 0]),
                         );
                     }
                     let mean_confidence = if matched == 0 {
@@ -225,10 +225,7 @@ pub(crate) fn decode_fixed_board_with_runner_up(
                         weighted / matched as f32
                     };
                     best = Some(DecodeOutcome {
-                        alignment: GridAlignment {
-                            transform,
-                            translation: [master_col, master_row],
-                        },
+                        alignment: transform.with_translation([master_col, master_row]),
                         edges_matched: matched,
                         edges_observed: total,
                         weighted_score: score,
@@ -574,12 +571,9 @@ impl HardScan {
             best_weighted / best_matched as f32
         };
         let candidate = DecodeOutcome {
-            alignment: GridAlignment {
-                transform,
-                // translation[0] is the i (col) offset, translation[1]
-                // is the j (row) offset, so master_col goes first.
-                translation: [master_col, master_row],
-            },
+            // translation[0] is the i (col) offset, translation[1]
+            // is the j (row) offset, so master_col goes first.
+            alignment: transform.with_translation([master_col, master_row]),
             edges_matched: best_matched,
             edges_observed: total,
             weighted_score: score,
@@ -910,10 +904,7 @@ fn scan_transform_direct(
                 weighted / matched as f32
             };
             let candidate = DecodeOutcome {
-                alignment: GridAlignment {
-                    transform,
-                    translation: [master_col, master_row],
-                },
+                alignment: transform.with_translation([master_col, master_row]),
                 edges_matched: matched,
                 edges_observed: total,
                 weighted_score: score,

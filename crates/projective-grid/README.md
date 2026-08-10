@@ -160,6 +160,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Running it prints all nine features, labelled `(0,0)` through `(2,2)` with a
 sub-pixel fit residual.
 
+## Detector-builder API
+
+The crate root is the ordinary detection facade. Pattern-specific detectors
+use the curated `expert` composition namespace:
+
+```rust
+use projective_grid::{Coord, LatticeKind};
+use projective_grid::expert::lattice::{
+    predict_grid_position, GridTransform,
+};
+use projective_grid::expert::geometry::estimate_homography;
+
+let transform = GridTransform::identity(LatticeKind::Square)
+    .with_translation([12, 7]);
+let board_coord = transform.apply(Coord::new(2, 3));
+# let _: Option<projective_grid::expert::lattice::PredictedPosition<f32>> = None;
+# let _ = predict_grid_position::<f32>;
+# let _ = estimate_homography::<f32>;
+# assert_eq!(board_coord, Coord::new(14, 10));
+```
+
+`GridTransform` is the single affine integer-grid mapping used by D4/D6
+symmetries and target alignments: `destination = matrix * source +
+translation`. It does not transform image or pixel coordinates. These expert
+paths are intentionally not duplicated at the crate root.
+
 ## Algorithm (square)
 
 Square lattice detection uses the **topological** assembler — the sole grid

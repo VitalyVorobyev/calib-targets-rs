@@ -65,12 +65,13 @@ def load_frame(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def transform_signature(transform: dict[str, int]) -> tuple[int, int, int, int]:
+def transform_signature(transform: dict[str, Any]) -> tuple[int, int, int, int]:
+    matrix = transform.get("matrix", [[0, 0], [0, 0]])
     return (
-        int(transform.get("a", 0)),
-        int(transform.get("b", 0)),
-        int(transform.get("c", 0)),
-        int(transform.get("d", 0)),
+        int(matrix[0][0]),
+        int(matrix[0][1]),
+        int(matrix[1][0]),
+        int(matrix[1][1]),
     )
 
 
@@ -215,7 +216,7 @@ def main() -> None:
             detection = outcome.get("detection", {})
             decode = outcome.get("decode", {})
             alignment = outcome.get("alignment", {})
-            t_sig = transform_signature(alignment.get("transform", {}))
+            t_sig = transform_signature(alignment)
             t_label = transform_label(t_sig)
             origin_row = int(decode.get("master_origin_row", 0))
             origin_col = int(decode.get("master_origin_col", 0))

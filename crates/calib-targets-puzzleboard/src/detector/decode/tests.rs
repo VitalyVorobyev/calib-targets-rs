@@ -7,7 +7,7 @@
 use super::*;
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit, EdgeOrientation};
-use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::{Coord, GridTransform, GRID_TRANSFORMS_D4};
 use std::collections::HashMap;
 
 /// Chinese Remainder closed form for `r ≡ a (mod 167) ∧ r ≡ b (mod 3)` in `[0, 501)`.
@@ -95,7 +95,7 @@ fn gate_reference_winner(
     let win_matched = winner.edges_matched as u32;
     let is_global_best = winner.master_origin_row == gr
         && winner.master_origin_col == gc
-        && winner.alignment.transform == gt;
+        && winner.alignment.matrix() == gt.matrix();
     let competitor = if is_global_best { grunner } else { gbest };
     let margin = win_matched.saturating_sub(competitor);
     let k_winner = (winner.edges_observed as u32).saturating_sub(win_matched);
@@ -169,12 +169,9 @@ fn decode_reference(
                     weighted / matched as f32
                 };
                 let candidate = DecodeOutcome {
-                    alignment: GridAlignment {
-                        transform,
-                        // translation[0] is the i (col) offset, translation[1]
-                        // is the j (row) offset, so master_col goes first.
-                        translation: [master_col, master_row],
-                    },
+                    // translation[0] is the i (col) offset, translation[1]
+                    // is the j (row) offset, so master_col goes first.
+                    alignment: transform.with_translation([master_col, master_row]),
                     edges_matched: matched,
                     edges_observed: total,
                     weighted_score: score,
@@ -305,10 +302,7 @@ fn decode_soft_reference(
                     match_conf_sum / matched as f32
                 };
                 let candidate = DecodeOutcome {
-                    alignment: GridAlignment {
-                        transform,
-                        translation: [master_col, master_row],
-                    },
+                    alignment: transform.with_translation([master_col, master_row]),
                     edges_matched: matched,
                     edges_observed: total,
                     weighted_score: ll_total / total as f32,
@@ -337,7 +331,7 @@ fn decode_soft_reference(
             best.score_margin = (best.score_best - r.score_best) / edges;
             best.runner_up_origin_row = Some(r.master_origin_row);
             best.runner_up_origin_col = Some(r.master_origin_col);
-            best.runner_up_transform = Some(r.alignment.transform);
+            best.runner_up_transform = Some(r.alignment.with_translation([0, 0]));
         }
         None => {
             best.score_runner_up = None;
@@ -368,8 +362,8 @@ fn rotate_observed_edge_canonically(
         EdgeOrientation::Horizontal => ((edge.col, edge.row), (edge.col + 1, edge.row)),
         EdgeOrientation::Vertical => ((edge.col, edge.row), (edge.col, edge.row + 1)),
     };
-    let p0 = t.apply(p0_i, p0_j);
-    let p1 = t.apply(p1_i, p1_j);
+    let p0 = t.apply(Coord::new(p0_i, p0_j));
+    let p1 = t.apply(Coord::new(p1_i, p1_j));
     let (p0_col, p0_row) = (p0.u, p0.v);
     let (p1_col, p1_row) = (p1.u, p1.v);
     let orientation = if p0_row == p1_row {
@@ -558,10 +552,7 @@ fn decoder_rejects_when_bit_error_rate_too_high() {
 
 #[test]
 fn best_candidate_update_keeps_lower_score_valid_candidate() {
-    let alignment = GridAlignment {
-        transform: GRID_TRANSFORMS_D4[0],
-        translation: [0, 0],
-    };
+    let alignment = GRID_TRANSFORMS_D4[0];
     let valid = DecodeOutcome {
         alignment,
         edges_matched: 16,
@@ -603,10 +594,7 @@ fn best_candidate_update_keeps_lower_score_valid_candidate() {
 /// A should win because edges_matched takes priority.
 #[test]
 fn lex_rank_matched_beats_weighted_score() {
-    let alignment = GridAlignment {
-        transform: GRID_TRANSFORMS_D4[0],
-        translation: [0, 0],
-    };
+    let alignment = GRID_TRANSFORMS_D4[0];
     let candidate_a = DecodeOutcome {
         alignment,
         edges_matched: 20,
@@ -990,7 +978,7 @@ fn assert_fixed_board_target_position_is_d4_invariant(
     let mut reference_targets: HashMap<(i32, i32), (i32, i32)> = HashMap::new();
     for gi in 0..n_corners {
         for gj in 0..n_corners {
-            let g = reference.alignment.map(gi, gj);
+            let g = reference.alignment.apply(Coord::new(gi, gj));
             let mi = g.u.rem_euclid(MASTER_COLS as i32);
             let mj = g.v.rem_euclid(MASTER_ROWS as i32);
             reference_targets.insert((gi, gj), (mi, mj));
@@ -1025,10 +1013,10 @@ fn assert_fixed_board_target_position_is_d4_invariant(
         let mut mismatches = Vec::new();
         for gi in 0..n_corners {
             for gj in 0..n_corners {
-                let nr = rot.apply(gi, gj);
+                let nr = rot.apply(Coord::new(gi, gj));
                 let rebased_i = nr.u - min_col;
                 let rebased_j = nr.v - min_row;
-                let g = result.alignment.map(rebased_i, rebased_j);
+                let g = result.alignment.apply(Coord::new(rebased_i, rebased_j));
                 let mi = g.u.rem_euclid(MASTER_COLS as i32);
                 let mj = g.v.rem_euclid(MASTER_ROWS as i32);
                 let reference_xy = reference_targets[&(gi, gj)];
@@ -1126,14 +1114,7 @@ fn random_observation(rng: &mut Lcg) -> Vec<PuzzleBoardObservedEdge> {
 /// exact float `==` (the optimized and reference paths perform identical
 /// summations, so any divergence is a real bug, not rounding noise).
 fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
-    assert_eq!(
-        a.alignment.transform, b.alignment.transform,
-        "{ctx}: transform"
-    );
-    assert_eq!(
-        a.alignment.translation, b.alignment.translation,
-        "{ctx}: translation"
-    );
+    assert_eq!(a.alignment, b.alignment, "{ctx}: alignment");
     assert_eq!(a.edges_matched, b.edges_matched, "{ctx}: edges_matched");
     assert_eq!(a.edges_observed, b.edges_observed, "{ctx}: edges_observed");
     assert_eq!(
@@ -1427,7 +1408,7 @@ fn wrong_corner_count(out: &DecodeOutcome, pos_row: i32, pos_col: i32, n: i32) -
     let mut wrong = 0;
     for gi in 0..n {
         for gj in 0..n {
-            let g = out.alignment.map(gi, gj);
+            let g = out.alignment.apply(Coord::new(gi, gj));
             let mi = g.u.rem_euclid(MASTER_COLS as i32);
             let mj = g.v.rem_euclid(MASTER_ROWS as i32);
             let ti = (pos_col + gi).rem_euclid(MASTER_COLS as i32);
