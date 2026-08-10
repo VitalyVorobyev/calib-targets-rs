@@ -33,7 +33,7 @@
 //! **once per D4 transform** in `O(501 × N)`.  The 501² origin loop then
 //! becomes `O(501²)` with two table lookups — no per-observation work.
 
-use calib_targets_core::{log_sigmoid, GridAlignment, GridTransform};
+use calib_targets_core::{log_sigmoid, Coord, GridAlignment, GridTransform};
 
 use crate::code_maps::{
     EdgeOrientation, PuzzleBoardObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS,
@@ -244,7 +244,7 @@ fn apply_soft_uniqueness_gate(
     let soft_matched = winner.edges_matched as u32;
     let soft_is_global_best = winner.master_origin_row == best_row
         && winner.master_origin_col == best_col
-        && winner.alignment.transform == best_transform;
+        && winner.alignment.matrix() == best_transform.matrix();
     let (competitor_matched, competitor) = if soft_is_global_best {
         (runner.map_or(0, |r| r.matched), runner)
     } else {
@@ -411,8 +411,8 @@ fn transform_edge_lookup(
         EdgeOrientation::Horizontal => ((edge.col, edge.row), (edge.col + 1, edge.row)),
         EdgeOrientation::Vertical => ((edge.col, edge.row), (edge.col, edge.row + 1)),
     };
-    let p0 = t.apply(p0_i, p0_j);
-    let p1 = t.apply(p1_i, p1_j);
+    let p0 = t.apply(Coord::new(p0_i, p0_j));
+    let p1 = t.apply(Coord::new(p1_i, p1_j));
     let (p0_col, p0_row) = (p0.u, p0.v);
     let (p1_col, p1_row) = (p1.u, p1.v);
     let orientation = if p0_row == p1_row {

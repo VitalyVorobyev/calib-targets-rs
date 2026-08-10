@@ -17,16 +17,14 @@
 
 use std::collections::HashMap;
 
-use nalgebra::Point2;
-
-use crate::float::{lit, Float};
+use nalgebra::{Point2, RealField};
 
 use super::{Coord, LatticeKind};
 
 /// A neighbour-midpoint position prediction from [`predict_grid_position`].
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[non_exhaustive]
-pub struct PredictedPosition<F: Float> {
+pub struct PredictedPosition<F: RealField + Copy> {
     /// Predicted image position: the average of the available opposite-pair
     /// midpoints.
     pub position: Point2<F>,
@@ -65,12 +63,12 @@ pub struct PredictedPosition<F: Float> {
 /// // A frontier coordinate with no opposite pair is not predicted.
 /// assert!(predict_grid_position(&labelled, Coord::new(2, 0), LatticeKind::Square).is_none());
 /// ```
-pub fn predict_grid_position<F: Float>(
+pub fn predict_grid_position<F: RealField + Copy>(
     labelled: &HashMap<Coord, Point2<F>>,
     at: Coord,
     kind: LatticeKind,
 ) -> Option<PredictedPosition<F>> {
-    let half: F = lit(0.5);
+    let half = F::from_subset(&0.5_f64);
     let mut sum_x = F::zero();
     let mut sum_y = F::zero();
     let mut n_axis_pairs = 0usize;
@@ -93,7 +91,7 @@ pub fn predict_grid_position<F: Float>(
     if n_axis_pairs == 0 {
         return None;
     }
-    let n: F = lit(n_axis_pairs as f32);
+    let n = F::from_subset(&(n_axis_pairs as f64));
     Some(PredictedPosition {
         position: Point2::new(sum_x / n, sum_y / n),
         n_axis_pairs,

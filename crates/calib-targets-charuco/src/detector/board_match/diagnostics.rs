@@ -265,11 +265,11 @@ fn fill_expected_from_board(
 ) {
     let cols = diag.board_cols as i32;
     let rows = diag.board_rows as i32;
-    let rot = rotation_index_for(&alignment.transform);
+    let rot = rotation_index_for(alignment);
     let dict = board.spec().dictionary;
 
     for (ci, cell) in diag.cells.iter_mut().enumerate() {
-        let bc = alignment.map(cell.gc.u, cell.gc.v);
+        let bc = alignment.apply(cell.gc);
         cell.mapped_bc = Some([bc.u, bc.v]);
         if bc.u < 0 || bc.v < 0 || bc.u >= cols || bc.v >= rows {
             continue;

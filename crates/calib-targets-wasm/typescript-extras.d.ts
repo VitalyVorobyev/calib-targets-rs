@@ -55,17 +55,15 @@ export interface Coord {
 }
 
 export interface GridTransform {
-  a: number;
-  b: number;
-  c: number;
-  d: number;
-}
-
-export interface GridAlignment {
-  transform: GridTransform;
+  lattice: "square" | "hex";
+  /** Row-major integer matrix applied before translation. */
+  matrix: [[number, number], [number, number]];
   /** Integer translation `[tx, ty]` in grid units. */
   translation: [number, number];
 }
+
+/** Semantic alias: detector alignment uses the canonical affine transform. */
+export type GridAlignment = GridTransform;
 
 // ---------------------------------------------------------------------------
 // Corner outputs

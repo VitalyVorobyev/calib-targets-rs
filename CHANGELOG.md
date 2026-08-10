@@ -9,6 +9,33 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.12.0
+
+Breaking API-consolidation release. See the
+[0.12 migration guide](docs/migrations/0.12.0.md).
+
+### Changed
+
+- **One canonical affine `GridTransform`.** `projective-grid` now owns the
+  lattice kind, row-major integer matrix, and translation in one structure.
+  `calib_targets_core::GridTransform` re-exports it and `GridAlignment` is a
+  semantic type alias. Detector results no longer compose two structures for
+  the same grid-coordinate mapping.
+- **Python/WASM/Serde alignment shape is now
+  `{ lattice, matrix, translation }`.** Python and TypeScript keep
+  `GridAlignment` as an alias. The C ABI stays unchanged through an adapter.
+- **`projective-grid` reusable primitives use the expert composition seam.**
+  Import prediction and transforms from `expert::lattice`, and homography
+  estimation from `expert::geometry`; `Coord` remains at the crate root.
+
+### Fixed
+
+- Removed duplicate square midpoint prediction, modulo-π angular helpers, and
+  D4 matrix literals. Compatibility entry points and historical tie-breaking
+  order now delegate to the canonical implementations.
+- Affine grid-transform inversion now includes translation and rejects
+  non-unimodular integer matrices.
+
 ## 0.11.2
 
 Dependency-cleanup patch: no public API or behaviour changes.

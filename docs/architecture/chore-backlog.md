@@ -67,9 +67,9 @@ breaking; C-4 took the delete-now option.
 
 - **Outcome:** done (PR #68). `pg Coord` is the sole grid-coordinate type; the
   `core GridCoords` model and the `grid_alignment_*_to_next` coordinate shims
-  are deleted. (The `homography_to_next` / `homography_from_next` *homography*
-  bridge is a separate, intentionally-retained seam, not part of this
-  coordinate migration.)
+  are deleted. Workspace 0.12 also makes `pg GridTransform` the sole affine
+  grid-transform implementation; core re-exports it and keeps `GridAlignment`
+  only as a semantic alias.
 
 
 - **Problem:** [D-2](critique.md#d-2-the-gridcoords--coord-migration-is-frozen-mid-flight).

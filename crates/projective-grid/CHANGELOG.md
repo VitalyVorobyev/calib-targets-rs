@@ -7,6 +7,32 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-08-10
+
+### Added
+
+- A canonical affine `expert::lattice::GridTransform` containing the lattice
+  kind, row-major integer matrix, and translation, with accessors,
+  `with_translation`, determinant, application, Serde support, and fallible
+  integer inversion.
+
+### Changed
+
+- D4 and D6 symmetry transforms and detector alignments now use the same
+  representation. The former public `source_kind` and `matrix` fields become
+  invariant-preserving accessors, and translation is now part of the explicit
+  `{lattice,matrix,translation}` contract.
+- The generic neighbour-midpoint predictor accepts ordinary nalgebra real
+  scalar types so workspace square compatibility APIs can delegate to it.
+- Reusable prediction, transform, and homography primitives remain in the
+  curated `expert` composition namespace; the ordinary crate-root facade is
+  unchanged.
+
+### Fixed
+
+- Removed local duplicates of modulo-π wrapping/distance helpers and a second
+  D4 literal table.
+
 ## [0.12.0] - 2026-08-09
 
 This is a pre-1.0 API consolidation release. Square `Oriented2` is the mature
@@ -67,5 +93,6 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.12.0...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...HEAD
+[0.13.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.12.0...projective-grid-v0.13.0
 [0.12.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/v0.11.2...projective-grid-v0.12.0

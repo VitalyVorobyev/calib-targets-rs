@@ -16,7 +16,7 @@ Most users go through the facade [`calib-targets`][facade] or the
 
 ```toml
 [dependencies]
-calib-targets-aruco = "0.11"
+calib-targets-aruco = "0.12"
 ```
 
 ## Quickstart

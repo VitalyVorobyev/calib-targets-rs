@@ -486,8 +486,8 @@ impl CharucoDetector {
             "alignment result: kept_markers={}, marker_inliers={}, transform={:?}, translation={:?}",
             markers.len(),
             alignment.marker_inliers.len(),
-            alignment.alignment.transform,
-            alignment.alignment.translation
+            alignment.alignment.matrix(),
+            alignment.alignment.translation()
         );
 
         if alignment.marker_inliers.len() < min_marker_inliers {

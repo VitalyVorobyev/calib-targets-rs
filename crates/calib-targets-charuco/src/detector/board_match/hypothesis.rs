@@ -52,10 +52,7 @@ pub(super) fn margin_from_scores(best: f32, runner_up: Option<f32>) -> f32 {
 }
 
 pub(super) fn hypothesis_to_alignment(h: &DiagHypothesis) -> GridAlignment {
-    GridAlignment {
-        transform: GRID_TRANSFORMS_D4[h.rotation as usize],
-        translation: h.translation,
-    }
+    GRID_TRANSFORMS_D4[h.rotation as usize].with_translation(h.translation)
 }
 
 #[cfg_attr(feature = "tracing", instrument(level = "info", skip_all))]
@@ -75,10 +72,7 @@ pub(super) fn enumerate_hypotheses(
 
     for rot_idx in 0..4u8 {
         let transform = GRID_TRANSFORMS_D4[rot_idx as usize];
-        let mapped: Vec<Coord> = cells
-            .iter()
-            .map(|c| transform.apply(c.gc.u, c.gc.v))
-            .collect();
+        let mapped: Vec<Coord> = cells.iter().map(|c| transform.apply(c.gc)).collect();
         let Some((tx_lo, tx_hi, ty_lo, ty_hi)) = translation_window(&mapped, cols, rows) else {
             continue;
         };
@@ -182,7 +176,7 @@ fn score_hypothesis(
 /// recover the rotation from a chosen alignment.
 pub(super) fn rotation_index_for(transform: &GridTransform) -> u8 {
     for (i, t) in GRID_TRANSFORMS_D4.iter().enumerate().take(4) {
-        if t == transform {
+        if t.matrix() == transform.matrix() {
             return i as u8;
         }
     }

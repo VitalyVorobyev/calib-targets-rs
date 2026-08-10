@@ -2,11 +2,8 @@
 
 use crate::Coord;
 use nalgebra::{Point2, RealField};
+use projective_grid::{expert::lattice::predict_grid_position, LatticeKind};
 use std::collections::HashMap;
-
-fn lit<F: RealField + Copy>(val: f64) -> F {
-    F::from_subset(&val)
-}
 
 /// Predict a square-grid corner position from complete cardinal neighbor
 /// pairs.
@@ -19,34 +16,7 @@ pub fn square_predict_grid_position<F: RealField + Copy>(
     grid: &HashMap<Coord, Point2<F>>,
     idx: Coord,
 ) -> Option<Point2<F>> {
-    let half: F = lit(0.5);
-    let mut pred_sum = Point2::new(F::zero(), F::zero());
-    let mut pred_count = 0u32;
-
-    let left = Coord::new(idx.u - 1, idx.v);
-    let right = Coord::new(idx.u + 1, idx.v);
-    if let (Some(pl), Some(pr)) = (grid.get(&left), grid.get(&right)) {
-        let mid = Point2::new(half * (pl.x + pr.x), half * (pl.y + pr.y));
-        pred_sum.x += mid.x;
-        pred_sum.y += mid.y;
-        pred_count += 1;
-    }
-
-    let up = Coord::new(idx.u, idx.v - 1);
-    let down = Coord::new(idx.u, idx.v + 1);
-    if let (Some(pu), Some(pd)) = (grid.get(&up), grid.get(&down)) {
-        let mid = Point2::new(half * (pu.x + pd.x), half * (pu.y + pd.y));
-        pred_sum.x += mid.x;
-        pred_sum.y += mid.y;
-        pred_count += 1;
-    }
-
-    if pred_count == 0 {
-        return None;
-    }
-
-    let n: F = lit(pred_count as f64);
-    Some(Point2::new(pred_sum.x / n, pred_sum.y / n))
+    predict_grid_position(grid, idx, LatticeKind::Square).map(|prediction| prediction.position)
 }
 
 #[cfg(test)]

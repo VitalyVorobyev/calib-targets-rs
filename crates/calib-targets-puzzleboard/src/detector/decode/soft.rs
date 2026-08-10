@@ -8,7 +8,7 @@
 //! Hypotheses are ranked purely on that soft score; the top candidate is
 //! returned only if it clears a best-vs-runner-up margin gate.
 
-use calib_targets_core::{GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{
@@ -38,7 +38,7 @@ fn finalize_soft_winner(
             best.score_margin = (best.score_best - r.score_best) / edges;
             best.runner_up_origin_row = Some(r.master_origin_row);
             best.runner_up_origin_col = Some(r.master_origin_col);
-            best.runner_up_transform = Some(r.alignment.transform);
+            best.runner_up_transform = Some(r.alignment.with_translation([0, 0]));
         }
         None => {
             best.score_runner_up = None;
@@ -281,7 +281,7 @@ pub(crate) fn decode_soft(
             best_matched,
             hard_winner.master_origin_row,
             hard_winner.master_origin_col,
-            hard_winner.alignment.transform,
+            hard_winner.alignment.with_translation([0, 0]),
             runner,
         ),
     )
@@ -338,10 +338,7 @@ fn build_soft_candidate(
         match_conf_sum / matched as f32
     };
     DecodeOutcome {
-        alignment: GridAlignment {
-            transform,
-            translation: [mc, mr],
-        },
+        alignment: transform.with_translation([mc, mr]),
         edges_matched: matched,
         edges_observed: total,
         weighted_score: ll_total / total as f32,
@@ -497,10 +494,7 @@ pub(crate) fn decode_fixed_board_soft(
                 let master_row = spec_or + p_r;
                 let master_col = spec_oc + p_c;
                 let candidate = DecodeOutcome {
-                    alignment: GridAlignment {
-                        transform,
-                        translation: [master_col, master_row],
-                    },
+                    alignment: transform.with_translation([master_col, master_row]),
                     edges_matched: matched,
                     edges_observed: total,
                     weighted_score: ll_total / total as f32,
@@ -537,7 +531,7 @@ pub(crate) fn decode_fixed_board_soft(
             best_matched,
             hard_winner.master_origin_row,
             hard_winner.master_origin_col,
-            hard_winner.alignment.transform,
+            hard_winner.alignment.with_translation([0, 0]),
             runner,
         ),
     )

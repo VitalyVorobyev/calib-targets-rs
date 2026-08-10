@@ -52,7 +52,10 @@ Severity: **P1** worth doing soon · **P2** worth doing · **P3** judgment / nic
 > written contract (backlog C-5). The "what the breadth costs" feature-gate
 > (C-9) was **deliberately deferred** in favour of documenting the
 > core-vs-extended boundary. The original analysis is kept below for the record;
-> per-finding resolution notes are inline.
+> per-finding resolution notes are inline. Workspace 0.12 completes the next
+> step as well: `projective-grid` owns the sole affine `GridTransform`, while
+> core's `GridAlignment` is only a semantic alias; midpoint, modulo-π, and D4
+> compatibility surfaces delegate rather than reimplement.
 
 ### <a id="d-1-homography-is-forked-verbatim"></a>D-1 Homography is forked verbatim
 **Severity: P1 · the top finding.**

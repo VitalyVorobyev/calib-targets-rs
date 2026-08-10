@@ -152,7 +152,7 @@ fn fixed_board_keeps_target_positions_in_board() {
                 tp.x,
                 result.decode.master_origin_row,
                 result.decode.master_origin_col,
-                result.alignment.transform,
+                result.alignment.matrix(),
             );
             assert!(
                 (0.0..=max_y_mm).contains(&tp.y),
@@ -161,7 +161,7 @@ fn fixed_board_keeps_target_positions_in_board() {
                 tp.y,
                 result.decode.master_origin_row,
                 result.decode.master_origin_col,
-                result.alignment.transform,
+                result.alignment.matrix(),
             );
         }
     }
@@ -198,7 +198,7 @@ fn full_mode_origin_matches_fixed_board() {
         match (full, fixed) {
             (Some(f), Some(x)) => {
                 compared += 1;
-                if f.alignment.transform != x.alignment.transform
+                if f.alignment.matrix() != x.alignment.matrix()
                     || f.decode.master_origin_row != x.decode.master_origin_row
                     || f.decode.master_origin_col != x.decode.master_origin_col
                 {
@@ -206,10 +206,10 @@ fn full_mode_origin_matches_fixed_board() {
                         "{label}: full=({},{},{:?}) fixed=({},{},{:?})",
                         f.decode.master_origin_row,
                         f.decode.master_origin_col,
-                        f.alignment.transform,
+                        f.alignment.matrix(),
                         x.decode.master_origin_row,
                         x.decode.master_origin_col,
-                        x.alignment.transform,
+                        x.alignment.matrix(),
                     ));
                 }
             }
@@ -274,7 +274,7 @@ fn full_vs_fixed_board_origin_match_on_all_snaps() {
                 match (full, fixed) {
                     (Some(f), Some(x)) => {
                         compared += 1;
-                        if f.alignment.transform != x.alignment.transform
+                        if f.alignment.matrix() != x.alignment.matrix()
                             || f.decode.master_origin_row != x.decode.master_origin_row
                             || f.decode.master_origin_col != x.decode.master_origin_col
                         {
@@ -282,10 +282,10 @@ fn full_vs_fixed_board_origin_match_on_all_snaps() {
                                 "{label} ({mode_name}): full=({},{},{:?}) fixed=({},{},{:?})",
                                 f.decode.master_origin_row,
                                 f.decode.master_origin_col,
-                                f.alignment.transform,
+                                f.alignment.matrix(),
                                 x.decode.master_origin_row,
                                 x.decode.master_origin_col,
-                                x.alignment.transform,
+                                x.alignment.matrix(),
                             ));
                         }
                     }

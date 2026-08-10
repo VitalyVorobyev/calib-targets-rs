@@ -781,15 +781,17 @@ pub(crate) fn grid_coords_to_ffi(grid: Coord) -> ct_grid_coords_t {
 }
 
 pub(crate) fn alignment_to_ffi(alignment: GridAlignment) -> ct_grid_alignment_t {
+    let matrix = alignment.matrix();
+    let translation = alignment.translation();
     ct_grid_alignment_t {
         transform: ct_grid_transform_t {
-            a: alignment.transform.a,
-            b: alignment.transform.b,
-            c: alignment.transform.c,
-            d: alignment.transform.d,
+            a: matrix[0][0],
+            b: matrix[0][1],
+            c: matrix[1][0],
+            d: matrix[1][1],
         },
-        translation_i: alignment.translation[0],
-        translation_j: alignment.translation[1],
+        translation_i: translation[0],
+        translation_j: translation[1],
     }
 }
 

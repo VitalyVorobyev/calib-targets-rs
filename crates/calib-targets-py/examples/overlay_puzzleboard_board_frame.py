@@ -62,12 +62,13 @@ def load_frame(path: Path) -> dict[str, Any]:
         return json.load(f)
 
 
-def transform_signature(transform: dict[str, int]) -> tuple[int, int, int, int]:
+def transform_signature(transform: dict[str, Any]) -> tuple[int, int, int, int]:
+    matrix = transform.get("matrix", [[0, 0], [0, 0]])
     return (
-        int(transform.get("a", 0)),
-        int(transform.get("b", 0)),
-        int(transform.get("c", 0)),
-        int(transform.get("d", 0)),
+        int(matrix[0][0]),
+        int(matrix[0][1]),
+        int(matrix[1][0]),
+        int(matrix[1][1]),
     )
 
 
@@ -125,7 +126,7 @@ def snap_summary(frame: dict[str, Any]) -> dict[str, Any]:
         "mi_max": max(mis) if mis else None,
         "mj_min": min(mjs) if mjs else None,
         "mj_max": max(mjs) if mjs else None,
-        "transform": transform_signature(alignment.get("transform", {})),
+        "transform": transform_signature(alignment),
         "origin_row": int(decode.get("master_origin_row", 0)),
         "origin_col": int(decode.get("master_origin_col", 0)),
         "ber": float(decode.get("bit_error_rate", math.nan)),

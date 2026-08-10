@@ -14,7 +14,7 @@ writing a new detector or consuming detection results without the facade.
 
 ```toml
 [dependencies]
-calib-targets-core = "0.11"
+calib-targets-core = "0.12"
 nalgebra = "0.34"
 ```
 
@@ -27,7 +27,8 @@ nalgebra = "0.34"
 | [`TargetDetection`] | `{ kind: TargetKind, corners: Vec<LabeledCorner> }`. Uniform wrapper across all detector types. |
 | [`TargetKind`] | `Chessboard`, `ChArUco`, `PuzzleBoard`, `CheckerboardMarker`. Non-exhaustive. |
 | [`Coord`] | Integer lattice index `{ u, v }` (`u` right = grid column `i`, `v` down = grid row `j`). Labels are always rebased so that the bounding-box minimum sits at `(0, 0)`. |
-| [`GridAlignment`] / [`GridTransform`] | Dihedral-group D4 (8 transforms) aligning a detected grid to a board-fixed coordinate system. |
+| [`GridTransform`] | Canonical affine integer-grid mapping owned by `projective-grid`: lattice kind + 2×2 matrix + translation. |
+| [`GridAlignment`] | Semantic alias for `GridTransform` used by detector result fields; not a second structure. |
 
 ## Utilities
 

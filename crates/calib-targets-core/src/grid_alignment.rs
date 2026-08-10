@@ -1,61 +1,19 @@
 //! Integer square-lattice alignment helpers.
 //!
 //! The canonical integer grid-coordinate type is [`projective_grid::Coord`]
-//! (`{ u, v }`), re-exported from this crate's facade. This module owns the
-//! square-lattice *alignment* algebra (`GridTransform`, `GridAlignment`) that
-//! maps board-model coordinates, expressed as [`Coord`]s, through a unimodular
-//! linear part plus an integer translation. The axis convention is fixed:
-//! `u` is the grid's first axis (right), `v` is the second axis (down).
+//! (`{ u, v }`), re-exported from this crate's facade. The canonical affine
+//! grid transform is owned by `projective-grid` as well; this module retains
+//! only square-target conveniences and rectified-cell geometry.
 
+pub use projective_grid::expert::lattice::GridTransform;
 use projective_grid::Coord;
-use serde::{Deserialize, Serialize};
 
-/// Integer 2D grid transform (a 2×2 matrix) for aligning detected grids to a
-/// board model.
+/// Semantic alias for a transform that maps detected grid coordinates into a
+/// board/model coordinate frame.
 ///
-/// Represents a linear transform on integer coordinates:
-/// `(u', v') = (a*u + b*v, c*u + d*v)`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GridTransform {
-    /// Row-0, column-0 entry — the `u`-contribution to the new `u`.
-    pub a: i32,
-    /// Row-0, column-1 entry — the `v`-contribution to the new `u`.
-    pub b: i32,
-    /// Row-1, column-0 entry — the `u`-contribution to the new `v`.
-    pub c: i32,
-    /// Row-1, column-1 entry — the `v`-contribution to the new `v`.
-    pub d: i32,
-}
-
-impl GridTransform {
-    /// The identity transform — leaves `(u, v)` unchanged.
-    pub const IDENTITY: GridTransform = GridTransform {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: 1,
-    };
-
-    /// Apply the transform to `(u, v)`, returning the result as a [`Coord`].
-    #[inline]
-    pub fn apply(&self, u: i32, v: i32) -> Coord {
-        Coord::new(self.a * u + self.b * v, self.c * u + self.d * v)
-    }
-
-    /// Invert the transform if it is unimodular (det = ±1).
-    pub fn inverse(&self) -> Option<GridTransform> {
-        let det = self.a * self.d - self.b * self.c;
-        if det != 1 && det != -1 {
-            return None;
-        }
-        Some(GridTransform {
-            a: self.d / det,
-            b: -self.b / det,
-            c: -self.c / det,
-            d: self.a / det,
-        })
-    }
-}
+/// An alignment is not a second representation: its integer translation is
+/// stored directly in the canonical [`GridTransform`].
+pub type GridAlignment = GridTransform;
 
 /// The four corners of a unit grid cell at `gc`, in canonical rectified
 /// space, in clockwise **TL, TR, BR, BL** order (the workspace-wide
@@ -80,95 +38,19 @@ pub fn cell_rect_corners_at(gc: Coord, px_per_cell: f32) -> [nalgebra::Point2<f3
     ]
 }
 
-/// A grid alignment: `dst = transform(src) + translation`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GridAlignment {
-    /// Linear part — applied to the source coordinates before translation.
-    pub transform: GridTransform,
-    /// Integer `[Δu, Δv]` offset added after `transform`.
-    pub translation: [i32; 2],
-}
-
-impl GridAlignment {
-    /// The identity alignment — identity transform with zero translation.
-    pub const IDENTITY: GridAlignment = GridAlignment {
-        transform: GridTransform::IDENTITY,
-        translation: [0, 0],
-    };
-
-    /// Map grid coordinates `(u, v)` using this alignment, returning a
-    /// [`Coord`].
-    #[inline]
-    pub fn map(&self, u: i32, v: i32) -> Coord {
-        let g = self.transform.apply(u, v);
-        Coord::new(g.u + self.translation[0], g.v + self.translation[1])
-    }
-
-    /// Invert the alignment if its linear part is unimodular (det = ±1).
-    pub fn inverse(&self) -> Option<GridAlignment> {
-        let inv = self.transform.inverse()?;
-        let [tx, ty] = self.translation;
-        let g = inv.apply(-tx, -ty);
-        Some(GridAlignment {
-            transform: inv,
-            translation: [g.u, g.v],
-        })
-    }
-}
-
 /// The 8 dihedral transforms `D4` on the integer grid.
 ///
-/// The order intentionally matches the historical `projective-grid` table:
+/// The order intentionally matches the historical workspace table:
 /// index `1` is `(u, v) -> (v, -u)`.
 pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
-    GridTransform {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: 1,
-    },
-    GridTransform {
-        a: 0,
-        b: 1,
-        c: -1,
-        d: 0,
-    },
-    GridTransform {
-        a: -1,
-        b: 0,
-        c: 0,
-        d: -1,
-    },
-    GridTransform {
-        a: 0,
-        b: -1,
-        c: 1,
-        d: 0,
-    },
-    GridTransform {
-        a: -1,
-        b: 0,
-        c: 0,
-        d: 1,
-    },
-    GridTransform {
-        a: 1,
-        b: 0,
-        c: 0,
-        d: -1,
-    },
-    GridTransform {
-        a: 0,
-        b: 1,
-        c: 1,
-        d: 0,
-    },
-    GridTransform {
-        a: 0,
-        b: -1,
-        c: -1,
-        d: 0,
-    },
+    projective_grid::expert::lattice::D4_TRANSFORMS[0],
+    projective_grid::expert::lattice::D4_TRANSFORMS[3],
+    projective_grid::expert::lattice::D4_TRANSFORMS[2],
+    projective_grid::expert::lattice::D4_TRANSFORMS[1],
+    projective_grid::expert::lattice::D4_TRANSFORMS[4],
+    projective_grid::expert::lattice::D4_TRANSFORMS[5],
+    projective_grid::expert::lattice::D4_TRANSFORMS[6],
+    projective_grid::expert::lattice::D4_TRANSFORMS[7],
 ];
 
 #[cfg(test)]
@@ -178,34 +60,31 @@ mod tests {
     #[test]
     fn d4_index_1_is_v_negative_u() {
         let t = GRID_TRANSFORMS_D4[1];
-        assert_eq!(t.apply(1, 0), Coord::new(0, -1));
-        assert_eq!(t.apply(0, 1), Coord::new(1, 0));
+        assert_eq!(t.apply(Coord::new(1, 0)), Coord::new(0, -1));
+        assert_eq!(t.apply(Coord::new(0, 1)), Coord::new(1, 0));
     }
 
     #[test]
     fn transform_identity_mapping_and_inverse() {
         let identity = GridTransform::IDENTITY;
-        assert_eq!(identity.apply(7, -3), Coord::new(7, -3));
+        assert_eq!(identity.apply(Coord::new(7, -3)), Coord::new(7, -3));
         assert_eq!(identity.inverse(), Some(identity));
 
         for t in GRID_TRANSFORMS_D4 {
             let inv = t.inverse().expect("D4 transform is unimodular");
             let p = Coord::new(4, -9);
-            let q = t.apply(p.u, p.v);
-            assert_eq!(inv.apply(q.u, q.v), p);
+            let q = t.apply(p);
+            assert_eq!(inv.apply(q), p);
         }
     }
 
     #[test]
     fn alignment_mapping_and_inverse() {
-        let align = GridAlignment {
-            transform: GRID_TRANSFORMS_D4[1],
-            translation: [3, -4],
-        };
+        let align = GRID_TRANSFORMS_D4[1].with_translation([3, -4]);
         let p = Coord::new(2, 5);
-        let q = align.map(p.u, p.v);
+        let q = align.apply(p);
         assert_eq!(q, Coord::new(8, -6));
         let inv = align.inverse().expect("D4 alignment is invertible");
-        assert_eq!(inv.map(q.u, q.v), p);
+        assert_eq!(inv.apply(q), p);
     }
 }

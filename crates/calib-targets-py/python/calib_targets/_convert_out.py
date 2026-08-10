@@ -204,10 +204,12 @@ def cell_offset_from_dict(data: Mapping[str, Any]) -> CellOffset:
 
 def grid_transform_to_dict(value: GridTransform) -> dict[str, Any]:
     return {
-        "a": int(value.a),
-        "b": int(value.b),
-        "c": int(value.c),
-        "d": int(value.d),
+        "lattice": value.lattice,
+        "matrix": [
+            [int(value.matrix[0][0]), int(value.matrix[0][1])],
+            [int(value.matrix[1][0]), int(value.matrix[1][1])],
+        ],
+        "translation": [int(value.translation[0]), int(value.translation[1])],
     }
 
 
@@ -215,43 +217,50 @@ def grid_transform_from_dict(data: Mapping[str, Any]) -> GridTransform:
     obj = _ensure_mapping(data, "GridTransform")
     _validate_keys(
         obj,
-        allowed={"a", "b", "c", "d"},
-        required={"a", "b", "c", "d"},
+        allowed={"lattice", "matrix", "translation"},
+        required={"lattice", "matrix", "translation"},
         ctx="GridTransform",
     )
+    lattice = obj["lattice"]
+    if not isinstance(lattice, str):
+        raise TypeError("GridTransform.lattice must be a string")
+    if lattice not in {"square", "hex"}:
+        raise ValueError("GridTransform.lattice must be 'square' or 'hex'")
+    matrix = _to_sequence(obj["matrix"], "GridTransform.matrix")
+    if len(matrix) != 2:
+        raise ValueError("GridTransform.matrix must have exactly 2 rows")
+    row0 = _to_sequence(matrix[0], "GridTransform.matrix[0]")
+    row1 = _to_sequence(matrix[1], "GridTransform.matrix[1]")
+    if len(row0) != 2 or len(row1) != 2:
+        raise ValueError("GridTransform.matrix rows must have exactly 2 items")
+    translation = _to_sequence(obj["translation"], "GridTransform.translation")
+    if len(translation) != 2:
+        raise ValueError("GridTransform.translation must have exactly 2 items")
     return GridTransform(
-        a=_to_int(obj["a"], "GridTransform.a"),
-        b=_to_int(obj["b"], "GridTransform.b"),
-        c=_to_int(obj["c"], "GridTransform.c"),
-        d=_to_int(obj["d"], "GridTransform.d"),
+        lattice=lattice,
+        matrix=(
+            (
+                _to_int(row0[0], "GridTransform.matrix[0][0]"),
+                _to_int(row0[1], "GridTransform.matrix[0][1]"),
+            ),
+            (
+                _to_int(row1[0], "GridTransform.matrix[1][0]"),
+                _to_int(row1[1], "GridTransform.matrix[1][1]"),
+            ),
+        ),
+        translation=(
+            _to_int(translation[0], "GridTransform.translation[0]"),
+            _to_int(translation[1], "GridTransform.translation[1]"),
+        ),
     )
 
 
 def grid_alignment_to_dict(value: GridAlignment) -> dict[str, Any]:
-    return {
-        "transform": grid_transform_to_dict(value.transform),
-        "translation": [int(value.translation[0]), int(value.translation[1])],
-    }
+    return grid_transform_to_dict(value)
 
 
 def grid_alignment_from_dict(data: Mapping[str, Any]) -> GridAlignment:
-    obj = _ensure_mapping(data, "GridAlignment")
-    _validate_keys(
-        obj,
-        allowed={"transform", "translation"},
-        required={"transform", "translation"},
-        ctx="GridAlignment",
-    )
-    translation = _to_sequence(obj["translation"], "GridAlignment.translation")
-    if len(translation) != 2:
-        raise ValueError("GridAlignment.translation must have exactly 2 items")
-    return GridAlignment(
-        transform=grid_transform_from_dict(obj["transform"]),
-        translation=(
-            _to_int(translation[0], "GridAlignment.translation[0]"),
-            _to_int(translation[1], "GridAlignment.translation[1]"),
-        ),
-    )
+    return grid_transform_from_dict(data)
 
 
 # -------------------- target detection --------------------

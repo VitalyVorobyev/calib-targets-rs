@@ -23,7 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.11"
+calib-targets-puzzleboard = "0.12"
 ```
 
 ## Quickstart (facade)
@@ -57,7 +57,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | Field | Meaning |
 |---|---|
 | `corners: Vec<PuzzleBoardCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space), and `score`. |
-| `alignment: GridAlignment` | D4 transform + translation mapping the local grid into master-board coordinates. |
+| `alignment: GridAlignment` | Semantic alias for the canonical affine `GridTransform`, mapping the local grid into master-board coordinates. |
 | `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, and `master_origin_row` / `master_origin_col`. |
 
 Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.

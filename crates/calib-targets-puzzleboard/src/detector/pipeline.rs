@@ -323,7 +323,7 @@ impl PuzzleBoardDetector {
             let Some(grid) = lc.grid else {
                 continue;
             };
-            let raw = decoded.alignment.map(grid.u, grid.v);
+            let raw = decoded.alignment.apply(grid);
             let (raw_i, raw_j) = (raw.u, raw.v);
             // Invariant: master coords must be wrapped into [0, 501) so that
             // `target_position == Point2::new((id % 501) * cell, (id / 501) * cell)`
@@ -757,7 +757,7 @@ mod tests {
         let mut wrong = 0;
         for gi in 0..cols {
             for gj in 0..rows {
-                let g = out.alignment.map(gi, gj);
+                let g = out.alignment.apply(Coord::new(gi, gj));
                 let mi = g.u.rem_euclid(MASTER_COLS as i32);
                 let mj = g.v.rem_euclid(MASTER_ROWS as i32);
                 let ti = (pc + gi).rem_euclid(MASTER_COLS as i32);

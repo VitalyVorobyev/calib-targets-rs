@@ -11,7 +11,7 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
+    Coord, CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -113,7 +113,9 @@ impl MarkerBoardDetector {
             let Some(cand) = candidates.get(idx) else {
                 continue;
             };
-            let r = alignment.transform.apply(cand.cell.i, cand.cell.j);
+            let r = alignment
+                .with_translation([0, 0])
+                .apply(Coord::new(cand.cell.i, cand.cell.j));
             m.offset_cells = Some(crate::coords::CellOffset {
                 di: m.expected.cell.i - r.u,
                 dj: m.expected.cell.j - r.v,
@@ -142,7 +144,7 @@ impl MarkerBoardDetector {
         if let Some(alignment) = alignment {
             for corner in &mut detection.corners {
                 if let Some(grid) = &mut corner.grid {
-                    let g = alignment.map(grid.u, grid.v);
+                    let g = alignment.apply(*grid);
                     grid.u = g.u;
                     grid.v = g.v;
                 }

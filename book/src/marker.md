@@ -24,7 +24,7 @@
 - `MarkerBoardParams`: board layout + chessboard params + circle score + match settings.
 - `MarkerBoardDetection`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
-  - `alignment`: optional `GridAlignment` from detected grid coords to board coords.
+  - `alignment`: optional `GridAlignment` semantic alias for the canonical affine `GridTransform`, from detected grid coordinates to board coordinates.
 - `MarkerBoardDiagnostics` (opt-in, from the `*_with_diagnostics` entry points):
   - `circle_candidates`: scored circles per cell.
   - `circle_matches`: matched circles (with offsets).
