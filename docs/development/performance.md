@@ -69,24 +69,29 @@ Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
 
 | Frame | px | corner detect | grid build | decode | end-to-end |
 |---|---|---:|---:|---:|---:|
-| `mid.png` (chessboard) | 1024×576 | **1.17** | 0.38 | — | 1.56 |
-| `small.png` (ChArUco) | 720×540 | **1.08** | 0.56 | 0.73 | 2.37 |
-| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.79 | 2.04 | **4.64** | 7.47 |
-| `large.png` (ChArUco) | 2048×1536 | **6.45** | 2.98 | 2.13 | 11.56 |
+| `mid.png` (chessboard) | 1024×576 | **0.89** | 0.33 | — | 1.21 |
+| `small.png` (ChArUco) | 720×540 | 0.92 | 0.72 | **0.97** | 2.61 |
+| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.67 | **1.60** | 1.26 | 3.53 |
+| `large.png` (ChArUco) | 2048×1536 | **4.50** | 3.38 | 2.23 | 10.11 |
 
-Corner detection is the largest stage on the chessboard and ChArUco rows; on the
-ChArUco frames decode (post-#71) is now *smaller* than both corner detection and
-grid build. The PuzzleBoard row is the exception: its full 501² master sweep
-makes decode the dominant stage — several times corner detection — and its
-oblique, corner-dense 640×480 frame also drives an outsized grid build for its
-size (see Tier 3).
+Corner detection leads on the chessboard and the large ChArUco frame. Decode
+leads on no frame: on the ChArUco rows it has been the smallest stage since #71,
+and the PuzzleBoard row — where the master sweep used to dominate at 4.6 ms —
+now spends more in the grid build than in decode. The PuzzleBoard frame's
+oblique, corner-dense 640×480 image drives an outsized grid build for its size
+(see Tier 3).
+
+The `small.png` grid-build and decode figures rose slightly when ChArUco stopped
+disabling the chessboard's wrong-label geometry check (#86). That is a
+correctness cost, not a regression to recover.
 
 ### Tier 1 — ChESS corner detection (external `chess-corners`)
 
-Corner detection is **the largest stage on every public frame** — ~65–75 % of a
-plain-chessboard end-to-end, and still the top stage on the ChArUco frames now
-that decode has shrunk. It scales with image area (`large.png`, 3 MP, ≈5.9 ms;
-the ~0.4–1 MP frames ≈0.8–1.2 ms). The `disk-fit` orientation method roughly
+Corner detection is **the largest stage on most public frames** — ~70 % of a
+plain-chessboard end-to-end, and the top stage on the large ChArUco frame. It
+scales with image area (`large.png`, 3 MP, ≈4.5 ms; the ~0.4–1 MP frames
+≈0.7–0.9 ms). It no longer leads on the two denser boards, where the owned grid
+build has caught up with it. The `disk-fit` orientation method roughly
 **doubles** corner-detection cost vs `ring-fit` — the standing reason `RingFit`
 is the default.
 
@@ -190,28 +195,30 @@ rewrite). **Every item is correctness-first: none may trade a false-positive
 risk for speed** — a wrong `(i, j)` label is unrecoverable for calibration (the
 asymmetric detection contract). Optimization work is *planned* here, not yet
 applied. With ChArUco decode now a minor stage, the two live owned candidates
-are the PuzzleBoard sweep and the dense-board grid build; the dominant cost
-across all regimes remains the external corner detector.
+are the dense-board grid build and edge sampling; the external corner detector
+still leads on the sparse and high-resolution frames.
 
 1. **Corner-detection configuration levers (Tier 1, highest leverage).**
-   *Evidence (refreshed):* the single largest stage on *every* public frame —
-   ~65–75 % of a plain-chessboard end-to-end and still the top stage on the
-   ChArUco frames now that decode shrank; ≈5.9 ms on the 3 MP frame; `disk-fit`
-   ≈2× `ring-fit`. *Approach:* keep `RingFit` default; offer optional downscale
+   *Evidence (refreshed):* the largest stage on the plain-chessboard frame
+   (~70 % of its end-to-end) and on the 3 MP frame (≈4.5 ms); `disk-fit`
+   ≈2× `ring-fit`. On the two denser boards the owned grid build has caught up
+   with it. *Approach:* keep `RingFit` default; offer optional downscale
    for large frames and ROI when a board prior exists. *Risk:* downscale trades
    corner-localization precision — validate recall/precision, never silently.
-2. **PuzzleBoard decode (Tier 2 — top remaining owned decode cost).**
-   *Evidence:* `puzzleboard_stage_timing` on a public fixture; the class
-   precompute in `decode/tables.rs` and the soft origin walk in `decode/soft.rs`.
-   *Remaining:* two distinct targets, and which one dominates depends on the
-   declared board size — the precompute leads up to ~130 squares, the soft
-   origin walk past that. (a) The precompute is `O(501 · N)` but an observation
-   only reaches the tables through `(bit, lookup mod period)`, so observations
-   sharing those residues can be grouped and applied once, bounding it by
-   `O(min(N, 6w) · 501)` for a `w`-square window. (b) The soft origin walk could
-   take the CRT collapse if its score were accumulated in fixed-point integers
-   rather than `f32`, which is what makes the separation exact. Optional `rayon`
-   over the 8 D4
+2. **PuzzleBoard decode — largely done.**
+   *Evidence:* `puzzleboard_stage_timing` and `decode::tests::decode_scaling_report`.
+   *Done:* the declared-board search became a restricted master search rather
+   than a separate correlation; the class precompute is now bounded by residue
+   groups rather than observation count (`O(N + min(N, 6w) · 501)`, flat in `N`);
+   and the soft scorer's log-likelihood moved to fixed point, which is what makes
+   the crossed-CRT separation exact and collapsed its `501²` origin walk to
+   `O(501)`. Default `Full + Soft` detect on the report fixture: 6.32 → 2.98 ms.
+   *Remaining:* only the declared-full-master case, where decode is still ~70 %
+   of `detect` — the `8 × 252k` origin-rectangle readout, which none of the three
+   changes reach because there is nothing left to restrict and the CRT collapse
+   does not apply to a sub-rectangle. It is pure table lookups and the natural
+   SIMD target, with little practical urgency since declaring a full-master board
+   conveys no information. Optional `rayon` over the 8 D4
    transforms; and the same fusion for `decode_fixed_board_soft` (the fixed-board
    shift-scan second pass, left untouched this round — different table shape, not
    a free reuse). *Risk:* the workspace has **zero parallelism** in its own code

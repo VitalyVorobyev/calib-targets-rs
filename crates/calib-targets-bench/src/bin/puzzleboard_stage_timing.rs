@@ -1,7 +1,7 @@
 //! Per-stage timing harness for `PuzzleBoardDetector::detect`.
 //!
 //! Companion to `topo_stage_timing` / `charuco_stage_timing`: installs the
-//! shared [`TimingLayer`](calib_targets_bench::span_timing::TimingLayer),
+//! shared [`calib_targets_bench::span_timing::TimingLayer`],
 //! runs the production `detect` path over warmup + timed repeats on a public
 //! synthetic fixture, and attributes the wall time across the pipeline's
 //! stages.
