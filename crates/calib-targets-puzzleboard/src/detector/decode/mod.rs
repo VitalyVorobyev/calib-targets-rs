@@ -40,16 +40,17 @@ use crate::code_maps::{
     EDGE_MAP_B_ROWS,
 };
 
+mod fixed;
 mod hard;
 mod soft;
+mod tables;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use hard::{
-    decode, decode_fixed_board, decode_fixed_board_with_runner_up, HardScan, TransformTables,
-};
-pub(crate) use soft::{decode_fixed_board_soft, decode_soft};
+pub(crate) use fixed::{decode_fixed_board, decode_fixed_board_soft, BoardRect};
+pub(crate) use hard::{decode, HardScan, TransformTables};
+pub(crate) use soft::decode_soft;
 
 /// Cyclic-period sizes for the precompute tables.
 ///

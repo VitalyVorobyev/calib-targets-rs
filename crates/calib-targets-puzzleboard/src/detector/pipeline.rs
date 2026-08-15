@@ -10,7 +10,8 @@ use nalgebra::Point2;
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 use crate::detector::decode::{
-    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, SoftLlConfig,
+    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, BoardRect,
+    SoftLlConfig,
 };
 use crate::detector::edge_sampling::{
     corner_at_map, horizontal_edge_sample_centers, local_cell_references, observed_horizontal_edge,
@@ -60,6 +61,16 @@ impl PuzzleBoardDetector {
     /// Return a reference to the detector parameters.
     pub fn params(&self) -> &PuzzleBoardParams {
         &self.params
+    }
+
+    /// The declared board as the fixed-board decoders consume it.
+    fn board_rect(&self) -> BoardRect {
+        BoardRect::new(
+            self.params.board.origin_row,
+            self.params.board.origin_col,
+            self.params.board.rows,
+            self.params.board.cols,
+        )
     }
 
     /// Detect a PuzzleBoard in `image` using raw ChESS corner features.
@@ -288,25 +299,10 @@ impl PuzzleBoardDetector {
                 decode_soft(&filtered, &soft_cfg, max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::HardWeighted) => {
-                decode_fixed_board(
-                    &filtered,
-                    self.params.board.origin_row,
-                    self.params.board.origin_col,
-                    self.params.board.rows,
-                    self.params.board.cols,
-                    max_err,
-                )
+                decode_fixed_board(&filtered, self.board_rect(), max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
-                decode_fixed_board_soft(
-                    &filtered,
-                    self.params.board.origin_row,
-                    self.params.board.origin_col,
-                    self.params.board.rows,
-                    self.params.board.cols,
-                    &soft_cfg,
-                    max_err,
-                )
+                decode_fixed_board_soft(&filtered, self.board_rect(), &soft_cfg, max_err)
             }
         }) else {
             return Err((
