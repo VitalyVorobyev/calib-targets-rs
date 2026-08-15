@@ -230,8 +230,9 @@ pub(crate) fn redetect_corner_in_roi(
 ///       - Re-detection succeeds → replace position.
 ///       - Re-detection fails → discard corner.
 ///
-/// `threshold_px = threshold_rel * px_per_square`
-/// `roi_half_px  = clamp(threshold_px * 3, 8, px_per_square * 0.5)`
+/// `threshold_px = threshold_rel * px_per_square`; the re-detection window is
+/// sized per corner by [`roi_half_px_at`], and a re-detected corner may be
+/// adopted by at most one board id.
 pub(crate) fn validate_and_fix_corners(
     detection: TargetDetection,
     board: &CharucoBoard,
@@ -247,11 +248,6 @@ pub(crate) fn validate_and_fix_corners(
 
     let threshold_px = cfg.threshold_rel * cfg.px_per_square;
     let threshold_sq = threshold_px * threshold_px;
-    let roi_half_px = (threshold_px * 3.0)
-        .round()
-        .max(8.0)
-        .min(cfg.px_per_square * 0.5) as i32;
-
     // Collect board↔image correspondences and estimate a global homography.
     let (board_pts, image_pts) = collect_board_to_image_correspondences(board, markers, alignment);
 
@@ -263,24 +259,22 @@ pub(crate) fn validate_and_fix_corners(
         }
     };
 
-    let mut out_corners: Vec<LabeledCorner> = Vec::with_capacity(detection.corners.len());
+    // Two passes, so that corners already consistent with the board — the ones
+    // we trust — claim their positions before any re-detection runs. Slot
+    // `None` marks a corner still to be resolved; the output keeps the input
+    // order regardless of which pass filled a slot.
+    let mut out: Vec<Option<LabeledCorner>> = Vec::with_capacity(detection.corners.len());
+    // (output slot, board position, predicted image position)
+    let mut suspects: Vec<(usize, Point2<f32>, Point2<f32>)> = Vec::new();
 
     for corner in detection.corners {
         // Only validate corners that have a board position (via target_position
         // which encodes the board coordinate) and a ChArUco ID.  Corners
         // without an ID cannot be validated — keep as-is.
-        let board_pos = match corner.target_position {
-            Some(p) => p,
-            None => {
-                out_corners.push(corner);
-                continue;
-            }
-        };
-
-        if corner.id.is_none() {
-            out_corners.push(corner);
+        let (Some(board_pos), true) = (corner.target_position, corner.id.is_some()) else {
+            out.push(Some(corner));
             continue;
-        }
+        };
 
         // Predict image position from the board homography.
         let seed = homography.apply(board_pos);
@@ -289,25 +283,89 @@ pub(crate) fn validate_and_fix_corners(
         let dy = corner.position.y - seed.y;
         if dx * dx + dy * dy <= threshold_sq {
             // Corner is geometrically consistent with the board homography.
-            out_corners.push(corner);
+            out.push(Some(corner));
             continue;
         }
 
-        // Corner is a candidate false positive — attempt local re-detection.
-        match redetect_corner_in_roi(image, seed, roi_half_px, cfg.detector) {
-            Some(new_pos) => {
-                // Replace the false position with the re-detected one.
-                let mut fixed = corner;
-                fixed.position = new_pos;
-                out_corners.push(fixed);
-            }
-            None => {
-                // No valid corner found near the seed — discard.
-            }
-        }
+        let slot = out.len();
+        out.push(Some(corner));
+        suspects.push((slot, board_pos, seed));
     }
 
-    TargetDetection::new(TargetKind::Charuco, out_corners)
+    let cell_size = board.spec().cell_size;
+    for (slot, board_pos, seed) in suspects {
+        // Bound the search window by the *locally predicted* cell pitch rather
+        // than the nominal `px_per_square`. Under foreshortening the real pitch
+        // can be a fraction of the nominal one, and a window wider than half a
+        // pitch reaches the neighbouring corner — which is how two board ids
+        // used to adopt one physical corner and ship a detection no homography
+        // admits (issue #86).
+        let roi_half_px = roi_half_px_at(&homography, board_pos, seed, cell_size, threshold_px);
+        let Some(new_pos) = redetect_corner_in_roi(image, seed, roi_half_px, cfg.detector) else {
+            // No valid corner found near the seed — discard.
+            out[slot] = None;
+            continue;
+        };
+        // Claim-once: a physical corner belongs to at most one board id. If the
+        // re-detection lands on a corner another id already holds, this id has
+        // no evidence of its own — drop it rather than duplicate the position.
+        let claimed = out.iter().enumerate().any(|(i, held)| {
+            i != slot
+                && held.as_ref().is_some_and(|c| {
+                    (c.position - new_pos).norm_squared() < CLAIM_EPS_PX * CLAIM_EPS_PX
+                })
+        });
+        out[slot] = if claimed {
+            None
+        } else {
+            out[slot].take().map(|mut c| {
+                c.position = new_pos;
+                c
+            })
+        };
+    }
+
+    TargetDetection::new(TargetKind::Charuco, out.into_iter().flatten().collect())
+}
+
+/// Two re-detected corners closer than this are the same physical corner.
+///
+/// Sub-pixel refinement of one corner from two different ROI origins can differ
+/// in the last fractional bits, so exact equality would miss the collision this
+/// guards against; a corner pitch is never anywhere near this small, so no two
+/// genuinely distinct board corners can fall inside it.
+const CLAIM_EPS_PX: f32 = 0.5;
+
+/// Half-width of the re-detection window around `seed`, in pixels.
+///
+/// The window must not be able to reach a neighbouring board corner, so it is
+/// capped at half the cell pitch **as predicted at this corner**: step the
+/// board position by one cell along each axis, push both through the same
+/// homography, and take the shorter of the two — an obliquely viewed board is
+/// then bounded by its foreshortened direction, which is where neighbouring
+/// corners are closest together in the image.
+///
+/// Within that cap the window is the historical `3 x threshold`, floored at
+/// 8 px so a tiny predicted pitch cannot shrink it below the corner detector's
+/// own support. When the cap and the floor conflict the floor wins and the
+/// windows may overlap again — the claim-once rule in the caller is what makes
+/// that safe.
+fn roi_half_px_at(
+    homography: &calib_targets_core::Homography<f32>,
+    board_pos: Point2<f32>,
+    seed: Point2<f32>,
+    cell_size: f32,
+    threshold_px: f32,
+) -> i32 {
+    let step_u = homography.apply(Point2::new(board_pos.x + cell_size, board_pos.y));
+    let step_v = homography.apply(Point2::new(board_pos.x, board_pos.y + cell_size));
+    let pitch = (step_u - seed).norm().min((step_v - seed).norm());
+    let cap = if pitch.is_finite() && pitch > 0.0 {
+        0.5 * pitch
+    } else {
+        f32::INFINITY
+    };
+    (threshold_px * 3.0).round().max(8.0).min(cap) as i32
 }
 
 // ---------------------------------------------------------------------------

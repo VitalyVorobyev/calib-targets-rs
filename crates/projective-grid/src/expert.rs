@@ -118,7 +118,7 @@ pub mod square {
 
 /// Labelled-component merge primitives.
 pub mod component {
-    pub use crate::shared::merge::{merge_components_local, ComponentInput, LocalMergeParams};
+    pub use crate::shared::merge::{merge_components_local, LocalMergeParams};
 }
 
 /// Pattern-aware candidate attachment primitives.

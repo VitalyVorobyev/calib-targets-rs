@@ -46,9 +46,11 @@ detector to marker scenes:
   presence — is the precision lever here. (It is the concern the historical
   ChArUco builder pin used to guard; the topological builder is now safe on
   marker scenes *because of* this floor.)
-- **`enable_final_edge_shape_check = false`** — ChArUco keeps the
-  chessboard component recall-oriented because the marker-ID and
-  board-alignment validation downstream is its precision gate.
+- **the chessboard's final wrong-label geometry check stays enabled**, exactly
+  as for the standalone chessboard detector. Marker decoding is not a
+  substitute: the board alignment searches `D4 × integer translation`, a
+  *rigid* relabelling of whatever lattice the chessboard produced, so it
+  cannot see or repair a labelling that is wrong *within* a component.
 
 There is no chessboard grid-builder selector; legacy selector keys are rejected
 as unknown configuration fields.

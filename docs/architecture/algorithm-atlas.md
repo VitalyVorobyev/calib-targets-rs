@@ -2,8 +2,7 @@
 
 > The **what** of the detection stack: every atomic algorithm in the workspace,
 > named once, with its home, its signature, and which pipelines use it.
-> For the **how-they-compose** view see [`pipeline-maps.md`](pipeline-maps.md);
-> for the **why-it-looks-like-this** view see [`critique.md`](critique.md).
+> For the **how-they-compose** view see [`pipeline-maps.md`](pipeline-maps.md).
 
 This is a hand-maintained snapshot. When you add, remove, or move an atomic
 algorithm, update this file and [`pipeline-maps.md`](pipeline-maps.md) in the same
@@ -49,8 +48,8 @@ The numerical bedrock: homography / projective fits and warps.
 | Square prediction compatibility alias | `core grid_smoothness.rs::square_predict_grid_position` | labelled neighbours → predicted position | Thin square-lattice wrapper over the canonical `pg` predictor. | ✅ (no duplicate logic) |
 
 Deep dive: homography conventions are documented in the canonical `pg`
-implementation and the image-aware core adapter. The resolved historical
-duplication is recorded in [`critique.md` §D-1](critique.md#d-1-homography-is-forked-verbatim).
+implementation and the image-aware core adapter. `core` holds no second solver —
+it wraps the `pg` one and adds only the image-domain extras.
 
 ## 2. Corner ingestion & feature prep
 
@@ -106,7 +105,7 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Local geometric merge | `pg shared/merge.rs::merge_components_local` | labelled components → merged | Reunite components under D4 symmetry via shortest label-space edge. | ✅ |
+| Local geometric merge | `pg shared/merge.rs::merge_components_local` | labelled components + shared positions → merged | Reunite components under D4 symmetry via shortest label-space edge; keeps the labelling injective in both directions. | ✅ |
 | Shared-corner-index merge | `chess pipeline/recover.rs::merge_components_with_shared_corners` | two label maps → merged | Merge by shared *corner indices* under D4 (runs after the geometric merge; needs core's `GRID_TRANSFORMS_D4`). | ✅ (chess-local) |
 
 ## 7. Growth & recovery — the geometry-only engine
@@ -138,6 +137,7 @@ relabelled), upholding the "no false positives" contract.
 | Line collinearity | `pg shared/validate/lines.rs::line_collinearity_flags` | labelled → rejected idx | Flag 3-point grid-line sets failing collinearity. | ✅ |
 | Per-corner local-H residual | `pg shared/validate/local_h.rs::local_h_residual` | labelled → rejected idx | Fit local H from K nearest, reject high relative residual. | ✅ |
 | Wrong-label edge drops | `pg shared/validate/wrong_label_filters.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
+| Lattice-orientation parity | `pg shared/validate/wrong_label_filters.rs::lattice_orientation_drops` | labelled → dropped | `sign(e_u × e_v)` is constant under a homography; drop minority-sign labels. Invariant, no tolerance. | ✅ |
 | Frontier-kink smoothness | `pg shared/validate/wrong_label_filters.rs` (frontier filter) | labelled + lines → dropped | Second-order line-spacing kink past the true boundary (Gap-15 fix). | ✅ |
 | Largest-component filter | `pg shared/validate/wrong_label_filters.rs::largest_component_filter` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
 | Chessboard geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | labelled → validated | Sequence the pg validators on the chess output. | ✅ |
@@ -172,7 +172,7 @@ with its alignment. Deep dive:
 | Marker-cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | corner map → 4-corner cells | Enumerate complete grid squares to decode. | ✅ |
 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | corners + image → refined | Per-corner ChESS re-detect to tighten the grid. | ✅ |
 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | corners + alignment → `CharucoCorner`s | Map grid→board coords, look up charuco id, dedup per cell. | ✅ |
-| Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via ChESS ROI. | ✅ |
+| Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via ChESS ROI sized by the locally predicted pitch, one claimant per corner. | ✅ |
 | Marker-corner linkage check | `charuco link_check.rs::validate_marker_corner_links` | reported links + spec → violations | **Public** post-hoc check that a result matches the board definition. | ✅ (API) |
 | Multi-component merge | `charuco detector/merge.rs::merge_charuco_results` | per-component results → union | Dedup + union across grid components. | ✅ |
 

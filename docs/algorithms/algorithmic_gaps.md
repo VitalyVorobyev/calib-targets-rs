@@ -1,11 +1,8 @@
 # Open algorithmic gaps — `projective-grid` + chessboard pipelines
 
-> *Internal working notes. Labels like "Phase D" or "Q2 of the
-> deep-dive roadmap" are internal milestones from prior debugging
-> campaigns and must not appear in source rustdoc, READMEs, or any
-> other public surface. When referring to algorithm stages from
-> code, use the descriptive names defined in the per-crate stage
-> maps.*
+> *Internal working notes. This file holds **only open gaps** — a gap that is
+> closed is deleted, not archived. What the pipeline does belongs in the stage
+> maps below; what changed belongs in the changelog.*
 
 This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
@@ -56,32 +53,28 @@ The sole labelling pipeline is:
 
 The topological facade runs the shared **component-merge** pass
 (`projective_grid::shared::merge::merge_components_local`) — local
-geometry only, no global homography (Phase 1.3 unified this; see Gap 9).
-The chessboard adapter keeps a *distinct* post-booster corner-identity
-merge in its recovery layer, not a second copy of this initial merge.
+geometry only, no global homography (see Gap 9). The chessboard adapter
+keeps a *distinct* post-booster corner-identity merge in its recovery
+layer, not a second copy of this initial merge.
 
 ---
 
 ## Gaps and follow-ups
 
 The pipeline ships zero wrong labels on the workspace's regression
-datasets. The remaining structural gaps are tracked here. Resolved
-items are kept in place as audit trail.
+datasets. Every gap below is **open**. A gap that gets closed is
+deleted from this file — what the pipeline *does* belongs in the stage
+maps above, and what changed belongs in the changelog.
 
-### Gap 1 — Generic axis-free lattice finder for non-chessboard consumers (PARTIAL)
+### Gap 1 — Fully axis-free lattice finder
 
-The chessboard's parity-aware finder (`calib-targets-chessboard::seed`)
-is built on top of the topological grid builder.
+The `Evidence::Positions` path synthesizes per-corner axes up front
+(`orient::synthesize_*`) and then feeds the topological builder, which covers
+the common case. **Missing:** a fully axis-free topological path (edge-length
+consistency only, no synthesized axes) for inputs where no reliable axis can be
+synthesized at all.
 
-**Status (verified 2026-06-11, Phase 3).** The `Evidence::Positions`
-path synthesizes per-corner axes up front (`orient::synthesize_*`) and
-then feeds the topological builder. What remains: a fully axis-free
-topological path (edge-length consistency only, no synthesized axes at
-all) for inputs where no reliable axis can be synthesized. The
-synthesized-axis path covers the common case; the pure-geometric fallback
-is the remaining incremental item. Tracked as a future deep-dive phase.
-
-### Gap 4 — Hex post-fit recovery schedule (OPEN, now precisely scoped)
+### Gap 4 — Hex post-fit recovery schedule
 
 Hex **topological** detection ships: `(Hex, Positions)` and `(Hex, Oriented3)`
 run the axis-driven path (`topological/hex.rs` — triangle-as-cell classify +
@@ -89,24 +82,18 @@ axial `(q, r)` parallelogram-completion walk, D6 component merge, projective
 fit). The hex topological path has **no post-fit recovery schedule** (boundary
 extension / interior fill / rescue) — that machinery is ChESS-axis-coupled and
 stays square-only — so hex recall is whatever the classify+walk recovers, with
-the fit residual as the precision gate. Adding a geometry-only hex recovery
-schedule is the remaining work. Tracked as a future deep-dive phase.
+the fit residual as the precision gate.
 
-### Gap 9 — Component merge handles only overlapping label sets (OPEN, verified 2026-06-11)
+**Fix.** A geometry-only hex recovery schedule, mirroring the square one but
+predicting from the axial lattice step rather than from ChESS axes.
 
-`projective_grid::shared::merge::merge_components_local` (moved here from
-the old `component_merge` module) still requires
-`min_overlap` shared labels between two components (default `2`). This
-handles the majority case (gap-induced splits where a few edge corners
-straddle both components), but disjoint patches separated by a missing
-row never satisfy the overlap test and stay split — `merge.rs` still
-lists that case as explicit out-of-scope.
+### Gap 9 — Component merge handles only overlapping label sets
 
-**Verified unchanged by the Phase 1.3 merge-unification.** That work
-made the topological facade call `merge_components_local` (via
-`merge_walk_components`, with the chessboard adapter dropping its private
-merge), but did **not** touch the overlap requirement. Disjoint-set merge
-remains unimplemented.
+`projective_grid::shared::merge::merge_components_local` requires `min_overlap`
+shared labels between two components (default `2`). This handles the majority
+case — gap-induced splits where a few edge corners straddle both components —
+but disjoint patches separated by a missing row never satisfy the overlap test
+and stay split. `merge.rs` lists that case as explicit out-of-scope.
 
 **Fix.** Add a "predict next corner from each side" boundary check:
 for each component, walk the labelled bbox boundary outward by one
@@ -116,7 +103,7 @@ labelled positions of the other. Same scoring (cell-size + position
 agreement) but applied to predicted-vs-labelled rather than
 labelled-vs-labelled pairs.
 
-### Gap 11 — Off-axis false labels in blurred regions defeat the structural check (OPEN)
+### Gap 11 — Off-axis false labels in blurred regions defeat the structural check
 
 Measured on public `testdata/small3.png` (ChArUco, blurred bottom rows):
 the production topological output labels `(10, 8)` at `(495.9, 312.4)`,
@@ -124,34 +111,29 @@ but column alignment against the adjacent sharp row (constant ≈ −2.4 px
 column drift, verified on two neighbouring columns) pins the true
 intersection at ≈ `(479.4, ·)` — the labelled corner is a marker-internal
 false corner ~16.5 px off-axis. The topological wrong-label structural
-check (overlong / off-axis / duplicate-pixel) does not fire: the offending
-vertical edge has near-nominal length and the off-axis threshold is kept
-deliberately low because aggressive values create diagonals on puzzle
-boards (see the wrong-label check notes). The same false-corner family
-caused the duplicate-coord ambiguity fixed in the walk (labels colliding
-one cell apart); collisions are now dropped, but a false corner whose true
-counterpart was never labelled still slips through.
+check does not fire: the offending vertical edge has near-nominal length, its
+orientation parity matches the rest of the component, and the off-axis
+threshold is kept deliberately low because aggressive values create diagonals
+on puzzle boards. A false corner whose true counterpart was never labelled
+therefore still slips through.
 
-Candidate directions: per-column/row drift-consistency check at the
-component level (the measured signature — one corner breaking an otherwise
-constant column drift — is strong and cheap), or marker-aware scoring once
-ChArUco-adjacent recall work resumes. Tied to the Phase 3 orientation-free
-policy work, which needs the same local-geometry discrimination.
+**Fix.** A per-column/row drift-consistency check at the component level: the
+measured signature — one corner breaking an otherwise constant column drift —
+is strong and cheap. Marker-aware scoring is the alternative, at the cost of
+coupling `projective-grid` to a target family.
 
 ---
 
 ## Architectural-direction summary
 
-The next architectural move is the **distortion-recall** line: recovering the
-legitimate-but-unreconstructed frontier corners in heavy radial distortion
-(Gap 8) via a *local* boundary-extension predicate unified with the generic
-extension machinery (Gap 6). The global smooth-warp backstop once proposed as
-Gap 16 was **falsified by measurement** (a global residual gate cannot separate a
-one-cell-past-edge false positive from legitimate distorted corners) and is
-closed; the Gap-15 *local* second-order criterion stays the precision tool there.
-The disjoint-set component merge (Gap 9) also remains. Gap 3 (homography-quality
-surface) and Gap 2 (`circular_stats`) are closed; the hex-grid recovery schedule
-(Gap 4) is a smaller incremental item.
+The next architectural move is the **distortion-recall** line: recovering
+legitimate-but-unreconstructed frontier corners in heavy radial distortion via a
+*local* boundary-extension predicate unified with the generic extension
+machinery. Precision at the frontier stays with *local* second-order criteria —
+a global residual gate cannot separate a one-cell-past-edge false positive from
+legitimately distorted corners, because a global homography does not represent
+distortion. The disjoint-set component merge (Gap 9) is the other structural
+item; the hex recovery schedule (Gap 4) is a smaller incremental one.
 
 ---
 

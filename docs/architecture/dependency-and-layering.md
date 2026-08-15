@@ -26,11 +26,9 @@ upstream ChESS corner detector; every detector depends on it. Internal edges onl
      bench → facade, chessboard, core, projective-grid      studio → facade, bench, chessboard
 ```
 
-It is a **clean acyclic graph with no cycles** — the crate boundaries are
-sound. This matters for the [critique](critique.md): nearly every problem found is
-*within* a crate (duplication, naming, dead seams), **not** in the dependency
-structure. The former homography fork was a *consequence* of the layering and
-is now resolved by placing the implementation in the lowest crate.
+It is a **clean acyclic graph with no cycles** — the crate boundaries are sound,
+and every numerical primitive lives in the lowest crate that needs it, so the
+layering itself never forces a second implementation.
 
 | Crate | Layer | Internal prod deps | Role |
 |---|---|---|---|
@@ -82,8 +80,7 @@ in-workspace client, and its public surface reflects that.
   (lib.rs:37–45).
 
 So the deep reach from `chessboard` into `pg shared::{grow, fill, validate, merge}`
-is **sanctioned by design**, not an encapsulation leak. The honest critique
-([§D-5](critique.md#d-5-the-advanced-tier-is-a-private-api-wearing-a-pub-badge)) is
+is **sanctioned by design**, not an encapsulation leak. The open question is
 narrower: a *semver-exempt `pub` module is still a `pub` module* on a published
 crate — it appears in docs.rs and external users can depend on it. Either it is a
 supported composition API (then document the contract and the policies a consumer
@@ -102,9 +99,16 @@ slice of L0 (orientation synthesis alone is `orient.rs` at ~1.08K LOC; hex is
 Per the owner's decision, this is **intended product** for external users (dot
 grids, circle grids, hex targets), **not** dead code, and is kept. It is called out
 so a reader of *this workspace* is not misled into thinking the detectors use it.
-The maintenance cost it carries is real and is reflected in the
-[critique](critique.md#what-the-breadth-costs) — but the cost is accepted, not a
-bug to fix.
+
+**It stays compiled in, not feature-gated.** Moving `Hex`, `Evidence::Positions`,
+the `orient::*` helpers and the recovery schedule behind off-by-default features
+would break every downstream user who composes them today, and would impose a CI
+feature-matrix obligation, in exchange for a compile-time win nobody has
+measured. Legibility — the core-vs-extended table in
+[`crates/projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md)
+and the "Core vs. extended surface" section in `pg lib.rs` — achieves the
+comprehension goal without the semver break. Revisit only if compile time or
+surface size becomes a *measured*, felt cost.
 
 ## <a id="why-projective-grid-is-big-and-duplicated"></a>Why `projective-grid` is broad, but no longer duplicated
 
@@ -117,5 +121,4 @@ Two structural facts, both downstream of the layering:
    grid-position predictor, modulo-π helpers, D4/D6 tables, `Coord`, and affine
    `GridTransform`. `core` re-exports or wraps those primitives and adds only
    image-domain operations. This direction follows the DAG and avoids both a
-   dependency cycle and parallel numerical implementations. Historical analysis:
-   [critique §D-1](critique.md#d-1-homography-is-forked-verbatim).
+   dependency cycle and parallel numerical implementations.

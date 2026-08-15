@@ -7,6 +7,56 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-15
+
+### Added
+
+- **Lattice-orientation parity as a precision invariant.** A homography
+  preserves orientation over any region that does not cross its vanishing line,
+  which an imaged planar target never does. The sign of the local basis
+  `e_u x e_v` is therefore the same at every cell of a correctly labelled
+  component — for any viewpoint, focal length, or amount of smooth lens
+  distortion. `drop_set` now always drops labels that violate it. This catches
+  a sub-block glued in with a reflected axis, which reverses the sign while
+  leaving edge lengths, edge directions and pixel separations plausible, so no
+  first-order wrong-label check can see it. The criterion compares a sign and
+  has no tolerance to tune.
+
+### Changed
+
+- **`merge_components_local` and `merge_components_local_for` take the
+  components plus one shared `positions` slice; `ComponentInput` is removed.**
+  Every component indexes the same corner array, so "the same corner appears in
+  two components" is a well-defined question. The previous shape allowed each
+  component its own index space, where it is not.
+- **Both merge entry points keep the labelling injective in both directions.**
+  One lattice coordinate holds one corner, and one corner sits at one
+  coordinate. A candidate label violating either is skipped, leaving a gap
+  rather than a duplicate: a gap costs recall, a duplicate is a wrong label a
+  consumer cannot recover from. Previously only the coordinate direction was
+  guarded, so a thin overlap could re-label a single corner at a run of
+  coordinates.
+- **`DropSet` is `#[non_exhaustive]`** and reports the parity drops separately
+  as `orientation_drop`, so a caller can attribute them in its own trace.
+
+### Migration
+
+```rust
+// before
+let views: Vec<ComponentInput<'_>> = components
+    .iter()
+    .map(|labelled| ComponentInput { labelled, positions })
+    .collect();
+let merged = merge_components_local(&views, &params);
+
+// after — components and positions are separate arguments
+let merged = merge_components_local(&components, positions, &params);
+```
+
+Callers that built each component over its own `positions` slice must first
+re-index them into one shared corner array. Matches on `DropSet` need a
+wildcard arm.
+
 ## [0.13.0] - 2026-08-10
 
 ### Added
@@ -93,6 +143,7 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.0...HEAD
+[0.14.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...projective-grid-v0.14.0
 [0.13.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.12.0...projective-grid-v0.13.0
 [0.12.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/v0.11.2...projective-grid-v0.12.0

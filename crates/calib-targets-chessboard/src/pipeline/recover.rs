@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::expert::component::{merge_components_local, ComponentInput};
+use projective_grid::expert::component::merge_components_local;
 use projective_grid::Coord;
 
 use super::boosters::{apply_boosters_with_directional_edge_scale, apply_geometry_only_recovery};
@@ -26,7 +26,13 @@ pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
 #[derive(Clone, Debug, Default)]
 pub(super) struct RecoveryOutcome {
     pub(super) components: Vec<LabelledComponent>,
+    /// Corners re-attached by the axis-aware boosters, sorted. Read only by
+    /// the `diagnostics` trace, so it is compiled out of the production build.
+    #[cfg(feature = "diagnostics")]
     pub(super) axis_aware_additions: Vec<usize>,
+    /// Corners re-attached by geometry-only recovery, sorted. Same gating as
+    /// [`RecoveryOutcome::axis_aware_additions`].
+    #[cfg(feature = "diagnostics")]
     pub(super) geometry_only_additions: Vec<usize>,
 }
 
@@ -246,10 +252,22 @@ fn shared_corner_alignment(
         return None;
     }
     let t = GRID_TRANSFORMS_D4[t_idx];
+    // Reject the alignment unless it preserves the labelling's injectivity in
+    // *both* directions. One coordinate may hold only one corner (checked
+    // against `dst`), and one corner may sit at only one coordinate (checked
+    // against `dst_by_corner`) — a corner shared by both components must land
+    // back on the coordinate it already occupies, or the merge would label one
+    // physical corner at two lattice positions. No homography admits that, and
+    // a consumer cannot recover from it.
     for (&ij_src, &idx) in src {
         let mapped = transform_label(t, ij_src, delta);
         if let Some(&existing) = dst.get(&mapped) {
             if existing != idx {
+                return None;
+            }
+        }
+        if let Some(&existing_at) = dst_by_corner.get(&idx) {
+            if existing_at != mapped {
                 return None;
             }
         }
@@ -399,28 +417,27 @@ pub(super) fn recover_topological_components(
         return RecoveryOutcome::default();
     }
 
-    let boosted_views: Vec<ComponentInput<'_>> = boosted_components
-        .iter()
-        .map(|labelled| ComponentInput {
-            labelled,
-            positions,
-        })
-        .collect();
-
     #[cfg(feature = "tracing")]
     let _span = tracing::debug_span!(
         "topological_post_recovery_component_merge",
-        num_components = boosted_views.len()
+        num_components = boosted_components.len()
     )
     .entered();
 
+    #[cfg(feature = "diagnostics")]
     let mut axis_aware_additions: Vec<usize> = axis_aware_additions.into_iter().collect();
+    #[cfg(feature = "diagnostics")]
     axis_aware_additions.sort_unstable();
+    #[cfg(feature = "diagnostics")]
     let mut geometry_only_additions: Vec<usize> = geometry_only_additions.into_iter().collect();
+    #[cfg(feature = "diagnostics")]
     geometry_only_additions.sort_unstable();
     RecoveryOutcome {
-        components: merge_components_local(&boosted_views, &tuning.component_merge).components,
+        components: merge_components_local(&boosted_components, positions, &tuning.component_merge)
+            .components,
+        #[cfg(feature = "diagnostics")]
         axis_aware_additions,
+        #[cfg(feature = "diagnostics")]
         geometry_only_additions,
     }
 }

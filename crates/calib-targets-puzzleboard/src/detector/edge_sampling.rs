@@ -263,14 +263,17 @@ pub(crate) fn observed_vertical_edge(
     }
 }
 
-/// Lookup a corner by labelled `(i, j)` grid coordinates using a pre-built
+/// Lookup a corner by labelled `(u, v)` grid coordinates using a pre-built
 /// map — O(1) amortised.
 ///
-/// Build the map once with:
-/// ```ignore
+/// The caller builds the map once per component, keyed by the corner's
+/// [`Coord`](calib_targets_core::Coord) as a `(u, v)` tuple — see
+/// `PuzzleBoardDetector::sample_all_edges`:
+///
+/// ```text
 /// let map: HashMap<(i32, i32), &LabeledCorner> = corners
 ///     .iter()
-///     .filter_map(|c| c.grid.map(|g| ((g.i, g.j), c)))
+///     .filter_map(|c| c.grid.map(|g| ((g.u, g.v), c)))
 ///     .collect();
 /// ```
 pub(crate) fn corner_at_map<'a>(

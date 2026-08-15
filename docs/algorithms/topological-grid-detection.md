@@ -242,6 +242,13 @@ cell-scale agreement. The merge deliberately does not use the global
 projective fit, so mild radial distortion does not prevent compatible patches
 from joining.
 
+All components index one shared `positions` slice, so "the same corner appears
+in two components" is a well-defined question. The merge answers it and keeps
+the labelling **injective in both directions**: one lattice coordinate holds
+one corner, and one corner sits at one coordinate. A candidate label that would
+violate either is skipped, leaving a gap rather than a duplicate — a gap costs
+recall, a duplicate is a wrong label no consumer can recover from.
+
 ### Step 7a — Public validation + projective fit
 
 `build_component_solution` and `run_fit_with_residual_drop` in
@@ -254,8 +261,36 @@ a projective transform is fitted from grid coordinates to pixels;
 corners whose reprojection residual exceeds `max_residual_px` are dropped
 and the transform is refit once.
 
+**Lattice-orientation parity** runs here unconditionally
+(`lattice_orientation_drops`), because it is an invariant rather than a
+heuristic. A homography preserves orientation over any region that does not
+cross its vanishing line, and an imaged planar board never does — the whole
+board lies in front of the camera, so the projective weight keeps one sign
+across it. Therefore
+
+```text
+e_u = p(u+1, v) - p(u, v)      e_v = p(u, v+1) - p(u, v)
+sign(e_u × e_v)  is constant over a correctly labelled component
+```
+
+for every viewpoint, focal length and amount of smooth lens distortion. A
+sub-block glued in with a *reflected* axis — what a merge produces when it
+accepts a mirroring symmetry element on thin overlap — reverses that sign while
+leaving edge lengths, edge directions and pixel separations entirely plausible,
+so the first-order checks above are blind to it. The parity check compares a
+sign, so it has no tolerance to tune. It drops only labels that take part
+exclusively in minority-sign cells; a label on the seam belongs to the majority
+region and is kept, and on an exact tie neither half is credible so both go.
+
 *Why:* an independent geometric gate over the labelled set, catching
 gross mislabels that survived the topological merge.
+
+*Why not a global residual gate here:* a single homography cannot represent
+lens distortion, so a healthy wide-angle view carries a real reprojection
+residual that has nothing to do with labelling. That residual is a useful
+*self-consistency measurement* — the map from grid coordinate to pixel is a
+homography by construction, so a detection can be checked against itself with
+no ground truth — but it cannot serve as the precision gate.
 
 ### Step 7b — Detector-builder handoff
 

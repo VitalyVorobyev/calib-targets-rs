@@ -42,7 +42,7 @@ use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
 };
-use crate::shared::merge::{merge_components_local, ComponentInput, LocalMergeParams};
+use crate::shared::merge::{merge_components_local, LocalMergeParams};
 use crate::shared::recovery_schedule::SquareAxisProvenance;
 use crate::shared::validate as pg_validate;
 
@@ -512,7 +512,6 @@ fn merge_walk_components(
 
     // Convert each `Coord`-keyed walk map into the `(i32, i32)`-keyed shape
     // the shared merge consumes. Hold the owned maps alive so the
-    // `ComponentInput` borrows stay valid for the merge call.
     let owned: Vec<std::collections::HashMap<(i32, i32), usize>> = ordered
         .iter()
         .map(|c| {
@@ -522,15 +521,7 @@ fn merge_walk_components(
                 .collect()
         })
         .collect();
-    let views: Vec<ComponentInput<'_>> = owned
-        .iter()
-        .map(|labelled| ComponentInput {
-            labelled,
-            positions,
-        })
-        .collect();
-
-    let merged = merge_components_local(&views, &LocalMergeParams::default()).components;
+    let merged = merge_components_local(&owned, positions, &LocalMergeParams::default()).components;
 
     merged
         .into_iter()

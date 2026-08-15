@@ -22,7 +22,7 @@ use crate::error::{GridError, Result};
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{GridSolution, LabelledGrid, RejectedFeature, RejectionReason};
 use crate::shared::fit_component;
-use crate::shared::merge::{ComponentInput, LocalMergeParams};
+use crate::shared::merge::LocalMergeParams;
 use crate::shared::FitComponentResult;
 
 use super::hex;
@@ -139,16 +139,9 @@ fn merge_hex_components(
                 .collect()
         })
         .collect();
-    let views: Vec<ComponentInput<'_>> = owned
-        .iter()
-        .map(|labelled| ComponentInput {
-            labelled,
-            positions,
-        })
-        .collect();
-
     let merged = crate::shared::merge::merge_components_local_for(
-        &views,
+        &owned,
+        positions,
         &LocalMergeParams::default(),
         LatticeKind::Hex,
     );

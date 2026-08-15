@@ -23,8 +23,6 @@ backlog. The best entry point when onboarding or auditing the detector crates.
 | [`architecture/algorithm-atlas.md`](architecture/algorithm-atlas.md) | Every atomic algorithm + the algorithm×pipeline matrix. |
 | [`architecture/pipeline-maps.md`](architecture/pipeline-maps.md) | Each detector stage-by-stage (algorithm, local vs delegated). |
 | [`architecture/dependency-and-layering.md`](architecture/dependency-and-layering.md) | Crate DAG, layering, the library-only surface. |
-| [`architecture/critique.md`](architecture/critique.md) | Critical review: duplication/debt findings + the from-scratch verdict. |
-| [`architecture/chore-backlog.md`](architecture/chore-backlog.md) | Ranked, effort/risk-tagged consolidation backlog. |
 
 ### `development/` — developer guides
 The everyday gates and conventions. These are the guides linked from the

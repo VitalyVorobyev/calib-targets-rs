@@ -9,6 +9,62 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.12.1
+
+Precision fix. No public API change in the `calib-targets*` crates; the
+workspace now builds against `projective-grid` 0.14 (see that crate's
+changelog for its own breaking change).
+
+### Fixed
+
+- **Grid labels are always projectively self-consistent.** The map from a
+  detection's `(grid.u, grid.v)` to its `position` is a homography by
+  construction; the detector could break that, emitting a labelled set in
+  which several lattice nodes collapsed onto one pixel or a sub-population was
+  displaced by a whole lattice step. Such a detection still carries enough
+  correspondences to pass a count check while its pose solve is meaningless
+  ([#86](https://github.com/VitalyVorobyev/calib-targets-rs/issues/86)).
+
+  Two producers are fixed at the source:
+
+  - **A lattice-orientation parity invariant.** A homography preserves
+    orientation over any region that does not cross its vanishing line, which
+    an imaged planar board never does. The sign of the local basis
+    `e_u × e_v` is therefore the same at every cell of a correctly labelled
+    component, under any viewpoint and any amount of smooth lens distortion. A
+    component merge that accepts a *mirroring* symmetry element on thin overlap
+    glues a sub-block in with a reversed axis, which reverses that sign while
+    leaving edge lengths, edge directions and pixel separations plausible —
+    invisible to every first-order wrong-label check. The parity check compares
+    a sign, so it has no tolerance to tune, and it drops only labels it can
+    prove wrong.
+  - **Two-way injectivity in both component merges.** One lattice coordinate
+    holds one corner, and one corner sits at one coordinate. Only the
+    coordinate direction was guarded before, so a thin overlap could re-label a
+    single physical corner at a run of lattice coordinates.
+
+- **ChArUco runs the chessboard's wrong-label geometry check.**
+  `CharucoParams::for_board` used to disable it, on the reasoning that the
+  downstream board alignment would catch mislabels. It cannot: the alignment
+  searches `D4 × integer translation`, a *rigid* relabelling of whatever
+  lattice the chessboard produced, so it applies the healthy region's alignment
+  to a broken region rather than detecting one.
+
+- **ChArUco corner re-detection cannot merge two board corners.** The search
+  window is now sized from the cell pitch predicted at that corner rather than
+  the nominal `px_per_square`, so a foreshortened region cannot open a window
+  wide enough to reach the neighbouring corner, and a re-detected corner may be
+  adopted by at most one board id.
+
+### Changed
+
+- **`projective-grid`: `merge_components_local` takes the components plus one
+  shared `positions` slice; `ComponentInput` is removed.** Every component now
+  indexes the same corner array, which is what makes "the same corner appears
+  in two components" a well-defined question — and therefore what makes the
+  injectivity guarantee above checkable. The previous shape let each component
+  carry its own index space, where the question has no answer.
+
 ## 0.12.0
 
 Breaking API-consolidation release. See the

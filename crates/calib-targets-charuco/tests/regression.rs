@@ -7,6 +7,10 @@ use calib_targets_core::GrayImageView;
 use chess_corners::{CornerDescriptor, Detector as ChessDetector};
 use image::ImageReader;
 use nalgebra::Point2;
+use projective_grid::{
+    check_consistency, ConsistencyParams, ConsistencyRequest, CoordinateHypothesis, LatticeKind,
+    PointFeature,
+};
 use std::path::Path;
 
 fn load_gray(path: &Path) -> image::GrayImage {
@@ -63,6 +67,123 @@ fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetection, max_id: u32)
     assert!(
         ids.last().copied().unwrap_or(0) < max_id,
         "unexpected corner id range"
+    );
+}
+
+/// Assert that a shipped detection is **projectively self-consistent**.
+///
+/// For a planar board the map `(grid.u, grid.v) -> position` is a homography by
+/// construction, so a detection can be checked against itself with no ground
+/// truth, no camera model and no calibration: fit the lattice-to-image map to
+/// the detection's own pairs and look at the residual.
+///
+/// Two things are asserted:
+///
+/// 1. **Distinct positions.** Two lattice nodes at one pixel is a fold no
+///    homography admits, and it is unrecoverable downstream — the consumer
+///    cannot tell which of the labels was meant.
+/// 2. **Residual small against the cell pitch.** Expressed as a fraction of the
+///    detection's own cell pitch, so the bound is free of image scale, board
+///    size and viewing distance.
+///
+///    The two regimes it separates are physically distinct, which is what makes
+///    a single bound defensible here. A *global* homography cannot represent
+///    lens distortion, so a healthy labelling on a wide-angle frame still shows
+///    a residual — but a smooth, sub-cell one: measured 0.7 % of the pitch on
+///    `large.png` and 5.2–5.4 % on the two `small*.png` frames, where the board
+///    fills the sensor. A *mislabelled* corner, by contrast, is displaced by a
+///    whole lattice step — on the order of 100 % of the pitch — and even a
+///    small mislabelled minority drags the median past 10 % (the issue-#86
+///    frames measured 11 %–600 %). The 8 % bound sits in the gap between
+///    "smooth sub-cell distortion" and "displaced by a lattice step"; it is an
+///    order-of-magnitude separator, not a value fitted to a frame.
+///
+///    This is a *fixture contract*, not the production gate. A global residual
+///    bound cannot be a production precision gate precisely because it absorbs
+///    distortion — the detector's own guard against this failure is the
+///    parameter-free lattice-orientation parity invariant in `projective-grid`.
+fn assert_projectively_consistent(res: &calib_targets_charuco::CharucoDetection, img_name: &str) {
+    /// Coincidence radius as a fraction of the cell pitch, matching
+    /// `projective-grid`'s duplicate-label guard.
+    const DUP_PIXEL_FRAC: f32 = 0.2;
+    /// Residual bound as a fraction of the cell pitch. See the doc above.
+    const MAX_RESIDUAL_OVER_PITCH: f32 = 0.08;
+
+    let corners = &res.corners;
+    assert!(
+        corners.len() >= 4,
+        "{img_name}: {} corners is too few to check",
+        corners.len()
+    );
+
+    // Cell pitch: median cardinal-edge length of the labelled set.
+    let by_grid: std::collections::HashMap<(i32, i32), Point2<f32>> = corners
+        .iter()
+        .map(|c| ((c.grid.u, c.grid.v), c.position))
+        .collect();
+    let mut edges: Vec<f32> = Vec::new();
+    for (&(u, v), &p) in &by_grid {
+        for (du, dv) in [(1, 0), (0, 1)] {
+            if let Some(&q) = by_grid.get(&(u + du, v + dv)) {
+                edges.push((q - p).norm());
+            }
+        }
+    }
+    assert!(
+        !edges.is_empty(),
+        "{img_name}: no cardinal edges to size from"
+    );
+    edges.sort_by(|a, b| a.partial_cmp(b).expect("finite edge lengths"));
+    let pitch = edges[edges.len() / 2];
+
+    let eps = DUP_PIXEL_FRAC * pitch;
+    for (a, ca) in corners.iter().enumerate() {
+        for cb in &corners[a + 1..] {
+            assert!(
+                (ca.position - cb.position).norm() >= eps,
+                "{img_name}: ids {} and {} collapsed onto one corner at {:?}",
+                ca.id,
+                cb.id,
+                ca.position,
+            );
+        }
+    }
+
+    let features: Vec<PointFeature> = corners
+        .iter()
+        .enumerate()
+        .map(|(i, c)| PointFeature::new(i, c.position))
+        .collect();
+    let hypotheses: Vec<CoordinateHypothesis> = corners
+        .iter()
+        .enumerate()
+        .map(|(i, c)| CoordinateHypothesis::unweighted(i, c.grid))
+        .collect();
+    let report = check_consistency(ConsistencyRequest::new(
+        LatticeKind::Square,
+        &features,
+        &hypotheses,
+        None,
+        // Infinite tolerance: the fit is what we want, the judgement is below.
+        ConsistencyParams::new(f32::INFINITY),
+    ))
+    .unwrap_or_else(|e| panic!("{img_name}: self-consistency fit failed: {e}"));
+
+    let mut residuals: Vec<f32> = report
+        .grid()
+        .entries()
+        .iter()
+        .filter_map(|e| e.residual_px)
+        .collect();
+    residuals.sort_by(|a, b| a.partial_cmp(b).expect("finite residuals"));
+    let median = residuals[residuals.len() / 2];
+    assert!(
+        median <= MAX_RESIDUAL_OVER_PITCH * pitch,
+        "{img_name}: labelling is not projectively self-consistent — median \
+         residual {median:.2} px is {:.1}% of the {pitch:.1} px cell pitch \
+         (bound {:.0}%)",
+        100.0 * median / pitch,
+        100.0 * MAX_RESIDUAL_OVER_PITCH,
     );
 }
 
@@ -132,6 +253,7 @@ fn run_public_charuco(case: &PublicCase) {
         min_corners,
     );
     assert_unique_ids(&res, rows * cols);
+    assert_projectively_consistent(&res, img_name);
     assert_eq!(
         diagnostics.raw_marker_wrong_id_count, 0,
         "{img_name}: wrong-id count must be 0",
