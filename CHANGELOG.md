@@ -121,6 +121,13 @@ changelog for its own breaking change).
   6.3 ms to 3.0 ms end to end, and decode is no longer the leading stage at any
   board size a caller would realistically print.
 
+- **PuzzleBoard is instrumented under the `tracing` feature.** The crate
+  declared the feature but instrumented nothing, so there was no way to see
+  where a `detect` call spent its time. Spans now cover the chessboard grid
+  build, per-component decode, edge sampling, the class precompute, and the
+  origin scan. `calib-targets-bench` gains a `puzzleboard_stage_timing` binary
+  alongside the topo / charuco / full ones.
+
 - **PuzzleBoard documentation now matches the code.** The book chapters, crate
   docs, and internal spec had drifted: the two code maps' roles were swapped
   (map A governs vertical edges, map B horizontal), the dot polarity was
