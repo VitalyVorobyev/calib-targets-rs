@@ -14,6 +14,8 @@ testdata/charuco_detect_config_test.json
 # Benchmark / sweep artifacts — local-only, never commit.
 # Contains per-frame JSONLs, aggregate JSONs, rendered overlays, etc.
 bench_results/
+# Stage-timing harness reports (topo / charuco / puzzleboard / full).
+tools/out/
 # calib-targets-bench overlay output for visual inspection of detector results.
 preview/
 # Local-only detection-performance reports + rendered overlays.
