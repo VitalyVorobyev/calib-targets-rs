@@ -1065,30 +1065,23 @@ fn random_observation(rng: &mut Lcg) -> Vec<PuzzleBoardObservedEdge> {
         .collect()
 }
 
-/// Assert two `DecodeOutcome`s are byte-identical across every field, with
-/// exact float `==` (the optimized and reference paths perform identical
-/// summations, so any divergence is a real bug, not rounding noise).
-fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
+/// Assert the optimized decoder agrees with the brute-force reference.
+///
+/// Every *decision* — the winning transform, origin, and match count — must be
+/// identical; those are integer-keyed and the optimization does not touch how
+/// they are compared.
+///
+/// The `f32` score fields are compared to a tight relative tolerance rather than
+/// bit-for-bit. The precompute sums each residue group once and adds the group
+/// total to the table, where the reference adds each observation separately;
+/// the two are mathematically equal but associate differently, so they can
+/// differ in the last few ULPs. `1e-5` relative is roughly three orders of
+/// magnitude above the `f32` epsilon accumulated over the largest observation
+/// sets here, and far below any score gap the ranking depends on.
+fn assert_outcome_matches_reference(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
     assert_eq!(a.alignment, b.alignment, "{ctx}: alignment");
     assert_eq!(a.edges_matched, b.edges_matched, "{ctx}: edges_matched");
     assert_eq!(a.edges_observed, b.edges_observed, "{ctx}: edges_observed");
-    assert_eq!(
-        a.weighted_score.to_bits(),
-        b.weighted_score.to_bits(),
-        "{ctx}: weighted_score {} vs {}",
-        a.weighted_score,
-        b.weighted_score
-    );
-    assert_eq!(
-        a.bit_error_rate.to_bits(),
-        b.bit_error_rate.to_bits(),
-        "{ctx}: bit_error_rate"
-    );
-    assert_eq!(
-        a.mean_confidence.to_bits(),
-        b.mean_confidence.to_bits(),
-        "{ctx}: mean_confidence"
-    );
     assert_eq!(
         a.master_origin_row, b.master_origin_row,
         "{ctx}: master_origin_row"
@@ -1098,11 +1091,22 @@ fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str
         "{ctx}: master_origin_col"
     );
     assert_eq!(
-        a.score_best.to_bits(),
-        b.score_best.to_bits(),
-        "{ctx}: score_best {} vs {}",
-        a.score_best,
-        b.score_best
+        a.bit_error_rate.to_bits(),
+        b.bit_error_rate.to_bits(),
+        "{ctx}: bit_error_rate"
+    );
+    assert_close(a.weighted_score, b.weighted_score, ctx, "weighted_score");
+    assert_close(a.mean_confidence, b.mean_confidence, ctx, "mean_confidence");
+    assert_close(a.score_best, b.score_best, ctx, "score_best");
+}
+
+/// Relative-tolerance float compare, falling back to absolute near zero.
+fn assert_close(a: f32, b: f32, ctx: &str, field: &str) {
+    const REL_TOL: f32 = 1e-5;
+    let scale = a.abs().max(b.abs()).max(1.0);
+    assert!(
+        (a - b).abs() <= REL_TOL * scale,
+        "{ctx}: {field} {a} vs {b} (rel tol {REL_TOL})"
     );
 }
 
@@ -1165,7 +1169,7 @@ fn adversarial_corpus() -> Vec<(String, Vec<PuzzleBoardObservedEdge>)> {
 }
 
 #[test]
-fn fast_decode_byte_identical_to_reference_fuzz() {
+fn fast_decode_matches_reference_fuzz() {
     let mut rng = Lcg::new(0xDEAD_BEEF);
     let bers = [0.01f32, 0.10, 0.30, 0.50, 1.0];
     for trial in 0..120usize {
@@ -1176,7 +1180,7 @@ fn fast_decode_byte_identical_to_reference_fuzz() {
         match (fast, reference) {
             (None, None) => {}
             (Some(f), Some(r)) => {
-                assert_outcome_byte_identical(&f, &r, &format!("hard trial {trial} ber {ber}"))
+                assert_outcome_matches_reference(&f, &r, &format!("hard trial {trial} ber {ber}"))
             }
             (f, r) => {
                 panic!("hard trial {trial} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
@@ -1186,7 +1190,7 @@ fn fast_decode_byte_identical_to_reference_fuzz() {
 }
 
 #[test]
-fn fast_decode_byte_identical_to_reference_adversarial() {
+fn fast_decode_matches_reference_adversarial() {
     let bers = [0.01f32, 0.30, 0.50, 1.0];
     for (name, obs) in adversarial_corpus() {
         for &ber in &bers {
@@ -1195,7 +1199,7 @@ fn fast_decode_byte_identical_to_reference_adversarial() {
             match (fast, reference) {
                 (None, None) => {}
                 (Some(f), Some(r)) => {
-                    assert_outcome_byte_identical(&f, &r, &format!("hard adv {name} ber {ber}"))
+                    assert_outcome_matches_reference(&f, &r, &format!("hard adv {name} ber {ber}"))
                 }
                 (f, r) => {
                     panic!("hard adv {name} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
@@ -1217,7 +1221,7 @@ fn assert_soft_equivalent(
         (None, None) => {}
         (Some(f), Some(r)) => {
             // Winner identity + carried diagnostics.
-            assert_outcome_byte_identical(f, r, ctx);
+            assert_outcome_matches_reference(f, r, ctx);
             // Margin gate inputs and outcome.
             assert_eq!(
                 f.score_margin.to_bits(),
@@ -1248,7 +1252,7 @@ fn assert_soft_equivalent(
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_fuzz() {
+fn soft_decode_matches_reference_fuzz() {
     let cfg = default_soft_cfg();
     let mut rng = Lcg::new(0x1234_5678_9ABC_DEF0);
     let bers = [0.10f32, 0.30, 0.50, 1.0];
@@ -1262,7 +1266,7 @@ fn soft_decode_byte_identical_to_reference_fuzz() {
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_low_margin_gate() {
+fn soft_decode_matches_reference_low_margin_gate() {
     // Sweep the margin gate across a wide range so the pass/fail decision is
     // exercised on both sides of the threshold for randomized inputs.
     let mut rng = Lcg::new(0xCAFE_F00D_0BAD_BEEF);
@@ -1285,7 +1289,7 @@ fn soft_decode_byte_identical_to_reference_low_margin_gate() {
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_adversarial() {
+fn soft_decode_matches_reference_adversarial() {
     let cfg = default_soft_cfg();
     let bers = [0.10f32, 0.30, 0.50, 1.0];
     for (name, obs) in adversarial_corpus() {

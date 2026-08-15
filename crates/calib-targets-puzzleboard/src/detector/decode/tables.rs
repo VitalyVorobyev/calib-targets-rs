@@ -220,6 +220,8 @@ pub(crate) struct ClassTables {
     /// Summed per-bit log-likelihood per V class. Empty unless a
     /// [`SoftLlConfig`] was supplied.
     pub v_ll: Vec<f32>,
+    /// Scratch for the residue grouping, reused across transforms.
+    groups: Groups,
 }
 
 impl ClassTables {
@@ -233,6 +235,7 @@ impl ClassTables {
             v_count: vec![0u32; V_ROWS * V_COLS],
             v_weight: vec![0.0f32; V_ROWS * V_COLS],
             v_ll: ll(V_ROWS * V_COLS),
+            groups: Groups::new(),
         }
     }
 
@@ -247,9 +250,20 @@ impl ClassTables {
 
     /// Rebuild the tables for one transform's observation set.
     ///
-    /// Every observation contributes to exactly one cell per reachable class,
-    /// so each cell accumulates its observations in input order — which makes
-    /// the `f32` sums reproducible and independent of the class restriction.
+    /// # Cost is bounded by residue classes, not by observations
+    ///
+    /// An observation reaches the tables only through its *residues*: which
+    /// cells it credits depends on `(bit, lookup_row mod period, lookup_col mod
+    /// period)` and nothing else. Two observations agreeing on those three
+    /// credit exactly the same cells with exactly the same shape of
+    /// contribution, so they can be summed once and applied once.
+    ///
+    /// There are at most `2 · 167 · 3 = 1002` such residue groups per
+    /// orientation, and for a window spanning `w` squares at most `6w` of them
+    /// are non-empty — while the window holds on the order of `w²`
+    /// observations. So the precompute costs
+    /// `O(N + min(N, 6w) · 501)` rather than `O(N · 501)`, and the saving grows
+    /// linearly with window size.
     ///
     /// Passing a [`SoftLlConfig`] additionally accumulates the per-bit
     /// log-likelihood halves; the count and weight tables are identical either
@@ -277,39 +291,152 @@ impl ClassTables {
         range: &ClassRange,
         cfg: &SoftLlConfig,
     ) {
+        self.groups.fill::<SOFT>(transformed, cfg);
+        for (key, acc) in self.groups.horizontal() {
+            accumulate::<H_ROWS, H_COLS, SOFT>(
+                Accumulate {
+                    count: &mut self.h_count,
+                    weight: &mut self.h_weight,
+                    ll_sum: &mut self.h_ll,
+                },
+                key,
+                acc,
+                &range.h_rows,
+                &range.h_cols,
+                flat_map_b(),
+            );
+        }
+        for (key, acc) in self.groups.vertical() {
+            accumulate::<V_ROWS, V_COLS, SOFT>(
+                Accumulate {
+                    count: &mut self.v_count,
+                    weight: &mut self.v_weight,
+                    ll_sum: &mut self.v_ll,
+                },
+                key,
+                acc,
+                &range.v_rows,
+                &range.v_cols,
+                flat_map_a(),
+            );
+        }
+    }
+}
+
+/// One residue group's summed contribution.
+#[derive(Clone, Copy, Debug, Default)]
+struct GroupAcc {
+    /// How many observations fell into this group.
+    count: u32,
+    /// Their summed confidence.
+    weight: f32,
+    /// Their summed match / mismatch log-likelihood (zero unless soft).
+    ll_match: f32,
+    ll_mismatch: f32,
+}
+
+/// The residues that decide which cells a group credits.
+#[derive(Clone, Copy, Debug)]
+struct GroupKey {
+    row: usize,
+    col: usize,
+    bit: u8,
+}
+
+/// Per-orientation residue buckets, indexed by `bit · 501 + row · 3 + col` for
+/// horizontal observations and `bit · 501 + row · 167 + col` for vertical ones.
+///
+/// Both index spaces hold `2 · 501` slots, so the scratch is 8 KB and clearing
+/// it between transforms is cheaper than the work it saves. Only the slots
+/// actually touched are visited afterwards, tracked in `touched`.
+struct Groups {
+    horizontal: Vec<GroupAcc>,
+    vertical: Vec<GroupAcc>,
+    touched_h: Vec<u32>,
+    touched_v: Vec<u32>,
+}
+
+const GROUPS_PER_ORIENTATION: usize = 2 * H_ROWS * H_COLS;
+
+impl Groups {
+    fn new() -> Self {
+        Self {
+            horizontal: vec![GroupAcc::default(); GROUPS_PER_ORIENTATION],
+            vertical: vec![GroupAcc::default(); GROUPS_PER_ORIENTATION],
+            touched_h: Vec::new(),
+            touched_v: Vec::new(),
+        }
+    }
+
+    /// Bucket one transform's observations by residue. `O(N)`.
+    fn fill<const SOFT: bool>(&mut self, transformed: &[TransformedEdge], cfg: &SoftLlConfig) {
+        for &slot in &self.touched_h {
+            self.horizontal[slot as usize] = GroupAcc::default();
+        }
+        for &slot in &self.touched_v {
+            self.vertical[slot as usize] = GroupAcc::default();
+        }
+        self.touched_h.clear();
+        self.touched_v.clear();
+
         for e in transformed {
-            let ll = if SOFT {
-                ll_pair(e.confidence, cfg.kappa, cfg.per_bit_floor)
-            } else {
-                (0.0, 0.0)
+            let (bucket, touched, n_rows, n_cols) = match e.orientation {
+                EdgeOrientation::Horizontal => {
+                    (&mut self.horizontal, &mut self.touched_h, H_ROWS, H_COLS)
+                }
+                EdgeOrientation::Vertical => {
+                    (&mut self.vertical, &mut self.touched_v, V_ROWS, V_COLS)
+                }
             };
-            match e.orientation {
-                EdgeOrientation::Horizontal => accumulate::<H_ROWS, H_COLS, SOFT>(
-                    Accumulate {
-                        count: &mut self.h_count,
-                        weight: &mut self.h_weight,
-                        ll_sum: &mut self.h_ll,
-                    },
-                    e,
-                    ll,
-                    &range.h_rows,
-                    &range.h_cols,
-                    flat_map_b(),
-                ),
-                EdgeOrientation::Vertical => accumulate::<V_ROWS, V_COLS, SOFT>(
-                    Accumulate {
-                        count: &mut self.v_count,
-                        weight: &mut self.v_weight,
-                        ll_sum: &mut self.v_ll,
-                    },
-                    e,
-                    ll,
-                    &range.v_rows,
-                    &range.v_cols,
-                    flat_map_a(),
-                ),
+            let row = e.lookup_row.rem_euclid(n_rows as i32) as usize;
+            let col = e.lookup_col.rem_euclid(n_cols as i32) as usize;
+            let slot = (e.bit as usize) * (n_rows * n_cols) + row * n_cols + col;
+            let acc = &mut bucket[slot];
+            if acc.count == 0 {
+                touched.push(slot as u32);
+            }
+            acc.count += 1;
+            acc.weight += e.confidence;
+            if SOFT {
+                let (m, mm) = ll_pair(e.confidence, cfg.kappa, cfg.per_bit_floor);
+                acc.ll_match += m;
+                acc.ll_mismatch += mm;
             }
         }
+        // Visit groups in a fixed order so the table sums are reproducible
+        // regardless of observation order.
+        self.touched_h.sort_unstable();
+        self.touched_v.sort_unstable();
+    }
+
+    fn horizontal(&self) -> impl Iterator<Item = (GroupKey, GroupAcc)> + '_ {
+        Self::iter(&self.touched_h, &self.horizontal, H_ROWS, H_COLS)
+    }
+
+    fn vertical(&self) -> impl Iterator<Item = (GroupKey, GroupAcc)> + '_ {
+        Self::iter(&self.touched_v, &self.vertical, V_ROWS, V_COLS)
+    }
+
+    fn iter<'a>(
+        touched: &'a [u32],
+        bucket: &'a [GroupAcc],
+        n_rows: usize,
+        n_cols: usize,
+    ) -> impl Iterator<Item = (GroupKey, GroupAcc)> + 'a {
+        let per_bit = n_rows * n_cols;
+        touched.iter().map(move |&slot| {
+            let slot = slot as usize;
+            let bit = (slot / per_bit) as u8;
+            let within = slot % per_bit;
+            (
+                GroupKey {
+                    row: within / n_cols,
+                    col: within % n_cols,
+                    bit,
+                },
+                bucket[slot],
+            )
+        })
     }
 }
 
@@ -343,38 +470,37 @@ struct Accumulate<'a> {
 #[inline]
 fn accumulate<const N_ROWS: usize, const N_COLS: usize, const SOFT: bool>(
     acc: Accumulate<'_>,
-    e: &TransformedEdge,
-    ll: (f32, f32),
+    key: GroupKey,
+    group: GroupAcc,
     rows: &ClassInterval,
     cols: &ClassInterval,
     map: &'static [u8],
 ) {
-    let (ll_match, ll_mismatch) = ll;
     let Accumulate {
         count,
         weight,
         ll_sum,
     } = acc;
-    // One cell: read the master bit, credit the class it belongs to.
+    // One cell: read the master bit, credit the class it belongs to with the
+    // whole group's contribution at once.
     let mut hit = |class_idx: usize, map_idx: usize| {
-        if map[map_idx] == e.bit {
-            count[class_idx] += 1;
-            weight[class_idx] += e.confidence;
+        if map[map_idx] == key.bit {
+            count[class_idx] += group.count;
+            weight[class_idx] += group.weight;
             if SOFT {
-                ll_sum[class_idx] += ll_match;
+                ll_sum[class_idx] += group.ll_match;
             }
         } else if SOFT {
-            ll_sum[class_idx] += ll_mismatch;
+            ll_sum[class_idx] += group.ll_mismatch;
         }
     };
 
     if rows.len() == N_ROWS && cols.len() == N_COLS {
         // Unrestricted: walk the master cells, whose bounds are compile-time
         // constants, and map each to the class it credits.
-        let first_b = (-e.lookup_col).rem_euclid(N_COLS as i32) as usize;
+        let first_b = (N_COLS - key.col) % N_COLS;
         for r in 0..N_ROWS {
-            let class_base =
-                ((r as i32 - e.lookup_row).rem_euclid(N_ROWS as i32) as usize) * N_COLS;
+            let class_base = ((r + N_ROWS - key.row) % N_ROWS) * N_COLS;
             let row_base = r * N_COLS;
             let mut b = first_b;
             for c in 0..N_COLS {
@@ -388,8 +514,8 @@ fn accumulate<const N_ROWS: usize, const N_COLS: usize, const SOFT: bool>(
     // Restricted: walk the reachable classes instead. Both indices advance by
     // one per step, so their master coordinates do too and wrap at most once —
     // each axis is reduced once at entry rather than once per cell.
-    let mut master_row = (rows.start as i32 + e.lookup_row).rem_euclid(N_ROWS as i32) as usize;
-    let first_col = (cols.start as i32 + e.lookup_col).rem_euclid(N_COLS as i32) as usize;
+    let mut master_row = (rows.start + key.row) % N_ROWS;
+    let first_col = (cols.start + key.col) % N_COLS;
     let mut a = rows.start;
     for _ in 0..rows.len() {
         let row_base = master_row * N_COLS;
