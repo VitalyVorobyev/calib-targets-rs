@@ -139,6 +139,7 @@ impl HardScan {
     /// (`h_match`/`v_match`) tables; `total = observed.len()` and `total_conf =
     /// Σ confidence`. The body is the exact step-1..4 logic of the original hard
     /// inner loop.
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
     pub(crate) fn fold(
         &mut self,
         transform: GridTransform,

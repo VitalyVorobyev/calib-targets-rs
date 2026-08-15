@@ -283,6 +283,7 @@ fn demote_into_runner(
 ///
 /// Returns `None` when the observation set is empty, carries no confidence, or
 /// admits no shift that keeps all of it on the board.
+#[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
 fn scan(
     observed: &[PuzzleBoardObservedEdge],
     board: BoardRect,
@@ -327,6 +328,8 @@ fn scan(
         );
         tables.build(&transformed, &range, soft);
 
+        #[cfg(feature = "tracing")]
+        let _origin_span = tracing::info_span!("origin_scan").entered();
         for p_r in r_lo..=r_hi {
             let master_row = board.origin_row + p_r;
             for p_c in c_lo..=c_hi {

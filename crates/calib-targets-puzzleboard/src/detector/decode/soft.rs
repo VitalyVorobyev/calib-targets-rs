@@ -119,6 +119,8 @@ pub(crate) fn decode_soft(
         // O(few) occasions a candidate is actually retained, which is
         // byte-identical in ranking (same scan order, same `f32` sums, same
         // strict-`>` first-seen tie-break) and far cheaper.
+        #[cfg(feature = "tracing")]
+        let _origin_span = tracing::info_span!("origin_scan").entered();
         for master_row in 0..MASTER_ROWS as i32 {
             let ha = (master_row % H_ROWS as i32) as usize;
             let va = (master_row % V_ROWS as i32) as usize;

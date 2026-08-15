@@ -25,6 +25,8 @@ use crate::detector::params::{
 use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetection};
 use crate::diagnostics::{PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics};
 use crate::params::PuzzleBoardParams;
+#[cfg(feature = "tracing")]
+use tracing::instrument;
 
 /// One component's decode: the slim public result paired with the
 /// diagnostics captured for it. Used internally to carry both through
@@ -138,6 +140,7 @@ impl PuzzleBoardDetector {
         self.detect_inner(image, corners)
     }
 
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip_all))]
     fn detect_inner(
         &self,
         image: &GrayImageView<'_>,
@@ -146,7 +149,11 @@ impl PuzzleBoardDetector {
         Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
         PuzzleBoardDiagnostics,
     ) {
-        let chess_results = self.chessboard.detect_all(corners);
+        let chess_results = {
+            #[cfg(feature = "tracing")]
+            let _span = tracing::info_span!("chess_detect_all").entered();
+            self.chessboard.detect_all(corners)
+        };
         if chess_results.is_empty() {
             return (
                 Err(PuzzleBoardDetectError::ChessboardNotDetected),
@@ -219,6 +226,7 @@ impl PuzzleBoardDetector {
         }
     }
 
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip_all))]
     fn decode_component(
         &self,
         image: &GrayImageView<'_>,
@@ -288,7 +296,9 @@ impl PuzzleBoardDetector {
 
         let max_err = self.params.decode.max_bit_error_rate;
         let soft_cfg = soft_cfg_from(&self.params.decode);
-        let Some(decoded) = (match (
+        #[cfg(feature = "tracing")]
+        let decode_span = tracing::info_span!("decode_edges").entered();
+        let decoded = match (
             self.params.decode.search_mode,
             self.params.decode.scoring_mode,
         ) {
@@ -304,7 +314,10 @@ impl PuzzleBoardDetector {
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
                 decode_fixed_board_soft(&filtered, self.board_rect(), &soft_cfg, max_err)
             }
-        }) else {
+        };
+        #[cfg(feature = "tracing")]
+        drop(decode_span);
+        let Some(decoded) = decoded else {
             return Err((
                 PuzzleBoardDetectError::DecodeFailed,
                 diagnostics_on_fail(&observed),
@@ -378,6 +391,7 @@ impl PuzzleBoardDetector {
         })
     }
 
+    #[cfg_attr(feature = "tracing", instrument(level = "info", skip_all))]
     fn sample_all_edges(
         &self,
         image: &GrayImageView<'_>,

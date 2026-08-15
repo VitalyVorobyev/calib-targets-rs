@@ -254,6 +254,7 @@ impl ClassTables {
     /// Passing a [`SoftLlConfig`] additionally accumulates the per-bit
     /// log-likelihood halves; the count and weight tables are identical either
     /// way, so a soft scan gets the hard scan's tables for free.
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
     pub(crate) fn build(
         &mut self,
         transformed: &[TransformedEdge],
