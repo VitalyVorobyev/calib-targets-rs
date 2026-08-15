@@ -85,10 +85,16 @@ pub fn extend_from_labelled<V: SquareAttachPolicy>(
         }
     }
 
-    // Seed the BFS from the boundary of the current labelled set.
+    // Seed the BFS from the boundary of the current labelled set, in sorted
+    // cell order. The walk claims corners first-come-first-served, so on a
+    // contested cell the seed order decides the outcome — and iterating a
+    // `HashMap` directly would take that decision from `RandomState`, which
+    // reseeds per process. Sorting makes the result depend only on the input.
     let mut boundary: VecDeque<(i32, i32)> = VecDeque::new();
     let mut seen_boundary: HashSet<(i32, i32)> = HashSet::new();
-    for &pos in grow.labelled.keys() {
+    let mut seeds: Vec<(i32, i32)> = grow.labelled.keys().copied().collect();
+    seeds.sort_unstable();
+    for pos in seeds {
         enqueue_cardinal_neighbours(pos, &grow.labelled, &mut boundary, &mut seen_boundary);
     }
 

@@ -56,6 +56,39 @@ changelog for its own breaking change).
   wide enough to reach the neighbouring corner, and a re-detected corner may be
   adopted by at most one board id.
 
+- **`projective-grid`: detection no longer depends on hash iteration order.**
+  `detect_grid` could return different labellings for byte-identical input
+  across processes — most runs labelling a 24 × 24 dot grid in full, roughly one
+  in thirty dropping a whole component
+  ([#77](https://github.com/VitalyVorobyev/calib-targets-rs/issues/77)). Three
+  reductions over the labelled set read `HashMap` iteration order, which `std`
+  reseeds per process: the boundary-extension BFS seeded its queue from the map
+  and then claimed corners first-come-first-served, and `ensure_axes` and
+  `cell_size_of` accumulated `f32` sums, which are not associative. All three
+  now iterate in sorted cell order. Measured on a 144-regime sweep, one regime
+  returned four different labellings over 40 repeats of the same input before
+  the fix and one after.
+
+- **PuzzleBoard: declaring the board is no longer a pessimisation.**
+  `PuzzleBoardSearchMode::FixedBoard` matched observations against a
+  materialised copy of the declared board's bit pattern, costing
+  `O(8 · (rows+1)(cols+1) · N)` — slower than not declaring the board at all
+  above roughly 22 squares, and pathologically so at scale. A declared board is
+  a sub-rectangle *cut from* the master, so its bit at board cell `(r, c)` is
+  the master bit at `(origin + r, origin + c)`: the same scoring problem,
+  restricted to a rectangle of origins, sharing the master search's cyclic
+  class tables. Restricting the origins also restricts the residue classes they
+  can reach, so declaring the board is now genuinely *cheaper* than not
+  declaring it, at every board size below the master's own.
+
+  The restricted scan also considers only shifts that keep every observation on
+  the board. An observation exists only where a dot was sampled, and a dot is
+  only sampled where the corner neighbourhood bounding it was detected, so
+  every observation does lie on the printed board and a shift placing one
+  outside it cannot describe the physical scene. Excluding those keeps
+  physically impossible placements out of the uniqueness gate, where they could
+  only ever suppress a correct decode.
+
 ### Changed
 
 - **`projective-grid`: `merge_components_local` takes the components plus one
@@ -64,6 +97,42 @@ changelog for its own breaking change).
   in two components" a well-defined question — and therefore what makes the
   injectivity guarantee above checkable. The previous shape let each component
   carry its own index space, where the question has no answer.
+
+- **PuzzleBoard decode is substantially faster, with the same output.** Two
+  changes beyond the fixed-board rework above, neither of which alters which
+  origin is decoded:
+
+  - *The cyclic class precompute is bounded by residue groups, not observation
+    count.* An observation reaches the tables only through
+    `(bit, lookup mod period)`; observations agreeing on those credit the same
+    cells with the same shape of contribution and are summed once. There are at
+    most `2 · 167 · 3` such groups per orientation, so the precompute goes from
+    `O(501 · N)` to `O(N + min(N, 6w) · 501)` for a `w`-square window — flat in
+    the observation count in practice.
+  - *The soft scorer's log-likelihood is accumulated in fixed point.* The
+    crossed-CRT separation that collapses the `501²` origin scan needs an
+    integer key: a table entry below the maximum must be at least one below it,
+    so that it provably cannot reach the maximum sum. `f32` rounding breaks that
+    step, which is why the soft path previously walked every origin while the
+    hard path did not. Fixed-point accumulation restores the property — and
+    makes the table sums exactly reproducible regardless of accumulation order.
+
+  On a public fixture the default `Full` + `SoftLogLikelihood` path drops from
+  6.3 ms to 3.0 ms end to end, and decode is no longer the leading stage at any
+  board size a caller would realistically print.
+
+- **PuzzleBoard documentation now matches the code.** The book chapters, crate
+  docs, and internal spec had drifted: the two code maps' roles were swapped
+  (map A governs vertical edges, map B horizontal), the dot polarity was
+  inverted (`0` is black), `min_window` was documented as 4 rather than 7, and
+  a `HardMajority` scoring mode was described that does not exist. Two claims
+  were wrong rather than merely stale — the shipped maps are *imported* from the
+  reference implementation (PStelldinger/PuzzleBoard, CC0) rather than generated
+  by this crate's tool, and the "a 4 × 4 fragment identifies its absolute
+  position" property holds only at a fixed orientation. Since the decoder must
+  search all eight D4 transforms, clean uniqueness begins at 6 × 6, which is
+  what justifies the `min_window` default of 7. A new book chapter covers the
+  code-map construction and the registration path from origin to absolute IDs.
 
 ## 0.12.0
 
