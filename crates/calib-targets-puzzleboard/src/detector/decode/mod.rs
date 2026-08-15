@@ -376,6 +376,36 @@ pub(crate) fn ll_pair(conf: f32, kappa: f32, floor: f32) -> (f32, f32) {
     (log_sigmoid(k).max(floor), log_sigmoid(-k).max(floor))
 }
 
+/// Fixed-point scale for accumulated log-likelihood.
+///
+/// The soft scorer accumulates in **integers**, not `f32`, and that is a
+/// correctness requirement rather than a speed trick. The crossed-CRT
+/// separation that collapses the `501²` origin scan rests on one step: a table
+/// entry below the maximum cannot reach the maximum *sum*. With integers that
+/// is immediate — below the maximum means at least one below it. With `f32`,
+/// rounding can let a strictly-smaller entry round up into the maximum sum, and
+/// the step fails. Quantising restores it, and makes the table sums exactly
+/// reproducible regardless of accumulation order as a side effect.
+///
+/// `2^24` puts the quantisation step at ~6e-8 per bit against per-bit values
+/// bounded by `per_bit_floor` (default −6). Even a 10⁵-edge observation set
+/// accumulates well inside `i64`, and the resulting error is orders of
+/// magnitude below any score gap the ranking depends on.
+pub(crate) const LL_SCALE: f64 = (1u64 << 24) as f64;
+
+/// Quantise one per-bit log-likelihood to the fixed-point accumulator.
+#[inline]
+pub(crate) fn quantize_ll(ll: f32) -> i64 {
+    (ll as f64 * LL_SCALE).round() as i64
+}
+
+/// Convert an accumulated fixed-point log-likelihood back to `f32` for the
+/// public score fields.
+#[inline]
+pub(crate) fn dequantize_ll(ll: i64) -> f32 {
+    (ll as f64 / LL_SCALE) as f32
+}
+
 /// Rank candidates by `score_best`, maintaining the current winner and
 /// runner-up in lock-step. Mirrors the two-slot update in
 /// `calib-targets-charuco/src/detector/board_match.rs`.

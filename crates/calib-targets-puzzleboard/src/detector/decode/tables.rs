@@ -37,7 +37,9 @@ use crate::code_maps::{
     horizontal_edge_bit, vertical_edge_bit, EdgeOrientation, PuzzleBoardObservedEdge,
 };
 
-use super::{ll_pair, transform_edge_lookup, SoftLlConfig, H_COLS, H_ROWS, V_COLS, V_ROWS};
+use super::{
+    ll_pair, quantize_ll, transform_edge_lookup, SoftLlConfig, H_COLS, H_ROWS, V_COLS, V_ROWS,
+};
 use calib_targets_core::GridTransform;
 
 /// One observation with its lookup cell resolved into a given D4 frame.
@@ -210,16 +212,16 @@ pub(crate) struct ClassTables {
     pub h_count: Vec<u32>,
     /// Summed confidence of matched observations per H class.
     pub h_weight: Vec<f32>,
-    /// Summed per-bit log-likelihood per H class. Empty unless a
-    /// [`SoftLlConfig`] was supplied.
-    pub h_ll: Vec<f32>,
+    /// Summed per-bit log-likelihood per H class, in the fixed-point units of
+    /// [`super::LL_SCALE`]. Empty unless a [`SoftLlConfig`] was supplied.
+    pub h_ll: Vec<i64>,
     /// Matched-bit count per V class.
     pub v_count: Vec<u32>,
     /// Summed confidence of matched observations per V class.
     pub v_weight: Vec<f32>,
-    /// Summed per-bit log-likelihood per V class. Empty unless a
-    /// [`SoftLlConfig`] was supplied.
-    pub v_ll: Vec<f32>,
+    /// Summed per-bit log-likelihood per V class, in the fixed-point units of
+    /// [`super::LL_SCALE`]. Empty unless a [`SoftLlConfig`] was supplied.
+    pub v_ll: Vec<i64>,
     /// Scratch for the residue grouping, reused across transforms.
     groups: Groups,
 }
@@ -227,7 +229,7 @@ pub(crate) struct ClassTables {
 impl ClassTables {
     /// Allocate zeroed tables. `soft` also allocates the log-likelihood halves.
     pub(crate) fn new(soft: bool) -> Self {
-        let ll = |n| if soft { vec![0.0f32; n] } else { Vec::new() };
+        let ll = |n| if soft { vec![0i64; n] } else { Vec::new() };
         Self {
             h_count: vec![0u32; H_ROWS * H_COLS],
             h_weight: vec![0.0f32; H_ROWS * H_COLS],
@@ -242,10 +244,10 @@ impl ClassTables {
     fn clear(&mut self) {
         self.h_count.fill(0);
         self.h_weight.fill(0.0);
-        self.h_ll.fill(0.0);
+        self.h_ll.fill(0);
         self.v_count.fill(0);
         self.v_weight.fill(0.0);
-        self.v_ll.fill(0.0);
+        self.v_ll.fill(0);
     }
 
     /// Rebuild the tables for one transform's observation set.
@@ -330,9 +332,10 @@ struct GroupAcc {
     count: u32,
     /// Their summed confidence.
     weight: f32,
-    /// Their summed match / mismatch log-likelihood (zero unless soft).
-    ll_match: f32,
-    ll_mismatch: f32,
+    /// Their summed match / mismatch log-likelihood, in fixed-point units
+    /// (zero unless soft). Integer accumulation makes the group sums exact.
+    ll_match: i64,
+    ll_mismatch: i64,
 }
 
 /// The residues that decide which cells a group credits.
@@ -399,8 +402,8 @@ impl Groups {
             acc.weight += e.confidence;
             if SOFT {
                 let (m, mm) = ll_pair(e.confidence, cfg.kappa, cfg.per_bit_floor);
-                acc.ll_match += m;
-                acc.ll_mismatch += mm;
+                acc.ll_match += quantize_ll(m);
+                acc.ll_mismatch += quantize_ll(mm);
             }
         }
         // Visit groups in a fixed order so the table sums are reproducible
@@ -451,7 +454,7 @@ const NO_SOFT: SoftLlConfig = SoftLlConfig {
 struct Accumulate<'a> {
     count: &'a mut [u32],
     weight: &'a mut [f32],
-    ll_sum: &'a mut [f32],
+    ll_sum: &'a mut [i64],
 }
 
 /// Accumulate one observation into every reachable class of one table.

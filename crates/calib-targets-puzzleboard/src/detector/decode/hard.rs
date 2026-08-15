@@ -284,7 +284,7 @@ struct TransformSummary {
 /// Row-major-min master origin over the joint optimal product `optimal_h ×
 /// optimal_v`. Matches the original scan's first-seen (strict-`>`) tie-break:
 /// the winner is the lexicographic minimum of `(master_row, master_col)`.
-fn row_major_min_origin(
+pub(super) fn row_major_min_origin(
     optimal_h: &[(usize, usize)],
     optimal_v: &[(usize, usize)],
 ) -> Option<(i32, i32)> {

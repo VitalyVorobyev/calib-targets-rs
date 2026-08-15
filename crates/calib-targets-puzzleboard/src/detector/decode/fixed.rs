@@ -51,8 +51,8 @@ use crate::code_maps::PuzzleBoardObservedEdge;
 
 use super::tables::{transform_observations, ClassRange, ClassTables, LookupExtent};
 use super::{
-    apply_soft_uniqueness_gate, finalize_hard_winner, update_best_and_runner_up, DecodeOutcome,
-    HardRunnerUp, SoftLlConfig, H_COLS, V_COLS,
+    apply_soft_uniqueness_gate, dequantize_ll, finalize_hard_winner, update_best_and_runner_up,
+    DecodeOutcome, HardRunnerUp, SoftLlConfig, H_COLS, V_COLS,
 };
 
 /// The declared board, as the decoders need it.
@@ -112,7 +112,9 @@ impl BoardRect {
 struct ShiftScore {
     matched: usize,
     weight: f32,
-    ll: f32,
+    /// Fixed-point log-likelihood (see [`super::LL_SCALE`]); zero when the
+    /// scan is not running the soft scorer.
+    ll: i64,
 }
 
 /// Read the class-table entries for master origin `(master_row, master_col)`.
@@ -128,7 +130,7 @@ fn score_at(tables: &ClassTables, master_row: i32, master_col: i32, soft: bool) 
         ll: if soft {
             tables.h_ll[h] + tables.v_ll[v]
         } else {
-            0.0
+            0
         },
     }
 }
@@ -240,12 +242,12 @@ impl FixedScan {
             alignment: transform.with_translation([master_col, master_row]),
             edges_matched: matched,
             edges_observed: ctx.total,
-            weighted_score: score.ll / ctx.total as f32,
+            weighted_score: dequantize_ll(score.ll) / ctx.total as f32,
             bit_error_rate,
             mean_confidence,
             master_origin_row: master_row,
             master_origin_col: master_col,
-            score_best: score.ll,
+            score_best: dequantize_ll(score.ll),
             score_runner_up: None,
             score_margin: 0.0,
             runner_up_origin_row: None,

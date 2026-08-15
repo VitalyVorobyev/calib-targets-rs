@@ -10,13 +10,14 @@
 
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 
-use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
 
+use super::hard::row_major_min_origin;
 use super::tables::{transform_observations, ClassRange, ClassTables};
 use super::{
-    apply_soft_uniqueness_gate, update_best_and_runner_up, DecodeOutcome, HardScan, SoftLlConfig,
-    TransformTables, H_COLS, H_ROWS, V_COLS, V_ROWS,
+    apply_soft_uniqueness_gate, crt_master_col, crt_master_row, dequantize_ll,
+    update_best_and_runner_up, DecodeOutcome, HardScan, SoftLlConfig, TransformTables, H_COLS,
+    H_ROWS, V_COLS, V_ROWS,
 };
 
 /// Finalize the winning hypothesis: populate `score_runner_up`,
@@ -57,15 +58,23 @@ pub(super) fn finalize_soft_winner(
 
 /// Soft-log-likelihood decoder over the full 501 × 501 master.
 ///
-/// For each D4 transform we precompute, per cyclic class `(a, b)`, the sum of
-/// per-bit LL contributions across observations (`O(501 × N)`), then walk all
-/// `501²` origins with a single table lookup per hypothesis. The origin walk
-/// keeps the exact serial row-major order — required to reproduce the
-/// first-seen tie-break under `f32` rounding (see the inner-loop note for why
-/// the integer-keyed crossed-CRT separation used by [`super::hard::decode`] is
-/// not byte-safe here) — but defers the cost of materializing a full
-/// [`DecodeOutcome`] to the `O(few)` origins that actually enter the
-/// winner / runner-up slots.
+/// For each D4 transform the shared precompute fills the per-class
+/// log-likelihood tables, and the winning origin is then recovered by the same
+/// crossed-CRT separation the hard path uses: because `501 = 3 · 167` with
+/// `gcd(3, 167) = 1`, the argmax of `h_ll[ha, hb] + v_ll[va, vb]` over all
+/// origins is exactly the pair of per-table argmaxes, so the `501²` scan
+/// collapses to `O(501)`.
+///
+/// That separation is only valid for an **integer** key — a table entry below
+/// the maximum must be at least one below it, so that it provably cannot reach
+/// the maximum sum — which is why the log-likelihood is accumulated in the
+/// fixed-point units of [`super::LL_SCALE`] rather than as `f32`.
+///
+/// The runner-up needed by the margin gate comes from the same separation: if
+/// the joint maximum is attained by more than one origin the decode is
+/// ambiguous and the runner-up sits at the same score (margin `0`); otherwise
+/// the second-highest achievable sum keeps one table at its maximum and drops
+/// the other to its second-distinct level.
 pub(crate) fn decode_soft(
     observed: &[PuzzleBoardObservedEdge],
     cfg: &SoftLlConfig,
@@ -96,74 +105,23 @@ pub(crate) fn decode_soft(
         let transformed = transform_observations(observed, &transform);
         tables.build(&transformed, &range, Some(cfg));
 
-        // Rank origins in the exact serial row-major order, but defer the
-        // expensive full `DecodeOutcome` build to the moments a candidate
-        // actually enters the best / runner-up slot.
-        //
-        // Why not the crossed-CRT argmax separation used by the hard `decode`?
-        // The hard path ranks on an *integer* match count as its primary key,
-        // so its per-table argmax sets are exact and the separation is
-        // byte-safe. The soft path ranks on a single `f32` sum
-        // `ll_total = h_ll[ha,hb] + v_ll[va,vb]`, and `f32` rounding can make
-        // two origins built from *distinct* table values collapse to an
-        // identical sum (`h + v1 == h + v2` with `v1 != v2`). The first-seen
-        // tie-break then depends on which of those origins the serial scan
-        // visits first — information a per-table level/argmax separation
-        // discards. Reproducing the exact tie-break therefore requires visiting
-        // origins in the real row-major order. We keep that O(501²) walk but
-        // strip its per-origin cost: the original built a 13-field
-        // `DecodeOutcome` (two divisions + several table reads) for *every* one
-        // of ~2M origins, then discarded all but two. Here the inner loop is
-        // two table reads, one add and a single float compare against the
-        // weakest retained slot; a `DecodeOutcome` is materialized only on the
-        // O(few) occasions a candidate is actually retained, which is
-        // byte-identical in ranking (same scan order, same `f32` sums, same
-        // strict-`>` first-seen tie-break) and far cheaper.
+        // Collapse the origin scan by crossed-CRT separation (see the
+        // function docs). `level_max` plays the role `lex_max_classes` plays on
+        // the hard path, on a single integer key instead of a lexicographic
+        // (count, weight) pair.
         #[cfg(feature = "tracing")]
         let _origin_span = tracing::info_span!("origin_scan").entered();
-        for master_row in 0..MASTER_ROWS as i32 {
-            let ha = (master_row % H_ROWS as i32) as usize;
-            let va = (master_row % V_ROWS as i32) as usize;
-            let h_row = &tables.h_ll[ha * H_COLS..ha * H_COLS + H_COLS];
-            let v_row = &tables.v_ll[va * V_COLS..va * V_COLS + V_COLS];
-            for master_col in 0..MASTER_COLS as i32 {
-                let hb = (master_col % H_COLS as i32) as usize;
-                let vb = (master_col % V_COLS as i32) as usize;
-                let ll_total = h_row[hb] + v_row[vb];
-
-                // Cheap gate replicating `update_best_and_runner_up`'s ranking
-                // decision *without* building the candidate. `enters_best` =
-                // strictly beats the current best. `enters_runner_up` =
-                // does not beat best but strictly beats the current runner-up
-                // (or the runner-up slot is empty). Only then do we pay for the
-                // full outcome and run the byte-identical two-slot update.
-                let enters_best = match &best {
-                    None => true,
-                    Some(b) => ll_total > b.score_best,
-                };
-                let enters = enters_best
-                    || match (&best, &runner_up) {
-                        (None, _) => true,
-                        (Some(_), None) => true,
-                        (Some(_), Some(r)) => ll_total > r.score_best,
-                    };
-                if enters {
-                    let origin = OriginClass {
-                        mr: master_row,
-                        mc: master_col,
-                        ha,
-                        hb,
-                        va,
-                        vb,
-                    };
-                    let candidate = build_soft_candidate(transform, &tables, total, &origin);
-                    update_best_and_runner_up(&mut best, &mut runner_up, candidate);
-                }
+        let h = level_max(&tables.h_ll, H_COLS);
+        let v = level_max(&tables.v_ll, V_COLS);
+        if let Some((winner, runner)) = separated_top2(transform, &tables, total, &h, &v) {
+            update_best_and_runner_up(&mut best, &mut runner_up, winner);
+            if let Some(runner) = runner {
+                update_best_and_runner_up(&mut best, &mut runner_up, runner);
             }
         }
+        #[cfg(feature = "tracing")]
+        drop(_origin_span);
 
-        // Fold this transform's count / matched-weight tables into the shared
-        // matched-count scan while they are still populated (the `*.fill(...)`
         // The shared precompute already produced exactly the count and
         // matched-weight tables the hard path consumes, so the uniqueness top-2
         // is folded from them rather than from a second precompute pass.
@@ -238,7 +196,8 @@ fn build_soft_candidate(
         va,
         vb,
     } = origin;
-    let ll_total = tables.h_ll[ha * H_COLS + hb] + tables.v_ll[va * V_COLS + vb];
+    let ll_fixed = tables.h_ll[ha * H_COLS + hb] + tables.v_ll[va * V_COLS + vb];
+    let ll_total = dequantize_ll(ll_fixed);
     let matched = (tables.h_count[ha * H_COLS + hb] + tables.v_count[va * V_COLS + vb]) as usize;
     let match_conf_sum = tables.h_weight[ha * H_COLS + hb] + tables.v_weight[va * V_COLS + vb];
 
@@ -265,4 +224,112 @@ fn build_soft_candidate(
         runner_up_origin_col: None,
         runner_up_transform: None,
     }
+}
+
+/// Highest and second-highest **distinct** values of one class table, with the
+/// cells attaining the maximum.
+///
+/// The integer key is what makes this usable: every cell not in `classes` is at
+/// least one below `max`, so no combination involving one can reach the joint
+/// maximum. `second` is the largest value strictly below `max`, which is what
+/// the runner-up needs.
+struct LevelMax {
+    max: i64,
+    classes: Vec<(usize, usize)>,
+    second: Option<i64>,
+    second_class: Option<(usize, usize)>,
+}
+
+fn level_max(table: &[i64], cols: usize) -> LevelMax {
+    let mut max = i64::MIN;
+    for &value in table {
+        if value > max {
+            max = value;
+        }
+    }
+    let mut classes = Vec::new();
+    let mut second: Option<i64> = None;
+    let mut second_class: Option<(usize, usize)> = None;
+    for (i, &value) in table.iter().enumerate() {
+        if value == max {
+            classes.push((i / cols, i % cols));
+        } else if second.is_none_or(|s| value > s) {
+            second = Some(value);
+            second_class = Some((i / cols, i % cols));
+        }
+    }
+    LevelMax {
+        max,
+        classes,
+        second,
+        second_class,
+    }
+}
+
+/// Build this transform's best origin and its closest competitor from the two
+/// per-table optima.
+///
+/// The winner is the row-major-minimum over the product of the two argmax sets,
+/// matching the serial scan's first-seen tie-break. The competitor is either
+/// another origin at the *same* joint maximum — an ambiguous decode, margin `0`
+/// — or the second-highest achievable sum, which keeps one table at its maximum
+/// and drops the other by one level.
+fn separated_top2(
+    transform: GridTransform,
+    tables: &ClassTables,
+    total: usize,
+    h: &LevelMax,
+    v: &LevelMax,
+) -> Option<(DecodeOutcome, Option<DecodeOutcome>)> {
+    let (winner_row, winner_col) = row_major_min_origin(&h.classes, &v.classes)?;
+    let build = |mr: i32, mc: i32| {
+        build_soft_candidate(
+            transform,
+            tables,
+            total,
+            &OriginClass {
+                mr,
+                mc,
+                ha: mr.rem_euclid(H_ROWS as i32) as usize,
+                hb: mc.rem_euclid(H_COLS as i32) as usize,
+                va: mr.rem_euclid(V_ROWS as i32) as usize,
+                vb: mc.rem_euclid(V_COLS as i32) as usize,
+            },
+        )
+    };
+    let winner = build(winner_row, winner_col);
+
+    // Case A: more than one origin attains the joint maximum — genuinely
+    // ambiguous, and the runner-up sits at the winner's own score.
+    if h.classes.len().saturating_mul(v.classes.len()) > 1 {
+        for &(ha, hb) in &h.classes {
+            for &(va, vb) in &v.classes {
+                let mr = crt_master_row(va, ha);
+                let mc = crt_master_col(hb, vb);
+                if (mr, mc) != (winner_row, winner_col) {
+                    return Some((winner, Some(build(mr, mc))));
+                }
+            }
+        }
+    }
+
+    // Case B: the second-highest sum drops exactly one table one level.
+    let from_v = v
+        .second
+        .map(|sv| (h.max + sv, Some(h.classes[0]), v.second_class));
+    let from_h = h
+        .second
+        .map(|sh| (sh + v.max, h.second_class, Some(v.classes[0])));
+    let pick = match (from_h, from_v) {
+        (Some(a), Some(b)) => Some(if a.0 >= b.0 { a } else { b }),
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    };
+    let runner = pick.and_then(|(_, h_cell, v_cell)| {
+        let (ha, hb) = h_cell?;
+        let (va, vb) = v_cell?;
+        Some(build(crt_master_row(va, ha), crt_master_col(hb, vb)))
+    });
+    Some((winner, runner))
 }
