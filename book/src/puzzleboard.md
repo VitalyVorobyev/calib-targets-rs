@@ -32,22 +32,26 @@ Detected inner corners are returned as `LabeledCorner` values with:
 
 The board uses two embedded cyclic maps:
 
-- map A, shape `(3, 167)`, for horizontal interior edges.
-- map B, shape `(167, 3)`, for vertical interior edges.
+- map **A**, shape `(3, 167)`, for **vertical** interior edges.
+- map **B**, shape `(167, 3)`, for **horizontal** interior edges.
 
-Dots encode bits directly: white dot = `0`, black dot = `1`.
+Dots encode bits directly: **black dot = `0`, white dot = `1`**.
 
 ```text
-corner (i,j) ---- A(j,i) ---- corner (i+1,j)
-     |                            |
-   B(j,i)                      B(j,i+1)
-     |                            |
-corner (i,j+1) -- A(j+1,i) -- corner (i+1,j+1)
+corner (i,j) ---- B(j-1,i) --- corner (i+1,j)
+     |                             |
+  A(j,i-1)                     A(j,i)
+     |                             |
+corner (i,j+1) -- B(j,i) ----- corner (i+1,j+1)
 ```
 
-The committed blobs are `src/data/map_a.bin` and `src/data/map_b.bin`.
-`generate-puzzleboard-code-maps` and `verify-puzzleboard-code-maps` are kept as
-repo tools so the runtime detector does no map construction.
+The committed blobs are `src/data/map_a.bin` and `src/data/map_b.bin`. They are
+**imported** from the reference implementation (PStelldinger/PuzzleBoard, CC0)
+by `import-author-puzzleboard-maps`, so boards interoperate with it;
+`generate-puzzleboard-code-maps` can build an alternate, non-interoperable pair
+for research, and `verify-puzzleboard-code-maps` checks the uniqueness property.
+The runtime detector constructs nothing. See
+[Code maps and registration](algo_puzzleboard_code_maps.md).
 
 ## Detection Pipeline
 
@@ -60,8 +64,12 @@ The flow is grid-first:
 5. Decode against the master maps over all D4 rotations/reflections.
 6. Assign absolute IDs and target-space positions to inlier corners.
 
-The default `decode.min_window` is `4`, meaning the detector requires enough
-edge samples for a 4 x 4 square fragment after confidence filtering.
+The default `decode.min_window` is `7`: after confidence filtering the fragment
+must span at least 7 squares on both axes. A 4 × 4 window is unique across
+master positions only at a *fixed* orientation, and the decoder must search all
+eight D4 transforms — over `D4 × position`, clean uniqueness begins at 6 × 6,
+and the default adds a square of noise margin. See
+[the decode chapter](algo_puzzleboard_decode.md#how-big-a-fragment-do-you-need).
 
 ## Rust Facade Example
 
@@ -93,11 +101,15 @@ let result = detect::detect_puzzleboard_best(img, &configs)?;
 
 ## Search Modes
 
-The default `PuzzleBoardSearchMode::Full` scans all `501 × 501 × 8` `(D4,
-origin)` candidates against the full master code. When the caller already
-knows which board they printed, `PuzzleBoardSearchMode::FixedBoard`
-matches observations directly against that declared board's own bit
-pattern under `8 × (rows+1)²` candidate shifts:
+The default `PuzzleBoardSearchMode::Full` considers every `(D4, origin)`
+candidate against the full master code — without enumerating them, since the
+code's cyclic structure collapses the search (see
+[the decode chapter](algo_puzzleboard_decode.md#collapsing-the-search)). When
+the caller already knows which board they printed,
+`PuzzleBoardSearchMode::FixedBoard` restricts the origin to that board's
+rectangle, which is both **faster** than the full search at every board size
+below the master's own and guarantees the decode cannot return a position
+outside the printed board:
 
 ```rust,no_run
 # use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardSearchMode, PuzzleBoardSpec}};

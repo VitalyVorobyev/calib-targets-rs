@@ -59,10 +59,10 @@ into the harness:
 Three tiers, in order of cost. The headline, **as of the ChArUco decode rewrite
 (PR #71)**: the external ChESS corner detector dominates every chessboard and
 ChArUco frame — including the ChArUco ones, where decode used to be the largest
-stage. The one exception is the PuzzleBoard frame, whose full 501² master sweep
-is its dominant stage. The largest *owned* costs are that PuzzleBoard sweep and
-the dense-board grid build; the once-dominant ChArUco decode has dropped to a
-minor stage.
+stage. The PuzzleBoard frame is the exception, and there the balance depends on
+the mode and declared board size (see Tier 2). The largest *owned* costs are the
+PuzzleBoard decode and the dense-board grid build; the once-dominant ChArUco
+decode has dropped to a minor stage.
 
 Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
 100 reps — the same numbers the published report renders):
@@ -97,17 +97,24 @@ cost across regimes.
 
 ### Tier 2 — marker-decode sweeps (our code)
 
-- **PuzzleBoard master sweep — the top remaining owned decode cost.** The
-  full-decode path grows with board size — synthetic `puzzleboard/full` goes
-  **3.7 ms (8×8) → 18 ms (30×30)** — matching the `O(8 × 501² + N)` master-pattern
-  sweep in `decode/hard.rs` / `soft.rs`. The `KnownOrigin` fast path
-  (`fixed_board`) avoids the sweep for the common case. The public
-  photo-realistic `synthetic_decode` bench (canonical-map renders) now measures
-  this end to end without private data. The default soft full-master path no
-  longer runs the precompute twice: its matched-count uniqueness gate now reuses
-  the soft scan's own count/weight tables (via the shared `HardScan` accumulator)
-  instead of a second full `decode_with_runner_up` pass — byte-exact, and it cut
-  the report PuzzleBoard frame's decode from **6.3 ms to 4.6 ms (~27 %)**.
+- **PuzzleBoard decode.** All four paths share one cyclic class precompute
+  (`decode/tables.rs`), `O(501 · N)` per D4 transform. On top of it:
+  - `Full × Hard` collapses the 501² origin argmax to `O(501)` by crossed-CRT
+    separation → `O(8 · 501 · N)`.
+  - `Full × Soft` cannot (an `f32` key breaks the separation's
+    strictly-below-the-max step), so it keeps the 501² walk stripped to two
+    table reads and a compare → `O(8 · (501 · N + 501²))`.
+  - `FixedBoard` (either scorer) is the same problem restricted to the declared
+    board's origin rectangle, over only the residue classes that rectangle
+    reaches → `O(8 · (reachable · N + L_r · L_c))`, strictly below the full
+    search until the board spans the maps' 167-long period.
+
+  Measure with `decode::tests::decode_scaling_report` (decode only, no image
+  pipeline) and `puzzleboard_stage_timing` (per-stage, on a public fixture).
+  Where the time sits depends on the mode and the *declared board size* — on a
+  public 20×20 fixture, decode is ~61 % of `detect` under `Full × Soft` but only
+  ~5 % under `FixedBoard`; declaring a 130×130 board puts it back at ~46 %, and
+  a full 501×501 board at ~75 %.
 - **ChArUco board match — now a minor stage (PR #71 closed this).** Precomputing
   a per-cell bit-log-likelihood table removed the
   `O(cells × markers × 4 × bits²)` `log_sigmoid` evaluations from the
@@ -193,16 +200,18 @@ across all regimes remains the external corner detector.
    ≈2× `ring-fit`. *Approach:* keep `RingFit` default; offer optional downscale
    for large frames and ROI when a board prior exists. *Risk:* downscale trades
    corner-localization precision — validate recall/precision, never silently.
-2. **PuzzleBoard 501² sweep (Tier 2 — top remaining owned decode cost).**
-   *Evidence:* `full` path 3.7→18 ms with board size; the `O(8×501²)` loop in
-   `decode/hard.rs`; now measurable on public canonical-map photos via
-   `synthetic_decode`. *Done:* the default **soft** full-master path's redundant
-   second precompute is fused away — the matched-count uniqueness gate now reuses
-   the soft scan's own count/weight tables through the shared `HardScan`
-   accumulator instead of a second `decode_with_runner_up` pass (byte-exact:
-   `*_byte_identical_to_reference_*` + uniqueness-gate suites green; report
-   PuzzleBoard decode 6.3→4.6 ms). *Remaining:* the `O(501×N)` precompute
-   alternative for the master walk itself; optional `rayon` over the 8 D4
+2. **PuzzleBoard decode (Tier 2 — top remaining owned decode cost).**
+   *Evidence:* `puzzleboard_stage_timing` on a public fixture; the class
+   precompute in `decode/tables.rs` and the soft origin walk in `decode/soft.rs`.
+   *Remaining:* two distinct targets, and which one dominates depends on the
+   declared board size — the precompute leads up to ~130 squares, the soft
+   origin walk past that. (a) The precompute is `O(501 · N)` but an observation
+   only reaches the tables through `(bit, lookup mod period)`, so observations
+   sharing those residues can be grouped and applied once, bounding it by
+   `O(min(N, 6w) · 501)` for a `w`-square window. (b) The soft origin walk could
+   take the CRT collapse if its score were accumulated in fixed-point integers
+   rather than `f32`, which is what makes the separation exact. Optional `rayon`
+   over the 8 D4
    transforms; and the same fusion for `decode_fixed_board_soft` (the fixed-board
    shift-scan second pass, left untouched this round — different table shape, not
    a free reuse). *Risk:* the workspace has **zero parallelism** in its own code

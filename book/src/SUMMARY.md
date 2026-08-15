@@ -17,6 +17,7 @@
   - [Homography & lattice fit](algo_homography.md)
   - [ArUco bit decode](algo_aruco_decode.md)
   - [PuzzleBoard edge-code decode](algo_puzzleboard_decode.md)
+    - [Code maps and registration](algo_puzzleboard_code_maps.md)
   - [ChArUco alignment & corner IDs](algo_charuco_alignment.md)
 - [Pipelines](pipelines.md)
   - [Regular grid](pipeline_regular_grid.md)
