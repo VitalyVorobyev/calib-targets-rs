@@ -71,6 +71,9 @@ is `params.decode`:
   per-view origin drift when the board is known).
 - **`scoring_mode`** — `SoftLogLikelihood` (default) vs `HardWeighted`
   (robust on ambiguous fragments; adds the margin gate).
+- **`symmetry_mode`** — `Rotations` (default; the four 90° rotations, correct
+  for an ordinary camera) vs `RotationsAndReflections` (all eight dihedral
+  transforms; enable only when the optical path mirrors the image).
 - **`search_all_components`** (default `true`) — decode every grid
   component and pick the best, with conflict detection.
 

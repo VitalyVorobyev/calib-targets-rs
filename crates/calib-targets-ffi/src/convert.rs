@@ -17,20 +17,22 @@ use crate::types::{
     ct_marker_board_layout_t, ct_marker_board_params_t, ct_marker_circle_spec_t,
     ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t,
     ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t,
-    ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t, ct_scan_decode_config_t,
-    ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
-    CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
-    CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
-    CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
-    CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50,
-    CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250,
-    CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
-    CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
-    CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
-    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
-    CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
-    CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER,
-    CT_REFINER_KIND_SADDLE_POINT, CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
+    ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t,
+    ct_scan_decode_config_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
+    CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000,
+    CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100,
+    CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50,
+    CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250,
+    CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000,
+    CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5,
+    CT_DICTIONARY_DICT_APRILTAG_25H9, CT_DICTIONARY_DICT_APRILTAG_36H10,
+    CT_DICTIONARY_DICT_APRILTAG_36H11, CT_DICTIONARY_DICT_ARUCO_MIP_36H12,
+    CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE, CT_MARKER_LAYOUT_OPENCV_CHARUCO,
+    CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED, CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
+    CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD, CT_PUZZLEBOARD_SEARCH_MODE_FULL,
+    CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS, CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS,
+    CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT,
+    CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -49,7 +51,7 @@ use calib_targets::marker::{
 };
 use calib_targets::puzzleboard::{
     PuzzleBoardDecodeConfig, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
-    PuzzleBoardSpec, PuzzleBoardSpecError,
+    PuzzleBoardSpec, PuzzleBoardSpecError, PuzzleBoardSymmetryMode,
 };
 // Advanced ChESS tuning types are imported from `chess-corners` directly —
 // the `calib-targets` facade re-exports only `DetectorConfig` +
@@ -700,6 +702,10 @@ pub(crate) fn convert_puzzleboard_decode_config(
         convert_puzzleboard_search_mode(params.search_mode, "puzzleboard.decode.search_mode")?;
     out.scoring_mode =
         convert_puzzleboard_scoring_mode(params.scoring_mode, "puzzleboard.decode.scoring_mode")?;
+    out.symmetry_mode = convert_puzzleboard_symmetry_mode(
+        params.symmetry_mode,
+        "puzzleboard.decode.symmetry_mode",
+    )?;
     let scoring_mode_omitted = params.scoring_mode == 0;
     // The soft-LL knobs are kept as flat C fields but now live in
     // `PuzzleBoardAdvancedTuning`. Seed the advanced tier from its default and
@@ -761,6 +767,21 @@ pub(crate) fn convert_puzzleboard_scoring_mode(
         CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED => Ok(PuzzleBoardScoringMode::HardWeighted),
         other => Err(FfiError::config_error(format!(
             "{field} must be HARD_WEIGHTED({CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED}) or SOFT_LOG_LIKELIHOOD({CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD}); got {other}"
+        ))),
+    }
+}
+
+pub(crate) fn convert_puzzleboard_symmetry_mode(
+    value: ct_puzzleboard_symmetry_mode_t,
+    field: &str,
+) -> FfiResult<PuzzleBoardSymmetryMode> {
+    match value {
+        0 | CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS => Ok(PuzzleBoardSymmetryMode::Rotations),
+        CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS => {
+            Ok(PuzzleBoardSymmetryMode::RotationsAndReflections)
+        }
+        other => Err(FfiError::config_error(format!(
+            "{field} must be ROTATIONS({CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS}) or ROTATIONS_AND_REFLECTIONS({CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS}); got {other}"
         ))),
     }
 }

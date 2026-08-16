@@ -515,6 +515,10 @@ export type PuzzleBoardScoringMode =
   | { kind: "hard_weighted" }
   | { kind: "soft_log_likelihood" };
 
+export type PuzzleBoardSymmetryMode =
+  | { kind: "rotations" }
+  | { kind: "rotations_and_reflections" };
+
 /**
  * Opt-in, **unstable** PuzzleBoard soft-log-likelihood tuning knobs (Rust
  * `PuzzleBoardAdvancedTuning`). Nested under
@@ -540,6 +544,7 @@ export interface PuzzleBoardDecodeConfig {
   sample_radius_rel: number;
   search_mode: PuzzleBoardSearchMode;
   scoring_mode: PuzzleBoardScoringMode;
+  symmetry_mode: PuzzleBoardSymmetryMode;
   // --- opt-in, unstable tuning (omitted when unset) ---
   advanced?: PuzzleBoardAdvancedTuning;
 }

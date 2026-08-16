@@ -736,6 +736,11 @@ typedef uint32_t ct_puzzleboard_search_mode_t;
 typedef uint32_t ct_puzzleboard_scoring_mode_t;
 
 /**
+ * Fixed PuzzleBoard symmetry-mode identifier type.
+ */
+typedef uint32_t ct_puzzleboard_symmetry_mode_t;
+
+/**
  * PuzzleBoard edge-bit decode parameters.
  */
 typedef struct ct_puzzleboard_decode_config_t {
@@ -746,6 +751,7 @@ typedef struct ct_puzzleboard_decode_config_t {
   float sample_radius_rel;
   ct_puzzleboard_search_mode_t search_mode;
   ct_puzzleboard_scoring_mode_t scoring_mode;
+  ct_puzzleboard_symmetry_mode_t symmetry_mode;
   float bit_likelihood_slope;
   float per_bit_floor;
   float alignment_min_margin;
@@ -901,6 +907,10 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 #define CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED 1
 
 #define CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD 2
+
+#define CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS 1
+
+#define CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS 2
 
 #define CT_CIRCLE_POLARITY_WHITE 1
 

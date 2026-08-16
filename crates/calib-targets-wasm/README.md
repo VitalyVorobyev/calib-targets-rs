@@ -118,6 +118,7 @@ const bundle = render_puzzleboard_bundle(10, 10, 20.0, 150);
 const params = default_puzzleboard_params(10, 10);
 params.decode.search_mode = { kind: "fixed_board" };
 params.decode.scoring_mode = { kind: "soft_log_likelihood" };
+params.decode.symmetry_mode = { kind: "rotations" }; // default
 const result = detect_puzzleboard(width, height, gray, default_chess_config(), params);
 // Every corner has an absolute master ID: result.corners[0].id
 // Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().

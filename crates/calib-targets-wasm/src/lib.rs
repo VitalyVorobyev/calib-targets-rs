@@ -126,8 +126,9 @@ pub fn default_marker_board_params() -> Result<JsValue, JsError> {
 /// Return default `PuzzleBoardParams` for a `rows × cols` board as a JS object.
 ///
 /// The returned payload includes the PuzzleBoard decode sub-config, with
-/// `search_mode = {"kind": "full"}` and
-/// `scoring_mode = {"kind": "soft_log_likelihood"}` by default.
+/// `search_mode = {"kind": "full"}`,
+/// `scoring_mode = {"kind": "soft_log_likelihood"}`, and
+/// `symmetry_mode = {"kind": "rotations"}` by default.
 #[wasm_bindgen]
 pub fn default_puzzleboard_params(rows: u32, cols: u32) -> Result<JsValue, JsError> {
     let spec = PuzzleBoardSpec::new(rows, cols, 1.0).map_err(|e| JsError::new(&e.to_string()))?;
@@ -899,7 +900,7 @@ pub fn detect_marker_board_best(
 ///
 /// Each config carries its own `chess` front-end (`params.chess`, deduplicated
 /// across shared front-ends) and may choose its own `decode.search_mode` /
-/// `decode.scoring_mode`.
+/// `decode.scoring_mode` / `decode.symmetry_mode`.
 #[wasm_bindgen]
 pub fn detect_puzzleboard_best(
     width: u32,

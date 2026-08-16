@@ -42,6 +42,7 @@ export type {
   PuzzleBoardScoringMode,
   PuzzleBoardSearchMode,
   PuzzleBoardSpec,
+  PuzzleBoardSymmetryMode,
   RefinerConfig,
   ScanDecodeConfig,
   TargetDetection,

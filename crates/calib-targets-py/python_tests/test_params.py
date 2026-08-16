@@ -322,6 +322,7 @@ def test_puzzleboard_params_roundtrip() -> None:
     )
     params.decode.search_mode = calib_targets.PuzzleBoardSearchMode.fixed_board()
     params.decode.scoring_mode = calib_targets.PuzzleBoardScoringMode.soft_log_likelihood()
+    params.decode.symmetry_mode = calib_targets.PuzzleBoardSymmetryMode.rotations_and_reflections()
     params.decode.max_bit_error_rate = 0.25
     params.decode.bit_likelihood_slope = 15.0
     params.decode.per_bit_floor = -5.0

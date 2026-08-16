@@ -1512,6 +1512,45 @@ class PuzzleBoardScoringMode:
 
 
 @dataclass(slots=True)
+class PuzzleBoardSymmetryMode:
+    """Which board orientations the decoder is allowed to consider.
+
+    - ``kind="rotations"`` (the default) — the four 90° rotations only.
+      Correct for an ordinary camera: the board may appear rotated but
+      cannot appear mirrored. Also the more unique search, since the four
+      mirrored hypotheses can no longer alias a correct decode into a
+      rejection.
+    - ``kind="rotations_and_reflections"`` — all eight dihedral transforms.
+      Needed only when the optical path flips handedness (a mirror or beam
+      splitter, or the image was mirrored before it reached the detector).
+    """
+
+    kind: str = "rotations"
+
+    @classmethod
+    def rotations(cls) -> PuzzleBoardSymmetryMode:
+        return cls(kind="rotations")
+
+    @classmethod
+    def rotations_and_reflections(cls) -> PuzzleBoardSymmetryMode:
+        return cls(kind="rotations_and_reflections")
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind in ("rotations", "rotations_and_reflections"):
+            return {"kind": self.kind}
+        raise ValueError(f"unknown PuzzleBoardSymmetryMode kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSymmetryMode:
+        kind = str(data.get("kind", "rotations"))
+        if kind == "rotations":
+            return cls.rotations()
+        if kind == "rotations_and_reflections":
+            return cls.rotations_and_reflections()
+        raise ValueError(f"unknown PuzzleBoardSymmetryMode kind: {kind!r}")
+
+
+@dataclass(slots=True)
 class PuzzleBoardDecodeConfig:
     """PuzzleBoard edge-bit decode parameters."""
 
@@ -1523,6 +1562,9 @@ class PuzzleBoardDecodeConfig:
     search_mode: PuzzleBoardSearchMode = field(default_factory=PuzzleBoardSearchMode.full)
     scoring_mode: PuzzleBoardScoringMode = field(
         default_factory=PuzzleBoardScoringMode.soft_log_likelihood
+    )
+    symmetry_mode: PuzzleBoardSymmetryMode = field(
+        default_factory=PuzzleBoardSymmetryMode.rotations
     )
     # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
     # These soft-scorer knobs live in Rust's ``PuzzleBoardAdvancedTuning``
@@ -1542,6 +1584,7 @@ class PuzzleBoardDecodeConfig:
             "sample_radius_rel": self.sample_radius_rel,
             "search_mode": self.search_mode.to_dict(),
             "scoring_mode": self.scoring_mode.to_dict(),
+            "symmetry_mode": self.symmetry_mode.to_dict(),
             "advanced": {
                 "bit_likelihood_slope": self.bit_likelihood_slope,
                 "per_bit_floor": self.per_bit_floor,
@@ -1573,6 +1616,9 @@ class PuzzleBoardDecodeConfig:
             ),
             scoring_mode=PuzzleBoardScoringMode.from_dict(
                 data.get("scoring_mode", {"kind": "soft_log_likelihood"})
+            ),
+            symmetry_mode=PuzzleBoardSymmetryMode.from_dict(
+                data.get("symmetry_mode", {"kind": "rotations"})
             ),
             bit_likelihood_slope=float(
                 advanced.get("bit_likelihood_slope", d.bit_likelihood_slope)
@@ -1693,6 +1739,7 @@ __all__ = [
     "PuzzleBoardSpec",
     "PuzzleBoardSearchMode",
     "PuzzleBoardScoringMode",
+    "PuzzleBoardSymmetryMode",
     "PuzzleBoardDecodeConfig",
     "DecodeConfig",  # backward-compatible alias
     "PuzzleBoardParams",

@@ -66,6 +66,12 @@ pub type ct_puzzleboard_scoring_mode_t = u32;
 pub const CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED: ct_puzzleboard_scoring_mode_t = 1;
 pub const CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD: ct_puzzleboard_scoring_mode_t = 2;
 
+/// Fixed PuzzleBoard symmetry-mode identifier type.
+pub type ct_puzzleboard_symmetry_mode_t = u32;
+pub const CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS: ct_puzzleboard_symmetry_mode_t = 1;
+pub const CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS: ct_puzzleboard_symmetry_mode_t =
+    2;
+
 /// Fixed circle polarity identifier type.
 pub type ct_circle_polarity_t = u32;
 pub const CT_CIRCLE_POLARITY_WHITE: ct_circle_polarity_t = 1;
@@ -620,6 +626,7 @@ pub struct ct_puzzleboard_decode_config_t {
     pub sample_radius_rel: f32,
     pub search_mode: ct_puzzleboard_search_mode_t,
     pub scoring_mode: ct_puzzleboard_scoring_mode_t,
+    pub symmetry_mode: ct_puzzleboard_symmetry_mode_t,
     pub bit_likelihood_slope: f32,
     pub per_bit_floor: f32,
     pub alignment_min_margin: f32,
