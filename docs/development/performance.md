@@ -141,6 +141,20 @@ stages (Tier 2 decode, Tier 3 grid build) now matter more.
   the published per-stage `decode_ms` also includes edge-dot sampling, which the
   transform count doesn't touch — so the measured drop on the report fixture is
   well short of 2×: 1.26 → 1.03 ms on `oblique.png` (≈18 %).
+
+  **Inside the precompute, the observations are nearly free.** `build` splits
+  into `fill` (bucket the observations by residue, `O(N)`) and `class_credit`
+  (credit each bucket into the classes it reaches, `O(buckets · 501)`), timed
+  separately by `puzzleboard_stage_timing`. On `oblique.png`: `build` 0.385 ms,
+  of which `fill` is **0.023 ms** and `class_credit` **0.360 ms** — 94 %. Adding
+  observations therefore costs almost nothing; adding *residue buckets* costs
+  501 cells each. The open lever is that the observed `bit` sits in the bucket
+  key, so the bit-0 and bit-1 buckets at one residue walk the identical
+  `(class, map cell)` sequence and differ only in the comparison. Merging each
+  pair into one sweep that selects on the map byte is an exact algebraic
+  identity — no approximation — and halves `class_credit` wherever both bits
+  occur at a residue, which on a real board is nearly everywhere. Worth ≈6 % of
+  `detect` on this frame. Not yet implemented.
 - **ChArUco board match — minor on the large frame, competitive on the small one
   (PR #71 closed the old bottleneck).** Precomputing a per-cell
   bit-log-likelihood table removed the `O(cells × markers × 4 × bits²)`

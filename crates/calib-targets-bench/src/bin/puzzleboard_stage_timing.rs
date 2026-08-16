@@ -15,6 +15,9 @@
 //!     sample_all_edges               read one dot per interior edge from the image
 //!     decode_edges                   recover (D4, origin) from the edge bits
 //!       build                          cyclic class precompute, per D4 transform
+//!         fill                           bucket observations by residue, O(N)
+//!         class_credit                   credit each bucket to its classes,
+//!                                        O(buckets · 501)
 //!       origin_scan / fold             rank origins against the tables
 //! ```
 //!
@@ -62,6 +65,8 @@ const STAGE_SPANS: &[&str] = &[
     "decode_edges",
     "scan",
     "build",
+    "fill",
+    "class_credit",
     "origin_scan",
     "fold",
 ];

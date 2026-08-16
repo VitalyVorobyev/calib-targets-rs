@@ -58,6 +58,15 @@
 //! import. Using the authors' maps is what makes boards printed from the
 //! reference tooling decode here, and vice versa.
 //!
+//! Both claims are checked, not just documented.
+//! `tests::shipped_maps_are_the_authors_code_verbatim` pins the exact bytes, so
+//! a regenerated map — valid but a *different code* — cannot ship unnoticed;
+//! and `tests/interop_authors.rs` decodes the authors' own photographs of a
+//! printed board against these bytes at BER 0 under the identity orientation,
+//! which is end-to-end proof that the coordinate convention matches too. Our
+//! master indices sit at a fixed `(333, 333) mod 501` offset from the reference
+//! decoder's — a labelling-origin convention, not a decode difference.
+//!
 //! `tools/generate_code_maps.rs` can *construct* a valid pair from scratch by
 //! stochastic hill-climbing — the companion paper arXiv:2405.03309 gives a
 //! closed-form construction but no reference implementation, and local search
@@ -281,6 +290,51 @@ pub const fn master_vertical_edges_cols() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The exact bytes imported from the reference implementation, pinned.
+    ///
+    /// The uniqueness tests below pass for *any* valid sub-perfect pair, so
+    /// they would not notice a regenerated map — and `generate_code_maps`
+    /// produces a valid pair that is a **different code**, which silently
+    /// breaks interoperability with every board printed from the reference
+    /// tooling. Identity, not just validity, is the shipping contract, so it
+    /// is pinned here rather than left to the provenance JSON.
+    ///
+    /// Re-derived 2026-08-16 from `code1` / `code2` at
+    /// `PStelldinger/PuzzleBoard@main:puzzle_board/puzzle_board_decoder.py`
+    /// under the transforms `tools/import_author_maps.rs` documents, and
+    /// cross-checked end to end by `tests/interop_authors.rs`, where the
+    /// authors' own photographs decode against these bytes at BER 0.
+    const CANONICAL_MAP_A: [u8; 63] = [
+        0xd0, 0xe1, 0xaa, 0xc4, 0xda, 0x70, 0x47, 0x89, 0xf8, 0x41, 0xfd, 0x32, 0xa9, 0xeb, 0xf0,
+        0xdb, 0x9a, 0x7d, 0xe7, 0xe5, 0x45, 0xc3, 0xef, 0x5f, 0x24, 0x78, 0x64, 0x10, 0x31, 0x0c,
+        0x1c, 0x2b, 0xee, 0xda, 0x4d, 0xc2, 0x32, 0xae, 0x38, 0x32, 0x5e, 0x89, 0xa0, 0x70, 0xe1,
+        0xf5, 0x05, 0x49, 0xe8, 0xb2, 0xb9, 0xd6, 0x34, 0x49, 0x33, 0xbd, 0x73, 0x40, 0xed, 0x6b,
+        0x33, 0xbc, 0x18,
+    ];
+    const CANONICAL_MAP_B: [u8; 63] = [
+        0xcb, 0x1f, 0x4c, 0x21, 0x9e, 0x6e, 0x31, 0xed, 0x70, 0x56, 0xae, 0x36, 0x91, 0x6a, 0x88,
+        0x88, 0x91, 0x41, 0x11, 0xbf, 0x24, 0xa5, 0xb9, 0x23, 0x20, 0xfb, 0xb9, 0x41, 0xe1, 0x58,
+        0xd4, 0x08, 0x74, 0x97, 0x9e, 0xd7, 0xb5, 0x61, 0x41, 0x03, 0xf2, 0x91, 0xb2, 0xcc, 0x38,
+        0x7d, 0x6b, 0x1e, 0x9b, 0xa3, 0xf5, 0x2f, 0xbe, 0xb3, 0x72, 0xb1, 0xea, 0x4a, 0xe0, 0x8b,
+        0xed, 0xcd, 0x1a,
+    ];
+
+    #[test]
+    fn shipped_maps_are_the_authors_code_verbatim() {
+        assert_eq!(
+            DATA_A, &CANONICAL_MAP_A,
+            "map_a.bin is no longer the authors' `code1`. A regenerated map is \
+             still a valid code but a DIFFERENT one: boards printed from the \
+             reference tooling stop decoding here, and boards printed from ours \
+             stop decoding there."
+        );
+        assert_eq!(
+            DATA_B, &CANONICAL_MAP_B,
+            "map_b.bin is no longer `rot90(code2[::-1, ::-1])` of the authors' \
+             `code2` — see the message above."
+        );
+    }
 
     #[test]
     fn map_a_all_3x3_cyclic_windows_unique() {

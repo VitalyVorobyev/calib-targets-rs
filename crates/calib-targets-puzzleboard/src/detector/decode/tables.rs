@@ -294,6 +294,12 @@ impl ClassTables {
         cfg: &SoftLlConfig,
     ) {
         self.groups.fill::<SOFT>(transformed, cfg);
+        // The two halves of `build` scale differently — bucketing is `O(N)` in
+        // observations, crediting is `O(touched · 501)` in residue groups — so
+        // they are timed apart. One span for the whole loop pair, not one per
+        // group: a per-group span would cost more than the group.
+        #[cfg(feature = "tracing")]
+        let _credit = tracing::info_span!("class_credit").entered();
         for (key, acc) in self.groups.horizontal() {
             accumulate::<H_ROWS, H_COLS, SOFT>(
                 Accumulate {
@@ -372,6 +378,7 @@ impl Groups {
     }
 
     /// Bucket one transform's observations by residue. `O(N)`.
+    #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
     fn fill<const SOFT: bool>(&mut self, transformed: &[TransformedEdge], cfg: &SoftLlConfig) {
         for &slot in &self.touched_h {
             self.horizontal[slot as usize] = GroupAcc::default();
