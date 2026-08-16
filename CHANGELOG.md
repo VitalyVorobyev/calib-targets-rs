@@ -9,6 +9,27 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+### Changed
+
+- **PuzzleBoard decodes only physically reachable board orientations by
+  default.** A camera imaging the printed side of an opaque planar board can
+  see it rotated by a multiple of 90°, but never mirrored: a rigid pose plus a
+  perspective projection preserves handedness. The decoder nevertheless
+  searched all eight dihedral relabellings, so four of every eight hypotheses
+  were unreachable — and they were not free. An unreachable hypothesis that
+  happens to match the observed bits competes in the uniqueness gate and turns
+  a correct decode into a rejection. The default search is now the four
+  rotations (`PuzzleBoardDecodeConfig::symmetry_mode`, new
+  `PuzzleBoardSymmetryMode::Rotations`), which halves the decode work *and*
+  removes that class of spurious ambiguity: clean-window uniqueness begins at a
+  smaller fragment than it did under the dihedral search.
+
+  Set `symmetry_mode = PuzzleBoardSymmetryMode::RotationsAndReflections` to
+  restore the previous behaviour. That is the correct setting when the optical
+  path flips handedness — a mirror or beam splitter in the path, or an image
+  mirrored before detection. Under the default, a mirrored view declines to
+  decode rather than returning a wrong absolute labelling.
+
 ## 0.12.1
 
 Precision fix. No public API change in the `calib-targets*` crates; the

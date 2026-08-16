@@ -1,5 +1,6 @@
 //! Knobs for the decoding stage and associated validation helpers.
 
+use calib_targets_core::{GridTransform, GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -80,6 +81,56 @@ pub enum PuzzleBoardScoringMode {
     SoftLogLikelihood,
 }
 
+/// Which board orientations the decoder is allowed to consider.
+///
+/// A detected fragment carries no cue for how the printed board was oriented in
+/// front of the camera, so the decoder tries every candidate relabelling of the
+/// grid before it can recover an absolute origin. This knob says which
+/// relabellings are physically possible for your setup.
+///
+/// - [`PuzzleBoardSymmetryMode::Rotations`] (default) is correct for an
+///   ordinary camera looking at a printed board: the board may appear rotated
+///   by any multiple of 90°, but it cannot appear mirrored. This is both the
+///   faster search (four hypotheses instead of eight) and the *more unique*
+///   one — the four mirrored hypotheses can no longer alias a correct decode
+///   into a rejection, so fragments that would otherwise be declined for
+///   ambiguity now decode.
+/// - [`PuzzleBoardSymmetryMode::RotationsAndReflections`] is needed only when
+///   the optical path flips handedness — the board is seen through a mirror or
+///   a beam splitter, or the image was mirrored before it reached the detector.
+///   Enable it in exactly those cases; enabling it otherwise only costs time
+///   and uniqueness.
+///
+/// Leaving this at the default never mislabels a mirrored view: a mirrored
+/// fragment simply fails to decode (a miss), which is the safe direction.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum PuzzleBoardSymmetryMode {
+    /// Search the four 90° rotations only. Default.
+    #[default]
+    Rotations,
+    /// Search the four rotations *and* their four mirror images.
+    RotationsAndReflections,
+}
+
+impl PuzzleBoardSymmetryMode {
+    /// The grid transforms the decoder searches under this mode.
+    ///
+    /// [`Rotations`](Self::Rotations) yields the orientation-preserving
+    /// subgroup [`GRID_TRANSFORMS_C4`];
+    /// [`RotationsAndReflections`](Self::RotationsAndReflections) yields the
+    /// full dihedral table [`GRID_TRANSFORMS_D4`]. The former is a prefix of
+    /// the latter, so a transform index means the same thing under both.
+    #[must_use]
+    pub fn transforms(self) -> &'static [GridTransform] {
+        match self {
+            Self::Rotations => &GRID_TRANSFORMS_C4,
+            Self::RotationsAndReflections => &GRID_TRANSFORMS_D4,
+        }
+    }
+}
+
 /// Tuning parameters for the decoding stage.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -92,11 +143,19 @@ pub struct PuzzleBoardDecodeConfig {
     ///
     /// **Orientation.** The 4 × 4 window is unique across master *positions* at
     /// a fixed orientation. A detected fragment carries no cue for how the board
-    /// was printed, so the decoder searches the eight D4 transforms too — and
-    /// over `D4 × position` a 4 × 4 window is not unique. On clean, noise-free
-    /// windows at seven planted origins, every 4 × 4 had a perfect alias under
-    /// some other transform; 5 × 5 decoded at 5/7; 6 × 6 and above always
-    /// decoded (`decode::tests::window_uniqueness_report`).
+    /// was printed, so the decoder searches candidate orientations too — by
+    /// default the four rotations
+    /// ([`PuzzleBoardSymmetryMode::Rotations`]), and all eight dihedral
+    /// transforms under [`PuzzleBoardSymmetryMode::RotationsAndReflections`] —
+    /// and over `orientation × position` a small window need not be unique. The
+    /// quoted figures below were measured under the *eight*-transform search:
+    /// on clean, noise-free windows at seven planted origins, every 4 × 4 had a
+    /// perfect alias under some other transform; 5 × 5 decoded at 5/7; 6 × 6 and
+    /// above always decoded (`decode::tests::window_uniqueness_report`, which
+    /// now reports both searches side by side). Restricting the search to the
+    /// four rotations removes aliases rather than adding them, so those figures
+    /// are an upper bound on the aliasing the default search sees; the default
+    /// `min_window` is not re-derived from the smaller search here.
     ///
     /// **Noise.** The master edge code has minimum Hamming distance `1` at a
     /// 4 × 4 window — zero error-correction — so one corrupted bit can turn a
@@ -137,6 +196,13 @@ pub struct PuzzleBoardDecodeConfig {
     /// to [`PuzzleBoardScoringMode::SoftLogLikelihood`].
     #[serde(default)]
     pub scoring_mode: PuzzleBoardScoringMode,
+    /// Board orientations the decoder is allowed to consider. Defaults to
+    /// [`PuzzleBoardSymmetryMode::Rotations`], which is correct for any
+    /// ordinary camera; switch to
+    /// [`PuzzleBoardSymmetryMode::RotationsAndReflections`] only when the
+    /// optical path mirrors the image.
+    #[serde(default)]
+    pub symmetry_mode: PuzzleBoardSymmetryMode,
     /// Opt-in, **unstable** soft-scorer tuning knobs. Leave unset (`None`)
     /// unless a specific input fails and you have evidence for the change;
     /// `None` behaves exactly like [`PuzzleBoardAdvancedTuning::default()`].
@@ -239,6 +305,7 @@ impl Default for PuzzleBoardDecodeConfig {
             sample_radius_rel: default_sample_radius_rel(),
             search_mode: PuzzleBoardSearchMode::default(),
             scoring_mode: PuzzleBoardScoringMode::default(),
+            symmetry_mode: PuzzleBoardSymmetryMode::default(),
             advanced: None,
         }
     }
@@ -336,6 +403,71 @@ mod tests {
                 "advanced knob `{leaked}` leaked to the top level"
             );
         }
+    }
+
+    #[test]
+    fn default_symmetry_mode_is_rotations_only() {
+        // The shipped default must be the physically reachable subgroup: a
+        // camera imaging the printed side of an opaque board cannot mirror it.
+        let cfg = PuzzleBoardDecodeConfig::default();
+        assert_eq!(cfg.symmetry_mode, PuzzleBoardSymmetryMode::Rotations);
+        assert_eq!(cfg.symmetry_mode.transforms().len(), 4);
+        assert_eq!(cfg.symmetry_mode.transforms(), &GRID_TRANSFORMS_C4);
+    }
+
+    #[test]
+    fn symmetry_mode_transforms_select_the_right_table() {
+        assert_eq!(
+            PuzzleBoardSymmetryMode::Rotations.transforms(),
+            &GRID_TRANSFORMS_C4
+        );
+        assert_eq!(
+            PuzzleBoardSymmetryMode::RotationsAndReflections.transforms(),
+            &GRID_TRANSFORMS_D4
+        );
+        // Every searched transform is invertible on the integer lattice; the
+        // opt-in table is exactly the default table plus the reflections.
+        for t in PuzzleBoardSymmetryMode::Rotations.transforms() {
+            assert_eq!(t.determinant(), 1);
+        }
+        assert_eq!(
+            PuzzleBoardSymmetryMode::RotationsAndReflections
+                .transforms()
+                .iter()
+                .filter(|t| t.determinant() == -1)
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn symmetry_mode_round_trips_through_serde() {
+        // Tagged like its neighbours: `{"kind": "..."}`.
+        let value = serde_json::to_value(PuzzleBoardSymmetryMode::RotationsAndReflections).unwrap();
+        assert_eq!(value["kind"], "rotations_and_reflections");
+        let restored: PuzzleBoardSymmetryMode = serde_json::from_value(value).unwrap();
+        assert_eq!(restored, PuzzleBoardSymmetryMode::RotationsAndReflections);
+
+        // ...and as a config field, including the default-on-absent path that
+        // keeps older serialized configs loadable.
+        let cfg = PuzzleBoardDecodeConfig {
+            symmetry_mode: PuzzleBoardSymmetryMode::RotationsAndReflections,
+            ..Default::default()
+        };
+        let value = serde_json::to_value(&cfg).unwrap();
+        assert_eq!(value["symmetry_mode"]["kind"], "rotations_and_reflections");
+        let restored: PuzzleBoardDecodeConfig = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            restored.symmetry_mode,
+            PuzzleBoardSymmetryMode::RotationsAndReflections
+        );
+        assert_eq!(serde_json::to_value(&restored).unwrap(), value);
+
+        let mut without = value.as_object().unwrap().clone();
+        without.remove("symmetry_mode");
+        let restored: PuzzleBoardDecodeConfig =
+            serde_json::from_value(serde_json::Value::Object(without)).unwrap();
+        assert_eq!(restored.symmetry_mode, PuzzleBoardSymmetryMode::Rotations);
     }
 
     #[test]

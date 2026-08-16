@@ -1,14 +1,20 @@
-//! Recover the `(D4 transform, master origin)` a set of observed edge bits
+//! Recover the `(grid transform, master origin)` a set of observed edge bits
 //! came from.
 //!
 //! # The hypothesis space
 //!
 //! A detected fragment knows neither where it sits on the master nor which way
-//! the board was printed, so a hypothesis is a pair: one of the 8 D4 transforms
+//! the board was printed, so a hypothesis is a pair: a candidate grid transform
 //! and a master origin. Scoring a hypothesis means predicting the bit at every
 //! observed edge and counting agreement.
 //!
-//! # Why this is not `8 × 501² × N` work
+//! Every entry point takes the transform list as a parameter, so the caller
+//! chooses the hypothesis space: the pipeline passes
+//! [`PuzzleBoardSymmetryMode::transforms`](crate::PuzzleBoardSymmetryMode::transforms),
+//! which is the four rotations by default and all eight dihedral transforms
+//! when reflections are explicitly enabled. Below, `T` is that list's length.
+//!
+//! # Why this is not `T × 501² × N` work
 //!
 //! The master edge code is cyclic, so the predicted bit depends on the origin
 //! only through its residues:
@@ -28,7 +34,7 @@
 //!
 //! [`tables`] builds both tables once per transform in `O(501 · N)`; every
 //! origin afterwards costs two lookups and an add. That alone takes the sweep
-//! from `O(8 · 501² · N)` to `O(8 · (501 · N + 501²))`.
+//! from `O(T · 501² · N)` to `O(T · (501 · N + 501²))`.
 //!
 //! The hard path removes the remaining `501²` as well. Because `501 = 3 · 167`
 //! with `gcd(3, 167) = 1`, the Chinese Remainder Theorem makes the four
@@ -50,7 +56,7 @@
 //! - [`soft`] — full-master decode ranked by summed per-bit log-likelihood.
 //! - [`fixed`] — both scorers restricted to a *declared* board's rectangle.
 //! - This module owns the scaffolding they share: the [`DecodeOutcome`]
-//!   carrier, the [`SoftLlConfig`] knobs, the D4 lookup transform, the
+//!   carrier, the [`SoftLlConfig`] knobs, the edge-lookup transform, the
 //!   candidate-ranking helpers, the per-bit log-likelihood pair, and the
 //!   uniqueness gate.
 
@@ -116,7 +122,7 @@ const MASTER_COLS_I32: i32 = crate::board::MASTER_COLS as i32;
 ///
 /// `best_matched` is the winning origin's matched-bit count; `runner_up_matched`
 /// is the highest matched-bit count of any *distinct* competing origin (across
-/// all D4 transforms). `margin` is computed with saturating subtraction, so when
+/// every searched transform). `margin` is computed with saturating subtraction, so when
 /// a distinct origin out-matches the winner (`runner_up_matched ≥ best_matched`,
 /// which can happen when the soft-LL winner is not the maximum-matched origin)
 /// the margin is `0` and the decode is correctly rejected.
@@ -153,8 +159,8 @@ fn passes_uniqueness_gate(
 ///
 /// `best_matched` is the winning origin's matched-bit count; `runner_up_matched`
 /// is the highest matched-bit count of any *distinct* competing origin (across
-/// all D4 transforms — D4-equivalent labelings of a fragment too small to break
-/// the symmetry legitimately compete here).
+/// every searched transform — symmetry-equivalent labelings of a fragment too
+/// small to break the searched symmetry legitimately compete here).
 ///
 /// **Criterion (no magic constant):** accept iff
 ///
@@ -175,9 +181,11 @@ fn passes_uniqueness_gate(
 /// - A **clean exact** read (`k_winner = 0`) passes at any `margin ≥ 1`, so a
 ///   fragment whose true origin out-votes every competitor by even one bit
 ///   decodes, with no size-dependent threshold standing in the way. What sets
-///   the practical floor is the code itself: below 6 × 6 a clean window
-///   routinely has a *perfect* alias under another D4 transform, giving
-///   `margin = 0`, and the gate declines.
+///   the practical floor is the code itself: under the full dihedral search,
+///   below 6 × 6 a clean window routinely has a *perfect* alias under another
+///   transform, giving `margin = 0`, and the gate declines. Searching only the
+///   rotations removes those reflected aliases, so the floor can only move
+///   down, never up.
 /// - A **noisy-ambiguous** read fails: when the observation is corrupted enough
 ///   that a wrong origin matches nearly as many bits (`margin` small) *and* the
 ///   winner itself mismatches many bits (`k_winner` large), the winner is not

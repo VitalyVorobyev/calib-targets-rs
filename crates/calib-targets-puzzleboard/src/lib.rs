@@ -65,7 +65,7 @@ pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_
 pub use detector::{
     PuzzleBoardAdvancedTuning, PuzzleBoardCorner, PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo,
     PuzzleBoardDetectError, PuzzleBoardDetection, PuzzleBoardDetector, PuzzleBoardScoringMode,
-    PuzzleBoardSearchMode,
+    PuzzleBoardSearchMode, PuzzleBoardSymmetryMode,
 };
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
@@ -77,4 +77,6 @@ pub use params::PuzzleBoardParams;
 // input and the image view — so depending on calib-targets-puzzleboard alone is
 // sufficient (no direct calib-targets-chessboard / -core dependency needed).
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+pub use calib_targets_core::{
+    GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4,
+};

@@ -8,7 +8,7 @@
 //! Hypotheses are ranked purely on that soft score; the top candidate is
 //! returned only if it clears a best-vs-runner-up margin gate.
 
-use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::GridTransform;
 
 use crate::code_maps::PuzzleBoardObservedEdge;
 
@@ -58,7 +58,12 @@ pub(super) fn finalize_soft_winner(
 
 /// Soft-log-likelihood decoder over the full 501 × 501 master.
 ///
-/// For each D4 transform the shared precompute fills the per-class
+/// `transforms` is the orientation hypothesis set to search — see
+/// [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode). The soft scan
+/// and the fused matched-count uniqueness scan below walk the *same* list, so
+/// the gate's competitor set is always the set the winner was drawn from.
+///
+/// For each transform the shared precompute fills the per-class
 /// log-likelihood tables, and the winning origin is then recovered by the same
 /// crossed-CRT separation the hard path uses: because `501 = 3 · 167` with
 /// `gcd(3, 167) = 1`, the argmax of `h_ll[ha, hb] + v_ll[va, vb]` over all
@@ -77,6 +82,7 @@ pub(super) fn finalize_soft_winner(
 /// the other to its second-distinct level.
 pub(crate) fn decode_soft(
     observed: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
@@ -96,12 +102,12 @@ pub(crate) fn decode_soft(
     // the count / matched-weight tables the hard path needs, so each transform
     // is folded into a shared `HardScan` here instead of re-running a second
     // full precompute after the soft scan (see the gate call below).
-    let mut hard_scan = HardScan::new();
+    let mut hard_scan = HardScan::new(transforms.len());
 
     let mut tables = ClassTables::new(true);
     let range = ClassRange::full();
 
-    for (transform_idx, transform) in GRID_TRANSFORMS_D4.iter().copied().enumerate() {
+    for (transform_idx, transform) in transforms.iter().copied().enumerate() {
         let transformed = transform_observations(observed, &transform);
         tables.build(&transformed, &range, Some(cfg));
 
@@ -150,10 +156,11 @@ pub(crate) fn decode_soft(
     // Fused (was a TODO(perf)): the matched-count top-2 is now folded inline
     // from the soft scan's own per-transform count / matched-weight tables (see
     // the `hard_scan.fold(...)` at the end of each transform iteration above),
-    // so the gate no longer re-runs a second full O(8·501·N) precompute over the
-    // same observations. `HardScan::finish` returns the byte-identical pre-gate
-    // triple a fresh `decode_with_runner_up(observed, max_bit_error_rate)` would
-    // (same tables, same crossed-CRT top-2 logic).
+    // so the gate no longer re-runs a second full O(|transforms|·501·N)
+    // precompute over the same observations. `HardScan::finish` returns the
+    // byte-identical pre-gate triple a fresh `decode_with_runner_up(observed,
+    // transforms, max_bit_error_rate)` would (same tables, same crossed-CRT
+    // top-2 logic).
     let (hard_winner, best_matched, runner) = hard_scan.finish()?;
     apply_soft_uniqueness_gate(
         winner,

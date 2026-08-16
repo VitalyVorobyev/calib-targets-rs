@@ -296,6 +296,7 @@ impl PuzzleBoardDetector {
 
         let max_err = self.params.decode.max_bit_error_rate;
         let soft_cfg = soft_cfg_from(&self.params.decode);
+        let transforms = self.params.decode.symmetry_mode.transforms();
         #[cfg(feature = "tracing")]
         let decode_span = tracing::info_span!("decode_edges").entered();
         let decoded = match (
@@ -303,16 +304,22 @@ impl PuzzleBoardDetector {
             self.params.decode.scoring_mode,
         ) {
             (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::HardWeighted) => {
-                run_decode(&filtered, max_err)
+                run_decode(&filtered, transforms, max_err)
             }
             (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::SoftLogLikelihood) => {
-                decode_soft(&filtered, &soft_cfg, max_err)
+                decode_soft(&filtered, transforms, &soft_cfg, max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::HardWeighted) => {
-                decode_fixed_board(&filtered, self.board_rect(), max_err)
+                decode_fixed_board(&filtered, self.board_rect(), transforms, max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
-                decode_fixed_board_soft(&filtered, self.board_rect(), &soft_cfg, max_err)
+                decode_fixed_board_soft(
+                    &filtered,
+                    self.board_rect(),
+                    transforms,
+                    &soft_cfg,
+                    max_err,
+                )
             }
         };
         #[cfg(feature = "tracing")]
@@ -695,6 +702,7 @@ mod tests {
     use super::*;
     use crate::board::{MASTER_COLS, MASTER_ROWS};
     use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit};
+    use crate::detector::params::PuzzleBoardSymmetryMode;
     use calib_targets_core::GridAlignment;
 
     /// Tiny seeded LCG (no external `rand`); shared by the guard regressions.
@@ -863,7 +871,13 @@ mod tests {
             if guard_rejects {
                 guard_rejected += 1;
             }
-            if let Some(out) = run_decode(&strip, 0.40) {
+            // Exercises the production default transform set: the guard has to
+            // hold for the search the pipeline actually runs.
+            if let Some(out) = run_decode(
+                &strip,
+                PuzzleBoardSymmetryMode::default().transforms(),
+                0.40,
+            ) {
                 if wrong_corners(&out, pr, pc, 3, 12) > 0 {
                     decoder_fa_without_guard += 1;
                     if !guard_rejects {

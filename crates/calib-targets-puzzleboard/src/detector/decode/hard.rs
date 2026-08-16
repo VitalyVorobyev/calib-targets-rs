@@ -5,7 +5,7 @@
 //! 501 × 501 master via the cyclic-period precompute; the declared-board
 //! counterpart lives in [`super::fixed`].
 
-use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::GridTransform;
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
@@ -28,7 +28,11 @@ const SEPARATION_PRODUCT_CAP: usize = 1024;
 
 /// Hard-weighted decoder over the full 501 × 501 master.
 ///
-/// For each D4 transform we precompute, per cyclic class, the match count and
+/// `transforms` is the orientation hypothesis set to search — see
+/// [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode), which supplies
+/// the four rotations by default and all eight dihedral transforms on request.
+///
+/// For each transform we precompute, per cyclic class, the match count and
 /// confidence-weight tables in `O(501 × N)`. The `501²` origin scan is then
 /// collapsed to `O(501)` via an exact crossed-CRT separation: because
 /// `501 = 3·167` with `gcd(3, 167) = 1`, the per-origin score
@@ -41,9 +45,11 @@ const SEPARATION_PRODUCT_CAP: usize = 1024;
 /// regresses past the original.
 pub(crate) fn decode(
     observed: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let (winner, best_matched, runner_up) = decode_with_runner_up(observed, max_bit_error_rate)?;
+    let (winner, best_matched, runner_up) =
+        decode_with_runner_up(observed, transforms, max_bit_error_rate)?;
     finalize_hard_winner(winner, best_matched, runner_up)
 }
 
@@ -54,6 +60,7 @@ pub(crate) fn decode(
 /// the runner-up against an independent brute-force oracle.
 pub(crate) fn decode_with_runner_up(
     observed: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<(DecodeOutcome, u32, Option<HardRunnerUp>)> {
     if observed.is_empty() {
@@ -66,11 +73,11 @@ pub(crate) fn decode_with_runner_up(
     }
     let total = observed.len();
 
-    let mut scan = HardScan::new();
+    let mut scan = HardScan::new(transforms.len());
     let mut tables = ClassTables::new(false);
     let range = ClassRange::full();
 
-    for (transform_idx, transform) in GRID_TRANSFORMS_D4.iter().copied().enumerate() {
+    for (transform_idx, transform) in transforms.iter().copied().enumerate() {
         let transformed = transform_observations(observed, &transform);
         tables.build(&transformed, &range, None);
 
@@ -108,8 +115,8 @@ pub(crate) fn decode_with_runner_up(
 /// logic here lets the soft scan reuse the tables it already builds instead of
 /// running a second full precompute pass purely for the uniqueness gate.
 ///
-/// Call [`HardScan::fold`] once per D4 transform (with that transform's tables)
-/// and then [`HardScan::finish`] to obtain the pre-gate winner triple.
+/// Call [`HardScan::fold`] once per searched transform (with that transform's
+/// tables) and then [`HardScan::finish`] to obtain the pre-gate winner triple.
 pub(crate) struct HardScan {
     best: Option<DecodeOutcome>,
     // Index of the transform that currently owns the winner, and the
@@ -123,18 +130,21 @@ pub(crate) struct HardScan {
 }
 
 impl HardScan {
-    pub(crate) fn new() -> Self {
+    /// Prepare an accumulator for a scan over `transform_count` transforms.
+    pub(crate) fn new(transform_count: usize) -> Self {
         Self {
             best: None,
             winner_transform_idx: None,
-            transform_summaries: Vec::with_capacity(8),
+            transform_summaries: Vec::with_capacity(transform_count),
         }
     }
 
-    /// Fold one D4 transform's precompute tables into the accumulator.
+    /// Fold one transform's precompute tables into the accumulator.
     ///
-    /// `transform_idx` is the transform's position in `GRID_TRANSFORMS_D4` (used
-    /// to attribute the global winner for the runner-up assembly). `tables`
+    /// `transform_idx` is the transform's position in the searched transform
+    /// list — equivalently, the number of [`fold`](Self::fold) calls that
+    /// preceded this one, since every call pushes exactly one summary (used to
+    /// attribute the global winner for the runner-up assembly). `tables`
     /// carries the matched-count (`h_count`/`v_count`) and matched-weight
     /// (`h_match`/`v_match`) tables; `total = observed.len()` and `total_conf =
     /// Σ confidence`. The body is the exact step-1..4 logic of the original hard
@@ -149,6 +159,15 @@ impl HardScan {
         total_conf: f32,
         max_bit_error_rate: f32,
     ) {
+        // The runner-up assembly indexes `transform_summaries` by
+        // `transform_idx`, which only lines up because every fold pushes
+        // exactly one summary, in call order — independent of how many
+        // transforms the caller chose to search.
+        debug_assert_eq!(
+            transform_idx,
+            self.transform_summaries.len(),
+            "fold must be called once per searched transform, in order"
+        );
         // Collapse the O(501²) origin scan to O(501) via the crossed-CRT
         // separation. The per-origin score is the sum of two *independent*
         // table terms — the H term depends only on `(ha, hb)` and the V term
@@ -397,12 +416,15 @@ fn within_transform_runner_up(
     }
 }
 
-/// Assemble the global uniqueness runner-up across all transforms.
+/// Assemble the global uniqueness runner-up across all searched transforms.
 ///
 /// The runner-up matched count is `max(within_runner of the winning transform,
 /// best_count of every *other* transform)`. A different transform yielding a
-/// D4-equivalent labeling legitimately competes (a fragment too small to break
-/// D4 symmetry cannot pin an absolute orientation and must be rejected).
+/// symmetry-equivalent labeling legitimately competes (a fragment too small to
+/// break the searched symmetry cannot pin an absolute orientation and must be
+/// rejected). Narrowing the searched set therefore only removes competitors:
+/// dropping the physically unreachable reflections can turn a rejection into a
+/// decode, never a decode into a different decode.
 fn assemble_global_runner_up(
     summaries: &[TransformSummary],
     winner_idx: Option<usize>,

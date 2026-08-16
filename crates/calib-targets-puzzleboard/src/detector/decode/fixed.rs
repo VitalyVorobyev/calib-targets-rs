@@ -4,8 +4,9 @@
 //!
 //! When the caller knows which board they printed, the origin is no longer
 //! anywhere on the 501 × 501 master: it lies in the rectangle that board
-//! occupies. Each hypothesis is a D4 transform plus a shift `(P_r, P_c)`
-//! placing the observed fragment's local `(0, 0)` at board corner
+//! occupies. Each hypothesis is a searched grid transform (see
+//! [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode)) plus a shift
+//! `(P_r, P_c)` placing the observed fragment's local `(0, 0)` at board corner
 //! `(P_r, P_c)`, which is master origin `(spec_origin + P)`.
 //!
 //! Because a declared board is *cut from* the master, its bit at board cell
@@ -32,20 +33,20 @@
 //!
 //! # Cost
 //!
-//! Let `N` be the observation count and `L_r × L_c` the surviving shift
-//! rectangle. Per D4 transform the precompute walks
-//! `min(167, L_r) · min(3, L_c)` classes per horizontal observation (and the
-//! transpose for vertical ones), then each shift costs `O(1)`:
+//! Let `N` be the observation count, `T` the number of searched transforms,
+//! and `L_r × L_c` the surviving shift rectangle. Per transform the precompute
+//! walks `min(167, L_r) · min(3, L_c)` classes per horizontal observation (and
+//! the transpose for vertical ones), then each shift costs `O(1)`:
 //!
 //! ```text
-//! O( 8 · ( min(501, class cells) · N  +  L_r · L_c ) )
+//! O( T · ( min(501, class cells) · N  +  L_r · L_c ) )
 //! ```
 //!
-//! which is bounded by the full-master `O(8 · 501 · N)` and falls strictly
+//! which is bounded by the full-master `O(T · 501 · N)` and falls strictly
 //! below it as the declared board shrinks. A board spanning the whole master
 //! reaches every class and converges to the full-master cost, as it must.
 
-use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::GridTransform;
 
 use crate::code_maps::PuzzleBoardObservedEdge;
 
@@ -281,7 +282,10 @@ fn demote_into_runner(
     }
 }
 
-/// Scan every realisable `(D4, shift)` hypothesis for a declared board.
+/// Scan every realisable `(transform, shift)` hypothesis for a declared board.
+///
+/// `transforms` is the orientation hypothesis set to search — see
+/// [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode).
 ///
 /// Returns `None` when the observation set is empty, carries no confidence, or
 /// admits no shift that keeps all of it on the board.
@@ -289,6 +293,7 @@ fn demote_into_runner(
 fn scan(
     observed: &[PuzzleBoardObservedEdge],
     board: BoardRect,
+    transforms: &[GridTransform],
     max_bit_error_rate: f32,
     soft: Option<&SoftLlConfig>,
 ) -> Option<FixedScan> {
@@ -310,7 +315,7 @@ fn scan(
     let mut tables = ClassTables::new(ctx.soft);
     let mut any_shift = false;
 
-    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+    for transform in transforms.iter().copied() {
         let transformed = transform_observations(observed, &transform);
         let extent = LookupExtent::of(&transformed);
         let Some(((r_lo, r_hi), (c_lo, c_hi))) = board.shift_range(&extent) else {
@@ -357,9 +362,10 @@ fn scan(
 pub(crate) fn decode_fixed_board(
     observed: &[PuzzleBoardObservedEdge],
     board: BoardRect,
+    transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let scan = scan(observed, board, max_bit_error_rate, None)?;
+    let scan = scan(observed, board, transforms, max_bit_error_rate, None)?;
     let winner = scan.hard_best?;
     let best_matched = winner.edges_matched as u32;
     finalize_hard_winner(winner, best_matched, scan.hard_runner)
@@ -373,10 +379,11 @@ pub(crate) fn decode_fixed_board(
 pub(crate) fn decode_fixed_board_soft(
     observed: &[PuzzleBoardObservedEdge],
     board: BoardRect,
+    transforms: &[GridTransform],
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let scan = scan(observed, board, max_bit_error_rate, Some(cfg))?;
+    let scan = scan(observed, board, transforms, max_bit_error_rate, Some(cfg))?;
     let winner = super::soft::finalize_soft_winner(
         scan.soft_best,
         scan.soft_runner,

@@ -83,7 +83,7 @@ defaults or `sweep_for_board(spec)` for a multi-config preset.
 | Group | Key knobs | Effect |
 |---|---|---|
 | Chessboard stage | `chessboard: ChessboardParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
-| Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, and minimum visible patch size. |
+| Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.symmetry_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, admissible board orientations, and minimum visible patch size. |
 
 The `soft_log_likelihood` scorer's unstable tuning knobs live in an opt-in
 `decode.advanced` (`PuzzleBoardAdvancedTuning`) block; leave it unset unless
@@ -92,14 +92,32 @@ tuning against a specific dataset with measured evidence.
 ### Search modes
 
 - [`PuzzleBoardSearchMode::Full`] (default) — cross-correlate the observed
-  edge bits against the **full 501 × 501 master pattern** over all 8 D4
-  transforms. Recovers any printed sub-rectangle without prior knowledge,
-  but scales with master size.
+  edge bits against the **full 501 × 501 master pattern** under every
+  admissible board orientation. Recovers any printed sub-rectangle without
+  prior knowledge, but scales with master size.
 - [`PuzzleBoardSearchMode::FixedBoard`] — match observations against only
-  the declared board's own bit pattern under its `8 × (rows+1)²` shifts.
-  Cheaper for known small boards and still partial-view correct: any
+  the declared board's own bit pattern under its `orientations × (rows+1)²`
+  shifts. Cheaper for known small boards and still partial-view correct: any
   fragment decodes to the same master IDs a full-view decode would
   produce.
+
+### Symmetry modes
+
+A fragment carries no cue for which way round the board was printed, so the
+decoder tries candidate orientations. This knob says which ones your optics
+can actually produce.
+
+- [`PuzzleBoardSymmetryMode::Rotations`] (default) — the four 90° rotations.
+  Correct for any ordinary camera looking at a printed board: the view may be
+  rotated, but it cannot be mirrored.
+- [`PuzzleBoardSymmetryMode::RotationsAndReflections`] — also the four mirror
+  images. Needed only when the optical path flips handedness (a mirror, a beam
+  splitter) or the image was mirrored before detection.
+
+The default is both faster (half the hypotheses) and *more* unique: the
+mirrored hypotheses are physically unreachable, and every alias they create is
+a correct decode declined for nothing. A mirrored view under the default
+simply fails to decode — a miss, never a wrong label.
 
 ### Scoring modes
 
@@ -126,11 +144,11 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   must span at least 7 squares on *both* axes. That is not arbitrary. A
   4×4 window is unique across master positions only at a *fixed*
   orientation, and a fragment gives no cue to how the board was printed,
-  so the decoder searches the eight D4 transforms as well — over
-  `D4 × position`, clean uniqueness only begins at 6×6. The default adds
-  one square of margin for bit noise. Lowering it trades misses for the
-  risk of a wrong absolute label, which downstream calibration cannot
-  recover from.
+  so the decoder searches candidate orientations as well — over
+  `orientation × position`, clean uniqueness begins well above 4×4 (at 6×6
+  under the full dihedral search). The default adds margin for bit noise on
+  top of that. Lowering it trades misses for the risk of a wrong absolute
+  label, which downstream calibration cannot recover from.
 - **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
   (e.g. `8.0` in place of the workspace default `15.0`) so more corners
   survive; edge-bit sampling is gated on the corners, not a separate
