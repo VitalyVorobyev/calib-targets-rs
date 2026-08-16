@@ -305,32 +305,38 @@ impl ClassTables {
         // group: a per-group span would cost more than the group.
         #[cfg(feature = "tracing")]
         let _credit = tracing::info_span!("class_credit").entered();
-        for (key, acc) in self.groups.horizontal() {
-            accumulate::<H_ROWS, H_COLS, SOFT>(
+        for &family in &self.groups.touched_h {
+            let base = family as usize * FAMILY_SLOTS;
+            let terms = fold_family::<SOFT>(&self.groups.horizontal[base..base + FAMILY_SLOTS]);
+            credit_family::<H_COLS, 1, SOFT>(
                 Accumulate {
                     count: &mut self.h_count,
                     weight: &mut self.h_weight,
                     ll_sum: &mut self.h_ll,
                 },
-                key,
-                acc,
+                &terms,
+                family as usize,
                 &range.h_rows,
                 &range.h_cols,
-                flat_map_b(),
+                h_row_patterns(),
             );
         }
-        for (key, acc) in self.groups.vertical() {
-            accumulate::<V_ROWS, V_COLS, SOFT>(
+        // The V table is the transpose of the H one — its long axis is the
+        // column axis — so the ranges and strides swap with it.
+        for &family in &self.groups.touched_v {
+            let base = family as usize * FAMILY_SLOTS;
+            let terms = fold_family::<SOFT>(&self.groups.vertical[base..base + FAMILY_SLOTS]);
+            credit_family::<1, V_COLS, SOFT>(
                 Accumulate {
                     count: &mut self.v_count,
                     weight: &mut self.v_weight,
                     ll_sum: &mut self.v_ll,
                 },
-                key,
-                acc,
-                &range.v_rows,
+                &terms,
+                family as usize,
                 &range.v_cols,
-                flat_map_a(),
+                &range.v_rows,
+                v_col_patterns(),
             );
         }
     }
@@ -349,19 +355,81 @@ struct GroupAcc {
     ll_mismatch: i64,
 }
 
-/// The residues that decide which cells a group credits.
+/// Long axis shared by both tables: the 167-long period of the map that
+/// indexes it (`mr mod 167` for H, `mc mod 167` for V).
+const LONG: usize = H_ROWS;
+/// Short axis shared by both tables: the 3-long period.
+const SHORT: usize = H_COLS;
+const _: () = assert!(H_ROWS == LONG && V_COLS == LONG);
+const _: () = assert!(H_COLS == SHORT && V_ROWS == SHORT);
+
+/// Residue slots in one *family*: three short-axis residues × the two bits a
+/// dot can carry.
+const FAMILY_SLOTS: usize = SHORT * 2;
+/// Distinct three-bit map patterns.
+const PATTERNS: usize = 1 << SHORT;
+
+/// What one family adds to a class, given the map pattern the class reads and
+/// the class's short-axis residue.
+///
+/// Folding a family into this table is what removes the short axis from the
+/// sweep: the three short residues are summed *once* per pattern here instead
+/// of walking the whole table once each.
 #[derive(Clone, Copy, Debug)]
-struct GroupKey {
-    row: usize,
-    col: usize,
-    bit: u8,
+struct FamilyTerm {
+    count: u32,
+    weight: f32,
+    ll: i64,
 }
 
-/// Per-orientation residue buckets, indexed by `bit · 501 + row · 3 + col` for
-/// horizontal observations and `bit · 501 + row · 167 + col` for vertical ones.
+impl FamilyTerm {
+    const ZERO: Self = Self {
+        count: 0,
+        weight: 0.0,
+        ll: 0,
+    };
+}
+
+/// One family's contribution, indexed `[map pattern][short class]`.
+type FamilyTerms = [[FamilyTerm; SHORT]; PATTERNS];
+
+/// Sum a family's members into its per-(pattern, short class) contribution.
 ///
-/// Both index spaces hold `2 · 501` slots, so the scratch is 8 KB and clearing
-/// it between transforms is cheaper than the work it saves. Only the slots
+/// A class whose short residue is `sc` reads map bit `(sc + short) mod 3` of
+/// the pattern, so a member either matches or misses depending only on the
+/// pattern and `sc` — never on the class's long residue. That independence is
+/// the whole reason the fold is possible.
+fn fold_family<const SOFT: bool>(members: &[GroupAcc]) -> FamilyTerms {
+    let mut terms = [[FamilyTerm::ZERO; SHORT]; PATTERNS];
+    for (slot, group) in members.iter().enumerate() {
+        if group.count == 0 {
+            continue;
+        }
+        let short = slot / 2;
+        let bit = (slot % 2) as u8;
+        for (pattern, row) in terms.iter_mut().enumerate() {
+            for (sc, term) in row.iter_mut().enumerate() {
+                let predicted = ((pattern >> ((sc + short) % SHORT)) & 1) as u8;
+                if predicted == bit {
+                    term.count += group.count;
+                    term.weight += group.weight;
+                    if SOFT {
+                        term.ll += group.ll_match;
+                    }
+                } else if SOFT {
+                    term.ll += group.ll_mismatch;
+                }
+            }
+        }
+    }
+    terms
+}
+
+/// Per-orientation residue buckets, laid out so a family occupies one
+/// contiguous run of [`FAMILY_SLOTS`] slots: `long · 6 + short · 2 + bit`.
+///
+/// Both index spaces hold `167 · 6` slots, so the scratch is 8 KB and clearing
+/// it between transforms is cheaper than the work it saves. Only the families
 /// actually touched are visited afterwards, tracked in `touched`.
 struct Groups {
     horizontal: Vec<GroupAcc>,
@@ -370,7 +438,7 @@ struct Groups {
     touched_v: Vec<u32>,
 }
 
-const GROUPS_PER_ORIENTATION: usize = 2 * H_ROWS * H_COLS;
+const GROUPS_PER_ORIENTATION: usize = LONG * FAMILY_SLOTS;
 
 impl Groups {
     fn new() -> Self {
@@ -385,30 +453,39 @@ impl Groups {
     /// Bucket one transform's observations by residue. `O(N)`.
     #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
     fn fill<const SOFT: bool>(&mut self, transformed: &[TransformedEdge], cfg: &SoftLlConfig) {
-        for &slot in &self.touched_h {
-            self.horizontal[slot as usize] = GroupAcc::default();
+        for &family in &self.touched_h {
+            let base = family as usize * FAMILY_SLOTS;
+            self.horizontal[base..base + FAMILY_SLOTS].fill(GroupAcc::default());
         }
-        for &slot in &self.touched_v {
-            self.vertical[slot as usize] = GroupAcc::default();
+        for &family in &self.touched_v {
+            let base = family as usize * FAMILY_SLOTS;
+            self.vertical[base..base + FAMILY_SLOTS].fill(GroupAcc::default());
         }
         self.touched_h.clear();
         self.touched_v.clear();
 
         for e in transformed {
-            let (bucket, touched, n_rows, n_cols) = match e.orientation {
-                EdgeOrientation::Horizontal => {
-                    (&mut self.horizontal, &mut self.touched_h, H_ROWS, H_COLS)
-                }
-                EdgeOrientation::Vertical => {
-                    (&mut self.vertical, &mut self.touched_v, V_ROWS, V_COLS)
-                }
+            // The V table transposes the two axes relative to H, so the long
+            // residue comes from the column there and from the row here.
+            let (long, short, bucket, touched) = match e.orientation {
+                EdgeOrientation::Horizontal => (
+                    e.lookup_row.rem_euclid(LONG as i32) as usize,
+                    e.lookup_col.rem_euclid(SHORT as i32) as usize,
+                    &mut self.horizontal,
+                    &mut self.touched_h,
+                ),
+                EdgeOrientation::Vertical => (
+                    e.lookup_col.rem_euclid(LONG as i32) as usize,
+                    e.lookup_row.rem_euclid(SHORT as i32) as usize,
+                    &mut self.vertical,
+                    &mut self.touched_v,
+                ),
             };
-            let row = e.lookup_row.rem_euclid(n_rows as i32) as usize;
-            let col = e.lookup_col.rem_euclid(n_cols as i32) as usize;
-            let slot = (e.bit as usize) * (n_rows * n_cols) + row * n_cols + col;
+            debug_assert!(e.bit <= 1, "an edge dot is one bit");
+            let slot = long * FAMILY_SLOTS + short * 2 + (e.bit & 1) as usize;
             let acc = &mut bucket[slot];
             if acc.count == 0 {
-                touched.push(slot as u32);
+                touched.push(long as u32);
             }
             acc.count += 1;
             acc.weight += e.confidence;
@@ -418,40 +495,13 @@ impl Groups {
                 acc.ll_mismatch += quantize_ll(mm);
             }
         }
-        // Visit groups in a fixed order so the table sums are reproducible
-        // regardless of observation order.
-        self.touched_h.sort_unstable();
-        self.touched_v.sort_unstable();
-    }
-
-    fn horizontal(&self) -> impl Iterator<Item = (GroupKey, GroupAcc)> + '_ {
-        Self::iter(&self.touched_h, &self.horizontal, H_ROWS, H_COLS)
-    }
-
-    fn vertical(&self) -> impl Iterator<Item = (GroupKey, GroupAcc)> + '_ {
-        Self::iter(&self.touched_v, &self.vertical, V_ROWS, V_COLS)
-    }
-
-    fn iter<'a>(
-        touched: &'a [u32],
-        bucket: &'a [GroupAcc],
-        n_rows: usize,
-        n_cols: usize,
-    ) -> impl Iterator<Item = (GroupKey, GroupAcc)> + 'a {
-        let per_bit = n_rows * n_cols;
-        touched.iter().map(move |&slot| {
-            let slot = slot as usize;
-            let bit = (slot / per_bit) as u8;
-            let within = slot % per_bit;
-            (
-                GroupKey {
-                    row: within / n_cols,
-                    col: within % n_cols,
-                    bit,
-                },
-                bucket[slot],
-            )
-        })
+        // Visit families in a fixed order so the table sums are reproducible
+        // regardless of observation order. Dedup because a family is pushed
+        // once per slot it fills, and it has six.
+        for touched in [&mut self.touched_h, &mut self.touched_v] {
+            touched.sort_unstable();
+            touched.dedup();
+        }
     }
 }
 
@@ -469,112 +519,287 @@ struct Accumulate<'a> {
     ll_sum: &'a mut [i64],
 }
 
-/// Accumulate one observation into every reachable class of one table.
+/// Credit one residue family into every class it reaches.
 ///
 /// Class `(a, b)` corresponds to origin residues `(mr mod N_ROWS, mc mod
-/// N_COLS)`, under which this observation reads master cell
-/// `(a + lookup_row, b + lookup_col)`. Walking the *classes* rather than the
-/// master cells is what lets a restricted range skip work.
+/// N_COLS)`, under which this family's members read master cells sharing a
+/// single map pattern — the three bits at the family's long index. So the walk
+/// is one pass over the long axis: read the pattern, then add the three
+/// pre-folded short-class terms.
 ///
-/// Both indices advance by one per step, so their master coordinates do too and
-/// wrap at most once — each axis is reduced once at entry rather than once per
-/// cell, leaving the inner body a table read, a compare and an add. The table
-/// shape and the scoring mode are const parameters so the strides, the wrap
-/// points and the presence of the log-likelihood term are all fixed at compile
-/// time.
+/// `LONG_STRIDE` / `SHORT_STRIDE` place the two axes in the table's row-major
+/// layout: the H table is `[long][short]` (`3`, `1`), the V table `[short][long]`
+/// (`1`, `167`).
+///
+/// Both the class index and the pattern index advance by one per step and wrap
+/// at most once, so each is reduced at entry rather than once per cell.
 #[inline]
-fn accumulate<const N_ROWS: usize, const N_COLS: usize, const SOFT: bool>(
+fn credit_family<const LONG_STRIDE: usize, const SHORT_STRIDE: usize, const SOFT: bool>(
     acc: Accumulate<'_>,
-    key: GroupKey,
-    group: GroupAcc,
-    rows: &ClassInterval,
-    cols: &ClassInterval,
-    map: &'static [u8],
+    terms: &FamilyTerms,
+    long_residue: usize,
+    long_range: &ClassInterval,
+    short_range: &ClassInterval,
+    patterns: &[u8; LONG],
 ) {
     let Accumulate {
         count,
         weight,
         ll_sum,
     } = acc;
-    // One cell: read the master bit, credit the class it belongs to with the
-    // whole group's contribution at once.
-    let mut hit = |class_idx: usize, map_idx: usize| {
-        if map[map_idx] == key.bit {
-            count[class_idx] += group.count;
-            weight[class_idx] += group.weight;
+    let mut pattern_idx = (long_range.start + long_residue) % LONG;
+    let mut lc = long_range.start;
+    for _ in 0..long_range.len() {
+        let row = &terms[(patterns[pattern_idx] & (PATTERNS as u8 - 1)) as usize];
+        let base = lc * LONG_STRIDE;
+        let mut sc = short_range.start;
+        for _ in 0..short_range.len() {
+            let idx = base + sc * SHORT_STRIDE;
+            let term = row[sc];
+            count[idx] += term.count;
+            weight[idx] += term.weight;
             if SOFT {
-                ll_sum[class_idx] += group.ll_match;
+                ll_sum[idx] += term.ll;
             }
-        } else if SOFT {
-            ll_sum[class_idx] += group.ll_mismatch;
+            sc = if sc + 1 == SHORT { 0 } else { sc + 1 };
         }
-    };
-
-    if rows.len() == N_ROWS && cols.len() == N_COLS {
-        // Unrestricted: walk the master cells, whose bounds are compile-time
-        // constants, and map each to the class it credits.
-        let first_b = (N_COLS - key.col) % N_COLS;
-        for r in 0..N_ROWS {
-            let class_base = ((r + N_ROWS - key.row) % N_ROWS) * N_COLS;
-            let row_base = r * N_COLS;
-            let mut b = first_b;
-            for c in 0..N_COLS {
-                hit(class_base + b, row_base + c);
-                b = if b + 1 == N_COLS { 0 } else { b + 1 };
-            }
-        }
-        return;
-    }
-
-    // Restricted: walk the reachable classes instead. Both indices advance by
-    // one per step, so their master coordinates do too and wrap at most once —
-    // each axis is reduced once at entry rather than once per cell.
-    let mut master_row = (rows.start + key.row) % N_ROWS;
-    let first_col = (cols.start + key.col) % N_COLS;
-    let mut a = rows.start;
-    for _ in 0..rows.len() {
-        let row_base = master_row * N_COLS;
-        let class_base = a * N_COLS;
-        let mut master_col = first_col;
-        let mut b = cols.start;
-        for _ in 0..cols.len() {
-            hit(class_base + b, row_base + master_col);
-            b = if b + 1 == N_COLS { 0 } else { b + 1 };
-            master_col = if master_col + 1 == N_COLS {
-                0
-            } else {
-                master_col + 1
-            };
-        }
-        a = if a + 1 == N_ROWS { 0 } else { a + 1 };
-        master_row = if master_row + 1 == N_ROWS {
+        lc = if lc + 1 == LONG { 0 } else { lc + 1 };
+        pattern_idx = if pattern_idx + 1 == LONG {
             0
         } else {
-            master_row + 1
+            pattern_idx + 1
         };
     }
 }
 
-/// The A map (`3 × 167`, vertical-edge bits) unpacked to one byte per cell.
+/// The three horizontal-edge bits of master row `r`, packed `bit j = map_b[r][j]`.
 ///
-/// The packed representation costs a shift and a mask on every read; the
-/// precompute reads it `O(501 · N)` times per transform, so it is unpacked once
-/// and indexed directly.
-fn flat_map_a() -> &'static [u8] {
-    static FLAT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
-        (0..V_ROWS * V_COLS)
-            .map(|i| vertical_edge_bit((i / V_COLS) as i32, (i % V_COLS) as i32))
-            .collect()
+/// The packed map costs a shift and a mask on every read and the sweep reads it
+/// `O(167)` times per family, so the three bits a family needs together are
+/// unpacked once into a single byte.
+fn h_row_patterns() -> &'static [u8; LONG] {
+    static PATS: std::sync::LazyLock<[u8; LONG]> = std::sync::LazyLock::new(|| {
+        std::array::from_fn(|r| {
+            (0..SHORT).fold(0u8, |acc, j| {
+                acc | horizontal_edge_bit(r as i32, j as i32) << j
+            })
+        })
     });
-    &FLAT
+    &PATS
 }
 
-/// The B map (`167 × 3`, horizontal-edge bits) unpacked to one byte per cell.
-fn flat_map_b() -> &'static [u8] {
-    static FLAT: std::sync::LazyLock<Vec<u8>> = std::sync::LazyLock::new(|| {
-        (0..H_ROWS * H_COLS)
-            .map(|i| horizontal_edge_bit((i / H_COLS) as i32, (i % H_COLS) as i32))
-            .collect()
+/// The three vertical-edge bits of master column `c`, packed `bit j = map_a[j][c]`.
+fn v_col_patterns() -> &'static [u8; LONG] {
+    static PATS: std::sync::LazyLock<[u8; LONG]> = std::sync::LazyLock::new(|| {
+        std::array::from_fn(|c| {
+            (0..SHORT).fold(0u8, |acc, j| {
+                acc | vertical_edge_bit(j as i32, c as i32) << j
+            })
+        })
     });
-    &FLAT
+    &PATS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::code_maps::PuzzleBoardObservedEdge;
+    use calib_targets_core::GRID_TRANSFORMS_D4;
+
+    /// The six tables, accumulated in `f64` so the weight comparison is against
+    /// a more precise sum than the one under test rather than an equally lossy one.
+    struct Reference {
+        h_count: Vec<u32>,
+        h_weight: Vec<f64>,
+        h_ll: Vec<i64>,
+        v_count: Vec<u32>,
+        v_weight: Vec<f64>,
+        v_ll: Vec<i64>,
+    }
+
+    /// The tables, spelled out from their definition: for every class, walk
+    /// every observation and test it against the master bit that class implies.
+    ///
+    /// `O(501 · N)` and obviously correct — which is the point. The shipped
+    /// builder reaches the same numbers by folding residue families and
+    /// sweeping each family once, and this is what pins that rearrangement to
+    /// the thing it is supposed to compute rather than to its own predecessor.
+    fn reference_tables(transformed: &[TransformedEdge], cfg: Option<&SoftLlConfig>) -> Reference {
+        let mut h_count = vec![0u32; H_ROWS * H_COLS];
+        let mut h_weight = vec![0.0f64; H_ROWS * H_COLS];
+        let mut h_ll = vec![0i64; H_ROWS * H_COLS];
+        let mut v_count = vec![0u32; V_ROWS * V_COLS];
+        let mut v_weight = vec![0.0f64; V_ROWS * V_COLS];
+        let mut v_ll = vec![0i64; V_ROWS * V_COLS];
+
+        for e in transformed {
+            let (rows, cols) = match e.orientation {
+                EdgeOrientation::Horizontal => (H_ROWS, H_COLS),
+                EdgeOrientation::Vertical => (V_ROWS, V_COLS),
+            };
+            for a in 0..rows {
+                for b in 0..cols {
+                    let mr = (a as i32 + e.lookup_row).rem_euclid(rows as i32);
+                    let mc = (b as i32 + e.lookup_col).rem_euclid(cols as i32);
+                    let expected = match e.orientation {
+                        EdgeOrientation::Horizontal => horizontal_edge_bit(mr, mc),
+                        EdgeOrientation::Vertical => vertical_edge_bit(mr, mc),
+                    };
+                    let idx = a * cols + b;
+                    let (count, weight, ll) = match e.orientation {
+                        EdgeOrientation::Horizontal => (&mut h_count, &mut h_weight, &mut h_ll),
+                        EdgeOrientation::Vertical => (&mut v_count, &mut v_weight, &mut v_ll),
+                    };
+                    if expected == e.bit {
+                        count[idx] += 1;
+                        weight[idx] += e.confidence as f64;
+                    }
+                    if let Some(cfg) = cfg {
+                        let (m, mm) = ll_pair(e.confidence, cfg.kappa, cfg.per_bit_floor);
+                        ll[idx] += quantize_ll(if expected == e.bit { m } else { mm });
+                    }
+                }
+            }
+        }
+        Reference {
+            h_count,
+            h_weight,
+            h_ll,
+            v_count,
+            v_weight,
+            v_ll,
+        }
+    }
+
+    /// A deterministic fragment: every interior edge of a `span × span` corner
+    /// window planted at a master origin, with `flip_every`-th dot corrupted so
+    /// that some residue families carry both bits.
+    fn fragment(span: i32, origin: (i32, i32), flip_every: usize) -> Vec<PuzzleBoardObservedEdge> {
+        let mut out = Vec::new();
+        let mut seen = 0usize;
+        for row in 1..span - 1 {
+            for col in 1..span - 1 {
+                for orientation in [EdgeOrientation::Horizontal, EdgeOrientation::Vertical] {
+                    let (mr, mc) = (origin.0 + row, origin.1 + col);
+                    let truth = match orientation {
+                        EdgeOrientation::Horizontal => horizontal_edge_bit(mr, mc),
+                        EdgeOrientation::Vertical => vertical_edge_bit(mr, mc),
+                    };
+                    seen += 1;
+                    let corrupt = flip_every != 0 && seen.is_multiple_of(flip_every);
+                    out.push(PuzzleBoardObservedEdge {
+                        row,
+                        col,
+                        orientation,
+                        bit: truth ^ u8::from(corrupt),
+                        // Distinct per-dot weights: a uniform confidence would
+                        // hide any misrouting of the weight table.
+                        confidence: 0.25 + (seen % 7) as f32 / 16.0,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn assert_matches_reference(observed: &[PuzzleBoardObservedEdge], soft: Option<&SoftLlConfig>) {
+        let mut tables = ClassTables::new(soft.is_some());
+        for transform in GRID_TRANSFORMS_D4 {
+            let transformed = transform_observations(observed, &transform);
+            tables.build(&transformed, &ClassRange::full(), soft);
+            let want = reference_tables(&transformed, soft);
+
+            assert_eq!(tables.h_count, want.h_count, "H count under {transform:?}");
+            assert_eq!(tables.v_count, want.v_count, "V count under {transform:?}");
+            if soft.is_some() {
+                assert_eq!(
+                    tables.h_ll, want.h_ll,
+                    "H log-likelihood under {transform:?}"
+                );
+                assert_eq!(
+                    tables.v_ll, want.v_ll,
+                    "V log-likelihood under {transform:?}"
+                );
+            }
+            // Weight sums in f32 and the reference in f64, so they agree to
+            // rounding, not to the bit. Counts and log-likelihoods are integers
+            // and must be exact.
+            for (got, want) in tables
+                .h_weight
+                .iter()
+                .chain(&tables.v_weight)
+                .zip(want.h_weight.iter().chain(&want.v_weight))
+            {
+                assert!(
+                    (*got as f64 - want).abs() <= 1e-4 * want.abs().max(1.0),
+                    "weight {got} vs reference {want} under {transform:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tables_match_their_definition_on_a_clean_fragment() {
+        assert_matches_reference(&fragment(9, (37, 211), 0), None);
+    }
+
+    #[test]
+    fn tables_match_their_definition_with_both_bits_at_a_residue() {
+        // Corrupting every fifth dot puts both bits in the same residue family,
+        // the case the fold has to keep separate.
+        assert_matches_reference(&fragment(11, (120, 4), 5), None);
+    }
+
+    #[test]
+    fn soft_tables_match_their_definition() {
+        let cfg = SoftLlConfig {
+            kappa: 3.0,
+            per_bit_floor: 0.02,
+            alignment_min_margin: 0.0,
+        };
+        assert_matches_reference(&fragment(9, (37, 211), 5), Some(&cfg));
+    }
+
+    #[test]
+    fn a_restricted_range_leaves_unreachable_classes_at_zero() {
+        let observed = fragment(9, (37, 211), 0);
+        let transformed = transform_observations(&observed, &GRID_TRANSFORMS_D4[0]);
+        let mut tables = ClassTables::new(false);
+        let range = ClassRange::of_origin_rect(37, 12, 211, 12);
+        tables.build(&transformed, &range, None);
+
+        // A 12-wide origin rectangle reaches 12 of the 167 H rows; the other
+        // 155 must be untouched, or the scan could return an origin outside the
+        // declared board.
+        let reached: Vec<usize> = (0..12).map(|k| (37 + k) % H_ROWS).collect();
+        for a in 0..H_ROWS {
+            for b in 0..H_COLS {
+                let credited = tables.h_count[a * H_COLS + b] > 0;
+                assert_eq!(
+                    credited,
+                    reached.contains(&a),
+                    "H class ({a}, {b}) credited={credited} outside the declared rectangle"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_family_is_visited_once_however_its_dots_are_ordered() {
+        let observed = fragment(9, (37, 211), 5);
+        let mut shuffled = observed.clone();
+        shuffled.reverse();
+
+        let build = |obs: &[PuzzleBoardObservedEdge]| {
+            let transformed = transform_observations(obs, &GRID_TRANSFORMS_D4[0]);
+            let mut tables = ClassTables::new(false);
+            tables.build(&transformed, &ClassRange::full(), None);
+            (tables.h_count.clone(), tables.v_count.clone())
+        };
+        assert_eq!(
+            build(&observed),
+            build(&shuffled),
+            "table counts must not depend on observation order"
+        );
+    }
 }

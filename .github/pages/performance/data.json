@@ -2,9 +2,9 @@
   "meta": {
     "cpu": "Apple M4 Pro",
     "rustc": "1.95.0",
-    "git_sha": "ade023a",
-    "repeats": 100,
-    "warmup": 10,
+    "git_sha": "b48c74f",
+    "repeats": 300,
+    "warmup": 30,
     "generated": "2026-08-16",
     "source": "scripts/gen-perf-data.sh",
     "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for oblique) on each image."
@@ -20,9 +20,9 @@
       "raw_corners": 413,
       "labelled": 115,
       "markers": 52,
-      "corner_detection_ms": 0.886,
-      "grid_build_ms": 0.696,
-      "decode_ms": 0.948,
+      "corner_detection_ms": 0.858,
+      "grid_build_ms": 0.707,
+      "decode_ms": 0.932,
       "note": "A ~0.4 MP ChArUco board (22×22, DICT_4X4_250). The full detector runs corner detection, a chessboard grid build, then per-cell marker decode + board alignment. On a marker-dense board of this size the three stages are close to balanced."
     },
     {
@@ -35,8 +35,8 @@
       "raw_corners": 86,
       "labelled": 77,
       "markers": null,
-      "corner_detection_ms": 0.862,
-      "grid_build_ms": 0.33,
+      "corner_detection_ms": 0.883,
+      "grid_build_ms": 0.337,
       "decode_ms": null,
       "note": "A plain 11×7 inner-corner chessboard (no markers, so no decode stage). Corner detection is the bulk of the work; the owned grid build is a thin slice."
     },
@@ -50,9 +50,9 @@
       "raw_corners": 589,
       "labelled": 327,
       "markers": 140,
-      "corner_detection_ms": 4.508,
-      "grid_build_ms": 3.393,
-      "decode_ms": 2.226,
+      "corner_detection_ms": 4.215,
+      "grid_build_ms": 3.411,
+      "decode_ms": 2.183,
       "note": "A 3 MP ChArUco board (22×22, DICT_4X4_1000). At this resolution corner detection is the largest single stage and the owned grid build is close behind it; the per-cell marker decode, once the dominant cost here, is now the smallest of the three. The published preview is downscaled to 1024 px wide; the detector runs on the full-resolution image."
     },
     {
@@ -66,8 +66,8 @@
       "labelled": 361,
       "markers": null,
       "corner_detection_ms": 0.678,
-      "grid_build_ms": 1.616,
-      "decode_ms": 1.031,
+      "grid_build_ms": 1.624,
+      "decode_ms": 0.948,
       "note": "A public photo-realistic synthetic PuzzleBoard (20×20): a deterministic render from the canonical 501×501 master maps, warped with perspective, radial distortion, blur, noise and JPEG compression. Unlike the author example photos it decodes uniquely against the current master, so this card runs the full pipeline — corner detection, chessboard grid build, and a real edge-dot decode that recovers every corner's absolute ID on the 501×501 master. The decode stage no longer dominates: the cyclic structure of the code collapses the origin search, and the decoder now searches only the four board orientations a camera can physically observe rather than all eight dihedral relabellings — a mirrored view of an opaque printed board is not reachable through a lens. What remains of this stage is mostly edge-dot sampling, which those changes do not touch, so the grid build is now the largest owned cost."
     }
   ],
@@ -76,22 +76,22 @@
     "frames": [
       {
         "file": "testdata/mid.png",
-        "ms": 1.192,
+        "ms": 1.22,
         "note": "1024x576 Chessboard"
       },
       {
         "file": "testdata/small.png",
-        "ms": 2.53,
+        "ms": 2.497,
         "note": "720x540 ChArUco"
       },
       {
         "file": "testdata/puzzleboard/oblique.png",
-        "ms": 3.325,
+        "ms": 3.25,
         "note": "640x480 PuzzleBoard"
       },
       {
         "file": "testdata/large.png",
-        "ms": 10.127,
+        "ms": 9.809,
         "note": "2048x1536 ChArUco"
       }
     ]

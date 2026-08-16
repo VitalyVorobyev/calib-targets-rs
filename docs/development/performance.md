@@ -154,32 +154,54 @@ stages (Tier 2 decode, Tier 3 grid build) now matter more.
   residue histogram against the map: for the H table,
   `H[a][b] = Σ_{row,col} S[row][col] · M[(a+row) mod 167][(b+col) mod 3]`,
   which is why it is `O(buckets · 501)` and why the observation count drops out.
-  Two measured levers follow from that shape (`oblique.png`, `Full × Soft`:
-  16 `build` calls per `detect` = 2 components × 4 transforms × 2 views, each
-  with 51 H and 51 V residues, so ≈818 k cell visits at ≈0.44 ns each):
 
-  - **Fuse the two views.** The physical and voted observation sets have the
-    *same* residues — measured 51/51 in both, which is exactly what period-3
-    voting guarantees — so the two sweeps walk an identical
-    `(class, map cell)` sequence and differ only in the values added. One
-    traversal emitting both accumulator sets is worth **2×**.
-  - **Amortise the 3-wide axis.** The 51 H residues are 17 rows × 3 column
-    residues, and `M[r][·]` is one of only 8 three-bit patterns. Precomputing
-    `T[row][pattern][b]` turns three 501-cell sweeps per row into one 167-cell
-    sweep emitting 3 values, worth a further **≈3×**. The V table is the mirror
-    image (short axis on rows, patterns over `map_a` columns).
+  **Optimised by folding residue families** (2026-08-16). A *family* is the
+  buckets sharing a long-axis residue; its members differ only in which of the
+  three bits of one map pattern they test, and `M[r][·]` is one of just 8
+  patterns. Folding the family into `T[pattern][short class]` first turns three
+  501-cell sweeps into one 167-cell sweep emitting three values. Measured on
+  `oblique.png` (`Full × Soft`, 16 `build` calls per `detect` = 2 components ×
+  4 transforms × 2 views, 51 H and 51 V residues each):
 
-  Together ≈6×: `class_credit` 0.360 → ≈0.06 ms, about 10 % of `detect` here
-  and considerably more in the regimes where decode dominates. Both are exact
-  rearrangements, and the current implementation is a byte-exact oracle to test
-  a rewrite against. Neither is implemented.
+  | | before | after |
+  |---|---|---|
+  | `class_credit` | 0.360 ms | **0.125 ms** (2.9×) |
+  | `build` | 0.385 ms | 0.152 ms |
+  | `decode_edges` | 0.402 ms | 0.171 ms |
 
-  **Refuted, do not retry:** merging the bit-0 and bit-1 bucket at one residue
-  into a single signed sweep. It is a valid identity but buys nothing —
-  instrumenting `fill` across all three public fixtures found **zero** residues
-  carrying both bits. Period-3 redundancy is why: every observation at one
-  residue is a replica of the same code bit, so the two buckets coexist only
-  where a dot was misread, and the authors' own photographs decode at BER 0.
+  The fold itself is negligible — ablating the sweep leaves 0.007 ms, so 94 %
+  of what remains is the 167-cell walk. `tables::tests` pins the result against
+  a `O(501 · N)` transcription of the definition (exact on the integer count and
+  log-likelihood tables), including the both-bits-at-one-residue case.
+
+  **This lands on `Full`, not on `FixedBoard`, and the published report row is
+  the wrong place to look for it.** A declared board already restricts the long
+  axis to the board's own extent, so the same frame under `--search fixed`
+  spends **0.013 ms** in `class_credit` (0.4 % of `detect`) and the fold has
+  almost nothing left to remove. The win is for the undeclared search — which is
+  the self-identifying use case a PuzzleBoard exists for, and the mode where
+  decode was the dominant cost in the first place.
+
+  **Two things measured and rejected, do not retry:**
+
+  - *Merging the bit-0 and bit-1 bucket at one residue into a signed sweep.* A
+    valid identity that buys nothing: instrumenting `fill` across all three
+    public fixtures found **zero** residues carrying both bits. Period-3
+    redundancy is why — every observation at one residue is a replica of the
+    same code bit, so the two buckets coexist only where a dot was misread, and
+    even the authors' own photographs decode at BER 0.
+  - *`get_unchecked` in the inner loop.* Priced with a throwaway build:
+    0.125 → 0.115 ms, **0.3 % of `detect`** and inside run-to-run noise. The
+    remaining loop is ~0.43 ns per element for three load-add-stores, near the
+    store-port limit regardless. Not worth the workspace's first `unsafe`
+    outside the FFI crate, in the hottest loop of a path where a wrong label is
+    a contract violation.
+
+  Still open but no longer attractive: **fusing the two views**. The physical
+  and voted sets share their residues, so one traversal could emit both
+  accumulator sets — but it now caps out at ≈0.06 ms (2 % of `detect`) for a
+  refactor that threads two observation sets through the hard, soft and
+  fixed-board scans and the uniqueness fold. The fold made it a bad trade.
 - **ChArUco board match — minor on the large frame, competitive on the small one
   (PR #71 closed the old bottleneck).** Precomputing a per-cell
   bit-log-likelihood table removed the `O(cells × markers × 4 × bits²)`
