@@ -267,6 +267,11 @@ impl ClassTables {
     /// `O(N + min(N, 6w) · 501)` rather than `O(N · 501)`, and the saving grows
     /// linearly with window size.
     ///
+    /// In practice it is `3w`, not `6w`: the `bit` in the key can only split a
+    /// residue when a dot was *misread*, because every observation sharing a
+    /// residue is a period-3 replica of the same code bit. Instrumenting the
+    /// public fixtures found no residue carrying both bits at all.
+    ///
     /// Passing a [`SoftLlConfig`] additionally accumulates the per-bit
     /// log-likelihood halves; the count and weight tables are identical either
     /// way, so a soft scan gets the hard scan's tables for free.

@@ -148,13 +148,38 @@ stages (Tier 2 decode, Tier 3 grid build) now matter more.
   separately by `puzzleboard_stage_timing`. On `oblique.png`: `build` 0.385 ms,
   of which `fill` is **0.023 ms** and `class_credit` **0.360 ms** — 94 %. Adding
   observations therefore costs almost nothing; adding *residue buckets* costs
-  501 cells each. The open lever is that the observed `bit` sits in the bucket
-  key, so the bit-0 and bit-1 buckets at one residue walk the identical
-  `(class, map cell)` sequence and differ only in the comparison. Merging each
-  pair into one sweep that selects on the map byte is an exact algebraic
-  identity — no approximation — and halves `class_credit` wherever both bits
-  occur at a residue, which on a real board is nearly everywhere. Worth ≈6 % of
-  `detect` on this frame. Not yet implemented.
+  501 cells each.
+
+  What `class_credit` computes is a **cyclic cross-correlation** of the
+  residue histogram against the map: for the H table,
+  `H[a][b] = Σ_{row,col} S[row][col] · M[(a+row) mod 167][(b+col) mod 3]`,
+  which is why it is `O(buckets · 501)` and why the observation count drops out.
+  Two measured levers follow from that shape (`oblique.png`, `Full × Soft`:
+  16 `build` calls per `detect` = 2 components × 4 transforms × 2 views, each
+  with 51 H and 51 V residues, so ≈818 k cell visits at ≈0.44 ns each):
+
+  - **Fuse the two views.** The physical and voted observation sets have the
+    *same* residues — measured 51/51 in both, which is exactly what period-3
+    voting guarantees — so the two sweeps walk an identical
+    `(class, map cell)` sequence and differ only in the values added. One
+    traversal emitting both accumulator sets is worth **2×**.
+  - **Amortise the 3-wide axis.** The 51 H residues are 17 rows × 3 column
+    residues, and `M[r][·]` is one of only 8 three-bit patterns. Precomputing
+    `T[row][pattern][b]` turns three 501-cell sweeps per row into one 167-cell
+    sweep emitting 3 values, worth a further **≈3×**. The V table is the mirror
+    image (short axis on rows, patterns over `map_a` columns).
+
+  Together ≈6×: `class_credit` 0.360 → ≈0.06 ms, about 10 % of `detect` here
+  and considerably more in the regimes where decode dominates. Both are exact
+  rearrangements, and the current implementation is a byte-exact oracle to test
+  a rewrite against. Neither is implemented.
+
+  **Refuted, do not retry:** merging the bit-0 and bit-1 bucket at one residue
+  into a single signed sweep. It is a valid identity but buys nothing —
+  instrumenting `fill` across all three public fixtures found **zero** residues
+  carrying both bits. Period-3 redundancy is why: every observation at one
+  residue is a replica of the same code bit, so the two buckets coexist only
+  where a dot was misread, and the authors' own photographs decode at BER 0.
 - **ChArUco board match — minor on the large frame, competitive on the small one
   (PR #71 closed the old bottleneck).** Precomputing a per-cell
   bit-log-likelihood table removed the `O(cells × markers × 4 × bits²)`
