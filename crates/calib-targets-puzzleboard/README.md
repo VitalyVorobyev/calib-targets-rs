@@ -23,7 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.12"
+calib-targets-puzzleboard = "0.13"
 ```
 
 ## Quickstart (facade)
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 |---|---|
 | `corners: Vec<PuzzleBoardCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space), and `score`. |
 | `alignment: GridAlignment` | Semantic alias for the canonical affine `GridTransform`, mapping the local grid into master-board coordinates. |
-| `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, and `master_origin_row` / `master_origin_col`. |
+| `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, plus the period-3 consensus fields `logical_bits`, `logical_bit_error_rate` and `dot_dissent_rate`. |
 
 Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.
 Fragments printed from different regions share the master ID space, so
@@ -141,13 +141,12 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 ## Tuning difficult cases
 
 - **Few visible squares** — `min_window` defaults to **7**: the fragment
-  must span at least 7 squares on *both* axes. That is not arbitrary. A
-  4×4 window is unique across master positions only at a *fixed*
-  orientation, and a fragment gives no cue to how the board was printed,
-  so the decoder searches candidate orientations as well — over
-  `orientation × position`, clean uniqueness begins well above 4×4 (at 6×6
-  under the full dihedral search). The default adds margin for bit noise on
-  top of that. Lowering it trades misses for the risk of a wrong absolute
+  must span at least 7 *corners* on *both* axes, which is 6×6 squares. That
+  is not arbitrary. A 4×4 window is unique across master positions only at a
+  *fixed* orientation, and a fragment gives no cue to how the board was
+  printed, so the decoder searches candidate orientations as well — over
+  `orientation × position`, clean uniqueness begins well above 4×4, at
+  exactly this span. Lowering it trades misses for the risk of a wrong absolute
   label, which downstream calibration cannot recover from.
 - **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
   (e.g. `8.0` in place of the workspace default `15.0`) so more corners

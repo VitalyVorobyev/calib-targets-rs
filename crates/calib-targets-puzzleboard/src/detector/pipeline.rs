@@ -323,8 +323,8 @@ impl PuzzleBoardDetector {
         // *post-confidence-filter* observation set — the window the decoder
         // actually decodes. The edge-count floor assumes a roughly-square window;
         // a wide-but-short strip can meet it yet still alias because its thin axis
-        // carries too little code distance (measured: a 3-corner-tall strip at the
-        // 84-edge floor false-accepts at a low rate, while every window spanning
+        // carries too little code distance (measured: a 3-corner-tall strip meeting
+        // the edge-count floor false-accepts at a low rate, while every window spanning
         // ≥ `min_window` corners on both axes is empirically alias-free). A
         // component that is wide overall can also collapse to a thin strip *after*
         // the `min_bit_confidence` filter drops its low-confidence edges, so the

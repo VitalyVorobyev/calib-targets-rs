@@ -63,9 +63,16 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 - [`changelog/`](changelog/) — archived per-minor-version release notes
   (`0.1.x` … `0.9.x`), indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
 - [`migrations/`](migrations/) — breaking-change migration guides, newest first:
-  [`0.11.0.md`](migrations/0.11.0.md) (live) and [`0.10.0.md`](migrations/0.10.0.md).
-  Both are pulled into the book's Migration chapter via `{{#include}}`;
-  **do not move/rename**.
+  [`0.13.0.md`](migrations/0.13.0.md) (live) and [`0.12.0.md`](migrations/0.12.0.md),
+  kept for consumers upgrading across two releases. Both are pulled into the
+  book's Migration chapter via `{{#include}}`; **do not move/rename**. Older
+  guides ([`0.11.0.md`](migrations/0.11.0.md), [`0.10.0.md`](migrations/0.10.0.md))
+  stay on disk but are no longer included in the book.
+- [`releases/`](releases/) — GitHub release bodies consumed by CI.
+  [`ffi-c-api-release-draft.md`](releases/ffi-c-api-release-draft.md) is the
+  `body_path` of the native-FFI archive release
+  (`.github/workflows/release-native-ffi.yml`), so it must track the **C ABI**
+  version, which is independent of the workspace version.
 
 ## Local-only (untracked) contents
 

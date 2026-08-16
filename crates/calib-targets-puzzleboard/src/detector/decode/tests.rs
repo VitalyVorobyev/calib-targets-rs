@@ -1740,9 +1740,11 @@ fn uniqueness_gate_accepts_clean_window_with_margin() {
 /// Measured on clean windows across seven planted origins under the eight-
 /// transform search: 4 × 4 never decodes (always aliased), 5 × 5 decodes at
 /// 5/7, and 6 × 6 and above always decode
-/// (`window_uniqueness_report`, which reports both searches). The pipeline's
-/// `min_window = 7` sits one square above that clean threshold, leaving the
-/// extra square as the noise budget.
+/// (`window_uniqueness_report`, which reports both searches). Those window
+/// sizes are in **squares**; the pipeline's `min_window = 7` is a *corner*
+/// span, and `6 × 6` squares span exactly 7 corners — so the default sits at
+/// that clean threshold, not above it. The noise budget is carried by the
+/// uniqueness gate and the period-3 vote, not by extra squares.
 #[test]
 fn uniqueness_gate_declines_d4_aliased_small_window() {
     let obs = build_perfect_observation(8, 19, 4, 4);

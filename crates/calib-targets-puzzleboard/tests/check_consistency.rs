@@ -56,7 +56,7 @@ fn render_png_to_gray_image(bundle_bytes: &[u8]) -> ImageBuffer<Luma<u8>, Vec<u8
 fn puzzleboard_corners_pass_check_consistency_square_lattice() {
     // 1) Render a synthetic puzzleboard. The board must be large enough that the
     //    detector's decodable interior window clears the bounded-distance floor
-    //    (`min_window = 7` → 84 interior edges; Gap 19): the ChESS detector drops
+    //    (`min_window = 7` corners → 60 interior edges; Gap 19): the ChESS detector drops
     //    the outermost corner ring, so a board of `w×w` squares yields roughly a
     //    `(w-2)×(w-2)` decodable corner grid. A 10×10 board leaves an ~8×8
     //    interior, comfortably above the 7×7 floor, while still being small

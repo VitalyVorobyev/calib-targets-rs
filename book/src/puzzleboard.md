@@ -67,11 +67,12 @@ The flow is grid-first:
 6. Assign absolute IDs and target-space positions to inlier corners.
 
 The default `decode.min_window` is `7`: after confidence filtering the fragment
-must span at least 7 squares on both axes. A 4 × 4 window is unique across
-master positions only at a *fixed* orientation, and a fragment gives no cue to
-how the board was printed, so the decoder searches candidate orientations too
-— over `orientation × position`, clean uniqueness begins at 6 × 6 under the
-full dihedral search, and the default adds a square of noise margin. See
+must span at least 7 *corners* on both axes — 6 × 6 squares. A 4 × 4 window is
+unique across master positions only at a *fixed* orientation, and a fragment
+gives no cue to how the board was printed, so the decoder searches candidate
+orientations too — over `orientation × position`, clean uniqueness begins at
+exactly this span. Noise is handled by the uniqueness gate and the period-3
+majority vote rather than by a larger window. See
 [the decode chapter](algo_puzzleboard_decode.md#how-big-a-fragment-do-you-need).
 
 ## Rust Facade Example

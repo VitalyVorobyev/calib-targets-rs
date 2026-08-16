@@ -7,7 +7,23 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.13.0
+
+Breaking, and deliberately so before 1.0. The detector structs and the facade
+free functions become one symmetric surface, and `MarkerBoardDetector` reports
+why it failed instead of returning `None`. Every Rust break is a compile error
+at the call site; nothing keeps compiling with a changed meaning.
+
+Results change in one place, the **PuzzleBoard decoder**, in three deliberate
+ways: it searches rotations rather than all eight dihedral transforms, it
+majority-votes the pattern's period-3 replicas before gating, and its two
+window gates now agree on their unit. All three admit more frames without
+weakening the uniqueness proof, and the second strengthens it. Full
+before/after in the [0.13 migration guide](docs/migrations/0.13.0.md).
+
+The C ABI goes to **4.0.0**: three exported symbols are renamed and two
+PuzzleBoard structs gain fields. Regenerate against the shipped
+`include/calib_targets_ffi.h`. `projective-grid` is unchanged at 0.14.
 
 ### Changed
 
@@ -139,6 +155,15 @@ see [Older releases](#older-releases) at the bottom for the index.
   existed with no preset to feed it. The new preset sweeps the shared
   grid-build axis only; no circle-scoring or matching constants are varied.
 
+- **The shipped PuzzleBoard code maps are pinned byte-for-byte to the
+  reference implementation.** The two 63-byte maps are now asserted against
+  literals in-tree, so a regenerated map — valid under every uniqueness
+  property the decoder tests, but *different* — can no longer ship and
+  silently stop decoding boards printed from the authors' generator. Nothing
+  previously stopped that, because the existing tests pass for any valid
+  sub-perfect pair. Boards produced by the reference implementation decode
+  under the identity transform at a bit error rate of zero.
+
 ### Fixed
 
 - **PuzzleBoard's two window gates disagreed on their unit, and the stricter
@@ -185,6 +210,30 @@ see [Older releases](#older-releases) at the bottom for the index.
   `ChessboardParams.sweep_default` and `CharucoParams.sweep_for_board`, which
   had no Python surface at all, are now exposed the same way. A parity test
   fails if either side moves alone.
+
+### Performance
+
+- **PuzzleBoard's origin search walks 167 master classes instead of 501.** The
+  decoder's inner loop is a cyclic cross-correlation of the observed dots
+  against the code map, and its cost was `O(residues × 501)` — independent of
+  how many dots were read. But the three residue buckets that share a
+  long-axis position all test three bits of *one* map row, and a map row is
+  one of only eight three-bit patterns. Folding each family into an
+  eight-entry table first turns three 501-cell sweeps into one 167-cell sweep
+  that emits three values.
+
+  On a public sample frame the class sweep drops from 0.360 ms to 0.125 ms
+  (2.9×), taking the whole edge-decode stage from 0.402 ms to 0.171 ms. The
+  result is exact, not approximate: it is pinned against a direct transcription
+  of the correlation's definition, over every transform in the search.
+
+  This lands on the self-identifying search. Under
+  `PuzzleBoardSearchMode::FixedBoard` the long axis is already restricted to
+  the declared board, so there is far less sweep to remove.
+
+- **Decoding searches four board orientations instead of eight** — see the
+  symmetry-mode entry under *Changed*. The two changes compose: the search is
+  half as wide and each hypothesis is ~3× cheaper to score.
 
 ## 0.12.1
 

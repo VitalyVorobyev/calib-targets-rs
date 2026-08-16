@@ -143,13 +143,17 @@ target_position.y == (id / 501) · cell_size
 
 Clean, noise-free windows at seven planted origins:
 
-| window | edge bits | decoded | rejected as D4-aliased |
-|---|---|---|---|
-| 3 × 3 | 12 | 0/7 | 7 |
-| 4 × 4 | 24 | 0/7 | 7 |
-| 5 × 5 | 40 | 5/7 | 2 |
-| 6 × 6 | 60 | 7/7 | 0 |
-| 7 × 7 | 84 | 7/7 | 0 |
+Windows are sized in **squares** here (the paper's convention). `min_window` is
+a **corner span**; `s × s` squares span `s + 1` corners, so `min_window = 7` is
+the `6 × 6` row.
+
+| window (squares) | corner span | edge bits | decoded | rejected as D4-aliased |
+|---|---|---|---|---|
+| 3 × 3 | 4 | 12 | 0/7 | 7 |
+| 4 × 4 | 5 | 24 | 0/7 | 7 |
+| 5 × 5 | 6 | 40 | 5/7 | 2 |
+| 6 × 6 | **7** | 60 | 7/7 | 0 |
+| 7 × 7 | 8 | 84 | 7/7 | 0 |
 
 The paper's "4 × 4 is unique" holds across master *positions at a fixed
 orientation* — which is what `code_maps::tests::master_4x4_windows_unique`

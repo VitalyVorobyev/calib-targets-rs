@@ -297,9 +297,12 @@ impl PuzzleBoardAdvancedTuning {
 }
 
 fn default_min_window() -> u32 {
-    // 7×7 (84 interior edges) — the smallest window the master code can decode
-    // with zero empirical false-accepts under the uniqueness gate at ≤40 % BER
-    // (bounded-distance decoding; see `min_window` field docs and Gap 19).
+    // A 7×7-*corner* span: 6×6 squares, 60 interior edges, 30 distinct master
+    // bits once the period-3 replicas collapse. The smallest window the master
+    // code can decode with zero empirical false-accepts under the uniqueness
+    // gate at ≤40 % BER (bounded-distance decoding; see `min_window` field docs
+    // and Gap 19). Note the unit: this is corners, so the edge-count floor is
+    // `required_edges(7) = 60`, not 84 — see `required_edges`.
     7
 }
 fn default_min_bit_confidence() -> f32 {

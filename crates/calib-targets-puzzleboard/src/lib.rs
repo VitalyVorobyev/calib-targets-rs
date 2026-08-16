@@ -11,9 +11,10 @@
 //!
 //! A 4 × 4 fragment pins the position *at a known orientation*, but a fragment
 //! carries no cue for how the board was printed, so the decoder also searches
-//! the eight D4 transforms — and over `D4 × position` a 4 × 4 window is not
-//! unique. Clean uniqueness begins at 6 × 6, which is why the pipeline asks for
-//! [`min_window`](PuzzleBoardDecodeConfig::min_window) = 7 squares by default
+//! the board's admissible transforms — and over `transform × position` a 4 × 4
+//! window is not unique. Clean uniqueness begins at 6 × 6 *squares*, which is a
+//! span of 7 *corners*: that is why the pipeline asks for
+//! [`min_window`](PuzzleBoardDecodeConfig::min_window) = 7 corners by default
 //! and reports a *miss* rather than a guess below it. See [`code_maps`] for the
 //! measurement.
 //!
