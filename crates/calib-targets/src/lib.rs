@@ -67,6 +67,14 @@ pub use calib_targets_puzzleboard as puzzleboard;
 pub use calib_targets_chessboard::ChessCorner;
 pub use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
 
+/// The chessboard detector's introspection entry points, re-exported so a
+/// facade-only caller can reach chessboard diagnostics without naming
+/// `calib-targets-chessboard` directly.
+///
+/// Available only with the `diagnostics` feature enabled.
+#[cfg(feature = "diagnostics")]
+pub use calib_targets_chessboard::{trace_topological, trace_topological_detection};
+
 /// Re-export of the [`image`] crate the [`detect`] helpers accept.
 ///
 /// Reach for `image` through `calib_targets::image` instead of adding a

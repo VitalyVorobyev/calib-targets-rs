@@ -4,7 +4,6 @@ use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, Ma
 use calib_targets_chessboard::ChessCorner as TargetCorner;
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use calib_targets_core::GrayImageView;
-use chess_corners::{CornerDescriptor, Detector as ChessDetector};
 use image::ImageReader;
 use nalgebra::Point2;
 use projective_grid::{
@@ -21,38 +20,25 @@ fn load_gray(path: &Path) -> image::GrayImage {
         .to_luma8()
 }
 
-fn detect_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
-    let chess_cfg = // chess-corners 1.0 removed relative thresholding for the ChESS
-    // strategy (`threshold` is now an absolute floor on the raw response;
-    // only Radon reads it as a fraction). Rather than invent an absolute
-    // number to imitate the old adaptive cutoff, use the workspace
-    // production default, so this exercises the config real callers get.
-    default_chess_config().with_detection(|d| d.nms_radius = 2);
-    let mut detector = ChessDetector::new(chess_cfg).expect("build ChESS detector");
-    detector.detect(img).expect("ChESS detection")
+/// Run the shared ChESS front-end with this suite's config: the workspace
+/// production default widened by one NMS radius step.
+///
+/// chess-corners 1.0 removed relative thresholding for the ChESS strategy
+/// (`threshold` is now an absolute floor on the raw response; only Radon reads
+/// it as a fraction). Rather than invent an absolute number to imitate the old
+/// adaptive cutoff, use the workspace production default, so this exercises the
+/// config real callers get.
+fn detect_corners(img: &image::GrayImage) -> Vec<TargetCorner> {
+    let chess_cfg = default_chess_config().with_detection(|d| d.nms_radius = 2);
+    calib_targets_chessboard::detect_corners(&gray_view(img), &chess_cfg)
 }
 
-fn adapt_chess_corner(c: &CornerDescriptor) -> TargetCorner {
-    TargetCorner::new(
-        Point2::new(c.x, c.y),
-        // `axes` is `None` only when the upstream orientation fit is
-        // skipped; these fixtures always fit it.
-        c.axes
-            .map(|a| {
-                [
-                    calib_targets_core::AxisEstimate {
-                        angle: a[0].angle,
-                        sigma: a[0].sigma,
-                    },
-                    calib_targets_core::AxisEstimate {
-                        angle: a[1].angle,
-                        sigma: a[1].sigma,
-                    },
-                ]
-            })
-            .expect("orientation fit enabled"),
-        c.response,
-    )
+fn gray_view(img: &image::GrayImage) -> GrayImageView<'_> {
+    GrayImageView {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        data: img.as_raw(),
+    }
 }
 
 fn assert_unique_ids(res: &calib_targets_charuco::CharucoDetection, max_id: u32) {
@@ -216,8 +202,7 @@ fn run_public_charuco(case: &PublicCase) {
     let min_corners = case.min_corners;
     let img_path = testdata_path(img_name);
     let img = load_gray(&img_path);
-    let raw_corners = detect_corners(&img);
-    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+    let corners = detect_corners(&img);
 
     let dict = builtins::builtin_dictionary(dict_name).expect("builtin dict");
     let board = CharucoBoardSpec::new(rows, cols, cell_size, 0.75, dict)
@@ -233,12 +218,8 @@ fn run_public_charuco(case: &PublicCase) {
     // already matches what this test wants, so no override is needed.
 
     let detector = CharucoDetector::new(params).expect("detector");
-    let src_view = GrayImageView {
-        width: img.width() as usize,
-        height: img.height() as usize,
-        data: img.as_raw(),
-    };
-    let (res, diagnostics) = detector.detect_with_diagnostics(&src_view, &corners);
+    let src_view = gray_view(&img);
+    let (res, diagnostics) = detector.diagnose_with_corners(&src_view, &corners);
     let res = res.unwrap_or_else(|e| panic!("{img_name}: detect: {e}"));
     assert!(
         res.markers.len() >= min_markers,
@@ -306,8 +287,7 @@ fn board_matcher_detects_large_png() {
 fn detects_charuco_on_small_png() {
     let img_path = testdata_path("small.png");
     let img = load_gray(&img_path);
-    let raw_corners = detect_corners(&img);
-    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+    let corners = detect_corners(&img);
 
     let dict = builtins::builtin_dictionary("DICT_4X4_250").expect("builtin dict");
     let board = CharucoBoardSpec::new(22, 22, 5.2, 0.75, dict)
@@ -319,13 +299,11 @@ fn detects_charuco_on_small_png() {
 
     let detector = CharucoDetector::new(params).expect("detector");
 
-    let src_view = GrayImageView {
-        width: img.width() as usize,
-        height: img.height() as usize,
-        data: img.as_raw(),
-    };
+    let src_view = gray_view(&img);
 
-    let res = detector.detect(&src_view, &corners).expect("detect");
+    let res = detector
+        .detect_with_corners(&src_view, &corners)
+        .expect("detect");
     assert!(res.markers.len() >= 20);
     assert!(res.corners.len() >= 60);
     assert_unique_ids(&res, 22 * 22);
@@ -335,8 +313,7 @@ fn detects_charuco_on_small_png() {
 fn detects_plain_chessboard_on_mid_png() {
     let img_path = testdata_path("mid.png");
     let img = load_gray(&img_path);
-    let raw_corners = detect_corners(&img);
-    let corners: Vec<TargetCorner> = raw_corners.iter().map(adapt_chess_corner).collect();
+    let corners = detect_corners(&img);
 
     let mut chessboard = ChessboardParams::default();
     chessboard.min_corner_strength = 0.5;

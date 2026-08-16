@@ -66,7 +66,7 @@ multi-camera detections stitch naturally.
 
 ### Diagnostics
 
-`PuzzleBoardDetector::detect_with_diagnostics` returns the result above
+`PuzzleBoardDetector::diagnose` (or `diagnose_with_corners`) returns the result above
 plus a [`diagnostics::PuzzleBoardDiagnostics`] — the raw per-edge bit
 observations (`observed_edges`) and the winner-vs-runner-up scoring
 evidence (`score_best`, `score_runner_up`, `score_margin`, the runner-up
@@ -162,7 +162,7 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   observations. When the printed board is known, prefer
   `FixedBoard + SoftLogLikelihood`: it cannot return a position outside the
   board, it is *faster* than `Full` at every board size below the master's
-  own, and `detect_with_diagnostics` surfaces `score_margin` (in
+  own, and `diagnose` / `diagnose_with_corners` surfaces `score_margin` (in
   [`diagnostics::PuzzleBoardDiagnostics`]) when a frame's winner is weak.
 
 ## Limitations

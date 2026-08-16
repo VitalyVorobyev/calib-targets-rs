@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
     let corners: Vec<ChessCorner> = Vec::new();
 
-    let _ = detector.detect(&view, &corners)?;
+    let _ = detector.detect_with_corners(&view, &corners)?;
     Ok(())
 }
 ```
@@ -108,11 +108,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `markers: Vec<MarkerDetection>` | ArUco markers that agree with the chosen alignment. Each carries `id`, `gc` (grid coordinate), `rotation`, `hamming`, and rectified/image corners. |
 | `alignment: GridAlignment` | Semantic alias for the canonical affine `GridTransform`, mapping chessboard `(i, j)` to the board's canonical ID space. |
 
-Use `detector.detect_with_diagnostics(...)` for per-component rejection
-reasons, per-cell sample scores, hypothesis margins, expected-vs-found
-marker IDs, and the pre-alignment `raw_marker_count` /
-`raw_marker_wrong_id_count` totals — rendered by the `overlay_charuco.py`
-tool.
+Use `detector.diagnose(...)` (or `diagnose_with_corners(...)` when you
+already have corners) for per-component rejection reasons, per-cell
+sample scores, hypothesis margins, expected-vs-found marker IDs, and the
+pre-alignment `raw_marker_count` / `raw_marker_wrong_id_count` totals —
+rendered by the `overlay_charuco.py` tool.
 
 ## Choosing a dictionary
 

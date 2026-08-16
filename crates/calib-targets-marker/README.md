@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let view = GrayImageView { width: 32, height: 32, data: &pixels };
     let corners: Vec<ChessCorner> = Vec::new();
 
-    let _ = detector.detect(&view, &corners);
+    let _ = detector.detect_with_corners(&view, &corners)?;
     Ok(())
 }
 ```
@@ -111,19 +111,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Outputs
 
 `MarkerBoardDetector::detect` returns
-`Option<MarkerBoardDetection>`:
+`Result<MarkerBoardDetection, MarkerBoardDetectError>`:
 
 | Field | Meaning |
 |---|---|
 | `corners: Vec<MarkerBoardCorner>` | Labelled inner corners, `(i, j)` grid, optional `id`, optional `target_position` in mm, and `score`. |
-| `alignment: Option<GridAlignment>` | Optional canonical affine `GridTransform` (under the semantic alias) aligning chessboard `(i, j)` to the layout frame. Full image+corner detection returns `None` if the three circles cannot be placed. |
+| `alignment: Option<GridAlignment>` | Canonical affine `GridTransform` (under the semantic alias) aligning chessboard `(i, j)` to the layout frame. Always `Some` on a successful `detect` / `detect_with_corners` — the three-circles-can't-be-placed case is now the typed `Err(MarkerBoardDetectError::AlignmentFailed { .. })` rather than an `Ok` result with `alignment: None`. |
+
+`MarkerBoardDetectError` is `#[non_exhaustive]` and distinguishes
+`ChessboardNotDetected` (no grid at all) from `AlignmentFailed { matched,
+candidates }` (grid found, circles did not pin it to the layout) — match
+it with a wildcard arm.
 
 The detection *evidence* — every scored `circle_candidates` hypothesis,
 the `circle_matches` pairing each expected circle to a detected one, the
 per-corner `inliers` provenance, and the `alignment_inliers` count —
-lives in `MarkerBoardDiagnostics`. Use the `detect_with_diagnostics`
-entry point (gated behind the off-by-default `diagnostics` feature) to
-obtain it.
+lives in `MarkerBoardDiagnostics`. Use the `diagnose` (or
+`diagnose_with_corners`) entry point (gated behind the off-by-default
+`diagnostics` feature) to obtain it — diagnostics come back even when
+detection fails.
 
 ## Circle layout
 
@@ -146,10 +152,12 @@ are a known-good starting point.
 ## Tuning difficult cases
 
 - **Circles not found** — check that the three layout cells actually
-  contain discs in the printed target; `detector.detect` fails silently
-  (returns `None`) if fewer than two circles are matched. Visualise
-  `MarkerBoardDiagnostics::circle_candidates` (from a `*_with_diagnostics`
-  call) to see what the scorer saw.
+  contain discs in the printed target; `detector.detect` returns
+  `Err(MarkerBoardDetectError::AlignmentFailed { .. })` if fewer than two
+  circles are matched (or `Err(ChessboardNotDetected)` if no grid was
+  found at all). Visualise `MarkerBoardDiagnostics::circle_candidates`
+  (from a `diagnose` / `diagnose_with_corners` call) to see what the
+  scorer saw.
 - **Two chessboards fighting for the grid** — out of scope. Crop the
   image so only one board is visible.
 - **Glare on the circles** — enable `multi_threshold`-style imaging

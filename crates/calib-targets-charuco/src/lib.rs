@@ -11,8 +11,8 @@
 //!
 //! ```no_run
 //! use calib_targets_charuco::{
-//!     builtins, CharucoBoardSpec, CharucoDetector, CharucoParams, ChessCorner,
-//!     GrayImageView, MarkerLayout,
+//!     builtins, CharucoBoardSpec, CharucoDetector, CharucoParams, GrayImageView,
+//!     MarkerLayout,
 //! };
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -28,9 +28,10 @@
 //!     height: 32,
 //!     data: &pixels,
 //! };
-//! let corners: Vec<ChessCorner> = Vec::new();
 //!
-//! let _ = detector.detect(&view, &corners)?;
+//! // `detect` runs the ChESS corner front-end from `params.chess` itself.
+//! // Feed a corner cloud you already have to `detect_with_corners` instead.
+//! let _ = detector.detect(&view)?;
 //! # Ok(())
 //! # }
 //! ```

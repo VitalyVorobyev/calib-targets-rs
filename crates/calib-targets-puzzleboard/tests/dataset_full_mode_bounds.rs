@@ -98,7 +98,9 @@ fn detect_one(
 
     let chess_cfg = default_chess_config();
     let corners = detect_corners(image, &chess_cfg);
-    detector.detect(&gray_view(image), &corners).ok()
+    detector
+        .detect_with_corners(&gray_view(image), &corners)
+        .ok()
 }
 
 fn dataset_present_or_skip(test_name: &str) -> bool {

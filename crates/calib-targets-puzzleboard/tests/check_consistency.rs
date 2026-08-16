@@ -100,7 +100,7 @@ fn puzzleboard_corners_pass_check_consistency_square_lattice() {
         data: gray.as_raw(),
     };
     let result = detector
-        .detect(&view, &corners)
+        .detect_with_corners(&view, &corners)
         .expect("puzzleboard decode");
 
     // The contract dry-run needs at least four hypotheses (the consistency

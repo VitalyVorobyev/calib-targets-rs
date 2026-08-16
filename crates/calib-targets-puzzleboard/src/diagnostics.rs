@@ -4,7 +4,8 @@
 //! per-edge bit observations sampled before alignment, and the
 //! winner-vs-runner-up scoring evidence the decoder used to pick a
 //! hypothesis. They are produced by
-//! [`crate::PuzzleBoardDetector::detect_with_diagnostics`] and are
+//! [`crate::PuzzleBoardDetector::diagnose`] /
+//! [`crate::PuzzleBoardDetector::diagnose_with_corners`] and are
 //! intentionally kept separate from the result API
 //! ([`crate::PuzzleBoardDetection`], [`crate::PuzzleBoardDecodeInfo`]).
 //!
@@ -63,7 +64,8 @@ pub struct PuzzleBoardDecodeDiagnostics {
 }
 
 /// Per-call diagnostics captured by
-/// [`crate::PuzzleBoardDetector::detect_with_diagnostics`].
+/// [`crate::PuzzleBoardDetector::diagnose`] /
+/// [`crate::PuzzleBoardDetector::diagnose_with_corners`].
 ///
 /// Returned alongside the detection result on **every** call, including
 /// failed detections (best-effort) so overlay tools can render the

@@ -110,8 +110,7 @@ fn run_image_with_chess_config(
 ) -> Result<calib_targets::puzzleboard::PuzzleBoardDetection, Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
     let corners = detect::detect_corners(&img, chess_cfg);
-    let detector = calib_targets::puzzleboard::PuzzleBoardDetector::new(params.clone())?;
-    let result = detector.detect(&detect::gray_view(&img), &corners)?;
+    let result = detect::detect_puzzleboard_with_corners(&img, &corners, params)?;
     report(&result);
     Ok(result)
 }

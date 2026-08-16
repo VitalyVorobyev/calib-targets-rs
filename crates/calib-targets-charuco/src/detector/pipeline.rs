@@ -29,7 +29,8 @@ fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetectio
     TargetDetection::new(TargetKind::Chessboard, corners)
 }
 
-/// Rich per-frame diagnostics captured by [`CharucoDetector::detect_with_diagnostics`].
+/// Rich per-frame diagnostics captured by [`CharucoDetector::diagnose`] /
+/// [`CharucoDetector::diagnose_with_corners`].
 ///
 /// One entry per chessboard connected component the detector tried to
 /// match; fail-early stages (no chessboard) produce an empty list.
@@ -142,11 +143,12 @@ struct ComponentContext {
 
 /// Sink for per-component / per-frame pipeline diagnostics.
 ///
-/// Mirrors the board matcher's `MatchSink` split: the production [`detect`]
-/// path uses the no-op [`NoPipelineDiag`] sink (all hooks inline away, so it
-/// builds no `ComponentDiagnostics` / `CharucoDetectDiagnostics`), while
-/// [`detect_with_diagnostics`] uses [`DiagCollector`], which runs the
-/// diagnostic matcher and accumulates the full record.
+/// Mirrors the board matcher's `MatchSink` split: the production
+/// `detect_with_corners` path uses the no-op [`NoPipelineDiag`] sink (all hooks
+/// inline away, so it builds no `ComponentDiagnostics` /
+/// `CharucoDetectDiagnostics`), while `diagnose_with_corners` uses
+/// [`DiagCollector`], which runs the diagnostic matcher and accumulates the
+/// full record.
 ///
 /// The sink owns *which* board matcher runs (`match_board` vs
 /// `match_board_diag`) so the production path never allocates a
@@ -237,7 +239,33 @@ impl CharucoDetector {
         &self.params
     }
 
-    /// Detect a ChArUco board from an image and a set of corners.
+    /// Run the ChESS corner front-end configured by
+    /// [`CharucoParams::chess`](crate::CharucoParams::chess) over `image`.
+    ///
+    /// This is the corner pass [`Self::detect`] runs internally, exposed so a
+    /// caller that wants to reuse one corner cloud across several detectors
+    /// (or inspect it) can run it once and feed
+    /// [`Self::detect_with_corners`].
+    pub fn detect_corners(&self, image: &GrayImageView<'_>) -> Vec<ChessCorner> {
+        calib_targets_chessboard::detect_corners(image, &self.params.chess)
+    }
+
+    /// Detect a ChArUco board in `image`, running the corner front-end
+    /// configured by [`CharucoParams::chess`](crate::CharucoParams::chess).
+    ///
+    /// This is the ergonomic entry point: hand it an image and it does the
+    /// whole pipeline. It is exactly
+    /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
+    /// for [`Self::detect_with_corners`] when you already have a corner cloud
+    /// (a custom upstream, or one shared across detectors).
+    pub fn detect(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> Result<CharucoDetection, CharucoDetectError> {
+        self.detect_with_corners(image, &self.detect_corners(image))
+    }
+
+    /// Detect a ChArUco board from an image and a pre-detected corner cloud.
     ///
     /// When the grid graph contains multiple disconnected components, each
     /// qualifying component is processed independently and results with
@@ -248,19 +276,37 @@ impl CharucoDetector {
     // and fall back to a plain mention otherwise so feature-off docs resolve.
     #[cfg_attr(
         feature = "diagnostics",
-        doc = "For per-component evidence use [`CharucoDetector::detect_with_diagnostics`] (behind the `diagnostics` feature)."
+        doc = "For per-component evidence use [`CharucoDetector::diagnose_with_corners`] (behind the `diagnostics` feature)."
     )]
     #[cfg_attr(
         not(feature = "diagnostics"),
-        doc = "For per-component evidence enable the `diagnostics` feature and use `detect_with_diagnostics`."
+        doc = "For per-component evidence enable the `diagnostics` feature and use `diagnose_with_corners`."
     )]
     #[cfg_attr(feature = "tracing", instrument(level = "info", skip(self, image, corners), fields(num_corners=corners.len())))]
-    pub fn detect(
+    pub fn detect_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<CharucoDetection, CharucoDetectError> {
         self.detect_core(image, corners, &mut NoPipelineDiag)
+    }
+
+    /// [`Self::detect`] + per-component diagnostics.
+    ///
+    /// Runs the corner front-end configured by
+    /// [`CharucoParams::chess`](crate::CharucoParams::chess) and then
+    /// [`Self::diagnose_with_corners`].
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> (
+        Result<CharucoDetection, CharucoDetectError>,
+        CharucoDetectDiagnostics,
+    ) {
+        self.diagnose_with_corners(image, &self.detect_corners(image))
     }
 
     /// Detect + return per-component diagnostics (matcher decisions, per-cell
@@ -270,7 +316,7 @@ impl CharucoDetector {
     ///
     /// Available only with the `diagnostics` feature enabled.
     #[cfg(feature = "diagnostics")]
-    pub fn detect_with_diagnostics(
+    pub fn diagnose_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
@@ -642,7 +688,7 @@ mod tests {
             height: 4,
             data: &buf,
         };
-        let result = detector.detect(&image, &[]);
+        let result = detector.detect_with_corners(&image, &[]);
         assert!(
             matches!(result, Err(CharucoDetectError::ChessboardNotDetected)),
             "detector must reach the chessboard stage, got {result:?}"

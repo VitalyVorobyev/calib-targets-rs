@@ -75,15 +75,46 @@ impl PuzzleBoardDetector {
         )
     }
 
+    /// Run the ChESS corner front-end configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess) over
+    /// `image`.
+    ///
+    /// This is the corner pass [`Self::detect`] runs internally, exposed so a
+    /// caller that wants to reuse one corner cloud across several detectors
+    /// (or inspect it) can run it once and feed
+    /// [`Self::detect_with_corners`].
+    pub fn detect_corners(&self, image: &GrayImageView<'_>) -> Vec<ChessCorner> {
+        calib_targets_chessboard::detect_corners(image, &self.params.chess)
+    }
+
+    /// Detect a PuzzleBoard in `image`, running the corner front-end
+    /// configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess).
+    ///
+    /// This is the ergonomic entry point: hand it an image and it does the
+    /// whole pipeline. It is exactly
+    /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
+    /// for [`Self::detect_with_corners`] when you already have a corner cloud
+    /// (a custom upstream, or one shared across detectors).
+    ///
+    /// The error and tie-breaking semantics are those of
+    /// [`Self::detect_with_corners`].
+    pub fn detect(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
+        self.detect_with_corners(image, &self.detect_corners(image))
+    }
+
     /// Detect a PuzzleBoard in `image` using raw ChESS corner features.
     ///
     /// # Arguments
     ///
     /// - `image` — greyscale image view; **not** processed to extract corners.
     /// - `corners` — raw ChESS corner detections (subpixel position + strength);
-    ///   typically obtained from `chess_corners::detect_corners` or the facade
-    ///   helper `detect::detect_corners`. The detector will internally refine
-    ///   them into a chessboard grid.
+    ///   typically obtained from [`Self::detect_corners`] or
+    ///   [`calib_targets_chessboard::detect_corners`]. The detector will
+    ///   internally refine them into a chessboard grid.
     ///
     /// # Errors
     ///
@@ -109,12 +140,30 @@ impl PuzzleBoardDetector {
     ///
     /// If two successful decodes disagree on the master origin,
     /// [`PuzzleBoardDetectError::InconsistentPosition`] is returned instead.
-    pub fn detect(
+    pub fn detect_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
         self.detect_inner(image, corners).0
+    }
+
+    /// [`Self::detect`] + per-call diagnostics.
+    ///
+    /// Runs the corner front-end configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess) and then
+    /// [`Self::diagnose_with_corners`].
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> (
+        Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
+        self.diagnose_with_corners(image, &self.detect_corners(image))
     }
 
     /// Detect a PuzzleBoard and additionally return per-call diagnostics
@@ -125,11 +174,11 @@ impl PuzzleBoardDetector {
     /// overlay tools can render the edge observations that *were* sampled.
     /// See [`crate::diagnostics::PuzzleBoardDiagnostics`] for the shape and
     /// stability promise. The success/error semantics of the
-    /// [`Result`] component match [`Self::detect`] exactly.
+    /// [`Result`] component match [`Self::detect_with_corners`] exactly.
     ///
     /// Available only with the `diagnostics` feature enabled.
     #[cfg(feature = "diagnostics")]
-    pub fn detect_with_diagnostics(
+    pub fn diagnose_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],

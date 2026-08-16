@@ -3,7 +3,8 @@
 //! These types carry evidence about how a detection was reached — which
 //! hypotheses were tried, why components were accepted or rejected, and
 //! what the per-cell marker match looked like. They are produced by
-//! [`crate::CharucoDetector::detect_with_diagnostics`] and are intentionally
+//! [`crate::CharucoDetector::diagnose`] /
+//! [`crate::CharucoDetector::diagnose_with_corners`] and are intentionally
 //! kept separate from the result API ([`crate::CharucoDetector`],
 //! [`crate::CharucoDetection`], [`crate::CharucoParams`]).
 //!

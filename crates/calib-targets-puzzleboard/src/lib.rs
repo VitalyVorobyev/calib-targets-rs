@@ -50,7 +50,8 @@ pub mod code_maps;
 // off), mirroring `calib-targets-chessboard`. The diagnostics types are always
 // compiled (the detector captures them internally) but only reach the public
 // surface — the `diagnostics` module, the type re-exports, and
-// `PuzzleBoardDetector::detect_with_diagnostics` — when the feature is enabled.
+// `PuzzleBoardDetector::diagnose` / `diagnose_with_corners` — when the feature
+// is enabled.
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 #[cfg(not(feature = "diagnostics"))]

@@ -126,7 +126,7 @@ fn bench_all(c: &mut Criterion) {
                     PuzzleBoardDetector::new(puzzle_params.clone()).expect("puzzle detector");
                 let view = gray_view(snap);
                 b.iter(|| {
-                    let out = detector.detect(&view, corners);
+                    let out = detector.detect_with_corners(&view, corners);
                     criterion::black_box(out)
                 });
             },

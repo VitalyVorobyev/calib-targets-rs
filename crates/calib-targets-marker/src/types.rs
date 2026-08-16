@@ -128,11 +128,13 @@ pub struct MarkerBoardParams {
     /// corners would otherwise fall inside the ChESS ring margin. Corner
     /// positions are always reported in input-image pixels regardless.
     ///
-    /// The facade's whole-image entry points (`detect_marker_board` /
-    /// `detect_marker_board_best`) run this front-end over the input image to
-    /// produce the corner cloud. [`MarkerBoardDetector::detect`](crate::MarkerBoardDetector::detect)
-    /// consumes an already-detected `&[ChessCorner]` and never re-runs corner
-    /// detection, so this field is read only on the image entry points.
+    /// Every whole-image entry point runs this front-end over the input image
+    /// to produce the corner cloud:
+    /// [`MarkerBoardDetector::detect`](crate::MarkerBoardDetector::detect),
+    /// [`MarkerBoardDetector::detect_corners`](crate::MarkerBoardDetector::detect_corners),
+    /// and the facade's `detect_marker_board` / `detect_marker_board_best`. The
+    /// `*_with_corners` entry points consume an already-detected
+    /// `&[ChessCorner]` and never read this field.
     #[serde(default = "default_chess_config")]
     pub chess: DetectorConfig,
     /// Chessboard-detector parameters for the underlying corner-grid step.
@@ -164,6 +166,29 @@ impl MarkerBoardParams {
             match_params: CircleMatchParams::default(),
             roi_cells: None,
         }
+    }
+
+    /// Multi-config sweep preset built on top of
+    /// [`ChessboardParams::sweep_default`].
+    ///
+    /// The sweep varies exactly one axis: the shared grid-build front-end.
+    /// Circle scoring and circle-to-layout matching stay at the
+    /// [`Self::for_board`] values in every config — those knobs describe the
+    /// printed board, not the imaging conditions, so sweeping them would be
+    /// fitting per-dataset constants rather than covering a real degree of
+    /// freedom.
+    pub fn sweep_for_board(board: &MarkerBoardSpec) -> Vec<Self> {
+        let base = Self::for_board(board.clone());
+        ChessboardParams::sweep_default()
+            .into_iter()
+            .map(|mut chessboard| {
+                chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+                Self {
+                    chessboard,
+                    ..base.clone()
+                }
+            })
+            .collect()
     }
 }
 
@@ -231,7 +256,7 @@ impl CircleMatch {
 #[cfg_attr(
     feature = "diagnostics",
     doc = "See [`crate::diagnostics::MarkerBoardDiagnostics`], obtained via",
-    doc = "[`crate::MarkerBoardDetector::detect_with_diagnostics`]."
+    doc = "[`crate::MarkerBoardDetector::diagnose_with_corners`]."
 )]
 ///
 /// `#[non_exhaustive]`: construct with [`MarkerBoardDetection::new`].
@@ -348,5 +373,50 @@ impl MarkerBoardCorner {
             corner = corner.with_target_position(target_position);
         }
         corner
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The sweep preset mirrors `ChessboardParams::sweep_default` one-for-one
+    /// and varies only that axis: every config keeps the board layout, the
+    /// circle-scoring knobs and the matching knobs `for_board` chose.
+    #[test]
+    fn sweep_for_board_varies_only_the_grid_axis() {
+        let board = MarkerBoardSpec::default();
+        let base = MarkerBoardParams::for_board(board.clone());
+        let sweep = MarkerBoardParams::sweep_for_board(&board);
+
+        assert_eq!(sweep.len(), ChessboardParams::sweep_default().len());
+        let tunings: Vec<String> = sweep
+            .iter()
+            .map(|p| format!("{:?}", p.chessboard.effective_tuning()))
+            .collect();
+        let mut distinct = tunings.clone();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            tunings.len(),
+            "every sweep config must carry a distinct chessboard tuning"
+        );
+        for params in &sweep {
+            assert_eq!(
+                format!("{:?}", params.circle_score),
+                format!("{:?}", base.circle_score),
+                "circle scoring must not be swept"
+            );
+            assert_eq!(
+                format!("{:?}", params.match_params),
+                format!("{:?}", base.match_params),
+                "circle matching must not be swept"
+            );
+            assert_eq!(
+                params.chessboard.min_corner_strength, base.chessboard.min_corner_strength,
+                "the corner-strength floor is pinned to the `for_board` value"
+            );
+        }
     }
 }

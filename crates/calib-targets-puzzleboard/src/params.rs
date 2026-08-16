@@ -19,11 +19,13 @@ pub struct PuzzleBoardParams {
     /// corners would otherwise fall inside the ChESS ring margin. Corner
     /// positions are always reported in input-image pixels regardless.
     ///
-    /// The facade's whole-image entry points (`detect_puzzleboard` /
-    /// `detect_puzzleboard_best`) run this front-end over the input image to
-    /// produce the corner cloud. [`PuzzleBoardDetector::detect`](crate::PuzzleBoardDetector::detect)
-    /// consumes an already-detected `&[ChessCorner]` and never re-runs corner
-    /// detection, so this field is read only on the image entry points.
+    /// Every whole-image entry point runs this front-end over the input image
+    /// to produce the corner cloud:
+    /// [`PuzzleBoardDetector::detect`](crate::PuzzleBoardDetector::detect),
+    /// [`PuzzleBoardDetector::detect_corners`](crate::PuzzleBoardDetector::detect_corners),
+    /// and the facade's `detect_puzzleboard` / `detect_puzzleboard_best`. The
+    /// `*_with_corners` entry points consume an already-detected
+    /// `&[ChessCorner]` and never read this field.
     #[serde(default = "default_chess_config")]
     pub chess: DetectorConfig,
     /// Pixels per board square in the rectified sampling space.

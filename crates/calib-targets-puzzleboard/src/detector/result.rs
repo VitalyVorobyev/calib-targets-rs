@@ -68,7 +68,7 @@ impl PuzzleBoardCorner {
 #[cfg_attr(
     feature = "diagnostics",
     doc = "See [`crate::diagnostics::PuzzleBoardDiagnostics`], obtained via",
-    doc = "[`crate::PuzzleBoardDetector::detect_with_diagnostics`]."
+    doc = "[`crate::PuzzleBoardDetector::diagnose_with_corners`]."
 )]
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]

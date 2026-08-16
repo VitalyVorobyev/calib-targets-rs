@@ -530,6 +530,7 @@ dependencies = [
  "projective-grid",
  "serde",
  "serde_json",
+ "thiserror",
  "tracing",
 ]
 
@@ -616,10 +617,8 @@ dependencies = [
  "calib-targets-marker",
  "calib-targets-print",
  "calib-targets-puzzleboard",
- "chess-corners",
  "getrandom 0.2.17",
  "js-sys",
- "nalgebra",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",

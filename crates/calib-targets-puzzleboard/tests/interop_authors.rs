@@ -380,7 +380,7 @@ fn diag_example0_edge_bits() {
     let view = gray_view(&img);
     let decoded = sweep.into_iter().find_map(|params| {
         let detector = PuzzleBoardDetector::new(params).ok()?;
-        let (result, diag) = detector.detect_with_diagnostics(&view, &corners);
+        let (result, diag) = detector.diagnose_with_corners(&view, &corners);
         result.ok().map(|r| (r, diag))
     });
     let (r, diag) = match decoded {

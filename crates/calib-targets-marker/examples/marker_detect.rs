@@ -1,13 +1,13 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_chessboard::{ChessCorner as TargetCorner, ChessboardParamsError};
+use calib_targets_chessboard::{
+    detect_corners, ChessCorner as TargetCorner, ChessboardParamsError, DetectorConfig,
+};
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{GrayImageView, GridAlignment, TargetDetection};
 use calib_targets_marker::{MarkerBoardDetection, MarkerBoardDetector, MarkerBoardParams};
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig};
 use image::ImageReader;
-use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "tracing"))]
@@ -126,27 +126,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let cfg = MarkerBoardDetectConfig::load_json(&config_path)?;
     let img = ImageReader::open(&cfg.image_path)?.decode()?.to_luma8();
 
-    let chess_cfg = make_chess_config();
-    let mut chess_detector = ChessDetector::new(chess_cfg)?;
-    let raw_corners = chess_detector.detect(&img)?;
-    info!("raw ChESS corners: {}", raw_corners.len());
-
-    let corners = adapt_corners(&raw_corners);
-
     let src_view = GrayImageView {
         width: img.width() as usize,
         height: img.height() as usize,
         data: img.as_raw(),
     };
 
+    // The example drives its own corner front-end (a slightly wider NMS radius
+    // than the production default) rather than `MarkerBoardDetector::detect`,
+    // so it feeds `detect_with_corners` the cloud it just built.
+    let corners = detect_corners(&src_view, &make_chess_config());
+    info!("raw ChESS corners: {}", corners.len());
+
     let mut report = MarkerBoardDetectReport::new(&cfg, &config_path, corners.clone());
 
     let detector = cfg.build_detector()?;
-    match detector.detect(&src_view, &corners) {
-        Some(res) => report.set_detection(res),
-        None => {
-            warn!("marker board not detected");
-            report.error = Some("marker board not detected".into());
+    match detector.detect_with_corners(&src_view, &corners) {
+        Ok(res) => report.set_detection(res),
+        Err(err) => {
+            warn!("marker board not detected: {err}");
+            report.error = Some(err.to_string());
         }
     }
 
@@ -169,31 +168,4 @@ fn make_chess_config() -> DetectorConfig {
     DetectorConfig::chess()
         .with_threshold(15.0)
         .with_detection(|d| d.nms_radius = 2)
-}
-
-fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<TargetCorner> {
-    raw.iter()
-        .map(|c| {
-            TargetCorner::new(
-                Point2::new(c.x, c.y),
-                // `axes` is `None` only when the upstream orientation fit is
-                // skipped; these fixtures always fit it.
-                c.axes
-                    .map(|a| {
-                        [
-                            calib_targets_core::AxisEstimate {
-                                angle: a[0].angle,
-                                sigma: a[0].sigma,
-                            },
-                            calib_targets_core::AxisEstimate {
-                                angle: a[1].angle,
-                                sigma: a[1].sigma,
-                            },
-                        ]
-                    })
-                    .expect("orientation fit enabled"),
-                c.response,
-            )
-        })
-        .collect()
 }

@@ -1,6 +1,7 @@
 use crate::circle_score::CircleCandidate;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
 use crate::diagnostics::MarkerBoardDiagnostics;
+use crate::error::MarkerBoardDetectError;
 use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
 use crate::types::{CircleMatch, MarkerBoardDetection, MarkerBoardParams};
 
@@ -43,13 +44,70 @@ impl MarkerBoardDetector {
         &self.params
     }
 
-    /// Full detection using image-space circle scoring.
+    /// Run the ChESS corner front-end configured by
+    /// [`MarkerBoardParams::chess`](crate::MarkerBoardParams::chess) over
+    /// `image`.
+    ///
+    /// This is the corner pass [`Self::detect`] runs internally, exposed so a
+    /// caller that wants to reuse one corner cloud across several detectors
+    /// (or inspect it) can run it once and feed
+    /// [`Self::detect_with_corners`].
+    pub fn detect_corners(&self, image: &GrayImageView<'_>) -> Vec<ChessCorner> {
+        calib_targets_chessboard::detect_corners(image, &self.params.chess)
+    }
+
+    /// Detect a marker board in `image`, running the corner front-end
+    /// configured by [`MarkerBoardParams::chess`](crate::MarkerBoardParams::chess).
+    ///
+    /// This is the ergonomic entry point: hand it an image and it does the
+    /// whole pipeline. It is exactly
+    /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
+    /// for [`Self::detect_with_corners`] when you already have a corner cloud
+    /// (a custom upstream, or one shared across detectors).
+    ///
+    /// # Errors
+    ///
+    /// See [`MarkerBoardDetectError`].
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
+    ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
+        self.detect_with_corners(image, &self.detect_corners(image))
+    }
+
+    /// Full detection from a pre-detected corner cloud, using image-space
+    /// circle scoring.
+    ///
+    /// # Errors
+    ///
+    /// - [`MarkerBoardDetectError::ChessboardNotDetected`] — the chessboard
+    ///   stage recovered no grid from `corners`.
+    /// - [`MarkerBoardDetectError::AlignmentFailed`] — a grid was found but
+    ///   the scored circles did not pin it to the board layout.
+    pub fn detect_with_corners(
+        &self,
+        image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> Option<MarkerBoardDetection> {
-        self.detect_inner(image, corners).map(|(result, _)| result)
+    ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
+        self.detect_inner(image, corners).0
+    }
+
+    /// [`Self::detect`] + per-call diagnostics.
+    ///
+    /// Runs the corner front-end configured by
+    /// [`MarkerBoardParams::chess`](crate::MarkerBoardParams::chess) and then
+    /// [`Self::diagnose_with_corners`].
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> (
+        Result<MarkerBoardDetection, MarkerBoardDetectError>,
+        MarkerBoardDiagnostics,
+    ) {
+        self.diagnose_with_corners(image, &self.detect_corners(image))
     }
 
     /// Full detection using image-space circle scoring, additionally
@@ -57,17 +115,22 @@ impl MarkerBoardDetector {
     ///
     /// The returned [`MarkerBoardDiagnostics`] carries every scored circle
     /// candidate, the expected-to-detected circle matches, the per-corner
-    /// provenance, and the alignment-inlier count. See
+    /// provenance, and the alignment-inlier count. Diagnostics come back even
+    /// when detection fails — best-effort, so overlay tools can render the
+    /// circle hypotheses that *were* scored. See
     /// [`crate::diagnostics::MarkerBoardDiagnostics`] for the shape and
     /// stability promise.
     ///
     /// Available only with the `diagnostics` feature enabled.
     #[cfg(feature = "diagnostics")]
-    pub fn detect_with_diagnostics(
+    pub fn diagnose_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> Option<(MarkerBoardDetection, MarkerBoardDiagnostics)> {
+    ) -> (
+        Result<MarkerBoardDetection, MarkerBoardDetectError>,
+        MarkerBoardDiagnostics,
+    ) {
         self.detect_inner(image, corners)
     }
 
@@ -75,8 +138,25 @@ impl MarkerBoardDetector {
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> Option<(MarkerBoardDetection, MarkerBoardDiagnostics)> {
-        let chess = self.chessboard_detector.detect(corners)?;
+    ) -> (
+        Result<MarkerBoardDetection, MarkerBoardDetectError>,
+        MarkerBoardDiagnostics,
+    ) {
+        // `detect`, not `detect_all`: a marker board is localised by its three
+        // circle markers, which realistically sit inside a single connected
+        // grid component — so the largest component is the only one that can
+        // carry the layout constraint, and the extra components would only add
+        // corners the alignment cannot place. ChArUco and PuzzleBoard call
+        // `detect_all` because each of their components is *independently*
+        // anchorable (a decoded marker / a decoded edge-code window), so a
+        // board split into two fragments is still fully recoverable there.
+        // This asymmetry is deliberate; do not "fix" it into `detect_all`.
+        let Some(chess) = self.chessboard_detector.detect(corners) else {
+            return (
+                Err(MarkerBoardDetectError::ChessboardNotDetected),
+                MarkerBoardDiagnostics::default(),
+            );
+        };
         let corner_map = build_corner_map(&chess);
         let roi = self
             .params
@@ -105,7 +185,23 @@ impl MarkerBoardDetector {
         .map(|(alignment, inliers)| (Some(alignment), inliers))
         .unwrap_or((None, 0));
 
-        let alignment = alignment?;
+        let Some(alignment) = alignment else {
+            // Counted before the vectors move into the diagnostics struct.
+            let matched = matches.iter().filter(|m| m.matched_index.is_some()).count();
+            let candidate_count = candidates.len();
+            return (
+                Err(MarkerBoardDetectError::AlignmentFailed {
+                    matched,
+                    candidates: candidate_count,
+                }),
+                MarkerBoardDiagnostics {
+                    inliers: Vec::new(),
+                    circle_candidates: candidates,
+                    circle_matches: matches,
+                    alignment_inliers: 0,
+                },
+            );
+        };
         for m in &mut matches {
             let Some(idx) = m.matched_index else {
                 continue;
@@ -122,13 +218,14 @@ impl MarkerBoardDetector {
             });
         }
 
-        Some(self.result_from_chessboard(
+        let (detection, diagnostics) = self.result_from_chessboard(
             chess,
             candidates,
             matches,
             Some(alignment),
             alignment_inliers,
-        ))
+        );
+        (Ok(detection), diagnostics)
     }
 
     fn result_from_chessboard(

@@ -35,6 +35,7 @@ tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing
 [dependencies]
 calib-targets-core.workspace = true
 projective-grid.workspace = true
+chess-corners = { workspace = true, features = ["rayon"] }
 nalgebra.workspace = true
 log.workspace = true
 kiddo.workspace = true
@@ -46,7 +47,6 @@ tracing = { workspace = true, optional = true }
 [dev-dependencies]
 approx.workspace = true
 calib-targets = { path = "../calib-targets" }
-chess-corners = { workspace = true, features = ["rayon"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true
