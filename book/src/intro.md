@@ -61,7 +61,9 @@ python crates/calib-targets-py/examples/detect_chessboard.py path/to/image.png
 ```
 
 The `calib_targets` module exposes `detect_chessboard`, `detect_charuco`,
-`detect_puzzleboard`, and `detect_marker_board`. The public API is
+`detect_puzzleboard`, and `detect_marker_board`, plus `diagnose_charuco`,
+`diagnose_puzzleboard`, and `diagnose_marker_board` for the
+diagnostics-returning counterparts. The public API is
 dataclass-first: config inputs are typed models and detector results are typed
 dataclasses with `to_dict()`/`from_dict(...)` helpers for JSON interoperability.
 `detect_charuco` requires `params` and the board lives in `params.board`.

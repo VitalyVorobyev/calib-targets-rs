@@ -32,6 +32,51 @@ let params = ChessboardParams::default();
 let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
 ```
 
+## Detector structs and free functions are one surface
+
+Each `detect_*` free function *is* the detector one-liner: construct the
+detector from `params`, then call `detect`. Reach for whichever fits — the
+free function when a single call is all you need, the detector struct when
+you configure once and detect many times, or when you want the
+corner-reuse entry points below.
+
+`CharucoDetector`, `PuzzleBoardDetector`, and `MarkerBoardDetector` each
+expose the same five operations, mirrored by five free functions per
+target (`charuco`, `puzzleboard`, `marker_board`):
+
+- `detect(&view)` / `detect_t(img, params)` — run the ChESS corner pass
+  (from `params.chess`) and the whole pipeline.
+- `detect_with_corners(&view, &corners)` /
+  `detect_t_with_corners(img, corners, params)` — skip the corner pass and
+  use corners you already have.
+- `diagnose(&view)` / `diagnose_t(img, params)` (`diagnostics` feature) —
+  like `detect`, plus a diagnostics report.
+- `diagnose_with_corners(&view, &corners)` /
+  `diagnose_t_with_corners(img, corners, params)` (`diagnostics` feature) —
+  like `detect_with_corners`, plus diagnostics.
+- `detect_t_best(img, configs)` — try several configs, keep the richest
+  result.
+
+`detect_corners` on a detector runs exactly the ChESS pass that detector's
+own `params.chess` configures, so corners you inject match what `detect`
+would have produced on its own. The one case that genuinely wants
+`detect_with_corners`: running a single corner pass across several target
+detectors on the same image, rather than paying for it once per detector.
+
+```rust,ignore
+let corners = charuco_detector.detect_corners(&view);
+let a = charuco_detector.detect_with_corners(&view, &corners)?;
+let b = puzzle_detector.detect_with_corners(&view, &corners)?;
+```
+
+`ChessboardDetector` keeps its original, corner-cloud-only shape described
+above — it has no `chess` field to run a corner pass from, by design: it
+is embedded inside all three composite params types, so a nested
+corner-detector config there would be dead in exactly the way a `chess`
+field on `ChessboardParams` itself would be. Configure the corner pass for
+a chessboard through `detect_chessboard`'s explicit `chess_cfg` argument
+instead.
+
 ## Multi-config sweep
 
 For challenging images (uneven lighting, Scheimpflug optics), try multiple

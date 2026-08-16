@@ -61,14 +61,17 @@ The flow is grid-first:
 2. Assemble one or more chessboard grid components.
 3. Sample every visible interior edge midpoint and estimate a bit confidence.
 4. Drop bits below `decode.min_bit_confidence`.
-5. Decode against the master maps over all D4 rotations/reflections.
+5. Decode against the master maps over the candidate orientations — the
+   four 90° rotations by default (`symmetry_mode = Rotations`), or all
+   eight D4 transforms under `RotationsAndReflections`.
 6. Assign absolute IDs and target-space positions to inlier corners.
 
 The default `decode.min_window` is `7`: after confidence filtering the fragment
 must span at least 7 squares on both axes. A 4 × 4 window is unique across
-master positions only at a *fixed* orientation, and the decoder must search all
-eight D4 transforms — over `D4 × position`, clean uniqueness begins at 6 × 6,
-and the default adds a square of noise margin. See
+master positions only at a *fixed* orientation, and a fragment gives no cue to
+how the board was printed, so the decoder searches candidate orientations too
+— over `orientation × position`, clean uniqueness begins at 6 × 6 under the
+full dihedral search, and the default adds a square of noise margin. See
 [the decode chapter](algo_puzzleboard_decode.md#how-big-a-fragment-do-you-need).
 
 ## Rust Facade Example

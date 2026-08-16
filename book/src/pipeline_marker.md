@@ -37,10 +37,10 @@ detector uses `detect` (single best component), not `detect_all`.
 
 | Symptom | Likely stage | What it means / knob to try |
 |---|---|---|
-| No grid / `None` from Stage 0 | Stage 0 (chessboard) | Sparse corner cloud or clustering failure — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). |
+| No grid / `Err(ChessboardNotDetected)` | Stage 0 (chessboard) | Sparse corner cloud or clustering failure — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). |
 | No / too few circle candidates | Stage 1 | Circles absent, wrong polarity (e.g. white circle on white cell), or low contrast. Adjust `circle_score` (`min_contrast`, `diameter_frac`); check `roi_cells` is not excluding them. |
 | Candidates found, no matches | Stage 2 | Candidates outside `max_distance_cells`, or polarity mismatch vs the spec. Verify the three `MarkerCircleSpec` cells + polarities against the printed board. |
-| Alignment `None` (too few inliers) | Stage 3 | Fewer than the required consistent matches, or circles on the board boundary giving an unreliable pose. Lower `min_offset_inliers` only if you genuinely see fewer circles. |
+| `Err(AlignmentFailed)` (too few inliers) | Stage 3 | Fewer than the required consistent matches, or circles on the board boundary giving an unreliable pose. Lower `min_offset_inliers` only if you genuinely see fewer circles. |
 | Grid found but `target_position` empty | output | `board.cell_size` is unset (or alignment failed) — `target_position` is only populated when both hold. |
 | Wrong anchored IDs | **never** | A wrong chessboard `(i, j)` would cause this — file a bug at the chessboard layer. |
 
@@ -65,8 +65,8 @@ matching:
 
 Cell coordinates `(i, j)` in the spec refer to **square cells** by their
 top-left corner index; the cell center is at `(i + 0.5, j + 0.5)`. Use the
-`*_with_diagnostics` entry points to inspect scored candidates, matches,
-and `alignment_inliers` when tuning.
+`diagnose` / `diagnose_with_corners` entry points to inspect scored
+candidates, matches, and `alignment_inliers` when tuning.
 
 ## Cross-references
 
