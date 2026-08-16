@@ -164,6 +164,40 @@ def transform_terms(
     return terms
 
 
+def self_alias_support(
+    ring: Ring, spec: WindowSpec, p: Params, *, role: str, name: str = "rot180"
+) -> np.ndarray:
+    """The factor one ring contributes to a **non-swapping** transform's term.
+
+    A transform that maps vertical dots to vertical dots (the identity and the
+    half turn) never mixes the two code maps, so its rank-one term splits
+    cleanly: the row vector is a function of map A alone and the column vector
+    of map B alone. This computes one such factor from a single ring, without
+    needing its partner.
+
+    That is what makes the search decompose. ``role="a"`` gives the row factor
+    the ring produces when it plays map A, ``role="b"`` the column factor it
+    produces as map B. A ring whose factor is identically zero cannot be
+    aliased by this transform *whatever it is paired with*.
+    """
+    act = slot_action(name, spec)
+    if act.swaps:
+        raise ValueError(
+            f"{name!r} exchanges the two code maps, so its term does not split "
+            "per ring; evaluate the pair with transform_terms instead"
+        )
+    if role == "a":
+        parts = vertical_parts(ring, spec, p)
+        query = parts[:, list(act.v_from)]
+    elif role == "b":
+        parts = horizontal_parts(ring, spec, p)
+        query = parts[:, list(act.h_from)]
+    else:
+        raise ValueError(f"unknown role {role!r}; expected 'a' or 'b'")
+    counts, _ = _match(query, _lookup(parts))
+    return counts
+
+
 def hypothesis_counts(terms: list[TransformTerm], p: Params) -> np.ndarray:
     """``[u, v]`` → number of consistent (position, orientation) hypotheses.
 
