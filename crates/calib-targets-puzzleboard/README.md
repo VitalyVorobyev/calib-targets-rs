@@ -23,7 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.12"
+calib-targets-puzzleboard = "0.13"
 ```
 
 ## Quickstart (facade)
@@ -58,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 |---|---|
 | `corners: Vec<PuzzleBoardCorner>` | Labelled inner corners. Each corner has `position` (sub-pixel), `grid: (i, j)` in the local board, `id` (absolute master ID), `target_position` (mm in board space), and `score`. |
 | `alignment: GridAlignment` | Semantic alias for the canonical affine `GridTransform`, mapping the local grid into master-board coordinates. |
-| `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, and `master_origin_row` / `master_origin_col`. |
+| `decode: PuzzleBoardDecodeInfo` | Compact decode quality summary: `edges_observed` / `edges_matched`, `mean_confidence`, `bit_error_rate`, `master_origin_row` / `master_origin_col`, plus the period-3 consensus fields `logical_bits`, `logical_bit_error_rate` and `dot_dissent_rate`. |
 
 Corner IDs come from master coordinates: `id = master_j * 501 + master_i`.
 Fragments printed from different regions share the master ID space, so
@@ -66,7 +66,7 @@ multi-camera detections stitch naturally.
 
 ### Diagnostics
 
-`PuzzleBoardDetector::detect_with_diagnostics` returns the result above
+`PuzzleBoardDetector::diagnose` (or `diagnose_with_corners`) returns the result above
 plus a [`diagnostics::PuzzleBoardDiagnostics`] — the raw per-edge bit
 observations (`observed_edges`) and the winner-vs-runner-up scoring
 evidence (`score_best`, `score_runner_up`, `score_margin`, the runner-up
@@ -83,7 +83,7 @@ defaults or `sweep_for_board(spec)` for a multi-config preset.
 | Group | Key knobs | Effect |
 |---|---|---|
 | Chessboard stage | `chessboard: ChessboardParams` | Upstream corner / grid detector. See [`calib-targets-chessboard`][cb]. |
-| Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, and minimum visible patch size. |
+| Decode | `decode.search_mode`, `decode.scoring_mode`, `decode.symmetry_mode`, `decode.min_window` | Matching strategy, hypothesis scorer, admissible board orientations, and minimum visible patch size. |
 
 The `soft_log_likelihood` scorer's unstable tuning knobs live in an opt-in
 `decode.advanced` (`PuzzleBoardAdvancedTuning`) block; leave it unset unless
@@ -92,14 +92,32 @@ tuning against a specific dataset with measured evidence.
 ### Search modes
 
 - [`PuzzleBoardSearchMode::Full`] (default) — cross-correlate the observed
-  edge bits against the **full 501 × 501 master pattern** over all 8 D4
-  transforms. Recovers any printed sub-rectangle without prior knowledge,
-  but scales with master size.
+  edge bits against the **full 501 × 501 master pattern** under every
+  admissible board orientation. Recovers any printed sub-rectangle without
+  prior knowledge, but scales with master size.
 - [`PuzzleBoardSearchMode::FixedBoard`] — match observations against only
-  the declared board's own bit pattern under its `8 × (rows+1)²` shifts.
-  Cheaper for known small boards and still partial-view correct: any
+  the declared board's own bit pattern under its `orientations × (rows+1)²`
+  shifts. Cheaper for known small boards and still partial-view correct: any
   fragment decodes to the same master IDs a full-view decode would
   produce.
+
+### Symmetry modes
+
+A fragment carries no cue for which way round the board was printed, so the
+decoder tries candidate orientations. This knob says which ones your optics
+can actually produce.
+
+- [`PuzzleBoardSymmetryMode::Rotations`] (default) — the four 90° rotations.
+  Correct for any ordinary camera looking at a printed board: the view may be
+  rotated, but it cannot be mirrored.
+- [`PuzzleBoardSymmetryMode::RotationsAndReflections`] — also the four mirror
+  images. Needed only when the optical path flips handedness (a mirror, a beam
+  splitter) or the image was mirrored before detection.
+
+The default is both faster (half the hypotheses) and *more* unique: the
+mirrored hypotheses are physically unreachable, and every alias they create is
+a correct decode declined for nothing. A mirrored view under the default
+simply fails to decode — a miss, never a wrong label.
 
 ### Scoring modes
 
@@ -123,14 +141,13 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 ## Tuning difficult cases
 
 - **Few visible squares** — `min_window` defaults to **7**: the fragment
-  must span at least 7 squares on *both* axes. That is not arbitrary. A
-  4×4 window is unique across master positions only at a *fixed*
-  orientation, and a fragment gives no cue to how the board was printed,
-  so the decoder searches the eight D4 transforms as well — over
-  `D4 × position`, clean uniqueness only begins at 6×6. The default adds
-  one square of margin for bit noise. Lowering it trades misses for the
-  risk of a wrong absolute label, which downstream calibration cannot
-  recover from.
+  must span at least 7 *corners* on *both* axes, which is 6×6 squares. That
+  is not arbitrary. A 4×4 window is unique across master positions only at a
+  *fixed* orientation, and a fragment gives no cue to how the board was
+  printed, so the decoder searches candidate orientations as well — over
+  `orientation × position`, clean uniqueness begins well above 4×4, at
+  exactly this span. Lowering it trades misses for the risk of a wrong absolute
+  label, which downstream calibration cannot recover from.
 - **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
   (e.g. `8.0` in place of the workspace default `15.0`) so more corners
   survive; edge-bit sampling is gated on the corners, not a separate
@@ -144,7 +161,7 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   observations. When the printed board is known, prefer
   `FixedBoard + SoftLogLikelihood`: it cannot return a position outside the
   board, it is *faster* than `Full` at every board size below the master's
-  own, and `detect_with_diagnostics` surfaces `score_margin` (in
+  own, and `diagnose` / `diagnose_with_corners` surfaces `score_margin` (in
   [`diagnostics::PuzzleBoardDiagnostics`]) when a frame's winner is weak.
 
 ## Limitations

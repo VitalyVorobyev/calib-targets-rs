@@ -122,7 +122,7 @@ fn bench_all(c: &mut Criterion) {
                     CharucoDetector::new(charuco_params.clone()).expect("charuco detector");
                 let view = gray_view(snap);
                 b.iter(|| {
-                    let out = detector.detect(&view, corners);
+                    let out = detector.detect_with_corners(&view, corners);
                     criterion::black_box(out)
                 });
             },

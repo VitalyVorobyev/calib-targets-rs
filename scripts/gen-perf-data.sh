@@ -41,9 +41,9 @@ expected=()
 
 # ---- 1. Full-detector per-stage timing on the four PUBLIC report images ----
 # `full_stage_timing` hard-codes the four images
-# (small/mid/large/author_like_oblique) and runs the COMPLETE detector for
+# (small/mid/large/oblique) and runs the COMPLETE detector for
 # each: ChArUco for small+large, plain chessboard for mid, PuzzleBoard for
-# author_like_oblique. It emits corner_detection / grid_build / decode p50s
+# oblique. It emits corner_detection / grid_build / decode p50s
 # plus raw/labelled/marker counts.
 out="$RAW/full.json"
 log "full_stage_timing (four public report images + detection overlays)"

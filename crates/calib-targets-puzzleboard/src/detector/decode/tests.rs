@@ -7,8 +7,17 @@
 use super::*;
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit, EdgeOrientation};
-use calib_targets_core::{Coord, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::{Coord, GridTransform, GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4};
 use std::collections::HashMap;
+
+/// The production default search: the four rotations a camera can actually
+/// produce when imaging the printed side of an opaque board.
+const C4: &[GridTransform] = &GRID_TRANSFORMS_C4;
+
+/// The opt-in search that also admits the four reflections
+/// ([`crate::PuzzleBoardSymmetryMode::RotationsAndReflections`]). Tests whose
+/// subject *is* the dihedral behaviour keep using this explicitly.
+const D4: &[GridTransform] = &GRID_TRANSFORMS_D4;
 
 /// Chinese Remainder closed form for `r ≡ a (mod 167) ∧ r ≡ b (mod 3)` in `[0, 501)`.
 ///
@@ -32,19 +41,28 @@ fn update_best_candidate_if_accepted(
     }
 }
 
-/// Brute-force matched-count top-2 over all `(transform, origin)` — the
-/// independent oracle for the uniqueness gate. Returns the global maximum
-/// matched count with its `(transform, master_row, master_col)`, and the highest
-/// matched count of any *distinct* origin.
+/// The voted class set for an observation set — what the pipeline hands the
+/// gates (and, on the hard path, the scorer) when `edge_consensus` is on.
+use crate::detector::params::required_logical_bits;
+
+fn logical_of(observed: &[PuzzleBoardObservedEdge]) -> Vec<PuzzleBoardObservedEdge> {
+    crate::detector::consensus::EdgeConsensus::build(observed).class_observations()
+}
+
+/// Brute-force matched-count top-2 over all `(transform, origin)` in the
+/// searched set — the independent oracle for the uniqueness gate. Returns the
+/// global maximum matched count with its `(transform, master_row, master_col)`,
+/// and the highest matched count of any *distinct* origin.
 fn brute_matched_top2(
     observed: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
 ) -> Option<(u32, GridTransform, i32, i32, u32)> {
     if observed.is_empty() {
         return None;
     }
     let mut best: Option<(u32, GridTransform, i32, i32)> = None;
     let mut all: Vec<(u32, GridTransform, i32, i32)> = Vec::new();
-    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+    for transform in transforms.iter().copied() {
         let tf: Vec<(i32, i32, EdgeOrientation, u8)> = observed
             .iter()
             .map(|e| {
@@ -81,31 +99,50 @@ fn brute_matched_top2(
     Some((bm, bt, br, bc, runner))
 }
 
-/// Re-gate a reference winner by the matched-count uniqueness predicate
-/// (`margin > k_winner`), using the independent brute-force top-2. Mirrors the
-/// production gate's accept/reject decision and matched-count runner-up
-/// (`score_runner_up`); the runner-up *origin* representative is the brute-force
-/// tie-break, which the soft equivalence check does not compare.
+/// Re-gate a reference winner, using the independent brute-force top-2.
+///
+/// Derived from the contract rather than transcribed from the fast path, and
+/// it must reproduce the production split of *which view proves what*:
+///
+/// - the **BER budget** on `logical`, the voted class set;
+/// - the **uniqueness proof** on `observed`, the physical dots, where the code
+///   is long enough for `margin > k_winner` to be a strong claim.
+///
+/// Mirrors the production gate's accept/reject decision and matched-count
+/// runner-up (`score_runner_up`); the runner-up *origin* representative is the
+/// brute-force tie-break, which the soft equivalence check does not compare.
 fn gate_reference_winner(
     observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
+    max_bit_error_rate: f32,
     best: Option<DecodeOutcome>,
 ) -> Option<DecodeOutcome> {
     let mut winner = best?;
-    let (gbest, gt, gr, gc, grunner) = brute_matched_top2(observed)?;
-    let win_matched = winner.edges_matched as u32;
+
+    let _ = observed;
+    let (gbest, gt, gr, gc, grunner) = brute_matched_top2(logical, transforms)?;
+    let n = logical.len() as u32;
+    // Budget, on the voted bits. If the best-matched hypothesis fails it, every
+    // hypothesis does — none matches more.
+    if n == 0 || (n - gbest) as f32 / n as f32 > max_bit_error_rate {
+        return None;
+    }
     let is_global_best = winner.master_origin_row == gr
         && winner.master_origin_col == gc
         && winner.alignment.matrix() == gt.matrix();
-    let competitor = if is_global_best { grunner } else { gbest };
-    let margin = win_matched.saturating_sub(competitor);
-    let k_winner = (winner.edges_observed as u32).saturating_sub(win_matched);
+    if !is_global_best {
+        return None;
+    }
+    let margin = gbest.saturating_sub(grunner);
+    let k_winner = n.saturating_sub(gbest);
     if margin <= k_winner {
         return None;
     }
-    winner.score_runner_up = if is_global_best && grunner == 0 {
+    winner.score_runner_up = if grunner == 0 {
         None
     } else {
-        Some(competitor as f32)
+        Some(grunner as f32)
     };
     Some(winner)
 }
@@ -116,6 +153,7 @@ fn gate_reference_winner(
 /// inner loop rather than using the cyclic precompute.
 fn decode_reference(
     observed: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
     if observed.is_empty() {
@@ -126,7 +164,7 @@ fn decode_reference(
         return None;
     }
     let mut best: Option<DecodeOutcome> = None;
-    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+    for transform in transforms.iter().copied() {
         let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
             .iter()
             .map(|e| {
@@ -190,15 +228,22 @@ fn decode_reference(
             }
         }
     }
-    gate_reference_winner(observed, best)
+    // The hard path decodes whatever set it was handed, so here `observed` is
+    // already the set the gate must judge.
+    gate_reference_winner(observed, observed, transforms, max_bit_error_rate, best)
 }
 
 /// Reference (slow, O(501² × N)) soft-log-likelihood decoder, kept verbatim
 /// from the pre-optimization `decode_soft` scan as a byte-exact oracle for the
 /// crossed-CRT separation. Inlines the `finalize_soft_winner` gate because that
 /// helper is private to the `soft` module.
+///
+/// `observed` drives the log-likelihood ranking; `logical` is the voted class
+/// set the BER and uniqueness gates are judged over.
 fn decode_soft_reference(
     observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
@@ -221,7 +266,7 @@ fn decode_soft_reference(
     let mut v_match = vec![0u32; V_ROWS * V_COLS];
     let mut v_match_conf = vec![0.0f32; V_ROWS * V_COLS];
 
-    for transform in GRID_TRANSFORMS_D4.iter().copied() {
+    for transform in transforms.iter().copied() {
         let transformed: Vec<(i32, i32, EdgeOrientation, u8, f32)> = observed
             .iter()
             .map(|e| {
@@ -344,14 +389,17 @@ fn decode_soft_reference(
     if best.score_margin < cfg.alignment_min_margin {
         return None;
     }
-    if best.bit_error_rate > max_bit_error_rate {
-        return None;
-    }
     // Mirror production: the soft `alignment_min_margin` gate does not enforce
-    // origin uniqueness, so re-gate by the matched-count predicate. Preserves
-    // `score_margin` (the LL gap); overwrites `score_runner_up` with the
-    // matched-count competitor.
-    gate_reference_winner(observed, Some(best))
+    // origin uniqueness, and the BER budget is a statement about voted bits, so
+    // both are re-derived over `logical`. Preserves `score_margin` (the LL gap);
+    // overwrites `score_runner_up` with the matched-count competitor.
+    gate_reference_winner(
+        observed,
+        logical,
+        transforms,
+        max_bit_error_rate,
+        Some(best),
+    )
 }
 
 fn rotate_observed_edge_canonically(
@@ -520,7 +568,7 @@ fn legacy_crt_recovery_can_amplify_one_cell_residue_into_large_jump() {
 #[test]
 fn decoder_recovers_identity_alignment() {
     let obs = build_perfect_observation(12, 37, 5, 5);
-    let outcome = decode(&obs, 0.05).expect("decoded");
+    let outcome = decode(&obs, &obs, C4, 0.05).expect("decoded");
     assert_eq!(outcome.edges_matched, outcome.edges_observed);
     assert!(outcome.bit_error_rate < 1e-6);
     assert_eq!(outcome.master_origin_row, 12);
@@ -531,7 +579,8 @@ fn decoder_recovers_identity_alignment() {
 fn decoder_handles_d4_rotations() {
     // Construct a perfect observation, then physically rotate it 90°
     // around the local frame origin — the decoder should find the
-    // inverse D4 transform that un-rotates it.
+    // inverse D4 transform that un-rotates it. Searched under the full
+    // dihedral set, so the reflections are in play as competitors.
     let original = build_perfect_observation(5, 11, 5, 5);
     let rot = GRID_TRANSFORMS_D4[1]; // 90° rotation: a=0, b=1, c=-1, d=0
                                      // Rotated observation: apply rot to each anchor + flip orientation.
@@ -540,9 +589,111 @@ fn decoder_handles_d4_rotations() {
         .map(|e| rotate_observed_edge_canonically(e, &rot))
         .collect();
 
-    let outcome = decode(&rotated, 0.05).expect("decoded under rotation");
+    let outcome = decode(&rotated, &rotated, D4, 0.05).expect("decoded under rotation");
     assert_eq!(outcome.edges_matched, outcome.edges_observed);
     assert!(outcome.bit_error_rate < 1e-6);
+}
+
+/// Every rotation a real camera can produce decodes under the *default*
+/// rotations-only search, and lands on the planted origin's labelling.
+///
+/// The observation is rebased to local `(0, 0)` exactly as the chessboard
+/// detector rebases a labelled grid, so this is the shape the pipeline feeds
+/// the decoder.
+#[test]
+fn all_four_rotations_decode_under_default_symmetry_mode() {
+    let pos_row = 5i32;
+    let pos_col = 11i32;
+    let n = 7i32;
+    let original = build_perfect_observation(pos_row, pos_col, n, n);
+    for (rot_idx, rot) in GRID_TRANSFORMS_C4.iter().enumerate() {
+        let rotated: Vec<PuzzleBoardObservedEdge> = original
+            .iter()
+            .map(|e| rotate_observed_edge_canonically(e, rot))
+            .collect();
+        let min_col = rotated.iter().map(|e| e.col).min().unwrap();
+        let min_row = rotated.iter().map(|e| e.row).min().unwrap();
+        let rebased: Vec<PuzzleBoardObservedEdge> = rotated
+            .iter()
+            .map(|e| PuzzleBoardObservedEdge {
+                row: e.row - min_row,
+                col: e.col - min_col,
+                ..*e
+            })
+            .collect();
+
+        let out = decode(&rebased, &rebased, C4, 0.05)
+            .unwrap_or_else(|| panic!("rot {rot_idx}: rotations-only search must decode"));
+        assert_eq!(out.edges_matched, out.edges_observed, "rot {rot_idx}");
+        // Every corner of the planted window must recover its true master ID
+        // through the rotation + rebase the "camera" applied.
+        for gi in 0..n {
+            for gj in 0..n {
+                let r = rot.apply(Coord::new(gi, gj));
+                let g = out
+                    .alignment
+                    .apply(Coord::new(r.u - min_col, r.v - min_row));
+                assert_eq!(
+                    (
+                        g.u.rem_euclid(MASTER_COLS as i32),
+                        g.v.rem_euclid(MASTER_ROWS as i32)
+                    ),
+                    (
+                        (pos_col + gi).rem_euclid(MASTER_COLS as i32),
+                        (pos_row + gj).rem_euclid(MASTER_ROWS as i32)
+                    ),
+                    "rot {rot_idx}: corner ({gi},{gj}) got a wrong master ID"
+                );
+            }
+        }
+    }
+}
+
+/// The opt-in actually does something, and the default declines instead of
+/// mislabelling: a *reflected* observation — the view through a mirror — is
+/// only decodable when reflections are searched.
+///
+/// This is the precision half of the change. Under the default the reflected
+/// fragment has no correct hypothesis available, and the required outcome is a
+/// miss (`None`), never a wrong absolute labelling.
+#[test]
+fn reflected_observation_needs_the_reflections_opt_in() {
+    let pos_row = 5i32;
+    let pos_col = 11i32;
+    let n = 7i32;
+    let original = build_perfect_observation(pos_row, pos_col, n, n);
+    // D4[4..] are the four reflections; each one is a mirrored "camera".
+    for (idx, refl) in GRID_TRANSFORMS_D4[4..].iter().enumerate() {
+        assert_eq!(
+            refl.determinant(),
+            -1,
+            "D4[{}] must be a reflection",
+            idx + 4
+        );
+        let reflected: Vec<PuzzleBoardObservedEdge> = original
+            .iter()
+            .map(|e| rotate_observed_edge_canonically(e, refl))
+            .collect();
+        let min_col = reflected.iter().map(|e| e.col).min().unwrap();
+        let min_row = reflected.iter().map(|e| e.row).min().unwrap();
+        let rebased: Vec<PuzzleBoardObservedEdge> = reflected
+            .iter()
+            .map(|e| PuzzleBoardObservedEdge {
+                row: e.row - min_row,
+                col: e.col - min_col,
+                ..*e
+            })
+            .collect();
+
+        let opt_in = decode(&rebased, &rebased, D4, 0.05)
+            .unwrap_or_else(|| panic!("refl {idx}: reflections-enabled search must decode"));
+        assert_eq!(opt_in.edges_matched, opt_in.edges_observed, "refl {idx}");
+
+        assert!(
+            decode(&rebased, &rebased, C4, 0.05).is_none(),
+            "refl {idx}: the rotations-only default must decline a mirrored view, not label it"
+        );
+    }
 }
 
 #[test]
@@ -556,7 +707,7 @@ fn decoder_rejects_when_bit_error_rate_too_high() {
     // origin = 1.0 (no match). But the decoder picks *best* origin — another
     // position may coincidentally match the flipped bits. We just assert
     // that with a strict threshold, nothing is returned.
-    let outcome = decode(&obs, 0.01);
+    let outcome = decode(&obs, &obs, C4, 0.01);
     // Either we got an almost-perfect match somewhere else (possible) or none
     // — both are valid.
     if let Some(out) = outcome {
@@ -654,8 +805,8 @@ fn lex_rank_matched_beats_weighted_score() {
 #[test]
 fn fast_decode_matches_reference_identity() {
     let obs = build_perfect_observation(12, 37, 5, 5);
-    let fast = decode(&obs, 0.30).expect("fast decoded");
-    let reference = decode_reference(&obs, 0.30).expect("reference decoded");
+    let fast = decode(&obs, &obs, C4, 0.30).expect("fast decoded");
+    let reference = decode_reference(&obs, C4, 0.30).expect("reference decoded");
 
     assert_eq!(
         fast.edges_matched, reference.edges_matched,
@@ -689,8 +840,8 @@ fn fast_decode_matches_reference_d4_rotation() {
         .map(|e| rotate_observed_edge_canonically(e, &rot))
         .collect();
 
-    let fast = decode(&rotated, 0.30).expect("fast decoded");
-    let reference = decode_reference(&rotated, 0.30).expect("reference decoded");
+    let fast = decode(&rotated, &rotated, D4, 0.30).expect("fast decoded");
+    let reference = decode_reference(&rotated, D4, 0.30).expect("reference decoded");
 
     assert_eq!(fast.edges_matched, reference.edges_matched);
     assert!(
@@ -708,8 +859,8 @@ fn fast_decode_matches_reference_all_flipped() {
         e.bit ^= 1;
     }
 
-    let fast = decode(&obs, 0.30);
-    let reference = decode_reference(&obs, 0.30);
+    let fast = decode(&obs, &obs, C4, 0.30);
+    let reference = decode_reference(&obs, C4, 0.30);
 
     match (fast, reference) {
         (None, None) => {} // both found nothing — fine.
@@ -737,7 +888,7 @@ fn decode_25x25_timing() {
     println!("decode_25x25_timing: {} observations", obs.len());
 
     let start = std::time::Instant::now();
-    let result = decode(&obs, 0.30);
+    let result = decode(&obs, &obs, C4, 0.30);
     let elapsed = start.elapsed();
 
     println!(
@@ -793,7 +944,7 @@ fn ll_pair_saturates_and_clips() {
 #[test]
 fn soft_ll_identity_perfect_obs() {
     let obs = build_perfect_observation(12, 37, 5, 5);
-    let out = decode_soft(&obs, &default_soft_cfg(), 0.05).expect("decoded");
+    let out = decode_soft(&obs, &logical_of(&obs), C4, &default_soft_cfg(), 0.05).expect("decoded");
     assert_eq!(out.edges_matched, out.edges_observed);
     assert!(out.bit_error_rate < 1e-6);
     assert!(out.score_margin > 0.1, "margin={}", out.score_margin);
@@ -809,8 +960,14 @@ fn soft_ll_handles_d4_rotations() {
             .iter()
             .map(|e| rotate_observed_edge_canonically(e, &rot))
             .collect();
-        let out = decode_soft(&rotated, &default_soft_cfg(), 0.05)
-            .unwrap_or_else(|| panic!("rot {rot_idx}: decode_soft returned None"));
+        let out = decode_soft(
+            &rotated,
+            &logical_of(&rotated),
+            D4,
+            &default_soft_cfg(),
+            0.05,
+        )
+        .unwrap_or_else(|| panic!("rot {rot_idx}: decode_soft returned None"));
         assert_eq!(out.edges_matched, out.edges_observed, "rot {rot_idx}");
         assert!(out.bit_error_rate < 1e-6, "rot {rot_idx}");
     }
@@ -825,7 +982,7 @@ fn soft_ll_rejects_below_margin_gate() {
     let obs = build_perfect_observation(0, 0, 5, 5);
     let mut cfg = default_soft_cfg();
     cfg.alignment_min_margin = 1e9;
-    let out = decode_soft(&obs, &cfg, 0.05);
+    let out = decode_soft(&obs, &logical_of(&obs), C4, &cfg, 0.05);
     assert!(
         out.is_none(),
         "margin gate should reject when threshold is huge"
@@ -838,7 +995,7 @@ fn soft_ll_beats_hard_when_winner_has_more_evidence() {
     // strong margin because correct-hypothesis score ≈ 0 while the nearest
     // wrong cyclic-neighbour has several wrong-bit penalties.
     let obs = build_perfect_observation(10, 20, 8, 8);
-    let out = decode_soft(&obs, &default_soft_cfg(), 0.05).expect("decoded");
+    let out = decode_soft(&obs, &logical_of(&obs), C4, &default_soft_cfg(), 0.05).expect("decoded");
     assert_eq!(out.edges_matched, out.edges_observed);
     // On a perfect build, score_best is a small non-positive number
     // (log_sigmoid saturates to ~0 for each match) and runner-up sits
@@ -857,11 +1014,13 @@ fn decode_fixed_board_soft_agrees_with_hard_on_planted_shift() {
     let rows = 10u32;
     let cols = 10u32;
     let obs = build_perfect_observation(3, 3, 7, 7);
-    let hard =
-        decode_fixed_board(&obs, BoardRect::new(0, 0, rows, cols), 0.30).expect("hard decoded");
+    let hard = decode_fixed_board(&obs, &obs, BoardRect::new(0, 0, rows, cols), C4, 0.30)
+        .expect("hard decoded");
     let soft = decode_fixed_board_soft(
         &obs,
+        &logical_of(&obs),
         BoardRect::new(0, 0, rows, cols),
+        C4,
         &default_soft_cfg(),
         0.30,
     )
@@ -885,7 +1044,9 @@ fn decode_fixed_board_excludes_truncating_shifts() {
     let obs = build_perfect_observation(2, 2, 4, 4);
     let out = decode_fixed_board_soft(
         &obs,
+        &logical_of(&obs),
         BoardRect::new(0, 0, rows, cols),
+        C4,
         &default_soft_cfg(),
         0.30,
     )
@@ -898,15 +1059,21 @@ fn decode_fixed_board_excludes_truncating_shifts() {
     );
 }
 
-/// Cross-D4 consistency: for a fixed physical corner observed in eight
-/// "cameras", each with a different D4 orientation applied to the local
-/// grid, every camera's `alignment.map(its-local-coord)` must reduce
-/// (mod MASTER_COLS) to the same physical master coordinate.
+/// Cross-symmetry consistency: for a fixed physical corner observed in one
+/// "camera" per entry of `observation_transforms`, each with that orientation
+/// applied to the local grid, every camera's `alignment.map(its-local-coord)`
+/// must reduce (mod MASTER_COLS) to the same physical master coordinate.
+///
+/// `observation_transforms` is the set of *observed* orientations to simulate;
+/// the search set the decoder uses is whatever `decode_one` closes over. The
+/// two coincide in every caller — simulating a view the decoder is not allowed
+/// to consider would only assert that it fails.
 ///
 /// Matches the symptom reported on the 130x130 real dataset: snaps that
 /// share a rotation class agree; snaps in different rotation classes
 /// disagree purely by an integer master-coord translation.
-fn assert_fixed_board_target_position_is_d4_invariant(
+fn assert_fixed_board_target_position_is_symmetry_invariant(
+    observation_transforms: &[GridTransform],
     mut decode_one: impl FnMut(&[PuzzleBoardObservedEdge], u32, u32, u32, u32) -> DecodeOutcome,
 ) {
     // Pick a physical corner inside the board and track its target_position.
@@ -933,9 +1100,9 @@ fn assert_fixed_board_target_position_is_d4_invariant(
         }
     }
 
-    for (rot_idx, &rot) in GRID_TRANSFORMS_D4.iter().enumerate().skip(1) {
+    for (rot_idx, &rot) in observation_transforms.iter().enumerate().skip(1) {
         // Simulate "camera i" observing the same physical board with its
-        // local axes D4-rotated: rotate each obs's (col, row) and flip
+        // local axes re-oriented: transform each obs's (col, row) and flip
         // orientation accordingly.
         let rotated: Vec<PuzzleBoardObservedEdge> = obs0
             .iter()
@@ -991,24 +1158,77 @@ fn assert_fixed_board_target_position_is_d4_invariant(
 
 #[test]
 fn decode_fixed_board_target_position_is_d4_invariant_hard() {
-    assert_fixed_board_target_position_is_d4_invariant(|obs, spec_or, spec_oc, rows, cols| {
-        decode_fixed_board(obs, BoardRect::new(spec_or, spec_oc, rows, cols), 0.30)
+    assert_fixed_board_target_position_is_symmetry_invariant(
+        D4,
+        |obs, spec_or, spec_oc, rows, cols| {
+            decode_fixed_board(
+                obs,
+                obs,
+                BoardRect::new(spec_or, spec_oc, rows, cols),
+                D4,
+                0.30,
+            )
             .expect("hard decode")
-    });
+        },
+    );
 }
 
 #[test]
 fn decode_fixed_board_soft_target_position_is_d4_invariant() {
     let cfg = default_soft_cfg();
-    assert_fixed_board_target_position_is_d4_invariant(|obs, spec_or, spec_oc, rows, cols| {
-        decode_fixed_board_soft(
-            obs,
-            BoardRect::new(spec_or, spec_oc, rows, cols),
-            &cfg,
-            0.30,
-        )
-        .expect("soft decode")
-    });
+    assert_fixed_board_target_position_is_symmetry_invariant(
+        D4,
+        |obs, spec_or, spec_oc, rows, cols| {
+            decode_fixed_board_soft(
+                obs,
+                &logical_of(obs),
+                BoardRect::new(spec_or, spec_oc, rows, cols),
+                D4,
+                &cfg,
+                0.30,
+            )
+            .expect("soft decode")
+        },
+    );
+}
+
+/// The same cross-camera consistency contract on the *default* search: four
+/// cameras seeing the same physical board at four different rotations must
+/// agree on every corner's master ID.
+#[test]
+fn decode_fixed_board_target_position_is_c4_invariant_hard() {
+    assert_fixed_board_target_position_is_symmetry_invariant(
+        C4,
+        |obs, spec_or, spec_oc, rows, cols| {
+            decode_fixed_board(
+                obs,
+                obs,
+                BoardRect::new(spec_or, spec_oc, rows, cols),
+                C4,
+                0.30,
+            )
+            .expect("hard decode")
+        },
+    );
+}
+
+#[test]
+fn decode_fixed_board_soft_target_position_is_c4_invariant() {
+    let cfg = default_soft_cfg();
+    assert_fixed_board_target_position_is_symmetry_invariant(
+        C4,
+        |obs, spec_or, spec_oc, rows, cols| {
+            decode_fixed_board_soft(
+                obs,
+                &logical_of(obs),
+                BoardRect::new(spec_or, spec_oc, rows, cols),
+                C4,
+                &cfg,
+                0.30,
+            )
+            .expect("soft decode")
+        },
+    );
 }
 
 // --- Differential tests: crossed-CRT separation vs O(501²) reference -------
@@ -1168,6 +1388,17 @@ fn adversarial_corpus() -> Vec<(String, Vec<PuzzleBoardObservedEdge>)> {
     out
 }
 
+/// The transform set a differential trial runs under. Alternating keeps both
+/// the default (rotations) and the opt-in (rotations + reflections) covered
+/// without doubling the O(|T| · 501² · N) reference cost.
+fn alternating_transforms(counter: usize) -> (&'static [GridTransform], &'static str) {
+    if counter.is_multiple_of(2) {
+        (C4, "c4")
+    } else {
+        (D4, "d4")
+    }
+}
+
 #[test]
 fn fast_decode_matches_reference_fuzz() {
     let mut rng = Lcg::new(0xDEAD_BEEF);
@@ -1175,15 +1406,21 @@ fn fast_decode_matches_reference_fuzz() {
     for trial in 0..120usize {
         let obs = random_observation(&mut rng);
         let ber = bers[trial % bers.len()];
-        let fast = decode(&obs, ber);
-        let reference = decode_reference(&obs, ber);
+        let (transforms, set) = alternating_transforms(trial);
+        let fast = decode(&obs, &obs, transforms, ber);
+        let reference = decode_reference(&obs, transforms, ber);
         match (fast, reference) {
             (None, None) => {}
-            (Some(f), Some(r)) => {
-                assert_outcome_matches_reference(&f, &r, &format!("hard trial {trial} ber {ber}"))
-            }
+            (Some(f), Some(r)) => assert_outcome_matches_reference(
+                &f,
+                &r,
+                &format!("hard trial {trial} ber {ber} set {set}"),
+            ),
             (f, r) => {
-                panic!("hard trial {trial} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
+                panic!(
+                    "hard trial {trial} ber {ber} set {set}: None/Some mismatch \
+                     fast={f:?} ref={r:?}"
+                )
             }
         }
     }
@@ -1192,17 +1429,23 @@ fn fast_decode_matches_reference_fuzz() {
 #[test]
 fn fast_decode_matches_reference_adversarial() {
     let bers = [0.01f32, 0.30, 0.50, 1.0];
-    for (name, obs) in adversarial_corpus() {
-        for &ber in &bers {
-            let fast = decode(&obs, ber);
-            let reference = decode_reference(&obs, ber);
+    for (case, (name, obs)) in adversarial_corpus().into_iter().enumerate() {
+        for (idx, &ber) in bers.iter().enumerate() {
+            let (transforms, set) = alternating_transforms(case + idx);
+            let fast = decode(&obs, &obs, transforms, ber);
+            let reference = decode_reference(&obs, transforms, ber);
             match (fast, reference) {
                 (None, None) => {}
-                (Some(f), Some(r)) => {
-                    assert_outcome_matches_reference(&f, &r, &format!("hard adv {name} ber {ber}"))
-                }
+                (Some(f), Some(r)) => assert_outcome_matches_reference(
+                    &f,
+                    &r,
+                    &format!("hard adv {name} ber {ber} set {set}"),
+                ),
                 (f, r) => {
-                    panic!("hard adv {name} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
+                    panic!(
+                        "hard adv {name} ber {ber} set {set}: None/Some mismatch \
+                         fast={f:?} ref={r:?}"
+                    )
                 }
             }
         }
@@ -1222,14 +1465,14 @@ fn assert_soft_equivalent(
         (Some(f), Some(r)) => {
             // Winner identity + carried diagnostics.
             assert_outcome_matches_reference(f, r, ctx);
-            // Margin gate inputs and outcome.
-            assert_eq!(
-                f.score_margin.to_bits(),
-                r.score_margin.to_bits(),
-                "{ctx}: score_margin {} vs {}",
-                f.score_margin,
-                r.score_margin
-            );
+            // Margin gate inputs and outcome. `score_margin` is derived from
+            // two `score_best` values, which `assert_outcome_matches_reference`
+            // already compares to a relative tolerance rather than bit-for-bit:
+            // the fast path accumulates the log-likelihood in fixed point and
+            // the reference in `f32`, so the two associate differently in the
+            // last ULPs. A difference of differences cannot be *more* exact
+            // than its operands, so this is held to the same tolerance.
+            assert_close(f.score_margin, r.score_margin, ctx, "score_margin");
             match (f.score_runner_up, r.score_runner_up) {
                 (None, None) => {}
                 (Some(fr), Some(rr)) => assert_eq!(
@@ -1259,9 +1502,15 @@ fn soft_decode_matches_reference_fuzz() {
     for trial in 0..120usize {
         let obs = random_observation(&mut rng);
         let ber = bers[trial % bers.len()];
-        let fast = decode_soft(&obs, &cfg, ber);
-        let reference = decode_soft_reference(&obs, &cfg, ber);
-        assert_soft_equivalent(&fast, &reference, &format!("soft trial {trial} ber {ber}"));
+        let (transforms, set) = alternating_transforms(trial);
+        let logical = logical_of(&obs);
+        let fast = decode_soft(&obs, &logical, transforms, &cfg, ber);
+        let reference = decode_soft_reference(&obs, &logical, transforms, &cfg, ber);
+        assert_soft_equivalent(
+            &fast,
+            &reference,
+            &format!("soft trial {trial} ber {ber} set {set}"),
+        );
     }
 }
 
@@ -1275,13 +1524,15 @@ fn soft_decode_matches_reference_low_margin_gate() {
         let obs = random_observation(&mut rng);
         let mut cfg = default_soft_cfg();
         cfg.alignment_min_margin = margins[trial % margins.len()];
-        let fast = decode_soft(&obs, &cfg, 0.50);
-        let reference = decode_soft_reference(&obs, &cfg, 0.50);
+        let (transforms, set) = alternating_transforms(trial);
+        let logical = logical_of(&obs);
+        let fast = decode_soft(&obs, &logical, transforms, &cfg, 0.50);
+        let reference = decode_soft_reference(&obs, &logical, transforms, &cfg, 0.50);
         assert_soft_equivalent(
             &fast,
             &reference,
             &format!(
-                "soft margin trial {trial} margin {}",
+                "soft margin trial {trial} margin {} set {set}",
                 cfg.alignment_min_margin
             ),
         );
@@ -1292,11 +1543,17 @@ fn soft_decode_matches_reference_low_margin_gate() {
 fn soft_decode_matches_reference_adversarial() {
     let cfg = default_soft_cfg();
     let bers = [0.10f32, 0.30, 0.50, 1.0];
-    for (name, obs) in adversarial_corpus() {
-        for &ber in &bers {
-            let fast = decode_soft(&obs, &cfg, ber);
-            let reference = decode_soft_reference(&obs, &cfg, ber);
-            assert_soft_equivalent(&fast, &reference, &format!("soft adv {name} ber {ber}"));
+    for (case, (name, obs)) in adversarial_corpus().into_iter().enumerate() {
+        for (idx, &ber) in bers.iter().enumerate() {
+            let (transforms, set) = alternating_transforms(case + idx);
+            let logical = logical_of(&obs);
+            let fast = decode_soft(&obs, &logical, transforms, &cfg, ber);
+            let reference = decode_soft_reference(&obs, &logical, transforms, &cfg, ber);
+            assert_soft_equivalent(
+                &fast,
+                &reference,
+                &format!("soft adv {name} ber {ber} set {set}"),
+            );
         }
     }
 }
@@ -1394,43 +1651,48 @@ fn wrong_corner_count(out: &DecodeOutcome, pos_row: i32, pos_col: i32, n: i32) -
 /// floor, validated separately, not by the window-agnostic decoder.)
 #[test]
 fn uniqueness_gate_declines_corrupted_safe_window() {
-    let mut accepted_correct = 0usize;
-    let mut declined = 0usize;
-    for &(pr, pc) in &[(2i32, 3i32), (5, 7), (33, 44), (100, 7)] {
-        // Sweep from light noise (decodes) to heavy noise (declines), spanning
-        // the gate's accept→decline transition on the 84-edge window.
-        for k in 1..=33usize {
-            for seed in 0..6u64 {
-                let mut obs = build_perfect_observation(pr, pc, 7, 7);
-                flip_k_bits(
-                    &mut obs,
-                    k,
-                    0xC0DE_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
-                );
-                match decode(&obs, 0.40) {
-                    Some(out) => {
-                        assert_eq!(
-                            wrong_corner_count(&out, pr, pc, 7),
-                            0,
-                            "gate accepted a WRONG corrupted 7×7 decode (pr={pr} pc={pc} k={k} seed={seed})"
-                        );
-                        accepted_correct += 1;
+    // Both searches must uphold the contract: the default rotations-only one
+    // and the reflections opt-in.
+    for (transforms, set) in [(C4, "c4"), (D4, "d4")] {
+        let mut accepted_correct = 0usize;
+        let mut declined = 0usize;
+        for &(pr, pc) in &[(2i32, 3i32), (5, 7), (33, 44), (100, 7)] {
+            // Sweep from light noise (decodes) to heavy noise (declines), spanning
+            // the gate's accept→decline transition on the 84-edge window.
+            for k in 1..=33usize {
+                for seed in 0..6u64 {
+                    let mut obs = build_perfect_observation(pr, pc, 7, 7);
+                    flip_k_bits(
+                        &mut obs,
+                        k,
+                        0xC0DE_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
+                    );
+                    match decode(&obs, &obs, transforms, 0.40) {
+                        Some(out) => {
+                            assert_eq!(
+                                wrong_corner_count(&out, pr, pc, 7),
+                                0,
+                                "gate accepted a WRONG corrupted 7×7 decode \
+                                 (set={set} pr={pr} pc={pc} k={k} seed={seed})"
+                            );
+                            accepted_correct += 1;
+                        }
+                        None => declined += 1,
                     }
-                    None => declined += 1,
                 }
             }
         }
+        // Sanity: the regime is genuinely exercised on both sides (some decode, some
+        // decline) — otherwise the test would pass vacuously.
+        assert!(
+            declined > 0,
+            "set={set}: expected some heavily-corrupted 7×7 fragments to decline"
+        );
+        assert!(
+            accepted_correct > 0,
+            "set={set}: expected some 7×7 fragments to still decode correctly"
+        );
     }
-    // Sanity: the regime is genuinely exercised on both sides (some decode, some
-    // decline) — otherwise the test would pass vacuously.
-    assert!(
-        declined > 0,
-        "expected some heavily-corrupted 7×7 fragments to decline"
-    );
-    assert!(
-        accepted_correct > 0,
-        "expected some 7×7 fragments to still decode correctly"
-    );
 }
 
 /// (b) A clean (noise-free) fragment at the safe window decodes correctly with a
@@ -1438,49 +1700,66 @@ fn uniqueness_gate_declines_corrupted_safe_window() {
 /// margin ≥ 1 passes). Exercises both the 7×7 floor and a larger window.
 #[test]
 fn uniqueness_gate_accepts_clean_window_with_margin() {
-    for &n in &[7i32, 8, 10] {
-        let obs = build_perfect_observation(12, 37, n, n);
-        let out = decode(&obs, 0.40).expect("clean window must decode");
-        assert_eq!(
-            out.edges_matched, out.edges_observed,
-            "clean read matches all bits"
-        );
-        assert_eq!(out.master_origin_row, 12);
-        assert_eq!(out.master_origin_col, 37);
-        // k_winner = 0 (perfect read); margin = best - runner > 0.
-        let k_winner = out.edges_observed as f32 - out.edges_matched as f32;
-        assert!(
-            out.score_margin > k_winner,
-            "n={n}: margin {} must exceed k_winner {}",
-            out.score_margin,
-            k_winner
-        );
-        assert!(out.score_margin >= 1.0, "n={n}: clean unique margin ≥ 1");
+    for (transforms, set) in [(C4, "c4"), (D4, "d4")] {
+        for &n in &[7i32, 8, 10] {
+            let obs = build_perfect_observation(12, 37, n, n);
+            let out = decode(&obs, &obs, transforms, 0.40).expect("clean window must decode");
+            assert_eq!(
+                out.edges_matched, out.edges_observed,
+                "clean read matches all bits"
+            );
+            assert_eq!(out.master_origin_row, 12);
+            assert_eq!(out.master_origin_col, 37);
+            // k_winner = 0 (perfect read); margin = best - runner > 0.
+            let k_winner = out.edges_observed as f32 - out.edges_matched as f32;
+            assert!(
+                out.score_margin > k_winner,
+                "set={set} n={n}: margin {} must exceed k_winner {}",
+                out.score_margin,
+                k_winner
+            );
+            assert!(
+                out.score_margin >= 1.0,
+                "set={set} n={n}: clean unique margin ≥ 1"
+            );
+        }
     }
 }
 
-/// (b') Clean-window uniqueness is a property of `D4 × position`, not of
-/// position alone.
+/// (b') Clean-window uniqueness is a property of `orientation × position`, not
+/// of position alone.
 ///
 /// `code_maps::master_4x4_windows_unique` proves every 4 × 4 window is distinct
 /// *at a fixed orientation*. The decoder cannot assume an orientation — a
 /// fragment carries no cue for which way the board was printed — so it searches
-/// all eight D4 transforms, and at 4 × 4 a window routinely has a **perfect
-/// alias** under some other transform. The gate then sees `margin = 0` and
-/// declines, which is the required behaviour: a wrong absolute label is
-/// unrecoverable downstream, a miss is not.
+/// every admissible transform, and under the full dihedral search a 4 × 4
+/// window routinely has a **perfect alias** under some other transform. The
+/// gate then sees `margin = 0` and declines, which is the required behaviour: a
+/// wrong absolute label is unrecoverable downstream, a miss is not.
 ///
-/// Measured on clean windows across seven planted origins: 4 × 4 never decodes
-/// (always D4-aliased), 5 × 5 decodes at 5/7, and 6 × 6 and above always
-/// decode. The pipeline's `min_window = 7` sits one square above that clean
-/// threshold, leaving the extra square as the noise budget.
+/// Measured on clean windows across seven planted origins under the eight-
+/// transform search: 4 × 4 never decodes (always aliased), 5 × 5 decodes at
+/// 5/7, and 6 × 6 and above always decode
+/// (`window_uniqueness_report`, which reports both searches). Those window
+/// sizes are in **squares**; the pipeline's `min_window = 7` is a *corner*
+/// span, and `6 × 6` squares span exactly 7 corners — so the default sits at
+/// that clean threshold, not above it. The noise budget is carried by the
+/// uniqueness gate and the period-3 vote, not by extra squares.
 #[test]
 fn uniqueness_gate_declines_d4_aliased_small_window() {
     let obs = build_perfect_observation(8, 19, 4, 4);
     assert_eq!(obs.len(), 24, "4×4 window carries 3·4 + 4·3 edge bits");
     assert!(
-        decode(&obs, 0.40).is_none(),
+        decode(&obs, &obs, D4, 0.40).is_none(),
         "a D4-aliased 4×4 must decline, not guess an orientation"
+    );
+    // Narrowing the search to the rotations does *not* rescue a 4 × 4: the
+    // report shows every planted 4 × 4 origin still has a perfect alias under
+    // another *rotation*, so the aliasing at this size is not a reflection
+    // artefact and the gate must keep declining.
+    assert!(
+        decode(&obs, &obs, C4, 0.40).is_none(),
+        "a rotation-aliased 4×4 must decline under the default search too"
     );
 }
 
@@ -1491,9 +1770,17 @@ fn uniqueness_gate_declines_d4_aliased_small_window() {
 fn uniqueness_gate_accepts_clean_window_above_d4_threshold() {
     for (row, col) in [(8i32, 19i32), (0, 0), (125, 16), (333, 444)] {
         let obs = build_perfect_observation(row, col, 6, 6);
-        let out = decode(&obs, 0.40).expect("clean 6×6 is D4-unique and must decode");
+        let out = decode(&obs, &obs, D4, 0.40).expect("clean 6×6 is D4-unique and must decode");
         assert_eq!((out.master_origin_row, out.master_origin_col), (row, col));
         assert_eq!(wrong_corner_count(&out, row, col, 6), 0);
+        // Dropping the reflections can only remove competitors, so whatever
+        // decodes under D4 must still decode — identically — under C4.
+        let narrowed = decode(&obs, &obs, C4, 0.40).expect("rotations-only must decode too");
+        assert_eq!(
+            (narrowed.master_origin_row, narrowed.master_origin_col),
+            (row, col)
+        );
+        assert_eq!(wrong_corner_count(&narrowed, row, col, 6), 0);
     }
 }
 
@@ -1509,22 +1796,27 @@ fn soft_uniqueness_gate_declines_corrupted_8x8() {
         per_bit_floor: -6.0,
         alignment_min_margin: 0.02,
     };
-    // Sweep origins × heavy noise; any accepted soft decode must be correct.
-    for &(pr, pc) in &[(125i32, 16i32), (3, 4), (200, 90), (50, 300)] {
-        for k in 24..=30usize {
-            for seed in 0..4u64 {
-                let mut obs = build_perfect_observation(pr, pc, 8, 8);
-                flip_k_bits(
-                    &mut obs,
-                    k,
-                    0x50F7_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
-                );
-                if let Some(out) = decode_soft(&obs, &cfg, 0.40) {
-                    assert_eq!(
-                        wrong_corner_count(&out, pr, pc, 8),
-                        0,
-                        "soft gate accepted a WRONG corrupted 8×8 decode (pr={pr} pc={pc} k={k} seed={seed})"
+    // Sweep origins × heavy noise; any accepted soft decode must be correct,
+    // under the default search and under the reflections opt-in alike.
+    for (transforms, set) in [(C4, "c4"), (D4, "d4")] {
+        for &(pr, pc) in &[(125i32, 16i32), (3, 4), (200, 90), (50, 300)] {
+            for k in 24..=30usize {
+                for seed in 0..4u64 {
+                    let mut obs = build_perfect_observation(pr, pc, 8, 8);
+                    flip_k_bits(
+                        &mut obs,
+                        k,
+                        0x50F7_0000 ^ (k as u64) << 8 ^ seed ^ (pr as u64) << 16,
                     );
+                    if let Some(out) = decode_soft(&obs, &logical_of(&obs), transforms, &cfg, 0.40)
+                    {
+                        assert_eq!(
+                            wrong_corner_count(&out, pr, pc, 8),
+                            0,
+                            "soft gate accepted a WRONG corrupted 8×8 decode \
+                             (set={set} pr={pr} pc={pc} k={k} seed={seed})"
+                        );
+                    }
                 }
             }
         }
@@ -1545,12 +1837,16 @@ fn gate_decision_matches_reference_on_corrupted_fragments() {
                     k,
                     0xBEEF_0000 ^ (n as u64) << 16 ^ (k as u64) << 8 ^ seed,
                 );
-                let fast = decode(&obs, 0.40);
-                let reference = decode_reference(&obs, 0.40);
+                // Alternate the searched set so both are covered without
+                // doubling the brute-force reference cost.
+                let (transforms, set) = alternating_transforms(n as usize + k + seed as usize);
+                let fast = decode(&obs, &obs, transforms, 0.40);
+                let reference = decode_reference(&obs, transforms, 0.40);
                 assert_eq!(
                     fast.is_some(),
                     reference.is_some(),
-                    "gate accept/reject mismatch n={n} k={k} seed={seed}: fast={} ref={}",
+                    "gate accept/reject mismatch set={set} n={n} k={k} seed={seed}: \
+                     fast={} ref={}",
                     fast.is_some(),
                     reference.is_some()
                 );
@@ -1599,13 +1895,17 @@ fn decode_scaling_report() {
     }
 
     let cfg = default_soft_cfg();
+    // Timed under the production default search (four rotations); the
+    // reflections opt-in costs twice this.
+    let transforms = C4;
     println!("\n| window | edges | board | full/hard | full/soft | fixed/hard | fixed/soft |");
     println!("|---|---|---|---|---|---|---|");
     for &window in &[7i32, 13, 25, 50] {
         let obs = build_perfect_observation(40, 60, window, window);
         let edges = obs.len();
-        let full_hard = millis(3, || decode(&obs, 0.30));
-        let full_soft = millis(3, || decode_soft(&obs, &cfg, 0.30));
+        let full_hard = millis(3, || decode(&obs, &obs, transforms, 0.30));
+        let logical = logical_of(&obs);
+        let full_soft = millis(3, || decode_soft(&obs, &logical, transforms, &cfg, 0.30));
         for &size in &[25u32, 50, 130, 501] {
             if (size as i32) < window {
                 continue;
@@ -1613,8 +1913,12 @@ fn decode_scaling_report() {
             // The board must contain the planted window at master (40, 60).
             let board = BoardRect::new(40, 60, size.min(501 - 60), size.min(501 - 60));
             let reps = if size >= 130 { 1 } else { 3 };
-            let fixed_hard = millis(reps, || decode_fixed_board(&obs, board, 0.30));
-            let fixed_soft = millis(reps, || decode_fixed_board_soft(&obs, board, &cfg, 0.30));
+            let fixed_hard = millis(reps, || {
+                decode_fixed_board(&obs, &obs, board, transforms, 0.30)
+            });
+            let fixed_soft = millis(reps, || {
+                decode_fixed_board_soft(&obs, &logical, board, transforms, &cfg, 0.30)
+            });
             println!(
                 "| {window}×{window} | {edges} | {size}×{size} | {full_hard:.2} | \
                  {full_soft:.2} | {fixed_hard:.2} | {fixed_soft:.2} |"
@@ -1623,14 +1927,21 @@ fn decode_scaling_report() {
     }
 }
 
-/// Clean-window uniqueness threshold under `D4 × position` search.
+/// Clean-window uniqueness threshold under `orientation × position` search,
+/// reported for both orientation sets side by side.
 ///
 /// Reports, per window size, how many planted origins decode and how many are
-/// rejected because a *distinct* origin matches every bit under some other D4
-/// transform. This is the empirical basis for
-/// [`PuzzleBoardDecodeConfig::min_window`](crate::PuzzleBoardDecodeConfig):
-/// clean uniqueness begins at 6 × 6, so the default of 7 leaves one square of
-/// margin for bit noise.
+/// rejected because a *distinct* origin matches every bit under some other
+/// searched transform — once for the default rotations-only search (`C4`) and
+/// once for the reflections opt-in (`D4`). The gap between the two columns is
+/// the evidence for the default: the reflected hypotheses are physically
+/// unreachable for a camera imaging the printed side of an opaque board, and
+/// every alias they create is a decode lost for nothing.
+///
+/// **Not a uniqueness proof.** Seven planted origins out of 251 001 is a spot
+/// check; the exhaustive measurement lives in `research/puzzleboard-rings`, and
+/// where the two disagree the exhaustive one is right. The documented
+/// `min_window` threshold traces to that, not to this.
 ///
 /// ```text
 /// cargo test --release -p calib-targets-puzzleboard --lib -- \
@@ -1648,26 +1959,181 @@ fn window_uniqueness_report() {
         (50, 300),
         (333, 444),
     ];
-    println!("\n| window | edges | decoded | D4-aliased |");
-    println!("|---|---|---|---|");
+    println!("\n| window | edges | C4 decoded | C4 aliased | D4 decoded | D4 aliased |");
+    println!("|---|---|---|---|---|---|");
     for window in 3..=9i32 {
-        let (mut decoded, mut aliased, mut edges) = (0usize, 0usize, 0usize);
+        let mut edges = 0usize;
+        // (decoded, aliased) per searched set, in the header's column order.
+        let mut stats = [(0usize, 0usize); 2];
         for &(row, col) in &origins {
             let obs = build_perfect_observation(row, col, window, window);
             edges = obs.len();
-            if decode(&obs, 0.40).is_some() {
-                decoded += 1;
-            } else if let Some((_, best, Some(runner))) =
-                crate::detector::decode::hard::decode_with_runner_up(&obs, 0.40)
-            {
-                if runner.matched >= best {
-                    aliased += 1;
+            for (slot, transforms) in [C4, D4].into_iter().enumerate() {
+                if decode(&obs, &obs, transforms, 0.40).is_some() {
+                    stats[slot].0 += 1;
+                } else if let Some((_, best, Some(runner))) =
+                    crate::detector::decode::hard::decode_with_runner_up(&obs, transforms, 0.40)
+                {
+                    if runner.matched >= best {
+                        stats[slot].1 += 1;
+                    }
                 }
             }
         }
+        let n = origins.len();
         println!(
-            "| {window}×{window} | {edges} | {decoded}/{} | {aliased} |",
-            origins.len()
+            "| {window}×{window} | {edges} | {}/{n} | {} | {}/{n} | {} |",
+            stats[0].0, stats[0].1, stats[1].0, stats[1].1
         );
     }
+}
+
+/// Does the period-3 consensus actually buy noise tolerance, and how much?
+///
+/// Corrupts a growing fraction of the sampled dots and reports, per window
+/// size, the highest corruption rate at which every trial still decodes to the
+/// planted origin — with the consensus reduction on and off. This is the direct
+/// test of the paper's claim that *"up to 401/1002 ≈ 40 % of all bits are
+/// allowed to be decoded incorrectly **after** averaging over all
+/// repetitions"*: the budget is spendable on raw dots only because the
+/// replicas are combined first.
+///
+/// Read it as the evidence for the gate-domain change, and as the shape of the
+/// pay-off: redundancy is `~2w²` dots over `~6w` bits, so the gap between the
+/// two columns should widen with window size and be near zero at the minimum
+/// window, where each bit is read only twice.
+///
+/// A decode to the *wrong* origin is reported separately and must stay at zero
+/// — the contract permits misses, never wrong labels.
+///
+/// ```text
+/// cargo test --release -p calib-targets-puzzleboard --lib -- \
+///     consensus_noise_tolerance_report --ignored --nocapture
+/// ```
+/// How close is the *nearest wrong origin* on a clean fragment?
+///
+/// The uniqueness gate accepts on `margin > k_winner`, so what it can tolerate
+/// is set by how much of the code a competing origin already matches for free.
+/// If that floor is `f` (as a fraction) then at dot-error rate `p` the gate
+/// needs `(1-p) - f > p`, i.e. `p < (1-f)/2` — a hard ceiling no amount of
+/// scoring cleverness moves.
+///
+/// The period-3 construction makes `f` large and *structural* rather than
+/// chance: shifting the origin by 3 columns leaves every horizontal bit
+/// identical (`map_b` is cyclic in `mc` with period 3), so that origin matches
+/// half the code before a single bit is examined. The same redundancy that
+/// enables majority voting also manufactures the aliases.
+///
+/// ```text
+/// cargo test --release -p calib-targets-puzzleboard --lib -- \
+///     runner_up_floor_report --ignored --nocapture
+/// ```
+#[test]
+#[ignore]
+fn runner_up_floor_report() {
+    println!("\n| window | view | entries | runner-up | floor f | implied error ceiling |");
+    println!("|---|---|---|---|---|---|");
+    for window in [6i32, 9, 12, 16, 24] {
+        let obs = build_perfect_observation(40, 17, window, window);
+        let voted = logical_of(&obs);
+        for (view, set) in [("dots", &obs), ("voted", &voted)] {
+            let (_, _, _, _, runner) = brute_matched_top2(set, C4).expect("top-2");
+            let n = set.len() as f32;
+            let f = runner as f32 / n;
+            println!(
+                "| {window}×{window} | {view} | {} | {runner} | {f:.3} | {:.1}% |",
+                set.len(),
+                100.0 * (1.0 - f) / 2.0
+            );
+        }
+    }
+    println!("\nA chance-level competitor would sit at f ≈ 0.5. The ceiling is on the");
+    println!("error rate *in that view*: for `voted` it is the post-vote rate, which is");
+    println!("far below the dot rate that produced it.");
+}
+
+#[test]
+#[ignore]
+fn consensus_noise_tolerance_report() {
+    const TRIALS: usize = 200;
+    let origins = [(8i32, 19i32), (12, 37), (125, 16), (200, 90), (333, 444)];
+    let rates = [0.05f32, 0.10, 0.15, 0.20, 0.25, 0.30, 0.40];
+    // The four configurations, in report order.
+    const NAMES: [&str; 4] = ["soft", "soft+vote", "hard", "hard+vote"];
+
+    let header: String = rates
+        .iter()
+        .map(|r| format!(" {:.0}% |", r * 100.0))
+        .collect();
+    println!("\nRecall %, {TRIALS} trials per cell, correct origin only.");
+    println!("Columns per cell: {}.\n", NAMES.join(" / "));
+    println!("| window | dots | bits | reads/bit |{header}");
+    println!(
+        "|---|---|---|---|{}",
+        rates.iter().map(|_| "---|").collect::<String>()
+    );
+
+    let mut rng = Lcg::new(0x00C0_FFEE_D00D_u64);
+    // Wrong-origin decodes per configuration. All must stay 0.
+    let mut wrong = [0usize; 4];
+    for window in [6i32, 7, 9, 12, 16, 24] {
+        let clean = build_perfect_observation(8, 19, window, window);
+        let dots = clean.len();
+        let bits = logical_of(&clean).len();
+        let mut cells = String::new();
+
+        for &rate in &rates {
+            let mut ok = [0usize; 4];
+            for _ in 0..TRIALS {
+                let &(row, col) = &origins[rng.below(origins.len() as u32) as usize];
+                let mut obs = build_perfect_observation(row, col, window, window);
+                for e in obs.iter_mut() {
+                    if (rng.below(10_000) as f32) < rate * 10_000.0 {
+                        e.bit ^= 1;
+                    }
+                }
+                let voted = logical_of(&obs);
+                // The pipeline refuses to judge a decode over fewer distinct
+                // bits than `min_window` guarantees (`NotEnoughLogicalBits`).
+                let voted_ok = voted.len() >= required_logical_bits(7);
+                let cfg = default_soft_cfg();
+                let outcomes = [
+                    decode_soft(&obs, &obs, C4, &cfg, 0.40),
+                    voted
+                        .len()
+                        .ge(&required_logical_bits(7))
+                        .then(|| decode_soft(&obs, &voted, C4, &cfg, 0.40))
+                        .flatten(),
+                    decode(&obs, &obs, C4, 0.40),
+                    voted_ok.then(|| decode(&voted, &obs, C4, 0.40)).flatten(),
+                ];
+                for (slot, out) in outcomes.into_iter().enumerate() {
+                    match out {
+                        Some(o) if (o.master_origin_row, o.master_origin_col) == (row, col) => {
+                            ok[slot] += 1
+                        }
+                        Some(_) => wrong[slot] += 1,
+                        None => {}
+                    }
+                }
+            }
+            let pct = |n: usize| 100.0 * n as f32 / TRIALS as f32;
+            cells.push_str(&format!(
+                " {:.0}/{:.0}/{:.0}/{:.0} |",
+                pct(ok[0]),
+                pct(ok[1]),
+                pct(ok[2]),
+                pct(ok[3])
+            ));
+        }
+        println!(
+            "| {window}×{window} | {dots} | {bits} | {:.1} |{cells}",
+            dots as f32 / bits as f32
+        );
+    }
+    println!("\nwrong-origin decodes across the sweep, by configuration:");
+    for (name, n) in NAMES.iter().zip(wrong) {
+        println!("  {name}: {n}");
+    }
+    println!("All must be 0 — a miss is acceptable, a wrong label never is.");
 }

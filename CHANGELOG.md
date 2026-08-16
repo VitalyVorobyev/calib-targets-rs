@@ -7,7 +7,233 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.13.0
+
+Breaking, and deliberately so before 1.0. The detector structs and the facade
+free functions become one symmetric surface, and `MarkerBoardDetector` reports
+why it failed instead of returning `None`. Every Rust break is a compile error
+at the call site; nothing keeps compiling with a changed meaning.
+
+Results change in one place, the **PuzzleBoard decoder**, in three deliberate
+ways: it searches rotations rather than all eight dihedral transforms, it
+majority-votes the pattern's period-3 replicas before gating, and its two
+window gates now agree on their unit. All three admit more frames without
+weakening the uniqueness proof, and the second strengthens it. Full
+before/after in the [0.13 migration guide](docs/migrations/0.13.0.md).
+
+The C ABI goes to **4.0.0**: three exported symbols are renamed and two
+PuzzleBoard structs gain fields. Regenerate against the shipped
+`include/calib_targets_ffi.h`. `projective-grid` is unchanged at 0.14.
+
+### Changed
+
+- **The detector structs and the facade free functions are one symmetric
+  surface.** Breaking; the full before/after is in
+  [`docs/migrations/0.13.0.md`](docs/migrations/0.13.0.md).
+
+  `CharucoParams`, `PuzzleBoardParams` and `MarkerBoardParams` each carried a
+  `chess: DetectorConfig` field that no detector ever read. Only the facade
+  free functions ran the ChESS corner pass, so a caller who wanted to configure
+  corner detection *and* keep a reusable detector had to abandon the detector
+  API, run the corner pass by hand, and feed the corners back in — and every
+  binding crate hand-rolled that same glue, one of them down to a private copy
+  of the corner-descriptor conversion.
+
+  Detectors now run the corner pass themselves, from the field they already
+  owned. `detect(image)` is the whole pipeline; `detect_with_corners(image,
+  corners)` is the injection variant for sharing one corner pass across several
+  target detectors; `detect_corners(image)` exposes the pass a given detector
+  would run, so the corners you inject are the ones `detect` would have
+  produced. That identity is a test, not a promise:
+  `d.detect(img) == d.detect_with_corners(img, &d.detect_corners(img))`, and
+  likewise `detect_t(img, &p) == TDetector::new(p)?.detect(img)`.
+
+  `detect_with_diagnostics` becomes `diagnose_with_corners`, joined by
+  `diagnose(image)`, so the `_with_corners` suffix means exactly one thing
+  everywhere. The same rename reaches the Python, WASM and C ABI surfaces.
+
+  Successful detections are unchanged — bit-identical, because
+  `chess_corners::Detector::detect` is literally its own `detect_u8` on the
+  same three values. Every break is a compile error at the call site; nothing
+  keeps compiling with a changed meaning.
+
+  `ChessboardDetector` is deliberately untouched. It consumes a corner cloud by
+  design, and `ChessboardParams` has no `chess` field because that struct is
+  embedded inside all three composite params types, where a nested
+  corner-detector config would be dead in exactly the way this release removes.
+
+- **MarkerBoard reports why it failed.** `MarkerBoardDetector` returned
+  `Option`, collapsing "no chessboard grid" and "grid found but the three
+  circle markers did not agree with the board" into one `None`. It now returns
+  `Result<_, MarkerBoardDetectError>` like ChArUco and PuzzleBoard, and its
+  `diagnose*` methods return diagnostics **even on failure** — which is when
+  the scored circle candidates and attempted matches are most worth having.
+  The set of inputs that succeed is unchanged; only the failure value carries
+  information now.
+
+  `MarkerBoardDetector` still has no `detect_all`, and that is intentional: a
+  marker board is localised by its three circle markers, which realistically
+  fall inside a single connected grid component, whereas ChArUco and PuzzleBoard
+  can be anchored from two disjoint fragments and therefore consume every
+  component.
+
+- **PuzzleBoard decodes only physically reachable board orientations by
+  default.** A camera imaging the printed side of an opaque planar board can
+  see it rotated by a multiple of 90°, but never mirrored: a rigid pose plus a
+  perspective projection preserves handedness. The decoder nevertheless
+  searched all eight dihedral relabellings, so four of every eight hypotheses
+  were unreachable — and they were not free. An unreachable hypothesis that
+  happens to match the observed bits competes in the uniqueness gate and turns
+  a correct decode into a rejection. The default search is now the four
+  rotations (`PuzzleBoardDecodeConfig::symmetry_mode`, new
+  `PuzzleBoardSymmetryMode::Rotations`), which halves the decode work *and*
+  removes that class of spurious ambiguity: clean-window uniqueness begins at a
+  smaller fragment than it did under the dihedral search.
+
+  Set `symmetry_mode = PuzzleBoardSymmetryMode::RotationsAndReflections` to
+  restore the previous behaviour. That is the correct setting when the optical
+  path flips handedness — a mirror or beam splitter in the path, or an image
+  mirrored before detection. Under the default, a mirrored view declines to
+  decode rather than returning a wrong absolute labelling.
+
+### Added
+
+- **PuzzleBoard decodes far noisier fragments, by using the period-3
+  redundancy the pattern was designed around.** Both code maps repeat every
+  three rows or columns, so a fragment sampling `~2w²` dots reads only `~6w`
+  distinct master bits, each of them several times. The decoder now reduces the
+  observations to those bits by confidence-weighted majority vote before the
+  accept/reject gates — which is what the pattern's authors describe: *"as each
+  bit is repeated every three rows or columns, its correct value can be derived
+  by majority voting when more rows and columns are visible"*.
+
+  The reduction is pure topology: the partition is invariant to the board's
+  orientation and to where the fragment sits, so it runs before any pose
+  hypothesis exists. A class whose members split evenly is treated as an
+  **erasure** rather than guessed, and a decode is refused outright if too few
+  distinct bits survive to place it uniquely
+  (`PuzzleBoardDetectError::NotEnoughLogicalBits`).
+
+  Measured on synthetic fragments: at 15 % dot corruption a 12×12 fragment
+  decodes essentially always, where before it never did. The gain runs out
+  where the code says it must — the nearest wrong origin already matches
+  84–93 % of a *clean* fragment, because a ±3 origin shift leaves an entire edge
+  family bit-identical, so the same redundancy that enables voting also
+  manufactures the aliases.
+
+- **`PuzzleBoardSpec::master(cell_size)`** — declare the whole master pattern
+  from the cell size alone, instead of spelling out `501, 501`. This is the
+  right default for detection: a PuzzleBoard identifies itself, so there is no
+  need to know which sub-rectangle was printed.
+
+- **PuzzleBoard decode quality gained three fields** — `logical_bits`,
+  `logical_bit_error_rate` and `dot_dissent_rate`. The last is a
+  hypothesis-free read-quality meter: it is computed before any pose is
+  hypothesised, so it is meaningful even when the decode is wrong, and it rises
+  sharply when the grid labelling is bad rather than merely noisy.
+
+- **Five matching entry points per compound target on the facade** —
+  `detect_t`, `detect_t_with_corners`, `diagnose_t`,
+  `diagnose_t_with_corners` and `detect_t_best`, for ChArUco, PuzzleBoard and
+  marker boards. `detect_puzzleboard_with_corners` previously existed but was
+  private. The `diagnose_*` free functions return
+  `(Result<TDetection, DetectError>, Option<TDiagnostics>)`; the `Option` is
+  `None` in exactly one case, where the facade constructed the detector for you
+  and the params were rejected before the pipeline ran.
+
+- **Chessboard diagnostics are reachable from the facade.**
+  `trace_topological` and `trace_topological_detection` are re-exported under
+  the `diagnostics` feature. A Rust caller previously had to depend on
+  `calib-targets-chessboard` directly to reach them.
+
+- **`calib_targets::chessboard::detect_corners(image, cfg)`** — one shared
+  corner pass over a borrowed `GrayImageView`, replacing four copies of the
+  corner-descriptor conversion that had accumulated across the facade, the WASM
+  bindings, and two examples/tests.
+
+- **`MarkerBoardParams::sweep_for_board`** — `detect_marker_board_best`
+  existed with no preset to feed it. The new preset sweeps the shared
+  grid-build axis only; no circle-scoring or matching constants are varied.
+
+- **The shipped PuzzleBoard code maps are pinned byte-for-byte to the
+  reference implementation.** The two 63-byte maps are now asserted against
+  literals in-tree, so a regenerated map — valid under every uniqueness
+  property the decoder tests, but *different* — can no longer ship and
+  silently stop decoding boards printed from the authors' generator. Nothing
+  previously stopped that, because the existing tests pass for any valid
+  sub-perfect pair. Boards produced by the reference implementation decode
+  under the identity transform at a bit error rate of zero.
+
+### Fixed
+
+- **PuzzleBoard's two window gates disagreed on their unit, and the stricter
+  one silently won.** `min_window` is a span in *corners*, and the span gate
+  read it that way, but the edge-count pre-filter read it as a count of
+  *squares* — demanding 84 interior edges where a 7-corner window yields 60.
+  Fragments spanning exactly the documented minimum were rejected before they
+  were ever decoded. The floor is now the interior edge count of the span the
+  gate actually requires.
+
+- **Python's parameter defaults matched Rust's in name only.** The Python
+  package mirrors the Rust params structs as dataclasses, and their literal
+  default values had drifted. Two of the five were precision defects rather
+  than preferences, so a Python caller who constructed params directly was
+  running with weaker guarantees than the equivalent Rust caller and had no
+  way to know:
+
+  | field | was | now |
+  |---|---|---|
+  | `PuzzleBoardDecodeConfig.min_window` | 4 | **7** |
+  | `ChessboardParams.min_corner_strength` | 0.0 | **33.0** |
+  | `CircleScoreParams.min_contrast` | 60.0 | 10.0 |
+  | `CharucoParams.min_marker_inliers` | 3 | 1 |
+  | `ScanDecodeConfig.min_border_score` | 0.45 | 0.75 |
+
+  `min_window` is the bounded-distance uniqueness floor. At 4 the decoder
+  accepted fragments far too small to be provably unique — a latent
+  **false-positive** path, and a wrong absolute corner ID is unrecoverable
+  downstream. `min_corner_strength` is the floor that clears false corners
+  produced by marker bits; at 0.0 they come back, and because
+  `ChessboardParams` is embedded in the ChArUco and marker-board params, that
+  one leaked into three detectors.
+
+  Callers who set these fields explicitly are unaffected. The Rust pipeline
+  never changed.
+
+- **The Python multi-config sweep presets are computed by Rust now**, instead
+  of being re-implemented by hand. `PuzzleBoardParams.sweep_for_board` had
+  silently drifted onto a different axis entirely — it varied the ChESS
+  corner-detector threshold where Rust varies the grid-graph angular
+  tolerances — so `detect_puzzleboard_best` explored a different configuration
+  space from Python than from Rust while its docstring claimed the two
+  matched. The config count is unchanged; the axis is now Rust's.
+  `ChessboardParams.sweep_default` and `CharucoParams.sweep_for_board`, which
+  had no Python surface at all, are now exposed the same way. A parity test
+  fails if either side moves alone.
+
+### Performance
+
+- **PuzzleBoard's origin search walks 167 master classes instead of 501.** The
+  decoder's inner loop is a cyclic cross-correlation of the observed dots
+  against the code map, and its cost was `O(residues × 501)` — independent of
+  how many dots were read. But the three residue buckets that share a
+  long-axis position all test three bits of *one* map row, and a map row is
+  one of only eight three-bit patterns. Folding each family into an
+  eight-entry table first turns three 501-cell sweeps into one 167-cell sweep
+  that emits three values.
+
+  On a public sample frame the class sweep drops from 0.360 ms to 0.125 ms
+  (2.9×), taking the whole edge-decode stage from 0.402 ms to 0.171 ms. The
+  result is exact, not approximate: it is pinned against a direct transcription
+  of the correlation's definition, over every transform in the search.
+
+  This lands on the self-identifying search. Under
+  `PuzzleBoardSearchMode::FixedBoard` the long axis is already restricted to
+  the declared board, so there is far less sweep to remove.
+
+- **Decoding searches four board orientations instead of eight** — see the
+  symmetry-mode entry under *Changed*. The two changes compose: the search is
+  half as wide and each hypothesis is ~3× cheaper to score.
 
 ## 0.12.1
 

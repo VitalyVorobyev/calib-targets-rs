@@ -9,9 +9,10 @@ use nalgebra::Point2;
 
 use crate::board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
+use crate::detector::consensus::EdgeConsensus;
 use crate::detector::decode::{
-    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, BoardRect,
-    SoftLlConfig,
+    decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, match_stats,
+    BoardRect, SoftLlConfig,
 };
 use crate::detector::edge_sampling::{
     corner_at_map, horizontal_edge_sample_centers, local_cell_references, observed_horizontal_edge,
@@ -19,8 +20,8 @@ use crate::detector::edge_sampling::{
 };
 use crate::detector::error::PuzzleBoardDetectError;
 use crate::detector::params::{
-    ensure_min_edges, required_edges, PuzzleBoardDecodeConfig, PuzzleBoardScoringMode,
-    PuzzleBoardSearchMode,
+    ensure_min_edges, required_edges, required_logical_bits, PuzzleBoardDecodeConfig,
+    PuzzleBoardScoringMode, PuzzleBoardSearchMode,
 };
 use crate::detector::result::{PuzzleBoardDecodeInfo, PuzzleBoardDetection};
 use crate::diagnostics::{PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics};
@@ -75,15 +76,46 @@ impl PuzzleBoardDetector {
         )
     }
 
+    /// Run the ChESS corner front-end configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess) over
+    /// `image`.
+    ///
+    /// This is the corner pass [`Self::detect`] runs internally, exposed so a
+    /// caller that wants to reuse one corner cloud across several detectors
+    /// (or inspect it) can run it once and feed
+    /// [`Self::detect_with_corners`].
+    pub fn detect_corners(&self, image: &GrayImageView<'_>) -> Vec<ChessCorner> {
+        calib_targets_chessboard::detect_corners(image, &self.params.chess)
+    }
+
+    /// Detect a PuzzleBoard in `image`, running the corner front-end
+    /// configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess).
+    ///
+    /// This is the ergonomic entry point: hand it an image and it does the
+    /// whole pipeline. It is exactly
+    /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
+    /// for [`Self::detect_with_corners`] when you already have a corner cloud
+    /// (a custom upstream, or one shared across detectors).
+    ///
+    /// The error and tie-breaking semantics are those of
+    /// [`Self::detect_with_corners`].
+    pub fn detect(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
+        self.detect_with_corners(image, &self.detect_corners(image))
+    }
+
     /// Detect a PuzzleBoard in `image` using raw ChESS corner features.
     ///
     /// # Arguments
     ///
     /// - `image` — greyscale image view; **not** processed to extract corners.
     /// - `corners` — raw ChESS corner detections (subpixel position + strength);
-    ///   typically obtained from `chess_corners::detect_corners` or the facade
-    ///   helper `detect::detect_corners`. The detector will internally refine
-    ///   them into a chessboard grid.
+    ///   typically obtained from [`Self::detect_corners`] or
+    ///   [`calib_targets_chessboard::detect_corners`]. The detector will
+    ///   internally refine them into a chessboard grid.
     ///
     /// # Errors
     ///
@@ -109,12 +141,30 @@ impl PuzzleBoardDetector {
     ///
     /// If two successful decodes disagree on the master origin,
     /// [`PuzzleBoardDetectError::InconsistentPosition`] is returned instead.
-    pub fn detect(
+    pub fn detect_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
         self.detect_inner(image, corners).0
+    }
+
+    /// [`Self::detect`] + per-call diagnostics.
+    ///
+    /// Runs the corner front-end configured by
+    /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess) and then
+    /// [`Self::diagnose_with_corners`].
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> (
+        Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
+        self.diagnose_with_corners(image, &self.detect_corners(image))
     }
 
     /// Detect a PuzzleBoard and additionally return per-call diagnostics
@@ -125,11 +175,11 @@ impl PuzzleBoardDetector {
     /// overlay tools can render the edge observations that *were* sampled.
     /// See [`crate::diagnostics::PuzzleBoardDiagnostics`] for the shape and
     /// stability promise. The success/error semantics of the
-    /// [`Result`] component match [`Self::detect`] exactly.
+    /// [`Result`] component match [`Self::detect_with_corners`] exactly.
     ///
     /// Available only with the `diagnostics` feature enabled.
     #[cfg(feature = "diagnostics")]
-    pub fn detect_with_diagnostics(
+    pub fn diagnose_with_corners(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
@@ -273,8 +323,8 @@ impl PuzzleBoardDetector {
         // *post-confidence-filter* observation set — the window the decoder
         // actually decodes. The edge-count floor assumes a roughly-square window;
         // a wide-but-short strip can meet it yet still alias because its thin axis
-        // carries too little code distance (measured: a 3-corner-tall strip at the
-        // 84-edge floor false-accepts at a low rate, while every window spanning
+        // carries too little code distance (measured: a 3-corner-tall strip meeting
+        // the edge-count floor false-accepts at a low rate, while every window spanning
         // ≥ `min_window` corners on both axes is empirically alias-free). A
         // component that is wide overall can also collapse to a thin strip *after*
         // the `min_bit_confidence` filter drops its low-confidence edges, so the
@@ -294,25 +344,81 @@ impl PuzzleBoardDetector {
             }
         }
 
+        // Period-3 consensus. Both code maps repeat every three rows or
+        // columns, so the fragment's `~2w²` dots read only `~6w` distinct
+        // master bits. Reducing to those bits needs no origin and no
+        // orientation — the partition is invariant to both (see
+        // `super::consensus`) — so it runs here, before any hypothesis exists.
+        //
+        // With the stage off, every dot stands for its own bit and the whole
+        // pipeline behaves as it did before the stage existed.
+        let consensus = EdgeConsensus::build(&filtered);
+        let consensus_on = self.params.decode.effective_tuning().edge_consensus;
+        let logical: Vec<PuzzleBoardObservedEdge> = if consensus_on {
+            consensus.class_observations()
+        } else {
+            filtered.clone()
+        };
+
+        // Information floor. The span gate above guarantees the fragment's
+        // geometry *offers* `6(min_window - 2)` distinct bits; this guarantees
+        // that many were actually resolved. Voting erases a class whose members
+        // split evenly rather than guessing it, so a noisy fragment can span the
+        // required corners and still determine far too little code.
+        //
+        // Skipping this is not merely lossy, it is unsound: `margin > k_winner`
+        // proves the winner is the only codeword inside its error radius, but
+        // over a handful of surviving bits a great many master positions sit
+        // inside that radius, so the proof stays true and stops meaning
+        // anything. Measured — erasure without this guard produced wrong-origin
+        // decodes (`decode::tests::consensus_noise_tolerance_report`).
+        if consensus_on {
+            let needed = required_logical_bits(self.params.decode.min_window);
+            if logical.len() < needed {
+                return Err((
+                    PuzzleBoardDetectError::NotEnoughLogicalBits {
+                        determined: logical.len(),
+                        needed,
+                    },
+                    diagnostics_on_fail(&observed),
+                ));
+            }
+        }
+
         let max_err = self.params.decode.max_bit_error_rate;
         let soft_cfg = soft_cfg_from(&self.params.decode);
+        let transforms = self.params.decode.symmetry_mode.transforms();
         #[cfg(feature = "tracing")]
         let decode_span = tracing::info_span!("decode_edges").entered();
+        // The hard scorer decodes the voted bits: it counts matches, having
+        // already discarded the per-dot confidence distribution, so voting
+        // first is strictly better input. The soft scorer keeps the raw dots —
+        // class members predict the same bit under every hypothesis, so summing
+        // their per-dot log-likelihoods already *is* the optimal way to combine
+        // the replicas, and voting first would decide too early. Both gate on
+        // the logical bits.
         let decoded = match (
             self.params.decode.search_mode,
             self.params.decode.scoring_mode,
         ) {
             (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::HardWeighted) => {
-                run_decode(&filtered, max_err)
+                run_decode(&logical, &filtered, transforms, max_err)
             }
             (PuzzleBoardSearchMode::Full, PuzzleBoardScoringMode::SoftLogLikelihood) => {
-                decode_soft(&filtered, &soft_cfg, max_err)
+                decode_soft(&filtered, &logical, transforms, &soft_cfg, max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::HardWeighted) => {
-                decode_fixed_board(&filtered, self.board_rect(), max_err)
+                decode_fixed_board(&logical, &filtered, self.board_rect(), transforms, max_err)
             }
             (PuzzleBoardSearchMode::FixedBoard, PuzzleBoardScoringMode::SoftLogLikelihood) => {
-                decode_fixed_board_soft(&filtered, self.board_rect(), &soft_cfg, max_err)
+                decode_fixed_board_soft(
+                    &filtered,
+                    &logical,
+                    self.board_rect(),
+                    transforms,
+                    &soft_cfg,
+                    max_err,
+                )
             }
         };
         #[cfg(feature = "tracing")]
@@ -360,11 +466,47 @@ impl PuzzleBoardDetector {
             }
             PuzzleBoardScoringMode::HardWeighted => (None, None),
         };
+        // The two scorers rank over different sets — the hard one over voted
+        // bits, the soft one over raw dots — so neither `decoded.edges_*` pair
+        // means the same thing across modes. Restate both views from the
+        // decided alignment instead, so the reported numbers are defined
+        // identically whatever produced the winner. Two O(N) passes.
+        let physical = match_stats(&filtered, &decoded.alignment);
+        let logical_stats = match_stats(&logical, &decoded.alignment);
+
+        // The scorer's own bookkeeping must agree with an independent
+        // recomputation over the set it was actually handed. This is what
+        // catches the two sets being crossed — a hard decode reported against
+        // the dots, or a soft one against the classes — which would otherwise
+        // surface only as a quietly wrong `bit_error_rate`.
+        debug_assert_eq!(
+            decoded.edges_observed,
+            match self.params.decode.scoring_mode {
+                PuzzleBoardScoringMode::HardWeighted => logical_stats.observed,
+                PuzzleBoardScoringMode::SoftLogLikelihood => physical.observed,
+            },
+            "decoder reported a different set size than it was given"
+        );
+        debug_assert!(
+            {
+                let own = match self.params.decode.scoring_mode {
+                    PuzzleBoardScoringMode::HardWeighted => &logical_stats,
+                    PuzzleBoardScoringMode::SoftLogLikelihood => &physical,
+                };
+                decoded.edges_matched == own.matched
+                    && (decoded.bit_error_rate - own.bit_error_rate).abs() < 1e-5
+                    && (decoded.mean_confidence - own.mean_confidence).abs() < 1e-5
+            },
+            "decoder bookkeeping disagrees with the restated match statistics"
+        );
         let decode_info = PuzzleBoardDecodeInfo {
-            edges_observed: decoded.edges_observed,
-            edges_matched: decoded.edges_matched,
-            mean_confidence: decoded.mean_confidence,
-            bit_error_rate: decoded.bit_error_rate,
+            edges_observed: physical.observed,
+            edges_matched: physical.matched,
+            mean_confidence: physical.mean_confidence,
+            bit_error_rate: physical.bit_error_rate,
+            logical_bits: logical_stats.observed,
+            logical_bit_error_rate: logical_stats.bit_error_rate,
+            dot_dissent_rate: consensus.dissent_rate(),
             master_origin_row: decoded.master_origin_row,
             master_origin_col: decoded.master_origin_col,
         };
@@ -695,6 +837,7 @@ mod tests {
     use super::*;
     use crate::board::{MASTER_COLS, MASTER_ROWS};
     use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit};
+    use crate::detector::params::PuzzleBoardSymmetryMode;
     use calib_targets_core::GridAlignment;
 
     /// Tiny seeded LCG (no external `rand`); shared by the guard regressions.
@@ -863,7 +1006,14 @@ mod tests {
             if guard_rejects {
                 guard_rejected += 1;
             }
-            if let Some(out) = run_decode(&strip, 0.40) {
+            // Exercises the production default transform set: the guard has to
+            // hold for the search the pipeline actually runs.
+            if let Some(out) = run_decode(
+                &strip,
+                &strip,
+                PuzzleBoardSymmetryMode::default().transforms(),
+                0.40,
+            ) {
                 if wrong_corners(&out, pr, pc, 3, 12) > 0 {
                     decoder_fa_without_guard += 1;
                     if !guard_rejects {
@@ -947,6 +1097,9 @@ mod tests {
                 edges_matched,
                 mean_confidence,
                 bit_error_rate,
+                logical_bits: edges_observed,
+                logical_bit_error_rate: bit_error_rate,
+                dot_dissent_rate: 0.0,
                 master_origin_row: 0,
                 master_origin_col: 0,
             },
@@ -974,6 +1127,9 @@ mod tests {
                 edges_matched,
                 mean_confidence,
                 bit_error_rate,
+                logical_bits: edges_observed,
+                logical_bit_error_rate: bit_error_rate,
+                dot_dissent_rate: 0.0,
                 master_origin_row: 0,
                 master_origin_col: 0,
             },

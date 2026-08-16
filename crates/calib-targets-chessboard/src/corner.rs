@@ -1,8 +1,73 @@
-//! Per-corner augmented state carried through the pipeline.
+//! The ChESS corner front-end pass and the per-corner state carried through
+//! the pipeline.
+//!
+//! [`detect_corners`] is the workspace's single corner front-end: it runs
+//! `chess-corners` over a [`GrayImageView`] and adapts every
+//! [`chess_corners::CornerDescriptor`] into the [`ChessCorner`] the detectors
+//! consume. Every whole-image entry point in the workspace — the composite
+//! detectors' `detect` methods and the facade's `detect_*` helpers — routes
+//! through it, so there is exactly one place where ChESS output becomes a
+//! corner cloud.
 
-use calib_targets_core::AxisEstimate;
+use calib_targets_core::{AxisEstimate, DetectorConfig, GrayImageView};
+use chess_corners::Detector as ChessDetector;
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
+
+/// Run the ChESS corner front-end over `image` and adapt the result into
+/// [`ChessCorner`]s.
+///
+/// Operates on the image as supplied — no pre-blur, no upscale beyond what
+/// `cfg` itself requests. Corner positions are returned in the input image
+/// frame.
+///
+/// Returns an empty vector rather than an error in both failure modes: when
+/// `cfg` is one `chess_corners::Detector::new` rejects, and when the corner
+/// pass itself fails (e.g. a buffer whose length disagrees with
+/// `width * height`). "No corners" is the correct downstream input in either
+/// case — every detector treats an empty cloud as "no board here" — so the
+/// front-end has no error channel of its own.
+pub fn detect_corners(image: &GrayImageView<'_>, cfg: &DetectorConfig) -> Vec<ChessCorner> {
+    let Ok(mut detector) = ChessDetector::new(*cfg) else {
+        return Vec::new();
+    };
+    detector
+        .detect_u8(image.data, image.width as u32, image.height as u32)
+        .unwrap_or_default()
+        .iter()
+        .map(adapt_chess_corner)
+        .collect()
+}
+
+/// Adapt one upstream [`chess_corners::CornerDescriptor`] into a
+/// [`ChessCorner`].
+fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
+    // `CornerDescriptor::axes` is `None` when the upstream orientation fit was
+    // skipped (`DetectorConfig::without_orientation`). Every detection entry
+    // point in this workspace leaves orientation enabled, so this is the
+    // defensive branch rather than the common one — but it must not fabricate
+    // a confident axis. `AxisEstimate::default()` is the workspace's existing
+    // no-information sentinel (`sigma = π`), which every axis-aware stage
+    // already treats as "skip this corner", so an orientation-free descriptor
+    // degrades to a bare position instead of poisoning the grid with a
+    // zero-sigma axis at angle 0.
+    let axes = c.axes.map_or_else(
+        || [AxisEstimate::default(); 2],
+        |axes| {
+            [
+                AxisEstimate {
+                    angle: axes[0].angle,
+                    sigma: axes[0].sigma,
+                },
+                AxisEstimate {
+                    angle: axes[1].angle,
+                    sigma: axes[1].sigma,
+                },
+            ]
+        },
+    );
+    ChessCorner::new(Point2::new(c.x, c.y), axes, c.response)
+}
 
 /// Canonical 2D corner consumed by the chessboard detector.
 ///
@@ -15,10 +80,10 @@ use serde::{Deserialize, Serialize};
 /// pixel position, the two local grid-axis directions with per-axis 1σ
 /// uncertainty, and the ChESS detector's response (`strength`).
 ///
-/// Callers constructing corners from `chess_corners::CornerDescriptor` typically
-/// go through the workspace facade's adapter; callers handing the detector a
-/// pre-built corner cloud (tests, custom upstreams) construct `ChessCorner`
-/// directly.
+/// Callers running the ChESS front-end go through [`detect_corners`], which
+/// adapts `chess_corners::CornerDescriptor` into this type; callers handing the
+/// detector a pre-built corner cloud (tests, custom upstreams) construct
+/// `ChessCorner` directly.
 ///
 /// The former `contrast` and `fit_rms` fields are gone. They mirrored
 /// `CornerDescriptor` fields that `chess-corners` 1.0 removed, having declared
@@ -48,8 +113,8 @@ impl ChessCorner {
     /// Construct a fully-specified [`ChessCorner`] from its pixel position, the
     /// two local grid-axis estimates, and the ChESS detector `strength`.
     ///
-    /// This is the constructor a custom corner-cloud upstream uses; the
-    /// workspace facade's adapter for `chess_corners::CornerDescriptor` also
+    /// This is the constructor a custom corner-cloud upstream uses;
+    /// [`detect_corners`]' adapter for `chess_corners::CornerDescriptor` also
     /// routes through it.
     pub fn new(position: Point2<f32>, axes: [AxisEstimate; 2], strength: f32) -> Self {
         Self {

@@ -2,6 +2,13 @@
 
 All config types use concrete defaults matching the Rust side, so users can
 construct a config with zero arguments and get reasonable behavior.
+
+The multi-config sweep presets (``ChessboardParams.sweep_default`` and the
+``*.sweep_for_board`` classmethods) are **not** re-implemented here: each one
+delegates to the corresponding Rust preset through :mod:`calib_targets._core`
+and parses the returned config dicts back with ``from_dict``. Hand-porting a
+preset is what let the Python and Rust sweeps drift onto different axes;
+computing them in one place makes that impossible.
 """
 
 from __future__ import annotations
@@ -9,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from . import _core
 from .enums import CirclePolarity, DictionaryName, MarkerLayout
 
 
@@ -981,7 +989,7 @@ class ChessboardParams:
     """
 
     # --- Stable core --------------------------------------------------------
-    min_corner_strength: float = 0.0
+    min_corner_strength: float = 33.0
     min_labeled_corners: int = 8
     max_components: int = 3
     # --- Advanced (opt-in, unstable; serialised under "advanced") ----------
@@ -1064,6 +1072,20 @@ class ChessboardParams:
             kwargs[name] = advanced.get(name, getattr(d, name))
         return cls(**kwargs)
 
+    @classmethod
+    def sweep_default(cls) -> list[ChessboardParams]:
+        """Three-config sweep preset: default + tighter + looser tolerances.
+
+        Thin delegator to Rust ``ChessboardParams::sweep_default``. All three
+        configs preserve the detector's precision-by-construction invariants;
+        only the recall-affecting grid-graph angular tolerances
+        (``cluster_tol_deg`` / ``attach_axis_tol_deg``) vary.
+
+        Pass the list straight to
+        :func:`calib_targets.detect_chessboard_best`.
+        """
+        return [cls.from_dict(cfg) for cfg in _core.chessboard_sweep_default()]
+
 
 # ---------------------------------------------------------------------------
 # ChArUco detection params
@@ -1072,11 +1094,22 @@ class ChessboardParams:
 
 @dataclass(slots=True)
 class ScanDecodeConfig:
+    """Marker-cell decoding parameters.
+
+    Mirrors ``calib_targets_aruco::ScanDecodeConfig``. The defaults here are
+    the ChArUco-flavoured ones the ChArUco detector applies, not the bare
+    ``ScanDecodeConfig::default()`` values.
+    """
+
     border_bits: int = 1
     inset_frac: float = 0.06
     marker_size_rel: float = 0.75
-    min_border_score: float = 0.45
+    min_border_score: float = 0.75
     dedup_by_id: bool = True
+    #: Try multiple per-cell binarization thresholds and keep the one that
+    #: yields a valid dictionary match. Improves recall on blurry or unevenly
+    #: lit images at a small compute cost.
+    multi_threshold: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1085,6 +1118,7 @@ class ScanDecodeConfig:
             "marker_size_rel": self.marker_size_rel,
             "min_border_score": self.min_border_score,
             "dedup_by_id": self.dedup_by_id,
+            "multi_threshold": self.multi_threshold,
         }
 
     @classmethod
@@ -1096,6 +1130,7 @@ class ScanDecodeConfig:
             marker_size_rel=data.get("marker_size_rel", d.marker_size_rel),
             min_border_score=data.get("min_border_score", d.min_border_score),
             dedup_by_id=data.get("dedup_by_id", d.dedup_by_id),
+            multi_threshold=data.get("multi_threshold", d.multi_threshold),
         )
 
 
@@ -1144,7 +1179,7 @@ class CharucoParams:
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
     scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
-    min_marker_inliers: int = 3
+    min_marker_inliers: int = 1
     # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
     # These knobs live in Rust's ``CharucoAdvancedTuning`` behind
     # ``CharucoParams.advanced``. They are kept flat on this dataclass for
@@ -1209,13 +1244,31 @@ class CharucoParams:
             scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
             # A legacy "max_hamming" key (the retired vote matcher's knob) is
             # ignored if present.
-            min_marker_inliers=data.get("min_marker_inliers", 3),
+            min_marker_inliers=data.get("min_marker_inliers", 1),
             min_secondary_marker_inliers=advanced.get("min_secondary_marker_inliers"),
             grid_smoothness_threshold_rel=advanced.get("grid_smoothness_threshold_rel"),
             corner_validation_threshold_rel=advanced.get(
                 "corner_validation_threshold_rel"
             ),
         )
+
+    @classmethod
+    def sweep_for_board(cls, board: CharucoBoardSpec) -> list[CharucoParams]:
+        """Three-config sweep preset for the given board.
+
+        Thin delegator to Rust ``CharucoParams::sweep_for_board``, which is
+        built on ``ChessboardParams::sweep_default``: canonical, tighter and
+        looser grid-build tolerances, each re-carrying the ChArUco corner
+        strength floor and the ChArUco-specific edge-shape-gate override. The
+        marker-decoding knobs describe the printed board rather than the
+        imaging conditions, so they stay fixed across the sweep.
+
+        Pass the list straight to :func:`calib_targets.detect_charuco_best`.
+        """
+        return [
+            cls.from_dict(cfg)
+            for cfg in _core.charuco_sweep_for_board(board.to_dict())
+        ]
 
 
 # Backward-compatible alias
@@ -1305,7 +1358,7 @@ class CircleScoreParams:
     diameter_frac: float = 0.5
     ring_thickness_frac: float = 0.35
     ring_radius_mul: float = 1.6
-    min_contrast: float = 60.0
+    min_contrast: float = 10.0
     samples: int = 48
     center_search_px: int = 2
 
@@ -1396,10 +1449,37 @@ class MarkerBoardParams:
             roi_cells=tuple(roi) if roi is not None else None,  # type: ignore[arg-type]
         )
 
+    @classmethod
+    def sweep_for_board(cls, board: MarkerBoardSpec) -> list[MarkerBoardParams]:
+        """Three-config sweep preset for the given board layout.
+
+        Thin delegator to Rust ``MarkerBoardParams::sweep_for_board``, which is
+        built on ``ChessboardParams::sweep_default``: default, tighter and
+        looser grid-build tolerances.
+
+        Varies exactly one axis — the shared grid-build front-end. Circle
+        scoring and circle-to-layout matching stay fixed across the sweep:
+        those knobs describe the printed board, not the imaging conditions, so
+        sweeping them would fit per-dataset constants rather than cover a real
+        degree of freedom.
+
+        Pass the list straight to
+        :func:`calib_targets.detect_marker_board_best`.
+        """
+        return [
+            cls.from_dict(cfg)
+            for cfg in _core.marker_board_sweep_for_board(board.to_dict())
+        ]
+
 
 # ---------------------------------------------------------------------------
 # PuzzleBoard detection params
 # ---------------------------------------------------------------------------
+
+#: Rows in the master PuzzleBoard pattern (Rust ``MASTER_ROWS``).
+MASTER_ROWS = 501
+#: Columns in the master PuzzleBoard pattern (Rust ``MASTER_COLS``).
+MASTER_COLS = 501
 
 
 @dataclass(slots=True)
@@ -1415,6 +1495,17 @@ class PuzzleBoardSpec:
     cell_size: float
     origin_row: int = 0
     origin_col: int = 0
+
+    @classmethod
+    def master(cls, cell_size: float) -> PuzzleBoardSpec:
+        """Declare the whole 501 x 501 master pattern, given only the cell size.
+
+        This is the right default for detection: a PuzzleBoard identifies
+        itself, so the decoder recovers where the visible fragment sits on the
+        master pattern and there is no need to know which sub-rectangle was
+        printed. Mirrors ``PuzzleBoardSpec::master`` on the Rust side.
+        """
+        return cls(rows=MASTER_ROWS, cols=MASTER_COLS, cell_size=cell_size)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1512,10 +1603,49 @@ class PuzzleBoardScoringMode:
 
 
 @dataclass(slots=True)
+class PuzzleBoardSymmetryMode:
+    """Which board orientations the decoder is allowed to consider.
+
+    - ``kind="rotations"`` (the default) — the four 90° rotations only.
+      Correct for an ordinary camera: the board may appear rotated but
+      cannot appear mirrored. Also the more unique search, since the four
+      mirrored hypotheses can no longer alias a correct decode into a
+      rejection.
+    - ``kind="rotations_and_reflections"`` — all eight dihedral transforms.
+      Needed only when the optical path flips handedness (a mirror or beam
+      splitter, or the image was mirrored before it reached the detector).
+    """
+
+    kind: str = "rotations"
+
+    @classmethod
+    def rotations(cls) -> PuzzleBoardSymmetryMode:
+        return cls(kind="rotations")
+
+    @classmethod
+    def rotations_and_reflections(cls) -> PuzzleBoardSymmetryMode:
+        return cls(kind="rotations_and_reflections")
+
+    def to_dict(self) -> dict[str, Any]:
+        if self.kind in ("rotations", "rotations_and_reflections"):
+            return {"kind": self.kind}
+        raise ValueError(f"unknown PuzzleBoardSymmetryMode kind: {self.kind!r}")
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzleBoardSymmetryMode:
+        kind = str(data.get("kind", "rotations"))
+        if kind == "rotations":
+            return cls.rotations()
+        if kind == "rotations_and_reflections":
+            return cls.rotations_and_reflections()
+        raise ValueError(f"unknown PuzzleBoardSymmetryMode kind: {kind!r}")
+
+
+@dataclass(slots=True)
 class PuzzleBoardDecodeConfig:
     """PuzzleBoard edge-bit decode parameters."""
 
-    min_window: int = 4
+    min_window: int = 7
     min_bit_confidence: float = 0.15
     max_bit_error_rate: float = 0.30
     search_all_components: bool = True
@@ -1523,6 +1653,9 @@ class PuzzleBoardDecodeConfig:
     search_mode: PuzzleBoardSearchMode = field(default_factory=PuzzleBoardSearchMode.full)
     scoring_mode: PuzzleBoardScoringMode = field(
         default_factory=PuzzleBoardScoringMode.soft_log_likelihood
+    )
+    symmetry_mode: PuzzleBoardSymmetryMode = field(
+        default_factory=PuzzleBoardSymmetryMode.rotations
     )
     # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
     # These soft-scorer knobs live in Rust's ``PuzzleBoardAdvancedTuning``
@@ -1542,6 +1675,7 @@ class PuzzleBoardDecodeConfig:
             "sample_radius_rel": self.sample_radius_rel,
             "search_mode": self.search_mode.to_dict(),
             "scoring_mode": self.scoring_mode.to_dict(),
+            "symmetry_mode": self.symmetry_mode.to_dict(),
             "advanced": {
                 "bit_likelihood_slope": self.bit_likelihood_slope,
                 "per_bit_floor": self.per_bit_floor,
@@ -1573,6 +1707,9 @@ class PuzzleBoardDecodeConfig:
             ),
             scoring_mode=PuzzleBoardScoringMode.from_dict(
                 data.get("scoring_mode", {"kind": "soft_log_likelihood"})
+            ),
+            symmetry_mode=PuzzleBoardSymmetryMode.from_dict(
+                data.get("symmetry_mode", {"kind": "rotations"})
             ),
             bit_likelihood_slope=float(
                 advanced.get("bit_likelihood_slope", d.bit_likelihood_slope)
@@ -1617,23 +1754,22 @@ class PuzzleBoardParams:
 
     @classmethod
     def sweep_for_board(cls, board: PuzzleBoardSpec) -> list[PuzzleBoardParams]:
-        # Bracket the workspace ChESS-threshold default (absolute 15.0)
-        # with a looser floor for blurry inputs and a tighter floor
-        # for clean ones. Detector + threshold semantics changed in
-        # chess-corners 0.10 (raw response `R = SR − DR − 16·MR`),
-        # so the bracket lives in raw-response units, not the 0..1
-        # normalised range used pre-0.10.
-        base = cls.for_board(board)
-        loose = cls.from_dict(base.to_dict())
-        loose.chess.threshold = 8.0
-        tight = cls.from_dict(base.to_dict())
-        tight.chess.threshold = 25.0
-        soft = [base, loose, tight]
-        hard = [cls.from_dict(params.to_dict()) for params in soft]
-        for params in hard:
-            params.decode.scoring_mode = PuzzleBoardScoringMode.hard_weighted()
-            params.decode.max_bit_error_rate = 0.40
-        return [*soft, *hard]
+        """Six-config sweep preset for the given board.
+
+        Thin delegator to Rust ``PuzzleBoardParams::sweep_for_board``. The
+        preset crosses the three ``ChessboardParams::sweep_default`` grid-build
+        tolerance brackets (default, tighter, looser) with the two decode
+        scorers: the default soft scorer at the default BER gate, then the
+        legacy hard-weighted scorer at the paper's 40 % BER allowance, which
+        recovers high-distortion fragments.
+
+        Pass the list straight to
+        :func:`calib_targets.detect_puzzleboard_best`.
+        """
+        return [
+            cls.from_dict(cfg)
+            for cfg in _core.puzzleboard_sweep_for_board(board.to_dict())
+        ]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1693,6 +1829,7 @@ __all__ = [
     "PuzzleBoardSpec",
     "PuzzleBoardSearchMode",
     "PuzzleBoardScoringMode",
+    "PuzzleBoardSymmetryMode",
     "PuzzleBoardDecodeConfig",
     "DecodeConfig",  # backward-compatible alias
     "PuzzleBoardParams",

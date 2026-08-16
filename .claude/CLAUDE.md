@@ -124,8 +124,8 @@ two distinct). Read the relevant guide before touching that area:
 
 **Other:** FFI / C-API consumer docs in [`docs/ffi/`](../docs/ffi/); release
 history in [`docs/changelog/`](../docs/changelog/) (archive, indexed by the root
-`CHANGELOG.md`) and the live [`docs/migrations/0.11.0.md`](../docs/migrations/0.11.0.md)
-(with [`0.10.0.md`](../docs/migrations/0.10.0.md) retained for two-release hops).
+`CHANGELOG.md`) and the live [`docs/migrations/0.13.0.md`](../docs/migrations/0.13.0.md)
+(with [`0.12.0.md`](../docs/migrations/0.12.0.md) retained for two-release hops).
 
 ## Key conventions (always on)
 

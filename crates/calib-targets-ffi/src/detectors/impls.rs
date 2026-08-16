@@ -22,11 +22,11 @@ use crate::{
     convert_chess_config, convert_chessboard_params, convert_marker_board_params,
     convert_puzzleboard_params, copy_output_slice, ct_charuco_detector_t, ct_chessboard_detector_t,
     ct_marker_board_detector_t, ct_puzzleboard_detector_t, labeled_corner_to_ffi,
-    map_charuco_create_error, map_charuco_detect_error, map_puzzleboard_create_error,
-    map_puzzleboard_detect_error, marker_detection_to_ffi, option_f32_to_ffi, require_mut_ref,
-    require_ref, validate_output_buffer, write_json_string, write_optional_result,
-    write_required_len, CharucoDetector, ChessboardDetector, FfiError, FfiResult,
-    MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
+    map_charuco_create_error, map_charuco_detect_error, map_marker_board_detect_error,
+    map_puzzleboard_create_error, map_puzzleboard_detect_error, marker_detection_to_ffi,
+    option_f32_to_ffi, require_mut_ref, require_ref, validate_output_buffer, write_json_string,
+    write_optional_result, write_required_len, CharucoDetector, ChessboardDetector, FfiError,
+    FfiResult, MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
 };
 use std::ffi::c_char;
 
@@ -73,7 +73,7 @@ pub(super) unsafe fn charuco_detector_create_impl(
     let mut params = convert_charuco_detector_params(&config.detector)?;
     params.chess = chess;
     let detector = CharucoDetector::new(params).map_err(map_charuco_create_error)?;
-    let handle = Box::new(ct_charuco_detector_t { chess, detector });
+    let handle = Box::new(ct_charuco_detector_t { detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
 }
@@ -94,7 +94,7 @@ pub(super) unsafe fn marker_board_detector_create_impl(
     params.chess = chess;
     let detector =
         MarkerBoardDetector::new(params).map_err(|e| FfiError::config_error(e.to_string()))?;
-    let handle = Box::new(ct_marker_board_detector_t { chess, detector });
+    let handle = Box::new(ct_marker_board_detector_t { detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
 }
@@ -114,7 +114,7 @@ pub(super) unsafe fn puzzleboard_detector_create_impl(
     let mut params = convert_puzzleboard_params(&config.detector)?;
     params.chess = chess;
     let detector = PuzzleBoardDetector::new(params).map_err(map_puzzleboard_create_error)?;
-    let handle = Box::new(ct_puzzleboard_detector_t { chess, detector });
+    let handle = Box::new(ct_puzzleboard_detector_t { detector });
     *out_detector = Box::into_raw(handle);
     Ok(())
 }
@@ -135,7 +135,7 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
+    let corners = prepared.detect_corners(&detector.chess);
 
     let Some(detection) = detector.detector.detect(&corners) else {
         // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
@@ -190,12 +190,11 @@ pub(super) unsafe fn charuco_detector_detect_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
     let detection = detector
         .detector
-        .detect(&view, &corners)
+        .detect(&view)
         .map_err(map_charuco_detect_error);
 
     let detection = match detection {
@@ -274,16 +273,18 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
-    let Some(detection) = detector.detector.detect(&view, &corners) else {
-        // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
-        unsafe {
-            write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
-            write_optional_result(bufs.out_result, ct_marker_board_result_t::default());
+    let detection = match detector.detector.detect(&view) {
+        Ok(detection) => detection,
+        Err(err) => {
+            // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
+            unsafe {
+                write_required_len(bufs.out_corners_len, 0, "out_corners_len")?;
+                write_optional_result(bufs.out_result, ct_marker_board_result_t::default());
+            }
+            return Err(map_marker_board_detect_error(err));
         }
-        return Err(FfiError::not_found("marker board not detected"));
     };
 
     let corners_out: Vec<ct_labeled_corner_t> = detection
@@ -340,12 +341,11 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
     let detection = detector
         .detector
-        .detect(&view, &corners)
+        .detect(&view)
         .map_err(map_puzzleboard_detect_error);
 
     let detection = match detection {
@@ -375,6 +375,9 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         edges_matched: detection.decode.edges_matched,
         mean_bit_confidence: detection.decode.mean_confidence,
         bit_error_rate: detection.decode.bit_error_rate,
+        logical_bits: detection.decode.logical_bits,
+        logical_bit_error_rate: detection.decode.logical_bit_error_rate,
+        dot_dissent_rate: detection.decode.dot_dissent_rate,
         master_origin_row: detection.decode.master_origin_row,
         master_origin_col: detection.decode.master_origin_col,
     };
@@ -408,7 +411,7 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
     let detector = unsafe { require_ref(args.detector, "args.detector")? };
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
+    let corners = prepared.detect_corners(&detector.chess);
 
     let detections = detector.detector.detect_all(&corners);
 
@@ -457,8 +460,8 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
 //
 // The detector diagnostics types are deeply nested `Vec`-of-struct trees with
 // an explicitly looser stability promise than the typed result API. Rather
-// than freeze them into flat C structs, each `*_detect_diagnostics_json` entry
-// point runs detection and renders `serde_json::to_string` of the diagnostics
+// than freeze them into flat C structs, each `*_diagnose_json` entry point
+// runs detection and renders `serde_json::to_string` of the diagnostics
 // struct into a caller-owned UTF-8 buffer, reusing the `ct_last_error_message`
 // query/fill discipline (NULL + capacity 0 queries the required length).
 
@@ -480,12 +483,11 @@ pub(super) unsafe fn charuco_detector_detect_diagnostics_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
-    // `detect_with_diagnostics` returns diagnostics even when detection fails,
-    // so a failed detection still produces a well-formed JSON payload.
-    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    // `diagnose` returns diagnostics even when detection fails, so a failed
+    // detection still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.diagnose(&view);
     let json = diagnostics_json(&diagnostics)?;
     // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
     unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
@@ -504,15 +506,12 @@ pub(super) unsafe fn marker_board_detector_detect_diagnostics_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
-    // The marker-board diagnostics channel only yields evidence on a successful
-    // detection; a failed detection is reported as `CT_STATUS_NOT_FOUND`.
-    let Some((_result, diagnostics)) = detector.detector.detect_with_diagnostics(&view, &corners)
-    else {
-        return Err(FfiError::not_found("marker board not detected"));
-    };
+    // `diagnose` returns diagnostics even when detection fails, so a failed
+    // detection still produces a well-formed JSON payload — matching the
+    // ChArUco and PuzzleBoard diagnostics entry points.
+    let (_result, diagnostics) = detector.detector.diagnose(&view);
     let json = diagnostics_json(&diagnostics)?;
     // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
     unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }
@@ -531,12 +530,11 @@ pub(super) unsafe fn puzzleboard_detector_detect_diagnostics_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t`.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess)?;
     let view = prepared.view();
 
-    // `detect_with_diagnostics` returns diagnostics even when detection fails,
-    // so a failed decode still produces a well-formed JSON payload.
-    let (_result, diagnostics) = detector.detector.detect_with_diagnostics(&view, &corners);
+    // `diagnose` returns diagnostics even when detection fails, so a failed
+    // decode still produces a well-formed JSON payload.
+    let (_result, diagnostics) = detector.detector.diagnose(&view);
     let json = diagnostics_json(&diagnostics)?;
     // SAFETY: see `chessboard_detector_detect_diagnostics_impl`.
     unsafe { write_json_string(&json, out_utf8, out_capacity, out_len) }

@@ -358,7 +358,7 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
     };
 
     let t_detect = Instant::now();
-    let (outcome, detect_diag) = detector.detect_with_diagnostics(&view, &corners);
+    let (outcome, detect_diag) = detector.diagnose_with_corners(&view, &corners);
     let detect_ms = t_detect.elapsed().as_secs_f32() * 1000.0;
     let total_ms = t_total.elapsed().as_secs_f32() * 1000.0;
 

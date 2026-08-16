@@ -31,9 +31,10 @@ ml-refiner = [
 default = ["image", "cli"]
 image = ["dep:chess-corners", "dep:image"]
 cli = ["dep:clap"]
-# Opt-in detector introspection surface. Enables the per-detector
-# `detect_*_with_diagnostics` entry points + the `diagnostics` modules
-# (`trace_topological`, `CharucoDetectDiagnostics`, `PuzzleBoardDiagnostics`,
+# Opt-in detector introspection surface. Enables the per-detector `diagnose_*`
+# / `diagnose_*_with_corners` entry points, the `trace_topological` /
+# `trace_topological_detection` re-exports, and the `diagnostics` modules
+# (`CharucoDetectDiagnostics`, `PuzzleBoardDiagnostics`,
 # `MarkerBoardDiagnostics`). OFF by default — the hot `detect_*` path never
 # assembles them. Forwards to every detector crate that exposes a
 # `diagnostics` feature, so the surface is gated uniformly across the

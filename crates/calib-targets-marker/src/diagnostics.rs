@@ -5,7 +5,8 @@
 //! circle pairings the matcher chose, the per-corner provenance back into the
 //! input ChESS-corner slice, and the count of circles consistent with the
 //! chosen grid alignment. They are produced by
-//! [`crate::MarkerBoardDetector::detect_with_diagnostics`] and are
+//! [`crate::MarkerBoardDetector::diagnose`] /
+//! [`crate::MarkerBoardDetector::diagnose_with_corners`] and are
 //! intentionally kept separate from the result API
 //! ([`crate::MarkerBoardDetection`]).
 //!
@@ -25,10 +26,12 @@ use crate::circle_score::CircleCandidate;
 use crate::types::CircleMatch;
 
 /// Per-call diagnostics captured by
-/// [`crate::MarkerBoardDetector::detect_with_diagnostics`].
+/// [`crate::MarkerBoardDetector::diagnose`] /
+/// [`crate::MarkerBoardDetector::diagnose_with_corners`].
 ///
-/// Returned alongside the [`crate::MarkerBoardDetection`] on every
-/// successful call.
+/// Returned alongside the detection result on **every** call, including
+/// failed detections (best-effort) so overlay tools can render the circle
+/// hypotheses that *were* scored even when no alignment was found.
 #[non_exhaustive]
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MarkerBoardDiagnostics {

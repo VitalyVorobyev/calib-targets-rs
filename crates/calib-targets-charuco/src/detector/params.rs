@@ -23,11 +23,13 @@ pub struct CharucoParams {
     /// This is the *main* detection pass; the local re-detection of individual
     /// suspicious corners runs on separate, internal fixed defaults.
     ///
-    /// The facade's whole-image entry points (`detect_charuco` /
-    /// `detect_charuco_best`) run this front-end over the input image to
-    /// produce the corner cloud. [`CharucoDetector::detect`](crate::CharucoDetector::detect)
-    /// consumes an already-detected `&[ChessCorner]` and never re-runs corner
-    /// detection, so this field is read only on the image entry points.
+    /// Every whole-image entry point runs this front-end over the input image
+    /// to produce the corner cloud:
+    /// [`CharucoDetector::detect`](crate::CharucoDetector::detect),
+    /// [`CharucoDetector::detect_corners`](crate::CharucoDetector::detect_corners),
+    /// and the facade's `detect_charuco` / `detect_charuco_best`. The
+    /// `*_with_corners` entry points consume an already-detected
+    /// `&[ChessCorner]` and never read this field.
     #[serde(default = "default_chess_config")]
     pub chess: DetectorConfig,
     /// Pixels per board square in the canonical sampling space.

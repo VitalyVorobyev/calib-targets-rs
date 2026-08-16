@@ -32,8 +32,8 @@ per target, with a shared corner vocabulary.
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
-Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.11.0.md)
-([book chapter][migration]); the [0.10.0 guide](docs/migrations/0.10.0.md) is kept
+Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.13.0.md)
+([book chapter][migration]); the [0.12.0 guide](docs/migrations/0.12.0.md) is kept
 for consumers upgrading across two releases.
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/
@@ -126,8 +126,11 @@ let detection = detect::detect_chessboard_best(
 ```
 
 The other three targets follow the same shape — `detect_charuco`,
-`detect_puzzleboard`, `detect_marker_board`, each with a `*_best` sweep
-variant. Runnable examples:
+`detect_puzzleboard`, `detect_marker_board`. Each also has a
+`*_with_corners` variant for reusing one ChESS corner pass across several
+target detectors, `diagnose_*` / `diagnose_*_with_corners` counterparts
+(`diagnostics` feature) for per-stage rejection detail, and a `*_best`
+sweep variant. Runnable examples:
 [`detect_charuco`](crates/calib-targets/examples/detect_charuco.rs),
 [`detect_markerboard`](crates/calib-targets/examples/detect_markerboard.rs),
 [`detect_puzzleboard`](crates/calib-targets/examples/detect_puzzleboard.rs).

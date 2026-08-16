@@ -133,9 +133,9 @@ target_position.y == (id / 501) · cell_size
 
 | constant | value | basis |
 |---|---|---|
-| `min_window` | 7 | Clean `D4 × position` uniqueness begins at 6 × 6 (measured, `window_uniqueness_report`); a 300k-trial noise sweep puts the zero-false-accept floor at 7 × 7 at both 30 % and 40 % BER. 7 = clean threshold + one square of noise margin. |
+| `min_window` | 7 | A span in **corners**. Exactly the paper's 4 × 4 claim in our units: an interior readout at span `s` carries `6(s-2)` distinct bits, so `s = 7` carries the 30 the paper attributes to its 4 × 4 fragment. Verified exhaustively over all 251 001 master positions (`research/puzzleboard-rings`): unique everywhere at 7 under the rotations-only search, 3 330 ambiguous at 6. Not a noise margin — an information floor, which is why majority voting cannot lower it. |
 | `min_bit_confidence` | 0.15 | Below this the dot read carries no usable evidence; dropping beats guessing because the scorers weight by confidence. |
-| `max_bit_error_rate` | 0.30 | The paper allows up to 40 %; 0.30 is the shipped default, with 0.40 available in the sweep preset. |
+| `max_bit_error_rate` | 0.30 | Applied to the **voted** bits, which is the domain the paper's figure is quoted in ("up to 401/1002 ≈ 40 % … *after* averaging over all repetitions"). 0.30 is the shipped default, with 0.40 available in the sweep preset. |
 | `sample_radius_rel` | 1/6 | Dot radius as a fraction of edge length — large enough to average sensor noise, small enough to stay inside the dot under foreshortening. |
 | `SEPARATION_PRODUCT_CAP` | 1024 | Guards the CRT separation against degenerate all-tied inputs; above it the transform falls back to a direct table scan, so worst-case cost never exceeds the pre-CRT version. |
 
@@ -143,13 +143,17 @@ target_position.y == (id / 501) · cell_size
 
 Clean, noise-free windows at seven planted origins:
 
-| window | edge bits | decoded | rejected as D4-aliased |
-|---|---|---|---|
-| 3 × 3 | 12 | 0/7 | 7 |
-| 4 × 4 | 24 | 0/7 | 7 |
-| 5 × 5 | 40 | 5/7 | 2 |
-| 6 × 6 | 60 | 7/7 | 0 |
-| 7 × 7 | 84 | 7/7 | 0 |
+Windows are sized in **squares** here (the paper's convention). `min_window` is
+a **corner span**; `s × s` squares span `s + 1` corners, so `min_window = 7` is
+the `6 × 6` row.
+
+| window (squares) | corner span | edge bits | decoded | rejected as D4-aliased |
+|---|---|---|---|---|
+| 3 × 3 | 4 | 12 | 0/7 | 7 |
+| 4 × 4 | 5 | 24 | 0/7 | 7 |
+| 5 × 5 | 6 | 40 | 5/7 | 2 |
+| 6 × 6 | **7** | 60 | 7/7 | 0 |
+| 7 × 7 | 8 | 84 | 7/7 | 0 |
 
 The paper's "4 × 4 is unique" holds across master *positions at a fixed
 orientation* — which is what `code_maps::tests::master_4x4_windows_unique`

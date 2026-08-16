@@ -1,6 +1,6 @@
 //! Synthetic author-like PuzzleBoard photo regression.
 //!
-//! The images under `testdata/puzzleboard_synthetic_author_like/` are
+//! The images under `testdata/puzzleboard/` are
 //! deterministic renders from the committed 501×501 PuzzleBoard maps, then
 //! warped through perspective, radial distortion, blur, noise, vignetting, and
 //! JPEG-like compression. Unlike the upstream example photos, these fixtures
@@ -47,7 +47,7 @@ fn fixture_dir() -> PathBuf {
         .join("..")
         .join("..")
         .join("testdata")
-        .join("puzzleboard_synthetic_author_like")
+        .join("puzzleboard")
 }
 
 fn load_manifest(dir: &Path) -> Manifest {

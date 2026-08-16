@@ -17,10 +17,9 @@ an integer-labelled chessboard grid `(i, j) → image position`. It is
 a real grid intersection by a stack of independent geometric invariants.
 Missing corners are acceptable; wrong corners are not.
 
-On our private regression dataset (captured with non-negligible lens
-distortion and motion blur — uncommitted; see `privatedata/` for how
-to reproduce locally) the detector achieves a **high detection rate
-with zero wrong `(i, j)` labels** — precision-by-construction.
+On real-world captures carrying non-negligible lens distortion and motion
+blur, the detector achieves a **high detection rate with zero wrong
+`(i, j)` labels** — precision-by-construction.
 
 A wrong label would corrupt downstream calibration; that is the constraint
 the algorithm refuses to break.

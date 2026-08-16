@@ -1,0 +1,586 @@
+<title>PuzzleBoard Ring Survey</title>
+<style>
+  :root {
+    --paper:      #f4f5f6;
+    --card:       #ffffff;
+    --ink:        #171a1f;
+    --ink-soft:   #545c67;
+    --ink-faint:  #878f9b;
+    --rule:       #d9dde2;
+    --rule-soft:  #e8ebee;
+    --accent:     #2c3a72;
+    --accent-dim: #6d78a8;
+    --clean:      #1c6146;
+    --clean-bg:   #e3efe9;
+    --alias:      #9c3226;
+    --alias-bg:   #f6e4e1;
+    --shadow:     0 1px 2px rgba(23,26,31,.06), 0 8px 24px -16px rgba(23,26,31,.35);
+
+    --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Palatino, "Source Serif 4", Georgia, serif;
+    --mono:  ui-monospace, "SF Mono", SFMono-Regular, Menlo, "Cascadia Mono", Consolas, monospace;
+    --sans:  ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #101216;
+      --card:       #171a1f;
+      --ink:        #e4e7ea;
+      --ink-soft:   #a2aab5;
+      --ink-faint:  #6f7884;
+      --rule:       #2a2f37;
+      --rule-soft:  #21262d;
+      --accent:     #97a4dd;
+      --accent-dim: #6b76a6;
+      --clean:      #6cc39a;
+      --clean-bg:   #14291f;
+      --alias:      #e0897c;
+      --alias-bg:   #2d1a17;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:      #101216;
+    --card:       #171a1f;
+    --ink:        #e4e7ea;
+    --ink-soft:   #a2aab5;
+    --ink-faint:  #6f7884;
+    --rule:       #2a2f37;
+    --rule-soft:  #21262d;
+    --accent:     #97a4dd;
+    --accent-dim: #6b76a6;
+    --clean:      #6cc39a;
+    --clean-bg:   #14291f;
+    --alias:      #e0897c;
+    --alias-bg:   #2d1a17;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 17px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap {
+    max-width: 60rem;
+    margin: 0 auto;
+    padding: 4rem 1.5rem 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 3.25rem;
+  }
+  p, li { max-width: 65ch; }
+
+  /* ---- masthead ---- */
+  header { display: flex; flex-direction: column; gap: 1rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: .7rem;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    font-size: clamp(2.1rem, 5vw, 3.1rem);
+    line-height: 1.08;
+    margin: 0;
+    font-weight: 600;
+    letter-spacing: -.018em;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 1.16rem;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 58ch;
+  }
+  .meta {
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-faint);
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem 1.5rem;
+    padding-top: .5rem;
+    border-top: 1px solid var(--rule);
+  }
+
+  /* ---- answers ---- */
+  .answers { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule); }
+  @media (min-width: 44rem) { .answers { grid-template-columns: repeat(3, 1fr); } }
+  .answer { background: var(--card); padding: 1.4rem 1.35rem; display: flex; flex-direction: column; gap: .5rem; }
+  .answer .q {
+    font-family: var(--sans);
+    font-size: .76rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+  }
+  .answer .a { font-size: 1.5rem; line-height: 1.15; font-weight: 600; letter-spacing: -.01em; }
+  .answer .a.pos { color: var(--clean); }
+  .answer .a.neg { color: var(--alias); }
+  .answer .n { font-family: var(--mono); font-size: .78rem; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+
+  /* ---- sections ---- */
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+  h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -.012em;
+    margin: 0;
+    padding-bottom: .55rem;
+    border-bottom: 2px solid var(--ink);
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: var(--sans);
+    font-size: .82rem;
+    font-weight: 650;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: .8rem 0 -.3rem;
+  }
+  p { margin: 0; }
+  strong { font-weight: 650; }
+  code, .m { font-family: var(--mono); font-size: .88em; }
+  code {
+    background: var(--rule-soft);
+    padding: .1em .34em;
+    border-radius: 3px;
+  }
+
+  /* ---- tables ---- */
+  .scroll { overflow-x: auto; border: 1px solid var(--rule); background: var(--card); }
+  table { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: .82rem; font-variant-numeric: tabular-nums; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-family: var(--sans);
+    font-size: .78rem;
+    color: var(--ink-soft);
+    padding: .7rem .9rem;
+    border-bottom: 1px solid var(--rule);
+    background: var(--rule-soft);
+  }
+  th, td { padding: .42rem .9rem; text-align: right; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th {
+    font-weight: 600;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--rule);
+    font-size: .74rem;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+  }
+  tbody tr + tr td { border-top: 1px solid var(--rule-soft); }
+  tbody tr.hi td { background: var(--clean-bg); }
+  tbody tr.lo td { background: var(--alias-bg); }
+  tbody tr.hi td:first-child::after { content: " ←"; color: var(--clean); }
+  td.good { color: var(--clean); font-weight: 600; }
+  td.bad  { color: var(--alias); }
+
+  /* ---- callout ---- */
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--card);
+    padding: 1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+  }
+  .note .label {
+    font-family: var(--sans);
+    font-size: .72rem;
+    font-weight: 650;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--accent);
+  }
+  .formula {
+    font-family: var(--mono);
+    font-size: .9rem;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    padding: 1rem 1.2rem;
+    overflow-x: auto;
+    line-height: 1.8;
+  }
+  ul { margin: 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: .45rem; }
+  li::marker { color: var(--accent-dim); }
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding-top: 1.5rem;
+    font-size: .88rem;
+    color: var(--ink-soft);
+    display: flex;
+    flex-direction: column;
+    gap: .7rem;
+  }
+  a { color: var(--accent); text-underline-offset: 2px; }
+  a:focus-visible, :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">calib-targets · research · puzzleboard-rings</div>
+  <h1>How good is the PuzzleBoard code, and how hard is it to beat?</h1>
+  <p class="standfirst">
+    An exhaustive survey of the position code shipped in <span class="m">calib-targets-puzzleboard</span>,
+    measured against 500 000 uniformly sampled alternatives from the same construction.
+  </p>
+  <div class="meta">
+    <span>500 000 rings · 40 000 board pairs</span>
+    <span>every count exact over all 251 001 master positions</span>
+    <span>rotations-only (C4)</span>
+    <span>2026-08-16</span>
+  </div>
+</header>
+
+<div class="answers">
+  <div class="answer">
+    <div class="q">Is the shipped board good?</div>
+    <div class="a pos">Yes, at its window</div>
+    <div class="n">perfect at 7 corners, where 0.48 % of random boards are</div>
+  </div>
+  <div class="answer">
+    <div class="q">Easy to match?</div>
+    <div class="a">1 draw in 208</div>
+    <div class="n">192 of 40 000 random pairs equal it</div>
+  </div>
+  <div class="answer">
+    <div class="q">Can anything beat it?</div>
+    <div class="a neg">Not by sampling</div>
+    <div class="n">0 of 40 000 reached 6 corners</div>
+  </div>
+</div>
+
+<section>
+  <h2>What this settles</h2>
+  <p>
+    The PuzzleBoard decoder refuses to decode a fragment narrower than
+    <code>min_window</code> corners, because below some size a fragment does not identify its
+    own position on the 501×501 master pattern uniquely. That constant was set from a
+    spot check on seven planted origins. This survey computes the answer exactly, over
+    every one of the 251 001 positions, for the shipped board and for half a million
+    alternatives drawn uniformly from the same construction.
+  </p>
+  <p>
+    Three results matter to the library. <strong>The shipped <code>min_window = 7</code> is
+    exactly the floor</strong> — not a conservative choice with slack, and not lowerable.
+    <strong>The switch to rotations-only decoding is what made it sound</strong>: while the
+    decoder searched all eight dihedral relabellings, the shipped constant sat two rings
+    <em>below</em> the provable floor. And <strong>a better board is not reachable by
+    sampling</strong>, though the space is far too large for that to settle whether one exists.
+  </p>
+</section>
+
+<section>
+  <h2>The reduction that makes this cheap</h2>
+  <p>
+    A board is two cyclic sequences superposed — map <span class="m">A</span> drives the
+    vertical edge dots, map <span class="m">B</span> the horizontal ones. Because their
+    periods are coprime with the map height, the code table factorises: what a fragment at
+    master position <span class="m">(i, j)</span> sees splits into a part that depends only on
+    an index <span class="m">u</span> into map A and a part that depends only on an index
+    <span class="m">v</span> into map B.
+  </p>
+  <p>
+    The consequence is that the number of hypotheses a fragment admits is a sum of
+    <em>rank-one outer products</em>, one per rotation:
+  </p>
+  <div class="formula">hypotheses(u, v) = Σ<sub>g</sub> row<sub>g</sub>[u] · col<sub>g</sub>[v]</div>
+  <p>
+    The identity contributes exactly 1 everywhere — every fragment matches itself. So a
+    position is ambiguous exactly when some non-identity rotation has both factors non-zero
+    there, the ambiguous set is a union of combinatorial rectangles, and
+    <strong>a board is perfect if and only if every non-identity rotation has one factor
+    identically zero.</strong> Verified against an independent per-position hypothesis count.
+  </p>
+  <div class="note">
+    <div class="label">Why this collapses the search</div>
+    <p>
+      The half turn is the only rotation that does not exchange the two code maps, so
+      <em>its</em> two factors are functions of one ring each. A ring whose factor vanishes
+      kills the half-turn term of any board it joins — whatever it is paired with. That turns
+      one axis of a product search over ~10<sup>193</sup> pairs into a linear scan over rings.
+      The quarter turns do mix the maps and stay irreducibly pairwise.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>The shipped board, exactly</h2>
+  <p>
+    Reproducing the published claims first, in the paper's own model — a fragment reading
+    <em>every</em> edge bounding its visible pieces, counted over distinct patterns rather than
+    positions. Both published figures come out:
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Published claims reproduced. Denominator is distinct patterns, as in the paper.</caption>
+      <thead>
+        <tr><th>Fragment</th><th>Edges</th><th>Unique under C4</th><th>Published</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>3×3 pieces</td><td>24</td><td>99.3294 % <span style="color:var(--ink-faint)">(247 671 / 249 343)</span></td><td>99.33 %</td></tr>
+        <tr><td>4×4 pieces</td><td>40</td><td>100.0000 % <span style="color:var(--ink-faint)">(251 001 / 251 001)</span></td><td>100 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Our detector reads less than that. It samples a dot only where it can see both flanking
+    squares, so the outermost ring of edges is unreadable and a fragment spanning
+    <span class="m">s</span> corners yields the edge count the paper would assign to a fragment
+    one ring smaller. The table below is that readout — the one <code>min_window</code> actually
+    gates — counted over positions, exactly, for all three symmetry groups.
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Shipped board, interior readout. Highlighted row is the shipped <code>min_window</code>.</caption>
+      <thead>
+        <tr><th>Span</th><th>Edges</th><th>Code bits</th><th>Fixed</th><th>C4 · rotations</th><th>D4 · with mirrors</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>5 corners</td><td>24</td><td>18</td><td>100 %</td><td class="bad">0 %</td><td class="bad">0 %</td></tr>
+        <tr><td>6 corners</td><td>40</td><td>24</td><td>100 %</td><td class="bad">98.6733 %</td><td class="bad">91.9538 %</td></tr>
+        <tr class="hi"><td>7 corners</td><td>60</td><td>30</td><td>100 %</td><td class="good">100 %</td><td class="bad">99.7992 %</td></tr>
+        <tr><td>8 corners</td><td>84</td><td>36</td><td>100 %</td><td class="good">100 %</td><td class="bad">99.9785 %</td></tr>
+        <tr><td>9 corners</td><td>112</td><td>42</td><td>100 %</td><td class="good">100 %</td><td class="good">100 %</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <div class="label">The rotations-only change was a correctness fix, not just a speed-up</div>
+    <p>
+      Read the last two columns against the shipped <code>min_window = 7</code>. Under C4 it is
+      the smallest span that is perfect — exactly the floor. Under D4 that same span leaves
+      <strong>504 positions ambiguous</strong>, and the D4 floor is 9. So for as long as the
+      decoder searched all eight dihedral relabellings, the shipped constant admitted fragments
+      that were not provably unique, and the runtime uniqueness gate had to decline them —
+      paying in recall for hypotheses a camera can never observe. Restricting the search to the
+      four rotations did not merely halve the work; it moved the constant from two rings below
+      the floor to sitting on it.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>How the shipped board compares to 500 000 alternatives</h2>
+  <p>
+    Every valid board is a pair of closed trails in a 24-vertex, 168-edge quotient graph;
+    there are about 10<sup>96</sup> such rings and 10<sup>193</sup> pairs. Rings can be drawn
+    uniformly from that space, so "is the shipped board special?" is directly measurable.
+  </p>
+  <p>
+    The per-ring statistic is the half-turn support: how many master offsets of a ring collide
+    with their own half turn. Zero is the good case.
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Half-turn support over 500 000 uniformly sampled rings, against the two shipped rings.</caption>
+      <thead>
+        <tr><th>Span</th><th>P(support = 0)</th><th>Best seen</th><th>Median</th><th>Worst</th><th>Shipped A</th><th>Shipped B</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>5 corners</td><td class="bad">0</td><td>501</td><td>501</td><td>501</td><td>501</td><td>501</td></tr>
+        <tr><td>6 corners</td><td class="bad">0</td><td>9</td><td>81</td><td>183</td><td>30</td><td>51</td></tr>
+        <tr class="hi"><td>7 corners</td><td>1.43 %</td><td>0</td><td>18</td><td>96</td><td class="good">0</td><td>12</td></tr>
+        <tr><td>8 corners</td><td>34.5 %</td><td>0</td><td>3</td><td>72</td><td class="good">0</td><td>6</td></tr>
+        <tr><td>9 corners</td><td>68.2 %</td><td>0</td><td>0</td><td>57</td><td class="good">0</td><td>3</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <strong>The shipped board's perfection rests entirely on one of its two rings.</strong>
+    Ring A is half-turn-clean from span 7 upward, which 1.43 % of random rings achieve.
+    Ring B is clean at no span down to 9 — it contributes nothing to the guarantee. At span 6,
+    where neither is clean, ring A's 30 still beats three quarters of the field.
+  </p>
+
+  <h3>At the pair level</h3>
+  <p>
+    Perfection needs the quarter turns to vanish too, and those cannot be attributed to either
+    ring. Tallied over 40 000 uniformly random pairs:
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Fraction of 40 000 random board pairs meeting each condition, with the shipped board's ambiguous-position count.</caption>
+      <thead>
+        <tr><th>Span</th><th>Half turn vanishes</th><th>Quarter turn vanishes</th><th>Board is perfect</th><th>Shipped board</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>6 corners</td><td class="bad">0</td><td class="bad">0</td><td class="bad">0 of 40 000</td><td class="bad">3 330 ambiguous</td></tr>
+        <tr class="hi"><td>7 corners</td><td>2.91 %</td><td>17.41 %</td><td>0.48 % <span style="color:var(--ink-faint)">(192)</span></td><td class="good">0 ambiguous</td></tr>
+        <tr><td>8 corners</td><td>57.09 %</td><td>93.05 %</td><td>53.25 %</td><td class="good">0 ambiguous</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    So the shipped board is a <strong>roughly 1-in-208 draw</strong> — clearly better than
+    average, and just as clearly not exotic. A brute-force search would match it in under a
+    second of sampling.
+  </p>
+  <div class="note">
+    <div class="label">Two independent surveys agreeing</div>
+    <p>
+      The ring survey says 1.43 % of rings are half-turn-clean at span 7, which predicts
+      1 − (1 − 0.0143)² = 2.85 % of pairs; the pair survey measured 2.91 % directly.
+      Multiplying the two independent pair conditions predicts 0.51 % perfect; 0.48 % was
+      measured. The reduction and the direct tally were computed by different code paths.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Could a board reach six corners?</h2>
+  <p>
+    This is the question with something at stake: <code>min_window = 6</code> would accept
+    materially smaller fragments, which on partially occluded views is recall. Nothing in
+    40 000 pairs came close, and the binding constraint is the per-ring one — a span-6 board
+    needs a span-6 half-turn-clean ring, and none of 500 000 rings was clean.
+  </p>
+  <p>
+    The left tail of that distribution says how far away it is. Support values are always
+    multiples of three, an artefact of the row-rotation orbit structure:
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Rarest span-6 half-turn supports observed in 500 000 uniformly sampled rings.</caption>
+      <thead>
+        <tr><th>Support</th><th>9</th><th>12</th><th>15</th><th>18</th><th>21</th><th>24</th><th>27</th><th>30</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Rings</td><td>1</td><td>5</td><td>9</td><td>27</td><td>80</td><td>135</td><td>304</td><td>559</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The tail thins by roughly 2.5× per step of three. Extrapolating the three steps from 9 down
+    to 0 puts <strong>P(a random ring is span-6-clean) near 10<sup>−7</sup></strong>. That is an
+    extrapolation across three unobserved bins, not a measurement — but it points somewhere
+    useful: 10<sup>−7</sup> is out of reach for uniform sampling and well within reach of a
+    directed search. Against a space of ~10<sup>96</sup> rings, it also implies such rings exist
+    in enormous numbers.
+  </p>
+  <div class="note">
+    <div class="label">What is not yet known</div>
+    <p>
+      A span-6-clean <em>ring</em> is necessary, not sufficient — the quarter-turn condition
+      must hold at span 6 as well, and it was never met in 40 000 pairs either. Whether the two
+      can be satisfied together is open, and is the next thing to run: hill-climbing on the
+      per-ring support, then the quarter-turn test on the survivors. Until that runs, the honest
+      statement is that no better board is <em>known</em>, not that none exists.
+    </p>
+  </div>
+</section>
+
+<section>
+  <h2>Beyond uniqueness</h2>
+  <p>
+    Uniqueness is binary and worst-case. Three other properties turned out to matter, and they
+    do not rank boards the same way.
+  </p>
+
+  <h3>Error margin — the constraint nobody set</h3>
+  <p>
+    The minimum Hamming distance between the codes of two master positions is what decides how
+    many misread dots a decode survives. At the shipped operating point it is <strong>2</strong>:
+    enough to notice one bad dot, never enough to correct it.
+  </p>
+  <div class="scroll">
+    <table>
+      <caption>Minimum nearest-neighbour Hamming distance, shipped board against six random boards.</caption>
+      <thead>
+        <tr><th>Span</th><th>Code-row reads</th><th>d<sub>min</sub> shipped</th><th>Positions at d<sub>min</sub></th><th>d<sub>min</sub> random</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>6 corners</td><td>1, 2, 2</td><td class="bad">1</td><td>102 054</td><td>1, 1, 1, 1, 1, 1</td></tr>
+        <tr class="hi"><td>7 corners</td><td>2, 2, 2</td><td>2</td><td>33 759</td><td>2, 2, 2, 2, 2, 2</td></tr>
+        <tr><td>8 corners</td><td>2, 2, 3</td><td>4</td><td>28 731</td><td>4, 4, 4, 4, 4, 4</td></tr>
+        <tr><td>9 corners</td><td>2, 3, 3</td><td class="bad">4</td><td>1 002</td><td>4, 5, 5, 6, 6, 7</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    The span-7 value is structural, not luck. At that span every informative code row is read
+    exactly twice, so flipping any single code bit changes exactly two observed dots — which
+    forces d<sub>min</sub> ≥ 2, and the bound is attained. At spans 5 and 6 some row is read
+    only once, which is why a single misread dot can move you to a different position there.
+  </p>
+  <p>
+    Note the last row: at span 9 the shipped board has the <em>lowest</em> minimum distance of
+    the seven boards compared. <strong>Uniqueness and error margin are genuinely different
+    axes</strong>, and the shipped board is optimised for the first. A search that ranks only on
+    uniqueness would inherit the same blind spot.
+  </p>
+
+  <h3>Dot balance — fixed by the construction</h3>
+  <p>
+    Across all 500 000 rings the number of set dots was 250 or 251 out of 501, never anything
+    else. The shipped rings are 251 and 250. Balance is forced by the construction, so it is
+    not a design variable and not worth ranking on.
+  </p>
+
+  <h3>Longest dot run — a free choice nobody has made</h3>
+  <p>
+    The longest run of identical dots along a map row ranged from 5 to 24 over the sample, median
+    9. Both shipped rings are 8 — slightly better than typical, well short of the best seen.
+    Long runs are locally featureless under the sampler, so this is a real quality axis that is
+    currently unoptimised and costs nothing to include in a search objective.
+  </p>
+</section>
+
+<section>
+  <h2>What follows for the library</h2>
+  <ul>
+    <li>
+      <strong>Keep <code>min_window = 7</code>.</strong> It is the exact C4 floor for the shipped
+      board, now verified over all 251 001 positions rather than seven planted origins. Lowering
+      it to 6 would admit 3 330 ambiguous positions.
+    </li>
+    <li>
+      <strong>The rotations-only default is load-bearing.</strong> Under D4 the same constant is
+      two rings below the floor. If reflection search is ever re-enabled by default, the constant
+      must go to 9 with it.
+    </li>
+    <li>
+      <strong>There is no error-correction margin at the minimum window</strong> — d<sub>min</sub>
+      is 2 there, by construction. Whatever robustness the decoder shows in practice comes from
+      fragments larger than the minimum, which is worth stating where
+      <code>max_bit_error_rate</code> is documented.
+    </li>
+    <li>
+      <strong>A better board is a research result, not a config change.</strong> Boards printed
+      against a different code do not decode against the reference implementation, so any
+      replacement is opt-in and additive at best.
+    </li>
+  </ul>
+</section>
+
+<footer>
+  <p>
+    <strong>Method.</strong> Rings drawn uniformly by Wilson's algorithm → BEST → Hierholzer over
+    the σ-quotient of the letter de Bruijn graph. Every uniqueness figure is exact over all
+    251 001 master positions — no sampling of positions anywhere — via the rank-one factorisation,
+    which is checked elementwise against a brute-force evaluator that materialises the master cell
+    by cell and shares none of its assumptions. Counts are stored as integers with their
+    denominator; 99.9996 % rounds to 100 % and would answer the central question wrong.
+  </p>
+  <p>
+    <strong>Reproduce.</strong> <span class="m">research/puzzleboard-rings</span> —
+    <span class="m">uv run pbr eval reference</span> for the shipped-board tables;
+    <span class="m">survey_rings(500_000, seed=20260816)</span> and
+    <span class="m">survey_pairs(40_000, seed=20260817)</span> for the distributions.
+    Results are reproducible from the seed and chunk size alone, independent of worker count.
+  </p>
+</footer>
+
+</div>

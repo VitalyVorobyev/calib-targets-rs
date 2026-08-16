@@ -108,8 +108,8 @@ fn marker_best_mixed_chess_configs_do_not_short_circuit() {
 #[test]
 fn puzzleboard_best_identical_configs_equal_single_config() {
     let img = load_gray("puzzleboard_small.png");
-    // testdata/puzzleboard_detect_config.json describes this image: 10x10,
-    // 12.0 mm cell, master origin (0, 0).
+    // testdata/puzzleboard_small.png is a 10x10 board at 12.0 mm cell size,
+    // cut from the master at origin (0, 0).
     let board = PuzzleBoardSpec::with_origin(10, 10, 12.0, 0, 0).expect("board spec");
     let params = PuzzleBoardParams::for_board(board);
 

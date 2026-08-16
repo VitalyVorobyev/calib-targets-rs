@@ -36,6 +36,19 @@ demo/dist/
 uv.lock
 REVIEW.md
 API_REVISION.md
+
+# Standalone research sub-projects under research/: source, tests and the
+# write-up are tracked; run output, generated figures and venvs are not.
+# The lock file is kept so a months-later resume reproduces the environment.
+research/*/runs/
+research/*/out/
+research/*/.venv/
+research/*/.pytest_cache/
+!research/*/uv.lock
+# The `report/` rule above is for local-only detector performance output; a
+# research sub-project's write-up is a deliverable and is tracked.
+!research/*/report/
+!research/*/report/**
 privatedata
 
 # codegraph local index daemon (SQLite DB, socket, pid, logs)

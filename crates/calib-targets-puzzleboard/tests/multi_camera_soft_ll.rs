@@ -146,7 +146,7 @@ fn run_six_views(mode: PuzzleBoardScoringMode) -> SixViewResult {
             "view {i} has too few corners ({}) — harness miscalibrated",
             subset.len()
         );
-        match detector.detect(&view, subset) {
+        match detector.detect_with_corners(&view, subset) {
             Ok(res) => {
                 alignments.push(Some((
                     res.decode.master_origin_row,

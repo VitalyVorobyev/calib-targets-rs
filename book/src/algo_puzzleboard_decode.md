@@ -191,27 +191,51 @@ positions at a fixed orientation** — and the decoder does not have a fixed
 orientation. Over `D4 × position`, measured on clean, noise-free windows at
 seven planted origins:
 
-| window | edge bits | decoded | rejected as D4-aliased |
-|---|---|---|---|
-| 3 × 3 | 12 | 0 / 7 | 7 |
-| 4 × 4 | 24 | 0 / 7 | 7 |
-| 5 × 5 | 40 | 5 / 7 | 2 |
-| 6 × 6 | 60 | 7 / 7 | 0 |
-| 7 × 7 | 84 | 7 / 7 | 0 |
+**Mind the unit.** This table sizes windows in *squares*, as the paper does.
+`min_window` is a **corner span**, and a window of `s × s` squares spans
+`s + 1` corners — so the `6 × 6` row below is what `min_window = 7` means.
+Both columns are given to keep the two readings from being confused.
+
+| window (squares) | corner span | edge bits | decoded | rejected as D4-aliased |
+|---|---|---|---|---|
+| 3 × 3 | 4 | 12 | 0 / 7 | 7 |
+| 4 × 4 | 5 | 24 | 0 / 7 | 7 |
+| 5 × 5 | 6 | 40 | 5 / 7 | 2 |
+| 6 × 6 | **7** | 60 | 7 / 7 | 0 |
+| 7 × 7 | 8 | 84 | 7 / 7 | 0 |
 
 Every clean 4 × 4 window tested had a *perfect* alias under some other
-transform. Clean uniqueness begins at 6 × 6.
+transform. Clean uniqueness begins at 6 × 6 squares — a 7-corner span, which
+`research/puzzleboard-rings` then verified exhaustively at all 251 001 master
+positions under the four rotations.
 
-Noise pushes the floor up again: the code's minimum Hamming distance is 1 at
-4 × 4, so a single flipped bit can turn a fragment into a perfect read of a
-different location. A 300k-trial sweep over random origins and error patterns
-puts the smallest window with zero false accepts at 7 × 7 (84 interior edges),
-at both 30 % and 40 % bit-error rates.
+Hence `min_window = 7` by default, and the edge-count pre-filter that
+accompanies it is `required_edges(7) = 60` — the interior edge count of exactly
+that span. (Before 0.13 the pre-filter read `min_window` as squares and demanded
+84, one full ring more than the span gate intended, so fragments at exactly the
+documented minimum were rejected before being decoded.)
 
-Hence `min_window = 7` by default: one square above the clean-uniqueness
-threshold, as the noise budget. The gate is applied to the corner *span* on both
-axes, because a wide-but-short strip can meet an edge-count floor while carrying
-too little code distance on its thin axis.
+The span gate is applied to the corner span on **both** axes, because a
+wide-but-short strip can meet an edge-count floor while carrying too little code
+distance on its thin axis.
+
+Noise pushes the floor up: the code's minimum Hamming distance is 1 at 4 × 4, so
+a single flipped bit can turn a fragment into a perfect read of a different
+location. A 300k-trial sweep over random origins and error patterns put the
+smallest window with *zero* false accepts at 7 × 7 squares — 84 edge bits — at
+both 30 % and 40 % bit-error rates.
+
+That measurement predates the gates now standing between a noisy read and a
+returned detection, and it is no longer what sets the floor. Window size is a
+blunt instrument for the job: what actually rules out a false accept is the
+uniqueness gate, a bounded-distance proof that the winner is the only codeword
+within its error radius. Two additions make that proof carry the noise case at
+a 7-corner span — the period-3 majority vote, which repairs a minority of
+misread dots before any gate sees them, and the
+`PuzzleBoardDetectError::NotEnoughLogicalBits` floor, which refuses the decode
+when too few distinct bits survive for the proof to mean anything. Without that
+second guard the proof stays formally valid while becoming vacuous, and
+wrong-origin decodes reappear at high corruption.
 
 Reproduce the table with:
 

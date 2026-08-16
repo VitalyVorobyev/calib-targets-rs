@@ -60,6 +60,10 @@ part of the ABI:
   `FIXED_BOARD` matching.
 - `ct_puzzleboard_decode_config_t.scoring_mode` selects legacy
   hard-weighted ranking vs soft log-likelihood ranking.
+- `ct_puzzleboard_decode_config_t.symmetry_mode` selects which board
+  orientations the decoder searches: `ROTATIONS` (default, the four 90°
+  rotations) or `ROTATIONS_AND_REFLECTIONS` (all eight dihedral transforms,
+  needed only when the optical path mirrors the image).
 - `ct_puzzleboard_result_t` carries the chosen scoring mode plus optional
   `score_best`, `score_runner_up`, `score_margin`, and runner-up
   alignment data when the decoder computed them.

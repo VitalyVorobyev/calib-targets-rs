@@ -50,8 +50,8 @@ pub enum PuzzleBoardSpecError {
     /// distinguishes at a fixed orientation. Note that a *detector* needs more
     /// than this — see
     /// [`min_window`](crate::PuzzleBoardDecodeConfig::min_window), which
-    /// defaults to 7 because a 4 × 4 window is not unique once the eight D4
-    /// orientations are searched too.
+    /// defaults to 7 because a smaller window is not unique once the four
+    /// board orientations a camera can actually observe are searched too.
     #[error("rows and cols must be >= 4")]
     TooSmall,
     /// The board dimensions do not fit inside the 501×501 master pattern.
@@ -73,6 +73,33 @@ pub enum PuzzleBoardSpecError {
 }
 
 impl PuzzleBoardSpec {
+    /// Declare the **whole** [`MASTER_ROWS`]×[`MASTER_COLS`] master pattern,
+    /// given only the physical size of one square.
+    ///
+    /// This is the right default for detection. A PuzzleBoard identifies
+    /// itself: the decoder recovers where the visible fragment sits on the
+    /// master pattern, so there is no need to know — or guess — which
+    /// sub-rectangle was printed. Any real board is a cut from the master, and
+    /// the decode reports the origin it actually found.
+    ///
+    /// ```
+    /// use calib_targets_puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
+    ///
+    /// let spec = PuzzleBoardSpec::master(1.0)?;
+    /// let params = PuzzleBoardParams::for_board(spec);
+    /// # Ok::<(), calib_targets_puzzleboard::PuzzleBoardSpecError>(())
+    /// ```
+    ///
+    /// The one case that wants a real board declared instead is
+    /// [`PuzzleBoardSearchMode::FixedBoard`](crate::PuzzleBoardSearchMode::FixedBoard),
+    /// which restricts the origin search to the declared rectangle. A declared
+    /// master carries no such restriction, so it is the one shape for which
+    /// `FixedBoard` is *slower* than the default
+    /// [`Full`](crate::PuzzleBoardSearchMode::Full) search.
+    pub fn master(cell_size: f32) -> Result<Self, PuzzleBoardSpecError> {
+        Self::with_origin(MASTER_ROWS, MASTER_COLS, cell_size, 0, 0)
+    }
+
     /// Build a spec anchored at origin `(0, 0)` on the master pattern.
     pub fn new(rows: u32, cols: u32, cell_size: f32) -> Result<Self, PuzzleBoardSpecError> {
         Self::with_origin(rows, cols, cell_size, 0, 0)
@@ -164,5 +191,27 @@ mod tests {
         let s = PuzzleBoardSpec::new(12, 12, 1.0).unwrap();
         assert_eq!(s.inner_rows(), 11);
         assert_eq!(s.inner_cols(), 11);
+    }
+
+    #[test]
+    fn master_declares_the_whole_pattern() {
+        let s = PuzzleBoardSpec::master(2.5).unwrap();
+        assert_eq!(s.rows, MASTER_ROWS);
+        assert_eq!(s.cols, MASTER_COLS);
+        assert_eq!(s.origin_row, 0);
+        assert_eq!(s.origin_col, 0);
+        assert_eq!(s.cell_size, 2.5);
+        assert_eq!(
+            s,
+            PuzzleBoardSpec::new(MASTER_ROWS, MASTER_COLS, 2.5).unwrap()
+        );
+    }
+
+    #[test]
+    fn master_still_validates_cell_size() {
+        assert!(matches!(
+            PuzzleBoardSpec::master(f32::NAN),
+            Err(PuzzleBoardSpecError::InvalidCellSize)
+        ));
     }
 }

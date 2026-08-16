@@ -1,19 +1,34 @@
 //! Interoperability test against Stelldinger et al. reference images.
 //!
-//! IMPORTANT (Gap 20, 2026-06-25): the author example photos are **not a
-//! faithful render of the canonical 501×501 map we ship**, so they are **not a
-//! decode oracle**. Our map matches the one the authors recommend, yet most
-//! author frames do not localize against it — the parsimonious explanation is
-//! that the photos were rendered from a different master-map revision. The
-//! authoritative public decode regression is therefore the canonical-map
-//! synthetic fixtures (`tests/synthetic_author_like.rs` +
-//! `benches/synthetic_decode.rs`; see `docs/SYNTHETIC_AUTHOR_LIKE.md`). What
-//! remains valid here is the **precision guard**
-//! (`author_examples_1_2_3_are_declined_as_non_unique`): a non-unique distorted
-//! frame must be declined, regardless of which map produced it. The
-//! cross-decoder D4-parity check below is unsound under a non-canonical map and
-//! is kept only as an `#[ignore]`d diagnostic (its parity mismatch is now a
-//! printed note, not a hard assertion).
+//! # The author photos *are* renders of the map we ship
+//!
+//! Superseded on 2026-08-16 (was "Gap 20"): this file used to claim the author
+//! example photos came from a different master-map revision, because most of
+//! them do not decode here. That claim is false. The three full-resolution
+//! frames (examples 4, 5, 6 — 4032 × 3024 phone photographs of a printed
+//! board) decode against our shipped canonical map at **BER exactly 0.000**,
+//! over 1500–2200 pixel-matched corners each, under the **identity** D4
+//! element. A different map cannot produce a zero-error decode, and a
+//! different axis / polarity / edge-family convention cannot produce the
+//! identity transform. Map and convention are the authors'.
+//!
+//! The relation to the authors' own decoder is
+//! `ref_master = our_master + (333, 333) (mod 501)` — the same constant on all
+//! three frames, so it is a fixed indexing-origin convention difference, not a
+//! decode disagreement. It matters only if you cross-reference raw master
+//! indices with the reference implementation; for calibration any consistent
+//! absolute labelling is equivalent.
+//!
+//! What the remaining seven frames show is a **recall** limit, not a map
+//! mismatch, and it tracks resolution exactly: every frame that fails is
+//! 640 × 480 or smaller, or is one of the heavily radially-distorted frames
+//! guarded below. Examples 3 and 7 do not even yield enough interior edges to
+//! reach the decoder.
+//!
+//! The canonical-map synthetic fixtures (`tests/synthetic_author_like.rs` +
+//! `benches/synthetic_decode.rs`; see `docs/SYNTHETIC_AUTHOR_LIKE.md`) remain
+//! the *public* decode regression, because `testdata/puzzleboard_reference/`
+//! is a 53 MB local-only directory — every test here self-skips without it.
 //!
 //! For each `testdata/puzzleboard_reference/exampleN.png`, we:
 //! 1. Load the reference oracle JSON (`exampleN.json`) produced by the authors'
@@ -112,17 +127,19 @@ fn load_ref_json(dir: &Path, index: usize) -> Option<RefJson> {
     serde_json::from_str(&text).ok()
 }
 
-fn run_one_image(index: usize, dir: &Path) {
+/// Returns `true` when the frame decoded *and* its labels are
+/// cross-decoder consistent with the authors' oracle.
+fn run_one_image(index: usize, dir: &Path) -> bool {
     let img_path = dir.join(format!("example{index}.png"));
     if !img_path.exists() {
         println!("example{index}: image not found, skipping");
-        return;
+        return false;
     }
     let ref_data = match load_ref_json(dir, index) {
         Some(d) => d,
         None => {
             println!("example{index}: reference JSON not found, skipping");
-            return;
+            return false;
         }
     };
 
@@ -131,7 +148,7 @@ fn run_one_image(index: usize, dir: &Path) {
             "example{index} ({}): reference has 0 corners, skipping",
             ref_data.source_image
         );
-        return;
+        return false;
     }
 
     let img = ImageReader::open(&img_path)
@@ -154,7 +171,7 @@ fn run_one_image(index: usize, dir: &Path) {
                 e,
                 ref_data.decoded_corners.len()
             );
-            return;
+            return false;
         }
     };
 
@@ -222,7 +239,7 @@ fn run_one_image(index: usize, dir: &Path) {
             "  pixel-matched pairs: {} (< 3, skipping cross-decoder consistency check)",
             pairs.len()
         );
-        return;
+        return false;
     }
 
     // Try every D4 transform and look for one where `ref - D4(our)` is
@@ -255,19 +272,23 @@ fn run_one_image(index: usize, dir: &Path) {
         }
     }
 
-    // Diagnostic only (Gap 20): the author photos are not a canonical-map decode
-    // oracle, so a mismatch here does NOT imply a detector bug. Report, never
-    // fail — the authoritative decode regression is `synthetic_author_like.rs`.
+    // A hard assertion, not a note. Both decoders read the same code off the
+    // same photograph, so their absolute labels must differ by exactly one D4
+    // element and one translation — anything else means our labelling drifted
+    // from the reference implementation's, which is the one failure this file
+    // exists to catch.
     if found_transform.is_none() {
-        eprintln!(
-            "  [diag] pixel-matched pairs: {} — NO single D4 transform explains \
-             all pairs (expected: author map ≠ canonical map). First 5:",
-            pairs.len()
-        );
         for (or, oc, rr, rc) in pairs.iter().take(5) {
             eprintln!("    ours=(row={or}, col={oc})  ref=(row={rr}, col={rc})");
         }
+        panic!(
+            "example{index}: no single D4 transform + translation explains all \
+             {} matched pairs — our master labels disagree with the authors' \
+             decoder on the same image",
+            pairs.len()
+        );
     }
+    true
 }
 
 /// Examples 1/2/3 are heavily radially-distorted author frames. The
@@ -309,12 +330,17 @@ fn author_examples_1_2_3_are_declined_as_non_unique() {
     }
 }
 
+/// Cross-decoder interoperability against the authors' own reference frames.
+///
+/// This is the only end-to-end evidence that our imported maps *and* our
+/// coordinate convention agree with the reference implementation. It self-skips
+/// when the local-only reference directory is absent, so it is a no-op in CI.
+///
+/// Frames that our detector declines are reported, never failed — recall on a
+/// 640 × 480 photograph of a 501² board is not the contract under test. What is
+/// under test is that every frame we *do* decode carries labels the authors'
+/// decoder agrees with.
 #[test]
-#[ignore = "Diagnostic, not a gate (Gap 20): the author example photos are not a \
-            faithful render of the canonical 501² map, so cross-decoder D4+translation \
-            parity against the author oracle is not a valid invariant. The authoritative \
-            decode regression is tests/synthetic_author_like.rs. Run with --ignored to \
-            inspect per-frame decode behaviour against the author references."]
 fn interop_authors_reference_images() {
     let dir = testdata_dir();
     if !dir.exists() {
@@ -322,28 +348,14 @@ fn interop_authors_reference_images() {
         return;
     }
 
-    let mut decoded_count = 0usize;
-    for i in 0..10 {
-        let img_path = dir.join(format!("example{i}.png"));
-        if img_path.exists() {
-            let img = ImageReader::open(&img_path)
-                .expect("open image")
-                .decode()
-                .expect("decode image")
-                .to_luma8();
-            let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
-            let sweep = PuzzleBoardParams::sweep_for_board(&board);
-            if detect::detect_puzzleboard_best(&img, &sweep).is_ok() {
-                decoded_count += 1;
-            }
-        }
-        run_one_image(i, &dir);
-    }
+    let consistent = (0..10).filter(|&i| run_one_image(i, &dir)).count();
 
-    println!("\nSummary: decoded {decoded_count}/10 reference images successfully");
+    println!("\nSummary: {consistent}/10 reference frames decoded and cross-decoder consistent");
     assert!(
-        decoded_count >= 1,
-        "expected to decode at least 1 reference image, got {decoded_count}"
+        consistent >= 1,
+        "no reference frame decoded — with the reference set present, at least \
+         one full-resolution author photograph must decode and agree with the \
+         authors' decoder, or we have no evidence our map interoperates"
     );
 }
 
@@ -380,7 +392,7 @@ fn diag_example0_edge_bits() {
     let view = gray_view(&img);
     let decoded = sweep.into_iter().find_map(|params| {
         let detector = PuzzleBoardDetector::new(params).ok()?;
-        let (result, diag) = detector.detect_with_diagnostics(&view, &corners);
+        let (result, diag) = detector.diagnose_with_corners(&view, &corners);
         result.ok().map(|r| (r, diag))
     });
     let (r, diag) = match decoded {

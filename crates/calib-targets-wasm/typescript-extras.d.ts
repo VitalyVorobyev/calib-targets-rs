@@ -174,7 +174,7 @@ export interface MarkerBoardDetection {
  *
  * Winner-vs-runner-up scoring evidence and the raw per-edge observations
  * live in the `PuzzleBoardDiagnostics` payload returned by
- * `detect_puzzleboard_with_diagnostics`.
+ * `diagnose_puzzleboard`.
  */
 export interface PuzzleBoardDecodeInfo {
   /** Total observed edges that contributed to the decode. */
@@ -185,6 +185,23 @@ export interface PuzzleBoardDecodeInfo {
   mean_confidence: number;
   /** Hamming error rate across all observed bits after alignment. */
   bit_error_rate: number;
+  /**
+   * Distinct master bits the fragment reads. Both code maps repeat every three
+   * rows or columns, so this is `~6w` against `~2w²` sampled dots;
+   * `edges_observed / logical_bits` is the redundancy available.
+   */
+  logical_bits: number;
+  /**
+   * Hamming error rate over `logical_bits`, after the period-3 replicas have
+   * been majority-voted. This is the rate the error budget gates on.
+   */
+  logical_bit_error_rate: number;
+  /**
+   * Fraction of confidence mass that lost its period-3 class vote — a
+   * read-quality meter computed before any pose hypothesis, so it is meaningful
+   * even when the decode is wrong. Near zero on a clean board.
+   */
+  dot_dissent_rate: number;
   /** Absolute master-board origin of local `(0, 0)`. */
   master_origin_row: number;
   /** Absolute master-board origin of local `(0, 0)`. */
@@ -515,6 +532,10 @@ export type PuzzleBoardScoringMode =
   | { kind: "hard_weighted" }
   | { kind: "soft_log_likelihood" };
 
+export type PuzzleBoardSymmetryMode =
+  | { kind: "rotations" }
+  | { kind: "rotations_and_reflections" };
+
 /**
  * Opt-in, **unstable** PuzzleBoard soft-log-likelihood tuning knobs (Rust
  * `PuzzleBoardAdvancedTuning`). Nested under
@@ -540,6 +561,7 @@ export interface PuzzleBoardDecodeConfig {
   sample_radius_rel: number;
   search_mode: PuzzleBoardSearchMode;
   scoring_mode: PuzzleBoardScoringMode;
+  symmetry_mode: PuzzleBoardSymmetryMode;
   // --- opt-in, unstable tuning (omitted when unset) ---
   advanced?: PuzzleBoardAdvancedTuning;
 }
@@ -564,22 +586,23 @@ export interface PuzzleBoardParams {
 // ---------------------------------------------------------------------------
 // Diagnostics channel
 //
-// Returned by the `detect_*_with_diagnostics` functions as a
+// Returned by the `diagnose_*` / `diagnose_*_with_corners` functions as a
 // `{ result, diagnostics }` object. The `diagnostics` payloads mirror the
 // Rust diagnostics structs' `serde_json` shape and carry a LOOSER stability
 // promise than the result types above — fields may be added or restructured
 // between minor releases.
 // ---------------------------------------------------------------------------
 
-/** `{ result, diagnostics }` wrapper returned by `detect_*_with_diagnostics`. */
+/** `{ result, diagnostics }` wrapper returned by `diagnose_*` / `diagnose_*_with_corners`. */
 export interface DetectionWithDiagnostics<TResult, TDiagnostics> {
   /** The typed detection result, or `null` when detection failed. */
   result: TResult | null;
   /**
-   * The diagnostics payload. `null` only for marker boards on a failed
-   * detection (that channel yields evidence only on success).
+   * The diagnostics payload, produced even when detection fails
+   * (best-effort evidence for overlays) — always present across ChArUco,
+   * PuzzleBoard, and marker-board detectors.
    */
-  diagnostics: TDiagnostics | null;
+  diagnostics: TDiagnostics;
 }
 
 // --- ChArUco diagnostics (Rust `CharucoDetectDiagnostics`) -----------------

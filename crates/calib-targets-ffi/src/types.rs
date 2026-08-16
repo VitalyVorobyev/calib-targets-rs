@@ -66,6 +66,12 @@ pub type ct_puzzleboard_scoring_mode_t = u32;
 pub const CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED: ct_puzzleboard_scoring_mode_t = 1;
 pub const CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD: ct_puzzleboard_scoring_mode_t = 2;
 
+/// Fixed PuzzleBoard symmetry-mode identifier type.
+pub type ct_puzzleboard_symmetry_mode_t = u32;
+pub const CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS: ct_puzzleboard_symmetry_mode_t = 1;
+pub const CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS: ct_puzzleboard_symmetry_mode_t =
+    2;
+
 /// Fixed circle polarity identifier type.
 pub type ct_circle_polarity_t = u32;
 pub const CT_CIRCLE_POLARITY_WHITE: ct_circle_polarity_t = 1;
@@ -327,6 +333,17 @@ pub struct ct_puzzleboard_result_t {
     pub edges_matched: usize,
     pub mean_bit_confidence: f32,
     pub bit_error_rate: f32,
+    /// Distinct master bits the fragment reads. Both code maps repeat every
+    /// three rows or columns, so this is `~6w` against `~2w²` sampled dots;
+    /// `edges_observed / logical_bits` is the redundancy available.
+    pub logical_bits: usize,
+    /// Hamming error rate over `logical_bits`, after the period-3 replicas have
+    /// been majority-voted. This is the rate the decoder's error budget gates.
+    pub logical_bit_error_rate: f32,
+    /// Fraction of confidence mass that lost its period-3 class vote — a
+    /// read-quality meter computed before any pose hypothesis, so it is
+    /// meaningful even when the decode is wrong. Near zero on a clean board.
+    pub dot_dissent_rate: f32,
     pub master_origin_row: i32,
     pub master_origin_col: i32,
 }
@@ -620,6 +637,7 @@ pub struct ct_puzzleboard_decode_config_t {
     pub sample_radius_rel: f32,
     pub search_mode: ct_puzzleboard_search_mode_t,
     pub scoring_mode: ct_puzzleboard_scoring_mode_t,
+    pub symmetry_mode: ct_puzzleboard_symmetry_mode_t,
     pub bit_likelihood_slope: f32,
     pub per_bit_floor: f32,
     pub alignment_min_margin: f32,

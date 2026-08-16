@@ -118,8 +118,12 @@ def main():
     # ---- OpenCV comparison block (independent, partial-safe) ----------------
     merge_comparison(raw_dir, data)
 
-    with open(data_path, "w") as f:
-        json.dump(data, f, indent=2)
+    # `ensure_ascii=False` keeps the editorial notes as literal UTF-8 (`22×22`,
+    # em dashes) instead of re-escaping them to `\uXXXX` on every regeneration.
+    # The file is committed and published, so escaping would add churn to every
+    # perf diff and bury the numeric changes the review actually cares about.
+    with open(data_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
         f.write("\n")
     print(f"Updated {data_path}")
 

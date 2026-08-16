@@ -88,8 +88,8 @@ const SAMPLES: SampleEntry[] = [
   { label: "PuzzleBoard",url: "./samples/puzzleboard.png", mode: "puzzleboard"},
   // Public photo-realistic synthetic PuzzleBoards (20×20) rendered from the
   // canonical 501×501 master maps; they decode uniquely against it.
-  { label: "PuzzleBoard (oblique)",       url: "./samples/author_like_oblique.png",       mode: "puzzleboard", rows: 20, cols: 20 },
-  { label: "PuzzleBoard (foreshortened)", url: "./samples/author_like_foreshortened.png", mode: "puzzleboard", rows: 20, cols: 20 },
+  { label: "PuzzleBoard (oblique)",       url: "./samples/oblique.png",       mode: "puzzleboard", rows: 20, cols: 20 },
+  { label: "PuzzleBoard (foreshortened)", url: "./samples/foreshortened.png", mode: "puzzleboard", rows: 20, cols: 20 },
 ];
 
 // ---------------------------------------------------------------------------

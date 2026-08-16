@@ -11,8 +11,13 @@ name = "calib-targets-ffi"
 # `threshold_rel` + `threshold_abs` into one absolute `threshold` and drops
 # `descriptor_use_radius10`, `ct_chessboard_advanced_t` drops
 # `max_fit_rms_ratio`, and the now-unused `ct_optional_bool_t` type is
-# removed — three struct-layout-breaking changes.
-version = "3.0.0"
+# removed — three struct-layout-breaking changes. v4.0.0 renames the three
+# `ct_*_detector_detect_diagnostics_json` entry points to
+# `ct_*_detector_diagnose_json` (exported-symbol renames), and grows two
+# PuzzleBoard structs: `ct_puzzleboard_decode_config_t` gains `symmetry_mode`
+# and `ct_puzzleboard_result_t` gains the three period-3 consensus fields —
+# both struct-layout-breaking.
+version = "4.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true
@@ -36,7 +41,7 @@ generate-header = ["dep:cbindgen"]
 [dependencies]
 # The C ABI cannot express Cargo features, so the FFI crate enables
 # `diagnostics` unconditionally: the diagnostic JSON entry points
-# (`ct_*_detector_detect_diagnostics_json`) are always present and the
+# (`ct_*_detector_diagnose_json`) are always present and the
 # generated header is stable across build configurations.
 calib-targets = { workspace = true, features = ["image", "diagnostics"] }
 cbindgen = { workspace = true, optional = true }

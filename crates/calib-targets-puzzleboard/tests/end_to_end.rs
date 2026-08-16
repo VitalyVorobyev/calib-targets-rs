@@ -97,7 +97,7 @@ fn render_detect_roundtrip_on_small_puzzleboard() {
         height: gray.height() as usize,
         data: gray.as_raw(),
     };
-    let result = match detector.detect(&view, &corners) {
+    let result = match detector.detect_with_corners(&view, &corners) {
         Ok(r) => r,
         Err(e) => panic!("detection failed: {e}"),
     };
@@ -190,14 +190,14 @@ fn fixed_board_agrees_with_full_on_whole_view() {
     let params_full = PuzzleBoardParams::for_board(board_spec);
     let full = PuzzleBoardDetector::new(params_full.clone())
         .expect("detector")
-        .detect(&view, &corners)
+        .detect_with_corners(&view, &corners)
         .expect("full decode");
 
     let mut params_fixed = params_full;
     params_fixed.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
     let fixed = PuzzleBoardDetector::new(params_fixed)
         .expect("detector")
-        .detect(&view, &corners)
+        .detect_with_corners(&view, &corners)
         .expect("fixed-board decode");
 
     assert_eq!(
@@ -306,7 +306,7 @@ fn fixed_board_agrees_across_disjoint_partial_views() {
             subset.len()
         );
         let res = detector
-            .detect(&view, subset)
+            .detect_with_corners(&view, subset)
             .unwrap_or_else(|e| panic!("view {i} decode failed: {e}"));
         let mut m = std::collections::HashMap::new();
         for lc in &res.corners {
@@ -429,7 +429,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         data: gray_orig.as_raw(),
     };
     let res_orig = detector
-        .detect(&view_orig, &corners_orig)
+        .detect_with_corners(&view_orig, &corners_orig)
         .expect("orig decode");
 
     // Detect on the 90° CW rotated image.
@@ -441,7 +441,7 @@ fn run_image_rotation_test(upscale: u32, rotation_deg: u32) {
         data: gray_rot.as_raw(),
     };
     let res_rot = detector
-        .detect(&view_rot, &corners_rot)
+        .detect_with_corners(&view_rot, &corners_rot)
         .expect("rotated decode");
 
     // Map each rotated detection back to original image pixel coords.

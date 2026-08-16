@@ -8,7 +8,7 @@
 //! Hypotheses are ranked purely on that soft score; the top candidate is
 //! returned only if it clears a best-vs-runner-up margin gate.
 
-use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::GridTransform;
 
 use crate::code_maps::PuzzleBoardObservedEdge;
 
@@ -16,18 +16,27 @@ use super::hard::row_major_min_origin;
 use super::tables::{transform_observations, ClassRange, ClassTables};
 use super::{
     apply_soft_uniqueness_gate, crt_master_col, crt_master_row, dequantize_ll,
-    update_best_and_runner_up, DecodeOutcome, HardScan, SoftLlConfig, TransformTables, H_COLS,
-    H_ROWS, V_COLS, V_ROWS,
+    update_best_and_runner_up, DecodeOutcome, SoftLlConfig, H_COLS, H_ROWS, V_COLS, V_ROWS,
 };
 
 /// Finalize the winning hypothesis: populate `score_runner_up`,
-/// `score_margin`, and the runner-up origin/transform fields, then apply
-/// the margin and BER rejection gates.
+/// `score_margin`, and the runner-up origin/transform fields, then apply the
+/// margin gate.
+///
+/// The BER gate is **not** applied here. It belongs on the logical-bit view of
+/// the observation set, which this function does not have; the callers apply it
+/// via the class-set scan that also supplies the uniqueness top-2.
+///
+/// `score_margin` stays normalised by the *physical* edge count. It is a tuned
+/// threshold (`alignment_min_margin`) whose value was swept in that domain, so
+/// re-denominating it over logical bits would silently change what the
+/// configured number means. The two gates therefore live in different units on
+/// purpose: this one is a soft heuristic, the uniqueness gate is an exact
+/// bounded-distance argument that has to be in the code's own alphabet.
 pub(super) fn finalize_soft_winner(
     best: Option<DecodeOutcome>,
     runner_up: Option<DecodeOutcome>,
     cfg: &SoftLlConfig,
-    max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
     let mut best = best?;
     let edges = best.edges_observed.max(1) as f32;
@@ -50,15 +59,17 @@ pub(super) fn finalize_soft_winner(
     if best.score_margin < cfg.alignment_min_margin {
         return None;
     }
-    if best.bit_error_rate > max_bit_error_rate {
-        return None;
-    }
     Some(best)
 }
 
 /// Soft-log-likelihood decoder over the full 501 × 501 master.
 ///
-/// For each D4 transform the shared precompute fills the per-class
+/// `transforms` is the orientation hypothesis set to search — see
+/// [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode). The soft scan
+/// and the fused matched-count uniqueness scan below walk the *same* list, so
+/// the gate's competitor set is always the set the winner was drawn from.
+///
+/// For each transform the shared precompute fills the per-class
 /// log-likelihood tables, and the winning origin is then recovered by the same
 /// crossed-CRT separation the hard path uses: because `501 = 3 · 167` with
 /// `gcd(3, 167) = 1`, the argmax of `h_ll[ha, hb] + v_ll[va, vb]` over all
@@ -77,6 +88,8 @@ pub(super) fn finalize_soft_winner(
 /// the other to its second-distinct level.
 pub(crate) fn decode_soft(
     observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
+    transforms: &[GridTransform],
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
@@ -92,16 +105,10 @@ pub(crate) fn decode_soft(
     let mut best: Option<DecodeOutcome> = None;
     let mut runner_up: Option<DecodeOutcome> = None;
 
-    // Fused matched-count uniqueness scan. The soft precompute produces exactly
-    // the count / matched-weight tables the hard path needs, so each transform
-    // is folded into a shared `HardScan` here instead of re-running a second
-    // full precompute after the soft scan (see the gate call below).
-    let mut hard_scan = HardScan::new();
-
     let mut tables = ClassTables::new(true);
     let range = ClassRange::full();
 
-    for (transform_idx, transform) in GRID_TRANSFORMS_D4.iter().copied().enumerate() {
+    for transform in transforms.iter().copied() {
         let transformed = transform_observations(observed, &transform);
         tables.build(&transformed, &range, Some(cfg));
 
@@ -121,42 +128,28 @@ pub(crate) fn decode_soft(
         }
         #[cfg(feature = "tracing")]
         drop(_origin_span);
-
-        // The shared precompute already produced exactly the count and
-        // matched-weight tables the hard path consumes, so the uniqueness top-2
-        // is folded from them rather than from a second precompute pass.
-        let hard_tables = TransformTables {
-            h_count: &tables.h_count,
-            h_weight: &tables.h_weight,
-            v_count: &tables.v_count,
-            v_weight: &tables.v_weight,
-        };
-        hard_scan.fold(
-            transform,
-            transform_idx,
-            &hard_tables,
-            total,
-            total_conf,
-            max_bit_error_rate,
-        );
     }
 
-    let winner = finalize_soft_winner(best, runner_up, cfg, max_bit_error_rate)?;
-    // Re-gate the soft winner by the matched-count uniqueness predicate. The
-    // soft-LL `alignment_min_margin` gate does not enforce origin uniqueness;
-    // the matched-count top-2 over the full master (the same candidate set the
-    // soft winner was drawn from) supplies the competitor.
+    let winner = finalize_soft_winner(best, runner_up, cfg)?;
+
+    // Budget and uniqueness, both on the voted bits — the domain the paper
+    // quotes the budget in ("after averaging over all repetitions") and, per
+    // `runner_up_floor_report`, a domain where the uniqueness predicate is no
+    // weaker: the structural alias floor is identical in both views, so the
+    // same ceiling now applies to the post-vote error rate rather than the raw
+    // dot rate.
     //
-    // Fused (was a TODO(perf)): the matched-count top-2 is now folded inline
-    // from the soft scan's own per-transform count / matched-weight tables (see
-    // the `hard_scan.fold(...)` at the end of each transform iteration above),
-    // so the gate no longer re-runs a second full O(8·501·N) precompute over the
-    // same observations. `HardScan::finish` returns the byte-identical pre-gate
-    // triple a fresh `decode_with_runner_up(observed, max_bit_error_rate)` would
-    // (same tables, same crossed-CRT top-2 logic).
-    let (hard_winner, best_matched, runner) = hard_scan.finish()?;
+    // This is where essentially all of the range comes from, on *both* scoring
+    // paths: with the gate moved, the soft and hard columns of
+    // `super::tests::consensus_noise_tolerance_report` agree cell for cell. The
+    // soft scorer's own ranking is unchanged — it still sums per-dot
+    // log-likelihoods, which is already the optimal way to combine replicas
+    // that predict the same bit under every hypothesis.
+    let (hard_winner, best_matched, runner) =
+        super::hard::decode_with_runner_up(logical, transforms, max_bit_error_rate)?;
     apply_soft_uniqueness_gate(
         winner,
+        logical.len(),
         (
             best_matched,
             hard_winner.master_origin_row,

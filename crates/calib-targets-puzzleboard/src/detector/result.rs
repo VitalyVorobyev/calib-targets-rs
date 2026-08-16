@@ -68,7 +68,7 @@ impl PuzzleBoardCorner {
 #[cfg_attr(
     feature = "diagnostics",
     doc = "See [`crate::diagnostics::PuzzleBoardDiagnostics`], obtained via",
-    doc = "[`crate::PuzzleBoardDetector::detect_with_diagnostics`]."
+    doc = "[`crate::PuzzleBoardDetector::diagnose_with_corners`]."
 )]
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -81,6 +81,37 @@ pub struct PuzzleBoardDecodeInfo {
     pub mean_confidence: f32,
     /// Hamming error rate across *all* observed bits after alignment.
     pub bit_error_rate: f32,
+    /// Number of **distinct** master bits the fragment reads.
+    ///
+    /// Both code maps are cyclic with period 3 on their short axis, so a dot
+    /// repeats the dot three edges along its own edge's direction. A fragment
+    /// spanning `R` edge-rows and `C` edge-columns therefore samples `~2w²`
+    /// dots but carries only `3R + 3C` independent bits — this count. It is the
+    /// fragment's true code length, and the one the accept/reject gates are
+    /// evaluated against.
+    ///
+    /// `edges_observed / logical_bits` is the redundancy the board gave you.
+    pub logical_bits: usize,
+    /// Hamming error rate over [`logical_bits`](Self::logical_bits), after the
+    /// period-3 replicas have been majority-voted.
+    ///
+    /// This is what `max_bit_error_rate` gates on. It sits below
+    /// [`bit_error_rate`](Self::bit_error_rate) whenever voting repaired a
+    /// minority of dots, which is the margin the repetition structure exists to
+    /// provide.
+    pub logical_bit_error_rate: f32,
+    /// Fraction of confidence mass that lost its period-3 class vote.
+    ///
+    /// A **hypothesis-free** read-quality meter: it is computed before any
+    /// origin or orientation is hypothesised, so it is meaningful even when the
+    /// decode itself is wrong. Near zero on a clean board. A large value means
+    /// either genuinely noisy dots or — more usefully — a *mislabelled grid*,
+    /// which mixes dots that read different master bits into one class.
+    ///
+    /// Monotone in the raw dot error rate but not calibrated to it: the mapping
+    /// depends on how many times each bit was read, and it saturates well below
+    /// `1`. Read it as "clean" versus "not clean".
+    pub dot_dissent_rate: f32,
     /// Absolute master-board origin of local `(0, 0)`.
     pub master_origin_row: i32,
     /// Absolute master-board origin of local `(0, 0)`.

@@ -82,15 +82,20 @@ detected grid.
 | Target | Facade helpers | Dedicated crate |
 |---|---|---|
 | **Chessboard** | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_best`, `detect_chessboard_with_diagnostics` | [`calib-targets-chessboard`] |
-| **ChArUco** | `detect_charuco`, `detect_charuco_best` | [`calib-targets-charuco`] |
-| **PuzzleBoard** | `detect_puzzleboard`, `detect_puzzleboard_best` | [`calib-targets-puzzleboard`] |
-| **Marker board** | `detect_marker_board`, `detect_marker_board_best` | [`calib-targets-marker`] |
+| **ChArUco** | `detect_charuco`, `detect_charuco_with_corners`, `diagnose_charuco`*, `diagnose_charuco_with_corners`*, `detect_charuco_best` | [`calib-targets-charuco`] |
+| **PuzzleBoard** | `detect_puzzleboard`, `detect_puzzleboard_with_corners`, `diagnose_puzzleboard`*, `diagnose_puzzleboard_with_corners`*, `detect_puzzleboard_best` | [`calib-targets-puzzleboard`] |
+| **Marker board** | `detect_marker_board`, `detect_marker_board_with_corners`, `diagnose_marker_board`*, `diagnose_marker_board_with_corners`*, `detect_marker_board_best` | [`calib-targets-marker`] |
 | **Printable targets** | `printable::{render_target_bundle, write_target_bundle}` | [`calib-targets-print`] |
 | **ArUco / AprilTag primitives** | `aruco::*` (dictionaries, matcher) | [`calib-targets-aruco`] |
+
+\* gated behind the `diagnostics` feature.
 
 Every detector ships a single-config helper and a 3-config
 `*_best` sweep. The sweep is the recommended default for new callers:
 it handles threshold tradeoffs without forcing manual tuning.
+The `_with_corners` variant reuses one ChESS corner pass across several
+target detectors on the same image; `detect_t` runs that pass itself
+from `params.chess`, so it is the one-liner for the common case.
 
 ## Main ideas
 
@@ -186,18 +191,25 @@ Canonical guide: [printable-target book chapter][printable-book].
 - `tracing` — gates tracing spans across the workspace crates.
 - `diagnostics` (off) — forwards to
   `calib-targets-chessboard/diagnostics` and gates
-  `detect_chessboard_with_diagnostics` (the `DebugFrame` channel). The
-  hot `detect_chessboard` path builds no trace when this is off.
+  `detect_chessboard_with_diagnostics` (the `DebugFrame` channel) plus the
+  `diagnose_charuco`, `diagnose_puzzleboard`, and `diagnose_marker_board`
+  free functions (and their `_with_corners` counterparts). The hot
+  `detect_*` paths build no trace when this is off.
 
 ## Migrating to the current release
 
-The chessboard detector's `ChessboardParams` is split into a stable core of
-four fields plus an opt-in, unstable `advanced` block (`ChessboardAdvancedTuning`);
-diagnostics moved behind a cargo feature; `cell_size` is back on
-`ChessboardDetection`; and the public config / result types are
-`#[non_exhaustive]` with named constructors. See the
-[Migration Guide][migration] (also at `MIGRATION.md`) for before/after
-snippets covering Rust, the JSON config wire format, and Python.
+The detector structs and these free functions are now one symmetric surface.
+`CharucoDetector`, `PuzzleBoardDetector` and `MarkerBoardDetector` gained
+`detect(image)`, which runs the ChESS corner pass from the `params.chess` field
+they always carried but never read; their old corner-consuming `detect` is now
+`detect_with_corners`, and `detect_with_diagnostics` is now
+`diagnose_with_corners`, joined by `diagnose(image)`. `MarkerBoardDetector`
+returns `Result<_, MarkerBoardDetectError>` in place of `Option`. Successful
+detections are unchanged, and every break is a compile error rather than a
+silent behaviour change.
+
+See the [Migration Guide][migration] for before/after snippets covering Rust,
+the C ABI, Python and WebAssembly.
 
 [migration]: https://vitalyvorobyev.github.io/calib-targets-rs/migration.html
 

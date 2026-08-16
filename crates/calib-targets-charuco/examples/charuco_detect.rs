@@ -11,9 +11,8 @@ use calib_targets_chessboard::ChessCorner as Corner;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{GrayImageView, GridAlignment, TargetDetection};
-use chess_corners::{CornerDescriptor, Detector as ChessDetector, DetectorConfig};
+use chess_corners::DetectorConfig;
 use image::ImageReader;
-use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 #[cfg(not(feature = "tracing"))]
@@ -172,14 +171,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let params = cfg.build_params();
     log_detector_params(&params);
 
-    let raw_corners = detect_raw_corners(&img);
-    let target_corners = adapt_corners(&raw_corners);
+    let src_view = make_view(&img);
+    let target_corners = detect_corners(&src_view);
     log_corner_stats(&target_corners, &params);
 
     let detector = CharucoDetector::new(params.clone())?;
-    let src_view = make_view(&img);
 
-    let detect_result = detector.detect(&src_view, &target_corners);
+    let detect_result = detector.detect_with_corners(&src_view, &target_corners);
 
     let mut report = CharucoDetectReport::new(&cfg, &config_path, target_corners);
     match detect_result {
@@ -211,25 +209,22 @@ fn load_image(path: &Path) -> Result<image::GrayImage, Box<dyn std::error::Error
     Ok(ImageReader::open(path)?.decode()?.to_luma8())
 }
 
-fn detect_raw_corners(img: &image::GrayImage) -> Vec<CornerDescriptor> {
-    let chess_cfg = // chess-corners 1.0 made `threshold` a single absolute floor on the raw
-    // ChESS response (relative thresholding is Radon-only now). 15.0 is the
-    // workspace production default — see
-    // `calib_targets::detect::default_chess_config`. This crate's examples do
-    // not depend on the facade, so the value is restated rather than imported.
-    DetectorConfig::chess()
+/// Run the shared ChESS front-end with this example's config.
+///
+/// chess-corners 1.0 made `threshold` a single absolute floor on the raw ChESS
+/// response (relative thresholding is Radon-only now). 15.0 is the workspace
+/// production default — see `calib_targets::detect::default_chess_config`.
+/// This crate's examples do not depend on the facade, so the value is restated
+/// rather than imported.
+fn detect_corners(image: &GrayImageView<'_>) -> Vec<Corner> {
+    let chess_cfg = DetectorConfig::chess()
         .with_threshold(15.0)
         .with_detection(|d| d.nms_radius = 2);
     debug!(
         "Running ChESS corner scan with threshold={:?}",
         chess_cfg.threshold
     );
-    let mut detector = ChessDetector::new(chess_cfg).expect("build ChESS detector");
-    detector.detect(img).expect("ChESS detection")
-}
-
-fn adapt_corners(raw: &[CornerDescriptor]) -> Vec<Corner> {
-    raw.iter().map(adapt_chess_corner).collect()
+    calib_targets_chessboard::detect_corners(image, &chess_cfg)
 }
 
 fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
@@ -238,29 +233,6 @@ fn make_view(img: &image::GrayImage) -> GrayImageView<'_> {
         height: img.height() as usize,
         data: img.as_raw(),
     }
-}
-
-fn adapt_chess_corner(c: &CornerDescriptor) -> Corner {
-    Corner::new(
-        Point2::new(c.x, c.y),
-        // `axes` is `None` only when the upstream orientation fit is
-        // skipped; these fixtures always fit it.
-        c.axes
-            .map(|a| {
-                [
-                    calib_targets_core::AxisEstimate {
-                        angle: a[0].angle,
-                        sigma: a[0].sigma,
-                    },
-                    calib_targets_core::AxisEstimate {
-                        angle: a[1].angle,
-                        sigma: a[1].sigma,
-                    },
-                ]
-            })
-            .expect("orientation fit enabled"),
-        c.response,
-    )
 }
 
 fn log_config(cfg: &CharucoDetectConfig, config_path: &Path) {

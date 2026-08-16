@@ -83,7 +83,7 @@ mod pipeline;
 mod rectified_view;
 
 // --- Public contract ---------------------------------------------------
-pub use corner::ChessCorner;
+pub use corner::{detect_corners, ChessCorner};
 pub use detector::{ChessboardCorner, ChessboardDetection, ChessboardDetector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};
 pub use params::{ChessboardAdvancedTuning, ChessboardParams, ChessboardParamsError};
@@ -93,3 +93,8 @@ pub use pipeline::{
     ChessboardLabelTrace, ChessboardStageTrace, ChessboardTopologicalTrace,
 };
 pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, RectifyError};
+
+// Re-export the foreign types [`detect_corners`] needs — the ChESS front-end
+// config, its named default, and the image view — so running the corner pass
+// through this crate does not require naming `calib-targets-core` as well.
+pub use calib_targets_core::{default_chess_config, DetectorConfig, GrayImageView};

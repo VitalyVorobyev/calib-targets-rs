@@ -5,8 +5,8 @@
   "generated_at": "unix:1777191275",
   "images": {
     "testdata/02-topo-grid/GeminiChess1.png": {
-      "labelled_count": 52,
-      "cell_size_px": 49.38853,
+      "labelled_count": 53,
+      "cell_size_px": 49.355747,
       "corners": [
         {
           "i": 1,
@@ -322,6 +322,13 @@
           "x": 546.64044,
           "y": 316.10934,
           "score": 449.8
+        },
+        {
+          "i": 0,
+          "j": 6,
+          "x": 237.7273,
+          "y": 341.99585,
+          "score": 479.80005
         },
         {
           "i": 1,
@@ -4276,8 +4283,8 @@
       ]
     },
     "testdata/puzzleboard_reference/example1.png": {
-      "labelled_count": 253,
-      "cell_size_px": 33.951897,
+      "labelled_count": 254,
+      "cell_size_px": 33.927063,
       "corners": [
         {
           "i": 2,
@@ -6049,6 +6056,13 @@
           "x": 605.6825,
           "y": 445.42822,
           "score": 552.3999
+        },
+        {
+          "i": 20,
+          "j": 14,
+          "x": 624.34235,
+          "y": 436.19162,
+          "score": 319.0
         }
       ]
     },
@@ -7521,8 +7535,8 @@
       ]
     },
     "testdata/small0.png": {
-      "labelled_count": 131,
-      "cell_size_px": 40.83007,
+      "labelled_count": 130,
+      "cell_size_px": 40.860466,
       "corners": [
         {
           "i": 2,
@@ -7747,13 +7761,6 @@
           "x": 632.5071,
           "y": 61.957226,
           "score": 61.799988
-        },
-        {
-          "i": 0,
-          "j": 3,
-          "x": 30.309464,
-          "y": 139.6871,
-          "score": 121.0
         },
         {
           "i": 1,
@@ -10940,8 +10947,8 @@
       ]
     },
     "testdata/small4.png": {
-      "labelled_count": 110,
-      "cell_size_px": 40.953274,
+      "labelled_count": 109,
+      "cell_size_px": 41.018227,
       "corners": [
         {
           "i": 12,
@@ -11005,13 +11012,6 @@
           "x": 268.00125,
           "y": 19.167702,
           "score": 61.600006
-        },
-        {
-          "i": 6,
-          "j": 2,
-          "x": 303.3562,
-          "y": 29.943144,
-          "score": 43.200012
         },
         {
           "i": 7,
@@ -11716,9 +11716,16 @@
       ]
     },
     "testdata/small5.png": {
-      "labelled_count": 128,
-      "cell_size_px": 41.658154,
+      "labelled_count": 129,
+      "cell_size_px": 41.642056,
       "corners": [
+        {
+          "i": 0,
+          "j": 0,
+          "x": 24.547318,
+          "y": 85.025246,
+          "score": 45.400024
+        },
         {
           "i": 2,
           "j": 0,

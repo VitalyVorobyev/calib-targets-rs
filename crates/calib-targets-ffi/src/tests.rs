@@ -8,15 +8,15 @@ use super::*;
 // Detector functions moved to `detectors` submodule; import them explicitly for tests.
 use crate::detectors::{
     ct_charuco_detect_args_t, ct_charuco_detect_buffers_t, ct_charuco_detector_create,
-    ct_charuco_detector_destroy, ct_charuco_detector_detect,
-    ct_charuco_detector_detect_diagnostics_json, ct_chessboard_detect_args_t,
-    ct_chessboard_detect_buffers_t, ct_chessboard_detector_create, ct_chessboard_detector_destroy,
-    ct_chessboard_detector_detect, ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
-    ct_marker_board_detector_create, ct_marker_board_detector_destroy,
-    ct_marker_board_detector_detect, ct_marker_board_detector_detect_diagnostics_json,
-    ct_puzzleboard_detect_args_t, ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
+    ct_charuco_detector_destroy, ct_charuco_detector_detect, ct_charuco_detector_diagnose_json,
+    ct_chessboard_detect_args_t, ct_chessboard_detect_buffers_t, ct_chessboard_detector_create,
+    ct_chessboard_detector_destroy, ct_chessboard_detector_detect, ct_marker_board_detect_args_t,
+    ct_marker_board_detect_buffers_t, ct_marker_board_detector_create,
+    ct_marker_board_detector_destroy, ct_marker_board_detector_detect,
+    ct_marker_board_detector_diagnose_json, ct_puzzleboard_detect_args_t,
+    ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
     ct_puzzleboard_detector_destroy, ct_puzzleboard_detector_detect,
-    ct_puzzleboard_detector_detect_diagnostics_json,
+    ct_puzzleboard_detector_diagnose_json,
 };
 use crate::error::ffi_status;
 use image::ImageReader;
@@ -216,6 +216,7 @@ fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
                 sample_radius_rel: 1.0 / 6.0,
                 search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FULL,
                 scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
+                symmetry_mode: CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS,
                 bit_likelihood_slope: 12.0,
                 per_bit_floor: -6.0,
                 alignment_min_margin: 0.02,
@@ -574,6 +575,7 @@ fn puzzleboard_decode_config_converts_new_modes_and_soft_fields() {
         sample_radius_rel: 1.0 / 6.0,
         search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
         scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+        symmetry_mode: CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS,
         bit_likelihood_slope: 9.0,
         per_bit_floor: -4.5,
         alignment_min_margin: 0.0,
@@ -587,6 +589,10 @@ fn puzzleboard_decode_config_converts_new_modes_and_soft_fields() {
     assert_eq!(
         converted.scoring_mode,
         calib_targets::puzzleboard::PuzzleBoardScoringMode::HardWeighted
+    );
+    assert_eq!(
+        converted.symmetry_mode,
+        calib_targets::puzzleboard::PuzzleBoardSymmetryMode::RotationsAndReflections
     );
     let tuning = converted.effective_tuning();
     assert_eq!(tuning.bit_likelihood_slope, 9.0);
@@ -604,6 +610,7 @@ fn puzzleboard_decode_config_defaults_omitted_soft_fields_for_legacy_callers() {
         sample_radius_rel: 1.0 / 6.0,
         search_mode: 0,
         scoring_mode: 0,
+        symmetry_mode: 0,
         bit_likelihood_slope: 0.0,
         per_bit_floor: 0.0,
         alignment_min_margin: 0.0,
@@ -617,6 +624,12 @@ fn puzzleboard_decode_config_defaults_omitted_soft_fields_for_legacy_callers() {
     assert_eq!(
         converted.scoring_mode,
         calib_targets::puzzleboard::PuzzleBoardScoringMode::SoftLogLikelihood
+    );
+    // A C value of `0` (an old caller built before this field existed) must
+    // fold to the default `Rotations` mode, not error out.
+    assert_eq!(
+        converted.symmetry_mode,
+        calib_targets::puzzleboard::PuzzleBoardSymmetryMode::Rotations
     );
     let tuning = converted.effective_tuning();
     assert_eq!(tuning.bit_likelihood_slope, 12.0);
@@ -634,6 +647,7 @@ fn puzzleboard_decode_config_allows_zero_slope_in_hard_mode() {
         sample_radius_rel: 1.0 / 6.0,
         search_mode: CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
         scoring_mode: CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+        symmetry_mode: CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS,
         bit_likelihood_slope: 0.0,
         per_bit_floor: 0.0,
         alignment_min_margin: 0.0,
@@ -785,7 +799,7 @@ fn charuco_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_charuco_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_charuco_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.is_object());
@@ -807,7 +821,7 @@ fn marker_board_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_marker_board_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_marker_board_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.get("inliers").is_some());
@@ -829,7 +843,7 @@ fn puzzleboard_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_puzzleboard_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_puzzleboard_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.get("observed_edges").is_some());

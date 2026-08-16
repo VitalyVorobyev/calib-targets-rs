@@ -736,6 +736,11 @@ typedef uint32_t ct_puzzleboard_search_mode_t;
 typedef uint32_t ct_puzzleboard_scoring_mode_t;
 
 /**
+ * Fixed PuzzleBoard symmetry-mode identifier type.
+ */
+typedef uint32_t ct_puzzleboard_symmetry_mode_t;
+
+/**
  * PuzzleBoard edge-bit decode parameters.
  */
 typedef struct ct_puzzleboard_decode_config_t {
@@ -746,6 +751,7 @@ typedef struct ct_puzzleboard_decode_config_t {
   float sample_radius_rel;
   ct_puzzleboard_search_mode_t search_mode;
   ct_puzzleboard_scoring_mode_t scoring_mode;
+  ct_puzzleboard_symmetry_mode_t symmetry_mode;
   float bit_likelihood_slope;
   float per_bit_floor;
   float alignment_min_margin;
@@ -801,6 +807,23 @@ typedef struct ct_puzzleboard_result_t {
   size_t edges_matched;
   float mean_bit_confidence;
   float bit_error_rate;
+  /**
+   * Distinct master bits the fragment reads. Both code maps repeat every
+   * three rows or columns, so this is `~6w` against `~2w²` sampled dots;
+   * `edges_observed / logical_bits` is the redundancy available.
+   */
+  size_t logical_bits;
+  /**
+   * Hamming error rate over `logical_bits`, after the period-3 replicas have
+   * been majority-voted. This is the rate the decoder's error budget gates.
+   */
+  float logical_bit_error_rate;
+  /**
+   * Fraction of confidence mass that lost its period-3 class vote — a
+   * read-quality meter computed before any pose hypothesis, so it is
+   * meaningful even when the decode is wrong. Near zero on a clean board.
+   */
+  float dot_dissent_rate;
   int32_t master_origin_row;
   int32_t master_origin_col;
 } ct_puzzleboard_result_t;
@@ -901,6 +924,10 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 #define CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED 1
 
 #define CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD 2
+
+#define CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS 1
+
+#define CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS 2
 
 #define CT_CIRCLE_POLARITY_WHITE 1
 
@@ -1077,10 +1104,10 @@ enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detect_args_
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_charuco_detector_detect_diagnostics_json(const struct ct_charuco_detect_args_t *args,
-                                                             char *out_utf8,
-                                                             size_t out_capacity,
-                                                             size_t *out_len);
+enum ct_status_t ct_charuco_detector_diagnose_json(const struct ct_charuco_detect_args_t *args,
+                                                   char *out_utf8,
+                                                   size_t out_capacity,
+                                                   size_t *out_len);
 
 /**
  * Create a marker-board detector handle.
@@ -1132,10 +1159,11 @@ enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_de
  * The JSON payload is `serde_json::to_string` of the Rust
  * `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
  * expected-to-detected circle matches, per-corner provenance, and the
- * alignment-inlier count). The marker-board diagnostics channel only
- * yields evidence on a successful detection, so a failed detection is
- * reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
- * stability promise than the typed result API.
+ * alignment-inlier count). Diagnostics are produced even when detection
+ * fails, so this entry point returns `CT_STATUS_OK` with a well-formed
+ * payload on failed frames — matching the ChArUco and PuzzleBoard
+ * diagnostics entry points; its schema carries a looser stability promise
+ * than the typed result API.
  *
  * `out_len` is required and always receives the JSON length excluding the
  * trailing NUL terminator. Query the required size by passing
@@ -1148,10 +1176,10 @@ enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_de
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_marker_board_detector_detect_diagnostics_json(const struct ct_marker_board_detect_args_t *args,
-                                                                  char *out_utf8,
-                                                                  size_t out_capacity,
-                                                                  size_t *out_len);
+enum ct_status_t ct_marker_board_detector_diagnose_json(const struct ct_marker_board_detect_args_t *args,
+                                                        char *out_utf8,
+                                                        size_t out_capacity,
+                                                        size_t *out_len);
 
 /**
  * Create a PuzzleBoard detector handle.
@@ -1219,10 +1247,10 @@ enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_dete
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_puzzleboard_detector_detect_diagnostics_json(const struct ct_puzzleboard_detect_args_t *args,
-                                                                 char *out_utf8,
-                                                                 size_t out_capacity,
-                                                                 size_t *out_len);
+enum ct_status_t ct_puzzleboard_detector_diagnose_json(const struct ct_puzzleboard_detect_args_t *args,
+                                                       char *out_utf8,
+                                                       size_t out_capacity,
+                                                       size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

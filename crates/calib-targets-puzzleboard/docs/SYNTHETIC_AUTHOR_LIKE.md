@@ -16,7 +16,7 @@ Generate the images and manifest with:
 uv venv .venv-synth
 uv pip install --python .venv-synth/bin/python opencv-python-headless numpy
 .venv-synth/bin/python crates/calib-targets-puzzleboard/tools/synth_puzzleboard_photo.py \
-  --preview-dir report/puzzleboard_synthetic_author_like
+  --preview-dir report/puzzleboard
 ```
 
 The generator is deterministic. Each scenario records its seed, board size,
@@ -24,15 +24,15 @@ master origin, perspective quad, radial distortion, blur, noise, illumination,
 and every ground-truth corner coordinate in:
 
 ```text
-testdata/puzzleboard_synthetic_author_like/manifest.json
+testdata/puzzleboard/manifest.json
 ```
 
 Default generated scenarios:
 
 | Scenario | Board | Origin | Purpose |
 | --- | ---: | ---: | --- |
-| `author_like_oblique` | 20 x 20 | `(18, 219)` | Broad author-style partial view |
-| `author_like_foreshortened` | 20 x 20 | `(30, 8)` | Strong perspective and mild distortion |
+| `oblique` | 20 x 20 | `(18, 219)` | Broad author-style partial view |
+| `foreshortened` | 20 x 20 | `(30, 8)` | Strong perspective and mild distortion |
 | `small_rotated_fragment` | 9 x 9 | `(453, 376)` | Small rotated patch near the decode-size boundary |
 
 ## Validation
@@ -47,7 +47,7 @@ cargo test -p calib-targets-puzzleboard --test synthetic_author_like -- --nocapt
 To write visual overlays:
 
 ```bash
-CALIB_PUZZLE_SYNTHETIC_OVERLAY_DIR="$PWD/report/puzzleboard_synthetic_author_like" \
+CALIB_PUZZLE_SYNTHETIC_OVERLAY_DIR="$PWD/report/puzzleboard" \
 CARGO_TARGET_DIR=/tmp/calib-targets-target \
 cargo test -p calib-targets-puzzleboard --test synthetic_author_like -- --nocapture
 ```
@@ -61,8 +61,8 @@ Current `origin/main`-based results after adding the fixtures:
 
 | Scenario | Decoded Corners | Truth-Matched Corners | BER | D4 Relation |
 | --- | ---: | ---: | ---: | --- |
-| `author_like_oblique` | 361 | 361 | 0.000 | identity |
-| `author_like_foreshortened` | 348 | 348 | 0.000 | identity |
+| `oblique` | 361 | 361 | 0.000 | identity |
+| `foreshortened` | 348 | 348 | 0.000 | identity |
 | `small_rotated_fragment` | 64 | 64 | 0.000 | identity |
 
 The regression accepts any single D4 + translation relation between detected

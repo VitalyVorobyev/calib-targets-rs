@@ -25,7 +25,7 @@
 - `MarkerBoardDetection`:
   - `detection`: `TargetDetection` labeled as `CheckerboardMarker`.
   - `alignment`: optional `GridAlignment` semantic alias for the canonical affine `GridTransform`, from detected grid coordinates to board coordinates.
-- `MarkerBoardDiagnostics` (opt-in, from the `*_with_diagnostics` entry points):
+- `MarkerBoardDiagnostics` (opt-in, from the `diagnose` / `diagnose_with_corners` entry points):
   - `circle_candidates`: scored circles per cell.
   - `circle_matches`: matched circles (with offsets).
   - `inliers`: per-corner provenance back into the input ChESS-corner slice.

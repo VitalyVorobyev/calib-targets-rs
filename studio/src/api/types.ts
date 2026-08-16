@@ -180,6 +180,9 @@ export interface DetectResponse {
       edges_matched: number;
       mean_confidence: number;
       bit_error_rate: number;
+      logical_bits: number;
+      logical_bit_error_rate: number;
+      dot_dissent_rate: number;
       master_origin_row: number;
       master_origin_col: number;
     };

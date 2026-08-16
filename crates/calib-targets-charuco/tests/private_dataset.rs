@@ -92,7 +92,7 @@ fn smoke_flagship_snap_0_detects() {
         height: snap.height() as usize,
         data: snap.as_raw(),
     };
-    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let result = result.expect("snap 0 of target 0 must detect");
 
     assert!(
@@ -149,7 +149,7 @@ fn run_flagship_sweep() -> Option<(usize, usize, usize)> {
                 height: snap.height() as usize,
                 data: snap.as_raw(),
             };
-            let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+            let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
             if result.is_ok() {
                 detected += 1;
                 wrong_id_total += diagnostics.raw_marker_wrong_id_count;
@@ -237,7 +237,7 @@ fn smoke_apriltag_image_does_not_panic() {
     // `min_secondary_marker_inliers` is now an advanced knob; its default (1)
     // already matches what this test wants, so no override is needed.
     let detector = CharucoDetector::new(params).expect("detector");
-    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let result = result.expect("board-level matcher must detect target_0 snap 0");
     assert!(
         result.markers.len() >= 2,
@@ -307,7 +307,7 @@ fn assert_reviewed_false_corners_rejected() {
             height: snap.height() as usize,
             data: snap.as_raw(),
         };
-        let Ok(result) = detector.detect(&view, &corners) else {
+        let Ok(result) = detector.detect_with_corners(&view, &corners) else {
             // A missing detection trivially carries no false corner.
             continue;
         };

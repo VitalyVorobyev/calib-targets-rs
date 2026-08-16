@@ -11,9 +11,10 @@
 //!
 //! A 4 × 4 fragment pins the position *at a known orientation*, but a fragment
 //! carries no cue for how the board was printed, so the decoder also searches
-//! the eight D4 transforms — and over `D4 × position` a 4 × 4 window is not
-//! unique. Clean uniqueness begins at 6 × 6, which is why the pipeline asks for
-//! [`min_window`](PuzzleBoardDecodeConfig::min_window) = 7 squares by default
+//! the board's admissible transforms — and over `transform × position` a 4 × 4
+//! window is not unique. Clean uniqueness begins at 6 × 6 *squares*, which is a
+//! span of 7 *corners*: that is why the pipeline asks for
+//! [`min_window`](PuzzleBoardDecodeConfig::min_window) = 7 corners by default
 //! and reports a *miss* rather than a guess below it. See [`code_maps`] for the
 //! measurement.
 //!
@@ -50,7 +51,8 @@ pub mod code_maps;
 // off), mirroring `calib-targets-chessboard`. The diagnostics types are always
 // compiled (the detector captures them internally) but only reach the public
 // surface — the `diagnostics` module, the type re-exports, and
-// `PuzzleBoardDetector::detect_with_diagnostics` — when the feature is enabled.
+// `PuzzleBoardDetector::diagnose` / `diagnose_with_corners` — when the feature
+// is enabled.
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
 #[cfg(not(feature = "diagnostics"))]
@@ -65,7 +67,7 @@ pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_
 pub use detector::{
     PuzzleBoardAdvancedTuning, PuzzleBoardCorner, PuzzleBoardDecodeConfig, PuzzleBoardDecodeInfo,
     PuzzleBoardDetectError, PuzzleBoardDetection, PuzzleBoardDetector, PuzzleBoardScoringMode,
-    PuzzleBoardSearchMode,
+    PuzzleBoardSearchMode, PuzzleBoardSymmetryMode,
 };
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::{
@@ -77,4 +79,6 @@ pub use params::PuzzleBoardParams;
 // input and the image view — so depending on calib-targets-puzzleboard alone is
 // sufficient (no direct calib-targets-chessboard / -core dependency needed).
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+pub use calib_targets_core::{
+    GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4,
+};

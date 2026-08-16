@@ -36,12 +36,11 @@ cargo run --release --features "tracing" --example detect_charuco_best -- testda
 cargo run --release --features "tracing" --example detect_puzzleboard_best -- testdata/puzzleboard_small.png
 ```
 
-Run examples with JSON config (produces detailed JSON reports):
+The ChArUco example additionally accepts a JSON config and writes a detailed
+JSON report:
 
 ```bash
-cargo run --example chessboard -- testdata/chessboard_config.json
-cargo run --example charuco_detect -- testdata/charuco_detect_config.json
-cargo run -p calib-targets --example detect_puzzleboard -- testdata/puzzleboard_detect_config.json
+cargo run -p calib-targets-charuco --example charuco_detect -- testdata/charuco_detect_config.json
 ```
 
 ## Benchmarks + diagnostics
