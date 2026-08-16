@@ -17,11 +17,9 @@ struct PuzzleBoardDetectConfig {
     /// Optional path for the detection report.
     #[serde(default)]
     output_path: Option<PathBuf>,
-    /// Optional ChESS corner-detector configuration; consumed by the
-    /// upstream corner-detection step.
-    #[serde(default)]
-    chess_config: Option<chess_corners::DetectorConfig>,
-    /// PuzzleBoard detector parameters.
+    /// PuzzleBoard detector parameters. The ChESS corner front-end is
+    /// configured through this struct's own `chess` field, like every other
+    /// detector knob.
     detector: PuzzleBoardParams,
 }
 
@@ -76,14 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run_config(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
     let cfg = PuzzleBoardDetectConfig::from_reader(file)?;
-    let params = cfg.detector.clone();
-    // The detector params carry no nested ChESS config, so an optional
-    // `chess_config` override is applied by running corner detection
-    // ourselves and feeding the corner cloud to the detector directly.
-    let result = match &cfg.chess_config {
-        Some(chess_cfg) => run_image_with_chess_config(&cfg.image_path, &params, chess_cfg)?,
-        None => run_image(&cfg.image_path, &params)?,
-    };
+    let result = run_image(&cfg.image_path, &cfg.detector)?;
     if let Some(output_path) = cfg.output_path {
         let report = PuzzleBoardDetectReport::new(cfg.image_path, result);
         let file = std::fs::File::create(output_path)?;
@@ -99,18 +90,6 @@ fn run_image(
 ) -> Result<calib_targets::puzzleboard::PuzzleBoardDetection, Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
     let result = detect::detect_puzzleboard(&img, params)?;
-    report(&result);
-    Ok(result)
-}
-
-fn run_image_with_chess_config(
-    path: &Path,
-    params: &PuzzleBoardParams,
-    chess_cfg: &chess_corners::DetectorConfig,
-) -> Result<calib_targets::puzzleboard::PuzzleBoardDetection, Box<dyn std::error::Error>> {
-    let img = ImageReader::open(path)?.decode()?.to_luma8();
-    let corners = detect::detect_corners(&img, chess_cfg);
-    let result = detect::detect_puzzleboard_with_corners(&img, &corners, params)?;
     report(&result);
     Ok(result)
 }
