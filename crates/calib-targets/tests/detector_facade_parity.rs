@@ -60,8 +60,8 @@ fn charuco_params() -> CharucoParams {
 }
 
 fn puzzleboard_params() -> PuzzleBoardParams {
-    // testdata/puzzleboard_detect_config.json describes this image: 10x10,
-    // 12.0 mm cell, master origin (0, 0).
+    // testdata/puzzleboard_small.png is a 10x10 board at 12.0 mm cell size,
+    // cut from the master at origin (0, 0).
     let board = PuzzleBoardSpec::with_origin(10, 10, 12.0, 0, 0).expect("board spec");
     PuzzleBoardParams::for_board(board)
 }

@@ -50,8 +50,8 @@ pub enum PuzzleBoardSpecError {
     /// distinguishes at a fixed orientation. Note that a *detector* needs more
     /// than this — see
     /// [`min_window`](crate::PuzzleBoardDecodeConfig::min_window), which
-    /// defaults to 7 because a 4 × 4 window is not unique once the eight D4
-    /// orientations are searched too.
+    /// defaults to 7 because a smaller window is not unique once the four
+    /// board orientations a camera can actually observe are searched too.
     #[error("rows and cols must be >= 4")]
     TooSmall,
     /// The board dimensions do not fit inside the 501×501 master pattern.
