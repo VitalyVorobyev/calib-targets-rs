@@ -121,7 +121,7 @@ params.decode.scoring_mode = { kind: "soft_log_likelihood" };
 params.decode.symmetry_mode = { kind: "rotations" }; // default
 const result = detect_puzzleboard(width, height, gray, default_chess_config(), params);
 // Every corner has an absolute master ID: result.corners[0].id
-// Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().
+// Soft-mode scoring evidence is available from diagnose_puzzleboard().
 ```
 
 The same `render_*_bundle` and `render_*_png` pairs exist for the other
@@ -163,7 +163,7 @@ cross-language payload.
 
 PuzzleBoard results include a compact `decode` summary. Raw observed
 edges and soft-mode runner-up scoring evidence are returned by
-`detect_puzzleboard_with_diagnostics`.
+`diagnose_puzzleboard`.
 
 **`LabeledCorner`** (shared across grid detectors):
 
@@ -185,11 +185,21 @@ edges and soft-mode runner-up scoring evidence are returned by
 | `detect_chessboard(w, h, px, cfg, params)` | `ChessboardDetection \| null` |
 | `detect_chessboard_best(w, h, px, cfg, configs)` | `ChessboardDetection \| null` |
 | `detect_charuco(w, h, px, cfg, params)` | `CharucoDetection` (throws on error) |
+| `detect_charuco_with_corners(w, h, px, corners, params)` | `CharucoDetection` (throws on error) |
 | `detect_charuco_best(w, h, px, configs)` | `CharucoDetection` (throws on all-fail) |
+| `diagnose_charuco(w, h, px, cfg, params)` | `{ result: CharucoDetection \| null, diagnostics: CharucoDetectDiagnostics }` |
+| `diagnose_charuco_with_corners(w, h, px, corners, params)` | same as `diagnose_charuco` |
 | `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetection` (throws on error) |
+| `detect_puzzleboard_with_corners(w, h, px, corners, params)` | `PuzzleBoardDetection` (throws on error) |
 | `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetection` (throws on all-fail) |
+| `diagnose_puzzleboard(w, h, px, cfg, params)` | `{ result: PuzzleBoardDetection \| null, diagnostics: PuzzleBoardDiagnostics }` |
+| `diagnose_puzzleboard_with_corners(w, h, px, corners, params)` | same as `diagnose_puzzleboard` |
 | `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetection \| null` |
+| `detect_marker_board_with_corners(w, h, px, corners, params)` | `MarkerBoardDetection \| null` |
 | `detect_marker_board_best(w, h, px, configs)` | `MarkerBoardDetection \| null` |
+| `diagnose_marker_board(w, h, px, cfg, params)` | `{ result: MarkerBoardDetection \| null, diagnostics: MarkerBoardDiagnostics }` |
+| `diagnose_marker_board_with_corners(w, h, px, corners, params)` | same as `diagnose_marker_board` |
+| `marker_board_sweep_for_board(spec)` | `MarkerBoardParams[]` — pass to `detect_marker_board_best` |
 | `rgba_to_gray(rgba, w, h)` | `Uint8Array` (BT.601) |
 | `render_chessboard_png(inner_rows, inner_cols, square_mm, dpi)` | `Uint8Array` — encoded PNG |
 | `render_charuco_png(rows, cols, square_mm, marker_size_rel, dict_name, dpi)` | `Uint8Array` |
@@ -230,11 +240,13 @@ edges and soft-mode runner-up scoring evidence are returned by
 - **No threads.** The WASM build is single-threaded; heavy detection on
   4K images may exceed 100 ms per call. Consider Web Workers.
 
-Diagnostics are available: `detect_chessboard_with_diagnostics` (and the
-ChArUco / marker-board / PuzzleBoard variants) return a
-`{ result, diagnostics }` object. The diagnostics payloads carry a looser
-stability promise than the typed results — see
-`typescript-extras.d.ts`.
+Diagnostics are available for the three compound targets:
+`diagnose_charuco`, `diagnose_marker_board`, and `diagnose_puzzleboard`
+(plus their `_with_corners` counterparts) return a
+`{ result, diagnostics }` object. `diagnostics` is produced even when
+detection fails, so overlay tools can render the failure mode. The
+diagnostics payloads carry a looser stability promise than the typed
+results — see `typescript-extras.d.ts`.
 
 ## Build from source
 

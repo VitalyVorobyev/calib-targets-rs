@@ -46,8 +46,8 @@ use calib_targets::chessboard::{
 use calib_targets::core::{Coord, GridAlignment, LabeledCorner};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
-    CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardParams,
-    MarkerBoardSpec, MarkerCircleSpec,
+    CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardDetectError,
+    MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
 use calib_targets::puzzleboard::{
     PuzzleBoardDecodeConfig, PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode,
@@ -634,6 +634,23 @@ pub(crate) fn map_charuco_detect_error(
         // not enumerated above (mesh-warp failures, etc.) falls
         // through to the generic `ChArUco detection failed` status.
         _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
+    }
+}
+
+pub(crate) fn map_marker_board_detect_error(err: MarkerBoardDetectError) -> FfiError {
+    match err {
+        MarkerBoardDetectError::ChessboardNotDetected => {
+            FfiError::not_found("chessboard not detected during marker-board detection")
+        }
+        MarkerBoardDetectError::AlignmentFailed {
+            matched,
+            candidates,
+        } => FfiError::not_found(format!(
+            "circle-marker alignment failed during marker-board detection (matched={matched}, candidates={candidates})"
+        )),
+        // `MarkerBoardDetectError` is `#[non_exhaustive]`; any variant not
+        // enumerated above falls through to the generic status.
+        other => FfiError::not_found(format!("marker board detection failed: {other}")),
     }
 }
 

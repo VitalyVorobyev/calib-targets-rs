@@ -300,7 +300,7 @@ class CharucoDetector {
     const ct_charuco_detect_args_t args{handle_.get(), &image};
     return fill_owned_string(
         [&args](char *buf, std::size_t cap, std::size_t *len) {
-          return ct_charuco_detector_detect_diagnostics_json(&args, buf, cap, len);
+          return ct_charuco_detector_diagnose_json(&args, buf, cap, len);
         },
         out_json);
   }
@@ -368,9 +368,8 @@ class MarkerBoardDetector {
   }
 
   // Run detection and capture the diagnostics channel as a JSON string.
-  // The marker-board diagnostics channel only yields evidence on a
-  // successful detection; a failed frame is reported as
-  // `CT_STATUS_NOT_FOUND`.
+  // Marker-board diagnostics are produced even on a failed frame, matching
+  // ChArUco and PuzzleBoard.
   [[nodiscard]] Status detect_diagnostics_json(
       const ct_gray_image_u8_t &image,
       std::string *out_json) const {
@@ -380,7 +379,7 @@ class MarkerBoardDetector {
     const ct_marker_board_detect_args_t args{handle_.get(), &image};
     return fill_owned_string(
         [&args](char *buf, std::size_t cap, std::size_t *len) {
-          return ct_marker_board_detector_detect_diagnostics_json(&args, buf, cap, len);
+          return ct_marker_board_detector_diagnose_json(&args, buf, cap, len);
         },
         out_json);
   }
@@ -458,7 +457,7 @@ class PuzzleBoardDetector {
     const ct_puzzleboard_detect_args_t args{handle_.get(), &image};
     return fill_owned_string(
         [&args](char *buf, std::size_t cap, std::size_t *len) {
-          return ct_puzzleboard_detector_detect_diagnostics_json(&args, buf, cap, len);
+          return ct_puzzleboard_detector_diagnose_json(&args, buf, cap, len);
         },
         out_json);
   }

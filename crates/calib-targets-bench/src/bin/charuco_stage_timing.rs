@@ -123,7 +123,7 @@ fn measure_once(
     totals.clear();
     let view = gray_view(img);
     let detect_start = Instant::now();
-    let result = detector.detect(&view, corners);
+    let result = detector.detect_with_corners(&view, corners);
     let detect_ms = detect_start.elapsed().as_secs_f64() * 1000.0;
     let spans_raw = totals.snapshot_ms();
 
@@ -159,7 +159,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // One diagnostics pass (production work, identical to `detect`) to recover
     // the candidate-cell count for the workload report. Not timed.
     let view = gray_view(&img);
-    let (diag_result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let (diag_result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let candidate_cells: usize = diagnostics
         .components
         .iter()

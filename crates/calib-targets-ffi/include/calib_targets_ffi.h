@@ -1087,10 +1087,10 @@ enum ct_status_t ct_charuco_detector_detect(const struct ct_charuco_detect_args_
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_charuco_detector_detect_diagnostics_json(const struct ct_charuco_detect_args_t *args,
-                                                             char *out_utf8,
-                                                             size_t out_capacity,
-                                                             size_t *out_len);
+enum ct_status_t ct_charuco_detector_diagnose_json(const struct ct_charuco_detect_args_t *args,
+                                                   char *out_utf8,
+                                                   size_t out_capacity,
+                                                   size_t *out_len);
 
 /**
  * Create a marker-board detector handle.
@@ -1142,10 +1142,11 @@ enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_de
  * The JSON payload is `serde_json::to_string` of the Rust
  * `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
  * expected-to-detected circle matches, per-corner provenance, and the
- * alignment-inlier count). The marker-board diagnostics channel only
- * yields evidence on a successful detection, so a failed detection is
- * reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
- * stability promise than the typed result API.
+ * alignment-inlier count). Diagnostics are produced even when detection
+ * fails, so this entry point returns `CT_STATUS_OK` with a well-formed
+ * payload on failed frames — matching the ChArUco and PuzzleBoard
+ * diagnostics entry points; its schema carries a looser stability promise
+ * than the typed result API.
  *
  * `out_len` is required and always receives the JSON length excluding the
  * trailing NUL terminator. Query the required size by passing
@@ -1158,10 +1159,10 @@ enum ct_status_t ct_marker_board_detector_detect(const struct ct_marker_board_de
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_marker_board_detector_detect_diagnostics_json(const struct ct_marker_board_detect_args_t *args,
-                                                                  char *out_utf8,
-                                                                  size_t out_capacity,
-                                                                  size_t *out_len);
+enum ct_status_t ct_marker_board_detector_diagnose_json(const struct ct_marker_board_detect_args_t *args,
+                                                        char *out_utf8,
+                                                        size_t out_capacity,
+                                                        size_t *out_len);
 
 /**
  * Create a PuzzleBoard detector handle.
@@ -1229,10 +1230,10 @@ enum ct_status_t ct_puzzleboard_detector_detect(const struct ct_puzzleboard_dete
  * point to writable memory of at least `out_capacity` bytes. `out_len`
  * must always be a valid writable pointer.
  */
-enum ct_status_t ct_puzzleboard_detector_detect_diagnostics_json(const struct ct_puzzleboard_detect_args_t *args,
-                                                                 char *out_utf8,
-                                                                 size_t out_capacity,
-                                                                 size_t *out_len);
+enum ct_status_t ct_puzzleboard_detector_diagnose_json(const struct ct_puzzleboard_detect_args_t *args,
+                                                       char *out_utf8,
+                                                       size_t out_capacity,
+                                                       size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

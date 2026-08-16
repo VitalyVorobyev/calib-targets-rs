@@ -23,17 +23,15 @@ crate-type = ["cdylib", "rlib"]
 # `default-features` for the override to inherit from.
 calib-targets = { path = "../calib-targets", default-features = false, features = ["image"] }
 calib-targets-core = { workspace = true }
-# The WASM bindings expose the `*_with_diagnostics` entry points, so they
-# enable each detector's `diagnostics` feature unconditionally (the bindings
-# have no Cargo feature of their own).
+# The WASM bindings expose the `diagnose_*` entry points, so they enable
+# each detector's `diagnostics` feature unconditionally (the bindings have
+# no Cargo feature of their own).
 calib-targets-chessboard = { workspace = true, features = ["diagnostics"] }
 calib-targets-charuco = { workspace = true, features = ["diagnostics"] }
 calib-targets-aruco = { workspace = true }
 calib-targets-marker = { workspace = true, features = ["diagnostics"] }
 calib-targets-print = { workspace = true }
 calib-targets-puzzleboard = { workspace = true, features = ["diagnostics"] }
-chess-corners = { workspace = true }
-nalgebra = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 serde-wasm-bindgen.workspace = true

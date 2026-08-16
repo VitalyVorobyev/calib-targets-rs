@@ -8,15 +8,15 @@ use super::*;
 // Detector functions moved to `detectors` submodule; import them explicitly for tests.
 use crate::detectors::{
     ct_charuco_detect_args_t, ct_charuco_detect_buffers_t, ct_charuco_detector_create,
-    ct_charuco_detector_destroy, ct_charuco_detector_detect,
-    ct_charuco_detector_detect_diagnostics_json, ct_chessboard_detect_args_t,
-    ct_chessboard_detect_buffers_t, ct_chessboard_detector_create, ct_chessboard_detector_destroy,
-    ct_chessboard_detector_detect, ct_marker_board_detect_args_t, ct_marker_board_detect_buffers_t,
-    ct_marker_board_detector_create, ct_marker_board_detector_destroy,
-    ct_marker_board_detector_detect, ct_marker_board_detector_detect_diagnostics_json,
-    ct_puzzleboard_detect_args_t, ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
+    ct_charuco_detector_destroy, ct_charuco_detector_detect, ct_charuco_detector_diagnose_json,
+    ct_chessboard_detect_args_t, ct_chessboard_detect_buffers_t, ct_chessboard_detector_create,
+    ct_chessboard_detector_destroy, ct_chessboard_detector_detect, ct_marker_board_detect_args_t,
+    ct_marker_board_detect_buffers_t, ct_marker_board_detector_create,
+    ct_marker_board_detector_destroy, ct_marker_board_detector_detect,
+    ct_marker_board_detector_diagnose_json, ct_puzzleboard_detect_args_t,
+    ct_puzzleboard_detect_buffers_t, ct_puzzleboard_detector_create,
     ct_puzzleboard_detector_destroy, ct_puzzleboard_detector_detect,
-    ct_puzzleboard_detector_detect_diagnostics_json,
+    ct_puzzleboard_detector_diagnose_json,
 };
 use crate::error::ffi_status;
 use image::ImageReader;
@@ -799,7 +799,7 @@ fn charuco_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_charuco_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_charuco_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.is_object());
@@ -821,7 +821,7 @@ fn marker_board_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_marker_board_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_marker_board_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.get("inliers").is_some());
@@ -843,7 +843,7 @@ fn puzzleboard_diagnostics_json_is_well_formed() {
         image: &descriptor,
     };
     let json = diagnostics_json_via(|out, cap, len| unsafe {
-        ct_puzzleboard_detector_detect_diagnostics_json(&args, out, cap, len)
+        ct_puzzleboard_detector_diagnose_json(&args, out, cap, len)
     });
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
     assert!(parsed.get("observed_edges").is_some());

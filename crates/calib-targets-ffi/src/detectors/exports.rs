@@ -383,7 +383,7 @@ pub unsafe extern "C" fn ct_charuco_detector_detect(
 /// point to writable memory of at least `out_capacity` bytes. `out_len`
 /// must always be a valid writable pointer.
 #[no_mangle]
-pub unsafe extern "C" fn ct_charuco_detector_detect_diagnostics_json(
+pub unsafe extern "C" fn ct_charuco_detector_diagnose_json(
     args: *const ct_charuco_detect_args_t,
     out_utf8: *mut c_char,
     out_capacity: usize,
@@ -465,10 +465,11 @@ pub unsafe extern "C" fn ct_marker_board_detector_detect(
 /// The JSON payload is `serde_json::to_string` of the Rust
 /// `MarkerBoardDiagnostics` struct (every scored circle hypothesis, the
 /// expected-to-detected circle matches, per-corner provenance, and the
-/// alignment-inlier count). The marker-board diagnostics channel only
-/// yields evidence on a successful detection, so a failed detection is
-/// reported as `CT_STATUS_NOT_FOUND`; its schema carries a looser
-/// stability promise than the typed result API.
+/// alignment-inlier count). Diagnostics are produced even when detection
+/// fails, so this entry point returns `CT_STATUS_OK` with a well-formed
+/// payload on failed frames — matching the ChArUco and PuzzleBoard
+/// diagnostics entry points; its schema carries a looser stability promise
+/// than the typed result API.
 ///
 /// `out_len` is required and always receives the JSON length excluding the
 /// trailing NUL terminator. Query the required size by passing
@@ -481,7 +482,7 @@ pub unsafe extern "C" fn ct_marker_board_detector_detect(
 /// point to writable memory of at least `out_capacity` bytes. `out_len`
 /// must always be a valid writable pointer.
 #[no_mangle]
-pub unsafe extern "C" fn ct_marker_board_detector_detect_diagnostics_json(
+pub unsafe extern "C" fn ct_marker_board_detector_diagnose_json(
     args: *const ct_marker_board_detect_args_t,
     out_utf8: *mut c_char,
     out_capacity: usize,
@@ -577,7 +578,7 @@ pub unsafe extern "C" fn ct_puzzleboard_detector_detect(
 /// point to writable memory of at least `out_capacity` bytes. `out_len`
 /// must always be a valid writable pointer.
 #[no_mangle]
-pub unsafe extern "C" fn ct_puzzleboard_detector_detect_diagnostics_json(
+pub unsafe extern "C" fn ct_puzzleboard_detector_diagnose_json(
     args: *const ct_puzzleboard_detect_args_t,
     out_utf8: *mut c_char,
     out_capacity: usize,

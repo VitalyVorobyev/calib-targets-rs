@@ -174,7 +174,7 @@ export interface MarkerBoardDetection {
  *
  * Winner-vs-runner-up scoring evidence and the raw per-edge observations
  * live in the `PuzzleBoardDiagnostics` payload returned by
- * `detect_puzzleboard_with_diagnostics`.
+ * `diagnose_puzzleboard`.
  */
 export interface PuzzleBoardDecodeInfo {
   /** Total observed edges that contributed to the decode. */
@@ -569,22 +569,23 @@ export interface PuzzleBoardParams {
 // ---------------------------------------------------------------------------
 // Diagnostics channel
 //
-// Returned by the `detect_*_with_diagnostics` functions as a
+// Returned by the `diagnose_*` / `diagnose_*_with_corners` functions as a
 // `{ result, diagnostics }` object. The `diagnostics` payloads mirror the
 // Rust diagnostics structs' `serde_json` shape and carry a LOOSER stability
 // promise than the result types above — fields may be added or restructured
 // between minor releases.
 // ---------------------------------------------------------------------------
 
-/** `{ result, diagnostics }` wrapper returned by `detect_*_with_diagnostics`. */
+/** `{ result, diagnostics }` wrapper returned by `diagnose_*` / `diagnose_*_with_corners`. */
 export interface DetectionWithDiagnostics<TResult, TDiagnostics> {
   /** The typed detection result, or `null` when detection failed. */
   result: TResult | null;
   /**
-   * The diagnostics payload. `null` only for marker boards on a failed
-   * detection (that channel yields evidence only on success).
+   * The diagnostics payload, produced even when detection fails
+   * (best-effort evidence for overlays) — always present across ChArUco,
+   * PuzzleBoard, and marker-board detectors.
    */
-  diagnostics: TDiagnostics | null;
+  diagnostics: TDiagnostics;
 }
 
 // --- ChArUco diagnostics (Rust `CharucoDetectDiagnostics`) -----------------

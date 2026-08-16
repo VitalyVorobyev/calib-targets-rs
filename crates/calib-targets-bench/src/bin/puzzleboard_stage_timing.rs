@@ -184,7 +184,7 @@ fn measure_once(
     totals.clear();
     let view = gray_view(img);
     let start = Instant::now();
-    let _ = detector.detect(&view, corners);
+    let _ = detector.detect_with_corners(&view, corners);
     let detect_ms = start.elapsed().as_secs_f64() * 1000.0;
     let raw = totals.snapshot_ms();
     TimingSample {
@@ -221,7 +221,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let corners = detect_corners(&img, &default_chess_config());
 
     let view = gray_view(&img);
-    let (result, diagnostics) = detector.detect_with_diagnostics(&view, &corners);
+    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let labelled_corners = match &result {
         Ok(res) => res.corners.len(),
         Err(e) => {

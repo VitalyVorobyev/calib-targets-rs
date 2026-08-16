@@ -373,7 +373,7 @@ fn measure_charuco(
 
     for _ in 0..warmup {
         let _ = chess_detector.detect_all(corners);
-        let _ = detector.detect(view, corners);
+        let _ = detector.detect_with_corners(view, corners);
     }
 
     let mut grid = Vec::with_capacity(repeats);
@@ -388,7 +388,7 @@ fn measure_charuco(
         grid_labelled = best_component_corners(&detections);
 
         let f_start = Instant::now();
-        let res = detector.detect(view, corners);
+        let res = detector.detect_with_corners(view, corners);
         full.push(elapsed_ms(f_start));
         if let Ok(res) = res {
             labelled = res.corners.len();
@@ -415,7 +415,7 @@ fn measure_charuco(
 
     // One more (untimed) detection to capture corners + marker quads for the
     // overlay (TL, TR, BR, BL order, in input-image pixels).
-    let (baseline, marker_quads) = match detector.detect(view, corners) {
+    let (baseline, marker_quads) = match detector.detect_with_corners(view, corners) {
         Ok(res) => {
             let corners_bl: Vec<BaselineCorner> = res
                 .corners
@@ -506,7 +506,7 @@ fn measure_puzzleboard(
 
     for _ in 0..warmup {
         let _ = chess_detector.detect_all(corners);
-        let _ = detector.detect(view, corners);
+        let _ = detector.detect_with_corners(view, corners);
     }
 
     let mut grid = Vec::with_capacity(repeats);
@@ -518,7 +518,7 @@ fn measure_puzzleboard(
         grid.push(elapsed_ms(g_start));
 
         let f_start = Instant::now();
-        let res = detector.detect(view, corners);
+        let res = detector.detect_with_corners(view, corners);
         full.push(elapsed_ms(f_start));
         if let Ok(res) = res {
             labelled = res.corners.len();
@@ -536,7 +536,7 @@ fn measure_puzzleboard(
 
     // One more (untimed) detection to capture the decoded corners for the
     // overlay (absolute master coords; `grid.u → i`, `grid.v → j`).
-    let baseline = match detector.detect(view, corners) {
+    let baseline = match detector.detect_with_corners(view, corners) {
         Ok(res) => {
             let corners_bl: Vec<BaselineCorner> = res
                 .corners
