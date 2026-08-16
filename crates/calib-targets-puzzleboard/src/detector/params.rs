@@ -7,9 +7,11 @@ use crate::detector::error::PuzzleBoardDetectError;
 
 /// Strategy for recovering the master-map origin during decode.
 ///
-/// - [`PuzzleBoardSearchMode::Full`] scans all `501 × 501 × 8` `(D4, origin)`
-///   candidates against the full 501 × 501 master code. Works whether or not
-///   the caller knows which printed board produced the image.
+/// - [`PuzzleBoardSearchMode::Full`] considers every `(D4, origin)` candidate
+///   against the full 501 × 501 master code. Works whether or not the caller
+///   knows which printed board produced the image. (The candidate *space* is
+///   `8 × 501 × 501`; the cyclic structure of the code means the decoder does
+///   not enumerate it — see `detector::decode`.)
 /// - [`PuzzleBoardSearchMode::FixedBoard`] matches observations directly
 ///   against the *declared* board's bit pattern (read from
 ///   [`crate::board::PuzzleBoardSpec`] at decode time). Any partial view of
@@ -27,13 +29,25 @@ pub enum PuzzleBoardSearchMode {
     /// Match observations against the declared board's own bit pattern
     /// (read from `PuzzleBoardParams.board` at decode time).
     ///
-    /// Bounded search space `8 × (rows+1)²` — cheaper than
-    /// [`PuzzleBoardSearchMode::Full`] for small boards and fast enough for
-    /// large ones (50 × 50 native under 10 ms at typical edge counts).
+    /// A declared board is a sub-rectangle *cut from* the master, so this is
+    /// the same scoring problem as [`PuzzleBoardSearchMode::Full`] restricted
+    /// to the origins that rectangle admits. Restricting the origins also
+    /// restricts the residue classes they reach, so the shared precompute does
+    /// strictly less work — which makes declaring the board **cheaper** than
+    /// not declaring it, not merely bounded. The saving shrinks as the board
+    /// approaches the master's 167-long period; declaring a full 501 × 501
+    /// board is the one case where the full search is faster, because there
+    /// the declaration carries no information and [`PuzzleBoardSearchMode::Full`]
+    /// gets a CRT collapse this mode cannot.
     ///
-    /// Partial-view guarantee: any subset of the printed board decodes to
-    /// the same master IDs a full-view decode would produce, so subsets
-    /// across frames or cameras stitch cleanly.
+    /// Two guarantees come with the restriction:
+    ///
+    /// - **Origin inside the board.** The decode cannot return a position the
+    ///   printed board does not cover, so every emitted `target_position` lies
+    ///   within it.
+    /// - **Partial-view consistency.** Any subset of the printed board decodes
+    ///   to the same master IDs a full-view decode would produce, so subsets
+    ///   across frames or cameras stitch cleanly.
     FixedBoard,
 }
 
@@ -73,16 +87,29 @@ pub enum PuzzleBoardScoringMode {
 pub struct PuzzleBoardDecodeConfig {
     /// Minimum window size (in squares) required to attempt a decode.
     ///
-    /// The paper's "4×4 = 100 % unique" holds only for a *noise-free* read: the
-    /// master edge code has minimum Hamming distance `1` at a 4×4 window (zero
-    /// error-correction), so a single corrupted bit can turn a corrupted 4×4
-    /// fragment into a perfect read of a *different* master location — a false
-    /// positive. The code's minimum distance grows with window size; an empirical
-    /// 300k-trial sweep (random origins × error patterns up to the BER budget)
-    /// finds the smallest window with zero false-accepts under the uniqueness
-    /// gate to be **7×7 (84 interior edges)** at both 30 % and 40 % BER. The
-    /// default is therefore 7 (bounded-distance decoding); smaller boards become
-    /// correct detection *misses* rather than risk a wrong absolute label.
+    /// Two separate effects push this above the paper's 4 × 4 figure, and both
+    /// are measured rather than assumed.
+    ///
+    /// **Orientation.** The 4 × 4 window is unique across master *positions* at
+    /// a fixed orientation. A detected fragment carries no cue for how the board
+    /// was printed, so the decoder searches the eight D4 transforms too — and
+    /// over `D4 × position` a 4 × 4 window is not unique. On clean, noise-free
+    /// windows at seven planted origins, every 4 × 4 had a perfect alias under
+    /// some other transform; 5 × 5 decoded at 5/7; 6 × 6 and above always
+    /// decoded (`decode::tests::window_uniqueness_report`).
+    ///
+    /// **Noise.** The master edge code has minimum Hamming distance `1` at a
+    /// 4 × 4 window — zero error-correction — so one corrupted bit can turn a
+    /// fragment into a *perfect* read of a different master location. The
+    /// minimum distance grows with window size; a 300k-trial sweep (random
+    /// origins × error patterns up to the BER budget) puts the smallest window
+    /// with zero false-accepts under the uniqueness gate at **7 × 7 (84 interior
+    /// edges)**, at both 30 % and 40 % BER.
+    ///
+    /// The default of 7 therefore clears the clean-uniqueness threshold of 6
+    /// with one square of noise margin (bounded-distance decoding). Fragments
+    /// below it become detection *misses* rather than a risked wrong absolute
+    /// label.
     #[serde(default = "default_min_window")]
     pub min_window: u32,
     /// Per-bit confidence floor — bits below this are treated as unknown.

@@ -1,6 +1,6 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
-use calib_targets_chessboard::{ChessboardAdvancedTuning, ChessboardParams};
+use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
 use chess_corners::{ChessRefiner, SaddlePointConfig};
 use serde::{Deserialize, Serialize};
@@ -286,15 +286,14 @@ impl CharucoParams {
         // alignment is a *location* tool, never a corner-drop gate, so this
         // floor — not marker presence — is what removes the bias.
         chessboard.min_corner_strength = 33.0;
-        // ChArUco has marker-ID and board-alignment validation after
-        // chessboard grid recovery. Keep the chessboard component
-        // recall-oriented here; the standalone chessboard detector
-        // still enables the stricter final edge-shape gate by default.
-        // `enable_final_edge_shape_check` is an advanced knob, so route it
-        // through a `ChessboardAdvancedTuning` override.
-        let mut advanced = ChessboardAdvancedTuning::default();
-        advanced.enable_final_edge_shape_check = false;
-        chessboard = chessboard.with_advanced(advanced);
+        // The chessboard's final wrong-label geometry check is left enabled,
+        // exactly as for the standalone chessboard detector. Marker decoding
+        // is not a substitute for it: the board alignment searches
+        // `D4 × integer translation` — a *rigid* relabelling of whatever
+        // lattice the chessboard produced — so it cannot see, penalise or
+        // repair a labelling that is wrong *within* a component. It picks the
+        // alignment the healthy region votes for and applies it to the broken
+        // region too.
 
         let scan = ScanDecodeConfig::default()
             .with_marker_size_rel(board.marker_size_rel)

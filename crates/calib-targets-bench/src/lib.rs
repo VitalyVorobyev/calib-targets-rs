@@ -27,6 +27,7 @@ pub mod precision;
 pub mod report;
 pub mod run_set;
 pub mod runner;
+pub mod span_timing;
 
 pub use ablate::{run_ablation, AblationOpts, AblationReport};
 pub use baseline::{Baseline, BaselineCorner, BaselineImage};

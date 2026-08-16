@@ -20,15 +20,41 @@
 //! shifts) is pairwise distinct across the map — 501 unique windows per
 //! map. See [`verify_cyclic_window_unique`] and the bundled tests.
 //!
-//! Construction is done once via stochastic hill-climbing in
-//! `tools/generate_code_maps.rs` (the companion paper arXiv:2405.03309 has
-//! a closed-form construction but no reference implementation; local search
-//! converges in milliseconds because 167 needed windows out of 168
-//! available orbits is a tiny assignment problem).
+//! Superposing the two maps makes every 4 × 4 window of *squares* — 3 × 4
+//! horizontal edge bits plus 4 × 3 vertical ones — distinct across all
+//! 501 × 501 master positions (`tests::master_4x4_windows_unique`).
 //!
-//! The maps are generated **once** by the `generate-puzzleboard-code-maps`
-//! binary under `tools/` and committed as `src/data/map_a.bin` /
-//! `src/data/map_b.bin`. They are loaded at compile time via `include_bytes!`.
+//! **That uniqueness is across positions at a fixed orientation.** A detected
+//! fragment carries no cue for which way the board was printed, so the decoder
+//! searches all eight D4 transforms as well, and over `D4 × position` a 4 × 4
+//! window is *not* unique: measured on clean windows at seven planted origins,
+//! every 4 × 4 had a perfect alias under some other transform, 5 × 5 decoded at
+//! 5/7, and 6 × 6 and above always decoded. This is why the pipeline's
+//! `min_window` default is 7 rather than 4 — see
+//! `decode::tests::window_uniqueness_report` for the harness that measures it.
+//!
+//! ## Provenance of the shipped maps
+//!
+//! The committed `src/data/map_a.bin` / `map_b.bin` are **imported from the
+//! reference implementation**, [PStelldinger/PuzzleBoard][upstream] (CC0 1.0),
+//! by `tools/import_author_maps.rs` — `map_a` is the author's `code1`
+//! verbatim, `map_b` is `rot90(code2[::-1, ::-1])` so that its fundamental
+//! period is stored as `167 × 3`. `src/data/map_metadata.json` records the
+//! import. Using the authors' maps is what makes boards printed from the
+//! reference tooling decode here, and vice versa.
+//!
+//! `tools/generate_code_maps.rs` can *construct* a valid pair from scratch by
+//! stochastic hill-climbing — the companion paper arXiv:2405.03309 gives a
+//! closed-form construction but no reference implementation, and local search
+//! converges in milliseconds because assigning 167 needed windows out of 168
+//! available σ-orbits is a tiny problem. A regenerated pair satisfies the same
+//! uniqueness property but is a **different code**: boards printed from it do
+//! not interoperate with the reference implementation, so it is a research
+//! tool, not the shipping path.
+//!
+//! Both maps are loaded at compile time via `include_bytes!`.
+//!
+//! [upstream]: https://github.com/PStelldinger/PuzzleBoard
 
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 
@@ -84,7 +110,7 @@ impl BitMap {
     }
 }
 
-/// The committed A map — governs *horizontal*-edge bits.
+/// The committed A map (`3 × 167`) — governs **vertical**-edge bits.
 #[inline]
 pub fn map_a() -> BitMap {
     BitMap {
@@ -94,7 +120,7 @@ pub fn map_a() -> BitMap {
     }
 }
 
-/// The committed B map — governs *vertical*-edge bits.
+/// The committed B map (`167 × 3`) — governs **horizontal**-edge bits.
 #[inline]
 pub fn map_b() -> BitMap {
     BitMap {

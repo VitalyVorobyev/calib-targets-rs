@@ -1,37 +1,58 @@
-//! Cross-correlate observed edge bits against the master code maps.
+//! Recover the `(D4 transform, master origin)` a set of observed edge bits
+//! came from.
 //!
-//! For each of the 8 D4 transforms and every possible master origin
-//! `(I0, J0) ∈ [0, 501) × [0, 501)`, score the observed edge bits against
-//! the expected master maps. Pick the `(transform, origin)` with highest
-//! confidence-weighted match rate.
+//! # The hypothesis space
 //!
-//! ## Module layout
+//! A detected fragment knows neither where it sits on the master nor which way
+//! the board was printed, so a hypothesis is a pair: one of the 8 D4 transforms
+//! and a master origin. Scoring a hypothesis means predicting the bit at every
+//! observed edge and counting agreement.
 //!
-//! - [`hard`] — the hard-weighted (count + confidence) decoders [`decode`] and
-//!   [`decode_fixed_board`].
-//! - [`soft`] — the soft-log-likelihood decoders [`decode_soft`] and
-//!   [`decode_fixed_board_soft`].
-//! - This module owns the shared scaffolding both halves depend on: the
-//!   [`DecodeOutcome`] carrier, the [`SoftLlConfig`] knobs, the D4 lookup
-//!   transform, the candidate-ranking helpers, and the per-bit
-//!   log-likelihood pair.
+//! # Why this is not `8 × 501² × N` work
 //!
-//! ## Fast-path via cyclic-period precompute (C3)
-//!
-//! The master maps have cyclic structure (matching PStelldinger/PuzzleBoard convention):
-//! - horizontal edge bit at `(mr, mc)` = `map_b[(mr % 167, mc % 3)]`
-//! - vertical edge bit at `(mr, mc)` = `map_a[(mr % 3, mc % 167)]`
-//!
-//! For transformed lookup coordinates `{(lr, lc, orient, bit, conf)}`, the score
-//! at master origin `(mr, mc)` is:
+//! The master edge code is cyclic, so the predicted bit depends on the origin
+//! only through its residues:
 //!
 //! ```text
-//! score(mr, mc) = H[(mr % 3, mc % 167)] + V[(mr % 167, mc % 3)]
+//! horizontal edge at (mr, mc) → map_b[mr mod 167][mc mod 3]
+//! vertical   edge at (mr, mc) → map_a[mr mod  3 ][mc mod 167]
 //! ```
 //!
-//! where `H` is a `3 × 167` table and `V` is a `167 × 3` table precomputed
-//! **once per D4 transform** in `O(501 × N)`.  The 501² origin loop then
-//! becomes `O(501²)` with two table lookups — no per-observation work.
+//! There are therefore only `167 · 3 = 501` distinct horizontal classes and
+//! `3 · 167 = 501` vertical ones, and an origin's score splits into one term
+//! from each:
+//!
+//! ```text
+//! score(mr, mc) = H[mr mod 167][mc mod 3] + V[mr mod 3][mc mod 167]
+//! ```
+//!
+//! [`tables`] builds both tables once per transform in `O(501 · N)`; every
+//! origin afterwards costs two lookups and an add. That alone takes the sweep
+//! from `O(8 · 501² · N)` to `O(8 · (501 · N + 501²))`.
+//!
+//! The hard path removes the remaining `501²` as well. Because `501 = 3 · 167`
+//! with `gcd(3, 167) = 1`, the Chinese Remainder Theorem makes the four
+//! residues `(mr mod 3, mr mod 167, mc mod 3, mc mod 167)` mutually independent
+//! and each free over its full range, so the argmax of the sum is the pair of
+//! per-table argmaxes and the origin scan collapses to `O(501)` — see
+//! [`hard::HardScan::fold`]. That separation needs an *integer* key: with an
+//! integer primary key a non-maximal table entry is at least one below the
+//! maximum and provably cannot reach the maximum sum, which is exactly the step
+//! that `f32` rounding invalidates. The soft path's key is an `f32` sum, so it
+//! keeps the `501²` walk ([`soft::decode_soft`] explains the tie-break that
+//! forces it).
+//!
+//! # Module layout
+//!
+//! - [`tables`] — the cyclic class precompute every path shares.
+//! - [`hard`] — full-master decode ranked by bit-match count, with the CRT
+//!   collapse.
+//! - [`soft`] — full-master decode ranked by summed per-bit log-likelihood.
+//! - [`fixed`] — both scorers restricted to a *declared* board's rectangle.
+//! - This module owns the scaffolding they share: the [`DecodeOutcome`]
+//!   carrier, the [`SoftLlConfig`] knobs, the D4 lookup transform, the
+//!   candidate-ranking helpers, the per-bit log-likelihood pair, and the
+//!   uniqueness gate.
 
 use calib_targets_core::{log_sigmoid, Coord, GridAlignment, GridTransform};
 
@@ -40,16 +61,17 @@ use crate::code_maps::{
     EDGE_MAP_B_ROWS,
 };
 
+mod fixed;
 mod hard;
 mod soft;
+mod tables;
 
 #[cfg(test)]
 mod tests;
 
-pub(crate) use hard::{
-    decode, decode_fixed_board, decode_fixed_board_with_runner_up, HardScan, TransformTables,
-};
-pub(crate) use soft::{decode_fixed_board_soft, decode_soft};
+pub(crate) use fixed::{decode_fixed_board, decode_fixed_board_soft, BoardRect};
+pub(crate) use hard::{decode, HardScan, TransformTables};
+pub(crate) use soft::decode_soft;
 
 /// Cyclic-period sizes for the precompute tables.
 ///
@@ -101,7 +123,7 @@ const MASTER_COLS_I32: i32 = crate::board::MASTER_COLS as i32;
 ///
 /// **Why this and not a `C·√N` magnitude threshold:** the master edge code has
 /// minimum Hamming distance `d(w)` that grows ~quadratically with window size
-/// but is only `1` at the `4×4` minimum window (zero error-correction). A
+/// but is only `1` at a `4×4` window (zero error-correction). A
 /// magnitude threshold either rejects clean small *unique* patches (margin `1`,
 /// `k_winner = 0`) or accepts corrupted small *alias* patches (a 1-bit-corrupted
 /// `4×4` is frequently a perfect read of a *different* master location:
@@ -150,10 +172,12 @@ fn passes_uniqueness_gate(
 /// to a *perfect* read than to its nearest competitor. This separates two
 /// distinct failure modes that a single-magnitude margin threshold conflates:
 ///
-/// - A **clean exact** read (`k_winner = 0`) passes at any `margin ≥ 1`, so the
-///   board's exact-uniqueness design is honored at *any* fragment size down to
-///   the pipeline's `min_window` — even a 4×4 patch, whose true origin out-votes
-///   every alias by ≥1 bit, decodes.
+/// - A **clean exact** read (`k_winner = 0`) passes at any `margin ≥ 1`, so a
+///   fragment whose true origin out-votes every competitor by even one bit
+///   decodes, with no size-dependent threshold standing in the way. What sets
+///   the practical floor is the code itself: below 6 × 6 a clean window
+///   routinely has a *perfect* alias under another D4 transform, giving
+///   `margin = 0`, and the gate declines.
 /// - A **noisy-ambiguous** read fails: when the observation is corrupted enough
 ///   that a wrong origin matches nearly as many bits (`margin` small) *and* the
 ///   winner itself mismatches many bits (`k_winner` large), the winner is not
@@ -350,6 +374,36 @@ fn update_best_candidate(best: &mut Option<DecodeOutcome>, candidate: DecodeOutc
 pub(crate) fn ll_pair(conf: f32, kappa: f32, floor: f32) -> (f32, f32) {
     let k = kappa * conf;
     (log_sigmoid(k).max(floor), log_sigmoid(-k).max(floor))
+}
+
+/// Fixed-point scale for accumulated log-likelihood.
+///
+/// The soft scorer accumulates in **integers**, not `f32`, and that is a
+/// correctness requirement rather than a speed trick. The crossed-CRT
+/// separation that collapses the `501²` origin scan rests on one step: a table
+/// entry below the maximum cannot reach the maximum *sum*. With integers that
+/// is immediate — below the maximum means at least one below it. With `f32`,
+/// rounding can let a strictly-smaller entry round up into the maximum sum, and
+/// the step fails. Quantising restores it, and makes the table sums exactly
+/// reproducible regardless of accumulation order as a side effect.
+///
+/// `2^24` puts the quantisation step at ~6e-8 per bit against per-bit values
+/// bounded by `per_bit_floor` (default −6). Even a 10⁵-edge observation set
+/// accumulates well inside `i64`, and the resulting error is orders of
+/// magnitude below any score gap the ranking depends on.
+pub(crate) const LL_SCALE: f64 = (1u64 << 24) as f64;
+
+/// Quantise one per-bit log-likelihood to the fixed-point accumulator.
+#[inline]
+pub(crate) fn quantize_ll(ll: f32) -> i64 {
+    (ll as f64 * LL_SCALE).round() as i64
+}
+
+/// Convert an accumulated fixed-point log-likelihood back to `f32` for the
+/// public score fields.
+#[inline]
+pub(crate) fn dequantize_ll(ll: i64) -> f32 {
+    (ll as f64 / LL_SCALE) as f32
 }
 
 /// Rank candidates by `score_best`, maintaining the current winner and

@@ -59,34 +59,39 @@ into the harness:
 Three tiers, in order of cost. The headline, **as of the ChArUco decode rewrite
 (PR #71)**: the external ChESS corner detector dominates every chessboard and
 ChArUco frame — including the ChArUco ones, where decode used to be the largest
-stage. The one exception is the PuzzleBoard frame, whose full 501² master sweep
-is its dominant stage. The largest *owned* costs are that PuzzleBoard sweep and
-the dense-board grid build; the once-dominant ChArUco decode has dropped to a
-minor stage.
+stage. The PuzzleBoard frame is the exception, and there the balance depends on
+the mode and declared board size (see Tier 2). The largest *owned* costs are the
+PuzzleBoard decode and the dense-board grid build; the once-dominant ChArUco
+decode has dropped to a minor stage.
 
 Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
 100 reps — the same numbers the published report renders):
 
 | Frame | px | corner detect | grid build | decode | end-to-end |
 |---|---|---:|---:|---:|---:|
-| `mid.png` (chessboard) | 1024×576 | **1.17** | 0.38 | — | 1.56 |
-| `small.png` (ChArUco) | 720×540 | **1.08** | 0.56 | 0.73 | 2.37 |
-| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.79 | 2.04 | **4.64** | 7.47 |
-| `large.png` (ChArUco) | 2048×1536 | **6.45** | 2.98 | 2.13 | 11.56 |
+| `mid.png` (chessboard) | 1024×576 | **0.89** | 0.33 | — | 1.21 |
+| `small.png` (ChArUco) | 720×540 | 0.92 | 0.72 | **0.97** | 2.61 |
+| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.67 | **1.60** | 1.26 | 3.53 |
+| `large.png` (ChArUco) | 2048×1536 | **4.50** | 3.38 | 2.23 | 10.11 |
 
-Corner detection is the largest stage on the chessboard and ChArUco rows; on the
-ChArUco frames decode (post-#71) is now *smaller* than both corner detection and
-grid build. The PuzzleBoard row is the exception: its full 501² master sweep
-makes decode the dominant stage — several times corner detection — and its
-oblique, corner-dense 640×480 frame also drives an outsized grid build for its
-size (see Tier 3).
+Corner detection leads on the chessboard and the large ChArUco frame. Decode
+leads on no frame: on the ChArUco rows it has been the smallest stage since #71,
+and the PuzzleBoard row — where the master sweep used to dominate at 4.6 ms —
+now spends more in the grid build than in decode. The PuzzleBoard frame's
+oblique, corner-dense 640×480 image drives an outsized grid build for its size
+(see Tier 3).
+
+The `small.png` grid-build and decode figures rose slightly when ChArUco stopped
+disabling the chessboard's wrong-label geometry check (#86). That is a
+correctness cost, not a regression to recover.
 
 ### Tier 1 — ChESS corner detection (external `chess-corners`)
 
-Corner detection is **the largest stage on every public frame** — ~65–75 % of a
-plain-chessboard end-to-end, and still the top stage on the ChArUco frames now
-that decode has shrunk. It scales with image area (`large.png`, 3 MP, ≈5.9 ms;
-the ~0.4–1 MP frames ≈0.8–1.2 ms). The `disk-fit` orientation method roughly
+Corner detection is **the largest stage on most public frames** — ~70 % of a
+plain-chessboard end-to-end, and the top stage on the large ChArUco frame. It
+scales with image area (`large.png`, 3 MP, ≈4.5 ms; the ~0.4–1 MP frames
+≈0.7–0.9 ms). It no longer leads on the two denser boards, where the owned grid
+build has caught up with it. The `disk-fit` orientation method roughly
 **doubles** corner-detection cost vs `ring-fit` — the standing reason `RingFit`
 is the default.
 
@@ -97,17 +102,24 @@ cost across regimes.
 
 ### Tier 2 — marker-decode sweeps (our code)
 
-- **PuzzleBoard master sweep — the top remaining owned decode cost.** The
-  full-decode path grows with board size — synthetic `puzzleboard/full` goes
-  **3.7 ms (8×8) → 18 ms (30×30)** — matching the `O(8 × 501² + N)` master-pattern
-  sweep in `decode/hard.rs` / `soft.rs`. The `KnownOrigin` fast path
-  (`fixed_board`) avoids the sweep for the common case. The public
-  photo-realistic `synthetic_decode` bench (canonical-map renders) now measures
-  this end to end without private data. The default soft full-master path no
-  longer runs the precompute twice: its matched-count uniqueness gate now reuses
-  the soft scan's own count/weight tables (via the shared `HardScan` accumulator)
-  instead of a second full `decode_with_runner_up` pass — byte-exact, and it cut
-  the report PuzzleBoard frame's decode from **6.3 ms to 4.6 ms (~27 %)**.
+- **PuzzleBoard decode.** All four paths share one cyclic class precompute
+  (`decode/tables.rs`), `O(501 · N)` per D4 transform. On top of it:
+  - `Full × Hard` collapses the 501² origin argmax to `O(501)` by crossed-CRT
+    separation → `O(8 · 501 · N)`.
+  - `Full × Soft` cannot (an `f32` key breaks the separation's
+    strictly-below-the-max step), so it keeps the 501² walk stripped to two
+    table reads and a compare → `O(8 · (501 · N + 501²))`.
+  - `FixedBoard` (either scorer) is the same problem restricted to the declared
+    board's origin rectangle, over only the residue classes that rectangle
+    reaches → `O(8 · (reachable · N + L_r · L_c))`, strictly below the full
+    search until the board spans the maps' 167-long period.
+
+  Measure with `decode::tests::decode_scaling_report` (decode only, no image
+  pipeline) and `puzzleboard_stage_timing` (per-stage, on a public fixture).
+  Where the time sits depends on the mode and the *declared board size* — on a
+  public 20×20 fixture, decode is ~61 % of `detect` under `Full × Soft` but only
+  ~5 % under `FixedBoard`; declaring a 130×130 board puts it back at ~46 %, and
+  a full 501×501 board at ~75 %.
 - **ChArUco board match — now a minor stage (PR #71 closed this).** Precomputing
   a per-cell bit-log-likelihood table removed the
   `O(cells × markers × 4 × bits²)` `log_sigmoid` evaluations from the
@@ -183,26 +195,30 @@ rewrite). **Every item is correctness-first: none may trade a false-positive
 risk for speed** — a wrong `(i, j)` label is unrecoverable for calibration (the
 asymmetric detection contract). Optimization work is *planned* here, not yet
 applied. With ChArUco decode now a minor stage, the two live owned candidates
-are the PuzzleBoard sweep and the dense-board grid build; the dominant cost
-across all regimes remains the external corner detector.
+are the dense-board grid build and edge sampling; the external corner detector
+still leads on the sparse and high-resolution frames.
 
 1. **Corner-detection configuration levers (Tier 1, highest leverage).**
-   *Evidence (refreshed):* the single largest stage on *every* public frame —
-   ~65–75 % of a plain-chessboard end-to-end and still the top stage on the
-   ChArUco frames now that decode shrank; ≈5.9 ms on the 3 MP frame; `disk-fit`
-   ≈2× `ring-fit`. *Approach:* keep `RingFit` default; offer optional downscale
+   *Evidence (refreshed):* the largest stage on the plain-chessboard frame
+   (~70 % of its end-to-end) and on the 3 MP frame (≈4.5 ms); `disk-fit`
+   ≈2× `ring-fit`. On the two denser boards the owned grid build has caught up
+   with it. *Approach:* keep `RingFit` default; offer optional downscale
    for large frames and ROI when a board prior exists. *Risk:* downscale trades
    corner-localization precision — validate recall/precision, never silently.
-2. **PuzzleBoard 501² sweep (Tier 2 — top remaining owned decode cost).**
-   *Evidence:* `full` path 3.7→18 ms with board size; the `O(8×501²)` loop in
-   `decode/hard.rs`; now measurable on public canonical-map photos via
-   `synthetic_decode`. *Done:* the default **soft** full-master path's redundant
-   second precompute is fused away — the matched-count uniqueness gate now reuses
-   the soft scan's own count/weight tables through the shared `HardScan`
-   accumulator instead of a second `decode_with_runner_up` pass (byte-exact:
-   `*_byte_identical_to_reference_*` + uniqueness-gate suites green; report
-   PuzzleBoard decode 6.3→4.6 ms). *Remaining:* the `O(501×N)` precompute
-   alternative for the master walk itself; optional `rayon` over the 8 D4
+2. **PuzzleBoard decode — largely done.**
+   *Evidence:* `puzzleboard_stage_timing` and `decode::tests::decode_scaling_report`.
+   *Done:* the declared-board search became a restricted master search rather
+   than a separate correlation; the class precompute is now bounded by residue
+   groups rather than observation count (`O(N + min(N, 6w) · 501)`, flat in `N`);
+   and the soft scorer's log-likelihood moved to fixed point, which is what makes
+   the crossed-CRT separation exact and collapsed its `501²` origin walk to
+   `O(501)`. Default `Full + Soft` detect on the report fixture: 6.32 → 2.98 ms.
+   *Remaining:* only the declared-full-master case, where decode is still ~70 %
+   of `detect` — the `8 × 252k` origin-rectangle readout, which none of the three
+   changes reach because there is nothing left to restrict and the CRT collapse
+   does not apply to a sub-rectangle. It is pure table lookups and the natural
+   SIMD target, with little practical urgency since declaring a full-master board
+   conveys no information. Optional `rayon` over the 8 D4
    transforms; and the same fusion for `decode_fixed_board_soft` (the fixed-board
    shift-scan second pass, left untouched this round — different table shape, not
    a free reuse). *Risk:* the workspace has **zero parallelism** in its own code

@@ -7,6 +7,87 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-15
+
+[#77]: https://github.com/VitalyVorobyev/calib-targets-rs/issues/77
+[#78]: https://github.com/VitalyVorobyev/calib-targets-rs/issues/78
+
+### Added
+
+- **Lattice-orientation parity as a precision invariant.** A homography
+  preserves orientation over any region that does not cross its vanishing line,
+  which an imaged planar target never does. The sign of the local basis
+  `e_u x e_v` is therefore the same at every cell of a correctly labelled
+  component — for any viewpoint, focal length, or amount of smooth lens
+  distortion. `drop_set` now always drops labels that violate it. This catches
+  a sub-block glued in with a reflected axis, which reverses the sign while
+  leaving edge lengths, edge directions and pixel separations plausible, so no
+  first-order wrong-label check can see it. The criterion compares a sign and
+  has no tolerance to tune.
+
+### Fixed
+
+- **Detection is deterministic for a fixed input.** `detect_grid` could return
+  different labellings for byte-identical input in different processes — most
+  runs labelling a 24 x 24 dot grid in full, roughly one in thirty dropping a
+  whole component ([#77]). Three reductions over the labelled set read
+  `HashMap` iteration order, which `std` reseeds per process: the
+  boundary-extension BFS seeded its queue straight from the map and then
+  claimed corners first-come-first-served, and `ensure_axes` and `cell_size_of`
+  accumulated `f32` sums, which are not associative. All three iterate in
+  sorted cell order now.
+
+  A 144-regime sweep (perspective x rotation x noise x dropout) found one
+  regime returning four different labellings over 40 repeats of the same input;
+  after the fix every regime is repeat-stable. `tests/determinism.rs` guards it
+  in-process — `RandomState` draws fresh keys per `HashMap`, so repeating a
+  detection inside one process already varies hash order — and
+  `examples/determinism_probe.rs` sweeps for new unstable regimes.
+
+- **Hex recall under sub-pixel noise is now covered by a test.** [#78] reported
+  an axis-aligned rectangular hex patch with no perspective term collapsing
+  from 30 labelled cells to 12 under 0.1 px centre noise, against 0.10.1. It
+  does not reproduce on this version: the same geometry labels every cell, with
+  labels consistent with ground truth, from 0 to 0.5 px noise and across a
+  10x spacing range. Every previous hex fixture carried a perspective term and
+  a hex-*disc* shape, so the reported configuration was untested — it now has
+  its own guard in `tests/detect_hex_positions.rs`.
+
+### Changed
+
+- **`merge_components_local` and `merge_components_local_for` take the
+  components plus one shared `positions` slice; `ComponentInput` is removed.**
+  Every component indexes the same corner array, so "the same corner appears in
+  two components" is a well-defined question. The previous shape allowed each
+  component its own index space, where it is not.
+- **Both merge entry points keep the labelling injective in both directions.**
+  One lattice coordinate holds one corner, and one corner sits at one
+  coordinate. A candidate label violating either is skipped, leaving a gap
+  rather than a duplicate: a gap costs recall, a duplicate is a wrong label a
+  consumer cannot recover from. Previously only the coordinate direction was
+  guarded, so a thin overlap could re-label a single corner at a run of
+  coordinates.
+- **`DropSet` is `#[non_exhaustive]`** and reports the parity drops separately
+  as `orientation_drop`, so a caller can attribute them in its own trace.
+
+### Migration
+
+```rust
+// before
+let views: Vec<ComponentInput<'_>> = components
+    .iter()
+    .map(|labelled| ComponentInput { labelled, positions })
+    .collect();
+let merged = merge_components_local(&views, &params);
+
+// after — components and positions are separate arguments
+let merged = merge_components_local(&components, positions, &params);
+```
+
+Callers that built each component over its own `positions` slice must first
+re-index them into one shared corner array. Matches on `DropSet` need a
+wildcard arm.
+
 ## [0.13.0] - 2026-08-10
 
 ### Added
@@ -93,6 +174,7 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.0...HEAD
+[0.14.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...projective-grid-v0.14.0
 [0.13.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.12.0...projective-grid-v0.13.0
 [0.12.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/v0.11.2...projective-grid-v0.12.0

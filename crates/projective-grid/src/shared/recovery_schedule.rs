@@ -296,7 +296,11 @@ fn ensure_axes(grow: &mut GrowResult, positions: &[Point2<f32>]) {
     }
     let (mut sum_i, mut n_i) = (Vector2::<f32>::zeros(), 0u32);
     let (mut sum_j, mut n_j) = (Vector2::<f32>::zeros(), 0u32);
-    for (&(i, j), &idx) in &grow.labelled {
+    // Sorted, because summing `f32` is not associative: iterating the map
+    // directly would make the recovered axes depend on hash order, which
+    // differs per process.
+    for (i, j) in sorted_cells(&grow.labelled) {
+        let idx = grow.labelled[&(i, j)];
         let here = positions[idx];
         if let Some(&n) = grow.labelled.get(&(i + 1, j)) {
             sum_i += positions[n] - here;
@@ -456,7 +460,10 @@ pub(crate) fn local_pitch_of(positions: &[Point2<f32>]) -> Vec<f32> {
 fn cell_size_of(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2<f32>]) -> f32 {
     let mut sum = 0.0_f32;
     let mut count = 0usize;
-    for (&(i, j), &idx) in labelled {
+    // Sorted for the same reason as `ensure_axes`: this is an `f32` mean, and
+    // hash order would leak the process's `RandomState` into the result.
+    for (i, j) in sorted_cells(labelled) {
+        let idx = labelled[&(i, j)];
         let here = positions[idx];
         for (di, dj) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
             if let Some(&n) = labelled.get(&(i + di, j + dj)) {
@@ -470,6 +477,17 @@ fn cell_size_of(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2<f32>]
     } else {
         sum / count as f32
     }
+}
+
+/// Labelled cells in a deterministic order.
+///
+/// Any reduction over a labelled set that is not order-invariant — an `f32`
+/// sum, a greedy first-come claim — must iterate through this rather than the
+/// map directly, or its result varies between processes.
+fn sorted_cells(labelled: &HashMap<(i32, i32), usize>) -> Vec<(i32, i32)> {
+    let mut cells: Vec<(i32, i32)> = labelled.keys().copied().collect();
+    cells.sort_unstable();
+    cells
 }
 
 /// Rebase a labelled component so its bounding-box minimum sits at `(0, 0)`.

@@ -396,35 +396,49 @@ fn rotate_observed_edge_canonically(
     }
 }
 
+/// Build the observation set the production edge sampler emits for a
+/// `local_rows × local_cols` window of **squares** anchored at master
+/// `(master_origin_row, master_origin_col)`.
+///
+/// Mirrors `PuzzleBoardDetector::sample_all_edges`, including *which* edges it
+/// can see. A dot is sampled only when the corners bounding both adjacent cells
+/// were detected, so across the `(local_rows + 1) × (local_cols + 1)` corner
+/// block that bounds the window a horizontal edge exists for corner rows
+/// `[1, local_rows - 1]` and columns `[0, local_cols - 1]`, and a vertical edge
+/// for rows `[0, local_rows - 1]` and columns `[1, local_cols - 1]`. The block's
+/// outermost corners host no dots, which is why every lookup cell a real
+/// observation references is non-negative:
+///
+/// - horizontal edge anchored at `(c, r)` reads cell `(r - 1, c)`
+/// - vertical edge anchored at `(c, r)` reads cell `(r, c - 1)`
+///
+/// The counts match the window: `(w-1)·w + w·(w-1)` edges for a `w × w` window
+/// — 24 at the 4 × 4 minimum, the same set `master_4x4_windows_unique` proves
+/// unique.
 fn build_perfect_observation(
     master_origin_row: i32,
     master_origin_col: i32,
     local_rows: i32,
     local_cols: i32,
 ) -> Vec<PuzzleBoardObservedEdge> {
-    // Mirror the real pipeline convention:
-    // - H edge at corner `(c, r)` samples lookup cell `(r-1, c)`
-    // - V edge at corner `(c, r)` samples lookup cell `(r, c-1)`
     let mut out = Vec::new();
-    for r in 0..local_rows {
-        for c in 0..local_cols {
-            if c + 1 < local_cols {
-                let bit = horizontal_edge_bit(master_origin_row + r - 1, master_origin_col + c);
+    for r in 0..=local_rows {
+        for c in 0..=local_cols {
+            if (1..local_rows).contains(&r) && c < local_cols {
                 out.push(PuzzleBoardObservedEdge {
                     row: r,
                     col: c,
                     orientation: EdgeOrientation::Horizontal,
-                    bit,
+                    bit: horizontal_edge_bit(master_origin_row + r - 1, master_origin_col + c),
                     confidence: 1.0,
                 });
             }
-            if r + 1 < local_rows {
-                let bit = vertical_edge_bit(master_origin_row + r, master_origin_col + c - 1);
+            if (1..local_cols).contains(&c) && r < local_rows {
                 out.push(PuzzleBoardObservedEdge {
                     row: r,
                     col: c,
                     orientation: EdgeOrientation::Vertical,
-                    bit,
+                    bit: vertical_edge_bit(master_origin_row + r, master_origin_col + c - 1),
                     confidence: 1.0,
                 });
             }
@@ -834,62 +848,26 @@ fn soft_ll_beats_hard_when_winner_has_more_evidence() {
     assert!(out.score_margin.is_finite() && out.score_margin > 0.5);
 }
 
-/// Build observations that sit at a specific fixed-board shift `(p_r, p_c)`
-/// relative to `spec_origin=(0, 0)` under the real pipeline convention.
-fn synth_fixed_board_obs(
-    shift_pr: i32,
-    shift_pc: i32,
-    local_rows: i32,
-    local_cols: i32,
-) -> Vec<PuzzleBoardObservedEdge> {
-    let mut out = Vec::new();
-    for r in 0..local_rows {
-        for c in 0..local_cols {
-            if c + 1 < local_cols {
-                // Horizontal map sees (mor + r, moc + c) but the
-                // decode indexes h_bit[(p_r + r - 1)][p_c + c] so we
-                // want horizontal_edge_bit(p_r + r - 1, p_c + c).
-                let bit = horizontal_edge_bit(shift_pr + r - 1, shift_pc + c);
-                out.push(PuzzleBoardObservedEdge {
-                    row: r,
-                    col: c,
-                    orientation: EdgeOrientation::Horizontal,
-                    bit,
-                    confidence: 1.0,
-                });
-            }
-            if r + 1 < local_rows {
-                // Vertical map: decode indexes v_bit[p_r + r][p_c + c - 1].
-                let bit = vertical_edge_bit(shift_pr + r, shift_pc + c - 1);
-                out.push(PuzzleBoardObservedEdge {
-                    row: r,
-                    col: c,
-                    orientation: EdgeOrientation::Vertical,
-                    bit,
-                    confidence: 1.0,
-                });
-            }
-        }
-    }
-    out
-}
-
 #[test]
 fn decode_fixed_board_soft_agrees_with_hard_on_planted_shift() {
-    // Plant a 7×7 observation that sits at (p_r=3, p_c=4) inside a
-    // 10×10 nominal board. Soft and hard decoders share the same
-    // inputs and must agree on the winning cyclic origin and the
-    // hard match count. We use the production BER gate (0.30) rather
-    // than a synthetic tight gate because a handful of observations
-    // near the board boundary legitimately fall off.
+    // Plant a 7×7 window at shift (3, 3) inside a 10×10 declared board —
+    // the largest shift at which the window still fits. Soft and hard
+    // decoders share the same inputs and must agree on the winning origin
+    // and the hard match count.
     let rows = 10u32;
     let cols = 10u32;
-    let obs = synth_fixed_board_obs(3, 4, 7, 7);
-    let hard = decode_fixed_board(&obs, 0, 0, rows, cols, 0.30).expect("hard decoded");
-    let soft = decode_fixed_board_soft(&obs, 0, 0, rows, cols, &default_soft_cfg(), 0.30)
-        .expect("soft decoded");
+    let obs = build_perfect_observation(3, 3, 7, 7);
+    let hard =
+        decode_fixed_board(&obs, BoardRect::new(0, 0, rows, cols), 0.30).expect("hard decoded");
+    let soft = decode_fixed_board_soft(
+        &obs,
+        BoardRect::new(0, 0, rows, cols),
+        &default_soft_cfg(),
+        0.30,
+    )
+    .expect("soft decoded");
     assert_eq!(hard.master_origin_row, 3);
-    assert_eq!(hard.master_origin_col, 4);
+    assert_eq!(hard.master_origin_col, 3);
     assert_eq!(soft.master_origin_row, hard.master_origin_row);
     assert_eq!(soft.master_origin_col, hard.master_origin_col);
     assert_eq!(soft.edges_matched, hard.edges_matched);
@@ -897,57 +875,27 @@ fn decode_fixed_board_soft_agrees_with_hard_on_planted_shift() {
 }
 
 #[test]
-fn decode_fixed_board_soft_penalizes_off_board_shifts() {
-    // A 4×4 observation planted at (p_r=2, p_c=2) inside a 10×10
-    // declared board. The soft decoder must prefer the fully-on-board
-    // shift over any alternative that truncates the window.
+fn decode_fixed_board_excludes_truncating_shifts() {
+    // A 4×4 window planted at shift (2, 2) inside a 10×10 declared board.
+    // Every hypothesis the fixed-board scan considers keeps the whole window
+    // on the board, so the winning read is exact — no observation is scored
+    // against a cell the printed board does not have.
     let rows = 10u32;
     let cols = 10u32;
-    let obs = synth_fixed_board_obs(2, 2, 4, 4);
-    let out = decode_fixed_board_soft(&obs, 0, 0, rows, cols, &default_soft_cfg(), 0.30)
-        .expect("decoded");
-    assert!(out.edges_matched >= out.edges_observed - 6);
-    assert!(out.score_margin > 0.05);
-}
-
-/// Emit a "pipeline-style" observation set matching what the real edge
-/// sampler (`detector::pipeline::sample_all_edges`) produces: an H obs
-/// at corner `(c, r)` reads the master dot at cell `(r-1, c)` — i.e.
-/// `horizontal_edge_bit(pos_row + r - 1, pos_col + c)`. Likewise a V obs
-/// at `(c, r)` reads the dot at cell `(r, c-1)`. The half-cell offsets
-/// reflect the `render.rs` dot placement at cell-boundary midpoints.
-fn build_pipeline_style_observation(
-    pos_row: i32,
-    pos_col: i32,
-    local_rows: i32,
-    local_cols: i32,
-) -> Vec<PuzzleBoardObservedEdge> {
-    let mut out = Vec::new();
-    for r in 0..local_rows {
-        for c in 0..local_cols {
-            if c + 1 < local_cols {
-                let bit = horizontal_edge_bit(pos_row + r - 1, pos_col + c);
-                out.push(PuzzleBoardObservedEdge {
-                    row: r,
-                    col: c,
-                    orientation: EdgeOrientation::Horizontal,
-                    bit,
-                    confidence: 1.0,
-                });
-            }
-            if r + 1 < local_rows {
-                let bit = vertical_edge_bit(pos_row + r, pos_col + c - 1);
-                out.push(PuzzleBoardObservedEdge {
-                    row: r,
-                    col: c,
-                    orientation: EdgeOrientation::Vertical,
-                    bit,
-                    confidence: 1.0,
-                });
-            }
-        }
-    }
-    out
+    let obs = build_perfect_observation(2, 2, 4, 4);
+    let out = decode_fixed_board_soft(
+        &obs,
+        BoardRect::new(0, 0, rows, cols),
+        &default_soft_cfg(),
+        0.30,
+    )
+    .expect("decoded");
+    assert_eq!(out.master_origin_row, 2);
+    assert_eq!(out.master_origin_col, 2);
+    assert_eq!(
+        out.edges_matched, out.edges_observed,
+        "a clean window fully on the board must match every bit"
+    );
 }
 
 /// Cross-D4 consistency: for a fixed physical corner observed in eight
@@ -965,7 +913,7 @@ fn assert_fixed_board_target_position_is_d4_invariant(
     let pos_row = 2i32;
     let pos_col = 3i32;
     let n_corners: i32 = 6;
-    let obs0 = build_pipeline_style_observation(pos_row, pos_col, n_corners, n_corners);
+    let obs0 = build_perfect_observation(pos_row, pos_col, n_corners, n_corners);
 
     // A 12×12 board is wide enough to hold any rotation of a 6×6 inner
     // corner grid after rebasing min-to-(0,0).
@@ -1044,7 +992,8 @@ fn assert_fixed_board_target_position_is_d4_invariant(
 #[test]
 fn decode_fixed_board_target_position_is_d4_invariant_hard() {
     assert_fixed_board_target_position_is_d4_invariant(|obs, spec_or, spec_oc, rows, cols| {
-        decode_fixed_board(obs, spec_or, spec_oc, rows, cols, 0.30).expect("hard decode")
+        decode_fixed_board(obs, BoardRect::new(spec_or, spec_oc, rows, cols), 0.30)
+            .expect("hard decode")
     });
 }
 
@@ -1052,7 +1001,13 @@ fn decode_fixed_board_target_position_is_d4_invariant_hard() {
 fn decode_fixed_board_soft_target_position_is_d4_invariant() {
     let cfg = default_soft_cfg();
     assert_fixed_board_target_position_is_d4_invariant(|obs, spec_or, spec_oc, rows, cols| {
-        decode_fixed_board_soft(obs, spec_or, spec_oc, rows, cols, &cfg, 0.30).expect("soft decode")
+        decode_fixed_board_soft(
+            obs,
+            BoardRect::new(spec_or, spec_oc, rows, cols),
+            &cfg,
+            0.30,
+        )
+        .expect("soft decode")
     });
 }
 
@@ -1110,30 +1065,23 @@ fn random_observation(rng: &mut Lcg) -> Vec<PuzzleBoardObservedEdge> {
         .collect()
 }
 
-/// Assert two `DecodeOutcome`s are byte-identical across every field, with
-/// exact float `==` (the optimized and reference paths perform identical
-/// summations, so any divergence is a real bug, not rounding noise).
-fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
+/// Assert the optimized decoder agrees with the brute-force reference.
+///
+/// Every *decision* — the winning transform, origin, and match count — must be
+/// identical; those are integer-keyed and the optimization does not touch how
+/// they are compared.
+///
+/// The `f32` score fields are compared to a tight relative tolerance rather than
+/// bit-for-bit. The precompute sums each residue group once and adds the group
+/// total to the table, where the reference adds each observation separately;
+/// the two are mathematically equal but associate differently, so they can
+/// differ in the last few ULPs. `1e-5` relative is roughly three orders of
+/// magnitude above the `f32` epsilon accumulated over the largest observation
+/// sets here, and far below any score gap the ranking depends on.
+fn assert_outcome_matches_reference(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str) {
     assert_eq!(a.alignment, b.alignment, "{ctx}: alignment");
     assert_eq!(a.edges_matched, b.edges_matched, "{ctx}: edges_matched");
     assert_eq!(a.edges_observed, b.edges_observed, "{ctx}: edges_observed");
-    assert_eq!(
-        a.weighted_score.to_bits(),
-        b.weighted_score.to_bits(),
-        "{ctx}: weighted_score {} vs {}",
-        a.weighted_score,
-        b.weighted_score
-    );
-    assert_eq!(
-        a.bit_error_rate.to_bits(),
-        b.bit_error_rate.to_bits(),
-        "{ctx}: bit_error_rate"
-    );
-    assert_eq!(
-        a.mean_confidence.to_bits(),
-        b.mean_confidence.to_bits(),
-        "{ctx}: mean_confidence"
-    );
     assert_eq!(
         a.master_origin_row, b.master_origin_row,
         "{ctx}: master_origin_row"
@@ -1143,11 +1091,22 @@ fn assert_outcome_byte_identical(a: &DecodeOutcome, b: &DecodeOutcome, ctx: &str
         "{ctx}: master_origin_col"
     );
     assert_eq!(
-        a.score_best.to_bits(),
-        b.score_best.to_bits(),
-        "{ctx}: score_best {} vs {}",
-        a.score_best,
-        b.score_best
+        a.bit_error_rate.to_bits(),
+        b.bit_error_rate.to_bits(),
+        "{ctx}: bit_error_rate"
+    );
+    assert_close(a.weighted_score, b.weighted_score, ctx, "weighted_score");
+    assert_close(a.mean_confidence, b.mean_confidence, ctx, "mean_confidence");
+    assert_close(a.score_best, b.score_best, ctx, "score_best");
+}
+
+/// Relative-tolerance float compare, falling back to absolute near zero.
+fn assert_close(a: f32, b: f32, ctx: &str, field: &str) {
+    const REL_TOL: f32 = 1e-5;
+    let scale = a.abs().max(b.abs()).max(1.0);
+    assert!(
+        (a - b).abs() <= REL_TOL * scale,
+        "{ctx}: {field} {a} vs {b} (rel tol {REL_TOL})"
     );
 }
 
@@ -1210,7 +1169,7 @@ fn adversarial_corpus() -> Vec<(String, Vec<PuzzleBoardObservedEdge>)> {
 }
 
 #[test]
-fn fast_decode_byte_identical_to_reference_fuzz() {
+fn fast_decode_matches_reference_fuzz() {
     let mut rng = Lcg::new(0xDEAD_BEEF);
     let bers = [0.01f32, 0.10, 0.30, 0.50, 1.0];
     for trial in 0..120usize {
@@ -1221,7 +1180,7 @@ fn fast_decode_byte_identical_to_reference_fuzz() {
         match (fast, reference) {
             (None, None) => {}
             (Some(f), Some(r)) => {
-                assert_outcome_byte_identical(&f, &r, &format!("hard trial {trial} ber {ber}"))
+                assert_outcome_matches_reference(&f, &r, &format!("hard trial {trial} ber {ber}"))
             }
             (f, r) => {
                 panic!("hard trial {trial} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
@@ -1231,7 +1190,7 @@ fn fast_decode_byte_identical_to_reference_fuzz() {
 }
 
 #[test]
-fn fast_decode_byte_identical_to_reference_adversarial() {
+fn fast_decode_matches_reference_adversarial() {
     let bers = [0.01f32, 0.30, 0.50, 1.0];
     for (name, obs) in adversarial_corpus() {
         for &ber in &bers {
@@ -1240,7 +1199,7 @@ fn fast_decode_byte_identical_to_reference_adversarial() {
             match (fast, reference) {
                 (None, None) => {}
                 (Some(f), Some(r)) => {
-                    assert_outcome_byte_identical(&f, &r, &format!("hard adv {name} ber {ber}"))
+                    assert_outcome_matches_reference(&f, &r, &format!("hard adv {name} ber {ber}"))
                 }
                 (f, r) => {
                     panic!("hard adv {name} ber {ber}: None/Some mismatch fast={f:?} ref={r:?}")
@@ -1262,7 +1221,7 @@ fn assert_soft_equivalent(
         (None, None) => {}
         (Some(f), Some(r)) => {
             // Winner identity + carried diagnostics.
-            assert_outcome_byte_identical(f, r, ctx);
+            assert_outcome_matches_reference(f, r, ctx);
             // Margin gate inputs and outcome.
             assert_eq!(
                 f.score_margin.to_bits(),
@@ -1293,7 +1252,7 @@ fn assert_soft_equivalent(
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_fuzz() {
+fn soft_decode_matches_reference_fuzz() {
     let cfg = default_soft_cfg();
     let mut rng = Lcg::new(0x1234_5678_9ABC_DEF0);
     let bers = [0.10f32, 0.30, 0.50, 1.0];
@@ -1307,7 +1266,7 @@ fn soft_decode_byte_identical_to_reference_fuzz() {
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_low_margin_gate() {
+fn soft_decode_matches_reference_low_margin_gate() {
     // Sweep the margin gate across a wide range so the pass/fail decision is
     // exercised on both sides of the threshold for randomized inputs.
     let mut rng = Lcg::new(0xCAFE_F00D_0BAD_BEEF);
@@ -1330,7 +1289,7 @@ fn soft_decode_byte_identical_to_reference_low_margin_gate() {
 }
 
 #[test]
-fn soft_decode_byte_identical_to_reference_adversarial() {
+fn soft_decode_matches_reference_adversarial() {
     let cfg = default_soft_cfg();
     let bers = [0.10f32, 0.30, 0.50, 1.0];
     for (name, obs) in adversarial_corpus() {
@@ -1442,7 +1401,7 @@ fn uniqueness_gate_declines_corrupted_safe_window() {
         // the gate's accept→decline transition on the 84-edge window.
         for k in 1..=33usize {
             for seed in 0..6u64 {
-                let mut obs = build_pipeline_style_observation(pr, pc, 7, 7);
+                let mut obs = build_perfect_observation(pr, pc, 7, 7);
                 flip_k_bits(
                     &mut obs,
                     k,
@@ -1480,7 +1439,7 @@ fn uniqueness_gate_declines_corrupted_safe_window() {
 #[test]
 fn uniqueness_gate_accepts_clean_window_with_margin() {
     for &n in &[7i32, 8, 10] {
-        let obs = build_pipeline_style_observation(12, 37, n, n);
+        let obs = build_perfect_observation(12, 37, n, n);
         let out = decode(&obs, 0.40).expect("clean window must decode");
         assert_eq!(
             out.edges_matched, out.edges_observed,
@@ -1500,18 +1459,42 @@ fn uniqueness_gate_accepts_clean_window_with_margin() {
     }
 }
 
-/// (b') A clean 4×4 fragment (below the production min_window, but the decoder
-/// itself is window-agnostic) is still *uniquely* decodable and must decode:
-/// the gate honors the code's exact-uniqueness design at any size — the floor
-/// that rejects 4×4 lives in the pipeline (`min_window`/`required_edges`/
-/// limiting-dimension), not in the gate.
+/// (b') Clean-window uniqueness is a property of `D4 × position`, not of
+/// position alone.
+///
+/// `code_maps::master_4x4_windows_unique` proves every 4 × 4 window is distinct
+/// *at a fixed orientation*. The decoder cannot assume an orientation — a
+/// fragment carries no cue for which way the board was printed — so it searches
+/// all eight D4 transforms, and at 4 × 4 a window routinely has a **perfect
+/// alias** under some other transform. The gate then sees `margin = 0` and
+/// declines, which is the required behaviour: a wrong absolute label is
+/// unrecoverable downstream, a miss is not.
+///
+/// Measured on clean windows across seven planted origins: 4 × 4 never decodes
+/// (always D4-aliased), 5 × 5 decodes at 5/7, and 6 × 6 and above always
+/// decode. The pipeline's `min_window = 7` sits one square above that clean
+/// threshold, leaving the extra square as the noise budget.
 #[test]
-fn uniqueness_gate_accepts_clean_4x4() {
-    let obs = build_pipeline_style_observation(8, 19, 4, 4);
-    let out = decode(&obs, 0.40).expect("clean 4×4 is unique and must decode");
-    assert_eq!(out.master_origin_row, 8);
-    assert_eq!(out.master_origin_col, 19);
-    assert_eq!(wrong_corner_count(&out, 8, 19, 4), 0);
+fn uniqueness_gate_declines_d4_aliased_small_window() {
+    let obs = build_perfect_observation(8, 19, 4, 4);
+    assert_eq!(obs.len(), 24, "4×4 window carries 3·4 + 4·3 edge bits");
+    assert!(
+        decode(&obs, 0.40).is_none(),
+        "a D4-aliased 4×4 must decline, not guess an orientation"
+    );
+}
+
+/// The companion to [`uniqueness_gate_declines_d4_aliased_small_window`]: once
+/// the window is large enough to break the D4 symmetry, a clean read decodes to
+/// the planted origin with every corner correct.
+#[test]
+fn uniqueness_gate_accepts_clean_window_above_d4_threshold() {
+    for (row, col) in [(8i32, 19i32), (0, 0), (125, 16), (333, 444)] {
+        let obs = build_perfect_observation(row, col, 6, 6);
+        let out = decode(&obs, 0.40).expect("clean 6×6 is D4-unique and must decode");
+        assert_eq!((out.master_origin_row, out.master_origin_col), (row, col));
+        assert_eq!(wrong_corner_count(&out, row, col, 6), 0);
+    }
 }
 
 /// (c) The soft n=8 witness from the Phase-A discovery: under heavy noise the
@@ -1530,7 +1513,7 @@ fn soft_uniqueness_gate_declines_corrupted_8x8() {
     for &(pr, pc) in &[(125i32, 16i32), (3, 4), (200, 90), (50, 300)] {
         for k in 24..=30usize {
             for seed in 0..4u64 {
-                let mut obs = build_pipeline_style_observation(pr, pc, 8, 8);
+                let mut obs = build_perfect_observation(pr, pc, 8, 8);
                 flip_k_bits(
                     &mut obs,
                     k,
@@ -1556,7 +1539,7 @@ fn gate_decision_matches_reference_on_corrupted_fragments() {
     for &n in &[4i32, 5, 6, 7] {
         for k in 0..=4usize {
             for seed in 0..4u64 {
-                let mut obs = build_pipeline_style_observation(7, 13, n, n);
+                let mut obs = build_perfect_observation(7, 13, n, n);
                 flip_k_bits(
                     &mut obs,
                     k,
@@ -1573,5 +1556,118 @@ fn gate_decision_matches_reference_on_corrupted_fragments() {
                 );
             }
         }
+    }
+}
+
+/// Decode-scaling report: cost of each `(search mode, scoring mode)` against
+/// observation count and declared-board size, with the image pipeline removed.
+///
+/// The decoders consume *already-sampled* edge bits, so timing them directly —
+/// rather than through `PuzzleBoardDetector::detect` — isolates decode
+/// complexity from image resolution and corner-detection cost, which otherwise
+/// dominate and hide it. `benches/synthetic_decode.rs` measures the end-to-end
+/// path; this measures the algorithm.
+///
+/// Run with:
+/// ```text
+/// cargo test --release -p calib-targets-puzzleboard --lib -- \
+///     decode_scaling_report --ignored --nocapture
+/// ```
+///
+/// What it demonstrates:
+///
+/// - **Full master** is `O(8 · 501 · N)` — the per-transform class precompute —
+///   plus `O(8 · 501)` for the hard path's crossed-CRT argmax. Cost tracks `N`
+///   and is flat in board size, which is the point: it does not know the board.
+/// - **Fixed board** is `O(8 · (reachable classes · N + L_r · L_c))`. Declaring
+///   a board shrinks the reachable residue range, so it is *cheaper* than the
+///   full search — until the range saturates at the 167-long period, which
+///   happens at board size ≈ `167 + window`. Past that it pays the full
+///   precompute plus a larger origin rectangle and falls behind.
+#[test]
+#[ignore]
+fn decode_scaling_report() {
+    fn millis<T>(reps: u32, mut f: impl FnMut() -> T) -> f64 {
+        // One untimed pass so the lazily-unpacked maps and the allocator are
+        // warm; the tables are rebuilt per call regardless.
+        std::hint::black_box(f());
+        let start = std::time::Instant::now();
+        for _ in 0..reps {
+            std::hint::black_box(f());
+        }
+        start.elapsed().as_secs_f64() * 1e3 / reps as f64
+    }
+
+    let cfg = default_soft_cfg();
+    println!("\n| window | edges | board | full/hard | full/soft | fixed/hard | fixed/soft |");
+    println!("|---|---|---|---|---|---|---|");
+    for &window in &[7i32, 13, 25, 50] {
+        let obs = build_perfect_observation(40, 60, window, window);
+        let edges = obs.len();
+        let full_hard = millis(3, || decode(&obs, 0.30));
+        let full_soft = millis(3, || decode_soft(&obs, &cfg, 0.30));
+        for &size in &[25u32, 50, 130, 501] {
+            if (size as i32) < window {
+                continue;
+            }
+            // The board must contain the planted window at master (40, 60).
+            let board = BoardRect::new(40, 60, size.min(501 - 60), size.min(501 - 60));
+            let reps = if size >= 130 { 1 } else { 3 };
+            let fixed_hard = millis(reps, || decode_fixed_board(&obs, board, 0.30));
+            let fixed_soft = millis(reps, || decode_fixed_board_soft(&obs, board, &cfg, 0.30));
+            println!(
+                "| {window}×{window} | {edges} | {size}×{size} | {full_hard:.2} | \
+                 {full_soft:.2} | {fixed_hard:.2} | {fixed_soft:.2} |"
+            );
+        }
+    }
+}
+
+/// Clean-window uniqueness threshold under `D4 × position` search.
+///
+/// Reports, per window size, how many planted origins decode and how many are
+/// rejected because a *distinct* origin matches every bit under some other D4
+/// transform. This is the empirical basis for
+/// [`PuzzleBoardDecodeConfig::min_window`](crate::PuzzleBoardDecodeConfig):
+/// clean uniqueness begins at 6 × 6, so the default of 7 leaves one square of
+/// margin for bit noise.
+///
+/// ```text
+/// cargo test --release -p calib-targets-puzzleboard --lib -- \
+///     window_uniqueness_report --ignored --nocapture
+/// ```
+#[test]
+#[ignore]
+fn window_uniqueness_report() {
+    let origins = [
+        (8i32, 19i32),
+        (0, 0),
+        (12, 37),
+        (125, 16),
+        (200, 90),
+        (50, 300),
+        (333, 444),
+    ];
+    println!("\n| window | edges | decoded | D4-aliased |");
+    println!("|---|---|---|---|");
+    for window in 3..=9i32 {
+        let (mut decoded, mut aliased, mut edges) = (0usize, 0usize, 0usize);
+        for &(row, col) in &origins {
+            let obs = build_perfect_observation(row, col, window, window);
+            edges = obs.len();
+            if decode(&obs, 0.40).is_some() {
+                decoded += 1;
+            } else if let Some((_, best, Some(runner))) =
+                crate::detector::decode::hard::decode_with_runner_up(&obs, 0.40)
+            {
+                if runner.matched >= best {
+                    aliased += 1;
+                }
+            }
+        }
+        println!(
+            "| {window}×{window} | {edges} | {decoded}/{} | {aliased} |",
+            origins.len()
+        );
     }
 }

@@ -39,10 +39,11 @@ detector to marker scenes:
   per-cell axis test is never poisoned by marker-internal X-corners. This
   floor — not marker presence — is the precision lever that the old
   `SeedAndGrow` pin used to provide.
-- **`enable_final_edge_shape_check = false`** — the standalone chessboard
-  detector enables the stricter final edge-shape gate by default; ChArUco
-  keeps the chessboard component recall-oriented because the marker-ID and
-  board-alignment validation downstream is its precision gate.
+- **the chessboard's final wrong-label geometry check stays enabled**, exactly
+  as for the standalone chessboard detector. Marker decoding is not a
+  substitute: the board alignment searches `D4 × integer translation`, a
+  *rigid* relabelling of whatever lattice the chessboard produced, so it
+  cannot see or repair a labelling that is wrong *within* a component.
 
 `chessboard.graph_build_algorithm` is the topological builder (the only
 builder; the field is a single-variant reserved seam). A config-supplied

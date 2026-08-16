@@ -46,7 +46,12 @@ pub enum PuzzleBoardSpecError {
     /// chessboard stage cannot honour.
     #[error("invalid chessboard configuration: {0}")]
     Chessboard(#[from] calib_targets_chessboard::ChessboardParamsError),
-    /// `rows` or `cols` is below the 4×4 minimum needed for a unique decode.
+    /// `rows` or `cols` is below 4, the smallest window the master code
+    /// distinguishes at a fixed orientation. Note that a *detector* needs more
+    /// than this — see
+    /// [`min_window`](crate::PuzzleBoardDecodeConfig::min_window), which
+    /// defaults to 7 because a 4 × 4 window is not unique once the eight D4
+    /// orientations are searched too.
     #[error("rows and cols must be >= 4")]
     TooSmall,
     /// The board dimensions do not fit inside the 501×501 master pattern.

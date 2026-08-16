@@ -40,7 +40,7 @@ The reference pipeline. Entry: `chess detector.rs::ChessboardDetector::detect` �
 | 2 | Axis cluster | `chess pipeline/cluster.rs` | Global axis clustering (§3) | **Delegated** → `pg cluster_axes` |
 | 3 | Topological grid | `pg ...::detect_square_oriented2_all` via `pipeline/mod.rs:112` | Delaunay → classify → quads → filter → walk (§4) | **Delegated** → `pg` (sole grid builder; `RecoverySchedule::Off`) |
 | 4 | Merge + recover | `chess pipeline/recover.rs::recover_topological_components` | Geometric merge (§6) + shared-index merge (§6) + boosters fill (§7) | **Mixed**: `pg merge_components_local` + `pg fill_grid_holes`; merge-by-index + directional scale **local** |
-| 5 | Geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | Line collinearity + local-H + wrong-label drops + largest-component (§8) | **Delegated** → `pg shared::validate` |
+| 5 | Geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | Line collinearity + local-H + orientation parity + wrong-label drops + largest-component (§8) | **Delegated** → `pg shared::validate` |
 | 6 | Output | `chess pipeline/output.rs::build_detection` | Normalize + rebase to non-negative (§8) | **Delegated** → `pg LabelledGrid::normalize` |
 
 **Notes.** Stage 3 hands `pg` native dual axes (`Evidence::Oriented2`) and turns the
@@ -91,11 +91,10 @@ corner IDs. Entry: `charuco detector/pipeline.rs::CharucoDetector::detect`.
 
 **Public, off-path:** `charuco link_check.rs::validate_marker_corner_links` lets a
 caller validate a finished result against the board spec — distinct from the internal
-stage-7 `corner_refit` (see [critique §D-3](critique.md#d-3-two-validations-two-corner-maps)).
+stage-7 `corner_refit`, which fixes corners rather than reporting on them.
 
-**Default matters:** stage **4a** is the default (`detector/params.rs:306`). 4b is a
-documented fallback, not the default — the atlas and critique correct an earlier
-mis-reading on this point.
+**Default matters:** stage **4a** is the default (`detector/params.rs:306`); 4b is a
+documented fallback.
 
 ## 4. Marker board — `marker MarkerBoardDetector::detect` → `MarkerBoardDetection`
 
@@ -105,7 +104,7 @@ truth. Entry: `marker detector.rs::MarkerBoardDetector`.
 | # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
 |---|---|---|---|---|
 | 1 | Chessboard grid | `marker detector.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
-| 2 | Corner map | `marker detector.rs::build_corner_map` | grid→pixel map | **Local** (duplicate of charuco's; see [critique §D-3](critique.md#d-3-two-validations-two-corner-maps)) |
+| 2 | Corner map | `marker detector.rs::build_corner_map` | grid→pixel map | **Local** (parallel to charuco's) |
 | 3 | Circle scoring | `marker detect.rs::detect_circles_via_square_warp` → `circle_score.rs::score_circle_in_square` | Circle scoring + detection (§12) | **Local** |
 | 4 | Circle matching | `marker match_circles.rs::match_expected_circles` | Circle matching (§12) | **Local** |
 | 5 | Alignment | `marker match_circles.rs::estimate_grid_alignment` | Grid-alignment from circles (§12) | **Local** |
@@ -134,15 +133,14 @@ simply not on any path a `calib-targets-*` detector takes.
 
 ---
 
-## Cross-cutting observations (feed the critique)
+## Cross-cutting observations
 
 - **One spine, four back-halves.** The structure is cleaner than it looks: §1's spine
   is shared via crate embedding, not copy-paste. The decode back-halves (§9–§12)
   are well-isolated.
-- **The delegation arrows almost all point down** (`charuco/puzzle/marker → chess →
-  pg/core`), which is correct layering. The only *up-ish* smell is the homography:
-  detectors call `core`'s copy while the identical solver also sits in `pg` below
-  them — see [critique §D-1](critique.md#d-1-homography-is-forked-verbatim).
+- **The delegation arrows all point down** (`charuco/puzzle/marker → chess →
+  pg/core`), which is correct layering. Detectors reach the DLT solver through
+  `core`'s image-domain wrapper; the solver itself lives once, in `pg`.
 - **Two corner-map builders and two "validation" concepts** ride along stages
-  marked *Local* above; they are small but are genuine duplication —
-  [critique §D-3](critique.md#d-3-two-validations-two-corner-maps).
+  marked *Local* above — small, parallel rather than shared, and the remaining
+  candidate for consolidation in this tree.

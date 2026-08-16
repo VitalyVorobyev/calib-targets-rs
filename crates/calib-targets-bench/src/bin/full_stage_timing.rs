@@ -38,7 +38,6 @@
 
 use std::error::Error;
 use std::path::PathBuf;
-use std::process::Command;
 use std::time::Instant;
 
 use calib_targets::aruco::builtins;
@@ -49,6 +48,7 @@ use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_bench::baseline::{BaselineCorner, BaselineImage};
 use calib_targets_bench::overlay::{render_report_overlay_on_gray, MarkerQuad};
+use calib_targets_bench::span_timing::{command_output, cpu_name};
 use clap::Parser;
 use image::{GrayImage, ImageReader};
 use serde::Serialize;
@@ -256,24 +256,6 @@ struct Metadata {
 struct Report {
     metadata: Metadata,
     images: Vec<ImageReport>,
-}
-
-fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let value = String::from_utf8(output.stdout).ok()?.trim().to_owned();
-    (!value.is_empty()).then_some(value)
-}
-
-fn cpu_name() -> Option<String> {
-    command_output("sysctl", &["-n", "machdep.cpu.brand_string"]).or_else(|| {
-        command_output(
-            "sh",
-            &["-c", "lscpu | sed -n 's/^Model name:[[:space:]]*//p'"],
-        )
-    })
 }
 
 fn elapsed_ms(start: Instant) -> f64 {

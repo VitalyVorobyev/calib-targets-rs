@@ -482,3 +482,76 @@ fn hex_oriented2_is_unsupported() {
         Err(projective_grid::GridError::UnsupportedCombination { .. })
     ));
 }
+
+/// A rectangular, axis-aligned hex patch with **no perspective term** must keep
+/// its recall under sub-pixel centre noise.
+///
+/// Regression guard for
+/// [#78](https://github.com/VitalyVorobyev/calib-targets-rs/issues/78), which
+/// reported this configuration collapsing from 30 labelled cells at zero noise
+/// to 12 at 0.1 px — noise ~0.3 % of the neighbour spacing. Every other hex
+/// fixture in this file carries a perspective term and a hex-*disc* shape, so
+/// none of them covered the axis-aligned rectangular case.
+///
+/// Noise is scaled with the spacing so the sweep tests the same *relative*
+/// perturbation at every scale, which is what the issue reported as
+/// scale-independent.
+#[test]
+fn axis_aligned_hex_rows_survive_subpixel_noise() {
+    /// Rows alternating `wide` and `wide - 1` cells, offset by half a spacing:
+    /// a triangular lattice whose nearest-neighbour distance is `spacing`.
+    fn hex_rows(
+        rows: i32,
+        wide: i32,
+        spacing: f32,
+        noise: f32,
+    ) -> (Vec<PointFeature>, HashMap<usize, (i32, i32)>) {
+        let dy = spacing * 3.0_f32.sqrt() * 0.5;
+        let mut rng = Lcg::new(0x1234_5678);
+        let mut features = Vec::new();
+        let mut truth = HashMap::new();
+        for row in 0..rows {
+            let odd = row % 2 == 1;
+            let count = if odd { wide - 1 } else { wide };
+            let x0 = 200.0 + if odd { spacing * 0.5 } else { 0.0 };
+            for col in 0..count {
+                let x = x0 + col as f32 * spacing + noise * rng.next_centered();
+                let y = 200.0 + row as f32 * dy + noise * rng.next_centered();
+                let index = features.len();
+                features.push(PointFeature::new(index, Point2::new(x, y)));
+                // Axial coords for this row-offset triangular lattice: the
+                // model basis is `(q + r/2, (sqrt3/2) r)`, so `q = col -
+                // floor(row / 2)` and `r = row`.
+                truth.insert(index, (col - (row - (row & 1)) / 2, row));
+            }
+        }
+        (features, truth)
+    }
+
+    for &spacing in &[14.0f32, 36.0, 140.0] {
+        for &relative_noise in &[0.0f32, 0.05 / 36.0, 0.1 / 36.0, 0.3 / 36.0] {
+            let (features, truth) = hex_rows(7, 7, spacing, relative_noise * spacing);
+            let n = features.len();
+            let solution = detect_grid(DetectionRequest::new(
+                LatticeKind::Hex,
+                Evidence::Positions(&features),
+            ))
+            .unwrap_or_else(|e| {
+                panic!("spacing {spacing} noise {relative_noise:.4}·s: detect failed: {e}")
+            });
+            let labelled = solution.grid().entries().len();
+            assert!(
+                labelled * 4 >= n * 3,
+                "spacing {spacing}, noise {:.3} px: labelled only {labelled}/{n} — the \
+                 axis-aligned hex path lost recall under sub-pixel noise",
+                relative_noise * spacing,
+            );
+            // Recall is only half the contract: the labels must also be right.
+            assert_labels_consistent_with_truth(
+                &entries_with_truth(&solution),
+                &truth,
+                &format!("axis-aligned hex, spacing {spacing}, noise {relative_noise:.4}·s"),
+            );
+        }
+    }
+}

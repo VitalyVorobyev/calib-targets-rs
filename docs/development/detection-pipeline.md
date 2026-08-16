@@ -43,16 +43,18 @@ corners directly:
 - a `min_corner_strength` floor (set to `33.0`) cuts the weak ChESS responses on
   marker-bit saddles **before** the grid grows, so the grid never extends into
   the marker interior; and
-- `enable_final_edge_shape_check` is disabled (the marker-ID and
-  board-alignment validation downstream of grid recovery is the precision gate
-  for ChArUco, so the chessboard component stays recall-oriented).
+- **the chessboard's final wrong-label geometry check stays enabled**, exactly
+  as for the standalone chessboard detector. Marker decoding is not a
+  substitute: the board alignment searches `D4 × integer translation`, a
+  *rigid* relabelling of whatever lattice the chessboard produced, so it
+  cannot see or repair a labelling that is wrong *within* a component.
 
 See `crates/calib-targets-charuco/docs/PIPELINE.md` for the full ChArUco stage
 map and `docs/algorithms/algorithmic_gaps.md` for the remaining open items.
 
 ### Component merge
 
-`projective_grid::component_merge::merge_components_local` runs as a post-stage
+`projective_grid::shared::merge::merge_components_local` runs as a post-stage
 on the topological builder's per-component walk output and uses local geometry
 only — no global homography, so it tolerates heavy radial distortion that would
 break a global fit. The chessboard crate's historical `enable_component_merge`

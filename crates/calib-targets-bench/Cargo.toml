@@ -46,5 +46,9 @@ path = "src/bin/charuco_stage_timing.rs"
 name = "full_stage_timing"
 path = "src/bin/full_stage_timing.rs"
 
+[[bin]]
+name = "puzzleboard_stage_timing"
+path = "src/bin/puzzleboard_stage_timing.rs"
+
 [lints]
 workspace = true

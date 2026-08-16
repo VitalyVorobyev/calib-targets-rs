@@ -108,6 +108,98 @@ const TOPO_FRONTIER_CURV_TOL: f32 = 0.30;
 /// neighbour pair has degree 3 and is spared.
 const TOPO_FRONTIER_MAX_DEGREE: usize = 2;
 
+/// Lattice-orientation drops — a **parity invariant**, not a tolerance.
+///
+/// The map from lattice coordinates to image positions is a homography, and a
+/// homography is orientation-preserving over any region that does not cross
+/// its vanishing line — which a physically imaged planar target never does:
+/// the whole board lies in front of the camera, so the projective weight keeps
+/// one sign across it. The signed area of the local basis
+///
+/// ```text
+/// e_u = p(u+1, v) - p(u, v)      e_v = p(u, v+1) - p(u, v)
+/// orientation(u, v) = sign(e_u × e_v)
+/// ```
+///
+/// therefore has the **same sign at every labelled cell of a correctly
+/// labelled component**, for every viewpoint, every focal length and any
+/// amount of smooth lens distortion.
+///
+/// A sub-block glued in with a *reflected* axis — the dominant outcome when a
+/// component merge accepts a mirroring D4 transform on thin overlap, and the
+/// mechanism behind whole swapped or mirrored rows — reverses that sign while
+/// leaving edge lengths, edge directions and pixel separations entirely
+/// plausible. None of the first-order checks in
+/// `topological_wrong_label_drops` can see it. This one sees it directly,
+/// and there is nothing to tune: it compares a sign.
+///
+/// A label is dropped only when every cell it takes part in carries the
+/// minority sign; a label on the seam between the two regions is a legitimate
+/// member of the majority region and is kept. The caller's largest-component
+/// filter then sweeps whatever the drop orphans.
+///
+/// **Exact tie.** When the two signs occur equally often no side is more
+/// credible than the other, and emitting either half would be a coin flip on
+/// correctness — which the detector's precision contract forbids. Both sides'
+/// exclusive labels are dropped, leaving the component to be refused rather
+/// than shipped half-wrong.
+///
+/// The result is deterministic: sign counting and set membership do not depend
+/// on `HashMap` iteration order.
+pub fn lattice_orientation_drops<F>(
+    labelled: &HashMap<(i32, i32), usize>,
+    position_of: F,
+) -> HashSet<usize>
+where
+    F: Fn(usize) -> Point2<f32>,
+{
+    // Cell orientation, one entry per labelled cell that has both cardinal
+    // successors. `members` is the three labels the sign is computed from.
+    let mut positive: HashSet<usize> = HashSet::new();
+    let mut negative: HashSet<usize> = HashSet::new();
+    let mut n_positive = 0usize;
+    let mut n_negative = 0usize;
+
+    for (&(u, v), &idx_o) in labelled.iter() {
+        let (Some(&idx_u), Some(&idx_v)) = (labelled.get(&(u + 1, v)), labelled.get(&(u, v + 1)))
+        else {
+            continue;
+        };
+        let origin = position_of(idx_o);
+        let e_u = position_of(idx_u) - origin;
+        let e_v = position_of(idx_v) - origin;
+        let cross = e_u.x * e_v.y - e_u.y * e_v.x;
+        if cross == 0.0 {
+            continue; // degenerate cell — the duplicate-pixel guard owns this
+        }
+        let (side, count) = if cross > 0.0 {
+            (&mut positive, &mut n_positive)
+        } else {
+            (&mut negative, &mut n_negative)
+        };
+        *count += 1;
+        side.extend([idx_o, idx_u, idx_v]);
+    }
+
+    if n_positive == 0 || n_negative == 0 {
+        return HashSet::new(); // consistent orientation — nothing to say
+    }
+
+    if n_positive == n_negative {
+        // No majority: neither half is more credible than the other.
+        let mut drop: HashSet<usize> = positive.difference(&negative).copied().collect();
+        drop.extend(negative.difference(&positive).copied());
+        return drop;
+    }
+
+    let (minority, majority) = if n_positive > n_negative {
+        (&negative, &positive)
+    } else {
+        (&positive, &negative)
+    };
+    minority.difference(majority).copied().collect()
+}
+
 /// Direct local wrong-label edge detector for the topological grid
 /// builder.
 ///
@@ -505,11 +597,17 @@ pub fn largest_component_filter(
 }
 
 /// Per-stage breakdown of a [`drop_set`] precision pass.
+#[non_exhaustive]
+#[derive(Debug, Default)]
 pub struct DropSet {
-    /// Union of every dropped index across the three filters below.
+    /// Union of every dropped index across the filters below.
     pub drop: HashSet<usize>,
     /// Indices dropped by the line-collinearity / local-H validate pass.
     pub validate_drop: HashSet<usize>,
+    /// Indices dropped by the lattice-orientation parity invariant
+    /// (`lattice_orientation_drops`). Always applied — it is an invariant,
+    /// not a heuristic, so it is not gated by `apply_wrong_label_drops`.
+    pub orientation_drop: HashSet<usize>,
     /// Indices dropped by the topological wrong-label check (empty when
     /// `apply_wrong_label_drops` was `false`).
     pub wrong_label_drop: HashSet<usize>,
@@ -528,11 +626,14 @@ pub struct DropSet {
 /// Over a labelled `(i, j) → index` map, computes the union of:
 /// 1. line-collinearity + local-H residual outliers
 ///    ([`validate`](crate::shared::validate::validate));
-/// 2. topological wrong-label drops when `apply_wrong_label_drops`;
-/// 3. the non-largest cardinally-connected component sweep when
+/// 2. lattice-orientation parity violations (`lattice_orientation_drops`) —
+///    **always applied**, because a reversed local basis is a proof of a wrong
+///    label rather than a tuned suspicion;
+/// 3. topological wrong-label drops when `apply_wrong_label_drops`;
+/// 4. the non-largest cardinally-connected component sweep when
 ///    `apply_largest_component`, computed
-///    over the union of (1)+(2) so a drop that splits a component removes the
-///    orphaned half.
+///    over the union of (1)+(2)+(3) so a drop that splits a component removes
+///    the orphaned half.
 ///
 /// Entries are materialised in deterministic `(i, j)`-sorted order before the
 /// validate pass, so the result never depends on the caller's `HashMap`
@@ -568,6 +669,9 @@ where
     let validate_drop = super::validate(&entries, cell_size, validate_params).blacklist;
     let mut drop = validate_drop.clone();
 
+    let orientation_drop = lattice_orientation_drops(labelled, &position);
+    drop.extend(orientation_drop.iter().copied());
+
     let mut wrong_label_drop = HashSet::new();
     if apply_wrong_label_drops {
         wrong_label_drop = topological_wrong_label_drops(labelled, &position, cell_size);
@@ -586,6 +690,7 @@ where
     DropSet {
         drop,
         validate_drop,
+        orientation_drop,
         wrong_label_drop,
         component_drop,
         components_seen,
@@ -598,6 +703,117 @@ mod tests {
 
     fn p(x: f32, y: f32) -> Point2<f32> {
         Point2::new(x, y)
+    }
+
+    /// `(i, j) -> index into the positions vector`.
+    type Labelled = HashMap<(i32, i32), usize>;
+
+    /// Build a `w x h` labelled grid at `pitch` px, index `u + w * v`, with
+    /// `place` deciding each label's image row. `place(v)` returning `v` is the
+    /// correct labelling; returning something else mislabels that row.
+    fn grid_with_rows(
+        w: i32,
+        h: i32,
+        pitch: f32,
+        place: impl Fn(i32) -> i32,
+    ) -> (Labelled, Vec<Point2<f32>>) {
+        let mut labelled = Labelled::new();
+        let mut positions = Vec::new();
+        for v in 0..h {
+            for u in 0..w {
+                let idx = positions.len();
+                positions.push(p(u as f32 * pitch, place(v) as f32 * pitch));
+                labelled.insert((u, v), idx);
+            }
+        }
+        (labelled, positions)
+    }
+
+    #[test]
+    fn orientation_parity_accepts_a_consistent_grid() {
+        let (labelled, pos) = grid_with_rows(4, 4, 10.0, |v| v);
+        assert!(lattice_orientation_drops(&labelled, |i| pos[i]).is_empty());
+    }
+
+    #[test]
+    fn orientation_parity_accepts_a_uniformly_mirrored_grid() {
+        // A board viewed through a mirror flips every cell's handedness — the
+        // sign is still *constant*, so nothing may be dropped.
+        let (labelled, pos) = grid_with_rows(4, 4, 10.0, |v| -v);
+        assert!(lattice_orientation_drops(&labelled, |i| pos[i]).is_empty());
+    }
+
+    #[test]
+    fn orientation_parity_drops_a_reflected_sub_block() {
+        // Rows v=0 and v=2 are swapped in image space: rows 0..=2 are labelled
+        // in reverse geometric order, so every cell between them has the
+        // opposite handedness from the rest of the board. This is the merge
+        // failure that ships whole mirrored rows — edge lengths, edge
+        // directions and pixel separations all stay plausible.
+        let (labelled, pos) = grid_with_rows(4, 6, 10.0, |v| match v {
+            0 => 2,
+            2 => 0,
+            other => other,
+        });
+        let drop = lattice_orientation_drops(&labelled, |i| pos[i]);
+        assert!(!drop.is_empty(), "the reflected block must be flagged");
+        // Every dropped label lies in the swapped band…
+        for &idx in &drop {
+            let (_, v) = *labelled.iter().find(|(_, &i)| i == idx).unwrap().0;
+            assert!(v <= 2, "dropped a label outside the reflected band: v={v}");
+        }
+        // …and the untouched rows below it all survive.
+        for v in 3..6 {
+            for u in 0..4 {
+                assert!(!drop.contains(&labelled[&(u, v)]), "dropped ({u},{v})");
+            }
+        }
+    }
+
+    #[test]
+    fn orientation_parity_drops_both_sides_of_an_exact_tie() {
+        // Two 2x2 blocks of opposite handedness joined by nothing else: no
+        // majority exists, so neither half may be shipped.
+        let mut labelled = HashMap::new();
+        let mut pos = Vec::new();
+        // Block A (positive handedness) at v = 0..=1.
+        for (v, y) in [(0, 0.0f32), (1, 10.0)] {
+            for (u, x) in [(0, 0.0f32), (1, 10.0)] {
+                labelled.insert((u, v), pos.len());
+                pos.push(p(x, y));
+            }
+        }
+        // Block B (negative handedness) at v = 5..=6, rows reversed in image.
+        for (v, y) in [(5, 110.0f32), (6, 100.0)] {
+            for (u, x) in [(0, 0.0f32), (1, 10.0)] {
+                labelled.insert((u, v), pos.len());
+                pos.push(p(x, y));
+            }
+        }
+        let drop = lattice_orientation_drops(&labelled, |i| pos[i]);
+        // Each block contributes exactly one complete cell, whose three
+        // members are the labels parity has evidence about. On a tie neither
+        // side is credible, so all six go. The two `(1, 1)`-corner labels take
+        // part in no cell, so parity says nothing about them and leaves them to
+        // the largest-component sweep — this filter only drops what it can
+        // prove wrong.
+        for v in [0, 5] {
+            for (u, dv) in [(0, 0), (1, 0), (0, 1)] {
+                assert!(
+                    drop.contains(&labelled[&(u, v + dv)]),
+                    "kept a tied label at ({u},{})",
+                    v + dv
+                );
+            }
+        }
+        assert_eq!(drop.len(), 6, "only cell members carry parity evidence");
+    }
+
+    #[test]
+    fn orientation_parity_is_silent_without_complete_cells() {
+        // A single row has no cell with both cardinal successors.
+        let (labelled, pos) = grid_with_rows(5, 1, 10.0, |v| v);
+        assert!(lattice_orientation_drops(&labelled, |i| pos[i]).is_empty());
     }
 
     #[test]

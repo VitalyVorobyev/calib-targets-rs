@@ -21,6 +21,7 @@
 //!     --out     bench_results/charuco/<dataset-dir>
 //! ```
 
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,9 +32,14 @@ use calib_targets_charuco::{
     diagnostics::CharucoDetectDiagnostics, load_board_spec_any, CharucoBoardSpec,
     CharucoDetectError, CharucoDetection, CharucoDetector, CharucoParams,
 };
-use calib_targets_chessboard::ChessCorner as Corner;
+use calib_targets_chessboard::{ChessCorner as Corner, ChessboardDetector};
 use calib_targets_core::GrayImageView;
 use image::GenericImageView;
+use nalgebra::Point2;
+use projective_grid::{
+    check_consistency, ConsistencyParams, ConsistencyRequest, Coord, CoordinateHypothesis,
+    LatticeKind, PointFeature,
+};
 use serde::Serialize;
 
 const DEFAULT_SNAP_WIDTH: u32 = 720;
@@ -210,6 +216,7 @@ fn main() {
                 upscale: args.upscale,
                 chess_cfg: &chess_cfg,
                 detector: &detector,
+                params: &params,
                 board: &spec,
                 emit_diag: args.emit_diag,
             });
@@ -253,6 +260,16 @@ fn main() {
         summary.charuco_corners_mean,
         summary.raw_wrong_id_total,
         summary.runtime_mean_ms,
+    );
+    println!(
+        "self-consistency: residual/cell p50={:.4} p90={:.4} max={:.4} | \
+         emitted dup-position frames={} | chess-stage reused-source frames={} dup-position frames={}",
+        summary.residual_over_cell_p50,
+        summary.residual_over_cell_p90,
+        summary.residual_over_cell_max,
+        summary.final_duplicate_position_frames,
+        summary.chess_reused_source_frames,
+        summary.chess_duplicate_position_frames,
     );
     println!("summary: {}", summary_path.display());
 }
@@ -309,6 +326,10 @@ struct RunCtx<'a> {
     upscale: u32,
     chess_cfg: &'a calib_targets_core::DetectorConfig,
     detector: &'a CharucoDetector,
+    /// The same params the detector was built from — the self-consistency audit
+    /// re-runs the chessboard stage with them to see the labels *before*
+    /// ChArUco maps and refits them.
+    params: &'a CharucoParams,
     board: &'a CharucoBoardSpec,
     emit_diag: bool,
 }
@@ -351,6 +372,22 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
         .map(|b| b.margin)
         .fold(0.0f32, f32::max);
 
+    // Projective self-consistency, measured at two points in the pipeline: the
+    // chessboard stage that produced the lattice, and the ChArUco corners
+    // actually emitted. Comparing the two localises which stage breaks the
+    // `(u, v) -> position` homography.
+    let (chess_components, chess_consistency, chess_stage) =
+        chessboard_stage_consistency(ctx.params, &corners);
+    let final_consistency = outcome
+        .as_ref()
+        .ok()
+        .map(|res| {
+            let labels: Vec<(Coord, Point2<f32>)> =
+                res.corners.iter().map(|c| (c.grid, c.position)).collect();
+            self_consistency(&labels, None)
+        })
+        .unwrap_or_default();
+
     let metrics = match &outcome {
         Ok(res) => FrameMetrics {
             chessboard_corners: corners.len(),
@@ -359,10 +396,15 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
             markers_wrong_id: detect_diag.raw_marker_wrong_id_count,
             charuco_corners: res.corners.len(),
             alignment_margin,
+            chess_components,
+            chess_consistency,
+            final_consistency,
         },
         Err(_) => FrameMetrics {
             chessboard_corners: corners.len(),
             alignment_margin,
+            chess_components,
+            chess_consistency,
             ..FrameMetrics::default()
         },
     };
@@ -403,6 +445,7 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
                 .iter()
                 .map(|c| [c.position.x, c.position.y])
                 .collect(),
+            chess_stage,
             result: outcome.as_ref().ok().map(DetectionSummary::from_result),
         })
     } else {
@@ -426,6 +469,10 @@ struct FrameDiag {
     /// Raw ChESS corners fed into the detector — useful to overlay the full
     /// input cloud alongside the labelled subset.
     input_corners: Vec<[f32; 2]>,
+    /// The chessboard stage's labelled components, captured before ChArUco
+    /// maps them to board coordinates and refits their positions. Lets an
+    /// audit attribute a broken labelling to the grid builder or to ChArUco.
+    chess_stage: Vec<ChessComponentSummary>,
     /// Final detection result (ChArUco corners with IDs, decoded markers,
     /// alignment). Present only when the detector returned `Ok`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -523,6 +570,214 @@ fn error_to_string(err: &CharucoDetectError) -> String {
     err.to_string()
 }
 
+// ---------------------------------------------------------------------------
+// Projective self-consistency audit
+// ---------------------------------------------------------------------------
+
+/// Coincidence radius for the collapsed-label check, as a fraction of the
+/// labelled set's own cell pitch. Mirrors `TOPO_DUP_PIXEL_FRAC` in
+/// `projective-grid`'s wrong-label filters so both surfaces call the same
+/// thing a duplicate.
+const DUP_PIXEL_FRAC: f32 = 0.2;
+
+/// Self-consistency audit of one labelled corner set.
+///
+/// For a planar target the map `(u, v) -> image position` **is a homography by
+/// construction**, so a labelled set can be checked against itself: fit the
+/// lattice-to-image projective map to the set's own pairs and look at the
+/// residual. No ground truth, no camera model, no calibration involved — which
+/// makes this usable as a per-frame product signal and not just an offline
+/// metric.
+#[derive(Default, Serialize, Clone, Copy)]
+struct SelfConsistency {
+    /// Number of labelled corners the audit saw.
+    labels: usize,
+    /// `true` when a projective fit was possible (>= 4 labels, non-degenerate).
+    fitted: bool,
+    /// Median per-corner reprojection residual, pixels.
+    median_residual_px: f32,
+    /// Largest per-corner reprojection residual, pixels.
+    max_residual_px: f32,
+    /// Median cardinal-edge length of the labelled set, pixels — the local cell
+    /// pitch that makes the residual dimensionless.
+    cell_px: f32,
+    /// `median_residual_px / cell_px`. Scale-free, so it is comparable across
+    /// snaps, board sizes and viewing distances; this is the discriminating
+    /// number, not the raw pixel residual.
+    median_over_cell: f32,
+    /// Pairs of distinct labels whose image positions coincide within
+    /// `DUP_PIXEL_FRAC * cell_px` — the collapsed-label signature.
+    duplicate_position_pairs: usize,
+    /// Source corners bound to more than one lattice coordinate. Non-zero means
+    /// the labelled set is not injective, which no homography admits.
+    /// Always `0` for sets whose provenance is unknown (the final ChArUco
+    /// corners carry no input index).
+    reused_source_corners: usize,
+}
+
+/// Median cardinal-edge length of a labelled set, in pixels.
+fn cell_pitch_px(by_grid: &HashMap<(i32, i32), Point2<f32>>) -> f32 {
+    let mut lens: Vec<f32> = Vec::new();
+    for (&(u, v), &p) in by_grid {
+        for (du, dv) in [(1, 0), (0, 1)] {
+            if let Some(&q) = by_grid.get(&(u + du, v + dv)) {
+                lens.push((q - p).norm());
+            }
+        }
+    }
+    if lens.is_empty() {
+        return 0.0;
+    }
+    lens.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    lens[lens.len() / 2]
+}
+
+/// Audit a labelled set. `provenance` carries the source-corner index per label
+/// when the caller knows it (the chessboard stage does; the emitted ChArUco
+/// corners do not).
+fn self_consistency(
+    labels: &[(Coord, Point2<f32>)],
+    provenance: Option<&[usize]>,
+) -> SelfConsistency {
+    let mut out = SelfConsistency {
+        labels: labels.len(),
+        ..SelfConsistency::default()
+    };
+
+    if let Some(indices) = provenance {
+        let mut coords_per_index: HashMap<usize, usize> = HashMap::new();
+        for &idx in indices {
+            *coords_per_index.entry(idx).or_insert(0) += 1;
+        }
+        out.reused_source_corners = coords_per_index.values().filter(|&&n| n > 1).count();
+    }
+
+    let by_grid: HashMap<(i32, i32), Point2<f32>> =
+        labels.iter().map(|&(c, p)| ((c.u, c.v), p)).collect();
+    out.cell_px = cell_pitch_px(&by_grid);
+
+    if out.cell_px > 0.0 {
+        let eps2 = (DUP_PIXEL_FRAC * out.cell_px).powi(2);
+        for (a, &(_, pa)) in labels.iter().enumerate() {
+            for &(_, pb) in &labels[a + 1..] {
+                if (pa - pb).norm_squared() < eps2 {
+                    out.duplicate_position_pairs += 1;
+                }
+            }
+        }
+    }
+
+    if labels.len() < 4 {
+        return out;
+    }
+
+    let features: Vec<PointFeature> = labels
+        .iter()
+        .enumerate()
+        .map(|(i, &(_, p))| PointFeature::new(i, p))
+        .collect();
+    let hypotheses: Vec<CoordinateHypothesis> = labels
+        .iter()
+        .enumerate()
+        .map(|(i, &(c, _))| CoordinateHypothesis::new(i, c, None))
+        .collect();
+
+    // Infinite tolerance: the audit measures the residual, it does not judge it.
+    let request = ConsistencyRequest::new(
+        LatticeKind::Square,
+        &features,
+        &hypotheses,
+        None,
+        ConsistencyParams::new(f32::INFINITY),
+    );
+    let Ok(report) = check_consistency(request) else {
+        return out;
+    };
+
+    let mut residuals: Vec<f32> = report
+        .grid()
+        .entries()
+        .iter()
+        .filter_map(|e| e.residual_px)
+        .collect();
+    if residuals.is_empty() {
+        return out;
+    }
+    residuals.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    out.fitted = true;
+    out.median_residual_px = residuals[residuals.len() / 2];
+    out.max_residual_px = report.fit().residuals.max_px;
+    if out.cell_px > 0.0 {
+        out.median_over_cell = out.median_residual_px / out.cell_px;
+    }
+    out
+}
+
+/// Audit every component the chessboard stage produced, and return the worst
+/// one (highest scale-free residual) alongside the component count.
+///
+/// This is the *pre-ChArUco* view of the same labelled corners: comparing it
+/// against the audit of the emitted ChArUco corners localises which stage
+/// breaks projective consistency.
+fn chessboard_stage_consistency(
+    params: &CharucoParams,
+    corners: &[Corner],
+) -> (usize, SelfConsistency, Vec<ChessComponentSummary>) {
+    let Ok(detector) = ChessboardDetector::new(params.chessboard.clone()) else {
+        return (0, SelfConsistency::default(), Vec::new());
+    };
+    let components = detector.detect_all(corners);
+    let mut worst = SelfConsistency::default();
+    let mut summaries = Vec::with_capacity(components.len());
+    for component in &components {
+        let labels: Vec<(Coord, Point2<f32>)> = component
+            .corners
+            .iter()
+            .map(|c| (c.grid, c.position))
+            .collect();
+        let provenance: Vec<usize> = component.corners.iter().map(|c| c.input_index).collect();
+        let audit = self_consistency(&labels, Some(&provenance));
+        let worse = audit.reused_source_corners > worst.reused_source_corners
+            || (audit.reused_source_corners == worst.reused_source_corners
+                && audit.median_over_cell > worst.median_over_cell);
+        if worse {
+            worst = audit;
+        }
+        summaries.push(ChessComponentSummary {
+            consistency: audit,
+            corners: component
+                .corners
+                .iter()
+                .map(|c| ChessCornerSummary {
+                    grid: [c.grid.u, c.grid.v],
+                    position: [c.position.x, c.position.y],
+                    input_index: c.input_index,
+                    score: c.score,
+                })
+                .collect(),
+        });
+    }
+    (components.len(), worst, summaries)
+}
+
+/// One chessboard-stage component, as seen *before* ChArUco maps and refits it.
+#[derive(Serialize)]
+struct ChessComponentSummary {
+    consistency: SelfConsistency,
+    corners: Vec<ChessCornerSummary>,
+}
+
+#[derive(Serialize)]
+struct ChessCornerSummary {
+    grid: [i32; 2],
+    position: [f32; 2],
+    /// Index into the detector's input corner slice — the provenance that makes
+    /// "one source corner labelled at two coordinates" observable.
+    input_index: usize,
+    score: f32,
+}
+
 #[derive(Serialize)]
 struct CharucoFrameReport {
     target_index: u32,
@@ -546,6 +801,12 @@ struct FrameMetrics {
     markers_wrong_id: usize,
     charuco_corners: usize,
     alignment_margin: f32,
+    /// Components the chessboard stage produced for this snap.
+    chess_components: usize,
+    /// Worst component's self-consistency at the chessboard stage.
+    chess_consistency: SelfConsistency,
+    /// Self-consistency of the ChArUco corners actually emitted.
+    final_consistency: SelfConsistency,
 }
 
 #[derive(Serialize, Clone, Copy)]
@@ -577,23 +838,57 @@ struct Aggregate {
     corners_sum: usize,
     raw_wrong_id_total: usize,
     total_ms_sum: f32,
+    /// Scale-free self-consistency of every emitted detection, for the
+    /// distribution reported in the summary.
+    final_residual_over_cell: Vec<f32>,
+    /// Detections that emitted two labels at one image position.
+    final_duplicate_position_frames: usize,
+    /// Snaps whose chessboard stage bound one source corner to several lattice
+    /// coordinates — a labelled set no homography admits.
+    chess_reused_source_frames: usize,
+    /// Snaps whose chessboard stage already collapsed two labels onto one pixel.
+    chess_duplicate_position_frames: usize,
+}
+
+/// Percentile of an already-sorted slice, nearest-rank.
+fn percentile(sorted: &[f32], q: f32) -> f32 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = ((q * (sorted.len() - 1) as f32).round() as usize).min(sorted.len() - 1);
+    sorted[idx]
 }
 
 impl Aggregate {
     fn record(&mut self, r: &CharucoFrameReport) {
         self.frames += 1;
         self.total_ms_sum += r.timings_ms.total_ms;
+        if r.metrics.chess_consistency.reused_source_corners > 0 {
+            self.chess_reused_source_frames += 1;
+        }
+        if r.metrics.chess_consistency.duplicate_position_pairs > 0 {
+            self.chess_duplicate_position_frames += 1;
+        }
         if r.detection.is_some() {
             self.detected += 1;
             self.markers_decoded_sum += r.metrics.markers_decoded;
             self.corners_sum += r.metrics.charuco_corners;
             self.raw_wrong_id_total += r.metrics.markers_wrong_id;
+            if r.metrics.final_consistency.fitted {
+                self.final_residual_over_cell
+                    .push(r.metrics.final_consistency.median_over_cell);
+            }
+            if r.metrics.final_consistency.duplicate_position_pairs > 0 {
+                self.final_duplicate_position_frames += 1;
+            }
         }
     }
 
-    fn finish(self, args: &Args, spec: &CharucoBoardSpec) -> SummaryReport {
+    fn finish(mut self, args: &Args, spec: &CharucoBoardSpec) -> SummaryReport {
         let frames = self.frames.max(1) as f32;
         let detected = self.detected.max(1) as f32;
+        self.final_residual_over_cell
+            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         SummaryReport {
             frames: self.frames,
             detected: self.detected,
@@ -602,6 +897,12 @@ impl Aggregate {
             charuco_corners_mean: self.corners_sum as f32 / detected,
             raw_wrong_id_total: self.raw_wrong_id_total,
             runtime_mean_ms: self.total_ms_sum / frames,
+            residual_over_cell_p50: percentile(&self.final_residual_over_cell, 0.50),
+            residual_over_cell_p90: percentile(&self.final_residual_over_cell, 0.90),
+            residual_over_cell_max: percentile(&self.final_residual_over_cell, 1.0),
+            final_duplicate_position_frames: self.final_duplicate_position_frames,
+            chess_reused_source_frames: self.chess_reused_source_frames,
+            chess_duplicate_position_frames: self.chess_duplicate_position_frames,
             upscale: args.upscale,
             algorithm: algorithm_slug(),
             board: *spec,
@@ -618,6 +919,18 @@ struct SummaryReport {
     charuco_corners_mean: f32,
     raw_wrong_id_total: usize,
     runtime_mean_ms: f32,
+    /// Distribution of the emitted detections' scale-free self-homography
+    /// residual (`median residual / cell pitch`). A healthy population sits at
+    /// corner-localisation scale — a couple of percent of the cell pitch.
+    residual_over_cell_p50: f32,
+    residual_over_cell_p90: f32,
+    residual_over_cell_max: f32,
+    /// Detections that emitted two labels at one image position.
+    final_duplicate_position_frames: usize,
+    /// Snaps whose chessboard stage bound one source corner to several coords.
+    chess_reused_source_frames: usize,
+    /// Snaps whose chessboard stage already collapsed two labels onto one pixel.
+    chess_duplicate_position_frames: usize,
     upscale: u32,
     /// Grid-build algorithm slug (always `topological` — the sole builder).
     algorithm: &'static str,

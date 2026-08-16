@@ -122,9 +122,15 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
 
 ## Tuning difficult cases
 
-- **Few visible squares** — `min_window` defaults to 4 (decode needs a
-  4×4 square fragment). Lower to 3 only if coverage is guaranteed
-  reliable; anything below 4×4 risks ambiguous fragments.
+- **Few visible squares** — `min_window` defaults to **7**: the fragment
+  must span at least 7 squares on *both* axes. That is not arbitrary. A
+  4×4 window is unique across master positions only at a *fixed*
+  orientation, and a fragment gives no cue to how the board was printed,
+  so the decoder searches the eight D4 transforms as well — over
+  `D4 × position`, clean uniqueness only begins at 6×6. The default adds
+  one square of margin for bit noise. Lowering it trades misses for the
+  risk of a wrong absolute label, which downstream calibration cannot
+  recover from.
 - **Low contrast / glare on the dots** — drop `chessboard.chess.threshold`
   (e.g. `8.0` in place of the workspace default `15.0`) so more corners
   survive; edge-bit sampling is gated on the corners, not a separate
@@ -133,20 +139,21 @@ params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
   `PuzzleBoardParams::sweep_for_board(&spec)` via
   `detect_puzzleboard_best`; the sweep includes stricter/looser ChESS
   thresholds plus a hard-weighted fallback at the paper's 40% BER allowance.
-- **Multi-camera sub-fragments** — keep `Full` mode; every camera
-  decodes to the same master coordinates, so downstream calibration gets
-  directly-comparable observations. If you're validating consistency on a
-  known printed board, `FixedBoard + SoftLogLikelihood` is the most
-  informative mode: it preserves partial-view correctness, and
-  `detect_with_diagnostics` surfaces `score_margin` (in
+- **Multi-camera sub-fragments** — every camera decodes to the same master
+  coordinates, so downstream calibration gets directly-comparable
+  observations. When the printed board is known, prefer
+  `FixedBoard + SoftLogLikelihood`: it cannot return a position outside the
+  board, it is *faster* than `Full` at every board size below the master's
+  own, and `detect_with_diagnostics` surfaces `score_margin` (in
   [`diagnostics::PuzzleBoardDiagnostics`]) when a frame's winner is weak.
 
 ## Limitations
 
 - **One PuzzleBoard per image.** Multiple separate boards are not
   disambiguated.
-- **Minimum visible area** — 4×4 inner-corner fragment by default; smaller
-  fragments are ambiguous under the cyclic edge-map encoding.
+- **Minimum visible area** — a 7×7-square fragment by default; smaller
+  fragments are ambiguous under `D4 × position` search and are reported as
+  misses rather than guesses.
 - **No fisheye support.** Moderate radial distortion is handled by the
   chessboard layer's local invariants.
 - **501×501 master.** Printable sub-rectangles must fit inside the master

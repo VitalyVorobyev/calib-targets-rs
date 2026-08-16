@@ -38,7 +38,8 @@
 //! one component's predicted boundary position to the other's actual
 //! boundary corner.
 
-use std::collections::HashMap;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet};
 
 use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
@@ -88,15 +89,6 @@ impl Default for LocalMergeParams {
     }
 }
 
-/// Slim view over one component's data for merging.
-#[derive(Clone, Copy, Debug)]
-pub struct ComponentInput<'a> {
-    /// `(i, j) → corner_idx` (indices into `positions`).
-    pub labelled: &'a HashMap<(i32, i32), usize>,
-    /// Corner positions in image pixels, indexed by the values of `labelled`.
-    pub positions: &'a [Point2<f32>],
-}
-
 /// Output of [`merge_components_local`].
 #[derive(Clone, Debug, Default)]
 pub struct ComponentMergeResult {
@@ -126,15 +118,15 @@ fn euclidean(p: Point2<f32>, q: Point2<f32>) -> f32 {
 
 /// Median nearest-neighbour cell size along grid axes (i and j directions).
 /// Falls back to 0.0 if the component has fewer than two corners.
-fn estimate_cell_size(c: &ComponentInput<'_>) -> f32 {
+fn estimate_cell_size(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2<f32>]) -> f32 {
     let mut dists: Vec<f32> = Vec::new();
-    for (&(i, j), &idx) in c.labelled.iter() {
-        let p = c.positions[idx];
-        if let Some(&right) = c.labelled.get(&(i + 1, j)) {
-            dists.push(euclidean(p, c.positions[right]));
+    for (&(i, j), &idx) in labelled.iter() {
+        let p = positions[idx];
+        if let Some(&right) = labelled.get(&(i + 1, j)) {
+            dists.push(euclidean(p, positions[right]));
         }
-        if let Some(&down) = c.labelled.get(&(i, j + 1)) {
-            dists.push(euclidean(p, c.positions[down]));
+        if let Some(&down) = labelled.get(&(i, j + 1)) {
+            dists.push(euclidean(p, positions[down]));
         }
     }
     if dists.is_empty() {
@@ -154,8 +146,8 @@ fn apply_transform(t: GridTransform, ij: (i32, i32)) -> (i32, i32) {
 /// For a candidate `(transform, delta)`, score the alignment by full
 /// label-space overlap.
 ///
-/// Counts every `c_p` label whose `transform · ij_p + delta` exists as a
-/// key in `c_q.labelled` (regardless of pixel distance), and tracks the
+/// Counts every `p` label whose `transform · ij_p + delta` exists as a
+/// key in `labelled_q` (regardless of pixel distance), and tracks the
 /// worst pixel-position disagreement among those overlapping label
 /// pairs. The histogram-based candidate enumeration in
 /// [`find_best_alignment`] only sees pairs already within `pos_tol`, so
@@ -164,18 +156,19 @@ fn apply_transform(t: GridTransform, ij: (i32, i32)) -> (i32, i32) {
 /// That would corrupt downstream calibration. Use this re-scoring as
 /// the precision gate before accepting a candidate.
 fn score_alignment(
-    c_p: &ComponentInput<'_>,
-    c_q: &ComponentInput<'_>,
+    labelled_p: &HashMap<(i32, i32), usize>,
+    labelled_q: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
     t: GridTransform,
     delta: (i32, i32),
 ) -> (usize, f32) {
     let mut overlap = 0usize;
     let mut max_err = 0.0f32;
-    for (&ij_p, &idx_p) in c_p.labelled.iter() {
+    for (&ij_p, &idx_p) in labelled_p.iter() {
         let ij_t = apply_transform(t, ij_p);
         let ij_q = (ij_t.0 + delta.0, ij_t.1 + delta.1);
-        if let Some(&idx_q) = c_q.labelled.get(&ij_q) {
-            let err = euclidean(c_p.positions[idx_p], c_q.positions[idx_q]);
+        if let Some(&idx_q) = labelled_q.get(&ij_q) {
+            let err = euclidean(positions[idx_p], positions[idx_q]);
             overlap += 1;
             if err > max_err {
                 max_err = err;
@@ -185,20 +178,20 @@ fn score_alignment(
     (overlap, max_err)
 }
 
-/// Find the best (transform, offset) for merging `c_p` into `c_q`'s frame.
+/// Find the best (transform, offset) for merging `p` into `q`'s frame.
 ///
 /// Two-pass strategy:
 ///
-/// 1. **Hough enumeration.** Index `c_q`'s positions in a KD-tree, then
-///    for each label in `c_p` find every `c_q` label whose pixel
+/// 1. **Hough enumeration.** Index `q`'s positions in a KD-tree, then
+///    for each label in `p` find every `q` label whose pixel
 ///    position is within `pos_tol` and vote each match into a histogram
 ///    bin keyed by the candidate `(transform, label-delta)`. This
 ///    surfaces a small set of candidate alignments in `O(P log Q)`,
 ///    replacing the previous `O(P² Q)` anchor enumeration.
 /// 2. **Full-overlap re-scoring.** Each surviving candidate is
 ///    re-scored by [`score_alignment`] over the *full* label-space
-///    overlap (every `c_p` label whose `transform · ij_p + delta` is a
-///    key in `c_q.labelled`, regardless of pixel distance). The
+///    overlap (every `p` label whose `transform · ij_p + delta` is a
+///    key in `labelled_q`, regardless of pixel distance). The
 ///    candidate is accepted only when the re-scored overlap meets
 ///    `min_overlap` AND the re-scored `max_err` is within `pos_tol`.
 ///    This is the precision gate: a histogram bin can pass with
@@ -213,8 +206,9 @@ fn score_alignment(
 /// algorithm's tiebreaker (which preferred identity by D4 iteration
 /// order).
 fn find_best_alignment(
-    c_p: &ComponentInput<'_>,
-    c_q: &ComponentInput<'_>,
+    labelled_p: &HashMap<(i32, i32), usize>,
+    labelled_q: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
     cell_size: f32,
     params: &LocalMergeParams,
     transforms: &[GridTransform],
@@ -224,21 +218,21 @@ fn find_best_alignment(
 
     // KD-tree over c_q label positions. The slot index maps back to
     // q_entries[slot] = (ij_q, idx_q).
-    let q_entries: Vec<((i32, i32), usize)> = c_q.labelled.iter().map(|(k, v)| (*k, *v)).collect();
+    let q_entries: Vec<((i32, i32), usize)> = labelled_q.iter().map(|(k, v)| (*k, *v)).collect();
     if q_entries.is_empty() {
         return None;
     }
     let mut tree: KdTree<f32, 2> = KdTree::new();
     for (slot, (_, idx)) in q_entries.iter().enumerate() {
-        let pos = c_q.positions[*idx];
+        let pos = positions[*idx];
         tree.add(&[pos.x, pos.y], slot as u64);
     }
 
     // Pass 1: Hough enumeration. The bin counts position-close votes
     // only — that's a *lower bound* on the full label-space overlap.
     let mut hist: HashMap<(u8, i32, i32), usize> = HashMap::new();
-    for (&ij_p, &idx_p) in c_p.labelled.iter() {
-        let pos_p = c_p.positions[idx_p];
+    for (&ij_p, &idx_p) in labelled_p.iter() {
+        let pos_p = positions[idx_p];
         for nn in tree
             .within_unsorted::<SquaredEuclidean>(&[pos_p.x, pos_p.y], pos_tol_sq)
             .into_iter()
@@ -274,7 +268,8 @@ fn find_best_alignment(
         }
         let t = transforms[t_idx as usize];
         let delta = (di, dj);
-        let (overlap_full, max_err_full) = score_alignment(c_p, c_q, t, delta);
+        let (overlap_full, max_err_full) =
+            score_alignment(labelled_p, labelled_q, positions, t, delta);
         if overlap_full < params.min_overlap || max_err_full > pos_tol {
             continue;
         }
@@ -323,23 +318,32 @@ fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
 /// tolerances. On success, rewrite `p`'s labels into `q`'s frame and
 /// merge into `q`. Repeat until no further merges are possible or the
 /// `max_components` cap is reached.
+///
+/// Every component labels corners out of the **same** `positions` slice: a
+/// component maps `(i, j) → index`, and that index means the same corner in
+/// every component. That shared index space is what lets the merge keep the
+/// labelling injective in both directions — one coordinate holds one corner,
+/// and one corner sits at one coordinate. Components that each carried their
+/// own index space could not be checked that way, so the two are not separable
+/// and the signature does not offer them separately.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
         level = "info",
         skip_all,
-        fields(num_components = inputs.len()),
+        fields(num_components = components.len()),
     )
 )]
 pub fn merge_components_local(
-    inputs: &[ComponentInput<'_>],
+    components: &[HashMap<(i32, i32), usize>],
+    positions: &[Point2<f32>],
     params: &LocalMergeParams,
 ) -> ComponentMergeResult {
     // Default to the square symmetry group, preserving the historical
     // byte-identical behaviour for the square callers (topological + seed-and-
     // grow facades). The lattice-parameterized variant is
     // [`merge_components_local_for`].
-    merge_components_local_with_transforms(inputs, params, &GRID_TRANSFORMS_D4)
+    merge_components_local_with_transforms(components, positions, params, &GRID_TRANSFORMS_D4)
 }
 
 /// Lattice-parameterized [`merge_components_local`]: reunite components under
@@ -347,23 +351,30 @@ pub fn merge_components_local(
 /// uses this so the 12 D6 relabellings of a hex component are all candidate
 /// alignments.
 pub fn merge_components_local_for(
-    inputs: &[ComponentInput<'_>],
+    components: &[HashMap<(i32, i32), usize>],
+    positions: &[Point2<f32>],
     params: &LocalMergeParams,
     lattice: LatticeKind,
 ) -> ComponentMergeResult {
-    merge_components_local_with_transforms(inputs, params, lattice.symmetry_transforms())
+    merge_components_local_with_transforms(
+        components,
+        positions,
+        params,
+        lattice.symmetry_transforms(),
+    )
 }
 
 fn merge_components_local_with_transforms(
-    inputs: &[ComponentInput<'_>],
+    components: &[HashMap<(i32, i32), usize>],
+    positions: &[Point2<f32>],
     params: &LocalMergeParams,
     transforms: &[GridTransform],
 ) -> ComponentMergeResult {
     let mut stats = ComponentMergeStats {
-        components_in: inputs.len(),
+        components_in: components.len(),
         ..Default::default()
     };
-    if inputs.is_empty() {
+    if components.is_empty() {
         return ComponentMergeResult {
             components: Vec::new(),
             diagnostics: stats,
@@ -371,18 +382,19 @@ fn merge_components_local_with_transforms(
     }
 
     // Working copies.
-    let mut working: Vec<HashMap<(i32, i32), usize>> =
-        inputs.iter().map(|c| c.labelled.clone()).collect();
-    let positions_per: Vec<&[Point2<f32>]> = inputs.iter().map(|c| c.positions).collect();
-    let mut cell_sizes: Vec<f32> = inputs.iter().map(estimate_cell_size).collect();
+    let mut working: Vec<HashMap<(i32, i32), usize>> = components.to_vec();
+    let mut cell_sizes: Vec<f32> = components
+        .iter()
+        .map(|labelled| estimate_cell_size(labelled, positions))
+        .collect();
 
-    let mut alive: Vec<bool> = vec![true; inputs.len()];
+    let mut alive: Vec<bool> = vec![true; components.len()];
     let mut changed = true;
     while changed {
         changed = false;
         // Order alive components by size descending; bigger anchors are
         // more reliable.
-        let mut order: Vec<usize> = (0..inputs.len()).filter(|i| alive[*i]).collect();
+        let mut order: Vec<usize> = (0..components.len()).filter(|i| alive[*i]).collect();
         order.sort_by(|a, b| working[*b].len().cmp(&working[*a].len()));
 
         'outer: for &i in &order {
@@ -398,34 +410,50 @@ fn merge_components_local_with_transforms(
                     continue;
                 }
                 let cell_size = 0.5 * (s_i + s_j);
-                let c_p = ComponentInput {
-                    labelled: &working[i],
-                    positions: positions_per[i],
-                };
-                let c_q = ComponentInput {
-                    labelled: &working[j],
-                    positions: positions_per[j],
-                };
-                let Some((t, delta, _overlap)) =
-                    find_best_alignment(&c_p, &c_q, cell_size, params, transforms)
-                else {
+                let Some((t, delta, _overlap)) = find_best_alignment(
+                    &working[i],
+                    &working[j],
+                    positions,
+                    cell_size,
+                    params,
+                    transforms,
+                ) else {
                     continue;
                 };
                 // Merge i into j (the larger component is j by ordering).
-                // For each label in i, transform to j's frame, insert if
-                // not already present (keeping j's value on conflict).
+                // For each label in i, transform to j's frame and insert it —
+                // subject to *both* directions of the labelling's injectivity:
+                //
+                // - the destination coordinate must be free (`or_insert` keeps
+                //   j's value on an i↔j coordinate collision), and
+                // - the source corner must not already be labelled elsewhere in
+                //   j. Components split by the walk can share *vertices* (the
+                //   split is on shared quad edges), so without this an overlap
+                //   as thin as `min_overlap` could re-label one physical corner
+                //   at a run of lattice coordinates. That is a labelled set no
+                //   homography admits, and it is unrecoverable for the consumer
+                //   — a gap is honest, a duplicate is actively harmful.
                 //
                 // `i` is killed immediately below (`alive[i] = false`) and its
                 // map is never read again — the final collection filters dead
                 // components — so move it out with `mem::take` instead of
-                // cloning. Byte-exact: i's keys are unique within its own map,
-                // and `or_insert` keeps j's value on any i↔j collision
-                // regardless of iteration order, so the merged result is
-                // independent of the order i's pairs are drained.
+                // cloning. The result is independent of the order i's pairs are
+                // drained: i's keys are unique within its own map, `or_insert`
+                // resolves coordinate collisions in j's favour regardless of
+                // order, and `claimed` is seeded from j before the drain begins
+                // so a source corner already in j is rejected no matter when it
+                // is visited.
+                let mut claimed: HashSet<usize> = working[j].values().copied().collect();
                 for (ij, idx_i) in std::mem::take(&mut working[i]) {
+                    if claimed.contains(&idx_i) {
+                        continue;
+                    }
                     let tij = apply_transform(t, ij);
                     let key = (tij.0 + delta.0, tij.1 + delta.1);
-                    working[j].entry(key).or_insert(idx_i);
+                    if let Entry::Vacant(slot) = working[j].entry(key) {
+                        slot.insert(idx_i);
+                        claimed.insert(idx_i);
+                    }
                 }
                 alive[i] = false;
                 cell_sizes[j] = 0.5 * (cell_sizes[i] + cell_sizes[j]);
@@ -476,19 +504,14 @@ mod tests {
 
     #[test]
     fn identical_components_merge_into_one() {
-        let (l1, p1) = component_5x5();
-        let (l2, p2) = component_5x5();
-        let inputs = vec![
-            ComponentInput {
-                labelled: &l1,
-                positions: &p1,
-            },
-            ComponentInput {
-                labelled: &l2,
-                positions: &p2,
-            },
-        ];
-        let res = merge_components_local(&inputs, &LocalMergeParams::default());
+        // Both components label the *same* corners — same indices, as the walk
+        // produces when one mesh is reachable two ways.
+        let (labels, positions) = component_5x5();
+        let res = merge_components_local(
+            &[labels.clone(), labels],
+            &positions,
+            &LocalMergeParams::default(),
+        );
         assert_eq!(res.components.len(), 1);
         assert_eq!(res.components[0].len(), 25);
         assert_eq!(res.diagnostics.merges_accepted, 1);
@@ -500,35 +523,26 @@ mod tests {
         // C2: labels (0..3, 0..5) at world (3..5, 0..4) * step
         // Overlap if we offset C2 by (2, 0): C1 cell (2, j) coincides with C2 cell (0, j) world-wise.
         let step = 10.0;
+        // One 5x5 world grid; both components index into it, so the shared
+        // column carries the same corner index in each — exactly what the walk
+        // hands the merge.
+        let mut positions = Vec::new();
+        let mut world = HashMap::new();
+        for j in 0..5 {
+            for i in 0..5 {
+                world.insert((i, j), positions.len());
+                positions.push(Point2::new(i as f32 * step, j as f32 * step));
+            }
+        }
         let mut l1 = HashMap::new();
-        let mut p1 = Vec::new();
-        for j in 0..5 {
-            for i in 0..3 {
-                let idx = p1.len();
-                l1.insert((i, j), idx);
-                p1.push(Point2::new(i as f32 * step, j as f32 * step));
-            }
-        }
         let mut l2 = HashMap::new();
-        let mut p2 = Vec::new();
         for j in 0..5 {
             for i in 0..3 {
-                let idx = p2.len();
-                l2.insert((i, j), idx);
-                p2.push(Point2::new((i as f32 + 2.0) * step, j as f32 * step));
+                l1.insert((i, j), world[&(i, j)]);
+                l2.insert((i, j), world[&(i + 2, j)]);
             }
         }
-        let inputs = vec![
-            ComponentInput {
-                labelled: &l1,
-                positions: &p1,
-            },
-            ComponentInput {
-                labelled: &l2,
-                positions: &p2,
-            },
-        ];
-        let res = merge_components_local(&inputs, &LocalMergeParams::default());
+        let res = merge_components_local(&[l1, l2], &positions, &LocalMergeParams::default());
         assert_eq!(res.components.len(), 1);
         // Combined unique labels: (0..5, 0..5) = 25.
         assert_eq!(res.components[0].len(), 25);
@@ -536,28 +550,17 @@ mod tests {
 
     #[test]
     fn cell_size_mismatch_blocks_merge() {
-        let (l1, p1) = component_5x5();
-        // Same labels but positions stretched 2x — cell size differs by 2x.
+        let (l1, mut positions) = component_5x5();
+        // A second, disjoint set of corners at twice the pitch — cell size
+        // differs by 2x, so the sanity gate must refuse the merge.
         let mut l2 = HashMap::new();
-        let mut p2 = Vec::new();
         for j in 0..5 {
             for i in 0..5 {
-                let idx = p2.len();
-                l2.insert((i, j), idx);
-                p2.push(Point2::new(i as f32 * 20.0, j as f32 * 20.0));
+                l2.insert((i, j), positions.len());
+                positions.push(Point2::new(i as f32 * 20.0, j as f32 * 20.0));
             }
         }
-        let inputs = vec![
-            ComponentInput {
-                labelled: &l1,
-                positions: &p1,
-            },
-            ComponentInput {
-                labelled: &l2,
-                positions: &p2,
-            },
-        ];
-        let res = merge_components_local(&inputs, &LocalMergeParams::default());
+        let res = merge_components_local(&[l1, l2], &positions, &LocalMergeParams::default());
         assert_eq!(res.components.len(), 2);
         assert_eq!(res.diagnostics.merges_accepted, 0);
     }
@@ -577,43 +580,30 @@ mod tests {
     #[test]
     fn drifted_overlapping_corner_blocks_merge() {
         let cell = 10.0_f32;
+        let mut positions: Positions = Vec::new();
         // C1: 4 labels on the unit cell, exact positions.
         let mut l1: Labels = HashMap::new();
-        let mut p1: Positions = Vec::new();
         for j in 0..2 {
             for i in 0..2 {
-                let idx = p1.len();
-                l1.insert((i, j), idx);
-                p1.push(Point2::new(i as f32 * cell, j as f32 * cell));
+                l1.insert((i, j), positions.len());
+                positions.push(Point2::new(i as f32 * cell, j as f32 * cell));
             }
         }
-        // C2: same labels, but the (1, 1) corner is drifted to (50, 50)
-        // — far outside `pos_tol = 0.20 × cell = 2.0` from c_p's (10, 10).
+        // C2: a distinct set of corners at the same labels, but its (1, 1)
+        // corner sits at (50, 50) — far outside `pos_tol = 0.20 x cell = 2.0`
+        // from C1's (10, 10).
         let mut l2: Labels = HashMap::new();
-        let mut p2: Positions = Vec::new();
         for j in 0..2 {
             for i in 0..2 {
-                let idx = p2.len();
-                l2.insert((i, j), idx);
-                let pos = if (i, j) == (1, 1) {
+                l2.insert((i, j), positions.len());
+                positions.push(if (i, j) == (1, 1) {
                     Point2::new(50.0, 50.0)
                 } else {
                     Point2::new(i as f32 * cell, j as f32 * cell)
-                };
-                p2.push(pos);
+                });
             }
         }
-        let inputs = vec![
-            ComponentInput {
-                labelled: &l1,
-                positions: &p1,
-            },
-            ComponentInput {
-                labelled: &l2,
-                positions: &p2,
-            },
-        ];
-        let res = merge_components_local(&inputs, &LocalMergeParams::default());
+        let res = merge_components_local(&[l1, l2], &positions, &LocalMergeParams::default());
         assert_eq!(
             res.components.len(),
             2,
@@ -654,20 +644,14 @@ mod tests {
         // Two copies of the same hex patch, the second relabelled by a
         // non-identity D6 element. The D6-aware merge must reunite them into
         // one component (the D4-only merge would not find the alignment).
-        let (l1, p1) = hex_component(2, 14.0, 0);
-        let (l2, p2) = hex_component(2, 14.0, 4); // 120° rotation
-        let inputs = vec![
-            ComponentInput {
-                labelled: &l1,
-                positions: &p1,
-            },
-            ComponentInput {
-                labelled: &l2,
-                positions: &p2,
-            },
-        ];
-        let res =
-            merge_components_local_for(&inputs, &LocalMergeParams::default(), LatticeKind::Hex);
+        let (l1, positions) = hex_component(2, 14.0, 0);
+        let (l2, _) = hex_component(2, 14.0, 4); // 120 deg rotation, same corners
+        let res = merge_components_local_for(
+            &[l1.clone(), l2],
+            &positions,
+            &LocalMergeParams::default(),
+            LatticeKind::Hex,
+        );
         assert_eq!(
             res.components.len(),
             1,
@@ -682,20 +666,14 @@ mod tests {
         // For every D6 automorphism, a relabelled copy must still merge — the
         // 12-element symmetry group is fully exercised.
         for relabel in 0..crate::lattice::D6_TRANSFORMS.len() {
-            let (l1, p1) = hex_component(2, 16.0, 0);
-            let (l2, p2) = hex_component(2, 16.0, relabel);
-            let inputs = vec![
-                ComponentInput {
-                    labelled: &l1,
-                    positions: &p1,
-                },
-                ComponentInput {
-                    labelled: &l2,
-                    positions: &p2,
-                },
-            ];
-            let res =
-                merge_components_local_for(&inputs, &LocalMergeParams::default(), LatticeKind::Hex);
+            let (l1, positions) = hex_component(2, 16.0, 0);
+            let (l2, _) = hex_component(2, 16.0, relabel);
+            let res = merge_components_local_for(
+                &[l1, l2],
+                &positions,
+                &LocalMergeParams::default(),
+                LatticeKind::Hex,
+            );
             assert_eq!(
                 res.components.len(),
                 1,

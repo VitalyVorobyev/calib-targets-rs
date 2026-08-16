@@ -32,7 +32,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.12.0"
+version = "0.12.1"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
@@ -58,7 +58,7 @@ calib-targets-chessboard = { version = "0.12", path = "crates/calib-targets-ches
 calib-targets-core = { version = "0.12", path = "crates/calib-targets-core" }
 calib-targets-marker = { version = "0.12", path = "crates/calib-targets-marker" }
 calib-targets-puzzleboard = { version = "0.12", path = "crates/calib-targets-puzzleboard" }
-projective-grid = { version = "0.13", path = "crates/projective-grid" }
+projective-grid = { version = "0.14", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.12", path = "crates/calib-targets-print" }
 approx = "0.5"
 assert_cmd = "2"

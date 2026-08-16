@@ -66,12 +66,15 @@ use projective_grid::diagnostics::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
 };
 use projective_grid::expert::square::assemble_oriented2_components;
-use projective_grid::expert::validation::ValidationParams as NextValidateParams;
+use projective_grid::expert::TopologicalParams as NextTopologicalParams;
+#[cfg(feature = "diagnostics")]
 use projective_grid::expert::{
-    DetectionTuning as NextDetectionTuning, RecoverySchedule,
-    TopologicalParams as NextTopologicalParams,
+    validation::ValidationParams as NextValidateParams, DetectionTuning as NextDetectionTuning,
+    RecoverySchedule,
 };
-use projective_grid::{DetectionParams as NextDetectionParams, OrientedFeature, PointFeature};
+#[cfg(feature = "diagnostics")]
+use projective_grid::DetectionParams as NextDetectionParams;
+use projective_grid::{OrientedFeature, PointFeature};
 use std::collections::HashMap;
 
 use crate::params::ChessboardParams;
@@ -124,15 +127,21 @@ pub(super) fn axis_admission_sigma(params: &ChessboardParams) -> f32 {
     params.effective_tuning().topological.axis_align_tol_rad
 }
 
-/// Build a `projective-grid` [`NextDetectionParams`] for the
-/// chessboard adapter's topological grid finder.
+/// Build a `projective-grid` [`NextDetectionParams`] for the **diagnostics**
+/// trace of the chessboard adapter's topological grid finder.
 ///
-/// The new pipeline also runs a post-grow validation + fit-residual
-/// drop. Both are disabled here (tolerances pushed to `+inf`,
-/// `max_residual_px = +inf`) because the
-/// chessboard owns its own geometry check downstream — the migration
-/// must preserve the labelled components produced by the topological
-/// graph builder.
+/// The production path drives `projective-grid` through the component
+/// assembly seam and never builds a `NextDetectionParams` at all; only
+/// `trace_topological_detection` needs one, to rebuild the grid through the
+/// facade for inspection. Hence the `diagnostics` gate — this is not
+/// production configuration.
+///
+/// The facade's post-grow validation and fit-residual drop are disabled here
+/// (tolerances pushed to `+inf`, `max_residual_px = +inf`) so the trace shows
+/// the labelled components the topological walk actually produced; the
+/// chessboard's own mandatory geometry check runs downstream of this in the
+/// production path (see [`geometry_check::run_geometry_check`]).
+#[cfg(feature = "diagnostics")]
 fn detection_params_for_topological(topological: NextTopologicalParams) -> NextDetectionParams {
     // ChESS axes are accurate enough that the walk alone reaches full recall,
     // and the chessboard owns its own validation + booster recovery downstream.
@@ -184,6 +193,10 @@ struct PreparedTopological {
     clustered_centers: Option<ClusterCenters>,
     features: Vec<OrientedFeature<2>>,
     component_params: NextTopologicalParams,
+    /// Grid-builder configuration, kept alongside the prepared features so the
+    /// `diagnostics` trace can rebuild the grid with the exact same parameters
+    /// the production path used. Compiled out otherwise.
+    #[cfg(feature = "diagnostics")]
     grid_params: NextDetectionParams,
 }
 
@@ -201,6 +214,7 @@ fn prepare_topological(
     }
     let mut component_params = params.effective_tuning().topological;
     component_params.axis_cluster_centers = clustered_centers.map(|c| [c.theta0, c.theta1]);
+    #[cfg(feature = "diagnostics")]
     let grid_params = detection_params_for_topological(component_params);
     let features = build_oriented_features(&inputs.positions, &inputs.axes);
     Some(PreparedTopological {
@@ -209,6 +223,7 @@ fn prepare_topological(
         clustered_centers,
         features,
         component_params,
+        #[cfg(feature = "diagnostics")]
         grid_params,
     })
 }

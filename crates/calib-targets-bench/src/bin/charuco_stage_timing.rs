@@ -16,20 +16,17 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use calib_targets::charuco::CharucoDetector;
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_bench::charuco_config::CharucoDetectConfig;
+use calib_targets_bench::span_timing::{
+    command_output, cpu_name, span_ms, summarize, SpanTotals, SummaryStats, TimingLayer,
+};
 use clap::Parser;
 use image::ImageReader;
 use serde::Serialize;
-use tracing::{Id, Subscriber};
-use tracing_subscriber::layer::{Context, SubscriberExt};
-use tracing_subscriber::registry::{LookupSpan, Registry};
-use tracing_subscriber::Layer;
 
 /// Board-level matcher spans, in the order the matcher invokes them. The
 /// first entry (`match_board`) is the production decode total; the rest are
@@ -73,14 +70,6 @@ struct TimingSample {
     detect_ms: f64,
 }
 
-#[derive(Clone, Copy, Debug, Default, Serialize)]
-struct SummaryStats {
-    mean_ms: f64,
-    p50_ms: f64,
-    p95_ms: f64,
-    max_ms: f64,
-}
-
 #[derive(Debug, Serialize)]
 struct StageReport {
     name: String,
@@ -122,130 +111,6 @@ struct Report {
     samples: Vec<TimingSample>,
 }
 
-#[derive(Default)]
-struct SpanTotals {
-    totals: Mutex<HashMap<&'static str, Duration>>,
-}
-
-impl SpanTotals {
-    fn clear(&self) {
-        self.totals
-            .lock()
-            .expect("span totals mutex poisoned")
-            .clear();
-    }
-
-    fn snapshot_ms(&self) -> HashMap<&'static str, f64> {
-        self.totals
-            .lock()
-            .expect("span totals mutex poisoned")
-            .iter()
-            .map(|(&name, &duration)| (name, duration.as_secs_f64() * 1000.0))
-            .collect()
-    }
-
-    fn add(&self, name: &'static str, duration: Duration) {
-        *self
-            .totals
-            .lock()
-            .expect("span totals mutex poisoned")
-            .entry(name)
-            .or_default() += duration;
-    }
-}
-
-struct SpanTiming {
-    name: &'static str,
-    entered_at: Option<Instant>,
-    elapsed: Duration,
-}
-
-struct TimingLayer {
-    totals: Arc<SpanTotals>,
-}
-
-impl<S> Layer<S> for TimingLayer
-where
-    S: Subscriber + for<'a> LookupSpan<'a>,
-{
-    fn on_new_span(&self, attrs: &tracing::span::Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
-            span.extensions_mut().insert(SpanTiming {
-                name: attrs.metadata().name(),
-                entered_at: None,
-                elapsed: Duration::ZERO,
-            });
-        }
-    }
-
-    fn on_enter(&self, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
-            if let Some(timing) = span.extensions_mut().get_mut::<SpanTiming>() {
-                timing.entered_at = Some(Instant::now());
-            }
-        }
-    }
-
-    fn on_exit(&self, id: &Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(id) {
-            if let Some(timing) = span.extensions_mut().get_mut::<SpanTiming>() {
-                if let Some(start) = timing.entered_at.take() {
-                    timing.elapsed += start.elapsed();
-                }
-            }
-        }
-    }
-
-    fn on_close(&self, id: Id, ctx: Context<'_, S>) {
-        if let Some(span) = ctx.span(&id) {
-            if let Some(timing) = span.extensions_mut().remove::<SpanTiming>() {
-                self.totals.add(timing.name, timing.elapsed);
-            }
-        }
-    }
-}
-
-fn command_output(program: &str, args: &[&str]) -> Option<String> {
-    let output = Command::new(program).args(args).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let value = String::from_utf8(output.stdout).ok()?;
-    let value = value.trim().to_owned();
-    (!value.is_empty()).then_some(value)
-}
-
-fn cpu_name() -> Option<String> {
-    command_output("sysctl", &["-n", "machdep.cpu.brand_string"]).or_else(|| {
-        command_output(
-            "sh",
-            &["-c", "lscpu | sed -n 's/^Model name:[[:space:]]*//p'"],
-        )
-    })
-}
-
-fn summarize(mut values: Vec<f64>) -> SummaryStats {
-    if values.is_empty() {
-        return SummaryStats::default();
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let mean_ms = values.iter().sum::<f64>() / values.len() as f64;
-    let percentile = |q: f64| {
-        let idx = ((values.len() - 1) as f64 * q).round() as usize;
-        values[idx.min(values.len() - 1)]
-    };
-    SummaryStats {
-        mean_ms,
-        p50_ms: percentile(0.50),
-        p95_ms: percentile(0.95),
-        max_ms: *values.last().unwrap_or(&0.0),
-    }
-}
-
-fn span_ms(spans: &HashMap<&'static str, f64>, name: &str) -> f64 {
-    spans.get(name).copied().unwrap_or(0.0)
-}
-
 /// Run one timed `detect` and capture per-span busy time plus the `detect`
 /// wall time. Returns the marker / labelled-corner counts so the caller can
 /// confirm output stability across repeats.
@@ -278,11 +143,7 @@ fn measure_once(
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    let totals = Arc::new(SpanTotals::default());
-    let subscriber = Registry::default().with(TimingLayer {
-        totals: Arc::clone(&totals),
-    });
-    tracing::subscriber::set_global_default(subscriber)?;
+    let totals = TimingLayer::install()?;
 
     // Build the detector from the checked-in config (board spec + params).
     let cfg = CharucoDetectConfig::load_json(&args.config)?;

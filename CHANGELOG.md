@@ -9,6 +9,138 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.12.1
+
+Precision fix. No public API change in the `calib-targets*` crates; the
+workspace now builds against `projective-grid` 0.14 (see that crate's
+changelog for its own breaking change).
+
+### Fixed
+
+- **Grid labels are always projectively self-consistent.** The map from a
+  detection's `(grid.u, grid.v)` to its `position` is a homography by
+  construction; the detector could break that, emitting a labelled set in
+  which several lattice nodes collapsed onto one pixel or a sub-population was
+  displaced by a whole lattice step. Such a detection still carries enough
+  correspondences to pass a count check while its pose solve is meaningless
+  ([#86](https://github.com/VitalyVorobyev/calib-targets-rs/issues/86)).
+
+  Two producers are fixed at the source:
+
+  - **A lattice-orientation parity invariant.** A homography preserves
+    orientation over any region that does not cross its vanishing line, which
+    an imaged planar board never does. The sign of the local basis
+    `e_u × e_v` is therefore the same at every cell of a correctly labelled
+    component, under any viewpoint and any amount of smooth lens distortion. A
+    component merge that accepts a *mirroring* symmetry element on thin overlap
+    glues a sub-block in with a reversed axis, which reverses that sign while
+    leaving edge lengths, edge directions and pixel separations plausible —
+    invisible to every first-order wrong-label check. The parity check compares
+    a sign, so it has no tolerance to tune, and it drops only labels it can
+    prove wrong.
+  - **Two-way injectivity in both component merges.** One lattice coordinate
+    holds one corner, and one corner sits at one coordinate. Only the
+    coordinate direction was guarded before, so a thin overlap could re-label a
+    single physical corner at a run of lattice coordinates.
+
+- **ChArUco runs the chessboard's wrong-label geometry check.**
+  `CharucoParams::for_board` used to disable it, on the reasoning that the
+  downstream board alignment would catch mislabels. It cannot: the alignment
+  searches `D4 × integer translation`, a *rigid* relabelling of whatever
+  lattice the chessboard produced, so it applies the healthy region's alignment
+  to a broken region rather than detecting one.
+
+- **ChArUco corner re-detection cannot merge two board corners.** The search
+  window is now sized from the cell pitch predicted at that corner rather than
+  the nominal `px_per_square`, so a foreshortened region cannot open a window
+  wide enough to reach the neighbouring corner, and a re-detected corner may be
+  adopted by at most one board id.
+
+- **`projective-grid`: detection no longer depends on hash iteration order.**
+  `detect_grid` could return different labellings for byte-identical input
+  across processes — most runs labelling a 24 × 24 dot grid in full, roughly one
+  in thirty dropping a whole component
+  ([#77](https://github.com/VitalyVorobyev/calib-targets-rs/issues/77)). Three
+  reductions over the labelled set read `HashMap` iteration order, which `std`
+  reseeds per process: the boundary-extension BFS seeded its queue from the map
+  and then claimed corners first-come-first-served, and `ensure_axes` and
+  `cell_size_of` accumulated `f32` sums, which are not associative. All three
+  now iterate in sorted cell order. Measured on a 144-regime sweep, one regime
+  returned four different labellings over 40 repeats of the same input before
+  the fix and one after.
+
+- **PuzzleBoard: declaring the board is no longer a pessimisation.**
+  `PuzzleBoardSearchMode::FixedBoard` matched observations against a
+  materialised copy of the declared board's bit pattern, costing
+  `O(8 · (rows+1)(cols+1) · N)` — slower than not declaring the board at all
+  above roughly 22 squares, and pathologically so at scale. A declared board is
+  a sub-rectangle *cut from* the master, so its bit at board cell `(r, c)` is
+  the master bit at `(origin + r, origin + c)`: the same scoring problem,
+  restricted to a rectangle of origins, sharing the master search's cyclic
+  class tables. Restricting the origins also restricts the residue classes they
+  can reach, so declaring the board is now genuinely *cheaper* than not
+  declaring it, at every board size below the master's own.
+
+  The restricted scan also considers only shifts that keep every observation on
+  the board. An observation exists only where a dot was sampled, and a dot is
+  only sampled where the corner neighbourhood bounding it was detected, so
+  every observation does lie on the printed board and a shift placing one
+  outside it cannot describe the physical scene. Excluding those keeps
+  physically impossible placements out of the uniqueness gate, where they could
+  only ever suppress a correct decode.
+
+### Changed
+
+- **`projective-grid`: `merge_components_local` takes the components plus one
+  shared `positions` slice; `ComponentInput` is removed.** Every component now
+  indexes the same corner array, which is what makes "the same corner appears
+  in two components" a well-defined question — and therefore what makes the
+  injectivity guarantee above checkable. The previous shape let each component
+  carry its own index space, where the question has no answer.
+
+- **PuzzleBoard decode is substantially faster, with the same output.** Two
+  changes beyond the fixed-board rework above, neither of which alters which
+  origin is decoded:
+
+  - *The cyclic class precompute is bounded by residue groups, not observation
+    count.* An observation reaches the tables only through
+    `(bit, lookup mod period)`; observations agreeing on those credit the same
+    cells with the same shape of contribution and are summed once. There are at
+    most `2 · 167 · 3` such groups per orientation, so the precompute goes from
+    `O(501 · N)` to `O(N + min(N, 6w) · 501)` for a `w`-square window — flat in
+    the observation count in practice.
+  - *The soft scorer's log-likelihood is accumulated in fixed point.* The
+    crossed-CRT separation that collapses the `501²` origin scan needs an
+    integer key: a table entry below the maximum must be at least one below it,
+    so that it provably cannot reach the maximum sum. `f32` rounding breaks that
+    step, which is why the soft path previously walked every origin while the
+    hard path did not. Fixed-point accumulation restores the property — and
+    makes the table sums exactly reproducible regardless of accumulation order.
+
+  On a public fixture the default `Full` + `SoftLogLikelihood` path drops from
+  6.3 ms to 3.0 ms end to end, and decode is no longer the leading stage at any
+  board size a caller would realistically print.
+
+- **PuzzleBoard is instrumented under the `tracing` feature.** The crate
+  declared the feature but instrumented nothing, so there was no way to see
+  where a `detect` call spent its time. Spans now cover the chessboard grid
+  build, per-component decode, edge sampling, the class precompute, and the
+  origin scan. `calib-targets-bench` gains a `puzzleboard_stage_timing` binary
+  alongside the topo / charuco / full ones.
+
+- **PuzzleBoard documentation now matches the code.** The book chapters, crate
+  docs, and internal spec had drifted: the two code maps' roles were swapped
+  (map A governs vertical edges, map B horizontal), the dot polarity was
+  inverted (`0` is black), `min_window` was documented as 4 rather than 7, and
+  a `HardMajority` scoring mode was described that does not exist. Two claims
+  were wrong rather than merely stale — the shipped maps are *imported* from the
+  reference implementation (PStelldinger/PuzzleBoard, CC0) rather than generated
+  by this crate's tool, and the "a 4 × 4 fragment identifies its absolute
+  position" property holds only at a fixed orientation. Since the decoder must
+  search all eight D4 transforms, clean uniqueness begins at 6 × 6, which is
+  what justifies the `min_window` default of 7. A new book chapter covers the
+  code-map construction and the registration path from origin to absolute IDs.
+
 ## 0.12.0
 
 Breaking API-consolidation release. See the
