@@ -239,6 +239,26 @@ def test_detect_marker_board_best_roundtrip() -> None:
     _assert_roundtrip(result)
 
 
+def test_marker_board_params_sweep_for_board_drives_detect_best() -> None:
+    """``MarkerBoardParams.sweep_for_board`` mirrors the Rust preset: three
+    configs varying only the shared chessboard grid-build tolerances."""
+    params = _marker_board_params()
+    configs = ct.MarkerBoardParams.sweep_for_board(params.board)
+    assert len(configs) == 3
+    assert all(isinstance(cfg, ct.MarkerBoardParams) for cfg in configs)
+    # Only the grid-build tolerances vary; circle scoring/matching stay fixed.
+    assert {cfg.chessboard.cluster_tol_deg for cfg in configs} == {12.0, 9.0, 16.0}
+    for cfg in configs:
+        cfg.circle_score = params.circle_score
+        cfg.match_params = params.match_params
+
+    image = _load_gray("markerboard_crop.png")
+    result = ct.detect_marker_board_best(image, configs)
+    if result is None:
+        pytest.skip("no marker board detected on testdata/markerboard_crop.png")
+    _assert_roundtrip(result)
+
+
 # ---------------------------------------------------------------------------
 # puzzleboard
 # ---------------------------------------------------------------------------
@@ -317,8 +337,7 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
     assert isinstance(raw, dict)
     # The decode dict is the compact quality summary. Winner/runner-up score
     # evidence and the raw observed-edge dump live in the Rust
-    # `PuzzleBoardDiagnostics` channel, reachable via
-    # `detect_puzzleboard_with_diagnostics`.
+    # `PuzzleBoardDiagnostics` channel, reachable via `diagnose_puzzleboard`.
     assert set(raw["decode"].keys()) == {
         "edges_observed",
         "edges_matched",
@@ -334,7 +353,7 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
 
 
 # ---------------------------------------------------------------------------
-# diagnostics channel (detect_*_with_diagnostics)
+# diagnostics channel (diagnose_*)
 # ---------------------------------------------------------------------------
 
 
@@ -345,12 +364,10 @@ def _assert_diagnostics_wrapper(payload: Any) -> dict[str, Any]:
     return payload
 
 
-def test_detect_charuco_with_diagnostics_shape() -> None:
+def test_diagnose_charuco_shape() -> None:
     image = _load_gray("small2.png")
     params = _charuco_params_small2()
-    payload = _assert_diagnostics_wrapper(
-        ct.detect_charuco_with_diagnostics(image, params=params)
-    )
+    payload = _assert_diagnostics_wrapper(ct.diagnose_charuco(image, params=params))
     # ChArUco diagnostics are produced even on a failed frame.
     diag = payload["diagnostics"]
     assert isinstance(diag, dict)
@@ -360,35 +377,30 @@ def test_detect_charuco_with_diagnostics_shape() -> None:
     assert isinstance(diag["components"], list)
 
 
-def test_detect_marker_board_with_diagnostics_shape() -> None:
+def test_diagnose_marker_board_shape() -> None:
     image = _load_gray("markerboard_crop.png")
     params = _marker_board_params()
-    payload = _assert_diagnostics_wrapper(
-        ct.detect_marker_board_with_diagnostics(image, params=params)
-    )
+    payload = _assert_diagnostics_wrapper(ct.diagnose_marker_board(image, params=params))
+    # Marker-board diagnostics are now produced even on a failed detection
+    # (a grid found but its circles not matching the layout, or no grid at
+    # all) — matching ChArUco and PuzzleBoard. `result` is `None` in that case.
     diag = payload["diagnostics"]
-    if diag is None:
-        # The marker-board diagnostics channel yields evidence only on a
-        # successful detection; both keys are then None.
-        assert payload["result"] is None
-        return
+    assert isinstance(diag, dict)
     assert {
         "inliers",
         "circle_candidates",
         "circle_matches",
         "alignment_inliers",
     }.issubset(diag.keys())
-    assert payload["result"] is not None
-    # `result` deserializes through the typed wrapper.
-    ct.MarkerBoardDetection.from_dict(payload["result"])
+    if payload["result"] is not None:
+        # `result` deserializes through the typed wrapper.
+        ct.MarkerBoardDetection.from_dict(payload["result"])
 
 
-def test_detect_puzzleboard_with_diagnostics_shape() -> None:
+def test_diagnose_puzzleboard_shape() -> None:
     image = _load_gray("puzzleboard_small.png")
     params = _puzzleboard_params()
-    payload = _assert_diagnostics_wrapper(
-        ct.detect_puzzleboard_with_diagnostics(image, params=params)
-    )
+    payload = _assert_diagnostics_wrapper(ct.diagnose_puzzleboard(image, params=params))
     # PuzzleBoard diagnostics are produced even on a failed decode.
     diag = payload["diagnostics"]
     assert isinstance(diag, dict)
@@ -396,3 +408,39 @@ def test_detect_puzzleboard_with_diagnostics_shape() -> None:
     assert isinstance(diag["observed_edges"], list)
     if payload["result"] is not None:
         ct.PuzzleBoardDetection.from_dict(payload["result"])
+
+
+# ---------------------------------------------------------------------------
+# *_with_corners — a shared corner cloud reproduces the *_ result exactly
+# ---------------------------------------------------------------------------
+
+
+def _topological_corners(image: np.ndarray, chess_cfg: Any = None) -> list[dict[str, Any]]:
+    from calib_targets._convert_in import chess_config_to_payload
+
+    trace = _core.trace_chessboard_topological(
+        image, chess_cfg=chess_config_to_payload(chess_cfg), params=None
+    )
+    corners: list[dict[str, Any]] = trace["corners"]
+    assert len(corners) > 0, "no ChESS corners found — check the test fixture"
+    return corners
+
+
+def test_detect_charuco_with_corners_matches_detect_charuco() -> None:
+    image = _load_gray("small2.png")
+    params = _charuco_params_small2()
+    corners = _topological_corners(image, params.chess)
+
+    direct = ct.detect_charuco(image, params=params)
+    via_corners = ct.detect_charuco_with_corners(image, corners, params=params)
+    assert via_corners.to_dict() == direct.to_dict()
+
+
+def test_diagnose_puzzleboard_with_corners_matches_diagnose_puzzleboard() -> None:
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    corners = _topological_corners(image, params.chess)
+
+    direct = ct.diagnose_puzzleboard(image, params=params)
+    via_corners = ct.diagnose_puzzleboard_with_corners(image, corners, params=params)
+    assert via_corners == direct

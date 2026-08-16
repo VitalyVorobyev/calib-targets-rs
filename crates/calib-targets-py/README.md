@@ -124,7 +124,7 @@ params.decode.scoring_mode = ct.PuzzleBoardScoringMode.soft_log_likelihood()
 params.decode.symmetry_mode = ct.PuzzleBoardSymmetryMode.rotations()  # default
 result = ct.detect_puzzleboard(image, params=params)
 # Every corner has an absolute master ID: result.corners[0].id
-# Soft-mode scoring evidence is available from detect_puzzleboard_with_diagnostics().
+# Soft-mode scoring evidence is available from diagnose_puzzleboard().
 ```
 
 Runnable: [`examples/puzzleboard_roundtrip.py`](examples/puzzleboard_roundtrip.py).
@@ -192,8 +192,13 @@ json.load(open(path)))`-compatible.
 
 ## Tuning difficult cases
 
-1. Replace `detect_*` with `detect_*_best` and pass a 3-config sweep —
-   this is the recommended default.
+1. Replace `detect_*` with `detect_*_best` and pass the matching sweep
+   preset — `ChessboardParams.sweep_default()`,
+   `CharucoParams.sweep_for_board(board)`,
+   `MarkerBoardParams.sweep_for_board(board)` or
+   `PuzzleBoardParams.sweep_for_board(board)`. Each preset is computed by
+   Rust and handed to Python, so both language surfaces search the same
+   configuration space. This is the recommended default.
 2. Increase rasterisation / input resolution if cells are smaller than
    ~20 px across.
 3. Open the per-detector README for deeper guidance:
@@ -239,10 +244,28 @@ any `ChessboardParams(...)` call that set it.
 ## Feature parity vs Rust facade
 
 - `detect_chessboard` / `_all` / `_best` / `_debug` — ✔
-- `detect_charuco` / `_best`, `detect_puzzleboard` / `_best`,
-  `detect_marker_board` / `_best` — ✔
+- `detect_charuco` / `_with_corners` / `_best`,
+  `detect_puzzleboard` / `_with_corners` / `_best`,
+  `detect_marker_board` / `_with_corners` / `_best` — ✔
+- `diagnose_charuco` / `_with_corners`, `diagnose_puzzleboard` / `_with_corners`,
+  `diagnose_marker_board` / `_with_corners` — ✔
 - Printable targets for all four target kinds — ✔
 - `to_dict` / `from_dict` round-trip on every config + result type — ✔
+
+### Reusing a corner cloud across detectors
+
+Each of ChArUco, PuzzleBoard, and marker board runs its own ChESS corner pass
+from `params.chess` inside `detect_*`. The `_with_corners` variant skips that
+pass and takes a corner cloud directly — useful when several detectors should
+share one pass, or the corners come from a custom upstream:
+
+```python
+corners = ct.trace_chessboard_topological(image, params=None)["corners"]
+result = ct.detect_charuco_with_corners(image, corners, params=params)
+```
+
+`corners` is a list of `ChessCorner`-shaped dicts:
+`{"position": [x, y], "axes": [...], "strength": ...}`.
 
 ## Implementation note
 

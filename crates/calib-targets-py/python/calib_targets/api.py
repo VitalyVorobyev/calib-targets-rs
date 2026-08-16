@@ -117,6 +117,30 @@ def detect_charuco(
     return CharucoDetection.from_dict(raw)
 
 
+def detect_charuco_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: CharucoDetectorParams,
+) -> CharucoDetection:
+    """Detect a ChArUco board from a pre-detected corner cloud.
+
+    ``corners`` is a list of ``ChessCorner``-shaped dicts —
+    ``{"position": [x, y], "axes": [...], "strength": ...}`` — e.g. the
+    ``"corners"`` field of :func:`trace_chessboard_topological`'s return
+    value, or a custom upstream. ``params.chess`` is not read: ``corners`` is
+    taken as given.
+    """
+    _check_type("params", params, CharucoDetectorParams)
+
+    raw = _core.detect_charuco_with_corners(
+        image,
+        corners,
+        params=charuco_detector_params_to_payload(params),
+    )
+    return CharucoDetection.from_dict(raw)
+
+
 def detect_marker_board(
     image: npt.NDArray[np.uint8],
     *,
@@ -138,7 +162,31 @@ def detect_marker_board(
     return MarkerBoardDetection.from_dict(raw)
 
 
-def detect_charuco_with_diagnostics(
+def detect_marker_board_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: MarkerBoardParams | None = None,
+) -> MarkerBoardDetection | None:
+    """Detect a marker board from a pre-detected corner cloud.
+
+    ``corners`` is a list of ``ChessCorner``-shaped dicts — see
+    :func:`detect_charuco_with_corners`. ``params.chess`` is not read.
+    """
+    if params is not None:
+        _check_type("params", params, MarkerBoardParams)
+
+    raw = _core.detect_marker_board_with_corners(
+        image,
+        corners,
+        params=marker_board_params_to_payload(params),
+    )
+    if raw is None:
+        return None
+    return MarkerBoardDetection.from_dict(raw)
+
+
+def diagnose_charuco(
     image: npt.NDArray[np.uint8],
     *,
     chess_cfg: ChessConfig | None = None,
@@ -159,14 +207,34 @@ def detect_charuco_with_diagnostics(
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, CharucoDetectorParams)
 
-    return _core.detect_charuco_with_diagnostics(
+    return _core.diagnose_charuco(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=charuco_detector_params_to_payload(params),
     )
 
 
-def detect_marker_board_with_diagnostics(
+def diagnose_charuco_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: CharucoDetectorParams,
+) -> dict[str, Any]:
+    """:func:`diagnose_charuco` on a pre-detected corner cloud.
+
+    ``params.chess`` is not read. See :func:`detect_charuco_with_corners` for
+    the ``corners`` shape.
+    """
+    _check_type("params", params, CharucoDetectorParams)
+
+    return _core.diagnose_charuco_with_corners(
+        image,
+        corners,
+        params=charuco_detector_params_to_payload(params),
+    )
+
+
+def diagnose_marker_board(
     image: npt.NDArray[np.uint8],
     *,
     chess_cfg: ChessConfig | None = None,
@@ -174,11 +242,12 @@ def detect_marker_board_with_diagnostics(
 ) -> dict[str, Any]:
     """Detect a marker board and additionally return the diagnostics channel.
 
-    Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``.  Both keys are
-    ``None`` when no board is found — the marker-board diagnostics channel
-    yields evidence only on a successful detection.  ``result`` is the
-    ``MarkerBoardDetection`` dict; ``diagnostics`` is the raw
-    ``MarkerBoardDiagnostics`` payload.
+    Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``.  ``result`` is
+    the ``MarkerBoardDetection`` dict (or ``None`` when detection failed);
+    ``diagnostics`` is the raw ``MarkerBoardDiagnostics`` payload (scored
+    circle candidates, circle matches, per-corner provenance, alignment-inlier
+    count). Diagnostics are produced even on a failed detection — e.g. a grid
+    found but its circles not matching the expected layout.
 
     The ``diagnostics`` payload is intentionally schemaless on the Python side
     and carries a looser stability promise than the typed result API.
@@ -188,9 +257,30 @@ def detect_marker_board_with_diagnostics(
     if params is not None:
         _check_type("params", params, MarkerBoardParams)
 
-    return _core.detect_marker_board_with_diagnostics(
+    return _core.diagnose_marker_board(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
+        params=marker_board_params_to_payload(params),
+    )
+
+
+def diagnose_marker_board_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: MarkerBoardParams | None = None,
+) -> dict[str, Any]:
+    """:func:`diagnose_marker_board` on a pre-detected corner cloud.
+
+    ``params.chess`` is not read. See :func:`detect_charuco_with_corners` for
+    the ``corners`` shape.
+    """
+    if params is not None:
+        _check_type("params", params, MarkerBoardParams)
+
+    return _core.diagnose_marker_board_with_corners(
+        image,
+        corners,
         params=marker_board_params_to_payload(params),
     )
 
@@ -213,7 +303,28 @@ def detect_puzzleboard(
     return PuzzleBoardDetection.from_dict(raw)
 
 
-def detect_puzzleboard_with_diagnostics(
+def detect_puzzleboard_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: PuzzleBoardParams,
+) -> PuzzleBoardDetection:
+    """Detect a PuzzleBoard from a pre-detected corner cloud.
+
+    ``corners`` is a list of ``ChessCorner``-shaped dicts — see
+    :func:`detect_charuco_with_corners`. ``params.chess`` is not read.
+    """
+    _check_type("params", params, PuzzleBoardParams)
+
+    raw = _core.detect_puzzleboard_with_corners(
+        image,
+        corners,
+        params=puzzleboard_params_to_payload(params),
+    )
+    return PuzzleBoardDetection.from_dict(raw)
+
+
+def diagnose_puzzleboard(
     image: npt.NDArray[np.uint8],
     *,
     chess_cfg: ChessConfig | None = None,
@@ -234,9 +345,29 @@ def detect_puzzleboard_with_diagnostics(
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, PuzzleBoardParams)
 
-    return _core.detect_puzzleboard_with_diagnostics(
+    return _core.diagnose_puzzleboard(
         image,
         chess_cfg=chess_config_to_payload(chess_cfg),
+        params=puzzleboard_params_to_payload(params),
+    )
+
+
+def diagnose_puzzleboard_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: PuzzleBoardParams,
+) -> dict[str, Any]:
+    """:func:`diagnose_puzzleboard` on a pre-detected corner cloud.
+
+    ``params.chess`` is not read. See :func:`detect_charuco_with_corners` for
+    the ``corners`` shape.
+    """
+    _check_type("params", params, PuzzleBoardParams)
+
+    return _core.diagnose_puzzleboard_with_corners(
+        image,
+        corners,
         params=puzzleboard_params_to_payload(params),
     )
 
@@ -320,11 +451,17 @@ __all__ = [
     "detect_chessboard_all",
     "trace_chessboard_topological",
     "detect_charuco",
-    "detect_charuco_with_diagnostics",
+    "detect_charuco_with_corners",
+    "diagnose_charuco",
+    "diagnose_charuco_with_corners",
     "detect_marker_board",
-    "detect_marker_board_with_diagnostics",
+    "detect_marker_board_with_corners",
+    "diagnose_marker_board",
+    "diagnose_marker_board_with_corners",
     "detect_puzzleboard",
-    "detect_puzzleboard_with_diagnostics",
+    "detect_puzzleboard_with_corners",
+    "diagnose_puzzleboard",
+    "diagnose_puzzleboard_with_corners",
     "detect_chessboard_best",
     "detect_charuco_best",
     "detect_marker_board_best",

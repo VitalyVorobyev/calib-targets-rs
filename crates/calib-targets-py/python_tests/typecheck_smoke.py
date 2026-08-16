@@ -34,6 +34,17 @@ marker = ct.detect_marker_board(img)
 if marker is not None:
     _marker_corners: list[ct.MarkerBoardCorner] = marker.corners
 
+# Sweep presets: each classmethod delegates to Rust and must hand back a
+# concretely-typed list of the params dataclass it lives on.
+_chess_sweep: list[ct.ChessboardParams] = ct.ChessboardParams.sweep_default()
+_charuco_sweep: list[ct.CharucoParams] = ct.CharucoParams.sweep_for_board(board)
+_marker_sweep: list[ct.MarkerBoardParams] = ct.MarkerBoardParams.sweep_for_board(
+    ct.MarkerBoardSpec()
+)
+_puzzle_sweep: list[ct.PuzzleBoardParams] = ct.PuzzleBoardParams.sweep_for_board(
+    ct.PuzzleBoardSpec(rows=13, cols=13, cell_size=1.0)
+)
+
 print_doc = ct.PrintableTargetDocument(
     target=ct.ChessboardTargetSpec(inner_rows=6, inner_cols=8, square_size_mm=20.0)
 )
