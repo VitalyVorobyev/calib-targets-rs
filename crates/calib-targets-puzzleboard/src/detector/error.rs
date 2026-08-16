@@ -34,6 +34,29 @@ pub enum PuzzleBoardDetectError {
         /// Minimum span required along each axis (`min_window`).
         needed: u32,
     },
+    /// Too few *distinct* master bits survived the period-3 vote.
+    ///
+    /// [`WindowTooThin`](Self::WindowTooThin) guarantees the fragment's
+    /// geometry *offers* enough independent bits; this guarantees enough of
+    /// them were actually resolved. The two differ whenever dots disagree: a
+    /// class whose members split evenly is an erasure, not a bit, so a noisy
+    /// fragment can span the required corners and still determine far less than
+    /// the code needs.
+    ///
+    /// Without this guard the uniqueness predicate silently changes meaning.
+    /// `margin > k_winner` proves the winner is the only codeword within its
+    /// error radius — but over a handful of surviving bits *many* master
+    /// positions are within that radius, so the proof holds while saying
+    /// nothing. Measured: erasures alone, ungated, produced wrong-origin
+    /// decodes at high dot corruption
+    /// (`decode::tests::consensus_noise_tolerance_report`).
+    #[error("not enough distinct code bits resolved (got {determined}, need {needed})")]
+    NotEnoughLogicalBits {
+        /// Distinct master bits the fragment resolved after voting.
+        determined: usize,
+        /// Minimum the configured `min_window` is required to yield.
+        needed: usize,
+    },
     /// The edge-code decoder found no master position above the
     /// confidence threshold.
     #[error("decoding failed: no position match above confidence threshold")]

@@ -7,7 +7,7 @@
     "warmup": 10,
     "generated": "2026-08-16",
     "source": "scripts/gen-perf-data.sh",
-    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for author_like_oblique) on each image."
+    "note": "Public testdata images only. Per-stage numbers are p50 from full_stage_timing, which runs the complete detector (ChArUco for small/large, plain chessboard for mid, PuzzleBoard for oblique) on each image."
   },
   "images": [
     {
@@ -57,8 +57,8 @@
     },
     {
       "label": "PuzzleBoard (synthetic photo)",
-      "file": "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
-      "img": "./img/author_like_oblique.png",
+      "file": "testdata/puzzleboard/oblique.png",
+      "img": "./img/oblique.png",
       "kind": "PuzzleBoard",
       "width": 640,
       "height": 480,
@@ -85,7 +85,7 @@
         "note": "720x540 ChArUco"
       },
       {
-        "file": "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
+        "file": "testdata/puzzleboard/oblique.png",
         "ms": 3.325,
         "note": "640x480 PuzzleBoard"
       },

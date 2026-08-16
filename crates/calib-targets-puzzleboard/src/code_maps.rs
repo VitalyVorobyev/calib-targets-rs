@@ -26,12 +26,27 @@
 //!
 //! **That uniqueness is across positions at a fixed orientation.** A detected
 //! fragment carries no cue for which way the board was printed, so the decoder
-//! searches all eight D4 transforms as well, and over `D4 × position` a 4 × 4
-//! window is *not* unique: measured on clean windows at seven planted origins,
-//! every 4 × 4 had a perfect alias under some other transform, 5 × 5 decoded at
-//! 5/7, and 6 × 6 and above always decoded. This is why the pipeline's
-//! `min_window` default is 7 rather than 4 — see
-//! `decode::tests::window_uniqueness_report` for the harness that measures it.
+//! searches orientations too — by default the four rotations, which is all a
+//! front view of an opaque plane can produce (see
+//! [`PuzzleBoardSymmetryMode`](crate::PuzzleBoardSymmetryMode)).
+//!
+//! Two further effects separate that 4 × 4 from the pipeline's `min_window` of
+//! 7 *corners*, and neither is a safety margin:
+//!
+//! - **Interior readout.** A dot is read against the two squares flanking it,
+//!   so a fragment's outermost ring of edges cannot be sampled at all.
+//! - **Repetition.** Because both maps repeat every three rows or columns,
+//!   edges are not independent bits — the paper says as much of its own 4 × 4
+//!   window: 40 edges, but "only 30 bits of information, as the remaining bits
+//!   are repetitions". An interior readout spanning `s` corners carries
+//!   `6(s-2)` distinct bits, so `s = 7` carries the same 30.
+//!
+//! Verified exhaustively over all 251 001 master positions
+//! (`research/puzzleboard-rings`): under the rotations-only search a 7-corner
+//! span is unique everywhere and a 6-corner span leaves 3 330 positions
+//! ambiguous; searching reflections as well pushes the floor out to 9.
+//! `decode::tests::window_uniqueness_report` is a spot-check harness over seven
+//! planted origins — useful for eyeballing, never a uniqueness proof.
 //!
 //! ## Provenance of the shipped maps
 //!

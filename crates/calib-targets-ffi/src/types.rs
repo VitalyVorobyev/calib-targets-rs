@@ -333,6 +333,17 @@ pub struct ct_puzzleboard_result_t {
     pub edges_matched: usize,
     pub mean_bit_confidence: f32,
     pub bit_error_rate: f32,
+    /// Distinct master bits the fragment reads. Both code maps repeat every
+    /// three rows or columns, so this is `~6w` against `~2w²` sampled dots;
+    /// `edges_observed / logical_bits` is the redundancy available.
+    pub logical_bits: usize,
+    /// Hamming error rate over `logical_bits`, after the period-3 replicas have
+    /// been majority-voted. This is the rate the decoder's error budget gates.
+    pub logical_bit_error_rate: f32,
+    /// Fraction of confidence mass that lost its period-3 class vote — a
+    /// read-quality meter computed before any pose hypothesis, so it is
+    /// meaningful even when the decode is wrong. Near zero on a clean board.
+    pub dot_dissent_rate: f32,
     pub master_origin_row: i32,
     pub master_origin_col: i32,
 }

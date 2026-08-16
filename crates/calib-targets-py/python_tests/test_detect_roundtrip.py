@@ -343,6 +343,9 @@ def test_raw_puzzleboard_dict_keys_match_python_schema() -> None:
         "edges_matched",
         "mean_confidence",
         "bit_error_rate",
+        "logical_bits",
+        "logical_bit_error_rate",
+        "dot_dissent_rate",
         "master_origin_row",
         "master_origin_col",
     }

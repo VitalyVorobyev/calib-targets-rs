@@ -63,8 +63,8 @@
 use calib_targets_core::{log_sigmoid, Coord, GridAlignment, GridTransform};
 
 use crate::code_maps::{
-    EdgeOrientation, PuzzleBoardObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS,
-    EDGE_MAP_B_ROWS,
+    horizontal_edge_bit, vertical_edge_bit, EdgeOrientation, PuzzleBoardObservedEdge,
+    EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
 };
 
 mod fixed;
@@ -76,7 +76,7 @@ mod tables;
 mod tests;
 
 pub(crate) use fixed::{decode_fixed_board, decode_fixed_board_soft, BoardRect};
-pub(crate) use hard::{decode, HardScan, TransformTables};
+pub(crate) use hard::decode;
 pub(crate) use soft::decode_soft;
 
 /// Cyclic-period sizes for the precompute tables.
@@ -111,6 +111,62 @@ fn crt_master_col(hb: usize, vb: usize) -> i32 {
 
 const MASTER_ROWS_I32: i32 = crate::board::MASTER_ROWS as i32;
 const MASTER_COLS_I32: i32 = crate::board::MASTER_COLS as i32;
+
+/// How an observation set scores against the master under a *known* alignment.
+///
+/// The scorers rank hypotheses over whichever set they were handed; this
+/// restates the outcome over any set, so the same winning alignment can be
+/// reported in both the physical (one entry per sampled dot) and the logical
+/// (one entry per distinct master bit) view.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MatchStats {
+    /// Entries scored.
+    pub observed: usize,
+    /// Entries whose bit agreed with the master.
+    pub matched: usize,
+    /// Mean confidence over the *matched* entries.
+    pub mean_confidence: f32,
+    /// Mismatch fraction over all entries.
+    pub bit_error_rate: f32,
+}
+
+/// Score `observed` against the master pattern under a decided `alignment`.
+///
+/// `O(N)`, no hypothesis search: the alignment already fixes the transform and
+/// the origin, and the master lookups wrap cyclically, so an alignment whose
+/// translation sits outside `[0, 501)` scores the same as its wrapped form.
+pub(crate) fn match_stats(
+    observed: &[PuzzleBoardObservedEdge],
+    alignment: &GridAlignment,
+) -> MatchStats {
+    let mut matched = 0usize;
+    let mut matched_weight = 0.0f32;
+    for e in observed {
+        let l = transform_edge_lookup(e, alignment);
+        let expected = match l.orientation {
+            EdgeOrientation::Horizontal => horizontal_edge_bit(l.lookup_row, l.lookup_col),
+            EdgeOrientation::Vertical => vertical_edge_bit(l.lookup_row, l.lookup_col),
+        };
+        if expected == e.bit {
+            matched += 1;
+            matched_weight += e.confidence;
+        }
+    }
+    MatchStats {
+        observed: observed.len(),
+        matched,
+        mean_confidence: if matched == 0 {
+            0.0
+        } else {
+            matched_weight / matched as f32
+        },
+        bit_error_rate: if observed.is_empty() {
+            1.0
+        } else {
+            (observed.len() - matched) as f32 / observed.len() as f32
+        },
+    }
+}
 
 /// The parameter-free uniqueness predicate, shared by the hard and soft paths.
 ///
@@ -207,11 +263,12 @@ fn passes_uniqueness_gate(
 /// enforce origin uniqueness; measured to false-accept at every window size).
 fn finalize_hard_winner(
     mut winner: DecodeOutcome,
+    edges_observed: usize,
     best_matched: u32,
     runner_up: Option<HardRunnerUp>,
 ) -> Option<DecodeOutcome> {
     let runner_up_matched = runner_up.as_ref().map_or(0, |r| r.matched);
-    if !passes_uniqueness_gate(winner.edges_observed, best_matched, runner_up_matched) {
+    if !passes_uniqueness_gate(edges_observed, best_matched, runner_up_matched) {
         return None;
     }
     let margin = best_matched.saturating_sub(runner_up_matched);
@@ -254,15 +311,36 @@ pub(crate) struct HardRunnerUp {
 /// wrong physical origin at every window size. This re-gates the soft winner by
 /// the same matched-count predicate the hard path uses ([`passes_uniqueness_gate`]).
 ///
-/// `matched_top2` is the global matched-count top-2 over the *same* candidate
-/// set the soft winner was drawn from (full master or fixed-board shifts): the
-/// maximum-matched origin (with its identity and matched count) and the closest
-/// distinct competitor. The competitor count for the soft winner is:
+/// # Which view proves what
 ///
-/// - `runner.matched` when the soft winner *is* the maximum-matched origin, or
-/// - `best_matched` (the maximum) otherwise — a distinct origin out-matches the
-///   soft winner, which saturates the margin to `0` and rejects (correct: the
-///   soft winner is not even the best-supported origin).
+/// The same observations have two views: the `~2w²` physical dots, and the
+/// `~6w` **logical** bits left after the period-3 replicas are voted. They are
+/// not interchangeable here, and the split is load-bearing.
+///
+/// - The **BER budget** belongs on the logical bits. That is the domain the
+///   paper's figure is quoted in ("after averaging over all repetitions"), and
+///   it is what lets voting buy noise tolerance. It is a budget, not a proof:
+///   loosening it cannot manufacture a wrong label on its own.
+/// - The **uniqueness proof** stays on the physical dots, and this is the part
+///   that is tempting to move and must not be. `margin > k_winner` is a
+///   *relative* separation test, so shortening the code weakens the same
+///   predicate: over 90 voted bits it is a far smaller claim than over the 480
+///   dots they came from, while an origin that aliases does so in both views.
+///   Measured — moving it to the logical view produced a wrong-origin decode
+///   that the physical view rejected
+///   (`decode::tests::consensus_noise_tolerance_report`, voted 1 / raw 0).
+///   Voting corrects errors; it does not add distinguishing information, so it
+///   cannot license a weaker uniqueness claim.
+///
+/// So `matched_top2` is the **physical** matched-count top-2 over the same
+/// candidate set the soft winner was drawn from, and `edges_observed` is the
+/// physical count. The logical view has already had its say, in the BER gate
+/// the caller applied before getting here.
+///
+/// A soft winner that is *not* the maximum-matched origin is rejected outright:
+/// a distinct origin reads more of the code than the winner does, so the winner
+/// is not even the best-supported hypothesis. (The previous formulation reached
+/// the same verdict arithmetically, by letting the margin saturate to `0`.)
 ///
 /// On acceptance, the soft winner's runner-up diagnostic fields are overwritten
 /// with the matched-count competitor (so consumers see the uniqueness margin,
@@ -270,32 +348,25 @@ pub(crate) struct HardRunnerUp {
 /// are preserved.
 fn apply_soft_uniqueness_gate(
     mut winner: DecodeOutcome,
+    edges_observed: usize,
     matched_top2: (u32, i32, i32, GridTransform, Option<HardRunnerUp>),
 ) -> Option<DecodeOutcome> {
     let (best_matched, best_row, best_col, best_transform, runner) = matched_top2;
-    let soft_matched = winner.edges_matched as u32;
     let soft_is_global_best = winner.master_origin_row == best_row
         && winner.master_origin_col == best_col
         && winner.alignment.matrix() == best_transform.matrix();
-    let (competitor_matched, competitor) = if soft_is_global_best {
-        (runner.map_or(0, |r| r.matched), runner)
-    } else {
-        (
-            best_matched,
-            Some(HardRunnerUp {
-                matched: best_matched,
-                master_row: best_row,
-                master_col: best_col,
-                transform: best_transform,
-            }),
-        )
-    };
-    if !passes_uniqueness_gate(winner.edges_observed, soft_matched, competitor_matched) {
+    if !soft_is_global_best {
+        return None;
+    }
+    // The soft winner *is* the maximum-matched hypothesis, so its own matched
+    // count is `best_matched` by definition — no second evaluation.
+    let competitor_matched = runner.map_or(0, |r| r.matched);
+    if !passes_uniqueness_gate(edges_observed, best_matched, competitor_matched) {
         return None;
     }
     // Surface the matched-count uniqueness margin in the runner-up diagnostics
     // (overwriting the soft-score-gap runner-up populated by the LL finalizer).
-    match competitor {
+    match runner {
         Some(c) => {
             winner.score_runner_up = Some(c.matched as f32);
             winner.runner_up_origin_row = Some(c.master_row);
@@ -445,13 +516,13 @@ fn update_best_and_runner_up(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct TransformedEdgeLookup {
-    lookup_row: i32,
-    lookup_col: i32,
-    orientation: EdgeOrientation,
+pub(in crate::detector) struct TransformedEdgeLookup {
+    pub lookup_row: i32,
+    pub lookup_col: i32,
+    pub orientation: EdgeOrientation,
 }
 
-fn transform_edge_lookup(
+pub(in crate::detector) fn transform_edge_lookup(
     edge: &PuzzleBoardObservedEdge,
     t: &GridTransform,
 ) -> TransformedEdgeLookup {

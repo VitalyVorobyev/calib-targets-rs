@@ -1476,6 +1476,11 @@ class MarkerBoardParams:
 # PuzzleBoard detection params
 # ---------------------------------------------------------------------------
 
+#: Rows in the master PuzzleBoard pattern (Rust ``MASTER_ROWS``).
+MASTER_ROWS = 501
+#: Columns in the master PuzzleBoard pattern (Rust ``MASTER_COLS``).
+MASTER_COLS = 501
+
 
 @dataclass(slots=True)
 class PuzzleBoardSpec:
@@ -1490,6 +1495,17 @@ class PuzzleBoardSpec:
     cell_size: float
     origin_row: int = 0
     origin_col: int = 0
+
+    @classmethod
+    def master(cls, cell_size: float) -> PuzzleBoardSpec:
+        """Declare the whole 501 x 501 master pattern, given only the cell size.
+
+        This is the right default for detection: a PuzzleBoard identifies
+        itself, so the decoder recovers where the visible fragment sits on the
+        master pattern and there is no need to know which sub-rectangle was
+        printed. Mirrors ``PuzzleBoardSpec::master`` on the Rust side.
+        """
+        return cls(rows=MASTER_ROWS, cols=MASTER_COLS, cell_size=cell_size)
 
     def to_dict(self) -> dict[str, Any]:
         return {

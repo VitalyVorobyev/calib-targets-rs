@@ -43,14 +43,53 @@ const SEPARATION_PRODUCT_CAP: usize = 1024;
 /// [`super::soft::decode_soft`]). A pathological all-tied input falls back to a
 /// direct table scan for the affected transform so worst-case cost never
 /// regresses past the original.
+/// `logical` is the set the hypothesis is *scored* over — the voted class set
+/// when the period-3 consensus is on, which is where this scorer gains the
+/// majority-vote error correction the pattern was designed for. `observed` is
+/// the physical dot set, used only to prove uniqueness.
+///
+/// The two views are not interchangeable, and keeping them apart is a soundness
+/// requirement rather than a refinement:
+///
+/// - Scoring and the BER budget go on `logical`. Voting collapses a fragment's
+///   `~2w²` dots onto the `~6w` bits they actually carry, correcting any error
+///   outvoted by its replicas. Measured: at 15 % dot corruption a 12 × 12
+///   fragment decodes 99 % of the time voted and 0 % unvoted
+///   (`super::tests::consensus_noise_tolerance_report`).
+/// - `margin > k_winner` also goes on `logical`, and that is *not* a weakening.
+///   What the predicate can tolerate is set by how much of the code the nearest
+///   wrong origin matches for free — call it `f` — giving a ceiling of
+///   `(1 - f) / 2` on the error rate *in the view being judged*. Measured, `f`
+///   is identical in both views (`super::tests::runner_up_floor_report`:
+///   0.93 at a 6-square fragment falling to 0.84 at 24), because the aliases
+///   are structural: a ±3 origin shift leaves an entire edge family
+///   bit-identical, so the same period-3 redundancy that enables voting also
+///   manufactures them. Same `f`, same ceiling — but applied to the post-vote
+///   error rate instead of the raw dot rate, which is what buys the range.
+///
+/// `observed` is therefore used only as a cross-view sanity check on the
+/// winner's identity, not to prove uniqueness.
 pub(crate) fn decode(
+    logical: &[PuzzleBoardObservedEdge],
     observed: &[PuzzleBoardObservedEdge],
     transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
     let (winner, best_matched, runner_up) =
-        decode_with_runner_up(observed, transforms, max_bit_error_rate)?;
-    finalize_hard_winner(winner, best_matched, runner_up)
+        decode_with_runner_up(logical, transforms, max_bit_error_rate)?;
+    // Cross-view sanity: the winner must also be the best-supported origin on
+    // the raw dots. Cheap, and it vetoes the case where voting *moved* the
+    // answer rather than merely cleaning it. (It does not catch a genuine
+    // near-alias — both views alias together — which is why the gate below
+    // still has to do the real work.)
+    let (physical, ..) = decode_with_runner_up(observed, transforms, 1.0)?;
+    if (winner.master_origin_row, winner.master_origin_col)
+        != (physical.master_origin_row, physical.master_origin_col)
+        || winner.alignment.matrix() != physical.alignment.matrix()
+    {
+        return None;
+    }
+    finalize_hard_winner(winner, logical.len(), best_matched, runner_up)
 }
 
 /// Core of [`decode`]: returns the winning hypothesis together with its

@@ -149,9 +149,21 @@ struct FixedScan {
 }
 
 /// Everything the per-shift ranking needs that does not vary with the shift.
+///
+/// The two rankings run in different alphabets and each carries its own
+/// denominator. The matched-count / BER ranking is evaluated over **logical
+/// bits** — one entry per distinct master bit, after the period-3 replicas have
+/// been voted — because both the BER budget and the uniqueness predicate are
+/// statements about the code, not about how many times it was sampled. The
+/// soft-LL ranking is evaluated over the **physical dots**, whose per-dot
+/// likelihoods are exactly what it exists to sum.
 struct ScanContext {
-    total: usize,
-    total_conf: f32,
+    /// Logical-bit count: denominator of the matched-count ranking and the BER.
+    logical_total: usize,
+    /// Summed confidence over the logical bits.
+    logical_conf: f32,
+    /// Physical dot count: denominator of the soft-LL normalisation.
+    physical_total: usize,
     max_bit_error_rate: f32,
     soft: bool,
 }
@@ -167,22 +179,26 @@ impl FixedScan {
     }
 
     /// Rank one hypothesis into the hard (and, when enabled, soft) slots.
+    ///
+    /// `logical` scores the voted class set; `physical` scores the raw dots and
+    /// is present only when the soft scorer is running.
     fn offer(
         &mut self,
         transform: GridTransform,
         master_row: i32,
         master_col: i32,
-        score: &ShiftScore,
+        logical: &ShiftScore,
+        physical: Option<&ShiftScore>,
         ctx: &ScanContext,
     ) {
-        let matched = score.matched;
-        let bit_error_rate = (ctx.total - matched) as f32 / ctx.total as f32;
+        let matched = logical.matched;
+        let bit_error_rate = (ctx.logical_total - matched) as f32 / ctx.logical_total as f32;
         let mean_confidence = if matched == 0 {
             0.0
         } else {
-            score.weight / matched as f32
+            logical.weight / matched as f32
         };
-        let weighted = score.weight / ctx.total_conf;
+        let weighted = logical.weight / ctx.logical_conf;
 
         // Hard ranking: BER-gated, then lexicographic (matched, weighted) with a
         // first-seen tie-break. Every shift that does not take the crown — and
@@ -210,7 +226,7 @@ impl FixedScan {
             self.hard_best = Some(DecodeOutcome {
                 alignment: transform.with_translation([master_col, master_row]),
                 edges_matched: matched,
-                edges_observed: ctx.total,
+                edges_observed: ctx.logical_total,
                 weighted_score: weighted,
                 bit_error_rate,
                 mean_confidence,
@@ -233,22 +249,27 @@ impl FixedScan {
             );
         }
 
-        if !ctx.soft {
+        let Some(physical) = physical else {
             return;
-        }
-        // Soft ranking: a plain two-slot update on the summed log-likelihood.
-        // Unlike the hard half there is no BER pre-gate — the soft winner is
-        // BER-checked once, at finalization.
+        };
+        // Soft ranking: a plain two-slot update on the summed log-likelihood
+        // over the raw dots. There is no BER pre-gate here — the soft winner is
+        // BER-checked once, against the logical bits, after the scan.
         let candidate = DecodeOutcome {
             alignment: transform.with_translation([master_col, master_row]),
-            edges_matched: matched,
-            edges_observed: ctx.total,
-            weighted_score: dequantize_ll(score.ll) / ctx.total as f32,
-            bit_error_rate,
-            mean_confidence,
+            edges_matched: physical.matched,
+            edges_observed: ctx.physical_total,
+            weighted_score: dequantize_ll(physical.ll) / ctx.physical_total as f32,
+            bit_error_rate: (ctx.physical_total - physical.matched) as f32
+                / ctx.physical_total as f32,
+            mean_confidence: if physical.matched == 0 {
+                0.0
+            } else {
+                physical.weight / physical.matched as f32
+            },
             master_origin_row: master_row,
             master_origin_col: master_col,
-            score_best: dequantize_ll(score.ll),
+            score_best: dequantize_ll(physical.ll),
             score_runner_up: None,
             score_margin: 0.0,
             runner_up_origin_row: None,
@@ -290,34 +311,59 @@ fn demote_into_runner(
 /// Returns `None` when the observation set is empty, carries no confidence, or
 /// admits no shift that keeps all of it on the board.
 #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
+/// `logical` is the voted class set the matched-count ranking is evaluated
+/// over; `physical` is the raw dot set, supplied together with the soft config
+/// when the soft scorer is running.
+///
+/// Both sets are scored in a **single** traversal of the shift rectangle, from
+/// two per-transform table builds, rather than by scanning the rectangle twice.
+///
+/// The shift rectangle itself is always derived from the *physical* extent when
+/// there is one. That constraint is geometric — "no observed dot may fall off
+/// the declared board" — and the class representatives are a thinned subset of
+/// the dots, so deriving it from them would admit placements that push real
+/// observations off the board.
 fn scan(
-    observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
+    physical: Option<(&[PuzzleBoardObservedEdge], &SoftLlConfig)>,
     board: BoardRect,
     transforms: &[GridTransform],
     max_bit_error_rate: f32,
-    soft: Option<&SoftLlConfig>,
 ) -> Option<FixedScan> {
-    if observed.is_empty() || board.rows < 2 || board.cols < 2 {
+    if logical.is_empty() || board.rows < 2 || board.cols < 2 {
         return None;
     }
-    let total_conf: f32 = observed.iter().map(|e| e.confidence).sum();
-    if total_conf <= 0.0 {
+    let logical_conf: f32 = logical.iter().map(|e| e.confidence).sum();
+    if logical_conf <= 0.0 {
         return None;
+    }
+    let soft_cfg = physical.map(|(_, cfg)| cfg);
+    let physical_edges = physical.map(|(edges, _)| edges);
+    if let Some(edges) = physical_edges {
+        if edges.is_empty() || edges.iter().map(|e| e.confidence).sum::<f32>() <= 0.0 {
+            return None;
+        }
     }
     let ctx = ScanContext {
-        total: observed.len(),
-        total_conf,
+        logical_total: logical.len(),
+        logical_conf,
+        physical_total: physical_edges.map_or(logical.len(), <[_]>::len),
         max_bit_error_rate,
-        soft: soft.is_some(),
+        soft: soft_cfg.is_some(),
     };
 
     let mut scan = FixedScan::new();
-    let mut tables = ClassTables::new(ctx.soft);
+    let mut logical_tables = ClassTables::new(false);
+    let mut physical_tables = ClassTables::new(true);
     let mut any_shift = false;
 
     for transform in transforms.iter().copied() {
-        let transformed = transform_observations(observed, &transform);
-        let extent = LookupExtent::of(&transformed);
+        let transformed = transform_observations(logical, &transform);
+        // Geometry comes from the dots when we have them (see fn docs).
+        let extent = match physical_edges {
+            Some(edges) => LookupExtent::of(&transform_observations(edges, &transform)),
+            None => LookupExtent::of(&transformed),
+        };
         let Some(((r_lo, r_hi), (c_lo, c_hi))) = board.shift_range(&extent) else {
             continue;
         };
@@ -333,7 +379,11 @@ fn scan(
             first_col,
             (c_hi - c_lo + 1) as usize,
         );
-        tables.build(&transformed, &range, soft);
+        logical_tables.build(&transformed, &range, None);
+        if let (Some(edges), Some(cfg)) = (physical_edges, soft_cfg) {
+            let transformed_physical = transform_observations(edges, &transform);
+            physical_tables.build(&transformed_physical, &range, Some(cfg));
+        }
 
         #[cfg(feature = "tracing")]
         let _origin_span = tracing::info_span!("origin_scan").entered();
@@ -341,8 +391,18 @@ fn scan(
             let master_row = board.origin_row + p_r;
             for p_c in c_lo..=c_hi {
                 let master_col = board.origin_col + p_c;
-                let score = score_at(&tables, master_row, master_col, ctx.soft);
-                scan.offer(transform, master_row, master_col, &score, &ctx);
+                let logical_score = score_at(&logical_tables, master_row, master_col, false);
+                let physical_score = ctx
+                    .soft
+                    .then(|| score_at(&physical_tables, master_row, master_col, true));
+                scan.offer(
+                    transform,
+                    master_row,
+                    master_col,
+                    &logical_score,
+                    physical_score.as_ref(),
+                    &ctx,
+                );
             }
         }
     }
@@ -360,45 +420,62 @@ fn scan(
 /// board recovers the same absolute master IDs for the corners it sees, so
 /// observations can be fused across cameras.
 pub(crate) fn decode_fixed_board(
+    logical: &[PuzzleBoardObservedEdge],
     observed: &[PuzzleBoardObservedEdge],
     board: BoardRect,
     transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let scan = scan(observed, board, transforms, max_bit_error_rate, None)?;
-    let winner = scan.hard_best?;
+    let voted = scan(logical, None, board, transforms, max_bit_error_rate)?;
+    let winner = voted.hard_best?;
+    // Cross-view sanity: the winner must also be the best-supported origin on
+    // the raw dots, so voting cannot silently *move* the answer.
+    let best = scan(observed, None, board, transforms, 1.0)?.hard_best?;
+    if (winner.master_origin_row, winner.master_origin_col)
+        != (best.master_origin_row, best.master_origin_col)
+        || winner.alignment.matrix() != best.alignment.matrix()
+    {
+        return None;
+    }
     let best_matched = winner.edges_matched as u32;
-    finalize_hard_winner(winner, best_matched, scan.hard_runner)
+    finalize_hard_winner(winner, logical.len(), best_matched, voted.hard_runner)
 }
 
 /// Soft-log-likelihood decoder over a declared board.
 ///
-/// One pass produces both rankings: the log-likelihood top-2 that selects the
-/// winner and applies the margin gate, and the matched-count top-2 that the
-/// uniqueness gate consumes.
+/// One pass produces both rankings: the log-likelihood top-2 over the raw dots,
+/// which selects the winner and applies the margin gate, and the matched-count
+/// top-2 over the voted `logical` bits, which the BER and uniqueness gates
+/// consume.
 pub(crate) fn decode_fixed_board_soft(
     observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
     board: BoardRect,
     transforms: &[GridTransform],
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let scan = scan(observed, board, transforms, max_bit_error_rate, Some(cfg))?;
-    let winner = super::soft::finalize_soft_winner(
-        scan.soft_best,
-        scan.soft_runner,
-        cfg,
+    let voted = scan(
+        logical,
+        Some((observed, cfg)),
+        board,
+        transforms,
         max_bit_error_rate,
     )?;
-    let hard_winner = scan.hard_best?;
+    let winner = super::soft::finalize_soft_winner(voted.soft_best, voted.soft_runner, cfg)?;
+    // Budget and uniqueness both come from the hard half of the same scan,
+    // which ran over the voted bits — see `super::hard::decode` for why that is
+    // the right domain for both.
+    let hard_winner = voted.hard_best?;
     apply_soft_uniqueness_gate(
         winner,
+        logical.len(),
         (
             hard_winner.edges_matched as u32,
             hard_winner.master_origin_row,
             hard_winner.master_origin_col,
             hard_winner.alignment.with_translation([0, 0]),
-            scan.hard_runner,
+            voted.hard_runner,
         ),
     )
 }

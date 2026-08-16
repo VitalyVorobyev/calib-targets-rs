@@ -5,7 +5,7 @@
   "pixel_frame": "image pixels, origin top-left, x right, y down; pixel centers at integer coordinates",
   "scenarios": [
     {
-      "name": "author_like_oblique",
+      "name": "oblique",
       "seed": 49153,
       "rows": 20,
       "cols": 20,
@@ -40,7 +40,7 @@
       "brightness": 2.0,
       "contrast": 1.0,
       "jpeg_quality": 92,
-      "image": "author_like_oblique.png",
+      "image": "oblique.png",
       "corners": [
         {
           "local_row": 0,
@@ -3573,7 +3573,7 @@
       ]
     },
     {
-      "name": "author_like_foreshortened",
+      "name": "foreshortened",
       "seed": 49154,
       "rows": 20,
       "cols": 20,
@@ -3608,7 +3608,7 @@
       "brightness": 1.0,
       "contrast": 0.96,
       "jpeg_quality": 90,
-      "image": "author_like_foreshortened.png",
+      "image": "foreshortened.png",
       "corners": [
         {
           "local_row": 0,

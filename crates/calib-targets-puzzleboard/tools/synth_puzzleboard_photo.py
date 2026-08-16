@@ -29,7 +29,7 @@ import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MAP_DIR = REPO_ROOT / "crates/calib-targets-puzzleboard/src/data"
-DEFAULT_OUT = REPO_ROOT / "testdata/puzzleboard_synthetic_author_like"
+DEFAULT_OUT = REPO_ROOT / "testdata/puzzleboard"
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,7 @@ class Scenario:
 
 SCENARIOS = [
     Scenario(
-        name="author_like_oblique",
+        name="oblique",
         seed=0xC001,
         rows=20,
         cols=20,
@@ -76,7 +76,7 @@ SCENARIOS = [
         jpeg_quality=92,
     ),
     Scenario(
-        name="author_like_foreshortened",
+        name="foreshortened",
         seed=0xC002,
         rows=20,
         cols=20,

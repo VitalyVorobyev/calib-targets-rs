@@ -3,7 +3,7 @@
 //!
 //! Public counterpart to the `dataset_decode` bench (which needs the private
 //! regression set). The fixtures under
-//! `testdata/puzzleboard_synthetic_author_like/` are deterministic renders
+//! `testdata/puzzleboard/` are deterministic renders
 //! from `map_a.bin` / `map_b.bin`, warped through perspective + radial
 //! distortion + camera effects (blur, vignette, noise, JPEG). They exercise the
 //! full corner → chessboard → decode path on realistic photos that decode
@@ -54,8 +54,7 @@ struct Scenario {
 }
 
 fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../testdata/puzzleboard_synthetic_author_like")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../testdata/puzzleboard")
 }
 
 fn load_manifest() -> Option<Manifest> {

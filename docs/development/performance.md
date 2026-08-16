@@ -27,7 +27,7 @@ marker decode**.
 
 The published report under `.github/pages/performance/` is refreshed by
 `scripts/gen-perf-data.sh`, which also regenerates the four committed preview
-PNGs (`img/{small,mid,large,author_like_oblique}.png`) as **detection
+PNGs (`img/{small,mid,large,oblique}.png`) as **detection
 overlays** — grid corners + edges, plus decoded ArUco marker quads on the
 ChArUco cards — drawn by `full_stage_timing --overlay-dir` from the same
 detection the card's numbers come from (`large.png` ships at half size). The OpenCV baseline comparison block is a
@@ -73,7 +73,7 @@ Per-stage p50 on the four public report frames (`full_stage_timing`, M4 Pro,
 |---|---|---:|---:|---:|---:|
 | `mid.png` (chessboard) | 1024×576 | **0.86** | 0.33 | — | 1.19 |
 | `small.png` (ChArUco) | 720×540 | 0.89 | 0.70 | **0.95** | 2.53 |
-| `author_like_oblique.png` (PuzzleBoard) | 640×480 | 0.68 | **1.62** | 1.03 | 3.33 |
+| `oblique.png` (PuzzleBoard) | 640×480 | 0.68 | **1.62** | 1.03 | 3.33 |
 | `large.png` (ChArUco) | 2048×1536 | **4.51** | 3.39 | 2.23 | 10.13 |
 
 Corner detection leads on the chessboard and the large ChArUco frame. On the
@@ -140,7 +140,7 @@ stages (Tier 2 decode, Tier 3 grid build) now matter more.
   transforms to four roughly **halves** the isolated transform-search cost, but
   the published per-stage `decode_ms` also includes edge-dot sampling, which the
   transform count doesn't touch — so the measured drop on the report fixture is
-  well short of 2×: 1.26 → 1.03 ms on `author_like_oblique.png` (≈18 %).
+  well short of 2×: 1.26 → 1.03 ms on `oblique.png` (≈18 %).
 - **ChArUco board match — minor on the large frame, competitive on the small one
   (PR #71 closed the old bottleneck).** Precomputing a per-cell
   bit-log-likelihood table removed the `O(cells × markers × 4 × bits²)`
@@ -191,7 +191,7 @@ owned hot spot — but it lives in determinism-contract-laden, false-positive-ga
 code, so it is *not* a safe place to micro-optimize (see backlog item 4).
 
 The same hot spot shows on the **public report PuzzleBoard frame** at a fraction
-of the resolution. `author_like_oblique.png` (640×480, 361 corners, *single
+of the resolution. `oblique.png` (640×480, 361 corners, *single
 component*): grid build ≈1.73 ms, of which `ordering` alone is ≈0.91 ms (**52 %**)
 and `recovery` ≈0.10 ms. The smaller `example2.png` (same 640×480, 180 corners):
 grid build ≈1.07 ms, `ordering` 0.48 ms (**45 %**), `recovery` 0.20 ms (19 %). So

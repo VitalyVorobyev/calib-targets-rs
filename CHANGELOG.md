@@ -82,6 +82,40 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ### Added
 
+- **PuzzleBoard decodes far noisier fragments, by using the period-3
+  redundancy the pattern was designed around.** Both code maps repeat every
+  three rows or columns, so a fragment sampling `~2w²` dots reads only `~6w`
+  distinct master bits, each of them several times. The decoder now reduces the
+  observations to those bits by confidence-weighted majority vote before the
+  accept/reject gates — which is what the pattern's authors describe: *"as each
+  bit is repeated every three rows or columns, its correct value can be derived
+  by majority voting when more rows and columns are visible"*.
+
+  The reduction is pure topology: the partition is invariant to the board's
+  orientation and to where the fragment sits, so it runs before any pose
+  hypothesis exists. A class whose members split evenly is treated as an
+  **erasure** rather than guessed, and a decode is refused outright if too few
+  distinct bits survive to place it uniquely
+  (`PuzzleBoardDetectError::NotEnoughLogicalBits`).
+
+  Measured on synthetic fragments: at 15 % dot corruption a 12×12 fragment
+  decodes essentially always, where before it never did. The gain runs out
+  where the code says it must — the nearest wrong origin already matches
+  84–93 % of a *clean* fragment, because a ±3 origin shift leaves an entire edge
+  family bit-identical, so the same redundancy that enables voting also
+  manufactures the aliases.
+
+- **`PuzzleBoardSpec::master(cell_size)`** — declare the whole master pattern
+  from the cell size alone, instead of spelling out `501, 501`. This is the
+  right default for detection: a PuzzleBoard identifies itself, so there is no
+  need to know which sub-rectangle was printed.
+
+- **PuzzleBoard decode quality gained three fields** — `logical_bits`,
+  `logical_bit_error_rate` and `dot_dissent_rate`. The last is a
+  hypothesis-free read-quality meter: it is computed before any pose is
+  hypothesised, so it is meaningful even when the decode is wrong, and it rises
+  sharply when the grid labelling is bad rather than merely noisy.
+
 - **Five matching entry points per compound target on the facade** —
   `detect_t`, `detect_t_with_corners`, `diagnose_t`,
   `diagnose_t_with_corners` and `detect_t_best`, for ChArUco, PuzzleBoard and
@@ -106,6 +140,14 @@ see [Older releases](#older-releases) at the bottom for the index.
   grid-build axis only; no circle-scoring or matching constants are varied.
 
 ### Fixed
+
+- **PuzzleBoard's two window gates disagreed on their unit, and the stricter
+  one silently won.** `min_window` is a span in *corners*, and the span gate
+  read it that way, but the edge-count pre-filter read it as a count of
+  *squares* — demanding 84 interior edges where a 7-corner window yields 60.
+  Fragments spanning exactly the documented minimum were rejected before they
+  were ever decoded. The floor is now the interior edge count of the span the
+  gate actually requires.
 
 - **Python's parameter defaults matched Rust's in name only.** The Python
   package mirrors the Rust params structs as dataclasses, and their literal

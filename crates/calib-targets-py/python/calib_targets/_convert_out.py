@@ -807,31 +807,33 @@ def puzzleboard_decode_info_to_dict(value: PuzzleBoardDecodeInfo) -> dict[str, A
         "edges_matched": int(value.edges_matched),
         "mean_confidence": float(value.mean_confidence),
         "bit_error_rate": float(value.bit_error_rate),
+        "logical_bits": int(value.logical_bits),
+        "logical_bit_error_rate": float(value.logical_bit_error_rate),
+        "dot_dissent_rate": float(value.dot_dissent_rate),
         "master_origin_row": int(value.master_origin_row),
         "master_origin_col": int(value.master_origin_col),
     }
+
+
+_PUZZLEBOARD_DECODE_INFO_KEYS = {
+    "edges_observed",
+    "edges_matched",
+    "mean_confidence",
+    "bit_error_rate",
+    "logical_bits",
+    "logical_bit_error_rate",
+    "dot_dissent_rate",
+    "master_origin_row",
+    "master_origin_col",
+}
 
 
 def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDecodeInfo:
     obj = _ensure_mapping(data, "PuzzleBoardDecodeInfo")
     _validate_keys(
         obj,
-        allowed={
-            "edges_observed",
-            "edges_matched",
-            "mean_confidence",
-            "bit_error_rate",
-            "master_origin_row",
-            "master_origin_col",
-        },
-        required={
-            "edges_observed",
-            "edges_matched",
-            "mean_confidence",
-            "bit_error_rate",
-            "master_origin_row",
-            "master_origin_col",
-        },
+        allowed=_PUZZLEBOARD_DECODE_INFO_KEYS,
+        required=_PUZZLEBOARD_DECODE_INFO_KEYS,
         ctx="PuzzleBoardDecodeInfo",
     )
     return PuzzleBoardDecodeInfo(
@@ -841,6 +843,13 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
             obj["mean_confidence"], "PuzzleBoardDecodeInfo.mean_confidence"
         ),
         bit_error_rate=_to_float(obj["bit_error_rate"], "PuzzleBoardDecodeInfo.bit_error_rate"),
+        logical_bits=_to_int(obj["logical_bits"], "PuzzleBoardDecodeInfo.logical_bits"),
+        logical_bit_error_rate=_to_float(
+            obj["logical_bit_error_rate"], "PuzzleBoardDecodeInfo.logical_bit_error_rate"
+        ),
+        dot_dissent_rate=_to_float(
+            obj["dot_dissent_rate"], "PuzzleBoardDecodeInfo.dot_dissent_rate"
+        ),
         master_origin_row=_to_int(
             obj["master_origin_row"], "PuzzleBoardDecodeInfo.master_origin_row"
         ),

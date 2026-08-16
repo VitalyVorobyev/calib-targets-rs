@@ -500,6 +500,18 @@ class PuzzleBoardDecodeInfo:
     edges_matched: int
     mean_confidence: float
     bit_error_rate: float
+    #: Distinct master bits the fragment reads. Both code maps repeat every
+    #: three rows or columns, so this is ``~6w`` against ``~2w**2`` sampled
+    #: dots; ``edges_observed / logical_bits`` is the redundancy available.
+    logical_bits: int
+    #: Hamming error rate over :attr:`logical_bits`, after the period-3
+    #: replicas have been majority-voted. This is the rate the error budget
+    #: gates on.
+    logical_bit_error_rate: float
+    #: Fraction of confidence mass that lost its period-3 class vote — a
+    #: read-quality meter computed before any pose hypothesis, so it is
+    #: meaningful even when the decode is wrong. Near zero on a clean board.
+    dot_dissent_rate: float
     master_origin_row: int
     master_origin_col: int
 

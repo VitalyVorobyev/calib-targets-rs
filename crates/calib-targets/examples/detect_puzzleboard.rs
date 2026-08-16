@@ -14,10 +14,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(path)?.decode()?.to_luma8();
 
     // A PuzzleBoard identifies itself: the decoder recovers where the visible
-    // fragment sits on the 501×501 master pattern. So declare the whole master
-    // rather than guessing which sub-board was printed — any real board is a
-    // cut from it, and the decode reports the origin it actually found.
-    let spec = PuzzleBoardSpec::new(501, 501, 1.0)?;
+    // fragment sits on the master pattern. So declare the whole master rather
+    // than guessing which sub-board was printed — any real board is a cut from
+    // it, and the decode reports the origin it actually found. All the board
+    // spec still has to carry is the physical size of one square.
+    let spec = PuzzleBoardSpec::master(1.0)?;
     let params = PuzzleBoardParams::for_board(spec);
 
     match detect::detect_puzzleboard(&img, &params) {

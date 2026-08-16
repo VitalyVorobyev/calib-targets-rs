@@ -1,5 +1,6 @@
 //! PuzzleBoard detection pipeline.
 
+mod consensus;
 mod decode;
 mod edge_sampling;
 mod error;

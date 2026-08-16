@@ -89,10 +89,7 @@ enum ScoringArg {
 )]
 struct Args {
     /// Input image (public synthetic fixture).
-    #[arg(
-        long,
-        default_value = "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png"
-    )]
+    #[arg(long, default_value = "testdata/puzzleboard/oblique.png")]
     image: PathBuf,
     /// Board rows in squares.
     #[arg(long, default_value_t = 20)]

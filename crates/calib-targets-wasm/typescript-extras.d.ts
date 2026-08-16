@@ -185,6 +185,23 @@ export interface PuzzleBoardDecodeInfo {
   mean_confidence: number;
   /** Hamming error rate across all observed bits after alignment. */
   bit_error_rate: number;
+  /**
+   * Distinct master bits the fragment reads. Both code maps repeat every three
+   * rows or columns, so this is `~6w` against `~2w²` sampled dots;
+   * `edges_observed / logical_bits` is the redundancy available.
+   */
+  logical_bits: number;
+  /**
+   * Hamming error rate over `logical_bits`, after the period-3 replicas have
+   * been majority-voted. This is the rate the error budget gates on.
+   */
+  logical_bit_error_rate: number;
+  /**
+   * Fraction of confidence mass that lost its period-3 class vote — a
+   * read-quality meter computed before any pose hypothesis, so it is meaningful
+   * even when the decode is wrong. Near zero on a clean board.
+   */
+  dot_dissent_rate: number;
   /** Absolute master-board origin of local `(0, 0)`. */
   master_origin_row: number;
   /** Absolute master-board origin of local `(0, 0)`. */

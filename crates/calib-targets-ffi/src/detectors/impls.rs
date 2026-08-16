@@ -375,6 +375,9 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         edges_matched: detection.decode.edges_matched,
         mean_bit_confidence: detection.decode.mean_confidence,
         bit_error_rate: detection.decode.bit_error_rate,
+        logical_bits: detection.decode.logical_bits,
+        logical_bit_error_rate: detection.decode.logical_bit_error_rate,
+        dot_dissent_rate: detection.decode.dot_dissent_rate,
         master_origin_row: detection.decode.master_origin_row,
         master_origin_col: detection.decode.master_origin_col,
     };

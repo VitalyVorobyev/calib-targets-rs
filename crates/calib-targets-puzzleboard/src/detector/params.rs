@@ -136,39 +136,36 @@ impl PuzzleBoardSymmetryMode {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PuzzleBoardDecodeConfig {
-    /// Minimum window size (in squares) required to attempt a decode.
+    /// Minimum fragment span, in **corners** per side, required to attempt a
+    /// decode. A span of `s` corners encloses `s - 1` squares.
     ///
-    /// Two separate effects push this above the paper's 4 × 4 figure, and both
-    /// are measured rather than assumed.
+    /// The default of 7 corners (6 × 6 squares) is exactly the paper's 4 × 4
+    /// claim, restated in the units our sampler works in. Two conversions
+    /// separate the two numbers, and neither is a safety margin:
     ///
-    /// **Orientation.** The 4 × 4 window is unique across master *positions* at
-    /// a fixed orientation. A detected fragment carries no cue for how the board
-    /// was printed, so the decoder searches candidate orientations too — by
-    /// default the four rotations
-    /// ([`PuzzleBoardSymmetryMode::Rotations`]), and all eight dihedral
-    /// transforms under [`PuzzleBoardSymmetryMode::RotationsAndReflections`] —
-    /// and over `orientation × position` a small window need not be unique. The
-    /// quoted figures below were measured under the *eight*-transform search:
-    /// on clean, noise-free windows at seven planted origins, every 4 × 4 had a
-    /// perfect alias under some other transform; 5 × 5 decoded at 5/7; 6 × 6 and
-    /// above always decoded (`decode::tests::window_uniqueness_report`, which
-    /// now reports both searches side by side). Restricting the search to the
-    /// four rotations removes aliases rather than adding them, so those figures
-    /// are an upper bound on the aliasing the default search sees; the default
-    /// `min_window` is not re-derived from the smaller search here.
+    /// **Interior readout.** A dot is read against the two squares flanking it,
+    /// so a fragment's outermost ring of edges is unreadable — we see only the
+    /// interior `2(s-1)(s-2)` edges where the paper counts all `2w(w+1)` edges
+    /// bounding its `w × w` block.
     ///
-    /// **Noise.** The master edge code has minimum Hamming distance `1` at a
-    /// 4 × 4 window — zero error-correction — so one corrupted bit can turn a
-    /// fragment into a *perfect* read of a different master location. The
-    /// minimum distance grows with window size; a 300k-trial sweep (random
-    /// origins × error patterns up to the BER budget) puts the smallest window
-    /// with zero false-accepts under the uniqueness gate at **7 × 7 (84 interior
-    /// edges)**, at both 30 % and 40 % BER.
+    /// **Information, not edge count.** Both maps repeat every three rows or
+    /// columns, so edges are not independent bits. The paper says as much of its
+    /// own 4 × 4 fragment: 40 edges, but *"only 30 bits of information, as the
+    /// remaining bits are repetitions"*. An interior readout at span `s` carries
+    /// `6(s-2)` distinct bits, so `s = 7` carries **30** — the same information
+    /// the paper's 4 × 4 window carries, one ring further out.
     ///
-    /// The default of 7 therefore clears the clean-uniqueness threshold of 6
-    /// with one square of noise margin (bounded-distance decoding). Fragments
-    /// below it become detection *misses* rather than a risked wrong absolute
-    /// label.
+    /// Verified exhaustively over all 251 001 master positions
+    /// (`research/puzzleboard-rings`): under the default rotations-only search a
+    /// 7-corner span is unique at every position, and a 6-corner span (24 bits)
+    /// leaves 3 330 positions ambiguous. Uniqueness is information-theoretic, so
+    /// the period-3 consensus stage cannot lower this floor — voting corrects
+    /// errors, it does not manufacture bits. Under
+    /// [`RotationsAndReflections`](PuzzleBoardSymmetryMode::RotationsAndReflections)
+    /// the exhaustive floor is 9, and 7 leaves 504 positions ambiguous.
+    ///
+    /// Fragments below the floor become detection *misses* rather than a risked
+    /// wrong absolute label.
     #[serde(default = "default_min_window")]
     pub min_window: u32,
     /// Per-bit confidence floor — bits below this are treated as unknown.
@@ -176,7 +173,15 @@ pub struct PuzzleBoardDecodeConfig {
     pub min_bit_confidence: f32,
     /// Maximum fraction of bits allowed to be wrong after majority voting.
     ///
-    /// The paper allows up to 40 % (401 / 1002). Default is 0.3.
+    /// Applied to the **voted** bits — one per distinct master bit the fragment
+    /// reads — not to the raw dots, which is what makes the paper's budget
+    /// meaningful: *"up to 401/1002 ≈ 40 % of all bits are allowed to be decoded
+    /// incorrectly **after** averaging over all repetitions"*. Default is 0.3.
+    ///
+    /// With
+    /// [`edge_consensus`](PuzzleBoardAdvancedTuning::edge_consensus) off, every
+    /// dot counts as its own bit and this reverts to a raw-dot rate, which is
+    /// strictly stricter.
     #[serde(default = "default_max_bit_error_rate")]
     pub max_bit_error_rate: f32,
     /// If true, attempt to decode each connected component independently.
@@ -215,13 +220,12 @@ pub struct PuzzleBoardDecodeConfig {
     pub advanced: Option<Box<PuzzleBoardAdvancedTuning>>,
 }
 
-/// Advanced, unstable soft-log-likelihood tuning knobs for the PuzzleBoard
-/// decoder.
+/// Advanced, unstable decode-internals knobs for the PuzzleBoard decoder.
 ///
-/// These knobs govern the per-bit soft-scoring and the hypothesis-acceptance
-/// margin used under [`PuzzleBoardScoringMode::SoftLogLikelihood`]. They are
-/// split out of [`PuzzleBoardDecodeConfig`] because they are
-/// decode-scorer-implementation tuning rather than the small stable decode
+/// These govern the per-bit soft scoring, the hypothesis-acceptance margin used
+/// under [`PuzzleBoardScoringMode::SoftLogLikelihood`], and the period-3
+/// consensus stage. They are split out of [`PuzzleBoardDecodeConfig`] because
+/// they are decoder-implementation tuning rather than the small stable decode
 /// core a consumer has a basis to set.
 ///
 /// **Unstable:** every field here is **NOT covered by semver** and may be
@@ -245,8 +249,32 @@ pub struct PuzzleBoardAdvancedTuning {
     /// Minimum per-observation score gap between the winning hypothesis and
     /// the runner-up. Detections below this gate are rejected with
     /// [`crate::detector::error::PuzzleBoardDetectError::DecodeFailed`].
+    ///
+    /// Normalised by the **physical** dot count, not by the logical bit count
+    /// the other gates use — see
+    /// [`edge_consensus`](Self::edge_consensus).
     #[serde(default = "default_alignment_min_margin")]
     pub alignment_min_margin: f32,
+    /// Collapse the period-3 replicas to one entry per distinct master bit
+    /// before the accept/reject gates. Default `true`.
+    ///
+    /// Both code maps repeat every three rows or columns, so a fragment
+    /// sampling `~2w²` dots reads only `~6w` distinct bits. With this on:
+    ///
+    /// - the hard scorer decodes the **voted** bits, gaining the majority-vote
+    ///   error correction the pattern was designed to provide;
+    /// - the soft scorer still sums per-dot log-likelihoods (already the
+    ///   optimal way to combine replicas, since class members predict the same
+    ///   bit under every hypothesis), but its BER and uniqueness gates are
+    ///   evaluated over the voted bits, which is the code length those
+    ///   bounded-distance arguments are actually about.
+    ///
+    /// Turning it off restores the pre-0.13 behaviour, in which every gate
+    /// treated each dot as an independent code bit. That is strictly
+    /// pessimistic rather than unsafe, and the switch exists so the difference
+    /// can be measured; there is no reason to ship with it off.
+    #[serde(default = "default_edge_consensus")]
+    pub edge_consensus: bool,
 }
 
 impl Default for PuzzleBoardAdvancedTuning {
@@ -255,6 +283,7 @@ impl Default for PuzzleBoardAdvancedTuning {
             bit_likelihood_slope: default_bit_likelihood_slope(),
             per_bit_floor: default_per_bit_floor(),
             alignment_min_margin: default_alignment_min_margin(),
+            edge_consensus: default_edge_consensus(),
         }
     }
 }
@@ -293,6 +322,9 @@ fn default_per_bit_floor() -> f32 {
 }
 fn default_alignment_min_margin() -> f32 {
     0.02
+}
+fn default_edge_consensus() -> bool {
+    true
 }
 
 impl Default for PuzzleBoardDecodeConfig {
@@ -342,10 +374,41 @@ impl PuzzleBoardDecodeConfig {
 
 /// Minimum number of observed interior edges required to attempt decoding.
 ///
-/// A decode window of `w × w` squares produces `2w(w-1)` interior edges.
+/// `min_window` is a span in **corners**
+/// ([`PuzzleBoardDecodeConfig::min_window`]), matching the span gate in
+/// `PuzzleBoardDetector::decode_component`. A span of `s` corners encloses
+/// `s - 1` squares and therefore yields `2(s-1)(s-2)` interior edges — 60 at
+/// the default `s = 7`.
+///
+/// This used to read `min_window` as a count of *squares* (`2s(s-1)`, 84 at
+/// `s = 7`), which is the floor for a span of 8. The two gates were a ring
+/// apart, and the stricter one silently won: fragments spanning exactly the
+/// documented minimum were rejected before they were ever decoded. 60 edges is
+/// the span-7 floor that `research/puzzleboard-rings` verifies as uniquely
+/// decodable at every one of the 251 001 master positions.
 pub(crate) fn required_edges(min_window: u32) -> usize {
-    let w = min_window.max(3) as usize;
-    2 * w * (w - 1)
+    let s = min_window.max(3) as usize;
+    2 * (s - 1) * (s - 2)
+}
+
+/// Minimum number of *distinct* master bits a decode may be judged over.
+///
+/// Both code maps repeat every three rows or columns, so a `s`-corner interior
+/// readout spans `3` residue classes on each family's short axis and `s - 2`
+/// positions on the other: `6(s - 2)` distinct bits, **30** at the default
+/// `s = 7`. That is the same information the paper attributes to its 4 × 4
+/// fragment ("only 30 bits of information, as the remaining bits are
+/// repetitions") and the count `research/puzzleboard-rings` verifies as uniquely
+/// decodable at all 251 001 master positions.
+///
+/// [`required_edges`] bounds the *dots* a fragment must sample; this bounds the
+/// *bits* they must resolve. The two come apart once dots disagree, because a
+/// class that splits evenly is erased rather than guessed — so a fragment can
+/// clear the edge floor and the corner span and still resolve far too little
+/// code to be placed uniquely.
+pub(crate) fn required_logical_bits(min_window: u32) -> usize {
+    let s = min_window.max(3) as usize;
+    6 * (s - 2)
 }
 
 /// Return an error if fewer than `needed` edges were observed.
@@ -363,16 +426,35 @@ pub(crate) fn ensure_min_edges(
 mod tests {
     use super::*;
 
+    /// `min_window` is a corner span, so the edge floor is the *interior* edge
+    /// count of the `s-1` squares it encloses.
     #[test]
-    fn required_edges_scales_with_window() {
-        assert_eq!(required_edges(3), 12);
-        assert_eq!(required_edges(4), 24);
-        assert_eq!(required_edges(5), 40);
+    fn required_edges_counts_interior_edges_of_a_corner_span() {
+        assert_eq!(required_edges(4), 12); // 3 squares
+        assert_eq!(required_edges(5), 24); // 4 squares
+        assert_eq!(required_edges(6), 40); // 5 squares
+        assert_eq!(required_edges(7), 60); // 6 squares — the default
+        assert_eq!(required_edges(8), 84); // 7 squares
+    }
+
+    /// The edge floor and the corner-span gate must agree on the unit, or the
+    /// stricter one silently overrides the documented minimum.
+    #[test]
+    fn edge_floor_matches_what_a_minimum_span_actually_yields() {
+        for span in 4u32..=12 {
+            let squares = (span - 1) as usize;
+            let interior = 2 * squares * (squares - 1);
+            assert_eq!(
+                required_edges(span),
+                interior,
+                "span {span} corners encloses {squares} squares"
+            );
+        }
     }
 
     #[test]
     fn min_edges_check_reports_filtered_count() {
-        let err = ensure_min_edges(7, required_edges(4)).expect_err("too few edges");
+        let err = ensure_min_edges(7, required_edges(5)).expect_err("too few edges");
         assert!(matches!(
             err,
             PuzzleBoardDetectError::NotEnoughEdges {

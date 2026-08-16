@@ -11,7 +11,7 @@
 //! `.github/pages/performance/data.json`, which is published, so every input
 //! must stay public. Two cards are ChArUco (`small.png`, `large.png`), one is a
 //! plain chessboard (`mid.png`), and one is a PuzzleBoard
-//! (`author_like_oblique.png` — a public photo-realistic synthetic render from
+//! (`oblique.png` — a public photo-realistic synthetic render from
 //! the canonical 501×501 maps that decodes uniquely against them, so the card
 //! exercises a real corner → grid → decode path).
 //!
@@ -164,7 +164,7 @@ fn cards() -> Vec<Card> {
                 min_marker_inliers: 64,
             }),
         },
-        // author_like_oblique.png — a PUBLIC photo-realistic synthetic
+        // oblique.png — a PUBLIC photo-realistic synthetic
         // PuzzleBoard. It is a deterministic render from the canonical 501×501
         // maps (perspective + radial distortion + blur/noise/vignette/JPEG), so
         // unlike the author example photos it decodes uniquely against the
@@ -175,7 +175,7 @@ fn cards() -> Vec<Card> {
         // manifest and the `synthetic_author_like` / `synthetic_decode`
         // regressions.
         Card {
-            file: "testdata/puzzleboard_synthetic_author_like/author_like_oblique.png",
+            file: "testdata/puzzleboard/oblique.png",
             preview_scale: 1.0,
             kind: Kind::PuzzleBoard(PuzzleBoardSpecCard {
                 rows: 20,
