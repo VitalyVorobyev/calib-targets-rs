@@ -39,6 +39,11 @@ pub struct ChessboardInitArgs {
     /// Square side length in millimeters.
     #[arg(long)]
     pub square_size_mm: f64,
+    /// White inset square drawn centred inside every black square, as a
+    /// fraction of the square side, in `[0, 1)`. Omitted or `0` means no
+    /// inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -71,6 +76,11 @@ pub struct CharucoInitArgs {
     /// Marker border width in bit cells.
     #[arg(long, default_value_t = 1)]
     pub border_bits: usize,
+    /// White inset square drawn centred inside every plain black checker
+    /// square (never inside an ArUco marker's bit cells), as a fraction of
+    /// the square side, in `[0, 1)`. Omitted or `0` means no inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -126,6 +136,11 @@ pub struct MarkerBoardInitArgs {
     /// Marker circles as `i,j,polarity`; repeat exactly three times when overriding defaults.
     #[arg(long = "circle", value_name = "I,J,POLARITY")]
     pub circles: Vec<String>,
+    /// White inset square drawn centred inside every black checkerboard
+    /// square, as a fraction of the square side, in `[0, 1)`. Omitted or
+    /// `0` means no inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -142,13 +157,14 @@ pub fn run(cmd: InitCommand) -> Result<(), CliError> {
 }
 
 fn run_chessboard(args: ChessboardInitArgs) -> Result<(), CliError> {
-    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec::new(
-        args.inner_rows,
-        args.inner_cols,
-        args.square_size_mm,
-    )))
-    .with_page(build_page_spec(&args.page)?)
-    .with_render(build_render_options(&args.render));
+    let mut target =
+        ChessboardTargetSpec::new(args.inner_rows, args.inner_cols, args.square_size_mm);
+    if let Some(rel) = args.inner_square_rel {
+        target = target.with_inner_square_rel(rel);
+    }
+    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(target))
+        .with_page(build_page_spec(&args.page)?)
+        .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)
 }
 
@@ -158,7 +174,7 @@ fn run_charuco(args: CharucoInitArgs) -> Result<(), CliError> {
     let marker_layout = match args.marker_layout {
         MarkerLayoutArg::OpencvCharuco => calib_targets_charuco::MarkerLayout::OpenCvCharuco,
     };
-    let target = CharucoTargetSpec::new(
+    let mut target = CharucoTargetSpec::new(
         args.rows,
         args.cols,
         args.square_size_mm,
@@ -167,6 +183,9 @@ fn run_charuco(args: CharucoInitArgs) -> Result<(), CliError> {
     )
     .with_marker_layout(marker_layout)
     .with_border_bits(args.border_bits);
+    if let Some(rel) = args.inner_square_rel {
+        target = target.with_inner_square_rel(rel);
+    }
     let doc = PrintableTargetDocument::new(TargetSpec::Charuco(target))
         .with_page(build_page_spec(&args.page)?)
         .with_render(build_render_options(&args.render));
@@ -189,13 +208,16 @@ fn run_marker_board(args: MarkerBoardInitArgs) -> Result<(), CliError> {
     } else {
         parse_circles(&args.circles)?
     };
-    let target = MarkerBoardTargetSpec::new(
+    let mut target = MarkerBoardTargetSpec::new(
         args.inner_rows,
         args.inner_cols,
         args.square_size_mm,
         circles,
     )
     .with_circle_diameter_rel(args.circle_diameter_rel);
+    if let Some(rel) = args.inner_square_rel {
+        target = target.with_inner_square_rel(rel);
+    }
     let doc = PrintableTargetDocument::new(TargetSpec::MarkerBoard(target))
         .with_page(build_page_spec(&args.page)?)
         .with_render(build_render_options(&args.render));

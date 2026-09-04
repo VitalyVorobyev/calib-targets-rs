@@ -3,7 +3,7 @@
 use calib_targets_marker::{CirclePolarity, MarkerBoardSpec};
 use serde::{Deserialize, Serialize};
 
-use super::chessboard::validate_inner_corner_grid;
+use super::chessboard::{validate_inner_corner_grid, validate_inner_square_rel};
 use super::error::PrintableTargetError;
 
 pub(super) fn default_circle_diameter_rel() -> f64 {
@@ -56,6 +56,12 @@ pub struct MarkerBoardTargetSpec {
     /// Circle diameter as a fraction of the square side.
     #[serde(default = "default_circle_diameter_rel")]
     pub circle_diameter_rel: f64,
+    /// White inset square drawn centred inside every black checkerboard
+    /// square, as a fraction of the square side, in `[0.0, 1.0)`. `None`
+    /// (the default) and `Some(0.0)` both mean no inset. Does not move any
+    /// corner intersection — see [`crate::TargetSpec::resolved_points`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_square_rel: Option<f64>,
 }
 
 impl MarkerBoardTargetSpec {
@@ -75,6 +81,7 @@ impl MarkerBoardTargetSpec {
             square_size_mm,
             circles,
             circle_diameter_rel: default_circle_diameter_rel(),
+            inner_square_rel: None,
         }
     }
 
@@ -82,6 +89,14 @@ impl MarkerBoardTargetSpec {
     #[must_use]
     pub fn with_circle_diameter_rel(mut self, circle_diameter_rel: f64) -> Self {
         self.circle_diameter_rel = circle_diameter_rel;
+        self
+    }
+
+    /// Draw a white square inset, centred inside every black checkerboard
+    /// square, whose side is `rel` times the square side.
+    #[must_use]
+    pub fn with_inner_square_rel(mut self, rel: f64) -> Self {
+        self.inner_square_rel = Some(rel);
         self
     }
 
@@ -128,6 +143,7 @@ impl MarkerBoardTargetSpec {
                 try_printable_circle_from_detector_spec(circle2)?,
             ],
             circle_diameter_rel: default_circle_diameter_rel(),
+            inner_square_rel: None,
         })
     }
 }
@@ -136,6 +152,7 @@ pub(crate) fn validate_marker_board_spec(
     spec: &MarkerBoardTargetSpec,
 ) -> Result<(), PrintableTargetError> {
     validate_inner_corner_grid(spec.inner_rows, spec.inner_cols, spec.square_size_mm)?;
+    validate_inner_square_rel(spec.inner_square_rel)?;
     if !spec.circle_diameter_rel.is_finite()
         || spec.circle_diameter_rel <= 0.0
         || spec.circle_diameter_rel > 1.0

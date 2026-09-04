@@ -4,7 +4,7 @@ use calib_targets_aruco::Dictionary;
 use calib_targets_charuco::{CharucoBoard, CharucoBoardSpec, MarkerLayout};
 use serde::{Deserialize, Serialize};
 
-use super::chessboard::validate_square_size;
+use super::chessboard::{validate_inner_square_rel, validate_square_size};
 use super::error::PrintableTargetError;
 
 pub(super) fn default_border_bits() -> usize {
@@ -31,6 +31,13 @@ pub struct CharucoTargetSpec {
     /// Marker border width in cells.
     #[serde(default = "default_border_bits")]
     pub border_bits: usize,
+    /// White inset square drawn centred inside every plain black checker
+    /// square (never inside an ArUco marker's bit cells), as a fraction of
+    /// the square side, in `[0.0, 1.0)`. `None` (the default) and
+    /// `Some(0.0)` both mean no inset. Does not move any corner
+    /// intersection — see [`crate::TargetSpec::resolved_points`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inner_square_rel: Option<f64>,
 }
 
 impl PartialEq for CharucoTargetSpec {
@@ -42,6 +49,7 @@ impl PartialEq for CharucoTargetSpec {
             && self.dictionary.name() == other.dictionary.name()
             && self.marker_layout == other.marker_layout
             && self.border_bits == other.border_bits
+            && self.inner_square_rel == other.inner_square_rel
     }
 }
 
@@ -65,6 +73,7 @@ impl CharucoTargetSpec {
             dictionary,
             marker_layout: MarkerLayout::default(),
             border_bits: default_border_bits(),
+            inner_square_rel: None,
         }
     }
 
@@ -82,6 +91,15 @@ impl CharucoTargetSpec {
         self
     }
 
+    /// Draw a white square inset, centred inside every plain black checker
+    /// square, whose side is `rel` times the square side. Never applied to
+    /// an ArUco marker's bit cells.
+    #[must_use]
+    pub fn with_inner_square_rel(mut self, rel: f64) -> Self {
+        self.inner_square_rel = Some(rel);
+        self
+    }
+
     /// Build a printable ChArUco target from a detector board spec whose
     /// `cell_size` is already expressed in millimeters.
     pub fn from_board_spec_mm(board: &CharucoBoardSpec) -> Self {
@@ -93,6 +111,7 @@ impl CharucoTargetSpec {
             dictionary: board.dictionary,
             marker_layout: board.marker_layout,
             border_bits: board.border_bits,
+            inner_square_rel: None,
         }
     }
 
@@ -115,6 +134,7 @@ pub(crate) fn validate_charuco_spec(spec: &CharucoTargetSpec) -> Result<(), Prin
         return Err(PrintableTargetError::InvalidCharucoSize);
     }
     validate_square_size(spec.square_size_mm)?;
+    validate_inner_square_rel(spec.inner_square_rel)?;
     if !spec.marker_size_rel.is_finite()
         || spec.marker_size_rel <= 0.0
         || spec.marker_size_rel > 1.0

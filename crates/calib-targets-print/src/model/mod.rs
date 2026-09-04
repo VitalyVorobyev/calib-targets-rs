@@ -23,7 +23,7 @@ pub use page::{PageOrientation, PageSize, PageSpec, RenderOptions};
 pub use puzzleboard::PuzzleBoardTargetSpec;
 
 pub(crate) use charuco::validate_charuco_spec;
-pub(crate) use chessboard::validate_inner_corner_grid;
+pub(crate) use chessboard::validate_chessboard_spec;
 pub(crate) use marker::validate_marker_board_spec;
 pub(crate) use puzzleboard::validate_puzzleboard_spec;
 
@@ -80,7 +80,7 @@ impl TargetSpec {
     pub fn board_size_mm(&self) -> Result<(f64, f64), PrintableTargetError> {
         match self {
             Self::Chessboard(spec) => {
-                validate_inner_corner_grid(spec.inner_rows, spec.inner_cols, spec.square_size_mm)?;
+                validate_chessboard_spec(spec)?;
                 Ok((
                     (spec.inner_cols as f64 + 1.0) * spec.square_size_mm,
                     (spec.inner_rows as f64 + 1.0) * spec.square_size_mm,
@@ -114,7 +114,7 @@ impl TargetSpec {
     pub fn resolved_points(&self) -> Result<Vec<ResolvedTargetPoint>, PrintableTargetError> {
         match self {
             Self::Chessboard(spec) => {
-                validate_inner_corner_grid(spec.inner_rows, spec.inner_cols, spec.square_size_mm)?;
+                validate_chessboard_spec(spec)?;
                 let mut points =
                     Vec::with_capacity(spec.inner_rows as usize * spec.inner_cols as usize);
                 for j in 0..spec.inner_rows {
@@ -422,6 +422,7 @@ mod tests {
             inner_rows: 6,
             inner_cols: 8,
             square_size_mm: 20.0,
+            inner_square_rel: None,
         }))
     }
 
@@ -434,6 +435,7 @@ mod tests {
             dictionary: builtins::builtin_dictionary("DICT_4X4_50").expect("dict"),
             marker_layout: MarkerLayout::OpenCvCharuco,
             border_bits: 1,
+            inner_square_rel: None,
         }))
     }
 
@@ -444,6 +446,7 @@ mod tests {
             square_size_mm: 20.0,
             circles: MarkerBoardTargetSpec::default_circles(6, 8),
             circle_diameter_rel: 0.5,
+            inner_square_rel: None,
         }))
     }
 
@@ -646,5 +649,128 @@ mod tests {
         let err =
             MarkerBoardTargetSpec::try_from_layout_mm(&layout).expect_err("negative detector cell");
         assert!(matches!(err, PrintableTargetError::InvalidCircleCell));
+    }
+
+    // --- inner_square_rel -----------------------------------------------
+
+    #[test]
+    fn inner_square_rel_none_is_omitted_from_json() {
+        // Byte-identical-to-today contract: an absent inset must not add a
+        // key to the serialized document.
+        let doc = sample_chessboard();
+        let json = doc.to_json_pretty().expect("json");
+        assert!(
+            !json.contains("inner_square_rel"),
+            "None inner_square_rel must not appear in the serialized document:\n{json}"
+        );
+    }
+
+    #[test]
+    fn inner_square_rel_some_roundtrips_through_json() {
+        let mut doc = sample_chessboard();
+        if let TargetSpec::Chessboard(spec) = &mut doc.target {
+            spec.inner_square_rel = Some(0.4);
+        }
+        let json = doc.to_json_pretty().expect("json");
+        assert!(json.contains("\"inner_square_rel\": 0.4"));
+        let parsed: PrintableTargetDocument = serde_json::from_str(&json).expect("parse");
+        assert_eq!(parsed, doc);
+    }
+
+    #[test]
+    fn rejects_invalid_inner_square_rel() {
+        for bad in [1.0, -0.1, f64::NAN, f64::INFINITY, 1.5] {
+            let mut doc = sample_chessboard();
+            if let TargetSpec::Chessboard(spec) = &mut doc.target {
+                spec.inner_square_rel = Some(bad);
+            }
+            let err = doc
+                .validate()
+                .expect_err(&format!("{bad} should be rejected"));
+            assert!(
+                matches!(err, PrintableTargetError::InvalidInnerSquareRel),
+                "expected InvalidInnerSquareRel for {bad}, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accepts_boundary_inner_square_rel() {
+        for good in [0.0, 0.95] {
+            let mut doc = sample_chessboard();
+            if let TargetSpec::Chessboard(spec) = &mut doc.target {
+                spec.inner_square_rel = Some(good);
+            }
+            doc.validate()
+                .unwrap_or_else(|e| panic!("{good} should be accepted, got {e}"));
+        }
+    }
+
+    #[test]
+    fn charuco_and_marker_board_also_validate_inner_square_rel() {
+        let mut charuco = sample_charuco();
+        if let TargetSpec::Charuco(spec) = &mut charuco.target {
+            spec.inner_square_rel = Some(1.0);
+        }
+        assert!(matches!(
+            charuco.validate(),
+            Err(PrintableTargetError::InvalidInnerSquareRel)
+        ));
+
+        let mut marker_board = sample_marker_board();
+        if let TargetSpec::MarkerBoard(spec) = &mut marker_board.target {
+            spec.inner_square_rel = Some(-1.0);
+        }
+        assert!(matches!(
+            marker_board.validate(),
+            Err(PrintableTargetError::InvalidInnerSquareRel)
+        ));
+    }
+
+    #[test]
+    fn with_inner_square_rel_builders_set_the_field() {
+        assert_eq!(
+            ChessboardTargetSpec::new(6, 8, 20.0)
+                .with_inner_square_rel(0.4)
+                .inner_square_rel,
+            Some(0.4)
+        );
+        assert_eq!(
+            CharucoTargetSpec::new(
+                5,
+                7,
+                15.0,
+                0.75,
+                builtins::builtin_dictionary("DICT_4X4_50").expect("dict"),
+            )
+            .with_inner_square_rel(0.4)
+            .inner_square_rel,
+            Some(0.4)
+        );
+        assert_eq!(
+            MarkerBoardTargetSpec::new(6, 8, 20.0, MarkerBoardTargetSpec::default_circles(6, 8),)
+                .with_inner_square_rel(0.4)
+                .inner_square_rel,
+            Some(0.4)
+        );
+    }
+
+    #[test]
+    fn inner_square_rel_does_not_change_resolved_points() {
+        // The inset draws inside squares; it must never move a corner
+        // intersection.
+        for mut doc in [sample_chessboard(), sample_charuco(), sample_marker_board()] {
+            let without_inset = doc.target.resolved_points().expect("points without inset");
+
+            match &mut doc.target {
+                TargetSpec::Chessboard(spec) => spec.inner_square_rel = Some(0.5),
+                TargetSpec::Charuco(spec) => spec.inner_square_rel = Some(0.5),
+                TargetSpec::MarkerBoard(spec) => spec.inner_square_rel = Some(0.5),
+                TargetSpec::PuzzleBoard(_) => unreachable!("not exercised here"),
+            }
+            let with_inset = doc.target.resolved_points().expect("points with inset");
+
+            assert_eq!(without_inset, with_inset);
+        }
     }
 }

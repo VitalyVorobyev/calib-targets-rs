@@ -49,6 +49,14 @@ export type PrintableTargetSpec =
       inner_rows: number;
       inner_cols: number;
       square_size_mm: number;
+      /**
+       * White inset square drawn centred inside every black square, as a
+       * fraction of the square side, in `[0, 1)`. Absent or `0` means no
+       * inset — the two are equivalent, since callers of this API always
+       * send an explicit number with `0` meaning "off". Never moves a
+       * corner intersection.
+       */
+      inner_square_rel?: number;
     }
   | {
       kind: "charuco";
@@ -64,6 +72,13 @@ export type PrintableTargetSpec =
       marker_layout?: MarkerLayout;
       /** Marker border width in cells. Defaults to 1. */
       border_bits?: number;
+      /**
+       * White inset square drawn centred inside every plain black checker
+       * square, as a fraction of the square side, in `[0, 1)`. Absent or
+       * `0` means no inset. Never applied to an ArUco marker's bit cells,
+       * and never moves a corner intersection.
+       */
+      inner_square_rel?: number;
     }
   | {
       kind: "marker_board";
@@ -77,6 +92,12 @@ export type PrintableTargetSpec =
         PrintableMarkerCircleSpec,
       ];
       circle_diameter_rel: number;
+      /**
+       * White inset square drawn centred inside every black checkerboard
+       * square, as a fraction of the square side, in `[0, 1)`. Absent or
+       * `0` means no inset. Never moves a corner intersection.
+       */
+      inner_square_rel?: number;
     }
   | {
       kind: "puzzle_board";

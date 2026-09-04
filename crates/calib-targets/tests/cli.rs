@@ -279,6 +279,132 @@ fn gen_marker_board_writes_bundle() {
 }
 
 #[test]
+fn gen_chessboard_with_inner_square_rel_writes_bundle_with_more_geometry() {
+    let dir = tempdir().expect("tempdir");
+    let baseline_stem = dir.path().join("baseline");
+    let inset_stem = dir.path().join("inset");
+
+    bin()
+        .args([
+            "gen",
+            "chessboard",
+            "--out-stem",
+            baseline_stem.to_str().expect("utf8"),
+            "--inner-rows",
+            "6",
+            "--inner-cols",
+            "8",
+            "--square-size-mm",
+            "20",
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args([
+            "gen",
+            "chessboard",
+            "--out-stem",
+            inset_stem.to_str().expect("utf8"),
+            "--inner-rows",
+            "6",
+            "--inner-cols",
+            "8",
+            "--square-size-mm",
+            "20",
+            "--inner-square-rel",
+            "0.4",
+        ])
+        .assert()
+        .success();
+
+    assert_bundle_written(&baseline_stem);
+    assert_bundle_written(&inset_stem);
+
+    let baseline_svg = fs::read_to_string(baseline_stem.with_extension("svg")).expect("svg");
+    let inset_svg = fs::read_to_string(inset_stem.with_extension("svg")).expect("svg");
+    assert!(
+        inset_svg.matches("<rect ").count() > baseline_svg.matches("<rect ").count(),
+        "the inset bundle should contain strictly more <rect> elements"
+    );
+
+    let baseline_dxf = fs::read_to_string(baseline_stem.with_extension("dxf")).expect("dxf");
+    let inset_dxf = fs::read_to_string(inset_stem.with_extension("dxf")).expect("dxf");
+    assert!(
+        inset_dxf.matches("LWPOLYLINE").count() > baseline_dxf.matches("LWPOLYLINE").count(),
+        "the inset bundle's DXF should contain strictly more LWPOLYLINE entities \
+         (the hole must reach the DXF, not just SVG/PNG)"
+    );
+
+    let inset_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(inset_stem.with_extension("json")).expect("json"))
+            .expect("valid json");
+    assert_eq!(
+        inset_json["target"]["inner_square_rel"],
+        serde_json::json!(0.4)
+    );
+}
+
+#[test]
+fn init_charuco_and_marker_board_accept_inner_square_rel() {
+    let dir = tempdir().expect("tempdir");
+
+    let charuco_spec = dir.path().join("charuco.json");
+    bin()
+        .args([
+            "init",
+            "charuco",
+            "--out",
+            charuco_spec.to_str().expect("utf8"),
+            "--rows",
+            "5",
+            "--cols",
+            "7",
+            "--square-size-mm",
+            "20",
+            "--marker-size-rel",
+            "0.75",
+            "--dictionary",
+            "DICT_4X4_50",
+            "--inner-square-rel",
+            "0.3",
+        ])
+        .assert()
+        .success();
+    let charuco_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&charuco_spec).expect("read")).expect("json");
+    assert_eq!(
+        charuco_json["target"]["inner_square_rel"],
+        serde_json::json!(0.3)
+    );
+
+    let marker_spec = dir.path().join("marker.json");
+    bin()
+        .args([
+            "init",
+            "marker-board",
+            "--out",
+            marker_spec.to_str().expect("utf8"),
+            "--inner-rows",
+            "6",
+            "--inner-cols",
+            "8",
+            "--square-size-mm",
+            "20",
+            "--inner-square-rel",
+            "0.4",
+        ])
+        .assert()
+        .success();
+    let marker_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&marker_spec).expect("read")).expect("json");
+    assert_eq!(
+        marker_json["target"]["inner_square_rel"],
+        serde_json::json!(0.4)
+    );
+}
+
+#[test]
 fn gen_rejects_unknown_dictionary() {
     let dir = tempdir().expect("tempdir");
     let out_stem = dir.path().join("charuco");

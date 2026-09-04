@@ -19,39 +19,10 @@ here.
 
 | Item | What | Sev | Effort | API |
 |---|---|---|---|---|
-| [B-1](#b-1) | Printable specs cannot express an inner white square | P1 | M | additive |
 | [B-2](#b-2) | `scan.marker_size_rel` repairs on a sentinel that is never set | P2 | S | semver |
 | [B-3](#b-3) | The soft ChArUco path reports a `hamming` it did not compute | P3 | S | none |
 
 ---
-
-## <a id="b-1"></a>B-1 · Printable specs cannot express an inner white square
-**Sev P1 · Effort M · API additive**
-
-- **Problem.** vitavision's own target generator draws a white square inset
-  inside each black square — a real, shipped feature of its printable boards —
-  and nothing in `calib-targets-print` expresses it. `ChessboardTargetSpec`,
-  `CharucoTargetSpec` and `MarkerBoardTargetSpec` describe a plain
-  black/white chequer, so a document round-tripped through this library loses
-  the inset entirely.
-- **Why it matters.** This is the *last* reason a second implementation of the
-  printable-target geometry exists downstream. That second implementation is
-  what shipped ChArUco markers rotated 180° — the defect this library was
-  independently right about. `render_target_bundle_json` (0.14.0)
-  closed the page/spec half of the gap; the inset is what still forces the fork.
-  As long as the fork exists it can drift again.
-- **Fix.** Add an optional `inner_square_rel: f64` (fraction of the square side,
-  `None`/absent = no inset) to the three specs, with a serde default that keeps
-  every existing document byte-identical, and honour it in the SVG / PNG / DXF
-  renderers *and* in `resolved_points` if the inset moves any output point.
-  Additive on `#[non_exhaustive]` structs, so no break. Mirror it in the WASM
-  `typescript-extras.d.ts` and the Python config, per the binding-parity rule in
-  [`conventions.md`](conventions.md).
-- **Care.** The inset changes what the *detector* sees: an inner square adds
-  four extra corners per cell that ChESS will fire on. Before shipping the
-  renderer, check a rendered inset board through the chessboard and ChArUco
-  detectors — if the extra corners enter the grid, the spec needs to state
-  the supported inset range rather than accept any value.
 
 ## <a id="b-2"></a>B-2 · `scan.marker_size_rel` repairs on an unset-sentinel that is never unset
 **Sev P2 · Effort S · API semver (behaviour)**

@@ -153,6 +153,7 @@ def _cmd_init_chessboard(args: argparse.Namespace) -> int:
         args.inner_rows,
         args.inner_cols,
         args.square_size_mm,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -173,6 +174,7 @@ def _cmd_init_charuco(args: argparse.Namespace) -> int:
         args.dictionary,
         marker_layout=MarkerLayout(args.marker_layout),
         border_bits=args.border_bits,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -203,6 +205,7 @@ def _cmd_init_marker_board(args: argparse.Namespace) -> int:
         args.square_size_mm,
         circles=circles,
         circle_diameter_rel=args.circle_diameter_rel,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -215,6 +218,7 @@ def _cmd_gen_chessboard(args: argparse.Namespace) -> int:
         args.inner_rows,
         args.inner_cols,
         args.square_size_mm,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -235,6 +239,7 @@ def _cmd_gen_charuco(args: argparse.Namespace) -> int:
         args.dictionary,
         marker_layout=MarkerLayout(args.marker_layout),
         border_bits=args.border_bits,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -265,6 +270,7 @@ def _cmd_gen_marker_board(args: argparse.Namespace) -> int:
         args.square_size_mm,
         circles=circles,
         circle_diameter_rel=args.circle_diameter_rel,
+        inner_square_rel=args.inner_square_rel,
         page=_build_page(args),
         render=_build_render(args),
     )
@@ -282,6 +288,7 @@ def _add_chessboard_shared(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--inner-rows", type=int, required=True)
     parser.add_argument("--inner-cols", type=int, required=True)
     parser.add_argument("--square-size-mm", type=float, required=True)
+    parser.add_argument("--inner-square-rel", type=float)
     _add_page_args(parser)
     _add_render_args(parser)
 
@@ -298,6 +305,7 @@ def _add_charuco_shared(parser: argparse.ArgumentParser) -> None:
         default=MarkerLayout.OPENCV_CHARUCO.value,
     )
     parser.add_argument("--border-bits", type=int, default=1)
+    parser.add_argument("--inner-square-rel", type=float)
     _add_page_args(parser)
     _add_render_args(parser)
 
@@ -325,6 +333,7 @@ def _add_marker_board_shared(parser: argparse.ArgumentParser) -> None:
         default=[],
         metavar="I,J,POLARITY",
     )
+    parser.add_argument("--inner-square-rel", type=float)
     _add_page_args(parser)
     _add_render_args(parser)
 
