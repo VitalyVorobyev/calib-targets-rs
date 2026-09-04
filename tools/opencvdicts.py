@@ -22,6 +22,13 @@ def export_dict(
 
     Codes are encoded as row-major bits, black=1, packed into an integer where
     bit 0 is the top-left cell.
+
+    Markers are read back from ``generateImageMarker`` rather than from
+    ``bytesList`` on purpose. ``bytesList`` is a ``CV_8UC4`` matrix whose four
+    rotations are consecutive in flat memory, so the obvious numpy slice
+    ``bytesList[id][:, rot]`` mixes bytes from two rotations and yields a marker
+    whose lower half belongs to the 180° variant. Rendering sidesteps the
+    layout entirely and is what OpenCV itself draws.
     """
     d = cv2.aruco.getPredefinedDictionary(dict_id)
 
