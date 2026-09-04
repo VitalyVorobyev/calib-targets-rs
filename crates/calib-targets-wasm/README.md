@@ -128,6 +128,41 @@ The same `render_*_bundle` and `render_*_png` pairs exist for the other
 three target families (`render_chessboard_*`, `render_charuco_*`,
 `render_marker_board_*`); see the Functions table below.
 
+### Printing on a real page
+
+The helpers above take a fixed argument list and fit the page to the board,
+which is right for a preview but leaves page size, orientation, margin and
+every unnamed spec field out of reach. `render_target_bundle_json` takes the
+whole `PrintableTargetDocument` instead — the same `schema_version: 1` JSON
+the CLI reads and `testdata/printable/*.json` holds, so one document is
+portable between the CLI, the Rust API and the browser.
+
+```ts
+import init, { render_target_bundle_json } from "@vitavision/calib-targets";
+await init();
+
+const bundle = render_target_bundle_json({
+  schema_version: 1,
+  target: {
+    kind: "charuco",
+    rows: 5, cols: 7, square_size_mm: 20.0,
+    marker_size_rel: 0.75,
+    dictionary: "DICT_4X4_50",
+    marker_layout: "opencv_charuco",
+    border_bits: 2,                       // not reachable via render_charuco_bundle
+  },
+  page:   { size: { kind: "letter" }, orientation: "landscape", margin_mm: 15.0 },
+  render: { debug_annotations: false, png_dpi: 300 },
+});
+// bundle.svg_text is a 279.4 x 215.9 mm page
+```
+
+`page` and `render` are optional and default to A4 portrait, 10 mm margins,
+300 DPI. Supplying the page the fixed-arity helper would have built yields a
+byte-identical SVG, so this is a superset of those helpers rather than a
+second rendering path. See `PrintableTargetDocument` in the TypeScript
+declarations for the full shape.
+
 ### Marker board
 
 ```typescript
@@ -209,6 +244,7 @@ edges and soft-mode runner-up scoring evidence are returned by
 | `render_charuco_bundle(rows, cols, square_mm, marker_size_rel, dict_name, dpi)` | `GeneratedTargetBundle` |
 | `render_marker_board_bundle(inner_rows, inner_cols, square_mm, dpi)` | `GeneratedTargetBundle` |
 | `render_puzzleboard_bundle(rows, cols, square_mm, dpi)` | `GeneratedTargetBundle` |
+| `render_target_bundle_json(doc)` | `GeneratedTargetBundle` — full `PrintableTargetDocument`: page size, orientation, margin and every spec field |
 | `default_chess_config()`, `default_chessboard_params()`, `default_puzzleboard_params(rows, cols)`, `default_marker_board_params()` | baseline configs |
 
 ## Tuning difficult cases
