@@ -53,6 +53,12 @@ pub struct CharucoParams {
     /// `CharucoParams::for_board` uses a slightly smaller inset
     /// (`inset_frac = 0.06`) to improve real-image robustness. If
     /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
+    ///
+    /// **`scan.border_bits` is derived, not configured.**
+    /// [`CharucoDetector::new`](crate::CharucoDetector::new) overwrites it with
+    /// [`CharucoBoardSpec::border_bits`], because the two describe the same
+    /// printed ring and the board is what describes the target. Set it on the
+    /// board — [`CharucoBoardSpec::with_border_bits`] — not here.
     #[serde(default)]
     pub scan: ScanDecodeConfig,
     /// Minimal number of marker inliers needed to accept the alignment.
@@ -299,6 +305,10 @@ impl CharucoParams {
 
         let scan = ScanDecodeConfig::default()
             .with_marker_size_rel(board.marker_size_rel)
+            // The border ring is a physical property of the printed board, so
+            // it comes from the spec rather than from a default: sampling the
+            // wrong ring width shifts every payload bit.
+            .with_border_bits(board.border_bits)
             .with_inset_frac(0.06)
             // Lower than the default (0.85) — downstream alignment validation
             // rejects false positives, so a looser bar here improves recall on

@@ -465,12 +465,18 @@ pub(crate) fn convert_charuco_detector_params(
     // Start from the defaults (so that future additions to CharucoParams —
     // such as the board-level matcher knobs — don't break the C ABI) and
     // overwrite only the fields that the C side exposes today.
-    let board_spec = convert_charuco_board_spec(&params.charuco)?;
+    // `border_bits` describes the printed board, and the C ABI already carries
+    // it once, on `scan`. Seed the board spec from that single field rather
+    // than adding a second C field for the same physical fact — two sources
+    // would only give callers a way to contradict themselves.
+    let scan = convert_scan_decode_config(&params.scan)?;
+    let board_spec =
+        convert_charuco_board_spec(&params.charuco)?.with_border_bits(scan.border_bits);
     let mut out = CharucoParams::for_board(board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.board = board_spec;
-    out.scan = convert_scan_decode_config(&params.scan)?;
+    out.scan = scan;
     out.min_marker_inliers = params.min_marker_inliers;
     // `grid_smoothness_threshold_rel` / `corner_validation_threshold_rel` are
     // kept as flat C fields but now live in `CharucoAdvancedTuning` on the Rust

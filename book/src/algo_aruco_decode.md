@@ -49,6 +49,15 @@ printed board exactly:
 - **`border_bits`** — the number of whole black border cells, matching the
   OpenCV definition (typically 1).
 
+Note the polarity is the *inverse* of OpenCV's own `bytesList`, where a set bit
+means white. When cross-checking against OpenCV, read markers through
+`cv2.aruco.generateImageMarker` rather than `bytesList`: the latter is a
+`CV_8UC4` matrix whose four rotations sit consecutively in flat memory, so the
+obvious numpy slice `bytesList[id][:, rot]` silently returns bytes from two
+different rotations. The symptom is a marker whose top half is correct and whose
+bottom half comes from the 180° variant — an easy false alarm to raise against a
+generator that is in fact correct.
+
 ## Dictionary matching
 
 `Matcher` brute-forces the sampled code against every dictionary entry
