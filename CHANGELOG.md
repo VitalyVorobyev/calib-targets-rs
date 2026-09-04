@@ -32,9 +32,23 @@ see [Older releases](#older-releases) at the bottom for the index.
   so it is a superset rather than a second rendering path. `page` and `render`
   may be omitted, defaulting to A4 portrait / 10 mm margins / 300 DPI.
 
-  `PrintableTargetDocument`, `PrintableTargetSpec`, `MarkerCircleSpec`,
-  `PageSpec`, `PageSize` and `RenderOptions` are now declared in
-  `typescript-extras.d.ts`.
+  `PrintableTargetDocument`, `PrintableTargetSpec`,
+  `PrintableMarkerCircleSpec`, `PageSpec`, `PageSize` and `RenderOptions` are
+  now declared in `typescript-extras.d.ts`. The printable circle needs a name
+  distinct from the detector's `MarkerCircleSpec`: the two Rust types share a
+  name across two crates, but the `.d.ts` has one flat namespace, and two
+  same-named `interface` declarations there *merge* silently into one requiring
+  the fields of both — which would have left both marker-board types
+  unconstructible, the existing one included.
+
+  Alongside it, `typescript-extras.check.ts` now *constructs* a value of each
+  exported shape and is type-checked in CI beside the declarations. Checking
+  the `.d.ts` alone proves it parses; only a construction proves the types are
+  usable, and the hand-mirrored drift contract had no enforcement until now.
+  It caught three further drifts in the same pass: `CharucoBoardSpec` was
+  missing `border_bits`, `MarkerLayout` still offered a `"bottom_left"` variant
+  the Rust enum does not have, and `marker_layout` was required in TypeScript
+  while having a serde default in Rust.
 
 - **`testdata/printable/*.json` is now covered by a test.** Those fixtures were
   only ever read by an example, yet they document the schema the CLI accepts —

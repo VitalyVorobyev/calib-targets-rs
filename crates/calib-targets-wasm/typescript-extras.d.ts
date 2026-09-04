@@ -61,7 +61,7 @@ export type PrintableTargetSpec =
       /** Dictionary name from `list_aruco_dictionaries()`. */
       dictionary: string;
       /** Defaults to `"opencv_charuco"`. */
-      marker_layout?: "opencv_charuco";
+      marker_layout?: MarkerLayout;
       /** Marker border width in cells. Defaults to 1. */
       border_bits?: number;
     }
@@ -70,8 +70,12 @@ export type PrintableTargetSpec =
       inner_rows: number;
       inner_cols: number;
       square_size_mm: number;
-      /** Exactly three circles. */
-      circles: MarkerCircleSpec[];
+      /** Exactly three circles — Rust `[MarkerCircleSpec; 3]`. */
+      circles: [
+        PrintableMarkerCircleSpec,
+        PrintableMarkerCircleSpec,
+        PrintableMarkerCircleSpec,
+      ];
       circle_diameter_rel: number;
     }
   | {
@@ -86,13 +90,22 @@ export type PrintableTargetSpec =
       dot_diameter_rel?: number;
     };
 
-/** One circular marker on a marker board. */
-export interface MarkerCircleSpec {
+/**
+ * One circular marker in a *printable* marker board — Rust
+ * `calib_targets_print::MarkerCircleSpec`.
+ *
+ * Distinct from {@link MarkerCircleSpec}, the detector's spec, which addresses
+ * the same circle as a `cell` rather than as `i`/`j`. The two Rust types share
+ * a name across two crates; this module has one flat namespace, and two
+ * same-named `interface` declarations here would silently *merge* into one
+ * requiring the fields of both — leaving neither constructible.
+ */
+export interface PrintableMarkerCircleSpec {
   /** Cell column (increases right). */
   i: number;
   /** Cell row (increases down). */
   j: number;
-  polarity: "black" | "white";
+  polarity: CirclePolarity;
 }
 
 /** Page size — Rust `PageSize`, internally tagged on `kind`. */
@@ -488,7 +501,11 @@ export interface ChessboardParams {
 // Parameters: ChArUco
 // ---------------------------------------------------------------------------
 
-export type MarkerLayout = "opencv_charuco" | "bottom_left";
+/**
+ * Marker placement scheme — Rust `MarkerLayout`, which has exactly one variant.
+ * The Rust enum is `#[non_exhaustive]`; default any `switch` on it.
+ */
+export type MarkerLayout = "opencv_charuco";
 
 export interface CharucoBoardSpec {
   rows: number;
@@ -497,7 +514,15 @@ export interface CharucoBoardSpec {
   marker_size_rel: number;
   /** Built-in dictionary name; see `list_aruco_dictionaries()`. */
   dictionary: string;
-  marker_layout: MarkerLayout;
+  /** Defaults to `"opencv_charuco"`. */
+  marker_layout?: MarkerLayout;
+  /**
+   * Width, in marker cells, of the black ring printed around each marker
+   * payload (OpenCV's `borderBits`). A property of the printed board, not a
+   * decode knob — the detector derives `ScanDecodeConfig.border_bits` from it.
+   * Defaults to 1.
+   */
+  border_bits?: number;
 }
 
 export interface ScanDecodeConfig {
