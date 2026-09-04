@@ -14,6 +14,120 @@
 // ---------------------------------------------------------------------------
 
 /**
+ * A printable-target document — the input to `render_target_bundle_json`,
+ * mirroring Rust `calib_targets_print::PrintableTargetDocument`.
+ *
+ * This is the same JSON the CLI reads and `testdata/printable/*.json` holds,
+ * so a document authored against this type is portable between the CLI, the
+ * Rust API and the browser. `page` and `render` are optional: omitting them
+ * yields A4 portrait with 10 mm margins at 300 DPI.
+ *
+ * Prefer this over the fixed-arity `render_*_bundle` helpers whenever page
+ * size, orientation, margin, or a spec field the helpers do not name (e.g.
+ * ChArUco `border_bits`, marker-board circle placement) matters.
+ */
+export interface PrintableTargetDocument {
+  /** JSON schema version. Currently `1`; defaults to `1` when omitted. */
+  schema_version?: number;
+  /** The target geometry to render. */
+  target: PrintableTargetSpec;
+  /** Page the target is placed on. Defaults to A4 portrait, 10 mm margins. */
+  page?: PageSpec;
+  /** Rendering options. Defaults to 300 DPI without debug annotations. */
+  render?: RenderOptions;
+}
+
+/**
+ * Union of printable target geometries — Rust `TargetSpec`, internally tagged
+ * on `kind`. The Rust enum is `#[non_exhaustive]`; default any `switch` on
+ * `kind`.
+ */
+export type PrintableTargetSpec =
+  | {
+      kind: "chessboard";
+      /** Inner-corner counts, each >= 2. */
+      inner_rows: number;
+      inner_cols: number;
+      square_size_mm: number;
+    }
+  | {
+      kind: "charuco";
+      /** Square counts, each >= 2 (not inner corners). */
+      rows: number;
+      cols: number;
+      square_size_mm: number;
+      /** Marker side relative to the square, in (0, 1]. */
+      marker_size_rel: number;
+      /** Dictionary name from `list_aruco_dictionaries()`. */
+      dictionary: string;
+      /** Defaults to `"opencv_charuco"`. */
+      marker_layout?: MarkerLayout;
+      /** Marker border width in cells. Defaults to 1. */
+      border_bits?: number;
+    }
+  | {
+      kind: "marker_board";
+      inner_rows: number;
+      inner_cols: number;
+      square_size_mm: number;
+      /** Exactly three circles — Rust `[MarkerCircleSpec; 3]`. */
+      circles: [
+        PrintableMarkerCircleSpec,
+        PrintableMarkerCircleSpec,
+        PrintableMarkerCircleSpec,
+      ];
+      circle_diameter_rel: number;
+    }
+  | {
+      kind: "puzzle_board";
+      rows: number;
+      cols: number;
+      square_size_mm: number;
+      /** Offset into the 501x501 master pattern. Both default to 0. */
+      origin_row?: number;
+      origin_col?: number;
+      /** Edge-dot diameter as a fraction of the square side. Defaults to 1/3. */
+      dot_diameter_rel?: number;
+    };
+
+/**
+ * One circular marker in a *printable* marker board — Rust
+ * `calib_targets_print::MarkerCircleSpec`.
+ *
+ * Distinct from {@link MarkerCircleSpec}, the detector's spec, which addresses
+ * the same circle as a `cell` rather than as `i`/`j`. The two Rust types share
+ * a name across two crates; this module has one flat namespace, and two
+ * same-named `interface` declarations here would silently *merge* into one
+ * requiring the fields of both — leaving neither constructible.
+ */
+export interface PrintableMarkerCircleSpec {
+  /** Cell column (increases right). */
+  i: number;
+  /** Cell row (increases down). */
+  j: number;
+  polarity: CirclePolarity;
+}
+
+/** Page size — Rust `PageSize`, internally tagged on `kind`. */
+export type PageSize =
+  | { kind: "a4" }
+  | { kind: "letter" }
+  | { kind: "custom"; width_mm: number; height_mm: number };
+
+/** Page geometry the target is centred on — Rust `PageSpec`. */
+export interface PageSpec {
+  size: PageSize;
+  orientation: "portrait" | "landscape";
+  margin_mm: number;
+}
+
+/** Rendering options — Rust `RenderOptions`. */
+export interface RenderOptions {
+  debug_annotations: boolean;
+  png_dpi: number;
+}
+
+/**
  * Full output of `render_*_bundle` — mirrors Rust
  * `calib_targets_print::GeneratedTargetBundle`.
  *
@@ -387,7 +501,11 @@ export interface ChessboardParams {
 // Parameters: ChArUco
 // ---------------------------------------------------------------------------
 
-export type MarkerLayout = "opencv_charuco" | "bottom_left";
+/**
+ * Marker placement scheme — Rust `MarkerLayout`, which has exactly one variant.
+ * The Rust enum is `#[non_exhaustive]`; default any `switch` on it.
+ */
+export type MarkerLayout = "opencv_charuco";
 
 export interface CharucoBoardSpec {
   rows: number;
@@ -396,7 +514,15 @@ export interface CharucoBoardSpec {
   marker_size_rel: number;
   /** Built-in dictionary name; see `list_aruco_dictionaries()`. */
   dictionary: string;
-  marker_layout: MarkerLayout;
+  /** Defaults to `"opencv_charuco"`. */
+  marker_layout?: MarkerLayout;
+  /**
+   * Width, in marker cells, of the black ring printed around each marker
+   * payload (OpenCV's `borderBits`). A property of the printed board, not a
+   * decode knob — the detector derives `ScanDecodeConfig.border_bits` from it.
+   * Defaults to 1.
+   */
+  border_bits?: number;
 }
 
 export interface ScanDecodeConfig {

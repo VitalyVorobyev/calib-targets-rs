@@ -78,6 +78,17 @@ hand-mirrored from Rust rather than generated, each with a drift contract:
 - **WASM TypeScript typings** (`crates/calib-targets-wasm/typescript-extras.d.ts`)
   mirror the serde shapes (incl. `ChessboardAdvancedTuning`). Update them whenever a Rust
   serde field is added, renamed, or retyped.
+
+  Enforced by `typescript-extras.check.ts`, which **constructs** a value of each
+  exported shape and is type-checked in CI beside the declarations. Add a
+  construction there for any shape you add. Type-checking the `.d.ts` alone
+  proves only that it parses — it cannot see a declaration that is
+  unsatisfiable, and TypeScript merges two same-named `interface` declarations
+  in one module *silently*, so a second `MarkerCircleSpec` (the printable
+  model's, next to the detector's) once left both marker-board types
+  unconstructible with every check green. Two Rust crates may share a type
+  name; this one flat namespace may not — disambiguate the new one (e.g.
+  `PrintableMarkerCircleSpec`) rather than repeating the name.
 - **Studio param-schema catalogue**
   (`crates/calib-targets-studio/src/routes/params_schema.rs`, served at
   `GET /api/params/schema`) carries the per-knob UI metadata (section, label,

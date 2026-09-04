@@ -99,6 +99,52 @@ that had begun failing the supply-chain gate.
 
 ### Added
 
+- **`render_target_bundle_json(doc)` on the WASM surface.** The four
+  `render_*_bundle` helpers each take a fixed argument list and wrap the target
+  in a page sized to fit it. That is the right default for a preview, but it
+  puts page size, orientation, margin and every spec field the helper does not
+  name out of reach — a browser application printing on Letter, or wanting
+  ChArUco `border_bits = 2`, or placing marker-board circles itself, could not
+  express any of it and had to reimplement the renderer to get there. Which is
+  how a second implementation of the bit and geometry conventions comes to
+  exist downstream, and then drifts.
+
+  The new entry point takes the `PrintableTargetDocument` the Rust API already
+  models, so the WASM surface stops being narrower than the library behind it.
+  It is the same `schema_version: 1` JSON the CLI reads and
+  `testdata/printable/*.json` holds, so a document is portable between the CLI,
+  the Rust API and the browser.
+
+  Purely additive — the existing helpers are unchanged, and handing the new
+  function the page one of them would have built returns a byte-identical SVG,
+  so it is a superset rather than a second rendering path. `page` and `render`
+  may be omitted, defaulting to A4 portrait / 10 mm margins / 300 DPI.
+
+  `PrintableTargetDocument`, `PrintableTargetSpec`,
+  `PrintableMarkerCircleSpec`, `PageSpec`, `PageSize` and `RenderOptions` are
+  now declared in `typescript-extras.d.ts`. The printable circle needs a name
+  distinct from the detector's `MarkerCircleSpec`: the two Rust types share a
+  name across two crates, but the `.d.ts` has one flat namespace, and two
+  same-named `interface` declarations there *merge* silently into one requiring
+  the fields of both — which would have left both marker-board types
+  unconstructible, the existing one included.
+
+  Alongside it, `typescript-extras.check.ts` now *constructs* a value of each
+  exported shape and is type-checked in CI beside the declarations. Checking
+  the `.d.ts` alone proves it parses; only a construction proves the types are
+  usable, and the hand-mirrored drift contract had no enforcement until now.
+  It caught three further drifts in the same pass: `CharucoBoardSpec` was
+  missing `border_bits`, `MarkerLayout` still offered a `"bottom_left"` variant
+  the Rust enum does not have, and `marker_layout` was required in TypeScript
+  while having a serde default in Rust.
+
+- **`testdata/printable/*.json` is now covered by a test.** Those fixtures were
+  only ever read by an example, yet they document the schema the CLI accepts —
+  and, as of this release, the shape the WASM surface accepts too. Every fixture
+  must deserialise and render, and the rendered SVG must carry the page the
+  document asked for; nothing else proved an *authored* page block reaches the
+  output, because the fixed-arity helpers always synthesise their own.
+
 - **OpenCV conformance tests for ChArUco generation.** Every previous check
   on the printable path was self-referential — the golden DXF came from our
   own output, and the round-trip tests decode with a detector that shares

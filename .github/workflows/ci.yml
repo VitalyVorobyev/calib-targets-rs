@@ -152,11 +152,25 @@ jobs:
           bunx tsc --noEmit
           bunx vite build
 
+      # Two checks, and the second is the one that bites. Type-checking the
+      # `.d.ts` proves it *parses*; it cannot see a declaration that is
+      # unsatisfiable. TypeScript silently merges two same-named `interface`
+      # declarations in one module, which is how `MarkerCircleSpec` came to be
+      # declared twice — once for the printable model, once for the detector —
+      # leaving a merged interface requiring the fields of both, so neither
+      # marker-board type could be constructed. `typescript-extras.check.ts`
+      # builds a value of each exported shape, which is what catches that.
       - name: Type-check hand-written WASM TypeScript declarations
         working-directory: demo
         run: >
           bunx tsc --noEmit --strict --skipLibCheck
           ../crates/calib-targets-wasm/typescript-extras.d.ts
+
+      - name: Check the declarations can actually be constructed
+        working-directory: demo
+        run: >
+          bunx tsc --noEmit --strict --skipLibCheck
+          ../crates/calib-targets-wasm/typescript-extras.check.ts
 
   python-bindings:
     runs-on: ubuntu-latest
