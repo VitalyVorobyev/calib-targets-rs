@@ -49,6 +49,21 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 
+      # Every crate has off-by-default features, and until 0.14.0 nothing built
+      # them: `--all-targets` above compiles default features only, and the
+      # `--all-features` gate runs at release time. So `link_check` — behind
+      # `link-check`, off by default — sat broken on `main` after a
+      # `#[non_exhaustive]` struct gained a field, with five green checks.
+      #
+      # This enables every *local* feature and deliberately omits `ml-refiner`,
+      # whose `tract` ONNX runtime is what makes `--all-features` too slow to
+      # run per-PR. It compiles in seconds and would have caught that break.
+      - name: check (every local feature, no ml-refiner)
+        if: matrix.toolchain == 'stable'
+        run: >
+          cargo check --workspace --all-targets --features
+          calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/link-check,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/dataset,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header
+
       - name: test (all crates, default features)
         # Keep --all-targets: besides lib/integration tests it RUNS the
         # harness=false Criterion benches in test mode (one iteration), which

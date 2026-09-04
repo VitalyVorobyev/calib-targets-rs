@@ -14,8 +14,11 @@ guides, and release history.
 
 ### `architecture/` — start here: how the whole stack fits together
 A cross-cutting map of the detection stack — the algorithm atlas, per-detector
-pipeline maps, the crate-layering view, a critical review, and a ranked cleanup
-backlog. The best entry point when onboarding or auditing the detector crates.
+pipeline maps, and the crate-layering view. The best entry point when
+onboarding or auditing the detector crates. (The critique and cleanup backlog
+that once lived here went away with the consolidation they tracked; open
+engineering items are now in
+[`development/backlog.md`](development/backlog.md).)
 
 | File | What it covers |
 |---|---|
@@ -34,6 +37,7 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 | [`debugging.md`](development/debugging.md) | Mandatory evidence-driven protocol for any detector failure. |
 | [`conventions.md`](development/conventions.md) | Public-struct conventions, binding/CLI/dict-key parity, local-only-artifact rules. |
 | [`private-dataset-policy.md`](development/private-dataset-policy.md) | Disclosure policy + the two private regression datasets. |
+| [`backlog.md`](development/backlog.md) | Open engineering items that are not detector algorithms (bindings, plumbing, packaging). |
 | [`release-gates.md`](development/release-gates.md) | Full pre-release quality-gate checklist. |
 | [`refactor-gates.md`](development/refactor-gates.md) | Standing per-phase validation gate for in-flight refactors. |
 | [`commands.md`](development/commands.md) | Complete build / example / bench / binding / CLI command reference. |
@@ -63,11 +67,12 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 - [`changelog/`](changelog/) — archived per-minor-version release notes
   (`0.1.x` … `0.9.x`), indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
 - [`migrations/`](migrations/) — breaking-change migration guides, newest first:
-  [`0.13.0.md`](migrations/0.13.0.md) (live) and [`0.12.0.md`](migrations/0.12.0.md),
+  [`0.14.0.md`](migrations/0.14.0.md) (live) and [`0.13.0.md`](migrations/0.13.0.md),
   kept for consumers upgrading across two releases. Both are pulled into the
   book's Migration chapter via `{{#include}}`; **do not move/rename**. Older
-  guides ([`0.11.0.md`](migrations/0.11.0.md), [`0.10.0.md`](migrations/0.10.0.md))
-  stay on disk but are no longer included in the book.
+  guides ([`0.12.0.md`](migrations/0.12.0.md), [`0.11.0.md`](migrations/0.11.0.md),
+  [`0.10.0.md`](migrations/0.10.0.md)) stay on disk but are no longer included
+  in the book.
 - [`releases/`](releases/) — GitHub release bodies consumed by CI.
   [`ffi-c-api-release-draft.md`](releases/ffi-c-api-release-draft.md) is the
   `body_path` of the native-FFI archive release

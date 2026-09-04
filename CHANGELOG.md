@@ -9,6 +9,38 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.14.0
+
+Additive on every published surface — no type removed or renamed, the C ABI
+unchanged at 4.0.0 — with one behaviour change, named in the
+[0.14 migration guide](docs/migrations/0.14.0.md).
+
+The release is aimed at one thing: making a downstream reimplementation of the
+printable-target geometry unnecessary. A generator that reimplemented this
+library's ChArUco conventions shipped its markers rotated 180°. The library was
+right — which OpenCV ground-truth tests now prove independently, rather than
+against our own output — and the interesting question was why a second
+implementation existed at all. It existed because the binding was narrower than
+the library: the WASM surface could not express a page, a margin, or a
+`border_bits`, so an application needing any of them had to rebuild the
+renderer. It can now hand over the same `PrintableTargetDocument` the CLI reads.
+
+Two defects underneath turned out to be the same shape — one physical property
+of the printed board described in two places, with nothing keeping the two in
+agreement. The ChArUco marker border ring is now stated by the board spec and
+derived everywhere else. The printable circle in the TypeScript declarations
+now has a name of its own, because sharing one with the detector's circle
+merged the two interfaces silently and left *neither* constructible.
+
+Neither defect had a test that could have caught it, so both gained one. The
+TypeScript declarations in particular gained the first enforcement their drift
+contract has ever had — a fixture that *constructs* a value of every exported
+shape, type-checked in CI. It found three further drifts on its first run.
+
+Dependencies were refreshed wholesale (54 packages, MSRV re-verified at 1.91,
+regression baselines unchanged), which also clears a yanked transitive crate
+that had begun failing the supply-chain gate.
+
 ### Fixed
 
 - **`border_bits` is now part of the ChArUco board description.**
@@ -52,6 +84,18 @@ see [Older releases](#older-releases) at the bottom for the index.
   Also unifies the marker border ring predicate. The soft ChArUco sampler
   assumed a one-cell ring while the hard ArUco binarizer honoured
   `border_bits`; both now call one `is_border_cell` helper.
+
+- **The `link-check` feature no longer fails to build.** `link_check`'s test
+  helper built a `CharucoBoardSpec` with a struct literal, so it stopped
+  compiling the moment that `#[non_exhaustive]` struct gained `border_bits` —
+  and nothing noticed, because every crate's off-by-default features were built
+  only by the release gate's `--all-features` run. It now uses the named
+  constructor, which is what `#[non_exhaustive]` is for.
+
+  CI gained the check that would have caught it: one `cargo check --workspace
+  --all-targets` over every *local* feature, deliberately excluding
+  `ml-refiner`, whose `tract` ONNX runtime is the reason `--all-features` is too
+  slow to run per-PR. It compiles in seconds and reproduces the break exactly.
 
 ### Added
 
