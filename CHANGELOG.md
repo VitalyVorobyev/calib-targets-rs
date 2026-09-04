@@ -7,6 +7,42 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Added
+
+- **`render_target_bundle_json(doc)` on the WASM surface.** The four
+  `render_*_bundle` helpers each take a fixed argument list and wrap the target
+  in a page sized to fit it. That is the right default for a preview, but it
+  puts page size, orientation, margin and every spec field the helper does not
+  name out of reach — a browser application printing on Letter, or wanting
+  ChArUco `border_bits = 2`, or placing marker-board circles itself, could not
+  express any of it and had to reimplement the renderer to get there. Which is
+  how a second implementation of the bit and geometry conventions comes to
+  exist downstream, and then drifts.
+
+  The new entry point takes the `PrintableTargetDocument` the Rust API already
+  models, so the WASM surface stops being narrower than the library behind it.
+  It is the same `schema_version: 1` JSON the CLI reads and
+  `testdata/printable/*.json` holds, so a document is portable between the CLI,
+  the Rust API and the browser.
+
+  Purely additive — the existing helpers are unchanged, and handing the new
+  function the page one of them would have built returns a byte-identical SVG,
+  so it is a superset rather than a second rendering path. `page` and `render`
+  may be omitted, defaulting to A4 portrait / 10 mm margins / 300 DPI.
+
+  `PrintableTargetDocument`, `PrintableTargetSpec`, `MarkerCircleSpec`,
+  `PageSpec`, `PageSize` and `RenderOptions` are now declared in
+  `typescript-extras.d.ts`.
+
+- **`testdata/printable/*.json` is now covered by a test.** Those fixtures were
+  only ever read by an example, yet they document the schema the CLI accepts —
+  and, as of this release, the shape the WASM surface accepts too. Every fixture
+  must deserialise and render, and the rendered SVG must carry the page the
+  document asked for; nothing else proved an *authored* page block reaches the
+  output, because the fixed-arity helpers always synthesise their own.
+
 ## 0.13.0
 
 Breaking, and deliberately so before 1.0. The detector structs and the facade

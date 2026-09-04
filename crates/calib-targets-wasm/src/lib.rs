@@ -352,6 +352,42 @@ fn puzzleboard_target_and_extent(
     (target, w, h)
 }
 
+/// Render a complete `PrintableTargetDocument` into a JSON / SVG / PNG / DXF
+/// bundle.
+///
+/// The `render_*_bundle` helpers below each take a fixed argument list and
+/// wrap the spec in a page sized to fit the board. That is the right default
+/// for a quick preview, but it puts page size, orientation, margin and every
+/// spec field the helper does not name out of reach — a host application that
+/// prints on Letter, or wants `border_bits = 2`, cannot express it and has to
+/// reimplement the renderer to get there. This entry point takes the document
+/// the Rust API already models, so the WASM surface stops being narrower than
+/// the library behind it.
+///
+/// `doc` is the same `schema_version: 1` JSON the CLI reads and
+/// `testdata/printable/*.json` holds:
+///
+/// ```json
+/// {
+///   "schema_version": 1,
+///   "target": { "kind": "charuco", "rows": 8, "cols": 11, "square_size_mm": 20.0,
+///               "marker_size_rel": 0.75, "dictionary": "DICT_4X4_250",
+///               "marker_layout": "opencv_charuco", "border_bits": 1 },
+///   "page":   { "size": { "kind": "a4" }, "orientation": "portrait", "margin_mm": 10.0 },
+///   "render": { "debug_annotations": false, "png_dpi": 300 }
+/// }
+/// ```
+///
+/// Returns a `GeneratedTargetBundle` JS object. Throws when the document
+/// fails to deserialise or the target spec is invalid (e.g. a board too small,
+/// or one needing more markers than the dictionary holds).
+#[wasm_bindgen]
+pub fn render_target_bundle_json(doc: JsValue) -> Result<JsValue, JsError> {
+    let doc: PrintableTargetDocument = from_js(doc)?;
+    let bundle = render_target_bundle(&doc).map_err(|e| JsError::new(&e.to_string()))?;
+    bundle_to_js(&bundle)
+}
+
 /// Synthesise a chessboard target as a full JSON / SVG / PNG / DXF bundle.
 ///
 /// `inner_rows` / `inner_cols` are the **inner-corner** counts (each ≥ 2). The
