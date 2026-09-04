@@ -299,6 +299,10 @@ impl CharucoParams {
 
         let scan = ScanDecodeConfig::default()
             .with_marker_size_rel(board.marker_size_rel)
+            // The border ring is a physical property of the printed board, so
+            // it comes from the spec rather than from a default: sampling the
+            // wrong ring width shifts every payload bit.
+            .with_border_bits(board.border_bits)
             .with_inset_frac(0.06)
             // Lower than the default (0.85) — downstream alignment validation
             // rejects false positives, so a looser bar here improves recall on

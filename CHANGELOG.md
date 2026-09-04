@@ -7,6 +7,53 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Fixed
+
+- **`border_bits` is now part of the ChArUco board description.**
+  `CharucoBoardSpec` had no `border_bits` field, so the detector always
+  assumed a one-cell marker border no matter what the board was printed
+  with. A board generated with `border_bits = 2` — which the printable spec
+  has always accepted — was undecodable: every payload bit was sampled one
+  cell off. The border ring is a physical property of the printed target,
+  not a tuning knob, so the spec that describes the board now carries it.
+
+  The field is additive on a `#[non_exhaustive]` struct with a named
+  constructor and a `with_border_bits` builder, and it defaults to 1
+  everywhere, so existing code, configs and board JSON are unaffected and
+  the `border_bits = 1` output is byte-identical. `CharucoParams::for_board`
+  seeds the scan config from the spec, and `CharucoDetector::new` repairs an
+  unset value the same way it already repaired `marker_size_rel`, so
+  hand-built or JSON-round-tripped params cannot silently decode a
+  non-default border as 1. Exposed on the Python `CharucoBoardSpec`; the C
+  ABI is unchanged, deriving the board's value from the `scan.border_bits`
+  field it already carried rather than adding a second field for the same
+  fact.
+
+  Also unifies the marker border ring predicate. The soft ChArUco sampler
+  assumed a one-cell ring while the hard ArUco binarizer honoured
+  `border_bits`; both now call one `is_border_cell` helper.
+
+### Added
+
+- **OpenCV conformance tests for ChArUco generation.** Every previous check
+  on the printable path was self-referential — the golden DXF came from our
+  own output, and the round-trip tests decode with a detector that shares
+  the generator's bit convention — so a convention the workspace agreed on
+  but OpenCV did not would have passed silently. Bit patterns and board
+  layout captured from OpenCV are now frozen in
+  `calib-targets-aruco/tests/opencv_ground_truth.rs` and
+  `calib-targets-print/tests/opencv_charuco_conformance.rs`, asserted
+  through all three output formats, with
+  `tools/gen_opencv_charuco_truth.py` to regenerate them or identify an
+  unknown board image. ChArUco also gains the render-to-detect round trip it
+  was the only board family to lack.
+
+- `crates/calib-targets-py/examples/generate_charuco_dxf.py` — a
+  parameterized ChArUco DXF generator with `--dxf-only`, reporting board
+  extent and marker bit-cell size before writing.
+
 ## 0.13.0
 
 Breaking, and deliberately so before 1.0. The detector structs and the facade

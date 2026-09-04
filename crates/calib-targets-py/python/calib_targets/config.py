@@ -1142,6 +1142,10 @@ class CharucoBoardSpec:
     marker_size_rel: float
     dictionary: DictionaryName
     marker_layout: MarkerLayout = MarkerLayout.OPENCV_CHARUCO
+    #: Black border cells around each marker payload, as printed (OpenCV's
+    #: ``borderBits``). Must match the board; the detector samples
+    #: ``marker_size + 2 * border_bits`` cells per marker.
+    border_bits: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1151,6 +1155,7 @@ class CharucoBoardSpec:
             "marker_size_rel": self.marker_size_rel,
             "dictionary": self.dictionary,
             "marker_layout": self.marker_layout.value,
+            "border_bits": self.border_bits,
         }
 
     @classmethod
@@ -1162,6 +1167,7 @@ class CharucoBoardSpec:
             marker_size_rel=data["marker_size_rel"],
             dictionary=data["dictionary"],
             marker_layout=MarkerLayout(data.get("marker_layout", "opencv_charuco")),
+            border_bits=int(data.get("border_bits", 1)),
         )
 
 def _charuco_chessboard_default() -> ChessboardParams:

@@ -14,6 +14,12 @@ pub enum MarkerLayout {
     /// OpenCV-style ChArUco layout:
     /// - markers are placed on white squares only (assuming top-left square is black),
     /// - marker IDs are assigned sequentially in row-major order over those squares.
+    ///
+    /// This is OpenCV's **modern** pattern — its default since 4.6 — so marker
+    /// 0 sits at column 1 of the top row. It is *not* `setLegacyPattern(true)`,
+    /// which inverts the parity and places a white square, carrying marker 0,
+    /// at `(0, 0)`. Only the modern pattern is implemented; a board printed
+    /// with the legacy parity will not match these IDs.
     #[serde(rename = "opencv_charuco", alias = "open_cv_charuco")]
     #[default]
     OpenCvCharuco,
@@ -38,6 +44,21 @@ pub struct CharucoBoardSpec {
     /// How markers are placed and numbered on the board.
     #[serde(default)]
     pub marker_layout: MarkerLayout,
+    /// Width, in marker cells, of the black border ring printed around each
+    /// marker payload. OpenCV's `borderBits`, and 1 on virtually every board.
+    ///
+    /// This is a physical property of the printed target, not a tuning knob:
+    /// the decoder samples `marker_size + 2 * border_bits` cells per marker, so
+    /// a board printed with a wider ring is undecodable unless the spec says
+    /// so. The printable spec carries the same field, and
+    /// `calib-targets-print` round-trips it through
+    /// [`CharucoBoardSpec`] in both directions.
+    #[serde(default = "default_border_bits")]
+    pub border_bits: usize,
+}
+
+pub(crate) fn default_border_bits() -> usize {
+    1
 }
 
 impl CharucoBoardSpec {
@@ -58,6 +79,7 @@ impl CharucoBoardSpec {
             marker_size_rel,
             dictionary,
             marker_layout: MarkerLayout::default(),
+            border_bits: default_border_bits(),
         }
     }
 
@@ -65,6 +87,15 @@ impl CharucoBoardSpec {
     #[must_use]
     pub fn with_marker_layout(mut self, marker_layout: MarkerLayout) -> Self {
         self.marker_layout = marker_layout;
+        self
+    }
+
+    /// Override the marker border ring width, in marker cells.
+    ///
+    /// Must match the printed board; see [`CharucoBoardSpec::border_bits`].
+    #[must_use]
+    pub fn with_border_bits(mut self, border_bits: usize) -> Self {
+        self.border_bits = border_bits;
         self
     }
 }
@@ -82,6 +113,10 @@ pub enum CharucoBoardError {
     /// `marker_size_rel` is outside the valid `(0, 1]` range.
     #[error("marker_size_rel must be in (0, 1]")]
     InvalidMarkerSizeRel,
+    /// `border_bits` is zero; a marker needs at least one border cell to be
+    /// distinguishable from the white square it sits on.
+    #[error("border_bits must be >= 1")]
+    InvalidBorderBits,
     /// The supplied dictionary contains no marker codes.
     #[error("dictionary has no codes")]
     EmptyDictionary,
@@ -122,6 +157,8 @@ struct RawBoardSpec {
     dict: String,
     #[serde(default)]
     layout: Option<MarkerLayout>,
+    #[serde(default)]
+    border_bits: Option<usize>,
 }
 
 impl RawBoardSpec {
@@ -135,6 +172,7 @@ impl RawBoardSpec {
             marker_size_rel: self.marker_scale,
             dictionary: dict,
             marker_layout: self.layout.unwrap_or_default(),
+            border_bits: self.border_bits.unwrap_or_else(default_border_bits),
         })
     }
 }
@@ -184,6 +222,9 @@ impl CharucoBoard {
             || spec.marker_size_rel > 1.0
         {
             return Err(CharucoBoardError::InvalidMarkerSizeRel);
+        }
+        if spec.border_bits == 0 {
+            return Err(CharucoBoardError::InvalidBorderBits);
         }
         if spec.dictionary.codes().is_empty() {
             return Err(CharucoBoardError::EmptyDictionary);
@@ -413,6 +454,7 @@ mod tests {
             marker_size_rel: 0.75,
             dictionary: dict,
             marker_layout: MarkerLayout::OpenCvCharuco,
+            border_bits: default_border_bits(),
         })
         .expect("board")
     }
@@ -426,6 +468,7 @@ mod tests {
             marker_size_rel: 0.75,
             dictionary: dict,
             marker_layout: MarkerLayout::OpenCvCharuco,
+            border_bits: default_border_bits(),
         })
         .expect("board")
     }
