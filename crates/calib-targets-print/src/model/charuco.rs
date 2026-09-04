@@ -92,7 +92,7 @@ impl CharucoTargetSpec {
             marker_size_rel: f64::from(board.marker_size_rel),
             dictionary: board.dictionary,
             marker_layout: board.marker_layout,
-            border_bits: default_border_bits(),
+            border_bits: board.border_bits,
         }
     }
 
@@ -106,6 +106,7 @@ impl CharucoTargetSpec {
             self.dictionary,
         )
         .with_marker_layout(self.marker_layout)
+        .with_border_bits(self.border_bits)
     }
 }
 

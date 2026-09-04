@@ -400,6 +400,17 @@ impl CellSamples {
     }
 }
 
+/// Whether cell `(cx, cy)` of a `cells`-wide marker grid lies on the black
+/// border ring of width `border`.
+///
+/// Both decode paths call this: the soft ChArUco sampler and the hard ArUco
+/// binarizer previously carried separate copies, and the copies disagreed for
+/// `border != 1`.
+#[inline]
+fn is_border_cell(cx: usize, cy: usize, cells: usize, border: usize) -> bool {
+    cx < border || cy < border || cx + border >= cells || cy + border >= cells
+}
+
 /// Sample a rectified per-cell intensity grid from an image using a cell
 /// quad, without decoding any marker id.
 ///
@@ -443,8 +454,7 @@ pub fn sample_cell(
     if border > 0 {
         for cy in 0..cells {
             for cx in 0..cells {
-                let is_border = cx == 0 || cy == 0 || cx + 1 == cells || cy + 1 == cells;
-                if !is_border {
+                if !is_border_cell(cx, cy, cells, border) {
                     continue;
                 }
                 border_total += 1;
@@ -742,8 +752,7 @@ fn binarize_and_score(
             if inverted {
                 is_black = !is_black;
             }
-            let is_border = use_border
-                && (cx < border || cy < border || cx + border >= cells || cy + border >= cells);
+            let is_border = use_border && is_border_cell(cx, cy, cells, border);
             if is_border {
                 border_total += 1;
                 if is_black {

@@ -63,7 +63,7 @@ fn grid_from_charuco_id(board: &CharucoBoard, id: u32) -> Option<Coord> {
 mod tests {
     use super::*;
     use crate::alignment::CharucoAlignment;
-    use crate::board::{CharucoBoard, CharucoBoardSpec, MarkerLayout};
+    use crate::board::{default_border_bits, CharucoBoard, CharucoBoardSpec, MarkerLayout};
     use calib_targets_aruco::builtins;
     use calib_targets_core::GridAlignment;
     use nalgebra::Point2;
@@ -77,6 +77,7 @@ mod tests {
             marker_size_rel: 0.75,
             dictionary: dict,
             marker_layout: MarkerLayout::OpenCvCharuco,
+            border_bits: default_border_bits(),
         })
         .expect("board")
     }
@@ -90,6 +91,7 @@ mod tests {
             marker_size_rel: 0.75,
             dictionary: dict,
             marker_layout: MarkerLayout::OpenCvCharuco,
+            border_bits: default_border_bits(),
         })
         .expect("board")
     }

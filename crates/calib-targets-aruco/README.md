@@ -56,10 +56,11 @@ Resolve by name with `builtins::builtin_dictionary(name)`.
 | [`scan_decode_markers`] | `&GrayImageView` + grid shape + cell size + config + matcher | `Vec<MarkerDetection>` (one per decoded cell) |
 | [`scan_decode_markers_in_cells`] | `&GrayImageView` + `&[MarkerCell]` + config + matcher | `Vec<MarkerDetection>` |
 | [`decode_marker_in_cell`] | a single `MarkerCell` | `Option<MarkerDetection>` |
-| [`Matcher::best_match`] | raw `u64` code bits | `Option<(id, rotation, hamming)>` |
+| [`Matcher::match_code`] | raw `u64` code bits | `Option<Match>` (`id`, `rotation`, `hamming`) |
 
-[`MarkerDetection`] carries `id`, `grid_coords`, `rotation` (0..3, 90° steps),
-`hamming`, `score`, and the rectified-rectangle corners used to produce it.
+[`MarkerDetection`] carries `id`, `gc` (the cell's grid coordinate), `rotation`
+(0..3, 90° steps), `hamming`, `score`, `border_score`, the observed `code`, and
+whether the decoder had to invert polarity.
 
 ## Configuration
 
@@ -68,10 +69,10 @@ Resolve by name with `builtins::builtin_dictionary(name)`.
 | Field | Default | Effect |
 |---|---|---|
 | `border_bits` | 1 | Marker border width in cells (OpenCV default 1). |
-| `inset_frac` | 0.08 | Per-cell edge inset to avoid sampling cell borders. Raise if markers print with soft edges. |
-| `marker_size_rel` | 0.75 | Marker side relative to the enclosing chessboard cell. Match the printed target. |
-| `min_border_score` | 0.7 | Minimum "frame looks like a marker border" score to accept a cell. Lower to recover low-contrast markers. |
-| `multi_threshold` | `false` | Try several local thresholds per cell. Enable for uneven illumination. |
+| `inset_frac` | 0.10 | Per-cell edge inset to avoid sampling cell borders. Raise if markers print with soft edges. |
+| `marker_size_rel` | 1.0 | Marker side relative to the enclosing chessboard cell. Match the printed target (ChArUco boards set this from the board spec). |
+| `min_border_score` | 0.85 | Minimum "frame looks like a marker border" score to accept a cell. Lower to recover low-contrast markers. |
+| `multi_threshold` | `true` | Try several local thresholds per cell. Disable to trade recall on uneven illumination for speed. |
 | `dedup_by_id` | `true` | Keep one detection per marker ID (highest score). Disable when multiple boards share a dictionary. |
 
 [`Matcher::new(dict, max_hamming)`] — the second arg is the maximum

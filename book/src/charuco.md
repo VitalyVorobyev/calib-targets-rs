@@ -2,6 +2,17 @@
 
 `calib-targets-charuco` combines chessboard detection with ArUco decoding to detect ChArUco boards. ChArUco dictionaries and board layouts are fully compatible with OpenCV's aruco/charuco implementation. The flow is grid-first:
 
+> **Which OpenCV pattern?** The *modern* one — OpenCV's default since 4.6.
+> The **top-left square is black**, markers sit on the white squares
+> (`(col + row)` odd), and marker IDs run row-major over those squares from 0,
+> so marker 0 is at column 1 of the top row. This is what
+> `cv2.aruco.CharucoBoard` produces out of the box; it is *not*
+> `setLegacyPattern(True)`, which flips the parity and puts a white square and
+> marker 0 at `(0, 0)`. Boards this crate generates and detects use the modern
+> pattern throughout, and
+> `crates/calib-targets-print/tests/opencv_charuco_conformance.rs` pins it
+> against captured OpenCV output.
+
 ![ChArUco detection overlay](img/charuco_detect_report_small2_overlay.png)
 *ChArUco detection overlay with assigned corner IDs.*
 
