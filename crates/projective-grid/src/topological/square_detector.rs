@@ -375,11 +375,7 @@ fn assemble_square_oriented2_components_observed(
         return Err(GridError::DegenerateGeometry);
     }
     if let Some(trace) = trace.as_mut() {
-        trace.triangles = triangulation
-            .triangles
-            .chunks_exact(3)
-            .map(|triangle| [triangle[0], triangle[1], triangle[2]])
-            .collect();
+        trace.triangles = triangulation.triangles.as_chunks::<3>().0.to_vec();
     }
 
     let edge_kinds =
