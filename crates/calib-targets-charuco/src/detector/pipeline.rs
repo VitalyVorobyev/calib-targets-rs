@@ -221,13 +221,15 @@ impl CharucoDetector {
         if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
             params.scan.marker_size_rel = board_cfg.marker_size_rel;
         }
-        // Both fields describe the same printed board. `for_board` seeds the
-        // scan config from the spec; this repairs params that were built by
-        // hand or round-tripped through JSON with the field left unset, so a
-        // non-default board border is never silently decoded as 1.
-        if params.scan.border_bits == 0 {
-            params.scan.border_bits = board_cfg.border_bits;
-        }
+        // `board.border_bits` and `scan.border_bits` describe one physical fact:
+        // the ring printed around each marker. Inside a ChArUco detector the
+        // board spec is the description of the target, so the scan value is
+        // derived from it rather than left as a second knob that can contradict
+        // it. Repairing only an "unset" scan value is not possible — its default
+        // is 1, indistinguishable from a caller who meant 1 — so a conditional
+        // here would silently decode a `border_bits = 2` board as 1 for every
+        // params built by hand or round-tripped through JSON.
+        params.scan.border_bits = board_cfg.border_bits;
 
         let board = CharucoBoard::new(board_cfg)?;
 

@@ -12,24 +12,42 @@ see [Older releases](#older-releases) at the bottom for the index.
 ### Fixed
 
 - **`border_bits` is now part of the ChArUco board description.**
-  `CharucoBoardSpec` had no `border_bits` field, so the detector always
-  assumed a one-cell marker border no matter what the board was printed
-  with. A board generated with `border_bits = 2` — which the printable spec
-  has always accepted — was undecodable: every payload bit was sampled one
-  cell off. The border ring is a physical property of the printed target,
-  not a tuning knob, so the spec that describes the board now carries it.
+  `CharucoBoardSpec` had no `border_bits` field. The printable spec has
+  always accepted one, but `to_board_spec()` dropped it and the reverse
+  conversion hardcoded the default, so the *only* statement of the ring width
+  reaching the detector was `scan.border_bits` — a decode tuning knob, always
+  1 unless a caller reached past the board spec to set it. The board's own
+  description could not say how the board was printed. The ring is a physical
+  property of the printed target, so the spec that describes the target now
+  carries it.
+
+  What that fixed is the description, not a decode failure: measured on a
+  synthetic render, the board-level matcher still aligns a `border_bits = 2`
+  or even `= 3` board while sampling it with a one-cell ring, because the
+  inset sampling grid happens to land inside the payload either way. What is
+  *not* accidental is everything computed from the ring — the border-score
+  gate `min_border_score` scores cells that are not the printed border, and
+  the diagnostics report a ring the board does not have. The tolerance is a
+  coincidence of one inset value; the description being right is not.
 
   The field is additive on a `#[non_exhaustive]` struct with a named
   constructor and a `with_border_bits` builder, and it defaults to 1
   everywhere, so existing code, configs and board JSON are unaffected and
-  the `border_bits = 1` output is byte-identical. `CharucoParams::for_board`
-  seeds the scan config from the spec, and `CharucoDetector::new` repairs an
-  unset value the same way it already repaired `marker_size_rel`, so
-  hand-built or JSON-round-tripped params cannot silently decode a
-  non-default border as 1. Exposed on the Python `CharucoBoardSpec`; the C
-  ABI is unchanged, deriving the board's value from the `scan.border_bits`
-  field it already carried rather than adding a second field for the same
-  fact.
+  the `border_bits = 1` output is byte-identical. `CharucoDetector::new`
+  **derives `scan.border_bits` from the board unconditionally**: the two
+  describe one physical fact, and a conditional repair cannot work here —
+  the scan default is `1`, indistinguishable from a caller who meant 1, so
+  `for_board` would have been the only construction path that agreed with
+  its own board. Reassigning `params.board`, or deserialising a config that
+  names the board and omits `scan` (the shape the Python bindings take), now
+  samples the ring the board declares. Exposed on the Python
+  `CharucoBoardSpec`; the C ABI is unchanged, deriving the board's value from
+  the `scan.border_bits` field it already carried rather than adding a second
+  field for the same fact.
+
+  Setting `scan.border_bits` directly no longer has an effect inside a ChArUco
+  detector — use `CharucoBoardSpec::with_border_bits`. See the
+  [0.14 migration guide](docs/migrations/0.14.0.md).
 
   Also unifies the marker border ring predicate. The soft ChArUco sampler
   assumed a one-cell ring while the hard ArUco binarizer honoured

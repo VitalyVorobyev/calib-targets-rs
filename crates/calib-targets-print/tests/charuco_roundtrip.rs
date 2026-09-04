@@ -210,10 +210,14 @@ fn board_position(col: u32, row: u32) -> (f32, f32) {
 
 /// A board printed with a two-cell marker border decodes.
 ///
-/// Before `border_bits` became part of `CharucoBoardSpec`, the detector always
-/// assumed a one-cell ring no matter what the board was printed with, so every
-/// payload bit was sampled one cell off and nothing decoded. This is the
-/// regression guard for that.
+/// Before `border_bits` became part of `CharucoBoardSpec`, the board could not
+/// state its own ring width — the detector read `scan.border_bits`, a decode
+/// knob that defaults to 1. This is the end-to-end guard that a board which
+/// declares a wider ring is generated and read back consistently. Note it is
+/// not by itself evidence that the ring width reaches the sampler: measured,
+/// the matcher aligns this board even when told the ring is one cell (see
+/// `a_reassigned_board_still_drives_the_scan_config`), so the config-level
+/// assertions are the ones that discriminate.
 #[test]
 fn wider_marker_border_still_decodes() {
     let (cols, rows) = (7u32, 5u32);
@@ -249,6 +253,105 @@ fn wider_marker_border_still_decodes() {
             marker.id
         );
     }
+}
+
+/// A board assigned *after* construction still drives the scan config.
+///
+/// `for_board` seeds `scan` from the board spec, so it is the one path that
+/// hides whether the detector honours `board.border_bits` at all. The reachable
+/// ways to hold params whose scan config was seeded from a *different* board
+/// are this one — reassign `board` — and deserialization (below); `CharucoParams`
+/// is `#[non_exhaustive]` with no `Default`, so there is no third.
+///
+/// The assertion that bites is the derived `scan.border_bits`, not the decode.
+/// Measured: with `scan.border_bits = 1` against a `border_bits = 3` board the
+/// board-level matcher still aligns this synthetic, noise-free render and
+/// reports every marker. That tolerance is accidental — it comes from where the
+/// inset sampling grid happens to fall — and it does not extend to the border
+/// score, which is then computed over cells that are not the printed ring. So
+/// the invariant to hold is that the two never disagree in the first place.
+#[test]
+fn a_reassigned_board_still_drives_the_scan_config() {
+    let (cols, rows) = (7u32, 5u32);
+    let border_bits = 2;
+    let img = render(cols, rows, "DICT_4X4_50", border_bits);
+    let view = GrayImageView {
+        width: img.width,
+        height: img.height,
+        data: &img.pixels,
+    };
+
+    // Seeded from a one-cell board, then pointed at the two-cell one.
+    let mut params = CharucoParams::for_board(board_spec(cols, rows, "DICT_4X4_50", 1));
+    assert_eq!(
+        params.scan.border_bits, 1,
+        "precondition: the scan config still describes the board it was seeded from"
+    );
+    params.board = board_spec(cols, rows, "DICT_4X4_50", border_bits);
+
+    let detector = CharucoDetector::new(params).expect("detector");
+    assert_eq!(
+        detector.params().scan.border_bits,
+        border_bits,
+        "the board spec must drive the scan config on every construction path"
+    );
+
+    let detection = detector.detect(&view).expect("detect");
+    let mut found: Vec<u32> = detection.markers.iter().map(|m| m.id).collect();
+    found.sort_unstable();
+    assert_eq!(
+        found,
+        decodable_markers(detector.board()),
+        "the reassigned board must decode"
+    );
+}
+
+/// The same, through JSON — the path a stored config and the Python bindings
+/// both take (`detect_charuco` accepts a params *dict*, deserialised by serde).
+#[test]
+fn a_deserialised_config_derives_the_scan_border() {
+    let (cols, rows) = (7u32, 5u32);
+    let border_bits = 2;
+    let img = render(cols, rows, "DICT_4X4_50", border_bits);
+    let view = GrayImageView {
+        width: img.width,
+        height: img.height,
+        data: &img.pixels,
+    };
+
+    // A config that names the board and says nothing about scanning — `scan`
+    // has a serde default, so this is the ordinary shape of a stored config.
+    let spec = board_spec(cols, rows, "DICT_4X4_50", border_bits);
+    let mut value = serde_json::to_value(CharucoParams::for_board(spec)).expect("serialise params");
+    value
+        .as_object_mut()
+        .expect("params serialise to an object")
+        .remove("scan")
+        .expect("params carry a scan block");
+
+    let params: CharucoParams = serde_json::from_value(value).expect("params deserialise");
+    assert_eq!(params.board.border_bits, border_bits);
+    assert_eq!(
+        params.scan.border_bits, 1,
+        "precondition: the defaulted scan block claims a one-cell ring, which is \
+         exactly the value an unset-sentinel repair cannot tell from a deliberate 1"
+    );
+
+    let detector = CharucoDetector::new(params).expect("detector");
+    assert_eq!(
+        detector.params().scan.border_bits,
+        border_bits,
+        "a deserialised config must sample the ring its board describes"
+    );
+
+    let detection = detector.detect(&view).expect("detect");
+    let mut found: Vec<u32> = detection.markers.iter().map(|m| m.id).collect();
+    found.sort_unstable();
+    assert_eq!(
+        found,
+        decodable_markers(detector.board()),
+        "a deserialised config must decode the board it describes"
+    );
 }
 
 /// A zero `border_bits` is rejected rather than silently accepted: a marker
