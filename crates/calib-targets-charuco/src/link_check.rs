@@ -271,14 +271,15 @@ mod tests {
 
     fn build_board() -> CharucoBoard {
         let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("dict");
-        CharucoBoard::new(CharucoBoardSpec {
-            rows: 5,
-            cols: 6,
-            cell_size: 1.0,
-            marker_size_rel: 0.75,
-            dictionary: dict,
-            marker_layout: MarkerLayout::OpenCvCharuco,
-        })
+        // Built through the named constructor, not a struct literal: the spec
+        // is `#[non_exhaustive]` and gains fields (`border_bits` in 0.14.0),
+        // and a literal here breaks the build for every future one. This
+        // module is behind the off-by-default `link-check` feature, so that
+        // break is invisible to CI and only surfaces at the release gate.
+        CharucoBoard::new(
+            CharucoBoardSpec::new(5, 6, 1.0, 0.75, dict)
+                .with_marker_layout(MarkerLayout::OpenCvCharuco),
+        )
         .expect("board")
     }
 

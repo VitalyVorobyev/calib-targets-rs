@@ -19,7 +19,7 @@ Algorithm details: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-marker = "0.13"
+calib-targets-marker = "0.14"
 ```
 
 ## Quickstart
@@ -29,7 +29,7 @@ ChESS corner detection for you and takes an `image::GrayImage` straight in.
 
 ```toml
 [dependencies]
-calib-targets = "0.13"
+calib-targets = "0.14"
 image = "0.25"
 ```
 
