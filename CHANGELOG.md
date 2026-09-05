@@ -7,7 +7,32 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.15.0
+
+A minor, not a patch, and the reason is narrow: three fields were **removed**
+from public structs. `#[non_exhaustive]` stops a downstream crate constructing
+or exhaustively destructuring them, but it never stopped reading a field, and
+`#[serde(deny_unknown_fields)]` turns a stored JSON config that still names one
+into a deserialization error rather than a silent ignore. That is the whole
+patch-vs-minor test, and it fails.
+
+Everything else in here would have been a patch. The blast radius is the
+marker-board detector, its printable model, and the bindings that mirror them —
+a consumer who does not use `calib-targets-marker` or `MarkerBoardTargetSpec`
+sees a version bump and nothing else. `projective-grid` is unchanged at 0.14.
+
+What it fixes is a false positive, which the workspace contract does not
+tolerate at any severity: a marker board rendered with `inner_square_rel` above
+~0.3 could resolve a board frame 90 or 180 degrees rotated while reporting
+three clean circle matches and no error. A miss is recoverable; a rotated frame
+puts a wrong `(i, j)` on every corner and is not. Reproducing it turned up two
+independent defects that had to line up, and three more found in the same code
+while tracing them — including a default circle layout that rendered three
+invisible markers, and a fully detected board silently dropping the board ids of
+its last row and column.
+
+Upgrading: [`docs/migrations/0.15.0.md`](docs/migrations/0.15.0.md). C ABI
+consumers must **relink**, not just recompile — the ABI goes 4.0.0 to 5.0.0.
 
 ### Fixed
 

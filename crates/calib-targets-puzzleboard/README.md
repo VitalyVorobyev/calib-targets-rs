@@ -23,7 +23,7 @@ Algorithm details and bit-layout spec: [book chapter][book-chapter].
 
 ```toml
 [dependencies]
-calib-targets-puzzleboard = "0.14"
+calib-targets-puzzleboard = "0.15"
 ```
 
 ## Quickstart (facade)

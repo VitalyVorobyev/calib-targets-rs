@@ -11,6 +11,49 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
+## ABI 5.0.0 — breaking
+
+Paired with workspace 0.15.0. **Relink; recompiling is not enough** — three
+marker-board structs change size, so a caller built against 4.0.0 passes
+structs of the wrong layout and is silently misaligned rather than failing to
+link. Nothing outside the marker board is touched: a consumer using only the
+chessboard, ChArUco or PuzzleBoard entry points rebuilds against the shipped
+header and is done.
+
+**The printed disk diameter moved onto the board.**
+
+- `ct_marker_board_layout_t` gains `float circle_diameter_rel` — the printed
+  disk diameter as a fraction of the square side, typically `0.5`. Every radius
+  the circle scorer probes is relative to it.
+- `ct_circle_score_params_t` loses `diameter_frac`, which stated the same
+  quantity. Two copies of one physical fact could disagree, and did: a board
+  printed at `0.45` was probed at `0.5`, putting every scorer radius 11% off.
+  Move the value; do not duplicate it.
+
+**The circle matcher lost its distance gate.**
+
+- `ct_circle_match_params_t` loses `max_distance_cells`. Frame resolution is now
+  hypothesis-and-verify over the four rotations rather than nearest-cell
+  matching, so a match is an exact integer coincidence and a distance tolerance
+  has nothing to tolerate.
+- `min_offset_inliers` keeps its type and its meaning but its *recommended*
+  value changes from `1` to `3` — the whole layout. The three circles exist only
+  to break the board's 4-fold rotational symmetry, and one circle is consistent
+  with all four rotations. The Rust default moved with it; a C caller fills the
+  struct itself and should set `3` unless it is knowingly trading the
+  never-a-wrong-frame guarantee for recall.
+
+**One new failure mode reaches C as a miss.**
+`ct_marker_board_detector_detect` now returns `CT_STATUS_NOT_FOUND` when two
+board frames explain the detected circles equally well, where it previously
+returned a confidently rotated result. `ct_marker_board_detector_diagnose_json`
+carries the detail: `alignment_ambiguous`, `alignment_runner_up_inliers`, and a
+`squareness` reading on every scored circle candidate.
+
+Full Rust-side context is in the
+[0.15 migration guide](../migrations/0.15.0.md) and
+[`CHANGELOG.md`](../../CHANGELOG.md).
+
 ## ABI 4.0.0 — breaking
 
 Paired with workspace 0.13.0, and unchanged in both 0.14.0 and 0.14.1 — the

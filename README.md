@@ -32,7 +32,7 @@ per target, with a shared corner vocabulary.
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
-Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.14.0.md)
+Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.15.0.md)
 ([book chapter][migration]); the [0.13.0 guide](docs/migrations/0.13.0.md) is kept
 for consumers upgrading across two releases.
 
