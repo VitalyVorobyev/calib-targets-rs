@@ -49,3 +49,35 @@ def test_write_target_bundle(tmp_path: Path) -> None:
     assert "$INSUNITS\n 70\n4\n" in dxf
     doc = json.loads(json_path.read_text())
     assert doc["target"]["kind"] == "marker_board"
+
+
+def test_inner_square_rel_omitted_when_none() -> None:
+    doc = ct.chessboard_document(6, 8, 20.0)
+    assert "inner_square_rel" not in doc.to_dict()["target"]
+
+
+def test_inner_square_rel_roundtrips_for_all_three_specs() -> None:
+    chessboard = ct.chessboard_document(6, 8, 20.0, inner_square_rel=0.4)
+    assert chessboard.to_dict()["target"]["inner_square_rel"] == 0.4
+    restored = ct.PrintableTargetDocument.from_dict(chessboard.to_dict())
+    assert restored.to_dict() == chessboard.to_dict()
+
+    charuco = ct.charuco_document(5, 7, 20.0, 0.75, "DICT_4X4_50", inner_square_rel=0.3)
+    assert charuco.to_dict()["target"]["inner_square_rel"] == 0.3
+    restored = ct.PrintableTargetDocument.from_dict(charuco.to_dict())
+    assert restored.to_dict() == charuco.to_dict()
+
+    marker_board = ct.marker_board_document(6, 8, 20.0, inner_square_rel=0.25)
+    assert marker_board.to_dict()["target"]["inner_square_rel"] == 0.25
+    restored = ct.PrintableTargetDocument.from_dict(marker_board.to_dict())
+    assert restored.to_dict() == marker_board.to_dict()
+
+
+def test_render_target_bundle_with_inner_square_rel() -> None:
+    baseline = ct.render_target_bundle(ct.chessboard_document(4, 4, 20.0))
+    inset = ct.render_target_bundle(ct.chessboard_document(4, 4, 20.0, inner_square_rel=0.4))
+
+    assert inset.svg_text.count("<rect ") > baseline.svg_text.count("<rect ")
+    # The inset must reach the DXF as a second LWPOLYLINE per black square,
+    # never as a solid black square (see the Rust RectWithHole docs).
+    assert inset.dxf_text.count("LWPOLYLINE") > baseline.dxf_text.count("LWPOLYLINE")

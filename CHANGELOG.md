@@ -9,6 +9,67 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+### Added
+
+- **`inner_square_rel` on `ChessboardTargetSpec`, `CharucoTargetSpec` and
+  `MarkerBoardTargetSpec`.** vitavision's own printable-target generator
+  draws a white square inset centred inside every black square — a real,
+  shipped feature of its laser-calibration boards — and nothing in
+  `calib-targets-print` could express it, so a document round-tripped
+  through this library lost the inset entirely. That gap was the *last*
+  reason a second implementation of the printable-target geometry existed
+  downstream, and that fork is the one that shipped ChArUco markers rotated
+  180° — a fork that has to reimplement geometry can drift, and did.
+
+  The new field is a fraction of the square side in `[0.0, 1.0)`; `None`
+  (absent) and `Some(0.0)` both mean no inset — the two are equivalent
+  because the downstream generator always sends an explicit number with `0`
+  meaning "off", and accepting it outright avoids a footgun. `1.0` and above
+  are rejected (`PrintableTargetError::InvalidInnerSquareRel`): at `1.0` the
+  inset erases the square it is cut from entirely. The inset draws *inside*
+  a square — it never moves a corner intersection, so `resolved_points()` is
+  provably identical with and without it.
+
+  It applies to chessboard, ChArUco and marker-board targets, never to
+  puzzleboard, and on a ChArUco board only to the plain black checker
+  squares — never to an ArUco marker's bit cells. Additive on three
+  `#[non_exhaustive]` structs with a serde default
+  (`skip_serializing_if = "Option::is_none"`), so every existing document
+  and fixture serialises byte-identical to before; each spec gains a
+  `with_inner_square_rel` builder.
+
+  The renderer gained a new `RectWithHole` scene primitive rather than an
+  overlaid white rectangle on top of the black square. The distinction
+  matters only for one output format, but matters completely there: the DXF
+  writer — the chrome-on-glass photolithography handoff — filters the scene
+  down to black-fill primitives and drops every white one, so an overlaid
+  white rect would render correctly in the SVG and PNG previews and
+  *silently produce a solid black square* in the DXF a fab actually cuts
+  from. `RectWithHole` carries the hole as an explicit second shape: the DXF
+  writer now emits it as a second closed `LWPOLYLINE`, wound clockwise
+  (reversed relative to the enclosing square's counter-clockwise winding) —
+  the conventional even-odd-fill signal for a boundary void — instead of
+  dropping it.
+
+  The open question the backlog raised — whether the inset's four extra
+  corners per cell enter the detected grid, and so whether the spec needs to
+  state a supported range rather than accept any value — was settled by
+  measurement rather than argument. Inset boards were rendered, rasterised
+  and run back through the real chessboard and ChArUco detectors at
+  `inner_square_rel` 0.0 / 0.3 / 0.5 / 0.7 / 0.9: corner count, labelled grid
+  extent, marker count, marker ids and marker rotations are identical at
+  every value (48 corners over `i` 0..7, `j` 0..5 for a 6x8 chessboard; 25
+  corners and 8 markers at rotation 0 for a 6x6 ChArUco board). ChESS fires
+  on saddle / X-junctions, and an inset corner is an L-corner. No range
+  restriction beyond the geometric `rel < 1.0` bound is therefore warranted.
+
+  Mirrored in every binding-parity surface per `docs/development/conventions.md`:
+  the WASM `typescript-extras.d.ts` (and its construction-check fixture),
+  the Python dataclasses in `calib_targets.printing` (`to_dict` omits the
+  key when unset, so the Rust round trip stays byte-identical), and the
+  Rust and Python CLIs (`--inner-square-rel` on the chessboard, ChArUco and
+  marker-board `init`/`gen` subcommands).
+
 ## 0.14.0
 
 Additive on every published surface — no type removed or renamed, the C ABI

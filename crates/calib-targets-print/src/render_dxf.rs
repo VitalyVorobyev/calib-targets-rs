@@ -4,7 +4,13 @@
 //! `Fill::Black` regions of the scene — the chrome side for chrome-on-
 //! glass photolithography. Rectangles become closed `LWPOLYLINE`s with
 //! four vertices; circles become native `CIRCLE` entities (exact center
-//! and radius, no polygon approximation). Coordinates are in
+//! and radius, no polygon approximation). A [`Primitive::RectWithHole`]
+//! (the `inner_square_rel` white inset cut into a black square) becomes
+//! **two** closed `LWPOLYLINE`s on the same layer — the outer square
+//! wound counter-clockwise like any other rect, the inner hole wound
+//! clockwise, the conventional even-odd-fill signal for a void; see
+//! [`write_hole_rect`] for why this is a dedicated shape rather than an
+//! overlaid white rectangle. Coordinates are in
 //! millimetres and the Y axis is flipped relative to the SVG/PNG
 //! renderer so the DXF lives in the standard Y-up cartesian frame
 //! photolith CAM tools expect (origin at the bottom-left of the page).
@@ -323,6 +329,39 @@ fn write_entities(out: &mut String, scene: &Scene, handles: &mut HandleAlloc) {
                 }
                 write_circle(out, *cx_mm, *cy_mm, *radius_mm, scene.height_mm, handles);
             }
+            Primitive::RectWithHole {
+                x_mm,
+                y_mm,
+                width_mm,
+                height_mm,
+                hole_x_mm,
+                hole_y_mm,
+                hole_width_mm,
+                hole_height_mm,
+                fill,
+            } => {
+                if !is_black(*fill) {
+                    continue;
+                }
+                write_rect(
+                    out,
+                    *x_mm,
+                    *y_mm,
+                    *width_mm,
+                    *height_mm,
+                    scene.height_mm,
+                    handles,
+                );
+                write_hole_rect(
+                    out,
+                    *hole_x_mm,
+                    *hole_y_mm,
+                    *hole_width_mm,
+                    *hole_height_mm,
+                    scene.height_mm,
+                    handles,
+                );
+            }
         }
     }
 
@@ -399,6 +438,52 @@ fn write_circle(
     push_real(out, 40, r_mm);
 }
 
+/// Emit a closed 4-vertex `LWPOLYLINE` for the rectangular *hole* cut out of
+/// an `inner_square_rel` black-square inset, Y-flipped like [`write_rect`]
+/// but with **reversed (clockwise) vertex winding**.
+///
+/// [`write_rect`] always winds its rectangles counter-clockwise. Emitting
+/// the hole with the opposite winding is the conventional signal, under an
+/// even-odd (or winding-aware nonzero) fill rule, that this polygon is a
+/// void cut from the enclosing one rather than a second solid shape on top
+/// of it — the reversal here is deliberate, not an inconsistency with
+/// `write_rect`. The consumer (CAM/photolith tooling) is expected to apply
+/// such a fill rule across the two polylines sharing this layer; a
+/// consumer that instead fills every closed polyline independently would
+/// render the hole as solid black, which is exactly the silent failure
+/// mode a plain overlaid white primitive would have produced — see the
+/// module-level and [`Primitive::RectWithHole`] documentation.
+fn write_hole_rect(
+    out: &mut String,
+    x_mm: f64,
+    y_mm: f64,
+    w_mm: f64,
+    h_mm: f64,
+    page_h_mm: f64,
+    handles: &mut HandleAlloc,
+) {
+    let x0 = x_mm;
+    let x1 = x_mm + w_mm;
+    let y_bottom = page_h_mm - y_mm - h_mm;
+    let y_top = page_h_mm - y_mm;
+
+    push_entity_header(out, "LWPOLYLINE", handles, "PATTERN");
+    push_pair(out, 100, "AcDbPolyline");
+    push_int(out, 90, 4); // vertex count
+    push_int(out, 70, 1); // closed flag
+
+    // CW vertex order starting from bottom-left — the reverse of
+    // write_rect's CCW order.
+    push_real(out, 10, x0);
+    push_real(out, 20, y_bottom);
+    push_real(out, 10, x0);
+    push_real(out, 20, y_top);
+    push_real(out, 10, x1);
+    push_real(out, 20, y_top);
+    push_real(out, 10, x1);
+    push_real(out, 20, y_bottom);
+}
+
 // Tests ---------------------------------------------------------------------
 
 #[cfg(test)]
@@ -406,7 +491,7 @@ mod tests {
     use super::*;
     use crate::render::{render_target_bundle, Fill, Primitive, Scene};
     use crate::{
-        CharucoTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec, PageSize,
+        CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec, PageSize,
         PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
     };
     use calib_targets_aruco::builtins;
@@ -513,6 +598,130 @@ mod tests {
         // cy_dxf = 40 - 6.25 = 33.75
         let entities = dxf.split("ENTITIES\n").nth(1).expect("ENTITIES section");
         assert!(entities.contains(" 10\n12.500000\n 20\n33.750000\n 30\n0.000000\n 40\n1.500000\n"));
+    }
+
+    #[test]
+    fn rect_with_hole_emits_outer_and_reversed_winding_hole_lwpolylines() {
+        // Outer square [5,7]-[13,11] (8x4, same as the plain-rect test
+        // above) with a hole cut at [7,8]-[11,10] (4x2).
+        let mut scene = Scene::new(20.0, 30.0);
+        scene.primitives.push(Primitive::RectWithHole {
+            x_mm: 5.0,
+            y_mm: 7.0,
+            width_mm: 8.0,
+            height_mm: 4.0,
+            hole_x_mm: 7.0,
+            hole_y_mm: 8.0,
+            hole_width_mm: 4.0,
+            hole_height_mm: 2.0,
+            fill: Fill::Black,
+        });
+        let dxf = render_dxf(&scene);
+
+        // Exactly two closed 4-vertex LWPOLYLINEs: outer + hole.
+        assert_eq!(count_entities(&dxf, "LWPOLYLINE"), 2);
+        assert_eq!(count_pairs_in_entities(&dxf, 90, "4"), 2);
+        assert_eq!(count_pairs_in_entities(&dxf, 70, "1"), 2);
+
+        let entities = dxf
+            .split(
+                "ENTITIES
+",
+            )
+            .nth(1)
+            .expect("ENTITIES section")
+            .split("ENDSEC")
+            .next()
+            .expect("ENDSEC");
+
+        // Outer, CCW from bottom-left — identical to the plain-rect case:
+        // SVG (5,7,8,4) on a 20x30 page -> DXF BL=(5,19), BR=(13,19),
+        // TR=(13,23), TL=(5,23).
+        assert!(entities.contains(
+            " 10
+5.000000
+ 20
+19.000000
+"
+        ));
+        assert!(entities.contains(
+            " 10
+13.000000
+ 20
+19.000000
+"
+        ));
+        assert!(entities.contains(
+            " 10
+13.000000
+ 20
+23.000000
+"
+        ));
+        assert!(entities.contains(
+            " 10
+5.000000
+ 20
+23.000000
+"
+        ));
+
+        // Hole, CW from bottom-left — the expected centred hole in
+        // Y-flipped DXF coordinates: SVG (7,8,4,2) -> DXF BL=(7,20),
+        // TL=(7,22), TR=(11,22), BR=(11,20). The vertex order is reversed
+        // relative to the outer rect's CCW winding.
+        for vertex in [
+            " 10
+7.000000
+ 20
+20.000000
+",
+            " 10
+7.000000
+ 20
+22.000000
+",
+            " 10
+11.000000
+ 20
+22.000000
+",
+            " 10
+11.000000
+ 20
+20.000000
+",
+        ] {
+            assert!(
+                entities.contains(vertex),
+                "missing hole vertex {vertex:?} in:\n{entities}"
+            );
+        }
+    }
+
+    #[test]
+    fn rect_with_hole_is_dropped_entirely_when_not_black() {
+        for fill in [Fill::White, Fill::Accent, Fill::Guide] {
+            let mut scene = Scene::new(10.0, 10.0);
+            scene.primitives.push(Primitive::RectWithHole {
+                x_mm: 0.0,
+                y_mm: 0.0,
+                width_mm: 4.0,
+                height_mm: 4.0,
+                hole_x_mm: 1.0,
+                hole_y_mm: 1.0,
+                hole_width_mm: 2.0,
+                hole_height_mm: 2.0,
+                fill,
+            });
+            let dxf = render_dxf(&scene);
+            assert_eq!(
+                count_entities(&dxf, "LWPOLYLINE"),
+                0,
+                "a non-black RectWithHole ({fill:?}) must not reach the DXF at all \
+                 — neither the outer square nor the hole"
+            );
+        }
     }
 
     #[test]
@@ -701,6 +910,7 @@ mod tests {
             dictionary: builtins::builtin_dictionary("DICT_4X4_50").expect("dict"),
             marker_layout: MarkerLayout::OpenCvCharuco,
             border_bits: 1,
+            inner_square_rel: None,
         }))
     }
 
@@ -721,6 +931,44 @@ mod tests {
         );
         // No CIRCLEs for ChArUco — only Rect primitives upstream.
         assert_eq!(count_entities(dxf, "CIRCLE"), 0);
+    }
+
+    #[test]
+    fn inner_square_inset_doubles_the_lwpolyline_count_per_black_square() {
+        // This is the DXF-specific proof that the inset is a genuine
+        // second LWPOLYLINE (the hole) rather than an overlaid white
+        // primitive that render_dxf would silently drop — see the
+        // `RectWithHole` / `write_hole_rect` documentation for why an
+        // overlay would be the worst possible failure here.
+        let mut doc = PrintableTargetDocument::new(TargetSpec::Chessboard(ChessboardTargetSpec {
+            inner_rows: 2,
+            inner_cols: 2,
+            square_size_mm: 20.0,
+            inner_square_rel: None,
+        }));
+        doc.page.size = PageSize::Custom {
+            width_mm: 100.0,
+            height_mm: 100.0,
+        };
+
+        // 3x3 squares; (sx + sy) % 2 == 0 is black, giving 5 black squares:
+        // (0,0), (0,2), (1,1), (2,0), (2,2).
+        let baseline = render_target_bundle(&doc).expect("baseline bundle");
+        let baseline_lwp = count_entities(&baseline.dxf_text, "LWPOLYLINE");
+        assert_eq!(
+            baseline_lwp, 5,
+            "non-inset case must still emit exactly one LWPOLYLINE per black square"
+        );
+
+        if let TargetSpec::Chessboard(spec) = &mut doc.target {
+            spec.inner_square_rel = Some(0.4);
+        }
+        let inset = render_target_bundle(&doc).expect("inset bundle");
+        let inset_lwp = count_entities(&inset.dxf_text, "LWPOLYLINE");
+        assert_eq!(
+            inset_lwp, 10,
+            "inset case must emit exactly two LWPOLYLINEs (outer + hole) per black square"
+        );
     }
 
     #[test]
@@ -751,6 +999,7 @@ mod tests {
                     },
                 ],
                 circle_diameter_rel: 0.5,
+                inner_square_rel: None,
             }));
         doc.render.debug_annotations = true;
         doc.page.size = PageSize::Custom {

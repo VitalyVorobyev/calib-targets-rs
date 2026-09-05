@@ -110,14 +110,22 @@ class ChessboardTargetSpec:
     inner_rows: int
     inner_cols: int
     square_size_mm: float
+    # White inset square drawn centred inside every black square, as a
+    # fraction of the square side, in [0.0, 1.0). `None` (the default) and
+    # `0.0` both mean no inset. Omitted from `to_dict()` when `None` so the
+    # Rust round trip stays byte-identical.
+    inner_square_rel: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "kind": "chessboard",
             "inner_rows": self.inner_rows,
             "inner_cols": self.inner_cols,
             "square_size_mm": self.square_size_mm,
         }
+        if self.inner_square_rel is not None:
+            out["inner_square_rel"] = self.inner_square_rel
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessboardTargetSpec:
@@ -125,6 +133,9 @@ class ChessboardTargetSpec:
             inner_rows=int(data["inner_rows"]),
             inner_cols=int(data["inner_cols"]),
             square_size_mm=float(data["square_size_mm"]),
+            inner_square_rel=float(data["inner_square_rel"])
+            if "inner_square_rel" in data
+            else None,
         )
 
 
@@ -137,9 +148,15 @@ class CharucoTargetSpec:
     dictionary: DictionaryName
     marker_layout: MarkerLayout = MarkerLayout.OPENCV_CHARUCO
     border_bits: int = 1
+    # White inset square drawn centred inside every plain black checker
+    # square (never inside an ArUco marker's bit cells), as a fraction of
+    # the square side, in [0.0, 1.0). `None` (the default) and `0.0` both
+    # mean no inset. Omitted from `to_dict()` when `None` so the Rust round
+    # trip stays byte-identical.
+    inner_square_rel: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "kind": "charuco",
             "rows": self.rows,
             "cols": self.cols,
@@ -151,6 +168,9 @@ class CharucoTargetSpec:
             else str(self.marker_layout),
             "border_bits": self.border_bits,
         }
+        if self.inner_square_rel is not None:
+            out["inner_square_rel"] = self.inner_square_rel
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CharucoTargetSpec:
@@ -165,6 +185,9 @@ class CharucoTargetSpec:
             dictionary=str(data["dictionary"]),
             marker_layout=marker_layout,
             border_bits=int(data.get("border_bits", 1)),
+            inner_square_rel=float(data["inner_square_rel"])
+            if "inner_square_rel" in data
+            else None,
         )
 
 
@@ -175,6 +198,11 @@ class MarkerBoardTargetSpec:
     square_size_mm: float
     circles: tuple[MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec]
     circle_diameter_rel: float = 0.5
+    # White inset square drawn centred inside every black checkerboard
+    # square, as a fraction of the square side, in [0.0, 1.0). `None` (the
+    # default) and `0.0` both mean no inset. Omitted from `to_dict()` when
+    # `None` so the Rust round trip stays byte-identical.
+    inner_square_rel: float | None = None
 
     @staticmethod
     def default_circles(inner_rows: int, inner_cols: int) -> tuple[
@@ -191,7 +219,7 @@ class MarkerBoardTargetSpec:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "kind": "marker_board",
             "inner_rows": self.inner_rows,
             "inner_cols": self.inner_cols,
@@ -199,6 +227,9 @@ class MarkerBoardTargetSpec:
             "circles": [_marker_circle_to_print_dict(circle) for circle in self.circles],
             "circle_diameter_rel": self.circle_diameter_rel,
         }
+        if self.inner_square_rel is not None:
+            out["inner_square_rel"] = self.inner_square_rel
+        return out
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MarkerBoardTargetSpec:
@@ -211,6 +242,9 @@ class MarkerBoardTargetSpec:
             square_size_mm=float(data["square_size_mm"]),
             circles=circles,  # type: ignore[arg-type]
             circle_diameter_rel=float(data.get("circle_diameter_rel", 0.5)),
+            inner_square_rel=float(data["inner_square_rel"])
+            if "inner_square_rel" in data
+            else None,
         )
 
 
@@ -373,6 +407,7 @@ def chessboard_document(
     inner_cols: int,
     square_size_mm: float,
     *,
+    inner_square_rel: float | None = None,
     page: PageSpec | None = None,
     render: RenderOptions | None = None,
 ) -> PrintableTargetDocument:
@@ -382,6 +417,7 @@ def chessboard_document(
             inner_rows=int(inner_rows),
             inner_cols=int(inner_cols),
             square_size_mm=float(square_size_mm),
+            inner_square_rel=float(inner_square_rel) if inner_square_rel is not None else None,
         ),
         page=page if page is not None else PageSpec(),
         render=render if render is not None else RenderOptions(),
@@ -397,6 +433,7 @@ def charuco_document(
     *,
     marker_layout: MarkerLayout = MarkerLayout.OPENCV_CHARUCO,
     border_bits: int = 1,
+    inner_square_rel: float | None = None,
     page: PageSpec | None = None,
     render: RenderOptions | None = None,
 ) -> PrintableTargetDocument:
@@ -410,6 +447,7 @@ def charuco_document(
             dictionary=str(dictionary),
             marker_layout=marker_layout,
             border_bits=int(border_bits),
+            inner_square_rel=float(inner_square_rel) if inner_square_rel is not None else None,
         ),
         page=page if page is not None else PageSpec(),
         render=render if render is not None else RenderOptions(),
@@ -451,6 +489,7 @@ def marker_board_document(
     *,
     circles: tuple[MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec] | None = None,
     circle_diameter_rel: float = 0.5,
+    inner_square_rel: float | None = None,
     page: PageSpec | None = None,
     render: RenderOptions | None = None,
 ) -> PrintableTargetDocument:
@@ -465,6 +504,7 @@ def marker_board_document(
             square_size_mm=float(square_size_mm),
             circles=resolved_circles,
             circle_diameter_rel=float(circle_diameter_rel),
+            inner_square_rel=float(inner_square_rel) if inner_square_rel is not None else None,
         ),
         page=page if page is not None else PageSpec(),
         render=render if render is not None else RenderOptions(),

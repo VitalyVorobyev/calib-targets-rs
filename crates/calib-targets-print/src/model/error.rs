@@ -49,6 +49,11 @@ pub enum PrintableTargetError {
     /// The circle-to-square diameter ratio is non-finite or outside `(0, 1]`.
     #[error("circle_diameter_rel must be finite and in (0, 1]")]
     InvalidCircleDiameter,
+    /// The inner-square inset ratio (fraction of the square side occupied by
+    /// the centred white inset) is non-finite, negative, or `>= 1.0` (which
+    /// would erase the square entirely).
+    #[error("inner_square_rel must be finite and in [0.0, 1.0)")]
+    InvalidInnerSquareRel,
     /// A marker board layout omits the millimeter cell size required to place
     /// it on a printable page.
     #[error("marker board layout needs cell_size in millimeters for printable conversion")]

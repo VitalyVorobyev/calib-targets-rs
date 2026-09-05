@@ -37,6 +37,11 @@ pub struct ChessboardGenArgs {
     pub inner_cols: u32,
     #[arg(long)]
     pub square_size_mm: f64,
+    /// White inset square drawn centred inside every black square, as a
+    /// fraction of the square side, in `[0, 1)`. Omitted or `0` means no
+    /// inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -61,6 +66,11 @@ pub struct CharucoGenArgs {
     pub marker_layout: MarkerLayoutArg,
     #[arg(long, default_value_t = 1)]
     pub border_bits: usize,
+    /// White inset square drawn centred inside every plain black checker
+    /// square (never inside an ArUco marker's bit cells), as a fraction of
+    /// the square side, in `[0, 1)`. Omitted or `0` means no inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -103,6 +113,11 @@ pub struct MarkerBoardGenArgs {
     pub circle_diameter_rel: f64,
     #[arg(long = "circle", value_name = "I,J,POLARITY")]
     pub circles: Vec<String>,
+    /// White inset square drawn centred inside every black checkerboard
+    /// square, as a fraction of the square side, in `[0, 1)`. Omitted or
+    /// `0` means no inset.
+    #[arg(long)]
+    pub inner_square_rel: Option<f64>,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -120,6 +135,11 @@ pub fn run(cmd: GenCommand) -> Result<(), CliError> {
 
 fn run_chessboard(args: ChessboardGenArgs) -> Result<(), CliError> {
     let mut doc = chessboard_document(args.inner_rows, args.inner_cols, args.square_size_mm);
+    if let Some(rel) = args.inner_square_rel {
+        if let calib_targets_print::TargetSpec::Chessboard(spec) = &mut doc.target {
+            spec.inner_square_rel = Some(rel);
+        }
+    }
     doc.page = build_page_spec(&args.page)?;
     doc.render = build_render_options(&args.render);
     emit_bundle(&doc, args.out_stem)
@@ -140,6 +160,9 @@ fn run_charuco(args: CharucoGenArgs) -> Result<(), CliError> {
         spec.marker_layout = match args.marker_layout {
             MarkerLayoutArg::OpencvCharuco => calib_targets_charuco::MarkerLayout::OpenCvCharuco,
         };
+        if let Some(rel) = args.inner_square_rel {
+            spec.inner_square_rel = Some(rel);
+        }
     }
     doc.page = build_page_spec(&args.page)?;
     doc.render = build_render_options(&args.render);
@@ -174,6 +197,9 @@ fn run_marker_board(args: MarkerBoardGenArgs) -> Result<(), CliError> {
     );
     if let calib_targets_print::TargetSpec::MarkerBoard(spec) = &mut doc.target {
         spec.circle_diameter_rel = args.circle_diameter_rel;
+        if let Some(rel) = args.inner_square_rel {
+            spec.inner_square_rel = Some(rel);
+        }
     }
     doc.page = build_page_spec(&args.page)?;
     doc.render = build_render_options(&args.render);

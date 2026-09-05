@@ -129,3 +129,58 @@ def test_cli_rejects_unknown_dictionary(tmp_path: Path) -> None:
             "--square-size-mm", "20", "--marker-size-rel", "0.75",
             "--dictionary", "DICT_DOES_NOT_EXIST",
         ])
+
+
+def test_cli_gen_chessboard_with_inner_square_rel(tmp_path: Path) -> None:
+    baseline_stem = tmp_path / "baseline"
+    inset_stem = tmp_path / "inset"
+
+    assert cli_main([
+        "gen", "chessboard",
+        "--out-stem", str(baseline_stem),
+        "--inner-rows", "6",
+        "--inner-cols", "8",
+        "--square-size-mm", "20",
+    ]) == 0
+    assert cli_main([
+        "gen", "chessboard",
+        "--out-stem", str(inset_stem),
+        "--inner-rows", "6",
+        "--inner-cols", "8",
+        "--square-size-mm", "20",
+        "--inner-square-rel", "0.4",
+    ]) == 0
+    _assert_bundle(baseline_stem)
+    _assert_bundle(inset_stem)
+
+    baseline_svg = baseline_stem.with_suffix(".svg").read_text()
+    inset_svg = inset_stem.with_suffix(".svg").read_text()
+    assert inset_svg.count("<rect ") > baseline_svg.count("<rect ")
+
+    inset_json = json.loads(inset_stem.with_suffix(".json").read_text())
+    assert inset_json["target"]["inner_square_rel"] == 0.4
+
+
+def test_cli_init_charuco_and_marker_board_accept_inner_square_rel(tmp_path: Path) -> None:
+    charuco_spec = tmp_path / "charuco.json"
+    assert cli_main([
+        "init", "charuco",
+        "--out", str(charuco_spec),
+        "--rows", "5", "--cols", "7",
+        "--square-size-mm", "20", "--marker-size-rel", "0.75",
+        "--dictionary", "DICT_4X4_50",
+        "--inner-square-rel", "0.3",
+    ]) == 0
+    charuco_data = json.loads(charuco_spec.read_text())
+    assert charuco_data["target"]["inner_square_rel"] == 0.3
+
+    marker_spec = tmp_path / "marker.json"
+    assert cli_main([
+        "init", "marker-board",
+        "--out", str(marker_spec),
+        "--inner-rows", "6", "--inner-cols", "8",
+        "--square-size-mm", "20",
+        "--inner-square-rel", "0.4",
+    ]) == 0
+    marker_data = json.loads(marker_spec.read_text())
+    assert marker_data["target"]["inner_square_rel"] == 0.4

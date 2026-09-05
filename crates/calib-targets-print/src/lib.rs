@@ -89,6 +89,7 @@ mod tests {
             inner_rows: 6,
             inner_cols: 8,
             square_size_mm: 20.0,
+            inner_square_rel: None,
         }));
         let paths = write_target_bundle(&doc, dir.path().join("sample")).expect("bundle");
         assert!(paths.json_path.is_file());

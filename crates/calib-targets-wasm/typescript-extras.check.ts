@@ -35,6 +35,7 @@ export const charucoDoc: PrintableTargetDocument = {
     dictionary: "DICT_4X4_50",
     marker_layout: "opencv_charuco",
     border_bits: 2,
+    inner_square_rel: 0.4,
   },
   page: {
     size: { kind: "letter" },
@@ -51,6 +52,18 @@ export const chessboardDoc: PrintableTargetDocument = {
     inner_rows: 6,
     inner_cols: 9,
     square_size_mm: 25.0,
+  },
+};
+
+// `inner_square_rel` is optional; a document authored without it (above)
+// must remain constructible, and one that names it must too.
+export const chessboardDocWithInnerSquare: PrintableTargetDocument = {
+  target: {
+    kind: "chessboard",
+    inner_rows: 6,
+    inner_cols: 9,
+    square_size_mm: 25.0,
+    inner_square_rel: 0.4,
   },
 };
 
@@ -76,6 +89,7 @@ export const markerBoardDoc: PrintableTargetDocument = {
       { i: 1, j: 4, polarity: "white" },
     ],
     circle_diameter_rel: 0.5,
+    inner_square_rel: 0.4,
   },
 };
 
