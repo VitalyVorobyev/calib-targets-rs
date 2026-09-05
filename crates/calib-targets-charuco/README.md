@@ -23,7 +23,7 @@ and [alignment & refinement chapter][book-alignment].
 
 ```toml
 [dependencies]
-calib-targets-charuco = "0.14"
+calib-targets-charuco = "0.15"
 ```
 
 ## Quickstart
@@ -33,7 +33,7 @@ ChESS corner detection for you and takes an `image::GrayImage` straight in.
 
 ```toml
 [dependencies]
-calib-targets = "0.14"
+calib-targets = "0.15"
 image = "0.25"
 ```
 
